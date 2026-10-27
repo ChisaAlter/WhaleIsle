@@ -1,3 +1,49 @@
+var __knownSymbol = (name2, symbol) => (symbol = Symbol[name2]) ? symbol : Symbol.for("Symbol." + name2);
+var __typeError = (msg) => {
+  throw TypeError(msg);
+};
+var __using = (stack, value, async) => {
+  if (value != null) {
+    if (typeof value !== "object" && typeof value !== "function") __typeError("Object expected");
+    var dispose, inner;
+    if (async) dispose = value[__knownSymbol("asyncDispose")];
+    if (dispose === void 0) {
+      dispose = value[__knownSymbol("dispose")];
+      if (async) inner = dispose;
+    }
+    if (typeof dispose !== "function") __typeError("Object not disposable");
+    if (inner) dispose = function() {
+      try {
+        inner.call(this);
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    };
+    stack.push([async, dispose, value]);
+  } else if (async) {
+    stack.push([async]);
+  }
+  return value;
+};
+var __callDispose = (stack, error, hasError) => {
+  var E = typeof SuppressedError === "function" ? SuppressedError : function(e, s, m, _) {
+    return _ = Error(m), _.name = "SuppressedError", _.error = e, _.suppressed = s, _;
+  };
+  var fail = (e) => error = hasError ? new E(e, error, "An error was suppressed during disposal") : (hasError = true, e);
+  var next = (it) => {
+    while (it = stack.pop()) {
+      try {
+        var result = it[1] && it[1].call(it[2]);
+        if (it[0]) return Promise.resolve(result).then(next, (e) => (fail(e), next()));
+      } catch (e) {
+        fail(e);
+      }
+    }
+    if (hasError) throw error;
+  };
+  return next();
+};
+
 // src/shared/contract.ts
 var RPC_CHANNEL = "/usage-stats";
 var RPC_OVERVIEW = "overview";
@@ -1317,7 +1363,6 @@ var BillingStore = class {
     this.medium = medium;
     this.mode = medium === void 0 ? "memory" : "durable";
   }
-  warn;
   cache = null;
   medium;
   mode;
@@ -2087,20 +2132,18 @@ function isSessionGone(err) {
   return err?.code === "SESSION_QUERY_SESSION_NOT_FOUND";
 }
 var STALE_MS = 10 * 60 * 1e3;
-var RESCAN_MS = 10 * 60 * 1e3;
 function apply(ctx) {
   const tag = "[dsh-usage-panel]";
   const scopedCtx = channelContext(ctx);
   const sq = ctx.get("sessionQuery");
   const registry = ctx.get("sessionProjections");
-  const projCache = ctx.get("sessionProjectionCache");
   const connection = scopedCtx.get("connection");
   const llm = ctx.get("llm");
   let mode = "projection";
   console.log(
     tag,
     "boot: mode=" + mode,
-    "services: sessionQuery=" + Boolean(sq) + " sessionProjections=" + Boolean(registry) + " sessionProjectionCache=" + Boolean(projCache)
+    "services: sessionQuery=" + Boolean(sq) + " sessionProjections=" + Boolean(registry) + " sessionProjectionCache=" + Boolean(ctx.get("sessionProjectionCache"))
   );
   let disposeUnit = null;
   try {
@@ -2162,6 +2205,7 @@ function apply(ctx) {
     let sessionsFailed = 0;
     let sessionsPending = 0;
     const failures = [];
+    const titles = /* @__PURE__ */ new Map();
     let sessions = [];
     try {
       sessions = await sq.listSessions();
@@ -2188,16 +2232,24 @@ function apply(ctx) {
         continue;
       }
       try {
-        const log = await sq.readSession(id);
-        const snap = projCache.coldSnapshot(log.session, log.inheritedEventCount, log.events);
-        const value = snap.values.usagePanel;
-        if (!value) {
-          sessionsPending += 1;
-          await pacer.beat(i + 1, sessions.length);
-          continue;
+        var _stack = [];
+        try {
+          const observation = __using(_stack, await sq.observeSession(id));
+          const value = observation.projections?.values.usagePanel;
+          const title = observation.projections?.values.title;
+          if (typeof title === "string" || title === null) titles.set(id, title);
+          if (!value) {
+            sessionsPending += 1;
+            await pacer.beat(i + 1, sessions.length);
+            continue;
+          }
+          a = mergeSessionValue(a, value, id, now, 0, observation.header.cwd ?? null);
+          sessionsOk += 1;
+        } catch (_) {
+          var _error = _, _hasError = true;
+        } finally {
+          __callDispose(_stack, _error, _hasError);
         }
-        a = mergeSessionValue(a, value, id, now, 0, log.session.cwd ?? null);
-        sessionsOk += 1;
       } catch (err) {
         sessionsFailed += 1;
         if (!isSessionGone(err) && failed.length < 50) failed.push(id);
@@ -2210,9 +2262,9 @@ function apply(ctx) {
       logFailure(sessionsFailed + " session(s) failed to read (first " + failures.length + "): " + failures.join(" | "));
     }
     sessionIndex = rankSessions(a.sessions, Number.MAX_SAFE_INTEGER);
-    const titles = /* @__PURE__ */ new Map();
     await Promise.all(
       rankSessions(a.sessions, 10).map(async (s) => {
+        if (titles.has(s.id)) return;
         try {
           const t = await sq.readTitle(s.id);
           titles.set(s.id, t ? t.title : null);
@@ -2266,8 +2318,8 @@ function apply(ctx) {
       payload = null;
     }
     if (payload !== null && !disposed) {
-      cache = { at: payload.updatedAt, payload };
-      console.log(tag, "stats cache hit \u2014 serving snapshot, refreshing in background");
+      cache = { at: 0, payload };
+      console.log(tag, "stats cache hit \u2014 awaiting exact demand refresh");
     }
   }
   function startScan() {
@@ -2316,13 +2368,10 @@ function apply(ctx) {
     });
     return run;
   }
-  function overview(args) {
+  async function overview(args) {
     const force = !!(args && args.force);
-    if (!force && cache) {
-      if (Date.now() - cache.at < STALE_MS) return Promise.resolve(cache.payload);
-      startScan();
-      return Promise.resolve(Object.assign({}, cache.payload, { stale: true }));
-    }
+    if (inflight !== null) return inflight;
+    if (!force && cache !== null && Date.now() - cache.at < STALE_MS) return cache.payload;
     return startScan();
   }
   const ZERO_TOTALS = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
@@ -2341,8 +2390,15 @@ function apply(ctx) {
         const liveRegistry = registry;
         value = liveRegistry.stateOf(live, USAGE_PANEL_KEY);
       } else {
-        const log = await sq.readSession(sessionId);
-        value = projCache.coldSnapshot(log.session, log.inheritedEventCount, log.events).values.usagePanel;
+        var _stack = [];
+        try {
+          const observation = __using(_stack, await sq.observeSession(sessionId));
+          value = observation.projections?.values.usagePanel;
+        } catch (_) {
+          var _error = _, _hasError = true;
+        } finally {
+          __callDispose(_stack, _error, _hasError);
+        }
       }
     } catch (err) {
       if (isSessionGone(err)) {
@@ -2380,6 +2436,7 @@ function apply(ctx) {
   }
   const sortOf = (payload) => payload?.sort ?? "tokens";
   async function sessionsMore(payload) {
+    await overview(void 0);
     const offset = Math.max(0, payload?.offset ?? 0);
     const sort = sortOf(payload);
     const ranked = rankSessionsBy(sessionIndex, sort, pricesSource.snapshot(), true);
@@ -2408,6 +2465,7 @@ function apply(ctx) {
     };
   }
   async function projectsMore(payload) {
+    await overview(void 0);
     const offset = Math.max(0, payload?.offset ?? 0);
     const all = projectRowsOf(sessionIndex, sortOf(payload), pricesSource.snapshot(), true);
     const { rows, hasMore } = pageOf(all, offset, PAGE_SIZE);
@@ -2589,23 +2647,9 @@ function apply(ctx) {
     },
     { authority: "loopback" }
   );
-  startScan().then((o) => {
-    console.log(
-      tag,
-      "first scan done:",
-      "mode=" + o.coverage.mode,
-      "sessions=" + o.coverage.sessionsTotal + "/" + o.coverage.sessionsOk + " (failed " + o.coverage.sessionsFailed + ", pending " + o.coverage.sessionsPending + ")",
-      "withUsage=" + o.allTime.sessionCount,
-      "dataRange=" + (o.coverage.from === null ? "-" : new Date(o.coverage.from).toISOString()) + ".." + (o.coverage.to === null ? "-" : new Date(o.coverage.to).toISOString())
-    );
-  });
-  const stopTimer = ctx.interval(() => {
-    if (!inflight) startScan();
-  }, RESCAN_MS);
   ctx.effect(() => () => {
     disposed = true;
     if (disposeUnit) disposeUnit();
-    if (stopTimer) stopTimer();
     if (disposeRpc) disposeRpc();
   });
 }

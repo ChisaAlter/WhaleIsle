@@ -2,15 +2,13 @@
 //
 // Data path: inject waits for sessionProjections / sessionQuery /
 // sessionProjectionCache, then register() installs a client-visible unit
-// (stateSchema + wire). The framework folds events; scans read
-// sessionQuery.readSession + coldSnapshot values.usagePanel (the vendored
-// rc.1 contract hands the caller the complete log). A missing cell is
-// pending, never a readSession replay. register() throw fails soft to the
-// full rescan.
+// (stateSchema + wire). Demand scans read usagePanel from exact shared
+// Session observations without cloning or replaying their logs again.
+// A missing cell is pending. Registration failure uses the full-scan reducer.
 //
-// Reads are served with stale-while-revalidate: fresh for 10 minutes; older
-// payloads return instantly with `stale: true` while a background rescan
-// refreshes; the refresh button forces a synchronous scan. Read-only.
+// Statistics requests share one exact scan. Completed results are reused for
+// ten minutes; stale or forced reads wait for their replacement. Startup and
+// settings search do not trigger full-corpus work. Session logs stay read-only.
 //
 // User PRICES are the one thing this plugin writes, and they are written into
 // the harness conversation settings section (`ui-conversation.sessionCostPrices`,
@@ -56,7 +54,7 @@ import { createPricesRepair } from './prices-repair.ts'
 import { decodeStorageRecord, isRepairableSessionId, repairSessionLog, resolveDshHome } from './session-repair.ts'
 import { openStatsCache, statsCacheKey, type StatsCache } from './stats-cache.ts'
 import { scanPacer, withTimeout } from './pacing.ts'
-import type { HostConnection, HostLlm, HostProjectionCache, HostSessionQuery, HostSettings, HostSettingsEventSource, LlmProviderInfoLike } from './types.ts'
+import type { HostConnection, HostLlm, HostSessionQuery, HostSettings, HostSettingsEventSource, LlmProviderInfoLike } from './types.ts'
 
 export const name = 'dsh-usage-panel'
 export const inject = [
@@ -86,7 +84,6 @@ function isSessionGone(err: unknown): boolean {
 }
 
 const STALE_MS = 10 * 60 * 1000 // cache freshness window
-const RESCAN_MS = 10 * 60 * 1000 // periodic keep-warm rescan
 
 export function apply(ctx: Context): void {
   const tag = '[dsh-usage-panel]'
@@ -95,7 +92,6 @@ export function apply(ctx: Context): void {
   // type packages still describe the retired id-only coldSnapshot contract.
   const sq = ctx.get('sessionQuery') as unknown as HostSessionQuery
   const registry = ctx.get('sessionProjections') as SessionProjectionRegistry
-  const projCache = ctx.get('sessionProjectionCache') as unknown as HostProjectionCache
   const connection = scopedCtx.get('connection') as HostConnection | undefined
   const llm = ctx.get('llm') as HostLlm | undefined
 
@@ -104,7 +100,7 @@ export function apply(ctx: Context): void {
   console.log(
     tag,
     'boot: mode=' + mode,
-    'services: sessionQuery=' + Boolean(sq) + ' sessionProjections=' + Boolean(registry) + ' sessionProjectionCache=' + Boolean(projCache),
+    'services: sessionQuery=' + Boolean(sq) + ' sessionProjections=' + Boolean(registry) + ' sessionProjectionCache=' + Boolean(ctx.get('sessionProjectionCache')),
   )
 
   // Registration is an effect on this fiber: the unit's key disappears when
@@ -205,6 +201,7 @@ export function apply(ctx: Context): void {
     let sessionsFailed = 0
     let sessionsPending = 0
     const failures: string[] = []
+    const titles = new Map<string, string | null>()
     let sessions: SessionRecord[] = []
     try {
       sessions = await sq.listSessions()
@@ -233,19 +230,18 @@ export function apply(ctx: Context): void {
         continue
       }
       try {
-        // Vendored contract (rc.1): the caller supplies the complete log.
-        // readSession is the live-preferred replay-validated read; the sync
-        // coldSnapshot seeds from the checkpoint rows, folds the tail, and
-        // refreshes the cache row (fire-and-forget write-back).
-        const log = await sq.readSession(id)
-        const snap = projCache.coldSnapshot(log.session, log.inheritedEventCount, log.events)
-        const value = snap.values.usagePanel as UsagePanelState | undefined
+        // The shared observation validates and prepares one exact Session cut.
+        // Its projections already include the checkpoint and unfurled tail.
+        using observation = await sq.observeSession(id)
+        const value = observation.projections?.values.usagePanel as UsagePanelState | undefined
+        const title = observation.projections?.values.title
+        if (typeof title === 'string' || title === null) titles.set(id, title)
         if (!value) {
           sessionsPending += 1 // no events / nothing folded yet
           await pacer.beat(i + 1, sessions.length)
           continue
         }
-        a = mergeSessionValue(a, value, id, now, 0, log.session.cwd ?? null)
+        a = mergeSessionValue(a, value, id, now, 0, observation.header.cwd ?? null)
         sessionsOk += 1
       } catch (err) {
         sessionsFailed += 1
@@ -261,9 +257,9 @@ export function apply(ctx: Context): void {
       logFailure(sessionsFailed + ' session(s) failed to read (first ' + failures.length + '): ' + failures.join(' | '))
     }
     sessionIndex = rankSessions(a.sessions, Number.MAX_SAFE_INTEGER)
-    const titles = new Map<string, string | null>()
     await Promise.all(
       rankSessions(a.sessions, 10).map(async (s) => {
+        if (titles.has(s.id)) return
         try {
           const t = await sq.readTitle(s.id)
           titles.set(s.id, t ? t.title : null)
@@ -316,7 +312,7 @@ export function apply(ctx: Context): void {
     return statsCacheKey({ sessionsTotal: sessions.length, to })
   }
 
-  /** Cold-start fast path: hydrate the in-memory cache from SQLite before any scan. */
+  /** Retain the last durable overview while the first demand refresh is in flight. */
   async function hydrateFromCache(): Promise<void> {
     if (cache !== null || statsCache === null) return
     let payload: Overview | null = null
@@ -326,9 +322,8 @@ export function apply(ctx: Context): void {
       payload = null
     }
     if (payload !== null && !disposed) {
-      // Serve as stale: the background scan refreshes immediately.
-      cache = { at: payload.updatedAt, payload }
-      console.log(tag, 'stats cache hit — serving snapshot, refreshing in background')
+      cache = { at: 0, payload }
+      console.log(tag, 'stats cache hit — awaiting exact demand refresh')
     }
   }
 
@@ -356,7 +351,7 @@ export function apply(ctx: Context): void {
         }
       }
       // Each projection is a whole-session value, never an additive delta.
-      // Rebuild the aggregate; coldSnapshot still reuses per-session checkpoints.
+      // Rebuild the aggregate from each observation's checkpoint and current tail.
       const payload = await scan(Date.now(), magpie)
       if (payload !== null && !disposed) {
         cache = { at: Date.now(), payload }
@@ -385,13 +380,10 @@ export function apply(ctx: Context): void {
     return run
   }
 
-  function overview(args: { force?: boolean } | undefined): Promise<Overview> {
+  async function overview(args: { force?: boolean } | undefined): Promise<Overview> {
     const force = !!(args && args.force)
-    if (!force && cache) {
-      if (Date.now() - cache.at < STALE_MS) return Promise.resolve(cache.payload)
-      startScan() // stale-while-revalidate: background refresh
-      return Promise.resolve(Object.assign({}, cache.payload, { stale: true }))
-    }
+    if (inflight !== null) return inflight
+    if (!force && cache !== null && Date.now() - cache.at < STALE_MS) return cache.payload
     return startScan()
   }
 
@@ -403,7 +395,7 @@ export function apply(ctx: Context): void {
 
   /**
    * Price-bearing projection data of ONE session: the live registry state
-   * when the session is open (synchronous, no replay), else the cold cached
+   * when the session is open (synchronous, no replay), else the exact observed
    * row. A session with neither (no persisted log / no cell yet) reports
    * `found: false` — the strip shows an empty readout, never an error.
    */
@@ -423,9 +415,8 @@ export function apply(ctx: Context): void {
         }
         value = liveRegistry.stateOf(live, USAGE_PANEL_KEY)
       } else {
-        // Cold read under the vendored caller-supplied-log contract.
-        const log = await sq.readSession(sessionId)
-        value = projCache.coldSnapshot(log.session, log.inheritedEventCount, log.events).values.usagePanel as UsagePanelState | undefined
+        using observation = await sq.observeSession(sessionId)
+        value = observation.projections?.values.usagePanel as UsagePanelState | undefined
       }
     } catch (err) {
       // An absent id is a poll for a deleted session, not a damaged artifact:
@@ -480,6 +471,7 @@ export function apply(ctx: Context): void {
 
   /** Next page of the ranked session list (titles fetched on demand). */
   async function sessionsMore(payload: Partial<PageRequest> | undefined): Promise<SessionPage> {
+    await overview(undefined)
     const offset = Math.max(0, payload?.offset ?? 0)
     const sort = sortOf(payload)
     const ranked = rankSessionsBy(sessionIndex, sort, pricesSource.snapshot(), true)
@@ -510,6 +502,7 @@ export function apply(ctx: Context): void {
 
   /** Next page of the project (= working directory) ranking. */
   async function projectsMore(payload: Partial<PageRequest> | undefined): Promise<ProjectPage> {
+    await overview(undefined)
     const offset = Math.max(0, payload?.offset ?? 0)
     const all = projectRowsOf(sessionIndex, sortOf(payload), pricesSource.snapshot(), true)
     const { rows, hasMore } = pageOf(all, offset, PAGE_SIZE)
@@ -722,27 +715,9 @@ export function apply(ctx: Context): void {
       { authority: 'loopback' },
     )
 
-  // Warm up the moment the plugin loads.
-  startScan().then((o) => {
-    console.log(
-      tag,
-      'first scan done:',
-      'mode=' + o.coverage.mode,
-      'sessions=' + o.coverage.sessionsTotal + '/' + o.coverage.sessionsOk + ' (failed ' + o.coverage.sessionsFailed + ', pending ' + o.coverage.sessionsPending + ')',
-      'withUsage=' + o.allTime.sessionCount,
-      'dataRange=' + (o.coverage.from === null ? '-' : new Date(o.coverage.from).toISOString()) + '..' + (o.coverage.to === null ? '-' : new Date(o.coverage.to).toISOString()),
-    )
-  })
-
-  // Keep-warm: light periodic rescan so the cached payload never goes stale.
-  const stopTimer = ctx.interval(() => {
-    if (!inflight) startScan()
-  }, RESCAN_MS)
-
   ctx.effect(() => () => {
     disposed = true
     if (disposeUnit) disposeUnit()
-    if (stopTimer) stopTimer()
     if (disposeRpc) disposeRpc()
   })
 }

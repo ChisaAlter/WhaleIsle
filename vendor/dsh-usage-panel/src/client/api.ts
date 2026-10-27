@@ -121,22 +121,29 @@ export function isUsable(value: unknown): value is CachedOverview {
   return true
 }
 
-/** Call the RPC overview endpoint; rejects with the machine-readable code. */
+/**
+ * Call overview once; reject after 60s while retaining its eventual success.
+ * `onSuccess` receives the same request's successful result even after timeout;
+ * its owner must ignore results after disposal or a newer request.
+ */
 export async function callOverview(
   rpc: { call(channel: string, endpoint: string, payload?: unknown): Promise<RpcResultLike<unknown>> },
   force: boolean,
+  onSuccess?: (value: Overview) => void,
 ): Promise<Overview> {
-  const res = (await withTimeout(
-    rpc.call('/usage-stats', 'overview', { force: !!force }),
-    TIMEOUTS.overview,
-    'overview',
-  )) as RpcResult<Overview>
-  if (res && res.ok) return res.value
-  const code = res && res.error ? res.error.code : 'internal'
-  const message = res && res.error ? res.error.message : 'unknown error'
-  const err = new Error(message) as Error & { code?: string }
-  err.code = code
-  throw err
+  const source = rpc.call('/usage-stats', 'overview', { force: !!force }).then((result) => {
+    const res = result as RpcResult<Overview>
+    if (res && res.ok) {
+      onSuccess?.(res.value)
+      return res.value
+    }
+    const code = res && res.error ? res.error.code : 'internal'
+    const message = res && res.error ? res.error.message : 'unknown error'
+    const err = new Error(message) as Error & { code?: string }
+    err.code = code
+    throw err
+  })
+  return withTimeout(source, TIMEOUTS.overview, 'overview')
 }
 
 /** Call billing.get (durable preferences); rejects with the machine-readable code. */

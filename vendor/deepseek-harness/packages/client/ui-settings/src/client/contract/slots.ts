@@ -261,6 +261,8 @@ export interface SettingsHeaderOwnerProps {
 export interface SettingsSectionOwnerProps {
   /** Close the settings panel (the shell owns the open state). */
   close: () => void
+  /** Render searchable labels without loading the section's business data. */
+  indexOnly?: boolean
 }
 
 /** Owner share of the currently active settings-backed onboarding step. */

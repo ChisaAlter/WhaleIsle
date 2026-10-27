@@ -22,6 +22,8 @@ export interface SlotRegisterOptions {
 /** The render share the host passes to an entry that declares children. */
 export interface ChildRenderProps {
   renderSlot?: (key: string, props: object) => ReactNode
+  /** Settings search requests labels without fetching statistics. */
+  indexOnly?: boolean
 }
 
 export interface RpcResultLike<T> {

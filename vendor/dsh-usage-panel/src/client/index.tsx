@@ -64,6 +64,7 @@ export function apply(ctx: ClientCtx): void {
         createElement(StatsSection, {
           rpc: ctx.connection.rpc,
           i18n,
+          indexOnly: (props as ChildRenderProps | undefined)?.indexOnly,
           settingsRows: (props as ChildRenderProps | undefined)?.renderSlot?.('settings.usage.item', {}),
         }),
       ),

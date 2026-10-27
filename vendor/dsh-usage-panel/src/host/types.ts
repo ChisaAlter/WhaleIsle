@@ -93,18 +93,10 @@ export interface HostSettingsEventSource {
   ): () => void
 }
 
-// --- Vendored harness read faces (dsh-v0.1.2-rc.1) ---
-//
-// The npm rc.6 devDependency types predate the vendored harness:
-// `sessionProjectionCache.coldSnapshot` went from `async coldSnapshot(id,
-// signal)` to a sync `coldSnapshot(meta, inheritedEventCount, events)` whose
-// caller supplies the complete replay-validated log, `cachedSnapshot` gained
-// the inheritedEventCount parameter, and `SessionLogSnapshot` gained the
-// `inheritedEventCount` field. These structural faces mirror the vendored
-// runtime shapes (same precedent as the connection/llm faces above); the npm
-// type packages must not be trusted for these calls.
+// Vendored Host read APIs. The npm rc.6 development types predate the
+// disposable Session observation and its exact projection cut.
 
-/** Header subset the projection-cache identity binds (createdAt / cwd / lineage). */
+/** Session identity and workspace attribution used by the statistics consumer. */
 export interface HostSessionHeader {
   id: string
   createdAt: number
@@ -126,15 +118,16 @@ export interface HostProjectionSnapshot {
   values: Record<string, unknown>
 }
 
-/** `ctx.sessionProjectionCache` — vendored rc.1 face; the id-only rc.6 calls are gone. */
-export interface HostProjectionCache {
-  coldSnapshot(meta: HostSessionHeader, inheritedEventCount: number, events: readonly SessionEvent[]): HostProjectionSnapshot
-  cachedSnapshot(meta: HostSessionHeader, inheritedEventCount: number, keys?: readonly string[]): HostProjectionSnapshot | undefined
+/** Caller-owned immutable observation; projection reads do not materialize its log. */
+export interface HostSessionObservation extends Disposable {
+  readonly header: HostSessionHeader
+  readonly projections?: HostProjectionSnapshot
 }
 
 /** `ctx.sessionQuery` — the read face the panel exercises. */
 export interface HostSessionQuery {
   listSessions(signal?: AbortSignal): Promise<SessionRecord[]>
+  observeSession(sessionId: string): Promise<HostSessionObservation>
   readSession(sessionId: string): Promise<HostSessionLogSnapshot>
   /** Vendored `SessionTitleSnapshot` cut down to the field the panel reads (`title` is non-empty). */
   readTitle(sessionId: string, signal?: AbortSignal): Promise<{ title: string } | undefined>

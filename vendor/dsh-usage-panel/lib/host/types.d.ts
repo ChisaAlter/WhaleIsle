@@ -66,7 +66,7 @@ export interface HostSettings {
 export interface HostSettingsEventSource {
     on(event: 'settings/document-updated', listener: (ns: unknown, revision: unknown) => void): () => void;
 }
-/** Header subset the projection-cache identity binds (createdAt / cwd / lineage). */
+/** Session identity and workspace attribution used by the statistics consumer. */
 export interface HostSessionHeader {
     id: string;
     createdAt: number;
@@ -85,14 +85,15 @@ export interface HostProjectionSnapshot {
     asOfSeq: number;
     values: Record<string, unknown>;
 }
-/** `ctx.sessionProjectionCache` — vendored rc.1 face; the id-only rc.6 calls are gone. */
-export interface HostProjectionCache {
-    coldSnapshot(meta: HostSessionHeader, inheritedEventCount: number, events: readonly SessionEvent[]): HostProjectionSnapshot;
-    cachedSnapshot(meta: HostSessionHeader, inheritedEventCount: number, keys?: readonly string[]): HostProjectionSnapshot | undefined;
+/** Caller-owned immutable observation; projection reads do not materialize its log. */
+export interface HostSessionObservation extends Disposable {
+    readonly header: HostSessionHeader;
+    readonly projections?: HostProjectionSnapshot;
 }
 /** `ctx.sessionQuery` — the read face the panel exercises. */
 export interface HostSessionQuery {
     listSessions(signal?: AbortSignal): Promise<SessionRecord[]>;
+    observeSession(sessionId: string): Promise<HostSessionObservation>;
     readSession(sessionId: string): Promise<HostSessionLogSnapshot>;
     /** Vendored `SessionTitleSnapshot` cut down to the field the panel reads (`title` is non-empty). */
     readTitle(sessionId: string, signal?: AbortSignal): Promise<{

@@ -8,6 +8,7 @@ import type { Overview } from '../shared/contract.ts'
 import { formatClock } from '../shared/format.ts'
 import { dayKeyUTC, isUsageEmpty } from '../shared/usage.ts'
 import { callOverview, callRepairSession, loadCached, saveCached } from './api.ts'
+import { createOverviewRequests } from './overview-requests.ts'
 import { useBillingSettings, useI18n, useLatest, type Tip } from './hooks.ts'
 import type { RpcLike } from './ctx.ts'
 import type { I18n } from './locales.ts'
@@ -52,9 +53,23 @@ interface StatsSectionProps {
   i18n: I18n
   /** Cost display switches other features place above the statistics. */
   settingsRows?: ReactNode
+  indexOnly?: boolean
 }
 
-export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps): JSX.Element {
+export function StatsSection(props: StatsSectionProps): JSX.Element {
+  if (props.indexOnly) {
+    const t = props.i18n.t
+    return <div className="dsw-ust-root">
+      {props.settingsRows}
+      {['nav.label', 'billing.title', 'heat.title', 'bar.title', 'donut.title', 'sessions.title', 'projects.title', 'providers.title', 'refresh.title'].map(key => (
+        <div key={key}><h3>{t(key)}</h3><p>{t('nav.label')}</p></div>
+      ))}
+    </div>
+  }
+  return <StatsContent {...props} />
+}
+
+function StatsContent({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps): JSX.Element {
   const i18n = useI18n(baseI18n)
   const t = i18n.t
   const locale = i18n.locale
@@ -72,6 +87,7 @@ export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSection
   const repairFeedbackId = React.useRef(0)
   const billing = useBillingSettings(rpc)
   const dataRef = useLatest(data)
+  const [overviewRequests] = useState(createOverviewRequests)
 
   const repairFirst = () => {
     const targets = data?.coverage.failedSessionIds ?? []
@@ -104,25 +120,31 @@ export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSection
 
   const load = useCallback(
     (force: boolean) => {
+      const isCurrent = overviewRequests.begin()
       setLoading(true)
       setError(null)
-      return callOverview(rpc, force)
-        .then((res) => {
-          setData(res)
-          setFreshness(res.stale ? 'stale' : 'fresh')
-          saveCached(res)
-          return res
-        })
+      return callOverview(rpc, force, (res) => {
+        if (!isCurrent()) return
+        setData(res)
+        setError(null)
+        setFreshness(res.stale ? 'stale' : 'fresh')
+        setLoading(false)
+        saveCached(res)
+      })
+        .then((res) => isCurrent() ? res : undefined)
         .catch((err) => {
+          if (!isCurrent()) return undefined
           const msg = String((err as Error)?.message ?? err)
           setError(msg)
           // Keep the last successful payload visible; never fake freshness.
           setFreshness(dataRef.current ? 'fallback' : 'error')
           return undefined
         })
-        .finally(() => setLoading(false))
+        .finally(() => {
+          if (isCurrent()) setLoading(false)
+        })
     },
-    [rpc, dataRef],
+    [rpc, dataRef, overviewRequests],
   )
 
   useEffect(() => {
@@ -132,6 +154,7 @@ export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSection
       setFreshness('fresh')
     }
     load(false)
+    return () => overviewRequests.invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load])
 
@@ -186,7 +209,7 @@ export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSection
         />
         <BarChart days={days} byModel={recentByModel} i18n={i18n} onTip={setBarTip} />
         <SessionsCard sessions={overview.topSessions} i18n={i18n} rpc={rpc} />
-        <ProjectRankCard i18n={i18n} rpc={rpc} />
+        {!loading && freshness === 'fresh' && <ProjectRankCard key={overview.updatedAt} i18n={i18n} rpc={rpc} />}
         <ProvidersCard providers={overview.providers} i18n={i18n} />
         <ModelDonut byModel={allTime.byModel} total={allTimeTotal} i18n={i18n} onTip={setDonutTip} />
       </>
