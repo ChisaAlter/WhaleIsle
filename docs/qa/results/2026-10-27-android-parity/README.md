@@ -56,6 +56,16 @@
 
 旧实现工作树在修复提交后变为不可用。已提交的产品代码与 QA 私有运行报告仍在；未提交的测试源码从本会话完整写入及增量编辑记录恢复到新的独立证据工作树，不重跑已通过的真实写操作，不改原用户工作区。
 
+## 虚拟 OAuth 桥贯通验证
+
+新增 `src/shared/dshd-account-callback.integration.test.js`，在独立 Node 测试进程中构造真实 Cordis Context、WebServer、PlatformAccount、AuthorizationService 和 LocalCredentialProvider。平台端是临时 HTTPS 服务，使用现有 TLS 证书生成器产生 localhost 证书，只给本用例独占的 undici Agent 配置信任 CA，每例后恢复原 dispatcher；没有替换 fetch、禁用 TLS 检验或改动产品代码。Host 回调使用实际 loopback HTTP。平台响应的 authorize/authorized 地址保持 HTTPS，符合桥的正式完成地址约束。
+
+本地复用既有 prepared Harness artifacts，以 `DSH_ACCOUNT_INTEGRATION_ROOT=<prepared Harness checkout> node --test --test-concurrency=1 src/shared/dshd-account-callback.integration.test.js` 执行，4/4 通过、0 失败、0 跳过，耗时 14.035 秒。四个案例分别验证：错误 state 拒绝后合法 state 可以完成，成功桥响应前 grant 已实际持久化；已取消 attempt 的晚到回调不能成功；真实 provider 超时后的晚到回调不能成功；平台交换拒绝经正式 HTTP/provider 流程后不存 grant。成功用例额外验证重复回调不再交换、bridge 结果不含 token。
+
+PKCE state/verifier/challenge 均来自正式 PlatformAccount。临时平台校验初始化携带 S256 challenge 且不含 verifier，交换时验证 `base64url(SHA256(code_verifier))` 等于原 challenge，并检查 redirect URI、授权码和实际生成的设备 ID。该验证贯通 `forwardHostRpc(account.completeSignIn)` → 正式 `/oauth/callback` → provider 状态校验/交换 → AuthorizationService 提交 → 本地凭据落盘；没有以单独 provider 单元测试推断 bridge 成功。
+
+永久测试仅在整套所需账户 artifacts 或依赖尚未准备时使用现有 VENDOR_RUNNABLE 约定明确跳过，不使用额外 opt-in 门槛。有完整 artifacts 时 import/runtime 错误会实际失败。隔离文本工作树的默认缺产物检查为 4 跳过，与上述复用既有产物的实际 4 通过分开记录。测试源码初始提交 `57c726f396`，汇总见同目录 `oauth-bridge-results.json`。账户、授权、凭据和 WebServer fibers、临时 HTTPS listener、dispatcher 和用例独占临时凭据目录均已清理。共享 QA Host、AVD、真实用户账户和其他存储文件没有改动。
+
 ## 验证限制
 
-上述真实验收验证管理动作在公网加密通道中实际执行，不认证外部 MCP 服务互操作、OAuth 平台完整授权或任何真机硬件行为。账户完整 OAuth、最终签名 APK 的原生逐项操作结合 lead/android-qa 的后续记录。物理手机按用户要求暂跳过；本轮未重启或修改安装中的用户 GUI。
+上述真实验收验证管理动作在公网加密通道中执行，以及虚拟 OAuth 桥在临时平台上的完整 provider 提交机制；不认证外部 MCP 服务互操作、真实公网平台用户授权或任何真机硬件行为。真实用户浏览器 OAuth、最终签名 APK 的原生逐项操作结合 lead/android-qa 的后续记录。物理手机按用户要求暂跳过；本轮未重启或修改安装中的用户 GUI。

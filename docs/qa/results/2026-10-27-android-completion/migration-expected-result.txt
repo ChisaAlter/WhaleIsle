@@ -1,0 +1,3 @@
+﻿INSTRUMENTATION_RESULT: stream=PASS: preserved 2 legacy computers and 3 drafts in encrypted native storage
+
+INSTRUMENTATION_CODE: -1

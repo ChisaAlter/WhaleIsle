@@ -1,0 +1,20 @@
+{
+  "sourceSha": "2212a19582757823a21be373a36bfee37e9088e6",
+  "version": "0.3.11",
+  "versionCode": 5,
+  "sha256": "e3ecb6e69942b7b2a858f8491d2a5729c64e7c3e63a08532662adfde31223f1a",
+  "certificateSha256": "4c292f304130080d89b3a2f5c236169b5dcda1fd7fbb8470ba66a186092273cc",
+  "device": "emulator-5556",
+  "installedWithDataPreserved": true,
+  "rootFilesVisible": true,
+  "rasterPreviewVisible": true,
+  "lightboxVisible": true,
+  "gallerySelectionAttached": true,
+  "galleryCancelPreservedDraft": true,
+  "coldStartSavedCredentialRestored": true,
+  "coldStartDefaultSession": "session-b1f5c077-503b-4809-8505-435827e85ab5",
+  "coldStartDraft": "QA_OFFLINE_DRAFT_20261027",
+  "historySessionDraftAfterExplicitNavigation": "QA_FORMA",
+  "submitted": false,
+  "completedAt": "2026-10-27T18:54:49.968070+08:00"
+}
