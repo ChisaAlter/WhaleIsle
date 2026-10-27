@@ -84,13 +84,13 @@ All money figures are **estimates, never a bill** — the plugin has no access t
 - **Peak/valley switch**: per model, and it opens in the state the model's saved record asks for — a saved 峰谷计价-off entry reopens off with its own price in the single row (labelled 价格, not 空闲价格), a saved two-column entry reopens on with both rows, a legacy peak-only entry reopens on with the off-peak row prefilled as half the peaks (exactly what the harness derives for it), and an unpriced model with an official column reopens on with that published pair. Only an unpriced model with no official column opens off and empty. The model dropdown has no placeholder: it opens on the first model of the selected provider. The global switch is gone (the conversation section has no such field): peak/valley pricing itself is always on, which is what the composer cost strip and the KPI both assume.
 - **Math**: integer micro-yuan with a single rounding to whole cents; cost columns in CSV exports are integer cents (empty when a row is unpriced).
 
-**Upgrade note (v0.3)**: the projection state version moved to 2; your first start after upgrading refolds each session's log once (in paced batches that keep the host responsive — a huge corpus is not a freeze, the page shows "updating in background"), and afterwards reads stay incremental.
+**Projection upgrades**: a changed projection version discards incompatible derived rows. The next statistics request reads exact logs and refolds the affected projections. Cold reads still decode and validate history; large logs can delay the Host despite the between-session pacing.
 
 **Upgrade note (price record)**: prices now live in the harness conversation settings section, which the composer cost strip reprices from. Prices you saved in this plugin's earlier versions are merged into it once (the section wins on conflicts) and the old record is cleared — nothing to re-enter. A model you saved with 峰谷计价 off before this version is repaired once as well: its single price is written into the off-peak column too, so it stops being billed at half outside peak hours.
 
 ## Loading behavior
 
-The first scan starts when the statistics page requests data. App startup, idle time and hidden settings-search renders do not scan the conversation corpus. Concurrent overview and ranking requests share the same scan; completed data is reused for 10 minutes. An older result or the refresh button waits for a fresh exact scan, so totals, rankings and repair candidates belong to the same completed read. The browser keeps its last successful payload in `localStorage` (versioned and structure-validated) and displays it while loading; a failed refresh keeps the cached numbers and says so instead of faking freshness. Search renders the page's headings and preference rows without loading statistics.
+The first scan starts when the statistics page requests data. App startup, idle time and hidden settings-search renders do not scan the conversation corpus. Concurrent overview and ranking requests share the same scan; completed data is reused for 10 minutes. An older result or the refresh button waits for a fresh exact scan, so totals, rankings and repair candidates belong to the same completed read. The browser keeps its last successful payload in `localStorage` (versioned and structure-validated) and displays it while loading; a failed refresh keeps the cached numbers and says so instead of faking freshness. Search renders the page's headings and preference rows without loading statistics. After 60 seconds the client reports a timeout and allows retry; if the same request later succeeds, the still-mounted page accepts its exact result. A newer load or disposal excludes old results.
 
 ## Units
 
@@ -102,7 +102,7 @@ Source is TypeScript (strict) in `src/`, built with esbuild; the `lib/` outputs 
 
 | File | Role |
 | --- | --- |
-| `src/host/index.ts` → `lib/index.js` | Host half (Cordis plugin): projection registration, aggregation, cached RPC with warm-up, fail-soft fallback, billing RPC endpoints |
+| `src/host/index.ts` → `lib/index.js` | Host half (Cordis plugin): projection registration, aggregation, demand-scanned cached RPC, fail-soft fallback, billing RPC endpoints |
 | `src/host/projection.ts` | Pure per-session projection reducer (four buckets + period buckets, fork dedup, retry/compaction semantics, UTC days, step/start phase) |
 | `src/host/aggregate.ts` | Cross-session merge → overview payload (cost maps included) |
 | `src/host/magpie-usage.ts` | Optional Magpie gateway ledger source: path resolution (`MAGPIE_USAGE_FILE` → `~/.config/magpie/usage.jsonl`), `agent === 'dsh'` fold (totals/byModel/byProvider/byDay), mtime+size cache, clean null fallback |
