@@ -464,6 +464,253 @@ test('OpenUI IPC accepts only the trusted harness main frame and preserves its r
   }
 });
 
+test('workspace directory picker authorizes the Harness view main frame and parents the BrowserWindow', async () => {
+  const origin = 'http://127.0.0.1:3080';
+  const mainFrame = { url: `${origin}/` };
+  const view = { mainFrame, isDestroyed: () => false };
+  const bootFrame = { url: require('./local-url').packagedBootFileUrl() };
+  const bootContents = { mainFrame: bootFrame, isDestroyed: () => false };
+  const mainWindow = { webContents: bootContents, isDestroyed: () => false };
+  const calls = [];
+  const selected = path.join(os.tmpdir(), 'picked-workspace');
+  const defaultPath = path.join(os.tmpdir(), 'workspace-default');
+  const ipc = loadIpc({
+    actualAuthorization: true,
+    getMainWindow: () => mainWindow,
+    getHarnessWebContents: () => view,
+    getHarnessOrigin: () => origin,
+    showOpenDialog: async (...args) => {
+      calls.push(args);
+      return { canceled: false, filePaths: [selected, 'ignored-second-path'], bookmarks: ['ignored'] };
+    },
+  });
+  try {
+    const trusted = { sender: view, senderFrame: mainFrame };
+    assert.notEqual(trusted.sender, mainWindow.webContents);
+    assert.equal(await ipc.invoke('shell:pick-workspace-directory', trusted, {
+      defaultPath, title: 'Choose a workspace', properties: ['openFile', 'multiSelections'],
+    }), selected);
+    assert.deepEqual(calls, [[mainWindow, {
+      properties: ['openDirectory', 'createDirectory'], defaultPath, title: 'Choose a workspace',
+    }]]);
+    const foreignFrame = { url: `${origin}/` };
+    const foreignContents = { mainFrame: foreignFrame, isDestroyed: () => false };
+    for (const event of [
+      { sender: bootContents, senderFrame: bootFrame },
+      launcherEvent(),
+      { sender: view, senderFrame: { url: `${origin}/`, parent: mainFrame } },
+      { sender: view, senderFrame: { url: 'about:srcdoc', parent: mainFrame } },
+      { sender: foreignContents, senderFrame: foreignFrame },
+      { sender: view },
+    ]) {
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', event),
+        error => error.code === 'ERR_DSH_IPC_SENDER');
+    }
+    for (const url of ['http://127.0.0.1:3081/', 'https://example.com/', 'about:blank']) {
+      mainFrame.url = url;
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', trusted),
+        error => error.code === 'ERR_DSH_IPC_SENDER');
+    }
+    assert.equal(calls.length, 1);
+    assert.deepEqual(ipc.saveConfigCalls, []);
+    assert.equal(ipc.startHarness(), 0);
+    assert.equal(ipc.startDesktop(), 0);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('workspace directory picker uses the configured workspace or home and returns null on cancel or no selection', async () => {
+  const mainWindow = { isDestroyed: () => false };
+  const workspace = path.join(os.tmpdir(), 'configured-workspace');
+  const home = path.join(os.tmpdir(), 'picker-home');
+  const config = { workspace };
+  const calls = [];
+  const paths = [];
+  let result = { canceled: true, filePaths: [workspace] };
+  const ipc = loadIpc({
+    config,
+    getMainWindow: () => mainWindow,
+    getPath: (name) => { paths.push(name); return home; },
+    showOpenDialog: async (...args) => { calls.push(args); return result; },
+  });
+  try {
+    assert.equal(await ipc.invoke('shell:pick-workspace-directory', harnessEvent()), null);
+    assert.deepEqual(calls[0], [mainWindow, {
+      properties: ['openDirectory', 'createDirectory'], defaultPath: workspace,
+    }]);
+    assert.deepEqual(paths, []);
+    config.workspace = '';
+    result = { canceled: false, filePaths: [] };
+    assert.equal(await ipc.invoke('shell:pick-workspace-directory', harnessEvent(), {}), null);
+    assert.deepEqual(calls[1], [mainWindow, {
+      properties: ['openDirectory', 'createDirectory'], defaultPath: home,
+    }]);
+    assert.deepEqual(paths, ['home']);
+    assert.deepEqual(ipc.saveConfigCalls, []);
+    assert.equal(ipc.startHarness(), 0);
+    assert.equal(ipc.startDesktop(), 0);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('workspace directory picker rejects invalid options before opening a native dialog', async () => {
+  let calls = 0;
+  const absolute = path.join(os.tmpdir(), 'picker-default');
+  const ipc = loadIpc({
+    getMainWindow: () => ({ isDestroyed: () => false }),
+    showOpenDialog: async () => { calls += 1; return { canceled: true, filePaths: [] }; },
+  });
+  try {
+    for (const options of [null, [], 'folder', 42, false, new Date(), Object.create({ title: 'inherited' })]) {
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', harnessEvent(), options), /plain object/);
+    }
+    for (const title of [null, 42, [], {}]) {
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', harnessEvent(), { title }), /title must be a string/);
+    }
+    for (const defaultPath of [null, 42, [], {}, '', 'relative/folder', '.', `file://${absolute}`, `${absolute}\0suffix`]) {
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', harnessEvent(), { defaultPath }), /absolute path without NUL/);
+    }
+    assert.equal(calls, 0);
+    assert.equal(await ipc.invoke('shell:pick-workspace-directory', harnessEvent(),
+      Object.assign(Object.create(null), { defaultPath: absolute, title: '' })), null);
+    assert.equal(calls, 1);
+    assert.deepEqual(ipc.saveConfigCalls, []);
+    assert.equal(ipc.startHarness(), 0);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('workspace directory picker explicitly rejects a missing or destroyed main window', async () => {
+  let calls = 0;
+  for (const mainWindow of [null, { isDestroyed: () => true }]) {
+    const ipc = loadIpc({
+      getMainWindow: () => mainWindow,
+      showOpenDialog: async () => { calls += 1; return { canceled: true, filePaths: [] }; },
+    });
+    try {
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', harnessEvent()), /requires a live main window/);
+      assert.deepEqual(ipc.saveConfigCalls, []);
+      assert.equal(ipc.startHarness(), 0);
+    } finally {
+      ipc.restore();
+    }
+  }
+  assert.equal(calls, 0);
+});
+
+test('workspace directory picker keeps one dialog without sharing its selection and releases it after rejection and cancellation', async () => {
+  const mainWindow = { isDestroyed: () => false };
+  const calls = [];
+  let resolveDialog;
+  let rejectDialog;
+  const ipc = loadIpc({
+    getMainWindow: () => mainWindow,
+    showOpenDialog: (...args) => {
+      calls.push(args);
+      return new Promise((resolve, reject) => { resolveDialog = resolve; rejectDialog = reject; });
+    },
+  });
+  let pending = [];
+  try {
+    for (const outcome of ['pick', 'reject', 'cancel']) {
+      const first = ipc.invoke('shell:pick-workspace-directory', harnessEvent(), { title: 'First request' });
+      const duplicate = ipc.invoke('shell:pick-workspace-directory', harnessEvent(), { title: 'Duplicate request' });
+      pending = [first, duplicate];
+      await Promise.resolve();
+      assert.equal(calls.length, ['pick', 'reject', 'cancel'].indexOf(outcome) + 1);
+      assert.equal(calls.at(-1)[0], mainWindow);
+      assert.equal(calls.at(-1)[1].title, 'First request');
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', harnessEvent(), { defaultPath: 'relative' }), /absolute path/);
+      await assert.rejects(() => ipc.invoke('shell:pick-workspace-directory', bootEvent()),
+        error => error.code === 'ERR_DSH_IPC_SENDER');
+      if (outcome === 'reject') {
+        const failure = new Error('Native picker failed');
+        const assertions = pending.map(request => assert.rejects(request, error => error === failure));
+        rejectDialog(failure);
+        await Promise.all(assertions);
+      } else {
+        const selected = path.join(os.tmpdir(), 'coalesced-workspace');
+        resolveDialog({ canceled: outcome === 'cancel', filePaths: [selected] });
+        assert.deepEqual(await Promise.all(pending), outcome === 'cancel' ? [null, null] : [selected, null]);
+      }
+      pending = [];
+    }
+    assert.deepEqual(ipc.saveConfigCalls, []);
+    assert.equal(ipc.startHarness(), 0);
+    assert.equal(ipc.startDesktop(), 0);
+  } finally {
+    if (resolveDialog) resolveDialog({ canceled: true, filePaths: [] });
+    await Promise.allSettled(pending);
+    ipc.restore();
+  }
+});
+
+test('workspace directory picker returns null when its owner is destroyed before a native rejection', async () => {
+  let destroyed = false;
+  let rejectDialog;
+  const ipc = loadIpc({
+    getMainWindow: () => ({ isDestroyed: () => destroyed }),
+    showOpenDialog: () => new Promise((_resolve, reject) => { rejectDialog = reject; }),
+  });
+  let pending;
+  try {
+    pending = ipc.invoke('shell:pick-workspace-directory', harnessEvent());
+    await Promise.resolve();
+    destroyed = true;
+    rejectDialog(new Error('Owner closed'));
+    assert.equal(await pending, null);
+    assert.deepEqual(ipc.saveConfigCalls, []);
+    assert.equal(ipc.startHarness(), 0);
+  } finally {
+    if (rejectDialog) rejectDialog(new Error('Test cleanup'));
+    if (pending) await pending.catch(() => {});
+    ipc.restore();
+  }
+});
+
+test('workspace directory picker returns null when its owner is destroyed and keeps a replacement window dialog pending', async () => {
+  let destroyed = false;
+  const original = { isDestroyed: () => destroyed };
+  const replacement = { isDestroyed: () => false };
+  let mainWindow = original;
+  const dialogs = [];
+  const ipc = loadIpc({
+    getMainWindow: () => mainWindow,
+    showOpenDialog: (owner) => new Promise(resolve => dialogs.push({ owner, resolve })),
+  });
+  const pending = [];
+  try {
+    const first = ipc.invoke('shell:pick-workspace-directory', harnessEvent());
+    pending.push(first);
+    await Promise.resolve();
+    destroyed = true;
+    mainWindow = replacement;
+    const next = ipc.invoke('shell:pick-workspace-directory', harnessEvent());
+    pending.push(next);
+    await Promise.resolve();
+    assert.deepEqual(dialogs.map(dialog => dialog.owner), [original, replacement]);
+    dialogs[0].resolve({ canceled: false, filePaths: [path.join(os.tmpdir(), 'stale-workspace')] });
+    assert.equal(await first, null);
+    const duplicate = ipc.invoke('shell:pick-workspace-directory', harnessEvent());
+    pending.push(duplicate);
+    await Promise.resolve();
+    assert.equal(dialogs.length, 2, 'old owner cleanup must not clear the replacement dialog');
+    const selected = path.join(os.tmpdir(), 'replacement-workspace');
+    dialogs[1].resolve({ canceled: false, filePaths: [selected] });
+    assert.deepEqual(await Promise.all([next, duplicate]), [selected, null]);
+    assert.deepEqual(ipc.saveConfigCalls, []);
+    assert.equal(ipc.startHarness(), 0);
+    assert.equal(ipc.startDesktop(), 0);
+  } finally {
+    for (const dialog of dialogs) dialog.resolve({ canceled: true, filePaths: [] });
+    await Promise.allSettled(pending);
+    ipc.restore();
+  }
+});
+
 test('shell:git-branch-list resolves the guard failure payload when the handler throws', async () => {
   const ipc = loadIpc({
     git: {

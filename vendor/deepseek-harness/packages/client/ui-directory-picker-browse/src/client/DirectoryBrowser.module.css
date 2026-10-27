@@ -401,6 +401,39 @@
   border-top: 0.5px solid var(--dsw-alias-border-l3);
 }
 
+.browseActions,
+.confirmActions,
+.nativeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.nativeToggle {
+  margin-left: auto;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.nativeContent {
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-y: auto;
+}
+
+.nativeDescription {
+  max-width: 360px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
 /* Show-hidden toggle: a subtle fixed-label text button left of the gap;
  * the pressed state seats a check glyph after the label (Menu's selected
  * vocabulary; trailing so the label never shifts) instead of flipping the

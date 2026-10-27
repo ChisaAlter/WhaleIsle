@@ -378,6 +378,9 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/host/directory-picker/src/index.ts', includes: ['WINDOWS_VOLUME_ROOT'] },
   { file: 'packages/host/directory-picker-browse/src/index.ts', includes: ['WINDOWS_VOLUME_ROOT', 'volumeListing'] },
   { file: 'packages/host/directory-picker-browse/tests/service.spec.ts', includes: ['WINDOWS_VOLUME_ROOT'] },
+  // Windows native chooser remains an opt-in alongside local/remote browsing.
+  { file: 'packages/client/ui-directory-picker-browse/src/client/index.ts', includes: ['pickWorkspaceDirectory', 'createPickerPreferenceStore'] },
+  { file: 'packages/client/ui-directory-picker-browse/src/client/DirectoryBrowser.tsx', includes: ['nativePicker', 'browser.nativePicker'] },
   // Global main panels get the content row only: only the Conversation owns
   // the shared titlebar row through the centerCol subgrid. Without the
   // row-2 seat a panel lands in row 1, inflates the caption band's track,

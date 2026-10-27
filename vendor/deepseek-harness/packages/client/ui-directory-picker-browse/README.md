@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 Local and Remote tabs keep the same title-row position when the local-only Home action disappears.
 
-This package provides the in-app directory-browsing surface for the Web GUI: a Select Workspace Directory dialog that lists, navigates, and creates folders through the local Host, with no operating-system chooser involved. It fills the two directory-flow slots declared by `ui-workspace`, composing the client side of the browse picking interaction in one cordis.yml row. Choose it when the browser is remote or in-process and no local OS chooser exists; local deployments may prefer the [`-native`](../ui-directory-picker-native/README.md) surface.
+This package provides the in-app directory-browsing surface for the Web GUI: a Select Workspace Directory dialog that lists, navigates, and creates folders through the local Host. Windows desktop also offers the system folder chooser through its trusted shell bridge. It fills the two directory-flow slots declared by `ui-workspace`, composing the client side of the browse picking interaction in one cordis.yml row. Choose it when the browser is remote or in-process and no local OS chooser exists; local deployments may prefer the [`-native`](../ui-directory-picker-native/README.md) surface.
 
 ## Table of Contents
 
@@ -32,6 +32,10 @@ Mount this plugin alongside `ui-workspace` and the host backend [`dsh-host-direc
 ### Navigating and creating
 
 Step through folders, edit the path directly, or filter the last pane by prefix; a Host-flagged hidden entry stays hidden until the footer toggle reveals it. **New folder** opens a nested create dialog targeting the selected folder and selects what it creates; **Open** adopts the selected folder, falling back to the listed level. Confirming a directory is the picked path; dismissing the dialog is the cancellation.
+
+### Windows system chooser
+
+On Windows desktop, the local footer offers a **Windows folder picker** switch. Enabling it opens the OS folder dialog immediately; a shared browser-local preference remembers the choice across both workspace entry points and reloads at the same origin. Later requests open the native chooser once. Canceling keeps the application dialog available with **Choose folder**, the switch, and the Remote tab. Turning the switch off restores in-app browsing. A selected path goes through the owner's normal workspace adoption; no startup-workspace configuration changes or Harness restarts occur. Browsers, phones, and other platforms keep the in-app browser. Closing or unmounting a flow invalidates any pending native result; failures remain retryable.
 
 ### Remote tab
 
