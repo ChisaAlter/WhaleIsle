@@ -8,6 +8,7 @@ import type { Overview } from '../shared/contract.ts'
 import { formatClock } from '../shared/format.ts'
 import { dayKeyUTC, isUsageEmpty } from '../shared/usage.ts'
 import { callOverview, callRepairSession, loadCached, saveCached } from './api.ts'
+import { createOverviewRequests } from './overview-requests.ts'
 import { useBillingSettings, useI18n, useLatest, type Tip } from './hooks.ts'
 import type { RpcLike } from './ctx.ts'
 import type { I18n } from './locales.ts'
@@ -86,6 +87,7 @@ function StatsContent({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps):
   const repairFeedbackId = React.useRef(0)
   const billing = useBillingSettings(rpc)
   const dataRef = useLatest(data)
+  const [overviewRequests] = useState(createOverviewRequests)
 
   const repairFirst = () => {
     const targets = data?.coverage.failedSessionIds ?? []
@@ -118,25 +120,31 @@ function StatsContent({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps):
 
   const load = useCallback(
     (force: boolean) => {
+      const isCurrent = overviewRequests.begin()
       setLoading(true)
       setError(null)
-      return callOverview(rpc, force)
-        .then((res) => {
-          setData(res)
-          setFreshness(res.stale ? 'stale' : 'fresh')
-          saveCached(res)
-          return res
-        })
+      return callOverview(rpc, force, (res) => {
+        if (!isCurrent()) return
+        setData(res)
+        setError(null)
+        setFreshness(res.stale ? 'stale' : 'fresh')
+        setLoading(false)
+        saveCached(res)
+      })
+        .then((res) => isCurrent() ? res : undefined)
         .catch((err) => {
+          if (!isCurrent()) return undefined
           const msg = String((err as Error)?.message ?? err)
           setError(msg)
           // Keep the last successful payload visible; never fake freshness.
           setFreshness(dataRef.current ? 'fallback' : 'error')
           return undefined
         })
-        .finally(() => setLoading(false))
+        .finally(() => {
+          if (isCurrent()) setLoading(false)
+        })
     },
-    [rpc, dataRef],
+    [rpc, dataRef, overviewRequests],
   )
 
   useEffect(() => {
@@ -146,6 +154,7 @@ function StatsContent({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps):
       setFreshness('fresh')
     }
     load(false)
+    return () => overviewRequests.invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load])
 

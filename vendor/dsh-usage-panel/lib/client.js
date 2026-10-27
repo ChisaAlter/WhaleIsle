@@ -821,18 +821,20 @@ window.__ModuleLoader__.load({
       if (!Array.isArray(payload.topSessions) || !Array.isArray(payload.providers)) return false;
       return true;
     }
-    async function callOverview(rpc, force) {
-      const res = await withTimeout(
-        rpc.call("/usage-stats", "overview", { force: !!force }),
-        TIMEOUTS.overview,
-        "overview"
-      );
-      if (res && res.ok) return res.value;
-      const code = res && res.error ? res.error.code : "internal";
-      const message = res && res.error ? res.error.message : "unknown error";
-      const err = new Error(message);
-      err.code = code;
-      throw err;
+    async function callOverview(rpc, force, onSuccess) {
+      const source = rpc.call("/usage-stats", "overview", { force: !!force }).then((result) => {
+        const res = result;
+        if (res && res.ok) {
+          onSuccess?.(res.value);
+          return res.value;
+        }
+        const code = res && res.error ? res.error.code : "internal";
+        const message = res && res.error ? res.error.message : "unknown error";
+        const err = new Error(message);
+        err.code = code;
+        throw err;
+      });
+      return withTimeout(source, TIMEOUTS.overview, "overview");
     }
     async function callBillingGet(rpc) {
       const res = await withTimeout(
@@ -899,6 +901,20 @@ window.__ModuleLoader__.load({
       const err = new Error(res && res.error ? res.error.message : "unknown error");
       if (res && res.error) err.code = res.error.code;
       throw err;
+    }
+
+    // src/client/overview-requests.ts
+    function createOverviewRequests() {
+      let generation = 0;
+      return {
+        begin() {
+          const request = ++generation;
+          return () => generation === request;
+        },
+        invalidate() {
+          generation += 1;
+        }
+      };
     }
 
     // src/client/hooks.ts
@@ -2202,6 +2218,7 @@ window.__ModuleLoader__.load({
       const repairFeedbackId = React12.useRef(0);
       const billing = useBillingSettings(rpc);
       const dataRef = useLatest(data);
+      const [overviewRequests] = (0, import_react9.useState)(createOverviewRequests);
       const repairFirst = () => {
         const targets = data?.coverage.failedSessionIds ?? [];
         if (targets.length === 0 || repairing) return;
@@ -2223,21 +2240,27 @@ window.__ModuleLoader__.load({
       };
       const load = (0, import_react9.useCallback)(
         (force) => {
+          const isCurrent = overviewRequests.begin();
           setLoading(true);
           setError(null);
-          return callOverview(rpc, force).then((res) => {
+          return callOverview(rpc, force, (res) => {
+            if (!isCurrent()) return;
             setData(res);
+            setError(null);
             setFreshness(res.stale ? "stale" : "fresh");
+            setLoading(false);
             saveCached(res);
-            return res;
-          }).catch((err) => {
+          }).then((res) => isCurrent() ? res : void 0).catch((err) => {
+            if (!isCurrent()) return void 0;
             const msg = String(err?.message ?? err);
             setError(msg);
             setFreshness(dataRef.current ? "fallback" : "error");
             return void 0;
-          }).finally(() => setLoading(false));
+          }).finally(() => {
+            if (isCurrent()) setLoading(false);
+          });
         },
-        [rpc, dataRef]
+        [rpc, dataRef, overviewRequests]
       );
       (0, import_react9.useEffect)(() => {
         const cached = loadCached();
@@ -2246,6 +2269,7 @@ window.__ModuleLoader__.load({
           setFreshness("fresh");
         }
         load(false);
+        return () => overviewRequests.invalidate();
       }, [load]);
       const allTime = data && data.allTime || { totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, sessionCount: 0, byModel: [] };
       const allTimeTotal = allTime.totals.total || 0;
