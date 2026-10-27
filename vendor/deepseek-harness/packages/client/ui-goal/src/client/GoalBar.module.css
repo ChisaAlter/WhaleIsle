@@ -33,7 +33,7 @@
   overflow: hidden;
 }
 
-.surface {
+.surface[data-state] {
   transform: none;
   transition:
     opacity var(--ds-transition-duration) var(--ds-ease-in-out),

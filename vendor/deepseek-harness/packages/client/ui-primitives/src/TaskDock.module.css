@@ -35,7 +35,7 @@
   pointer-events: none;
 }
 
-.surface {
+.surface[data-state] {
   min-height: 0;
   overflow: hidden;
   transform: none;
@@ -81,8 +81,9 @@
   overflow: hidden;
 }
 
-.content {
+.content[data-state] {
   padding-top: 8px;
+  transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 .chevron[data-expanded='true'] {
