@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -170,6 +171,21 @@ test('updater path returns a downloaded installer and reports the real different
   assert.equal(fake.listenerCount('error'), 0);
 });
 
+test('differential progress forwards finite transfer sizes and speed without inventing invalid metrics', async () => {
+  const fake = fakeAutoUpdater();
+  fake.downloadUpdate = async () => {
+    fake.emit('download-progress', { percent: 33.2, transferred: 123, total: 456, bytesPerSecond: 78 });
+    fake.emit('download-progress', { percent: 100, transferred: -1, total: NaN, bytesPerSecond: Infinity });
+    return ['C:/installer.exe'];
+  };
+  const { events, onProgress } = collectProgress();
+  assert.equal((await installLatestViaUpdater({ expectedCheck }, onProgress, packagedDeps(fake))).ok, true);
+  assert.deepEqual(events, [
+    { phase: 'download', percent: 33, differential: true, received: 123, total: 456, bytesPerSecond: 78 },
+    { phase: 'download', percent: 99, differential: true },
+  ]);
+});
+
 test('incremental selection without an installer cache never probes or downloads', async () => {
   const fake = fakeAutoUpdater();
   const { events, onProgress } = collectProgress();
@@ -247,6 +263,122 @@ test('updater path enforces the wall-clock timeout via cancellation token', asyn
   assert.equal(fake.calls.token.cancelled, false);
 });
 
+test('updater default wall-clock budget allows two hours of continuously progressing transfers', async () => {
+  let budget;
+  const fake = fakeAutoUpdater();
+  const result = await installLatestViaUpdater({ expectedCheck }, null, packagedDeps(fake, {
+    setTimeout: (_fn, ms) => { budget = ms; return 1; }, clearTimeout() {},
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(budget, 2 * 60 * 60_000);
+});
+
+function requestClock() {
+  const pending = new Map();
+  const delays = [];
+  let next = 0;
+  return { pending, delays,
+    requestSetTimeout(fn, ms) { const id = ++next; delays.push(ms); pending.set(id, { fn, ms }); return id; },
+    requestClearTimeout(id) { pending.delete(id); },
+    expire(ms) {
+      const item = [...pending].find(([, timer]) => timer.ms === ms);
+      assert.ok(item, `expected an armed ${ms}ms timer`);
+      pending.delete(item[0]); item[1].fn();
+    },
+  };
+}
+
+test('Electron-shaped requests enforce header and resettable body-idle budgets without socket events', async () => {
+  for (const bodyStarted of [false, true]) {
+    const fake = fakeAutoUpdater();
+    const clock = requestClock();
+    let start;
+    const started = new Promise(resolve => { start = resolve; });
+    let request, response, respond, observed = '';
+    fake.httpExecutor = new HttpExecutor();
+    fake.httpExecutor.createRequest = (_options, callback) => {
+      respond = callback;
+      request = new EventEmitter();
+      request.end = () => { request.emit('close'); start(); };
+      request.abort = () => { request.aborted = true; request.emit('abort'); };
+      return request;
+    };
+    fake.downloadUpdate = () => new Promise((_resolve, reject) => {
+      const req = fake.httpExecutor.createRequest({}, res => { res.on('data', data => { observed += data; }); });
+      fake.httpExecutor.addErrorAndTimeoutHandlers(req, reject);
+      req.end();
+    });
+    const pending = installLatestViaUpdater({ expectedCheck }, null, packagedDeps(fake, clock));
+    await started;
+    assert.deepEqual([...clock.pending.values()].map(v => v.ms), [20_000]);
+    if (bodyStarted) {
+      response = new PassThrough();
+      response.statusCode = 200;
+      respond(response);
+      assert.deepEqual([...clock.pending.values()].map(v => v.ms), [45_000]);
+      const before = [...clock.pending.keys()][0];
+      response.write('slow data');
+      assert.equal(observed, 'slow data', 'the watchdog must not consume the downloader bytes');
+      assert.notEqual([...clock.pending.keys()][0], before, 'each nonempty data chunk resets the idle budget');
+    }
+    clock.expire(bodyStarted ? 45_000 : 20_000);
+    const result = await pending;
+    assert.equal(result.reason, 'ETIMEDOUT');
+    assert.equal(request.aborted, true);
+    if (response) assert.equal(response.destroyed, true);
+    assert.equal(clock.pending.size, 0);
+  }
+});
+
+test('request budgets clean up after response end, request error and cancellation', async () => {
+  for (const terminal of ['end', 'error', 'cancel']) {
+    const fake = fakeAutoUpdater(), clock = requestClock(), controller = new AbortController();
+    let request, response, ready;
+    const started = new Promise(resolve => { ready = resolve; });
+    fake.httpExecutor = new HttpExecutor();
+    fake.httpExecutor.createRequest = (_options, callback) => {
+      request = new EventEmitter();
+      request.abort = () => request.emit('abort');
+      request.end = () => {
+        response = new PassThrough(); response.statusCode = 200;
+        callback(response); ready();
+      };
+      return request;
+    };
+    fake.downloadUpdate = () => new Promise((resolve, reject) => {
+      const req = fake.httpExecutor.createRequest({}, res => {
+        res.on('data', () => {}); res.once('end', () => resolve(['C:/installer.exe']));
+      });
+      fake.httpExecutor.addErrorAndTimeoutHandlers(req, reject); req.end();
+    });
+    const pending = installLatestViaUpdater({ expectedCheck, signal: controller.signal }, null, packagedDeps(fake, clock));
+    await started;
+    if (terminal === 'end') response.end();
+    else if (terminal === 'error') request.emit('error', new Error('offline'));
+    else controller.abort();
+    const result = await pending;
+    assert.equal(result.ok, terminal === 'end');
+    assert.equal(clock.pending.size, 0, terminal);
+  }
+});
+
+test('a request attempted after cancellation rejects asynchronously without a network request', async () => {
+  const fake = fakeAutoUpdater(), controller = new AbortController();
+  fake.httpExecutor = new HttpExecutor();
+  let created = 0;
+  fake.httpExecutor.createRequest = () => { created++; throw new Error('network must stay closed'); };
+  fake.downloadUpdate = () => new Promise((_resolve, reject) => {
+    controller.abort();
+    queueMicrotask(() => {
+      const request = fake.httpExecutor.createRequest({}, () => {});
+      fake.httpExecutor.addErrorAndTimeoutHandlers(request, reject);
+      request.end();
+    });
+  });
+  assert.equal((await installLatestViaUpdater({ expectedCheck, signal: controller.signal }, null, packagedDeps(fake))).reason, 'cancelled');
+  assert.equal(created, 0);
+});
+
 test('differential tracker only trusts the downloader report line', () => {
   const tracker = makeDifferentialTracker();
   tracker.log('Download block maps (old: "a", new: "b")');
@@ -304,11 +436,11 @@ test('a missing or stale NSIS base is recovered from the verified full installer
     const fixture = await baseFixture(t, { cached });
     fs.writeFileSync(path.join(fixture.pendingDir, 'update-info.json'), 'broken unused pending metadata');
     fs.writeFileSync(path.join(path.dirname(fixture.installer), 'current.blockmap'), 'unrelated old map');
-    assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true });
+    assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true, blockmapUrl: 'https://example.test/base.blockmap' });
     assert.equal(fs.readFileSync(fixture.installer, 'utf8'), fixture.official);
     assert.equal(fs.existsSync(path.join(path.dirname(fixture.installer), 'current.blockmap')), false);
     assert.equal(fs.readFileSync(fixture.full, 'utf8'), fixture.official, 'retain the reusable full download');
-    assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true });
+    assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true, blockmapUrl: 'https://example.test/base.blockmap' });
     assert.equal(fixture.releaseLookups(), 1, 'unchanged verified bytes reuse the result');
     assert.equal(fixture.requests(), 1);
   }
@@ -320,7 +452,7 @@ test('a verified reconstructed installer in the pinned pending cache also repair
   const pending = path.join(fixture.pendingDir, fixture.assetName);
   fs.writeFileSync(pending, fixture.official);
   fs.writeFileSync(path.join(fixture.pendingDir, 'update-info.json'), JSON.stringify({ fileName: fixture.assetName }));
-  assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true });
+  assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true, blockmapUrl: 'https://example.test/base.blockmap' });
   assert.equal(fs.readFileSync(fixture.installer, 'utf8'), fixture.official);
   assert.equal(fs.readFileSync(pending, 'utf8'), fixture.official);
 });
@@ -343,7 +475,7 @@ test('a same-size unofficial base is rejected by SHA512 and cannot become delta-
   assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), result);
   assert.equal(fixture.requests(), 1, 'unchanged rejected bytes do not repeat the manifest fetch or scan');
   fs.writeFileSync(fixture.full, fixture.official);
-  assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true },
+  assert.deepEqual(await prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), { ok: true, blockmapUrl: 'https://example.test/base.blockmap' },
     'a newly available full installer invalidates the failed preparation');
 });
 
@@ -447,19 +579,21 @@ test('manifest target changes stop before any installer download, including prer
   }
 });
 
-async function realUpdaterFixture(t, { incompatibleBlockmap = false, stallRange = false, rangeStatus = 206 } = {}) {
+async function realUpdaterFixture(t, { incompatibleBlockmap = false, stallRange = false, rangeStatus = 206,
+  wrongContentRange = false, wrongContentLength = false, oversizedRange = false,
+  oldAssetName = 'Whale-Isle-Setup-1.0.0.exe', fragmentedRanges = false } = {}) {
   const { NsisUpdater } = require('electron-updater');
   assert.equal(require('electron-updater/package.json').version, '6.8.9', 'protected seam is tested against the pinned library');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-strict-delta-'));
-  const blockSize = 32 * 1024;
+  const blockSize = fragmentedRanges ? 64 : 32 * 1024;
   const same = Buffer.alloc(blockSize, 'a');
-  const oldBytes = Buffer.concat([same, Buffer.alloc(blockSize, 'b')]);
-  const newBytes = Buffer.concat([same, Buffer.alloc(blockSize, 'c')]);
+  const blocks = fragmentedRanges ? 204 : 2;
+  const oldBytes = Buffer.concat(Array.from({ length: blocks }, (_, i) => i % 2 ? Buffer.alloc(blockSize, 'b') : same));
+  const newBytes = Buffer.concat(Array.from({ length: blocks }, (_, i) => i % 2 ? Buffer.alloc(blockSize, 'c') : same));
   const assetName = 'Whale-Isle-Setup-1.1.0.exe';
-  const oldAssetName = 'Whale-Isle-Setup-1.0.0.exe';
   const digest = crypto.createHash('sha512').update(newBytes).digest('base64');
   const blockmap = (buffer, version = '2') => ({ version, files: [{ name: 'file', offset: 0,
-    sizes: [blockSize, blockSize], checksums: [0, 1].map((index) => crypto.createHash('sha256')
+    sizes: Array(blocks).fill(blockSize), checksums: Array.from({ length: blocks }, (_, index) => crypto.createHash('sha256')
       .update(buffer.subarray(index * blockSize, (index + 1) * blockSize)).digest('hex')),
   }] });
   const requests = [];
@@ -485,9 +619,12 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false, stallRange 
       if (!range) { res.statusCode = 500; res.end('whole download forbidden'); return; }
       const start = Number(range[1]);
       const end = Number(range[2]);
-      res.writeHead(rangeStatus, { 'content-range': `bytes ${start}-${end}/${newBytes.length}`,
-        'content-type': 'application/octet-stream' });
-      if (stallRange) {
+      res.writeHead(rangeStatus, { 'content-range': `bytes ${wrongContentRange ? start + 1 : start}-${end}/${newBytes.length}`,
+        'content-type': 'application/octet-stream', ...(wrongContentLength ? { 'content-length': end - start + 2 } : {}) });
+      if (oversizedRange) {
+        req.once('close', rangeClosed);
+        res.end(Buffer.concat([newBytes.subarray(start, end + 1), Buffer.from('extra')]));
+      } else if (stallRange) {
         req.once('close', rangeClosed);
         res.write(newBytes.subarray(start, start + 10));
         markRange();
@@ -519,6 +656,8 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false, stallRange 
   let fullDownloads = 0;
   class LocalHttpExecutor extends HttpExecutor {
     createRequest(options, callback) { return http.request(options, callback); }
+    // Electron emits no socket event, so only the host watchdog can time out.
+    addTimeOutHandler() {}
     async download() { fullDownloads++; throw new Error('whole-file updater transfer forbidden'); }
   }
   updater.httpExecutor = new LocalHttpExecutor();
@@ -559,6 +698,72 @@ test('pinned NSIS updater reconstructs verified bytes with only an actual HTTP r
   assert.equal(fs.existsSync(path.join(fixture.cacheDir, 'current.blockmap')), false,
     'a cached pending hit also cannot promote a map over the installed base');
   assert.deepEqual(fs.readFileSync(path.join(fixture.cacheDir, 'installer.exe')), fixture.oldBytes);
+});
+
+test('pinned NSIS updater uses the verified old release blockmap across installer renames', async (t) => {
+  const f = await realUpdaterFixture(t, { oldAssetName: 'Deepseek-Harness-Desktop-Setup-1.0.0.exe' });
+  const result = await installLatestViaUpdater({ expectedCheck: f.target }, null, f.deps);
+  assert.equal(result.ok, true, result.message);
+  assert.deepEqual(fs.readFileSync(result.installer), f.newBytes);
+  assert.ok(f.requests.some(req => req.pathname === '/Deepseek-Harness-Desktop-Setup-1.0.0.exe.blockmap'));
+  assert.equal(f.requests.some(req => req.pathname === '/Whale-Isle-Setup-1.0.0.exe.blockmap'), false);
+  assert.equal(f.fullDownloads(), 0);
+});
+
+test('pinned NSIS updater rejects ignored and mismatched ranges before piping a body', async (t) => {
+  for (const options of [{ rangeStatus: 200 }, { wrongContentRange: true }, { wrongContentLength: true }, { oversizedRange: true }]) {
+    const f = await realUpdaterFixture(t, { ...options, stallRange: true });
+    const result = await installLatestViaUpdater({ expectedCheck: f.target }, null, f.deps);
+    assert.equal(result.reason, 'ERR_UPDATER_INVALID_RANGE');
+    await f.closedRange;
+    assert.equal(f.updater.downloadPromise, null);
+    assert.equal(f.fullDownloads(), 0);
+    assert.deepEqual(fs.readFileSync(path.join(f.cacheDir, 'installer.exe')), f.oldBytes);
+  }
+});
+
+test('pinned NSIS updater preserves idle timeout errors and cleans up the pending transfer', { timeout: 5000 }, async (t) => {
+  const f = await realUpdaterFixture(t, { stallRange: true }), clock = requestClock();
+  let received;
+  const rangeReceived = new Promise(resolve => { received = resolve; });
+  const executor = f.updater.httpExecutor, createRequest = executor.createRequest;
+  executor.createRequest = function (options, callback) {
+    return createRequest.call(this, options, response => {
+      callback(response);
+      if (options.headers?.range) response.once('data', received);
+    });
+  };
+  const pending = installLatestViaUpdater({ expectedCheck: f.target }, null, { ...f.deps, ...clock });
+  await rangeReceived;
+  clock.expire(45_000);
+  const result = await pending;
+  assert.equal(result.reason, 'ETIMEDOUT');
+  await f.closedRange;
+  assert.equal(f.updater.downloadPromise, null);
+  assert.equal(clock.pending.size, 0);
+  assert.equal(f.fullDownloads(), 0);
+});
+
+test('pinned NSIS updater settles cancellation during its 100-range delay without late network requests', { timeout: 5000 }, async (t) => {
+  const f = await realUpdaterFixture(t, { fragmentedRanges: true }), controller = new AbortController();
+  let markGap;
+  const gap = new Promise(resolve => { markGap = resolve; });
+  const executor = f.updater.httpExecutor, createRequest = executor.createRequest;
+  let completed = 0;
+  executor.createRequest = function (options, callback) {
+    return createRequest.call(this, options, response => {
+      callback(response);
+      if (options.headers?.range) response.once('end', () => {
+        if (++completed === 100) { controller.abort(); markGap(); }
+      });
+    });
+  };
+  const pending = installLatestViaUpdater({ expectedCheck: f.target, signal: controller.signal }, null, f.deps);
+  await gap;
+  assert.equal((await pending).reason, 'cancelled');
+  assert.equal(f.requests.filter(req => req.range).length, 100);
+  assert.equal(f.updater.downloadPromise, null);
+  assert.equal(f.fullDownloads(), 0);
 });
 
 test('pinned NSIS updater rejects its internal whole-download fallback on incompatible blockmaps', async (t) => {
@@ -638,7 +843,7 @@ test('Electron request close before its response is not a completed transfer', {
 test('failed Range responses close even when the server never ends the error body', { timeout: 5000 }, async (t) => {
   const f = await realUpdaterFixture(t, { stallRange: true, rangeStatus: 503 });
   const result = await installLatestViaUpdater({ expectedCheck: f.target }, null, f.deps);
-  assert.equal(result.reason, 'ERR_UPDATER_DIFFERENTIAL_FAILED');
+  assert.equal(result.reason, 'HTTP_ERROR_503');
   await f.closedRange;
   assert.equal(f.updater.downloadPromise, null);
   assert.equal(f.fullDownloads(), 0);

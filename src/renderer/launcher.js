@@ -940,7 +940,9 @@ function installPhaseText(payload) {
     error: errText(payload, '安装失败'),
   };
   if (payload?.phase === 'download') {
-    if (payload.retrying) return `下载中断，正在重试（${payload.attempt}/${payload.maxAttempts}）…`;
+    if (payload.retrying) return payload.received > 0
+      ? `下载中断，将从 ${(payload.received / 1048576).toFixed(1)} MB 续传（${payload.attempt}/${payload.maxAttempts}）…`
+      : `下载中断，正在重试（${payload.attempt}/${payload.maxAttempts}）…`;
     const size = Number.isFinite(payload.received) ? ` · ${(payload.received / 1048576).toFixed(1)} MB${payload.total > 0 ? ` / ${(payload.total / 1048576).toFixed(1)} MB` : ''}` : '';
     const speed = payload.bytesPerSecond > 0 ? ` · ${(payload.bytesPerSecond / 1048576).toFixed(2)} MB/s` : '';
     const percent = Number.isFinite(payload.percent) ? ` ${payload.percent}%` : '';

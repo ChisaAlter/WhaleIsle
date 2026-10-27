@@ -307,15 +307,15 @@ async function downloadReleaseAsset(info, dest, onProgress, options = {}) {
       }
     }
     complete = false;
-    await downloadFile(info.assetUrl, partial, onProgress, { signal });
+    await downloadFile(info.assetUrl, partial, onProgress, { signal, resume: Boolean(expected) });
     complete = true;
     if (expected) await verify(partial, false);
     if (signal?.aborted) throw cancelledError();
     fs.renameSync(partial, dest);
     return dest;
   } catch (error) {
-    // Never append to a partial. Retain received bytes only for a fresh full
-    // SHA512 check on the next explicit attempt; they are not installable yet.
+    // Never append across operations. Retain completed bytes only for a fresh
+    // full SHA512 check on the next explicit attempt; they are not installable yet.
     if (!complete || !expected || error.code === 'ERR_UPDATER_CHECKSUM_MISMATCH') cleanupPartial(partial);
     throw error;
   }
@@ -522,22 +522,32 @@ async function runDownloadAttempts(run, {
 
 async function downloadFile(url, dest, onProgress, options = {}) {
   const { timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, maxAttempts = 3 } = options;
-  return runDownloadAttempts((attempt, remainingMs) => downloadFileOnce(url, dest,
-    (progress) => onProgress?.({ ...progress, attempt, maxAttempts }),
-    { ...options, signal, timeoutMs: remainingMs }), {
-    ...options, timeoutMs, signal, maxAttempts,
-    onRetry: (retry) => onProgress?.({ phase: 'download', ...retry, percent: null }),
-  });
+  // Only checksum-backed release downloads may reuse bytes. This state belongs
+  // to this exact operation/URL, never an unverified partial from an earlier run.
+  const resumeState = options.resume ? { offset: 0, total: 0, validator: null } : null;
+  try {
+    return await runDownloadAttempts((attempt, remainingMs) => downloadFileOnce(url, dest,
+      (progress) => onProgress?.({ ...progress, attempt, maxAttempts }),
+      { ...options, resumeState, signal, timeoutMs: remainingMs }), {
+      ...options, timeoutMs, signal, maxAttempts,
+      onRetry: (retry) => onProgress?.({ phase: 'download', ...retry, percent: null,
+        received: resumeState?.offset || 0, total: resumeState?.total || 0 }),
+    });
+  } catch (error) {
+    cleanupPartial(dest);
+    throw error;
+  }
 }
 
 function downloadFileOnce(url, dest, onProgress, {
-  timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, idleTimeoutMs = 45_000, connectionTimeoutMs = 20_000,
+  timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, idleTimeoutMs = 45_000, connectionTimeoutMs = 20_000, resumeState,
 } = {}) {
   if (signal?.aborted) {
     return Promise.reject(cancelledError());
   }
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
+    const offset = resumeState?.offset || 0;
+    let file;
     let settled = false;
     let activeRequest = null;
     let activeResponse = null;
@@ -561,16 +571,24 @@ function downloadFileOnce(url, dest, onProgress, {
       clearTimeout(deadline);
       clearTimeout(inactivityTimer);
       releaseSignal();
-      activeResponse?.unpipe?.(file);
+      if (file) activeResponse?.unpipe?.(file);
       activeResponse?.destroy?.();
-      if (activeRequest) {
-        activeRequest.destroy();
-      }
-      file.once('close', () => {
-        cleanupPartial(dest);
+      activeRequest?.destroy();
+      const finish = () => {
+        // Wait until writes close: network data events can be ahead of the
+        // actual file. The next Range starts at bytes safely written to disk.
+        if (resumeState && error.retryable && !signal?.aborted && resumeState.total > 0) {
+          try { resumeState.offset = fs.statSync(dest).size; } catch { resumeState.offset = 0; }
+          if (resumeState.offset >= resumeState.total) resumeState.offset = 0;
+        } else if (resumeState) resumeState.offset = 0;
+        if (!resumeState?.offset) cleanupPartial(dest);
         reject(error);
-      });
-      file.destroy();
+      };
+      if (file) {
+        file.once('close', finish);
+        if (resumeState && error.retryable && !file.destroyed) file.end();
+        else file.destroy();
+      } else finish();
     };
     if (signal) {
       signal.addEventListener('abort', onAbort, { once: true });
@@ -588,8 +606,14 @@ function downloadFileOnce(url, dest, onProgress, {
       }
       armInactivity(connectionTimeoutMs, '下载连接超时，请检查网络或切换下载线路');
       let request;
+      const headers = downloadHeaders(hops === 0, target);
+      headers['Accept-Encoding'] = 'identity';
+      if (offset > 0) {
+        headers.Range = `bytes=${offset}-`;
+        if (resumeState.validator) headers['If-Range'] = resumeState.validator;
+      }
       try { request = https.get(target, {
-        headers: downloadHeaders(hops === 0, target),
+        headers,
       }, (response) => {
         if (settled) { response.resume(); return; }
         activeResponse = response;
@@ -605,22 +629,54 @@ function downloadFileOnce(url, dest, onProgress, {
           try { visit(new URL(location, target).href, hops + 1); } catch (error) { fail(error); }
           return;
         }
-        if (response.statusCode !== 200) {
-          response.resume();
+        const resumed = offset > 0 && response.statusCode === 206;
+        if (response.statusCode !== 200 && !resumed) {
           fail(Object.assign(new Error(`下载失败（HTTP ${response.statusCode}）`), {
             code: `HTTP_ERROR_${response.statusCode}`, retryable: RETRYABLE_HTTP_STATUSES.has(response.statusCode),
           }));
           return;
         }
-        const total = Number(response.headers['content-length']) || 0;
-        try { if (total > 0) checkInstallSpace(path.dirname(dest), total); } catch (error) { fail(error); return; }
+        let total = Number(response.headers['content-length']) || 0;
+        if (resumed) {
+          const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers['content-range'] || '');
+          if (!range || Number(range[1]) !== offset || Number(range[3]) !== resumeState.total
+            || Number(range[2]) !== resumeState.total - 1
+            || (total && total !== resumeState.total - offset)
+            || (resumeState.validator && response.headers[resumeState.validatorHeader]
+              && response.headers[resumeState.validatorHeader] !== resumeState.validator)) {
+            fail(Object.assign(new Error('下载续传响应与原文件不一致'), { code: 'ERR_UPDATER_INVALID_RANGE' }));
+            return;
+          }
+          total = resumeState.total;
+        }
+        if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
+          fail(Object.assign(new Error('下载服务器返回了压缩的安装包传输'), { code: 'ERR_UPDATER_INVALID_RANGE' }));
+          return;
+        }
+        // A server ignoring Range (or a changed If-Range validator) returns a
+        // fresh 200. Truncate before writing rather than concatenate two files.
+        const initial = resumed ? offset : 0;
+        if (resumeState) {
+          resumeState.offset = initial;
+          resumeState.total = total;
+          const etag = response.headers.etag;
+          resumeState.validatorHeader = etag && !etag.startsWith('W/') ? 'etag' : 'last-modified';
+          resumeState.validator = response.headers[resumeState.validatorHeader] || null;
+        }
+        try { if (total > 0) checkInstallSpace(path.dirname(dest), total - initial); } catch (error) { fail(error); return; }
+        file = fs.createWriteStream(dest, { flags: resumed ? 'a' : 'w' });
+        file.on('error', fail);
         armInactivity(idleTimeoutMs, '下载连接长时间无数据，请检查网络或切换下载线路');
-        let received = 0;
+        let received = initial;
         let lastProgressAt = 0;
         response.on('data', (chunk) => {
           if (settled) return;
           armInactivity(idleTimeoutMs, '下载连接长时间无数据，请检查网络或切换下载线路');
           received += chunk.length;
+          if (total > 0 && received > total) {
+            fail(Object.assign(new Error('下载响应超出声明的文件大小'), { code: 'ERR_UPDATER_INVALID_RANGE' }));
+            return;
+          }
           const now = Date.now();
           if (typeof onProgress === 'function' && (now - lastProgressAt >= 250 || received === total)) {
             lastProgressAt = now;
@@ -629,7 +685,8 @@ function downloadFileOnce(url, dest, onProgress, {
               percent: total > 0 ? Math.min(99, Math.round((received / total) * 100)) : null,
               received,
               total,
-              bytesPerSecond: received / Math.max(1, (Date.now() - started) / 1000),
+              bytesPerSecond: (received - initial) / Math.max(1, (Date.now() - started) / 1000),
+              resumed: initial > 0,
             });
           }
         });
@@ -656,7 +713,6 @@ function downloadFileOnce(url, dest, onProgress, {
         fail(error);
       });
     };
-    file.on('error', fail);
     visit(url, 0);
   });
 }
@@ -793,7 +849,7 @@ async function installFromAsset(info, onProgress, options = {}) {
       });
       journalProgress({ phase: 'download', percent: 0 });
       const outcome = await downloadLatestViaUpdater(
-        { timeoutMs: 15 * 60_000, expectedCheck: info, signal: options.signal },
+        { timeoutMs: DOWNLOAD_TIMEOUT_MS, expectedCheck: info, signal: options.signal },
         journalProgress, options.updaterDeps,
       );
       if (!outcome.ok) {
