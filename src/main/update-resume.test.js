@@ -86,6 +86,39 @@ test('weak ETag uses Last-Modified consistently for If-Range and resumed validat
   assert.deepEqual(fs.readFileSync(f.dest), bytes);
 });
 
+test('three attempts keep the original If-Range when an intermediate 206 omits its validator', async t => {
+  for (const changed of [false, true]) {
+    await t.test(`changed=${changed}`, async st => {
+      const f = fixture(st, (response, attempt, headers) => {
+        if (attempt === 1) { broken(response); return; }
+        assert.equal(headers['If-Range'], '"installer-v1"');
+        if (attempt === 2) {
+          assert.equal(headers.Range, 'bytes=10-');
+          response.statusCode = 206;
+          response.headers = { 'content-length': String(bytes.length - 10),
+            'content-range': `bytes 10-${bytes.length - 1}/${bytes.length}` };
+          response.once('ready', () => {
+            response.write(bytes.subarray(10, 20));
+            setImmediate(() => response.destroy(Object.assign(new Error('reset'), { code: 'ECONNRESET' })));
+          });
+        } else {
+          assert.equal(headers.Range, 'bytes=20-');
+          suffix(response, headers, { etag: changed ? '"installer-v2"' : '"installer-v1"' });
+        }
+      });
+      const pending = downloadFile('https://example.test/Setup.exe', f.dest, null, options);
+      if (changed) {
+        await assert.rejects(pending, { code: 'ERR_UPDATER_INVALID_RANGE' });
+        assert.equal(fs.existsSync(f.dest), false);
+      } else {
+        await pending;
+        assert.deepEqual(fs.readFileSync(f.dest), bytes);
+      }
+      assert.equal(f.requests.length, 3);
+    });
+  }
+});
+
 test('a server returning 200 to resumed Range truncates before writing a fresh complete body', async t => {
   const f = fixture(t, (response, attempt, headers) => {
     if (attempt === 1) broken(response);

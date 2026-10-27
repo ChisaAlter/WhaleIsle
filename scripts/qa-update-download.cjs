@@ -97,10 +97,16 @@ async function runNative() {
               res.write(newBytes.subarray(0, half));
               setTimeout(() => res.destroy(), 30);
             } else {
-              assert.equal(offset, half); assert.equal(req.headers['if-range'], '"full-v1"');
+              assert.equal(req.headers['if-range'], '"full-v1"');
+              const repeatReset = f.mode === 'full-repeat-reset' && offset === half;
+              assert.ok(offset === half || (f.mode === 'full-repeat-reset' && offset === half + half / 2));
               res.writeHead(206, { 'content-length': newBytes.length - offset,
-                'content-range': `bytes ${offset}-${newBytes.length - 1}/${newBytes.length}`, etag: '"full-v1"' });
-              res.end(newBytes.subarray(offset));
+                'content-range': `bytes ${offset}-${newBytes.length - 1}/${newBytes.length}`,
+                ...(repeatReset ? {} : { etag: '"full-v1"' }) });
+              if (repeatReset) {
+                res.write(newBytes.subarray(offset, offset + half / 2));
+                setTimeout(() => res.destroy(), 30);
+              } else res.end(newBytes.subarray(offset));
             }
           } else if (file === 'latest.yml') {
             if (f.mode === 'metadata' || f.mode === 'headers') { stalled(); return; } // No headers at all.
@@ -245,23 +251,25 @@ async function runNative() {
       // file writes with the unchanged production downloader.
       const https = require('node:https'), originalGet = https.get;
       const update = require('../src/main/update');
-      active = { requests: [], mode: 'full' };
-      const fullDest = path.join(dir, 'full', asset);
-      const fullProgress = [];
       https.get = (url, options, callback) => {
         assert.ok(url.startsWith(base));
         return http.get(url, options, callback);
       };
       try {
-        await update.downloadReleaseAsset({ assetName: asset, assetUrl: base + 'full.exe', checksumUrl: base + 'full-sums' },
-          fullDest, p => fullProgress.push(p));
+        for (const mode of ['full', 'full-repeat-reset']) {
+          active = { requests: [], mode };
+          const fullDest = path.join(dir, mode, asset), fullProgress = [];
+          await update.downloadReleaseAsset({ assetName: asset, assetUrl: base + 'full.exe', checksumUrl: base + 'full-sums' },
+            fullDest, p => fullProgress.push(p));
+          assert.equal(hash(fs.readFileSync(fullDest)), newHash);
+          const fullRequests = active.requests.filter(r => r.file === 'full.exe');
+          assert.deepEqual(fullRequests.map(r => r.range), mode === 'full' ? [undefined, `bytes=${half}-`]
+            : [undefined, `bytes=${half}-`, `bytes=${half + half / 2}-`]);
+          assert.ok(fullProgress.some(p => p.resumed && p.received === newBytes.length));
+          cases.push({ name: mode === 'full' ? 'full-reset-resume-sha512' : 'full-repeat-reset-pinned-validator',
+            result: 'passed', transferred: newBytes.length, assetSize: newBytes.length });
+        }
       } finally { https.get = originalGet; }
-      assert.equal(hash(fs.readFileSync(fullDest)), newHash);
-      const fullRequests = active.requests.filter(r => r.file === 'full.exe');
-      assert.equal(fullRequests.length, 2);
-      assert.deepEqual(fullRequests.map(r => r.range), [undefined, `bytes=${half}-`]);
-      assert.ok(fullProgress.some(p => p.resumed && p.received === newBytes.length));
-      cases.push({ name: 'full-reset-resume-sha512', result: 'passed', transferred: half + half, assetSize: newBytes.length });
     })(), 'whole runtime QA', 20000);
   } catch (error) { failure = error; }
   finally {

@@ -659,9 +659,13 @@ function downloadFileOnce(url, dest, onProgress, {
         if (resumeState) {
           resumeState.offset = initial;
           resumeState.total = total;
-          const etag = response.headers.etag;
-          resumeState.validatorHeader = etag && !etag.startsWith('W/') ? 'etag' : 'last-modified';
-          resumeState.validator = response.headers[resumeState.validatorHeader] || null;
+          // A 206 may omit validators. Keep the validator for the original
+          // representation across every retry; only a fresh 200 may replace it.
+          if (!resumed) {
+            const etag = response.headers.etag;
+            resumeState.validatorHeader = etag && !etag.startsWith('W/') ? 'etag' : 'last-modified';
+            resumeState.validator = response.headers[resumeState.validatorHeader] || null;
+          }
         }
         try { if (total > 0) checkInstallSpace(path.dirname(dest), total - initial); } catch (error) { fail(error); return; }
         file = fs.createWriteStream(dest, { flags: resumed ? 'a' : 'w' });
