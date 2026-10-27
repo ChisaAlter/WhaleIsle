@@ -20,33 +20,38 @@ internal class NativeDesktopController(
     private val cwd: () -> String,
     host: suspend (String, JsonObject) -> JsonElement,
     git: suspend (String, JsonObject) -> JsonElement,
+    private val accountConnection: (() -> suspend (String, JsonObject) -> JsonElement)? = null,
 ) {
     var state by mutableStateOf(NativeDesktopState())
         private set
     private var revision = 0L
     private var login: NativeAccountLogin? = null
     private var loginJob: Job? = null
+    private var loginAttemptId = ""
+    fun pendingLoginAttempt() = loginAttemptId
     private var appVersion = ""
     var installRequestId by mutableStateOf("")
         private set
     var installUncertain by mutableStateOf(false)
         private set
+    var uncertainInstallRequestId by mutableStateOf("")
+        private set
     private val host: suspend (String, JsonObject) -> JsonElement = { method, payload ->
         val identity = currentCoroutineContext()[NativeDesktopOwner]?.identity
         check(identity == null || identity == owner()) { "电脑或会话已切换，请重新打开" }
-        host(method, payload)
+        host(method, payload).also { check(identity == null || identity == owner()) { "电脑或会话已切换，请重新打开" } }
     }
     private val git: suspend (String, JsonObject) -> JsonElement = { method, payload ->
         val identity = currentCoroutineContext()[NativeDesktopOwner]?.identity
         check(identity == null || identity == owner()) { "电脑或会话已切换，请重新打开" }
-        git(method, payload)
+        git(method, payload).also { check(identity == null || identity == owner()) { "电脑或会话已切换，请重新打开" } }
     }
     fun setAppVersion(version: String) { appVersion = version }
     private fun clientMetadata() = obj("version" to appVersion, "locale" to "zh", "timezoneOffsetSeconds" to TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000)
     private fun skillScope() = obj("cwd" to cwd()).let { if (sessionId().isBlank()) it else JsonObject(it + ("sessionId" to JsonPrimitive(sessionId()))) }
     private fun args(vararg values: Pair<String, Any?>) = obj("args" to obj(*values))
     private fun fileArgs(path: String, vararg values: Pair<String, Any?>) = args("workspaceFileScopeId" to sessionId(), "path" to path, *values)
-    fun reset() { revision++; loginJob?.cancel(); loginJob = null; login?.close(); login = null; installRequestId = ""; installUncertain = false; state = NativeDesktopState() }
+    fun reset() { revision++; loginJob?.cancel(); loginJob = null; login?.close(); login = null; loginAttemptId = ""; installRequestId = ""; installUncertain = false; uncertainInstallRequestId = ""; state = NativeDesktopState() }
     fun open(section: String) { revision++; state = NativeDesktopState(section = section); refresh() }
     fun dismissDetail() { revision++; state = state.copy(detail = obj(), busy = false, error = "", notice = "") }
     fun clearFeedback() { state = state.copy(error = "", notice = "") }
@@ -68,7 +73,11 @@ internal class NativeDesktopController(
     }
     private suspend fun readSection(): JsonObject = when (state.section) {
         "files" -> host("workspaceFiles.list", fileArgs(state.path)).objectValue()
-        "diff" -> git("git-diff", obj("options" to if (state.baseRef.isBlank()) obj() else obj("baseRef" to state.baseRef))).objectValue()
+        "diff" -> {
+            val value = git("git-diff", obj("options" to if (state.baseRef.isBlank()) obj() else obj("baseRef" to state.baseRef)))
+            require(value is JsonObject && value["files"] is JsonArray) { "无法读取差异，请确认工作目录已登记为 Git 仓库，且对比引用有效。" }
+            value
+        }
         "mcp" -> host("mcpServers.list", args()).objectValue()
         "skills" -> host("skillInventory.list", args("request" to skillScope())).objectValue()
         "plugins" -> {
@@ -123,13 +132,18 @@ internal class NativeDesktopController(
                 val result = host("pluginManager.installBundle", args("spec" to spec, "options" to obj("requestId" to requestId, "enabled" to true, "saveExact" to true, "approvedBuilds" to approvedBuilds))).objectValue()
                 state.copy(data = readSection(), detail = obj("installation" to result, "spec" to spec), notice = nativePluginResult(result))
             } catch (failure: Throwable) {
-                if (owner() == identity) installUncertain = true
+                if (installRequestId == requestId) { installUncertain = true; uncertainInstallRequestId = requestId }
                 throw IllegalStateException("安装结果未确认。请先刷新核对电脑的插件状态；不会自动重复安装。", failure)
-            } finally { if (owner() == identity && installRequestId == requestId) installRequestId = "" }
+            } finally {
+                if (installRequestId == requestId) {
+                    if (owner() != identity) { installUncertain = true; uncertainInstallRequestId = requestId }
+                    installRequestId = ""
+                }
+            }
         }
     }
     fun cancelInstall() {
-        val id = installRequestId.takeIf { it.isNotBlank() } ?: return
+        val id = installRequestId.ifBlank { uncertainInstallRequestId }.takeIf { it.isNotBlank() } ?: return
         val identity = owner()
         scope.launch(NativeDesktopOwner(identity)) {
             try {
@@ -141,7 +155,19 @@ internal class NativeDesktopController(
             }
         }
     }
-    fun acknowledgeInstallState() { if (!state.busy) installUncertain = false }
+    fun recoverInstall() {
+        val id = uncertainInstallRequestId.takeIf { it.isNotBlank() } ?: return
+        run {
+            val result = host("pluginManager.waitForInstall", args("requestId" to id))
+            if (result is JsonObject) {
+                installUncertain = false; uncertainInstallRequestId = ""
+                state.copy(data = readSection(), detail = obj("installation" to result), notice = nativePluginResult(result))
+            } else {
+                installUncertain = false; uncertainInstallRequestId = ""
+                state.copy(data = readSection(), notice = "电脑未保留这次安装的进行中结果。未确认成功，请核对插件清单后再决定是否重新安装。")
+            }
+        }
+    }
     fun saveSetting(descriptor: JsonObject, field: NativeSettingField, value: JsonElement) = run {
         val revision = descriptor["revision"].number() ?: error("设置缺少版本，请刷新后再保存")
         val result = host("settings.mutate", args("ns" to descriptor.string("ns"), "expectedRevision" to revision,
@@ -170,25 +196,41 @@ internal class NativeDesktopController(
     fun checkSignOut() = run { state.copy(detail = obj("signOut" to true, "running" to host("account.hasRunningAccountTasks", args()))) }
     fun signOut() = mutate("account.signOut", args("client" to clientMetadata()))
     fun cancelSignIn(attemptId: String) {
-        loginJob?.cancel(); loginJob = null; login?.close(); login = null
+        loginJob?.cancel(); loginJob = null; login?.close(); login = null; loginAttemptId = ""
         mutate("account.cancelSignIn", args("attemptId" to attemptId))
     }
-    fun startSignIn(openUrl: (String) -> Unit) = run {
+    fun startSignIn(openUrl: (String) -> Unit) {
+        val phase = state.data["view"].objectValue()["attempt"].objectValue().string("phase")
+        if (state.busy || loginJob?.isActive == true || phase in setOf("initializing", "waiting-browser", "exchanging", "committing")) return
+        run {
+        val identity = owner()
+        val request = revision
+        val connection = accountConnection?.invoke() ?: host
         loginJob?.cancel(); login?.close()
         val callback = withContext(Dispatchers.IO) { NativeAccountLogin() }
-        login = callback
         try {
-            var view = host("account.startSignIn", args("client" to clientMetadata(), "callbackOrigin" to callback.origin, "loginSource" to "web")).objectValue()
+            check(owner() == identity && revision == request) { "电脑或会话已切换，请重新登录" }
+            login = callback
+            var view = connection("account.startSignIn", args("client" to clientMetadata(), "callbackOrigin" to callback.origin, "loginSource" to "web")).objectValue()
+            val staleAttempt = view["attempt"].objectValue().string("id")
+            if (owner() != identity || revision != request) {
+                if (staleAttempt.isNotBlank()) try { connection("account.cancelSignIn", args("attemptId" to staleAttempt)) } catch (_: Exception) { /* The initiating transport may already be closed. */ }
+                error("电脑或会话已切换，请重新登录")
+            }
             val attemptId = view["attempt"].objectValue().string("id")
             require(attemptId.isNotBlank()) { "账户服务未返回登录身份" }
-            val identity = owner()
+            loginAttemptId = attemptId
             loginJob = scope.launch(NativeDesktopOwner(identity)) {
                 try {
+                    suspend fun ownedAccount(method: String, payload: JsonObject): JsonElement {
+                        check(owner() == identity) { "电脑或会话已切换，请重新登录" }
+                        return connection(method, payload).also { check(owner() == identity) { "电脑或会话已切换，请重新登录" } }
+                    }
                     val callbackJob = async {
                         callback.awaitCallback { code, token ->
-                            val current = host("account.getState", args()).objectValue()["attempt"].objectValue()
+                            val current = ownedAccount("account.getState", args()).objectValue()["attempt"].objectValue()
                             require(current.string("id") == attemptId) { "登录请求已变化，请重新登录" }
-                            val completed = host("account.completeSignIn", args("code" to code, "state" to token)).objectValue()
+                            val completed = ownedAccount("account.completeSignIn", args("code" to code, "state" to token)).objectValue()
                             require(completed["completed"].flag()) { "账户授权未完成" }
                             completed.string("completionUrl")
                         }
@@ -197,7 +239,7 @@ internal class NativeDesktopController(
                         withTimeout(60_000) {
                             while (view["attempt"].objectValue().string("phase") == "initializing") {
                                 delay(500)
-                                view = host("account.getState", args()).objectValue()
+                                view = ownedAccount("account.getState", args()).objectValue()
                                 require(view["attempt"].objectValue().string("id") == attemptId) { "登录请求已变化，请重新登录" }
                                 if (owner() == identity && state.section == "account") state = state.copy(data = obj("view" to view))
                             }
@@ -214,10 +256,19 @@ internal class NativeDesktopController(
                 } catch (failure: Throwable) {
                     if (failure is CancellationException && failure !is TimeoutCancellationException) throw failure
                     if (owner() == identity && state.section == "account") state = state.copy(error = failure.message ?: "账户登录失败，请取消后重试")
-                } finally { callback.close(); if (login === callback) login = null }
+                } finally {
+                    callback.close()
+                    if (login === callback) login = null
+                    if (loginAttemptId == attemptId) loginAttemptId = ""
+                    withContext(NonCancellable) {
+                        try { connection("account.cancelSignIn", args("attemptId" to attemptId)) }
+                        catch (_: Exception) { /* A closed initiating connection leaves only its expiring server attempt. */ }
+                    }
+                }
             }
             state.copy(data = obj("view" to view))
         } catch (failure: Throwable) { callback.close(); login = null; throw failure }
+        }
     }
     fun acknowledgeBonus(accountId: String, orderId: String) = mutate("account.ackBonusNotified", args("accountId" to accountId, "orderId" to orderId, "client" to clientMetadata()))
 }

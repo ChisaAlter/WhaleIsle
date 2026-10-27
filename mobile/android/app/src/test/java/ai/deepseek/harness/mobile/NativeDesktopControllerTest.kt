@@ -62,6 +62,87 @@ class NativeDesktopControllerTest {
         assertEquals(descriptor, controller.state.detail)
         assertTrue(controller.state.error.contains("conflict"))
     }
+    @Test fun nullDiffIsFailureAndEmptyFilesIsHonestEmptySuccess() = runTest {
+        var response: JsonElement = JsonNull
+        val controller = NativeDesktopController(this, { "o" }, { "s" }, { "/p" }, { _, _ -> obj() }, { _, _ -> response })
+        controller.open("diff"); runCurrent()
+        assertFalse(controller.state.loaded)
+        assertTrue(controller.state.error.contains("无法读取差异"))
+        response = obj("files" to emptyList<JsonObject>())
+        controller.refresh(); runCurrent()
+        assertTrue(controller.state.loaded)
+        assertTrue(controller.state.error.isBlank())
+    }
+    @Test fun existingSignInAttemptCannotStartAgainOrReplaceCallback() = runTest {
+        val methods = mutableListOf<String>()
+        val controller = NativeDesktopController(this, { "o" }, { "s" }, { "/p" }, { method, _ ->
+            methods += method; obj("status" to "signed-out", "attempt" to obj("id" to "active", "phase" to "waiting-browser", "authorizeUrl" to "https://platform.example/auth"))
+        }, { _, _ -> obj() })
+        controller.open("account"); runCurrent()
+        controller.startSignIn { fail("Must not open a second authorization URL") }; runCurrent()
+        assertEquals(listOf("account.getState"), methods)
+    }
+    @Test fun reconnectDuringInstallReleasesOperationAndRetainsUnknownResult() = runTest {
+        var owner = "one"
+        val gate = CompletableDeferred<JsonElement>()
+        var installs = 0
+        val controller = NativeDesktopController(this, { owner }, { "s" }, { "/p" }, { method, _ -> when (method) {
+            "pluginInventory.list" -> obj("managementAvailable" to true)
+            "pluginManager.listPlugins", "pluginManager.listBundles" -> JsonArray(emptyList())
+            "pluginManager.installBundle" -> { installs++; gate.await() }
+            else -> obj()
+        } }, { _, _ -> obj() })
+        controller.open("plugins"); runCurrent(); controller.installPlugin("test-bundle"); runCurrent()
+        assertTrue(controller.installRequestId.isNotBlank())
+        owner = "two"; gate.complete(obj("application" to "applied")); runCurrent()
+        assertEquals("", controller.installRequestId)
+        assertTrue(controller.installUncertain)
+        assertTrue(controller.uncertainInstallRequestId.isNotBlank())
+        controller.installPlugin("test-bundle"); runCurrent()
+        assertEquals(1, installs)
+        controller.recoverInstall(); runCurrent()
+        assertFalse(controller.installUncertain)
+        assertEquals("", controller.uncertainInstallRequestId)
+        assertEquals(1, installs)
+    }
+    @Test fun absentInstallRecoveryDoesNotClaimSuccessOrReplayInstallation() = runTest {
+        var owner = "one"
+        val gate = CompletableDeferred<JsonElement>()
+        var installs = 0
+        val controller = NativeDesktopController(this, { owner }, { "s" }, { "/p" }, { method, _ -> when (method) {
+            "pluginInventory.list" -> obj("managementAvailable" to true)
+            "pluginManager.listPlugins", "pluginManager.listBundles" -> JsonArray(emptyList())
+            "pluginManager.installBundle" -> { installs++; gate.await() }
+            "pluginManager.waitForInstall" -> JsonNull
+            else -> obj()
+        } }, { _, _ -> obj() })
+        controller.open("plugins"); runCurrent(); controller.installPlugin("bundle"); runCurrent()
+        owner = "two"; gate.complete(JsonNull); runCurrent()
+        controller.recoverInstall(); runCurrent()
+        assertFalse(controller.installUncertain)
+        assertTrue(controller.state.notice.contains("未确认成功"))
+        assertEquals(1, installs)
+    }
+    @Test fun delayedAccountStartCannotPollNewComputerOrOpenItsBrowser() = runTest {
+        var owner = "first"
+        val started = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<JsonElement>()
+        val initiatingCalls = mutableListOf<String>()
+        var browserOpened = false
+        val initiating: suspend (String, JsonObject) -> JsonElement = { method, _ ->
+            initiatingCalls += method
+            if (method == "account.startSignIn") { started.complete(Unit); response.await() } else obj()
+        }
+        val controller = NativeDesktopController(this, { owner }, { "s" }, { "/p" }, { _, _ -> obj("status" to "signed-out", "attempt" to JsonNull) }, { _, _ -> obj() }, accountConnection = { initiating })
+        controller.open("account"); runCurrent(); controller.startSignIn { browserOpened = true }
+        started.await()
+        owner = "second"; controller.reset()
+        response.complete(obj("status" to "signed-out", "attempt" to obj("id" to "late", "phase" to "waiting-browser", "authorizeUrl" to "https://platform.example/auth")))
+        runCurrent()
+        assertFalse(browserOpened)
+        assertEquals("", controller.pendingLoginAttempt())
+        assertEquals(listOf("account.startSignIn", "account.cancelSignIn"), initiatingCalls)
+    }
     @Test fun failedFileReadRetainsDirectoryAndNeverClaimsEmptySuccess() = runTest {
         val controller = NativeDesktopController(this, { "o" }, { "s" }, { "/p" }, { _, _ -> error("permission denied") }, { _, _ -> obj() })
         controller.open("files"); runCurrent()

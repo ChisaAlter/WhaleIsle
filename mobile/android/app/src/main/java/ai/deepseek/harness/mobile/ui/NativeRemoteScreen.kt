@@ -236,6 +236,7 @@ private fun NativeGitPage(vm: DshViewModel) {
     val diverged = (status["aheadCount"].number() ?: 0) > 0 && (status["behindCount"].number() ?: 0) > 0
     val payload = obj("message" to message, "filePaths" to selectedFiles.toList(), "options" to obj("featureBranch" to featureBranch))
     fun execute(steps: List<String>) {
+        if ("git-commit" in steps && files.isNotEmpty() && selectedFiles.isEmpty()) { vm.report("请至少选择一个要提交的文件"); return }
         if (status["isDefaultRef"].flag() && steps.any { it in setOf("git-commit", "git-push", "git-create-change-request") } && !featureBranch) defaultConfirmation = steps
         else vm.gitAction(steps, payload)
     }
@@ -246,7 +247,7 @@ private fun NativeGitPage(vm: DshViewModel) {
         }
         Text("分支：${status.string("refName").ifBlank { "尚未初始化" }}", color = dsh().labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
         val quick = nativeGitQuick(status)
-        WorkButton(quick.label, available && quick.hint.isBlank()) {
+        WorkButton(quick.label, available && quick.hint.isBlank() && ("git-commit" !in quick.steps || files.isEmpty() || selectedFiles.isNotEmpty())) {
             when (quick.target) { "pr" -> vm.viewPullRequest(); "publish" -> vm.report("填写下方仓库 URL 或名称后选择 Publish"); else -> execute(quick.steps) }
         }
         if (quick.hint.isNotBlank()) Text(quick.hint, color = dsh().labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)

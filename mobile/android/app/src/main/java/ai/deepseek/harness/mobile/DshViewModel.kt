@@ -113,6 +113,10 @@ class DshViewModel(
             check(!chat.offline && !chat.loading && catalogReady) { "连接已断开或正在同步，请恢复后重试" }
             val root = currentSession()?.cwd?.takeIf { it.isNotBlank() } ?: error("当前会话没有工作目录")
             (client ?: error("请先连接电脑")).git(method, root, payload)
+        }, accountConnection = {
+            val connection = client ?: error("请先连接电脑")
+            val invoke: suspend (String, JsonObject) -> JsonElement = { method, payload -> connection.host(method, payload) }
+            invoke
         })
     internal fun openDesktop(section: String) { panel = "desktop"; desktop.open(section) }
     internal fun openExternal(url: String) {
@@ -163,7 +167,16 @@ class DshViewModel(
         val saved = computers.find { it.serverId == serverId } ?: computers.maxByOrNull { it.savedAt } ?: return
         connect(saved.offer(), saved, preserveTasks = route == Route.Chat && selectedServer == saved.serverId)
     }
+    private fun retireDesktopLogin() {
+        val attempt = desktop.pendingLoginAttempt().takeIf { it.isNotBlank() } ?: return
+        val connection = client ?: return
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try { connection.host("account.cancelSignIn", obj("args" to obj("attemptId" to attempt))) }
+            catch (_: Exception) { /* A retired connection cannot cancel a server attempt; its original callback expires normally. */ }
+        }
+    }
     fun leaveComputer() {
+        retireDesktopLogin()
         saveImageDraft()
         cancelGitReview()
         generation++; uiOwnerEpoch = generation.toString(); reconnectEnabled = false; catalogReady = false
@@ -190,6 +203,7 @@ class DshViewModel(
         startupHandled = true; lastConnectionOffer = offer
         saveImageDraft()
         cancelGitReview()
+        if (!keepTasks) retireDesktopLogin()
         generation++
         if (!keepTasks) { uiOwnerEpoch = generation.toString(); desktop.reset() }
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
@@ -377,7 +391,7 @@ class DshViewModel(
         val keepPanel = preservePanel && chat.sessionId == id && panel in RETAINED_TASK_PANELS
         saveImageDraft()
         cancelGitReview()
-        if (!keepPanel) { panel = ""; desktop.reset() }
+        if (!keepPanel) { retireDesktopLogin(); panel = ""; desktop.reset() }
         sessionRevision++
         val revision = sessionRevision
         historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); historyImages.clear()
@@ -755,6 +769,7 @@ class DshViewModel(
         if (epoch == generation && chat.sessionId == owner && currentSession()?.cwd == cwd && panelRevision == revision) externalUrl = url
     }
     internal fun gitAction(steps: List<String>, payload: JsonObject = obj(), completed: List<String> = emptyList(), reviewedPR: JsonObject? = null) = panelAction { connection, epoch ->
+        requireNativeGitSelection(steps, payload)
         val cwd = currentSession()?.cwd ?: error("当前会话没有工作目录")
         val owner = chat.sessionId
         if (gitSession != owner || gitReviewEpoch != epoch || gitRoot != cwd) { gitDraftTitle = ""; gitDraftBody = "" }
@@ -851,7 +866,7 @@ class DshViewModel(
         computers = readComputers()
         if (route == Route.Connect && computers.isNotEmpty()) reopenComputer()
     }
-    override fun onCleared() { client?.close(); super.onCleared() }
+    override fun onCleared() { retireDesktopLogin(); desktop.reset(); client?.close(); super.onCleared() }
     companion object {
         private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse", "desktop")
         internal val PERMISSIONS = listOf(NativePermissionOption("read-only", "仅可查看"),

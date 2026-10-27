@@ -109,12 +109,13 @@ internal fun NativeAccountPanel(controller: NativeDesktopController, available: 
     val state = controller.state
     val view = state.data["view"].objectValue()
     val signedIn = view.string("status") == "credential-stored"
+    val attempt = view["attempt"].objectValue()
+    val activeAttempt = attempt.string("phase") in setOf("initializing", "waiting-browser", "exchanging", "committing")
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { DesktopNote("当前电脑的 DeepSeek 账户") }
         if (!state.loaded && !state.busy) item { DesktopNote("账户尚未读取；请刷新。") }
-        if (state.loaded && !signedIn) item { DesktopButton("登录账户", available) { controller.startSignIn(openUrl) } }
-        val attempt = view["attempt"].objectValue()
-        if (attempt.isNotEmpty() && attempt.string("phase") in setOf("initializing", "waiting-browser", "exchanging", "committing")) {
+        if (state.loaded && !signedIn && !activeAttempt) item { DesktopButton("登录账户", available) { controller.startSignIn(openUrl) } }
+        if (activeAttempt) {
             item { DesktopNote("登录进行中：" + attempt.string("phase")) }
             item { DesktopButton("取消登录", available) { controller.cancelSignIn(attempt.string("id")) } }
         }

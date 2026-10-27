@@ -75,7 +75,7 @@ private fun NativeMcpEditor(row: JsonObject, available: Boolean, onClose: () -> 
             TextButton(enabled = available && name.isNotBlank() && (if (transport == "stdio") command.isNotBlank() else url.isNotBlank()), onClick = {
                 try {
                     val fields = original.toMutableMap()
-                    fields["id"] = JsonPrimitive(original.string("id").ifBlank { UUID.randomUUID().toString() })
+                    fields["id"] = JsonPrimitive(original.string("id").ifBlank { nativeMcpId() })
                     fields["serverName"] = JsonPrimitive(name.trim()); fields["transport"] = JsonPrimitive(transport); fields["enabled"] = JsonPrimitive(enabled)
                     if (timeout.isNotBlank()) fields["toolCallTimeoutMs"] = JsonPrimitive(timeout.toLongOrNull()?.takeIf { it > 0 } ?: error("超时必须是正整数")) else fields.remove("toolCallTimeoutMs")
                     val pairs = variables.toMutableList()
@@ -190,10 +190,10 @@ internal fun NativePluginsPanel(controller: NativeDesktopController, available: 
     val manageable = state.data["inventory"].objectValue()["managementAvailable"].flag()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { NativeField(query, { query = it }, "搜索插件与插件包") }
-        if (controller.installRequestId.isNotBlank()) item { DesktopButton("取消当前安装", !controller.installUncertain) { controller.cancelInstall() } }
+        if (controller.installRequestId.isNotBlank() || controller.uncertainInstallRequestId.isNotBlank()) item { DesktopButton("取消当前安装", !state.busy || controller.installRequestId.isNotBlank()) { controller.cancelInstall() } }
         if (controller.installUncertain) {
             item { DesktopNote("上次安装结果未确认，请先刷新并核对以下插件包状态。") }
-            item { DesktopButton("已核对电脑状态，允许继续操作", available) { controller.acknowledgeInstallState() } }
+            item { DesktopButton("恢复这次安装结果", available) { controller.recoverInstall() } }
         }
         if (manageable) {
             item { NativeField(spec, { spec = it }, "安装插件包（包名 / GitHub spec / 电脑本地路径）", available) }

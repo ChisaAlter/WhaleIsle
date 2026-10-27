@@ -42,6 +42,10 @@ internal fun nativeSessionTree(sessions: List<NativeSession>, collapsed: Set<Str
     return result
 }
 
+internal fun requireNativeGitSelection(steps: List<String>, payload: JsonObject) {
+    if ("git-commit" in steps) require(payload["filePaths"].arrayValue().any { it.text().isNotBlank() }) { "请至少选择一个要提交的文件" }
+}
+
 internal data class NativeGitQuick(val label: String, val steps: List<String> = emptyList(), val target: String = "", val hint: String = "")
 
 /** Same decision table as desktop/mobile git quick actions. */
@@ -60,11 +64,20 @@ internal fun nativeGitQuick(status: JsonObject): NativeGitQuick {
         if (openPr || default) return NativeGitQuick("Commit & push", listOf("git-commit", "git-push"))
         return NativeGitQuick("Commit, push & PR", listOf("git-commit", "git-push", "git-create-change-request"))
     }
-    if (!upstream) return if (!remote) NativeGitQuick("Publish repository", target = "publish") else NativeGitQuick("Push", listOf("git-push"))
+    val unreliable = status["aheadUnreliable"].flag()
+    val defaultDelta = (status["aheadOfDefaultCount"].number() ?: status["aheadCount"].number() ?: 0) > 0
+    if (!upstream) {
+        if (!remote) return if (openPr && !ahead) NativeGitQuick("View PR", target = "pr") else NativeGitQuick("Publish repository", target = "publish")
+        if (!ahead && !unreliable) return if (openPr) NativeGitQuick("View PR", target = "pr") else NativeGitQuick("Push", hint = "没有可推送的本地提交。")
+        if (unreliable && !ahead) return NativeGitQuick("Push", listOf("git-push"))
+        return if (openPr || default) NativeGitQuick("Push", listOf("git-push")) else NativeGitQuick("Push & create PR", listOf("git-push", "git-create-change-request"))
+    }
     if (ahead && behind) return NativeGitQuick("Sync branch", hint = "分支已分叉，请先合并或变基。")
     if (behind) return NativeGitQuick("Pull", listOf("git-pull"))
+    if (unreliable && !ahead) return NativeGitQuick("Push", listOf("git-push"))
     if (ahead) return if (openPr || default) NativeGitQuick("Push", listOf("git-push")) else NativeGitQuick("Push & create PR", listOf("git-push", "git-create-change-request"))
     if (openPr) return NativeGitQuick("View PR", target = "pr")
+    if (defaultDelta && !default) return NativeGitQuick("Create PR", listOf("git-create-change-request"))
     return NativeGitQuick("Commit", hint = "分支已是最新，无需操作。")
 }
 
@@ -72,6 +85,7 @@ internal fun nativeRelativeChild(parent: String, name: String): String {
     require(name.isNotBlank() && name != "." && name != ".." && '/' !in name && '\\' !in name) { "电脑返回了无效的文件名称" }
     return if (parent.isBlank()) name else "$parent/$name"
 }
+internal fun nativeMcpId(): String = java.util.UUID.randomUUID().toString().replace("-", "")
 internal fun nativeParentPath(path: String) = path.substringBeforeLast('/', "")
 internal fun nativeFileSize(bytes: Long?): String = when {
     bytes == null -> "大小未知"

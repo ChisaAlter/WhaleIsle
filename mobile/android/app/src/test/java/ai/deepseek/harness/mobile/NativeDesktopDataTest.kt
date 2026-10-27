@@ -32,6 +32,13 @@ class NativeDesktopDataTest {
         assertTrue(nativeGitQuick(diverged).steps.isEmpty())
         assertTrue(nativeGitQuick(diverged).hint.contains("分叉"))
     }
+    @Test fun pushedFeatureWithDefaultDeltaStillOffersCreatePr() {
+        val pushed = obj("isRepo" to true, "refName" to "feature", "hasPrimaryRemote" to true, "hasUpstream" to true, "aheadCount" to 0, "behindCount" to 0, "aheadOfDefaultCount" to 2)
+        assertEquals("Create PR", nativeGitQuick(pushed).label)
+        assertEquals(listOf("git-create-change-request"), nativeGitQuick(pushed).steps)
+        val unreliable = JsonObject(pushed + obj("aheadUnreliable" to true, "aheadOfDefaultCount" to 0))
+        assertEquals(listOf("git-push"), nativeGitQuick(unreliable).steps)
+    }
     @Test fun settingFieldsResolveActualSchemasteryReferencesAndNeverExposeSecretValues() {
         val descriptor = obj("schema" to obj("uid" to 1, "refs" to obj(
             "1" to obj("type" to "object", "dict" to obj("enabled" to 2, "token" to 3, "route" to 4)),
@@ -56,6 +63,17 @@ class NativeDesktopDataTest {
         val fields = nativeSettingFields(descriptor)
         assertFalse(fields.any { it.path == listOf("providers") })
         assertTrue(fields.first { it.path.last() == "key" }.secret)
+    }
+    @Test fun commitActionRejectsEmptySelectionBeforeTransport() {
+        assertThrows(IllegalArgumentException::class.java) { requireNativeGitSelection(listOf("git-commit", "git-push"), obj("filePaths" to emptyList<String>())) }
+        assertThrows(IllegalArgumentException::class.java) { requireNativeGitSelection(listOf("git-commit"), obj()) }
+        requireNativeGitSelection(listOf("git-commit"), obj("filePaths" to listOf("selected.kt")))
+        requireNativeGitSelection(listOf("git-push"), obj())
+    }
+    @Test fun newMcpIdentifierMatchesManagedDocumentGrammar() {
+        val id = nativeMcpId()
+        assertEquals(32, id.length)
+        assertTrue(Regex("^[A-Za-z0-9_-]{1,32}$").matches(id))
     }
     @Test fun fileChildRejectsTraversalAndRetainsSpaces() {
         assertEquals("folder/a b.kt", nativeRelativeChild("folder", "a b.kt"))
