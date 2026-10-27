@@ -149,7 +149,7 @@ function imageRow(id: string, refId: string, text = ''): UserMessage {
 
 describe('QueueDock', () => {
   it.each(['ABC', 'ACB', 'BAC', 'BCA', 'CAB', 'CBA'])(
-    'keeps repeated queued submissions in Dock through acceptance and FIFO claims (%s)', (hostOrder) => {
+    'keeps repeated queued submissions in Dock through acceptance and FIFO claims (%s)', async (hostOrder) => {
       const pending: SessionSnapshot['pendingSubmissions'] = ['A', 'B', 'C'].map(id => ({
         requestId: id as never, placement: 'queued', time: 1_000,
         text: `input ${id}`, attachments: [],
@@ -158,7 +158,7 @@ describe('QueueDock', () => {
       const source = liveSession(initial)
       const view = render(<QueueDock {...kitFor(initial)} useSession={source.useSession} useProjection={source.useProjection} />)
       fireEvent.click(view.getByRole('button', { name: /3 条排队消息/ }))
-      const order = () => [...view.container.querySelectorAll('[data-queue-dock] li')]
+      const order = () => view.queryAllByRole('listitem')
         .map(element => pending.find(input => element.textContent?.includes(input.text))!.requestId)
       expect(order()).toEqual(['A', 'B', 'C'])
       const queued: UserMessage[] = []
@@ -173,7 +173,8 @@ describe('QueueDock', () => {
         act(() => { source.push(snapshotWith(queued.slice(claimed))) })
         expect(order()).toEqual(hostOrder.slice(claimed).split(''))
       }
-      expect(view.container.querySelector('[data-queue-dock]')).toBeNull()
+      expect(view.container.querySelector('[data-queue-dock]')?.hasAttribute('inert')).toBe(true)
+      await waitFor(() => { expect(view.container.querySelector('[data-queue-dock]')).toBeNull() })
     },
   )
 
@@ -433,7 +434,9 @@ describe('QueueDock', () => {
     expect(view.getByText('one')).toBeTruthy()
 
     act(() => { source.push(snapshotWith([])) })
-    expect(view.container.innerHTML).toBe('')
+    expect(view.queryByRole('button', { name: '2 条排队消息' })).toBeNull()
+    expect(view.container.querySelector('[data-queue-dock]')?.hasAttribute('inert')).toBe(true)
+    expect(view.getByText('one')).toBeTruthy()
     act(() => {
       source.push(snapshotWith([row('i-3', 'three'), row('i-4', 'four')]))
     })
@@ -759,13 +762,30 @@ describe('QueueDock', () => {
     expect(getByText('pending')).toBeTruthy()
   })
 
-  it('follows authoritative retirement back to null', () => {
+  it('retains the last queue during exit and immediately removes its actions from accessibility', async () => {
     const snap = snapshotWith([row('i-1', '在场')])
     const source = liveSession(snap)
-    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
-    expect(container.textContent).toContain('在场')
+    const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
+    expect(view.container.textContent).toContain('在场')
     act(() => { source.push(snapshotWith([])) })
-    expect(container.innerHTML).toBe('')
+    expect(view.getByText('在场')).toBeTruthy()
+    expect(view.container.firstElementChild?.getAttribute('aria-hidden')).toBe('true')
+    expect(view.container.firstElementChild?.hasAttribute('inert')).toBe(true)
+    expect(view.queryByRole('button', { name: '删除排队消息' })).toBeNull()
+    await waitFor(() => { expect(view.container.firstChild).toBeNull() })
+  })
+
+  it('settles an empty queue immediately with reduced motion', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    try {
+      const snap = snapshotWith([row('i-1', '在场')])
+      const source = liveSession(snap)
+      const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
+      act(() => { source.push(snapshotWith([])) })
+      expect(view.container.firstChild).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('registers as the terminal composer-context entry', () => {
