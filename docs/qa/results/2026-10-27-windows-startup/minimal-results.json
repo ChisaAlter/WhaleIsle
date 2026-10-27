@@ -1,0 +1,56 @@
+[
+  {
+    "label": "official44.4.3",
+    "exitCode": "0x00000000",
+    "reachedJs": true,
+    "capturedWindow": true
+  },
+  {
+    "label": "official44.9.1",
+    "exitCode": "0x00000000",
+    "reachedJs": true,
+    "capturedWindow": true
+  },
+  {
+    "label": "official44.9.1-renamed",
+    "exitCode": "0x00000000",
+    "reachedJs": true,
+    "capturedWindow": true
+  },
+  {
+    "label": "ci-native-medium",
+    "exitCode": "0x00000000",
+    "reachedJs": true,
+    "capturedWindow": true
+  },
+  {
+    "label": "ci-after-low-medium",
+    "exitCode": "0x00000000",
+    "reachedJs": true,
+    "capturedWindow": true
+  },
+  {
+    "label": "reusable-official-medium",
+    "exitCode": "0x00000000",
+    "reachedJs": true,
+    "capturedWindow": true,
+    "parentIntegrityRid": 8192,
+    "childIntegrityRid": 8192,
+    "sha256": "1432afee01d6a788f11cb6649efd271923e1e490beef688c24d31f47965013aa"
+  },
+  {
+    "label": "reusable-official-low",
+    "exitCode": "0x80000003",
+    "reachedJs": false,
+    "capturedWindow": false,
+    "parentIntegrityRid": 8192,
+    "childIntegrityRid": 4096,
+    "sha256": "1432afee01d6a788f11cb6649efd271923e1e490beef688c24d31f47965013aa"
+  },
+  {
+    "label": "ci-native-low-token",
+    "exitCode": "0x80000003",
+    "childIntegrityRid": 4096,
+    "fileLabelChanged": false
+  }
+]

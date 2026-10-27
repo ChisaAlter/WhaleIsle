@@ -1,0 +1,37 @@
+{
+  "ciRun": "40179132499",
+  "ciCommit": "ab4feeb910d8dab74c250b78b7de4a87990db40f",
+  "electron": "44.9.1",
+  "freshExtraction": true,
+  "resourceReplacement": false,
+  "legacyShell": false,
+  "serviceInstrumentation": false,
+  "profile": "isolated-empty-profile-warmed-after-first-runtime-extraction",
+  "pid": 33448,
+  "started": "2026-10-27T06:30:51.303Z",
+  "readyAt": "2026-10-27T06:31:31.030Z",
+  "page": {
+    "readyState": "complete",
+    "buttons": 27,
+    "editors": 1,
+    "bodyLength": 140,
+    "title": "Whale Isle"
+  },
+  "normalQuitRequested": true,
+  "exit": {
+    "code": 0,
+    "signal": null,
+    "at": "2026-10-27T06:31:33.778Z"
+  },
+  "ok": true,
+  "hashes": {
+    "exe": "3982202ffdc44d5107fcfbd82baa48c9388e0c95150e699a4c671c78991131cb",
+    "appAsar": "a6fe6246965986ea1418ca094e2abb8933a616eb1fb6d61750f3e7a712ec18e4",
+    "harnessTar": "009bbe4fa513bd50e30be4b5001cc30fabc51aac5e1167210896f1e0c41a6973"
+  },
+  "limits": [
+    "First cold startup extracted runtime but timed out waiting for service; not a cold-start performance pass.",
+    "No real user profile, history, credentials or model message used.",
+    "Main app inspect and Chromium remote-debugging enabled solely to observe page and request ordinary app.quit."
+  ]
+}
