@@ -103,9 +103,8 @@ export interface Config {
   /** Physical encoding; defaults to checksummed Zstandard frames. */
   compression?: JsonlCompression
   /**
-   * Maximum directory, header, and stat reads in flight across all concurrent
-   * listings of this backend (`list()`, the root encoding check, and historical
-   * fingerprints). Defaults to 3.
+   * Maximum discovery reads in flight across listings and per-session project
+   * lookups. Listing header and stat reads share this bound. Defaults to 3.
    */
   listConcurrency?: number
 }
@@ -150,13 +149,29 @@ interface PreparedStoredLog extends StoredLogBase {
 /** A validated logical log, either durable current state or prepared historical state. */
 type StoredLog = CurrentStoredLog | PreparedStoredLog
 
-/** Deep-freeze acyclic stored JSON; its arrays contain only indexed JSON values. */
+/** Deep-freeze stored JSON after validateStoredEvents has frozen the identified message. */
 function freezeStoredEvent(event: SessionEvent): void {
+  let message: object | undefined
+  switch (event.type) {
+    case 'user/message':
+      message = event.data
+      break
+    case 'developer/message':
+    case 'system/message':
+    case 'assistant/message':
+    case 'tool/result':
+      message = event.data.message
+      break
+    default:
+      // Plugin-owned data still needs a complete traversal.
+      break
+  }
   const pending: object[] = [event]
   while (pending.length > 0) {
     // The non-empty check proves an object remains to visit.
     // oxlint-disable-next-line typescript/no-non-null-assertion
     const current = pending.pop()!
+    if (current === message) continue
     Object.freeze(current)
     if (Array.isArray(current)) {
       for (let index = 0; index < current.length; index += 1) {
@@ -295,8 +310,8 @@ class JsonlSessionPersistence extends SessionPersistence {
   private root: string
   private compression: JsonlCompression
   /**
-   * Bounds directory, header, and stat I/O across every concurrent listing of
-   * this backend (`list()`, the root encoding check, historical fingerprints).
+   * Bounds discovery I/O across listings and per-session project lookups.
+   * Listing header and stat reads use this same limiter.
    * Queued tasks of a cancelled listing run and reject at their signal check.
    */
   private readonly listLimit: LimitFunction
@@ -1596,15 +1611,14 @@ class JsonlSessionPersistence extends SessionPersistence {
 
   /** Find the unique authoritative generation for an id across project directories. */
   private async findLog(id: SessionId, signal?: AbortSignal): Promise<ResolvedJsonlGeneration | undefined> {
-    const matches: ResolvedJsonlGeneration[] = []
-    for (const project of await this.listProjectDirs(signal)) {
+    const projects = await this.listProjectDirs(signal)
+    const selected = settledValues(await settleLimited(this.listLimit, projects, async (project) => {
       signal?.throwIfAborted()
       await this.rejectLegacyFlatArtifact(project, id, signal)
       signal?.throwIfAborted()
-      const dir = join(project, encodeSegment(id))
-      const selected = await this.resolveGenerationInDirectory(dir, signal)
-      if (selected !== undefined) matches.push(selected)
-    }
+      return this.resolveGenerationInDirectory(join(project, encodeSegment(id)), signal)
+    }))
+    const matches = selected.filter((entry): entry is ResolvedJsonlGeneration => entry !== undefined)
     if (matches.length > 1) {
       throw new Error(`duplicate JSONL session id "${id}" appears in multiple project directories`)
     }

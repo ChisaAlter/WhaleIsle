@@ -2812,7 +2812,17 @@ describe('JsonlSessionPersistence: edge cases', () => {
       extra: { a: null, b: true, c: [1, 2, { d: 'nested' }] },
     }, surfaceOp: 'append' }] as unknown as SessionEvent[]
     await writeLog(ctx.sessionPersistence, m, events)
-    expect((await readAll(ctx.sessionPersistence, m.id)).events).toEqual(events)
+    const restored = (await readAll(ctx.sessionPersistence, m.id)).events
+    expect(restored).toEqual(events)
+    const event = restored[0] as SessionEvent<'user/message'>
+    expect(Object.isFrozen(event)).toBe(true)
+    expect(Object.isFrozen(event.data)).toBe(true)
+    expect(Object.isFrozen(event.data.content)).toBe(true)
+    const extra = event.data as typeof events[number]['data'] & { extra: { c: [number, number, { d: string }] } }
+    expect(Object.isFrozen(extra.extra)).toBe(true)
+    expect(Object.isFrozen(extra.extra.c)).toBe(true)
+    expect(Object.isFrozen(extra.extra.c[2])).toBe(true)
+    expect(Reflect.set(extra.extra.c[2], 'd', 'changed')).toBe(false)
   })
 })
 
@@ -2869,6 +2879,35 @@ describe('JsonlSessionPersistence listing concurrency', () => {
 
     expect(listingProbe.maxInFlight).toBe(2)
     for (const listing of listings) expect(listing.map(s => s.header.id).sort()).toEqual(expected)
+  })
+
+  it('bounds the project checks within a point lookup', async () => {
+    await seed('/work-a', ['point-a'])
+    await seed('/work-b', ['point-b'])
+    await seed('/work-c', ['point-c'])
+    await listingCtx.sessionPersistence.list()
+    listingProbe.delayMs = 5
+    listingProbe.active = true
+    const snapshot = await listingCtx.sessionPersistence.stat(SessionId('point-a'))
+    listingProbe.active = false
+    expect(snapshot?.header.id).toBe('point-a')
+    expect(listingProbe.maxInFlight).toBe(2)
+  })
+
+  it('reports point-lookup failures in project order after all checks settle', async () => {
+    await seed('/work-a', ['point-failure'])
+    await seed('/work-b', ['another-point'])
+    await listingCtx.sessionPersistence.list()
+    const [earlierProject, laterProject] = await directoriesOf(listingRoot) as [string, string]
+    const firstPath = join(earlierProject, encodeSegment(SessionId('point-failure')))
+    const secondPath = join(laterProject, encodeSegment(SessionId('point-failure')))
+    const firstFailure = Object.assign(new Error('earlier project unreadable'), { code: 'EACCES' })
+    const secondFailure = Object.assign(new Error('later project unreadable'), { code: 'EACCES' })
+    listingProbe.failures.set(firstPath, firstFailure)
+    listingProbe.failures.set(secondPath, secondFailure)
+    listingProbe.active = true
+    await expect(listingCtx.sessionPersistence.stat(SessionId('point-failure'))).rejects.toBe(firstFailure)
+    expect(listingProbe.inFlight).toBe(0)
   })
 
   it('reports the failure a sequential traversal would reach first', async () => {
