@@ -31,6 +31,11 @@ private val settingsSections = listOf(
     SettingsSection("models", "模型与权限", "当前会话的模型、思考强度、权限和 Plan"),
     SettingsSection("archived", "归档会话", "查看、恢复和删除电脑上的归档对话"),
     SettingsSection("usage", "当前会话用量", "输入、输出和缓存 token"),
+    SettingsSection("account", "账户", "登录、余额、赠送余额、账户用量与充值"),
+    SettingsSection("settings", "电脑设置与供应商", "电脑配置、默认模型、供应商和 API 凭据"),
+    SettingsSection("mcp", "MCP 服务器", "连接状态、工具、添加、编辑与测试"),
+    SettingsSection("skills", "技能", "查看、分组、调用开关与编辑"),
+    SettingsSection("plugins", "插件", "插件包安装与启用、运行状态"),
     SettingsSection("about", "关于", "应用版本、连接与数据说明"),
 )
 
@@ -67,7 +72,9 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
                     NativeField(query, { query = it }, "搜索设置")
                     val matches = settingsSections.filter { query.isBlank() || (it.title + it.detail).contains(query.trim(), true) }
                     if (matches.isEmpty()) SettingsNote("没有匹配的设置")
-                    matches.forEach { item -> NativeChoiceRow(item.title, detail = item.detail, onClick = { keyboard?.hide(); section = item.id }) }
+                    matches.forEach { item -> NativeChoiceRow(item.title, detail = item.detail,
+                        enabled = item.id !in setOf("account", "settings", "mcp", "skills", "plugins") || available,
+                        onClick = { keyboard?.hide(); if (item.id in setOf("account", "settings", "mcp", "skills", "plugins")) vm.openDesktop(item.id) else section = item.id }) }
                 }
                 when (section) {
                     "devices" -> {
@@ -116,7 +123,7 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
                     }
                     "models" -> {
                         val chosen = chosenModel
-                        SettingsNote("只修改当前会话。供应商账号、API 密钥和默认配置在电脑端管理。")
+                        SettingsNote("只修改当前会话。供应商、API 密钥与电脑默认配置可从设置中的“电脑设置与供应商”管理。")
                         if (vm.chat.modelOptions.isEmpty()) SettingsNote(if (vm.route == Route.Chat) "模型仍在同步，请返回对话后重试。" else "连接电脑后可选择模型与权限。")
                         else if (chosen != null) {
                             SettingsLabel(chosen.label)
@@ -176,7 +183,7 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
                         SettingsNote("配对凭据与文字草稿加密保存在本机。手机通过端到端加密连接电脑，已配对的电脑使用保存凭据重连。")
                         SettingsNote("手机与电脑共用会话。显示偏好只影响本机；更换或移除配对不会删除电脑上的会话与文件。")
                         SettingsLabel("电脑端功能")
-                        SettingsNote("供应商与密钥、插件、MCP、技能配置和完整用量分析仍由电脑端管理。")
+                        SettingsNote("账户、供应商与凭据、插件、MCP 和技能使用已配对电脑的正规服务，修改会作用于电脑。文件与更改从会话与工作区菜单进入。")
                     }
                 }
                 if (vm.panelError.isNotBlank() || vm.chat.banner.isNotBlank()) SettingsNote(vm.panelError.ifBlank { vm.chat.banner })

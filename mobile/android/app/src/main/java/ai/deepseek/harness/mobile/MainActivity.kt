@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        vm.desktop.setAppVersion(packageManager.getPackageInfo(packageName, 0).versionName.orEmpty())
         images = NativeImagePicker(this, vm::attachmentOwner, vm::addImage, vm::report)
         images.restoreState(savedInstanceState)
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)

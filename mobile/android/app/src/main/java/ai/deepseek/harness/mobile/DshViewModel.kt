@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.*
+import java.util.UUID
 
 enum class Route { Connect, Permission, Scan, Chat }
 class DshViewModel(
@@ -93,6 +94,8 @@ class DshViewModel(
     private var refreshingHistory = false
     private var historyDirty = false
     private val imageDrafts = mutableMapOf<String, List<NativeImage>>()
+    private data class PendingPrompt(val requestId: String, val text: String, val images: List<NativeImage>, val mode: String)
+    private val unconfirmedPrompts = mutableMapOf<String, PendingPrompt>()
     private val historyImages = mutableMapOf<String, NativeImage>()
     private val historyImageReads = mutableMapOf<String, Deferred<Result<JsonObject>>>()
     private var history: List<JsonObject> = emptyList()
@@ -101,6 +104,24 @@ class DshViewModel(
     private val resolvedApprovals = mutableSetOf<Pair<String, String>>()
     private var draftData = Json.parseToJsonElement(store.draftsJson).objectValue()
     private val computerSerializer = ListSerializer(SavedComputer.serializer())
+    internal val desktop = NativeDesktopController(viewModelScope,
+        owner = { "$generation/$sessionRevision/${chat.sessionId}" }, sessionId = { chat.sessionId }, cwd = { currentSession()?.cwd.orEmpty() },
+        host = { method, payload ->
+            check(!chat.offline && !chat.loading && catalogReady) { "连接已断开或正在同步，请恢复后重试" }
+            (client ?: error("请先连接电脑")).host(method, payload)
+        }, git = { method, payload ->
+            check(!chat.offline && !chat.loading && catalogReady) { "连接已断开或正在同步，请恢复后重试" }
+            val root = currentSession()?.cwd?.takeIf { it.isNotBlank() } ?: error("当前会话没有工作目录")
+            (client ?: error("请先连接电脑")).git(method, root, payload)
+        }, accountConnection = {
+            val connection = client ?: error("请先连接电脑")
+            val invoke: suspend (String, JsonObject) -> JsonElement = { method, payload -> connection.host(method, payload) }
+            invoke
+        })
+    internal fun openDesktop(section: String) { panel = "desktop"; desktop.open(section) }
+    internal fun openExternal(url: String) {
+        if (url.startsWith("https://") || url.startsWith("http://")) externalUrl = url else report("链接不是可打开的网页")
+    }
 
     private fun readComputers() = Json.decodeFromString(ListSerializer(SavedComputer.serializer()), store.computersJson)
     init { store.clearLegacyHttpCredentials() }
@@ -146,7 +167,16 @@ class DshViewModel(
         val saved = computers.find { it.serverId == serverId } ?: computers.maxByOrNull { it.savedAt } ?: return
         connect(saved.offer(), saved, preserveTasks = route == Route.Chat && selectedServer == saved.serverId)
     }
+    private fun retireDesktopLogin() {
+        val attempt = desktop.pendingLoginAttempt().takeIf { it.isNotBlank() } ?: return
+        val connection = client ?: return
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try { connection.host("account.cancelSignIn", obj("args" to obj("attemptId" to attempt))) }
+            catch (_: Exception) { /* A retired connection cannot cancel a server attempt; its original callback expires normally. */ }
+        }
+    }
     fun leaveComputer() {
+        retireDesktopLogin()
         saveImageDraft()
         cancelGitReview()
         generation++; uiOwnerEpoch = generation.toString(); reconnectEnabled = false; catalogReady = false
@@ -154,6 +184,7 @@ class DshViewModel(
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         workspaces = emptyList(); allSessions = emptyList(); history = emptyList(); beforeSeq = null
         liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); refreshingHistory = false; historyDirty = false
+        desktop.reset()
         chat = NativeChatState(); panel = ""; panelData = obj(); panelBusy = false; route = Route.Connect
     }
     fun forgetComputer(serverId: String) {
@@ -172,8 +203,9 @@ class DshViewModel(
         startupHandled = true; lastConnectionOffer = offer
         saveImageDraft()
         cancelGitReview()
+        if (!keepTasks) retireDesktopLogin()
         generation++
-        if (!keepTasks) uiOwnerEpoch = generation.toString()
+        if (!keepTasks) { uiOwnerEpoch = generation.toString(); desktop.reset() }
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         reconnectEnabled = false; authenticationRejected = false; catalogReady = false; catalogSyncEpoch = null
         selectedServer = offer.serverId; store.selectedComputer = selectedServer
@@ -359,7 +391,7 @@ class DshViewModel(
         val keepPanel = preservePanel && chat.sessionId == id && panel in RETAINED_TASK_PANELS
         saveImageDraft()
         cancelGitReview()
-        if (!keepPanel) panel = ""
+        if (!keepPanel) { retireDesktopLogin(); panel = ""; desktop.reset() }
         sessionRevision++
         val revision = sessionRevision
         historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); historyImages.clear()
@@ -582,9 +614,17 @@ class DshViewModel(
                         }
                         require(request.mode in setOf("queue", "steer")) { "未知发送方式" }
                         if (submitted.trim().startsWith('/')) command(connection, id, submitted.trim(), attachments)
-                        else connection.host("session.prompt", obj("sessionId" to id, "mode" to if (chat.running) request.mode else "queue", "content" to
-                            listOfNotNull(submitted.takeIf { it.isNotBlank() }?.let { obj("type" to "text", "text" to it) }) +
-                            attachments.map { obj("type" to "image", "mediaType" to it.mediaType, "data" to it.data) }))
+                        else {
+                            val owner = draftKey(id)
+                            val mode = if (chat.running) request.mode else "queue"
+                            val pending = unconfirmedPrompts[owner]?.takeIf { it.text == submitted && it.images == attachments && it.mode == mode }
+                                ?: PendingPrompt(UUID.randomUUID().toString(), submitted, attachments.toList(), mode).also { unconfirmedPrompts[owner] = it }
+                            val receipt = connection.host("session.prompt", obj("sessionId" to id, "requestId" to pending.requestId, "mode" to pending.mode, "content" to
+                                listOfNotNull(submitted.takeIf { it.isNotBlank() }?.let { obj("type" to "text", "text" to it) }) +
+                                attachments.map { obj("type" to "image", "mediaType" to it.mediaType, "data" to it.data) })).objectValue()
+                            check(receipt["accepted"].flag()) { "未能确认消息发送，请同步后重试" }
+                            if (unconfirmedPrompts[owner] === pending) unconfirmedPrompts.remove(owner)
+                        }
                         if (epoch == generation && chat.sessionId == id) {
                             if (chat.draft == submitted) saveDraft(id, "")
                             imageDrafts.remove(draftKey(id)); update { copy(attachments = emptyList(), running = true) }; loadHistory(connection, epoch, id)
@@ -729,6 +769,7 @@ class DshViewModel(
         if (epoch == generation && chat.sessionId == owner && currentSession()?.cwd == cwd && panelRevision == revision) externalUrl = url
     }
     internal fun gitAction(steps: List<String>, payload: JsonObject = obj(), completed: List<String> = emptyList(), reviewedPR: JsonObject? = null) = panelAction { connection, epoch ->
+        requireNativeGitSelection(steps, payload)
         val cwd = currentSession()?.cwd ?: error("当前会话没有工作目录")
         val owner = chat.sessionId
         if (gitSession != owner || gitReviewEpoch != epoch || gitRoot != cwd) { gitDraftTitle = ""; gitDraftBody = "" }
@@ -825,9 +866,9 @@ class DshViewModel(
         computers = readComputers()
         if (route == Route.Connect && computers.isNotEmpty()) reopenComputer()
     }
-    override fun onCleared() { client?.close(); super.onCleared() }
+    override fun onCleared() { retireDesktopLogin(); desktop.reset(); client?.close(); super.onCleared() }
     companion object {
-        private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse")
+        private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse", "desktop")
         internal val PERMISSIONS = listOf(NativePermissionOption("read-only", "仅可查看"),
             NativePermissionOption("workspace-write", "可写入工作区"), NativePermissionOption("danger-full-access", "完全权限"))
     }

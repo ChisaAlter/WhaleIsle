@@ -36,7 +36,15 @@ internal data class NativeSessionGroup(
 
 /** Preserve catalog order and every non-archived session, including legacy ungrouped rows. */
 internal fun nativeSessionGroups(workspaces: List<NativeWorkspace>, sessions: List<NativeSession>): List<NativeSessionGroup> {
-    val visible = sessions.filterNot { it.archived }
+    val active = sessions.filterNot { it.archived }
+    val byId = active.associateBy { it.id }
+    fun root(row: NativeSession): NativeSession {
+        var current = row
+        val visited = mutableSetOf<String>()
+        while (current.origin == "subagent" && current.parentSessionId.isNotBlank() && visited.add(current.id)) current = byId[current.parentSessionId] ?: break
+        return current
+    }
+    val visible = active.map { row -> if (row.origin != "subagent") row else root(row).let { parent -> row.copy(workspaceId = parent.workspaceId, workspace = parent.workspace, cwd = parent.cwd) } }
     val knownIds = workspaces.map { it.id }.toSet()
     val groups = workspaces.map { workspace ->
         NativeSessionGroup("workspace:${workspace.id}", workspace.title.ifBlank {

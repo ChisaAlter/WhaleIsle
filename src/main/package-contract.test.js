@@ -72,6 +72,8 @@ test('manifest keeps the packaging contract after-pack depends on', () => {
     'src/main/dshd-daemon-runner.mjs',
     'src/main/dshd-daemon-hooks.mjs',
     'src/shared/dshd-host-tunnel.js',
+    'src/shared/dshd-account-callback.js',
+    'src/shared/dshd-workspace-image.js',
     'src/shared/dshd-mux-sse.js',
     'src/main/pet-growth.js',
     'src/main/pet-growth-scan-worker.js',

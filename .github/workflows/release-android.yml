@@ -36,6 +36,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version-file: .nvmrc
+      - name: Read Android version from Gradle
+        run: node scripts/android-version.mjs --github-env >> "$GITHUB_ENV"
       - uses: actions/setup-java@816722acf8fd27c9d1e9ae6ee6085da07e0d44c1
         with:
           distribution: temurin
@@ -69,7 +71,7 @@ jobs:
         run: |
           bash gradlew :protocol:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease -Pkotlin.compiler.execution.strategy=in-process --no-parallel --console=plain
           mkdir -p ../../dist/android/release
-          cp app/build/outputs/apk/release/app-release.apk ../../dist/android/release/Whale-Isle-0.3.10-android.apk
+          cp app/build/outputs/apk/release/app-release.apk "../../dist/android/release/$ANDROID_APK_NAME"
       - name: Enable emulator hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -82,7 +84,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: node scripts/smoke-android.mjs dist/android/release/Whale-Isle-0.3.10-android.apk
+          script: node scripts/smoke-android.mjs
       - name: Record APK identity and completed checks
         env:
           ANDROID_SOURCE_SHA: ${{ github.sha }}
@@ -104,7 +106,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
           CNB_REPO: ${{ vars.CNB_REPO }}
-          ANDROID_VERSION: 0.3.10
           ANDROID_SOURCE_SHA: ${{ github.sha }}
           ANDROID_ASSET_DIR: dist/android/release
         run: |

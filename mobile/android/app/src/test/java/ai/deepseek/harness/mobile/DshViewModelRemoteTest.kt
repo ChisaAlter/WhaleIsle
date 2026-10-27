@@ -1037,6 +1037,81 @@ class DshViewModelRemoteTest {
         assertEquals("new", vm.chat.queue.single().id)
     }
 
+    @Test fun lostPromptAcknowledgementKeepsIdentityUntilAnExplicitRetryIsAccepted() = remoteTest {
+        val (vm, clients) = model()
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        val admitted = mutableSetOf<String>()
+        var loseAcknowledgement = true
+        relay.promptReply = { payload ->
+            val requestId = payload.string("requestId")
+            assertTrue("business request identity is required", requestId.isNotBlank())
+            admitted += requestId
+            if (loseAcknowledgement) error("prompt acknowledgement lost")
+            obj("accepted" to true)
+        }
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "retry this message"))
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft)); runCurrent()
+        val first = relay.hostCalls.last { it.first == "session.prompt" }.second
+        assertEquals("retry this message", vm.chat.draft)
+        assertEquals("prompt acknowledgement lost", vm.chat.banner)
+        advanceTimeBy(10_000); runCurrent()
+        assertEquals(1, relay.hostCalls.count { it.first == "session.prompt" })
+        loseAcknowledgement = false
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft)); runCurrent()
+        assertEquals(first, relay.hostCalls.last { it.first == "session.prompt" }.second)
+        assertEquals(1, admitted.size)
+        assertEquals("", vm.chat.draft)
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "retry this message"))
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft)); runCurrent()
+        assertNotEquals(first.string("requestId"), relay.hostCalls.last { it.first == "session.prompt" }.second.string("requestId"))
+    }
+
+    @Test fun changedPromptAndAnotherSessionNeverReuseAnUnconfirmedSubmissionIdentity() = remoteTest {
+        val (vm, clients) = model()
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        relay.promptReply = { error("reply lost") }
+        fun submit(text: String) { vm.onChatAction(NativeChatAction("draft", vm.chat.sessionId, text = text)); vm.onChatAction(NativeChatAction("send", vm.chat.sessionId, text = text)) }
+        submit("original"); runCurrent()
+        val first = relay.hostCalls.last { it.first == "session.prompt" }.second.string("requestId")
+        assertTrue(first.isNotBlank())
+        submit("changed"); runCurrent()
+        val changed = relay.hostCalls.last { it.first == "session.prompt" }.second.string("requestId")
+        assertNotEquals(first, changed)
+        vm.openSession("s2"); runCurrent()
+        submit("changed"); runCurrent()
+        assertNotEquals(changed, relay.hostCalls.last { it.first == "session.prompt" }.second.string("requestId"))
+        vm.openSession("s1"); runCurrent()
+        submit("changed"); runCurrent()
+        assertEquals(changed, relay.hostCalls.last { it.first == "session.prompt" }.second.string("requestId"))
+    }
+
+    @Test fun unconfirmedPromptImagesAndDeliveryModeBelongToTheExactSubmission() = remoteTest {
+        val (vm, clients) = model()
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        relay.projections["s1"] = obj("inbox" to obj())
+        relay.histories["s1"] = listOf(obj("event" to obj("seq" to 1, "type" to "turn/start", "data" to obj())))
+        vm.openSession("s1"); runCurrent()
+        val payloads = mutableListOf<JsonObject>()
+        relay.promptReply = { payload -> payloads += payload; obj("accepted" to false) }
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "with picture"))
+        vm.addImage("computer", "s1", NativeImage("image/png", "first"))
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft, mode = "queue")); runCurrent()
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft, mode = "queue")); runCurrent()
+        assertEquals(payloads[0], payloads[1])
+        assertEquals("first", vm.chat.attachments.single().data)
+        vm.removeImage(0); vm.addImage("computer", "s1", NativeImage("image/png", "second"))
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft, mode = "queue")); runCurrent()
+        assertNotEquals(payloads[1].string("requestId"), payloads[2].string("requestId"))
+        assertEquals("second", payloads[2].objects("content").last().string("data"))
+        vm.onChatAction(NativeChatAction("send", "s1", text = vm.chat.draft, mode = "steer")); runCurrent()
+        assertNotEquals(payloads[2].string("requestId"), payloads[3].string("requestId"))
+        assertEquals("steer", payloads[3].string("mode"))
+        assertEquals("with picture", vm.chat.draft)
+    }
+
     private class FakeRelay(
         val usedOffer: Offer,
         credential: SavedComputer?,
@@ -1066,6 +1141,7 @@ class DshViewModelRemoteTest {
         var gitReply: suspend (String, String) -> JsonElement = { _, _ -> obj("isRepo" to true) }
         var attachmentReply: suspend (String) -> JsonObject = { error("unexpected image read") }
         var queueReply: suspend (JsonObject) -> JsonElement = { obj("accepted" to true) }
+        var promptReply: suspend (JsonObject) -> JsonElement = { obj("accepted" to true) }
         var searchReply: suspend (String) -> JsonObject = { query -> obj("items" to listOf(obj("sessionId" to "s1", "snippet" to query))) }
         private val ended = CompletableDeferred<Throwable>()
         override suspend fun connect() {
@@ -1109,7 +1185,8 @@ class DshViewModelRemoteTest {
                 "host.listDirectory" -> obj("path" to "C:/new", "entries" to emptyList<JsonObject>())
                 "workspace.create" -> obj("workspace" to obj("workspaceId" to "new-workspace"))
                 "session.attachment" -> attachmentReply(payload.string("attachmentId"))
-                "respond", "session.prompt", "session.selectModel" -> obj()
+                "session.prompt" -> promptReply(payload)
+                "respond", "session.selectModel" -> obj()
                 else -> error("unexpected host method $method")
             }
         }

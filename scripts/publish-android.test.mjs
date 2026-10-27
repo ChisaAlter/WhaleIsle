@@ -6,6 +6,7 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { androidReleaseBody, publishAndroid, syncAndroidTag, validateAndroidAssets } from './publish-android.mjs'
+import { readAndroidVersion } from './android-version.mjs'
 
 const repo = 'owner/project'
 const mirrorRepo = 'mirror/project'
@@ -20,17 +21,18 @@ const names = [apkName, metadataName, sumsName]
 const digest = (bytes, algorithm = 'sha512') => createHash(algorithm).update(bytes).digest('hex')
 const clone = value => value == null ? value : structuredClone(value)
 
-async function buildFixture(t) {
+async function buildFixture(t, { version: buildVersion = version, versionCode = 4 } = {}) {
+  const buildApkName = 'Whale-Isle-' + buildVersion + '-android.apk'
   const directory = await mkdtemp(join(tmpdir(), 'publish-android-test-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const apk = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('APK bytes already checked by build apksigner')])
-  const metadata = { schemaVersion: 1, version, versionCode: 4, applicationId: 'ai.deepseek.harness.mobile', minSdk: 26, targetSdk: 36,
-    sourceSha: sha, apk: { name: apkName, size: apk.length, sha256: digest(apk, 'sha256'), sha512: digest(apk), signingCertificateSha256: certificate },
+  const metadata = { schemaVersion: 1, version: buildVersion, versionCode, applicationId: 'ai.deepseek.harness.mobile', minSdk: 26, targetSdk: 36,
+    sourceSha: sha, apk: { name: buildApkName, size: apk.length, sha256: digest(apk, 'sha256'), sha512: digest(apk), signingCertificateSha256: certificate },
     checks: { jvm: 'passed', lint: 'passed', emulator: 'passed' } }
-  const bytes = new Map([[apkName, apk], [metadataName, Buffer.from(JSON.stringify(metadata) + '\n')]])
+  const bytes = new Map([[buildApkName, apk], [metadataName, Buffer.from(JSON.stringify(metadata) + '\n')]])
   bytes.set(sumsName, Buffer.from([...bytes].map(([name, data]) => digest(data) + '  ' + name).join('\n') + '\n'))
   for (const [name, data] of bytes) if (name !== sumsName) await writeFile(join(directory, name), data)
-  return { directory, metadata, bytes, options: { assetDir: directory, version, sha, expectedCertificateSha256: certificate },
+  return { directory, metadata, bytes, options: { assetDir: directory, version: buildVersion, sha, expectedCertificateSha256: certificate },
     async saveMetadata() { await writeFile(join(directory, metadataName), JSON.stringify(metadata) + '\n') } }
 }
 
@@ -214,6 +216,24 @@ test('build artifact validation emits exact APK and metadata checksums and is id
   assert.deepEqual(result.files.map(file => file.name), names)
   assert.deepEqual(await readFile(join(f.directory, sumsName)), f.bytes.get(sumsName))
   assert.deepEqual((await validateAndroidAssets({ ...f.options, expectedCertificateSha256: certificate.toUpperCase().match(/../g).join(':') })).files, result.files)
+})
+
+test('current Gradle candidate requires its own code and cannot reuse the historical code', async t => {
+  const current = await readAndroidVersion()
+  const candidate = await buildFixture(t, current)
+  const result = await validateAndroidAssets(candidate.options)
+  assert.equal(result.metadata.version, current.version)
+  assert.equal(result.metadata.versionCode, current.versionCode)
+  assert.equal(result.files[0].name, current.apkName)
+  for (const versionCode of [4, current.versionCode + 1]) {
+    const invalid = await buildFixture(t, { version: current.version, versionCode })
+    await assert.rejects(validateAndroidAssets(invalid.options), /versionCode/)
+    await assert.rejects(validateAndroidAssets({ ...invalid.options, expectedVersionCode: versionCode }), /versionCode/)
+    assert.ok(!(await readdir(invalid.directory)).includes(sumsName))
+  }
+  const historical = await buildFixture(t, { version, versionCode: current.versionCode })
+  await assert.rejects(validateAndroidAssets(historical.options), /versionCode/)
+  await assert.rejects(validateAndroidAssets({ ...historical.options, expectedVersionCode: current.versionCode }), /versionCode/)
 })
 
 test('schema, identities, versionCode, certificates, checks and APK bytes reject before any API or upload', async t => {
@@ -442,10 +462,11 @@ test('release notes explain Android requirements, desktop QR connection and the 
   const body = androidReleaseBody(version)
   assert.match(body, /Android 8\.0/)
   assert.match(body, /API 26\+/)
-  assert.match(body, /v0\.3\.10 桌面端/)
+  assert.match(body, /扫描鲸屿桌面端提供的连接二维码/)
   assert.match(body, /物理 Android 设备.*全链路验证证据/)
   assert.match(body, /scan the connection QR code/)
-  assert.match(body, /desktop v0\.3\.10/)
+  assert.match(body, /shown by Whale Isle desktop\./)
+  assert.doesNotMatch(androidReleaseBody('0.3.11'), /v0\.3\.11 (?:桌面端|desktop)|desktop v0\.3\.11/)
   assert.match(body, /no physical-device end-to-end evidence/)
   assert.doesNotMatch(body, /autonomous|standalone AI|自主运行/)
 })

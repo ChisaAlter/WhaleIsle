@@ -218,6 +218,7 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
     onOpen: (NativeSession) -> Unit, onSessionMenu: (NativeSession) -> Unit, onWorkspaceMenu: (NativeWorkspace) -> Unit) {
     val colors = dsh()
     var collapsed by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var collapsedAgents by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val groups = nativeSessionGroups(workspaces, state.sessions)
     Column(Modifier.fillMaxSize().drawSidebarEdge(colors.borderHair)) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -248,8 +249,10 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
                     if (group.sessions.isEmpty()) item(key = "empty:${group.id}") {
                         Text("还没有会话", Modifier.padding(start = 44.dp, bottom = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
                     }
-                    items(group.sessions, key = { "session:${it.id}" }) { row ->
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (row.id == state.sessionId) colors.navActive else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
+                    items(nativeSessionTree(group.sessions, collapsedAgents.toSet()), key = { "session:${it.session.id}" }) { tree ->
+                        val row = tree.session
+                        Row(Modifier.fillMaxWidth().padding(start = (tree.depth.coerceAtMost(5) * 12).dp).clip(RoundedCornerShape(8.dp)).background(if (row.id == state.sessionId) colors.navActive else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
+                            if (tree.hasChildren) NativeIconButton(if (row.id in collapsedAgents) NativeGlyph.Plus else NativeGlyph.Down, "${if (row.id in collapsedAgents) "展开" else "收起"}子会话", { collapsedAgents = if (row.id in collapsedAgents) collapsedAgents - row.id else collapsedAgents + row.id })
                             val awaitingApproval = state.approval?.let { it.sessionId.ifBlank { state.sessionId } == row.id } == true
                             val isRunning = if (row.id == state.sessionId) state.running else row.running
                             val rowStatus = when { awaitingApproval -> "等待审批"; isRunning -> "正在进行"; else -> "空闲" }
@@ -548,6 +551,7 @@ private fun NativeMessage(row: NativeRow) {
     val preferences = LocalMobilePreferences.current
     val scale = preferences?.messageScale ?: 1f
     val user = row.role == "user"
+    var lightboxIndex by remember(row.id) { mutableIntStateOf(-1) }
     val background = when { user -> colors.bubble; row.role == "error" -> colors.warnTertiary; else -> Color.Transparent }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
         if (row.role !in setOf("user", "assistant")) Text(when (row.role) { "tool" -> "工具"; "error" -> "运行失败"; else -> "过程" }, Modifier.padding(start = 8.dp, bottom = 4.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
@@ -555,7 +559,7 @@ private fun NativeMessage(row: NativeRow) {
             Column(Modifier.padding(horizontal = if (user) 12.dp else 0.dp, vertical = if (user) 10.dp else 4.dp)) {
                 if (row.role == "assistant") NativeMarkdown(row.text)
                 else SelectionContainer { Text(row.text.ifBlank { if (row.running) "正在思考…" else " " }, color = colors.labelPrimary, fontSize = (14 * scale).sp, lineHeight = (22 * scale).sp) }
-                row.images.forEach { NativeImagePreview(it, Modifier.fillMaxWidth().heightIn(max = 280.dp)) }
+                row.images.forEachIndexed { index, image -> NativeImagePreview(image, Modifier.fillMaxWidth().heightIn(max = 280.dp).clickable(enabled = image.data.isNotBlank(), role = Role.Button, onClickLabel = "展开图片") { lightboxIndex = index }) }
                 if (row.detail.isNotBlank()) {
                     var expanded by remember(row.id, preferences?.expandToolDetails) { mutableStateOf(row.role == "tool" && preferences?.expandToolDetails == true) }
                     Text(if (expanded) "收起详情" else "查看详情", Modifier.clickable { expanded = !expanded }.padding(vertical = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
@@ -564,6 +568,7 @@ private fun NativeMessage(row: NativeRow) {
             }
         }
     }
+    if (lightboxIndex >= 0) NativeImageLightbox(row.images, lightboxIndex, { lightboxIndex = -1 })
 }
 
 @Composable

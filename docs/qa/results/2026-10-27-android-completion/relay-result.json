@@ -1,0 +1,1 @@
+{"transport":"real Kotlin RelayClient over public TLS encrypted relay","cases":[{"case":"complete-history","pageSizes":[50,100,150,200,250,260],"messages":260,"hasOlderAtEnd":false,"refreshDuplicates":false},{"case":"actual-dropped-ack","manualSubmissions":2,"durableMessages":1,"draftClearedAfterConfirmedRetry":true}]}

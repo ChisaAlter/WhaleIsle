@@ -3,8 +3,10 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import assert from 'node:assert/strict'
+import { readAndroidVersion } from './android-version.mjs'
 
-const apk = resolve(process.argv[2] || 'dist/android/release/Whale-Isle-0.3.10-android.apk')
+const { apkName } = await readAndroidVersion()
+const apk = resolve(process.argv[2] || join('dist/android/release', apkName))
 const directory = resolve('dist/android/smoke')
 const applicationId = 'ai.deepseek.harness.mobile'
 const adb = (...args) => execFileSync('adb', args, { encoding: 'utf8', timeout: 60000 }).trim()
@@ -49,6 +51,10 @@ try {
   xml = await uiUntil(value => value.includes('收起粘贴输入') && value.includes('粘贴含 #offer='), 'paste field expanded')
   await capture('paste-expanded', xml)
   steps.push('paste-entry-expanded')
+  // Empty paste keeps Connect disabled. Enter invalid nonempty text so this
+  // exercises the real parser rather than tapping a disabled control.
+  adb('shell', 'input', 'text', 'not-a-pairing-link')
+  xml = await uiUntil(value => value.includes('text="not-a-pairing-link"'), 'invalid pairing text entered')
   // The focused field opens the IME; Android Back must first dismiss it.
   adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
   xml = await uiUntil(value => value.includes('收起粘贴输入'), 'paste field retained after keyboard back')

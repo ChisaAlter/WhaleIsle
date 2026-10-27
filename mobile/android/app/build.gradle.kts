@@ -11,8 +11,8 @@ android {
         applicationId = "ai.deepseek.harness.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.10"
+        versionCode = 5
+        versionName = "0.3.11"
         testInstrumentationRunner = providers.gradleProperty("dshTestRunner")
             .orElse("ai.deepseek.harness.mobile.NativeUpgradeInstrumentation").get()
     }
