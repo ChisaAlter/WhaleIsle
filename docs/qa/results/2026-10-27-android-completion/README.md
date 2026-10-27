@@ -16,7 +16,7 @@ Android 旧 `session.prompt` 不传业务 `requestId`；桌面 tunnel 每次补�
 
 ## 插件管理 RPC 等待
 
-只将 `pluginManager.installBundle` / `pluginManager.removeBundle` 的 host RPC 等待改为12分钟，匹配实际管理操作时间；其他host方法仍30秒，Git仍120秒。操作归属、显式取消和不确定结果回读由原生管理面实现；加长等待不自动重放请求。
+只将 `pluginManager.installBundle` / `pluginManager.removeBundle` / `pluginManager.waitForInstall` 的 host RPC 等待改为12分钟，匹配实际管理操作时间；其他host方法仍30秒，Git仍120秒。操作归属、显式取消和不确定结果回读由原生管理面实现；加长等待不自动重放请求。
 
 ## 环境与后续记录
 

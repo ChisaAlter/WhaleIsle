@@ -168,7 +168,7 @@ open class RelayClient(
     }
     open suspend fun host(method: String, payload: JsonObject = obj()): JsonElement =
         rpc("dshd.host.rpc.request", obj("method" to method, "payload" to payload),
-            if (method == "pluginManager.installBundle" || method == "pluginManager.removeBundle") 720_000 else 30_000)
+            if (method == "pluginManager.installBundle" || method == "pluginManager.removeBundle" || method == "pluginManager.waitForInstall") 720_000 else 30_000)
     open suspend fun git(action: String, cwd: String, payload: JsonObject = obj()): JsonElement =
         rpc("dshd.git.rpc.request", obj("action" to action, "cwd" to cwd, "payload" to payload), 120_000)
     open fun subscribe() = sendSession(obj("type" to "dshd.host.mux.subscribe", "requestId" to UUID.randomUUID().toString()))

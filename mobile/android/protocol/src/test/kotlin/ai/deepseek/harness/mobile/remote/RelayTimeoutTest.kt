@@ -31,16 +31,18 @@ class RelayTimeoutTest {
             val normal = async { runCatching { client.host("session.list") } }
             val install = async { runCatching { client.host("pluginManager.installBundle") } }
             val remove = async { runCatching { client.host("pluginManager.removeBundle") } }
+            val recovery = async { runCatching { client.host("pluginManager.waitForInstall") } }
             runCurrent(); advanceTimeBy(29_999); runCurrent()
-            assertTrue(normal.isActive); assertTrue(install.isActive); assertTrue(remove.isActive)
+            assertTrue(normal.isActive); assertTrue(install.isActive); assertTrue(remove.isActive); assertTrue(recovery.isActive)
             advanceTimeBy(1); runCurrent()
             assertTrue(normal.await().exceptionOrNull() is TimeoutCancellationException)
-            assertTrue(install.isActive); assertTrue(remove.isActive)
+            assertTrue(install.isActive); assertTrue(remove.isActive); assertTrue(recovery.isActive)
             advanceTimeBy(689_999); runCurrent()
-            assertTrue(install.isActive); assertTrue(remove.isActive)
+            assertTrue(install.isActive); assertTrue(remove.isActive); assertTrue(recovery.isActive)
             advanceTimeBy(1); runCurrent()
             assertTrue(install.await().exceptionOrNull() is TimeoutCancellationException)
             assertTrue(remove.await().exceptionOrNull() is TimeoutCancellationException)
+            assertTrue(recovery.await().exceptionOrNull() is TimeoutCancellationException)
         } finally { client.close() }
     }
 }
