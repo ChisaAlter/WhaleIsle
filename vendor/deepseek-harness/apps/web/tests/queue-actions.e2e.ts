@@ -386,7 +386,11 @@ describe('web e2e: queue row actions', () => {
           while (layoutParent !== null && getComputedStyle(layoutParent).display === 'contents') {
             layoutParent = layoutParent.parentElement
           }
+          const surface = panel?.querySelector<HTMLElement>('[data-dsh-motion="fade"]')
+          const surfaceStyle = surface === null || surface === undefined ? null : getComputedStyle(surface)
           return {
+            surfaceTransition: surfaceStyle?.transitionProperty ?? '',
+            surfaceDuration: surfaceStyle?.transitionDuration ?? '',
             top: box.top, bottom: box.bottom, left: box.left, width: box.width,
             seatTop: seatBox.top, seatHeight: seatBox.height,
             panelHeight: panel?.getBoundingClientRect().height ?? 0,
@@ -454,6 +458,10 @@ describe('web e2e: queue row actions', () => {
         const frames = await probe.evaluate(capture => capture.finish())
         const first = frames[0]!
         const last = frames.at(-1)!
+        const visible = frames.find(frame => frame.panelHeight > 1)!
+        expect(visible.surfaceTransition.split(',').map(property => property.trim()), `${label}: keeps the surface movement in the cascade`)
+          .toEqual(['opacity', 'transform'])
+        expect(visible.surfaceDuration.split(',').every(duration => Number.parseFloat(duration) > 0.1), `${label}: fades for the full height transition`).toBe(true)
         expect(frames.every(frame => frame.sameInput), `${label}: retains the active input DOM`).toBe(true)
         expect(Math.max(...frames.map(frame => Math.abs(frame.top - first.top))), `${label}: input card top`)
           .toBeLessThanOrEqual(1)
@@ -465,7 +473,8 @@ describe('web e2e: queue row actions', () => {
         expect(frames.some(frame => frame.panelHeight > low + 1 && frame.panelHeight < high - 1),
           `${label}: includes an intermediate panel height`).toBe(true)
         if (first.panelHeight === 0 || last.panelHeight === 0) {
-          const gap = first.panelHeight === 0 ? last.panelGap : -first.panelGap
+          const stackGap = first.panelHeight === 0 ? last.panelGap : -first.panelGap
+          const gap = selector === '[data-queue-dock]' ? (first.panelHeight === 0 ? -3 : 3) : stackGap
           expect(Math.abs(last.seatHeight - first.seatHeight - (last.panelHeight - first.panelHeight + gap)),
             `${label}: reserves exactly the panel and one stack gap`).toBeLessThanOrEqual(1)
         }
@@ -502,12 +511,15 @@ describe('web e2e: queue row actions', () => {
     expect(Math.abs(clearedTodo.last.seatHeight - initialTodo.first.seatHeight)).toBeLessThanOrEqual(1)
     await sampleContextMotion('Todo added again', todoSelector, addTodos)
 
-    for (const text of ['Layout queue first', 'Layout queue second']) {
-      // A just-submitted composer is read-only for the prompt round-trip.
+    await sampleContextMotion('Queue added', '[data-queue-dock]', async () => {
       await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
-      await input.fill(text)
+      await input.fill('Layout queue first')
       await input.press('Enter')
-    }
+      await page.locator('[data-queue-dock]').waitFor({ timeout: 10_000 })
+    })
+    await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
+    await input.fill('Layout queue second')
+    await input.press('Enter')
     const queueHeader = page.getByRole('button', { name: '2 queued messages' })
     await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })
       .toBe('false')
@@ -524,7 +536,7 @@ describe('web e2e: queue row actions', () => {
       // Sample one layout: the responsive grid can move between separate browser round trips.
       await vi.waitFor(async () => {
         const [queuePanelBox, todoBox, goalBox] = await page.evaluate(() => [
-          document.querySelector('[data-queue-dock] > div'),
+          document.querySelector('[data-queue-dock] ul')?.parentElement,
           document.querySelector('[data-testid="todo-panel"]'),
           // The action row belongs to the visible card, inside its height clip.
           document.querySelector('[data-goal-bar] button[aria-label="Clear goal"]')?.parentElement?.parentElement,
@@ -562,8 +574,10 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => removeButtons.count(), { timeout: 10_000 }).toBe(2)
     await removeButtons.first().click()
     await expect.poll(() => removeButtons.count(), { timeout: 10_000 }).toBe(1)
-    await removeButtons.first().click()
-    await expect.poll(() => page.locator('[data-queue-dock]').count(), { timeout: 10_000 }).toBe(0)
+    await sampleContextMotion('Queue cleared', '[data-queue-dock]', async () => {
+      await removeButtons.first().click()
+      await page.locator('[data-queue-dock]').waitFor({ state: 'detached', timeout: 10_000 })
+    })
     const finalTodo = await sampleContextMotion('Final Todo cleared', todoSelector, clearTodos)
     expect(Math.abs(finalTodo.last.seatTop - initialTodo.first.seatTop)).toBeLessThanOrEqual(1)
     expect(Math.abs(finalTodo.last.seatHeight - initialTodo.first.seatHeight)).toBeLessThanOrEqual(1)
@@ -577,6 +591,15 @@ describe('web e2e: queue row actions', () => {
     expect(await page.locator('[data-queue-dock]').count()).toBe(0)
     expect(await activeInput.evaluate(element => element.isConnected
       && document.querySelector('[data-phase="active"] [data-composer-input]') === element)).toBe(true)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const reducedTop = await page.locator('[data-composer-card]').evaluate(card => card.getBoundingClientRect().top)
+    await addTodos()
+    await expect.poll(() => todoPanel.getAttribute('data-state')).toBe('open')
+    expect(await todoPanel.locator('[data-dsh-motion="fade"]').first().evaluate(surface =>
+      getComputedStyle(surface).transitionDuration.split(',').every(duration => Number.parseFloat(duration) === 0))).toBe(true)
+    await toggleTodos(true)
+    await clearTodos()
+    expect(await page.locator('[data-composer-card]').evaluate(card => card.getBoundingClientRect().top)).toBe(reducedTop)
     await activeInput.dispose()
     const settled = scaffold.whenTurnSettled()
     await page.getByRole('button', { name: 'Stop generating' }).click()
