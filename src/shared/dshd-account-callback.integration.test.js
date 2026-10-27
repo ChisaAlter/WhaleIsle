@@ -15,9 +15,17 @@ const { forwardHostRpc } = require('./dshd-host-tunnel.js');
 
 // A prepared checkout may be supplied for a local probe; CI uses its own built vendor artifacts.
 const harnessRoot = path.resolve(process.env.DSH_ACCOUNT_INTEGRATION_ROOT || path.join(__dirname, '../../vendor/deepseek-harness'));
-const accountArtifact = path.join(harnessRoot, 'packages/credentials/deepseek-account-platform/lib/index.js');
-const built = existsSync(accountArtifact);
-const options = { skip: built ? false : 'Requires prepared Harness account artifacts', timeout: 30_000 };
+const VENDOR_RUNNABLE = [
+  'packages/credentials/deepseek-account-platform/lib/index.js',
+  'packages/credentials/credentials-local/lib/index.js',
+  'packages/credentials/authorization/lib/index.js',
+  'packages/credentials/credentials/lib/index.js',
+  'packages/host/webserver/lib/index.js',
+  'packages/credentials/deepseek-account-platform/node_modules',
+].every(relative => existsSync(path.join(harnessRoot, relative)));
+const VENDOR_HINT = 'Harness account dist/dependencies missing (prepare vendor artifacts before this integration check)';
+// node --test isolates files in child processes; keep this file serial while its fixture owns the trusted dispatcher.
+const options = { skip: VENDOR_RUNNABLE ? false : VENDOR_HINT, timeout: 30_000, concurrency: false };
 
 async function fixture(t, attemptTimeoutMs = 5_000) {
   const load = (relative) => import(pathToFileURL(path.join(harnessRoot, relative)).href);
