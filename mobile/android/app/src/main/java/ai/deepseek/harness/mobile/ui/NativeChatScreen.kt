@@ -597,8 +597,9 @@ private fun NativeMessage(row: NativeRow) {
 @Composable
 internal fun NativeImagePreview(image: NativeImage, modifier: Modifier) {
     // Base64 decoding and bitmap sampling stay off the main thread so long timelines scroll smoothly.
-    val decoded by produceState<Result<androidx.compose.ui.graphics.ImageBitmap?>?>(null, image.data) {
-        value = withContext(Dispatchers.Default) {
+    var decoded by remember(image.data) { mutableStateOf<Result<androidx.compose.ui.graphics.ImageBitmap?>?>(null) }
+    LaunchedEffect(image.data) {
+        decoded = withContext(Dispatchers.Default) {
             runCatching {
                 val bytes = Base64.getDecoder().decode(image.data)
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
