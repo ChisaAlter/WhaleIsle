@@ -32,12 +32,14 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -50,9 +52,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Compose owns conversation state; opening an anchored menu never unmounts the chat. */
 @Composable
@@ -318,8 +322,12 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
     val preferences = LocalMobilePreferences.current
     val rows = state.rows.filter { it.role != "reasoning" || preferences?.showReasoning != false }
     val list = rememberSaveable(state.sessionId, saver = LazyListState.Saver) { LazyListState() }
+    val scope = rememberCoroutineScope()
     var initialShown by rememberSaveable(state.sessionId) { mutableStateOf(false) }
     var followTail by rememberSaveable(state.sessionId) { mutableStateOf(true) }
+    // Reading older messages stops tail-follow; the jump button brings the newest back.
+    val showJump by remember(list) { derivedStateOf { !followTail && list.canScrollForward } }
+    val bottomIndex = rows.size + (if (state.hasOlder) 1 else 0) + (if (state.queue.isNotEmpty()) 1 else 0)
     var lastSize by remember(state.sessionId) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     var viewportSize by remember(state.sessionId) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     LaunchedEffect(list) {
@@ -335,11 +343,11 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
         rows.lastOrNull()?.text, rows.lastOrNull()?.detail, state.queue, lastSize, viewportSize, followTail) {
         if (!state.olderLoading && !state.loading && (rows.isNotEmpty() || state.queue.isNotEmpty()) && (!initialShown || followTail)) {
             // A tiny final item is a real end anchor, even when the last message is taller than the viewport.
-            val bottom = rows.size + (if (state.hasOlder) 1 else 0) + (if (state.queue.isNotEmpty()) 1 else 0)
-            list.scrollToItem(bottom)
+            list.scrollToItem(bottomIndex)
             initialShown = true
         }
     }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(state = list, modifier = Modifier.fillMaxSize().onSizeChanged { viewportSize = it },
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (state.hasOlder) item(key = "older") {
@@ -365,6 +373,16 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
             }
         }
         if (rows.isNotEmpty() || state.queue.isNotEmpty()) item(key = "tail") { Spacer(Modifier.height(1.dp)) }
+    }
+    if (showJump) Surface(Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 8.dp), shape = CircleShape,
+        color = colors.bgLayer2, border = BorderStroke(1.dp, colors.borderL2), shadowElevation = 4.dp) {
+        NativeIconButton(NativeGlyph.Latest, "回到最新消息", {
+            scope.launch {
+                list.animateScrollToItem(bottomIndex)
+                followTail = true
+            }
+        })
+    }
     }
 }
 
@@ -567,18 +585,33 @@ private fun NativeMessage(row: NativeRow) {
                 }
             }
         }
+        // A rendered reply spans several text views; copying the whole answer takes one tap.
+        if (row.role == "assistant" && !row.running && row.text.isNotBlank()) {
+            val clipboard = LocalClipboardManager.current
+            NativeIconButton(NativeGlyph.Copy, "复制回复", { clipboard.setText(AnnotatedString(row.text)) })
+        }
     }
     if (lightboxIndex >= 0) NativeImageLightbox(row.images, lightboxIndex, { lightboxIndex = -1 })
 }
 
 @Composable
 internal fun NativeImagePreview(image: NativeImage, modifier: Modifier) {
-    val bitmap = remember(image.data) { runCatching {
-        val bytes = Base64.getDecoder().decode(image.data)
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        val options = BitmapFactory.Options().apply { inSampleSize = (maxOf(bounds.outWidth, bounds.outHeight) / 1024).coerceAtLeast(1) }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
-    }.getOrNull() }
-    if (bitmap != null) Image(bitmap, "图片附件", modifier) else Text(image.error.ifBlank { "图片无法预览" }, color = dsh().labelSecondary)
+    // Base64 decoding and bitmap sampling stay off the main thread so long timelines scroll smoothly.
+    val decoded by produceState<Result<androidx.compose.ui.graphics.ImageBitmap?>?>(null, image.data) {
+        value = withContext(Dispatchers.Default) {
+            runCatching {
+                val bytes = Base64.getDecoder().decode(image.data)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val options = BitmapFactory.Options().apply { inSampleSize = (maxOf(bounds.outWidth, bounds.outHeight) / 1024).coerceAtLeast(1) }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+            }
+        }
+    }
+    val bitmap = decoded?.getOrNull()
+    when {
+        bitmap != null -> Image(bitmap, "图片附件", modifier)
+        decoded == null && image.data.isNotEmpty() -> Box(modifier.heightIn(min = 48.dp).background(dsh().bgModule))
+        else -> Text(image.error.ifBlank { if (image.data.isEmpty() && image.attachmentId.isNotBlank()) "正在读取图片…" else "图片无法预览" }, color = dsh().labelSecondary)
+    }
 }
