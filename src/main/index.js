@@ -815,7 +815,11 @@ const taskControlPeer = createTaskControlPeer({
     // inspect/acquire/drain sequencing but skips the confirm — prompting
     // again would double-prompt one click (and with every desktop window
     // hidden it fell back to a native box).
-    const result = await taskProtection.coordinate('stop', { terminal: true, preConfirmed: true });
+    // Like quit, an explicit stop proceeds after a short drain even with work
+    // still running.
+    const result = await taskProtection.coordinate('stop', {
+      terminal: true, preConfirmed: true, force: true, drainTimeoutMs: 10_000,
+    });
     if (!result.proceeded) {
       return { ok: false, code: result.code || 'cancelled' };
     }
@@ -825,7 +829,9 @@ const taskControlPeer = createTaskControlPeer({
   onPeerInstall: async () => {
     // Same explicit-consent rule as onPeerStop: the launcher's install/更新
     // click already authorized replacing the running desktop.
-    const result = await taskProtection.coordinate('install', { terminal: true, preConfirmed: true });
+    const result = await taskProtection.coordinate('install', {
+      terminal: true, preConfirmed: true, force: true, drainTimeoutMs: 10_000,
+    });
     if (!result.proceeded) {
       return { ok: false, code: result.code || 'cancelled' };
     }

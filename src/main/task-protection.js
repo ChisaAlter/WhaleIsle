@@ -175,14 +175,14 @@ function createTaskProtection(options = {}) {
     }
   }
 
-  async function acquire(operation) {
+  async function acquire(operation, drainTimeoutMs) {
+    const drainMs = drainTimeoutMs || options.drainTimeoutMs || DEFAULT_DRAIN_TIMEOUT_MS;
     const result = await controlOp('acquire', {
       owner: `desktop-${operation}`,
       kind: operation,
       ttlMs: options.acquireTtlMs || DEFAULT_ACQUIRE_TTL_MS,
-      drainTimeoutMs: options.drainTimeoutMs || DEFAULT_DRAIN_TIMEOUT_MS,
-    }, Math.max(options.inspectTimeoutMs || DEFAULT_INSPECT_TIMEOUT_MS,
-      (options.drainTimeoutMs || DEFAULT_DRAIN_TIMEOUT_MS) + 10000));
+      drainTimeoutMs: drainMs,
+    }, Math.max(options.inspectTimeoutMs || DEFAULT_INSPECT_TIMEOUT_MS, drainMs + 10000));
     if (result.ok === true) {
       currentLock = { lockId: result.lockId, owner: `desktop-${operation}` };
     }
@@ -200,6 +200,9 @@ function createTaskProtection(options = {}) {
    *   so a held lock would freeze admissions until its TTL.
    *   `preConfirmed: true` skips both user-confirm gates — callers carrying
    *   explicit consent (the launcher's stop button) must not prompt again.
+   *   `force: true` commits even when the Host admission fails (drain
+   *   timeout, unreachable Host): an explicit update or close is never held
+   *   back by unfinished work. `drainTimeoutMs` shortens the drain wait.
    * @returns {Promise<{ proceeded: boolean, code?: string, inspection?: object }>}
    */
   async function coordinate(operation, opts = {}) {
@@ -220,19 +223,22 @@ function createTaskProtection(options = {}) {
           return { proceeded: false, code: 'cancelled', inspection: first };
         }
       }
+      let forced = null;
       if (hostRunning() && opts.hostLock !== false) {
-        const acquired = await acquire(operation);
+        const acquired = await acquire(operation, opts.drainTimeoutMs);
         if (acquired.ok !== true) {
-          return {
-            proceeded: false,
+          const failure = {
             code: acquired.code || 'acquire-failed',
             detail: acquired.detail,
             pendingCount: acquired.pendingCount,
             pendingLabels: acquired.pendingLabels,
           };
+          if (opts.force !== true) return { proceeded: false, ...failure };
+          forced = failure;
+          log(`task-protection ${operation}: proceeding without Host admission ${JSON.stringify(failure)}`);
         }
-        const second = mergedInspection(await inspect());
-        if (!inspectionClean(second) && inspectionClean(first) && opts.preConfirmed !== true) {
+        const second = forced ? first : mergedInspection(await inspect());
+        if (!forced && !inspectionClean(second) && inspectionClean(first) && opts.preConfirmed !== true) {
           // Work arrived between the first look and the lock — re-confirm
           // against the fresh picture rather than riding an obsolete prompt.
           if (!(await confirmWithUser(operation, second))) {
@@ -261,7 +267,7 @@ function createTaskProtection(options = {}) {
         // admissions are not frozen for the TTL.
         await release();
       }
-      return { proceeded: true };
+      return forced ? { proceeded: true, forced } : { proceeded: true };
     } finally {
       coordinating = null;
     }

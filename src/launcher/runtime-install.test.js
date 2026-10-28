@@ -48,6 +48,45 @@ test('an unpicked route defaults to CNB on mainland-China systems only', () => {
   assert.equal(runtimeInstall.configuredRoute({ loadConfig: () => ({ downloadRoute: '' }) }), 'github');
 });
 
+function lingeringDesktop(t, { exitsOn }) {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-stop-desktop-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  let running = true;
+  const kills = [];
+  const execFileSync = (bin, args) => {
+    if (bin === 'tasklist') return running ? '"Whale Isle.exe","4242"' : 'INFO: No tasks';
+    if (bin === 'taskkill') {
+      // Every known product image is closed; follow the current one.
+      if (args.at(-1) === 'Whale Isle.exe') kills.push(args.join(' '));
+      if (args.includes(exitsOn)) running = false;
+      return '';
+    }
+    throw new Error(`unexpected ${bin}`);
+  };
+  const deps = { platform: 'win32', target: { productName: 'Whale Isle' }, stateDir, execFileSync,
+    stopGraceMs: 20, forceWaitMs: 20, exitWaitMs: 20 };
+  return { deps, kills };
+}
+
+test('stopping a desktop that ignores the graceful close ends its process tree', async (t) => {
+  const { deps, kills } = lingeringDesktop(t, { exitsOn: '/F' });
+  assert.deepEqual(await runtimeInstall.stopExternalDesktop(deps), { ok: true, stopped: true });
+  assert.deepEqual(kills, ['/IM Whale Isle.exe', '/F /T /IM Whale Isle.exe']);
+});
+
+test('installing over a desktop that will not exit is not refused', async (t) => {
+  const { deps, kills } = lingeringDesktop(t, { exitsOn: '/F' });
+  const result = await runtimeInstall.ensureExternalDesktopExited(deps);
+  assert.equal(result.ok, true);
+  assert.equal(kills.at(-1), '/F /T /IM Whale Isle.exe');
+});
+
+test('a desktop that closes gracefully is never force-killed', async (t) => {
+  const { deps, kills } = lingeringDesktop(t, { exitsOn: '/IM' });
+  assert.deepEqual(await runtimeInstall.stopExternalDesktop(deps), { ok: true, stopped: true });
+  assert.deepEqual(kills, ['/IM Whale Isle.exe']);
+});
+
 test('listRoutes exposes GitHub and the enabled CNB mirror', () => {
   const routes = releaseSource.listRoutes();
   const github = routes.find((row) => row.id === 'github');

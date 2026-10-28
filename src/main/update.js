@@ -982,16 +982,18 @@ async function commitPreparedInstaller(info, dest, onProgress, options = {}, ext
     // asking again would double-prompt one click.
     // The launch belongs inside commit so a rejected spawn releases Host
     // admission and never latches the coordinator into a shutdown state.
-    const result = await protection.coordinate('update', { terminal: quitAfterInstall, preConfirmed: true, commit: launch });
+    // Unfinished work gets a short drain, then the update proceeds anyway:
+    // nothing running may hold back an update the user confirmed.
+    const result = await protection.coordinate('update', {
+      terminal: quitAfterInstall, preConfirmed: true, force: true, drainTimeoutMs: 10_000, commit: launch,
+    });
     if (!result.proceeded) {
       return {
         ...info,
         launched: false,
         cancelled: true,
         code: result.code || 'cancelled',
-        ...(result.code === 'dshd/drain-timeout' ? {
-          message: `仍有 ${result.pendingCount || 1} 个请求未在 30 秒内结束，已取消安装，请稍后重试。`,
-        } : {}),
+        ...(result.code === 'busy' ? { message: '另一个退出或更新操作正在进行，请稍候。' } : {}),
       };
     }
   } else await launch();
