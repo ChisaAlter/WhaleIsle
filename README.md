@@ -11,7 +11,7 @@
 
 <p align="center">
   中文 · <a href="README.en.md">English</a> ·
-  <a href="https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.10">更新说明</a> ·
+  <a href="https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.11">更新说明</a> ·
   <a href="https://github.com/ChisaAlter/WhaleIsle/issues">反馈</a>
 </p>
 
@@ -29,15 +29,15 @@
 
 社区独立维护，非 DeepSeek 官方产品。基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
 
-## 下载 v0.3.10
+## 下载 v0.3.11
 
 | 平台 | GitHub | 国内镜像 |
 | --- | --- | --- |
-| Windows 10+ · x64 | [安装包](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.10/Whale-Isle-Setup-0.3.10.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.10/Whale-Isle-Setup-0.3.10.exe) |
-| macOS 14+ · Apple Silicon | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) |
-| Android 8.0+ | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) |
+| Windows 10+ · x64 | [安装包](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.11/Whale-Isle-Setup-0.3.11.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.11/Whale-Isle-Setup-0.3.11.exe) |
+| macOS 14+ · Apple Silicon（0.3.10） | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) |
+| Android 8.0+（0.3.10） | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) |
 
-Windows 包未签名；Mac 包未签名、未公证，不含 Windows 专用 Office 运行时；Android 为正式签名 APK。各发布页提供 SHA512 校验清单。
+Windows 包未签名；Mac 包未签名、未公证，不含 Windows 专用 Office 运行时，0.3.11 暂未提供 Mac 包；Android 为正式签名 APK，独立发布。各发布页提供 SHA512 校验清单。
 
 1. 安装桌面端，在「设置 → 模型」配置 API 服务。
 2. 选择工作目录，或新建无工作区会话，开始对话。
