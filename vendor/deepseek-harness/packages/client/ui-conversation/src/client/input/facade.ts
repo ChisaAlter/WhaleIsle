@@ -649,6 +649,16 @@ export class SessionInputShell implements SessionInput {
   // ---- wiring-layer extras (not on the frozen SessionInput face) ----
 
   /**
+   * Attachments of the draft the user left on screen: the stashed draft's
+   * while a composer edit is live, otherwise the current ones. Unsettled
+   * sends are not part of it.
+   * @returns ordered attachment ids that belong with the persisted draft text.
+   */
+  draftAttachmentIds(): readonly DraftAttachmentId[] {
+    return this.edit?.stash.attachmentIds ?? this.attachmentIds
+  }
+
+  /**
    * Teardown the shell and return every browser-owned attachment still retained by
    * the draft or an unsettled default send.
    * @returns attachment ids the scope disposer must release.

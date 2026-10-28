@@ -49,11 +49,24 @@ interface ConversationAttachmentFace {
   ): Promise<SubmitOutcome>
   serializeDraftAttachments(attachmentIds: readonly DraftAttachmentId[]): Promise<DraftAttachmentSerializationResult>
   releaseDraftAttachment(id: DraftAttachmentId): void
+  resolveDraftAttachments(ids: readonly DraftAttachmentId[]): readonly { readonly id: DraftAttachmentId }[]
 }
+
+/**
+ * Sessions whose left-behind draft attachments stay parked; the oldest beyond
+ * this are released (their persisted text alone survives).
+ */
+const MAX_PARKED_SESSIONS = 20
 
 /** Session-addressed input facade registry (SessionInputResolver face + composer-layer extras). */
 export class InputHub implements SessionInputResolver {
   private readonly shells = new WeakMap<SessionBinding, SessionInputShell>()
+  /**
+   * Draft attachments of composers that were torn down with their Session
+   * scope (the user left the page). The draft text persists in storage; its
+   * images and files wait here for the same Session's next composer.
+   */
+  private readonly parked = new Map<SessionId, readonly DraftAttachmentId[]>()
 
   /**
    * @param ctx - client root context (services resolved lazily per call — boot order stays free).
@@ -155,10 +168,16 @@ export class InputHub implements SessionInputResolver {
       ]
       return () => {
         for (const off of offs) off()
+        const kept = shell.draftAttachmentIds()
         const drafts = shell.dispose()
         this.shells.delete(binding)
         const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
-        for (const attachmentId of drafts) conversation?.releaseDraftAttachment(attachmentId)
+        const keep = new Set(kept)
+        // Only unsettled sends are released; the draft's own attachments park.
+        for (const attachmentId of drafts) {
+          if (!keep.has(attachmentId)) conversation?.releaseDraftAttachment(attachmentId)
+        }
+        this.park(binding.sessionId, kept)
       }
     }, 'conversation.input: session shell')
     actx.inject(['inputTriggers'], (scope) => {
@@ -168,7 +187,30 @@ export class InputHub implements SessionInputResolver {
       }, 'conversation.input: reference catalogs')
     })
     shell.setDraft(readConversationDraft(binding.sessionId))
+    this.unpark(binding.sessionId, shell)
     return shell
+  }
+
+  private park(id: SessionId, ids: readonly DraftAttachmentId[]): void {
+    this.parked.delete(id)
+    if (ids.length === 0) return
+    this.parked.set(id, [...ids])
+    const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
+    while (this.parked.size > MAX_PARKED_SESSIONS) {
+      const [oldest, attachments] = this.parked.entries().next().value as [SessionId, readonly DraftAttachmentId[]]
+      this.parked.delete(oldest)
+      for (const attachmentId of attachments) conversation?.releaseDraftAttachment(attachmentId)
+    }
+  }
+
+  /** Return parked draft attachments that are still live to a new composer of the same Session. */
+  private unpark(id: SessionId, shell: SessionInputShell): void {
+    const ids = this.parked.get(id)
+    if (ids === undefined) return
+    this.parked.delete(id)
+    const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
+    const live = conversation?.resolveDraftAttachments(ids).map(attachment => attachment.id) ?? []
+    if (live.length > 0) shell.addAttachments(live)
   }
 
   /**

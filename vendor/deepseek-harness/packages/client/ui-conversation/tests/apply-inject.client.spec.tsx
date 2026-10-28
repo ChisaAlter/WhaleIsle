@@ -421,6 +421,29 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('keeps draft images when the user leaves the Session and comes back', async () => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    const composer = b.composerApi(ROOT)
+    expect(composer.addFiles?.([new File([Uint8Array.of(1, 2, 3)], 'shot.png', { type: 'image/png' })])).toBeNull()
+    const [image] = b.inputApi(ROOT).state.getSnapshot().attachmentIds
+    if (image === undefined) throw new Error('missing pasted image')
+    const controller = b.runtime.ctx.get('conversation') as unknown as {
+      releaseDraftAttachment(id: string): void
+    }
+    const release = vi.spyOn(controller, 'releaseDraftAttachment')
+    // Leaving the page releases the Session scope and tears its composer down.
+    b.rootReference.release()
+    await vi.waitFor(() => { expect(b.runtime.sessions.scope(ROOT)).toBeUndefined() })
+    expect(release).not.toHaveBeenCalled()
+    const back = b.runtime.sessions.retain(ROOT)
+    onTestFinished(() => { back.release() })
+    await back.ready
+    const state = b.inputApi(ROOT).state.getSnapshot()
+    expect(state.attachmentIds).toEqual([image])
+    expect(composer.resolveDraftAttachments?.(state.attachmentIds).map(draft => draft.kind)).toEqual(['image'])
+  })
+
   it('cites shell-named files and folders as @ references and refuses folders without the shell bridge', async () => {
     const browser = await bench()
     const folder = new File([], 'project')

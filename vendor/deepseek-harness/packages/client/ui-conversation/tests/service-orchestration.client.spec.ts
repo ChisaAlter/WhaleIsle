@@ -128,7 +128,7 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('releases draft previews when their session scope is disposed', async () => {
+  it('parks draft previews when their session scope is disposed and returns them to the next composer', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-1')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
@@ -138,10 +138,15 @@ describe('ConversationController', () => {
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
       b.root.input.for(b.runtime.sessions.scope('s1')!).addAttachments([attachment.id])
+      // Leaving the page disposes the scope; the draft's image stays with its Session.
       b.reference.release()
       await b.runtime.flush()
-      expect(b.root.resolveDraftAttachments([attachment.id])).toEqual([])
-      expect(revoked).toHaveBeenCalledWith('blob:draft-1')
+      expect(b.root.resolveDraftAttachments([attachment.id])).toEqual([attachment])
+      expect(revoked).not.toHaveBeenCalled()
+      const back = b.runtime.sessions.retain('s1' as never)
+      await back.ready
+      expect(b.root.input.for(b.runtime.sessions.scope('s1')!).state.getSnapshot().attachmentIds).toEqual([attachment.id])
+      back.release()
     } finally {
       created.mockRestore()
       revoked.mockRestore()
