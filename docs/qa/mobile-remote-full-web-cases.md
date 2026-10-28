@@ -597,17 +597,17 @@ Touching: `mobile-remote`。公约、视口阈值、非法证据沿用 [mobile-r
 
 ## 13. FRZ 冻结与 NEVER（P0 = 6）
 
-### FRZ-001 · Files 冻结条 · P0 · 空
-- **期望：** 设置→文件是冻结/只读下钻（卡文案或等价句）；**不是**转圈后的空列表、不是 ACP 报错当「没有文件」。桌面 Files 工作环可用 = 允许不一样（记录）。
+### FRZ-001 · Files 只读下钻 · P0 · 空
+- **期望（2026-10-28 起）：** 设置→文件按会话作用域列目录（`workspaceFiles.list`），文本分页预览、图片预览、插入 @路径；**不是**转圈后的空列表，读取失败显示原因与重试。无写盘入口。
 
-### FRZ-002 · Diff 冻结 · P0 · 空
-- **期望：** 无 Stage/Unstage/Discard；冻结条在。
+### FRZ-002 · Diff 只读 · P0 · 空
+- **期望：** 工作区→更改显示 `git-diff` 文件与行，可填对比引用；无 Stage/Unstage/Discard。非仓库/无效引用显示失败原因，不显示「没有更改」。
 
-### FRZ-003 · MCP 只读 · P0 · 空
-- **期望：** 只读清单或「电脑端管理」；无写入口。
+### FRZ-003 · MCP · P0 · 空
+- **期望：** 清单含健康状态与错误；可写行有启停/重连/删除，composition 行只读；测试显示工具数与耗时。无新增/编辑入口（电脑端与 Android 提供）。
 
-### FRZ-004 · 技能只读 · P0 · 空
-- **期望：** 同 FRZ-003。
+### FRZ-004 · 技能 / 插件 · P0 · 空
+- **期望：** 技能清单→详情（正文 Markdown、调用开关、可写时删除）；插件包与插件可启停，只读项显示原因。无安装入口。
 
 ### FRZ-005 · NEVER 抽检 · P0 · 主
 - **checklist（逐项勾）：** 无 `host.pickDirectory` / `host.openPath`；无 credentials / `llm.discoverModels` / MCP 写 / skillInventory 调用；无开放 `/api/*` 代理；无 `:8411` 当页面；无 offer v1 / `__remote__login`；daemon 环境无 `DSH_HOME`；无官方 `dsh web` 整页嵌手机。

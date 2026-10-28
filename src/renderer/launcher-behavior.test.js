@@ -41,6 +41,7 @@ test('installation feedback distinguishes unknown length, retry and waiting for 
   assert.match(text, /1\.0 MB/);
   assert.doesNotMatch(text, /%/);
   assert.match(installPhaseText({ phase: 'download', retrying: true, attempt: 2, maxAttempts: 3 }), /重试（2\/3）/);
+  assert.match(installPhaseText({ phase: 'download', retrying: true, attempt: 2, maxAttempts: 3, received: 10485760 }), /10\.0 MB 续传（2\/3）/);
   assert.match(installPhaseText({ phase: 'install-wait', elapsedMs: 7000 }), /安装向导.*7 秒/);
 });
 

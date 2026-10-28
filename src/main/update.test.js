@@ -484,6 +484,35 @@ test('download does not retry permanent HTTP failure', async (t) => {
   assert.equal(attempts, 1);
 });
 
+test('a disk write still in flight when the body errors keeps the transport error', async () => {
+  // Destroying the file stream makes pending writes report ERR_STREAM_DESTROYED;
+  // that must not replace why the download actually failed.
+  const previousGet = https.get;
+  https.get = (_target, _options, onResponse) => {
+    const request = new EventEmitter();
+    request.destroy = () => {};
+    const response = fakeDownloadResponse({ contentLength: 64 * 1024 * 1024 });
+    process.nextTick(() => {
+      onResponse(response);
+      response.write(Buffer.alloc(16 * 1024 * 1024));
+      setImmediate(() => response.emit('error', new Error('socket hang up')));
+    });
+    return request;
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-update-dl-inflight-'));
+  const dest = path.join(dir, 'setup.exe');
+  try {
+    await assert.rejects(
+      () => downloadFile('https://example.test/setup.exe', dest, null, { timeoutMs: 5_000 }),
+      /下载连接中断/,
+    );
+    assert.equal(fs.existsSync(dest), false, 'partial download must be removed');
+  } finally {
+    https.get = previousGet;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('downloadFile fails without crashing and removes the partial when the body errors mid-stream', async () => {
   const previousGet = https.get;
   let destroyed = false;

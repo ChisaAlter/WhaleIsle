@@ -16,7 +16,7 @@
 7. 新会话：已有工作区、无工作区文件夹、浏览本机（`host.listDirectory` / `createDirectory` / `workspace.create` / `session.create`）。禁止 `host.pickDirectory`。
 8. Composer：`session.models` / `session.selectModel`（含 reasoningEffort）；权限与 Plan / 斜杠走 Typert `commands/execute`；发送 `session.prompt`、停止 `session.cancel`；审批 `respond` → `POST /api/respond`。
 9. 顶栏 Git 对齐 `git-titlebar`：Init、分支搜索/切换/创建并检出、stacked Commit & push / Publish / View PR。执行走 `dshd.git.rpc` → `shell:git-*`。不转发 stage / pty / writeFile。
-10. 时间线：`session.history`（`beforeSeq`）+ mux 或 1.5s 轮询。daemon mux 不转发 `assistant/chunk`（避免堵审批帧）。断线横幅 + 草稿；重连后 `session.list` + 当前 `history`。Files / Diff / MCP / 技能显示冻结条，不装做成空列表。
+10. 时间线：`session.history`（`beforeSeq`）+ mux 或 1.5s 轮询。daemon mux 不转发 `assistant/chunk`（避免堵审批帧）。断线横幅 + 草稿；重连后 `session.list` + 当前 `history`。Files / Diff / MCP / 技能 / 插件接正式 Host 服务，失败显示原因，不装做成空列表。
 11. offer 无效、重连、会话目录、创建会话、Git 和桌面专属操作失败都必须显示在连接错误、banner 或 toast。
 12. 手机侧复用官方语义色（`--dsw-alias-*`），不嵌官方插件树，不用启动页 `--boot-*`。
 
@@ -50,7 +50,7 @@ sequenceDiagram
 ## 入口
 
 - `src/main/dshd-remote.js`、`src/main/dshd-daemon-hooks.mjs`、`src/main/dshd-git-dispatch.js`、`src/shared/dshd-host-tunnel.js`、`src/main/mobile-web-server.js`
-- `mobile/web/host/`（backend / catalog / history / models / mux / freeze）、`mobile/web/app.js`、`mobile/web/git/`
+- `mobile/web/host/`（backend / catalog / history / models / mux / projections / desktop）、`mobile/web/app.js`、`mobile/web/git/`
 - `mobile/web/chisacode/session.js`、`controller.js`、`directory.js`、`timeline.js`、`approvals.js`、`commands.js`、`mobile/web/conversation/markdown.js`
 - `tools/mobile-web-qa/`（fake-daemon 浏览器集成 harness）
 - `mobile/android/`、`mobile/README.md`

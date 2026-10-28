@@ -728,7 +728,7 @@ async function main() {
 
     await check('Git（产品仓，只读）：胶囊 + 创建并检出，不提交', async () => {
       await openDrawer(page);
-      await page.click('#open-workspace');
+      await page.click('#nav-workspace');
       await waitFor(
         page,
         () => Boolean(document.querySelector('#options .git-capsule'))
@@ -760,25 +760,21 @@ async function main() {
     });
     await shot('live-git-product');
 
-    await check('Files/Diff/MCP：冻结条不是空列表', async () => {
+    await check('Files/Diff/MCP：真实内容或明确失败，不是空列表', async () => {
       await openDrawer(page);
-      await page.click('#open-workspace');
+      await page.click('#nav-workspace');
       await waitFor(page, () => Boolean(document.querySelector('#options .ws-tab')), 'ws tabs', 10_000);
       await clickByText(page, '#options .ws-tab', '文件');
-      const files = await page.evaluate(() => document.querySelector('#options')?.textContent || '');
-      assert(files.includes('下一轮接 host/gitDiff'), `files freeze: ${files.slice(0, 240)}`);
-      assert(!files.includes('没有文件'), 'empty files list pretending to work');
+      await waitFor(page, () => Boolean(document.querySelector('#options .file-row, #options .ext-error, #options .ext-empty')), 'files settled', 15_000);
       await clickByText(page, '#options .ws-tab', '更改');
-      const diff = await page.evaluate(() => document.querySelector('#options')?.textContent || '');
-      assert(diff.includes('下一轮接 host/gitDiff') || diff.includes('请暂时用电脑端'), `diff freeze: ${diff.slice(0, 240)}`);
+      await waitFor(page, () => Boolean(document.querySelector('#options .diff-file, #options .ext-error, #options .ext-empty')), 'diff settled', 15_000);
       await page.click('#settings-back');
       await waitFor(page, () => (document.querySelector('#options')?.textContent || '').includes('MCP'), 'settings hub');
       await clickByText(page, '#options .link-row', 'MCP');
-      const mcp = await page.evaluate(() => document.querySelector('#options')?.textContent || '');
-      assert(mcp.includes('请暂时用电脑端') || mcp.includes('电脑端操作') || mcp.includes('下一轮'), `mcp freeze: ${mcp.slice(0, 240)}`);
+      await waitFor(page, () => Boolean(document.querySelector('#options .ext-row, #options .ext-error, #options .ext-empty')), 'mcp settled', 15_000);
       await page.click('#close-settings');
     });
-    await shot('live-freeze');
+    await shot('live-desktop-services');
 
     await check('新会话：已有工作区 + 无目录 + 浏览本机', async () => {
       await openDrawer(page);
@@ -852,7 +848,7 @@ async function main() {
 
     await check('Git：非仓库 Initialize Git', async () => {
       await openDrawer(page);
-      await page.click('#open-workspace');
+      await page.click('#nav-workspace');
       await waitFor(
         page,
         () => (document.querySelector('#options .cap-primary')?.textContent || '').includes('Initialize')
@@ -920,7 +916,7 @@ async function main() {
       await writeFile(path.join(created.folderPath, 'README.md'), 'dshd live webui qa\n', 'utf8');
       await closeOverlays(page);
       await openDrawer(page);
-      await page.click('#open-workspace');
+      await page.click('#nav-workspace');
       await waitFor(page, () => Boolean(document.querySelector('#options .cap-primary')), 'primary', 10_000);
       await sleep(800);
       const label = await page.evaluate(() => document.querySelector('#options .cap-primary')?.textContent || '');

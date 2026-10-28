@@ -7,14 +7,19 @@ function textFromBlocks(blocks) {
   }).join('');
 }
 
-// 镜像 Android Fold.kt imagesFromBlocks：user/message 里的 image block 折叠成气泡图片。
+// 镜像 Android NativeHistory images：user/message 里的 image block 折叠成气泡图片。
+// 历史记录里的图片可能只带 attachment 引用，由界面按需读取 `session.attachment`。
 function imagesFromBlocks(blocks) {
   if (!Array.isArray(blocks)) return [];
   const images = [];
   for (const block of blocks) {
     if (!block || typeof block !== 'object' || block.type !== 'image') continue;
-    if (typeof block.mediaType !== 'string' || typeof block.data !== 'string') continue;
-    images.push({ mediaType: block.mediaType, data: block.data });
+    const attachment = block.attachment && typeof block.attachment === 'object' ? block.attachment : null;
+    const attachmentId = typeof attachment?.attachmentId === 'string' ? attachment.attachmentId : '';
+    const mediaType = typeof attachment?.mediaType === 'string' && attachment.mediaType ? attachment.mediaType : block.mediaType;
+    const data = typeof block.data === 'string' ? block.data : '';
+    if (typeof mediaType !== 'string' || (!data && !attachmentId)) continue;
+    images.push(attachmentId ? { mediaType, data, attachmentId } : { mediaType, data });
   }
   return images;
 }
