@@ -1279,11 +1279,23 @@ function renderUpdateCheck(check) {
 
 // --- Update center (desktop package; docs/features/update-center.md) -------
 
+// Set once the main process answers: the slim launcher package exposes the
+// bridge without an update center behind it.
+let centerReady = false;
+
 function updateCenterApi() {
-  return pageShell()?.updateCenter || null;
+  return centerReady ? pageShell()?.updateCenter || null : null;
 }
 
 let centerView = null;
+
+function adoptUpdateCenter(view) {
+  const first = !centerReady;
+  centerReady = true;
+  renderCenterNotice(view);
+  // Release rows rendered before the answer still carry per-row choices.
+  if (first) void refreshReleases();
+}
 
 function centerNotice(view) {
   if (!view?.target) return null;
@@ -2727,8 +2739,8 @@ function bind() {
     });
   }
   if (api?.updateCenter) {
-    api.updateCenter.onState((view) => renderCenterNotice(view));
-    void api.updateCenter.state().then(renderCenterNotice).catch(() => {});
+    api.updateCenter.onState((view) => adoptUpdateCenter(view));
+    void api.updateCenter.state().then(adoptUpdateCenter).catch(() => {});
   }
   if (api?.onUpdateProgress) {
     api.onUpdateProgress((payload) => {

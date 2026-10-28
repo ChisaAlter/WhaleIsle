@@ -611,6 +611,8 @@ test('background startup passes inactive presentation only to the initial gate a
         backgroundStartup: true,
         process: { argv: direct ? ['--dshd-from-launcher', '--background'] : ['--background'] },
         harness: {},
+        // Slim launcher package: no update center, the legacy check seeds status.
+        updateCenter: null,
         checkUpdate() {
           updateChecks++;
           return Promise.resolve({ status: 'none' });

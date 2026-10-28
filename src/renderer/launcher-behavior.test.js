@@ -25,6 +25,8 @@ test('version installation displays manual DMG instructions and releases busy st
   const elements = new Map(['update-progress-title', 'update-progress'].map((id) => [id, { textContent: '' }]));
   const phases = [];
   const context = vm.createContext({ updateBusy: false, lastStatus: {}, progressPanels: new Map(),
+    // Slim launcher package: no update center answers, the legacy flow runs.
+    openUpdateCenter: async () => false,
     pageShell: () => ({ installRelease: async () => ({ manualInstall: true, launched: false, message: 'Drag into Applications' }) }),
     appConfirm: async () => true, $: (id) => elements.get(id),
     paintProgress: (_id, state) => phases.push(state.phase),

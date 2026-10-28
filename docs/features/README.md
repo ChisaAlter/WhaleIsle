@@ -82,6 +82,7 @@
 | [session-cost-display](session-cost-display.md) | 会话累计费用显示与按峰谷分桶计价；开关关闭时整行隐藏 | `PeakValleyRow` / `billedUsage` 投影 / `ui-model-selection` | vendor client specs + 设置开关回归 |
 | [skills-groups](skills-groups.md) | 技能分组多选 tag picker 与分组开关批量切换 | vendor skills 设置（fork） | vendor 51/51 + fork 门禁 |
 | [desktop-build-runtime](desktop-build-runtime.md) | 桌面清单与打包运行时契约：scripts/依赖/build 字段、vendor 资源与 afterPack 装配 | `package.json` / `package-contract.test.js` / `after-pack.js` | 结构契约测试 + packaged smoke |
+| [update-center](update-center.md) | 启动器与桌面共用的更新中心：后台下载、自动选增量、断点与重启续传、线路回退 | `src/main/update-center/` / `renderer/update-center.*` | 服务/界面单测；隔离实例端到端续传与安装 |
 | [task-protection](task-protection.md) | 退出/停止/更新前检查活动任务并确认；锁接纳排空后放行 | task-protection / dsh-task-control / peer 握手 | 协调器+插件单测；实机验收待 C |
 | [close-behavior](close-behavior.md) | 关闭=收托盘或直接退出；首次隐藏一次性 toast | `background-notice` / `CloseBehaviorRow` | 定向测试 |
 | [office-runtime](office-runtime.md) | 文档格式：DOCX/PPTX 创建编辑校验、PDF/XLSX 预览（拟议） | standalone runtime / `libreoffice-kit` | 待 P3 收口 |
