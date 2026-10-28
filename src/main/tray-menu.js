@@ -11,10 +11,14 @@
  *   onQuit: () => void,
  *   onPetToggle: (enabled: boolean) => void,
  *   petEnabled: () => boolean,
+ *   updateLabel?: () => string,
+ *   onUpdate?: () => void,
  * }} actions
  * @returns {Array<{ label?: string, type?: string, click?: () => void }>}
  */
-function trayMenuTemplate({ onShow, onOpenLauncher, onSettings, onMarketplace, onRestart, onQuit, onPetToggle, petEnabled }) {
+function trayMenuTemplate({
+  onShow, onOpenLauncher, onSettings, onMarketplace, onRestart, onQuit, onPetToggle, petEnabled, updateLabel, onUpdate,
+}) {
   const petItem = typeof onPetToggle === 'function' && typeof petEnabled === 'function'
     ? [{
         label: '桌面宠物',
@@ -30,6 +34,9 @@ function trayMenuTemplate({ onShow, onOpenLauncher, onSettings, onMarketplace, o
     { label: '插件市场', click: () => onMarketplace() },
     { label: '重启 Harness', click: () => onRestart() },
     ...petItem,
+    ...(typeof updateLabel === 'function' && typeof onUpdate === 'function'
+      ? [{ type: 'separator' }, { label: updateLabel(), click: () => onUpdate() }]
+      : []),
     { type: 'separator' },
     { label: '退出', click: () => onQuit() },
   ];

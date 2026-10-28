@@ -7,7 +7,7 @@ let tray = null;
 let trayActions = null;
 let trayMenuParams = null;
 
-function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, petEnabled }) {
+function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, petEnabled, updateLabel, onUpdate }) {
   if (tray) {
     return tray;
   }
@@ -40,6 +40,8 @@ function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, pe
     onQuit,
     onPetToggle: trayActions.petToggle,
     petEnabled,
+    updateLabel,
+    onUpdate,
   };
   refreshTrayMenu();
   tray.on('click', () => trayActions.show());

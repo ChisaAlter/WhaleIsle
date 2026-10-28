@@ -95,6 +95,13 @@ function harnessApi(renderer, remoteFeature) {
     checkUpdate: invoke(renderer, 'shell:check-update'),
     installUpdate: invoke(renderer, 'shell:install-update'),
     onUpdateProgress: subscribe(renderer, 'shell:update-progress'),
+    // Update center (docs/features/update-center.md): one shared job and overlay.
+    updateCenter: {
+      state: invoke(renderer, 'shell:update-center-state'),
+      command: invoke(renderer, 'shell:update-center-command'),
+      open: invoke(renderer, 'shell:update-center-open'),
+      onState: subscribe(renderer, 'shell:update-center'),
+    },
     reportChrome: send(renderer, 'shell:chrome-metrics'),
     listMarketplace: invoke(renderer, 'shell:list-marketplace'),
     refreshMarketplace: invoke(renderer, 'shell:refresh-marketplace'),
@@ -206,6 +213,13 @@ function launcherApi(renderer) {
     checkUpdate: invoke(renderer, 'shell:check-update'),
     installUpdate: invoke(renderer, 'shell:install-update'),
     onUpdateProgress: subscribe(renderer, 'shell:update-progress'),
+    // Update center (docs/features/update-center.md): one shared job and overlay.
+    updateCenter: {
+      state: invoke(renderer, 'shell:update-center-state'),
+      command: invoke(renderer, 'shell:update-center-command'),
+      open: invoke(renderer, 'shell:update-center-open'),
+      onState: subscribe(renderer, 'shell:update-center'),
+    },
     scanImport: invoke(renderer, 'shell:scan-import'),
     runImport: invoke(renderer, 'shell:run-import'),
     cancelImport: invoke(renderer, 'shell:cancel-import'),
