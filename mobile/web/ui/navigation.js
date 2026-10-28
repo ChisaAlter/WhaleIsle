@@ -1,7 +1,7 @@
 /** Navigation is projected from owned UI state, never from host payloads. */
 export function backTarget(state) {
   if (state.lightbox) return 'lightbox';
-  for (const key of ['sessionConfirm', 'workspaceRename', 'folderCreate', 'sessionRename']) {
+  for (const key of ['sessionConfirm', 'confirmAction', 'workspaceRename', 'folderCreate', 'sessionRename', 'queueEdit']) {
     if (state[key]) return key;
   }
   if (state.gitDialog) return 'git';

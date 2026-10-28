@@ -55,50 +55,38 @@ test('hostSettingsSection maps host panes to desktop settings sections', () => {
   assert.equal(hostSettingsSection('关于'), '');
 });
 
-test('settingsGroups mirrors the Android hub group table', () => {
+test('settingsGroups lists only panes the paired phone can actually open', () => {
   const groups = settingsGroups({
     channel: 'HTTPS 中继',
     accessMode: '只读',
     gitLine: 'main · 已与上游同步',
     scheme: 'system',
+    usage: '输入 1.2K · 输出 300',
   });
   assert.deepEqual(groups.map((group) => group.label), [
-    '这次连接', '对话', '工作区', '这台手机', '电脑与界面', 'Host', '关于',
+    '这次连接', '当前会话', '工作区', '这台手机', '电脑', '关于',
   ]);
   assert.deepEqual(
     groups.flatMap((group) => group.rows.map((row) => row.pane)),
-    ['连接详情', '断开这台设备', '通用设置', '权限', '模型', '工作区', '文件', '外观',
-      '电脑外观', '界面设置', 'MCP', '技能', '插件', '市场', '关于'],
+    ['连接详情', '断开这台设备', '权限', '模型', '会话用量', '工作区', '文件', '外观',
+      '阅读与输入', 'MCP', '技能', '插件', '关于'],
   );
   const disconnect = groups[0].rows[1];
   assert.equal(disconnect.danger, true);
   assert.equal(disconnect.action, 'logout');
   assert.equal(groups[0].rows[0].desc, 'HTTPS 中继');
-  assert.equal(groups[1].rows[1].desc, '只读');
+  assert.equal(groups[1].rows[0].desc, '只读');
+  assert.equal(groups[1].rows[2].desc, '输入 1.2K · 输出 300');
   assert.equal(groups[2].rows[0].desc, 'main · 已与上游同步');
   assert.equal(groups[3].rows[0].desc, '跟随系统');
+  // Desktop window, gallery and market windows have no phone entry (feature card NEVER).
+  for (const pane of ['电脑外观', '界面设置', '市场', '通用设置']) {
+    assert.equal(groups.some((group) => group.rows.some((row) => row.pane === pane)), false, pane);
+  }
 });
 
 test('权限 row falls back to provider-decided copy when no snapshot mode exists', () => {
   const groups = settingsGroups({ channel: '', accessMode: '', gitLine: '', scheme: 'light' });
   const row = groups[1].rows.find((entry) => entry.pane === '权限');
   assert.equal(row.desc, '由提供方决定');
-});
-
-test('remoteReadOnly flips MCP / 技能 / 文件 descriptions to the daemon read-only copy', () => {
-  const defaults = settingsGroups({ scheme: 'light' });
-  const flat = (groups) => Object.fromEntries(
-    groups.flatMap((group) => group.rows.map((row) => [row.pane, row.desc])),
-  );
-  assert.equal(flat(defaults).MCP, '在电脑上打开');
-  assert.equal(flat(defaults)['技能'], '在电脑上打开');
-  assert.equal(flat(defaults)['文件'], '搜索并插入到输入框');
-
-  const remote = settingsGroups({ scheme: 'light', remoteReadOnly: true });
-  assert.equal(flat(remote).MCP, '只读清单 · 电脑端管理');
-  assert.equal(flat(remote)['技能'], '只读清单 · 电脑端管理');
-  assert.equal(flat(remote)['文件'], '浏览 · 只读预览 · 插入路径');
-  // 插件 / 市场 stay honest desktop-only placeholders — no daemon RPC.
-  assert.equal(flat(remote)['插件'], '已挂载清单');
-  assert.equal(flat(remote)['市场'], '在电脑上安装');
 });

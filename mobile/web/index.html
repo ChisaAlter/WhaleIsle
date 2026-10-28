@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Whale Isle · 手机远程</title>
     <link rel="stylesheet" href="./tokens.css?v=20261025-remote-refinement" />
-    <link rel="stylesheet" href="./app.css?v=20261025-anchored-menus" />
+    <link rel="stylesheet" href="./app.css?v=20261028-mobile" />
 </head>
 <body>
   <div class="phone" id="phone">
@@ -136,6 +136,9 @@
         </button>
       </div>
       <div class="composer-root">
+        <button class="jump-bottom hidden" type="button" id="jump-bottom" aria-label="回到最新消息">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <div class="slash-pop hidden" id="slash-pop"></div>
         <p class="readonly-note hidden" id="readonly-note"></p>
         <form class="composer" id="composer">
@@ -252,6 +255,6 @@
     <input type="file" accept="image/*" capture="environment" id="file-camera" hidden />
     <input type="file" accept="image/*" multiple id="file-gallery" hidden />
   </div>
-    <script type="module" src="./app.js?v=20261025-anchored-menus"></script>
+    <script type="module" src="./app.js?v=20261028-mobile"></script>
 </body>
 </html>
