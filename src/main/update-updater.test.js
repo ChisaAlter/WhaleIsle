@@ -802,7 +802,9 @@ test('host rejects damaged same-process pending bytes and the next delta really 
   const { installFromAsset } = require('./update');
   let verifiedFile;
   let installGates = 0;
-  const options = { downloadMode: 'delta', updaterDeps: f.deps, quitAfterInstall: false,
+  // Delta and the NSIS install gate are Windows paths; pin the platform so the
+  // macOS runner does not take the DMG branch.
+  const options = { downloadMode: 'delta', updaterDeps: f.deps, quitAfterInstall: false, platform: 'win32',
     beforeInstall: ({ dest }) => { verifiedFile = dest; installGates++; return { ok: false, cancelled: true }; },
     spawn: () => { throw new Error('no installer launch'); } };
   await installFromAsset(f.target, null, options);
