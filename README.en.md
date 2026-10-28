@@ -35,7 +35,7 @@ Independently maintained by the community, not an official DeepSeek product. Bui
 | --- | --- | --- |
 | Windows 10+ · x64 | [Installer](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.11/Whale-Isle-Setup-0.3.11.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.11/Whale-Isle-Setup-0.3.11.exe) |
 | macOS 14+ · Apple Silicon (0.3.10) | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) |
-| Android 8.0+ (0.3.10) | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) |
+| Android 8.0+ | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) |
 
 The Windows package is unsigned. The Mac package is unsigned, not notarized, and excludes the Windows-only Office runtime; 0.3.11 has no Mac package yet. The Android APK is release-signed and released separately. Each release provides SHA512 checksums.
 
@@ -43,7 +43,7 @@ The Windows package is unsigned. The Mac package is unsigned, not notarized, and
 2. Choose a workspace or start a conversation without one.
 3. On Android, scan the QR code in the desktop app's Remote dialog to connect.
 
-Your model provider charges for usage; this project supplies no credits. See the [Android release notes](https://github.com/ChisaAlter/WhaleIsle/releases/tag/android-v0.3.10) for validation scope.
+Your model provider charges for usage; this project supplies no credits. See the [Android release notes](https://github.com/ChisaAlter/WhaleIsle/releases/tag/android-v0.3.11) for validation scope.
 
 ## Features
 

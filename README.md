@@ -35,7 +35,7 @@
 | --- | --- | --- |
 | Windows 10+ · x64 | [安装包](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.11/Whale-Isle-Setup-0.3.11.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.11/Whale-Isle-Setup-0.3.11.exe) |
 | macOS 14+ · Apple Silicon（0.3.10） | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.10/Whale-Isle-0.3.10-mac-arm64.dmg) |
-| Android 8.0+（0.3.10） | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.10/Whale-Isle-0.3.10-android.apk) |
+| Android 8.0+ | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) |
 
 Windows 包未签名；Mac 包未签名、未公证，不含 Windows 专用 Office 运行时，0.3.11 暂未提供 Mac 包；Android 为正式签名 APK，独立发布。各发布页提供 SHA512 校验清单。
 
@@ -43,7 +43,7 @@ Windows 包未签名；Mac 包未签名、未公证，不含 Windows 专用 Offi
 2. 选择工作目录，或新建无工作区会话，开始对话。
 3. 手机使用 Android 客户端，扫描桌面「远程」二维码连接。
 
-模型费用由服务商收取，本项目不提供额度。Android 验证范围见[发布说明](https://github.com/ChisaAlter/WhaleIsle/releases/tag/android-v0.3.10)。
+模型费用由服务商收取，本项目不提供额度。Android 验证范围见[发布说明](https://github.com/ChisaAlter/WhaleIsle/releases/tag/android-v0.3.11)。
 
 ## 功能
 
