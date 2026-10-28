@@ -547,7 +547,7 @@ async function main() {
     await clickByText(page, '#session-list .session', '会话 1');
     await waitFor(page, () => document.querySelectorAll('#log > *').length > 2, 's-1 open');
     await openDrawer(page);
-    await clickId(page, 'open-workspace');
+    await clickId(page, 'nav-workspace');
     await waitFor(page, () => document.querySelector('#options .git-capsule'), 'git capsule');
     const primary = await page.evaluate(() => document.querySelector('#options .cap-primary')?.textContent || '');
     assert(primary.includes('Commit & push') || primary.includes('Commit'), `primary: ${primary}`);
@@ -573,7 +573,7 @@ async function main() {
 
   await check('Git：Commit & push 先 commit 再 push', async () => {
     await openDrawer(page);
-    await clickId(page, 'open-workspace');
+    await clickId(page, 'nav-workspace');
     await waitFor(page, () => document.querySelector('#options .git-capsule'), 'git capsule');
     await page.evaluate(() => {
       window.__qa.world.git.hasWorkingTreeChanges = true;
@@ -583,7 +583,7 @@ async function main() {
     });
     await closeOverlays(page);
     await openDrawer(page);
-    await clickId(page, 'open-workspace');
+    await clickId(page, 'nav-workspace');
     await waitFor(page, () => (document.querySelector('#options .cap-primary')?.textContent || '').includes('Commit'), 'primary restored');
     const label = await page.evaluate(() => document.querySelector('#options .cap-primary')?.textContent || '');
     if (label.includes('Commit & push')) {
@@ -604,18 +604,15 @@ async function main() {
     await page.click('#close-settings');
   });
 
-  await check('Files/Diff/MCP：冻结条不是空列表', async () => {
+  await check('Files/Diff/MCP：正式服务的真实内容，不是空列表', async () => {
     await openDrawer(page);
-    await clickId(page, 'open-workspace');
-    await waitFor(page, () => document.querySelector('#options').textContent.includes('下一轮'), 'freeze copy');
+    await clickId(page, 'nav-workspace');
+    await waitFor(page, () => document.querySelector('#options .diff-file'), 'git-diff files');
     await clickByText(page, '#options .ws-tab', '文件');
-    const files = await page.evaluate(() => document.querySelector('#options').textContent);
-    assert(files.includes('下一轮接 host/gitDiff'), `files freeze: ${files}`);
-    assert(!files.includes('没有文件'), 'empty files list pretending to work');
+    await waitFor(page, () => [...document.querySelectorAll('#options .file-name')].some((node) => node.textContent === 'README.md'), 'workspaceFiles.list rows');
     await page.click('#settings-back');
     await clickByText(page, '#options .link-row', 'MCP');
-    const mcp = await page.evaluate(() => document.querySelector('#options').textContent);
-    assert(mcp.includes('请暂时用电脑端') || mcp.includes('电脑端操作'), `mcp freeze: ${mcp}`);
+    await waitFor(page, () => document.querySelectorAll('#options .ext-row').length > 0, 'mcpServers.list rows');
     await page.click('#close-settings');
   });
   await shot('mobile-web-phase2-files');
