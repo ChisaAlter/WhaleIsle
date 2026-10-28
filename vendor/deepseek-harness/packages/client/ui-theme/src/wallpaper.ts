@@ -104,6 +104,15 @@ export const NEUTRAL_BACKGROUND_EFFECT_SPEED = 100
 /** Default ambient-gradient speed percent. */
 export const DEFAULT_BACKGROUND_EFFECT_SPEED = 190
 
+/**
+ * Interval the ambient gradient advances at. Every step re-rasterizes the
+ * blurred, blended full-window backdrop; driven at the display rate (up to
+ * 165 Hz) an idle window kept the GPU process near half a core busy. The
+ * blooms drift on 10–20 s cycles under a 64 px blur, so twelve steps a second
+ * still read as continuous motion.
+ */
+export const GRADIENT_STEP_MS = 1000 / 12
+
 /** Lowest bloom count the ambient gradient paints. */
 export const MIN_BACKGROUND_EFFECT_COUNT = 1
 /** Highest bloom count; the authored set is five blooms. */
@@ -483,6 +492,44 @@ let applied: { image: string; blurPx: number; factor: number; gradient: boolean 
 let decodedFor = ''
 let decoded: HTMLImageElement | null = null
 let resizeBound = false
+let gradientClock: ReturnType<typeof setInterval> | null = null
+
+/** Root attribute the desktop shell sets while its window is minimized or hidden. */
+export const WINDOW_HIDDEN_ATTR = 'data-dshd-window-hidden'
+
+function stopGradientClock(): void {
+  if (gradientClock === null) return
+  clearInterval(gradientClock)
+  gradientClock = null
+}
+
+/**
+ * Hold the bloom animations paused and move them on a {@link GRADIENT_STEP_MS}
+ * clock instead of every display frame. Keyframes stay in `wallpaper.css`;
+ * animations the stylesheet restarts (variant switch) are caught on the next
+ * step. A hidden document takes no steps, nor a desktop window that is
+ * minimized or in the tray (`data-dshd-window-hidden`: its view keeps
+ * background throttling off, so the page stays "visible"). Without the Web
+ * Animations API (jsdom) the CSS animations run unchanged.
+ */
+function startGradientClock(blobs: HTMLElement | null): void {
+  if (gradientClock !== null || blobs === null || typeof blobs.getAnimations !== 'function') return
+  const step = (): void => {
+    if (!blobs.isConnected) {
+      stopGradientClock()
+      return
+    }
+    if (document.visibilityState === 'hidden' || document.documentElement.hasAttribute(WINDOW_HIDDEN_ATTR)) return
+    const now = document.timeline?.currentTime
+    if (typeof now !== 'number') return
+    for (const animation of blobs.getAnimations({ subtree: true })) {
+      if (animation.playState !== 'paused') animation.pause()
+      animation.currentTime = now
+    }
+  }
+  step()
+  gradientClock = setInterval(step, GRADIENT_STEP_MS)
+}
 
 
 /**
@@ -623,6 +670,7 @@ export function applyWallpaperLayer(extras: {
   const image = isWallpaperDataUrl(extras.wallpaperImage) ? extras.wallpaperImage : ''
   const gradient = image.length === 0 && extras.backgroundEffect === 'gradient'
   const root = document.documentElement
+  if (!gradient) stopGradientClock()
   if (image.length === 0 && !gradient) {
     applied = null
     decoded = null
@@ -657,6 +705,7 @@ export function applyWallpaperLayer(extras: {
       resizeBound = false
     }
     applyGradientConfig(gradientEl, extras)
+    startGradientClock(document.getElementById(GRADIENT_BLOBS_ID))
     applied = { image: '', blurPx: 0, factor: 1, gradient: true }
     return
   }

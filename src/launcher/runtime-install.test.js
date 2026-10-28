@@ -37,6 +37,56 @@ test('normalizeRoute accepts known ids only', () => {
   assert.equal(releaseSource.normalizeRoute(undefined), '');
 });
 
+test('an unpicked route defaults to CNB on mainland-China systems only', () => {
+  assert.equal(releaseSource.defaultRoute({ locale: 'zh-CN', timeZone: 'America/New_York' }), 'cnb');
+  assert.equal(releaseSource.defaultRoute({ locale: 'zh-Hans-CN', timeZone: '' }), 'cnb');
+  assert.equal(releaseSource.defaultRoute({ locale: 'en-US', timeZone: 'Asia/Shanghai' }), 'cnb');
+  assert.equal(releaseSource.defaultRoute({ locale: 'zh-TW', timeZone: 'Asia/Taipei' }), 'github');
+  assert.equal(releaseSource.defaultRoute({ locale: 'en-US', timeZone: 'Europe/Berlin' }), 'github');
+  // Outside a ready Electron app (tests, source tools) nothing is inferred.
+  assert.equal(releaseSource.defaultRoute(), 'github');
+  assert.equal(runtimeInstall.configuredRoute({ loadConfig: () => ({ downloadRoute: '' }) }), 'github');
+});
+
+function lingeringDesktop(t, { exitsOn }) {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-stop-desktop-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  let running = true;
+  const kills = [];
+  const execFileSync = (bin, args) => {
+    if (bin === 'tasklist') return running ? '"Whale Isle.exe","4242"' : 'INFO: No tasks';
+    if (bin === 'taskkill') {
+      // Every known product image is closed; follow the current one.
+      if (args.at(-1) === 'Whale Isle.exe') kills.push(args.join(' '));
+      if (args.includes(exitsOn)) running = false;
+      return '';
+    }
+    throw new Error(`unexpected ${bin}`);
+  };
+  const deps = { platform: 'win32', target: { productName: 'Whale Isle' }, stateDir, execFileSync,
+    stopGraceMs: 20, forceWaitMs: 20, exitWaitMs: 20 };
+  return { deps, kills };
+}
+
+test('stopping a desktop that ignores the graceful close ends its process tree', async (t) => {
+  const { deps, kills } = lingeringDesktop(t, { exitsOn: '/F' });
+  assert.deepEqual(await runtimeInstall.stopExternalDesktop(deps), { ok: true, stopped: true });
+  assert.deepEqual(kills, ['/IM Whale Isle.exe', '/F /T /IM Whale Isle.exe']);
+});
+
+test('installing over a desktop that will not exit is not refused', async (t) => {
+  const { deps, kills } = lingeringDesktop(t, { exitsOn: '/F' });
+  const result = await runtimeInstall.ensureExternalDesktopExited(deps);
+  assert.equal(result.ok, true);
+  assert.equal(kills.at(-1), '/F /T /IM Whale Isle.exe');
+});
+
+test('a desktop that closes gracefully is never force-killed', async (t) => {
+  const { deps, kills } = lingeringDesktop(t, { exitsOn: '/IM' });
+  assert.deepEqual(await runtimeInstall.stopExternalDesktop(deps), { ok: true, stopped: true });
+  assert.deepEqual(kills, ['/IM Whale Isle.exe']);
+});
+
 test('listRoutes exposes GitHub and the enabled CNB mirror', () => {
   const routes = releaseSource.listRoutes();
   const github = routes.find((row) => row.id === 'github');
@@ -606,17 +656,18 @@ test('checkDesktopUpdate clamps available→none when no runtime is installed', 
 test('downloadFile aborts an in-flight request on signal and removes the partial', async () => {
   const previousGet = https.get;
   let destroyed = false;
+  const controller = new AbortController();
   https.get = (_target, _options, _onResponse) => {
     const request = new EventEmitter();
     request.destroy = () => { destroyed = true; };
+    // Abort once the request is actually in flight (proxy resolution is async).
+    queueMicrotask(() => controller.abort());
     return request;
   };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-rt-dl-'));
   const dest = path.join(dir, 'setup.exe');
-  const controller = new AbortController();
   try {
     const pending = update.downloadFile('https://example.test/setup.exe', dest, null, { signal: controller.signal });
-    controller.abort();
     await assert.rejects(pending, (error) => error.name === 'AbortError');
     assert.equal(destroyed, true);
     assert.equal(fs.existsSync(dest), false);

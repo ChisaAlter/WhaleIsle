@@ -602,8 +602,11 @@ function createLauncherService(deps) {
     const wasRunning = kernelIsRunning(dsh);
     const result = await protection.coordinate('stop', {
       // The stop button is explicit consent — inspect/acquire/drain still run,
-      // but no second confirmation may stand between the click and the stop.
+      // but no second confirmation may stand between the click and the stop,
+      // and unfinished work cannot veto it after a short drain.
       preConfirmed: true,
+      force: true,
+      drainTimeoutMs: 10_000,
       commit: async () => {
         await runDesktopCleanup();
         if (harness && typeof harness.stopDesktop === 'function') {

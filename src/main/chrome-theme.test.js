@@ -154,6 +154,34 @@ test('macOS shell windows retain their alpha silhouette and expose native traffi
   }
 });
 
+test('minimize, hide and restore publish window visibility to boot and harness', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' });
+  const win = chromeTestWindow();
+  const viewStates = [];
+  win.harnessWc = { isDestroyed: () => false, send: (channel, state) => viewStates.push({ channel, state }) };
+  const { chrome, restore } = loadChrome({ mainWindow: win });
+  try {
+    chrome.attachIntegratedChrome(win);
+    win.minimized = true;
+    win.emit('minimize');
+    assert.equal(win.states.at(-1).state.visible, false);
+    assert.equal(viewStates.at(-1).state.visible, false);
+    win.minimized = false;
+    win.emit('restore');
+    assert.equal(viewStates.at(-1).state.visible, true);
+    win.visible = false;
+    win.emit('hide');
+    assert.equal(viewStates.at(-1).state.visible, false);
+    win.visible = true;
+    win.emit('show');
+    assert.equal(viewStates.at(-1).state.visible, true);
+  } finally {
+    restore();
+    Object.defineProperty(process, 'platform', platform);
+  }
+});
+
 test('macOS native fullscreen transitions publish the current state to boot and harness', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform');
   Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' });
@@ -192,7 +220,10 @@ function chromeTestWindow() {
   wc.owner = win;
   win.webContents = wc;
   win.isDestroyed = () => false;
-  win.isMinimized = () => false;
+  win.minimized = false;
+  win.visible = true;
+  win.isMinimized = () => win.minimized;
+  win.isVisible = () => win.visible;
   win.isMaximized = () => false;
   win.fullscreen = false;
   win.isFullScreen = () => win.fullscreen;

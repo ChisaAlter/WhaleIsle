@@ -25,6 +25,8 @@
 - 揭示先持桌面透明，等待窗控注入与全尺寸布局产帧，捕获启动页快照并按 62% 海天线分为上下两片；主界面在快照后方保持原位，独立透明覆盖窗口中的两片静态图层按三倍基础动效 token 向上下移出窗口；boot 保持不透明，渲染侧报告过渡完成后才遮盖。取消/替换后的旧回调无效，减弱动效直切；失败回退也须挂载并清理快照遮罩与透明状态，而非只隐藏 boot。
 - 无账号或模型密钥也直接揭示工作区，不弹原版欢迎窗；登录和密钥配置留在设置。后台账号观察保留授权外开与 Platform 身份刷新，退出/过期不隐藏工作区。冒烟检测到欢迎窗即失败，不自动点击跳过，见 [desktop-welcome](../../features/desktop-welcome.md)。
 - 主 frame preload 的 `dshDesktop.onboarding: false` 同时关闭首次用途/过程引导，不创建 controller、不写完成标记或默认偏好；通用设置保留这些选项。冒烟不代点继续/稍后配置。
+- 渲染档位：`whenReady` 后 `gpu-tier.js` 按实际渲染的显卡分类（Intel 核显与非 A/B 型号 Arc、AMD APU、高通、软件渲染或软件合成为低功耗；NVIDIA、Apple、独立 AMD/Intel Arc 为完整）。Harness 视图最多等 3 秒拿到结果，经 `--dshd-low-power-gpu=1` 传给 preload 的 `dshDesktop.renderHints`；低功耗时用户未设置过的背景特效默认关闭（外观页说明原因），开幕过渡直接揭示。用户自己设置过的值不受影响。
+- 空闲重绘：环境渐变以 12 帧/秒的时钟推进，窗口最小化或在托盘时（`shell:window-state.visible` → `data-dshd-window-hidden`）停止；被主界面覆盖的 boot 场景动画移除。主窗在用户已切到其他应用后才就绪时不抢前台，改为任务栏闪烁（`foreground.js`）。
 - 流程详述：[../flows/boot-to-ready.md](../flows/boot-to-ready.md)
 - 启动器使用 `src/renderer/launcher.html` / `launcher.css` / `launcher.js` 与共享 `dsh-webui-tokens.css`。`html[data-shell-theme=official]` 下 `theme.js` 只选择 `theme.scheme` 的明暗表，不写 Appearance 壁纸种子，不新增 `data-theme` / `prefers-color-scheme` 色板。首页启停共享操作锁，故障原文保存在默认折叠的「启动诊断」；插件恢复建议在首页可见并主动确认，取消后不反复弹出。
 

@@ -194,6 +194,28 @@ test('drain timeout blocks unattended commit (fail closed)', async () => {
   assert.equal(committed, false);
 });
 
+test('forced operations commit through a drain timeout or an unreachable Host', async () => {
+  for (const code of ['dshd/drain-timeout', 'dshd/unreachable']) {
+    let committed = 0;
+    const logs = [];
+    const { protection, calls } = makeProtection({ options: { log: line => logs.push(line) } }, {
+      acquire: async () => ({ ok: false, code, pendingCount: 66, pendingLabels: ['resolveAgent'] }),
+    });
+    const result = await protection.coordinate('update', {
+      terminal: true, preConfirmed: true, force: true, drainTimeoutMs: 10_000,
+      commit: async () => { committed++; },
+    });
+    assert.equal(result.proceeded, true, code);
+    assert.equal(result.forced.code, code);
+    assert.equal(committed, 1);
+    assert.equal(protection.isCommitted(), true);
+    // No second look and no release: there is no lock to give back.
+    assert.deepEqual(calls.map((c) => c.op), ['inspect', 'acquire']);
+    assert.equal(calls[1].body.drainTimeoutMs, 10_000);
+    assert.ok(logs.some(line => line.includes(code) && line.includes('resolveAgent')));
+  }
+});
+
 test('a throwing commit releases the Host lock', async () => {
   const { protection, calls } = makeProtection();
   await assert.rejects(protection.coordinate('stop', {

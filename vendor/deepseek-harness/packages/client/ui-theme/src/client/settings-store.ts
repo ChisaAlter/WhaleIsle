@@ -6,7 +6,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import { DEFAULT_FAMILY_ID, type ThemeFamily } from '../theme-family.ts'
 import {
-  DEFAULT_FONT_SIZES, DEFAULT_THEME_SETTINGS, type FontFamilies, type FontSizes, type BackgroundEffect, type ThemePreference,
+  DEFAULT_FONT_SIZES, DEFAULT_THEME_SETTINGS, defaultBackgroundEffect, type FontFamilies, type FontSizes, type BackgroundEffect, type ThemePreference,
   type ThemeSettings, type WallpaperFavorite, type WallpaperSource,
 } from '../theme-settings.ts'
 import { normalizeCursorEffect } from '../cursor-fx.ts'
@@ -203,7 +203,7 @@ const EMPTY: Omit<AppearanceRowState, 'revision'> = {
   wallpaperCatalogUrls: [],
   wallpaperSources: DEFAULT_THEME_SETTINGS.wallpaperSources,
   wallpaperFavorites: [],
-  backgroundEffect: DEFAULT_THEME_SETTINGS.backgroundEffect,
+  backgroundEffect: defaultBackgroundEffect(),
   backgroundEffectColors: DEFAULT_THEME_SETTINGS.backgroundEffectColors,
   backgroundEffectSpeed: DEFAULT_THEME_SETTINGS.backgroundEffectSpeed,
   backgroundEffectCount: DEFAULT_THEME_SETTINGS.backgroundEffectCount,

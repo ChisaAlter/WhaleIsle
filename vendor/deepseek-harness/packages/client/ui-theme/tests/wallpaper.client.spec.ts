@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  GRADIENT_ATTR, GRADIENT_BLOBS_ID, GRADIENT_LAYER_ID,
+  GRADIENT_ATTR, GRADIENT_BLOBS_ID, GRADIENT_LAYER_ID, GRADIENT_STEP_MS, WINDOW_HIDDEN_ATTR,
   MAX_WALLPAPER_DATA_URL_CHARS, MAX_WALLPAPER_CANVAS_SOLIDITY, TERMINAL_PANE_MIN_SOLIDITY,
   TRANSPARENT_ATTR, TRANSPARENT_GLASS_SOLIDITY,
   WALLPAPER_ATTR, WALLPAPER_INNER_ID, WALLPAPER_LAYER_ID,
@@ -201,6 +201,56 @@ describe('applyWallpaperLayer', () => {
     applyWallpaperLayer({ ...gradient, backgroundEffect: 'none' })
     expect(document.documentElement.hasAttribute(GRADIENT_ATTR)).toBe(false)
     expect(document.getElementById(WALLPAPER_LAYER_ID)).toBeNull()
+  })
+
+  it('steps the gradient blooms on a low-rate clock instead of every display frame', () => {
+    vi.useFakeTimers()
+    const animations = [0, 1].map(() => ({
+      playState: 'running',
+      currentTime: null as number | null,
+      pause() { this.playState = 'paused' },
+    }))
+    const getAnimations = vi.fn(() => animations)
+    const prototype = HTMLElement.prototype as { getAnimations?: unknown }
+    const previous = Object.getOwnPropertyDescriptor(prototype, 'getAnimations')
+    prototype.getAnimations = getAnimations
+    let now = 1000
+    let visibility = 'visible'
+    Object.defineProperty(document, 'timeline', { configurable: true, get: () => ({ currentTime: now }) })
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
+    try {
+      const gradient = { wallpaperImage: '', wallpaperBlur: 0, wallpaperPixelate: 0, backgroundEffect: 'gradient' as const }
+      applyWallpaperLayer(gradient)
+      expect(animations.every(animation => animation.playState === 'paused' && animation.currentTime === 1000)).toBe(true)
+      now = 1500
+      vi.advanceTimersByTime(GRADIENT_STEP_MS)
+      expect(animations.map(animation => animation.currentTime)).toEqual([1500, 1500])
+      // A hidden window takes no steps.
+      visibility = 'hidden'
+      now = 9000
+      vi.advanceTimersByTime(GRADIENT_STEP_MS * 3)
+      expect(animations[0]?.currentTime).toBe(1500)
+      // Neither does a desktop window that is minimized or in the tray.
+      visibility = 'visible'
+      document.documentElement.setAttribute(WINDOW_HIDDEN_ATTR, '')
+      vi.advanceTimersByTime(GRADIENT_STEP_MS * 3)
+      expect(animations[0]?.currentTime).toBe(1500)
+      document.documentElement.removeAttribute(WINDOW_HIDDEN_ATTR)
+      vi.advanceTimersByTime(GRADIENT_STEP_MS)
+      expect(animations[0]?.currentTime).toBe(9000)
+      // Turning the effect off stops the clock.
+      applyWallpaperLayer({ ...gradient, backgroundEffect: 'none' })
+      visibility = 'visible'
+      const calls = getAnimations.mock.calls.length
+      vi.advanceTimersByTime(GRADIENT_STEP_MS * 5)
+      expect(getAnimations.mock.calls.length).toBe(calls)
+    } finally {
+      if (previous) Object.defineProperty(prototype, 'getAnimations', previous)
+      else delete prototype.getAnimations
+      delete (document as { timeline?: unknown }).timeline
+      delete (document as { visibilityState?: unknown }).visibilityState
+      vi.useRealTimers()
+    }
   })
 
   it('writes stored color, speed, count, and variant overrides onto the gradient element', () => {

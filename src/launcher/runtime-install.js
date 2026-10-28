@@ -51,11 +51,11 @@ function invalidateInstalledCache() {
 function configuredRoute(deps = {}) {
   try {
     const config = typeof deps.loadConfig === 'function' ? deps.loadConfig() : loadConfig();
-    // No explicit pick yet → behave as if GitHub were selected, matching the
-    // prototype's default-checked line card and the seg control.
-    return releaseSource.normalizeRoute(config.downloadRoute) || 'github';
+    // No explicit pick yet → the region default is shown as selected, so the
+    // line card, the seg control and every fetch agree on one route.
+    return releaseSource.normalizeRoute(config.downloadRoute) || releaseSource.defaultRoute();
   } catch {
-    return 'github';
+    return releaseSource.defaultRoute();
   }
 }
 
@@ -533,35 +533,44 @@ async function stopExternalDesktop(deps = {}) {
     return { ok: true, stopped: false };
   }
   // Prefer the task-control handshake: a new desktop runs its own protection
-  // (prompt/lock/drain) before it stops — the launcher never force-kills it.
+  // (lock/short drain) and quits by itself.
   const handshake = await requestPeerStop('stop-desktop', deps);
+  if (handshake.code === 'peer-cancelled') {
+    return { ok: false, cancelled: true, error: handshake.code, stopped: false };
+  }
   if (handshake.ok === true) {
     await waitUntilGone(probe, deps.exitWaitMs ?? 30000);
-    return { ok: !probe(), stopped: !probe(), ...(probe() ? { error: 'desktop-still-running' } : {}) };
+  } else {
+    // Legacy desktop (no peer file) or a busy/unreachable peer: WM_CLOSE is
+    // the graceful normal exit.
+    taskkillImages(exec, images, []);
+    await waitUntilGone(probe, deps.stopGraceMs ?? 15000);
   }
-  if (handshake.code === 'peer-cancelled' || handshake.code === 'busy') {
-    return { ok: false, cancelled: handshake.code === 'peer-cancelled', error: handshake.code, stopped: false };
+  // An explicit stop or update is never refused because the desktop did not
+  // leave by itself: end the process tree as the last step.
+  if (probe()) {
+    taskkillImages(exec, images, ['/F', '/T']);
+    await waitUntilGone(probe, deps.forceWaitMs ?? 10000);
   }
-  // Legacy desktop (no peer file): WM_CLOSE is the graceful normal exit —
-  // a tray-parked app may stay alive; report instead of force-killing.
-  for (const name of images) {
-    try {
-      exec('taskkill', ['/IM', `${name}.exe`], { windowsHide: true });
-    } catch {
-      // already gone between probe and close
-    }
-  }
-  const grace = deps.stopGraceMs ?? 15000;
-  await waitUntilGone(probe, grace);
   if (probe()) {
     return {
       ok: false,
       stopped: false,
       error: 'desktop-still-running',
-      message: '桌面端仍在运行，请从托盘退出后重试',
+      message: '桌面端进程无法结束，请在任务管理器中结束后重试',
     };
   }
   return { ok: true, stopped: true };
+}
+
+function taskkillImages(exec, images, flags) {
+  for (const name of images) {
+    try {
+      exec('taskkill', [...flags, '/IM', `${name}.exe`], { windowsHide: true, timeout: 5000 });
+    } catch {
+      // already gone between probe and close
+    }
+  }
 }
 
 async function waitUntilGone(probe, timeoutMs) {
@@ -608,8 +617,8 @@ async function requestPeerStop(op, deps = {}) {
  * For install/delta flows: ensure the managed desktop process has exited —
  * peer handshake (desktop coordinates its own protection and quits) when the
  * target supports it, otherwise a graceful WM_CLOSE plus confirmation that
- * the process is really gone. Never force-kills; a desktop still running
- * blocks the install.
+ * the process is really gone, and a forced end of the process tree when it
+ * stays. Only the user's own cancel stops the install.
  */
 async function ensureExternalDesktopExited(deps = {}) {
   const probe = () => probeDesktopRunning({ ...deps });
@@ -617,14 +626,11 @@ async function ensureExternalDesktopExited(deps = {}) {
     return { ok: true, wasRunning: false };
   }
   const handshake = await requestPeerStop('prepare-install', deps);
-  if (handshake.ok === true) {
-    const gone = await waitUntilGone(probe, deps.exitWaitMs ?? 30000);
-    return gone
-      ? { ok: true, wasRunning: true, via: 'peer' }
-      : { ok: false, code: 'desktop-still-running' };
+  if (handshake.ok === true && await waitUntilGone(probe, deps.exitWaitMs ?? 30000)) {
+    return { ok: true, wasRunning: true, via: 'peer' };
   }
-  if (handshake.code === 'peer-cancelled' || handshake.code === 'busy') {
-    return { ok: false, code: handshake.code === 'peer-cancelled' ? 'cancelled' : 'busy', cancelled: handshake.code === 'peer-cancelled' };
+  if (handshake.code === 'peer-cancelled') {
+    return { ok: false, code: 'cancelled', cancelled: true };
   }
   const stop = await stopExternalDesktop(deps);
   if (stop.ok !== true || probe()) {

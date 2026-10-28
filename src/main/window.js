@@ -18,6 +18,33 @@ const {
 } = require('./local-url');
 
 const { applyHarnessCookieToSession, launchTokenFromUrl, loadUrlAfterRedeem } = require('./harness-browser-auth');
+const { createForegroundPolicy } = require('./foreground');
+
+// Render hints (src/main/gpu-tier.js), resolved once after ready. The Harness
+// view waits briefly for them because its preload reads them from argv.
+const RENDER_HINTS_WAIT_MS = 3000;
+let renderHints = { lowPowerGpu: false };
+let renderHintsReady = Promise.resolve();
+
+function setRenderHintsSource(source) {
+  renderHintsReady = Promise.resolve(source).then((tier) => {
+    renderHints = { lowPowerGpu: tier?.lowPower === true };
+  }, () => {});
+}
+
+function renderHintsSettled() {
+  let timer;
+  return Promise.race([
+    renderHintsReady,
+    new Promise((resolve) => { timer = setTimeout(resolve, RENDER_HINTS_WAIT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+let foregroundPolicy = null;
+function foreground() {
+  foregroundPolicy ||= createForegroundPolicy({ app, BrowserWindow });
+  return foregroundPolicy;
+}
 
 const PLUGIN_BOOT_TIMEOUT_MS = 90_000;
 
@@ -227,10 +254,12 @@ function createMainWindow({ activate = true } = {}) {
   attachWindowsAppDetails(mainWindow);
   markWindowTransparent(mainWindow);
   attachIntegratedChrome(mainWindow);
+  // Created before the window exists so focus already lost to another app
+  // (during a long first start) is known when it becomes ready.
+  const presenter = foreground();
   mainWindow.once('ready-to-show', () => {
     hideNativeMenu(mainWindow);
-    if (activate) mainWindow.show();
-    else mainWindow.showInactive();
+    presenter.present(mainWindow, activate);
   });
   mainWindow.on('closed', () => {
     hideHarnessView(mainWindow);
@@ -494,7 +523,9 @@ async function revealHarnessView(win) {
     prepareHarnessChrome(win);
     await syncHarnessChrome(win, view.webContents);
     if (!current()) return;
-    const reduced = await view.webContents.executeJavaScript(
+    // The cross-fade captures and composites two full-window layers; a
+    // low-power GPU shows the view directly.
+    const reduced = renderHints.lowPowerGpu || await view.webContents.executeJavaScript(
       `matchMedia('(prefers-reduced-motion: reduce)').matches`,
     );
     if (!current()) return;
@@ -659,6 +690,7 @@ function ensureHarnessView(win) {
       additionalArguments: [
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
+        ...(renderHints.lowPowerGpu ? ['--dshd-low-power-gpu=1'] : []),
       ],
       contextIsolation: true,
       nodeIntegration: false,
@@ -792,6 +824,7 @@ function showHarness(baseUrl, options = {}) {
     ? Promise.resolve()
     : win.loadFile(rendererFile('boot.html'));
   return bootReady.then(async () => {
+    await renderHintsSettled();
     const view = ensureHarnessView(win);
     harnessOrigin = new URL(viewUrl).origin;
     notifyHarnessOrigin();
@@ -1007,6 +1040,7 @@ function closeLauncherWindow() {
 }
 
 module.exports = {
+  setRenderHintsSource,
   createMainWindow,
   setRecoveryConfirm,
   getMainWindow,

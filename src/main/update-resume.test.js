@@ -18,7 +18,12 @@ function fixture(t, respond) {
   t.mock.method(https, 'get', (url, options, callback) => {
     const request = new EventEmitter();
     request.destroy = () => {};
-    requests.push({ url, headers: options.headers });
+    requests.push({ url, headers: options.headers, agent: options.agent });
+    if (options.agent?.refuse) {
+      setImmediate(() => request.emit('error', Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:10808'),
+        { code: 'ECONNREFUSED', proxyFailure: true })));
+      return request;
+    }
     setImmediate(() => {
       const response = new PassThrough();
       response.statusCode = 200;
@@ -49,6 +54,16 @@ function suffix(response, headers, overrides = {}) {
     'content-range': `bytes ${offset}-${bytes.length - 1}/${bytes.length}`, etag: '"installer-v1"', ...overrides };
   response.once('ready', () => response.end(bytes.subarray(offset)));
 }
+
+test('a system proxy that refuses connections falls back to a direct retry', async t => {
+  const f = fixture(t, (response) => {
+    response.headers = { 'content-length': String(bytes.length) };
+    response.once('ready', () => response.end(bytes));
+  });
+  await downloadFile('https://example.test/Setup.exe', f.dest, null, { ...options, agent: { refuse: true } });
+  assert.deepEqual(f.requests.map(request => Boolean(request.agent)), [true, false]);
+  assert.ok(fs.readFileSync(f.dest).equals(bytes));
+});
 
 test('checksum-backed retries resume written bytes and verify the entire reconstructed file', async t => {
   const f = fixture(t, (response, attempt, headers) => {

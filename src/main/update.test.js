@@ -772,6 +772,43 @@ test('an installer removed after verification rejects spawn instead of claiming 
   assert.deepEqual(calls, ['inspect', 'acquire', 'inspect', 'release']);
 });
 
+test('a confirmed update launches the installer even when running work does not drain', async (t) => {
+  const { createTaskProtection } = require('./task-protection');
+  const calls = [];
+  const protection = createTaskProtection({
+    hostRunning: () => true, getBaseUrl: () => 'http://127.0.0.1:9',
+    fetchImpl: async (url, init) => {
+      const op = url.split('/').at(-1);
+      calls.push({ op, body: JSON.parse(init.body || '{}') });
+      return { ok: true, json: async () => op === 'inspect'
+        ? { ok: true, activeWork: [{ kind: 'agent', count: 56 }], scheduledWork: [], coverage: { agents: 'ok' } }
+        : { ok: false, code: 'dshd/drain-timeout', pendingCount: 66 } };
+    },
+  });
+  const previous = global.fetch;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-install-forced-'));
+  fs.mkdirSync(path.join(dir, 'updates'));
+  fs.writeFileSync(path.join(dir, 'updates', 'Setup.exe'), 'fixture');
+  const digest = crypto.createHash('sha512').update('fixture').digest('hex');
+  global.fetch = async () => ({ ok: true, text: async () => `${digest}  Setup.exe` });
+  t.after(() => { global.fetch = previous; fs.rmSync(dir, { recursive: true, force: true }); });
+  let spawned = 0;
+  const result = await installFromAsset({ assetUrl: 'https://example.test/Setup.exe', assetName: 'Setup.exe', checksumUrl: 'https://example.test/sums' }, null, {
+    platform: 'win32', userDataDir: dir, quitAfterInstall: false, taskProtection: protection,
+    spawn: () => {
+      spawned++;
+      const child = new EventEmitter();
+      child.unref = () => {};
+      setImmediate(() => child.emit('spawn'));
+      return child;
+    },
+  });
+  assert.equal(result.launched, true);
+  assert.equal(spawned, 1);
+  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire']);
+  assert.equal(calls[1].body.drainTimeoutMs, 10_000);
+});
+
 test('installRelease refuses a tag with no Setup.exe', async (t) => {
   useReleasePlatform(t, 'win32');
   const previousFetch = global.fetch;

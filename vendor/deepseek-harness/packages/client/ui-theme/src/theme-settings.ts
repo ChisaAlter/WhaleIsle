@@ -475,7 +475,9 @@ export const ThemeSettingsFields = {
   [THEME_WALLPAPER_CATALOGS_FIELD]: z.array(z.string()).default([]),
   [THEME_WALLPAPER_SOURCES_FIELD]: arrayWithoutDefault(WallpaperSourceSchema),
   [THEME_WALLPAPER_FAVORITES_FIELD]: z.array(WallpaperFavoriteSchema).default([]),
-  [THEME_BACKGROUND_EFFECT_FIELD]: z.union([...BACKGROUND_EFFECTS]).default('gradient'),
+  // No schema default: an omitted value must stay detectable so the render
+  // default (defaultBackgroundEffect) applies only to users who never chose.
+  [THEME_BACKGROUND_EFFECT_FIELD]: z.union([...BACKGROUND_EFFECTS]),
   [THEME_BACKGROUND_EFFECT_COLORS_FIELD]: z.array(z.string()).default(DEFAULT_BACKGROUND_EFFECT_COLORS),
   [THEME_BACKGROUND_EFFECT_SPEED_FIELD]: z.number()
     .min(MIN_BACKGROUND_EFFECT_SPEED).max(MAX_BACKGROUND_EFFECT_SPEED)
@@ -572,12 +574,31 @@ export function isThemePreference(value: unknown): value is ThemePreference {
 }
 
 /**
+ * Backdrop effect for a user who never chose one: the ambient gradient,
+ * unless the desktop shell reports an integrated or software GPU, where the
+ * animated full-window backdrop can saturate the GPU.
+ * @returns the default backdrop effect for this machine.
+ */
+export function defaultBackgroundEffect(): BackgroundEffect {
+  return lowPowerGpu() ? 'none' : DEFAULT_THEME_SETTINGS.backgroundEffect
+}
+
+/** Whether the desktop shell reported an integrated or software GPU. */
+export function lowPowerGpu(): boolean {
+  const desktop = (globalThis as { dshDesktop?: { renderHints?: { lowPowerGpu?: unknown } } }).dshDesktop
+  return desktop?.renderHints?.lowPowerGpu === true
+}
+
+/**
  * Fill missing fields on a partial Host section with product defaults.
  * @param section - accepted Host value, or undefined before the first read.
  * @returns a complete settings object.
  */
 export function resolveThemeSettings(section: ThemeSettings | undefined): ThemeSettings {
-  if (section === undefined) return { ...DEFAULT_THEME_SETTINGS, customThemes: [] }
+  if (section === undefined) {
+    return { ...DEFAULT_THEME_SETTINGS, customThemes: [], backgroundEffect: defaultBackgroundEffect() }
+  }
+  const storedEffect: unknown = section.backgroundEffect
   const wallpaperSources = Array.isArray(section.wallpaperSources)
     ? sanitizeWallpaperSources(section.wallpaperSources)
     : [
@@ -591,6 +612,9 @@ export function resolveThemeSettings(section: ThemeSettings | undefined): ThemeS
     wallpaperCatalogUrls: sanitizeWallpaperCatalogUrls(section.wallpaperCatalogUrls),
     wallpaperSources,
     wallpaperFavorites: sanitizeWallpaperFavorites(section.wallpaperFavorites),
+    backgroundEffect: BACKGROUND_EFFECTS.some(effect => effect === storedEffect)
+      ? storedEffect as BackgroundEffect
+      : defaultBackgroundEffect(),
     backgroundEffectColors: sanitizeBackgroundEffectColors(section.backgroundEffectColors),
     cursorEffect: normalizeCursorEffect(section.cursorEffect),
     cursorEffectColors: sanitizeCursorEffectColors(section.cursorEffectColors),

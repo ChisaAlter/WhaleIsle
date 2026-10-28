@@ -943,6 +943,31 @@ describe('ThemeRuntime', () => {
   })
 })
 
+describe('resolveThemeSettings background effect', () => {
+  const desktop = (lowPowerGpu: boolean) => {
+    vi.stubGlobal('dshDesktop', { renderHints: { lowPowerGpu } })
+  }
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('keeps an omitted effect detectable in the schema', () => {
+    expect(ThemeSettingsSchema({} as never).backgroundEffect).toBeUndefined()
+    expect(ThemeSettingsSchema({ backgroundEffect: 'none' } as never).backgroundEffect).toBe('none')
+  })
+
+  it('starts with the gradient off on a low-power GPU only when the user never chose', () => {
+    const omitted = { ...DEFAULT_THEME_SETTINGS, backgroundEffect: undefined as never } as ThemeSettings
+    expect(resolveThemeSettings(omitted).backgroundEffect).toBe('gradient')
+    expect(resolveThemeSettings(undefined).backgroundEffect).toBe('gradient')
+    desktop(true)
+    expect(resolveThemeSettings(omitted).backgroundEffect).toBe('none')
+    expect(resolveThemeSettings(undefined).backgroundEffect).toBe('none')
+    expect(resolveThemeSettings({ ...omitted, backgroundEffect: 'gradient' }).backgroundEffect).toBe('gradient')
+    desktop(false)
+    expect(resolveThemeSettings(omitted).backgroundEffect).toBe('gradient')
+    expect(resolveThemeSettings({ ...omitted, backgroundEffect: 'none' }).backgroundEffect).toBe('none')
+  })
+})
+
 describe('resolveThemeSettings wallpaper sources', () => {
   it('seeds bing and wallhaven when wallpaperSources is omitted', () => {
     const parsed = ThemeSettingsSchema({} as never)

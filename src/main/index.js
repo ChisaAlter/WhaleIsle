@@ -98,7 +98,9 @@ const {
   showMain,
   openHarnessSettings,
   setRecoveryConfirm,
+  setRenderHintsSource,
 } = require('./window');
+const { detectGpuTier } = require('./gpu-tier');
 const { watchSystemTheme, currentTheme, applyAppTheme } = require('./chrome');
 const { showClosingOverlay } = require('./closing-overlay');
 const { installShortcutService, getShortcutService } = require('./shortcuts');
@@ -815,7 +817,11 @@ const taskControlPeer = createTaskControlPeer({
     // inspect/acquire/drain sequencing but skips the confirm — prompting
     // again would double-prompt one click (and with every desktop window
     // hidden it fell back to a native box).
-    const result = await taskProtection.coordinate('stop', { terminal: true, preConfirmed: true });
+    // Like quit, an explicit stop proceeds after a short drain even with work
+    // still running.
+    const result = await taskProtection.coordinate('stop', {
+      terminal: true, preConfirmed: true, force: true, drainTimeoutMs: 10_000,
+    });
     if (!result.proceeded) {
       return { ok: false, code: result.code || 'cancelled' };
     }
@@ -825,7 +831,9 @@ const taskControlPeer = createTaskControlPeer({
   onPeerInstall: async () => {
     // Same explicit-consent rule as onPeerStop: the launcher's install/更新
     // click already authorized replacing the running desktop.
-    const result = await taskProtection.coordinate('install', { terminal: true, preConfirmed: true });
+    const result = await taskProtection.coordinate('install', {
+      terminal: true, preConfirmed: true, force: true, drainTimeoutMs: 10_000,
+    });
     if (!result.proceeded) {
       return { ok: false, code: result.code || 'cancelled' };
     }
@@ -1058,6 +1066,10 @@ if (!gotLock) {
       dsh.log(`[legacy-notification-shortcut] ${shortcutMigration.status}`, 'app');
     }
     const homeEnv = sanitizePackagedDshHomeEnv({ isPackaged: app.isPackaged });
+    setRenderHintsSource(detectGpuTier(app).then((tier) => {
+      dsh.log(`显卡：${tier.device || '未知'}（${tier.reason}）${tier.lowPower ? '，默认关闭重渲染特效' : ''}`, 'app');
+      return tier;
+    }));
     if (homeEnv.dropped) {
       dsh.log(`忽略继承的 DSHD_HOME=${homeEnv.value}（packaged 下需要 DSHD_ALLOW_ENV_HOME=1）`, 'app');
     }
@@ -1502,6 +1514,9 @@ if (!gotLock) {
           taskProtection.coordinate('quit', {
             terminal: true,
             preConfirmed: true,
+            // Quit gives no feedback until the drain ends; a 30 s wait read as
+            // an ignored click. Work still running is cleaned up either way.
+            drainTimeoutMs: 3000,
             commit: async () => {
               stoppingForQuit = true;
               closingOverlayActive = true;
