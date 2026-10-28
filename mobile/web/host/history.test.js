@@ -1,6 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HISTORY_PAGE_MESSAGES, historyQuery, hostHistoryPage, mergeApprovalPending, mergeOlderHistory, pendingFromHistoryEvents, runningFromHistoryEvents } from './history.js';
+import { HISTORY_PAGE_MESSAGES, historyQuery, hostHistoryPage, mergeApprovalPending, mergeLatestHistory, mergeOlderHistory, pendingFromHistoryEvents, runningFromHistoryEvents } from './history.js';
+
+const seqs = (events) => events.map((entry) => entry.event.seq);
+const ev = (seq) => ({ event: { type: 'assistant/message', seq } });
+
+test('mergeLatestHistory keeps pages the user loaded above a refreshed tail', () => {
+  const loaded = [ev(10), ev(11), ev(20), ev(21), ev(22)];
+  const page = hostHistoryPage({ hasMore: true, events: [ev(21), ev(22), ev(23)] });
+  const merged = mergeLatestHistory(loaded, page);
+  assert.deepEqual(seqs(merged.events), [10, 11, 20, 21, 22, 23]);
+  assert.equal(merged.contiguous, true);
+  assert.equal(merged.keptOlder, true);
+});
+
+test('mergeLatestHistory reports a gap when a small window misses events', () => {
+  const merged = mergeLatestHistory([ev(1), ev(2)], hostHistoryPage({ hasMore: true, events: [ev(40), ev(41)] }));
+  assert.equal(merged.contiguous, false);
+});
+
+test('mergeLatestHistory replaces the log when the page is the whole session or nothing is loaded', () => {
+  assert.deepEqual(seqs(mergeLatestHistory([ev(1), ev(2)], hostHistoryPage({ hasMore: false, events: [ev(1), ev(2), ev(3)] })).events), [1, 2, 3]);
+  const fresh = mergeLatestHistory([], hostHistoryPage({ hasMore: true, events: [ev(9)] }));
+  assert.deepEqual(seqs(fresh.events), [9]);
+  assert.equal(fresh.keptOlder, false);
+});
 
 test('historyQuery pages like dsh web (50 messages)', () => {
   assert.deepEqual(historyQuery('s1'), { sessionId: 's1', maxMessages: HISTORY_PAGE_MESSAGES });

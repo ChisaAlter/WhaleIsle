@@ -40,6 +40,22 @@ test('foldEvents builds user, assistant, and tool bubbles', () => {
   assert.equal(rows[2].card, 'read_file');
 });
 
+test('foldEvents keeps attachment-only history images for lazy reads', () => {
+  const rows = foldEvents([{
+    event: {
+      type: 'user/message', seq: 3,
+      data: {
+        source: { kind: 'user' },
+        content: [
+          { type: 'text', text: '看图' },
+          { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/png' } },
+        ],
+      },
+    },
+  }]);
+  assert.deepEqual(rows[0].images, [{ mediaType: 'image/png', data: '', attachmentId: 'att-1' }]);
+});
+
 // 对应 Android Fold.kt imagesFromBlocks。
 test('foldEvents keeps image blocks on user bubbles', () => {
   const rows = foldEvents([

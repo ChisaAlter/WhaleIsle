@@ -38,9 +38,9 @@ function hostSettingsSection(pane) {
   }
 }
 
-// 分组与行文案与 Android SettingsHub 同表。desc 为动态值时用占位键，由 settingsGroups 解析。
-// remoteReadOnly = ChisaCode v2 传输：MCP / 技能有 daemon 只读清单，文件有下钻浏览。
-function settingsGroups({ channel, accessMode, gitLine, scheme, remoteReadOnly = false } = {}) {
+// 设置首页分组（与 Android 完整设置的分区对应）。每一行都通向可用页面：
+// 手机偏好只存本机，MCP / 技能 / 插件调用已配对 Host 的正式管理服务。
+function settingsGroups({ channel, accessMode, gitLine, scheme, usage } = {}) {
   return [
     {
       label: '这次连接',
@@ -50,38 +50,33 @@ function settingsGroups({ channel, accessMode, gitLine, scheme, remoteReadOnly =
       ],
     },
     {
-      label: '对话',
+      label: '当前会话',
       rows: [
-        { pane: '通用设置', desc: '语言 · 排队' },
         { pane: '权限', desc: accessMode || '由提供方决定' },
         { pane: '模型', desc: '当前会话' },
+        { pane: '会话用量', desc: usage || '当前会话' },
       ],
     },
     {
       label: '工作区',
       rows: [
         { pane: '工作区', desc: gitLine || '' },
-        { pane: '文件', desc: remoteReadOnly ? '浏览 · 只读预览 · 插入路径' : '搜索并插入到输入框' },
+        { pane: '文件', desc: '浏览 · 预览 · 插入路径' },
       ],
     },
     {
       label: '这台手机',
-      rows: [{ pane: '外观', desc: schemeLabel(scheme) }],
-    },
-    {
-      label: '电脑与界面',
       rows: [
-        { pane: '电脑外观', desc: '背景图 · 毛玻璃' },
-        { pane: '界面设置', desc: '标题栏 Git · 分栏 · 日志' },
+        { pane: '外观', desc: schemeLabel(scheme) },
+        { pane: '阅读与输入', desc: '字号 · 思考过程 · Enter 发送' },
       ],
     },
     {
-      label: 'Host',
+      label: '电脑',
       rows: [
-        { pane: 'MCP', desc: remoteReadOnly ? '只读清单 · 电脑端管理' : '在电脑上打开' },
-        { pane: '技能', desc: remoteReadOnly ? '只读清单 · 电脑端管理' : '在电脑上打开' },
-        { pane: '插件', desc: '已挂载清单' },
-        { pane: '市场', desc: '在电脑上安装' },
+        { pane: 'MCP', desc: '服务器状态 · 启用 · 测试' },
+        { pane: '技能', desc: '查看 · 调用开关' },
+        { pane: '插件', desc: '插件包与插件启停' },
       ],
     },
     {

@@ -179,6 +179,86 @@ function buildExtensionsWorld() {
   };
 }
 
+const PNG_1PX_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const FILE_TREE = buildFileTree();
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/** Session-scoped workspace files (`workspaceFiles.*`) over the in-memory tree. */
+function workspaceFilesRpc(method, args = {}) {
+  const rel = !args.path || args.path === '.' ? '' : String(args.path);
+  if (method === 'workspaceFiles.list') {
+    const children = FILE_TREE[rel];
+    if (!Array.isArray(children)) throw new Error(`ENOENT: ${rel || '.'}`);
+    return {
+      path: rel,
+      truncated: false,
+      entries: children.map((child) => {
+        const name = child.split('/').pop();
+        const directory = Array.isArray(FILE_TREE[child]);
+        const file = FILE_TREE.files[child];
+        return directory
+          ? { name, type: 'directory' }
+          : { name, type: 'file', size: file?.sizeOverride ?? file?.bytes.length };
+      }),
+    };
+  }
+  const file = FILE_TREE.files[rel];
+  if (!file) throw new Error(`ENOENT: ${rel}`);
+  if (method === 'workspaceFiles.readImage') {
+    if (file.fileKind !== 'image') throw new Error('不是图片文件');
+    return { absolutePath: `/repo/mobile/${rel}`, version: 'v1', bytes: file.bytes.length, mediaType: file.mime, data: bytesToBase64(file.bytes) };
+  }
+  if (file.fileKind === 'binary') throw new Error('文件不是文本，无法按行读取');
+  const lines = new TextDecoder().decode(file.bytes).replace(/\n$/, '').split('\n');
+  const offset = args.range?.offset || 1;
+  const limit = args.range?.limit || 200;
+  const page = lines.slice(offset - 1, offset - 1 + limit);
+  return {
+    absolutePath: `/repo/mobile/${rel}`, version: 'v1', bytes: file.sizeOverride ?? file.bytes.length,
+    offset, text: page.join('\n'), lines: page.length, eof: offset - 1 + page.length >= lines.length,
+  };
+}
+
+function sessionProjectionValues(sessionId) {
+  const session = findSession(sessionId);
+  const values = qa.world.projections[sessionId] || {};
+  return {
+    title: session?.projections?.values?.title || '',
+    permissions: { currentValue: session?.projections?.values?.permissionPreset || 'workspace-write' },
+    usagePanel: { totals: { input: 15234, output: 2380, cacheRead: 8000, cacheWrite: 120 } },
+    inbox: qa.world.inbox[sessionId] || {},
+    ...values,
+  };
+}
+
+function appendedEvents(sessionId) {
+  return qa.world.appended[sessionId] || [];
+}
+
+function nextSeq(sessionId, base) {
+  const all = [...base, ...appendedEvents(sessionId)];
+  return all.reduce((max, entry) => Math.max(max, entry?.event?.seq ?? entry?.seq ?? 0), 0) + 1;
+}
+
+/** Poll windows (`maxMessages` below a page) keep only the newest messages. */
+function tailWindow(events, maxMessages) {
+  if (!Number.isInteger(maxMessages) || maxMessages >= 50) return { events, cut: false };
+  let count = 0;
+  let index = events.length;
+  while (index > 0) {
+    const type = events[index - 1]?.event?.type;
+    if (type === 'user/message' || type === 'assistant/message') count += 1;
+    if (count > maxMessages) break;
+    index -= 1;
+  }
+  return { events: events.slice(index), cut: index > 0 };
+}
+
 function makeSession(id, title, extra = {}) {
   return {
     sessionId: id,
@@ -305,6 +385,31 @@ function hostHistoryEvents(beforeSeq) {
   return { events, hasMore: start > 1, projections: { asOfSeq: end, values: { title: '会话 1' } } };
 }
 
+/** Newest (or `beforeSeq`) host history page before appended live events. */
+function historyPage(payload) {
+  if (payload.sessionId === 's-1') return hostHistoryEvents(payload.beforeSeq);
+  return {
+    events: [
+      {
+        event: {
+          type: 'user/message',
+          seq: 1,
+          data: { source: { kind: 'user' }, content: [{ type: 'text', text: '你好' }] },
+        },
+      },
+      {
+        event: {
+          type: 'assistant/message',
+          seq: 2,
+          data: { message: { content: [{ type: 'text', text: '助手回复' }] } },
+        },
+      },
+    ],
+    hasMore: false,
+    projections: { values: { title: findSession(payload.sessionId)?.projections?.values?.title || '' } },
+  };
+}
+
 function buildWorld() {
   const items = [
     makeSession('s-1', '会话 1', { running: true }),
@@ -346,6 +451,32 @@ function buildWorld() {
         { name: 'feat', isCurrent: false, isRemote: false },
       ],
     },
+    appended: {},
+    inbox: {},
+    projections: {},
+    mcp: [
+      {
+        id: 'm1', origin: 'managed', writable: true, enabled: true, fiberPhase: 'active',
+        connection: { health: 'connected', tools: ['mcp__github__search', 'mcp__github__issue'] },
+        spec: { id: 'm1', serverName: 'github', transport: 'streamable-http', url: 'https://mcp.example/github' },
+      },
+      {
+        id: 'm2', origin: 'composition', writable: false, enabled: true, fiberPhase: 'failed',
+        connection: { health: 'failed', lastError: 'spawn fs-mcp ENOENT' },
+        spec: { id: 'm2', serverName: 'local-fs', transport: 'stdio', command: 'fs-mcp' },
+      },
+    ],
+    skills: [
+      { name: 'release-notes', description: '生成发布说明', source: 'project', groups: ['发布'], modelInvocable: true, userInvocable: true, writable: true, path: '/repo/mobile/.agents/skills/release-notes/SKILL.md', content: '# 发布说明\n\n- 读取变更\n- 生成摘要\n\n| 字段 | 说明 |\n|---|---|\n| version | 版本号 |' },
+      { name: 'db-migrate', description: '数据库迁移助手', source: 'user', groups: [], modelInvocable: false, userInvocable: true, writable: false, path: '/home/qa/.dsh/skills/db-migrate', content: '迁移前先备份。' },
+    ],
+    plugins: [
+      { entryId: 'p1', moduleName: '@dsh/plugin-git', fiberPhase: 'active', enabled: true, patchId: 'patch-1', readOnlyReason: '' },
+      { entryId: 'p2', moduleName: '@dsh/core', fiberPhase: 'active', enabled: true, patchId: '', readOnlyReason: '内置插件，不能停用' },
+    ],
+    bundles: [
+      { name: 'dsh-im', description: '即时通讯桥', version: '1.2.0', availability: 'installed', enabled: false, removable: true },
+    ],
     models: {
       current: { provider: 'dsh', model: 'r3', reasoningEffort: 'high' },
       groups: [{
@@ -462,6 +593,15 @@ const qa = {
       for (const listener of client.muxListeners || []) listener(frame);
     }
   },
+  /** Append one durable event to a session's newest history page. */
+  appendEvent(sessionId, event) {
+    const list = this.world.appended[sessionId] || (this.world.appended[sessionId] = []);
+    list.push({ event });
+    return event.seq;
+  },
+  setInbox(sessionId, inbox) {
+    this.world.inbox[sessionId] = inbox;
+  },
 };
 
 if (typeof window !== 'undefined') {
@@ -547,27 +687,56 @@ function handleHostRpc(method, payload = {}) {
     return ok({ items: hits.slice(0, 20) });
   }
   if (method === 'session.history') {
-    if (payload.sessionId === 's-1') return ok(hostHistoryEvents(payload.beforeSeq));
-    return ok({
-      events: [
-        {
-          event: {
-            type: 'user/message',
-            seq: 1,
-            data: { source: { kind: 'user' }, content: [{ type: 'text', text: '你好' }] },
-          },
-        },
-        {
-          event: {
-            type: 'assistant/message',
-            seq: 2,
-            data: { message: { content: [{ type: 'text', text: '助手回复' }] } },
-          },
-        },
-      ],
-      hasMore: false,
-      projections: { values: { title: findSession(payload.sessionId)?.projections?.values?.title || '' } },
-    });
+    const page = historyPage(payload);
+    if (payload.beforeSeq === undefined) page.events = [...page.events, ...appendedEvents(payload.sessionId)];
+    const window = tailWindow(page.events, payload.maxMessages);
+    page.events = window.events;
+    page.hasMore = page.hasMore || window.cut;
+    return ok(page);
+  }
+  if (method === 'session.projections') {
+    return ok({ values: sessionProjectionValues(payload.sessionId) });
+  }
+  if (method.startsWith('workspaceFiles.')) return ok(workspaceFilesRpc(method, payload.args));
+  if (method === 'mcpServers.list') return ok({ servers: qa.world.mcp });
+  if (method.startsWith('mcpServers.')) {
+    const request = payload.args?.request || {};
+    const server = qa.world.mcp.find((row) => row.id === request.id);
+    if (!server) throw new Error('MCP 服务器不存在');
+    if (method === 'mcpServers.setEnabled') server.enabled = request.enabled === true;
+    if (method === 'mcpServers.delete') qa.world.mcp = qa.world.mcp.filter((row) => row !== server);
+    if (method === 'mcpServers.test') {
+      return ok({ ok: true, serverName: server.spec.serverName, transport: server.spec.transport, toolNames: server.connection?.tools || [], toolCount: server.connection?.tools?.length || 0, elapsedMs: 38 });
+    }
+    return ok({});
+  }
+  if (method === 'skillInventory.list') {
+    return ok({ skills: qa.world.skills.map(({ content, path, writable, ...row }) => row) });
+  }
+  if (method.startsWith('skillInventory.')) {
+    const request = payload.args?.request || {};
+    const skill = qa.world.skills.find((row) => row.name === request.name);
+    if (!skill) throw new Error('技能不存在');
+    if (method === 'skillInventory.get') return ok({ ...skill });
+    if (method === 'skillInventory.setInvocation') {
+      skill.modelInvocable = request.modelInvocable === true;
+      skill.userInvocable = request.userInvocable === true;
+    }
+    if (method === 'skillInventory.delete') qa.world.skills = qa.world.skills.filter((row) => row !== skill);
+    return ok({});
+  }
+  if (method === 'pluginInventory.list') return ok({ managementAvailable: true, entries: [] });
+  if (method === 'pluginManager.listPlugins') return ok(qa.world.plugins);
+  if (method === 'pluginManager.listBundles') return ok(qa.world.bundles);
+  if (method === 'pluginManager.setPluginEnabled') {
+    const plugin = qa.world.plugins.find((row) => row.entryId === payload.args?.id);
+    if (plugin) plugin.enabled = payload.args.enabled === true;
+    return ok({ application: 'applied' });
+  }
+  if (method === 'pluginManager.setBundleEnabled') {
+    const bundle = qa.world.bundles.find((row) => row.name === payload.args?.name);
+    if (bundle) bundle.enabled = payload.args.enabled === true;
+    return ok({ application: 'restart-required', restartReason: '插件包需要重新加载' });
   }
   if (method === 'session.create') {
     const id = `s-new-${qa.calls.length}`;
@@ -614,15 +783,36 @@ function handleHostRpc(method, payload = {}) {
     if (text.startsWith('/permission ') && session) {
       session.projections.values.permissionPreset = text.slice('/permission '.length).trim();
     }
-    return ok({});
+    qa.world.lastPrompt = payload;
+    if (!qa.world.holdPromptEcho) {
+      const base = historyPage({ sessionId: payload.sessionId }).events;
+      qa.appendEvent(payload.sessionId, {
+        type: 'user/message',
+        seq: nextSeq(payload.sessionId, base),
+        data: { id: `u-${payload.requestId}`, source: { kind: 'user' }, content: payload.content || [] },
+      });
+    }
+    return ok({ accepted: true, requestId: payload.requestId });
   }
   if (method === 'session.cancel') {
     const session = findSession(payload.sessionId);
     if (session) session.running = false;
     return ok({});
   }
-  if (method === 'session.attachment') return ok({ items: [] });
-  if (method === 'session.updateQueue') return ok({});
+  if (method === 'session.attachment') {
+    if (String(payload.attachmentId || '').startsWith('broken')) throw new Error('附件已不可用');
+    return ok({ attachment: { attachmentId: payload.attachmentId, mediaType: 'image/png' }, data: PNG_1PX_BASE64 });
+  }
+  if (method === 'session.updateQueue') {
+    const inbox = qa.world.inbox[payload.sessionId] || {};
+    for (const target of Object.keys(inbox)) {
+      const index = inbox[target].findIndex((item) => item.id === payload.itemId);
+      if (index < 0) continue;
+      if (payload.action?.kind === 'edit') inbox[target][index] = { ...inbox[target][index], content: payload.action.content };
+      else inbox[target].splice(index, 1);
+    }
+    return ok({ accepted: true });
+  }
   if (method === 'workspace.create') {
     const id = `ws-${qa.calls.length}`;
     workspaces.items.push({
@@ -704,6 +894,24 @@ function handleGitRpc(action, cwd, payload = {}) {
   }
   if (action === 'git-pull-request') return ok(git.pr);
   if (action === 'git-status-entries') return ok({ entries: [] });
+  if (action === 'git-diff') {
+    if (payload.options?.baseRef === 'missing') return ok(null);
+    return ok({
+      files: [
+        {
+          path: 'mobile/web/app.js', status: 'modified',
+          hunks: [{ header: '@@ -10,3 +10,4 @@', lines: [
+            { kind: 'context', text: 'const before = 1;' },
+            { kind: 'del', text: 'legacyCall();' },
+            { kind: 'add', text: 'phase2Call();' },
+            { kind: 'add', text: 'phase2Extra();' },
+          ] }],
+        },
+        { path: 'assets/logo.png', status: 'added', hunks: [] },
+      ],
+      ...(payload.options?.baseRef ? { baseRef: payload.options.baseRef } : {}),
+    });
+  }
   throw new Error(`unsupported git action ${action}`);
 }
 

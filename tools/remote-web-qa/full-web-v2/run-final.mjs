@@ -254,8 +254,8 @@ try {
 
   await runCase('FRZ-001', async () => {
     const v = await openSettingsPane('文件');
-    if (!/电脑端|冻结|只读|下一轮|浏览/i.test(v.body)) throw new Error(`文件页: ${v.body.slice(0, 80)}`);
-    if (/此目录为空/.test(v.body) && !/只读|冻结/.test(v.body)) throw new Error('空列表冒充');
+    // 2026-10-28: the page lists `workspaceFiles.list` or shows the read failure.
+    if (!/根目录|读取目录失败|先打开/.test(v.body)) throw new Error(`文件页: ${v.body.slice(0, 80)}`);
     return { status: 'Pass', note: `文件=「${v.body.slice(0, 60)}…」` };
   });
 
@@ -268,9 +268,8 @@ try {
     await sleep(800);
     const body = await page.evaluate(() => (document.querySelector('#options')?.innerText || '').replace(/\s+/g, ' ').slice(0, 300));
     await dismissOverlays(page);
-    if (!/下一轮接 host\/gitDiff|请暂时用电脑端/.test(body)) throw new Error(`无冻结条: ${body.slice(0, 100)}`);
     if (/Stage|Unstage|Discard/i.test(body)) throw new Error('出现 Stage 类入口');
-    return { status: 'Pass', note: 'Git sheet 更改/文件=冻结条原文；无 Stage/Unstage/Discard' };
+    return { status: 'Pass', note: 'Git sheet 无 Stage/Unstage/Discard；更改页走 git-diff（2026-10-28）' };
   });
 
   await runCase('FRZ-003', async () => {

@@ -29,7 +29,8 @@
 7. Composer：模型 + 思考 `session.models` / `session.selectModel`；权限与 Plan / 斜杠走 Typert `commands/execute`（`/permission <id>`、`/plan off`）；发送 `session.prompt`、停止 `session.cancel`；附件进 host；审批保持线协议 `respond`，由 daemon 将当前 Gateway 的 clientId/eventId 回复到 `/api/$events/result`。
 8. 顶栏 Git 对齐桌面 titlebar：Init、分支搜索/切换/跟踪远端/**创建并检出**、stacked Commit/Push/PR、Publish、View PR。执行走隧道 `shell:git-*`，不是 ACP checkout。
 9. 时间线：`session.history`（`beforeSeq` 向上分页）+ mux 或 1.5s 轮询（running / pending 时）。断线横幅 + 草稿；重连后 `session.list` + 当前 `history`。
-10. Files / Diff / MCP / 技能：浏览器 SPA 保留旧冻结条；2026-10-27 原生 Android 补全轮接入文件读取、Git diff 与正式管理服务，真实无数据和请求失败分别显示。
+10. Files / Diff / MCP / 技能 / 插件：2026-10-27 原生 Android 补全轮、2026-10-28 浏览器 SPA 分别接入文件读取、Git diff 与正式管理服务，真实无数据和请求失败分别显示。Web 提供文件浏览与只读预览、diff、MCP 启停/重连/测试/删除、技能详情/调用开关/删除、插件与插件包启停；MCP/技能的新增编辑与插件安装仍只在电脑端和 Android。
+11. 2026-10-28 Web 时间线：运行中轮询取最新 6 条消息并按 seq 合并到已加载历史，断档回退整页；隐藏页暂停轮询。发送带稳定 `requestId` 并先显示待确认气泡；`session.projections` 驱动待发送队列（编辑/删除/转入当前回复，同 Android）、会话用量、权限、Plan 和模型；只带附件引用的历史图片经 `session.attachment` 读取，失败占位不随轮询重读。手机阅读偏好（字号、思考过程、工具详情默认展开、Enter 发送、运行中发送方式）只存本机。
 
 ## MUST 矩阵（本轮交付物；缺一行不算完成）
 
@@ -98,14 +99,14 @@
 
 「请在电脑端操作」**只允许**出现在本段或 NEVER。
 
-- 浏览器 SPA 的工作区「文件」「更改」tab 与设置里 MCP/技能保留冻结条。原生 Android 补全轮使用独立 Compose 页面接正式服务；禁止把请求失败画成没有文件/没有服务器。
+- 浏览器 SPA 与原生 Android 的文件、更改、MCP、技能与插件页面均接正式服务；禁止把请求失败画成没有文件/没有服务器。
 - 只读 Files/Diff 的旧契约（不写盘、不 Stage）下一轮仍有效；本轮不转发 `git-stage` / `unstage` / `discard`。
-- 2026-10-27 原生 Android 补全轮已接入 MCP/技能正式管理服务；写入与只读 composition 的判断由 Host 服务决定。浏览器 SPA 的旧冻结入口不据此声称已实现。
+- 2026-10-27 原生 Android 补全轮已接入 MCP/技能正式管理服务；写入与只读 composition 的判断由 Host 服务决定。浏览器 SPA（2026-10-28）提供其中的启停、测试、删除与调用开关，不提供 MCP/技能新增编辑、插件安装、电脑设置与账户页，也不声称这些已对齐。
 - 消息编辑/rewind、Trajectory、Context meter、Session log 下载、标题栏终端/表面开关、Generative UI：本轮不声称对齐。
 
 ## NEVER
 
-- `host.pickDirectory`、`host.openPath`、`llm.discoverModels`；credentials 的原始读取、导出与通用 `/api` 转发。已配对的原生客户端可使用下述明确列出的正式管理服务，仍由 Host 执行权限、密钥遮蔽和配置 revision 校验。
+- `host.pickDirectory`、`host.openPath`、`llm.discoverModels`；credentials 的原始读取、导出与通用 `/api` 转发。已配对的客户端（Android 与浏览器 SPA）可使用下述明确列出的正式管理服务，仍由 Host 执行权限、密钥遮蔽和配置 revision 校验。
 - 任意 `shell:*`：`pty*`、`writeFile`、打开本机路径（Git 对话框「在资源管理器打开」远程不做，用禁用 + 电脑端）
 - 开放 `/api/*` 代理、恢复 HTTP offer v1、把 `:8411` 当 SPA、官方 `dsh web` 整页当手机 UI
 - 给 daemon 注入 `DSH_HOME`、双写 `dsh-home`

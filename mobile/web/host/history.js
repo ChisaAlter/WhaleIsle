@@ -1,4 +1,6 @@
 const HISTORY_PAGE_MESSAGES = 50;
+/** Live-follow ticks only need the newest messages; a gap falls back to a full page. */
+const POLL_PAGE_MESSAGES = 6;
 
 function historyQuery(sessionId, extra = {}) {
   return { sessionId, maxMessages: HISTORY_PAGE_MESSAGES, ...extra };
@@ -61,6 +63,38 @@ function mergeOlderHistory(olderEvents, current) {
   return [...fresh, ...(current || [])];
 }
 
+function newestSeq(events) {
+  let max = null;
+  for (const entry of events || []) {
+    const seq = entrySeq(entry);
+    if (seq !== null && (max === null || seq > max)) max = seq;
+  }
+  return max;
+}
+
+/**
+ * Merge a newest-page refresh into the loaded log. Older pages the user has
+ * already loaded stay; from the page's oldest seq onward the page is the
+ * truth. `contiguous` is false when a partial page does not reach back to the
+ * loaded log, so a small poll window may have skipped events in between.
+ * @returns {{ events: object[], contiguous: boolean, keptOlder: boolean }}
+ */
+function mergeLatestHistory(current, page) {
+  const list = Array.isArray(current) ? current : [];
+  const events = Array.isArray(page?.events) ? page.events : [];
+  const oldest = oldestSeq(events);
+  if (!page?.hasOlder || oldest === null || !list.length) {
+    return { events, contiguous: true, keptOlder: false };
+  }
+  const loadedNewest = newestSeq(list);
+  const contiguous = loadedNewest !== null && loadedNewest >= oldest;
+  const kept = list.filter((entry) => {
+    const seq = entrySeq(entry);
+    return seq !== null && seq < oldest;
+  });
+  return { events: [...kept, ...events], contiguous, keptOlder: kept.length > 0 };
+}
+
 function historyEventType(entry) {
   if (!entry || typeof entry !== 'object') return '';
   if (entry.event && typeof entry.event.type === 'string') return entry.event.type;
@@ -117,7 +151,9 @@ export {
   HISTORY_PAGE_MESSAGES,
   hostHistoryPage,
   mergeApprovalPending,
+  mergeLatestHistory,
   mergeOlderHistory,
+  POLL_PAGE_MESSAGES,
   pendingFromHistoryEvents,
   runningFromHistoryEvents,
 };

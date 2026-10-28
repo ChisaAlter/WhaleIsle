@@ -129,11 +129,38 @@ test('approval respond confirms host history after an E2EE ack timeout', () => {
 });
 
 test('history poll hydrates unanswered approval/asked into the strip', () => {
-  assert.match(app, /pendingFromHistoryEvents\(/);
+  assert.match(app, /pendingFromHistoryEvents\(state\.events/);
   assert.match(app, /mergeApprovalPending\(/);
   const poll = app.slice(app.indexOf('historyPollTimer = setInterval'));
-  assert.match(poll, /applyHistoryPayload\(payload\)/);
+  assert.match(poll, /applyHistoryPayload\(payload, \{ merge: true \}\)/);
   assert.match(poll, /renderApproval\(\)/);
+});
+
+test('live history ticks fetch a small window and keep older pages the user loaded', () => {
+  const pull = app.slice(app.indexOf('function pullCurrentHistory()'), app.indexOf('function forceLogout('));
+  assert.match(pull, /maxMessages: POLL_PAGE_MESSAGES/);
+  assert.match(pull, /mergeLatestHistory\(state\.events, hostHistoryPage\(payload\)\)\.contiguous/);
+  assert.match(pull, /payload = await fetchPage\(\{\}\)/);
+  const apply = app.slice(app.indexOf('function applyHistoryPayload('), app.indexOf('let projectionsInflight'));
+  assert.match(apply, /if \(!merged\.keptOlder\) state\.timelinePage =/);
+  const poll = app.slice(app.indexOf('historyPollTimer = setInterval'), app.indexOf('let historyPullInflight'));
+  assert.match(poll, /document\.visibilityState === 'hidden'/);
+});
+
+test('sends carry a stable request id and show a pending bubble until the host echoes them', () => {
+  const send = app.slice(app.indexOf('async function sendPrompt()'), app.indexOf('function finishSubmittedDraft('));
+  assert.match(send, /promptIdentity\(state\.promptIdentity/);
+  assert.match(send, /requestId: identity\.requestId, mode/);
+  assert.match(send, /receipt\?\.value\?\.accepted === false/);
+  assert.match(send, /state\.outbox = state\.outbox\.filter\(\(item\) => item !== entry\)/);
+  assert.match(send, /store\.runningSend === 'steer' \? 'steer' : 'queue'/);
+});
+
+test('the conversation log reuses unchanged row nodes instead of replacing the whole list', () => {
+  const render = app.slice(app.indexOf('function renderLog('), app.indexOf('async function loadOlderMessages()'));
+  assert.match(render, /logList\.nodes\(rows/);
+  assert.match(render, /reconcileChildren\(logEl, nodes\)/);
+  assert.equal(render.includes('logEl.replaceChildren('), false);
 });
 
 test('open chat exposes the host session id on #phone for the current row', () => {
@@ -276,13 +303,20 @@ test('destructive confirm dialogs win over leftover rename or mkdir dialogs', ()
   assert.equal(confirmIdx >= 0 && renameIdx >= 0 && confirmIdx < renameIdx, true, 'sessionConfirm must render before workspaceRename');
 });
 
-test('paired SPA uses host history poll and freeze bars, not ACP files', () => {
+test('paired SPA uses host history poll and formal Host services, not ACP files', () => {
   assert.match(app, /historyQuery\(/);
   assert.match(app, /sessionRowForest/);
   assert.match(app, /subscribeHostMux/);
   assert.match(app, /session\.selectModel/);
   assert.match(app, /gitCreateBranch/);
   assert.match(app, /host\.listDirectory/);
-  assert.match(app, /freezePane/);
+  for (const method of [
+    'workspaceFiles.list', 'workspaceFiles.read', 'workspaceFiles.readImage', 'session.projections',
+    'session.attachment', 'session.updateQueue', 'mcpServers.list', 'skillInventory.list',
+    'skillInventory.get', 'pluginInventory.list', 'pluginManager.listBundles',
+  ]) assert.ok(app.includes(`'${method}'`), method);
+  assert.match(app, /gitCall\(owner\.client, 'git-diff', cwd/);
+  assert.equal(app.includes('freezePane'), false);
+  assert.equal(app.includes('listDirectoryView'), false);
   assert.equal(app.includes('openEventSockets({ origin'), false);
 });
