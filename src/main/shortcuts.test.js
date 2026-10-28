@@ -10,8 +10,7 @@ const { pathToFileURL } = require('node:url');
 const { createShortcutService, ariaToAccelerator, CHANNELS } = require('./shortcuts');
 
 const PROTOCOL_URL = pathToFileURL(path.join(
-  __dirname, '..', '..', 'vendor', 'deepseek-harness',
-  'packages', 'client', 'shortcuts', 'lib', 'protocol.js',
+  __dirname, 'shortcuts-protocol.mjs',
 )).href;
 
 const DEFINITIONS = [
@@ -76,7 +75,7 @@ function fakeContents(origin) {
   return contents;
 }
 
-async function createService(t, { origin = 'http://127.0.0.1:4180' } = {}) {
+async function createService(t, { origin = 'http://127.0.0.1:4180', platform = 'windows' } = {}) {
   const protocol = await import(PROTOCOL_URL);
   const userData = tmpDir(t);
   const ipc = fakeIpc();
@@ -88,7 +87,7 @@ async function createService(t, { origin = 'http://127.0.0.1:4180' } = {}) {
   const service = createShortcutService({
     ipcMain: ipc,
     userData,
-    platform: 'windows',
+    platform,
     getView: () => view,
     getWindow: () => win,
     getOrigin: () => origin,
@@ -225,6 +224,36 @@ test('ariaToAccelerator maps aria strings to Electron tokens', () => {
   assert.equal(ariaToAccelerator('Control+Shift+P'), 'CmdOrCtrl+Shift+P');
   assert.equal(ariaToAccelerator('Control+,'), 'CmdOrCtrl+,');
   assert.equal(ariaToAccelerator(undefined), undefined);
+});
+
+test('macOS keeps physical Control distinct from Command in native accelerators', () => {
+  assert.equal(ariaToAccelerator('Meta+O', 'macos'), 'Command+O');
+  assert.equal(ariaToAccelerator('Control+O', 'macos'), 'Control+O');
+  assert.equal(ariaToAccelerator('Control+Meta+Shift+P', 'macos'), 'Control+Command+Shift+P');
+  assert.equal(ariaToAccelerator('Meta+Alt+,', 'macos'), 'Command+Alt+,');
+  assert.equal(ariaToAccelerator('Control+O', 'windows'), 'CmdOrCtrl+O');
+  assert.equal(ariaToAccelerator('Meta+O', 'linux'), 'Super+O');
+});
+
+test('Mac registry keycaps and native dispatch agree for Command and Control bindings', async t => {
+  const { service, ipc, event, contents, inputEvent } = await createService(t, { platform: 'macos' });
+  service.attach({ webContents: contents });
+  await ipc.handlers.get(CHANNELS.get)(event, [
+    { id: 'workspace.add', defaults: { 'desktop:macos': { code: 'KeyO', modifiers: ['primary'] } } },
+    { id: 'custom.control', defaults: { 'desktop:macos': { code: 'KeyO', modifiers: ['control'] } } },
+  ], null);
+  assert.equal(service.acceleratorFor('workspace.add'), 'Command+O');
+  assert.equal(service.acceleratorFor('custom.control'), 'Control+O');
+  for (const modifier of ['meta', 'control']) {
+    const evt = inputEvent();
+    contents.emit('before-input-event', evt, keydown('KeyO', { [modifier]: true }));
+    assert.equal(evt.defaultPrevented, true, modifier);
+    const last = contents.sent.filter(item => item.channel === CHANNELS.input).at(-1);
+    assert.ok(last, modifier);
+    assert.equal(last.payload.code, 'KeyO');
+    assert.equal(last.payload.meta, modifier === 'meta');
+    assert.equal(last.payload.control, modifier === 'control');
+  }
 });
 
 test('native-first: bound keys inside a focused iframe are intercepted and dispatched', async (t) => {

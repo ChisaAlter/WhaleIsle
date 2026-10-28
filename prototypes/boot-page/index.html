@@ -16,6 +16,25 @@
   <span class="rail rail-br" aria-hidden="true"></span>
 
   <main class="prototype-stage" id="prototype-stage">
+    <header class="mac-chrome" aria-label="macOS 窗口原型（非系统控件）">
+      <div class="mac-menu-bar">
+        <details class="mac-app-menu">
+          <summary>Whale Isle</summary>
+          <div class="mac-menu-items">
+            <button type="button" data-preview-command="settings">设置… <kbd>⌘,</kbd></button>
+            <hr />
+            <button type="button" data-preview-command="hide">隐藏 Whale Isle <kbd>⌘H</kbd></button>
+            <button type="button" data-preview-command="quit">退出 Whale Isle <kbd>⌘Q</kbd></button>
+          </div>
+        </details>
+        <span>文件</span><span>编辑</span><span>运行</span><span>视图</span><span>窗口</span><span>帮助</span>
+        <span class="mac-preview-label">系统菜单模拟</span>
+      </div>
+      <div class="mac-titlebar">
+        <div class="mac-traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+        <span class="mac-window-title">Whale Isle</span>
+      </div>
+    </header>
     <section class="canvas canvas-a" data-variant="a" aria-label="方向 A：宽分栏">
       <header class="meta">
         <span class="code">DSH-DESKTOP</span>
@@ -157,6 +176,21 @@
       <button type="button" id="next-variant" aria-label="下一个设计">→</button>
     </div>
     <div class="control-row">
+      <label>平台
+        <select id="platform-select">
+          <option value="windows">Windows</option>
+          <option value="mac">macOS</option>
+        </select>
+      </label>
+      <label id="window-state-label" hidden>窗口
+        <select id="window-state-select">
+          <option value="active">前台</option>
+          <option value="inactive">失焦</option>
+          <option value="fullscreen">全屏</option>
+        </select>
+      </label>
+    </div>
+    <div class="control-row">
       <label>状态样例
         <select id="fixture-select">
           <option value="startup">正在启动</option>
@@ -170,6 +204,7 @@
       <button type="button" id="theme-toggle" aria-pressed="false">深色预览</button>
       <button type="button" id="motion-toggle" aria-pressed="false">减少动效：关</button>
     </div>
+    <p class="platform-detail" id="platform-detail" hidden></p>
     <p class="prototype-note" id="prototype-note" role="status">样例状态仅用于预览；操作按钮未连接真实运行时或日志导出。</p>
   </aside>
 

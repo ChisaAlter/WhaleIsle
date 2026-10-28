@@ -161,6 +161,9 @@ const fixtureSelect = document.getElementById('fixture-select');
 const themeToggle = document.getElementById('theme-toggle');
 const motionToggle = document.getElementById('motion-toggle');
 const note = document.getElementById('prototype-note');
+const platformSelect = document.getElementById('platform-select');
+const windowStateSelect = document.getElementById('window-state-select');
+const macAppMenu = document.querySelector('.mac-app-menu');
 let currentVariant = variants.some(({ key }) => key === url.searchParams.get('variant'))
   ? url.searchParams.get('variant')
   : 'a';
@@ -168,6 +171,28 @@ let currentVariant = variants.some(({ key }) => key === url.searchParams.get('va
 function updateUrl(key, value) {
   url.searchParams.set(key, value);
   history.replaceState(null, '', url);
+}
+
+function setPlatform(platform, syncUrl = true) {
+  const mac = platform === 'mac';
+  platformSelect.value = mac ? 'mac' : 'windows';
+  document.documentElement.dataset.platform = mac ? 'darwin' : 'win32';
+  document.getElementById('window-state-label').hidden = !mac;
+  document.getElementById('platform-detail').hidden = !mac;
+  macAppMenu.open = false;
+  setWindowState(windowStateSelect.value, false);
+  if (syncUrl) updateUrl('platform', platformSelect.value);
+}
+
+function setWindowState(state, syncUrl = true) {
+  const resolved = ['active', 'inactive', 'fullscreen'].includes(state) ? state : 'active';
+  windowStateSelect.value = resolved;
+  document.documentElement.dataset.windowState = resolved;
+  document.getElementById('platform-detail').textContent = resolved === 'fullscreen'
+    ? '全屏预览：收回窗口圆角；系统标题栏由 AppKit 显隐，此处不模拟鼠标触顶'
+    : '原型标注：左侧 80px 留给原生红黄绿 · 关窗不退出 · ⌘, 设置 · ⌘H 隐藏 · ⌘Q 退出';
+  macAppMenu.open = false;
+  if (syncUrl) updateUrl('window', resolved);
 }
 
 function showVariant(key, syncUrl = true) {
@@ -263,11 +288,32 @@ document.getElementById('next-variant').addEventListener('click', () => cycleVar
 fixtureSelect.addEventListener('change', () => renderFixture(fixtureSelect.value));
 themeToggle.addEventListener('click', () => setTheme(themeToggle.getAttribute('aria-pressed') !== 'true'));
 motionToggle.addEventListener('click', () => setReducedMotion(!document.body.classList.contains('is-reduced-motion')));
+platformSelect.addEventListener('change', () => setPlatform(platformSelect.value));
+windowStateSelect.addEventListener('change', () => setWindowState(windowStateSelect.value));
+document.querySelectorAll('[data-preview-command]').forEach(button => {
+  button.addEventListener('click', () => {
+    const messages = {
+      settings: '原型预览：正式应用通过 ⌘, 打开设置；此处不连接应用',
+      hide: '原型预览：⌘H 隐藏整个应用，点击 Dock 图标可回到前台；此处不会隐藏浏览器',
+      quit: '原型预览：⌘Q 退出应用；红色按钮与 ⌘W 只关闭窗口，不退出应用',
+    };
+    note.textContent = messages[button.dataset.previewCommand];
+    macAppMenu.open = false;
+  });
+});
+document.addEventListener('pointerdown', event => {
+  if (!macAppMenu.contains(event.target)) macAppMenu.open = false;
+});
 const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 let requestedReducedMotion = url.searchParams.get('motion') === 'reduced';
 motionPreference.addEventListener('change', () => setReducedMotion(requestedReducedMotion, false));
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && macAppMenu.open) {
+    macAppMenu.open = false;
+    macAppMenu.querySelector('summary').focus();
+    return;
+  }
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   const focused = event.target;
   if (focused instanceof HTMLElement && (
@@ -290,6 +336,8 @@ document.querySelectorAll('.actions button').forEach((button) => {
 });
 
 showVariant(currentVariant, false);
+setWindowState(url.searchParams.get('window'), false);
+setPlatform(url.searchParams.get('platform') ?? (/Mac/.test(navigator.platform) ? 'mac' : 'windows'), false);
 renderFixture(url.searchParams.get('state') ?? 'startup', false);
 setTheme(url.searchParams.get('theme') === 'dark', false);
 document.body.classList.toggle('is-clean-presentation', url.searchParams.get('presentation') === 'clean');

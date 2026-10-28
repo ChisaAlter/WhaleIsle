@@ -48,11 +48,15 @@ const ARIA_KEYS = {
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
 };
 
-function ariaToAccelerator(aria) {
+function ariaToAccelerator(aria, platform) {
   if (typeof aria !== 'string' || aria === '') return undefined;
   const parts = aria.split('+');
   const key = parts.pop();
-  const accelerator = parts.map((part) => ARIA_MODIFIERS[part]);
+  const accelerator = parts.map((part) => {
+    if (platform === 'macos' && part === 'Control') return 'Control';
+    if (platform === 'macos' && part === 'Meta') return 'Command';
+    return ARIA_MODIFIERS[part];
+  });
   if (accelerator.some((part) => part === undefined)) return undefined;
   const suffix = key in ARIA_KEYS ? ARIA_KEYS[key]
     : /^(F\d{1,2}|[A-Z0-9])$/u.test(key) ? key : undefined;
@@ -104,7 +108,7 @@ function createShortcutService(options) {
     if (protocol === null) return table;
     for (const row of rows) {
       if (row.binding !== null && row.issue === null && row.conflicts.length === 0) {
-        const accelerator = ariaToAccelerator(protocol.presentBinding(row.binding, platform).aria);
+        const accelerator = ariaToAccelerator(protocol.presentBinding(row.binding, platform).aria, platform);
         if (accelerator !== undefined) table[row.id] = accelerator;
       }
     }

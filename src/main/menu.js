@@ -18,15 +18,27 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
     };
   };
   const isMac = process.platform === 'darwin';
+  const settingsItem = {
+    label: '设置…',
+    ...commandItem('settings.open', 'CmdOrCtrl+,', () => { openHarnessSettings(); }),
+  };
 
   const template = [
     ...(isMac
       ? [{
         label: app.name,
         submenu: [
-          { role: 'about', label: '关于' },
+          { role: 'about', label: `关于 ${app.name}` },
           { type: 'separator' },
-          { role: 'quit', label: '退出' },
+          settingsItem,
+          { type: 'separator' },
+          { role: 'services', label: '服务' },
+          { type: 'separator' },
+          { role: 'hide', label: `隐藏 ${app.name}` },
+          { role: 'hideOthers', label: '隐藏其他应用' },
+          { role: 'unhide', label: '全部显示' },
+          { type: 'separator' },
+          { role: 'quit', label: `退出 ${app.name}` },
         ],
       }]
       : []),
@@ -42,7 +54,7 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
           click: () => onOpenLauncher && onOpenLauncher(),
         },
         {
-          label: '在资源管理器中打开工作区',
+          label: isMac ? '在 Finder 中打开工作区' : '在资源管理器中打开工作区',
           click: () => {
             const { workspace } = loadConfig();
             if (workspace) {
@@ -51,10 +63,7 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
           },
         },
         { type: 'separator' },
-        {
-          label: '设置…',
-          ...commandItem('settings.open', 'CmdOrCtrl+,', () => { openHarnessSettings(); }),
-        },
+        ...(!isMac ? [settingsItem] : []),
         {
           label: '插件市场…',
           accelerator: 'CmdOrCtrl+Shift+M',
@@ -72,6 +81,7 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
         isMac ? { role: 'close', label: '关闭窗口' } : { role: 'quit', label: '退出' },
       ],
     },
+    ...(isMac ? [{ role: 'editMenu', label: '编辑' }] : []),
     {
       label: '运行',
       submenu: [
@@ -100,6 +110,16 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
         { role: 'toggleDevTools', label: '开发者工具' },
       ],
     },
+    ...(isMac ? [{
+      role: 'windowMenu',
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '缩放' },
+        { type: 'separator' },
+        { role: 'front', label: '前置全部窗口' },
+      ],
+    }] : []),
     {
       label: '帮助',
       submenu: [
@@ -121,6 +141,12 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  if (isMac) {
+    app.dock.setMenu(Menu.buildFromTemplate([
+      { label: '打开工作区…', click: () => onOpenWorkspace() },
+      { label: '打开启动器', click: () => onOpenLauncher && onOpenLauncher() },
+    ]));
+  }
 }
 
 module.exports = { buildMenu };
