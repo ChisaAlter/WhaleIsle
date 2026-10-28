@@ -5,6 +5,7 @@
 // of these endpoints. Selecting a route must drive every fetch — metadata,
 // installer, checksum — through that route's host only.
 const update = require('../main/update');
+const { systemFetch } = require('../main/system-proxy');
 const deltaManifest = require('./delta/manifest');
 
 const ROUTES = {
@@ -13,7 +14,7 @@ const ROUTES = {
     label: 'GitHub',
     detail: '国外线路 · GitHub Releases 直连',
     verified: true,
-    apiBase: 'https://api.github.com/repos/ChisaAlter/Deepseek-Harness-Desktop',
+    apiBase: 'https://api.github.com/repos/ChisaAlter/WhaleIsle',
     page: update.RELEASES_PAGE,
   },
   cnb: {
@@ -34,6 +35,33 @@ function normalizeRoute(value) {
   return ROUTES[key] ? key : '';
 }
 
+// GitHub release hosts are often unreachable without a proxy in mainland China.
+const CHINA_TIME_ZONES = new Set(['Asia/Shanghai', 'Asia/Chongqing', 'Asia/Chungking', 'Asia/Harbin',
+  'Asia/Urumqi', 'Asia/Kashgar', 'PRC']);
+
+function systemRegion() {
+  try {
+    const { app } = require('electron');
+    if (!app?.isReady?.()) return null;
+    return {
+      locale: app.getSystemLocale?.() || app.getLocale?.() || '',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Route used until the user picks one: CNB on mainland-China systems
+ * (Simplified Chinese locale or a China time zone), GitHub elsewhere and
+ * outside a ready Electron app.
+ */
+function defaultRoute(region = systemRegion()) {
+  if (!region) return 'github';
+  return /^zh-(cn|hans)\b/i.test(region.locale || '') || CHINA_TIME_ZONES.has(region.timeZone) ? 'cnb' : 'github';
+}
+
 function listRoutes() {
   return Object.values(ROUTES).map(({ id, label, detail, verified, page }) => ({
     id,
@@ -47,7 +75,7 @@ function listRoutes() {
 async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS, { signal } = {}) {
   let response;
   try {
-    response = await fetch(url, {
+    response = await systemFetch(url, {
       headers: {
         Accept: 'application/vnd.cnb.api+json',
         'User-Agent': `Deepseek-Harness-Desktop/${update.currentVersion()}`,
@@ -234,6 +262,7 @@ async function releaseFor(route, tag, { installedVersion = '', timeoutMs, signal
 module.exports = {
   ROUTES,
   normalizeRoute,
+  defaultRoute,
   listRoutes,
   normalizeAssets,
   latestFor,

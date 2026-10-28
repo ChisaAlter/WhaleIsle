@@ -264,7 +264,7 @@ function createWhaleBridgeService(deps = {}) {
       } else {
         const source = require('./release-source');
         const saved = require('../main/config').loadConfig().downloadRoute;
-        const route = source.normalizeRoute(saved) || 'github';
+        const route = source.normalizeRoute(saved) || source.defaultRoute();
         if (route === 'github') {
           // Public release attachments do not consume the shared IP's REST API
           // quota. Pin the executable to the validated manifest's version so a

@@ -51,11 +51,11 @@ function invalidateInstalledCache() {
 function configuredRoute(deps = {}) {
   try {
     const config = typeof deps.loadConfig === 'function' ? deps.loadConfig() : loadConfig();
-    // No explicit pick yet → behave as if GitHub were selected, matching the
-    // prototype's default-checked line card and the seg control.
-    return releaseSource.normalizeRoute(config.downloadRoute) || 'github';
+    // No explicit pick yet → the region default is shown as selected, so the
+    // line card, the seg control and every fetch agree on one route.
+    return releaseSource.normalizeRoute(config.downloadRoute) || releaseSource.defaultRoute();
   } catch {
-    return 'github';
+    return releaseSource.defaultRoute();
   }
 }
 

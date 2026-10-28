@@ -37,6 +37,17 @@ test('normalizeRoute accepts known ids only', () => {
   assert.equal(releaseSource.normalizeRoute(undefined), '');
 });
 
+test('an unpicked route defaults to CNB on mainland-China systems only', () => {
+  assert.equal(releaseSource.defaultRoute({ locale: 'zh-CN', timeZone: 'America/New_York' }), 'cnb');
+  assert.equal(releaseSource.defaultRoute({ locale: 'zh-Hans-CN', timeZone: '' }), 'cnb');
+  assert.equal(releaseSource.defaultRoute({ locale: 'en-US', timeZone: 'Asia/Shanghai' }), 'cnb');
+  assert.equal(releaseSource.defaultRoute({ locale: 'zh-TW', timeZone: 'Asia/Taipei' }), 'github');
+  assert.equal(releaseSource.defaultRoute({ locale: 'en-US', timeZone: 'Europe/Berlin' }), 'github');
+  // Outside a ready Electron app (tests, source tools) nothing is inferred.
+  assert.equal(releaseSource.defaultRoute(), 'github');
+  assert.equal(runtimeInstall.configuredRoute({ loadConfig: () => ({ downloadRoute: '' }) }), 'github');
+});
+
 test('listRoutes exposes GitHub and the enabled CNB mirror', () => {
   const routes = releaseSource.listRoutes();
   const github = routes.find((row) => row.id === 'github');
@@ -606,17 +617,18 @@ test('checkDesktopUpdate clamps available→none when no runtime is installed', 
 test('downloadFile aborts an in-flight request on signal and removes the partial', async () => {
   const previousGet = https.get;
   let destroyed = false;
+  const controller = new AbortController();
   https.get = (_target, _options, _onResponse) => {
     const request = new EventEmitter();
     request.destroy = () => { destroyed = true; };
+    // Abort once the request is actually in flight (proxy resolution is async).
+    queueMicrotask(() => controller.abort());
     return request;
   };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-rt-dl-'));
   const dest = path.join(dir, 'setup.exe');
-  const controller = new AbortController();
   try {
     const pending = update.downloadFile('https://example.test/setup.exe', dest, null, { signal: controller.signal });
-    controller.abort();
     await assert.rejects(pending, (error) => error.name === 'AbortError');
     assert.equal(destroyed, true);
     assert.equal(fs.existsSync(dest), false);

@@ -6,13 +6,14 @@ const { spawn } = require('child_process');
 const { app, shell } = require('electron');
 const { downloadLatestViaUpdater, differentialAvailability } = require('./update-updater');
 const { UpdateJournal } = require('./update-journal');
+const { agentFor, systemFetch } = require('./system-proxy');
 const { checkInstallSpace } = require('./install-space');
 const { setTimeout: delay } = require('node:timers/promises');
 const installDetect = require('../launcher/install-detect');
 const { currentVersion, getInstalledAppInfo } = installDetect;
 
 const GITHUB_OWNER = 'ChisaAlter';
-const GITHUB_REPO = 'Deepseek-Harness-Desktop';
+const GITHUB_REPO = 'WhaleIsle';
 const RELEASES_LATEST = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
 const RELEASES_LIST = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=30`;
 const RELEASES_PAGE = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`;
@@ -24,7 +25,7 @@ const DOWNLOAD_TIMEOUT_MS = 2 * 60 * 60_000;
 const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const RETRYABLE_NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED',
   'ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET']);
+  'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET', 'ERR_PROXY_TUNNEL']);
 /**
  * Release asset with `sha512sum` lines for every installer. Releases that
  * carry it get mandatory post-download verification; older releases without
@@ -46,7 +47,8 @@ function setGithubTokenProvider(provider) {
 
 /**
  * Lazy shell `config.downloadRoute` source, injected by src/main/index.js.
- * Unset (tests, source tools) and unpicked both mean GitHub.
+ * Unpicked means the region default (release-source defaultRoute); outside
+ * Electron (tests, source tools) that is GitHub.
  */
 let routeProvider = null;
 
@@ -56,7 +58,8 @@ function setUpdateRouteProvider(provider) {
 
 function updateRoute() {
   try {
-    return require('../launcher/release-source').normalizeRoute(routeProvider?.()) || 'github';
+    const releaseSource = require('../launcher/release-source');
+    return releaseSource.normalizeRoute(routeProvider?.()) || releaseSource.defaultRoute();
   } catch {
     return 'github';
   }
@@ -213,7 +216,7 @@ async function readAssetChecksum(assetName, checksumUrl, {
     let response;
     let text;
     try {
-      response = await fetch(checksumUrl, {
+      response = await systemFetch(checksumUrl, {
         headers: downloadHeaders(true, checksumUrl),
         signal: signal ? AbortSignal.any([signal, requestSignal]) : requestSignal,
       });
@@ -335,7 +338,7 @@ function isTimeoutError(error) {
 async function githubJson(url, timeoutMs = CHECK_TIMEOUT_MS, { signal } = {}) {
   let response;
   try {
-    response = await fetch(url, {
+    response = await systemFetch(url, {
       headers: githubHeaders(),
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
@@ -526,9 +529,18 @@ async function downloadFile(url, dest, onProgress, options = {}) {
   // to this exact operation/URL, never an unverified partial from an earlier run.
   const resumeState = options.resume ? { offset: 0, total: 0, validator: null } : null;
   try {
+    // Redirect hops (GitHub -> signed asset host) reuse the first hop's proxy decision.
+    let agent = options.agent === undefined ? await agentFor(url) : options.agent;
     return await runDownloadAttempts((attempt, remainingMs) => downloadFileOnce(url, dest,
       (progress) => onProgress?.({ ...progress, attempt, maxAttempts }),
-      { ...options, resumeState, signal, timeoutMs: remainingMs }), {
+      { ...options, agent, resumeState, signal, timeoutMs: remainingMs }).catch((error) => {
+      // A dead or refusing system proxy must not block a reachable direct route.
+      if (agent && error.proxyFailure) {
+        agent = null;
+        error.retryable = true;
+      }
+      throw error;
+    }), {
       ...options, timeoutMs, signal, maxAttempts,
       onRetry: (retry) => onProgress?.({ phase: 'download', ...retry, percent: null,
         received: resumeState?.offset || 0, total: resumeState?.total || 0 }),
@@ -540,7 +552,7 @@ async function downloadFile(url, dest, onProgress, options = {}) {
 }
 
 function downloadFileOnce(url, dest, onProgress, {
-  timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, idleTimeoutMs = 45_000, connectionTimeoutMs = 20_000, resumeState,
+  timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, idleTimeoutMs = 45_000, connectionTimeoutMs = 20_000, resumeState, agent,
 } = {}) {
   if (signal?.aborted) {
     return Promise.reject(cancelledError());
@@ -621,6 +633,7 @@ function downloadFileOnce(url, dest, onProgress, {
       }
       try { request = https.get(target, {
         headers,
+        ...(agent && /^https:/i.test(target) ? { agent } : {}),
       }, (response) => {
         if (settled) { response.resume(); return; }
         activeResponse = response;
