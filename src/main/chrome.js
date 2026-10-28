@@ -169,6 +169,9 @@ function sendWindowState(win) {
     fullscreen: win.isFullScreen(),
     minimizable: win.minimizable,
     maximizable: win.maximizable,
+    // The Harness view keeps backgroundThrottling off (minimize blank-flash),
+    // so its page cannot see that the window left the screen.
+    visible: win.isVisible() && !win.isMinimized(),
   };
   if (!win.webContents.isDestroyed()) {
     win.webContents.send('shell:window-state', payload);
@@ -382,6 +385,7 @@ function attachIntegratedChrome(win, options = {}) {
   win.on('unmaximize', () => sendWindowState(win));
   win.on('enter-full-screen', () => sendWindowState(win));
   win.on('leave-full-screen', () => sendWindowState(win));
+  for (const event of ['minimize', 'restore', 'hide', 'show']) win.on(event, () => sendWindowState(win));
   win.webContents.on('did-finish-load', apply);
   win.webContents.on('dom-ready', apply);
   win.webContents.on('did-navigate-in-page', apply);

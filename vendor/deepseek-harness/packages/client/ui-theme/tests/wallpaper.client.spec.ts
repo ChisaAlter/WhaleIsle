@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  GRADIENT_ATTR, GRADIENT_BLOBS_ID, GRADIENT_LAYER_ID, GRADIENT_STEP_MS,
+  GRADIENT_ATTR, GRADIENT_BLOBS_ID, GRADIENT_LAYER_ID, GRADIENT_STEP_MS, WINDOW_HIDDEN_ATTR,
   MAX_WALLPAPER_DATA_URL_CHARS, MAX_WALLPAPER_CANVAS_SOLIDITY, TERMINAL_PANE_MIN_SOLIDITY,
   TRANSPARENT_ATTR, TRANSPARENT_GLASS_SOLIDITY,
   WALLPAPER_ATTR, WALLPAPER_INNER_ID, WALLPAPER_LAYER_ID,
@@ -230,6 +230,14 @@ describe('applyWallpaperLayer', () => {
       now = 9000
       vi.advanceTimersByTime(GRADIENT_STEP_MS * 3)
       expect(animations[0]?.currentTime).toBe(1500)
+      // Neither does a desktop window that is minimized or in the tray.
+      visibility = 'visible'
+      document.documentElement.setAttribute(WINDOW_HIDDEN_ATTR, '')
+      vi.advanceTimersByTime(GRADIENT_STEP_MS * 3)
+      expect(animations[0]?.currentTime).toBe(1500)
+      document.documentElement.removeAttribute(WINDOW_HIDDEN_ATTR)
+      vi.advanceTimersByTime(GRADIENT_STEP_MS)
+      expect(animations[0]?.currentTime).toBe(9000)
       // Turning the effect off stops the clock.
       applyWallpaperLayer({ ...gradient, backgroundEffect: 'none' })
       visibility = 'visible'

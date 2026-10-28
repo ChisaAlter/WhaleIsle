@@ -98,7 +98,9 @@ const {
   showMain,
   openHarnessSettings,
   setRecoveryConfirm,
+  setRenderHintsSource,
 } = require('./window');
+const { detectGpuTier } = require('./gpu-tier');
 const { watchSystemTheme, currentTheme, applyAppTheme } = require('./chrome');
 const { showClosingOverlay } = require('./closing-overlay');
 const { installShortcutService, getShortcutService } = require('./shortcuts');
@@ -1064,6 +1066,10 @@ if (!gotLock) {
       dsh.log(`[legacy-notification-shortcut] ${shortcutMigration.status}`, 'app');
     }
     const homeEnv = sanitizePackagedDshHomeEnv({ isPackaged: app.isPackaged });
+    setRenderHintsSource(detectGpuTier(app).then((tier) => {
+      dsh.log(`显卡：${tier.device || '未知'}（${tier.reason}）${tier.lowPower ? '，默认关闭重渲染特效' : ''}`, 'app');
+      return tier;
+    }));
     if (homeEnv.dropped) {
       dsh.log(`忽略继承的 DSHD_HOME=${homeEnv.value}（packaged 下需要 DSHD_ALLOW_ENV_HOME=1）`, 'app');
     }

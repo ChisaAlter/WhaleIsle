@@ -47,7 +47,7 @@ import {
   DEFAULT_FONT_SIZES, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
   fontFamilyVariable, isFontSize, normalizeFontFamily, sectionFontSizes,
   type FontFamilies, type FontRole, type FontSizes,
-  DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, DEFAULT_THEME_SETTINGS, FONT_SIZE_MAX,
+  DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, FONT_SIZE_MAX,
   FONT_SIZE_MIN, isThemePreference,
   THEME_BACKGROUND_EFFECT_COLORS_FIELD, THEME_BACKGROUND_EFFECT_COUNT_FIELD,
   THEME_BACKGROUND_EFFECT_FIELD,
@@ -281,7 +281,7 @@ export class ThemeRuntime {
   private readonly ctx: ClientContext
   private readonly host: ConfigForm<ThemeSettings>
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
-  private settings: ThemeSettings = { ...DEFAULT_THEME_SETTINGS, customThemes: [] }
+  private settings: ThemeSettings = resolveThemeSettings(undefined)
   private preference: ThemePreference
   private fontSize: number = bootstrapFontSize()
   private fontSizes: FontSizes = bootstrapFontSizes()

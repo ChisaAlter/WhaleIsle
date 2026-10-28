@@ -20,6 +20,12 @@ function remoteFeatureEnabled(argv = process.argv) {
   return value ? value.slice(prefix.length) === '1' : false;
 }
 
+// Render hints (src/main/gpu-tier.js) arrive the same way; an absent flag
+// means a full-effects machine.
+function lowPowerGpu(argv = process.argv) {
+  return argv.includes('--dshd-low-power-gpu=1');
+}
+
 function invoke(renderer, channel) {
   return (...args) => renderer.invoke(channel, ...args);
 }
@@ -306,13 +312,17 @@ const api = isMainFrame ? buildShellApi(role, ipcRenderer) : null;
 if (isMainFrame && ['boot', 'harness', 'launcher'].includes(role)
     && typeof window !== 'undefined' && typeof document !== 'undefined') {
   let fullscreen = false;
+  // Ambient effects pause while the window is minimized or in the tray.
+  let hidden = false;
   const markWindow = () => {
     if (document.documentElement === null) return;
     document.documentElement.dataset.platform = process.platform;
     document.documentElement.toggleAttribute('data-fullscreen', fullscreen);
+    document.documentElement.toggleAttribute('data-dshd-window-hidden', hidden);
   };
   const applyWindowState = (state) => {
     fullscreen = Boolean(state?.fullscreen);
+    if (typeof state?.visible === 'boolean') hidden = !state.visible;
     markWindow();
   };
   if (document.documentElement === null) {
@@ -342,6 +352,8 @@ if (role === 'harness' && isMainFrame) {
   contextBridge.exposeInMainWorld('dshDesktop', {
     protocolVersion: 1,
     onboarding: false,
+    // Integrated or software GPU: ui-theme starts with heavy effects off.
+    renderHints: { lowPowerGpu: lowPowerGpu() },
     keyboard: {
       closeWindow: invoke(ipcRenderer, 'shell:shortcuts-close-window'),
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-input'),

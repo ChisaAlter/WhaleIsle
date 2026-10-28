@@ -731,6 +731,19 @@ describe('AppearanceSection', () => {
     expect(bindings.setWallpaper).toHaveBeenCalledWith({ backgroundEffect: 'gradient' })
   })
 
+  it('explains the default-off effect on a low-power GPU', () => {
+    mount('system', { backgroundEffect: 'none' })
+    expect(screen.queryByText(COPY['effect.lowPowerGpu'])).toBeNull()
+    cleanup()
+    vi.stubGlobal('dshDesktop', { renderHints: { lowPowerGpu: true } })
+    try {
+      mount('system', { backgroundEffect: 'none' })
+      expect(screen.getByText(COPY['effect.lowPowerGpu'])).toBeDefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('marks the stored effect as paused while a wallpaper is set', () => {
     mount('system', { backgroundEffect: 'gradient', wallpaperImage: PNG })
     expect(screen.getByText(COPY['effect.pausedByWallpaper'])).toBeDefined()

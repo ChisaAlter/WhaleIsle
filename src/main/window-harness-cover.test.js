@@ -101,7 +101,7 @@ test('curtain waits for native animation completion instead of a wall-clock cuto
   assert.deepEqual(states, ['ready', 'in']);
 });
 
-function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animation = Promise.resolve(), reduced = false } = {}) {
+function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animation = Promise.resolve(), reduced = false, lowPowerGpu = false } = {}) {
   const events = [];
   const view = { webContents: {
     isDestroyed: () => false,
@@ -125,6 +125,7 @@ function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animatio
   const snippet = source.slice(source.indexOf('const HARNESS_FADE_'), source.indexOf('function watchPluginBoot'));
   const context = {
     harnessView: view, harnessRevealed: false,
+    renderHints: { lowPowerGpu },
     rendererFile: name => name,
     BrowserWindow: class {
       constructor() {
@@ -177,6 +178,14 @@ test('reveal waits for chrome before layout and renderer completion before cover
 
 test('reduced motion never captures or creates a curtain renderer', async () => {
   const fixture = revealFixture({ reduced: true });
+  await fixture.reveal(fixture.win);
+  assert.ok(!fixture.events.includes('create-curtain'));
+  assert.ok(!fixture.events.includes('animate'));
+  assert.ok(fixture.events.includes('covered'));
+});
+
+test('a low-power GPU shows the desktop without the curtain cross-fade', async () => {
+  const fixture = revealFixture({ lowPowerGpu: true });
   await fixture.reveal(fixture.win);
   assert.ok(!fixture.events.includes('create-curtain'));
   assert.ok(!fixture.events.includes('animate'));

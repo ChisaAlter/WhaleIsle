@@ -415,6 +415,13 @@ test('harness main-frame keeps component management launcher-only after the acco
   }
 });
 
+test('harness render hints carry the low-power GPU flag from the view arguments', (t) => {
+  withMainFrame(t, true);
+  assert.deepEqual(loadPreload(['electron', '--dshd-shell-role=harness']).exposures.dshDesktop.renderHints, { lowPowerGpu: false });
+  assert.deepEqual(loadPreload(['electron', '--dshd-shell-role=harness', '--dshd-low-power-gpu=1']).exposures.dshDesktop.renderHints,
+    { lowPowerGpu: true });
+});
+
 test('harness subframes do not expose shell privileges', (t) => {
   withMainFrame(t, false);
   const { exposures } = loadPreload(['electron', '--dshd-shell-role=harness']);
@@ -457,6 +464,11 @@ test('desktop shell main frames track initial and native fullscreen state in the
     assert.equal(attributes.has('data-fullscreen'), false);
     listeners.get('shell:window-state')({}, { fullscreen: true });
     assert.equal(attributes.has('data-fullscreen'), true);
+    assert.equal(attributes.has('data-dshd-window-hidden'), false);
+    listeners.get('shell:window-state')({}, { fullscreen: true, visible: false });
+    assert.equal(attributes.has('data-dshd-window-hidden'), true, `${role} must mark a minimized or hidden window`);
+    listeners.get('shell:window-state')({}, { fullscreen: true, visible: true });
+    assert.equal(attributes.has('data-dshd-window-hidden'), false);
   }
 });
 

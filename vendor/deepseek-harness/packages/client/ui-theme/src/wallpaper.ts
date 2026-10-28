@@ -494,6 +494,9 @@ let decoded: HTMLImageElement | null = null
 let resizeBound = false
 let gradientClock: ReturnType<typeof setInterval> | null = null
 
+/** Root attribute the desktop shell sets while its window is minimized or hidden. */
+export const WINDOW_HIDDEN_ATTR = 'data-dshd-window-hidden'
+
 function stopGradientClock(): void {
   if (gradientClock === null) return
   clearInterval(gradientClock)
@@ -504,8 +507,10 @@ function stopGradientClock(): void {
  * Hold the bloom animations paused and move them on a {@link GRADIENT_STEP_MS}
  * clock instead of every display frame. Keyframes stay in `wallpaper.css`;
  * animations the stylesheet restarts (variant switch) are caught on the next
- * step. A hidden document takes no steps. Without the Web Animations API
- * (jsdom) the CSS animations run unchanged.
+ * step. A hidden document takes no steps, nor a desktop window that is
+ * minimized or in the tray (`data-dshd-window-hidden`: its view keeps
+ * background throttling off, so the page stays "visible"). Without the Web
+ * Animations API (jsdom) the CSS animations run unchanged.
  */
 function startGradientClock(blobs: HTMLElement | null): void {
   if (gradientClock !== null || blobs === null || typeof blobs.getAnimations !== 'function') return
@@ -514,7 +519,7 @@ function startGradientClock(blobs: HTMLElement | null): void {
       stopGradientClock()
       return
     }
-    if (document.visibilityState === 'hidden') return
+    if (document.visibilityState === 'hidden' || document.documentElement.hasAttribute(WINDOW_HIDDEN_ATTR)) return
     const now = document.timeline?.currentTime
     if (typeof now !== 'number') return
     for (const animation of blobs.getAnimations({ subtree: true })) {

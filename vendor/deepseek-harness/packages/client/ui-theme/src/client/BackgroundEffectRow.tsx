@@ -14,7 +14,7 @@ import {
   MAX_BACKGROUND_EFFECT_SPEED, MIN_BACKGROUND_EFFECT_COUNT,
   MIN_BACKGROUND_EFFECT_SPEED, sanitizeBackgroundEffectColors,
 } from '../wallpaper.ts'
-import { DEFAULT_THEME_SETTINGS, type ThemeSettings } from '../theme-settings.ts'
+import { DEFAULT_THEME_SETTINGS, lowPowerGpu, type ThemeSettings } from '../theme-settings.ts'
 import type { ThemeKey } from './locales.ts'
 import { EFFECT_PRESETS, effectPreset, type EffectScheme } from './effect-presets.ts'
 import { sliderFillStyle } from './slider.ts'
@@ -339,6 +339,7 @@ export function BackgroundEffectRow({
           {wallpaperSet && gradient ? (
             <p className={css.hint}>{t('effect.pausedByWallpaper')}</p>
           ) : null}
+          {lowPowerGpu() ? <p className={css.hint}>{t('effect.lowPowerGpu')}</p> : null}
         </div>
         <div className={css.effectActions}>
           <Tooltip label={t('effect.configure')} side="top" delayMs={500}>

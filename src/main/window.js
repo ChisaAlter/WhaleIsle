@@ -20,6 +20,26 @@ const {
 const { applyHarnessCookieToSession, launchTokenFromUrl, loadUrlAfterRedeem } = require('./harness-browser-auth');
 const { createForegroundPolicy } = require('./foreground');
 
+// Render hints (src/main/gpu-tier.js), resolved once after ready. The Harness
+// view waits briefly for them because its preload reads them from argv.
+const RENDER_HINTS_WAIT_MS = 3000;
+let renderHints = { lowPowerGpu: false };
+let renderHintsReady = Promise.resolve();
+
+function setRenderHintsSource(source) {
+  renderHintsReady = Promise.resolve(source).then((tier) => {
+    renderHints = { lowPowerGpu: tier?.lowPower === true };
+  }, () => {});
+}
+
+function renderHintsSettled() {
+  let timer;
+  return Promise.race([
+    renderHintsReady,
+    new Promise((resolve) => { timer = setTimeout(resolve, RENDER_HINTS_WAIT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 let foregroundPolicy = null;
 function foreground() {
   foregroundPolicy ||= createForegroundPolicy({ app, BrowserWindow });
@@ -503,7 +523,9 @@ async function revealHarnessView(win) {
     prepareHarnessChrome(win);
     await syncHarnessChrome(win, view.webContents);
     if (!current()) return;
-    const reduced = await view.webContents.executeJavaScript(
+    // The cross-fade captures and composites two full-window layers; a
+    // low-power GPU shows the view directly.
+    const reduced = renderHints.lowPowerGpu || await view.webContents.executeJavaScript(
       `matchMedia('(prefers-reduced-motion: reduce)').matches`,
     );
     if (!current()) return;
@@ -668,6 +690,7 @@ function ensureHarnessView(win) {
       additionalArguments: [
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
+        ...(renderHints.lowPowerGpu ? ['--dshd-low-power-gpu=1'] : []),
       ],
       contextIsolation: true,
       nodeIntegration: false,
@@ -801,6 +824,7 @@ function showHarness(baseUrl, options = {}) {
     ? Promise.resolve()
     : win.loadFile(rendererFile('boot.html'));
   return bootReady.then(async () => {
+    await renderHintsSettled();
     const view = ensureHarnessView(win);
     harnessOrigin = new URL(viewUrl).origin;
     notifyHarnessOrigin();
@@ -1016,6 +1040,7 @@ function closeLauncherWindow() {
 }
 
 module.exports = {
+  setRenderHintsSource,
   createMainWindow,
   setRecoveryConfirm,
   getMainWindow,
