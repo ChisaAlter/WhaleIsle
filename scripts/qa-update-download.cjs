@@ -65,7 +65,7 @@ async function runNative() {
   const oldBytes = Buffer.concat([Buffer.alloc(half, 'a'), Buffer.alloc(half, 'b')]);
   const newBytes = Buffer.concat([Buffer.alloc(half, 'a'), Buffer.alloc(half, 'c')]);
   const oldHash = hash(oldBytes), newHash = hash(newBytes);
-  const asset = 'Whale-Isle-Setup-1.1.0.exe', oldAsset = 'Whale-Isle-Setup-1.0.0.exe';
+  const asset = 'Whale-Isle-Setup-1.1.0.exe', oldAsset = 'Deepseek-Harness-Desktop-Setup-1.0.0.exe';
   const blockmap = bytes => gzipSync(JSON.stringify({ version: '2', files: [{ name: 'file', offset: 0,
     sizes: [half, half], checksums: [0, 1].map(i => createHash('sha256').update(bytes.subarray(i * half, (i + 1) * half)).digest('hex')),
   }] }));
@@ -89,8 +89,27 @@ async function runNative() {
           const record = { file, range: req.headers.range, socketClosed: false, res, bytes: 0 };
           f.requests.push(record);
           const stalled = () => { f.stalled = record; req.socket.once('close', () => { record.socketClosed = true; }); };
-          if (file === 'latest.yml') {
-            if (f.mode === 'metadata') { stalled(); return; } // No headers at all.
+          if (file === 'full-sums') { res.end(`${newHash}  ${asset}`); }
+          else if (file === 'full.exe') {
+            const offset = Number(/^bytes=(\d+)-$/.exec(req.headers.range || '')?.[1] || 0);
+            if (!offset) {
+              res.writeHead(200, { 'content-length': newBytes.length, etag: '"full-v1"' });
+              res.write(newBytes.subarray(0, half));
+              setTimeout(() => res.destroy(), 30);
+            } else {
+              assert.equal(req.headers['if-range'], '"full-v1"');
+              const repeatReset = f.mode === 'full-repeat-reset' && offset === half;
+              assert.ok(offset === half || (f.mode === 'full-repeat-reset' && offset === half + half / 2));
+              res.writeHead(206, { 'content-length': newBytes.length - offset,
+                'content-range': `bytes ${offset}-${newBytes.length - 1}/${newBytes.length}`,
+                ...(repeatReset ? {} : { etag: '"full-v1"' }) });
+              if (repeatReset) {
+                res.write(newBytes.subarray(offset, offset + half / 2));
+                setTimeout(() => res.destroy(), 30);
+              } else res.end(newBytes.subarray(offset));
+            }
+          } else if (file === 'latest.yml') {
+            if (f.mode === 'metadata' || f.mode === 'headers') { stalled(); return; } // No headers at all.
             res.end(`version: 1.1.0\nfiles:\n  - url: ${asset}\n    sha512: ${hash(newBytes, 'base64')}\n    size: ${newBytes.length}\n`);
           } else if (maps[file]) res.end(maps[file]);
           else if (file === 'base-sums') res.end(`${oldHash}  ${oldAsset}`);
@@ -99,9 +118,21 @@ async function runNative() {
             const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
             if (!range) forbid('whole installer GET');
             assert.equal(req.headers.range, `bytes=${half}-${newBytes.length - 1}`);
-            res.writeHead(f.mode === 'error' ? 503 : 206, { 'content-type': 'application/octet-stream',
-              'content-range': `bytes ${range[1]}-${range[2]}/${newBytes.length}`, 'content-length': half });
+            const status = f.mode === 'error' ? 503 : f.mode === 'ignored-range' ? 200 : 206;
+            res.writeHead(status, { 'content-type': 'application/octet-stream',
+              'content-range': f.mode === 'wrong-range' ? `bytes 0-${half - 1}/${newBytes.length}`
+                : `bytes ${range[1]}-${range[2]}/${newBytes.length}`,
+              'content-length': f.mode === 'ignored-range' ? newBytes.length : half });
             if (f.mode === 'ok') res.end(newBytes.subarray(half));
+            else if (f.mode === 'slow') {
+              let sent = half;
+              const timer = setInterval(() => {
+                const end = Math.min(sent + half / 4, newBytes.length);
+                res.write(newBytes.subarray(sent, end)); sent = end;
+                if (sent === newBytes.length) { clearInterval(timer); res.end(); }
+              }, 120);
+              res.once('close', () => clearInterval(timer));
+            }
             else { record.bytes = 10; res.write(newBytes.subarray(half, half + 10)); res.flushHeaders(); stalled(); }
           } else forbid(`unexpected route ${file}`);
         } catch (error) { violations.push(error.message); res.destroy(); }
@@ -141,7 +172,9 @@ async function runNative() {
         const helper = await updater.getOrCreateDownloadHelper();
         assert.equal(helper.cacheDir, cache);
         active = { name, mode, requests: [], wire, updater, helper, cache,
-          run: (signal, timeoutMs = 8000) => downloadLatestViaUpdater({ expectedCheck: target, signal, timeoutMs }, null, deps) };
+          run: (signal, timeoutMs = 8000, watchdog = false) => downloadLatestViaUpdater({ expectedCheck: target, signal, timeoutMs }, null,
+            watchdog ? { ...deps, requestSetTimeout: (fn, ms) => setTimeout(fn, ms === 45000 || ms === 20000 ? 250 : ms),
+              requestClearTimeout: clearTimeout } : deps) };
         return active;
       }
       const ranges = f => f.requests.filter(r => r.file === asset);
@@ -183,7 +216,7 @@ async function runNative() {
         const start = Date.now();
         if (mode === 'range' || mode === 'metadata') controller.abort();
         const result = await bounded(pending, `${name}: operation must settle`);
-        const reason = mode === 'error' ? 'ERR_UPDATER_DIFFERENTIAL_FAILED' : mode === 'timeout' ? 'timeout' : 'cancelled';
+        const reason = mode === 'error' ? 'HTTP_ERROR_503' : mode === 'timeout' ? 'timeout' : 'cancelled';
         assert.equal(result.ok, false); assert.equal(result.reason, reason, result.message);
         await until(() => f.stalled.socketClosed, `${name}: actual server socket must close`);
         assert.equal(f.updater.checkForUpdatesPromise, null, 'metadata cleanup'); invariant(f);
@@ -192,6 +225,51 @@ async function runNative() {
         cases.push({ name, result: 'passed', reason, settledMs, ranges: ranges(f).length, socketClosed: f.stalled.socketClosed,
           ...(mode === 'range' ? { closeBeforeResponse: earlyClose } : {}) });
       }
+      for (const mode of ['ignored-range', 'wrong-range', 'idle', 'headers']) {
+        const f = await fixture(mode, mode);
+        const timedOut = mode === 'idle' || mode === 'headers';
+        const pending = f.run(undefined, 8000, timedOut);
+        const result = await bounded(pending, mode);
+        assert.equal(result.ok, false);
+        assert.equal(result.reason, timedOut ? 'ETIMEDOUT' : 'ERR_UPDATER_INVALID_RANGE', result.message);
+        await until(() => f.stalled?.socketClosed, `${mode}: rejected socket closes`);
+        assert.equal(ranges(f).length, mode === 'headers' ? 0 : 1, 'no automatic full transfer or retry');
+        invariant(f);
+        await retry(f);
+        cases.push({ name: mode, result: 'passed', reason: result.reason, socketClosed: true });
+      }
+      const slow = await fixture('continuously-progressing', 'slow');
+      const slowStart = Date.now();
+      const slowResult = await bounded(slow.run(undefined, 8000, true), 'continuous progress');
+      assert.equal(slowResult.ok, true, slowResult.message);
+      assert.ok(Date.now() - slowStart > 250, 'transfer outlives a single idle window');
+      assert.equal(hash(fs.readFileSync(slowResult.installer)), newHash);
+      invariant(slow);
+      cases.push({ name: 'continuously-progressing', result: 'passed', idleWindowMs: 250 });
+      // The complete-file release path uses Node HTTPS in production. Map only
+      // the localhost fixture's URL protocol to exercise real HTTP resets and
+      // file writes with the unchanged production downloader.
+      const https = require('node:https'), originalGet = https.get;
+      const update = require('../src/main/update');
+      https.get = (url, options, callback) => {
+        assert.ok(url.startsWith(base));
+        return http.get(url, options, callback);
+      };
+      try {
+        for (const mode of ['full', 'full-repeat-reset']) {
+          active = { requests: [], mode };
+          const fullDest = path.join(dir, mode, asset), fullProgress = [];
+          await update.downloadReleaseAsset({ assetName: asset, assetUrl: base + 'full.exe', checksumUrl: base + 'full-sums' },
+            fullDest, p => fullProgress.push(p));
+          assert.equal(hash(fs.readFileSync(fullDest)), newHash);
+          const fullRequests = active.requests.filter(r => r.file === 'full.exe');
+          assert.deepEqual(fullRequests.map(r => r.range), mode === 'full' ? [undefined, `bytes=${half}-`]
+            : [undefined, `bytes=${half}-`, `bytes=${half + half / 2}-`]);
+          assert.ok(fullProgress.some(p => p.resumed && p.received === newBytes.length));
+          cases.push({ name: mode === 'full' ? 'full-reset-resume-sha512' : 'full-repeat-reset-pinned-validator',
+            result: 'passed', transferred: newBytes.length, assetSize: newBytes.length });
+        }
+      } finally { https.get = originalGet; }
     })(), 'whole runtime QA', 20000);
   } catch (error) { failure = error; }
   finally {

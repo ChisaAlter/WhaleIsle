@@ -6,8 +6,11 @@
 
 const path = require('path');
 const fs = require('fs');
+const { EventEmitter } = require('events');
 const { app } = require('electron');
 
+const requestFailures = new WeakMap();
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 2 * 60 * 60_000;
 const checkedBases = new Map();
 const preparingBases = new Map();
 
@@ -66,6 +69,10 @@ function strictNsisUpdaterClass(NsisUpdater) {
       try {
         const needsFullDownload = await super.differentialDownloadInstaller(...args);
         if (needsFullDownload) {
+          // 6.8.9 swallows differential errors to select its full-file fallback.
+          // Preserve the request's actionable error without enabling fallback.
+          const failure = requestFailures.get(this.httpExecutor);
+          if (failure) throw failure;
           throw Object.assign(new Error('增量更新失败，已停止下载。请重新选择完全下载。'), {
             code: 'ERR_UPDATER_DIFFERENTIAL_FAILED',
           });
@@ -91,50 +98,125 @@ function getStrictUpdater(deps) {
   return updater;
 }
 
-/** Cancel the actual requests as well as the library's cancellation token. */
-function bindUpdaterRequests(executor, signal) {
+/** Cancel requests and enforce budgets without Electron's absent socket event. */
+function bindUpdaterRequests(executor, signal, deps = {}) {
   if (!executor?.createRequest) return () => {};
   const createRequest = executor.createRequest;
+  const setTimer = deps.requestSetTimeout || setTimeout;
+  const clearTimer = deps.requestClearTimeout || clearTimeout;
   const active = new Set();
+  requestFailures.delete(executor);
+  const cancelledError = () => Object.assign(new Error('下载已取消'), { name: 'AbortError' });
+  const close = ({ request, response }, error) => {
+    response?.destroy?.(error);
+    if (request.abort) request.abort();
+    else request.destroy?.(error);
+  };
+  const fail = (entry, error) => {
+    entry.cleanup();
+    // Single-range requests in 6.8.9 are not directly bound to the token.
+    // Their registered error handler must settle the downloader before cleanup.
+    entry.request.emit('error', error);
+    close(entry, error);
+  };
   const abort = () => {
-    for (const { request, response } of active) {
-      const error = Object.assign(new Error('下载已取消'), { name: 'AbortError' });
-      // Single-range requests in 6.8.9 are not directly bound to the token.
-      // Reject their promises and close both streams, even when no data arrives.
-      request.emit('error', error);
-      if (response?.destroy) response.destroy(error);
-      if (request.abort) request.abort();
-      else request.destroy?.(error);
-    }
+    for (const entry of [...active]) fail(entry, cancelledError());
   };
   executor.createRequest = function (options, callback) {
-    if (signal.aborted) throw Object.assign(new Error('下载已取消'), { name: 'AbortError' });
+    if (signal.aborted) {
+      // The pinned downloader may call from its 100-range delay, outside a
+      // Promise executor. Return the small request API it uses, then reject
+      // asynchronously after addErrorAndTimeoutHandlers has attached listeners.
+      const request = new EventEmitter();
+      request.end = request.abort = () => request;
+      queueMicrotask(() => request.emit('error', cancelledError()));
+      return request;
+    }
     const entry = {};
+    let timer;
+    let expectedBytes;
+    let receivedBytes = 0;
+    const cleanup = () => {
+      clearTimer(timer);
+      timer = undefined;
+      entry.response?.removeListener('data', onData);
+      active.delete(entry);
+    };
+    const arm = (ms) => {
+      clearTimer(timer);
+      timer = setTimer(() => {
+        const error = Object.assign(new Error(ms === 20_000 ? '连接或响应头等待超时' : '下载无数据超时'), { code: 'ETIMEDOUT' });
+        requestFailures.set(executor, error);
+        fail(entry, error);
+      }, ms);
+    };
+    const onData = (chunk) => {
+      receivedBytes += chunk.length;
+      if (expectedBytes !== undefined && receivedBytes > expectedBytes) {
+        entry.response.unpipe?.();
+        const error = Object.assign(new Error('增量下载响应超过请求的字节范围'), { code: 'ERR_UPDATER_INVALID_RANGE' });
+        requestFailures.set(executor, error);
+        fail(entry, error);
+        return;
+      }
+      if (chunk.length > 0) arm(45_000);
+    };
+    entry.cleanup = cleanup;
     const request = createRequest.call(this, options, (response) => {
       entry.response = response;
-      response.once('end', () => active.delete(entry));
-      response.once('error', () => active.delete(entry));
-      response.once('aborted', () => active.delete(entry));
+      response.once('end', cleanup);
+      response.once('error', cleanup);
+      response.once('aborted', cleanup);
+      const range = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.range || '');
+      if (response.statusCode >= 400) {
+        const { createHttpError } = require('builder-util-runtime');
+        const error = createHttpError(response);
+        requestFailures.set(executor, error);
+        fail(entry, error);
+        return;
+      }
+      if (range) {
+        const header = response.headers?.['content-range'];
+        const contentRange = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(Array.isArray(header) ? header[0] : header || '');
+        expectedBytes = Number(range[2]) - Number(range[1]) + 1;
+        const lengthHeader = response.headers?.['content-length'];
+        const declaredLength = Array.isArray(lengthHeader) ? lengthHeader[0] : lengthHeader;
+        if (response.statusCode !== 206 || !contentRange
+          || Number(contentRange[1]) !== Number(range[1]) || Number(contentRange[2]) !== Number(range[2])
+          || Number(contentRange[3]) <= Number(range[2]) || !Number.isSafeInteger(expectedBytes) || expectedBytes <= 0
+          || (declaredLength !== undefined && (!/^\d+$/.test(declaredLength) || Number(declaredLength) !== expectedBytes))) {
+          const error = Object.assign(new Error('增量下载响应与请求的字节范围不一致'), { code: 'ERR_UPDATER_INVALID_RANGE' });
+          requestFailures.set(executor, error);
+          fail(entry, error);
+          return;
+        }
+      }
+      arm(45_000);
+      response.on('data', onData);
       callback(response);
     });
     entry.request = request;
     active.add(entry);
-    // Electron ClientRequest closes its writable side before the response
-    // arrives. Keep it active until the response ends or a real request error.
-    request.once('error', () => active.delete(entry));
+    // Electron closes the writable request before the response arrives.
+    // Only abort/error or the response's terminal events clear its watchdog.
+    request.once('error', (error) => {
+      requestFailures.set(executor, error);
+      cleanup();
+      entry.response?.destroy?.(error);
+    });
+    request.once('abort', cleanup);
+    arm(20_000);
     return request;
   };
   signal.addEventListener('abort', abort, { once: true });
   return (settled) => {
     signal.removeEventListener('abort', abort);
     // Error statuses can reject the downloader before their body ends.
-    // Close those leftover responses too, without changing the reported error.
-    for (const { request, response } of active) {
-      response?.destroy?.();
-      if (request.abort) request.abort();
-      else request.destroy?.();
+    for (const entry of [...active]) {
+      entry.cleanup();
+      close(entry);
     }
-    active.clear();
+    requestFailures.delete(executor);
     // A discarded metadata check can wake late; keep its executor closed.
     if (!signal.aborted || settled) executor.createRequest = createRequest;
   };
@@ -213,8 +295,9 @@ async function prepareDifferentialBase(autoUpdater, info, deps = {}) {
       checkCancelled();
       if (before !== installerStat(installer)) throw new Error('安装包缓存已变化，请重新检查更新');
       if (matches) {
-        checkedBases.set(key, { stat: before, result: { ok: true } });
-        return { ok: true };
+        const result = { ok: true, blockmapUrl: release.blockmapUrl };
+        checkedBases.set(key, { stat: before, result });
+        return result;
       }
     }
     // Whole downloads already live here. NSIS may finish successfully even
@@ -261,8 +344,9 @@ async function prepareDifferentialBase(autoUpdater, info, deps = {}) {
           throw new Error('安装包缓存已变化，请重新检查更新');
         }
         await removeBlockmap(path.join(path.dirname(installer), 'current.blockmap'));
-        checkedBases.set(key, { stat: recovered, result: { ok: true } });
-        return { ok: true };
+        const result = { ok: true, blockmapUrl: release.blockmapUrl };
+        checkedBases.set(key, { stat: recovered, result });
+        return result;
       } finally {
         try { await fs.promises.unlink(staged); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       }
@@ -291,7 +375,7 @@ async function differentialAvailability(info, deps = {}) {
     const autoUpdater = getStrictUpdater(deps);
     const prepared = await (deps.prepareDifferentialBase || prepareDifferentialBase)(autoUpdater, info, deps);
     if (!prepared.ok) return prepared;
-    return { ok: true, autoUpdater };
+    return { ok: true, autoUpdater, blockmapUrl: prepared.blockmapUrl };
   } catch (error) {
     if (deps.signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     return { ok: false, reason: error.code || 'updater-config-unavailable',
@@ -339,7 +423,8 @@ function makeLogger(tracker, sink) {
  * @param {number} args.timeoutMs - wall-clock budget for the whole download.
  * @param {function} [onProgress] - receives `{phase:'download'|'install', percent, differential}`.
  * @param {object} [deps] - test seams: `autoUpdater`, `isPackaged`,
- *   `prepareDifferentialBase`, `CancellationToken`, `logger`, `setTimeout`/`clearTimeout`.
+ *   `prepareDifferentialBase`, `CancellationToken`, `logger`, `setTimeout`/`clearTimeout`,
+ *   `requestSetTimeout`/`requestClearTimeout` (per-request watchdog clock).
  * @returns {Promise<{ok:true, installer:string, differential:boolean, version:string}|{ok:false, reason:string}>}
  *   `ok:false` stops this action; only another explicit full choice may retry.
  */
@@ -348,6 +433,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
   const tracker = makeDifferentialTracker();
   let autoUpdater;
   let releaseRequests;
+  let restoreBlockmapFiles;
   let pendingPreparation;
   let pendingCheck;
   let pendingTransfer;
@@ -357,7 +443,12 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
       return;
     }
     const percent = Math.max(0, Math.min(99, Math.round(Number(progress && progress.percent) || 0)));
-    onProgress({ phase: 'download', percent, differential: true });
+    const metrics = {};
+    for (const [source, target] of [['transferred', 'received'], ['total', 'total'], ['bytesPerSecond', 'bytesPerSecond']]) {
+      const value = progress?.[source];
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) metrics[target] = value;
+    }
+    onProgress({ phase: 'download', percent, differential: true, ...metrics });
   };
   const onErrorEvent = () => {};
   const setTimeoutFn = deps.setTimeout || setTimeout;
@@ -386,7 +477,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
         // a stuck token must not block the timeout result
       }
       resolve(timeoutSentinel);
-    }, Math.max(1_000, Number(timeoutMs) || 15 * 60_000));
+    }, Math.max(1_000, Number(timeoutMs) || DEFAULT_DOWNLOAD_TIMEOUT_MS));
   });
   // Metadata checks have no caller-supplied token. Race cancellation too;
   // the request binding closes their sockets and prevents late requests.
@@ -398,7 +489,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
   const timeoutOutcome = () => ({
     ok: false,
     reason: 'timeout',
-    message: `下载超时（${Math.round((Number(timeoutMs) || 15 * 60_000) / 60_000)} 分钟）`,
+    message: `下载超时（${Math.round((Number(timeoutMs) || DEFAULT_DOWNLOAD_TIMEOUT_MS) / 60_000)} 分钟）`,
   });
 
   try {
@@ -409,7 +500,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     if (!available.ok) return available;
     autoUpdater = available.autoUpdater;
-    releaseRequests = bindUpdaterRequests(autoUpdater.httpExecutor, requestSignal);
+    releaseRequests = bindUpdaterRequests(autoUpdater.httpExecutor, requestSignal, deps);
     const feed = feedFor(expectedCheck);
     // electron-updater 6.8.9 rebuilds its client from app-update.yml when this is null.
     if (feed) autoUpdater.setFeedURL(feed); else autoUpdater.clientPromise = null;
@@ -435,6 +526,14 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     const updateInfoAndProvider = autoUpdater.updateInfoAndProvider;
     assertConfirmedTarget({ ...updateInfoAndProvider, info }, expectedCheck);
     assertConfirmedTarget(updateInfoAndProvider, expectedCheck);
+    if (available.blockmapUrl) {
+      // The old asset may have a different product name or release directory.
+      // Use the release whose installer bytes were verified during preparation.
+      const provider = updateInfoAndProvider.provider;
+      const getBlockMapFiles = provider.getBlockMapFiles;
+      provider.getBlockMapFiles = () => [new URL(available.blockmapUrl), new URL(expectedCheck.blockmapUrl)];
+      restoreBlockmapFiles = () => { provider.getBlockMapFiles = getBlockMapFiles; };
+    }
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     autoUpdater.confirmedDownloadTarget = expectedCheck;
     pendingTransfer = autoUpdater.downloadUpdate(token);
@@ -468,6 +567,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
       await pendingTransfer?.catch(() => {});
     }
     releaseRequests?.(Boolean(pendingTransfer || autoUpdater?.httpExecutor?.createRequest));
+    restoreBlockmapFiles?.();
     requestSignal.removeEventListener('abort', onAbort);
     if (autoUpdater) autoUpdater.confirmedDownloadTarget = undefined;
     clearTimeoutFn(timeoutHandle);
