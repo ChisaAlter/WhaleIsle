@@ -322,14 +322,16 @@ function releaseActionLabel(row) {
     return null;
   }
   if (row.newer) {
-    return '完全下载';
+    return updateCenterApi() ? '更新到此版本' : '完全下载';
   }
   return '切换至此版本';
 }
 
-function releaseActionButtons(row, delta) {
+function releaseActionButtons(row, rowDelta) {
   const parts = [];
   const label = releaseActionLabel(row);
+  // The update center picks the cheapest transfer itself; no per-row choice.
+  const delta = updateCenterApi() ? null : rowDelta;
   if (delta && label) {
     parts.push(`<button type="button" class="primary small" data-delta-tag="${escapeHtml(row.tag || '')}">增量更新</button>`);
   }
@@ -1270,7 +1272,75 @@ function renderUpdateCheck(check) {
   if (check && typeof check === 'object') {
     lastUpdateCheck = check;
   }
+  // The update center's own state drives the notice in the desktop package.
+  if (updateCenterApi()) return;
   syncUpdateNotice(check && typeof check === 'object' ? check : lastUpdateCheck);
+}
+
+// --- Update center (desktop package; docs/features/update-center.md) -------
+
+// Set once the main process answers: the slim launcher package exposes the
+// bridge without an update center behind it.
+let centerReady = false;
+
+function updateCenterApi() {
+  return centerReady ? pageShell()?.updateCenter || null : null;
+}
+
+let centerView = null;
+
+function adoptUpdateCenter(view) {
+  const first = !centerReady;
+  centerReady = true;
+  renderCenterNotice(view);
+  // Release rows rendered before the answer still carry per-row choices.
+  if (first) void refreshReleases();
+}
+
+function centerNotice(view) {
+  if (!view?.target) return null;
+  const version = `v${view.target.version}`;
+  const progress = view.progress;
+  const percent = progress?.total ? ` · ${Math.floor((progress.received / progress.total) * 100)}%` : '';
+  switch (view.phase) {
+    case 'available': return { text: `可更新至 ${version}（当前 v${view.current}）`, action: '立即更新' };
+    case 'downloading': return { text: `正在下载 ${version}${percent}`, action: '查看进度' };
+    case 'paused': return { text: `${version} 下载已暂停${percent}`, action: '继续下载' };
+    case 'verifying': return { text: `正在校验 ${version}`, action: '查看' };
+    case 'ready': return { text: `${version} 已准备好，可以安装`, action: '安装并重启' };
+    case 'installing': return { text: `正在安装 ${version}`, action: '查看' };
+    case 'error': return { text: `${version} 更新未完成`, action: '查看原因' };
+    default: return null;
+  }
+}
+
+function renderCenterNotice(view) {
+  centerView = view;
+  const box = $('home-update');
+  if (!box) return;
+  const notice = centerNotice(view);
+  if (!notice) {
+    updateNoticePanel?.hide();
+    box.hidden = true;
+    return;
+  }
+  updateNoticePanel?.show({ reset: view.target.version !== updateNoticeVersion, active: false });
+  updateNoticeVersion = view.target.version;
+  $('home-update-text').textContent = notice.text;
+  $('btn-home-update').textContent = notice.action;
+}
+
+/** Show the update center over the launcher, then run `action` there. */
+async function openUpdateCenter(action, arg) {
+  const center = updateCenterApi();
+  if (!center) return false;
+  try {
+    await center.open();
+    if (action) await center.command(action, arg);
+  } catch (error) {
+    setHint(errText(error, '无法打开更新'));
+  }
+  return true;
 }
 
 function updateCheckNotice(check) {
@@ -1426,6 +1496,7 @@ function activateTab(name) {
 }
 
 async function checkUpdateNow() {
+  if (await openUpdateCenter('check')) return;
   const api = pageShell();
   if (!api?.checkUpdate || updateCheckBusy) {
     return;
@@ -2191,6 +2262,7 @@ function renderVersionsHead(status) {
 }
 
 async function installTag(tag, kind) {
+  if (tag && await openUpdateCenter('installVersion', tag)) return;
   const api = pageShell();
   if (!api || !tag || updateBusy) {
     return;
@@ -2348,6 +2420,11 @@ function bind() {
   }
   if ($('btn-home-update')) {
     $('btn-home-update').addEventListener('click', () => {
+      if (updateCenterApi()) {
+        const next = { available: 'download', paused: 'resume', ready: 'install' }[centerView?.phase];
+        void openUpdateCenter(next);
+        return;
+      }
       const latest = lastUpdateCheck?.latest || lastUpdateCheck?.stableVersion || '';
       const tag = latest ? (String(latest).startsWith('v') ? String(latest) : `v${latest}`) : '';
       if (tag) {
@@ -2660,6 +2737,10 @@ function bind() {
         void api.respondAppConfirm?.({ id, ok });
       });
     });
+  }
+  if (api?.updateCenter) {
+    api.updateCenter.onState((view) => adoptUpdateCenter(view));
+    void api.updateCenter.state().then(adoptUpdateCenter).catch(() => {});
   }
   if (api?.onUpdateProgress) {
     api.onUpdateProgress((payload) => {

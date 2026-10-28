@@ -33,6 +33,7 @@ const importGuard = require('./import-guard');
 const { readImportJournal, journalIsBlocked } = require('./data-import');
 const { recordLastDesktopStart, kernelLogTail } = require('./launcher-gate');
 const { createLauncherService } = require('../launcher/launcher-service');
+const { withUpdateCenter } = require('./update-center/legacy');
 const { createLauncherConfirm } = require('../launcher/launcher-confirm');
 const { listWallpaperCatalog, downloadWallpaper } = require('./wallpaper-catalog');
 const { gitBranchList, gitCheckLargeFiles, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, openWorkspacePath } = require('./git');
@@ -101,7 +102,7 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 
 function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
-  getLive2dPet,
+  getLive2dPet, updateCenter = null, openUpdateCenter = () => {},
 }) {
   const handle = (channel, roles, listener) => {
     ipcMain.handle(channel, (event, ...args) => {
@@ -118,7 +119,7 @@ function registerIpc({
   // card (the bridge mounts shell:app-confirm:response through extraChannels);
   // a null answer falls back to the native box inside the service.
   const launcherConfirm = createLauncherConfirm({ getWindow: getLauncherWindow });
-  const launcher = createLauncherService({
+  const launcherService = createLauncherService({
     dsh,
     harness,
     startHarness,
@@ -128,6 +129,10 @@ function registerIpc({
     statusContributors: [ipcComponents.contributeStatus, ipcDelta.contributeStatus],
     askLauncherConfirm: launcherConfirm.ask,
   });
+  // Desktop package: check/download/install belong to the update center.
+  const launcher = updateCenter
+    ? withUpdateCenter(launcherService, updateCenter, () => openUpdateCenter(getLauncherWindow()))
+    : launcherService;
 
   handle('shell:get-state', BOOT_ONLY, () => (harness ? harness.snapshot() : dsh.snapshot()));
 

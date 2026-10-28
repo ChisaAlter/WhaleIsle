@@ -20,11 +20,14 @@ function createUpdatesState({ onOpen }) {
   let presentation = { phase: 'idle' };
   const listeners = new Set();
 
-  const publish = (state) => {
-    presentation = presentUpdate(state);
+  const notify = () => {
     for (const listener of listeners) {
       try { listener(presentation); } catch (error) { console.warn('dshd updates: listener failed', error); }
     }
+  };
+  const publish = (state) => {
+    presentation = presentUpdate(state);
+    notify();
   };
 
   ipcMain.handle(IPC.status, () => presentation);
@@ -34,6 +37,11 @@ function createUpdatesState({ onOpen }) {
   return {
     presentation: () => presentation,
     publish,
+    /** Adopt an already semantic presentation (update center). */
+    present(next) {
+      presentation = next;
+      notify();
+    },
     /** Push the same state to every harness renderer subscriber. */
     broadcast(webContentsList) {
       for (const wc of webContentsList) {

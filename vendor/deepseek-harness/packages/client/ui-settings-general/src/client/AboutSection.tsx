@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { Button, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { desktopShell, type DownloadRoute, type UpdateInfo } from './desktop-shell.ts'
+import { UpdateCenterRow } from './UpdateCenterRow.tsx'
 import css from './AboutSection.module.css'
 
 const HARNESS_URL = 'https://github.com/deepseek-ai/deepseek-harness'
@@ -190,7 +191,8 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
       setReadError(message)
       setNotice({ id: ++noticeId.current, text: t('feedback.readError', { message }), success: false })
     })
-    void check()
+    // The update center keeps its own schedule and state.
+    if (!shell.updateCenter) void check()
     const stop = shell.onUpdateProgress?.((payload) => {
       if (payload.phase === 'download') {
         setStatus('download')
@@ -220,7 +222,9 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
           <div className={css.name}>{t('about.app')}</div>
           <p className={css.meta}>{t('about.version', { version: version || '—' })}</p>
           <p className={css.meta}>{t('about.appMeta')}</p>
-          {shell ? (
+          {shell?.updateCenter ? (
+            <UpdateCenterRow center={shell.updateCenter} t={t} />
+          ) : shell ? (
             <>
               {shell.saveConfig ? (
                 <div className={css.route}>

@@ -160,7 +160,26 @@ export type OpenDshHomeResult =
   | { ok: true; path: string }
   | { ok: false; error: string }
 
+/** Desktop update center snapshot (shell docs/features/update-center.md). */
+export type UpdateCenterView = {
+  phase: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'paused' | 'verifying' | 'ready' | 'installing' | 'error'
+  current: string
+  target: { version: string } | null
+  progress: { received: number; total: number } | null
+  error: { message?: string } | null
+  platform?: string
+}
+
+/** The shared update job; the overlay it opens owns routes, progress and installs. */
+export type DesktopUpdateCenter = {
+  state: () => Promise<UpdateCenterView>
+  command: (action: 'check' | 'download' | 'resume' | 'install', arg?: unknown) => Promise<UpdateCenterView>
+  open: () => Promise<UpdateCenterView>
+  onState: (handler: (view: UpdateCenterView) => void) => () => void
+}
+
 export type DesktopShell = {
+  updateCenter?: DesktopUpdateCenter
   getConfig?: () => Promise<DesktopConfig>
   saveConfig?: (patch: Partial<DesktopConfig>) => Promise<DesktopConfig>
   /** Refresh the page through the desktop's active-work confirmation and resource cleanup. */

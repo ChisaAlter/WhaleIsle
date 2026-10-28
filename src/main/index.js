@@ -42,6 +42,9 @@ const { LIVE2D_PET_FEATURE, configureLive2dPet, getLive2dPet } = require('./desk
 const { checkUpdate, updateDownloadMethods, setGithubTokenProvider, setUpdateRouteProvider, setUpdateStateSink, currentVersion } = require('./update');
 const { plainReleaseNotes, releaseNotesTabs } = require('../shared/release-notes');
 const { createUpdatesState } = require('./updates-state');
+const { createDesktopUpdateCenter } = require('./update-center');
+const { UpdateCenterWindow, registerUpdateCenterIpc } = require('./update-center/ipc');
+const { ipcSenderRole } = require('./ipc-authorization');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { connectWelcome } = require('./welcome-backend');
 const { resolveDesktopStartupLocale } = require('./desktop-locale');
@@ -253,6 +256,34 @@ function shellConfirm() {
   }
   return shellConfirmInstance;
 }
+
+// Update center (docs/features/update-center.md): one main-owned update job,
+// one overlay shared by the launcher and the desktop.
+let updateCenter = null;
+const updateReadyAttention = new UpdateAttention({
+  title: '新版本已准备好',
+  body: '新版本已在后台下载完成，点击安装并重启。',
+});
+const updateCenterWindow = new UpdateCenterWindow({
+  overlays: shellOverlays,
+  preload: require('node:path').join(__dirname, '..', 'preload', 'update-center.js'),
+  page: pathToFileURL(rendererFile('update-center.html')).href,
+  theme: () => currentTheme(),
+  isMaximized: (win) => require('./chrome').isEffectivelyMaximized(win),
+});
+
+/** Open the update center over `parent`, or the first visible shell window. */
+function openUpdateCenter(parent) {
+  const target = [parent, getMainWindow(), getLauncherWindow()]
+    .find((win) => win && !win.isDestroyed() && win.isVisible());
+  if (!target) {
+    showForeground();
+    setTimeout(() => openUpdateCenter(), 300);
+    return;
+  }
+  updateCenterWindow.open(target);
+}
+
 const updateAttention = new UpdateAttention({
   title: '发现新版本',
   body: '新版本可用，回到窗口查看更新说明。',
@@ -588,9 +619,11 @@ function runColdStartGate(options = {}) {
     config: loadConfig(),
     userDataDir,
     isPackaged: app.isPackaged,
+    // The update center checks and downloads in the background; the cold
+    // start never waits for or asks about updates in the desktop package.
     checkUpdate: launcherPackage
       ? () => runtimeInstall.checkDesktopUpdate()
-      : checkUpdate,
+      : async () => ({ status: 'none' }),
     installUpdate: gateInstallUpdate,
     confirmUpdate: async (check) => {
       const win = getLauncherWindow();
@@ -694,11 +727,14 @@ function describeWorkItem(item) {
 }
 
 /**
- * `dshDesktop.updates.open()`: run the same check→confirm→install flow the
- * launcher gate owns, presented over the main window. Version confirmation
- * and task protection stay identical — only the host surface differs.
+ * `dshDesktop.updates.open()`: the update center over the main window. The
+ * slim launcher package keeps the legacy check→confirm→install flow.
  */
 async function openDesktopUpdate() {
+  if (updateCenter) {
+    openUpdateCenter(getMainWindow());
+    return;
+  }
   const win = getMainWindow();
   const info = await checkUpdate();
   if (info.status === 'available') {
@@ -1259,7 +1295,14 @@ if (!gotLock) {
         dsh.log(`任务保护握手端点启动失败：${error.message || String(error)}`, 'error');
       });
 
+    if (!isLauncherPackage()) {
+      updateCenter = createDesktopUpdateCenter({
+        app, loadConfig, saveConfig, taskProtection, log: (line) => dsh.log(line, 'app'),
+      });
+    }
     desktopResources = registerIpc({
+      updateCenter,
+      openUpdateCenter,
       dsh,
       harness,
       startHarness: restartWithCleanup,
@@ -1300,6 +1343,13 @@ if (!gotLock) {
     createTray({
       onShow: showForeground,
       onOpenLauncher: () => ignoreFailure(openLauncher()),
+      ...(updateCenter ? {
+        updateLabel: () => {
+          const view = updateCenter.snapshot();
+          return view.phase === 'ready' && view.target ? `安装 v${view.target.version} 并重启…` : '检查更新…';
+        },
+        onUpdate: () => openUpdateCenter(),
+      } : {}),
       onRestart: () => ignoreFailure(restartWithCleanup()),
       onQuit: () => quitApp(),
       ...(DESKTOP_PET_FEATURE ? {
@@ -1323,11 +1373,41 @@ if (!gotLock) {
     // chip reads status() and open() joins the shell-owned check→confirm→
     // install flow — identical gates to the launcher ask.
     const updatesState = createUpdatesState({ onOpen: openDesktopUpdate });
-    setUpdateStateSink((state) => {
-      updatesState.publish(state);
-      const wc = getHarnessWebContents(getMainWindow());
-      if (wc) updatesState.broadcast([wc]);
-    });
+    if (updateCenter) {
+      let lastPhase = '';
+      registerUpdateCenterIpc({
+        ipcMain,
+        center: updateCenter,
+        centerWindow: updateCenterWindow,
+        releaseNotes: require('../shared/release-notes'),
+        authorize: (event) => ipcSenderRole(event),
+        parentFor: (role) => (role === 'launcher' ? getLauncherWindow() : getMainWindow()) || getLauncherWindow(),
+        surfaces: () => [getLauncherWindow()?.webContents, getHarnessWebContents(getMainWindow())],
+        onPresentation: (presentation) => {
+          updatesState.present(presentation);
+          const wc = getHarnessWebContents(getMainWindow());
+          if (wc) updatesState.broadcast([wc]);
+          const phase = updateCenter.snapshot().phase;
+          if (phase !== lastPhase) {
+            refreshTrayMenu();
+            // A finished background download is announced once; an open
+            // update center already shows it.
+            const anchor = getMainWindow() || getLauncherWindow();
+            if (phase === 'ready' && lastPhase && !updateCenterWindow.webContents && anchor && !anchor.isDestroyed()) {
+              updateReadyAttention.ready(String(presentation.version || 'update'), anchor, null, () => openUpdateCenter());
+            }
+            lastPhase = phase;
+          }
+        },
+      });
+      updateCenter.start();
+    } else {
+      setUpdateStateSink((state) => {
+        updatesState.publish(state);
+        const wc = getHarnessWebContents(getMainWindow());
+        if (wc) updatesState.broadcast([wc]);
+      });
+    }
 
     // Sidebar browser guests (upstream webview model): lease-checked
     // will-attach-webview, per-workspace locked-down partitions, Host origin
@@ -1421,7 +1501,7 @@ if (!gotLock) {
         await startDesktopFromLauncher(startupOptions);
         // The external launcher's gate ran in another process. Seed this
         // desktop's single update status stream without opening another gate.
-        void checkUpdate();
+        if (!updateCenter) void checkUpdate();
       } else {
         await runColdStartGate(startupOptions);
       }

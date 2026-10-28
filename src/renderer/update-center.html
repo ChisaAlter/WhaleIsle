@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self'">
+    <title>更新</title>
+    <link rel="stylesheet" href="../shared/dsh-webui-tokens.css">
+    <link rel="stylesheet" href="update-dialog.css">
+    <link rel="stylesheet" href="update-center.css">
+  </head>
+  <body class="update-dialog update-center">
+    <main id="center" data-kind="update" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="title">
+      <header><h1 id="title">软件更新</h1><button id="close" class="close" type="button" aria-label="关闭">✕</button></header>
+
+      <section id="summary" aria-live="polite">
+        <div class="summary-line"><strong id="headline"></strong><span id="badge" hidden></span></div>
+        <p id="subline"></p>
+      </section>
+
+      <section id="progress" hidden aria-live="polite">
+        <div class="bar" role="progressbar" aria-labelledby="progress-text" aria-valuemin="0" aria-valuemax="100"><div id="bar-fill"></div></div>
+        <p id="progress-text"></p>
+      </section>
+
+      <section id="problem" role="alert" hidden>
+        <p id="problem-text"></p>
+        <div id="problem-actions"></div>
+      </section>
+
+      <div id="notes-tabs" role="tablist" aria-label="更新说明语言" hidden></div>
+      <div id="content" tabindex="0" role="region" aria-label="更新说明" hidden>
+        <p id="notes"></p>
+      </div>
+
+      <section id="preferences">
+        <div class="pref-row">
+          <span class="pref-label" id="route-label">下载线路</span>
+          <div id="routes" class="segmented" role="radiogroup" aria-labelledby="route-label"></div>
+        </div>
+        <label class="pref-row toggle">
+          <span class="pref-label">有新版本时在后台自动下载</span>
+          <input id="auto-download" type="checkbox" role="switch">
+        </label>
+      </section>
+
+      <div id="actions"></div>
+    </main>
+    <script src="../shared/release-notes.js"></script>
+    <script src="update-center.js"></script>
+  </body>
+</html>

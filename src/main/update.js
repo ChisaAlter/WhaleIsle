@@ -526,8 +526,10 @@ async function runDownloadAttempts(run, {
 async function downloadFile(url, dest, onProgress, options = {}) {
   const { timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, maxAttempts = 3 } = options;
   // Only checksum-backed release downloads may reuse bytes. This state belongs
-  // to this exact operation/URL, never an unverified partial from an earlier run.
-  const resumeState = options.resume ? { offset: 0, total: 0, validator: null } : null;
+  // to this exact operation/URL, never an unverified partial from an earlier
+  // run — unless the caller owns a persisted state for the same checksum
+  // (update center), whose bytes are verified as a whole at the end.
+  const resumeState = options.resumeState || (options.resume ? { offset: 0, total: 0, validator: null } : null);
   try {
     // Redirect hops (GitHub -> signed asset host) reuse the first hop's proxy decision.
     let agent = options.agent === undefined ? await agentFor(url) : options.agent;
@@ -546,13 +548,16 @@ async function downloadFile(url, dest, onProgress, options = {}) {
         received: resumeState?.offset || 0, total: resumeState?.total || 0 }),
     });
   } catch (error) {
-    cleanupPartial(dest);
+    // keepPartial: a paused or failed transfer keeps its written bytes for a
+    // later resume; the caller owns cleanup.
+    if (!(options.keepPartial && resumeState?.offset > 0)) cleanupPartial(dest);
     throw error;
   }
 }
 
 function downloadFileOnce(url, dest, onProgress, {
   timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, idleTimeoutMs = 45_000, connectionTimeoutMs = 20_000, resumeState, agent,
+  keepPartial = false,
 } = {}) {
   if (signal?.aborted) {
     return Promise.reject(cancelledError());
@@ -594,7 +599,8 @@ function downloadFileOnce(url, dest, onProgress, {
       const finish = () => {
         // Wait until writes close: network data events can be ahead of the
         // actual file. The next Range starts at bytes safely written to disk.
-        if (resumeState && failureError.retryable && !signal?.aborted && resumeState.total > 0) {
+        const keepBytes = keepPartial ? failureError.retryable || signal?.aborted : failureError.retryable && !signal?.aborted;
+        if (resumeState && keepBytes && resumeState.total > 0) {
           try { resumeState.offset = fs.statSync(dest).size; } catch { resumeState.offset = 0; }
           if (resumeState.offset >= resumeState.total) resumeState.offset = 0;
         } else if (resumeState) resumeState.offset = 0;
@@ -1076,6 +1082,7 @@ module.exports = {
   listReleases,
   installRelease,
   installFromAsset,
+  launchPreparedInstaller,
   downloadFile,
   launchInstaller,
   cleanupPartial,

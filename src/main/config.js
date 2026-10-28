@@ -51,6 +51,8 @@ const DEFAULTS = {
   quitAfterStart: true,
   autoStartDesktop: true,
   askOnUpdate: true,
+  // Update center: download new versions in the background, then offer the install.
+  autoDownloadUpdates: true,
   // Download route for the managed DSHD runtime ('' = user has not picked yet;
   // enum mirrors src/launcher/release-source.js ROUTES keys).
   downloadRoute: '',
@@ -302,6 +304,7 @@ function normalizeLauncherSettings(config) {
     quitAfterStart: config.quitAfterStart !== false,
     autoStartDesktop: config.autoStartDesktop !== false,
     askOnUpdate: config.askOnUpdate !== false,
+    autoDownloadUpdates: config.autoDownloadUpdates !== false,
     downloadRoute: config.downloadRoute === 'gitee' ? 'cnb' : ['github', 'cnb'].includes(config.downloadRoute) ? config.downloadRoute : '',
     disabledPlugins: normalizeDisabledPlugins(config.disabledPlugins),
   };
