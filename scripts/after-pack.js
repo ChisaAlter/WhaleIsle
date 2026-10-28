@@ -15,6 +15,7 @@ const { selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExcl
   pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest } = require('./production-runtime');
 const { RUNTIME_LINKS, removeRuntimeLinks } = require('../src/shared/runtime-links');
 const { writeRuntimeArchiveIdentity } = require('../src/shared/harness-runtime-identity');
+const { writeRuntimeArchive } = require('./runtime-archive');
 const {
   ensureGhosttyAssetsInHarness,
   harnessHasGhosttyAssets,
@@ -1993,11 +1994,7 @@ module.exports = async function afterPack(context) {
   const archive = path.join(resources, 'vendor', 'deepseek-harness.tar');
   removeRuntimeLinks(harnessDest);
   console.log('打包运行时为单个 tar，减少 NSIS 解压文件数…');
-  execFileSync('tar', ['-cf', path.basename(archive), '-C', path.basename(harnessDest), '.'], {
-    cwd: path.dirname(harnessDest),
-    stdio: 'inherit',
-    env: { ...process.env, COPYFILE_DISABLE: '1' },
-  });
+  writeRuntimeArchive(harnessDest, archive);
   if (!fs.existsSync(archive) || fs.statSync(archive).size < 1024) {
     throw new Error('运行时 tar 生成失败');
   }

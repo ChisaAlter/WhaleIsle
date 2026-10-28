@@ -31,7 +31,7 @@ const RC7_PIN = { npm: '0.1.0-rc.7' };
 
 test('afterPack records the completed tar content identity before removing the assembly tree', () => {
   const source = fs.readFileSync(path.join(__dirname, '../../scripts/after-pack.js'), 'utf8');
-  const createTar = source.indexOf("execFileSync('tar', ['-cf'");
+  const createTar = source.indexOf('writeRuntimeArchive(harnessDest, archive)');
   const recordDigest = source.indexOf('await writeRuntimeArchiveIdentity(archive)', createTar);
   const removeTree = source.indexOf('fs.rmSync(longPath(harnessDest)', createTar);
   assert.ok(createTar >= 0 && recordDigest > createTar && removeTree > recordDigest);
