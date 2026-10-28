@@ -26,7 +26,7 @@ const LOG_LIMIT = 400;
 function whichAll(command) {
   try {
     const bin = process.platform === 'win32' ? 'where.exe' : 'which';
-    const out = execFileSync(bin, [command], { encoding: 'utf8' });
+    const out = execFileSync(bin, [command], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
     return out
       .split(/\r?\n/)
       .map((line) => line.trim())

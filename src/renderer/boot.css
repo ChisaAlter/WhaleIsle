@@ -72,6 +72,14 @@ body[data-harness-covered] {
   visibility: hidden;
 }
 
+/* Hidden is not idle: covered scene animations kept ticking at the display
+   rate for the whole session. They restart when boot is shown again. */
+body[data-harness-covered] *,
+body[data-harness-covered] *::before,
+body[data-harness-covered] *::after {
+  animation: none !important;
+}
+
 /* ===== 海平线场景：62% 交接线，线上天空（深色=深空），线下深海 ===== */
 .scene {
   position: relative;

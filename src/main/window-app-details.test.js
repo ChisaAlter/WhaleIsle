@@ -7,6 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 const { windowsAppDetails, applyWindowsAppDetails } = require('./window-app-details');
+const { createForegroundPolicy } = require('./foreground');
 
 const sourceOptions = {
   isPackaged: false,
@@ -95,6 +96,7 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
     assetFile: () => sourceOptions.iconPath,
     iconImage: () => 'whale-icon',
     BrowserWindow: Window,
+    foreground: () => createForegroundPolicy({ app: new EventEmitter(), BrowserWindow: Window }),
     shellWindowChrome: options => options,
     markWindowTransparent() {},
     attachIntegratedChrome() { events.push('chrome'); },

@@ -18,6 +18,13 @@ const {
 } = require('./local-url');
 
 const { applyHarnessCookieToSession, launchTokenFromUrl, loadUrlAfterRedeem } = require('./harness-browser-auth');
+const { createForegroundPolicy } = require('./foreground');
+
+let foregroundPolicy = null;
+function foreground() {
+  foregroundPolicy ||= createForegroundPolicy({ app, BrowserWindow });
+  return foregroundPolicy;
+}
 
 const PLUGIN_BOOT_TIMEOUT_MS = 90_000;
 
@@ -227,10 +234,12 @@ function createMainWindow({ activate = true } = {}) {
   attachWindowsAppDetails(mainWindow);
   markWindowTransparent(mainWindow);
   attachIntegratedChrome(mainWindow);
+  // Created before the window exists so focus already lost to another app
+  // (during a long first start) is known when it becomes ready.
+  const presenter = foreground();
   mainWindow.once('ready-to-show', () => {
     hideNativeMenu(mainWindow);
-    if (activate) mainWindow.show();
-    else mainWindow.showInactive();
+    presenter.present(mainWindow, activate);
   });
   mainWindow.on('closed', () => {
     hideHarnessView(mainWindow);

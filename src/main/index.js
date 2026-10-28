@@ -1508,6 +1508,9 @@ if (!gotLock) {
           taskProtection.coordinate('quit', {
             terminal: true,
             preConfirmed: true,
+            // Quit gives no feedback until the drain ends; a 30 s wait read as
+            // an ignored click. Work still running is cleaned up either way.
+            drainTimeoutMs: 3000,
             commit: async () => {
               stoppingForQuit = true;
               closingOverlayActive = true;
