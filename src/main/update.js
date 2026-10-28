@@ -550,6 +550,9 @@ function downloadFileOnce(url, dest, onProgress, {
     let file;
     let settled = false;
     let failureError;
+    // True only while queued writes drain for a resume (file.end()); a stream
+    // destroyed on purpose reports its pending writes as ERR_STREAM_DESTROYED.
+    let draining = false;
     let activeRequest = null;
     let activeResponse = null;
     let inactivityTimer;
@@ -588,8 +591,10 @@ function downloadFileOnce(url, dest, onProgress, {
       };
       if (file) {
         file.once('close', finish);
-        if (resumeState && error.retryable && !file.destroyed) file.end();
-        else file.destroy();
+        if (resumeState && error.retryable && !file.destroyed) {
+          draining = true;
+          file.end();
+        } else file.destroy();
       } else finish();
     };
     if (signal) {
@@ -675,8 +680,8 @@ function downloadFileOnce(url, dest, onProgress, {
           // A network failure may already be draining queued writes for resume.
           // Disk failure during that drain is terminal and must replace the
           // retryable transport error before close decides whether to retry.
-          if (failureError) failureError = error;
-          else fail(error);
+          if (!failureError) fail(error);
+          else if (draining) failureError = error;
         });
         armInactivity(idleTimeoutMs, '下载连接长时间无数据，请检查网络或切换下载线路');
         let received = initial;
