@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/v0.3.13/screenshot-desktop.jpg" alt="Whale Isle 0.3.13 main window on Windows" width="920" />
+  <img src="docs/images/v0.3.13/screenshot-desktop.png" alt="Whale Isle 0.3.13 main window on Windows" width="920" />
 </p>
 
 Independently maintained by the community, not an official DeepSeek product.
@@ -56,7 +56,7 @@ The desktop installers are unsigned; on a Mac, right-click and choose Open the f
 <table>
   <tr><th>Launcher</th><th>Android connection screen</th></tr>
   <tr>
-    <td align="center"><img src="docs/images/v0.3.13/screenshot-launcher.jpg" alt="Whale Isle 0.3.13 launcher on Windows" width="650" /></td>
+    <td align="center"><img src="docs/images/v0.3.13/screenshot-launcher.png" alt="Whale Isle 0.3.13 launcher on Windows" width="650" /></td>
     <td align="center"><img src="docs/images/v0.3.10/screenshot-android.png" alt="Whale Isle Android connection screen" width="240" /></td>
   </tr>
 </table>

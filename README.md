@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/v0.3.13/screenshot-desktop.jpg" alt="鲸屿 0.3.13 Windows 主界面" width="920" />
+  <img src="docs/images/v0.3.13/screenshot-desktop.png" alt="鲸屿 0.3.13 Windows 主界面" width="920" />
 </p>
 
 社区独立维护，非 DeepSeek 官方产品。
@@ -56,7 +56,7 @@
 <table>
   <tr><th>启动器</th><th>Android 连接页</th></tr>
   <tr>
-    <td align="center"><img src="docs/images/v0.3.13/screenshot-launcher.jpg" alt="鲸屿 0.3.13 Windows 启动器" width="650" /></td>
+    <td align="center"><img src="docs/images/v0.3.13/screenshot-launcher.png" alt="鲸屿 0.3.13 Windows 启动器" width="650" /></td>
     <td align="center"><img src="docs/images/v0.3.10/screenshot-android.png" alt="鲸屿 Android 连接页" width="240" /></td>
   </tr>
 </table>
