@@ -31,7 +31,7 @@ import type { FilesShellInjected } from './shell.ts'
 import { isWorkspaceImagePreviewPath } from './workspacePreview.ts'
 import { desktopFileTitle, parseDesktopFileAddress, type DesktopFileBuffer } from './desktop-files.ts'
 import { SidebarFilesPanel, type SidebarFilesPanelProps } from './FilesPanel.tsx'
-import type { DesktopFileStateInjected } from './desktop-file-state.ts'
+import type { DesktopFileSave, DesktopFileStateInjected } from './desktop-file-state.ts'
 import css from './FilePreview.module.css'
 
 /** Everything the editor reads: its file identity, buffer, IPC, and copy. */
@@ -45,7 +45,7 @@ export interface FilePreviewProps extends PropsLocale<typeof NS>, FilesShellInje
   onDirtyChange: (dirty: boolean) => void
   readBuffer: () => DesktopFileBuffer | undefined
   writeBuffer: (buffer: DesktopFileBuffer | null) => void
-  registerSave: (save: (() => Promise<boolean>) | null) => void
+  registerSave: (save: DesktopFileSave | null) => void
   /** Workspace root override for a caller that owns the file's Session (the Sidebar adapter). */
   workspaceCwd?: string | undefined
 }
@@ -542,7 +542,10 @@ export function FilePreview({
   }, [])
 
   useEffect(() => {
-    registerSave(() => saveRef.current())
+    registerSave(Object.assign(() => saveRef.current(), {
+      pause: () => coordinatorRef.current?.pause() ?? null,
+      resume: () => { coordinatorRef.current?.resume() },
+    }))
     return () => { registerSave(null) }
   }, [registerSave])
 
@@ -712,6 +715,15 @@ export function FilePreview({
                 value={draft}
                 aria-label={relativePath}
                 onChange={(event) => { applyDraft(event.target.value) }}
+                onKeyDown={(event) => {
+                  if (event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey
+                    && event.key.toLowerCase() === 'z' && !event.nativeEvent.isComposing) {
+                    // Replayed Command keys do not invoke AppKit's native redo action.
+                    event.preventDefault()
+                    // oxlint-disable-next-line typescript/no-deprecated -- No replacement preserves native editing history.
+                    document.execCommand('redo')
+                  }
+                }}
                 onSelect={(event) => { syncTextareaSelection(event.currentTarget) }}
               />
             )}

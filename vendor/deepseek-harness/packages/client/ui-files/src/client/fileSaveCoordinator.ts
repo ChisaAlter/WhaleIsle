@@ -18,7 +18,8 @@ export class FileSaveCoordinator {
   private latestContents = ''
   private latestRevision = 0
   private persistedRevision = 0
-  private queue: Promise<boolean> = Promise.resolve(true)
+  private queue: Promise<boolean> | null = null
+  private paused = false
 
   constructor(private readonly options: FileSaveCoordinatorOptions) {}
 
@@ -26,7 +27,7 @@ export class FileSaveCoordinator {
     this.latestContents = contents
     this.latestRevision += 1
     this.options.onPendingChange(true)
-    this.schedule()
+    if (!this.paused) this.schedule()
   }
 
   /**
@@ -40,7 +41,20 @@ export class FileSaveCoordinator {
     this.latestRevision += 1
     this.options.onPendingChange(true)
     this.clearTimer()
-    return this.enqueuePersist()
+    return this.enqueuePersist(true)
+  }
+
+  /** Pause automatic saves synchronously; the returned queue settles before close decisions. */
+  pause(): Promise<boolean> | null {
+    this.paused = true
+    this.clearTimer()
+    return this.queue
+  }
+
+  /** Resume the latest dirty draft after Keep editing or an obsolete close request. */
+  resume(): void {
+    this.paused = false
+    if (this.latestRevision > this.persistedRevision) this.schedule()
   }
 
   dispose(): void {
@@ -62,9 +76,12 @@ export class FileSaveCoordinator {
     this.timer = null
   }
 
-  private enqueuePersist(): Promise<boolean> {
-    const run = this.queue.then(() => this.persistLatest())
+  private enqueuePersist(explicit = false): Promise<boolean> {
+    const run = (this.queue ?? Promise.resolve(true)).then(() =>
+      this.paused && !explicit ? false : this.persistLatest())
     this.queue = run
+    const finish = (): void => { if (this.queue === run) this.queue = null }
+    void run.then(finish, finish)
     return run
   }
 

@@ -8,6 +8,8 @@ store 保存 `sessions[]`、`activeId`、每会话的 `cols`／`rows`／`buffer`
 
 底栏工具条为左右分屏／上下分屏／最大化（还原记住上次高度）／新建／关闭。超过一个 PTY 时显示会话列表。选区提供复制、加入对话（terminal 围栏写入输入框；没有 session id 时禁用），以及在文本是 URL 或工作区路径时打开。⌘／Ctrl-点击激活同样的目标。loopback http(s) 打开 Browser，其它 http(s) 调用 `window.shell.openExternal`。工作区路径走 `workspaces.openPath`，并带上可选的 `{ line }`，供 FilePreview 跳行。高度拖动写入 `setTerminalDrawer`，夹在 `TERMINAL_DRAWER_MIN` ..= 视口 75%。有 cwd 时 Ctrl+` 调用 `toggleTerminalDrawer`。本包 `inject` `surfaces.terminal`，等右边栏壳声明该槽后再挂上；该 occupant 没有单独最大化。
 
+macOS 上先处理终端自身的剪贴板、导航、删除和清屏 Command 快捷键。其余 Command 组合留给应用菜单，不向 PTY 发送按下或释放事件。物理 Control 组合仍作为终端输入。
+
 `/client` 导出表层只包含插件主体（`apply`／`inject`）、store 工厂及约定类型；抽屉与 surface 组件仍由 slot 注册封装在包内。
 
 ## 模型体验

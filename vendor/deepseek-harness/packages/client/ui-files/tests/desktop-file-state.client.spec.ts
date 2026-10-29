@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 /** Durable drafts and asynchronous close confirmation share one file owner. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DesktopFileState } from '../src/client/desktop-file-state.ts'
+import { DesktopFileState, type DesktopFileSave } from '../src/client/desktop-file-state.ts'
 
 const ADDRESS = 'dsh-resource://file/session/session-files/src/a.ts'
 const OTHER = 'dsh-resource://file/session/session-files/src/b.ts'
 const dirty = { text: 'disk', draft: 'edited' }
+
+function editor(save: () => Promise<boolean>): DesktopFileSave {
+  return Object.assign(save, { pause: () => null, resume: () => {} })
+}
 
 afterEach(() => { vi.restoreAllMocks(); localStorage.clear() })
 
@@ -84,10 +88,10 @@ describe('DesktopFileState', () => {
     const state = new DesktopFileState()
     const proceed = vi.fn(() => true)
     state.write(ADDRESS, dirty)
-    state.registerSave('tab-a', ADDRESS, async () => {
+    state.registerSave('tab-a', ADDRESS, editor(async () => {
       if (result === 'throw') throw new Error('write failed')
       return false
-    })
+    }))
     state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)
     await state.saveClose()
     expect(proceed).not.toHaveBeenCalled()
@@ -100,11 +104,11 @@ describe('DesktopFileState', () => {
     const proceed = vi.fn(() => true)
     let complete: (() => void) | undefined
     state.write(ADDRESS, dirty)
-    state.registerSave('tab-a', ADDRESS, async () => {
+    state.registerSave('tab-a', ADDRESS, editor(async () => {
       await new Promise<void>((resolve) => { complete = resolve })
       state.write(ADDRESS, { text: dirty.draft, draft: 'new characters' })
       return true
-    })
+    }))
     state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)
     const saving = state.saveClose()
     expect(state.closeRequest.getSnapshot()?.busy).toBe(true)
@@ -122,10 +126,10 @@ describe('DesktopFileState', () => {
     const state = new DesktopFileState()
     const proceed = vi.fn(() => true)
     state.write(ADDRESS, dirty)
-    state.registerSave('tab-a', ADDRESS, async () => {
+    state.registerSave('tab-a', ADDRESS, editor(async () => {
       state.write(ADDRESS, { text: dirty.draft, draft: dirty.draft })
       return true
-    })
+    }))
     state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)
     await state.saveClose()
     expect(proceed).toHaveBeenCalledOnce()
@@ -138,7 +142,7 @@ describe('DesktopFileState', () => {
     const proceed = vi.fn(() => true)
     const save = vi.fn(async () => false)
     state.write(ADDRESS, dirty)
-    state.registerSave('tab-a', ADDRESS, save)
+    state.registerSave('tab-a', ADDRESS, editor(save))
     state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)
     state.write(ADDRESS, { text: dirty.draft, draft: dirty.draft })
     await state.saveClose()
@@ -169,8 +173,8 @@ describe('DesktopFileState', () => {
     const saveSecond = vi.fn(async () => false)
     state.write(ADDRESS, dirty)
     state.write(otherSession, { text: 'other disk', draft: 'other draft' })
-    state.registerSave('tab-a', ADDRESS, saveFirst)
-    state.registerSave('tab-a', otherSession, saveSecond)
+    state.registerSave('tab-a', ADDRESS, editor(saveFirst))
+    state.registerSave('tab-a', otherSession, editor(saveSecond))
     state.requestClose('tab-a', ADDRESS, 'first/a.ts', first)
     state.requestClose('tab-a', otherSession, 'second/a.ts', second)
     await state.saveClose()

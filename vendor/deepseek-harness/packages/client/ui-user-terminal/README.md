@@ -8,6 +8,8 @@ The store keeps `sessions[]`, `activeId`, per-session `cols`/`rows`/`buffer`, an
 
 The drawer toolbar is horizontal split / vertical split / maximize (restore remembers the last height) / new / close. A session list appears when more than one PTY is open. A selection offers Copy, Add to chat (fenced `terminal` draft; disabled without a session id), and Open when the text is a URL or workspace path. ⌘/Ctrl-click activates the same targets. Loopback http(s) opens the Browser surface; other http(s) calls `window.shell.openExternal`. Workspace paths go through `workspaces.openPath` with an optional `{ line }` so FilePreview can jump to that line. Height drag writes `setTerminalDrawer` clamped to `TERMINAL_DRAWER_MIN` ..= 75% of the viewport. Ctrl+` calls `toggleTerminalDrawer` when a cwd exists. `surfaces.terminal` is injected so it attaches when the surfaces shell declares that slot; that occupant has no separate maximize.
 
+On macOS, the terminal handles its own clipboard, navigation, delete and clear Command shortcuts first. Remaining Command chords stay available to application menus without sending either key press or release to the PTY. Physical Control combinations remain terminal input.
+
 The `/client` exports are the plugin body (`apply`/`inject`), the store factory, and the contract types only; drawer and surface components remain package-internal behind the slot registrations.
 
 Before enabling creation, both terminal surfaces query desktop `ptyCanCreate(cwd)` using the same workspace authority as `ptyCreate`. Missing or unauthorized directories disable New and Split with an explanation; automatic opening waits for the current directory's authorization result. The main process still enforces authority when creating the PTY.

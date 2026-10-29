@@ -303,6 +303,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar-right/src/client/shortcuts.ts', includes: ['DSHD: Ctrl+\\'] },
   { file: 'packages/client/ui-sidebar-terminal/src/client/index.ts', includes: ['terminal.drawer.toggle'] },
   { file: 'packages/client/ui-user-terminal/src/client/TerminalPane.tsx', includes: ['xterm'] },
+  { file: 'packages/client/ui-user-terminal/src/client/ghostty/surface.ts', includes: ['isTerminalAppShortcut'] },
+  { file: 'packages/client/ui-files/src/client/FilePreview.tsx', includes: ["document.execCommand('redo')"] },
+  { file: 'packages/client/ui-files/src/client/desktop-file-state.ts', includes: ['editor?.pause()', 'editor?.resume()'] },
+  { file: 'packages/client/ui-files/src/client/fileSaveCoordinator.ts', includes: ['pause(): Promise<boolean> | null', 'resume(): void'] },
   // Office preview routing (office-runtime card): binary Office files decline
   // the editable desktop viewer and the surfaces file editor, so the native
   // document preview claims them (Office→PDF, XLSX→Spreadsheet).

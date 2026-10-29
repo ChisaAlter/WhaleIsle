@@ -67,6 +67,25 @@ afterEach(() => {
 })
 
 describe('native Files adapters', () => {
+  it('uses browser editing history for replayed Mac redo without consuming Control or IME input', async () => {
+    const state = new DesktopFileState()
+    render(<SidebarFilePreview {...fileProps(state)} />)
+    const editor = await screen.findByLabelText('src/a.ts')
+    const original = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    const execCommand = vi.fn(() => true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+    try {
+      expect(fireEvent.keyDown(editor, { key: 'Z', metaKey: true, shiftKey: true })).toBe(false)
+      expect(execCommand).toHaveBeenCalledExactlyOnceWith('redo')
+      fireEvent.keyDown(editor, { key: 'Z', ctrlKey: true, shiftKey: true })
+      fireEvent.keyDown(editor, { key: 'Z', metaKey: true, shiftKey: true, isComposing: true })
+      expect(execCommand).toHaveBeenCalledOnce()
+    } finally {
+      if (original === undefined) Reflect.deleteProperty(document, 'execCommand')
+      else Object.defineProperty(document, 'execCommand', original)
+    }
+  })
+
   it('appends the selected lines verbatim to their owning Session', async () => {
     const state = new DesktopFileState()
     const injected = shell()
@@ -151,7 +170,48 @@ describe('native Files adapters', () => {
     expect(disk).toBe('edited')
   })
 
-  it('does not resurrect a discarded draft after an in-flight write completes', async () => {
+  it.each(['Keep editing', 'Discard', 'Save and close'] as const)(
+    'pauses autosave throughout the close dialog before choosing %s', async (choice) => {
+      const state = new DesktopFileState()
+      let disk = 'disk'
+      const injected = shell()
+      injected.readFile = async () => ({ ok: true, text: disk, binary: false })
+      injected.writeFile = vi.fn<FilesShellInjected['writeFile']>(async (_cwd, _path, text) => {
+        disk = text
+        return { ok: true }
+      })
+      const view = render(<><SidebarFilePreview {...fileProps(state, injected)} /><ClosePrompt state={state} /></>)
+      const field = await screen.findByLabelText('src/a.ts')
+      const proceed = vi.fn(() => { view.unmount(); return true })
+      vi.useFakeTimers()
+      fireEvent.change(field, { target: { value: 'edited' } })
+      act(() => { expect(state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)).toBe(false) })
+      const dialog = screen.getByRole('dialog', { name: 'Unsaved changes' })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(injected.writeFile).not.toHaveBeenCalled()
+      expect(disk).toBe('disk')
+      await act(async () => {
+        fireEvent.click(within(dialog).getByRole('button', { name: choice }))
+        await vi.advanceTimersByTimeAsync(500)
+      })
+      if (choice === 'Keep editing') {
+        expect(proceed).not.toHaveBeenCalled()
+        expect(screen.getByLabelText<HTMLTextAreaElement>('src/a.ts').value).toBe('edited')
+      } else {
+        expect(proceed).toHaveBeenCalledOnce()
+        expect(new DesktopFileState().read(ADDRESS)).toBeUndefined()
+      }
+      expect(disk).toBe(choice === 'Discard' ? 'disk' : 'edited')
+      expect(injected.writeFile).toHaveBeenCalledTimes(choice === 'Discard' ? 0 : 1)
+      if (choice === 'Discard') {
+        vi.useRealTimers()
+        render(<SidebarFilePreview {...fileProps(new DesktopFileState(), injected)} />)
+        expect((await screen.findByLabelText<HTMLTextAreaElement>('src/a.ts')).value).toBe('disk')
+      }
+    },
+  )
+
+  it('waits for an issued write before allowing close decisions', async () => {
     const state = new DesktopFileState()
     const injected = shell('disk')
     let complete: (() => void) | undefined
@@ -167,8 +227,11 @@ describe('native Files adapters', () => {
     expect(injected.writeFile).toHaveBeenCalledOnce()
     const proceed = vi.fn(() => { view.unmount(); return true })
     state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)
+    expect(state.closeRequest.getSnapshot()?.busy).toBe(true)
     act(() => { state.discardClose() })
+    expect(proceed).not.toHaveBeenCalled()
     await act(async () => { complete?.(); await Promise.resolve() })
+    expect(proceed).toHaveBeenCalledOnce()
     expect(state.read(ADDRESS)).toBeUndefined()
     expect(new DesktopFileState().read(ADDRESS)).toBeUndefined()
   })
@@ -183,7 +246,7 @@ describe('native Files adapters', () => {
     expect(openWorkspaceFile).toHaveBeenCalledWith(SID, '/tmp/owning', 'report.pdf')
   })
 
-  it('does not restore a discarded buffer when a delayed conflict reread settles', async () => {
+  it('keeps a delayed conflict draft until the write queue settles and Discard is confirmed', async () => {
     const state = new DesktopFileState()
     const injected = shell('disk')
     const view = render(<SidebarFilePreview {...fileProps(state, injected)} />)
@@ -197,9 +260,14 @@ describe('native Files adapters', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     expect(injected.readFile).toHaveBeenCalledOnce()
     state.requestClose('tab-a', ADDRESS, 'src/a.ts', () => { view.unmount(); return true })
+    expect(state.closeRequest.getSnapshot()?.busy).toBe(true)
     act(() => { state.discardClose() })
+    expect(new DesktopFileState().read(ADDRESS)?.draft).toBe('edited')
     await act(async () => { complete?.({ ok: true, text: 'external change' }); await Promise.resolve() })
     expect(injected.writeFile).not.toHaveBeenCalled()
+    expect(state.closeRequest.getSnapshot()?.busy).toBe(false)
+    expect(new DesktopFileState().read(ADDRESS)).toEqual({ text: 'external change', draft: 'edited' })
+    act(() => { state.discardClose() })
     expect(new DesktopFileState().read(ADDRESS)).toBeUndefined()
   })
 })

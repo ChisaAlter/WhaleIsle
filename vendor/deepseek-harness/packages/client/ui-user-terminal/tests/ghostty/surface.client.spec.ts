@@ -8,6 +8,7 @@ import {
   advanceTerminalSelectionClickSequence,
   ghosttyMouseButton,
   isTerminalAltGraphText,
+  isTerminalAppShortcut,
   isTerminalCompositionCommitInput,
   isTerminalCopyShortcut,
   isTerminalLinkPointerGesture,
@@ -28,6 +29,20 @@ import {
   terminalWheelArrowData,
   terminalWheelDeltaRows,
 } from "../../src/client/ghostty/surface.ts";
+
+describe('isTerminalAppShortcut', () => {
+  it.each(['q', 'h', 'm', 'w', ','])('leaves Command+%s available to macOS menus', (key) => {
+    const event = new KeyboardEvent('keydown', { key, metaKey: true })
+    expect(isTerminalAppShortcut(event, 'MacIntel')).toBe(true)
+    expect(isTerminalAppShortcut(event, 'Win32')).toBe(false)
+    expect(isTerminalAppShortcut(event, 'Linux x86_64')).toBe(false)
+  })
+
+  it('keeps physical Control and ordinary typing available to the terminal', () => {
+    expect(isTerminalAppShortcut(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }), 'MacIntel')).toBe(false)
+    expect(isTerminalAppShortcut(new KeyboardEvent('keydown', { key: 'q' }), 'MacIntel')).toBe(false)
+  })
+})
 
 const cell = (text: string): GhosttyCell => ({
   text,

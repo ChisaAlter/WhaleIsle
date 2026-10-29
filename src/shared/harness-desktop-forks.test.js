@@ -272,6 +272,10 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-sidebar-right/src/client/shortcuts.ts': 'DSHD: Ctrl+\\\n',
       'packages/client/ui-sidebar-terminal/src/client/index.ts': 'terminal.drawer.toggle\n',
       'packages/client/ui-user-terminal/src/client/TerminalPane.tsx': 'xterm\n',
+      'packages/client/ui-user-terminal/src/client/ghostty/surface.ts': 'isTerminalAppShortcut\n',
+      'packages/client/ui-files/src/client/FilePreview.tsx': "document.execCommand('redo')\n",
+      'packages/client/ui-files/src/client/desktop-file-state.ts': 'editor?.pause()\neditor?.resume()\n',
+      'packages/client/ui-files/src/client/fileSaveCoordinator.ts': 'pause(): Promise<boolean> | null\nresume(): void\n',
     };
     const projectSeams = {
       'apps/cli/src/profile-boot.ts': 'export async function disposeProfileApplication\nfor (const release of [() => projects?.dispose?.(), () => ctx?.fiber.dispose()])\ndisposeProfileApplication(app.current)\ninstallFailLoud(NAME, process, dispose)\n',

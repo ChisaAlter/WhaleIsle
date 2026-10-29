@@ -17,20 +17,34 @@ interface PendingClose {
   readonly address: string
   readonly path: string
   readonly proceed: () => boolean
+  readonly editor: DesktopFileSave | undefined
+  waiting: boolean
+  failed: boolean
+}
+
+/**
+ * Save controls leased by one mounted editor. Pause stops unissued automatic
+ * writes immediately and returns the outstanding queue (null when idle).
+ * Only explicit Save may write until Resume.
+ */
+export interface DesktopFileSave {
+  (): Promise<boolean>
+  readonly pause: () => Promise<boolean> | null
+  readonly resume: () => void
 }
 
 /** Inputs injected into one desktop file viewer. */
 export interface DesktopFileStateInjected {
   readFileBuffer: (address: string) => DesktopFileBuffer | undefined
   writeFileBuffer: (address: string, buffer: DesktopFileBuffer | null) => void
-  registerFileSave: (tabId: string, address: string, save: (() => Promise<boolean>) | null) => void
+  registerFileSave: (tabId: string, address: string, save: DesktopFileSave | null) => void
 }
 
 /** Owns drafts for one plugin lifetime; dirty contents are persisted on each edit. */
 export class DesktopFileState {
   private readonly buffers = new Map<string, DesktopFileBuffer>()
   private readonly persisted = new Set<string>()
-  private readonly saves = new Map<string, () => Promise<boolean>>()
+  private readonly saves = new Map<string, DesktopFileSave>()
   private readonly pending: PendingClose[] = []
   private readonly source = createSnapshotStore<FileCloseRequest | undefined>(undefined)
   /** Registrant-private source bound to the overlay by its framework hook. */
@@ -86,16 +100,17 @@ export class DesktopFileState {
    * Bind a mounted editor's serialized Save operation.
    * @param tabId - owning tab occurrence.
    * @param address - Session-scoped resource address; tab ids alone are not globally unique.
-   * @param save - Save operation, or null when the editor unmounts.
+   * @param save - Save and autosave controls, or null when the editor unmounts.
    */
-  registerSave(tabId: string, address: string, save: (() => Promise<boolean>) | null): void {
+  registerSave(tabId: string, address: string, save: DesktopFileSave | null): void {
     const key = JSON.stringify([address, tabId])
     if (save === null) this.saves.delete(key)
     else this.saves.set(key, save)
   }
 
   /**
-   * Defer dirty-file removal to the shared Modal; repeated requests coalesce.
+   * Pause autosave before deferring dirty-file removal to the shared Modal.
+   * Issued writes settle before decisions are enabled; repeated requests coalesce.
    * @param tabId - owning tab occurrence.
    * @param address - resource whose draft must be protected.
    * @param path - visible workspace-relative file name.
@@ -110,8 +125,17 @@ export class DesktopFileState {
     }
     const key = JSON.stringify([address, tabId])
     if (!this.pending.some(request => request.key === key)) {
-      this.pending.push({ key, address, path, proceed })
+      const editor = this.saves.get(key)
+      const writing = editor?.pause() ?? null
+      const request: PendingClose = { key, address, path, proceed, editor, waiting: writing !== null, failed: false }
+      this.pending.push(request)
       if (this.pending.length === 1) this.publish()
+      if (writing !== null) {
+        void writing.then(
+          () => { this.settleClose(request, false) },
+          () => { this.settleClose(request, true) },
+        )
+      }
     }
     return false
   }
@@ -119,7 +143,7 @@ export class DesktopFileState {
   /** Cancel the current close request and leave its draft untouched. */
   cancelClose(): void {
     if (this.source.getSnapshot()?.busy) return
-    this.pending.shift()
+    this.pending.shift()?.editor?.resume()
     this.publish()
   }
 
@@ -140,7 +164,7 @@ export class DesktopFileState {
     }
     this.source.set({ path: request.path, busy: true, failed: false })
     let ok = false
-    try { ok = await this.saves.get(request.key)?.() ?? false }
+    try { ok = await request.editor?.() ?? false }
     catch (_error: unknown) {
       // A failed Save keeps the prompt and the recoverable draft in place.
     }
@@ -164,12 +188,29 @@ export class DesktopFileState {
     const request = this.pending.shift()
     if (request !== undefined) {
       if (request.proceed()) this.write(request.address, null)
+      else request.editor?.resume()
     }
     this.publish()
   }
 
   private publish(): void {
-    const request = this.pending[0]
-    this.source.set(request === undefined ? undefined : { path: request.path, busy: false, failed: false })
+    let request = this.pending[0]
+    while (request !== undefined && !request.waiting && !request.failed) {
+      const buffer = this.read(request.address)
+      if (buffer !== undefined && buffer.text !== buffer.draft) break
+      this.pending.shift()
+      if (request.proceed()) this.write(request.address, null)
+      else request.editor?.resume()
+      request = this.pending[0]
+    }
+    this.source.set(request === undefined ? undefined
+      : { path: request.path, busy: request.waiting, failed: request.failed })
+  }
+
+  private settleClose(request: PendingClose, failed: boolean): void {
+    if (!this.pending.includes(request)) return
+    request.waiting = false
+    request.failed = failed
+    if (this.pending[0] === request) this.publish()
   }
 }
