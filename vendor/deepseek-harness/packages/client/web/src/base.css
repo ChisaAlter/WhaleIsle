@@ -68,7 +68,8 @@ html[data-platform='darwin'] [data-window-drag-recall] {
   -webkit-app-region: no-drag;
 }
 
-html[data-platform='darwin'] body > :not(#root) {
+/* Noninteractive shell decorations must not subtract the whole caption band. */
+html[data-platform='darwin'] body > :not(#root, [data-window-decoration]) {
   -webkit-app-region: no-drag;
 }
 

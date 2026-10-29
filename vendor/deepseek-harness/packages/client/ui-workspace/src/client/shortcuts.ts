@@ -53,14 +53,14 @@ export function createWorkspaceShortcutControls(): WorkspaceShortcutControls {
  * @param navigation - session creation and forking from the pointer controls' navigation service.
  * @param controls - browser-owned opening requests.
  * @param archiveSession - shared archive action, including running-work confirmation and notices.
- * @param reportForkFailure - publish a classified failure through the frame-wide notice channel.
+ * @param reportShortcutFailure - publish a classified failure through the frame-wide notice channel.
  */
 export function installWorkspaceShortcuts(
   ctx: Context,
   navigation: Pick<UiWorkspace, 'startSession' | 'forkSession' | 'resolveSessionAction'>,
   controls: ReturnType<typeof createWorkspaceShortcutControls>,
   archiveSession: (sessionId: SessionId) => void,
-  reportForkFailure: (reason: 'unavailable' | 'failed') => void,
+  reportShortcutFailure: (reason: 'unavailable' | 'failed' | 'reveal') => void,
 ): void {
   const t = ctx.locale.bind('workspace')
   const current = () => Object.values(ctx.sessions.list.getSnapshot().byId)
@@ -87,6 +87,25 @@ export function installWorkspaceShortcuts(
       const reason = addReason()
       return reason === null ? { status: 'handled', run: controls.add } : { status: 'blocked', reason }
     })
+  const shell = typeof window === 'undefined' ? undefined : (window as Window & { shell?: {
+    platform: string
+    openWorkspacePath: (cwd: string, relativePath: string) => Promise<{ ok: boolean }>
+  } }).shell
+  if (shell?.platform === 'darwin') {
+    ctx.effect(() => ctx.shortcuts.register({
+      id: 'workspace.reveal' as ShortcutCommandId, label: () => t('workspace.reveal'),
+      aliases: ['finder', 'reveal workspace'], defaults: {}, regions: ['page', 'editable', 'terminal'], modals: [],
+      resolve: () => {
+        const cwd = current()?.cwd
+        if (!cwd) return { status: 'blocked', reason: t('shortcut.noSession') }
+        return { status: 'handled', run: () => {
+          void shell.openWorkspacePath(cwd, '.').then((result) => {
+            if (!result.ok) reportShortcutFailure('reveal')
+          }, () => { reportShortcutFailure('reveal') })
+        } }
+      },
+    }), 'ui-workspace: workspace.reveal')
+  }
   register('session.rename', () => t('rename.session.title'), ['rename session'], 'KeyG', ['primary', 'alt'], ['primary', 'alt'], (context) => {
     const target = current()
     if (target === undefined || context.modal !== null || ctx.layout.panelInfo.getSnapshot().activePanelId !== null) return { status: 'blocked', reason: t('shortcut.noSession') }
@@ -107,7 +126,7 @@ export function installWorkspaceShortcuts(
         // Client plugin bundles do not share error-class identity.
         const unavailable = error instanceof Error && error.name === 'SessionForkError'
           && (error as SessionForkError).rpcError.code === 'session/fork-unavailable'
-        reportForkFailure(unavailable ? 'unavailable' : 'failed')
+        reportShortcutFailure(unavailable ? 'unavailable' : 'failed')
         if (!unavailable) console.warn('session fork rejected:', error)
       })
     } }

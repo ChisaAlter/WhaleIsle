@@ -55,6 +55,9 @@ test('injected silhouette keeps a hairline ring element that maximization remove
   // The ring must live inside body: --dsw-alias-* tokens are declared on
   // body, so a sibling element would only ever resolve the fallback color.
   assert.match(injectSource, /document\.body\.appendChild\(el\)/);
+  for (const id of ['FRAME_CANVAS_ID', 'FRAME_RING_ID']) {
+    assert.match(injectSource, new RegExp(`el.id = ${id};\\s*el.setAttribute\\('aria-hidden', 'true'\\);\\s*el.setAttribute\\('data-window-decoration', ''\\);`));
+  }
 });
 
 test('injected chrome seeds the maximized flag from getWindowState on first run', () => {

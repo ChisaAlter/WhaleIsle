@@ -48,11 +48,15 @@ const ARIA_KEYS = {
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
 };
 
-function ariaToAccelerator(aria) {
+function ariaToAccelerator(aria, platform) {
   if (typeof aria !== 'string' || aria === '') return undefined;
   const parts = aria.split('+');
   const key = parts.pop();
-  const accelerator = parts.map((part) => ARIA_MODIFIERS[part]);
+  const accelerator = parts.map((part) => {
+    if (platform === 'macos' && part === 'Control') return 'Control';
+    if (platform === 'macos' && part === 'Meta') return 'Command';
+    return ARIA_MODIFIERS[part];
+  });
   if (accelerator.some((part) => part === undefined)) return undefined;
   const suffix = key in ARIA_KEYS ? ARIA_KEYS[key]
     : /^(F\d{1,2}|[A-Z0-9])$/u.test(key) ? key : undefined;
@@ -104,7 +108,7 @@ function createShortcutService(options) {
     if (protocol === null) return table;
     for (const row of rows) {
       if (row.binding !== null && row.issue === null && row.conflicts.length === 0) {
-        const accelerator = ariaToAccelerator(protocol.presentBinding(row.binding, platform).aria);
+        const accelerator = ariaToAccelerator(protocol.presentBinding(row.binding, platform).aria, platform);
         if (accelerator !== undefined) table[row.id] = accelerator;
       }
     }
@@ -436,14 +440,16 @@ function createShortcutService(options) {
    * shortcuts (upstream sendEditingKey: interception bypasses the synthetic
    * pair so menu roles still reach inputs).
    * @param {string} keyCode - edit key.
-   * @param {Array<'control'>} modifiers - edit modifiers.
+   * @param {string[]} modifiers - Electron edit modifiers.
+   * @returns {boolean} whether the focused product window owns this action.
    */
   function sendEditingKey(keyCode, modifiers) {
     const window = getWindow();
-    if (window === undefined || window.isDestroyed() || overlayInput(window).blocked) return;
+    if (!window || window.isDestroyed() || !window.isFocused()) return false;
+    if (overlayInput(window).blocked || recording || !window.isEnabled()) return true;
     const contents = [...guestInputs].find(([guest, owner]) => owner.window === window && !guest.isDestroyed() && guest.isFocused())?.[0]
       ?? view()?.webContents;
-    if (contents === undefined || contents.isDestroyed()) return;
+    if (contents === undefined || contents.isDestroyed()) return false;
     contents.focus();
     const previous = editingInput;
     editingInput = contents;
@@ -454,6 +460,7 @@ function createShortcutService(options) {
       editingInput = previous;
       if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(recording);
     }
+    return true;
   }
 
   return {

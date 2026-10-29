@@ -52,6 +52,10 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Mac menu ownership and the noninteractive shell-decoration drag exclusion.
+  { file: 'packages/client/web/src/base.css', includes: ['[data-window-decoration]'] },
+  { file: 'packages/client/ui-workspace/src/client/shortcuts.ts', includes: ['workspace.reveal', 'openWorkspacePath'] },
+  { file: 'packages/client/ui-workspace/src/client/toast/register.ts', includes: ['revealWorkspaceFailed'] },
   // Desktop panel defaults remain configurable beneath profile and home patches.
   { file: 'packages/boot/app-boot/src/profile-context.ts', includes: ['DSHD_PROFILE_DEFAULT_PATCH', 'readProfileDefaultPatches'] },
   { file: 'apps/cli/src/dump-config.ts', includes: ['readProfileDefaultPatches'] },
@@ -299,6 +303,11 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar-right/src/client/shortcuts.ts', includes: ['DSHD: Ctrl+\\'] },
   { file: 'packages/client/ui-sidebar-terminal/src/client/index.ts', includes: ['terminal.drawer.toggle'] },
   { file: 'packages/client/ui-user-terminal/src/client/TerminalPane.tsx', includes: ['xterm'] },
+  { file: 'packages/client/ui-user-terminal/src/client/ghostty/surface.ts', includes: ['isTerminalAppShortcut'] },
+  { file: 'packages/client/ui-files/src/client/FilePreview.tsx', includes: ["document.execCommand('redo')"] },
+  { file: 'packages/client/ui-files/src/client/FileClosePrompt.tsx', includes: ["<p role=\"alert\">{t('error.write')}</p>"] },
+  { file: 'packages/client/ui-files/src/client/desktop-file-state.ts', includes: ['editor?.pause()', 'editor?.resume()'] },
+  { file: 'packages/client/ui-files/src/client/fileSaveCoordinator.ts', includes: ['pause(): Promise<boolean> | null', 'resume(): void'] },
   // Office preview routing (office-runtime card): binary Office files decline
   // the editable desktop viewer and the surfaces file editor, so the native
   // document preview claims them (Office→PDF, XLSX→Spreadsheet).

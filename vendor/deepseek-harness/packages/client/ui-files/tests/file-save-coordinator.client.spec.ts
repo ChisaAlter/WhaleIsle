@@ -33,6 +33,68 @@ describe('FileSaveCoordinator', () => {
     expect(onPendingChange.mock.calls).toEqual([[true], [true], [false]])
   })
 
+  it('holds automatic writes while paused but permits Save and resumes the latest edit', async () => {
+    vi.useFakeTimers()
+    const persist = vi.fn(async (_contents: string) => ({ ok: true }))
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500, persist, onPendingChange: vi.fn(), onConfirmed: vi.fn(),
+    })
+    coordinator.change('before close')
+    expect(coordinator.pause()).toBeNull()
+    coordinator.change('latest')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(persist).not.toHaveBeenCalled()
+    await expect(coordinator.flush('latest')).resolves.toBe(true)
+    expect(persist).toHaveBeenCalledExactlyOnceWith('latest')
+    coordinator.change('after Save')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(persist).toHaveBeenCalledOnce()
+    coordinator.resume()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(persist).toHaveBeenLastCalledWith('after Save')
+    coordinator.dispose()
+  })
+
+  it('suppresses a queued automatic write before it starts, including disposal while paused', async () => {
+    vi.useFakeTimers()
+    const persist = vi.fn(async (_contents: string) => ({ ok: true }))
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500, persist, onPendingChange: vi.fn(), onConfirmed: vi.fn(),
+    })
+    coordinator.change('discarded')
+    vi.advanceTimersByTime(500)
+    const settled = coordinator.pause()
+    expect(settled).not.toBeNull()
+    await settled
+    coordinator.dispose()
+    await vi.runAllTimersAsync()
+    expect(persist).not.toHaveBeenCalled()
+  })
+
+  it('waits for an issued write without starting a newer draft until resumed', async () => {
+    vi.useFakeTimers()
+    const issued = deferred()
+    const persist = vi.fn<(contents: string) => Promise<{ ok: boolean }>>()
+      .mockReturnValueOnce(issued.promise).mockResolvedValue({ ok: true })
+    const onConfirmed = vi.fn()
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500, persist, onPendingChange: vi.fn(), onConfirmed,
+    })
+    coordinator.change('issued')
+    await vi.advanceTimersByTimeAsync(500)
+    const settled = coordinator.pause()
+    coordinator.change('newer')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(persist).toHaveBeenCalledExactlyOnceWith('issued')
+    issued.resolve({ ok: true })
+    await settled
+    expect(onConfirmed).toHaveBeenCalledExactlyOnceWith('issued')
+    coordinator.resume()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(persist).toHaveBeenLastCalledWith('newer')
+    coordinator.dispose()
+  })
+
   it('keeps pending state until an edit made during a write is also saved', async () => {
     vi.useFakeTimers()
     const firstWrite = deferred()

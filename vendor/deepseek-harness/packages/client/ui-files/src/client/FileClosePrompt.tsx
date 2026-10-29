@@ -26,10 +26,10 @@ export function FileClosePrompt({ useCloseRequest, cancelClose, discardClose, sa
       <Button variant="ghost" disabled={request?.busy} onClick={cancelClose}>{t('unsaved.keep')}</Button>
       <Button variant="ghost" disabled={request?.busy} onClick={discardClose}>{t('unsaved.discard')}</Button>
       <Button variant="primary" disabled={request?.busy} loading={request?.busy === true}
-        {...(request?.failed ? { feedback: t('error.write'), title: t('error.write') } : {})}
         onClick={() => { void saveClose() }}>{t('unsaved.save')}</Button>
     </>}
   >
     <p>{request?.path}</p>
+    {request?.failed && <p role="alert">{t('error.write')}</p>}
   </Modal>
 }

@@ -352,6 +352,21 @@ async function githubJson(url, timeoutMs = CHECK_TIMEOUT_MS, { signal } = {}) {
     return null;
   }
   if (!response.ok) {
+    const remaining = response.headers?.get('x-ratelimit-remaining');
+    const retryAfter = response.headers?.get('retry-after');
+    if (response.status === 429 || (response.status === 403 && (remaining === '0' || retryAfter))) {
+      const reset = Number(response.headers?.get('x-ratelimit-reset'));
+      const minutes = Math.ceil((reset * 1000 - Date.now()) / 60_000);
+      const recovery = Number.isFinite(minutes) && minutes > 0 ? `，预计 ${minutes} 分钟后恢复` : '';
+      throw Object.assign(new Error(`GitHub 请求已限流（HTTP ${response.status}）${recovery}；请稍后重试，或配置 GitHub Token／手动选择 CNB 线路`), {
+        code: 'GITHUB_RATE_LIMIT',
+      });
+    }
+    if (response.status === 403) {
+      throw Object.assign(new Error('GitHub 拒绝访问（HTTP 403）；请检查 GitHub Token 权限，或手动选择 CNB 线路'), {
+        code: 'GITHUB_FORBIDDEN',
+      });
+    }
     throw new Error(`GitHub ${response.status}`);
   }
   return response.json();

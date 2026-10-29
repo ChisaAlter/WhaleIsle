@@ -21,6 +21,7 @@
 - `harness-chrome-inject.js` / `chrome.js` 把桌面 chrome 接到官方页。
 - macOS 主窗口与启动器使用左上角原生红黄绿按钮，保留透明自绘外形；壳窗使用 `roundedCorners: true` 保留 AppKit titled style，否则 Electron 会连同原生按钮一起移除。主窗口按钮位置 `(16, 18)` 对齐上游侧栏的 52px 顶部安全区，启动器按钮对齐 32px caption。Mac 不绘制右侧 Windows 按钮，Harness 右侧操作只保留 8px 边距。全屏状态由原生窗口事件同步到 `html[data-fullscreen]`，进入全屏取消外框圆角和缘线，退出后恢复；绿键、最小化与关闭沿用系统行为和既有关闭策略。
 - Mac 侧栏完全折叠时，`AppFrame` 继续挂载既有 `shell.leading` 的展开侧栏／新会话按钮；会话标题与路径一起避让这个区域，全屏页内预留空间按原生全屏状态收回。全屏系统标题栏与原生按钮由 AppKit 管理，按钮 `hidden` 属性不能替代完整 OS 画面的遮挡验收。
+- macOS 应用菜单承载设置（默认 `⌘,`）、服务、隐藏与退出；文件菜单使用 Finder 文案和关闭窗口，编辑菜单使用 Electron 原生 `editMenu`，窗口菜单提供最小化、缩放与前置全部窗口。Dock 附加打开工作区与打开启动器入口。菜单设置与工作区快捷键仍由现有注册表拥有，取消绑定后不补回默认键；Mac 原生 accelerator 区分 `Command` 和物理 `Control`，不把 `⌃` 转成 `⌘`。Windows/Linux 保持原菜单布局。
 - `closing-overlay.js` 关闭过渡。
 - `pet-growth.js` 的版本化 food 账本将投喂余额与当前日志存量分离；worker 返回按会话与 turn/step 摘要的用量桶，重复扫描、删除或恢复日志不重复发放。旧状态迁移保留等级与原有可用余额，新增消费立即可投喂。见[投喂账本决定](../../decisions/implemented/bug-fix/2026-10-02-pet-feed-ledger.md)。
 

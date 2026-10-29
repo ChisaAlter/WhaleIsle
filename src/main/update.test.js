@@ -280,6 +280,31 @@ test('checkUpdate and listReleases send Authorization only when a githubToken is
   }
 });
 
+test('GitHub rate limits explain recovery without masking permission errors or switching routes', async (t) => {
+  const { githubJson } = require('./update');
+  const seen = [];
+  t.mock.method(global, 'fetch', async (url) => {
+    seen.push(url);
+    return new Response('', { status: 403, headers: {
+      'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 1800),
+    } });
+  });
+  const url = 'https://api.github.com/repos/ChisaAlter/WhaleIsle/releases/latest';
+  await assert.rejects(githubJson(url), error => {
+    assert.equal(error.code, 'GITHUB_RATE_LIMIT');
+    assert.match(error.message, /预计 .* 分钟后恢复/);
+    assert.match(error.message, /GitHub Token.*手动选择 CNB/);
+    return true;
+  });
+  assert.deepEqual(seen, [url], 'no automatic mirror switch or retry on a rate limit');
+  for (const status of [403, 429]) {
+    global.fetch = async () => new Response('', { status });
+    await assert.rejects(githubJson(url), { code: status === 403 ? 'GITHUB_FORBIDDEN' : 'GITHUB_RATE_LIMIT' });
+  }
+  global.fetch = async () => new Response('', { status: 403, headers: { 'retry-after': '60' } });
+  await assert.rejects(githubJson(url), { code: 'GITHUB_RATE_LIMIT' });
+});
+
 test('the configured CNB route drives check, list and tag installs without touching GitHub', async (t) => {
   useReleasePlatform(t, 'win32');
   const { setUpdateRouteProvider, setGithubTokenProvider } = require('./update');

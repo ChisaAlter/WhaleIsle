@@ -328,6 +328,14 @@ export function terminalLinkAtColumn(row: GhosttySnapshot["rowData"][number], co
   return terminalLinkAtPosition([row], 0, column);
 }
 
+/** Unhandled Mac Command chords belong to application menus, not the PTY. */
+export function isTerminalAppShortcut(
+  event: Pick<KeyboardEvent, "metaKey">,
+  platform = navigator.platform,
+): boolean {
+  return isMacPlatform(platform) && event.metaKey;
+}
+
 export function isTerminalCopyShortcut(
   event: Pick<KeyboardEvent, "ctrlKey" | "key" | "metaKey" | "shiftKey">,
   platform = navigator.platform,
@@ -925,6 +933,10 @@ export class GhosttyTerminalSurface {
           },
         );
       }
+      return;
+    }
+    if (isTerminalAppShortcut(event)) {
+      this.suppressedKeyCodes.add(event.code);
       return;
     }
     // keyCode 229 is Safari's only signal that this keydown opens an IME

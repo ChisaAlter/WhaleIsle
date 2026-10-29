@@ -67,9 +67,41 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop', platform: ShortcutP
   return { ctx, fiber, registry, commands, navigation, controls, reportForkFailure, list, directory, select, history, loadOlder, panelInfo }
 }
 
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('workspace shortcut ownership', () => {
+  it('reveals the selected Mac Session workspace and captures it before navigation changes', async () => {
+    const openWorkspacePath = vi.fn(async (_cwd: string, _relativePath: string) => ({ ok: true }))
+    vi.stubGlobal('window', { shell: { platform: 'darwin', openWorkspacePath } })
+    const b = await bench()
+    const reveal = () => b.commands.get('workspace.reveal')!.resolve(context)
+    const first = reveal()
+    b.select('b')
+    if (first.status !== 'handled') throw new Error('expected a selected workspace')
+    first.run()
+    const second = reveal()
+    if (second.status !== 'handled') throw new Error('expected the new workspace')
+    second.run()
+    expect(openWorkspacePath.mock.calls).toEqual([['/workspace/a', '.'], ['/workspace/b', '.']])
+    b.select('none')
+    expect(reveal()).toMatchObject({ status: 'blocked' })
+    await b.fiber.dispose()
+    expect(b.registry.catalog.getSnapshot()).toEqual([])
+  })
+
+  it.each(['failed', 'rejected'])('reports a %s Finder open through the existing frame notice', async (failure) => {
+    const openWorkspacePath = vi.fn(async () => {
+      if (failure === 'rejected') throw new Error('unavailable')
+      return { ok: false }
+    })
+    vi.stubGlobal('window', { shell: { platform: 'darwin', openWorkspacePath } })
+    const b = await bench()
+    const result = b.commands.get('workspace.reveal')!.resolve(context)
+    if (result.status !== 'handled') throw new Error('expected a selected workspace')
+    result.run()
+    await vi.waitFor(() => { expect(b.reportForkFailure).toHaveBeenCalledWith('reveal') })
+  })
+
   it('routes Project rename and archive to the owner while retaining the selected Project identity', async () => {
     const b = await bench()
     const rename = vi.fn(), archive = vi.fn()
