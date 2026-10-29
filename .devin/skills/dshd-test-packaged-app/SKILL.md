@@ -1,9 +1,11 @@
 ---
 name: dshd-test-packaged-app
-description: End-to-end test a packaged Deepseek-Harness-Desktop build on macOS — DMG mount/install checks, cold-start expectations (auto-start vs launcher hold), where userData/runtime/logs live, how to surface the launcher and quit, and this VM's focus quirk with the accessibility workaround.
+description: Test a packaged Whale Isle build on macOS — locate production-client freshness and isolated-runtime checks, DMG installation, cold start, userData/logs, launcher controls, and this VM's accessibility workaround.
 ---
 
-# Testing a packaged Deepseek-Harness-Desktop build (macOS)
+# Testing a packaged Whale Isle build (macOS)
+
+The [maintenance guide](../../../docs/maintenance/README.md) owns the workflow. See [Mac local package verification](../../../docs/handbook/modules/release-process.md#mac-本地包验证) for production-client rebuilding, installed-artifact identity, isolated userData and actual runtime-bundle checks.
 
 ## Artifacts and install
 
