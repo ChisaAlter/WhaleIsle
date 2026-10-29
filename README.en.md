@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="README.md">中文</a> · English ·
-  <a href="https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.12">Release notes</a> ·
+  <a href="https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.13">Release notes</a> ·
   <a href="https://github.com/ChisaAlter/WhaleIsle/issues">Report an issue</a>
 </p>
 
@@ -29,12 +29,12 @@
 
 Independently maintained by the community, not an official DeepSeek product. Built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-## Download v0.3.12
+## Download v0.3.13
 
 | Platform | GitHub | CNB mirror |
 | --- | --- | --- |
-| Windows 10+ · x64 | [Installer](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.12/Whale-Isle-Setup-0.3.12.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.12/Whale-Isle-Setup-0.3.12.exe) |
-| macOS 14+ · Apple Silicon | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.12/Whale-Isle-0.3.12-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.12/Whale-Isle-0.3.12-mac-arm64.dmg) |
+| Windows 10+ · x64 | [Installer](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.13/Whale-Isle-Setup-0.3.13.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.13/Whale-Isle-Setup-0.3.13.exe) |
+| macOS 14+ · Apple Silicon | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.13/Whale-Isle-0.3.13-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.13/Whale-Isle-0.3.13-mac-arm64.dmg) |
 | Android 8.0+ | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) |
 
 The Windows package is unsigned. The Mac package is unsigned, not notarized, and excludes the Windows-only Office runtime; right-click and choose Open the first time. The Android APK is release-signed and released separately. Each release provides SHA512 checksums.
