@@ -16,6 +16,22 @@
 
 安装或升级行为发生变化时，在开发阶段验证相应实际操作，并在 PR 说明结果。没有固定的每版人工验收全表。
 
+## Mac 本地包验证
+
+修改 Harness 客户端源码后，在仓库根目录先刷新生产客户端，再打包：
+
+```sh
+npm run setup:harness
+npm run dist:mac
+```
+
+`setup:harness` 执行 Harness 的 `build:official`；`dist:mac` 不包含这一步，会使用已有客户端产物。仅 TypeScript 检查通过或 `app.asar` 摘要变化，不能说明新的客户端代码已进入安装包。
+
+- 当前应用名是 `Whale Isle.app`。安装新 DMG 时确认实际挂载卷，避免从仍挂载的同名旧卷复制。核对安装副本与本次 `dist/mac-arm64/Whale Isle.app` 的 `Contents/Resources/app.asar`、`Contents/Resources/vendor/deepseek-harness.tar` 是否一致。
+- 同版本回归使用新的专用 `--user-data-dir=<绝对路径>`，不要删除真实用户配置或运行时缓存。正常退出上一轮测试实例后，确认新进程的应用路径和实际 userData，避免把旧实例当作新包。
+- Mac 的解压运行时位于该 userData 的 `runtime/<桌面版本>`，复用受归档身份校验控制。核对实际运行时中受影响的 `packages/client/*/lib/client.js` 与本次构建产物，而不是只看源码或 ASAR；例如文件与终端修复分别检查 `ui-files`、`ui-user-terminal`。
+- 分别记录本地安装版、互联网下载版与签名/Gatekeeper 结果。本地包没有 quarantine 时能启动，不代表下载后的首次启动通过；不要清除 quarantine 或关闭安全验证来代替测试。
+
 ## 自动分发
 
 [Release](../../../.github/workflows/release.yml) 在 main 的 Development CI 成功后自动运行，发布实现位于 `scripts/publish-release.mjs`。
