@@ -24,7 +24,7 @@ test('Finder opens the authorized workspace root, including a non-Git workspace,
   require.cache[electron] = { exports: { shell: { openPath: async target => { opened.push(target); return ''; } } } };
   t.after(() => { if (previous) require.cache[electron] = previous; else delete require.cache[electron]; });
   assert.equal((await openWorkspacePath(active, '.')).ok, true);
-  assert.deepEqual(opened, [fs.realpathSync(active)]);
+  assert.deepEqual(opened, [fs.realpathSync.native(active)]);
   for (const relative of ['../outside', 'escape', '.git']) {
     assert.equal((await openWorkspacePath(active, relative)).ok, false, relative);
   }
