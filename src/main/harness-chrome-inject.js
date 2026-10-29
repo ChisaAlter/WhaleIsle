@@ -206,6 +206,7 @@
     const el = document.createElement('div');
     el.id = FRAME_CANVAS_ID;
     el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-window-decoration', '');
     document.body.appendChild(el);
   }
 
@@ -216,6 +217,7 @@
     const el = document.createElement('div');
     el.id = FRAME_RING_ID;
     el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-window-decoration', '');
     // Inside body: the --dsw-alias-* tokens are defined on body (light/dark
     // tables), so a ring sibling to body would only ever see the fallback.
     // position:fixed still escapes body's rounded overflow clip.

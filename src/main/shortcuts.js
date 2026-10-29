@@ -440,14 +440,16 @@ function createShortcutService(options) {
    * shortcuts (upstream sendEditingKey: interception bypasses the synthetic
    * pair so menu roles still reach inputs).
    * @param {string} keyCode - edit key.
-   * @param {Array<'control'>} modifiers - edit modifiers.
+   * @param {string[]} modifiers - Electron edit modifiers.
+   * @returns {boolean} whether the focused product window owns this action.
    */
   function sendEditingKey(keyCode, modifiers) {
     const window = getWindow();
-    if (window === undefined || window.isDestroyed() || overlayInput(window).blocked) return;
+    if (!window || window.isDestroyed() || !window.isFocused()) return false;
+    if (overlayInput(window).blocked || recording || !window.isEnabled()) return true;
     const contents = [...guestInputs].find(([guest, owner]) => owner.window === window && !guest.isDestroyed() && guest.isFocused())?.[0]
       ?? view()?.webContents;
-    if (contents === undefined || contents.isDestroyed()) return;
+    if (contents === undefined || contents.isDestroyed()) return false;
     contents.focus();
     const previous = editingInput;
     editingInput = contents;
@@ -458,6 +460,7 @@ function createShortcutService(options) {
       editingInput = previous;
       if (!contents.isDestroyed()) contents.setIgnoreMenuShortcuts(recording);
     }
+    return true;
   }
 
   return {

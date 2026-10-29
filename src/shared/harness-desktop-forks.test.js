@@ -288,6 +288,9 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
     };
     // Presentation-skin fork: every marker snippet lives in these files.
     const skinSeams = {
+      'packages/client/web/src/base.css': '[data-window-decoration]\n',
+      'packages/client/ui-workspace/src/client/shortcuts.ts': 'workspace.reveal\nopenWorkspacePath\n',
+      'packages/client/ui-workspace/src/client/toast/register.ts': 'revealWorkspaceFailed\n',
       'packages/client/ui-theme/src/theme-family.ts': 'ThemeSkinId\nskin?: ThemeSkinId\nwallpaper?: string\n',
       'packages/client/ui-theme/src/builtin-families.ts': 'CODEX_FAMILY\nCLAUDE_FAMILY\n--dsh-codex-panel\n',
       'packages/client/ui-theme/src/theme-settings.ts': 'THEME_SKIN_WALLPAPER_FIELD\nskinWallpaperEnabled\n',

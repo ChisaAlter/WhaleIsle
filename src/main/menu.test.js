@@ -25,6 +25,7 @@ function loadMenu(platform, shortcuts) {
         openPath: target => calls.push(['openPath', target]),
         openExternal: target => calls.push(['openExternal', target]),
       },
+      webContents: { getFocusedWebContents: () => ({ redo: () => calls.push(['nativeRedo']) }) },
     },
     './window': {
       openHarnessSettings: section => calls.push(['settings', section]),
@@ -89,6 +90,37 @@ test('Mac settings keep registry dispatch and do not restore an unbound accelera
     settings.click();
     assert.deepEqual(dispatched, ['settings.open']);
     assert.deepEqual(calls, []);
+  }
+});
+
+test('Mac Finder resolves the current workspace through the renderer registry, not the boot config', () => {
+  const dispatched = [];
+  const { applicationMenu, calls } = loadMenu('darwin', {
+    currentRevision: () => 4,
+    acceleratorFor: () => undefined,
+    dispatchMenuCommand: id => { dispatched.push(id); return false; },
+  });
+  applicationMenu.find(item => item.label === '文件').submenu.find(item => item.label === '在 Finder 中打开工作区').click();
+  assert.deepEqual(dispatched, ['workspace.reveal']);
+  assert.deepEqual(calls, [], 'blocked dispatch must not open a stale boot workspace');
+});
+
+test('Mac native redo sends the same editing key as Command-Shift-Z and preserves native fallback', () => {
+  for (const owned of [true, false]) {
+    const keys = [];
+    const { applicationMenu, calls } = loadMenu('darwin', {
+      sendEditingKey: (key, modifiers) => { keys.push([key, Array.from(modifiers)]); return owned; },
+    });
+    const edit = applicationMenu.find(item => item.role === 'editMenu');
+    const redo = edit.submenu.find(item => item.label === '重做');
+    assert.equal(redo.role, undefined, 'Electron roles override click handlers');
+    assert.equal(redo.accelerator, 'Command+Shift+Z');
+    redo.click();
+    assert.deepEqual(keys, [['Z', ['meta', 'shift']]]);
+    assert.deepEqual(calls, owned ? [] : [['nativeRedo']]);
+    for (const role of ['undo', 'cut', 'copy', 'paste', 'pasteAndMatchStyle', 'delete', 'selectAll']) {
+      assert.ok(edit.submenu.some(item => item.role === role), role);
+    }
   }
 });
 

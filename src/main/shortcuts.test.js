@@ -108,6 +108,25 @@ const keydown = (code, opts = {}) => ({
   isAutoRepeat: false, isComposing: false, modifiers: [], ...opts,
 });
 
+test('Mac native redo reaches the editor without registry interception and respects input guards', async (t) => {
+  const b = await createService(t, { platform: 'macos' });
+  t.after(() => b.service.dispose());
+  const sent = [];
+  b.contents.focus = () => {};
+  b.contents.sendInputEvent = input => sent.push(input);
+  assert.equal(b.service.sendEditingKey('Z', ['meta', 'shift']), true);
+  assert.deepEqual(sent, [
+    { type: 'keyDown', keyCode: 'Z', modifiers: ['meta', 'shift'] },
+    { type: 'keyUp', keyCode: 'Z', modifiers: ['meta', 'shift'] },
+  ]);
+  b.overlay.blocked = true;
+  assert.equal(b.service.sendEditingKey('Z', ['meta', 'shift']), true);
+  assert.equal(sent.length, 2);
+  b.win.isFocused = () => false;
+  assert.equal(b.service.sendEditingKey('Z', ['meta', 'shift']), false);
+  assert.equal(sent.length, 2, 'launcher and other windows keep their native editing owner');
+});
+
 test('get serves defaults when no device file exists', async (t) => {
   const { service, ipc, event, userData } = await createService(t);
   const snapshot = await ipc.handlers.get(CHANNELS.get)(event, DEFINITIONS, null);

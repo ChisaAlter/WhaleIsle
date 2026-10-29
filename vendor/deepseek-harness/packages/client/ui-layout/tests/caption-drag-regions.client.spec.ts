@@ -63,6 +63,14 @@ function blocks(text: string): CssBlock[] {
 describe('caption drag regions across client stylesheets', () => {
   const files = cssFiles()
 
+  it('keeps full-window noninteractive shell decorations out of the Mac overlay subtraction', () => {
+    const base = files.find(file => file.path === 'packages/client/web/src/base.css')!
+    const overlays = blocks(base.text).filter(block => block.selector.includes('body >') && /-webkit-app-region:\s*no-drag/.test(block.body))
+    expect(overlays.map(block => block.selector)).toEqual([
+      "html[data-platform='darwin'] body > :not(#root, [data-window-decoration])",
+    ])
+  })
+
   it('scans the client stylesheet population', () => {
     expect(files.length).toBeGreaterThan(20)
   })

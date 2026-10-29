@@ -1,4 +1,4 @@
-const { Menu, shell, app } = require('electron');
+const { Menu, shell, app, webContents } = require('electron');
 const { openHarnessSettings, openMarketplace } = require('./window');
 const { loadConfig } = require('./config');
 
@@ -56,6 +56,10 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
         {
           label: isMac ? '在 Finder 中打开工作区' : '在资源管理器中打开工作区',
           click: () => {
+            if (isMac && shortcuts?.currentRevision?.() !== undefined) {
+              shortcuts.dispatchMenuCommand('workspace.reveal');
+              return;
+            }
             const { workspace } = loadConfig();
             if (workspace) {
               shell.openPath(workspace);
@@ -81,7 +85,24 @@ function buildMenu({ onOpenWorkspace, onOpenLauncher, onRestart, onReload, short
         isMac ? { role: 'close', label: '关闭窗口' } : { role: 'quit', label: '退出' },
       ],
     },
-    ...(isMac ? [{ role: 'editMenu', label: '编辑' }] : []),
+    ...(isMac ? [{
+      role: 'editMenu', label: '编辑', submenu: [
+        { role: 'undo' },
+        {
+          label: '重做', accelerator: 'Command+Shift+Z',
+          click: () => {
+            if (!shortcuts?.sendEditingKey('Z', ['meta', 'shift'])) {
+              webContents.getFocusedWebContents()?.redo();
+            }
+          },
+        },
+        { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+        { role: 'pasteAndMatchStyle' }, { role: 'delete' }, { role: 'selectAll' },
+        { type: 'separator' },
+        { label: '语音', submenu: [{ role: 'startSpeaking' }, { role: 'stopSpeaking' }] },
+      ],
+    }] : []),
     {
       label: '运行',
       submenu: [

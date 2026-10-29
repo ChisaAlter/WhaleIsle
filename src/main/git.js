@@ -1095,12 +1095,11 @@ async function gitPublishRepository(cwd, input, onProgress) {
 }
 
 async function openWorkspacePath(cwd, relativePath) {
-  const { root, rel } = resolveGitPath(cwd, relativePath);
-  if (!root) return fail('Git status is unavailable.');
-  if (!rel) return fail('Path is outside the workspace.');
+  const target = resolveInsideWorkspace(cwd, relativePath);
+  if (!target) return fail('Path is outside the workspace.');
   try {
     const { shell } = require('electron');
-    const error = await shell.openPath(path.join(root, rel));
+    const error = await shell.openPath(target);
     return error ? fail(error) : ok();
   } catch (error) {
     return fail(error instanceof Error ? error.message : 'Unable to open file');
