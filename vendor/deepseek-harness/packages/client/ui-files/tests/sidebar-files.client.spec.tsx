@@ -157,11 +157,11 @@ describe('native Files adapters', () => {
     const dialog = screen.getByRole('dialog', { name: 'Unsaved changes' })
     const saveAndClose = within(dialog).getByRole('button', { name: 'Save and close' })
     fireEvent.click(saveAndClose)
-    await screen.findByRole('alert')
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('Could not save the file.')
     expect(proceed).not.toHaveBeenCalled()
     expect(new DesktopFileState().read(ADDRESS)?.draft).toBe('edited')
     expect(screen.getByLabelText('src/a.ts')).toBe(editor)
-    expect(within(dialog).getByRole('button', { name: 'Could not save the file.' })).toBe(saveAndClose)
+    expect(within(dialog).getByRole('button', { name: 'Save and close' })).toBe(saveAndClose)
     fail = false
     fireEvent.click(saveAndClose)
     await waitFor(() => { expect(proceed).toHaveBeenCalledOnce() })

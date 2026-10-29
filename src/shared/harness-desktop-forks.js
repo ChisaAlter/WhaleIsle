@@ -305,6 +305,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-user-terminal/src/client/TerminalPane.tsx', includes: ['xterm'] },
   { file: 'packages/client/ui-user-terminal/src/client/ghostty/surface.ts', includes: ['isTerminalAppShortcut'] },
   { file: 'packages/client/ui-files/src/client/FilePreview.tsx', includes: ["document.execCommand('redo')"] },
+  { file: 'packages/client/ui-files/src/client/FileClosePrompt.tsx', includes: ["<p role=\"alert\">{t('error.write')}</p>"] },
   { file: 'packages/client/ui-files/src/client/desktop-file-state.ts', includes: ['editor?.pause()', 'editor?.resume()'] },
   { file: 'packages/client/ui-files/src/client/fileSaveCoordinator.ts', includes: ['pause(): Promise<boolean> | null', 'resume(): void'] },
   // Office preview routing (office-runtime card): binary Office files decline
