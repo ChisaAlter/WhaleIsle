@@ -62,6 +62,8 @@ export interface MenuItemButtonProps {
   shortcut?: MenuItem['shortcut']
   /** Leading icon (figma .Menu_cell gap 8). */
   icon?: ReactNode
+  /** Whether this row identifies the currently displayed page or view. */
+  current?: boolean
   /** Whether the row cannot be activated. */
   disabled?: boolean
   /** Destructive row: error-colored text/icon and danger hover fill. */
@@ -86,6 +88,7 @@ export interface MenuItemButtonProps {
  * @param props.children - visible row label.
  * @param props.shortcut - effective key labels and accessible combination.
  * @param props.icon - optional leading icon.
+ * @param props.current - whether the row identifies the currently displayed page or view.
  * @param props.disabled - whether the row cannot be activated.
  * @param props.danger - whether to use the destructive row colors.
  * @param props.separatorBefore - whether this row starts a new group (hairline above it).
@@ -93,7 +96,7 @@ export interface MenuItemButtonProps {
  * @returns one menu-item row.
  */
 export function MenuItemButton({
-  children, shortcut, icon, disabled = false, danger = false, separatorBefore = false, onSelect,
+  children, shortcut, icon, current, disabled = false, danger = false, separatorBefore = false, onSelect,
 }: MenuItemButtonProps) {
   return (
     <div className={css.itemWrap}>
@@ -104,6 +107,7 @@ export function MenuItemButton({
         className={clsx(css.item, danger && css.danger)}
         disabled={disabled}
         aria-keyshortcuts={shortcut?.aria}
+        aria-current={current === true ? 'page' : undefined}
         onClick={onSelect}
       >
         {icon !== undefined && <span className={css.itemIcon}>{icon}</span>}
@@ -174,6 +178,7 @@ function inertWhen(inactive: boolean): Record<string, string> {
  * frame, and scroll/resize; return null to skip placement for that frame.
  * @param props.matchAnchorWidth - portal mode only: size the list to the
  * anchor rect width. Form fields opt in so the list covers their trigger.
+ * @param props.minWidthFromAnchor - in portal mode, keep the menu at least as wide as its anchor, bounded by viewport margins.
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
  * @param props.children - component rows rendered after `items` in the same
@@ -190,7 +195,7 @@ function inertWhen(inactive: boolean): Record<string, string> {
  * document.body outside the owner's DOM subtree.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, material = 'translucent', autoFocus = false, selection = 'check', getAnchorRect, matchAnchorWidth = false, footer, filter, className, listClassName }: {
+export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, material = 'translucent', autoFocus = false, selection = 'check', getAnchorRect, matchAnchorWidth = false, minWidthFromAnchor = false, footer, filter, className, listClassName }: {
   open: boolean
   autoFocus?: boolean
   anchor: ReactNode
@@ -212,6 +217,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
   selection?: 'check' | 'fill'
   getAnchorRect?: () => DOMRect | null
   matchAnchorWidth?: boolean
+  minWidthFromAnchor?: boolean
   className?: string | undefined
   listClassName?: string | undefined
 }) {
@@ -285,6 +291,10 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       const vw = window.innerWidth
       const vh = window.innerHeight
       const listEl = listRef.current
+      if (listEl !== null) {
+        const minimum = minWidthFromAnchor ? `${Math.min(r.width, Math.max(0, vw - MARGIN * 2))}px` : ''
+        if (listEl.style.minWidth !== minimum) listEl.style.minWidth = minimum
+      }
       const lw = matchAnchorWidth ? r.width : (listEl?.offsetWidth ?? 0)
       const lh = listEl?.offsetHeight ?? 0
 
@@ -325,7 +335,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, portal, align, side, getAnchorRect, matchAnchorWidth])
+  }, [open, portal, align, side, getAnchorRect, matchAnchorWidth, minWidthFromAnchor])
 
   // The exit recipe keeps the list mounted for one transition; its last
   // placement stays frozen until the tree really drops.

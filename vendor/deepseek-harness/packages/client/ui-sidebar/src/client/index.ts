@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SidebarPanelMetadata, SidebarRootInjected } from './contract/slots.ts'
 import type { SidebarNavTabRow } from './stores.ts'
 import { createSidebarNavStore } from './stores.ts'
+import { createPanelPins } from './panel-pins.ts'
 import { HeaderLeadingControls } from './HeaderLeadingControls.tsx'
 import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
@@ -20,9 +21,8 @@ import { en, zh, type SidebarKey } from './locales.ts'
 export type {
   SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
   SidebarNavTabOwnerProps, SidebarPageOwnerProps,
-  SidebarPanelIconOwnerProps, SidebarPanelMetadata,
-  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps,
-  SidebarSettingsOwnerProps,
+  SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata,
+  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
 export type { SidebarNavTabRow } from './stores.ts'
@@ -85,6 +85,11 @@ export function apply(ctx: ClientContext): void {
   }
   ctx.effect(() => ctx.slots.subscribe('sidebar.panellist', syncPanels), 'ui-sidebar: panel entries')
   ctx.effect(() => ctx.locale.subscribe(syncPanels), 'ui-sidebar: panel labels')
+  const panelPins = createPanelPins()
+  const entryActions = {
+    getSnapshot: () => ctx.slots.entriesOfSlot('sidebar.panellist.actions').length > 0,
+    subscribe: (listener: () => void) => ctx.slots.subscribe('sidebar.panellist.actions', listener),
+  }
 
   let tabsVersion = -1
   let tabsRevision = -1
@@ -94,10 +99,9 @@ export function apply(ctx: ClientContext): void {
     // (current Session Workspace, then recent Workspace).
     startSession: (workspaceId) => { navInstance.actions.selectTab('sessions'); workspaceNavigation.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
-    selectPanel: (id) => {
-      if (id === 'plugins' || id === 'schedules') ctx.get('productAnalytics')?.track('sidebar_menu_click', { menu_name: id === 'plugins' ? 'plugin' : 'cron' })
-      ctx.layout.selectPanel(id)
-    },
+    selectPanel: (id) => { ctx.layout.selectPanel(id) },
+    setPinned: panelPins.setPinned,
+    trackEntryClick: (attributes) => { ctx.get('productAnalytics')?.track('sidebar_menu_click', attributes) },
     hooks: {
       navTabs: {
         getSnapshot: () => {
@@ -128,6 +132,8 @@ export function apply(ctx: ClientContext): void {
       },
       panels,
       shortcuts: ctx.shortcuts.catalog,
+      entryPins: panelPins.unpinned,
+      entryActions,
     },
   })
   ctx.slots.inject('sidebar', () => ctx.slots.register({
@@ -141,6 +147,7 @@ export function apply(ctx: ClientContext): void {
       'sidebar.brand.name': { kind: 'single', scope: 'root' },
       'sidebar.toggle.badge': { kind: 'single', scope: 'root' },
       'sidebar.panellist': { kind: 'list', scope: 'root' },
+      'sidebar.panellist.actions': { kind: 'list', scope: 'root' },
       'sidebar.workspaces': { kind: 'single', scope: 'root' },
       'sidebar.nav.tab': { kind: 'list', scope: 'root' },
       'sidebar.page': { kind: 'keyed', scope: 'root' },

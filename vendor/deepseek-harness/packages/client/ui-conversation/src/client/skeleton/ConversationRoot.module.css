@@ -284,13 +284,26 @@ button.crumb:hover {
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 36px;
+  gap: 16px 20px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  align-items: flex-start;
+  flex-wrap: wrap;
   margin-top: 4px;
   padding-left: 8px;
 }
 
+.viewTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 36px;
+  min-width: 0;
+  min-height: 27px;
+}
 .tab {
   position: relative;
+  min-height: 27px;
   padding: 0 0 11px;
   border: none;
   background: transparent;
@@ -322,6 +335,32 @@ button.crumb:hover {
 
 .tabActive::after {
   background: var(--dsw-alias-state-business-primary);
+}
+
+/* The More launcher centers its 22px box on the tab's 16px text line. */
+.viewsMoreAnchor {
+  flex: none;
+}
+
+.viewsMore {
+  width: 22px;
+  height: 22px;
+  margin-top: -3px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.viewsMoreActive { color: var(--dsw-alias-state-business-primary); }
+
+.tabLabel { display: block; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.viewsMore[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.viewsMoreMenu {
+  width: 288px;
+  max-width: calc(100vw - 24px);
 }
 
 .viewArea {

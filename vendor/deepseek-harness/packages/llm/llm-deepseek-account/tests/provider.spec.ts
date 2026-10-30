@@ -105,11 +105,11 @@ it('falls back to the bundled catalog when the listing fails', async () => {
   await ctx.plugin(Account, { baseURL: server.baseURL })
   expect((await ctx.llm.listModels('deepseek-account')).map(row => row.id)).toEqual(['deepseek-flash', 'deepseek-v4-pro'])
   expect(warn).toHaveBeenCalledExactlyOnceWith('[llm-deepseek-account]', expect.stringContaining('using the bundled catalog') as string)
-  await expect(ctx.llm.resolveModelInfo('deepseek-account', 'deepseek-flash')).resolves.toMatchObject({ context: { contextWindow: 1_000_000 } })
+  await expect(ctx.llm.resolveModelInfo('deepseek-account', 'deepseek-flash')).resolves.toMatchObject({ context: { contextWindow: 1_048_576 } })
 })
 
 it('hides and refuses listed models this build cannot serve before any inference request', async () => {
-  const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+  const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {})
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   const server = await listing(json({ data: [
     FLASH,
@@ -127,7 +127,7 @@ it('hides and refuses listed models this build cannot serve before any inference
     .rejects.toMatchObject({ code: 'CLIENT_UPGRADE_REQUIRED', message: expect.stringMatching(/requires DeepSeek Harness 99\.0\.0-alpha\.1 or later; current version is /) as string })
   await expect(ctx.llm.prepareCall({ provider: 'deepseek-account', model: 'unlisted-pass-through' })).resolves.toBeDefined()
   expect(server.requests.map(request => request.url)).toEqual(['/models'])
-  expect(info).toHaveBeenCalledExactlyOnceWith('[llm-deepseek-account]', expect.stringContaining('loaded 5 model(s), skipped 0 row(s)') as string)
+  expect(diagnostic).toHaveBeenCalledExactlyOnceWith('[llm-deepseek-account]', expect.stringContaining('loaded 5 model(s), skipped 0 row(s)') as string)
   expect(warn).toHaveBeenCalledExactlyOnceWith('[llm-deepseek-account]', 'model "deepseek-v4-pro" declares no api_capabilities.anthropic_messages')
 })
 

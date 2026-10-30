@@ -43,6 +43,7 @@ export const zh = {
   'tab.guide.title': '开始',
   'tab.guide.heading': '打开一个面板',
   'tab.guide.subtitle': '选择要在右侧栏显示的内容。',
+  'tab.guide.more': '更多工具',
   'tab.unavailable': '这类内容还没有可用的查看方式。',
 } satisfies Record<string, string>
 
@@ -86,5 +87,6 @@ export const en = {
   'tab.guide.title': 'Start',
   'tab.guide.heading': 'Open a panel',
   'tab.guide.subtitle': 'Pick what shows in the right sidebar.',
+  'tab.guide.more': 'More tools',
   'tab.unavailable': 'Nothing here can view this kind of content yet.',
 } satisfies Record<SidebarRightKey, string>
