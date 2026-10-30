@@ -28,6 +28,7 @@ const DESKTOP_PACKAGES = [
 const COMPOSITION_ROWS = [
   { file: 'packages/bundle/base/cordis.patch.yml', id: 'llm-vision-fallback', name: '@deepseek-ai/dsh-llm-vision-fallback', configIncludes: ['maxOutputTokens: 2048', 'timeoutMs: 120000'] },
   { file: 'packages/bundle/base/cordis.patch.yml', id: 'mcp-servers-file', name: '@deepseek-ai/dsh-mcp-servers-file' },
+  { file: 'packages/bundle/base/cordis.patch.yml', id: 'session-query-sqlite', name: '@deepseek-ai/dsh-session-query-sqlite', configIncludes: ['preparedSessionCacheSize: 1'] },
   { file: 'packages/bundle/web-app/cordis.patch.yml', id: 'directory-picker', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
   { file: 'packages/bundle/web-app/cordis.patch.yml', id: 'mcp-servers', name: '@deepseek-ai/dsh-host-mcp-servers' },
   { file: 'packages/bundle/web-app/cordis.patch.yml', id: 'skill-inventory', name: '@deepseek-ai/dsh-host-skill-inventory' },
@@ -83,6 +84,11 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/subagent/subagent/src/index.ts', includes: ['registerContinuationPolicy'] },
   { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation'] },
   { file: 'packages/api/session-controller/src/index.ts', includes: ["'session/before-cancel'", 'cancel(request: SessionCancelRequest): Promise<SessionCancelValue>'] },
+  // Opened Sessions nobody watches release their resident Agent instead of staying in the Host until restart.
+  { file: 'packages/api/session-controller/src/idle-release.ts', includes: ['class IdleSessionRelease', "optionalService(this.ctx, 'jobs')", "stateOf(agent.session, 'sessionListMetadata')"] },
+  { file: 'packages/api/session-controller/src/index.ts', includes: ['new IdleSessionRelease(ctx, this.lifecycle', 'this.lifecycle.releasingIds.has(session.id)', 'idleReleaseMs: z.natural().default(300_000)'] },
+  { file: 'packages/api/session-controller/src/history.ts', includes: ['const unwatch = this.watch(target)'] },
+  { file: 'packages/api/session-controller/src/lifecycle.ts', includes: ['readonly releasingIds', 'retained(): [SessionId, AgentHandle][]'] },
   { file: 'packages/client/ui-sidebar/src/client/index.ts', includes: ['selectTab'] },
   // WhaleBridge thresholds travel with each model and are consumed by
   // compaction; keeping only the configuration field would silently lose it.

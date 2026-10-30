@@ -43,6 +43,10 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
     '        timeoutMs: 120000',
     '    - id: mcp-servers-file',
     "      name: '@deepseek-ai/dsh-mcp-servers-file'",
+    '    - id: session-query-sqlite',
+    "      name: '@deepseek-ai/dsh-session-query-sqlite'",
+    '      config:',
+    '        preparedSessionCacheSize: 1',
     '',
   ].join('\n'));
   const webRows = COMPOSITION_ROWS
@@ -288,7 +292,10 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/subagent/subagent/src/lifecycle.ts': 'readonly runId: SubagentRunId\n',
       'packages/subagent/subagent/src/index.ts': 'registerContinuationPolicy\n',
       'packages/api/session-controller/src/commands.ts': "await this.ctx.serial('session/before-cancel'\nasync cancel(request:\n&& !pluginPresentation\n",
-      'packages/api/session-controller/src/index.ts': "'session/before-cancel'\ncancel(request: SessionCancelRequest): Promise<SessionCancelValue>\n",
+      'packages/api/session-controller/src/index.ts': "'session/before-cancel'\ncancel(request: SessionCancelRequest): Promise<SessionCancelValue>\nnew IdleSessionRelease(ctx, this.lifecycle\nthis.lifecycle.releasingIds.has(session.id)\nidleReleaseMs: z.natural().default(300_000)\n",
+      'packages/api/session-controller/src/idle-release.ts': "class IdleSessionRelease\noptionalService(this.ctx, 'jobs')\nstateOf(agent.session, 'sessionListMetadata')\n",
+      'packages/api/session-controller/src/history.ts': 'const unwatch = this.watch(target)\n',
+      'packages/api/session-controller/src/lifecycle.ts': 'readonly releasingIds\nretained(): [SessionId, AgentHandle][]\n',
       'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',
     };
     // Presentation-skin fork: every marker snippet lives in these files.
