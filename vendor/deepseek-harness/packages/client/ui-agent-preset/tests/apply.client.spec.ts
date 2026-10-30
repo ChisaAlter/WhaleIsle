@@ -1122,10 +1122,11 @@ describe('ui-agent-preset apply', () => {
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
     expect(calls).not.toContain('select:cordis')
 
-    // A blank whose listed preset is already Creator is staged and follows its projection.
+    // Navigation reuses a blank whose listed preset is already Creator; the opened Session is staged and follows its projection.
     state.byId.s1 = { id: 's1', blank: true, projectionValues: { agentPreset: 'cordis' } }
     sessions.notify()
     section.startCreatorDraft?.()
+    uiWorkspace.open(SessionId('s1'))
     await vi.waitFor(() => { expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis') })
     expect(seat.hooks.agentPresetSeat.getSnapshot().introduce).toBe(true)
     expect(calls).not.toContain('select:cordis')

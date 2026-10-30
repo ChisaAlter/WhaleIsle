@@ -529,12 +529,12 @@ it.each([false, true])('starts Creator from Plugins with Coding Tools=%s without
 
     // An old hero controller is still alive after its Session completes.
     // Its list updates must not consume the next Creator draft's selection.
-    next.session.append('turn/start', { turn: 1 })
-    next.session.append('user/message', createUserMessage({
+    standard.session.append('turn/start', { turn: 1 })
+    standard.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Standard fixture completed before creating a plugin.' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    next.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    await scaffold.ctx.sessions.flush(next.session)
+    standard.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await scaffold.ctx.sessions.flush(standard.session)
     await page.getByText('Standard fixture completed before creating a plugin.', { exact: true }).waitFor()
     await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
     await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
@@ -543,13 +543,13 @@ it.each([false, true])('starts Creator from Plugins with Coding Tools=%s without
       page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
     ])
     await picker.waitFor()
-    const fresh = scaffold.ctx.agents.list().find(agent => agent.id !== creator.id && agent.id !== next.id)
+    const fresh = scaffold.ctx.agents.list().find(agent => agent.id !== creator.id && agent.id !== standard.id)
     if (fresh === undefined) throw new Error('Creator entry did not open a new blank Session')
     expect(scaffold.ctx.agentPresets.composedPreset(fresh.ctx)).toBe('cordis')
     expect(scaffold.ctx.tools.schemas(fresh).map(tool => tool.name))
       .toEqual(expect.arrayContaining(['cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager']))
     expect(fresh.session.snapshotEvents().some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
-    expect(scaffold.ctx.agentPresets.composedPreset(next.ctx)).toBe('standard')
+    expect(scaffold.ctx.agentPresets.composedPreset(standard.ctx)).toBe('standard')
     expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
 
     const switchedWorkspace = join(scaffold.workspaceCwd, 'creator-workspace-switch')
@@ -566,7 +566,7 @@ it.each([false, true])('starts Creator from Plugins with Coding Tools=%s without
     const switched = scaffold.ctx.agents.list().find(agent => agent.session.header.cwd === switchedWorkspace)
     if (switched === undefined) throw new Error('Workspace switch did not resolve its blank Session')
     const switchedDraft = 'Keep the plugin idea in the newly selected workspace.'
-    await writeComposerDraft(page, composer, switchedDraft)
+    await writeComposerDraft(page, composerOf(switched.id), switchedDraft)
     await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
     await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
     await Promise.all([
@@ -574,7 +574,7 @@ it.each([false, true])('starts Creator from Plugins with Coding Tools=%s without
       page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
     ])
     await picker.waitFor()
-    expect(await composer.innerText()).toBe(switchedDraft)
+    expect(await composerOf(switched.id).innerText()).toBe(switchedDraft)
     expect(scaffold.ctx.agentPresets.composedPreset(switched.ctx)).toBe('cordis')
     expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
     expect(tripwire.pageErrors).toEqual([])

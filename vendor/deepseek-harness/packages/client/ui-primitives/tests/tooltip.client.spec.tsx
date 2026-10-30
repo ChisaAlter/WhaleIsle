@@ -547,8 +547,11 @@ describe('Tooltip', () => {
     }
   })
 
-  it('supports left placement without a vertical flip', () => {
-    const spy = placed(100, 120, 20)
+  it('keeps a left bubble on the left when the anchor leaves room for it', () => {
+    bubbleSize = { inlineSize: 100, blockSize: 20 }
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 300, right: 400, top: 100, bottom: 120, width: 100, height: 20, x: 300, y: 100, toJSON: () => ({}),
+    })
     try {
       render(
         <Tooltip label="Left" side="left">
@@ -560,9 +563,27 @@ describe('Tooltip', () => {
       expect(bubble.getAttribute('data-side')).toBe('left')
       // Vertically centered against the anchor: 100 + (120 - 100) / 2.
       expect(bubble.style.top).toBe('110px')
-      // pos.x = anchor left (100); the 100px-wide bubble plus the 10px gutter
-      // would land at -10, so the clamp pins it to the 12px edge margin.
-      expect(bubble.style.left).toBe('12px')
+      // The anchor's left edge less the 10px gutter and the 100px bubble.
+      expect(bubble.style.left).toBe('190px')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('flips a left bubble to the right when the anchor leaves no room on its left', () => {
+    const spy = placed(100, 120, 20)
+    try {
+      render(
+        <Tooltip label="Left" side="left">
+          <button type="button">anchor</button>
+        </Tooltip>,
+      )
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      // 100 - 10 - 100 = -10 would cross the 12px margin, so the opposite side takes it.
+      expect(bubble.getAttribute('data-side')).toBe('right')
+      expect(bubble.style.top).toBe('110px')
+      expect(bubble.style.left).toBe('210px')
     } finally {
       spy.mockRestore()
     }

@@ -1,19 +1,18 @@
-/** Conversation navigation spacing preserves the right-pane header alignment. */
+/** Conversation navigation spacing: identity and tools share the first row; view tabs sit below it. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(new URL('../src/client/skeleton/ConversationRoot.module.css', import.meta.url), 'utf8')
 
 describe('conversation header geometry', () => {
-  it('keeps the single-line header at the shared 76px height', () => {
-    expect(css.match(/\.header\s*\{([^}]*)\}/)?.[1]).toContain('min-height: 76px')
-    expect(css.match(/\.viewTabs\s*\{([^}]*)\}/)?.[1]).toContain('min-height: 25px')
-    expect(css.match(/\.tab\s*\{([^}]*)\}/)?.[1]).toContain('min-height: 25px')
-    expect(css.match(/\.tab\s*\{([^}]*)\}/)?.[1]).toContain('padding: 0 0 9px')
+  it('sizes the view row from the 16px tab line and its 11px bar inset', () => {
+    expect(css.match(/\.viewTabs\s*\{([^}]*)\}/)?.[1]).toContain('min-height: 27px')
+    expect(css.match(/\.tab\s*\{([^}]*)\}/)?.[1]).toContain('min-height: 27px')
+    expect(css.match(/\.tab\s*\{([^}]*)\}/)?.[1]).toContain('padding: 0 0 11px')
   })
 
-  it('uses 32px between view labels without changing the action gap', () => {
-    expect(css.match(/\.viewTabs\s*\{([^}]*)\}/)?.[1]).toContain('gap: 32px')
+  it('keeps 36px between view labels and 16px/20px around the More launcher', () => {
+    expect(css.match(/\.viewTabs\s*\{([^}]*)\}/)?.[1]).toContain('gap: 36px')
     expect(css.match(/\.tabs\s*\{([^}]*)\}/)?.[1]).toContain('gap: 16px 20px')
   })
 })

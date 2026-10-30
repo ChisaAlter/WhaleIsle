@@ -1065,7 +1065,9 @@ describe('ConversationRoot resident composer', () => {
     const tooltipFor = (label: string): string | null => {
       const span = within(b.view.getByRole('tab', { name: label })).getByText(label)
       fireEvent.mouseEnter(span)
-      const tooltip = screen.queryByRole('tooltip', { hidden: true })?.textContent ?? null
+      // A withdrawn bubble fades out aria-hidden while the next one opens.
+      const tooltip = screen.queryAllByRole('tooltip', { hidden: true })
+        .find(node => node.getAttribute('aria-hidden') !== 'true')?.textContent ?? null
       fireEvent.mouseLeave(span)
       return tooltip
     }
