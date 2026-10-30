@@ -36,7 +36,9 @@ app.whenReady().then(async () => {
   await js("console.info('LAYOUT_INFO_CONTROL'); console.error('LAYOUT_ERROR_SENTINEL')");
   await delay(50);
   const report = await writeCrashReport(path.join(root, 'logs'), { time: new Date(), source: 'renderer', phase: 'test', app: { name: 'fixture', electron: process.versions.electron }, error: new Error('fixture'), rendererConsole: tail.snapshot() });
-  const diagnostics = { errorCaptured: tail.snapshot().includes('LAYOUT_ERROR_SENTINEL'), infoCaptured: tail.snapshot().includes('LAYOUT_INFO_CONTROL'), reportHasError: fs.readFileSync(report, 'utf8').includes('LAYOUT_ERROR_SENTINEL') };
+  // Tail lines carry a timestamp prefix, so match the message inside each line.
+  const logged = (text) => tail.snapshot().some((line) => line.includes(text));
+  const diagnostics = { errorCaptured: logged('LAYOUT_ERROR_SENTINEL'), infoCaptured: logged('LAYOUT_INFO_CONTROL'), reportHasError: fs.readFileSync(report, 'utf8').includes('LAYOUT_ERROR_SENTINEL') };
   const cases = [];
   for (scheme of ['light', 'dark']) {
     await js(`document.documentElement.toggleAttribute('data-ds-dark-theme', ${scheme === 'dark'})`);
