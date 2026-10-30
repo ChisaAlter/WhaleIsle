@@ -82,7 +82,7 @@ async function runNative() {
       const { downloadLatestViaUpdater, strictNsisUpdaterClass } = require('../src/main/update-updater');
       versions = { electron: process.versions.electron, node: process.versions.node,
         electronUpdater: require('electron-updater/package.json').version };
-      assert.equal(versions.electronUpdater, '6.8.9', 'QA targets the pinned updater');
+      assert.equal(versions.electronUpdater, '6.8.10', 'QA targets the pinned updater');
       server = http.createServer((req, res) => {
         try {
           const file = new URL(req.url, 'http://127.0.0.1').pathname.slice(1), f = active;
