@@ -1,5 +1,8 @@
 const { app, BrowserView, BrowserWindow, shell, nativeImage, screen } = require('electron');
-const { attachRendererConsoleTail, RendererConsoleTail, writeCrashReport, desktopErrorState } = require('./crash-report');
+const {
+  attachRendererConsoleTail, RendererConsoleTail, RendererMemorySamples, collectHangStack, rendererMemorySample,
+  writeCrashReport, desktopErrorState,
+} = require('./crash-report');
 const { rendererFile, assetFile, preloadFile } = require('./paths');
 const { applyWindowsAppDetails } = require('./window-app-details');
 const { REMOTE_FEATURE_ENABLED } = require('./config');
@@ -65,7 +68,7 @@ function crashLogDir() {
 }
 
 /** Persist the diagnostic, then keep only its last lines in the dialog. */
-async function writeRendererReport(why, contents) {
+async function writeRendererReport(why, contents, diagnostics = {}) {
   const dir = crashLogDir();
   if (!dir) return undefined;
   const { app } = require('electron');
@@ -74,6 +77,8 @@ async function writeRendererReport(why, contents) {
     phase: 'running',
     error: desktopErrorState(new Error(why)),
     rendererConsole: rendererConsoleTail.snapshot(),
+    rendererStack: diagnostics.stack,
+    rendererMemory: diagnostics.memory,
     app: {
       name: 'Whale Isle',
       version: app.getVersion(),
@@ -88,6 +93,26 @@ async function writeRendererReport(why, contents) {
 }
 
 const RECOVERY_DETAIL_TAIL_LINES = 8;
+const UNRESPONSIVE = '界面无响应';
+// One hour of five-minute readings shows whether memory climbed before an OOM.
+const RENDERER_MEMORY_INTERVAL_MS = 5 * 60 * 1000;
+const hangStackSessions = new WeakSet();
+
+/**
+ * Let unresponsive Harness pages report their running JavaScript: Chromium
+ * collects the stack only for documents that opt in through Document-Policy,
+ * and index.js enables the feature. Only main-frame responses pass through.
+ */
+function allowHangCallStacks(session) {
+  if (!session || hangStackSessions.has(session)) return;
+  hangStackSessions.add(session);
+  session.webRequest.onHeadersReceived(
+    { urls: ['http://127.0.0.1/*', 'http://localhost/*'], types: ['mainFrame'] },
+    (details, callback) => {
+      callback({ responseHeaders: { ...details.responseHeaders, 'Document-Policy': ['include-js-call-stacks-in-crash-reports'] } });
+    },
+  );
+}
 const RECOVERY_DETAIL_BUDGET = 1200;
 
 // The composition root injects its productized confirmDialog so the crash
@@ -105,6 +130,15 @@ function attachRendererRecovery(contents, label) {
   }
   contents.__dshdRecoveryAttached = true;
   attachRendererConsoleTail(contents, rendererConsoleTail);
+  const memory = new RendererMemorySamples();
+  const sampleMemory = () => {
+    if (contents.isDestroyed()) return;
+    const { app } = require('electron');
+    memory.record(rendererMemorySample(contents.getOSProcessId(), app.getAppMetrics()));
+  };
+  const memoryTimer = setInterval(sampleMemory, RENDERER_MEMORY_INTERVAL_MS);
+  memoryTimer.unref?.();
+  contents.once('destroyed', () => { clearInterval(memoryTimer); });
   let recovering = false;
   const recover = async (why) => {
     if (recovering || contents.isDestroyed()) {
@@ -113,7 +147,9 @@ function attachRendererRecovery(contents, label) {
     recovering = true;
     try {
       const { dialog, app, BrowserWindow } = require('electron');
-      const reportPath = await writeRendererReport(why, contents);
+      sampleMemory();
+      const stack = why === UNRESPONSIVE ? await collectHangStack(contents.mainFrame) : undefined;
+      const reportPath = await writeRendererReport(why, contents, { stack, memory: memory.snapshot() });
       const reportLine = reportPath ? `\n诊断已写入 ${reportPath}` : '';
       const tail = String(why).split(/\r\n|[\n\r\u2028\u2029]/u).slice(-RECOVERY_DETAIL_TAIL_LINES).join('\n');
       const budget = RECOVERY_DETAIL_BUDGET - reportLine.length;
@@ -162,7 +198,7 @@ function attachRendererRecovery(contents, label) {
     void recover(`页面加载失败（${desc || code}）`);
   });
   contents.on('unresponsive', () => {
-    void recover('界面无响应');
+    void recover(UNRESPONSIVE);
   });
 }
 
@@ -711,6 +747,7 @@ function ensureHarnessView(win) {
   });
   win.addBrowserView(harnessView);
   harnessView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  allowHangCallStacks(harnessView.webContents.session);
   try {
     require('./shortcuts').getShortcutService()?.attach(harnessView);
   } catch {

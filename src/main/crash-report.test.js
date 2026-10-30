@@ -8,11 +8,14 @@ const test = require('node:test');
 const {
   RENDERER_CONSOLE_MAX_BYTES,
   RendererConsoleTail,
+  RendererMemorySamples,
   attachRendererConsoleTail,
+  collectHangStack,
   crashReportFileName,
   desktopErrorState,
   pruneCrashReports,
   renderCrashReport,
+  rendererMemorySample,
   writeCrashReport,
 } = require('./crash-report');
 
@@ -66,16 +69,72 @@ test('prune deletes only matching names beyond retained', async () => {
   assert.ok(!names.some((n) => n.includes('T00-00-00') && n.endsWith('-main.log') && n < 'crash-2026-01-03'));
 });
 
-test('attachRendererConsoleTail keeps error-level lines only', () => {
+test('attachRendererConsoleTail keeps error-level lines only, each with its arrival time', () => {
   const handlers = {};
   const contents = { on: (ev, fn) => { handlers[ev] = fn; } };
   const tail = new RendererConsoleTail();
-  attachRendererConsoleTail(contents, tail);
+  const times = [new Date('2026-10-29T15:00:00Z'), new Date('2026-10-29T15:59:50Z')];
+  attachRendererConsoleTail(contents, tail, () => times.shift());
   handlers['console-message']({ level: 'info', message: 'info' });
   handlers['console-message']({ level: 'warning', message: 'warning' });
   handlers['console-message']({ level: 'error', message: 'ERR real failure' });
   handlers['console-message']({ level: 'error', message: 'ERR second' });
-  assert.deepEqual(tail.snapshot(), ['ERR real failure', 'ERR second']);
+  assert.deepEqual(tail.snapshot(), [
+    '2026-10-29T15:00:00.000Z ERR real failure',
+    '2026-10-29T15:59:50.000Z ERR second',
+  ]);
+});
+
+test('report adds the hang stack and memory trend only when they were collected', () => {
+  const base = {
+    source: 'renderer',
+    phase: 'running',
+    error: new Error('界面无响应'),
+    rendererConsole: [],
+    app: { name: 'Whale Isle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' },
+    time: new Date('2026-10-29T16:00:00Z'),
+  };
+  const plain = renderCrashReport(base);
+  assert.ok(!plain.includes('renderer JavaScript stack'));
+  assert.ok(!plain.includes('renderer memory'));
+  const body = renderCrashReport({
+    ...base,
+    rendererStack: 'Error\n    at spin (http://127.0.0.1:3080/plugins/x.js:1:2)',
+    rendererMemory: [
+      { time: new Date('2026-10-29T15:50:00Z'), workingSetKB: 400000, peakWorkingSetKB: 410000, privateKB: 380000 },
+      { time: new Date('2026-10-29T15:55:00Z'), workingSetKB: 900000, peakWorkingSetKB: 950000 },
+    ],
+  });
+  assert.match(body, /--- renderer JavaScript stack \(when unresponsive\) ---\nError\n    at spin /u);
+  assert.ok(body.includes('2026-10-29T15:50:00.000Z  working set 400000, peak 410000, private 380000'));
+  assert.ok(body.includes('2026-10-29T15:55:00.000Z  working set 900000, peak 950000\n'));
+  assert.ok(body.indexOf('renderer memory') < body.indexOf('renderer console'));
+});
+
+test('memory samples keep the newest readings of the renderer process only', () => {
+  const samples = new RendererMemorySamples(2);
+  const metrics = [
+    { pid: 10, memory: { workingSetSize: 1, peakWorkingSetSize: 2, privateBytes: 3 } },
+    { pid: 20, memory: { workingSetSize: 4, peakWorkingSetSize: 5 } },
+  ];
+  const at = (minute) => new Date(Date.UTC(2026, 9, 29, 15, minute));
+  assert.equal(rendererMemorySample(30, metrics, at(0)), undefined);
+  assert.deepEqual(rendererMemorySample(20, metrics, at(0)), { time: at(0), workingSetKB: 4, peakWorkingSetKB: 5 });
+  samples.record(rendererMemorySample(10, metrics, at(0)));
+  samples.record(rendererMemorySample(30, metrics, at(5)));
+  samples.record(rendererMemorySample(10, metrics, at(10)));
+  samples.record(rendererMemorySample(10, metrics, at(15)));
+  assert.deepEqual(samples.snapshot().map((sample) => [sample.time.getUTCMinutes(), sample.privateKB]), [[10, 3], [15, 3]]);
+});
+
+test('hang stack collection returns the stack, and gives up when the frame never answers', async () => {
+  assert.equal(await collectHangStack(undefined), undefined);
+  assert.equal(await collectHangStack({ collectJavaScriptCallStack: async () => 'Error\n    at spin' }), 'Error\n    at spin');
+  assert.equal(await collectHangStack({ collectJavaScriptCallStack: async () => undefined }), undefined);
+  assert.equal(await collectHangStack({ collectJavaScriptCallStack: async () => { throw new Error('gone'); } }), undefined);
+  const started = Date.now();
+  assert.equal(await collectHangStack({ collectJavaScriptCallStack: () => new Promise(() => {}) }, 50), undefined);
+  assert.ok(Date.now() - started < 2000);
 });
 
 test('console tail truncates oversized lines at complete UTF-8 boundaries', () => {

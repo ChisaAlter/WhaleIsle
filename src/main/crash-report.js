@@ -19,6 +19,8 @@ const CRASH_REPORT_NAME = /^crash-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-(?:
 const CRASH_REPORTS_RETAINED = 10;
 const RENDERER_CONSOLE_MAX_BYTES = 64 * 1024;
 const ERROR_SECTION_MAX_CHARS = 256 * 1024;
+const RENDERER_MEMORY_SAMPLES = 12;
+const HANG_STACK_TIMEOUT_MS = 3000;
 
 /** Preserve nested diagnostics when sending failures to a renderer. */
 function desktopErrorState(error) {
@@ -60,6 +62,65 @@ class RendererConsoleTail {
   }
 }
 
+/** Last renderer memory readings, oldest first, so a report shows the trend before a crash. */
+class RendererMemorySamples {
+  constructor(limit = RENDERER_MEMORY_SAMPLES) {
+    this.limit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : RENDERER_MEMORY_SAMPLES;
+    this.samples = [];
+  }
+
+  record(sample) {
+    if (!sample) return;
+    this.samples.push(sample);
+    if (this.samples.length > this.limit) this.samples.shift();
+  }
+
+  snapshot() {
+    return [...this.samples];
+  }
+}
+
+/**
+ * One renderer's memory from app.getAppMetrics(); sizes are kilobytes and
+ * `privateKB` exists only where the platform reports private bytes.
+ */
+function rendererMemorySample(pid, metrics, time = new Date()) {
+  const memory = Array.isArray(metrics) ? metrics.find((metric) => metric && metric.pid === pid)?.memory : undefined;
+  if (!memory) return undefined;
+  return {
+    time,
+    workingSetKB: memory.workingSetSize,
+    peakWorkingSetKB: memory.peakWorkingSetSize,
+    ...Number.isFinite(memory.privateBytes) ? { privateKB: memory.privateBytes } : {},
+  };
+}
+
+/**
+ * The JavaScript an unresponsive frame is running. Electron's call never
+ * settles while no script runs, so it is bounded; failures yield undefined.
+ */
+async function collectHangStack(frame, timeoutMs = HANG_STACK_TIMEOUT_MS) {
+  if (!frame || typeof frame.collectJavaScriptCallStack !== 'function') return undefined;
+  let timer;
+  try {
+    const stack = await Promise.race([
+      frame.collectJavaScriptCallStack(),
+      new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+    ]);
+    return typeof stack === 'string' && stack.trim() ? stack : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function formatMemorySample(sample) {
+  const fields = [`working set ${sample.workingSetKB}`, `peak ${sample.peakWorkingSetKB}`];
+  if (sample.privateKB !== undefined) fields.push(`private ${sample.privateKB}`);
+  return `${sample.time.toISOString()}  ${fields.join(', ')}`;
+}
+
 function crashReportFileName(time, source) {
   return `${CRASH_REPORT_PREFIX}${time.toISOString().replaceAll(/[:.]/gu, '-')}-${source}.log`;
 }
@@ -93,6 +154,10 @@ function renderCrashReport(input) {
     boundedErrorSection(input.error),
     '',
     ...(input.hostDiagnostic === undefined ? [] : ['--- host diagnostic (as reported by the Host process) ---', input.hostDiagnostic, '']),
+    ...(input.rendererStack === undefined ? [] : ['--- renderer JavaScript stack (when unresponsive) ---', input.rendererStack, '']),
+    ...(input.rendererMemory === undefined || input.rendererMemory.length === 0
+      ? []
+      : ['--- renderer memory (KB, oldest first) ---', ...input.rendererMemory.map(formatMemorySample), '']),
     '--- renderer console (error level, oldest first) ---',
     consoleSection,
     '',
@@ -137,18 +202,20 @@ async function pruneCrashReports(directory, retained = CRASH_REPORTS_RETAINED) {
 }
 
 /**
- * Collect error-level console lines from one renderer into a tail buffer.
+ * Collect error-level console lines from one renderer into a tail buffer,
+ * each prefixed with the time it arrived.
  * Electron's console-message Event uses string levels (including 'error').
  * @param {any} contents - renderer WebContents (Electron >=41: console-message takes an Event object).
  * @param {RendererConsoleTail} tail
+ * @param {() => Date} [now]
  */
-function attachRendererConsoleTail(contents, tail) {
+function attachRendererConsoleTail(contents, tail, now = () => new Date()) {
   if (!contents || contents.__dshdConsoleTailAttached) return;
   contents.__dshdConsoleTailAttached = true;
   contents.on('console-message', (details) => {
     const level = details && (details.level ?? details.details?.level);
     const message = details && (details.message ?? details.details?.message);
-    if ((level === 'error' || level === 3) && typeof message === 'string') tail.push(message);
+    if ((level === 'error' || level === 3) && typeof message === 'string') tail.push(`${now().toISOString()} ${message}`);
   });
 }
 
@@ -158,10 +225,13 @@ module.exports = {
   RENDERER_CONSOLE_MAX_BYTES,
   SOURCES,
   RendererConsoleTail,
+  RendererMemorySamples,
   attachRendererConsoleTail,
+  collectHangStack,
   crashReportFileName,
   desktopErrorState,
   pruneCrashReports,
   renderCrashReport,
+  rendererMemorySample,
   writeCrashReport,
 };
