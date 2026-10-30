@@ -28,6 +28,7 @@ import { SessionCommandController, hasPromptContent } from './commands.ts'
 import { SessionControlController } from './control.ts'
 import { ArchivedSessionDelete } from './delete-archived.ts'
 import { SessionHistoryController } from './history.ts'
+import { IdleSessionRelease } from './idle-release.ts'
 import { SessionLifecycle } from './lifecycle.ts'
 import { SessionFileReferences } from './file-references.ts'
 import { ApiSessionList } from './list.ts'
@@ -113,10 +114,21 @@ export interface Config {
   readonly nativeOpen?: boolean
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
+  /**
+   * Milliseconds an opened Session may stay unwatched and idle before its resident Agent is
+   * released; reopening reloads it from persistence. `0` keeps every opened Session resident.
+   */
+  readonly idleReleaseMs?: number
+  /** Most recently active idle Sessions kept resident regardless of {@link idleReleaseMs}. */
+  readonly idleReleaseKeep?: number
 }
 
 /** Deployment policy after schema defaults have been applied. */
-type ResolvedConfig = Config & { readonly listWorkSliceMs: number }
+type ResolvedConfig = Config & {
+  readonly listWorkSliceMs: number
+  readonly idleReleaseMs: number
+  readonly idleReleaseKeep: number
+}
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {
@@ -152,6 +164,8 @@ export class SessionController extends TypertRemoteService {
   static Config: z<Config, ResolvedConfig> = z.object({
     nativeOpen: z.boolean(),
     listWorkSliceMs: z.natural().min(1).default(16),
+    idleReleaseMs: z.natural().default(300_000),
+    idleReleaseKeep: z.natural().default(3),
   })
 
   private readonly agents: ApiSessionAgentController
@@ -180,6 +194,10 @@ export class SessionController extends TypertRemoteService {
     installModelSelectionProjection(ctx)
     installMessageEdits(ctx)
     this.lifecycle = new SessionLifecycle(ctx)
+    const idleRelease = new IdleSessionRelease(ctx, this.lifecycle, {
+      idleMs: resolved.idleReleaseMs,
+      keep: resolved.idleReleaseKeep,
+    })
     this.archivedDelete = new ArchivedSessionDelete(ctx, this.lifecycle)
     this.agents = new ApiSessionAgentController(ctx)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
@@ -194,7 +212,11 @@ export class SessionController extends TypertRemoteService {
     ctx.effect(() => async () => {
       await Promise.allSettled([...this.promotions])
     }, 'session-controller.promotions')
-    this.history = new SessionHistoryController(ctx, (observation) => { this.promote(observation) })
+    this.history = new SessionHistoryController(
+      ctx,
+      (observation) => { this.promote(observation) },
+      sessionId => idleRelease.watch(sessionId),
+    )
     this.listState = new ApiSessionList(ctx, resolved.listWorkSliceMs)
     this.fileApplications = internals.fileApplications ?? nativeFileApplications
     this.openFileApplication = internals.openFileApplication ?? openNativeFileApplication
@@ -215,6 +237,11 @@ export class SessionController extends TypertRemoteService {
     })
     ctx.on('session/disposed', (session) => {
       if (this.lifecycle.deletingIds.has(session.id)) return
+      // An idle release keeps the Session listed; only its resident Agent went away.
+      if (this.lifecycle.releasingIds.has(session.id)) {
+        ctx.emit('api-session/added', { ...this.listState.summaryFor(session), agentAvailable: false, running: false })
+        return
+      }
       ctx.emit('api-session/removed', session.id)
     })
     const publishAgentAvailability = ({ agent }: { agent: Agent }): undefined => {
