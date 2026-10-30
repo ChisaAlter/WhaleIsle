@@ -141,3 +141,18 @@
   flex: 1;
   min-width: 0;
 }
+
+/* The More card takes one grid cell, like the entry capsules before it. */
+.moreAnchor {
+  display: flex;
+  min-width: 0;
+}
+
+.moreAnchor > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.moreAnchor .entry[aria-expanded='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+
+.moreMenu { width: max-content; max-width: min(480px, calc(100vw - 24px)); }

@@ -6,7 +6,7 @@
 | **last verified (release catalog)** | 2026-09-29 — 会话统计 dock 的 `statsLine` 注入同步到官方生成的 slot catalog；`gen-client-catalog --check` 与 `gen-third-party-notices --check` 通过。仅生成产物补齐，见 [候选记录](../qa/results/2026-09-29-release-candidate/README.md)。 |
 | **status** | `active` |
 | **last verified (window gate)** | 2026-09-29 — 新增 Windows HWND 样式/真实 IPC 回归与可见动画验收要求；本次未变更上游 pin。 |
-| **last verified** | 2026-10-18 — 将 `dsh-v0.2.1-rc.2`（`687f282`）从 alpha.3 pin 三方合并至桌面树，24 处冲突按下方合并裁定解决；persistence 目录重新生成，lockfile 无变化。官方构建通过；冲突相关 vendor 包 vitest 全过；桌面 `npm test` 仅余 `vendor/dsh-project` 原有竞态用例（合并前 main 同样间歇失败）；`smoke:source` 的 UI、标题栏命中与 PTY 探针通过。`verify-config-catalog`（composer-beam JSDoc）与 `verify-cordis-catalog`（`session/before-cancel` @param）的失败来自合并未改动的桌面文件。更早记录见本文件 Git 历史。 |
+| **last verified** | 2026-10-30 — 将 `dsh-v0.2.1-rc.4`（`504a01a`）从 rc.2 pin 三方合并至桌面树，33 处冲突按下方合并裁定解决；lockfile、client slot catalog 与 persistence 目录重新生成。rc.5 当时只在 npm（`latest`），GitHub 无源码 tag，未同步。`setup:harness`（锁定安装 + 官方构建）通过；冲突相关 vendor 包 vitest 4598 项全过；桌面插件兼容（含真实 Loader 启动 SSH / ChatGPT 插件）、鲸桥、差异标记、启动参数与 skip compose 契约 101 项通过，`check-skip-compose-contract.js` 通过。源码应用隔离配置实测：左栏「更多」、右栏「更多工具」卡片、对话头部「更多会话视图」（`no-drag`，桌面两行头部保留）与插件页跳转正常。`sync:harness --dry-run` 本次合并失败却报告空冲突列表，需用手动 `git merge` 复核。更早记录见本文件 Git 历史。 |
 
 ## User paths
 
@@ -27,6 +27,7 @@
 - 新槽位拆出的常驻会话 header 与 Session header 共用一层网格和内边距，不能让右栏起点因重复标题容器而下移；`ui-conversation` 的所有浏览器可编辑设置字段须在 Host `Config` 中声明 volatile，以便 `ConfigForm` 写入真正持久化。
 
 - rc.2 合并裁定：模型设置里手写路由的行使用上游推理等级编辑器（等级 + API 值，只剩 Off 时报 `modelReasoningNeedsLevel`），其余行保留桌面思考强度复选框及 `effortOffAlone`；上游编辑器的档位选择改用 `SettingsSelect`，模型设置界面不出现原生 `<select>`。插件管理器“已确认版本”弹窗自行显示拒绝原因与重试，桌面安装 Toast 不再重复该输入错误；其余安装反馈仍走 Toast。模型选择器触发器的标签插槽外层为 `display: contents`，回退时仍是 `FlipText className={css.triggerLabel}`。
+- rc.4 合并裁定：用户确认保留上游默认加载的 `ui-entry-customization`（左栏「更多」、对话「更多会话视图」、右栏「更多工具」，提供浏览插件与 Creator 草稿）。Tooltip 采用上游 `placeTooltip`（放不下时换到对侧），保留桌面 `usePresence` 淡出快照；Menu 同时保留桌面 `matchAnchorWidth` 与上游 `minWidthFromAnchor`。右栏引导保留桌面标题与正方形卡片网格及全部描述，「更多工具」占一格。对话头部保留桌面两行布局与显示条件（视图标签设置、托管会话、空白隐藏），叠加上游按宽度折叠；标签间距 36px、行高 27px。左栏埋点改用上游 `trackEntryClick`，`selectPanel` 不再重复上报。新会话保留桌面无目录流程，采用上游按预设筛选空白会话与 `whenDraftExists`；Creator 仍由桌面 `beforeOpen` 在实际打开的会话上设置。DeepSeek 列表代码移入 `llm-deepseek` 后，桌面 `modelOverrides.<id>.disabled`、已配置但未列出的模型与旧版 `models` 换算随之迁移，API Key 路线同样生效。
 
 ## Allowed touch
 

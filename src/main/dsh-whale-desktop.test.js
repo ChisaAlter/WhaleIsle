@@ -272,7 +272,7 @@ test('vendored dsh-whale peers satisfy the vendored runtime compatibility gate',
   const dir = path.join(__dirname, '..', '..', 'vendor', 'dsh-whale');
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
   assert.equal(evaluatePluginCompatibility(manifest, {}, getDshRuntimeVersion()), undefined);
-  for (const version of ['0.1.5-rc.2', '0.1.7', '0.2.1-alpha.1', '0.2.1-alpha.3', '0.2.1-rc.2']) {
+  for (const version of ['0.1.5-rc.2', '0.1.7', '0.2.1-alpha.1', '0.2.1-alpha.3', '0.2.1-rc.2', '0.2.1-rc.4']) {
     assert.equal(evaluatePluginCompatibility(manifest, {}, version), undefined, version);
   }
   for (const version of ['0.2.1-alpha.2', '0.2.1-alpha.4', '0.2.1']) {

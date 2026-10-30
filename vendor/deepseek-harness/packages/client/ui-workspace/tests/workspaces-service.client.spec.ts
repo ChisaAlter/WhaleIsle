@@ -893,6 +893,24 @@ describe('UiWorkspaceService', () => {
     })
   })
 
+  it('reuses any blank without a requested preset and only a matching blank with one', async () => {
+    const b = bench({
+      sessions: sessionState([
+        summary('creator', { blank: true, cwd: '/w/a', projectionValues: { agentPreset: 'cordis' } }),
+        summary('plain', { blank: true, cwd: '/w/a', projectionValues: { agentPreset: 'standard' } }),
+      ], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('creator'), sid('plain')])]),
+    })
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('creator'))
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'), { agentPreset: 'standard' })).resolves.toBe(sid('plain'))
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'), { agentPreset: 'ptc' })).resolves.toBe(sid('created-a'))
+    expect(b.sessions.create.mock.calls).toEqual([
+      [{ workspaceId: wid('a'), sessionId: sid('creator') }],
+      [{ workspaceId: wid('a'), sessionId: sid('plain'), agentPreset: 'standard' }],
+      [{ workspaceId: wid('a'), agentPreset: 'ptc' }],
+    ])
+  })
+
   it('reports a refused explicit Session creation through the Workspace notice', async () => {
     const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState() })
     // Startup restoration creates its own Session first and stays quiet on failure (pinned above).
@@ -1034,6 +1052,8 @@ describe('UiWorkspaceService', () => {
       { name: 'plain text', options: { prompt: '草稿 🧭\nsecond line', clearPreviousDraft: true } },
       { name: 'empty text', options: { prompt: '' } },
       { name: 'clear without prompt', options: { clearPreviousDraft: true } },
+      { name: 'replace without prompt', options: { whenDraftExists: 'replace' } },
+      { name: 'appended text', options: { prompt: 'next', whenDraftExists: 'append' } },
       { name: 'reference-like text', options: { prompt: '🧭 @notes.md' } },
     ])('prepares $name on the retained target before replacing the current selection', async ({ options }) => {
       const backing = persistSelection({})
@@ -1065,7 +1085,9 @@ describe('UiWorkspaceService', () => {
       expect(b.notify).not.toHaveBeenCalled()
     })
 
-    it.each([undefined, {}, { clearPreviousDraft: false }])('does not invoke the draft API for default options %j', async (options) => {
+    it.each<DraftInitializationOptions | undefined>([
+      undefined, {}, { clearPreviousDraft: false }, { whenDraftExists: 'append' }, { clearPreviousDraft: true, whenDraftExists: 'keep' },
+    ])('does not invoke the draft API for options that cannot change text %j', async (options) => {
       const b = bench({ workspaces: workspaceState([workspace('a')]) })
       const opening = vi.spyOn(b.uiWorkspace, 'openWorkspace')
 

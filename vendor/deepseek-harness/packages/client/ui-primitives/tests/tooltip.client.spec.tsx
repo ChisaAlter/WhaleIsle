@@ -158,15 +158,65 @@ describe('Tooltip', () => {
     expect(bubble.style.visibility).toBe('hidden')
     fireEvent(window, new Event('resize'))
     expect(bubble.style.visibility).toBe('hidden')
-    expect(measured.mock.contexts).toEqual([anchor])
+    expect(measured.mock.contexts).toEqual([anchor, anchor])
     bubbleSize = { inlineSize: 100, blockSize: 20 }
     act(() => { observers[0]!.deliver() })
     expect(screen.getByRole('tooltip').style.left).toBe('62px')
     fireEvent(window, new Event('resize'))
-    expect(measured.mock.contexts).toEqual([anchor])
+    expect(measured.mock.contexts).toEqual([anchor, anchor, anchor])
     const disconnect = vi.spyOn(observers[0]!, 'disconnect')
     view.unmount()
     expect(disconnect).toHaveBeenCalledOnce()
+  })
+
+  it('fits a default right-edge tooltip left and follows its focused anchor on resize', () => {
+    vi.stubGlobal('innerWidth', 1280)
+    vi.stubGlobal('innerHeight', 900)
+    bubbleSize = { inlineSize: 118, blockSize: 26 }
+    render(<Tooltip label="Pin" portal><button>anchor</button></Tooltip>)
+    const anchor = screen.getByText('anchor')
+    const measure = vi.spyOn(anchor, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(1150.5, 736.08, 22, 22))
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    act(() => { anchor.focus() })
+    const bubble = screen.getByRole('tooltip')
+    expect(bubble.dataset.side).toBe('left')
+    expect(bubble.style.left).toBe('1022.5px')
+    expect(bubble.parentElement).toBe(document.body)
+    expect(document.activeElement).toBe(anchor)
+
+    vi.stubGlobal('innerWidth', 390)
+    measure.mockReturnValue(new DOMRect(180, 300, 22, 22))
+    bubbleSize = { inlineSize: 195, blockSize: 66 }
+    fireEvent(window, new Event('resize'))
+    act(() => { observers[0]!.deliver() })
+    expect(bubble.dataset.side).toBe('bottom')
+    expect(bubble.style.left).toBe('191px')
+    expect(bubble.style.top).toBe('330px')
+    act(() => { observers[0]!.deliver() })
+    expect(bubble.dataset.side).toBe('bottom')
+    expect(document.activeElement).toBe(anchor)
+
+    vi.stubGlobal('innerWidth', 1280)
+    measure.mockReturnValue(new DOMRect(400, 400, 22, 22))
+    fireEvent(window, new Event('resize'))
+    expect(bubble.dataset.side).toBe('right')
+    expect(bubble.style.left).toBe('432px')
+    expect(document.activeElement).toBe(anchor)
+  })
+
+  it('handles resize during anchor ref cleanup and removes its listener on unmount', () => {
+    const measure = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+    const childRef = (element: HTMLButtonElement | null) => {
+      if (element === null) fireEvent(window, new Event('resize'))
+    }
+    const view = render(<Tooltip label="Cleanup"><button ref={childRef}>anchor</button></Tooltip>)
+    fireEvent.mouseEnter(screen.getByText('anchor'))
+    expect(screen.getByRole('tooltip')).toBeTruthy()
+    view.unmount()
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    fireEvent(window, new Event('resize'))
+    expect(measure).toHaveBeenCalledOnce()
   })
 
   it('resolves lazy labels only after the bubble becomes visible', () => {
@@ -309,7 +359,7 @@ describe('Tooltip', () => {
     expect(bubble.textContent).toBe('Open sidebar')
     expect(bubble.getAttribute('data-side')).toBe('right')
     expect(bubble.style.left).toBe('12px')
-    expect(bubble.style.top).toBe('0px')
+    expect(bubble.style.top).toBe('12px')
     fireEvent.mouseLeave(anchor)
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
@@ -326,7 +376,7 @@ describe('Tooltip', () => {
     expect(bubble.getAttribute('data-side')).toBe('bottom')
     // Zero-width jsdom rect at x=0 clamps to the 12px edge margin.
     expect(bubble.style.left).toBe('12px')
-    expect(bubble.style.top).toBe('8px')
+    expect(bubble.style.top).toBe('12px')
     fireEvent.blur(anchor)
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
@@ -361,8 +411,7 @@ describe('Tooltip', () => {
     )
     fireEvent.mouseEnter(screen.getByText('anchor'))
 
-    // The stylesheet's half-viewport cap stays the default; this one overrides it.
-    expect(screen.getByRole('tooltip').style.maxWidth).toBe('360px')
+    expect(screen.getByRole('tooltip').style.maxWidth).toBe('min(360px, calc(100vw - 24px))')
   })
 
   it('clamps a bubble overflowing the right viewport edge back inside', () => {
@@ -410,7 +459,7 @@ describe('Tooltip', () => {
       fireEvent(window, new Event('resize'))
       expect(screen.getByRole('tooltip').style.left).toBe('838px')
       expect(observers).toHaveLength(1)
-      expect(spy).toHaveBeenCalledOnce()
+      expect(spy).toHaveBeenCalledTimes(2)
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
       spy.mockRestore()
@@ -498,8 +547,11 @@ describe('Tooltip', () => {
     }
   })
 
-  it('supports left placement without a vertical flip', () => {
-    const spy = placed(100, 120, 20)
+  it('keeps a left bubble on the left when the anchor leaves room for it', () => {
+    bubbleSize = { inlineSize: 100, blockSize: 20 }
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 300, right: 400, top: 100, bottom: 120, width: 100, height: 20, x: 300, y: 100, toJSON: () => ({}),
+    })
     try {
       render(
         <Tooltip label="Left" side="left">
@@ -511,9 +563,27 @@ describe('Tooltip', () => {
       expect(bubble.getAttribute('data-side')).toBe('left')
       // Vertically centered against the anchor: 100 + (120 - 100) / 2.
       expect(bubble.style.top).toBe('110px')
-      // pos.x = anchor left (100); the 100px-wide bubble plus the 10px gutter
-      // would land at -10, so the clamp pins it to the 12px edge margin.
-      expect(bubble.style.left).toBe('12px')
+      // The anchor's left edge less the 10px gutter and the 100px bubble.
+      expect(bubble.style.left).toBe('190px')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('flips a left bubble to the right when the anchor leaves no room on its left', () => {
+    const spy = placed(100, 120, 20)
+    try {
+      render(
+        <Tooltip label="Left" side="left">
+          <button type="button">anchor</button>
+        </Tooltip>,
+      )
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      // 100 - 10 - 100 = -10 would cross the 12px margin, so the opposite side takes it.
+      expect(bubble.getAttribute('data-side')).toBe('right')
+      expect(bubble.style.top).toBe('110px')
+      expect(bubble.style.left).toBe('210px')
     } finally {
       spy.mockRestore()
     }
@@ -536,9 +606,7 @@ describe('Tooltip', () => {
     }
   })
 
-  it('keeps the requested side when neither side fits', () => {
-    // A bubble taller than the viewport has no home; oscillating between the
-    // two would be worse than honouring the request.
+  it('uses a horizontal side for viewport-height content instead of covering the anchor', () => {
     const spy = placed(300, 400, 900)
     try {
       render(
@@ -547,7 +615,8 @@ describe('Tooltip', () => {
         </Tooltip>,
       )
       fireEvent.mouseEnter(screen.getByText('anchor'))
-      expect(screen.getByRole('tooltip').getAttribute('data-side')).toBe('bottom')
+      expect(screen.getByRole('tooltip').getAttribute('data-side')).toBe('right')
+      expect(screen.getByRole('tooltip').style.left).toBe('210px')
     } finally {
       spy.mockRestore()
     }

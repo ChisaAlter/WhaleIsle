@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-surfaces",
   "description": "Right-panel surfaces shell: empty-state cards, tabs, and occupant slots",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.1-rc.4",
   "publishConfig": {
     "access": "public"
   },

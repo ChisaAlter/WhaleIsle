@@ -1836,3 +1836,31 @@ export const IconServerOutline16 = ({ size = 16, className }: IconProps) => (
     <path d="M3.95 3.55A0.75 0.75 0 1 1 3.95 5.05A0.75 0.75 0 1 1 3.95 3.55ZM6.7 3.65H10.4A0.65 0.65 0 1 1 10.4 4.95H6.7A0.65 0.65 0 1 1 6.7 3.65ZM3.95 10.95A0.75 0.75 0 1 1 3.95 12.45A0.75 0.75 0 1 1 3.95 10.95ZM6.7 11.05H10.4A0.65 0.65 0 1 1 10.4 12.35H6.7A0.65 0.65 0 1 1 6.7 11.05Z" fill="currentColor" />
   </svg>
 )
+
+/** `compact` moves the tiles 0.5px inward, for glyphs drawn at card size. */
+type AppsAddIconProps = IconProps & { readonly compact?: boolean | undefined }
+
+const IconAppsAddOutlineArtwork = ({ size = 16, className, strokeWidth, compact = false }: AppsAddIconProps & { strokeWidth: number }) => {
+  const near = compact ? 2.75 : 2.25
+  const far = compact ? 9.25 : 9.75
+  const plusX = far + 2
+  const plusY = near + 2
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className={className} fill="none" stroke="currentColor" strokeWidth={strokeWidth} aria-hidden="true">
+      <rect x={near} y={near} width={4} height={4} rx={1} />
+      <rect x={near} y={far} width={4} height={4} rx={1} />
+      <rect x={far} y={far} width={4} height={4} rx={1} />
+      <path d={`M${plusX} ${plusY - 2.5}v5M${plusX - 2.5} ${plusY}h5`} />
+    </svg>
+  )
+}
+
+/** Three entry tiles and an add mark with one-pixel strokes. */
+export const IconAppsAddOutlineRegular = (props: AppsAddIconProps) => (
+  <IconAppsAddOutlineArtwork {...props} strokeWidth={ICON_REGULAR_STROKE} />
+)
+
+/** Three entry tiles and an add mark with 1.3px strokes. */
+export const IconAppsAddOutlineMedium = (props: AppsAddIconProps) => (
+  <IconAppsAddOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
+)
