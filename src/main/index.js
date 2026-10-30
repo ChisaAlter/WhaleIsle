@@ -1,6 +1,8 @@
 const { app, clipboard, dialog, ipcMain, session, shell, nativeTheme, systemPreferences } = require('electron');
 // Select the discrete GPU before Chromium initializes any rendering contexts.
 app.commandLine.appendSwitch('force_high_performance_gpu');
+// Unresponsive renderers can report their running JavaScript (window.js allowHangCallStacks).
+app.commandLine.appendSwitch('enable-features', 'DocumentPolicyIncludeJSCallStacksInCrashReports');
 const { PRODUCT_NAME, LEGACY_DESKTOP_USER_DATA, preserveUserDataPath } = require('../shared/product-identity');
 preserveUserDataPath(app, LEGACY_DESKTOP_USER_DATA);
 const fs = require('fs');
