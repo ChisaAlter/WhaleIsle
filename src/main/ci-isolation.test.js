@@ -119,10 +119,10 @@ test('pnpm workspace pins app-builder-lib away from @electron/get 3.0.0', () => 
   const lock = fs.readFileSync(path.join(ROOT, 'pnpm-lock.yaml'), 'utf8');
   assert.match(
     lock,
-    /app-builder-lib@26\.15\.3[\s\S]*?'@electron\/get': 5\.1\.0/,
+    /app-builder-lib@26\.17\.0[\s\S]*?'@electron\/get': 5\.1\.0/,
   );
   assert.doesNotMatch(
     lock,
-    /app-builder-lib@26\.15\.3\(dmg-builder@26\.15\.3\)[\s\S]*?'@electron\/get': 3\.0\.0/,
+    /app-builder-lib@26\.17\.0\(dmg-builder@26\.17\.0\)[\s\S]*?'@electron\/get': 3\.0\.0/,
   );
 });

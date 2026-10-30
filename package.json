@@ -58,9 +58,9 @@
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "electron": "^44.9.1",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.17.0",
     "esbuild": "0.28.2",
-    "pnpm": "12.5.1",
+    "pnpm": "12.8.1",
     "semver": "^7.8.5"
   },
   "overrides": {
@@ -222,8 +222,8 @@
     }
   },
   "dependencies": {
-    "electron-updater": "6.8.9",
+    "electron-updater": "6.8.10",
     "koffi": "3.3.2",
-    "ws": "8.21.3"
+    "ws": "8.22.0"
   }
 }

@@ -42,7 +42,7 @@ test('manifest keeps the documented npm entry points', () => {
 });
 
 test('manifest keeps the runtime and build-tool dependencies', () => {
-  assert.equal(pkg.dependencies?.['electron-updater'], '6.8.9');
+  assert.equal(pkg.dependencies?.['electron-updater'], '6.8.10');
   for (const name of ['electron', 'electron-builder', 'semver', 'pnpm']) {
     assert.equal(typeof pkg.devDependencies?.[name], 'string', `devDependencies.${name} is missing`);
   }

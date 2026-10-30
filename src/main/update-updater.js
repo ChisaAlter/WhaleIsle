@@ -43,7 +43,7 @@ function assertConfirmedTarget(updateInfoAndProvider, expectedCheck) {
   }
 }
 
-/** electron-updater 6.8.9 returns true when its differential path failed. */
+/** electron-updater 6.8.10 returns true when its differential path failed. */
 function strictNsisUpdaterClass(NsisUpdater) {
   return class StrictNsisUpdater extends NsisUpdater {
     async doDownloadUpdate(options) {
@@ -52,7 +52,7 @@ function strictNsisUpdaterClass(NsisUpdater) {
       assertConfirmedTarget(options.updateInfoAndProvider, this.confirmedDownloadTarget);
       const helper = await this.getOrCreateDownloadHelper();
       // A valid pending installer bypasses differentialDownloadInstaller, but
-      // 6.8.9 would still promote its anonymous map in executeDownload.done().
+      // 6.8.10 would still promote its anonymous map in executeDownload.done().
       await removeBlockmap(path.join(helper.cacheDirForPendingUpdate, 'current.blockmap'));
       await removeBlockmap(path.join(helper.cacheDir, 'current.blockmap'));
       return super.doDownloadUpdate({
@@ -62,14 +62,14 @@ function strictNsisUpdaterClass(NsisUpdater) {
 
     async differentialDownloadInstaller(...args) {
       const helper = await this.getOrCreateDownloadHelper();
-      // 6.8.9 promotes the new map as soon as download finishes, before NSIS
+      // 6.8.10 promotes the new map as soon as download finishes, before NSIS
       // replaces installer.exe. Always fetch the old release's map for our
       // verified base, and prevent that premature promotion on this channel.
       await removeBlockmap(path.join(helper.cacheDir, 'current.blockmap'));
       try {
         const needsFullDownload = await super.differentialDownloadInstaller(...args);
         if (needsFullDownload) {
-          // 6.8.9 swallows differential errors to select its full-file fallback.
+          // 6.8.10 swallows differential errors to select its full-file fallback.
           // Preserve the request's actionable error without enabling fallback.
           const failure = requestFailures.get(this.httpExecutor);
           if (failure) throw failure;
@@ -114,7 +114,7 @@ function bindUpdaterRequests(executor, signal, deps = {}) {
   };
   const fail = (entry, error) => {
     entry.cleanup();
-    // Single-range requests in 6.8.9 are not directly bound to the token.
+    // Single-range requests in 6.8.10 are not directly bound to the token.
     // Their registered error handler must settle the downloader before cleanup.
     entry.request.emit('error', error);
     close(entry, error);
@@ -502,7 +502,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     autoUpdater = available.autoUpdater;
     releaseRequests = bindUpdaterRequests(autoUpdater.httpExecutor, requestSignal, deps);
     const feed = feedFor(expectedCheck);
-    // electron-updater 6.8.9 rebuilds its client from app-update.yml when this is null.
+    // electron-updater 6.8.10 rebuilds its client from app-update.yml when this is null.
     if (feed) autoUpdater.setFeedURL(feed); else autoUpdater.clientPromise = null;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
