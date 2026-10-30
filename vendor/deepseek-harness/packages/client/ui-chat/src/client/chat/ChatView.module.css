@@ -90,11 +90,17 @@
 
 /* The flow slot's display:contents anchor preserves layout but not selector ancestry.
    `hidden="until-found"` retains a searchable zero-height box; hidden and empty
-   Seats do not contribute spacing. */
+   Seats do not contribute spacing. The older-history row precedes the flow
+   anchor, so a sibling combinator states "column has .older" without :has().
+   The spaced elements are named (flow seats, the running status, slot
+   anchors) rather than matched as any element: when a row's content mounts,
+   its :has() state changes, and a featureless right-hand side after `~` made
+   Chromium restyle the whole subtree of every following row (and, merged with
+   the other :has() rules, the whole transcript on each composer keystroke). */
 :is(.column, :global([data-slot="conversation.chat.flow"])) > :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty)))
-  ~ :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))),
-.column:has(> .older) > :global([data-slot="conversation.chat.flow"])
-  > :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))) {
+  ~ :is([data-chat-flow-key], [data-chat-running], [data-slot]):not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))),
+.older ~ :global([data-slot="conversation.chat.flow"])
+  > :is([data-chat-flow-key], [data-chat-running], [data-slot]):not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))) {
   margin-top: var(--dsh-chat-flow-gap, 6px);
 }
 
@@ -105,7 +111,7 @@
 }
 
 :is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-group-part="response"]:not([hidden]):not(:empty)
-  + :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running) {
+  + :is([data-chat-flow-key], [data-chat-running], [data-slot]):not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running) {
   --dsh-chat-flow-gap: 12px;
 }
 
@@ -121,20 +127,23 @@
   height: 0;
 }
 
-/* While a Turn folds, spacing changes share the closing rows' timing. */
-.column[data-chat-motion] > :not([data-chat-motion]),
-.column[data-chat-motion] > :global([data-slot="conversation.chat.flow"]) > :not([data-chat-motion]) {
+/* While a Turn folds, spacing changes share the closing rows' timing. The rows
+   are named rather than matched as any child: the column attributes toggle at
+   every Turn start and end, and a featureless right-hand side restyled the
+   whole transcript each time. */
+.column[data-chat-motion] > :is([data-slot], [data-chat-running], .older):not([data-chat-motion]),
+.column[data-chat-motion] > :global([data-slot="conversation.chat.flow"]) > :is([data-chat-flow-key], [data-chat-running]):not([data-chat-motion]) {
   transition: margin-top 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.column[data-input-fold] > :not([data-chat-motion]),
-.column[data-input-fold] > :global([data-slot="conversation.chat.flow"]) > :not([data-chat-motion]) {
+.column[data-input-fold] > :is([data-slot], [data-chat-running], .older):not([data-chat-motion]),
+.column[data-input-fold] > :global([data-slot="conversation.chat.flow"]) > :is([data-chat-flow-key], [data-chat-running]):not([data-chat-motion]) {
   transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .column[data-chat-motion] > :not([data-chat-motion]),
-  .column[data-chat-motion] > :global([data-slot="conversation.chat.flow"]) > :not([data-chat-motion]) {
+  .column[data-chat-motion] > :is([data-slot], [data-chat-running], .older):not([data-chat-motion]),
+  .column[data-chat-motion] > :global([data-slot="conversation.chat.flow"]) > :is([data-chat-flow-key], [data-chat-running]):not([data-chat-motion]) {
     transition: none;
   }
 }
@@ -142,7 +151,7 @@
 /* The Turn header has 16px clearance from its input and following content. */
 .flowItem[data-chat-flow-kind="turn-process"],
 .flowItem[data-turn-process-answer],
-:is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-flow-kind="turn-process"] + :not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running) {
+:is(.column, :global([data-slot="conversation.chat.flow"])) > [data-chat-flow-kind="turn-process"] + :is([data-chat-flow-key], [data-chat-running], [data-slot]):not([hidden]):not(.flowItem:is(:empty, :has(> [data-slot="conversation.chat.node"]:empty))):not(.running) {
   --dsh-chat-flow-gap: 16px;
 }
 

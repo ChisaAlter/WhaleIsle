@@ -102,80 +102,84 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   return (
     <div className={css.dock} data-goal-bar data-state={presence.state} aria-hidden={open ? undefined : true} {...open ? {} : { inert: '' }}>
       <div className={css.clip}>
-        <div className={css.surface} data-dsh-motion="fade" data-state={presence.state}>
+        <div className={css.surface} data-state={presence.state}>
           {editing && open ? (
             <div className={`${css.bar} ${css.editBar}`}>
-              <InlineEditor
-                value={draft}
-                label={t('objective.aria')}
-                onChange={setDraft}
-                onSave={() => { void handleEdit() }}
-                onCancel={() => { setEditing(false) }}
-              />
-              {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
-              <div className={css.actions}>
-                <Tooltip portal label={t('action.save')} side="bottom" delayMs={500}>
-                  <Button
-                    type="button"
-                    className={css.iconBtn}
-                    onClick={() => { void handleEdit() }}
-                    disabled={pending || draft.trim() === ''}
-                    loading={pendingAction === 'save'}
-                    aria-label={t('action.save')}
-                  >
-                    <IconCheckOutlineRegular size={14} />
-                  </Button>
-                </Tooltip>
-                <Tooltip portal label={t('action.cancel')} side="bottom" delayMs={500}>
-                  <button
-                    type="button"
-                    className={css.iconBtn}
-                    onClick={() => { setEditing(false) }}
-                    disabled={pending}
-                    aria-label={t('action.cancel')}
-                  >
-                    <IconCloseOutlineRegular size={14} />
-                  </button>
-                </Tooltip>
+              <div className={css.content}>
+                <InlineEditor
+                  value={draft}
+                  label={t('objective.aria')}
+                  onChange={setDraft}
+                  onSave={() => { void handleEdit() }}
+                  onCancel={() => { setEditing(false) }}
+                />
+                {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
+                <div className={css.actions}>
+                  <Tooltip portal label={t('action.save')} side="bottom" delayMs={500}>
+                    <Button
+                      type="button"
+                      className={css.iconBtn}
+                      onClick={() => { void handleEdit() }}
+                      disabled={pending || draft.trim() === ''}
+                      loading={pendingAction === 'save'}
+                      aria-label={t('action.save')}
+                    >
+                      <IconCheckOutlineRegular size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip portal label={t('action.cancel')} side="bottom" delayMs={500}>
+                    <button
+                      type="button"
+                      className={css.iconBtn}
+                      onClick={() => { setEditing(false) }}
+                      disabled={pending}
+                      aria-label={t('action.cancel')}
+                    >
+                      <IconCloseOutlineRegular size={14} />
+                    </button>
+                  </Tooltip>
+                </div>
               </div>
             </div>
           ) : (
             <div className={css.bar} title={visibleGoal.phase === 'blocked' ? visibleGoal.blockedReason?.message : undefined}>
-              <span className={css.goalGlyph}><IconGoalOutlineRegular size={14} /></span>
-              <span className={css.label}>{displayed.label}</span>
-              <span className={css.objective}>{visibleGoal.objective}</span>
-              {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
-              <div className={css.actions}>
-                {visibleGoal.phase === 'active' && displayed.activation === 'armed' && (
-                  <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
-                    <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
-                      <IconPauseOutlineRegular size={14} />
+              <div className={css.content}>
+                <span className={css.goalGlyph}><IconGoalOutlineRegular size={14} /></span>
+                <span className={css.label}>{displayed.label}</span>
+                <span className={css.objective}>{visibleGoal.objective}</span>
+                {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
+                <div className={css.actions}>
+                  {visibleGoal.phase === 'active' && displayed.activation === 'armed' && (
+                    <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
+                      <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
+                        <IconPauseOutlineRegular size={14} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                  {displayed.showResume && (
+                    <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
+                      <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
+                        <IconPlayOutlineRegular size={14} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                  <Tooltip portal label={t('action.edit')} side="bottom" delayMs={500}>
+                    <button
+                      type="button"
+                      className={css.iconBtn}
+                      disabled={pending}
+                      onClick={() => { setDraft(visibleGoal.objective); setEditing(true) }}
+                      aria-label={t('action.edit')}
+                    >
+                      <IconEditOutlineRegular size={14} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip portal label={t('action.clear')} side="bottom" delayMs={500}>
+                    <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'clear'} onClick={() => { void handleClear(visibleGoal.id) }} aria-label={t('action.clear')}>
+                      <IconTrashOutlineRegular size={14} />
                     </Button>
                   </Tooltip>
-                )}
-                {displayed.showResume && (
-                  <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
-                    <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
-                      <IconPlayOutlineRegular size={14} />
-                    </Button>
-                  </Tooltip>
-                )}
-                <Tooltip portal label={t('action.edit')} side="bottom" delayMs={500}>
-                  <button
-                    type="button"
-                    className={css.iconBtn}
-                    disabled={pending}
-                    onClick={() => { setDraft(visibleGoal.objective); setEditing(true) }}
-                    aria-label={t('action.edit')}
-                  >
-                    <IconEditOutlineRegular size={14} />
-                  </button>
-                </Tooltip>
-                <Tooltip portal label={t('action.clear')} side="bottom" delayMs={500}>
-                  <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'clear'} onClick={() => { void handleClear(visibleGoal.id) }} aria-label={t('action.clear')}>
-                    <IconTrashOutlineRegular size={14} />
-                  </Button>
-                </Tooltip>
+                </div>
               </div>
             </div>
           )}

@@ -2,13 +2,14 @@
    1236:32276). Its dock column (card cap minus four insets) matches Todo and
    the Queue panel. */
 
+/* The 0fr/1fr track only reserves layout: it pushes the transcript reserve on
+   the main thread. The stack gap rides inside the slot (.surface padding), so
+   the slot's bottom edge sits on the next card and never moves. */
 .dock {
   min-height: 0;
   display: grid;
   grid-template-rows: 1fr;
-  transition:
-    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),
-    margin-bottom var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out);
   box-sizing: border-box;
   width: calc(
     100% -
@@ -19,29 +20,48 @@
     var(--dsh-composer-dock-inset) -
     var(--dsh-composer-dock-inset)
   );
-  margin: 0 auto;
+  margin: 0 auto calc(-1 * var(--dsh-composer-stack-gap, 6px));
 }
 
 .dock[data-state='closed'] {
   grid-template-rows: 0fr;
-  margin-bottom: calc(-1 * var(--dsh-composer-stack-gap, 6px));
   pointer-events: none;
 }
 
+/* The card rides the track on the compositor. This clip box reaches past the
+   slot above and to the sides, so only its fixed bottom edge cuts the card: the
+   card rises out of the next card as the track-clipped strip did, and a busy
+   main thread cannot make it jump. `clip` is neither a scroll container nor a
+   backdrop root, so focus cannot scroll it and the material still samples the
+   page. */
 .clip {
   min-height: 0;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin:
+    calc(-1 * var(--dsh-composer-dock-overhang, 320px))
+    calc(-1 * var(--dsh-composer-dock-bleed, 24px))
+    0;
+  padding:
+    var(--dsh-composer-dock-overhang, 320px)
+    var(--dsh-composer-dock-bleed, 24px)
+    0;
+  overflow: clip;
+  pointer-events: none;
 }
 
 .surface[data-state] {
+  flex: none;
+  padding-bottom: var(--dsh-composer-stack-gap, 6px);
+  pointer-events: auto;
   transform: none;
-  transition:
-    opacity var(--ds-transition-duration) var(--ds-ease-in-out),
-    transform var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 .surface[data-state='closed'] {
-  transform: translateY(var(--ds-motion-distance-popover));
+  pointer-events: none;
+  transform: translateY(100%);
 }
 
 .bar {
@@ -50,7 +70,6 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
   /* Follows the drag-resized input card (seat publishes
      --dsh-composer-resized-width) so the goal card keeps the card-minus-
@@ -65,7 +84,6 @@
   border: 0;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   border-radius: var(--dsw-radius-md);
-  box-shadow: var(--dsw-elevation-panel);
 }
 
 .bar::before {
@@ -75,8 +93,30 @@
   border-radius: inherit;
   background: var(--dsw-specific-menu);
   backdrop-filter: var(--dsw-menu-backdrop-filter);
+  box-shadow: var(--dsw-elevation-panel);
   content: '';
   pointer-events: none;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Opacity sits on the material and on the content, never on an ancestor of
+   the backdrop filter: an ancestor below full opacity cuts the frosted
+   material off from the page, and it snaps back on the fade's last frame. */
+.surface[data-state] .bar::before,
+.surface[data-state] .content {
+  transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.surface[data-state='closed'] .bar::before,
+.surface[data-state='closed'] .content {
+  opacity: 0;
 }
 
 .goalGlyph {
@@ -123,10 +163,13 @@
 .editBar {
   height: auto;
   min-height: 36px;
-  align-items: flex-end;
   /* The editor scrolls inside this elevated menu-surface strip. */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.editBar .content {
+  align-items: flex-end;
 }
 
 /* ---- Icon actions ---- */

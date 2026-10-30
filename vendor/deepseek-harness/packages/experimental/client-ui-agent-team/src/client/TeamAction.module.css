@@ -274,9 +274,16 @@
 }
 
 /* Without a toolbar the first heading sits 16px under the panel edge: 8px
-   panel padding plus this trimmed margin. */
-.body section:first-of-type h3 {
+   panel padding plus this trimmed margin; later sections keep the panel's
+   16px. Stated with a sibling combinator, not `section:first-of-type`:
+   Chromium merges structural-pseudo invalidation sets, and this rule made
+   every transcript row restyle its whole subtree when a row was inserted. */
+.body section h3 {
   margin-top: 8px;
+}
+
+.body section ~ section h3 {
+  margin-top: 16px;
 }
 
 .roster {

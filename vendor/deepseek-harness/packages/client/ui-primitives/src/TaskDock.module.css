@@ -5,9 +5,10 @@
   grid-template-rows: 1fr;
   flex: none;
   margin: 0 auto;
-  transition:
-    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),
-    margin-bottom var(--ds-transition-duration) var(--ds-ease-in-out);
+  /* The stack gap rides inside the slot (.slide padding), so the slot's bottom
+     edge sits on the next card and never moves while the track animates. */
+  margin-bottom: calc(-1 * var(--dsh-composer-stack-gap, 6px));
+  transition: grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out);
   width: calc(
     100% -
     var(--dsh-composer-side-clearance) -
@@ -31,17 +32,49 @@
 
 .root[data-state='closed'] {
   grid-template-rows: 0fr;
-  margin-bottom: calc(-1 * var(--dsh-composer-stack-gap, 6px));
   pointer-events: none;
 }
 
-.surface[data-state] {
+/* The 0fr/1fr track only reserves layout on the main thread; the card rides
+   it on the compositor. This clip box reaches past the slot above and to the
+   sides, so only its fixed bottom edge cuts the card: the card rises out of the
+   next card as the track-clipped strip did, and a busy main thread cannot make
+   it jump. `clip` is neither a scroll container nor a backdrop root. */
+.slot {
   min-height: 0;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin:
+    calc(-1 * var(--dsh-composer-dock-overhang, 320px))
+    calc(-1 * var(--dsh-composer-dock-bleed, 24px))
+    0;
+  padding:
+    var(--dsh-composer-dock-overhang, 320px)
+    var(--dsh-composer-dock-bleed, 24px)
+    0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+.slide[data-state] {
+  flex: none;
+  padding-bottom: var(--dsh-composer-stack-gap, 6px);
+  pointer-events: auto;
   transform: none;
-  transition:
-    opacity var(--ds-transition-duration) var(--ds-ease-in-out),
-    transform var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.slide[data-state='closed'] {
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+/* The material owns its own fade, so no ancestor below full opacity cuts the
+   backdrop filter off from the page. */
+.surface[data-state] {
+  overflow: hidden;
+  transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
   border: 0;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   border-radius: var(--dsw-radius-lg);
@@ -53,10 +86,6 @@
      ui-theme styles/scrollbar.css for the rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.surface[data-state='closed'] {
-  transform: translateY(var(--ds-motion-distance-popover));
 }
 
 .body {

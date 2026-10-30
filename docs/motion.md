@@ -131,7 +131,7 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 | --- | --- |
 | 侧栏 / 栏开合 | `AppFrame` 过渡 `grid-template-columns` / `rows`、把手 `left`、图标位移；拖拽中暂停；减弱动效时停下 |
 | 草稿首次发送 | `ConversationContent` 测量输入卡位移，在离开草稿页的同一提交、首帧绘制前开始 `transform: translateY()` 合成层滑动（`--ds-transition-duration-slow`、`--ds-ease-in-out`），不由定时器放行；会话标题区与对话内容同时以 swap 淡入。内置 fixed 浮层使用页面 portal，结束后移除 transform；减弱动效归零，切换会话取消 |
-| 输入框上方任务、目标与待发送队列 | `TaskDock` / `GoalBar` / `QueueDock` 通过 Presence 保留退场内容，`0fr` / `1fr` 高度轨道与尾部间距使用 `--ds-transition-duration` / `--ds-ease-in-out` 收展，内容以相同时长淡入淡出并位移 4px，组件规则不被全局 fade 的短时长覆盖；任务正文沿用同一轨道。逻辑关闭立即退出键盘与辅助技术访问；输入卡保持底部锚定，统计控件等高且不因数据到达换行，草稿首次下滑独立保留；减弱动效直接落位 |
+| 输入框上方任务、目标与待发送队列 | `TaskDock` / `GoalBar` / `QueueDock` 通过 Presence 保留退场内容。`0fr` / `1fr` 高度轨道只负责在布局上推开对话；卡片贴在轨道底边，以 `translateY(100%)` ↔ `0` 加淡入淡出收展（`--ds-transition-duration` / `--ds-ease-in-out`），只动 transform 与 opacity，在合成线程上运行，主线程忙（命令处理、流式输出）时也不掉帧。裁切框为 `overflow: clip`，向上与两侧放宽（`--dsh-composer-dock-overhang` / `--dsh-composer-dock-bleed`），只有固定的轨道底边（下一张卡片的上沿；队列面板再低 3px 压到输入卡下）裁切卡片；栈间距放在滑动层内，轨道底边不随动画移动。透明度只放在带 `backdrop-filter` 的材质层（或其伪元素）与内容层上，不放在它们的祖先：祖先不透明度低于 1 时毛玻璃采样不到页面，淡入最后一帧会跳变。任务正文沿用同一轨道。逻辑关闭立即退出键盘与辅助技术访问；输入卡保持底部锚定，统计控件等高且不因数据到达换行，草稿首次下滑独立保留；减弱动效直接落位 |
 | 开关 | `Switch` 滑块 `transform`，`--ds-transition-duration-fast` |
 | 按钮、输入、行 hover | 交互色 token，不是进出场 recipe |
 | 微交互 | 图标按钮按压、卡片按压位移等 `transform` 反馈，`--ds-transition-duration-fast`；卡片级 hover（边框 / 底色）用 `--ds-motion-duration-popover` |
