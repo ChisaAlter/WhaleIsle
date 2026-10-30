@@ -371,8 +371,7 @@ function viewportSize() {
   if (typeof window === "undefined") return { width: 1440, height: 900 };
   return { width: window.innerWidth, height: window.innerHeight };
 }
-function defaultBall() {
-  const { width, height } = viewportSize();
+function defaultBall(width, height) {
   return {
     x: Math.max(BALL_MARGIN, Math.round(width - BALL_SIZE - BALL_SNAP_INSET)),
     y: Math.max(BALL_MARGIN, Math.round(height * 0.42 - BALL_SIZE / 2))
@@ -382,7 +381,8 @@ var DEFAULT_LAYOUT = {
   expanded: false,
   width: DEFAULT_WIDTH,
   tree: null,
-  ball: defaultBall(),
+  // DSHD: null keeps the default edge position, resolved against the live viewport.
+  ball: null,
   dock: null,
   heights: {}
 };
@@ -426,22 +426,20 @@ function readPoint(raw) {
   if (typeof y !== "number" || !Number.isFinite(y)) return null;
   return { x, y };
 }
+// DSHD: the desktop starts Harness in a 0x0 view, so the viewport is unknown
+// while the layout loads. Keep the stored point; the dock clamps it when it
+// renders. Clamping against that view left balls at the margin corner, which
+// a drag always snaps away from, so that corner counts as never placed.
 function readBall(raw, legacy) {
   const point = readPoint(raw);
-  if (point !== null) {
-    const { width, height } = viewportSize();
-    return {
-      x: Math.round(Math.min(Math.max(BALL_MARGIN, point.x), Math.max(BALL_MARGIN, width - BALL_SIZE - BALL_MARGIN))),
-      y: Math.round(Math.min(Math.max(BALL_MARGIN, point.y), Math.max(BALL_MARGIN, height - BALL_SIZE - BALL_MARGIN)))
-    };
-  }
+  if (point !== null) return point.x === BALL_MARGIN && point.y === BALL_MARGIN ? null : point;
   const fraction = legacy["capsuleY"];
-  if (typeof fraction === "number" && Number.isFinite(fraction)) {
-    const { width, height } = viewportSize();
+  const { width, height } = viewportSize();
+  if (typeof fraction === "number" && Number.isFinite(fraction) && width > 0 && height > 0) {
     const y = Math.min(0.94, Math.max(0.06, fraction));
     return { x: width - BALL_SIZE - BALL_SNAP_INSET, y: Math.round(height * y - BALL_SIZE / 2) };
   }
-  return defaultBall();
+  return null;
 }
 function normalizeDockHeight(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
@@ -468,7 +466,7 @@ function readRows(raw) {
 }
 function normalizeDockLayout(raw) {
   if (typeof raw !== "object" || raw === null) {
-    return { ...DEFAULT_LAYOUT, ball: defaultBall() };
+    return { ...DEFAULT_LAYOUT };
   }
   const record = raw;
   const rows = readRows(record["rows"]);
@@ -489,7 +487,7 @@ function readLayout() {
   try {
     return normalizeDockLayout(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null"));
   } catch {
-    return { ...DEFAULT_LAYOUT, ball: defaultBall() };
+    return { ...DEFAULT_LAYOUT };
   }
 }
 var PadClient = class {
@@ -1781,7 +1779,7 @@ function createDock(client) {
       return true;
     };
     const attention = snap.panels.some(needsAttention);
-    const ballPoint = clampBall(ballDrag ?? snap.layout.ball, viewport.width, viewport.height);
+    const ballPoint = clampBall(ballDrag ?? snap.layout.ball ?? defaultBall(viewport.width, viewport.height), viewport.width, viewport.height);
     const widthLimit = Math.max(120, viewport.width - EDGE_GAP * 2);
     const dockWidth = Math.min(dragWidth ?? snap.layout.width, widthLimit);
     const openHeight = snap.layout.dockHeight ?? Math.min(560, Math.max(MIN_DOCK_HEIGHT, viewport.height - EDGE_GAP * 2));
