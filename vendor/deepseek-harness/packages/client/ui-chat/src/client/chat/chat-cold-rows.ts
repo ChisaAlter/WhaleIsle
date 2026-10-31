@@ -44,9 +44,16 @@ export class ColdRows {
       for (const entry of entries) if (entry.isIntersecting) entry.target.removeAttribute(COLD_ATTRIBUTE)
     }, { root: scroller, rootMargin: WARM_MARGIN })
     this.coldObserver = new IntersectionObserver((entries) => {
+      // Reads first, then writes: resolving a padding forces layout, and a write between two reads would force it again
+      // for every row (the first callback of a session carries every row; this cost 360 ms when it interleaved them).
+      const planned: Array<readonly [HTMLElement, number]> = []
       for (const entry of entries) {
-        if (!entry.isIntersecting) this.chill(entry.target as HTMLElement, entry.boundingClientRect.height)
+        if (entry.isIntersecting) continue
+        const row = entry.target as HTMLElement
+        const height = this.contentHeight(row, entry.boundingClientRect.height)
+        if (height !== null) planned.push([row, height])
       }
+      for (const [row, height] of planned) this.chill(row, height)
     }, { root: scroller, rootMargin: COLD_MARGIN })
     this.mutations = new MutationObserver((records) => {
       for (const record of records) {
@@ -103,24 +110,33 @@ export class ColdRows {
   }
 
   /**
-   * Mark one row cold, remembering its height first so the transcript keeps its length.
+   * The content-box height to remember for a row that is about to go cold, or null while it must stay warm. Reads only.
+   * The intrinsic size stands in for the content box, so padding and borders come off the border-box height. Heights
+   * are layout units (1/64 px) and are kept whole: a rounded copy would drift the transcript by a fraction per row.
    * @param row - a row beyond the cold margin.
-   * @param height - the row's measured height.
+   * @param height - the row's measured border-box height.
+   * @returns the height to remember (zero or less writes none), or null for a row that stays warm.
    */
-  private chill(row: HTMLElement, height: number): void {
-    if (row.hasAttribute(COLD_ATTRIBUTE) || !row.isConnected || row.hidden) return
+  private contentHeight(row: HTMLElement, height: number): number | null {
+    if (row.hasAttribute(COLD_ATTRIBUTE) || !row.isConnected || row.hidden) return null
     // A fold in progress and the reader's focus both need the row laid out.
-    if (row.hasAttribute('data-chat-motion') || row.contains(document.activeElement)) return
+    if (row.hasAttribute('data-chat-motion') || row.contains(document.activeElement)) return null
     let following = 0
     for (let next = row.nextElementSibling; next !== null && following < WARM_TAIL; next = next.nextElementSibling) following++
-    if (following < WARM_TAIL) return
-    // The intrinsic size stands in for the content box, so padding and borders come off the border-box height. Heights
-    // are layout units (1/64 px) and are written whole: a rounded copy would drift the transcript by a fraction per row.
+    if (following < WARM_TAIL) return null
     const style = getComputedStyle(row)
     const frame = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
       .reduce((sum, property) => sum + (Number.parseFloat(style[property as 'paddingTop']) || 0), 0)
-    const content = height - frame
-    if (content > 0) row.style.setProperty(COLD_HEIGHT_PROPERTY, `${String(content)}px`)
+    return height - frame
+  }
+
+  /**
+   * Mark one row cold, remembering its height first so the transcript keeps its length. Writes only.
+   * @param row - a row beyond the cold margin.
+   * @param height - the content-box height from {@link contentHeight}.
+   */
+  private chill(row: HTMLElement, height: number): void {
+    if (height > 0) row.style.setProperty(COLD_HEIGHT_PROPERTY, `${String(height)}px`)
     row.setAttribute(COLD_ATTRIBUTE, '')
   }
 }
