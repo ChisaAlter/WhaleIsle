@@ -69,6 +69,7 @@
 | [composer-family-width](composer-family-width.md) | 输入卡改宽时统计行、Dock 与 Hero 控件联动 | vendor ui-chat / ui-conversation CSS | vendor vitest + marker 单测 + 实机坐标 |
 | [composer-stats-peak-valley](composer-stats-peak-valley.md) | 会话统计/峰谷行与输入卡对齐；官方峰谷状态条与开关 | vendor `ui-conversation` / `ui-model-selection` | vendor client specs |
 | [message-edit](message-edit.md) | 最新用户消息编辑后在当前会话重发 | vendor `ui-message-edit` | vendor client/host specs + test:gui + keyless edit e2e |
+| [chat-cold-rows](chat-cold-rows.md) | 远离视口的对话行跳过样式与布局：长对话发送/流式不再整段重算，总高与滚动位置不变 | vendor ui-chat（chat-cold-rows / use-chat-viewport / ChatView.module.css） | vendor client specs + 实机长对话 trace |
 | [composer-dock-stability](composer-dock-stability.md) | 输入区上方目标/任务/队列卡与分支菜单：发送不闪、尺寸稳定后不整段重算样式、首开即满高 | vendor ui-conversation / ui-chat / ui-trajectory / ui-git | vendor client specs + 实机长对话逐帧 |
 | [composer-draft-transition](composer-draft-transition.md) | 草稿首次发送时输入框连续落位、不贴底回弹 | vendor `ui-conversation` | 组件回归 + keyless 逐帧几何 |
 | [windows-installer](windows-installer.md) | NSIS 品牌化安装器；`/S` 静默与 artifact 名不变 | `build.nsis` / `build/installer.nsh` | installer-branding 单测；TC-INST-001、009、010 |

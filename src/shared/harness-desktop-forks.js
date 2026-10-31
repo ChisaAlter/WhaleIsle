@@ -234,6 +234,13 @@ const FORK_FILE_MARKERS = [
   // transcript (or every icon) on each composer keystroke and row mount.
   { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['.older ~ :global([data-slot="conversation.chat.flow"])', '~ :is([data-chat-flow-key], [data-chat-running], [data-slot])'], excludes: ['.column:has(> .older)'] },
   { file: 'packages/client/ui-dockkit/src/components/dockkit.module.css', includes: ['--dsh-dock-icon-size: 16px'], excludes: ['.floatHeader .iconButton svg'] },
+  // Cold rows: every style and layout pass costs in proportion to the whole transcript, so rows far
+  // from the reader skip theirs (content-visibility at their measured height; near rows untouched).
+  { file: 'packages/client/ui-chat/src/client/chat/chat-cold-rows.ts', includes: ['COLD_ATTRIBUTE', 'WARM_TAIL', 'COLD_MARGIN'] },
+  { file: 'packages/client/ui-chat/src/client/chat/use-chat-viewport.ts', includes: ['this.cold.attach(scroller, column)', 'this.cold.detach()'] },
+  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['data-chat-cold', '--dsh-chat-cold-height', 'content-visibility: auto'] },
+  { file: 'packages/client/ui-chat/tests/chat-cold-rows.client.spec.ts', includes: ['marks a row beyond the cold margin'] },
+  { file: 'packages/client/ui-chat/tests/chat-cold-rows-styles.client.spec.ts', includes: ['ChatView.module.css cold rows'] },
   { file: 'packages/client/ui-theme/src/wallpaper.ts', includes: ['TRANSPARENT_ATTR', 'data-dsh-transparent'] },
   { file: 'packages/client/ui-theme/src/styles/wallpaper.css', includes: ['html[data-dsh-transparent]'] },
   // Motion call sites the alpha.2/rc.2 merges resolved toward upstream,
