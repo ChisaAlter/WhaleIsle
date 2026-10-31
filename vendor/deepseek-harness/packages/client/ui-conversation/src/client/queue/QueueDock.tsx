@@ -16,6 +16,12 @@ import { NS } from '../locales.ts'
 import css from './QueueDock.module.css'
 
 const EMPTY_QUEUE = [] as const
+/**
+ * A queued row the user did not write (a goal round, a notice) is normally taken
+ * within moments; opening the card for it would flash it open and shut between
+ * goal rounds, so such rows only open it once they linger this long.
+ */
+const SYSTEM_ROW_SETTLE_MS = 400
 const QUEUE_TEXT_FACTS: Readonly<Partial<UserTextFacts>> = {
   collapseWhitespace: true,
   trimWhitespace: true,
@@ -93,6 +99,20 @@ function QueueThumb({ attachment, loadImage, label }: {
     : <img className={css.thumb} src={url} alt={label} />
 }
 
+/** True once `active` has held for `delayMs`; drops with it at once. */
+function useLingering(active: boolean, delayMs: number): boolean {
+  const [lingered, setLingered] = useState(false)
+  useEffect(() => {
+    if (!active) {
+      setLingered(false)
+      return
+    }
+    const timer = setTimeout(() => { setLingered(true) }, delayMs)
+    return () => { clearTimeout(timer) }
+  }, [active, delayMs])
+  return active && lingered
+}
+
 /** Full props of a dock entry: InputZone owner share + session standard kit + global seat + the locale seat. */
 export type QueueDockProps = PropsRuntime<'conversation.input.dock'> & QueueDockInjected & PropsLocale<'conversation'>
   & PropsRenderFactories
@@ -122,13 +142,15 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
     ))
   }, [pendingSubmissions, queue])
   const rowCount = queue.length + pendingQueue.length
+  const userRows = pendingQueue.length > 0 || queue.some(({ source }) => source.kind === 'user')
+  const systemRowsLinger = useLingering(rowCount > 0 && !userRows, SYSTEM_ROW_SETTLE_MS)
   const running = useSession(s => s.running)
   const queueMutable = useSession(s => s.subagent === null || s.subagent.address.mode === 'continuable')
   const [editing, setEditing] = useState<{ id: MessageId; text: string } | null>(null)
   const [busy, setBusy] = useState<MessageId | null>(null)
   const [collapsed, setCollapsed] = useState(true)
   const listId = useId()
-  const open = rowCount > 0
+  const open = rowCount > 0 && (userRows || systemRowsLinger)
   const presence = usePresence(open)
   const retained = useRef<ReactNode>(null)
 

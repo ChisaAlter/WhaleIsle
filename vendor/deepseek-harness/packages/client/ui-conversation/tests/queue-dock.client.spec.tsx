@@ -178,6 +178,53 @@ describe('QueueDock', () => {
     },
   )
 
+  it('opens the card for a goal round only once it lingers, and at once for a row the user queued', () => {
+    vi.useFakeTimers()
+    try {
+      const goalRound: UserMessage = {
+        ...row('goal-round', '<goal_round> 继续'),
+        source: { kind: 'goal', goalId: 'g1', revision: 1, round: 2 } as never,
+      }
+      const idle = snapshotWith([])
+      const source = liveSession(idle)
+      const view = render(<QueueDock {...kitFor(idle)} useSession={source.useSession} useProjection={source.useProjection} />)
+      const dock = (): Element | null => view.container.querySelector('[data-queue-dock]')
+
+      // The agent takes the next round straight away: the card never shows.
+      act(() => { source.push(snapshotWith([goalRound])) })
+      expect(dock()).toBeNull()
+      act(() => { vi.advanceTimersByTime(200) })
+      act(() => { source.push(snapshotWith([])) })
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(dock()).toBeNull()
+
+      // One that waits behind a running turn opens it.
+      act(() => { source.push(snapshotWith([goalRound])) })
+      act(() => { vi.advanceTimersByTime(400) })
+      expect(dock()).not.toBeNull()
+      expect(dock()?.hasAttribute('inert')).toBe(false)
+
+      // A user row joining it needs no wait, and the card stays up.
+      act(() => { source.push(snapshotWith([goalRound, row('user-row', '我的排队消息')])) })
+      expect(dock()?.hasAttribute('inert')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens at once for a queued row the user wrote', () => {
+    vi.useFakeTimers()
+    try {
+      const idle = snapshotWith([])
+      const source = liveSession(idle)
+      const view = render(<QueueDock {...kitFor(idle)} useSession={source.useSession} useProjection={source.useProjection} />)
+      act(() => { source.push(snapshotWith([row('mine', '我的排队消息')])) })
+      expect(view.container.querySelector('[data-queue-dock]')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders null while the queue is empty', () => {
     const snap = snapshotWith([])
     const source = liveSession(snap)

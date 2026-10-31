@@ -59,11 +59,14 @@ export function ConversationContent(props: ConversationContentProps) {
 
   // Publishes the live measurements the scroll body and floating View chrome
   // read: the seat's height as --dsh-composer-reserve keeps footer space
-  // outside the transcript, and the inherited --dsh-composer-height and
-  // --dsh-conversation-viewport-height (the remaining scrollport) place
-  // descendant controls. Callback ref, not an effect; stable identity
-  // prevents observer churn while the first blank session fills the resident
-  // body outlet.
+  // outside the transcript. The phone layout also reads the inherited
+  // --dsh-composer-height and --dsh-conversation-viewport-height (the
+  // remaining scrollport); on desktop their only consumers (the turn rail and
+  // the trajectory ledger) measure themselves, because one write of an
+  // inherited property restyles every element of a long transcript (about
+  // 15 ms per 1000 elements) each time the footer changes size. Callback ref,
+  // not an effect; stable identity prevents observer churn while the first
+  // blank session fills the resident body outlet.
   const seatCleanup = useRef<(() => void) | null>(null)
   const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
     seatCleanup.current?.()
@@ -80,6 +83,7 @@ export function ConversationContent(props: ConversationContentProps) {
       scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
     }
     const publishSettled = () => {
+      if (scroller.closest('[data-phone]') === null) return
       scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
       scroller.style.setProperty(
         '--dsh-conversation-viewport-height',
@@ -91,6 +95,7 @@ export function ConversationContent(props: ConversationContentProps) {
     let settleSince = 0
     const observer = new ResizeObserver(() => {
       if (frame === 0) frame = requestAnimationFrame(() => { frame = 0; publishReserve() })
+      if (scroller.closest('[data-phone]') === null) return
       const now = performance.now()
       if (settle === undefined) settleSince = now
       clearTimeout(settle)
