@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BranchMenu, type BranchMenuProps } from '../src/client/BranchMenu.tsx'
 import {
   dedupeRemoteBranchesWithLocalMatches,
@@ -112,6 +112,69 @@ describe('BranchMenu', () => {
     expect(await screen.findByRole('menuitem', { name: 'feature/qa' })).toBeTruthy()
     expect(await screen.findByRole('menuitem', { name: 'main' })).toBeTruthy()
     expect(b.gitBranchList).toHaveBeenCalledWith('C:/proj')
+  })
+
+  it('lists branches once the workspace settles so the first open already has its rows', async () => {
+    vi.useFakeTimers()
+    try {
+      const b = mountMenu()
+      expect(b.gitBranchList).not.toHaveBeenCalled()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+      expect(b.gitBranchList).toHaveBeenCalledTimes(1)
+      fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
+      // Same commit as the click: no loading row, no growing card.
+      expect(screen.getByRole('menuitem', { name: 'feature/qa' })).toBeTruthy()
+      expect(screen.queryByText('Reading branches…')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reads the branches when the pointer reaches the trigger', async () => {
+    const b = mountMenu()
+    expect(b.gitBranchList).not.toHaveBeenCalled()
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Switch branch' }))
+    await waitFor(() => { expect(b.gitBranchList).toHaveBeenCalledWith('C:/proj') })
+    // Rows listed a moment ago are not read again on the next hover.
+    await act(async () => { await Promise.resolve() })
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Switch branch' }))
+    expect(b.gitBranchList).toHaveBeenCalledTimes(1)
+  })
+
+  it('says the branches are being read instead of showing an empty card', async () => {
+    let finish: (value: { ok: boolean; branches: BranchRef[] }) => void = () => {}
+    const pending = new Promise<{ ok: boolean; branches: BranchRef[] }>((resolve) => { finish = resolve })
+    mountMenu({ gitBranchList: vi.fn(() => pending) })
+    fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
+    expect(screen.getByText('Reading branches…')).toBeTruthy()
+    expect(screen.queryByText('No matching branches')).toBeNull()
+    await act(async () => { finish({ ok: true, branches: [{ name: 'main', isRemote: false, isCurrent: true }] }) })
+    expect(screen.queryByText('Reading branches…')).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'main' })).toBeTruthy()
+  })
+
+  it('shows the rows it already has on the next open while it re-lists', async () => {
+    let calls = 0
+    let finish: (value: { ok: boolean; branches: BranchRef[] }) => void = () => {}
+    const gitBranchList = vi.fn(() => {
+      calls += 1
+      if (calls === 1) return Promise.resolve({ ok: true, branches: [{ name: 'main', isRemote: false, isCurrent: true }] })
+      return new Promise<{ ok: boolean; branches: BranchRef[] }>((resolve) => { finish = resolve })
+    })
+    mountMenu({ gitBranchList })
+    const trigger = screen.getByRole('button', { name: 'Switch branch' })
+    fireEvent.click(trigger)
+    await screen.findByRole('menuitem', { name: 'main' })
+    fireEvent.click(trigger)
+    fireEvent.click(trigger)
+    // The second open is waiting on git, yet the card opens with the known rows.
+    expect(screen.getByRole('menuitem', { name: 'main' })).toBeTruthy()
+    expect(screen.queryByText('Reading branches…')).toBeNull()
+    expect(trigger.querySelector('svg')).not.toBeNull()
+    await act(async () => {
+      finish({ ok: true, branches: [{ name: 'main', isRemote: false, isCurrent: true }, { name: 'fresh', isRemote: false, isCurrent: false }] })
+    })
+    expect(screen.getByRole('menuitem', { name: 'fresh' })).toBeTruthy()
   })
 
   it('opens the shared Menu with a filter and branch rows', async () => {

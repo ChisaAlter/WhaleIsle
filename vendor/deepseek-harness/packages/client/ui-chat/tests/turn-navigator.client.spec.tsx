@@ -25,6 +25,40 @@ const items: readonly TurnRailItem[] = Array.from({ length: 1_000 }, (_, index) 
 const t = makeTranslate(zh, commonZh)
 
 describe('TurnNavigator', () => {
+  it('measures the scrollport band itself, on the rail frame alone', () => {
+    const callbacks: ResizeObserverCallback[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { callbacks.push(callback) }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    })
+    let height = 612
+    const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: Element) { return this.hasAttribute('data-conversation-scroll') ? height : 0 },
+    })
+    try {
+      const view = render(
+        <div data-conversation-scroll="">
+          <TurnNavigator items={items} activeTurn={1} busyTurn={null} onNavigate={vi.fn()} t={t} />
+        </div>,
+      )
+      const nav = view.getByRole('navigation')
+      const scroller = view.container.firstElementChild as HTMLElement
+      expect(nav.style.getPropertyValue('--turn-rail-band')).toBe('612px')
+      expect(scroller.style.getPropertyValue('--dsh-conversation-viewport-height')).toBe('')
+
+      height = 540
+      act(() => { for (const callback of callbacks) callback([], undefined as never) })
+      expect(nav.style.getPropertyValue('--turn-rail-band')).toBe('540px')
+      view.unmount()
+    } finally {
+      if (clientHeight !== undefined) Object.defineProperty(Element.prototype, 'clientHeight', clientHeight)
+    }
+  })
+
   it('places the latest committed active turn on its first viewport size without scroll commands', () => {
     const observer = installTurnNavigatorObserver(null)
     const onNavigate = vi.fn()
