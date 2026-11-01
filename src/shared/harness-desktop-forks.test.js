@@ -146,6 +146,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-chat/src/client/chat/use-chat-viewport.ts': 'this.cold.attach(scroller, column)\nthis.cold.detach()\n',
       'packages/client/ui-chat/tests/chat-cold-rows.client.spec.ts': "it('marks a row beyond the cold margin and remembers its height')\n",
       'packages/client/ui-chat/tests/chat-cold-rows-styles.client.spec.ts': "describe('ChatView.module.css cold rows')\n",
+      'packages/client/ui-primitives/src/StateDot.module.css': '.spinner { transform-origin: center; animation: dsh-state-dot-spin 1.5s linear infinite; }\n',
+      'packages/client/ui-primitives/tests/state-dot-styles.client.spec.ts': "it('rotates the svg itself: an animated inner group would re-run SVG layout every frame')\n",
       'packages/client/ui-chat/src/client/chat/ChatView.module.css': '@property --dsh-chat-cold-height { syntax: "<length>"; inherits: false; }\n[data-chat-cold] { content-visibility: auto; }\n@property --dsh-composer-flow-width { syntax: "*"; inherits: false; }\n.column { max-width: calc(var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, 100%)) - 32px); }\n.older ~ :global([data-slot="conversation.chat.flow"]) > x {}\na ~ :is([data-chat-flow-key], [data-chat-running], [data-slot]) {}\n',
       'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx': 'export const host = () => el?.closest("[data-conversation-scroll]")\nconst FLOW_VAR = 1\nconst settle = true\n',
       'packages/client/ui-conversation/src/client/queue/QueueDock.module.css': '.dock { max-width: calc(var(--dsh-composer-resized-width, 100%) - 16px); }\n.clip { overflow: clip; }\n.closed { transform: translateY(100%); }\n.surface[data-state] .panelBody {}\n',

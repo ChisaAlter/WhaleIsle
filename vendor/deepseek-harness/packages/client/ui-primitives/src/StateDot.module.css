@@ -33,13 +33,13 @@
 
 /* Ongoing is the sole non-dot state: a quiet full ring sits behind a centered
  * breathing arc while the complete glyph rotates continuously. Both animations
- * share one 1.5s period so pinning their start times aligns them together. */
+ * share one 1.5s period so pinning their start times aligns them together.
+ * The rotation belongs on the <svg> itself, never on an inner <g>: an animated
+ * SVG child transform re-runs SVG layout on every frame, and while a turn runs
+ * that pass alone saturates the main thread of a long transcript. */
 .spinner {
   flex: none;
   color: var(--dsw-alias-label-tertiary);
-}
-
-.spinnerMotion {
   transform-origin: center;
   animation: dsh-state-dot-spin 1.5s linear infinite;
 }
@@ -83,7 +83,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spinnerMotion,
+  .spinner,
   .spinnerArc {
     animation: none;
   }

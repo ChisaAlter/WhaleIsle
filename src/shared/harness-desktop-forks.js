@@ -241,6 +241,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['data-chat-cold', '--dsh-chat-cold-height', 'content-visibility: auto'] },
   { file: 'packages/client/ui-chat/tests/chat-cold-rows.client.spec.ts', includes: ['marks a row beyond the cold margin'] },
   { file: 'packages/client/ui-chat/tests/chat-cold-rows-styles.client.spec.ts', includes: ['ChatView.module.css cold rows'] },
+  // Running spinner: the rotation sits on the svg root, because an animated SVG child transform re-runs SVG
+  // layout every frame and, in a long transcript, that pass alone saturates the main thread while a turn runs.
+  { file: 'packages/client/ui-primitives/src/StateDot.module.css', includes: ['animation: dsh-state-dot-spin 1.5s linear infinite'], excludes: ['.spinnerMotion'] },
+  { file: 'packages/client/ui-primitives/tests/state-dot-styles.client.spec.ts', includes: ['rotates the svg itself'] },
   { file: 'packages/client/ui-theme/src/wallpaper.ts', includes: ['TRANSPARENT_ATTR', 'data-dsh-transparent'] },
   { file: 'packages/client/ui-theme/src/styles/wallpaper.css', includes: ['html[data-dsh-transparent]'] },
   // Motion call sites the alpha.2/rc.2 merges resolved toward upstream,
