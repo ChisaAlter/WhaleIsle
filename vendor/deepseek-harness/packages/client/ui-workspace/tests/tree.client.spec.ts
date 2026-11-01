@@ -8,7 +8,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   type ArchivedFilter,
-  currentGroupKey, deriveFlat, deriveGroups, deriveSearchResults, isNoDirectorySession,
+  currentGroupKey, deriveFlat, deriveGroups, derivePinned, deriveSearchResults, isNoDirectorySession,
   orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
@@ -219,6 +219,59 @@ describe('Session ordering', () => {
       .toEqual([sid('blank'), sid('newer'), sid('older')])
     expect(pinCurrentBlank([sid('newer'), sid('older')], undefined))
       .toEqual([sid('newer'), sid('older')])
+  })
+})
+
+describe('pinned section', () => {
+  const world = () => ({
+    sessions: list(
+      summary('a1', 5, '/projects/alpha'), summary('a2', 4, '/projects/alpha'),
+      summary('b1', 3, '/projects/beta'), summary('task', 2, SCRATCH),
+      summary('gone', 1, '/projects/deleted'),
+    ),
+    workspaces: [workspace('alpha', ['a1', 'a2']), workspace('beta', ['b1'], 'Beta project')],
+  })
+
+  it('lists every pinned Session once, in pin order, labeled by its owning Workspace', () => {
+    const { sessions, workspaces } = world()
+    const rows = derivePinned(
+      sessions, workspaces, rowState({ pinned: ['task', 'b1', 'a2', 'gone', 'missing'] }), noAttention, SCRATCH, 'Loose',
+    )
+    // 'gone' belongs to an unregistered Workspace and 'missing' has no summary: neither is listed anywhere.
+    expect(rows.map(row => [row.id, row.context])).toEqual([
+      [sid('task'), 'Loose'], [sid('b1'), 'Beta project'], [sid('a2'), 'alpha'],
+    ])
+    expect(rows.every(row => row.pinned && !row.archived)).toBe(true)
+  })
+
+  it('leaves out archived, blank and subagent Sessions and the archived-only view', () => {
+    const { workspaces } = world()
+    const sessions = list(
+      summary('a1', 5, '/projects/alpha'),
+      { ...summary('a2', 4, '/projects/alpha'), blank: true },
+      { ...summary('a3', 3, '/projects/alpha'), origin: 'subagent' },
+      summary('a4', 2, '/projects/alpha'),
+    )
+    const members = [{ ...workspaces[0]!, sessionIds: ['a1', 'a2', 'a3', 'a4'].map(sid) }]
+    const pinned = ['a1', 'a2', 'a3', 'a4']
+    expect(derivePinned(sessions, members, rowState({ pinned, archived: ['a4'] }), noAttention, SCRATCH, 'Loose')
+      .map(row => row.id)).toEqual([sid('a1')])
+    expect(derivePinned(sessions, members, rowState({ pinned, archivedFilter: 'only' }), noAttention, SCRATCH, 'Loose'))
+      .toEqual([])
+  })
+
+  it('lists a pin whose Workspace group is folded, and keeps the group rows free of it when hoisting', () => {
+    const { sessions, workspaces } = world()
+    const state = rowState({ pinned: ['a2'] })
+    expect(derivePinned(sessions, workspaces, state, noAttention, SCRATCH, 'Loose').map(row => row.id))
+      .toEqual([sid('a2')])
+    const folded = deriveGroups(sessions, workspaces, state, noAttention, view(), SCRATCH, { hoistPinned: true })
+    expect(folded[0]!.sessions).toEqual([])
+    const hoisted = deriveGroups(sessions, workspaces, state, noAttention, view(['alpha']), SCRATCH, { hoistPinned: true })
+    expect(hoisted[0]!.sessions.map(row => row.id)).toEqual([sid('a1')])
+    // Without the option the pin still leads its own group, as before.
+    const kept = deriveGroups(sessions, workspaces, state, noAttention, view(['alpha']), SCRATCH)
+    expect(kept[0]!.sessions.map(row => row.id)).toEqual([sid('a2'), sid('a1')])
   })
 })
 

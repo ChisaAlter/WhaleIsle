@@ -33,11 +33,11 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
-  currentGroupKey, deriveArchived, deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
-  pinCurrentBlank, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
+  currentGroupKey, deriveArchived, deriveFlat, deriveGroups, derivePinned, deriveSearchResults, orderByRecency, owningGroupKey,
+  owningParentFolder, pinCurrentBlank, PINNED_SECTION_KEY, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
 } from '../tree.ts'
 import {
-  ArchivedSectionHeader, ArchivedSessionNodeItem, GroupSessionRun, ProjectRowItem,
+  ArchivedSectionHeader, ArchivedSessionNodeItem, GroupSessionRun, PinnedSectionHeader, ProjectRowItem,
   SearchResultItem, SessionNodeItem, TasksSectionHeader,
 } from './Rows.tsx'
 import { AnimatedRows } from './AnimatedRows.tsx'
@@ -420,6 +420,8 @@ function SessionTree({
   // presence wrapper can play its exit transition without the derivation
   // having to keep folded rows in the semantic tree.
   const heldRuns = useRef(new Map<string, { rows: readonly SessionNode[]; hiddenCount: number }>())
+  // The pinned section holds its last rows the same way while it folds.
+  const heldPinned = useRef<readonly SessionNode[]>([])
   const [workspaceDrag, setWorkspaceDrag] = useState<WorkspaceDragState | null>(null)
   const workspaceDropCommitted = useRef(false)
   const nativeDragActive = drag !== null || workspaceDrag !== null
@@ -456,9 +458,20 @@ function SessionTree({
     () => deriveGroups(list, workspaces, rowState, statuses, {
       expandedGroups,
       ungroupedOrder: ungroupedSessionIds,
-    }, scratchCwd),
+    }, scratchCwd, { hoistPinned: true }),
     [list, workspaces, rowState, statuses, expandedGroups, ungroupedSessionIds, scratchCwd],
   )
+  // Pinned Sessions lead the whole sidebar, whatever Workspace owns them or whether its group is folded.
+  const ungroupedLabel = t('group.ungrouped')
+  const pinnedNodes = useMemo(
+    () => derivePinned(list, workspaces, rowState, statuses, scratchCwd, ungroupedLabel),
+    [list, workspaces, rowState, statuses, scratchCwd, ungroupedLabel],
+  )
+  const pinnedExpanded = groupExpansion[PINNED_SECTION_KEY] ?? true
+  const revealPinned = revealSessionId !== undefined && pinnedNodes.some(node => node.id === revealSessionId)
+  useEffect(() => {
+    if (revealPinned && groupExpansion[PINNED_SECTION_KEY] === false) setGroupExpanded(PINNED_SECTION_KEY, true)
+  }, [revealPinned, groupExpansion, setGroupExpanded])
   useEffect(() => {
     for (let key = revealGroup; key !== undefined; key = parents.get(key)) {
       if (groupExpansion[key] === false || (key === revealGroup && groupExpansion[key] !== true)) {
@@ -774,6 +787,12 @@ function SessionTree({
     )
   }
 
+  if (pinnedExpanded) heldPinned.current = pinnedNodes
+  const pinnedRun = pinnedExpanded ? pinnedNodes : heldPinned.current
+  if (pinnedNodes.length > 0) {
+    rowKeys.push('pinned-section')
+    for (const node of pinnedRun) rowKeys.push(`session:${node.id}`)
+  }
   const groupRows = rootGroups.map(group => renderGroup(group, 0))
   if (showArchivedSection) rowKeys.push('archived-section')
   return (
@@ -789,6 +808,34 @@ function SessionTree({
       >
         {groups.length === 0 && archivedNodes.length === 0 && (
           <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
+        )}
+        {pinnedNodes.length > 0 && (
+          <div key="pinned-section" className={css.groupSection}>
+            <PinnedSectionHeader
+              expanded={pinnedExpanded}
+              onToggle={() => { setGroupExpanded(PINNED_SECTION_KEY, !pinnedExpanded) }}
+              t={t}
+            />
+            <GroupSessionRun open={pinnedExpanded}>
+              {pinnedRun.map(node => (
+                <SessionNodeItem
+                  key={node.id}
+                  node={node}
+                  currentId={current}
+                  now={now}
+                  onOpen={open}
+                  onRenameRequest={onSessionRenameRequest}
+                  onDeleteRequest={onSessionDeleteRequest}
+                  selection={selection}
+                  renderSlot={renderSlot}
+                  onReveal={node.id === revealSessionId
+                    ? () => { onSessionRevealed(node.id) }
+                    : undefined}
+                  t={t}
+                />
+              ))}
+            </GroupSessionRun>
+          </div>
         )}
         {groupRows}
         <ArchivedSessionSection
@@ -1282,6 +1329,7 @@ export function WorkspaceBrowser({
     actions.retainAccountKeys([
       UNGROUPED_KEY,
       FLAT_SESSION_ORDER_KEY,
+      PINNED_SECTION_KEY,
       ...workspaces.map(workspace => workspace.workspaceId),
     ])
   }, [actions.retainAccountKeys, workspacePhase, workspaces])
