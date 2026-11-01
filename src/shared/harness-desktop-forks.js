@@ -199,18 +199,35 @@ const FORK_FILE_MARKERS = [
   // the compositor inside an overflow:clip box cut at the slot's fixed bottom
   // edge, and opacity sits on the backdrop-filter material itself.
   { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .panelBody'] },
-  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.tsx', includes: ['className={css.panelBody}'], excludes: ['data-dsh-motion="fade"'] },
+  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.tsx', includes: ['className={css.panelBody}', 'SYSTEM_ROW_SETTLE_MS'], excludes: ['data-dsh-motion="fade"'] },
   { file: 'packages/client/ui-conversation/tests/queue-dock-motion-styles.client.spec.ts', includes: ['QueueDock.module.css motion'] },
-  { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'margin-bottom: calc(-1 * var(--dsh-composer-stack-gap', 'overflow: clip', 'transform: translateY(100%)'] },
+  { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'margin-bottom: calc(-1 * var(--dsh-composer-stack-gap', 'overflow: clip', 'transform: translateY(100%)', 'transition: none'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.tsx', includes: ["import css from './TaskDock.module.css'", 'className={css.root}', 'className={css.slot}', 'className={css.slide}', 'usePresence(open)', 'usePresence(expanded)'] },
   { file: 'packages/client/ui-primitives/tests/task-dock-motion-styles.client.spec.ts', includes: ['TaskDock.module.css motion'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/TodoPanel.tsx', includes: ['<TaskDock open={open}', 'retained.current'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/TodoPanel.tsx', includes: ['<TaskDock open={open}', 'retained.current', 'usePlanLeavingOnSend'] },
+  { file: 'packages/client/ui-conversation/tests/todo-panel.client.spec.tsx', includes: ['starts the plan leaving with the send echo'] },
   { file: 'packages/client/ui-goal/src/client/GoalBar.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .bar::before'] },
   { file: 'packages/client/ui-goal/src/client/GoalBar.tsx', includes: ['usePresence(open)', 'aria-hidden={open ? undefined : true}', 'className={css.content}'], excludes: ['data-dsh-motion="fade"'] },
   { file: 'packages/client/ui-goal/tests/goalbar-motion-styles.client.spec.ts', includes: ['GoalBar.module.css motion'] },
   // Seat measurement: the scroll body reserves the seat through a registered,
   // non-inherited property written per frame; inherited copies wait to settle.
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["'--dsh-composer-reserve'", 'SIZE_SETTLE_MS', 'requestAnimationFrame(() => { frame = 0; publishReserve() })'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["'--dsh-composer-reserve'", 'SIZE_SETTLE_MS', 'requestAnimationFrame(() => { frame = 0; publishReserve() })', "scroller.closest('[data-phone]') === null"] },
+  // The two inherited footer metrics restyled the whole transcript on every
+  // footer resize (about 15 ms per 1000 elements); their desktop consumers
+  // measure what they clear themselves.
+  { file: 'packages/client/ui-chat/src/client/chat/TurnNavigator.tsx', includes: ["'--turn-rail-band'"] },
+  { file: 'packages/client/ui-trajectory/src/client/TrajectoryView.tsx', includes: ["'--dsh-trajectory-seat'"] },
+  { file: 'packages/client/ui-trajectory/src/client/views.module.css', includes: ['--dsh-trajectory-seat'], excludes: ['--dsh-composer-height'] },
+  { file: 'packages/client/ui-conversation/tests/skeleton.client.spec.tsx', includes: ['publishes the footer reserve on the scrollport'] },
+  { file: 'packages/client/ui-chat/tests/turn-navigator.client.spec.tsx', includes: ['measures the scrollport band itself'] },
+  // Docks above the input must not churn: a goal round or notice row opens the
+  // queue card only once it lingers, and a plan leaves with the send.
+  { file: 'packages/client/ui-conversation/tests/queue-dock.client.spec.tsx', includes: ['opens the card for a goal round only once it lingers'] },
+  // Branch picker: rows are read ahead of the first open so the card opens at
+  // its final size.
+  { file: 'packages/client/ui-git/src/client/BranchMenu.tsx', includes: ['WARM_DELAY_MS', "t('branch.loading')"] },
+  { file: 'packages/client/ui-git/src/client/locales.ts', includes: ["'branch.loading'"] },
+  { file: 'packages/client/ui-git/tests/branch-menu.client.spec.tsx', includes: ['lists branches once the workspace settles'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['@property --dsh-composer-reserve', 'margin-bottom: var(--dsh-composer-reserve)', '--dsh-composer-dock-overhang', '.header > :is(.titleRow, .tabs)'], excludes: ['.header > :not([data-conversation-header-leading])'] },
   // :has() rules never end in a featureless or tag-only compound: Chromium
   // merges their invalidation sets, so one such rule restyled the whole

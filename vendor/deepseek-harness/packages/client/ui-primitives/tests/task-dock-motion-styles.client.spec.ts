@@ -28,6 +28,12 @@ describe('TaskDock.module.css motion', () => {
     expect(css).not.toMatch(/transition:[^;]*margin-bottom/)
   })
 
+  it('collapses the track at once when leaving, so the exit is compositor-only', () => {
+    expect(declarations(".root[data-state='closed']")).toContain('grid-template-rows: 0fr')
+    expect(declarations(".root[data-state='closed']")).toContain('transition: none')
+    expect(declarations(".slide[data-state='closed']")).toContain('transform: translateY(100%)')
+  })
+
   it('clips the card at the slot bottom without a scroll container or backdrop root', () => {
     const slot = declarations('.slot')
     expect(slot).toContain('overflow: clip')

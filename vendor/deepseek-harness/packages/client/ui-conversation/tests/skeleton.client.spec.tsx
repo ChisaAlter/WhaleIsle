@@ -650,6 +650,32 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('tab', { name: 'Trajectory' })).toBeTruthy()
   })
 
+  it('publishes the footer reserve on the scrollport, and the inherited metrics only in the phone layout', () => {
+    vi.useFakeTimers()
+    try {
+      const b = mount(sessionSnapshotOf())
+      const host = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
+      const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')!
+      const settle = (): void => {
+        fireResize(seat)
+        act(() => { vi.advanceTimersByTime(600) })
+      }
+      settle()
+      // One write of an inherited property restyles every element of the transcript,
+      // so desktop keeps to the registered, non-inherited reserve.
+      expect(host.style.getPropertyValue('--dsh-composer-reserve')).not.toBe('')
+      expect(host.style.getPropertyValue('--dsh-composer-height')).toBe('')
+      expect(host.style.getPropertyValue('--dsh-conversation-viewport-height')).toBe('')
+
+      b.view.container.setAttribute('data-phone', '')
+      settle()
+      expect(host.style.getPropertyValue('--dsh-composer-height')).not.toBe('')
+      expect(host.style.getPropertyValue('--dsh-conversation-viewport-height')).not.toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('viewport composer seat wraps the whole overlay chain, not only the fallback stack', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, { overlayTakeover: true })
     const seat = b.view.container.querySelector('[data-composer-seat]')

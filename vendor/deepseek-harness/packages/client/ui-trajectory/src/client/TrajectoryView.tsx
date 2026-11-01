@@ -1,6 +1,6 @@
 /** Trajectory view: compact summary over a turn-aware event ledger. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   AssistantBlock, AssistantMessageNode, ConvViewProps, MessageImageLoader,
   ToolCallBlock,
@@ -503,6 +503,24 @@ export function TrajectoryView({
     })
   }
 
+  // The ledger clears the floating composer, so it measures the seat itself: an
+  // inherited value published by the conversation would restyle every element
+  // under the scrollport on each footer resize.
+  const rootRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const seat = root?.closest('[data-conversation-scroll]')?.querySelector<HTMLElement>('[data-composer-seat]') ?? null
+    if (root === null || seat === null || typeof ResizeObserver === 'undefined') return
+    const publish = (): void => { root.style.setProperty('--dsh-trajectory-seat', `${seat.offsetHeight}px`) }
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(seat)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--dsh-trajectory-seat')
+    }
+  }, [])
+
   const loadEarlierHistory = useCallback(async () => {
     if (!hasResidentOlderHistory && !await loadOlder()) return false
     setHistoryNodeLimit(limit => limit + HISTORY_PAGE_NODES)
@@ -510,7 +528,7 @@ export function TrajectoryView({
   }, [hasResidentOlderHistory, loadOlder])
 
   return (
-    <div className={css.root} data-conversation-composer-overlay="">
+    <div ref={rootRef} className={css.root} data-conversation-composer-overlay="">
       <TrajectoryToolbar
         actualDuration={actualDuration}
         onActualDurationChange={(nextActualDuration) => {

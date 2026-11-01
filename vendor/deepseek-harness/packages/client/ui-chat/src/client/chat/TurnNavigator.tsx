@@ -175,6 +175,24 @@ function TurnNavigatorRail(
       return indexes
     }, [focusedIndex]),
   })
+  const railRef = useRef<HTMLElement | null>(null)
+  const hasRail = items.length >= 2
+  // The band is the scrollport the footer leaves free. Measured here and written
+  // on the frame alone: an inherited property written on the scroller would
+  // restyle the whole transcript on every footer resize.
+  useLayoutEffect(() => {
+    const frame = railRef.current
+    const scroller = frame?.closest<HTMLElement>('[data-conversation-scroll]') ?? null
+    if (frame === null || scroller === null || typeof ResizeObserver === 'undefined') return
+    const publish = (): void => { frame.style.setProperty('--turn-rail-band', `${scroller.clientHeight}px`) }
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(scroller)
+    return () => {
+      observer.disconnect()
+      frame.style.removeProperty('--turn-rail-band')
+    }
+  }, [hasRail])
   const scrollTop = virtualizer.scrollOffset ?? 0
   const viewHeight = virtualizer.scrollRect?.height ?? 0
   const virtualItems = virtualizer.getVirtualItems()
@@ -233,6 +251,7 @@ function TurnNavigatorRail(
   return (
     <div className={css.slot}>
       <nav
+        ref={railRef}
         className={css.frame}
         aria-label={t('chat.turnNavigation.label')}
         onPointerEnter={() => { pointerInsideRef.current = true }}

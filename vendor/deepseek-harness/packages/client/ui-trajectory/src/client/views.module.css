@@ -25,6 +25,8 @@
   min-width: 0;
   overflow: hidden;
 
-  /* ConversationRoot publishes the floating composer's live height. */
-  --dsh-trajectory-bottom-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
+  /* The view measures the floating composer's live height (--dsh-trajectory-seat);
+     an inherited value published by the conversation would restyle the whole
+     transcript on every footer resize. */
+  --dsh-trajectory-bottom-clearance: calc(var(--dsh-trajectory-seat, 152px) + 16px);
 }

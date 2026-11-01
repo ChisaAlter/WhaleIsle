@@ -30,9 +30,14 @@
   );
 }
 
+/* Leaving collapses the track at once. The card is still drawn in the slot's
+   clip box and leaves on the compositor (below), so the exit no longer needs a
+   layout pass per frame - the frames a send leaves free - and it cannot step
+   when the main thread is busy. Entering keeps the animated track. */
 .root[data-state='closed'] {
   grid-template-rows: 0fr;
   pointer-events: none;
+  transition: none;
 }
 
 /* The 0fr/1fr track only reserves layout on the main thread; the card rides
