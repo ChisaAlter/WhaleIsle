@@ -22,8 +22,9 @@ describe('StateDot', () => {
     expect(spinner.tagName).toBe('svg')
     expect(spinner.querySelectorAll('rect')).toHaveLength(0)
     expect(spinner.getAttribute('viewBox')).toBe('0 0 24 24')
-    expect(spinner.querySelector('g')).not.toBeNull()
-    const rings = spinner.querySelectorAll('circle')
+    // The rotation lives on the svg root; an animated inner group would re-run SVG layout every frame.
+    expect(spinner.querySelector('g')).toBeNull()
+    const rings = spinner.querySelectorAll(':scope > circle')
     expect(rings).toHaveLength(2)
     expect([...rings].map(ring => ring.getAttribute('r'))).toEqual(['9.5', '9.5'])
   })

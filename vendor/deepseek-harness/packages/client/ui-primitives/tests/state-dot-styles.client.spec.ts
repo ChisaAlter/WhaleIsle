@@ -35,16 +35,20 @@ describe('StateDot.module.css', () => {
     expect(css).toContain('.spinnerArc')
     expect(css).toContain('@keyframes dsh-state-dot-spin')
     expect(css).toContain('@keyframes dsh-state-dot-dash')
-    expect(css).toMatch(/\.spinnerMotion[^{]*\{[^}]*animation: dsh-state-dot-spin 1\.5s linear infinite/su)
-    expect(css).not.toMatch(/\.spinner\s*\{[^}]*animation:/su)
+    expect(css).toMatch(/\.spinner\s*\{[^}]*animation: dsh-state-dot-spin 1\.5s linear infinite/su)
     expect(css).toContain('stroke-dasharray: 12 150')
     expect(css).toContain('stroke-dasharray: 24 150')
     expect(css).toContain('stroke-dashoffset: -6')
   })
 
+  it('rotates the svg itself: an animated inner group would re-run SVG layout every frame', () => {
+    expect(css).not.toContain('.spinnerMotion')
+    expect(css).toMatch(/\.spinner\s*\{[^}]*transform-origin: center/su)
+  })
+
   it('stops both animations and retains an intermediate arc for reduced motion', () => {
     const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
-    expect(reduced).toContain('.spinnerMotion,')
+    expect(reduced).toContain('.spinner,')
     expect(reduced).toContain('.spinnerArc')
     expect(reduced).toContain('animation: none')
     expect(reduced).toContain('stroke-dasharray: 18 150')
