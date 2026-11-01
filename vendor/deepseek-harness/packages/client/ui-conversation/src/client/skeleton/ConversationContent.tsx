@@ -8,6 +8,11 @@ import { conversationPhase } from '../contract/snapshot.ts'
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
 
+/** Quiet time before the seat's inherited size properties are rewritten; a dock animation resizes it every frame. */
+const SIZE_SETTLE_MS = 120
+/** Longest a continuous resize (a window drag) waits for those properties. */
+const SIZE_SETTLE_MAX_MS = 400
+
 function ConversationSessionView({ renderSlot }: ConversationViewsProps) {
   return renderSlot('conversation.session', {})
 }
@@ -52,30 +57,52 @@ export function ConversationContent(props: ConversationContentProps) {
   const [pendingNoDirectory, setPendingNoDirectory] = useState(false)
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
-  // Publishes the two live measurements floating View chrome reads off the
-  // scroll body: the seat's height as --dsh-composer-height reserves footer
-  // space outside the transcript, and the remaining scrollport height as
-  // --dsh-conversation-viewport-height places controls in the visible band.
-  // Callback ref, not an effect; stable identity prevents
-  // observer churn while the first blank session fills the resident body
-  // outlet.
+  // Publishes the live measurements the scroll body and floating View chrome
+  // read: the seat's height as --dsh-composer-reserve keeps footer space
+  // outside the transcript, and the inherited --dsh-composer-height and
+  // --dsh-conversation-viewport-height (the remaining scrollport) place
+  // descendant controls. Callback ref, not an effect; stable identity
+  // prevents observer churn while the first blank session fills the resident
+  // body outlet.
   const seatCleanup = useRef<(() => void) | null>(null)
   const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
     seatCleanup.current?.()
     seatCleanup.current = null
     const scroller = seat?.parentElement ?? null
     if (seat === null || scroller === null) return
-    const publishSize = () => {
+    // The reserve is registered and non-inherited, so writing it every frame
+    // while a dock animates restyles only the scroll body. Each inherited write
+    // restyles the whole transcript, so those wait until the size settles.
+    // Writes run in the next frame's animation callbacks: resizing the scroller
+    // inside this observer's callback leaves its notification undelivered (a
+    // loop error) and lands a frame late anyway.
+    const publishReserve = () => {
+      scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
+    }
+    const publishSettled = () => {
       scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
       scroller.style.setProperty(
         '--dsh-conversation-viewport-height',
         `${scroller.clientHeight}px`,
       )
     }
-    const observer = new ResizeObserver(publishSize)
+    let frame = 0
+    let settle: ReturnType<typeof setTimeout> | undefined
+    let settleSince = 0
+    const observer = new ResizeObserver(() => {
+      if (frame === 0) frame = requestAnimationFrame(() => { frame = 0; publishReserve() })
+      const now = performance.now()
+      if (settle === undefined) settleSince = now
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        settle = undefined
+        publishSettled()
+      }, now - settleSince >= SIZE_SETTLE_MAX_MS ? 0 : SIZE_SETTLE_MS)
+    })
     observer.observe(seat)
     observer.observe(scroller)
-    publishSize()
+    publishReserve()
+    publishSettled()
 
     // A viewport-positioned child does not participate in its DOM parent's
     // native wheel chain. Preserve footer scrolling, while answer fields and
@@ -105,6 +132,8 @@ export function ConversationContent(props: ConversationContentProps) {
     seat.addEventListener('wheel', onWheel, { passive: false })
     seatCleanup.current = () => {
       observer.disconnect()
+      cancelAnimationFrame(frame)
+      clearTimeout(settle)
       seat.removeEventListener('wheel', onWheel)
     }
   }, [])

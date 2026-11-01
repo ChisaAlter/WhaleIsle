@@ -7,9 +7,7 @@
   grid-template-rows: 1fr;
   min-height: 0;
   flex: none;
-  transition:
-    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),
-    margin-bottom var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out);
   width: calc(
     100% -
     var(--dsh-composer-side-clearance) -
@@ -25,9 +23,10 @@
     var(--dsh-composer-dock-inset) -
     var(--dsh-composer-dock-inset)
   );
-  /* Cancel the stack gap after this item and tuck 3px under the input card
-     (square bottom), reading as one attached surface. */
-  margin: 0 auto calc(0px - var(--dsh-composer-stack-gap) - 3px);
+  /* Cancel the stack gap after this item, so the slot's bottom edge sits on the
+     input card and never moves while the track animates; the surface tucks 3px
+     under the card (square bottom), reading as one attached surface. */
+  margin: 0 auto calc(-1 * var(--dsh-composer-stack-gap));
   /* Horizontal padding completes the shared dock inset (this wrapper only
      subtracts two insets from its width); no vertical padding, so the visual
      gap above the panel stays the uniform stack gap. */
@@ -36,24 +35,58 @@
 
 .dock[data-state='closed'] {
   grid-template-rows: 0fr;
-  margin-bottom: calc(-1 * var(--dsh-composer-stack-gap));
   pointer-events: none;
 }
 
+/* The 0fr/1fr track only reserves layout on the main thread; the panel rides
+   it on the compositor. This clip box reaches past the slot above and to the
+   sides, and 3px below for the tuck, so only that fixed bottom edge cuts the
+   panel: it rises out of the input card as the track-clipped panel did, and a
+   busy main thread cannot make it jump. `clip` is neither a scroll container
+   nor a backdrop root. */
 .clip {
   min-height: 0;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  margin:
+    calc(-1 * var(--dsh-composer-dock-overhang, 320px))
+    calc(-1 * var(--dsh-composer-dock-bleed, 24px))
+    -3px;
+  padding:
+    var(--dsh-composer-dock-overhang, 320px)
+    var(--dsh-composer-dock-bleed, 24px)
+    3px;
+  overflow: clip;
+  pointer-events: none;
 }
 
 .surface[data-state] {
+  flex: none;
+  margin-bottom: -3px;
+  pointer-events: auto;
   transform: none;
-  transition:
-    opacity var(--ds-transition-duration) var(--ds-ease-in-out),
-    transform var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 .surface[data-state='closed'] {
-  transform: translateY(var(--ds-motion-distance-popover));
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+/* Opacity sits on the material, the border, and the content, never on an
+   ancestor of the backdrop filter: an ancestor below full opacity cuts the
+   frosted material off from the page, and it snaps back on the last frame. */
+.surface[data-state] .panel::before,
+.surface[data-state] .panel::after,
+.surface[data-state] .panelBody {
+  transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.surface[data-state='closed'] .panel::before,
+.surface[data-state='closed'] .panel::after,
+.surface[data-state='closed'] .panelBody {
+  opacity: 0;
 }
 
 .panel {

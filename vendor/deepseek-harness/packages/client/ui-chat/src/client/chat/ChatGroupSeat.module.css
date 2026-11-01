@@ -129,7 +129,9 @@
   flex-direction: column;
 }
 .content > * { flex-shrink: 0; }
-.content > :not([hidden]):not(:empty) ~ :not([hidden]):not(:empty) {
+/* Members are named, not matched as any element: a featureless right-hand
+   side after `~` restyled every following member's whole subtree. */
+.content > :not([hidden]):not(:empty) ~ [data-chat-flow-key]:not([hidden]):not(:empty) {
   margin-top: var(--dsh-chat-flow-gap, 6px);
 }
 .expandedBody {
@@ -138,13 +140,15 @@
   scrollbar-gutter: auto;
 }
 
-/* Member spacing changes share the closing body's timing. */
-:global([data-chat-motion]) .content > :not([data-chat-motion]) {
+/* Member spacing changes share the closing body's timing. Members are named:
+   [data-chat-motion] toggles on the column at every Turn start and end, and a
+   featureless right-hand side restyled the whole transcript each time. */
+:global([data-chat-motion]) .content > [data-chat-flow-key]:not([data-chat-motion]) {
   transition: margin-top 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :global([data-chat-motion]) .content > :not([data-chat-motion]) {
+  :global([data-chat-motion]) .content > [data-chat-flow-key]:not([data-chat-motion]) {
     transition: none;
   }
 }

@@ -195,12 +195,28 @@ const FORK_FILE_MARKERS = [
   // Typing never scrolls a reader-scrolled transcript.
   { file: 'packages/client/ui-conversation/src/client/input/editor/runtime.ts', includes: ['SKIP_SCROLL_INTO_VIEW_TAG', 'keepCaretInDraft', 'DELETE_CHARACTER_COMMAND, scrollOnlyDraft'] },
   { file: 'apps/web/tests/composer-typing-keeps-reading.e2e.ts', includes: ['types, grows, and overflows the draft without moving the transcript'] },
-  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width'] },
-  { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'margin-bottom: calc(-1 * var(--dsh-composer-stack-gap'] },
-  { file: 'packages/client/ui-primitives/src/TaskDock.tsx', includes: ["import css from './TaskDock.module.css'", 'className={css.root}', 'usePresence(open)', 'usePresence(expanded)'] },
+  // Composer docks: the 0fr/1fr track only reserves layout; the card moves on
+  // the compositor inside an overflow:clip box cut at the slot's fixed bottom
+  // edge, and opacity sits on the backdrop-filter material itself.
+  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .panelBody'] },
+  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.tsx', includes: ['className={css.panelBody}'], excludes: ['data-dsh-motion="fade"'] },
+  { file: 'packages/client/ui-conversation/tests/queue-dock-motion-styles.client.spec.ts', includes: ['QueueDock.module.css motion'] },
+  { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'margin-bottom: calc(-1 * var(--dsh-composer-stack-gap', 'overflow: clip', 'transform: translateY(100%)'] },
+  { file: 'packages/client/ui-primitives/src/TaskDock.tsx', includes: ["import css from './TaskDock.module.css'", 'className={css.root}', 'className={css.slot}', 'className={css.slide}', 'usePresence(open)', 'usePresence(expanded)'] },
+  { file: 'packages/client/ui-primitives/tests/task-dock-motion-styles.client.spec.ts', includes: ['TaskDock.module.css motion'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/TodoPanel.tsx', includes: ['<TaskDock open={open}', 'retained.current'] },
-  { file: 'packages/client/ui-goal/src/client/GoalBar.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr'] },
-  { file: 'packages/client/ui-goal/src/client/GoalBar.tsx', includes: ['usePresence(open)', 'aria-hidden={open ? undefined : true}'] },
+  { file: 'packages/client/ui-goal/src/client/GoalBar.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .bar::before'] },
+  { file: 'packages/client/ui-goal/src/client/GoalBar.tsx', includes: ['usePresence(open)', 'aria-hidden={open ? undefined : true}', 'className={css.content}'], excludes: ['data-dsh-motion="fade"'] },
+  { file: 'packages/client/ui-goal/tests/goalbar-motion-styles.client.spec.ts', includes: ['GoalBar.module.css motion'] },
+  // Seat measurement: the scroll body reserves the seat through a registered,
+  // non-inherited property written per frame; inherited copies wait to settle.
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["'--dsh-composer-reserve'", 'SIZE_SETTLE_MS', 'requestAnimationFrame(() => { frame = 0; publishReserve() })'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['@property --dsh-composer-reserve', 'margin-bottom: var(--dsh-composer-reserve)', '--dsh-composer-dock-overhang', '.header > :is(.titleRow, .tabs)'], excludes: ['.header > :not([data-conversation-header-leading])'] },
+  // :has() rules never end in a featureless or tag-only compound: Chromium
+  // merges their invalidation sets, so one such rule restyled the whole
+  // transcript (or every icon) on each composer keystroke and row mount.
+  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['.older ~ :global([data-slot="conversation.chat.flow"])', '~ :is([data-chat-flow-key], [data-chat-running], [data-slot])'], excludes: ['.column:has(> .older)'] },
+  { file: 'packages/client/ui-dockkit/src/components/dockkit.module.css', includes: ['--dsh-dock-icon-size: 16px'], excludes: ['.floatHeader .iconButton svg'] },
   { file: 'packages/client/ui-theme/src/wallpaper.ts', includes: ['TRANSPARENT_ATTR', 'data-dsh-transparent'] },
   { file: 'packages/client/ui-theme/src/styles/wallpaper.css', includes: ['html[data-dsh-transparent]'] },
   // Motion call sites the alpha.2/rc.2 merges resolved toward upstream,
