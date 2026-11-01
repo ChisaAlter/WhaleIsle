@@ -15,6 +15,8 @@ declare module '@deepseek-ai/cordis' {
 export class SessionLifecycle {
   /** Session ids currently inside `session.delete` orchestration. */
   readonly deletingIds = new Set<SessionId>()
+  /** Session ids whose idle Agent is being released; the Session stays listed. */
+  readonly releasingIds = new Set<SessionId>()
   private readonly handles = new Map<SessionId, AgentHandle>()
 
   /** @param ctx - Host context whose Agent registry is wrapped. */
@@ -60,5 +62,13 @@ export class SessionLifecycle {
    */
   handleOf(id: SessionId): AgentHandle | undefined {
     return this.handles.get(id)
+  }
+
+  /**
+   * Every retained handle, for idle-release sweeps.
+   * @returns a stable copy of the retained id/handle pairs.
+   */
+  retained(): [SessionId, AgentHandle][] {
+    return [...this.handles]
   }
 }

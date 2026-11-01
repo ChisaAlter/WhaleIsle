@@ -159,6 +159,10 @@
       config:
         path: ':memory:'
         openAt: never
+        # Desktop: idle Sessions release their Agent (session-controller
+        # `idleReleaseMs`) and recent ones stay resident, so cache only the
+        # follow-to-resume handoff instead of pinning five released logs.
+        preparedSessionCacheSize: 1
 
     # Shared projection registry: subagent catalog identity (mode/label) folds
     # through its registered units, so the `list_agents` surface below fails
