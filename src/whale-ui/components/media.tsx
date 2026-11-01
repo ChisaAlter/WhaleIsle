@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { useComponentState, useIsStreaming } from "@whale-ui/react";
 import { isElementNode } from "../language/parser/types";
-import { color, colorSchema, content, define, Feedback, Glyph, imageUrl, radius, radiusSchema, textValue, webUrl } from "./common";
+import { color, colorSchema, content, define, Feedback, Glyph, imageUrl, radius, radiusSchema, textColor, textValue, webUrl } from "./common";
 export { Chart } from "./chart";
 
 const fit = z.enum(["cover", "contain"]);
@@ -32,7 +32,7 @@ function ImageView(p: any) {
   return !src || failed === p.src ? <ImageSearch query={p.alt} aspectRatio={p.aspectRatio} radius={p.radius} fit={p.fit} /> : <div className="whale-image" style={{ aspectRatio: p.aspectRatio ?? 1.5, borderRadius: radius(p.radius) }}><img src={src} alt={p.alt} loading="lazy" style={{ objectFit: p.fit ?? "cover" }} onError={() => setFailed(p.src)} /></div>;
 }
 export const ImageComponent = define("Image", { src: z.string(), alt: z.string(), aspectRatio: z.number().optional(), radius: radiusSchema.optional(), fit: fit.optional() }, "Image from a URL; find an image for alt text if loading fails.", p => <ImageView {...p} />);
-export const Icon = define("Icon", { name: z.string(), size: z.enum(["sm", "md", "lg", "xl"]).optional(), color: colorSchema.optional() }, "Lucide icon by kebab-case name.", p => <Glyph name={p.name} size={({ sm: 16, md: 16, lg: 24, xl: 32 } as Record<string, number>)[p.size ?? "md"]} style={{ color: color(p.color) }} />);
+export const Icon = define("Icon", { name: z.string(), size: z.enum(["sm", "md", "lg", "xl"]).optional(), color: colorSchema.optional() }, "Lucide icon by kebab-case name.", p => <Glyph name={p.name} size={({ sm: 16, md: 16, lg: 24, xl: 32 } as Record<string, number>)[p.size ?? "md"]} style={{ color: textColor(p.color) }} />);
 const shortCell = (value: unknown) => typeof value === "number" || (typeof value === "string" && !/[\r\n]/.test(value) && Array.from(value).length <= 16);
 export const Table = define("Table", { columns: z.array(z.string()), rows: z.array(z.array(z.any())) }, "Scrollable data table with numeric alignment and support for components in cells.", (p, render) => {
   const numeric = p.columns.map((_: string, i: number) => { const values = p.rows.map((row: unknown[]) => row[i]).filter((value: unknown) => value != null); return values.length > 0 && values.every((value: unknown) => typeof value === "number"); });

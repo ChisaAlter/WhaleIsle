@@ -32,6 +32,20 @@
   --whale-chart-4: var(--whale-danger);
   --whale-chart-5: var(--dsw-static-deepseek-400);
   --whale-chart-6: var(--whale-fg-muted);
+
+  /* Ink for words and glyphs. The state fills above are tuned for bars, tints and icons; as text they fall under 4.5:1 on a
+     light page and on their own tints, so each text step moves the fill toward the page ink. light-dark() picks how much
+     fill to keep per color-scheme; dark fills mostly hold already. */
+  --whale-accent-text: light-dark(color-mix(in srgb, var(--whale-accent) 75%, var(--whale-fg)), color-mix(in srgb, var(--whale-accent) 90%, var(--whale-fg)));
+  --whale-ok-text: light-dark(color-mix(in srgb, var(--whale-ok) 55%, var(--whale-fg)), var(--whale-ok));
+  --whale-warn-text: light-dark(color-mix(in srgb, var(--whale-warn) 55%, var(--whale-fg)), var(--whale-warn));
+  --whale-danger-text: light-dark(color-mix(in srgb, var(--whale-danger) 75%, var(--whale-fg)), color-mix(in srgb, var(--whale-danger) 80%, var(--whale-fg)));
+  --whale-purple-text: light-dark(color-mix(in srgb, var(--whale-purple) 75%, var(--whale-fg)), color-mix(in srgb, var(--whale-purple) 90%, var(--whale-fg)));
+  --whale-pink-text: light-dark(color-mix(in srgb, var(--whale-pink) 75%, var(--whale-fg)), color-mix(in srgb, var(--whale-pink) 80%, var(--whale-fg)));
+  --whale-faint-text: light-dark(color-mix(in srgb, var(--whale-fg-faint) 80%, var(--whale-fg)), var(--whale-fg-faint));
+  /* Fills that carry a white label (solid success/danger buttons). */
+  --whale-ok-solid: light-dark(color-mix(in srgb, var(--whale-ok) 55%, var(--whale-fg)), var(--whale-ok));
+  --whale-danger-solid: light-dark(color-mix(in srgb, var(--whale-danger) 75%, var(--whale-fg)), var(--whale-danger));
 }
 
 * { box-sizing: border-box; }
@@ -40,7 +54,7 @@ body { max-height: 100vh; overflow: auto; }
 html, body { padding: 0; margin: 0; color: var(--whale-fg); background: transparent; font-family: var(--whale-font); font-size: var(--whale-font-size, 14px); line-height: 22px; }
 .whale-viewer-root { container: whale-page / inline-size; width: 100%; min-width: 0; display: flow-root; padding: 20px; overflow-wrap: anywhere; }
 .whale-viewer-root > .whale-col { gap: 20px; }
-.whale-viewer-error { color: var(--whale-danger); white-space: pre-wrap; font-size: 14px; line-height: 22px; padding: 8px 12px; border-inline-start: 2px solid var(--whale-danger); }
+.whale-viewer-error { color: var(--whale-danger-text); white-space: pre-wrap; font-size: 14px; line-height: 22px; padding: 8px 12px; border-inline-start: 2px solid var(--whale-danger); }
 .whale-viewer-diagnostics { font: 12px/18px var(--whale-font); color: var(--whale-fg-muted); margin: 12px 0 0; }
 .whale-viewer-diagnostics summary { cursor: pointer; }
 .whale-viewer-diagnostics ul { padding-inline-start: 20px; }

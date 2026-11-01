@@ -249,3 +249,22 @@ test('remaining input controls and Popover expose local interactions accessibly'
  const app=await mounted('root = Col([TextArea($note, "Notes"), Select($choice, ["A", "B"], "Select"), SegmentedControl($choice, ["A", "B"]), Slider($n, 0, 10, 1, "Amount", "%", [{value:0,label:"Low"},{value:10,label:"High"}]), Checkbox($checked, "Done", true), RadioGroup($choice, [{value:"A",label:"Alpha",description:"first"},{value:"B",label:"Beta"}], "Pick", "cards"), DatePicker($date, "When"), Popover("Details", "More"), Pressable([Label("Tile")], @Set($n, 5), $n == 5), IconButton("plus", @Set($n, $n + 1), "Add"), Divider(), Carousel([Label("One"),Label("Two")]), Image("https://images.test/ok.png", "Photo"), YouTube("dQw4w9WgXcQ", "Video"), Celebration(false)])\n$note = "text"\n$choice = "A"\n$n = 2\n$checked = false\n$date = "2026-10-20"');
  try{assert.equal(app.element.querySelector('textarea').value,'text');assert.equal(app.element.querySelector('select').value,'A');await click([...app.element.querySelectorAll('[role=radio]')].find(b=>b.textContent==='B'));assert.equal(app.element.querySelector('select').value,'B');await click(button(app.element,'Details'));assert.equal(app.element.querySelector('[role=dialog]').textContent,'More');await click(app.element.querySelector('.whale-pressable'));assert.equal(app.element.querySelector('.whale-pressable').getAttribute('aria-pressed'),'true');await click(app.element.querySelector('button[aria-label=Add]'));assert.equal(app.element.querySelector('.whale-range').value,'6');assert.ok(app.element.querySelector('.whale-youtube').src.startsWith('https://www.youtube-nocookie.com/embed/'));assert.equal(app.element.querySelector('input[type=date]').value,'2026-10-20');}finally{await app.close();}
 });
+
+test('words and glyphs take the text-safe step of a state colour while fills and tints keep the original',async()=>{
+ const app=await mounted('root = Col([Text("ok","md","success"),Title("warn","md","warning"),Caption("bad","danger"),Badge("tag","info"),Icon("check","md","success"),Progress(50,100,"share","success"),Svg([SvgText("label",1,2,12,"danger"),Rect(0,0,5,5,"success")],"0 0 10 10"),Text("plain","md","muted"),Text("custom","md","#123456")],4)');
+ try{
+  const styleOf=text=>[...app.element.querySelectorAll('*')].find(node=>node.children.length===0&&node.textContent===text)?.getAttribute('style')??'';
+  assert.match(styleOf('ok'),/var\(--whale-ok-text\)/);
+  assert.match(styleOf('warn'),/var\(--whale-warn-text\)/);
+  assert.match(styleOf('bad'),/var\(--whale-danger-text\)/);
+  const badge=app.element.querySelector('.whale-badge');
+  assert.match(badge.getAttribute('style'),/color: var\(--whale-accent-text\)/);
+  assert.match(badge.getAttribute('style'),/color-mix\(in srgb, var\(--whale-accent\) 12%/,'the tint behind the badge keeps the fill colour');
+  assert.match(app.element.querySelector('svg.lucide, svg[aria-hidden]')?.getAttribute('style')??'',/var\(--whale-ok-text\)/,'icons are glyphs, so they use the text step');
+  assert.match(app.element.querySelector('.whale-progress-fill').getAttribute('style'),/background: var\(--whale-ok\)/,'a bar is a fill and keeps the original colour');
+  assert.equal(app.element.querySelector('text').getAttribute('fill'),'var(--whale-danger-text)');
+  assert.equal(app.element.querySelector('rect').getAttribute('fill'),'var(--whale-ok)');
+  assert.match(styleOf('plain'),/var\(--whale-fg-muted\)/);
+  assert.match(styleOf('custom'),/rgb\(18, 52, 86\)|#123456/,'a literal colour passes through untouched');
+ }finally{await app.close();}
+});

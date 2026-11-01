@@ -20,29 +20,26 @@ const flags = Object.fromEntries(process.argv.slice(2)
 const viewerPath = path.resolve(flags.viewer || path.join(root, 'src', 'renderer', 'whale-ui', 'viewer.html'))
 const outPath = flags.out
 const shotsDir = flags.shots
-const tokensPath = path.join(root, 'src', 'shared', 'dsh-webui-tokens.css')
+// The chat host resolves --dsw-* from ui-theme's design-platform.css (which has the -secondary/-tertiary state tokens the
+// declarative components read); the desktop mirror in src/shared is a subset, used only when the vendor tree is absent.
+const designPlatformPath = path.join(root, 'vendor', 'deepseek-harness', 'packages', 'client', 'ui-theme', 'src', 'styles', 'design-platform.css')
+const tokensPath = fs.existsSync(designPlatformPath) ? designPlatformPath : path.join(root, 'src', 'shared', 'dsh-webui-tokens.css')
 const auditSource = fs.readFileSync(path.join(__dirname, 'audit-page.cjs'), 'utf8')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** The opaque canvas the chat paints behind a transparent document: the desktop token mirror's page background. */
-function hostBackdrops() {
-  const css = fs.readFileSync(tokensPath, 'utf8')
-  const values = [...css.matchAll(/--dsw-alias-bg-base:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)/g)]
-    .map((match) => ({ r: +match[1], g: +match[2], b: +match[3], a: 1 }))
-  if (values.length !== 2) throw new Error(`expected a light and a dark --dsw-alias-bg-base in dsh-webui-tokens.css, found ${values.length}`)
-  return { light: values[0], dark: values[1] }
-}
+/** The shell can make the page background transparent over a wallpaper; the document then sits on the canvas colour. */
+const TRANSPARENT_HOST = { '--dsw-alias-bg-base': 'transparent' }
+const THEMES = [
+  { name: 'light', appearance: 'light', overrides: {} },
+  { name: 'dark', appearance: 'dark', overrides: {} },
+  { name: 'light, transparent host', appearance: 'light', overrides: TRANSPARENT_HOST },
+  { name: 'dark, transparent host', appearance: 'dark', overrides: TRANSPARENT_HOST },
+]
 
-function themeCases() {
-  const backdrop = hostBackdrops()
-  // The shell can make the page background transparent over a wallpaper; the document then inherits the backdrop colour.
-  const transparent = { '--dsw-alias-bg-base': 'transparent' }
-  return [
-    { name: 'light', appearance: 'light', variables: {}, backdrop: backdrop.light },
-    { name: 'dark', appearance: 'dark', variables: {}, backdrop: backdrop.dark },
-    { name: 'light, transparent host', appearance: 'light', variables: transparent, backdrop: backdrop.light },
-    { name: 'dark, transparent host', appearance: 'dark', variables: transparent, backdrop: backdrop.dark },
-  ]
+function parseCanvas(value) {
+  const match = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(value)
+  if (!match) throw new Error(`cannot read the host canvas colour from "${value}"`)
+  return { r: +match[1], g: +match[2], b: +match[3], a: 1 }
 }
 
 function writeHostPage(directory) {
@@ -50,7 +47,7 @@ function writeHostPage(directory) {
   fs.writeFileSync(file, `<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="${pathToFileURL(tokensPath).href}"><style>html,body{margin:0;background:transparent}iframe{display:block;border:0;width:900px;height:3200px}</style>`
     + `<iframe id="viewer" name="whale-ui:audit" src="${pathToFileURL(viewerPath).href}"></iframe>`
     + `<script>window.__messages=[];addEventListener('message',function(e){if(e.source===document.getElementById('viewer').contentWindow)window.__messages.push(e.data)});`
-    + `window.__variables=function(dark){var root=document.documentElement;root.toggleAttribute('data-ds-dark-theme',dark);var computed=getComputedStyle(root),out={};Array.from(computed).forEach(function(n){if(n.indexOf('--dsw-')===0)out[n]=computed.getPropertyValue(n).trim()});return out};`
+    + `window.__theme=function(dark){document.body.toggleAttribute('data-ds-dark-theme',dark);var frame=document.getElementById('viewer'),computed=getComputedStyle(frame),variables={};Array.from(computed).forEach(function(n){if(n.indexOf('--dsw-')===0)variables[n]=computed.getPropertyValue(n).trim()});var probe=document.createElement('div');probe.style.background='var(--dsw-alias-bg-base)';document.body.appendChild(probe);var canvas=getComputedStyle(probe).backgroundColor;probe.remove();return{variables:variables,canvas:canvas}};`
     + `window.__send=function(m){document.getElementById('viewer').contentWindow.postMessage(Object.assign({channel:'whale-ui',version:2,instanceId:'audit'},m),'*')}</script>`)
   return file
 }
@@ -74,10 +71,11 @@ async function auditPage(win, hostFile, theme, page) {
   await win.loadFile(hostFile)
   const host = win.webContents
   await waitFor(() => host.executeJavaScript('window.__messages.some(function(m){return m.type==="ready"})'), 'the viewer ready message')
-  const hostVariables = await host.executeJavaScript(`window.__variables(${theme.appearance === 'dark'})`)
+  const { variables: hostVariables, canvas } = await host.executeJavaScript(`window.__theme(${theme.appearance === 'dark'})`)
+  const backdrop = parseCanvas(canvas)
   await host.executeJavaScript(`window.__send(${JSON.stringify({
     type: 'render', program: page.program, language: page.language, streaming: false,
-    state: {}, theme: { appearance: theme.appearance, variables: { ...hostVariables, ...theme.variables } }, locale: 'en',
+    state: {}, theme: { appearance: theme.appearance, variables: { ...hostVariables, ...theme.overrides } }, locale: 'en',
   })})`)
   const viewer = host.mainFrame.frames[0]
   if (!viewer) throw new Error('the viewer frame did not load')
@@ -87,15 +85,20 @@ async function auditPage(win, hostFile, theme, page) {
     throw new Error(`${error.message}\nviewer messages: ${sent}\nroot html: ${shown}`)
   })
   await sleep(1500)
+  // A nested HtmlView paints in the default colours until the viewer's theme message reaches it; measure only after it has.
+  for (const child of viewer.frames) {
+    await waitFor(() => child.executeJavaScript('!!document.documentElement.dataset.theme'), 'a HtmlView to receive the theme')
+  }
+  await sleep(200)
 
   const messages = await host.executeJavaScript('window.__messages')
   const diagnostics = messages.filter((m) => m.type === 'diagnostics').flatMap((m) => m.diagnostics)
-  const options = JSON.stringify({ backdrop: theme.backdrop })
+  const options = JSON.stringify({ backdrop })
   const main = await inFrame(viewer, `auditContrast(${options})`)
   const backdrops = await inFrame(viewer, `frameBackdrops(${options})`)
   const frames = []
   for (const [index, child] of viewer.frames.entries()) {
-    const result = await inFrame(child, `auditContrast(${JSON.stringify({ backdrop: backdrops[index] || theme.backdrop })})`)
+    const result = await inFrame(child, `auditContrast(${JSON.stringify({ backdrop: backdrops[index] || backdrop })})`)
     frames.push({ label: `HtmlView #${index + 1}`, ...result })
   }
 
@@ -117,7 +120,7 @@ async function run() {
     if (!fs.existsSync(viewerPath)) throw new Error(`${viewerPath} is missing; run npm run prepare:whale-ui first`)
     const hostFile = writeHostPage(directory)
     const results = []
-    for (const theme of themeCases()) {
+    for (const theme of THEMES) {
       for (const page of programs) results.push(await auditPage(win, hostFile, theme, page))
     }
     return { viewer: viewerPath, results }
@@ -132,7 +135,7 @@ app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
 app.whenReady().then(async () => {
-  const watchdog = setTimeout(() => app.exit(3), 240000)
+  const watchdog = setTimeout(() => app.exit(3), 280000)
   let code = 0
   try {
     fs.writeFileSync(outPath, JSON.stringify(await run(), null, 2))

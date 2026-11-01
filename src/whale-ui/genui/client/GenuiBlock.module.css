@@ -46,6 +46,15 @@
   --dsl-g-tint: 8%;
   --dsl-g-tint-quiet: 8%;
   --dsl-g-tint-strong: 14%;
+
+  /* Ink for words and glyphs. State fills and the label tiers below primary are tuned for tints, bars and hints; as text
+     they fall under 4.5:1 on a light page and on their own tints, so each text step moves toward the primary ink.
+     light-dark() picks how much to keep per color-scheme; dark values mostly hold already. */
+  --dsl-g-accent-text: light-dark(color-mix(in srgb, var(--dsl-g-accent) 75%, var(--dsw-alias-label-primary)), color-mix(in srgb, var(--dsl-g-accent) 90%, var(--dsw-alias-label-primary)));
+  --dsl-g-success-text: light-dark(color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, var(--dsw-alias-label-primary)), color-mix(in srgb, var(--dsw-alias-state-success-primary) 85%, var(--dsw-alias-label-primary)));
+  --dsl-g-warn-text: light-dark(color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-label-primary)), var(--dsw-alias-state-warn-primary));
+  --dsl-g-danger-text: light-dark(color-mix(in srgb, var(--dsw-alias-state-error-primary) 75%, var(--dsw-alias-label-primary)), color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)));
+  --dsl-g-tertiary-text: light-dark(color-mix(in srgb, var(--dsw-alias-label-tertiary) 80%, var(--dsw-alias-label-primary)), var(--dsw-alias-label-tertiary));
   --dsl-g-font-mono: var(--ds-font-family-code);
   font-family: var(--dsw-font-family);
   font-size: var(--dsl-g-font-body);
@@ -154,7 +163,7 @@
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
 }
 
 /* ---------- text ---------- */
@@ -213,19 +222,19 @@
 .button.danger {
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) var(--dsl-g-tint), transparent);
   border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 30%, transparent);
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--dsl-g-danger-text);
 }
 .button.success {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) var(--dsl-g-tint), transparent);
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 30%, transparent);
-  color: var(--dsw-alias-state-success-secondary);
+  color: var(--dsl-g-success-text);
 }
 .button.ghost { background: transparent; border-color: transparent; }
 .button.full { width: 100%; }
 .button.small { min-height: 28px; padding: 4px 12px; font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); border-radius: var(--dsw-radius-button-sm, 14px); }
 
 .field { display: flex; flex-direction: column; gap: var(--dsl-g-gap-xs); }
-.field > span { font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-tertiary); }
+.field > span { font-size: var(--dsl-g-font-meta); color: var(--dsl-g-tertiary-text); }
 
 .input, .select {
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-1));
@@ -246,7 +255,7 @@
   outline: 2px solid var(--dsl-g-accent);
   outline-offset: 1px;
 }
-.input::placeholder { color: var(--dsw-alias-label-caption); }
+.input::placeholder, .textarea::placeholder { color: var(--dsl-g-tertiary-text); opacity: 1; }
 
 .checkbox { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .checkbox input { accent-color: var(--dsl-g-accent); width: 15px; height: 15px; }
@@ -257,7 +266,7 @@
 }
 
 .link {
-  color: var(--dsl-g-accent);
+  color: var(--dsl-g-accent-text);
   background: none;
   border: none;
   font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body);
@@ -270,7 +279,7 @@
 
 /* Link without a whitelisted href: plain styled text, no pointer affordance. */
 .linkText {
-  color: var(--dsl-g-accent);
+  color: var(--dsl-g-accent-text);
   font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body);
   font-family: inherit;
   text-decoration: none;
@@ -293,7 +302,7 @@
    source, reading or credit; quieter and smaller than the alt label above. */
 .mediaCaption {
   font-size: var(--dsl-g-font-data);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   line-height: var(--dsl-g-line-meta);
   text-align: center;
 }
@@ -302,7 +311,7 @@
    unloaded <img> collapses to 0px and the card looks broken. */
 img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl-g-surface); }
 .videoPlayer { max-height: min(70vh, 720px); background: var(--dsw-alias-bg-mask-photo, var(--dsw-alias-bg-base)); object-fit: contain; }
-.mediaError { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); color: var(--dsw-alias-state-error-primary); }
+.mediaError { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); color: var(--dsl-g-danger-text); }
 
 /* ---------- summary ---------- */
 .hero {
@@ -364,9 +373,9 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   padding: 0 4px;
   border-radius: 4px;
 }
-.inlineLink { color: var(--dsl-g-accent); text-decoration: underline; text-underline-offset: 2px; }
+.inlineLink { color: var(--dsl-g-accent-text); text-decoration: underline; text-underline-offset: 2px; }
 .inlineLink:hover { text-decoration-thickness: 2px; }
-.inlineFileLink { padding: 0; border: 0; background: none; color: var(--dsl-g-accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.inlineFileLink { padding: 0; border: 0; background: none; color: var(--dsl-g-accent-text); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .inlineFileLink:hover { text-decoration-thickness: 2px; }
 .inlineFileLink:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 2px; border-radius: 3px; }
 
@@ -389,22 +398,22 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 }
 .badge.success {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) var(--dsl-g-tint), transparent);
-  color: var(--dsw-alias-state-success-secondary);
+  color: var(--dsl-g-success-text);
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 30%, transparent);
 }
 .badge.warn {
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) var(--dsl-g-tint), transparent);
-  color: var(--dsw-alias-state-warn-secondary);
+  color: var(--dsl-g-warn-text);
   border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 30%, transparent);
 }
 .badge.danger {
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) var(--dsl-g-tint), transparent);
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--dsl-g-danger-text);
   border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 30%, transparent);
 }
 .badge.accent {
   background: color-mix(in srgb, var(--dsl-g-accent) var(--dsl-g-tint), transparent);
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsl-g-accent-text);
   border-color: color-mix(in srgb, var(--dsl-g-accent) 30%, transparent);
 }
 
@@ -464,7 +473,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   color: var(--dsw-alias-label-secondary);
   background: color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
 }
-.statDelta.up { color: var(--dsw-alias-state-success-secondary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent); }
+.statDelta.up { color: var(--dsl-g-success-text); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent); }
 .statSpark {
   display: block;
   width: 100%;
@@ -475,7 +484,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 }
 .statHero .statSpark { width: 100%; margin: 4px 0 0; }
 
-.statDelta.down { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent); }
+.statDelta.down { color: var(--dsl-g-danger-text); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent); }
 
 .progress { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
 .progressRow {
@@ -574,8 +583,8 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 /* Signed values read as a delta chip (+12.4% / -3%) without any new spec
    field: the renderer classifies the cell text. */
 .tdDelta { font-weight: 600; }
-.tdDeltaUp { color: var(--dsw-alias-state-success-secondary); }
-.tdDeltaDown { color: var(--dsw-alias-state-error-primary); }
+.tdDeltaUp { color: var(--dsl-g-success-text); }
+.tdDeltaDown { color: var(--dsl-g-danger-text); }
 /* A cell carrying real line breaks opts out of the `nowrap` data voice.
    Prose keeps `pre-line` (newlines paint, spaces collapse as everywhere else);
    a code-shaped cell uses `pre-wrap` so leading indentation survives too.
@@ -672,7 +681,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 /* The ACTIVE sort column stays at full contrast — the sort direction mark
    alone is too faint to read which header owns the order. */
 .table th[aria-sort]:not([aria-sort="none"]) .thSort { color: var(--dsw-alias-label-primary); }
-.thSortMark { color: var(--dsl-g-accent); }
+.thSortMark { color: var(--dsl-g-accent-text); }
 .thSort:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 1px; border-radius: var(--dsl-g-radius-control); }
 
 /* Chart skeleton: plot area with baseline + 25/50/75% gridlines, category
@@ -688,7 +697,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   transform: translateY(50%);
   font-family: var(--dsl-g-font-mono);
   font-size: var(--dsl-g-font-data); line-height: var(--dsl-g-line-meta);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   white-space: nowrap;
 }
 .chartPlot {
@@ -848,7 +857,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   place-items: center;
   font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body);
   font-weight: 600;
-  color: var(--dsw-static-neutral-bluish-00);
+  color: var(--dsw-static-neutral-bluish-1000, #0f1115);
   flex-shrink: 0;
   border: 1px solid var(--dsw-alias-border-l2);
   box-shadow: none;
@@ -873,10 +882,10 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .calloutSuccess { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) var(--dsl-g-tint), transparent); }
 .calloutWarning { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) var(--dsl-g-tint), transparent); }
 .calloutError { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) var(--dsl-g-tint), transparent); }
-.calloutInfo .calloutTitle { color: var(--dsw-alias-state-business-primary); }
-.calloutSuccess .calloutTitle { color: var(--dsw-alias-state-success-primary); }
-.calloutWarning .calloutTitle { color: var(--dsw-alias-state-warn-primary); }
-.calloutError .calloutTitle { color: var(--dsw-alias-state-error-primary); }
+.calloutInfo .calloutTitle { color: var(--dsl-g-accent-text); }
+.calloutSuccess .calloutTitle { color: var(--dsl-g-success-text); }
+.calloutWarning .calloutTitle { color: var(--dsl-g-warn-text); }
+.calloutError .calloutTitle { color: var(--dsl-g-danger-text); }
 .calloutTitle {
   display: flex;
   align-items: center;
@@ -913,7 +922,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
    reads as progress instead of a row of badges. */
 .stepDone:not(:last-child)::before { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 45%, transparent); }
 .stepTitle { transition: color var(--dsl-g-dur-fast); }
-.stepActive .stepTitle { color: var(--dsl-g-accent); }
+.stepActive .stepTitle { color: var(--dsl-g-accent-text); }
 .stepMarker {
   width: 24px;
   height: 24px;
@@ -931,13 +940,13 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .stepDone .stepMarker {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 18%, transparent);
   border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 55%, transparent);
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsl-g-success-text);
   font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body);
 }
 .stepActive .stepMarker {
   background: color-mix(in srgb, var(--dsl-g-accent) var(--dsl-g-tint-strong), transparent);
   border-color: var(--dsl-g-accent);
-  color: var(--dsl-g-accent);
+  color: var(--dsl-g-accent-text);
 }
 .stepContent { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
 .stepTitle { font-size: var(--dsl-g-font-body); font-weight: 600; color: var(--dsw-alias-label-primary); line-height: var(--dsl-g-line-body); }
@@ -971,7 +980,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .lineGrid { stroke: var(--dsw-alias-border-l1); stroke-width: 1; }
 .lineGridAxis { stroke: var(--dsl-g-border-strong); stroke-width: 1; }
 .lineTick {
-  fill: var(--dsw-alias-label-tertiary);
+  fill: var(--dsl-g-tertiary-text);
   font-family: var(--dsl-g-font-mono);
   font-size: var(--dsl-g-font-data); line-height: var(--dsl-g-line-meta);
 }
@@ -1010,9 +1019,9 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .donutSeg { transition: filter var(--dsl-g-dur-fast); }
 .donutSeg:hover { filter: brightness(1.18); }
 .donutTotal { fill: var(--dsw-alias-label-primary); font-size: var(--dsl-g-font-h2); line-height: var(--dsl-g-line-title); font-weight: 600; }
-.donutTotalLabel { fill: var(--dsw-alias-label-tertiary); font-size: var(--dsl-g-font-data); line-height: var(--dsl-g-line-meta); }
+.donutTotalLabel { fill: var(--dsl-g-tertiary-text); font-size: var(--dsl-g-font-data); line-height: var(--dsl-g-line-meta); }
 .donutLegend { display: flex; flex-direction: column; justify-content: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-secondary); line-height: var(--dsl-g-line-meta); }
-.donutPct { color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
+.donutPct { color: var(--dsl-g-tertiary-text); font-variant-numeric: tabular-nums; }
 
 /* ---------- progress ring + target marker ---------- */
 
@@ -1108,8 +1117,8 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   cursor: pointer;
   text-align: left;
 }
-.detailToggle:hover { color: var(--dsl-g-accent); }
-.detailCell:hover .detailToggle { color: var(--dsl-g-accent); }
+.detailToggle:hover { color: var(--dsl-g-accent-text); }
+.detailCell:hover .detailToggle { color: var(--dsl-g-accent-text); }
 .detailToggle:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 2px; border-radius: 4px; }
 .detailContent { position: relative; z-index: 1; vertical-align: middle; cursor: pointer; }
 /* Chevron glyphs share ONE optical size (11px) across every collapsible —
@@ -1117,7 +1126,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .detailChevron {
   flex-shrink: 0;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   transition: transform var(--dsl-g-dur-fast) var(--dsl-g-ease-out);
 }
 .detailChevron[data-open="true"] { transform: rotate(90deg); }
@@ -1174,11 +1183,11 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
-.groupToggle:hover { color: var(--dsl-g-accent); }
-.groupLabel:hover { color: var(--dsl-g-accent); }
+.groupToggle:hover { color: var(--dsl-g-accent-text); }
+.groupLabel:hover { color: var(--dsl-g-accent-text); }
 .groupToggle:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 2px; border-radius: 4px; }
 .groupLabel { position: relative; z-index: 1; display: inline-flex; vertical-align: middle; align-items: center; gap: 8px; cursor: pointer; }
-.groupChevron { color: var(--dsw-alias-label-tertiary); font-size: 12px; width: 10px; }
+.groupChevron { color: var(--dsl-g-tertiary-text); font-size: 12px; width: 10px; }
 .groupCount {
   padding: 0 8px;
   border-radius: var(--dsl-g-radius-pill);
@@ -1216,10 +1225,10 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .cardSuccess { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) var(--dsl-g-tint), transparent); }
 .cardWarning { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) var(--dsl-g-tint), transparent); }
 .cardDanger { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) var(--dsl-g-tint), transparent); }
-.cardInfo > .cardTitle { color: var(--dsw-alias-state-business-primary); }
-.cardSuccess > .cardTitle { color: var(--dsw-alias-state-success-primary); }
-.cardWarning > .cardTitle { color: var(--dsw-alias-state-warn-primary); }
-.cardDanger > .cardTitle { color: var(--dsw-alias-state-error-primary); }
+.cardInfo > .cardTitle { color: var(--dsl-g-accent-text); }
+.cardSuccess > .cardTitle { color: var(--dsl-g-success-text); }
+.cardWarning > .cardTitle { color: var(--dsl-g-warn-text); }
+.cardDanger > .cardTitle { color: var(--dsl-g-danger-text); }
 
 /* ---------- horizontal bars (chart.horizontal) ---------- */
 
@@ -1285,7 +1294,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   min-width: 18px;
   font-family: var(--dsl-g-font-mono);
   font-size: var(--dsl-g-font-data); line-height: var(--dsl-g-line-meta);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   font-variant-numeric: tabular-nums;
 }
 .cellBar {
@@ -1317,7 +1326,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 /* ---------- radio / switch / textarea ---------- */
 
 .fieldGroup { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
-.fieldLabel { font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); color: var(--dsw-alias-label-tertiary); }
+.fieldLabel { font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); color: var(--dsl-g-tertiary-text); }
 .radio { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-title); color: var(--dsw-alias-label-secondary); cursor: pointer; line-height: var(--dsl-g-line-body); }
 .radio input { accent-color: var(--dsl-g-accent); }
 .radio input:focus-visible {
@@ -1330,20 +1339,20 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 
 .submitRow { display: flex; align-items: center; gap: var(--dsl-g-gap-md); margin-top: 4px; }
 .submit { align-self: flex-start; }
-.submitHint { font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); color: var(--dsw-alias-label-tertiary); }
+.submitHint { font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); color: var(--dsl-g-tertiary-text); }
 
 .btnSent {
   margin-left: var(--dsl-g-gap-sm);
   font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta);
   font-weight: 600;
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsl-g-success-text);
 }
 
 /* local grading result panel */
 .gradeWrap { display: flex; flex-direction: column; gap: var(--dsl-g-gap-md); }
 .gradeScore { display: flex; align-items: baseline; gap: var(--dsl-g-gap-sm); }
 .gradeScoreValue { font-size: var(--dsl-g-font-display); font-weight: 600; color: var(--dsw-alias-label-primary); line-height: var(--dsl-g-line-stat); }
-.gradeScoreLabel { font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); color: var(--dsw-alias-label-tertiary); }
+.gradeScoreLabel { font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); color: var(--dsl-g-tertiary-text); }
 .gradeList { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
 .gradeItem {
   display: grid;
@@ -1365,11 +1374,11 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .gradeItemNo { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 30%, transparent); }
 .gradeQ { grid-column: 1 / -1; margin-bottom: 0; overflow-wrap: anywhere; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .gradeTag { font-weight: 600; }
-.gradeItemOk .gradeTag { color: var(--dsw-alias-state-success-primary); }
-.gradeItemNo .gradeTag { color: var(--dsw-alias-state-error-primary); }
+.gradeItemOk .gradeTag { color: var(--dsl-g-success-text); }
+.gradeItemNo .gradeTag { color: var(--dsl-g-danger-text); }
 .gradeAns { overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); }
-.gradeRight { color: var(--dsw-alias-state-error-primary); }
-.gradeExp { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-tertiary); line-height: var(--dsl-g-line-meta); }
+.gradeRight { color: var(--dsl-g-danger-text); }
+.gradeExp { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: var(--dsl-g-font-meta); color: var(--dsl-g-tertiary-text); line-height: var(--dsl-g-line-meta); }
 
 .switchRow { display: flex; align-items: center; justify-content: space-between; gap: var(--dsl-g-gap-md); cursor: pointer; }
 .switchRow:focus-within .switch { outline: 2px solid var(--dsl-g-accent); outline-offset: 2px; }
@@ -1473,7 +1482,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
    as motion, and the closed/open shapes stay consistent. */
 .accChevron {
   flex-shrink: 0;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   font-size: 12px;
   transition: transform var(--dsl-g-dur-fast) var(--dsl-g-ease-out);
 }
@@ -1503,7 +1512,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 }
 .copyChip:hover { background: var(--dsl-g-hover); }
 .copyChip:active { background: var(--dsl-g-hover-strong); }
-.copyChipDone { border-color: var(--dsw-alias-state-success-primary); color: var(--dsw-alias-state-success-primary); }
+.copyChipDone { border-color: var(--dsw-alias-state-success-primary); color: var(--dsl-g-success-text); }
 
 /* ---------- mermaid ---------- */
 
@@ -1520,8 +1529,8 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   font-family: var(--dsl-g-font-mono);
   font-size: var(--dsl-g-font-meta);
 }
-.mermaidErr { color: var(--dsw-alias-state-error-primary); font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); }
-.mermaidHint { color: var(--dsw-alias-label-tertiary); font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); }
+.mermaidErr { color: var(--dsl-g-danger-text); font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); }
+.mermaidHint { color: var(--dsl-g-tertiary-text); font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); }
 
 /* ---------- scene3d ---------- */
 
@@ -1548,7 +1557,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   min-height: 0;
 }
 .echartHint {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta);
 }
 .echartFallback {
@@ -1561,7 +1570,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   border-radius: var(--dsl-g-radius-surface);
 }
 .echartErr {
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--dsl-g-danger-text);
   font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta);
 }
 .scene3dTitle { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); font-weight: 600; color: var(--dsw-alias-label-primary); }
@@ -1573,7 +1582,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   border: 1px solid var(--dsl-g-border);
 }
 .scene3dCanvas canvas { display: block; }
-.scene3dHint { color: var(--dsw-alias-label-tertiary); font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); }
+.scene3dHint { color: var(--dsl-g-tertiary-text); font-size: var(--dsl-g-font-meta); line-height: var(--dsl-g-line-meta); }
 
 /* ---------- timeline ---------- */
 
@@ -1603,7 +1612,7 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   white-space: nowrap;
   font-family: var(--dsl-g-font-mono);
   font-size: var(--dsl-g-font-data); line-height: var(--dsl-g-line-meta);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   font-variant-numeric: tabular-nums;
 }
 .tlDesc { font-size: var(--dsl-g-font-title); color: var(--dsw-alias-label-secondary); margin-top: 4px; line-height: var(--dsl-g-line-body); }
@@ -1650,13 +1659,13 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
   flex-shrink: 0;
   font-size: 12px;
   line-height: 1;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   transition: transform var(--dsl-g-dur-fast) var(--dsl-g-ease-out);
   transform-origin: 50% 50%;
 }
 .ftChevron[data-open="true"] { transform: rotate(90deg); }
-.ftGlyph { display: inline-flex; flex-shrink: 0; color: var(--dsw-alias-label-tertiary); }
-.ftGlyphDir { color: var(--dsl-g-accent); }
+.ftGlyph { display: inline-flex; flex-shrink: 0; color: var(--dsl-g-tertiary-text); }
+.ftGlyphDir { color: var(--dsl-g-accent-text); }
 /* Long paths must stay on ONE line (issue #28: per-character vertical
    wrapping when the host message column gets narrow). */
 .ftName {
@@ -1691,9 +1700,9 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
 .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dsl-g-gap-xs); font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); }
 .bcItem { display: inline-flex; align-items: center; gap: var(--dsl-g-gap-xs); }
 .bcText { color: var(--dsw-alias-label-secondary); cursor: pointer; }
-.bcText:hover { color: var(--dsl-g-accent); }
+.bcText:hover { color: var(--dsl-g-accent-text); }
 .bcCurrent { color: var(--dsw-alias-label-primary); font-weight: 600; cursor: default; }
-.bcSep { color: var(--dsw-alias-label-caption, var(--dsw-alias-label-tertiary)); }
+.bcSep { color: var(--dsl-g-tertiary-text); }
 
 /* ---------- streaming skeleton ----------
    Shown while a fence body is still arriving and no component has finished.
@@ -1860,7 +1869,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   padding: 12px 12px;
   font-size: var(--dsl-g-font-title);
   font-family: inherit;
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsl-g-success-text);
   font-weight: 600;
   line-height: var(--dsl-g-line-body);
 }
@@ -1875,7 +1884,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   padding: 12px 12px;
   font-size: var(--dsl-g-font-title);
   font-family: inherit;
-  color: var(--dsw-alias-state-error-primary);
+  color: var(--dsl-g-danger-text);
   font-weight: 600;
   line-height: var(--dsl-g-line-body);
 }
@@ -1890,7 +1899,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   padding: 12px 12px;
   font-size: var(--dsl-g-font-title);
   font-family: inherit;
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsl-g-success-text);
   line-height: var(--dsl-g-line-body);
 }
 .quizMarker {
@@ -1898,18 +1907,18 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   width: 14px;
   text-align: center;
   font-weight: 600;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   flex-shrink: 0;
 }
-.quizOptCorrect .quizMarker { color: var(--dsw-alias-state-success-primary); }
-.quizOptWrong .quizMarker { color: var(--dsw-alias-state-error-primary); }
+.quizOptCorrect .quizMarker { color: var(--dsl-g-success-text); }
+.quizOptWrong .quizMarker { color: var(--dsl-g-danger-text); }
 .quizResult { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
-.quizCorrectMsg { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); font-weight: 600; color: var(--dsw-alias-state-success-primary); }
-.quizWrongMsg { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); font-weight: 600; color: var(--dsw-alias-state-error-primary); }
+.quizCorrectMsg { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); font-weight: 600; color: var(--dsl-g-success-text); }
+.quizWrongMsg { font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body); font-weight: 600; color: var(--dsl-g-danger-text); }
 .quizFeedback { font-size: var(--dsl-g-font-meta); font-weight: 400; color: var(--dsw-alias-label-secondary); margin-top: 4px; line-height: var(--dsl-g-line-meta); }
 .quizExplanation {
   font-size: var(--dsl-g-font-meta);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
   line-height: var(--dsl-g-line-meta);
   padding: var(--dsl-g-gap-sm) 12px;
   border-top: 1px solid var(--dsl-g-border);
@@ -2061,7 +2070,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
 
 .panelTplActive {
   border-color: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsl-g-accent-text);
 }
 
 .panelOnboard .panelHeader {
@@ -2082,7 +2091,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   border-top: 1px solid var(--dsw-alias-border-l1);
   font-size: var(--dsl-g-font-data);
   line-height: var(--dsl-g-line-meta);
-  color: var(--dsw-alias-state-success-primary);
+  color: var(--dsl-g-success-text);
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent);
 }
 
@@ -2091,7 +2100,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   border-top: 1px solid var(--dsw-alias-border-l1);
   font-size: var(--dsl-g-font-data);
   line-height: var(--dsl-g-line-meta);
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsl-g-accent-text);
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
 }
 
@@ -2132,7 +2141,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
 .achToastName {
   font-size: var(--dsl-g-font-title); line-height: var(--dsl-g-line-body);
   font-weight: 600;
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsl-g-accent-text);
 }
 
 .achToastDesc {
@@ -2152,7 +2161,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   /* The semantic token adapts per theme: deepseek-500 on light canvases
      (≈5.7:1), deepseek-400 on dark — never the hardcoded #7ba8ff that
      failed AA on light backgrounds. */
-  color: var(--dsw-alias-state-business-primary);
+  color: var(--dsl-g-accent-text);
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -2172,7 +2181,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   place-items: center;
   flex: none;
   margin-left: auto;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsl-g-tertiary-text);
 }
 
 .panelBody {
@@ -2227,10 +2236,10 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
 /* Tones pick the *foreground*; the plate derives its wash from currentColor,
    so one declaration keeps glyph and plate on the same hue. */
 .iconNode[data-tone="muted"] { color: var(--dsw-alias-label-secondary); }
-.iconNode[data-tone="info"] { color: var(--dsl-g-accent); }
-.iconNode[data-tone="success"] { color: var(--dsw-alias-state-success-primary); }
-.iconNode[data-tone="warning"] { color: var(--dsw-alias-state-warn-primary); }
-.iconNode[data-tone="danger"] { color: var(--dsw-alias-state-error-primary); }
+.iconNode[data-tone="info"] { color: var(--dsl-g-accent-text); }
+.iconNode[data-tone="success"] { color: var(--dsl-g-success-text); }
+.iconNode[data-tone="warning"] { color: var(--dsl-g-warn-text); }
+.iconNode[data-tone="danger"] { color: var(--dsl-g-danger-text); }
 .iconDot {
   display: block;
   border-radius: 50%;
@@ -2291,7 +2300,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   justify-content: center;
   min-height: 32px;
   border-radius: var(--dsl-g-radius-control);
-  color: var(--dsw-alias-label-caption, var(--dsw-alias-label-secondary));
+  color: var(--dsl-g-tertiary-text);
   font-size: var(--dsl-g-font-meta);
   line-height: var(--dsl-g-line-meta);
   opacity: 0.6;
@@ -2360,10 +2369,10 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
 }
 
 /* `text.tone`: a red run without wrapping it in a badge. */
-.text[data-tone="danger"] { color: var(--dsw-alias-state-error-primary); }
-.text[data-tone="success"] { color: var(--dsw-alias-state-success-primary); }
-.text[data-tone="warning"] { color: var(--dsw-alias-state-warn-primary); }
-.text[data-tone="info"] { color: var(--dsl-g-accent); }
+.text[data-tone="danger"] { color: var(--dsl-g-danger-text); }
+.text[data-tone="success"] { color: var(--dsl-g-success-text); }
+.text[data-tone="warning"] { color: var(--dsl-g-warn-text); }
+.text[data-tone="info"] { color: var(--dsl-g-accent-text); }
 .text[data-tone="muted"] { color: var(--dsw-alias-label-secondary); }
 
 /* `arrow`: a hairline connector. Fixed length, chevron head, centred — the
@@ -2373,7 +2382,7 @@ button.ftNameBtn[aria-expanded] { cursor: pointer; }
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  color: var(--dsl-g-tertiary-text);
   line-height: 1;
 }
 .arrow[data-dir="down"] { padding: 4px 0; }
