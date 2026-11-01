@@ -435,6 +435,36 @@ export function TasksSectionHeader({ expanded, containsCurrent, onToggle, onCrea
   )
 }
 
+/**
+ * Header of the cross-workspace pinned section: chevron + localized title, no create control.
+ * @param props.expanded - whether the pinned rows below are shown.
+ * @param props.onToggle - expand/collapse.
+ * @param props.t - the browser root's locale seat.
+ * @returns the section header row.
+ */
+export function PinnedSectionHeader({ expanded, onToggle, t }: {
+  expanded: boolean
+  onToggle: () => void
+  t: RowTranslate
+}) {
+  return (
+    <div
+      className={clsx(css.projectRow, css.tasksSection)}
+      data-row-key="pinned-section"
+      role="treeitem"
+      aria-expanded={expanded}
+      onClick={onToggle}
+    >
+      <span className={clsx(css.slot, css.chevron, css.tasksChevron)}>
+        <IconTriangleRightFillRegular className={clsx(css.arrow, expanded && css.arrowOpen)} size={14} />
+      </span>
+      <span className={css.projectText}>
+        <span className={css.title}>{t('section.pinned')}</span>
+      </span>
+    </div>
+  )
+}
+
 /* v8 ignore next 3 -- closed-union backstop; only reached if the status is forged */
 function assertNever(value: never): never {
   throw new Error(`unknown pending interaction: ${String(value)}`)
@@ -794,6 +824,8 @@ export function SessionNodeItem({
       >
         {title}
       </span>
+      {/* Pinned-section rows leave their Workspace group, so the row names it. */}
+      {node.context !== undefined && <span className={css.context} title={node.context}>{node.context}</span>}
       {!row.blank && renderSlot('sidebar.session.row.badge', { sessionId: node.id })}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -808,8 +840,8 @@ export function SessionNodeItem({
         </span>
       )}
       {/* Trails the time so the marker occupies the same right-edge cell as
-          the hover pin button that replaces it. */}
-      {row.pinned && !row.archived && <PinnedIndicator t={t} />}
+          the hover pin button that replaces it. The pinned section already says every row is pinned. */}
+      {row.pinned && !row.archived && node.context === undefined && <PinnedIndicator t={t} />}
       {/* The strip's clicks stay in the strip: the trigger and every
           row.action entry act without also opening the row, so an entry's
           button needs no propagation handling of its own. */}

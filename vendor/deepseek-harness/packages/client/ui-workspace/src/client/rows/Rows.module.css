@@ -283,6 +283,20 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Pinned-section rows name their Workspace after the title, quieter than the time label. */
+.sessionRow .context {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 64px;
+  margin-right: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .pinIndicator {
   display: inline-flex;
   flex: none;

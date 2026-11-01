@@ -169,14 +169,17 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/api/workspace-controller/src/client/model.ts': 'export interface WorkspaceSnapshot { readonly scratchCwd?: string }\n',
       'packages/workspace/workspace/src/index.ts': 'private async readoptableSessionIds(canonical: string) {} workspace/session-before-archive\n',
       'packages/client/ui-workspace/src/client/navigation.ts': 'connectNoDirectory() { return this.workspaces.list.getSnapshot().scratchCwd }\nconnectScratchCwd() { return this.workspaces.list.getSnapshot().scratchCwd }\ndeleteWorkspace() {}\nregisterDirectoryAction() {}\nrowLabel\n',
-      'packages/client/ui-workspace/src/client/tree.ts': 'export function isNoDirectorySession() {}\nexport function currentGroupKey() {}\n',
+      'packages/client/ui-workspace/src/client/tree.ts': 'export function isNoDirectorySession() {}\nexport function currentGroupKey() {}\nexport function derivePinned() {}\nconst opts = { hoistPinned: true }\nexport const PINNED_SECTION_KEY = 1\n',
       'packages/client/ui-workspace/src/client/WorkspacePicker.tsx': "const NO_DIRECTORY = '::no-directory'\nonPickNoDirectory?.()\naction.picker !== false\n",
-      'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx': '<TasksSectionHeader onCreate={() => { connectNoDirectory() }} /><GroupSessionRun open={group.expanded} /><ArchivedSessionSection visible={showArchivedSection} />\n',
+      'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx': '<TasksSectionHeader onCreate={() => { connectNoDirectory() }} /><GroupSessionRun open={group.expanded} /><ArchivedSessionSection visible={showArchivedSection} /><PinnedSectionHeader />derivePinned()\n',
       'packages/client/ui-workspace/src/client/ShowArchivedListRow.tsx': 'const checked = showArchivedList\n',
       'packages/client/ui-workspace/src/client/contract/slots.ts': "'sidebar.session.row.badge': { kind: 'list' }\n",
-      'packages/client/ui-workspace/src/client/rows/Rows.tsx': "renderSlot('sidebar.session.row.badge', { sessionId })\ndirectoryItems\n",
+      'packages/client/ui-workspace/src/client/rows/Rows.tsx': "renderSlot('sidebar.session.row.badge', { sessionId })\ndirectoryItems\nPinnedSectionHeader\nclassName={css.context}\n",
+      'packages/client/ui-workspace/src/client/rows/Rows.module.css': '.sessionRow .context { max-width: 40%; }\n',
+      'packages/client/ui-workspace/tests/tree.client.spec.ts': "describe('pinned section')\n",
+      'packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx': "it('leads the sidebar with a pinned section holding every Workspace pins')\n",
       'packages/client/ui-conversation/src/client/contract/slots.ts': 'export interface HeroOptionsOwnerProps { openWithDraft }\n',
-      'packages/client/ui-workspace/src/client/locales.ts': "'menu.noDirectory': 'No workspace folder',\n",
+      'packages/client/ui-workspace/src/client/locales.ts': "'menu.noDirectory': 'No workspace folder',\n'section.pinned': 'Pinned',\n",
       'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx': "const noDirectorySession = false\nvoid selectNoDirectory()\nstack.dataset.composerEntering = ''\n<div data-composer-flow=\"\">\n",
       'packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx': 'function revealTurn() {}\nif (revealTurn(snapshot) !== data.turn) {}\n',
       'packages/client/ui-conversation/src/client/apply.ts': "selectNoDirectory: async () => { await workspaceNavigation.openNoDirectory() }\nimport { TypingFxRow } from './settings/TypingFxRow.tsx'\nctx.slots.inject('settings.appearance.item', () => {})\ntypingFx: submissionPolicy.typingFx\n",
@@ -464,7 +467,7 @@ test('assertDesktopForks throws when the no-directory picker entry or the Ungrou
 
   const fixed = makeFixture(t);
   const localesPath = path.join(fixed, ...'packages/client/ui-workspace/src/client/locales.ts'.split('/'));
-  fs.writeFileSync(localesPath, "'menu.noDirectory': 'No workspace folder',\n'group.ungrouped': 'Ungrouped',\n");
+  fs.writeFileSync(localesPath, "'menu.noDirectory': 'No workspace folder',\n'section.pinned': 'Pinned',\n'group.ungrouped': 'Ungrouped',\n");
   assert.throws(() => assertDesktopForks(fixed, '0.1.0-rc.5'), /Ungrouped/);
 });
 

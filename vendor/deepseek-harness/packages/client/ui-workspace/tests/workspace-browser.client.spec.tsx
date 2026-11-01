@@ -2141,121 +2141,81 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one', 'three'])
   })
 
-  it('drags a pinned row by moving its position in the complete Session sequence', () => {
-    const sessions = sessionState([
-      summary('one', 4), summary('two', 3), summary('three', 2), summary('four', 1),
-    ])
-    createWorkspaceViewStore().create().actions.setSessionOrder('alpha', ['three', 'one', 'four', 'two'], {})
-    const b = mount({
+  it('leads the sidebar with a pinned section holding every Workspace\'s pins', () => {
+    const sessions = sessionState([summary('one', 4), summary('two', 3), summary('three', 2), summary('four', 1)])
+    mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState(
-        [workspace('alpha', ['one', 'two', 'three', 'four'])], [], [sid('one'), sid('two')],
+        [workspace('alpha', ['one', 'two']), workspace('beta', ['three', 'four'])], [], [sid('four'), sid('two')],
       )),
     })
-    fireEvent.click(screen.getByText('alpha'))
-    expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
-      expect.stringContaining('one'), expect.stringContaining('two'),
-      expect.stringContaining('three'), expect.stringContaining('four'),
+    // Both groups are folded, yet their pins already lead the list, most recently pinned first,
+    // and each pinned row names the Workspace that owns it.
+    expect(mainListRows().map(row => row.textContent)).toEqual([
+      '已置顶',
+      expect.stringMatching(/^four.*beta/su), expect.stringMatching(/^two.*alpha/su),
+      expect.stringContaining('alpha'), expect.stringContaining('beta'),
     ])
-    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
-    const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
-    one.getBoundingClientRect = () => ({
-      top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
-    })
-    fireEvent.dragStart(two, { dataTransfer: dragData() })
-    fireDrag(one, 'dragOver', 105)
-    fireDrag(one, 'drop', 105)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one', 'four'])
-    expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
-      expect.stringContaining('two'), expect.stringContaining('one'),
-      expect.stringContaining('three'), expect.stringContaining('four'),
-    ])
+    // The section already says "pinned", so its rows carry no pin marker of their own.
+    expect(screen.queryAllByRole('img', { name: '已置顶' })).toHaveLength(0)
 
-    // Dropping the trailing pinned row after the leading one restates the
-    // current block: a no-op that writes nothing.
-    const oneAgain = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
-    const twoAgain = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
-    twoAgain.getBoundingClientRect = () => ({
-      top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
-    })
-    fireEvent.dragStart(oneAgain, { dataTransfer: dragData() })
-    fireDrag(twoAgain, 'drop', 130)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one', 'four'])
+    // An unfolded group keeps only its ordinary rows: the pin left it for the section.
+    fireEvent.click(screen.getByRole('treeitem', { name: /^alpha$/ }))
+    expect(mainListRows().map(row => row.textContent)).toEqual([
+      '已置顶',
+      expect.stringMatching(/^four.*beta/su), expect.stringMatching(/^two.*alpha/su),
+      expect.stringContaining('alpha'), expect.stringMatching(/^one/u), expect.stringContaining('beta'),
+    ])
   })
 
-  it('keeps pinned and unpinned rows in separate drag domains', () => {
+  it('keeps pinned-section rows undraggable because their order is the pin order', () => {
+    const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
+    mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])], [], [sid('one')])),
+    })
+    fireEvent.click(screen.getByRole('treeitem', { name: /^alpha$/ }))
+    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
+    expect(one.getAttribute('draggable')).not.toBe('true')
+    expect(two.getAttribute('draggable')).toBe('true')
+  })
+
+  it('moves a row between its group and the pinned section as its pin changes', () => {
+    const sessions = sessionState([summary('one', 2), summary('two', 1)])
+    const unpinned = workspaceState([workspace('alpha', ['one', 'two'])])
+    const b = mount({ useSessions: hook(sessions), useWorkspaces: hook(unpinned) })
+    fireEvent.click(screen.getByRole('treeitem', { name: /^alpha$/ }))
+    expect(screen.queryByText('已置顶')).toBeNull()
+    const plain = [expect.stringContaining('alpha'), expect.stringMatching(/^one/u), expect.stringMatching(/^two/u)]
+    expect(mainListRows().map(row => row.textContent)).toEqual(plain)
+
+    rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('two')])) })
+    expect(mainListRows().map(row => row.textContent)).toEqual([
+      '已置顶', expect.stringMatching(/^two.*alpha/su), expect.stringContaining('alpha'), expect.stringMatching(/^one/u),
+    ])
+
+    rerender(b, { useWorkspaces: hook(unpinned) })
+    expect(screen.queryByText('已置顶')).toBeNull()
+    expect(mainListRows().map(row => row.textContent)).toEqual(plain)
+  })
+
+  it('folds the pinned section into the store and hides it in the archived-only view', () => {
     const sessions = sessionState([summary('one', 2), summary('two', 1)])
     const b = mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])], [], [sid('one')])),
     })
-    fireEvent.click(screen.getByText('alpha'))
-    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
-    const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
-    for (const row of [one, two]) {
-      row.getBoundingClientRect = () => ({
-        top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
-      })
-    }
-    const before = b.store.getSnapshot().sessionOrderByAccount.alpha
+    const header = screen.getByRole('treeitem', { name: /^已置顶$/ })
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(b.store.getSnapshot().groupExpansion['::pinned']).toBe(false)
+    fireEvent.click(header)
+    expect(header.getAttribute('aria-expanded')).toBe('true')
 
-    // A pinned source ignores unpinned targets…
-    fireEvent.dragStart(one, { dataTransfer: dragData() })
-    fireDrag(two, 'dragOver', 105)
-    fireDrag(two, 'drop', 105)
-    fireEvent.dragEnd(one)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(before)
-
-    // …and an unpinned source ignores pinned targets.
-    fireEvent.dragStart(two, { dataTransfer: dragData() })
-    fireDrag(one, 'dragOver', 105)
-    fireDrag(one, 'drop', 105)
-    fireEvent.dragEnd(two)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(before)
-  })
-
-  it('ignores a pinned drop whose pin state moved in flight', () => {
-    const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
-    const b = mount({
-      useSessions: hook(sessions),
-      useWorkspaces: hook(workspaceState(
-        [workspace('alpha', ['one', 'two', 'three'])], [], [sid('one'), sid('two')],
-      )),
-    })
-    fireEvent.click(screen.getByText('alpha'))
-    const before = b.store.getSnapshot().sessionOrderByAccount.alpha
-    const markTarget = (): HTMLElement => {
-      const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
-      two.getBoundingClientRect = () => ({
-        top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
-      })
-      return two
-    }
-
-    // The target unpins in flight: its id left the pinned block.
-    let one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
-    fireEvent.dragStart(one, { dataTransfer: dragData() })
-    fireDrag(markTarget(), 'dragOver', 105)
-    rerender(b, {
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])], [], [sid('one')])),
-    })
-    fireEvent.dragEnd(screen.getByText('one').closest('[role="treeitem"]') as HTMLElement)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(before)
-
-    // The source unpins in flight.
-    rerender(b, {
-      useWorkspaces: hook(workspaceState(
-        [workspace('alpha', ['one', 'two', 'three'])], [], [sid('one'), sid('two')],
-      )),
-    })
-    one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
-    fireEvent.dragStart(one, { dataTransfer: dragData() })
-    fireDrag(markTarget(), 'dragOver', 105)
-    rerender(b, {
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])], [], [sid('two')])),
-    })
-    fireEvent.dragEnd(screen.getByText('one').closest('[role="treeitem"]') as HTMLElement)
-    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(before)
+    act(() => { b.store.actions.setArchivedFilter('only') })
+    expect(screen.queryByText('已置顶')).toBeNull()
   })
 
   it('drags pinned rows within the flat pinned block and keeps cross-block targets inert', () => {

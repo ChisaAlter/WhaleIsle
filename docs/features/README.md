@@ -61,6 +61,7 @@
 | [launcher-components](launcher-components.md) | 现有启动器按需安装并监管独立工具或服务（拟议） | `launcher.*` / component supervisor | 签名包、运行与回滚实机 |
 | [data-import](data-import.md) | 启动器只读导入官方会话/插件名单 | `data-import.js` | TC-LAUNCH-004 |
 | [session-archive](session-archive.md) | 归档隐藏；已归档里恢复/删除 | ui-workspace / workspace RPC | TC-CHAT-010、013 |
+| [pinned-section](pinned-section.md) | 侧栏顶部「已置顶」区：所有工作区的置顶会话集中在最上面，标出所属工作区，原分组不再重复 | vendor ui-workspace（tree / Rows / WorkspaceBrowser / locales） | vendor client specs + 实机侧栏 |
 | [no-directory-sessions](no-directory-sessions.md) | 「无工作目录」会话（Host scratch cwd）；删工作区隐藏、重加恢复 | vendor `workspace` / `workspace-controller` / `ui-workspace` | vendor specs + 桌面 marker 单测 |
 | [git-titlebar](git-titlebar.md) | 标题栏分支/提交/推拉；登记工作区即授权 | `git.js` / workspace-authority | TC-WS-006、TC-GIT-001…007 |
 | [usage-stats](usage-stats.md) | 设置内跨会话 Token 用量；预置改版 dsh-usage-panel | `usage-panel-preset` / vendor 插件 | TC-EXT-008 |

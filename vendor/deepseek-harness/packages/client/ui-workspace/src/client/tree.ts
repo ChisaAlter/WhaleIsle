@@ -28,6 +28,9 @@ function navigationOwned(session: SessionSummary): boolean {
 /** Group key for no-directory Sessions (the Host scratch cwd bucket). */
 export const UNGROUPED_KEY = ''
 
+/** Expansion key of the cross-workspace pinned section; never a Workspace id. */
+export const PINNED_SECTION_KEY = '::pinned'
+
 /**
  * Whether a Session is a no-directory task: no Workspace accounts it and it
  * runs in the Host scratch cwd. Until the Workspace baseline supplies that cwd
@@ -106,6 +109,8 @@ export interface SessionNode {
   /** In the registry-global archive set: shown grayed in place and not openable. */
   archived: boolean
   updatedAt: number
+  /** Display label of the owning Workspace; present only on rows of the pinned section. */
+  context?: string | undefined
 }
 
 /** Session order selected by the Workspace browser. */
@@ -539,6 +544,7 @@ export function deriveArchived(
  * @param statuses - unified UI status by Session.
  * @param view - local expansion arrays.
  * @param scratchCwd - Host scratch cwd (Workspace baseline); gates the no-directory bucket.
+ * @param options - `hoistPinned` leaves pinned rows out of their groups: the pinned section shows them instead.
  * @returns group sections in render order.
  */
 export function deriveGroups(
@@ -548,6 +554,7 @@ export function deriveGroups(
   statuses: SessionStatuses,
   view: TreeView,
   scratchCwd: string | undefined,
+  options: { hoistPinned?: boolean } = {},
 ): GroupNode[] {
   const archived = new Set(rowState.archivedSessionIds)
   const pinned = new Set(rowState.pinnedSessionIds)
@@ -571,11 +578,62 @@ export function deriveGroups(
       containsCurrent: g.key === currentGroup,
       sessions: expanded
         ? sectionMembers(g.sessions, pinned, archived)
+          .filter(session => options.hoistPinned !== true || !hoisted(session, pinned, archived))
           .map(session => sessionNode(session, list, statuses, pinned, archived))
         : [],
     })
   }
   return groups
+}
+
+/** A pinned, unarchived, ordinary Session: the rows the pinned section takes out of their groups. */
+function hoisted(
+  session: SessionSummary,
+  pinned: ReadonlySet<SessionId>,
+  archived: ReadonlySet<SessionId>,
+): boolean {
+  return !session.blank && pinned.has(session.id) && !archived.has(session.id) && !navigationOwned(session)
+}
+
+/**
+ * Derive the cross-workspace pinned section: every listed pinned Session once, most recently pinned
+ * first, each labeled with its owning Workspace. Pinned rows are independent of group folding, so a
+ * pin in a collapsed Workspace still shows. Archived Sessions never appear (the Host drops their pin)
+ * and the archived-only view has no pinned section.
+ * @param list - sessions list snapshot.
+ * @param workspaces - real Workspaces (membership decides the label and what is listed).
+ * @param rowState - registry-global pin and archive sets plus the archived filter.
+ * @param statuses - unified UI status by Session.
+ * @param scratchCwd - Host scratch cwd from the Workspace baseline.
+ * @param ungroupedLabel - localized label for no-directory Sessions.
+ * @returns pinned rows in pin order, each carrying its Workspace label as `context`.
+ */
+export function derivePinned(
+  list: SessionListState,
+  workspaces: readonly WorkspaceView[],
+  rowState: SessionRowState,
+  statuses: SessionStatuses,
+  scratchCwd: string | undefined,
+  ungroupedLabel: string,
+): SessionNode[] {
+  if (rowState.archivedFilter === 'only') return []
+  const archived = new Set(rowState.archivedSessionIds)
+  const pinned = new Set(rowState.pinnedSessionIds)
+  const accounted = accountedIds(workspaces)
+  const current = mainSessionId(list)
+  const owners = new Map<SessionId, string>()
+  for (const workspace of workspaces) {
+    for (const id of workspace.sessionIds) owners.set(id, workspace.title)
+  }
+  const rows: SessionNode[] = []
+  for (const id of rowState.pinnedSessionIds) {
+    const session = list.byId[id]
+    if (session === undefined || !hoisted(session, pinned, archived)) continue
+    if (!listed(session, accounted, scratchCwd)) continue
+    if (!sessionVisible(session, current, archived, rowState.archivedFilter)) continue
+    rows.push({ ...sessionNode(session, list, statuses, pinned, archived), context: owners.get(id) ?? ungroupedLabel })
+  }
+  return rows
 }
 
 /**
