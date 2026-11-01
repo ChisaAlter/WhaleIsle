@@ -76,6 +76,21 @@
   inherits: false;
 }
 
+/* Rows far from the reader (chat-cold-rows.ts marks them) skip style, layout and
+   paint of their contents. The intrinsic size is the row's last measured height, so
+   the transcript keeps its length and every scroll position; the registered,
+   non-inherited property keeps a write from restyling the row's subtree. */
+@property --dsh-chat-cold-height {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 160px;
+}
+
+:global([data-slot="conversation.chat.flow"]) > :global([data-chat-cold]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--dsh-chat-cold-height);
+}
+
 .column {
   max-width: calc(
     var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))) -
