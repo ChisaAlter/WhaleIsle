@@ -92,6 +92,8 @@
 .whale-input::placeholder { color: var(--whale-fg-faint); opacity: 1; }
 .whale-input:disabled { opacity: .4; }
 .whale-input[type=date] { color-scheme: inherit; }
+/* The popup list is painted from the options' own colours. A transparent select leaves it on the UA white while the text keeps theme ink (light on white), so options carry an opaque system pair that follows the document color-scheme. */
+select.whale-input :is(option, optgroup) { background-color: Canvas; color: CanvasText; }
 textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding-block: 8px; }
 .whale-field-heading { justify-content: space-between; gap: 12px; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); }
 .whale-field-heading output { font-variant-numeric: tabular-nums; color: var(--whale-fg-muted); }
