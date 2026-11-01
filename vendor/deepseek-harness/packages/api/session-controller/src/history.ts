@@ -46,10 +46,12 @@ export class SessionHistoryController {
   /**
    * @param ctx - Host context carrying Session query and projection services.
    * @param promote - starts ordinary Session activation after snapshot delivery.
+   * @param watch - marks the followed Session as watched until its stream ends.
    */
   constructor(
     private readonly ctx: Context,
     private readonly promote: (observation: SessionObservation) => void,
+    private readonly watch: (sessionId: SessionId) => () => void = () => () => {},
   ) {
     ctx.on('agent/assistant-stream', ({ agent, frame }) => {
       let stream = this.assistantStreams.get(agent.session.id)
@@ -143,6 +145,7 @@ export class SessionHistoryController {
       notify()
     }
     this.closeFollowers.add(close)
+    const unwatch = this.watch(target)
     const disposeEvent = this.ctx.on('session/event', (session, event) => {
       if (session.id !== target) return
       buffered.pushBack({ type: 'event', event })
@@ -233,6 +236,7 @@ export class SessionHistoryController {
       }
     } finally {
       this.closeFollowers.delete(close)
+      unwatch()
       signal.removeEventListener('abort', onAbort)
       disposeCreated()
       disposeEvent()

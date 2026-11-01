@@ -18,6 +18,7 @@
     "src/delete-archived.ts",
     "src/file-references.ts",
     "src/history.ts",
+    "src/idle-release.ts",
     "src/lifecycle.ts",
     "src/list.ts",
     "src/media-references.ts",

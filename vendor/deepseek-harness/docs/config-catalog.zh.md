@@ -231,6 +231,13 @@ export interface Config {
   readonly nativeOpen?: boolean
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
+  /**
+   * Milliseconds an opened Session may stay unwatched and idle before its resident Agent is
+   * released; reopening reloads it from persistence. `0` keeps every opened Session resident.
+   */
+  readonly idleReleaseMs?: number
+  /** Most recently active idle Sessions kept resident regardless of {@link idleReleaseMs}. */
+  readonly idleReleaseKeep?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-session-controller -->
