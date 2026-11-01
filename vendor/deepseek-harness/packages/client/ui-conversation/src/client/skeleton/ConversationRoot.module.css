@@ -463,6 +463,11 @@ button.crumb:hover {
   /* Horizontal geometry (card width, clearance, dock inset) rides the shared
      .root variables above so takeover siblings match the stack. */
   --dsh-composer-stack-gap: 6px;
+  /* How far a dock card's clip box reaches past its layout slot (above and to
+     the sides): the card moves on the compositor and may run ahead of the
+     slot while the main thread is busy; only the slot's bottom edge cuts it. */
+  --dsh-composer-dock-overhang: 320px;
+  --dsh-composer-dock-bleed: 24px;
 
   display: flex;
   flex-direction: column;
@@ -489,7 +494,12 @@ button.crumb:hover {
    content and the transcript enter with the swap fade (opacity only, the
    shared swap duration) instead of appearing in one frame; resident header
    controls stay as they are. */
-.root:has([data-composer-entering]) .header > :not([data-conversation-header-leading]),
+/* Named children, not `:not([data-conversation-header-leading])`: Chromium
+   merges every :has() rule's invalidation set, and a featureless right-hand
+   side would restyle the whole transcript on any DOM change beneath .root. The
+   header's direct children are the leading cluster, .titleRow, .tabs, and a
+   display:contents slot anchor that has no box to animate. */
+.root:has([data-composer-entering]) .header > :is(.titleRow, .tabs),
 .root:has([data-composer-entering]) [data-chat-flow] {
   animation: conversation-enter-swap var(--ds-motion-duration-swap) var(--ds-ease-in-out);
 }
@@ -612,12 +622,21 @@ button.crumb:hover {
   min-height: auto;
 }
 
+/* Registered and non-inherited: a composer dock resizes the seat every frame
+   while it animates, and an inherited custom property on the scroll body
+   restyles the whole transcript on every write. */
+@property --dsh-composer-reserve {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 .root[data-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])),
 .embeddedBody[data-content-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])) {
   /* The transparent footer must never cover transcript text. Reserve the
      seat's measured height outside the scrollport, while its absolute box
      stays anchored to .body and inside the composer event/resize ancestry. */
-  margin-bottom: var(--dsh-composer-height, 0px);
+  margin-bottom: var(--dsh-composer-reserve);
 }
 
 .root[data-phase='active'] .composerSeat,

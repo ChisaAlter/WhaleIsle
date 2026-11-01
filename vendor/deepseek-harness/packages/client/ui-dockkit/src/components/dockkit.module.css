@@ -527,8 +527,8 @@
 }
 
 .iconButton svg {
-  width: 15px;
-  height: 15px;
+  width: var(--dsh-dock-icon-size, 15px);
+  height: var(--dsh-dock-icon-size, 15px);
 }
 
 .iconButton:hover:not(:disabled) {
@@ -862,9 +862,11 @@
   display: none;
 }
 
-.float:has([data-file-preview], [data-textpreview-state]) .floatHeader .iconButton svg {
-  width: 16px;
-  height: 16px;
+/* Sized through the button, not `.iconButton svg`: Chromium merges every :has()
+   rule's invalidation set, and an `svg` right-hand side restyled every icon in
+   the transcript on each composer keystroke. */
+.float:has([data-file-preview], [data-textpreview-state]) .floatHeader .iconButton {
+  --dsh-dock-icon-size: 16px;
 }
 
 /* File previews use the same inset viewport as the native Browser guest.

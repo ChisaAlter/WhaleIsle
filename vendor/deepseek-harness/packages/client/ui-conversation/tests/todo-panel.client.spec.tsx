@@ -147,14 +147,25 @@ function sessionList(presentation?: SessionSummary['presentation']): SessionList
   }
 }
 
-/** Bind the adapter's actual Session metadata and projected-plan inputs. */
+/** The local submission echoes the composer registers on the click's own frame. */
+type EchoStore = ReturnType<typeof createSnapshotStore<{ pendingSubmissions: { placement: string }[] }>>
+
+function echoes(): EchoStore {
+  return createSnapshotStore<{ pendingSubmissions: { placement: string }[] }>({ pendingSubmissions: [] })
+}
+
+/** Bind the adapter's actual Session metadata, submission echoes and projected-plan inputs. */
 function dockProps(
   store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>,
   sessions = createSnapshotStore(sessionList()),
+  session: EchoStore = echoes(),
 ): TodoDockProps {
   const useProjection = ((_key: string, selector?: (v: unknown) => unknown) =>
     bindSnapshotSelector(store)(s => (selector ?? (v => v))(s.value))) as TodoDockProps['useProjection']
-  return { sessionId: SID, useSessions: bindSnapshotSelector(sessions), useProjection, t }
+  return {
+    sessionId: SID, useSession: bindSnapshotSelector(session) as unknown as TodoDockProps['useSession'],
+    useSessions: bindSnapshotSelector(sessions), useProjection, t,
+  }
 }
 
 describe('TodoDock', () => {
@@ -170,6 +181,72 @@ describe('TodoDock', () => {
     expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(true)
     expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
     await waitFor(() => { expect(screen.queryByTestId('todo-panel')).toBeNull() })
+  })
+
+  it('starts the plan leaving with the send echo, before the Host clears the plan', () => {
+    vi.useFakeTimers()
+    try {
+      const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+      const session = echoes()
+      render(<TodoDock {...dockProps(store, undefined, session)} />)
+      expect(screen.getByRole('region', { name: '任务' })).toBeTruthy()
+
+      // The click's own frame: the card is already on its way out, the plan still projected.
+      act(() => { session.set({ pendingSubmissions: [{ placement: 'transcript' }] }) })
+      expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(true)
+      expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
+
+      // The turn start clears the plan, the echo hands off; the exit just finishes.
+      act(() => { store.set({ value: null }) })
+      act(() => { session.set({ pendingSubmissions: [] }) })
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(screen.queryByTestId('todo-panel')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves the plan alone for a queued or steering send', () => {
+    const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+    const session = echoes()
+    render(<TodoDock {...dockProps(store, undefined, session)} />)
+    for (const placement of ['queued', 'steering']) {
+      act(() => { session.set({ pendingSubmissions: [{ placement }] }) })
+      expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(false)
+    }
+  })
+
+  it('brings the plan back when the send starts no turn', () => {
+    vi.useFakeTimers()
+    try {
+      const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+      const session = echoes()
+      render(<TodoDock {...dockProps(store, undefined, session)} />)
+      act(() => { session.set({ pendingSubmissions: [{ placement: 'transcript' }] }) })
+      expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(true)
+
+      // The prompt was rejected: the echo goes, the plan was never cleared.
+      act(() => { session.set({ pendingSubmissions: [] }) })
+      act(() => { vi.advanceTimersByTime(250) })
+      expect(screen.queryByTestId('todo-panel')).toBeNull()
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(false)
+      expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows a plan written while the echo is still around', () => {
+    const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+    const session = echoes()
+    render(<TodoDock {...dockProps(store, undefined, session)} />)
+    act(() => { session.set({ pendingSubmissions: [{ placement: 'transcript' }] }) })
+    act(() => { store.set({ value: null }) })
+    // The new turn writes its plan before the echo retires.
+    act(() => { store.set({ value: PARALLEL }) })
+    expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(false)
+    expect(screen.getByText('1 已完成 · 3 进行中 · 1 待处理')).toBeTruthy()
   })
 
   it('keeps a Project Lead plan available without mounting a composer strip', () => {

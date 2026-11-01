@@ -25,21 +25,25 @@ export function TaskDock({ title, summary, children, testId, open = true }: {
       aria-hidden={open ? undefined : true}
       {...open ? {} : { inert: '' }}
     >
-      <div className={css.surface} data-dsh-motion="fade" data-state={presence.state}>
-        <div className={css.body}>
-          <button type="button" className={css.header} aria-expanded={expanded} onClick={() => { setExpanded(value => !value) }}>
-            <span className={css.lead} aria-hidden><IconChecklistOutlineRegular /></span>
-            <span className={css.title}>{title}</span>
-            <span className={css.progress}>{summary}</span>
-            <span className={css.chevron} data-expanded={expanded} aria-hidden><IconChevronUpOutlineRegular /></span>
-          </button>
-          {details.mounted && (
-            <div className={css.details} data-state={details.state} aria-hidden={expanded ? undefined : true} {...expanded ? {} : { inert: '' }}>
-              <div className={css.clip}>
-                <div className={css.content} data-dsh-motion="fade" data-state={details.state}>{children}</div>
-              </div>
+      <div className={css.slot}>
+        <div className={css.slide} data-state={presence.state}>
+          <div className={css.surface} data-dsh-motion="fade" data-state={presence.state}>
+            <div className={css.body}>
+              <button type="button" className={css.header} aria-expanded={expanded} onClick={() => { setExpanded(value => !value) }}>
+                <span className={css.lead} aria-hidden><IconChecklistOutlineRegular /></span>
+                <span className={css.title}>{title}</span>
+                <span className={css.progress}>{summary}</span>
+                <span className={css.chevron} data-expanded={expanded} aria-hidden><IconChevronUpOutlineRegular /></span>
+              </button>
+              {details.mounted && (
+                <div className={css.details} data-state={details.state} aria-hidden={expanded ? undefined : true} {...expanded ? {} : { inert: '' }}>
+                  <div className={css.clip}>
+                    <div className={css.content} data-dsh-motion="fade" data-state={details.state}>{children}</div>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </section>

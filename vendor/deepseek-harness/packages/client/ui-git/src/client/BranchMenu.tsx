@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-client-ui-git/client/BranchMenu
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   FlipText,
@@ -53,6 +53,19 @@ export interface BranchMenuProps extends BranchMenuOps {
 }
 
 const CREATE_ID = '__create__'
+/** Wait after a workspace settles before listing its branches ahead of the first open. */
+const WARM_DELAY_MS = 1500
+/** Rows listed less than this long ago need no refresh when the pointer reaches the trigger. */
+const WARM_FRESH_MS = 15_000
+
+/** Whether two listings hold the same refs, so a refresh that changed nothing re-renders nothing. */
+function sameRefs(left: BranchRef[] | null, right: BranchRef[]): boolean {
+  return left !== null && left.length === right.length && left.every((ref, index) => {
+    const other = right[index]
+    return other !== undefined && ref.name === other.name && ref.isCurrent === other.isCurrent
+      && ref.isRemote === other.isRemote && ref.switchable === other.switchable
+  })
+}
 
 /**
  * Render the branch trigger and the shared Menu (filter + branch rows + create).
@@ -69,6 +82,27 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
   const [listing, setListing] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  /**
+   * Branch rows by workspace. The list is read ahead of the first open (idle, then
+   * pointer or focus on the trigger) so the card opens at its final size instead of
+   * growing when git answers; every open still re-lists.
+   */
+  const listed = useRef(new Map<string, { rows: BranchRef[]; at: number }>())
+  const cwdRef = useRef(cwd)
+  cwdRef.current = cwd
+  const warming = useRef(false)
+  const warm = useCallback((): void => {
+    if (cwd === undefined || disabled || warming.current) return
+    const known = listed.current.get(cwd)
+    if (known !== undefined && Date.now() - known.at < WARM_FRESH_MS) return
+    warming.current = true
+    void gitBranchList(cwd).then((result) => {
+      if (!result.ok) return
+      const rows = result.branches ?? []
+      listed.current.set(cwd, { rows, at: Date.now() })
+      if (cwdRef.current === cwd) setRefs(current => sameRefs(current, rows) ? current : rows)
+    }).catch(() => { /* the open reports list failures */ }).finally(() => { warming.current = false })
+  }, [cwd, disabled, gitBranchList])
 
   useEffect(() => {
     if (disabled) {
@@ -80,9 +114,15 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
   // A workspace change invalidates the cached rows; the next open must not
   // flash the previous repository's branches.
   useEffect(() => {
-    setRefs(null)
+    setRefs((cwd === undefined ? undefined : listed.current.get(cwd)?.rows) ?? null)
     setListError(null)
   }, [cwd])
+
+  useEffect(() => {
+    if (cwd === undefined) return
+    const timer = setTimeout(warm, WARM_DELAY_MS)
+    return () => { clearTimeout(timer) }
+  }, [cwd, warm])
 
   useEffect(() => {
     if (!open) {
@@ -98,14 +138,18 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
       if (cancelled) return
       setListing(false)
       if (result.ok) {
-        setRefs(result.branches ?? [])
+        const rows = result.branches ?? []
+        listed.current.set(cwd, { rows, at: Date.now() })
+        setRefs(current => sameRefs(current, rows) ? current : rows)
         return
       }
+      listed.current.delete(cwd)
       setRefs(null)
       setListError(result.message?.trim() ?? '')
       onError(result.message?.trim() || t('branch.listFailed'), t('branch.listFailed'))
     }).catch((error: unknown) => {
       if (cancelled) return
+      listed.current.delete(cwd)
       setRefs(null)
       setListError(error instanceof Error ? error.message.trim() : '')
       setListing(false)
@@ -136,6 +180,11 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
       onError(error instanceof Error && error.message.trim() !== '' ? error.message : t('branch.error'), failTitle)
     }).finally(() => {
       setBusy(false)
+      // The checked-out branch moved or a branch was added: re-read the rows so
+      // the next open does not show the old current marker.
+      listed.current.delete(cwd)
+      setRefs(null)
+      warm()
       onChanged()
     })
   }
@@ -160,20 +209,24 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
   }
 
   const label = currentRef ?? t('branch.select')
+  const branchItems = rows.map(ref => ({
+    id: ref.name,
+    label: ref.name,
+    disabled: disabled || busy || ref.isCurrent || ref.switchable === false,
+    // Desktop-unsupported name: the row stays listed (the branch exists)
+    // but cannot be switched to, and the hint says why.
+    ...(ref.switchable === false ? { hint: t('branch.unsupportedName') } : {}),
+  }))
   // A failed list reports through the progress toast and never masquerades
-  // as the "no matching branches" empty state.
+  // as the "no matching branches" empty state; a list still being read says so
+  // instead of showing an empty card that then jumps to its full height.
   const items = listError !== null
     ? []
-    : rows.length === 0 && refs !== null
-      ? [{ type: 'label' as const, id: 'empty', text: t('branch.empty') }]
-      : rows.map(ref => ({
-        id: ref.name,
-        label: ref.name,
-        disabled: disabled || busy || ref.isCurrent || ref.switchable === false,
-        // Desktop-unsupported name: the row stays listed (the branch exists)
-        // but cannot be switched to, and the hint says why.
-        ...(ref.switchable === false ? { hint: t('branch.unsupportedName') } : {}),
-      }))
+    : refs === null
+      ? [{ type: 'label' as const, id: 'loading', text: t('branch.loading') }]
+      : rows.length === 0
+        ? [{ type: 'label' as const, id: 'empty', text: t('branch.empty') }]
+        : branchItems
 
   return (
     <>
@@ -216,9 +269,11 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
             aria-expanded={open}
             disabled={disabled || busy || cwd === undefined}
             aria-busy={busy || listing}
+            onPointerEnter={warm}
+            onFocus={warm}
             onClick={() => { setOpen(next => !next) }}
           >
-            {busy || listing ? <StateDot state="ongoing" size={14} /> : <IconBranchOutline16 size={14} />}
+            {busy || (listing && refs === null) ? <StateDot state="ongoing" size={14} /> : <IconBranchOutline16 size={14} />}
             <span className={labelCss.label}>
               <span className={labelCss.clip}>
                 <span className={labelCss.text}><FlipText text={label} className={css.name} /></span>

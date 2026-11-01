@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { ChatScrollPosition } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
+import { ColdRows } from './chat-cold-rows.ts'
 import { createFlowMotion, type InputFoldBox, type InputFoldDriver } from './flow-motion.ts'
 import { scrollMetrics, ScrollFollow, type ViewportMetrics } from './use-scroll-follow.ts'
 export type { ViewportMetrics } from './use-scroll-follow.ts'
@@ -62,6 +63,8 @@ const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home
 export class ChatViewport {
   private elements: ViewportElements | null = null
   private observer: ResizeObserver | null = null
+  /** Rows far from the reader skip layout; see chat-cold-rows.ts. */
+  private readonly cold = new ColdRows()
   private events: ViewportEvents | null = null
   private turns: ReturnType<ChatSnapshot['navigation']['items']> = []
   private observation: { top: number; landing: ViewportLanding | null } = { top: 0, landing: null }
@@ -106,6 +109,7 @@ export class ChatViewport {
       this.observer.observe(scroller)
       if (composer !== null) this.observer.observe(composer)
     }
+    this.cold.attach(scroller, column)
   }
 
   /** Commit outgoing reading memory before disconnecting DOM resources and clearing observations. */
@@ -119,6 +123,7 @@ export class ChatViewport {
     for (const type of READING_INTENTS) this.elements?.scroller.removeEventListener(type, this.onIntent, true)
     this.observer?.disconnect()
     this.observer = null
+    this.cold.detach()
     this.elements = null
     this.events = null
     this.tailRequested = false

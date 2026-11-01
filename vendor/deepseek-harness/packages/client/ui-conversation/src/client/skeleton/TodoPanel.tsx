@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // The domain's client-namespace pure-type outlet: one import edge delivers
@@ -84,18 +84,54 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
   )
 }
 
+/** Longest a send keeps the plan on its way out before the plan is shown again. */
+const SEND_EXIT_MAX_MS = 8000
+/** How long the plan stays on its way out once the echo is gone, waiting for the turn start to clear it. */
+const SEND_EXIT_GRACE_MS = 1000
+
+/**
+ * Start the plan's exit with the send itself. The Host clears the plan when the turn starts,
+ * a round trip after the click (130 ms and up, much more while a long transcript is busy), so
+ * waiting for it starts the exit late and on the busiest frames. The composer registers a
+ * submission echo on the click's own frame; a new echo that lands on a standing plan starts the
+ * exit there. If the turn never starts (a command that runs none, a rejected prompt) the plan
+ * comes back. A plan written after the echo is never held back.
+ * @param planned - whether the projection holds a plan.
+ * @param sending - whether an idle send's echo is on the transcript.
+ * @returns whether the plan should already be leaving.
+ */
+function usePlanLeavingOnSend(planned: boolean, sending: boolean): boolean {
+  const leaving = useRef(false)
+  const wasSending = useRef(false)
+  const [, release] = useState(0)
+  if (sending && !wasSending.current && planned) leaving.current = true
+  wasSending.current = sending
+  if (!planned) leaving.current = false
+  useEffect(() => {
+    if (!leaving.current) return
+    const timer = setTimeout(() => {
+      leaving.current = false
+      release(count => count + 1)
+    }, sending ? SEND_EXIT_MAX_MS : SEND_EXIT_GRACE_MS)
+    return () => { clearTimeout(timer) }
+  }, [sending])
+  return leaving.current
+}
+
 /** Session metadata and projected plan read by the native todo dock. */
 export type TodoDockProps = Pick<PropsRuntime<'conversation.input.dock'>,
-  'sessionId' | 'useSessions' | 'useProjection'> & PropsLocale<'conversation'>
+  'sessionId' | 'useSession' | 'useSessions' | 'useProjection'> & PropsLocale<'conversation'>
 
 /** Project Leads expose the same plan in their requirement details instead of above the input. */
-export function TodoDock({ sessionId, useSessions, useProjection, t }: TodoDockProps) {
+export function TodoDock({ sessionId, useSession, useSessions, useProjection, t }: TodoDockProps) {
   const projectLead = useSessions((value) => {
     const presentation = value.byId[sessionId]?.presentation
     return presentation?.owner === 'project' && presentation.composer !== 'managed'
   })
-  const todos = useProjection('todos')
-  return projectLead ? null : <TodoPanel todos={todos ?? []} t={t} />
+  const todos = useProjection('todos') ?? []
+  const sending = useSession(session => session.pendingSubmissions.some(submission => submission.placement === 'transcript'))
+  const leaving = usePlanLeavingOnSend(todos.length > 0, sending)
+  return projectLead ? null : <TodoPanel todos={leaving ? [] : todos} t={t} />
 }
 
 /** Registers the projected todo dock. */
