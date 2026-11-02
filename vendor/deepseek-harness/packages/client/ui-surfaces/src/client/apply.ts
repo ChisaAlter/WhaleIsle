@@ -194,6 +194,30 @@ function subscribeOpenPreviewUrl(): () => void {
   })
 }
 
+/**
+ * A Project presents the user's bound folder but keeps its notes and reports
+ * under the coordinator's own execution directory, so a link to one of those
+ * files points outside the presented folder. Name that directory when it holds
+ * the file, so the open stays in the panel instead of falling through to the
+ * OS opener.
+ * @param session - the Session summary, when it is listed.
+ * @param presentedRoot - the folder the Session presents to the user.
+ * @param path - host-absolute file path from `workspaces.openPath`.
+ * @returns the execution directory holding `path`, or undefined when the file
+ *   is in the presented folder, in neither, or is the directory itself.
+ */
+function executionRootHolding(
+  session: { readonly cwd?: string | undefined } | undefined,
+  presentedRoot: string | undefined,
+  path: string,
+): string | undefined {
+  const root = session?.cwd
+  if (typeof root !== 'string' || root.length === 0 || presentedRoot === undefined) return undefined
+  if (relativeTo(presentedRoot, path) !== undefined) return undefined
+  const relative = relativeTo(root, path)
+  return relative === undefined || relative === '' ? undefined : root
+}
+
 /** Open workspace resources in the same tab owner as the guide. */
 async function openWorkspaceSurface(
   ctx: Context,
@@ -204,7 +228,8 @@ async function openWorkspaceSurface(
   const id = sessionId as SessionId
   const session = ctx.sessions.list.getSnapshot().byId[id]
   const sessionCwd = session?.presentation?.workingDirectory ?? session?.cwd
-  const cwd = options?.workingDirectory ?? sessionCwd
+  const workingDirectory = options?.workingDirectory ?? executionRootHolding(session, sessionCwd, path)
+  const cwd = workingDirectory ?? sessionCwd
   if (typeof cwd !== 'string' || cwd.length === 0) return false
   const relative = relativeTo(cwd, path)
   if (relative === undefined) return false
@@ -212,7 +237,7 @@ async function openWorkspaceSurface(
   // Project sessions store their private state under a different Host cwd.
   // Every resolved deliverable must therefore keep its absolute identity,
   // including Office files inside the presented working directory.
-  const address = options?.workingDirectory === undefined
+  const address = workingDirectory === undefined
     ? fileAddressFor(id, sessionCwd, relative)
     : sessionFileAddress(id, path)
   const own = currentSessionId(ctx) === sessionId

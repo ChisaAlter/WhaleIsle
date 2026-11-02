@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { apply, desktopListingAvailable, inject } from '../src/client/index.ts'
 import { canOpenDesktopFile } from '../../ui-files/src/client/desktop-files.ts'
 import { hostFileOf } from '../../ui-sidebar-documentpreview/src/client/rpc.ts'
@@ -19,7 +20,15 @@ function declare(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
-function sessionsStub(opts: { mainView?: string; cwd?: string; background?: { id: string; cwd: string } } = {}) {
+/** Plugin-owned presentation a Project Session carries beside its execution cwd. */
+interface TestPresentation { owner: string; title: string; workingDirectory: string }
+
+function sessionsStub(opts: {
+  mainView?: string
+  cwd?: string
+  presentation?: TestPresentation
+  background?: { id: string; cwd: string }
+} = {}) {
   const cwd = opts.cwd ?? '/tmp/proj'
   return {
     list: {
@@ -35,6 +44,7 @@ function sessionsStub(opts: { mainView?: string; cwd?: string; background?: { id
                 blank: false,
                 updatedAt: 1,
                 cwd,
+                ...(opts.presentation === undefined ? {} : { presentation: opts.presentation }),
                 retainedBy: { mainView: 1 },
               },
             }),
@@ -60,6 +70,7 @@ async function bench(
   opts: {
     mainView?: string
     cwd?: string
+    presentation?: TestPresentation
     background?: { id: string; cwd: string }
     sidebarRight?: ReturnType<typeof sidebarRightStub>
     sidebarRightTabs?: ReturnType<typeof sidebarRightTabsStub>
@@ -127,6 +138,62 @@ describe('single right panel routing', () => {
     expect(canOpenDesktopFile(address, () => '/bound')).toBe(false)
     expect(b.originalOpen).not.toHaveBeenCalled()
     await b.fiber.dispose()
+  })
+
+  describe('a report the Project keeps in its own directory', () => {
+    const project: TestPresentation = { owner: 'project', title: 'Project', workingDirectory: '/bound' }
+    const windowsProject: TestPresentation = { ...project, workingDirectory: 'C:\\AI\\repo' }
+
+    const reports: [string, string, TestPresentation][] = [
+      ['/projects/p/docs/work-1/design.md', '/projects/p', project],
+      // The link text a model writes: forward slashes in a Windows path, against a backslash cwd.
+      ['C:/Users/me/dsh-home/projects/p/docs/work-1/design.md', 'C:\\Users\\me\\dsh-home\\projects\\p', windowsProject],
+    ]
+
+    it.each(reports)('previews %s through the Host read-only viewer, not the OS opener', async (path, cwd, presentation) => {
+      desktop()
+      const sidebarRight = sidebarRightStub()
+      const b = await bench({ mainView: 'project-main', cwd, presentation, sidebarRight })
+      await b.workspaces.openPath(path, { sessionId: 'project-main' })
+      const address = (sidebarRight.openResourceIn.mock.calls[0] as unknown as [string, string])[1]
+      expect(hostFileOf(address)).toEqual({ sessionId: 'project-main', path })
+      expect(canOpenDesktopFile(address, () => presentation.workingDirectory)).toBe(false)
+      expect(b.originalOpen).not.toHaveBeenCalled()
+      await b.fiber.dispose()
+    })
+
+    it('keeps a file in the bound folder on the editable desktop viewer', async () => {
+      desktop()
+      const sidebarRight = sidebarRightStub()
+      const b = await bench({ mainView: 'project-main', cwd: '/projects/p', presentation: project, sidebarRight })
+      await b.workspaces.openPath('/bound/src/notes.md', { sessionId: 'project-main' })
+      const address = (sidebarRight.openResourceIn.mock.calls[0] as unknown as [string, string])[1]
+      expect(address).toBe(sessionFileAddress('project-main', 'src/notes.md'))
+      expect(canOpenDesktopFile(address, () => '/bound')).toBe(true)
+      expect(b.originalOpen).not.toHaveBeenCalled()
+      await b.fiber.dispose()
+    })
+
+    it.each(['/elsewhere/a.md', '/projects/p', '/projects/p-other/a.md'])('still hands %s to the OS opener', async (path) => {
+      desktop()
+      const sidebarRight = sidebarRightStub()
+      const b = await bench({ mainView: 'project-main', cwd: '/projects/p', presentation: project, sidebarRight })
+      await b.workspaces.openPath(path, { sessionId: 'project-main' })
+      expect(sidebarRight.openResourceIn).not.toHaveBeenCalled()
+      expect(sidebarRight.openTabIn).not.toHaveBeenCalled()
+      expect(b.originalOpen).toHaveBeenCalledExactlyOnceWith(path)
+      await b.fiber.dispose()
+    })
+
+    it('leaves a Session without a presented folder on the OS opener for files outside its cwd', async () => {
+      desktop()
+      const sidebarRight = sidebarRightStub()
+      const b = await bench({ mainView: 'sess-1', cwd: '/tmp/proj', sidebarRight })
+      await b.workspaces.openPath('/projects/p/docs/work-1/design.md', { sessionId: 'sess-1' })
+      expect(sidebarRight.openResourceIn).not.toHaveBeenCalled()
+      expect(b.originalOpen).toHaveBeenCalledExactlyOnceWith('/projects/p/docs/work-1/design.md')
+      await b.fiber.dispose()
+    })
   })
 
   it('does not register a second panel host', async () => {

@@ -79,6 +79,7 @@ A failed Lead summary keeps the saved results and presents a concise cause and r
 - Detail returns at most 20 current summaries and three recent historical summaries. History, materials and report reads are paged; polling retains selected pages and rejects stale responses. Store tools consume only results actually returned, including paged historical outcomes without reports.
 - Generated notes prioritize blocked and active work and have a UTF-8 byte budget. The legal user-owned suffix is preserved completely; old oversized generated content remains readable within the same budget. Preferences apply only to this Project.
 - Worktree cleanup checks original ownership and runtime drain, preserves dirty and ignored files and retains branches. User directories are never reset, stashed or removed. Windows long-path support is applied to Project Git commands without changing shared Git configuration.
+- A file link in a Project conversation that points into the Project's own directory, where reports and notes are kept outside the presented working directory, opens in the right panel through the read-only Host viewer. It is never rebased onto the working directory or authorized for desktop editing; only a path outside both directories falls back to the system opener.
 
 ## Ownership and verification
 
