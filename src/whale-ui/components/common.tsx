@@ -23,6 +23,11 @@ export function color(value?: string, background = false): string | undefined {
   const c = chart ? `var(--whale-chart-${chart[1]}, ${["var(--whale-accent)", "var(--whale-ok)", "var(--whale-warn)", "var(--whale-danger)", "var(--whale-purple, var(--whale-accent))", "var(--whale-pink, var(--whale-danger))"][Number(chart[1]) - 1]})` : palette[value] ?? value;
   return background && value in palette && value !== "surface" ? `color-mix(in srgb, ${c} 12%, var(--whale-bg))` : c;
 }
+// Words and glyphs take the darker `-text` step of a state colour (see viewer/styles.css); bars, tints and fills keep color().
+const textPalette: Record<string, string> = { info: "var(--whale-accent-text)", primary: "var(--whale-accent-text)", success: "var(--whale-ok-text)", warning: "var(--whale-warn-text)", danger: "var(--whale-danger-text)", purple: "var(--whale-purple-text)", pink: "var(--whale-pink-text)", faint: "var(--whale-faint-text)" };
+export function textColor(value?: string): string | undefined {
+  return value && Object.prototype.hasOwnProperty.call(textPalette, value) ? textPalette[value] : color(value);
+}
 export const fontWeight = (value?: string) => value === "semibold" ? 600 : value === "medium" ? 500 : 400;
 export const alignment = (value?: string) => value === "start" ? "flex-start" : value === "end" ? "flex-end" : value;
 export const justification = (value?: string) => value === "between" ? "space-between" : alignment(value);

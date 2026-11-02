@@ -36,3 +36,5 @@ HTTP(S) 链接由宿主打开，复制由宿主剪贴板完成，导出由父页
 ## 验证
 
 基础组件、数据函数、语言与 React 状态、GenUI 解析与专用图形，以及主进程/预加载桥接有定向回归。受控图形工厂和 jsdom 可验证状态、回执和卸载，不能证明 GPU、外部资源或源码 Electron 的端到端结果。当前变更的实际构建与应用验证结果记录在对应 PR。
+
+颜色走查 `npm run qa:whale-contrast` 在真实 Chromium 中按聊天宿主的方式加载构建出的 viewer，使用宿主自己的 `design-platform.css` 令牌，分别解析出浅色、深色和页面背景透明三种主题，渲染覆盖全部控件、命名颜色与表面的测试页（含模型手写的 HtmlView 和声明式组件），逐处计算文字、输入值、占位符和下拉选项与其背后各层背景的对比度。npm 脚本走严格档：普通文字须达到 4.5:1，大字 3:1；直接运行 `node scripts/audit-whale-ui-contrast.mjs` 只在低于 3:1 时失败，其余作警告。状态色是为填充、进度条和着色底调的，所以文字与图标改用 `--whale-*-text`、`--dsl-g-*-text` 这一档：浅色下把填充色向页面墨色靠近（`light-dark()`），填充本身保持原色；鲸UI 组件取文字色只走 `components/common.tsx` 的 `textColor()`。原生下拉的弹出列表是独立表面，透明的 select 会让它落在白底上而选项仍用主题字色，因此选项显式使用 `Canvas`/`CanvasText`。HtmlView 的模型指引也列出了可用的主题变量。[已知清单](../../scripts/whale-ui-contrast/known-findings.json)记录暂时接受的发现（目前为空），已不再复现的条目会提示移除。未覆盖：悬停与聚焦状态、图表系列色等图形（WCAG 1.4.11）、按需加载的引擎（ECharts、Mermaid、3D、地图）和宿主的其他皮肤；原生弹出层本身没有截图，其颜色以选项的计算样式为准。

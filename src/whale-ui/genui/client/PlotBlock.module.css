@@ -27,7 +27,7 @@
 .title { font-size: 14px; line-height: 22px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .gridLine { stroke: var(--dsw-alias-border-l1); stroke-width: 1; }
 .axis { stroke: var(--dsw-alias-label-tertiary); stroke-width: 1; }
-.tick { fill: var(--dsw-alias-label-tertiary); font-size: 12px; font-family: var(--dsl-g-font-mono); }
+.tick { fill: var(--dsl-g-tertiary-text, var(--dsw-alias-label-tertiary)); font-size: 12px; font-family: var(--dsl-g-font-mono); }
 .line { fill: none; stroke: var(--dsl-g-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .area { stroke: none; fill-opacity: 0.16; }
 .scatterDot { stroke: var(--dsw-alias-bg-base); stroke-width: 1; }

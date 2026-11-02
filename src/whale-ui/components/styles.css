@@ -33,7 +33,7 @@
 .whale-progress-fill { height: 100%; border-radius: inherit; transition: width .2s ease; }
 @media (prefers-reduced-motion: reduce) { .whale-progress-fill { transition: none; } }
 .whale-badge { display: inline-flex; align-items: center; align-self: flex-start; gap: 4px; padding: 2px 8px; border-radius: 8px; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); vertical-align: middle; font-weight: 500; white-space: nowrap; }
-.whale-link, .whale-markdown a, .whale-text a { color: var(--whale-accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.whale-link, .whale-markdown a, .whale-text a { color: var(--whale-accent-text); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .whale-list { padding-inline-start: 20px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .whale-list[data-marker=none] { list-style: none; padding-inline-start: 0; }
 .whale-list-item { position: relative; }
@@ -70,8 +70,8 @@
 .whale-math .katex-display { margin: 8px 0; }
 
 .whale-button { --button-color: var(--whale-button); display: inline-flex; flex: 0 0 auto; align-self: flex-start; justify-content: center; align-items: center; gap: 4px; height: auto; min-height: max(36px, calc(1rem * 22 / 14 + 14px)); max-width: 100%; padding: 0 16px; border: 1px solid transparent; border-radius: 18px; font: 500 1rem/calc(1rem * 22 / 14) var(--whale-font); cursor: pointer; background: var(--button-color); color: var(--whale-on-button); text-decoration: none; white-space: nowrap; }
-.whale-button[data-color=danger] { --button-color: var(--whale-danger); }
-.whale-button[data-color=success] { --button-color: var(--whale-ok); }
+.whale-button[data-color=danger] { --button-color: var(--whale-danger-solid); }
+.whale-button[data-color=success] { --button-color: var(--whale-ok-solid); }
 .whale-button[data-variant=outline] { background: transparent; color: var(--whale-fg); border-color: var(--whale-border); }
 .whale-button[data-variant=soft] { background: var(--whale-hover); color: var(--whale-fg); }
 .whale-button[data-variant=ghost] { background: transparent; color: var(--whale-fg-muted); }
@@ -89,9 +89,11 @@
 .whale-pressable[aria-disabled=true] { opacity: .4; cursor: not-allowed; }
 .whale-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .whale-input { box-sizing: border-box; width: 100%; min-width: 0; height: max(36px, calc(1rem * 22 / 14 + 14px)); padding: 6px 12px; background: transparent; color: var(--whale-fg); border: 1px solid var(--whale-border); border-radius: 8px; font: 400 1rem/calc(1rem * 22 / 14) var(--whale-font); }
-.whale-input::placeholder { color: var(--whale-fg-faint); opacity: 1; }
+.whale-input::placeholder { color: var(--whale-faint-text); opacity: 1; }
 .whale-input:disabled { opacity: .4; }
 .whale-input[type=date] { color-scheme: inherit; }
+/* The popup list is painted from the options' own colours. A transparent select leaves it on the UA white while the text keeps theme ink (light on white), so options carry an opaque system pair that follows the document color-scheme. */
+select.whale-input :is(option, optgroup) { background-color: Canvas; color: CanvasText; }
 textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding-block: 8px; }
 .whale-field-heading { justify-content: space-between; gap: 12px; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); }
 .whale-field-heading output { font-variant-numeric: tabular-nums; color: var(--whale-fg-muted); }
@@ -115,12 +117,12 @@ textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding
 .whale-radio-group[data-variant=cards] > .whale-radio-option[data-selected=true] { border-color: var(--whale-accent); background: var(--whale-active); }
 .whale-radio-group[data-variant=pills] { flex-direction: row; flex-wrap: wrap; }
 .whale-radio-group[data-variant=pills] > .whale-radio-option { padding: 4px 12px; min-height: 32px; border: 1px solid var(--whale-border); border-radius: 16px; }
-.whale-radio-group[data-variant=pills] > .whale-radio-option[data-selected=true] { border-color: var(--whale-accent); background: var(--whale-active); color: var(--whale-accent); }
+.whale-radio-group[data-variant=pills] > .whale-radio-option[data-selected=true] { border-color: var(--whale-accent); background: var(--whale-active); color: var(--whale-accent-text); }
 .whale-timer { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px; border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); background: var(--whale-panel); }
 .whale-timer output { font-family: var(--whale-mono); font-size: calc(1rem * 32 / 14); line-height: calc(1rem * 40 / 14); font-variant-numeric: tabular-nums; }
 .whale-timer > .whale-row { gap: 8px; }
 .whale-feedback { margin: 4px 0; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); color: var(--whale-fg-muted); overflow-wrap: anywhere; }
-.whale-feedback[data-error=true] { color: var(--whale-danger); }
+.whale-feedback[data-error=true] { color: var(--whale-danger-text); }
 
 .whale-image { width: 100%; position: relative; overflow: hidden; background: var(--whale-surface); min-width: 0; }
 .whale-image img { width: 100%; height: 100%; display: block; }
@@ -157,7 +159,7 @@ textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding
 .whale-map-locations { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; }
 .whale-map-location { display: inline-flex; gap: 8px; align-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--whale-fg); padding: 8px; font: calc(1rem * 12 / 14)/calc(1rem * 18 / 14) var(--whale-font); cursor: pointer; text-align: start; }
 .whale-map-location[data-selected=true] { border-color: var(--whale-accent); background: var(--whale-active); }
-.whale-map-label-pin { min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--whale-panel); font-size: calc(1rem * 12 / 14); color: var(--whale-accent); }
+.whale-map-label-pin { min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--whale-panel); font-size: calc(1rem * 12 / 14); color: var(--whale-accent-text); }
 .whale-map-selected { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--whale-panel); border-top: 1px solid var(--whale-border); font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); }
 .whale-map > .whale-feedback { padding: 0 12px; }
 

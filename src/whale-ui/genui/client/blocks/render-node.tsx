@@ -30,7 +30,7 @@ import { DiagramNode } from './diagram/index.tsx'
 import { ImageNode } from './image.tsx'
 import { SvgNode } from './svg.tsx'
 import { IconNode } from './icon.tsx'
-import { BlocksNode } from './blocks.tsx'
+import { BlocksNode, readableOn } from './blocks.tsx'
 
 import { EChartNode } from '../EChartNode.tsx'
 
@@ -470,7 +470,7 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
     case 'tabs': return <TabsNode key={key} tabs={node} onAction={onAction} depth={depth} answers={answers} />
     case 'avatar': {
       return (
-        <div key={key} className={css.avatar} style={{ background: node.color ?? avatarColor(node.name) }}>
+        <div key={key} className={css.avatar} style={node.color === undefined ? { background: avatarColor(node.name) } : { background: node.color, color: readableOn(node.color) }}>
           {node.name.slice(0, 1).toUpperCase()}
         </div>
       )

@@ -12,6 +12,7 @@
     "prepare:whale-ui": "node scripts/prepare-whale-ui.mjs",
     "test:whale-ui": "node scripts/prepare-whale-ui.mjs && node --test src/whale-ui/tests/*.mjs",
     "typecheck:whale-ui": "node src/whale-ui/node_modules/typescript/bin/tsc --project src/whale-ui/tsconfig.json --noEmit",
+    "qa:whale-contrast": "node scripts/prepare-whale-ui.mjs && node scripts/audit-whale-ui-contrast.mjs --strict",
     "start": "node scripts/prestart-ensure.mjs && node scripts/run-electron.js",
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
