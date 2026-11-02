@@ -246,6 +246,29 @@
   margin: 0 14px 8px;
 }
 
+/* An owner's own surface (Project's Requests panel) hosts the Team: that surface scrolls, so the body grows
+   instead of scrolling inside it, and the surface's insets replace the body's. */
+.embedded {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.embedded .roster {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.embedded .projectToolbar {
+  padding: 0 0 12px;
+}
+
+.embedded .body {
+  flex: none;
+  padding: 0;
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+
 @media (max-width: 560px) {
   .projectPanel .roster {
     grid-template-columns: minmax(0, 1fr);

@@ -31,6 +31,8 @@ export interface TeamActivityFacts {
   readonly state: 'ready' | 'loading' | 'unavailable'
   /** Members owning running or stopping Jobs; each member is counted at most once. */
   readonly runningJobSessionIds: readonly SessionId[]
+  /** The owner presents this Team inside its own surface, so the Lead's header omits the standalone entry. */
+  readonly embedded?: boolean
 }
 
 /** Background activity by Lead Session id; an absent entry leaves native Team behavior in force. */
