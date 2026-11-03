@@ -1173,11 +1173,11 @@ export class ProjectService {
       }
       return copy({ project: this.projectFacts(this.project(actor.project.id)), total: all.length, nextCursor: args.workstreamId ? history.nextCursor : offset + page.length < all.length ? String(offset + page.length) : null,
         requests: requests.slice(0,20).map(row => this.requirements.view(row)), requestCount: requests.length,
-        deliveries: this.requirements.deliveries(actor.project.id),
+        deliveries: this.requirements.deliveriesForLead(actor.project.id, args.requestId),
         work: page.map(work => ({ id: work.id, title: work.title, status: work.status, replaces: work.replaces, request: this.requirements.associated(work), summaryFailure: work.summaryFailure, requirement: latest(work).brief, report: latest(work).report && this.reportView(latest(work).report, actor.project.id),
           terminal: terminalFor(work, latest(work).report), workerSessionId: work.workerSessionId, resultRef: latest(work).report ? { teamId: actor.project.coordinatorSessionId, taskId: work.id, assignmentRef: latest(work).ref, reportId: latest(work).report.callId } : null })),
         ...(history ? { history } : { historyHint: 'Read notes.md with workstreamId and optional cursor to page through that work\'s actual historical reports and matching settlements.' }),
-        userNotes });
+        ...userNotes.length > 4000 && !args.fullNotes ? { userNotes: `${userNotes.slice(0, 4000)}…`, userNotesChars: userNotes.length, userNotesHint: 'Only the first 4000 characters are shown; pass fullNotes to read all of them.' } : { userNotes } });
     }
     return this.readStore(actor.project.id, args.path);
   }
