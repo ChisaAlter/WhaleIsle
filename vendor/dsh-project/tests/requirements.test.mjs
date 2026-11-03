@@ -903,3 +903,18 @@ test('a turn a host notice started may end silently only while nothing needs say
   const timer = setTimeout(() => {}, 1e6); timer.unref(); l.service.summaryRetryTimers.set(l.project.id, timer);
   try { assert.deepEqual(await quiet(l), { standby: true }); } finally { clearTimeout(timer); }
 });
+
+test('research is its own ceiling: readonly cannot reach the web, research stays read-only, and writing ceilings include it', async () => {
+  const stage = async (ceiling, scope) => {
+    const f = fixture(); f.human(['Study the linked page']); const { request } = await f.accept({ scopeCeiling: ceiling, ...(scope === 'docs' ? {} : {}) });
+    return f.service.requirements.assignment(f.actor, { requestId: request.id, requestRevision: 1, scope, ...(scope === 'docs' ? { writePaths: ['docs/a.md'] } : {}) }, f.exec('project_delegate'));
+  };
+  await assert.rejects(stage('readonly', 'research'), { code: 'unauthorized' });
+  await stage('readonly', 'readonly');
+  await stage('research', 'research'); await stage('research', 'readonly');
+  await assert.rejects(stage('research', 'docs'), { code: 'unauthorized' });
+  await assert.rejects(stage('research', 'development'), { code: 'unauthorized' });
+  await stage('docs', 'research'); await stage('development', 'research');
+  const f = fixture(); f.human(['Study the linked page']); const { request } = await f.accept({ scopeCeiling: 'research' });
+  assert.equal(f.service.requirements.view(f.service.requirements.get(f.project.id, request.id)).scopeCeiling, 'research', 'the requirement view names the ceiling the user authorized');
+});

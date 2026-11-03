@@ -9,7 +9,7 @@ const latest = work => work.delegations.find(item => item.ref === work.currentDe
 // One line of a handover for the Lead's notes: the full text stays one `requestId` read away.
 const deliveryBrief = item => ({ id: item.id, requestId: item.requestId, requestRevision: item.requestRevision, title: item.title, outcome: item.outcome, status: item.status, at: item.at, applicable: item.applicable,
   summary: item.summary.length > 240 ? `${item.summary.slice(0, 240)}…` : item.summary, artifactCount: item.artifacts.length, remainingIssueCount: item.remainingIssues?.length ?? 0 });
-const scope = value => ({ readonly: 'readonly', docs: 'docs', development: 'worker', worker: 'worker' })[value];
+const scope = value => ({ readonly: 'readonly', research: 'research', docs: 'docs', development: 'worker', worker: 'worker' })[value];
 const NEEDS_YOU = ['awaitingAnswer', 'awaitingDecision', 'blocked'];
 const string = (value, label, limit = 32000) => { if (typeof value !== 'string' || !value.trim() || value.length > limit) fail('invalid_request', `Invalid ${label}.`); return value.trim(); };
 const strings = (value = []) => { if (!Array.isArray(value) || value.length > 64 || value.some(item => typeof item !== 'string' || item.length > 8000)) fail('invalid_request', 'Expected bounded text items.'); return [...new Set(value)]; };
@@ -132,7 +132,7 @@ export class ProjectRequirements {
     }
     if (!row && work && latest(work).source.requestId) row = this.get(actor.project.id, latest(work).source.requestId);
     if (!row) fail('request_missing', 'Declare the user requirement before arranging new stages.');
-    service.queue.assertWork(row, args.requestRevision ?? row.revision, args.scope === 'readonly' ? 'readonly' : 'write');
+    service.queue.assertWork(row, args.requestRevision ?? row.revision, ['readonly', 'research'].includes(args.scope) ? 'readonly' : 'write');
     const version = this.version(row);
     if (version.authorityError || !version.source) fail('request_authority', 'The saved requirement has no verified original authorization. Accept a new actual user revision before arranging work.');
     const related = input.messages.some(event => {
@@ -149,7 +149,7 @@ export class ProjectRequirements {
     if (!related && !activation && !separateInputs && input.human.some(item => !(version.source.messageIds ?? [version.source.messageId]).includes(item.data.id))) fail('request_changed', 'Accept the new human inputs as a requirement revision or a separate discussed requirement before delegating.');
     if (!input.human.length && !related && !activation || (related || activation) && (service.project(actor.project.id).paused || service.projectHolds.has(actor.project.id))) fail('unauthorized', 'This notification cannot advance the selected requirement.');
     const chosen = scope(args.scope), paths = args.writePaths ?? [];
-    if (!chosen || version.scope === 'readonly' && chosen !== 'readonly' || version.scope === 'docs' && (chosen === 'worker' || chosen === 'docs' && paths.some(path => !version.writePaths.includes(path)))) fail('unauthorized', 'This stage exceeds the original requirement authorization.');
+    if (!chosen || version.scope === 'readonly' && chosen !== 'readonly' || version.scope === 'research' && !['readonly', 'research'].includes(chosen) || version.scope === 'docs' && (chosen === 'worker' || chosen === 'docs' && paths.some(path => !version.writePaths.includes(path)))) fail('unauthorized', 'This stage exceeds the original requirement authorization.');
     return { request: row, source: { ...version.source, callId: exec.callId,
       ...(row.queue?.activation?.resume ? { continuationMessageId: row.queue.activation.messageId } : {}) } };
   }

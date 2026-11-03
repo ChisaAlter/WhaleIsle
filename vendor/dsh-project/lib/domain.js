@@ -14,7 +14,7 @@ const basisHead = workReference.extend({ runId: z.string(), reportId: z.string()
 const importedRequest = z.object({ inputs: z.array(humanInput), requiredWork: z.array(workReference), callId: id });
 const importedDelivery = z.object({ callId: id, callSeq: z.number(), references: z.array(evidenceReference), requiredWork: z.array(workReference),
   basisHeads: z.array(basisHead).optional(), basisAlreadyChanged: z.boolean().optional(), messageId: id.optional(), committedAt: z.number().optional(), supersededBy: id.optional() });
-const requestVersion = z.object({ revision: z.number().int().positive(), title: id.optional(), goal: id, constraints: z.array(z.string()), conditions: z.array(z.string()), scope: z.enum(['worker', 'readonly', 'docs']), writePaths: z.array(z.string()), source: source.optional(), authorityError: id.optional(), imported035: importedRequest.optional(), at: z.number() });
+const requestVersion = z.object({ revision: z.number().int().positive(), title: id.optional(), goal: id, constraints: z.array(z.string()), conditions: z.array(z.string()), scope: z.enum(['worker', 'readonly', 'research', 'docs']), writePaths: z.array(z.string()), source: source.optional(), authorityError: id.optional(), imported035: importedRequest.optional(), at: z.number() });
 const requestQueue = z.object({ state: z.enum(['discussing', 'queued', 'active', 'cancelled']), order: z.number().optional(),
   released: z.boolean().optional(), resumeRequested: z.boolean().optional(), activation: z.object({ messageId: id, requestRevision: z.number().int().positive(), resume: z.boolean().optional() }).optional() });
 // One unanswered question per requirement, about its current revision. Progress never answers it.
@@ -37,7 +37,9 @@ const prerequisite = z.object({ workstreamId: id, title: id, delegationRef: id, 
 const waitingReason = z.object({ kind: z.enum(['dependencies', 'directory', 'capacity']), workTitles: z.array(z.string()), code: z.string().optional() });
 const report = z.object({ delegationRef: id, outcome: z.enum(['completed', 'blocked', 'failed']), summary: id,
   artifacts: z.array(z.object({ path: id, size: z.number(), sha256: id, type: id })), evidence: z.array(z.string()), remainingIssues: z.array(z.string()), at: z.number(), callId: id, summarizedBy: z.string().optional(), prerequisites: z.array(prerequisite).optional() });
-const delegation = z.object({ ref: id, source, brief: id, scope: z.enum(['worker', 'readonly', 'docs']), writePaths: z.array(z.string()), phase: z.enum(['queued', 'preparing', 'accepted', 'failed', 'stopped']),
+// What a research member searched and fetched, as the host saw the calls.
+const researchSource = z.object({ kind: z.enum(['fetch', 'search']), text: z.string(), at: z.number() });
+const delegation = z.object({ ref: id, source, brief: id, scope: z.enum(['worker', 'readonly', 'research', 'docs']), writePaths: z.array(z.string()), sources: z.array(researchSource).optional(), phase: z.enum(['queued', 'preparing', 'accepted', 'failed', 'stopped']),
   messageId: z.string(), runId: z.string(), error: z.string(), createdAt: z.number(), report: report.optional(), waitingReason: waitingReason.optional(),
   dispatchedPrerequisites: z.array(prerequisite).optional(), prerequisites: z.array(prerequisite).optional(), supersededBy: id.optional() });
 const workstream = z.object({ id, projectId: id, title: id, brief: id, status: z.enum(['open', 'running', 'blocked', 'done']),
@@ -48,7 +50,7 @@ const workstream = z.object({ id, projectId: id, title: id, brief: id, status: z
   pendingSummary: z.boolean(), summaryFailure: z.object({ turn: z.number(), at: z.number(), delegationRef: id, runId: id.optional(),
     error: z.object({ code: id, message: id }), autoRetries: z.number().optional() }).optional(), archived: z.boolean(), createdAt: z.number(), updatedAt: z.number() });
 const worker = z.object({ sessionId: id, projectId: id, workstreamId: id, cwd: z.string(),
-  role: z.enum(['worker', 'readonly', 'docs']), mode: z.enum(['existing', 'worktree']),
+  role: z.enum(['worker', 'readonly', 'research', 'docs']), mode: z.enum(['existing', 'worktree']),
   phase: z.enum(['provisioning', 'active', 'idle', 'failed', 'stopping']), directoryHeld: z.boolean(), stopped: z.boolean(), materialized: z.boolean(),
   activeRunId: z.string().optional(), reservationRef: z.string().optional(), holdSourceMessageId: z.string().optional(),
   branch: z.string().optional(), workspace: z.unknown().optional(), writePaths: z.array(z.string()), consumedDelegationRef: z.string(), error: z.string(), updatedAt: z.number() });

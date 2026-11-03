@@ -88,6 +88,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   };
   Object.assign(zh, { requestSections: '需求详情', requestProgress: '进度', requestResults: '成果', leadPlan: '协调者计划', stageRail: '执行阶段', stageArranging: '安排', stageExecuting: '执行', stageSummarizing: '汇总', stageDelivered: '交付', sectionMembers: '成员', panelSections: '面板内容', pinObserver: '固定观察', returnFloat: '返回浮窗', closeObserver: '关闭观察', statusUnknown: '状态未知', statusWaiting: '等待中', statusHandover: '等待交付', statusArranging: '正在安排', statusSummarizing: '正在汇总', retryRead: '重新读取', retainedStatus: '连接中断，以下为上次确认的数据。', queueRetry: '重试队列操作', allRequestDetails: '查看完整需求', workPreviewHint: '完整工作记录正在读取…' });
   Object.assign(en, { requestSections: 'Request details', requestProgress: 'Progress', requestResults: 'Results', leadPlan: 'Coordinator plan', stageRail: 'Execution stages', stageArranging: 'Arrange', stageExecuting: 'Execute', stageSummarizing: 'Summarize', stageDelivered: 'Deliver', sectionMembers: 'Members', panelSections: 'Panel sections', pinObserver: 'Keep observing', returnFloat: 'Return to popover', closeObserver: 'Close observer', statusUnknown: 'Unknown', statusWaiting: 'Waiting', statusHandover: 'Awaiting delivery', statusArranging: 'Arranging', statusSummarizing: 'Summarizing', retryRead: 'Reload', retainedStatus: 'Disconnected; showing the last confirmed data.', queueRetry: 'Retry queue action', allRequestDetails: 'View full request', workPreviewHint: 'Loading full work records…' });
+  Object.assign(zh, { requestRoleResearch: '调研', researchSources: '查阅的来源', searchedPrefix: '搜索：' });
+  Object.assign(en, { requestRoleResearch: 'Research', researchSources: 'Sources consulted', searchedPrefix: 'Searched: ' });
   Object.assign(zh, { needsYou: '需要你', groupActive: '进行中', stageAwaitingAnswer: '等你回答', stageAwaitingDecision: '等你决定', askFromMember: '成员在等你回答', askPlaceholder: '输入你的回答', askSend: '回答', askSent: '已回复，协调者处理中…', askIfUnanswered: '不回答时：{text}', askAnswer: '{title}：{answer}',
     blockedRetry: '重试', blockedRetryPrompt: '请重试受阻的需求「{title}」。受阻原因：{reason}。先说明你准备怎么做；如果需要我提供什么，请用 project_ask 问我。', viewResults: '查看成果', statusNeedsYou: '{count} 项等你', statusSummaryRetrying: '汇总遇到临时故障，自动重试中', summaryRetrying: '临时故障，自动重试中（第 {attempt}/{of} 次）' });
   Object.assign(en, { needsYou: 'Needs you', groupActive: 'In progress', stageAwaitingAnswer: 'Waiting for your answer', stageAwaitingDecision: 'Waiting for your decision', askFromMember: 'A member is waiting for your answer', askPlaceholder: 'Type your answer', askSend: 'Answer', askSent: 'Sent; the coordinator is on it…', askIfUnanswered: 'If you don’t answer: {text}', askAnswer: '{title}: {answer}',
@@ -663,7 +665,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [confirm, setConfirm] = useState(null);
     const delivery = card.delivery, changes = card.changes;
     if (!delivery || !Array.isArray(delivery.artifacts) || !(card.status === 'completed' || delivery.outcome === 'partial')) return null;
-    const files = delivery.artifacts, pages = delivery.pages ?? [], diffWork = (card.work ?? []).find(item => item.memberRole && item.memberRole !== 'readonly');
+    const files = delivery.artifacts, pages = delivery.pages ?? [], diffWork = (card.work ?? []).find(item => item.memberRole && !['readonly', 'research'].includes(item.memberRole));
     const requirementDiff = changes?.isGit && changes.fileCount !== undefined;
     if (!files.length && !pages.length && !diffWork && !requirementDiff) return null;
     const open = async file => {
@@ -842,7 +844,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           const stream = workstreams?.find(work => work.id === item.workstreamId);
           const failure = item.status === 'summaryFailed' && stream?.summaryFailure?.delegationRef === item.delegationRef ? stream.summaryFailure : null;
           // A delivered requirement shows its own changes once, in the delivery; work in progress shows its directory.
-          const changes = !done && item.current !== false && Boolean(item.memberRole) && item.memberRole !== 'readonly';
+          const changes = !done && item.current !== false && Boolean(item.memberRole) && !['readonly', 'research'].includes(item.memberRole);
           const stoppable = item.current !== false && !controls.paused && (live || ['queued', 'preparing', 'provisioning', 'stopping'].includes(item.status));
           return h('li', { key: rowKey, className: 'dsh-project-task-step', 'data-state': item.status, 'data-enter': seen.current.get(rowKey) },
             canOpen ? h('button', { type: 'button', className: 'dsh-project-task-step-open', title: t('viewProcess'), onClick: open }, row) : h('div', { className: 'dsh-project-task-step-open' }, row),
@@ -897,7 +899,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const task = historical ? undefined : team?.tasks?.find(item => item.id === work.workstreamId);
       const member = historical ? undefined : team?.members?.find(item => task?.ownerName ? item.name === task.ownerName : item.id === work.workerSessionId);
       const title = task?.subject || work.title, name = projectMemberDisplayName(member ?? { name: work.memberName }, work, t);
-      const roleKey = { development: 'requestRoleDevelopment', readonly: 'requestRoleReview', docs: 'requestRoleDocs' }[work.memberRole];
+      const roleKey = { development: 'requestRoleDevelopment', readonly: 'requestRoleReview', research: 'requestRoleResearch', docs: 'requestRoleDocs' }[work.memberRole];
       const executorName = name === title || name === work.title ? t('teamMember') : name;
       const executor = roleKey ? executorName === t('teamMember') ? t(roleKey) : `${t(roleKey)} · ${executorName}` : executorName;
       const blocked = task?.blockedBy?.filter(id => team.tasks.find(item => item.id === id)?.status !== 'completed') ?? [];
@@ -1193,6 +1195,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       h('div', { className: 'dsh-project-result-checks' }, h('strong', null, t('keyEvidence')), report.evidence?.length ? h('ul', null, report.evidence.slice(0, 2).map((item, index) => h('li', { key: index }, item))) : h('p', { className: 'dsh-project-muted' }, t('noEvidence'))),
       report.remainingIssues?.length ? h('div', { className: 'dsh-project-result-checks' }, h('strong', null, t('remainingIssues')), h('ul', null, report.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null,
       report.artifacts?.map(file => h(Artifact, { key: file.path, file, open, busy, t })),
+      // What a research member opened and searched, as the host recorded it while the calls were made.
+      report.sources?.length ? h('details', { className: 'dsh-project-result-disclosure', 'data-project-sources': report.sources.length }, h('summary', null, `${t('researchSources')} · ${report.sources.length}`),
+        h('ul', null, report.sources.map((item, index) => h('li', { key: index }, item.kind === 'search' ? `${t('searchedPrefix')}${item.text}` : item.text)))) : null,
       h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('reportDetails')),
         h('div', { className: 'dsh-project-result-details' }, markdown(t, report.summary),
           report.evidence?.length > 2 ? h('details', null, h('summary', null, t('evidence')), h('ul', null, report.evidence.map((item, index) => h('li', { key: index }, item)))) : null)),
