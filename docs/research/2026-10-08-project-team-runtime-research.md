@@ -99,7 +99,7 @@ Team 任务、成员 Session、执行 run、交接结果各有稳定身份。恢
 | TeamTaskBoard | expectedRevision 校验与 claim；writeScopes 明确是 advisory | 任务归属/版本可复用，写目录排他不能假装已经解决 |
 | TeamRuntimeLifecycle | admission cutoff 与有界 settle | 可参考生命周期边界；插件 dispose 不是产品“停止此项目”API |
 
-源码：[服务](../../vendor/deepseek-harness/packages/experimental/agent-team/src/index.ts)、[journal](../../vendor/deepseek-harness/packages/experimental/agent-team/src/journal.ts)、[mailbox](../../vendor/deepseek-harness/packages/experimental/agent-team/src/mailbox.ts)、[任务板](../../vendor/deepseek-harness/packages/experimental/agent-team/src/task-board.ts)、[生命周期](../../vendor/deepseek-harness/packages/experimental/agent-team/src/lifecycle.ts)。
+源码：[服务](../../vendor/deepseek-harness/packages/experimental/agent-team/src/index.ts)、[journal](../../vendor/deepseek-harness/packages/experimental/agent-team/src/journal.ts)、[mailbox](../../vendor/deepseek-harness/packages/experimental/agent-team/src/session-message.ts)、[任务板](../../vendor/deepseek-harness/packages/experimental/agent-team/src/task-board.ts)、[生命周期](../../vendor/deepseek-harness/packages/experimental/agent-team/src/lifecycle.ts)。
 
 以下是研究推导出的实施要求，不声称这些要求已经被现有 API 满足。
 

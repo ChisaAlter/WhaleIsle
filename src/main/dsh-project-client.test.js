@@ -2658,3 +2658,14 @@ test('a research report lists the pages the member opened and what it searched, 
     assert.match(result.textContent, /https:\/\/example\.com\/spec/); assert.match(result.textContent, /searchedPrefix.*harness web tools/);
   } finally { await b.dispose(); }
 });
+
+test('the research sites list is edited from Project materials like the other plain materials', async () => {
+  const b = bench({ detail: workDetail() });
+  b.stored['research-hosts.txt'] = '';
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.press('researchHosts');
+    await b.flush(); await b.changeNotes('docs.example.org  # the spec lives here\n'); await b.press('save'); await b.flush();
+    const write = b.requests.findLast(request => request.method === 'store/write');
+    assert.deepEqual([write.input.path, write.input.text], ['research-hosts.txt', 'docs.example.org  # the spec lives here\n']);
+  } finally { await b.dispose(); }
+});

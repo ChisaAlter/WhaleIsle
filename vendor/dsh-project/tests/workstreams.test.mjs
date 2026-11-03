@@ -584,3 +584,21 @@ test('research adds only web search and fetch to the read-only tools; every call
     await flush(); assert.equal(sources().length, 8, 'denied calls leave no trace');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('the research sites list is an ordinary editable material that the guard reads', async () => {
+  const f = setup(), item = f.add('Research work', true, 1), agent = { id: item.worker.sessionId };
+  const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-hosts-')), storage = await projectDirectory(root, f.project.id);
+  f.service.home = root; f.service.project(f.project.id).storageRoot = storage; await fs.mkdir(join(storage, 'docs'));
+  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.role = 'research';
+  try {
+    const read = () => f.service.command('store/read', { projectId: f.project.id, path: 'research-hosts.txt' });
+    assert.deepEqual(await read(), { path: 'research-hosts.txt', text: '' }, 'it exists, empty, the first time it is opened');
+    assert.equal(f.service.guard({ name: 'web_fetch', arguments: { url: 'https://anywhere.test/' }, agent }), undefined);
+    await f.service.command('store/write', { projectId: f.project.id, path: 'research-hosts.txt', text: '# only these\ndocs.example.org\n' });
+    assert.equal((await read()).text, '# only these\ndocs.example.org\n');
+    assert.match(f.service.guard({ name: 'web_fetch', arguments: { url: 'https://anywhere.test/' }, agent }), /only these sites: docs\.example\.org/);
+    assert.equal(f.service.guard({ name: 'web_fetch', arguments: { url: 'https://docs.example.org/x' }, agent }), undefined);
+    await assert.rejects(f.service.command('store/write', { projectId: f.project.id, path: 'research-hosts.txt', text: 'a.test\n'.repeat(3000) }), { code: 'store_size' });
+    await assert.rejects(f.service.command('store/write', { projectId: f.project.id, path: 'decisions.md', text: 'x' }), { code: 'store_path' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
