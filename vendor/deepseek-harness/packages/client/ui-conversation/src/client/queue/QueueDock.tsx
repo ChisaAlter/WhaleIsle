@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { PropsLocale, PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -22,6 +22,8 @@ const EMPTY_QUEUE = [] as const
  * goal rounds, so such rows only open it once they linger this long.
  */
 const SYSTEM_ROW_SETTLE_MS = 400
+/** Custom drag type, so dropping a row on the composer text box inserts nothing. */
+const DRAG_TYPE = 'application/x-dsh-queue-item'
 const QUEUE_TEXT_FACTS: Readonly<Partial<UserTextFacts>> = {
   collapseWhitespace: true,
   trimWhitespace: true,
@@ -99,6 +101,15 @@ function QueueThumb({ attachment, loadImage, label }: {
     : <img className={css.thumb} src={url} alt={label} />
 }
 
+/** Six-dot grip that marks a row as reorderable. */
+function GripIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden focusable="false">
+      {[4, 10].flatMap(x => [3, 7, 11].map(y => <circle key={`${x}:${y}`} cx={x} cy={y} r="1.1" />))}
+    </svg>
+  )
+}
+
 /** True once `active` has held for `delayMs`; drops with it at once. */
 function useLingering(active: boolean, delayMs: number): boolean {
   const [lingered, setLingered] = useState(false)
@@ -153,15 +164,30 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
   const open = rowCount > 0 && (userRows || systemRowsLinger)
   const presence = usePresence(open)
   const retained = useRef<ReactNode>(null)
+  // Reorder positions address the Host's whole turn queue, which can hold rows hidden from this list.
+  const hostRows = inbox?.['next-turn'] ?? EMPTY_QUEUE
+  const [drag, setDrag] = useState<{ id: MessageId; over: { id: MessageId; after: boolean } | null } | null>(null)
+  const handles = useRef(new Map<MessageId, HTMLElement>())
+  const refocus = useRef<MessageId | null>(null)
 
   useEffect(() => {
     if (rowCount === 0 && !collapsed) setCollapsed(true)
     if (editing !== null && (!queueMutable || !queue.some(row => row.id === editing.id))) setEditing(null)
-  }, [collapsed, editing, queue, queueMutable, rowCount])
+    if (drag !== null && (!queueMutable || !queue.some(row => row.id === drag.id))) setDrag(null)
+  }, [collapsed, drag, editing, queue, queueMutable, rowCount])
+
+  // A keyboard move re-orders the rows under the focused grip; put focus back on it once they settle.
+  useEffect(() => {
+    const id = refocus.current
+    if (id === null) return
+    refocus.current = null
+    handles.current.get(id)?.focus()
+  }, [queue])
 
   if (!presence.mounted) return null
 
   const interactionActive = queueMutable && (editing !== null || busy !== null)
+  const reorderable = queueMutable && queue.length > 1
   const expanded = !collapsed || interactionActive
   const listVisible = rowCount === 1 || expanded
 
@@ -191,6 +217,36 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
     )) setEditing(null)
   }
 
+  /** Put one row beside another; the Host clamps and keeps the message's identity. */
+  const moveBeside = async (id: MessageId, targetId: MessageId, after: boolean): Promise<boolean> => {
+    const from = hostRows.findIndex(row => row.id === id)
+    const target = hostRows.findIndex(row => row.id === targetId)
+    if (from < 0 || target < 0) return false
+    const slot = after ? target + 1 : target
+    const toIndex = slot > from ? slot - 1 : slot
+    if (toIndex === from) return true
+    return applyAction(id, { kind: 'move', toIndex }, t('queue.moveFailed'))
+  }
+
+  const dragOver = (id: MessageId, event: DragEvent<HTMLElement>): void => {
+    if (drag === null) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const box = event.currentTarget.getBoundingClientRect()
+    const over = id === drag.id ? null : { id, after: event.clientY > box.top + box.height / 2 }
+    setDrag(current => (current === null || (current.over?.id === over?.id && current.over?.after === over?.after))
+      ? current
+      : { ...current, over })
+  }
+
+  const dropDragged = (event: DragEvent<HTMLElement>): void => {
+    if (drag === null) return
+    event.preventDefault()
+    const { id, over } = drag
+    setDrag(null)
+    if (over !== null) void moveBeside(id, over.id, over.after)
+  }
+
   const panel = (
     <div className={css.panel}>
       <div className={css.panelBody}>
@@ -214,13 +270,62 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
           </button>
         )}
         <ul id={listId} className={css.list} hidden={!listVisible}>
-          {listVisible && queue.map((row) => {
+          {listVisible && queue.map((row, index) => {
             const attachments = queueAttachments(row.content)
             const text = textOf(row.content)
             return (
-              <li key={row.id} className={css.row}>
+              <li
+                key={row.id}
+                className={[
+                  css.row,
+                  drag?.id === row.id ? css.dragging : '',
+                  drag?.over?.id === row.id ? (drag.over.after ? css.dropAfter : css.dropBefore) : '',
+                ].filter(Boolean).join(' ')}
+                onDragOver={drag === null ? undefined : (event) => { dragOver(row.id, event) }}
+                onDrop={drag === null ? undefined : dropDragged}
+              >
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
                 {rowCount === 1 && <span className={css.lead} aria-hidden><IconQueueOutlineRegular /></span>}
+                {reorderable && editing?.id !== row.id && (row.source.kind === 'user'
+                  ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className={css.handle}
+                      ref={(element) => {
+                        if (element === null) handles.current.delete(row.id)
+                        else handles.current.set(row.id, element)
+                      }}
+                      draggable={busy === null}
+                      aria-label={t('queue.reorder', { n: index + 1, total: queue.length })}
+                      aria-disabled={busy !== null || undefined}
+                      aria-keyshortcuts="ArrowUp ArrowDown"
+                      title={t('queue.reorder.hint')}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData(DRAG_TYPE, row.id)
+                        const rowElement = event.currentTarget.closest('li')
+                        if (rowElement !== null && typeof event.dataTransfer.setDragImage === 'function') {
+                          event.dataTransfer.setDragImage(rowElement, 16, 18)
+                        }
+                        setDrag({ id: row.id, over: null })
+                      }}
+                      onDragEnd={() => { setDrag(null) }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+                        event.preventDefault()
+                        const neighbor = queue[event.key === 'ArrowUp' ? index - 1 : index + 1]
+                        if (neighbor === undefined || busy !== null) return
+                        refocus.current = row.id
+                        void moveBeside(row.id, neighbor.id, event.key === 'ArrowDown').then((moved) => {
+                          if (!moved) refocus.current = null
+                        })
+                      }}
+                    >
+                      <GripIcon />
+                    </span>
+                  )
+                  : <span className={css.handleSpacer} aria-hidden />)}
                 {editing?.id === row.id
                   ? (
                     <InlineEditor

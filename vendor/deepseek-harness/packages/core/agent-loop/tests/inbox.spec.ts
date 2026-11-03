@@ -13,7 +13,7 @@ function unsupportedInbox(): Agent['inbox'] {
   }
   return {
     nextTurn: [], nextStep: [], clear: rejectMutation, append: rejectMutation,
-    prepend: rejectMutation, replace: rejectMutation, remove: rejectMutation, splice: rejectMutation,
+    prepend: rejectMutation, replace: rejectMutation, remove: rejectMutation, move: rejectMutation, splice: rejectMutation,
   }
 }
 
@@ -224,6 +224,44 @@ describe('ReactLoopInbox', () => {
     expect(inserted).toEqual([original, nextStep, replacement, editedStep])
     expect(() => { agent.inbox.replace(editedStep.id, replacement) })
       .toThrow(`message "${replacement.id}" is already pending`)
+  })
+
+  it('moves a pending message within its list as one reorder that publishes no discard or insert', async () => {
+    const { ctx, session, agent } = await inboxAgent('move-inbox')
+    const text = (value: string) => createUserMessage({
+      content: [{ type: 'text', text: value }],
+      source: { kind: 'user' },
+    })
+    const [a, b, c, d] = [text('a'), text('b'), text('c'), text('d')] as [UserMessage, UserMessage, UserMessage, UserMessage]
+    const step = text('step')
+    for (const message of [a, b, c, d]) agent.inbox.append('next-turn', message)
+    agent.inbox.append('next-step', step)
+    const inserted: UserMessage[] = []
+    const discarded: UserMessage[] = []
+    ctx.on('agent/inbox/inserted', ({ message }) => void inserted.push(message))
+    ctx.on('agent/inbox/discarded', ({ message }) => void discarded.push(message))
+    const beforeMove = session.snapshotEvents().length
+
+    expect(agent.inbox.move(text('missing').id, 0)).toBe(false)
+    expect(agent.inbox.move(d.id, 1)).toBe(true)
+    expect(agent.inbox.nextTurn).toEqual([a, d, b, c])
+    // A destination past the end clamps to the last position.
+    expect(agent.inbox.move(a.id, 99)).toBe(true)
+    expect(agent.inbox.nextTurn).toEqual([d, b, c, a])
+    // A message already at its destination, or an unusable destination, records nothing.
+    expect(agent.inbox.move(a.id, 3)).toBe(true)
+    expect(agent.inbox.move(b.id, Number.NaN)).toBe(true)
+    expect(agent.inbox.nextTurn).toEqual([d, b, c, a])
+    expect(agent.inbox.nextStep).toEqual([step])
+
+    expect(discarded).toEqual([])
+    expect(inserted).toEqual([])
+    expect(session.snapshotEvents().slice(beforeMove).map(event => event.type === 'agent/inbox/spliced'
+      ? event.data
+      : event.type)).toEqual([
+      { target: 'next-turn', start: 1, removedCount: 3, inserted: [d, b, c], outcome: 'canceled' },
+      { target: 'next-turn', start: 0, removedCount: 4, inserted: [d, b, c, a], outcome: 'canceled' },
+    ])
   })
 
   it('normalizes splice coordinates, rejects duplicate identities, and reports missing removals', async () => {
