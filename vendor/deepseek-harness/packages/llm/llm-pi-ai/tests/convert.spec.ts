@@ -939,6 +939,17 @@ describe('mapStopReason / mapUsage', () => {
   })
 
   it.each([
+    'Our servers are currently overloaded. Please try again later.',
+    'Overloaded',
+    'The service is temporarily unavailable',
+    'Service Unavailable',
+    'The model is at capacity right now',
+  ])('maps a provider that reports itself overloaded to a retryable server failure: %j', (errorMessage) => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
+      .toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+  })
+
+  it.each([
     'other side closed',
     'HTTP2 request did not get a response',
     'WebSocket closed unexpectedly',

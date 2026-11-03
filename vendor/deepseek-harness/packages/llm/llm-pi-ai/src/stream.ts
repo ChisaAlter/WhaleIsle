@@ -48,6 +48,9 @@ function classifyPiAiError(message: string): string {
   if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
   if (/\b400\b|invalid.?request/i.test(message)) return 'INVALID_REQUEST'
   if (/\b5\d\d\b/.test(message)) return 'SERVER'
+  // A provider that says it is overloaded or out of capacity, with no status number left after pi-ai flattened the
+  // error to its message, is a transient server condition: retrying can succeed, so it must not be PI_AI_ERROR.
+  if (/\b(?:overloaded|over capacity|at capacity|temporarily unavailable|service unavailable)\b/i.test(message)) return 'SERVER'
   if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
   // A stream truncated before the provider's terminal event: each pi-ai provider
   // throws its own wording when the wire closes mid-response without a terminal
