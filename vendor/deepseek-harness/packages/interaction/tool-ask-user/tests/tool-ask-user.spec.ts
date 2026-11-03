@@ -87,7 +87,7 @@ function stubAgent(id: string, delegationDepth = 0): Agent {
     }),
     inbox: {
       nextTurn: [], nextStep: [], clear() {}, append() {}, prepend() {},
-      replace: () => false, remove: () => false, splice: () => [],
+      replace: () => false, remove: () => false, move: () => false, splice: () => [],
     },
     status: 'idle',
     ctx: new Context(),

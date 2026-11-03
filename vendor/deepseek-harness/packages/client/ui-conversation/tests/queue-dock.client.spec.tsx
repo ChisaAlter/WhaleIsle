@@ -5,7 +5,7 @@
  */
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type {
   SessionListState, SessionSnapshot, UseProjection,
@@ -212,6 +212,125 @@ describe('QueueDock', () => {
     }
   })
 
+  describe('reordering', () => {
+    const user = (id: string): UserMessage => row(id, `message ${id}`)
+    const reorderName = (n: number, total: number): string => t('queue.reorder', { n, total })
+    const dataTransfer = () => ({ effectAllowed: '', dropEffect: '', setData: vi.fn(), setDragImage: vi.fn() })
+    /** jsdom has no DragEvent, so the pointer height is attached to the event by hand. */
+    const dragOver = (target: Element, transfer: ReturnType<typeof dataTransfer>, clientY: number): void => {
+      const event = createEvent.dragOver(target, { dataTransfer: transfer })
+      Object.defineProperty(event, 'clientY', { value: clientY })
+      fireEvent(target, event)
+    }
+
+    /** Mount a dock with its list open; `visible` is the row count the header shows. */
+    function mount(
+      rows: UserMessage[],
+      injected: Partial<QueueDockInjected> = {},
+      extra: Partial<TestSnapshot> = {},
+      visible = rows.length,
+    ) {
+      const snap = { ...snapshotWith(rows), ...extra }
+      const source = liveSession(snap)
+      const props = kitFor(snap, injected)
+      const view = render(<QueueDock {...props} useSession={source.useSession} useProjection={source.useProjection} />)
+      if (visible > 1) fireEvent.click(view.getByRole('button', { name: t('queue.count', { n: visible }) }))
+      return { view, props }
+    }
+
+    it('moves a row to where it is dropped, below or above its neighbour', async () => {
+      const { view, props } = mount([user('a'), user('b'), user('c')])
+      const items = view.getAllByRole('listitem')
+      const transfer = dataTransfer()
+
+      fireEvent.dragStart(view.getByRole('button', { name: reorderName(1, 3) }), { dataTransfer: transfer })
+      expect(transfer.setData).toHaveBeenCalledWith('application/x-dsh-queue-item', 'a')
+      dragOver(items[2]!, transfer, 10)
+      fireEvent.drop(items[2]!, { dataTransfer: transfer })
+      await waitFor(() => { expect(props.updateQueue).toHaveBeenCalledWith('a', { kind: 'move', toIndex: 2 }) })
+
+      fireEvent.dragStart(view.getByRole('button', { name: reorderName(3, 3) }), { dataTransfer: transfer })
+      dragOver(items[0]!, transfer, -1)
+      fireEvent.drop(items[0]!, { dataTransfer: transfer })
+      await waitFor(() => { expect(props.updateQueue).toHaveBeenCalledWith('c', { kind: 'move', toIndex: 0 }) })
+    })
+
+    it('sends nothing when a row is dropped where it already is, or the drag is abandoned', () => {
+      const { view, props } = mount([user('a'), user('b'), user('c')])
+      const items = view.getAllByRole('listitem')
+      const transfer = dataTransfer()
+
+      // Just above its lower neighbour, or on itself: same place.
+      fireEvent.dragStart(view.getByRole('button', { name: reorderName(1, 3) }), { dataTransfer: transfer })
+      dragOver(items[1]!, transfer, -1)
+      fireEvent.drop(items[1]!, { dataTransfer: transfer })
+      fireEvent.dragStart(view.getByRole('button', { name: reorderName(2, 3) }), { dataTransfer: transfer })
+      dragOver(items[1]!, transfer, 10)
+      fireEvent.drop(items[1]!, { dataTransfer: transfer })
+      // Released outside the list.
+      fireEvent.dragStart(view.getByRole('button', { name: reorderName(3, 3) }), { dataTransfer: transfer })
+      fireEvent.dragEnd(view.getByRole('button', { name: reorderName(3, 3) }), { dataTransfer: transfer })
+      fireEvent.drop(items[0]!, { dataTransfer: transfer })
+
+      expect(props.updateQueue).not.toHaveBeenCalled()
+    })
+
+    it('moves a row one place with the arrow keys and keeps focus on its grip', async () => {
+      const queue = [user('a'), user('b'), user('c')]
+      const { view, props } = mount(queue)
+      const grip = (n: number) => view.getByRole('button', { name: reorderName(n, 3) })
+
+      // The ends have nowhere to go.
+      fireEvent.keyDown(grip(1), { key: 'ArrowUp' })
+      fireEvent.keyDown(grip(3), { key: 'ArrowDown' })
+      fireEvent.keyDown(grip(1), { key: 'Enter' })
+      expect(props.updateQueue).not.toHaveBeenCalled()
+
+      fireEvent.keyDown(grip(2), { key: 'ArrowDown' })
+      await waitFor(() => { expect(props.updateQueue).toHaveBeenCalledWith('b', { kind: 'move', toIndex: 2 }) })
+      await waitFor(() => { expect(view.getByRole('button', { name: t('queue.count', { n: 3 }) })).toBeTruthy() })
+      fireEvent.keyDown(grip(3), { key: 'ArrowUp' })
+      await waitFor(() => { expect(props.updateQueue).toHaveBeenLastCalledWith('c', { kind: 'move', toIndex: 1 }) })
+    })
+
+    it('offers a grip only on rows the user wrote, and only when there is something to reorder around', () => {
+      const goalRound: UserMessage = {
+        ...row('goal-round', '<goal_round>'),
+        source: { kind: 'goal', goalId: 'g1', revision: 1, round: 2 } as never,
+      }
+      const mixed = mount([user('a'), goalRound, user('c')])
+      expect(mixed.view.container.querySelectorAll('[role="button"][draggable]')).toHaveLength(2)
+      cleanup()
+
+      const single = mount([user('only')])
+      expect(single.view.container.querySelector('[role="button"][draggable]')).toBeNull()
+    })
+
+    it('addresses the Host queue, counting rows the list hides', async () => {
+      const local = { ...user('local'), source: { kind: 'user' as const, rpcId: 'idle-request' as never } }
+      const { view, props } = mount([local, user('a'), user('b')], {}, {
+        pendingSubmissions: [{
+          requestId: 'idle-request' as never, placement: 'transcript', time: 1, text: 'shown in the chat', attachments: [],
+        }],
+      }, 2)
+      const items = view.getAllByRole('listitem')
+      const transfer = dataTransfer()
+
+      fireEvent.dragStart(view.getByRole('button', { name: reorderName(1, 2) }), { dataTransfer: transfer })
+      dragOver(items[1]!, transfer, 10)
+      fireEvent.drop(items[1]!, { dataTransfer: transfer })
+      // 'a' sits second in the Host queue, behind the hidden row; after 'b' is the third place.
+      await waitFor(() => { expect(props.updateQueue).toHaveBeenCalledWith('a', { kind: 'move', toIndex: 2 }) })
+    })
+
+    it('reports a reorder the Host refused', async () => {
+      const updateQueue = vi.fn((): Promise<void> => Promise.reject(new Error('already sent')))
+      const { view, props } = mount([user('a'), user('b')], { updateQueue })
+      fireEvent.keyDown(view.getByRole('button', { name: reorderName(1, 2) }), { key: 'ArrowDown' })
+      await waitFor(() => { expect(props.notify).toHaveBeenCalledWith('error', t('queue.moveFailed')) })
+    })
+  })
+
   it('opens at once for a queued row the user wrote', () => {
     vi.useFakeTimers()
     try {
@@ -392,8 +511,8 @@ describe('QueueDock', () => {
 
     fireEvent.click(header)
     expect(header.getAttribute('aria-expanded')).toBe('true')
-    // Expanded renders one Edit/Remove/Steer group per row, plus the header.
-    expect(view.getAllByRole('button')).toHaveLength(1 + 2 * 3)
+    // Expanded renders one grip and one Edit/Remove/Steer group per row, plus the header.
+    expect(view.getAllByRole('button')).toHaveLength(1 + 2 * (1 + 3))
     expect(view.getByText('one')).toBeTruthy()
     expect(view.getByText('two')).toBeTruthy()
 

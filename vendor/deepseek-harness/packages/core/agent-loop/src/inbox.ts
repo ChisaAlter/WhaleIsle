@@ -157,6 +157,40 @@ export class ReactLoopInbox implements InboxContract {
   }
 
   /**
+   * Move one pending message to another position in the list that holds it.
+   * Recorded as one splice over the shifted range, shaped like an in-place edit
+   * (`canceled` removal plus the reordered messages): every durable consumer
+   * already reads that shape as "same pending work, new order" and not as a claim.
+   * No discard or insert notification is published, because no message left or
+   * joined the list.
+   * @param messageId - identity of the pending message to move.
+   * @param toIndex - destination position in that list, clamped to its bounds.
+   * @returns whether the message was still pending.
+   */
+  move(messageId: MessageId, toIndex: number): boolean {
+    const location = this.locate(messageId)
+    if (location === undefined) return false
+    const inbox = this.current()[location.target]
+    const truncated = Math.trunc(toIndex)
+    const destination = Math.min(
+      Math.max(Number.isNaN(truncated) ? location.index : truncated, 0),
+      inbox.length - 1,
+    )
+    if (destination === location.index) return true
+    const start = Math.min(location.index, destination)
+    const reordered = inbox.slice(start, Math.max(location.index, destination) + 1)
+    reordered.splice(destination - start, 0, ...reordered.splice(location.index - start, 1))
+    this.session.append('agent/inbox/spliced', {
+      target: location.target,
+      start,
+      removedCount: reordered.length,
+      inserted: reordered,
+      outcome: 'canceled',
+    })
+    return true
+  }
+
+  /**
    * Apply standard splice semantics and durably record the normalized result.
    * @param target - pending list to mutate.
    * @param start - splice position.
