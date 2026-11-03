@@ -2642,3 +2642,19 @@ test('Needs you: a temporary summary failure the host retries reads as the host 
     assert.equal(b.panel('requests').querySelector('[data-project-attention]'), null);
   } finally { await b.dispose(); }
 });
+
+test('a research report lists the pages the member opened and what it searched, and a research member shows no file changes', async () => {
+  const detail = workDetail(), task = taskForWork(detail);
+  detail.workstreams[0].latestReport.sources = [{ kind: 'fetch', text: 'https://example.com/spec', at: 1 }, { kind: 'search', text: 'harness web tools', at: 2 }];
+  task.work[0].memberRole = 'research';
+  const b = bench({ detail, cards: [task] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
+    assert.equal([...b.requestElement(task.id).querySelectorAll('button')].some(button => button.textContent === 'viewChanges'), false, 'a read-only research member has no changes to view');
+    await b.press('viewResult'); await b.flush();
+    const result = b.dialog()?.querySelector('[data-result-workstream-id=work-one]');
+    assert.equal(result.querySelector('[data-project-sources]').dataset.projectSources, '2');
+    await b.disclose('researchSources · 2', result);
+    assert.match(result.textContent, /https:\/\/example\.com\/spec/); assert.match(result.textContent, /searchedPrefix.*harness web tools/);
+  } finally { await b.dispose(); }
+});

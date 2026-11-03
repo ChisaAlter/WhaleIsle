@@ -2150,6 +2150,60 @@ test('the real Lead ends a notice-started turn with project_standby and no messa
   }
 });
 
+test('a research stage gives the member web search and fetch but no shell or directory, and the host records what it opened', { timeout: 240000 }, async () => {
+  const URL_READ = 'https://research-fixture.invalid/spec';
+  class ResearchModel extends ScriptedModel {
+    workerTools = [];
+    async *stream(options) {
+      const names = (options.tools ?? []).map(tool => tool.name);
+      const envelope = messageText(options.messages.findLast(message => message.role === 'user' && messageText(message).includes('DelegationRef:')) ?? {});
+      if (names.includes('project_report') && envelope.includes('RESEARCH_LINK')) {
+        this.requests.push(options); this.workerTools = names;
+        const ref = /DelegationRef: ([^\n]+)/.exec(envelope)?.[1], stage = this.stages.get(ref) ?? 0; this.stages.set(ref, stage + 1);
+        if (!stage) yield* call(`research-fetch-${++this.counter}`, 'web_fetch', { url: URL_READ });
+        else if (stage === 1) yield* call(`research-shell-${++this.counter}`, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo SHOULD_NOT_EXECUTE' });
+        else yield* call(`research-report-${++this.counter}`, 'project_report', { delegationRef: ref, outcome: 'completed', summary: 'Read the linked page as far as it could be fetched.', artifacts: [], evidence: [URL_READ], remainingIssues: [] });
+        return;
+      }
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
+      if (names.includes('project_delegate') && input?.source.kind === 'user' && messageText(input).includes('RESEARCH_LINK')) {
+        this.requests.push(options);
+        const key = `research:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (stage === 0) yield* call(`research-request-${++this.counter}`, 'project_request', { title: 'Study the spec', disposition: 'queued', goal: `Read ${URL_READ} and summarize it`, conditions: ['A summary exists'], scopeCeiling: 'research' });
+        else if (stage === 1) {
+          const request = JSON.parse(messageText(options.messages.findLast(message => message.role === 'tool')));
+          yield* call(`research-delegate-${++this.counter}`, 'project_delegate', { requestId: request.id, requestRevision: request.revision, title: 'Research work', brief: `RESEARCH_LINK read ${URL_READ}`, scope: 'research' });
+        } else yield* blocks('Research started.');
+        return;
+      }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-research-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new ResearchModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'research-flow', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'research-turn', mode: 'queue', content: [{ type: 'text', text: 'RESEARCH_LINK please' }] }, signal);
+    await waitFor(() => host.state().workstreams.find(item => item.title === 'Research work' && item.latestReport), 'the research member reports', 150000);
+    await lead.whenIdle(); await host.tail;
+    const work = host.state().workstreams.find(item => item.title === 'Research work'), member = host.state().workers.find(item => item.workstreamId === work.id);
+    assert.equal(work.delegations[0].scope, 'research'); assert.equal(member.role, 'research'); assert.equal(member.directoryHeld, false, 'research holds no directory');
+    assert.equal(host.state().requests[0].versions[0].scope, 'research', 'the requirement was authorized as research');
+    assert.ok(model.workerTools.includes('web_search') && model.workerTools.includes('web_fetch'), `the research member has the web tools: ${model.workerTools.join(', ')}`);
+    assert.deepEqual(work.delegations[0].sources.map(item => [item.kind, item.text]), [['fetch', URL_READ]], 'the host recorded the page the member asked to open');
+    assert.ok(model.failures.some(item => ['pwsh', 'bash'].includes(item.name) && /no shell or unrestricted repository write/.test(JSON.stringify(item.error))), 'the shell stays refused for research');
+    assert.deepEqual((await host.command('workstreams/get', { projectId: project.id, workstreamId: work.id })).workstream.delegations[0].sources.map(item => item.text), [URL_READ], 'the sources are readable from the Project');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-research-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('failed warm admission keeps occupancy, expanding stops drain every worker, and notes reject junction replacement', async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-boundaries-')), home = join(root, 'home'), directory = join(root, 'selected'), store = join(home, 'projects', 'project-a');
   assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-boundaries-`));

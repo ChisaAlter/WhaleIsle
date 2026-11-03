@@ -31,6 +31,9 @@ const isDirectoryDiagnostic = (message, root) => message.startsWith(directoryDia
   || /^(ENOENT|ENOTDIR):/.test(message) && message.includes(`'${root}'`);
 
 export const summaryRetryPlugin = 'whale-project:summary-retry';
+// Read-only scopes hold no directory, capture no baseline and may not write; research adds only the web tools.
+const readOnly = scope => scope === 'readonly' || scope === 'research';
+const webTools = new Set(['web_search', 'web_fetch']);
 // A summary turn that ends on a temporary model-service failure has already been retried by the model layer; the host tries it
 // again later, three times at most, and leaves the explicit retry to the user afterwards.
 const TRANSIENT_CODES = new Set(['SERVER', 'RATE_LIMIT', 'TIMEOUT', 'TRANSPORT']);
@@ -396,7 +399,7 @@ export class ProjectService {
     if (!report) return;
     const work = this.state().workstreams.find(item => item.projectId === projectId && item.delegations.some(receipt => receipt.ref === report.delegationRef));
     const worker = work && this.worker(work.workerSessionId), docs = join(this.project(projectId).storageRoot, 'docs');
-    return { ...report, request: work && this.requirements.associated(work, work.delegations.find(item => item.ref === report.delegationRef)), artifacts: report.artifacts.map(file => ({ ...file, location: within(docs, file.path) ? 'materials' : worker?.mode })), ...this.prerequisiteStatus(report, projectId) };
+    return { ...report, ...(work?.delegations.find(item => item.ref === report.delegationRef)?.sources?.length ? { sources: work.delegations.find(item => item.ref === report.delegationRef).sources } : {}), request: work && this.requirements.associated(work, work.delegations.find(item => item.ref === report.delegationRef)), artifacts: report.artifacts.map(file => ({ ...file, location: within(docs, file.path) ? 'materials' : worker?.mode })), ...this.prerequisiteStatus(report, projectId) };
   }
   workSummaries(rows) {
     return {
@@ -424,7 +427,7 @@ export class ProjectService {
     const row = (await this.workRows(projectId)).find(row => workstreamId ? row.work.id === workstreamId : row.work.workerSessionId === workerSessionId);
     if (!row) fail('missing', 'Workstream does not belong to this Project.');
     const { delegations, settlements, latestReport, ...work } = row.work;
-    return copy({ workstream: { ...work, request: this.requirements.associated(row.work), delegations: delegations.map(receipt => ({ ref: receipt.ref, messageId: receipt.messageId, runId: receipt.runId, createdAt: receipt.createdAt, phase: receipt.phase, scope: receipt.scope, requestId: receipt.source.requestId, requestRevision: receipt.source.requestRevision })), status: row.status, group: row.group, delegation: row.delegation,
+    return copy({ workstream: { ...work, request: this.requirements.associated(row.work), delegations: delegations.map(receipt => ({ ref: receipt.ref, messageId: receipt.messageId, runId: receipt.runId, createdAt: receipt.createdAt, phase: receipt.phase, scope: receipt.scope, requestId: receipt.source.requestId, requestRevision: receipt.source.requestRevision, ...(receipt.sources?.length ? { sources: receipt.sources } : {}) })), status: row.status, group: row.group, delegation: row.delegation,
       latestReport: this.reportView(row.delegation?.report, projectId), ...this.prerequisiteStatus(row.delegation?.report, projectId), recentSettlements: settlements.slice(-5) }, worker: row.worker && { ...row.worker, jobs: row.jobs } });
   }
   async delegate(actor, args, exec) {
@@ -452,7 +455,7 @@ export class ProjectService {
   missingLegacyChangeWorkspaces(row) {
     if (!row.changes || row.changes.workspaces) return [];
     return [...new Set(this.state().workstreams.filter(work => work.projectId === row.projectId
-      && work.delegations.some(receipt => receipt.source.requestId === row.id && receipt.scope !== 'readonly' && receipt.runId))
+      && work.delegations.some(receipt => receipt.source.requestId === row.id && !readOnly(receipt.scope) && receipt.runId))
       .map(work => this.worker(work.workerSessionId)).filter(worker => worker.mode === 'worktree' && worker.cwd).map(worker => worker.cwd))];
   }
   legacyChangesError(directories) {
@@ -598,12 +601,12 @@ export class ProjectService {
   async doDelegate(actor, args, exec) {
     this.coordinatorOnly(actor); exec.signal.throwIfAborted();
     const existing = args.workstreamId ? this.stream(args.workstreamId, actor.project.id) : undefined;
-    const { source } = await this.requirements.assignment(actor, args, exec, existing), brief = required(args.brief, 'brief'), role = { development: 'worker', readonly: 'readonly', docs: 'docs' }[args.scope];
+    const { source } = await this.requirements.assignment(actor, args, exec, existing), brief = required(args.brief, 'brief'), role = { development: 'worker', readonly: 'readonly', research: 'research', docs: 'docs' }[args.scope];
     const continuationId = source.continuationMessageId ?? source.messageId;
     if (this.projectHolds.get(actor.project.id) === continuationId || this.project(actor.project.id).holdSourceMessageId === continuationId) fail('stopped', 'The request was stopped; a new actual user message is required.');
     const stopGeneration = existing ? this.workerStops.get(existing.workerSessionId)?.generation ?? 0 : 0;
     if (existing && this.workerStops.get(existing.workerSessionId)?.sourceMessageId === continuationId) fail('stopped', 'The request was stopped; a new actual user message is required.');
-    if (!role) fail('invalid_scope', 'Choose readonly, docs or development.');
+    if (!role) fail('invalid_scope', 'Choose readonly, research, docs or development.');
     const blockers = args.blockedBy === undefined ? existing?.blockedBy ?? [] : args.blockedBy;
     if (!Array.isArray(blockers) || blockers.length > 64) fail('dependencies', 'Dependencies must reference existing work in this Project.');
     const validateDependencies = () => {
@@ -646,7 +649,7 @@ export class ProjectService {
       const project = this.project(actor.project.id);
       if (this.closing || this.archiving.has(project.id) || project.lifecycle !== 'ready') fail('unavailable', 'Restore this Project before delegating.');
       this.requirements.get(project.id, source.requestId, source.requestRevision);
-      this.queue.assertWork(this.requirements.get(project.id, source.requestId), source.requestRevision, role);
+      this.queue.assertWork(this.requirements.get(project.id, source.requestId), source.requestRevision, readOnly(role) ? 'readonly' : role);
       if (this.projectHolds.get(project.id) === continuationId || project.holdSourceMessageId === continuationId) fail('stopped', 'The request was stopped; a new actual user message is required.');
       if (existing && (this.workerStops.get(existing.workerSessionId)?.generation ?? 0) !== stopGeneration) fail('stopped', 'The work was stopped while its continuation was being prepared.');
       const replay = this.state().workstreams.find(item => item.projectId === project.id && item.delegations.some(receipt => receipt.ref === ref));
@@ -695,7 +698,7 @@ export class ProjectService {
     });
   }
   directoryBlockers(worker, role) {
-    if (role === 'readonly') return [];
+    if (readOnly(role)) return [];
     const cwd = worker.cwd || (worker.mode === 'existing' ? this.project(worker.projectId).canonicalWorkingDirectory : '');
     if (!cwd) return []; // An unprepared isolated worktree owns no shared directory yet.
     return this.state().workers.filter(other => {
@@ -741,7 +744,7 @@ export class ProjectService {
       const occupied = this.directoryBlockers(worker, receipt.scope);
       if (occupied.length) { await recordWaiting({ kind: 'directory', workTitles: occupied.map(member => this.stream(member.workstreamId).title) }); return; }
       prerequisites = upstream.map(work => ({ workstreamId: work.id, title: work.title, delegationRef: work.currentDelegationRef, report: latest(work).report ?? null }));
-      await this.write(state => { const member = state.workers.find(item => item.sessionId === worker.sessionId); member.directoryHeld = receipt.scope !== 'readonly'; member.reservationRef = receipt.ref; const current = latest(state.workstreams.find(item => item.id === id)); current.phase = 'preparing'; delete current.waitingReason;
+      await this.write(state => { const member = state.workers.find(item => item.sessionId === worker.sessionId); member.directoryHeld = !readOnly(receipt.scope); member.reservationRef = receipt.ref; const current = latest(state.workstreams.find(item => item.id === id)); current.phase = 'preparing'; delete current.waitingReason;
         current.dispatchedPrerequisites = prerequisites.map(({ workstreamId, title, delegationRef, report }) => ({ workstreamId, title, delegationRef, ...(report?.callId ? { reportId: report.callId } : {}) }));
       }); reserved = true;
     });
@@ -761,7 +764,7 @@ export class ProjectService {
       } else await this.desktop('check-workspace', { projectId: project.id, workstreamId: id, workspace: worker.workspace });
       worker = this.worker(worker.sessionId); stream = this.stream(id);
       if (worker.stopped || this.held.has(worker.sessionId) || this.project(project.id).paused || receipt.source.requestId && !this.queue.acceptsWork(this.requirements.get(project.id, receipt.source.requestId), receipt.source.requestRevision, receipt.scope)) return;
-      if (receipt.scope !== 'readonly' && receipt.source.requestId) await this.captureBaseline(project.id, receipt.source.requestId, worker);
+      if (!readOnly(receipt.scope) && receipt.source.requestId) await this.captureBaseline(project.id, receipt.source.requestId, worker);
       const internal = await safeProjectSubdirectory(this.home, project.id, 'internal', id), docs = await safeProjectSubdirectory(this.home, project.id, 'docs', id);
       const previous = stream.delegations.slice(0, stream.delegations.findIndex(item => item.ref === receipt.ref)).findLast(item => item.report)?.report;
       const requirement = receipt.source.requestId && this.requirements.rows(project.id).find(row => row.id === receipt.source.requestId);
@@ -836,7 +839,7 @@ export class ProjectService {
       member.activeRunId = info.runId;
       const submitted = work.delegations.find(item => item.ref === member.reservationRef);
       if (submitted?.phase === 'preparing') submitted.runId = info.runId;
-      if (!member.stopped) { member.phase = 'active'; member.directoryHeld = latest(work).scope !== 'readonly'; work.status = 'running'; }
+      if (!member.stopped) { member.phase = 'active'; member.directoryHeld = !readOnly(latest(work).scope); work.status = 'running'; }
     }));
   }
   runEnded(info) {
@@ -853,7 +856,7 @@ export class ProjectService {
           const reservation = work.delegations.find(item => item.ref === member.reservationRef);
           const preparing = reservation?.phase === 'preparing' && !reservation.runId;
           member.phase = member.stopped ? 'stopping' : preparing ? 'provisioning' : 'idle';
-          member.directoryHeld = Boolean(preparing && reservation.scope !== 'readonly') || (member.role !== 'readonly' && this.jobs(member.sessionId).length > 0);
+          member.directoryHeld = Boolean(preparing && !readOnly(reservation.scope)) || (!readOnly(member.role) && this.jobs(member.sessionId).length > 0);
         }
         const receipt = latest(work);
         if (refs.includes(receipt.ref)) {
@@ -969,8 +972,35 @@ export class ProjectService {
     if (requestId && this.queue.state(this.requirements.get(worker.projectId, requestId)) === 'cancelled') return 'This requirement is cancelled.';
     if (!worker.consumedDelegationRef) return 'A Project assignment has not been consumed.';
     const safe = new Set(['project_read_store', 'project_read', 'project_search', 'project_report', 'project_write_artifact', 'project_write_document', 'list_agents', 'team_task_list', 'send_message']);
-    if (worker.role !== 'worker' && !safe.has(exec.name)) return 'This assignment has no shell or unrestricted repository write capability.';
-    if (worker.role === 'readonly' && exec.name === 'project_write_document') return 'This repository is read-only for the assignment.';
+    const web = webTools.has(exec.name);
+    if (web && worker.role !== 'worker' && worker.role !== 'research') return 'Web access needs a research assignment.';
+    if (worker.role !== 'worker' && !safe.has(exec.name) && !web) return 'This assignment has no shell or unrestricted repository write capability.';
+    if (readOnly(worker.role) && exec.name === 'project_write_document') return 'This repository is read-only for the assignment.';
+    if (web) return this.researchCall(worker, exec);
+  }
+  // The sites a Project lets research read: one host per line in research-hosts.txt (a host covers its subdomains). No file, no limit.
+  researchHosts(project) {
+    try { return readFileSync(join(project.storageRoot, 'research-hosts.txt'), 'utf8').split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().toLowerCase().replace(/^\*\./, '')).filter(Boolean).slice(0, 200); }
+    catch { return []; }
+  }
+  // The host's own account of what a member read on the web: the Project's allowed sites when it names any, and every search and
+  // fetch recorded on the delegation being worked, as the calls were made.
+  researchCall(worker, exec) {
+    const args = exec.arguments && typeof exec.arguments === 'object' ? exec.arguments : {}, fetching = exec.name === 'web_fetch';
+    if (fetching) {
+      const allowed = this.researchHosts(this.project(worker.projectId));
+      if (allowed.length) {
+        let host; try { host = new URL(String(args.url)).hostname.toLowerCase(); } catch { return 'Give a complete http or https URL.'; }
+        if (!allowed.some(entry => host === entry || host.endsWith(`.${entry}`))) return `This Project lets research read only these sites: ${allowed.join(', ')}.`;
+      }
+    }
+    const entries = (fetching ? [args.url] : Array.isArray(args.queries) ? args.queries.slice(0, 8) : []).filter(item => typeof item === 'string' && item.trim()).map(item => ({ kind: fetching ? 'fetch' : 'search', text: item.trim().slice(0, fetching ? 500 : 300) }));
+    if (entries.length) void this.serial(() => this.write(state => {
+      const work = state.workstreams.find(item => item.id === worker.workstreamId), receipt = work?.delegations.find(item => item.ref === worker.consumedDelegationRef);
+      if (!receipt) return;
+      receipt.sources ??= [];
+      for (const entry of entries) if (receipt.sources.length < 100 && !receipt.sources.some(item => item.kind === entry.kind && item.text === entry.text)) receipt.sources.push({ ...entry, at: Date.now() });
+    })).catch(error => this.ctx.logger.warn('Project could not record a research source: %s', error.message));
   }
   async assistantReply(session, event) {
     if (this.closing && !this.persistOnDispose) return;
