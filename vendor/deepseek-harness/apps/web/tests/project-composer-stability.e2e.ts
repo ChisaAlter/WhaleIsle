@@ -10,11 +10,19 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { SpawnTeammateRequest } from '@deepseek-ai/dsh-experimental-agent-team'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JobId, JobOutcome } from '@deepseek-ai/dsh-jobs'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
+
+// The Project host's own notice kind, as the Agent loop records it for a notice that wakes the Lead.
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'whale-project:queue': { kind: 'whale-project:queue' } & ContextFormed
+  }
+}
 
 const TEAM_PATCH = fileURLToPath(new URL('./agent-team-panel.overlay.yml', import.meta.url))
 const TEAM_ANCHOR = fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/package.json', import.meta.url))
@@ -694,6 +702,32 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     await pinned.waitFor({ state: 'detached', timeout: 15_000 })
     await page.keyboard.press('Escape')
     expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('shows a host notice that starts a Lead turn as one collapsed line with its own account, and a silent turn adds nothing after it', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-project-composer-quiet-turn'))
+    await setState('running')
+    await settleViewport(page, 1280)
+    const notice = createUserMessage({
+      source: { kind: 'whale-project:queue', form: 'notice', summary: `Project activated: ${TITLE}` },
+      content: [{ type: 'text', text: 'The Project host activated the next user-authorized requirement. Read notes.md and arrange its work.' }],
+    })
+    // The sequence the Agent loop records for a notice that wakes the idle Lead: queued, claimed, then its turn. project_standby
+    // ends that turn with no assistant message, so nothing follows the notice.
+    lead.session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [notice] })
+    lead.session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
+    lead.session.append('turn/start', { turn: 2 })
+    lead.session.append('user/message', notice, { surfaceOp: 'append' })
+    lead.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    await scaffold.ctx.sessions.flush(lead.session)
+    const row = page.locator('[data-turn-trigger]', { hasText: `Project activated: ${TITLE}` })
+    await row.waitFor({ timeout: 15_000 })
+    expect(await row.getByRole('button').getAttribute('aria-expanded'), 'the notice is one collapsed line').toBe('false')
+    expect(await row.locator('[data-context-text]').count()).toBe(0)
+    expect(await row.getByText('Execution requested').count(), 'not the generic title').toBe(0)
+    const shot = process.env.DSH_PROJECT_SHOT_QUIET
+    if (shot) await page.locator('[data-conversation-scroll]').first().screenshot({ path: shot })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 })

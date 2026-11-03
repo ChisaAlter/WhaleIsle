@@ -46,6 +46,18 @@ describe('Turn trigger notices', () => {
     expect(view.container.querySelector('time')?.dateTime).toBe('2023-11-14T22:13:20.000Z')
   })
 
+  it('names a plugin notice by its own one-line account instead of a generic title', () => {
+    const source = { kind: 'whale-project:queue', form: 'notice', summary: 'Project activated: Fix login' }
+    const node = trigger(source)
+    expect(turnTriggerDetails(node.data)).toEqual({ title: 'message.trigger.request', icon: 'request', label: 'Project activated: Fix login' })
+    const view = render(<TurnTriggerNodeView node={node} t={makeTranslate(en)} />)
+    expect(view.getByRole('button').textContent).toContain('Project activated: Fix login')
+    expect(view.getByRole('button').textContent).not.toContain('Execution requested')
+    // A source with a dedicated title keeps it, whatever summary it carries.
+    expect(turnTriggerDetails(trigger({ kind: 'subagent-settled', summary: 'Background subagent session-1 finished.' }).data))
+      .toEqual({ title: 'message.trigger.subagent', icon: 'subagent' })
+  })
+
   it.each([
     [en, 'Task message received'],
     [zh, '收到任务消息'],

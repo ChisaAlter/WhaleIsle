@@ -9,7 +9,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { projectPackage, harness, cliRequire, resolvePackage, ProjectService } from './harness-runtime.mjs';
 const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
-const { LlmAdapter, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
+const { LlmAdapter, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
 const { FiberState } = await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href);
@@ -2094,6 +2094,59 @@ test('the real Lead asks one question through project_ask; the list and the head
     if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
     assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-ask-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the real Lead ends a notice-started turn with project_standby and no message, and cannot go silent on the user', { timeout: 180000 }, async () => {
+  class QuietModel extends ScriptedModel {
+    async *stream(options) {
+      const lead = options.tools?.some(tool => tool.name === 'project_delegate');
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'whale-project:summary-retry'].includes(message.source.kind));
+      const text = input ? messageText(input) : '';
+      if (lead && input?.source.kind === 'whale-project:summary-retry') {
+        this.requests.push(options); this.noticeTurns = (this.noticeTurns ?? 0) + 1;
+        const key = `quiet:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (!stage) yield* call(`standby-${++this.counter}`, 'project_standby', { note: 'nothing to say' });
+        else yield* blocks('SHOULD NOT SPEAK AFTER STANDBY');
+        return;
+      }
+      if (lead && input?.source.kind === 'user' && text.includes('TRY_SILENCE')) {
+        this.requests.push(options);
+        const key = `silence:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (!stage) yield* call(`standby-${++this.counter}`, 'project_standby', {});
+        else { this.refusal = messageText(options.messages.findLast(message => message.role === 'tool')); yield* blocks('Understood; replying to you.'); }
+        return;
+      }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-quiet-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new QuietModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'quiet-flow', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    assert.ok((await (async () => { await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'silence-turn', mode: 'queue', content: [{ type: 'text', text: 'TRY_SILENCE' }] }, signal); await lead.whenIdle(); return true; })()));
+    assert.match(model.refusal ?? '', /The user wrote in this turn/, 'the host refuses silence on a turn the user started');
+    const before = lead.session.snapshotEvents().length;
+    lead.followup(createUserMessage({ source: { kind: 'whale-project:summary-retry', form: 'notice', summary: 'Summary retry: nothing' }, content: [{ type: 'text', text: 'The Project host is trying a summary again.' }] }));
+    await waitFor(() => (model.noticeTurns ?? 0) >= 1, 'the notice wakes the Lead', 60000);
+    await lead.whenIdle(); await host.tail;
+    const events = lead.session.snapshotEvents().slice(before);
+    const standby = events.find(event => event.type === 'tool/call' && event.data.name === 'project_standby');
+    assert.ok(standby, 'the Lead used project_standby');
+    const result = events.find(event => event.type === 'tool/result' && event.data.message.toolCallId === standby.data.callId);
+    assert.equal(result.data.message.isError, false, JSON.stringify(result.data.message.content));
+    const ended = events.findLast(event => event.type === 'turn/end'); assert.equal(ended.data.reason.kind, 'completed');
+    assert.equal(model.requests.filter(options => options.messages.some(message => messageText(message).includes('SHOULD NOT SPEAK'))).length, 0);
+    const spoken = events.filter(event => event.type === 'assistant/message').flatMap(event => event.data.message.content.filter(block => block.type === 'text' && block.text.trim()));
+    assert.deepEqual(spoken, [], 'a silent turn leaves no message for the user');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-quiet-`)); await rm(root, { recursive: true, force: true });
   }
 });
 

@@ -443,6 +443,17 @@ export class ProjectRequirements {
     return this.current(projectId).map(row => this.card(projectId, row, byWork)).filter(card => card.stage.needsYou)
       .toSorted((a, b) => rank[a.stage.id] - rank[b.stage.id] || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   }
+  // Why the Lead must say something instead of staying silent after a host notice: the user is waited on, or the active
+  // requirement has nothing left running or queued, so it is either due for delivery or still unarranged.
+  silenceBlockers(projectId) {
+    const byWork = this.service.liveWork(projectId), blockers = [];
+    for (const row of this.current(projectId)) {
+      const card = this.card(projectId, row, byWork);
+      if (card.stage.needsYou) blockers.push(`"${row.title}" waits on the user (${card.stage.id}); say so once, briefly`);
+      else if (this.service.queue.state(row) === 'active' && card.status === 'pendingDelivery') blockers.push(`"${row.title}" has nothing running or queued: arrange its next stage, or deliver it with project_deliver and reply`);
+    }
+    return blockers;
+  }
   listAttention(projectId) { const items = this.attention(projectId); return { items: items.slice(0, 50), total: items.length }; }
 
   card(projectId, row, byWork, full = false) {
