@@ -215,6 +215,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-goal/src/client/GoalBar.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .bar::before'] },
   { file: 'packages/client/ui-goal/src/client/GoalBar.tsx', includes: ['usePresence(open)', 'aria-hidden={open ? undefined : true}', 'className={css.content}'], excludes: ['data-dsh-motion="fade"'] },
   { file: 'packages/client/ui-goal/tests/goalbar-motion-styles.client.spec.ts', includes: ['GoalBar.module.css motion'] },
+  // A plugin notice that starts a turn shows its own one-line account as the collapsed row's title.
+  { file: 'packages/client/ui-chat/src/client/chat/turn-trigger.ts', includes: ["field(source, 'summary')"] },
+  { file: 'packages/client/ui-chat/src/client/chat/TurnTriggerNodeView.tsx', includes: ['details.label ?? t(details.title)'] },
+  { file: 'packages/client/ui-chat/tests/turn-trigger.client.spec.tsx', includes: ['names a plugin notice by its own one-line account'] },
   // Seat measurement: the scroll body reserves the seat through a registered,
   // non-inherited property written per frame; inherited copies wait to settle.
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["'--dsh-composer-reserve'", 'SIZE_SETTLE_MS', 'requestAnimationFrame(() => { frame = 0; publishReserve() })', "scroller.closest('[data-phone]') === null"] },

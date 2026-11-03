@@ -266,6 +266,17 @@ export class ProjectService {
   }
   coordinatorOnly(actor) { if (actor.role !== 'coordinator') fail('unauthorized', 'Only the coordinator can delegate or stop work.'); }
   acceptRequest(actor, args, exec) { return this.requirements.accept(actor, args, exec); }
+  // The quiet end of a turn a host notice started. Refused when the user wrote in it, when this turn declared a handover (that
+  // needs its reply), or while the user is waited on or the active requirement has nothing left to wait for.
+  async standby(actor, args, exec) {
+    this.coordinatorOnly(actor); exec.signal.throwIfAborted();
+    const input = this.requirements.inputs(actor, exec);
+    if (input.human.length) fail('speak_required', 'The user wrote in this turn. Answer them; silence is only for a turn a host notice started.');
+    if ((this.state().deliveries ?? []).some(item => item.projectId === actor.project.id && item.sessionId === actor.agent.id && item.turn === input.call.data.turn && item.status === 'draft')) fail('speak_required', 'This turn declared a handover. Give its reply instead of staying silent.');
+    const blockers = this.requirements.silenceBlockers(actor.project.id);
+    if (blockers.length) fail('speak_required', `Do not stay silent: ${blockers.join('; ')}.`);
+    return { standby: true };
+  }
   async askHuman(actor, args, exec) { this.coordinatorOnly(actor); exec.signal.throwIfAborted(); return this.requirements.ask(actor.project.id, args); }
   // The synchronous view of one Project's work that cards read (no Team task lookup), so the header counts with the same function the list uses.
   liveWork(projectId) {
@@ -948,7 +959,7 @@ export class ProjectService {
   guard(exec) {
     if (this.closing) return 'Project is unloading.';
     const coordinator = this.state().projects.find(item => item.coordinatorSessionId === exec.agent?.id);
-    if (coordinator && !['project_request', 'project_queue', 'project_ask', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render', 'todo_write'].includes(exec.name)) return 'The Project coordinator may only organize requirements, keep its plan, read materials, visualize results, delegate, deliver or stop work.';
+    if (coordinator && !['project_request', 'project_queue', 'project_ask', 'project_standby', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render', 'todo_write'].includes(exec.name)) return 'The Project coordinator may only organize requirements, keep its plan, read materials, visualize results, delegate, deliver or stop work.';
     const worker = this.state().workers.find(item => item.sessionId === exec.agent?.id); if (!worker) return;
     // The optional Agent Teams bundle registers these globally; Project work is arranged only by its coordinator host.
     if (['spawn_teammate', 'wait_agent', 'interrupt_agent', 'team_task_create', 'team_task_get', 'team_task_update'].includes(exec.name)) return 'Project members collaborate through Project tools; the coordinator arranges Team work.';

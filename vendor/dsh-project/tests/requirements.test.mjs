@@ -864,3 +864,42 @@ test('a delivered requirement that needs review, or only partly delivered, waits
   assert.deepEqual([stage.id, stage.waitingOn, stage.reason], ['awaitingDecision', 'you', 'partial']);
   assert.equal((await attentionOf(f)).total, 1);
 });
+
+test('a turn a host notice started may end silently only while nothing needs saying; every reason to speak is enforced by the host', async () => {
+  const notice = { id: 'notice-1', role: 'user', source: { kind: 'subagent-settled', summary: 'A member finished.' }, content: [{ type: 'text', text: 'A member finished.' }] };
+  const f = fresh();
+  function fresh() { const g = fixture(); return g; }
+  const quiet = (g, message = notice) => { g.activate(message); return g.service.standby(g.actor, { note: 'stage delegated' }, g.exec('project_standby')); };
+
+  // Something is still running: the panel shows it, the Lead need not.
+  f.human(['Fix login']); const { request } = await f.accept({}); const item = f.add(request);
+  delete item.receipt.report; delete item.work.latestReport; item.work.status = 'open'; item.work.pendingSummary = false; item.work.settlements = [];
+  const worker = f.state.workers.at(-1); worker.activeRunId = item.ref.runId; worker.phase = 'active';
+  assert.deepEqual(await quiet(f), { standby: true });
+
+  // The user wrote in the turn: answer them.
+  const g = fixture(); g.human(['Fix login']); await g.accept({});
+  await assert.rejects(g.service.standby(g.actor, {}, g.exec('project_standby')), { code: 'speak_required' });
+
+  // The user is waited on: say it once, briefly.
+  const h = fixture(); h.human(['Pick a database']); const { request: ask } = await h.accept({ disposition: 'discussing' });
+  await h.service.askHuman(h.actor, { requestId: ask.id, question: 'Postgres or SQLite?' }, h.exec('project_ask'));
+  await assert.rejects(quiet(h), error => error.code === 'speak_required' && /waits on the user/.test(error.message));
+
+  // Nothing is running or queued for the active requirement: deliver it, or arrange the next stage.
+  const i = fixture(); i.human(['Fix login']); await i.accept({});
+  await assert.rejects(quiet(i), error => error.code === 'speak_required' && /nothing running or queued/.test(error.message));
+  const j = fixture(); j.human(['Fix login']); const { request: done } = await j.accept({}); j.add(done);
+  await assert.rejects(quiet(j), error => error.code === 'speak_required' && /deliver it with project_deliver/.test(error.message));
+
+  // A handover declared in this turn needs its reply.
+  const k = fixture(); k.human(['Fix login']); const { request: handed } = await k.accept({}); const work = k.add(handed);
+  k.activate(notice); await k.declare(handed, [work.ref]);
+  await assert.rejects(k.service.standby(k.actor, {}, k.exec('project_standby')), error => error.code === 'speak_required' && /declared a handover/.test(error.message));
+
+  // A temporary summary failure the host is retrying is the host working, not a reason to speak.
+  const l = fixture(); l.human(['Fix login']); const { request: retrying } = await l.accept({}); const failing = l.add(retrying);
+  failing.work.summaryFailure = { turn: 1, at: 1, delegationRef: failing.ref.delegationRef, runId: failing.ref.runId, error: { code: 'SERVER', message: 'x' }, autoRetries: 1 };
+  const timer = setTimeout(() => {}, 1e6); timer.unref(); l.service.summaryRetryTimers.set(l.project.id, timer);
+  try { assert.deepEqual(await quiet(l), { standby: true }); } finally { clearTimeout(timer); }
+});
