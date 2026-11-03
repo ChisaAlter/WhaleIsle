@@ -6,6 +6,9 @@ import { optionalRequestId, requestIdForCall } from './catalog-recovery.js';
 const fail = (code, message) => { const error = new Error(message); error.code = code; throw error; };
 const text = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
 const latest = work => work.delegations.find(item => item.ref === work.currentDelegationRef);
+// One line of a handover for the Lead's notes: the full text stays one `requestId` read away.
+const deliveryBrief = item => ({ id: item.id, requestId: item.requestId, requestRevision: item.requestRevision, title: item.title, outcome: item.outcome, status: item.status, at: item.at, applicable: item.applicable,
+  summary: item.summary.length > 240 ? `${item.summary.slice(0, 240)}…` : item.summary, artifactCount: item.artifacts.length, remainingIssueCount: item.remainingIssues?.length ?? 0 });
 const scope = value => ({ readonly: 'readonly', docs: 'docs', development: 'worker', worker: 'worker' })[value];
 const string = (value, label, limit = 32000) => { if (typeof value !== 'string' || !value.trim() || value.length > limit) fail('invalid_request', `Invalid ${label}.`); return value.trim(); };
 const strings = (value = []) => { if (!Array.isArray(value) || value.length > 64 || value.some(item => typeof item !== 'string' || item.length > 8000)) fail('invalid_request', 'Expected bounded text items.'); return [...new Set(value)]; };
@@ -340,8 +343,8 @@ export class ProjectRequirements {
       return report && (!reference.reportId || report.callId === reference.reportId) && !this.service.prerequisiteStatus(report, delivery.projectId).prerequisitesChanged;
     });
   }
-  deliveries(projectId, cursor) {
-    const all = (this.service.state().deliveries ?? []).filter(item => item.projectId === projectId && (item.status === 'delivered' || item.status === 'historical' || item.status === 'obsolete' && item.imported035)).toSorted((a, b) => b.at - a.at || a.id.localeCompare(b.id));
+  deliveries(projectId, cursor, requestId) {
+    const all = (this.service.state().deliveries ?? []).filter(item => item.projectId === projectId && (requestId == null || item.requestId === requestId) && (item.status === 'delivered' || item.status === 'historical' || item.status === 'obsolete' && item.imported035)).toSorted((a, b) => b.at - a.at || a.id.localeCompare(b.id));
     const start = cursor == null ? 0 : all.findIndex(item => item.id === cursor) + 1;
     if (cursor != null && !start) fail('delivery_cursor', 'This handover cursor does not belong to the Project.');
     const items = all.slice(start, start + 10).map(item => ({ ...item, applicable: this.applicable(item), artifacts: item.reportRefs.flatMap(reference => {
@@ -349,6 +352,12 @@ export class ProjectRequirements {
       return (this.service.reportView(report, projectId)?.artifacts ?? []).map(file => ({ ...file, workstreamId: reference.workstreamId, delegationRef: reference.delegationRef }));
     }).filter((file, index, files) => files.findIndex(other => other.path === file.path && other.workstreamId === file.workstreamId && other.delegationRef === file.delegationRef) === index) }));
     return { items, total: all.length, nextCursor: start + items.length < all.length ? items.at(-1).id : null };
+  }
+  /** What the Lead reads in notes.md: complete handovers only for the requirement it names, one line for each of the rest. */
+  deliveriesForLead(projectId, requestId) {
+    if (requestId != null) return this.deliveries(projectId, undefined, requestId);
+    const page = this.deliveries(projectId);
+    return { ...page, items: page.items.map(deliveryBrief), brief: true, hint: 'Handovers are listed briefly. Pass requestId to read that requirement\'s complete handovers.' };
   }
   current(projectId) {
     // Applicability belongs to the referenced result. A later independent
