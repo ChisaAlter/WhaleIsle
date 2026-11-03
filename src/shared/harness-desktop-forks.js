@@ -490,6 +490,10 @@ const FORK_FILE_MARKERS = [
   // follows the dedicated terminal-pane token instead — the Appearance
   // terminal-opacity slider keeps it readable over the wallpaper.
   { file: 'packages/client/ui-sidebar-terminal/src/client/terminal.module.css', includes: ['--dsw-alias-terminal-pane'] },
+  // A provider that reports itself overloaded (no status number survives pi-ai's flattening) is a transient SERVER
+  // failure the retry policy retries, not a non-retryable PI_AI_ERROR that ends the turn.
+  { file: 'packages/llm/llm-pi-ai/src/stream.ts', includes: ['over capacity|at capacity|temporarily unavailable'] },
+  { file: 'packages/llm/llm-pi-ai/tests/convert.spec.ts', includes: ['reports itself overloaded'] },
   // Project presents the native Team inside its Requests panel: the owner marks the Lead's Team facts `embedded`,
   // the Lead's own header entry steps aside (members keep theirs), and TeamEmbedded is the Team body without a
   // header entry or surface of its own.

@@ -241,6 +241,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-sidebar-right/src/client/locales.ts': "'tab.guide.heading'\n",
       'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.module.css': '--dsw-alias-bg-base: transparent\n',
       'packages/client/ui-sidebar-terminal/src/client/terminal.module.css': 'background: var(--dsw-alias-terminal-pane, var(--dsw-alias-bg-base));\n',
+      'packages/llm/llm-pi-ai/src/stream.ts': 'overloaded|over capacity|at capacity|temporarily unavailable\n',
+      'packages/llm/llm-pi-ai/tests/convert.spec.ts': "it.each(['reports itself overloaded'])\n",
       'packages/experimental/client-ui-agent-team/src/client/mount.ts': 'readonly embedded?: boolean\n',
       'packages/experimental/client-ui-agent-team/src/client/TeamAction.tsx': 'if (project && activity?.embedded === true) return null\n',
       'packages/experimental/client-ui-agent-team/src/client/TeamEmbedded.tsx': 'export function TeamEmbedded() {}\n<div data-team-embedded />\n',
