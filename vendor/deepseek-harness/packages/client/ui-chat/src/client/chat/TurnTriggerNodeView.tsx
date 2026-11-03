@@ -37,7 +37,7 @@ export function TurnTriggerNodeView({ node, t }: Pick<ChatNodeViewProps<'turn-tr
     <section className={css.root} data-turn-trigger>
       <button className={css.header} type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => { setOpen(!open) }}>
         <span className={css.icon} aria-hidden><TriggerIcon size={14} /></span>
-        <span className={css.title}>{t(details.title)}</span>
+        <span className={css.title}>{details.label ?? t(details.title)}</span>
         <time className={css.time} dateTime={date.toISOString()}>{time}</time>
         <IconChevronDownOutlineRegular size={12} className={open ? css.openChevron : css.chevron} />
       </button>

@@ -9,7 +9,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { projectPackage, harness, cliRequire, resolvePackage, ProjectService } from './harness-runtime.mjs';
 const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
-const { LlmAdapter, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
+const { LlmAdapter, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
 const { FiberState } = await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href);
@@ -2007,6 +2007,200 @@ test('a failed native Lead summary preserves its report and ordinary user summar
     if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
     assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-summary-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a summary turn that ends on a temporary model-service failure is retried by the host and then delivers', { timeout: 180000 }, async () => {
+  class TransientSummaryModel extends ScriptedModel {
+    async *stream(options) {
+      const lead = options.tools?.some(tool => tool.name === 'project_delegate');
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled', 'whale-project:summary-retry'].includes(message.source.kind));
+      if (lead && input?.source.kind === 'whale-project:summary-retry') {
+        // The host's retry notice reads like the explicit summary request the script already answers.
+        const messages = options.messages.map(message => message === input ? { ...message, id: 'summary-retry-as-read-pending', source: { kind: 'user' }, content: [{ type: 'text', text: 'READ_PENDING' }] } : message);
+        yield* super.stream({ ...options, messages }); return;
+      }
+      if (lead && input?.source.kind === 'subagent-settled') { this.requests.push(options); throw new LlmError('The scripted provider is overloaded.', 'SERVER'); }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-summary-retry-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new TransientSummaryModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    host.summaryRetryDelays = [50, 50, 50];
+    const { project } = await host.command('create', { requestId: 'summary-retry', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'create-report', mode: 'queue', content: [{ type: 'text', text: 'MAKE_DOCS' }] }, signal);
+    const work = await waitFor(() => host.state().workstreams.find(item => item.title === 'Plan work' && item.latestReport), 'the member reports', 90000);
+    const workerRequests = model.requests.filter(options => options.tools?.some(tool => tool.name === 'project_report')).length;
+    await waitFor(() => host.stream(work.id).latestReport?.summarizedBy, 'the host retries the failed summary and the Lead delivers without a person', 120000);
+    await lead.whenIdle(); await host.tail;
+    assert.equal(host.stream(work.id).summaryFailure, undefined); assert.ok(host.stream(work.id).latestReport.summarizedBy);
+    const events = lead.session.snapshotEvents(), failed = events.filter(event => event.type === 'turn/end' && event.data.reason.kind === 'error');
+    assert.equal(failed.length, 1); assert.equal(failed[0].data.reason.error.code, 'SERVER');
+    assert.equal(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'whale-project:summary-retry').length, 1, 'one automatic retry was enough');
+    assert.equal(model.requests.filter(options => options.tools?.some(tool => tool.name === 'project_report')).length, workerRequests, 'the retry never reopens the member');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-summary-retry-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the real Lead asks one question through project_ask; the list and the header count see it, and the user\'s next message answers it', { timeout: 180000 }, async () => {
+  class AskingModel extends ScriptedModel {
+    async *stream(options) {
+      const lead = options.tools?.some(tool => tool.name === 'project_delegate');
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
+      if (lead && input?.source.kind === 'user' && messageText(input).includes('ASK_USER')) {
+        this.requests.push(options);
+        const key = `ask:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (stage === 0) yield* call(`ask-request-${++this.counter}`, 'project_request', { title: 'Choose the database', disposition: 'discussing', goal: 'Pick the storage layer', conditions: ['A choice is made'], scopeCeiling: 'readonly' });
+        else if (stage === 1) {
+          const request = JSON.parse(messageText(options.messages.findLast(message => message.role === 'tool')));
+          yield* call(`ask-${++this.counter}`, 'project_ask', { requestId: request.id, question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I will start with SQLite' });
+        } else yield* blocks('I need one answer from you: Postgres or SQLite?');
+        return;
+      }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-ask-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new AskingModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'ask-flow', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'ask-turn', mode: 'queue', content: [{ type: 'text', text: 'ASK_USER' }] }, signal);
+    const asked = await waitFor(() => host.state().requests?.find(row => row.ask), 'the Lead asks its question', 90000);
+    await lead.whenIdle(); await host.tail;
+    assert.equal(asked.ask.question, 'Postgres or SQLite?'); assert.deepEqual(asked.ask.options, ['Postgres', 'SQLite']); assert.equal(asked.ask.by, 'coordinator');
+    assert.ok(model.requests.some(options => options.tools?.some(tool => tool.name === 'project_ask')), 'the real Lead receives project_ask');
+    const pinned = await host.command('requests/attention', { projectId: project.id });
+    assert.equal(pinned.total, 1); assert.equal(pinned.items[0].stage.id, 'awaitingAnswer'); assert.equal(pinned.items[0].stage.ask.ifUnanswered, 'I will start with SQLite');
+    const listed = (await host.command('list')).projects.find(item => item.id === project.id);
+    assert.equal(listed.activity.needsYou, 1, 'the header count equals the pinned list');
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'answer-turn', mode: 'queue', content: [{ type: 'text', text: 'SHORT_QUESTION SQLite please' }] }, signal);
+    await waitFor(() => !host.state().requests.some(row => row.ask), 'the next user message answers it', 90000);
+    await lead.whenIdle(); await host.tail;
+    assert.equal((await host.command('requests/attention', { projectId: project.id })).total, 0);
+    assert.equal((await host.command('list')).projects.find(item => item.id === project.id).activity.needsYou, 0);
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-ask-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the real Lead ends a notice-started turn with project_standby and no message, and cannot go silent on the user', { timeout: 180000 }, async () => {
+  class QuietModel extends ScriptedModel {
+    async *stream(options) {
+      const lead = options.tools?.some(tool => tool.name === 'project_delegate');
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'whale-project:summary-retry'].includes(message.source.kind));
+      const text = input ? messageText(input) : '';
+      if (lead && input?.source.kind === 'whale-project:summary-retry') {
+        this.requests.push(options); this.noticeTurns = (this.noticeTurns ?? 0) + 1;
+        const key = `quiet:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (!stage) yield* call(`standby-${++this.counter}`, 'project_standby', { note: 'nothing to say' });
+        else yield* blocks('SHOULD NOT SPEAK AFTER STANDBY');
+        return;
+      }
+      if (lead && input?.source.kind === 'user' && text.includes('TRY_SILENCE')) {
+        this.requests.push(options);
+        const key = `silence:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (!stage) yield* call(`standby-${++this.counter}`, 'project_standby', {});
+        else { this.refusal = messageText(options.messages.findLast(message => message.role === 'tool')); yield* blocks('Understood; replying to you.'); }
+        return;
+      }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-quiet-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new QuietModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'quiet-flow', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    assert.ok((await (async () => { await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'silence-turn', mode: 'queue', content: [{ type: 'text', text: 'TRY_SILENCE' }] }, signal); await lead.whenIdle(); return true; })()));
+    assert.match(model.refusal ?? '', /The user wrote in this turn/, 'the host refuses silence on a turn the user started');
+    const before = lead.session.snapshotEvents().length;
+    lead.followup(createUserMessage({ source: { kind: 'whale-project:summary-retry', form: 'notice', summary: 'Summary retry: nothing' }, content: [{ type: 'text', text: 'The Project host is trying a summary again.' }] }));
+    await waitFor(() => (model.noticeTurns ?? 0) >= 1, 'the notice wakes the Lead', 60000);
+    await lead.whenIdle(); await host.tail;
+    const events = lead.session.snapshotEvents().slice(before);
+    const standby = events.find(event => event.type === 'tool/call' && event.data.name === 'project_standby');
+    assert.ok(standby, 'the Lead used project_standby');
+    const result = events.find(event => event.type === 'tool/result' && event.data.message.toolCallId === standby.data.callId);
+    assert.equal(result.data.message.isError, false, JSON.stringify(result.data.message.content));
+    const ended = events.findLast(event => event.type === 'turn/end'); assert.equal(ended.data.reason.kind, 'completed');
+    assert.equal(model.requests.filter(options => options.messages.some(message => messageText(message).includes('SHOULD NOT SPEAK'))).length, 0);
+    const spoken = events.filter(event => event.type === 'assistant/message').flatMap(event => event.data.message.content.filter(block => block.type === 'text' && block.text.trim()));
+    assert.deepEqual(spoken, [], 'a silent turn leaves no message for the user');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-quiet-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a research stage gives the member web search and fetch but no shell or directory, and the host records what it opened', { timeout: 240000 }, async () => {
+  const URL_READ = 'https://research-fixture.invalid/spec';
+  class ResearchModel extends ScriptedModel {
+    workerTools = [];
+    async *stream(options) {
+      const names = (options.tools ?? []).map(tool => tool.name);
+      const envelope = messageText(options.messages.findLast(message => message.role === 'user' && messageText(message).includes('DelegationRef:')) ?? {});
+      if (names.includes('project_report') && envelope.includes('RESEARCH_LINK')) {
+        this.requests.push(options); this.workerTools = names;
+        const ref = /DelegationRef: ([^\n]+)/.exec(envelope)?.[1], stage = this.stages.get(ref) ?? 0; this.stages.set(ref, stage + 1);
+        if (!stage) yield* call(`research-fetch-${++this.counter}`, 'web_fetch', { url: URL_READ });
+        else if (stage === 1) yield* call(`research-shell-${++this.counter}`, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo SHOULD_NOT_EXECUTE' });
+        else yield* call(`research-report-${++this.counter}`, 'project_report', { delegationRef: ref, outcome: 'completed', summary: 'Read the linked page as far as it could be fetched.', artifacts: [], evidence: [URL_READ], remainingIssues: [] });
+        return;
+      }
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
+      if (names.includes('project_delegate') && input?.source.kind === 'user' && messageText(input).includes('RESEARCH_LINK')) {
+        this.requests.push(options);
+        const key = `research:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (stage === 0) yield* call(`research-request-${++this.counter}`, 'project_request', { title: 'Study the spec', disposition: 'queued', goal: `Read ${URL_READ} and summarize it`, conditions: ['A summary exists'], scopeCeiling: 'research' });
+        else if (stage === 1) {
+          const request = JSON.parse(messageText(options.messages.findLast(message => message.role === 'tool')));
+          yield* call(`research-delegate-${++this.counter}`, 'project_delegate', { requestId: request.id, requestRevision: request.revision, title: 'Research work', brief: `RESEARCH_LINK read ${URL_READ}`, scope: 'research' });
+        } else yield* blocks('Research started.');
+        return;
+      }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-research-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new ResearchModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'research-flow', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'research-turn', mode: 'queue', content: [{ type: 'text', text: 'RESEARCH_LINK please' }] }, signal);
+    await waitFor(() => host.state().workstreams.find(item => item.title === 'Research work' && item.latestReport), 'the research member reports', 150000);
+    await lead.whenIdle(); await host.tail;
+    const work = host.state().workstreams.find(item => item.title === 'Research work'), member = host.state().workers.find(item => item.workstreamId === work.id);
+    assert.equal(work.delegations[0].scope, 'research'); assert.equal(member.role, 'research'); assert.equal(member.directoryHeld, false, 'research holds no directory');
+    assert.equal(host.state().requests[0].versions[0].scope, 'research', 'the requirement was authorized as research');
+    assert.ok(model.workerTools.includes('web_search') && model.workerTools.includes('web_fetch'), `the research member has the web tools: ${model.workerTools.join(', ')}`);
+    assert.deepEqual(work.delegations[0].sources.map(item => [item.kind, item.text]), [['fetch', URL_READ]], 'the host recorded the page the member asked to open');
+    assert.ok(model.failures.some(item => ['pwsh', 'bash'].includes(item.name) && /no shell or unrestricted repository write/.test(JSON.stringify(item.error))), 'the shell stays refused for research');
+    assert.deepEqual((await host.command('workstreams/get', { projectId: project.id, workstreamId: work.id })).workstream.delegations[0].sources.map(item => item.text), [URL_READ], 'the sources are readable from the Project');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-research-`)); await rm(root, { recursive: true, force: true });
   }
 });
 

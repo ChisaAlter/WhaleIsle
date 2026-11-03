@@ -192,6 +192,7 @@
   min-height: 36px;
   padding: 4px 5px 4px 12px;
   border-radius: var(--dsw-radius-md);
+  position: relative;
 }
 
 .row + .row {
@@ -307,4 +308,67 @@
 .action:disabled {
   cursor: default;
   opacity: 0.45;
+}
+
+/* Reorder: a grip leads each of the user's own rows once there is more than one; a drag draws one
+   accent line where the row would land. The spacer keeps rows the user did not write aligned. */
+.handle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 28px;
+  margin: 0 -4px;
+  border-radius: var(--dsw-radius-xs);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: grab;
+}
+
+.handle:hover:not([aria-disabled]) {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.handle:active:not([aria-disabled]) {
+  cursor: grabbing;
+}
+
+.handle:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+
+.handle[aria-disabled] {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.handleSpacer {
+  flex: none;
+  width: 16px;
+  margin: 0 -4px;
+}
+
+.dragging {
+  opacity: 0.45;
+}
+
+.dropBefore::after,
+.dropAfter::after {
+  position: absolute;
+  right: 12px;
+  left: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dsw-alias-state-business-primary);
+  content: '';
+  pointer-events: none;
+}
+
+/* Inside the row's own box: the panel clips anything outside it, so a line below the last row would vanish. */
+.dropBefore::after {
+  top: 0;
+}
+
+.dropAfter::after {
+  bottom: 0;
 }

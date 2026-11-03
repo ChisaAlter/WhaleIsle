@@ -5,11 +5,13 @@ import { registerAgentTeamUi } from './mount.ts'
 
 export { TeamAction, TeamBody } from './TeamAction.tsx'
 export { TeamSidebar } from './TeamSidebar.tsx'
+export { TeamEmbedded } from './TeamEmbedded.tsx'
 export { en as teamEnglish, zh as teamChinese } from './locales.ts'
 export { inject, TEAM_SIDEBAR_ID, TEAM_SIDEBAR_KIND } from './mount.ts'
 export type { TeamActionInjected, TeamActionProps, TeamBodyProps, TeamTaskScopesProps, TeamViewProps } from './TeamAction.tsx'
 export type { TeamActivityFacts, TeamActivityMap, TeamTaskScopeMap, TeamTaskScopes } from './mount.ts'
 export type { TeamSidebarProps } from './TeamSidebar.tsx'
+export type { TeamEmbeddedProps } from './TeamEmbedded.tsx'
 export type { TeamKey } from './locales.ts'
 
 /**

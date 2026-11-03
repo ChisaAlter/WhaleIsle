@@ -565,6 +565,9 @@ export class SessionCommandController {
         )
       }
     }
+    if (request.action.kind === 'move' && !Number.isSafeInteger(request.action.toIndex)) {
+      throw new RemoteError('gateway/bad-request', 'queue move needs an integer position', {})
+    }
     let agent = this.ctx.agents.get(request.sessionId)
     if (agent === undefined) {
       const found = await this.agents.resolveAgent(request.sessionId)
@@ -595,6 +598,9 @@ export class SessionCommandController {
     if (request.action.kind === 'steer' && (target !== 'next-turn' || agent.status !== 'running')) {
       throw new RemoteError('session/steer-unavailable', 'current turn no longer accepts steering', { itemId: request.itemId })
     }
+    if (request.action.kind === 'move' && target !== 'next-turn') {
+      throw new RemoteError('gateway/bad-request', 'only queued turns can be reordered', {})
+    }
     switch (request.action.kind) {
       case 'edit':
         agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
@@ -613,6 +619,9 @@ export class SessionCommandController {
       case 'steer':
         agent.inbox.remove(request.itemId)
         agent.steer(message)
+        break
+      case 'move':
+        agent.inbox.move(request.itemId, request.action.toIndex)
         break
       /* v8 ignore next 2 -- closed-union exhaustiveness guard */
       default:

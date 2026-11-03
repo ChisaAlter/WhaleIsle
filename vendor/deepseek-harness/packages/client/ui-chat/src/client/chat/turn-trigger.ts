@@ -21,11 +21,14 @@ function field(source: Record<string, unknown>, key: string): string {
 export function turnTriggerDetails(node: ContextMessageNode): {
   title: ChatKey
   icon: TurnTriggerIcon
+  /** The notice's own one-line account, for a source this chat has no dedicated title for. */
+  label?: string
 } {
   const source = record(node.source)
   const kind = field(source, 'kind')
   let title: ChatKey = 'message.trigger.request'
   let icon: TurnTriggerIcon = 'request'
+  let label: string | undefined
   switch (kind) {
     case 'goal': {
       title = 'message.trigger.goal'
@@ -64,8 +67,10 @@ export function turnTriggerDetails(node: ContextMessageNode): {
       icon = 'plugin'
       break
     default:
-      // Custom sources remain visible without attributing unrecorded identity or success.
+      // Custom sources remain visible without attributing unrecorded identity or success. A plugin notice
+      // carries its own one-line account, which says more than a generic title.
+      label = field(source, 'summary').trim().slice(0, 160) || undefined
       break
   }
-  return { title, icon }
+  return { title, icon, ...label === undefined ? {} : { label } }
 }

@@ -14,6 +14,7 @@ import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-tes
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { TeamAction, type TeamActionInjected, type TeamActionProps } from '../src/client/TeamAction.tsx'
 import { TeamSidebar, type TeamSidebarProps } from '../src/client/TeamSidebar.tsx'
+import { TeamEmbedded, type TeamEmbeddedProps } from '../src/client/TeamEmbedded.tsx'
 import { zh } from '../src/client/locales.ts'
 import type { TeamActivityMap } from '../src/client/mount.ts'
 import { createTeamViewStore } from '../src/client/view-state.ts'
@@ -899,5 +900,51 @@ describe('owner task scopes', () => {
     expect(page.textContent).not.toContain('已取消的旧工作')
     act(() => { scopes.set({}) })
     expect(page.textContent).toContain('已取消的旧工作')
+  })
+})
+
+describe('embedded Team', () => {
+  it('drops the Lead\'s standalone entry while its owner embeds the Team, and keeps every other header', () => {
+    const embedded = createSnapshotStore<TeamActivityMap>({ [SESSION]: { state: 'ready', runningJobSessionIds: [], embedded: true } })
+    const lead = bench({ project: true })
+    const { container, unmount } = render(<TeamAction {...lead.props} useTeamActivity={bindSnapshotSelector(embedded)} />)
+    expect(container.querySelector('[data-team-action]')).toBeNull()
+    act(() => { embedded.set({ [SESSION]: { state: 'ready', runningJobSessionIds: [] } }) })
+    expect(container.querySelector('[data-team-action]')).not.toBeNull()
+    act(() => { embedded.set({ [SESSION]: { state: 'ready', runningJobSessionIds: [], embedded: true } }) })
+    expect(container.querySelector('[data-team-action]')).toBeNull()
+    unmount()
+
+    const member = bench({ project: true, sessionId: WORKER, parentSessionId: SESSION })
+    render(<TeamAction {...member.props} useTeamActivity={bindSnapshotSelector(embedded)} />)
+    expect(document.querySelector('[data-team-action]'), 'A member conversation keeps its way to the Lead and the other members').not.toBeNull()
+    cleanup()
+
+    const ordinary = bench()
+    render(<TeamAction {...ordinary.props} useTeamActivity={bindSnapshotSelector(embedded)} />)
+    expect(document.querySelector('[data-team-action]'), 'A Team that is not a Project\'s is never hidden').not.toBeNull()
+  })
+
+  it('shows the Project roster inside the owner\'s page and reports a failed member opening there', async () => {
+    const b = bench({ project: true, running: { [WORKER]: true }, projections: {
+      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+        members: [lead, worker],
+        tasks: [{ ...task, subject: '修复登录', ownerName: worker.name, writeScopeWarnings: [] }],
+      } } },
+    } })
+    vi.mocked(b.injected.openTeammate).mockImplementation(() => { throw new Error('成员会话不可用') })
+    const { container } = render(<TeamEmbedded {...(b.props as unknown as TeamEmbeddedProps)} />)
+    const page = container.querySelector('[data-team-embedded]') as HTMLElement
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(within(page).getByRole('heading', { name: /成员/u })).toBeTruthy()
+    const member = within(page).getAllByRole('button').find(button => button.textContent?.includes('修复登录') && button.textContent.includes('运行中'))!
+    fireEvent.click(member)
+    expect(b.injected.openTeammate).toHaveBeenCalledWith(SESSION, WORKER)
+    expect(screen.getByRole('alert').textContent).toContain('成员会话不可用')
+    expect(member.getAttribute('data-error')).toBe('true')
+    vi.mocked(b.injected.openTeammate).mockImplementation(() => {})
+    fireEvent.click(member)
+    expect(member.getAttribute('data-error')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

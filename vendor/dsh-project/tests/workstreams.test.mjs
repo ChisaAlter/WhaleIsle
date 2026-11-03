@@ -545,3 +545,42 @@ test('the native launch boundary cannot execute discussed, queued or superseded 
     assert.equal(saved.delegations[0].phase, 'queued'); assert.equal(worker.reservationRef, undefined); assert.equal(worker.activeRunId, undefined);
   }
 });
+
+test('research adds only web search and fetch to the read-only tools; every call is recorded and a Project may limit the sites', async () => {
+  const f = setup(), item = f.add('Research work', true, 1), agent = { id: item.worker.sessionId };
+  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.stopped = false;
+  const call = (name, args = {}) => f.service.guard({ name, arguments: args, agent });
+  const flush = () => f.service.serial(async () => {});
+  const sources = () => f.service.stream(item.work.id).delegations[0].sources ?? [];
+  // Every write replaces the stored rows with fresh copies, so the member is read again each time.
+  const member = () => f.service.worker(agent.id);
+
+  item.worker.role = 'research';
+  assert.equal(call('web_fetch', { url: 'https://example.com/spec' }), undefined); assert.equal(call('web_search', { queries: ['harness web tools', 'cordis plugin'] }), undefined);
+  for (const name of ['bash', 'pwsh', 'write', 'edit', 'run_code']) assert.match(call(name, {}) ?? '', /no shell or unrestricted repository write/, name);
+  assert.match(call('project_write_document', { path: 'docs/a.md' }) ?? '', /read-only/);
+  assert.equal(call('project_read', { path: '.' }), undefined);
+  await flush();
+  assert.deepEqual(sources().map(({ kind, text }) => [kind, text]), [['fetch', 'https://example.com/spec'], ['search', 'harness web tools'], ['search', 'cordis plugin']]);
+  call('web_fetch', { url: 'https://example.com/spec' }); await flush();
+  assert.equal(sources().length, 3, 'the same call is recorded once');
+
+  for (const role of ['readonly', 'docs']) { member().role = role; assert.equal(call('web_fetch', { url: 'https://example.com' }), 'Web access needs a research assignment.', role); }
+  member().role = 'worker'; assert.equal(call('web_search', { queries: ['x'] }), undefined, 'a development member keeps the tools it always had');
+
+  // The Project names its sites: a host covers its subdomains, everything else is refused and not recorded.
+  const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-research-')); f.service.project(f.project.id).storageRoot = root;
+  try {
+    member().role = 'research';
+    assert.equal(call('web_fetch', { url: 'https://anything.test/page' }), undefined, 'no file, no limit');
+    await flush(); assert.equal(sources().length, 5, 'the development member\'s search was recorded too');
+    await fs.writeFile(join(root, 'research-hosts.txt'), '# sites research may read\nexample.com\n*.docs.test  # wildcard form\n\n');
+    assert.equal(call('web_fetch', { url: 'https://example.com/a' }), undefined); assert.equal(call('web_fetch', { url: 'https://www.example.com/a' }), undefined);
+    assert.equal(call('web_fetch', { url: 'https://api.docs.test/x' }), undefined);
+    await flush(); assert.equal(sources().length, 8, 'the three allowed fetches were recorded');
+    assert.match(call('web_fetch', { url: 'https://evil.test/leak?x=1' }), /only these sites: example\.com, docs\.test/);
+    assert.match(call('web_fetch', { url: 'https://notexample.com/' }), /only these sites/, 'a host does not match as a suffix of another name');
+    assert.equal(call('web_fetch', { url: 'not a url' }), 'Give a complete http or https URL.');
+    await flush(); assert.equal(sources().length, 8, 'denied calls leave no trace');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
