@@ -488,10 +488,10 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
       const requests = page.locator('[data-project-panel="requests"]')
       await assertPopoverInViewport(page, '[data-project-panel="requests"]')
       const card = requests.locator(`[data-project-request-id="${REQUEST_ID}"]`)
-      await card.getByRole('tab', { name: 'Plan', exact: true }).click()
-      for (const todo of PLAN) await card.locator('[data-project-request-tab="plan"]').getByText(todo.content, { exact: true }).waitFor()
-      await card.getByRole('tab', { name: 'Work', exact: true }).click()
-      await card.locator('[data-project-request-tab="work"]').getByText('Verify stable Project status', { exact: true }).waitFor()
+      const progress = card.locator('[data-project-request-tab="progress"]')
+      await progress.getByText('Verify stable Project status', { exact: true }).waitFor()
+      await progress.locator('summary', { hasText: 'Coordinator plan' }).click()
+      for (const todo of PLAN) await progress.getByText(todo.content, { exact: true }).waitFor()
       await page.keyboard.press('Escape')
       await requests.waitFor({ state: 'hidden' })
 
@@ -586,14 +586,14 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
           : '[data-sidebar-right-open] [data-team-sidebar]')
         await trigger.click()
         await floating.waitFor()
-        if (surface === 'requests') await floating.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Work', exact: true }).click()
+        if (surface === 'requests') await floating.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).click()
         expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(1)
         await floating.getByRole('button', { name: 'Keep observing', exact: true }).click()
         await observer.waitFor()
         await floating.waitFor({ state: 'hidden' })
         expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(0)
         expect(await page.getByRole('button', { name: 'Return to popover', exact: true }).count()).toBe(1)
-        if (surface === 'requests') expect(await observer.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Work', exact: true }).getAttribute('aria-selected')).toBe('true')
+        if (surface === 'requests') expect(await observer.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')).toBe('true')
         await observer.getByRole('button', { name: 'Return to popover', exact: true }).click()
         await floating.waitFor()
         await expect.poll(async () => {
@@ -605,8 +605,8 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
         expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(1)
         if (surface === 'requests') {
           const card = floating.locator(`[data-project-request-id="${REQUEST_ID}"]`)
-          expect(await card.getByRole('tab', { name: 'Work', exact: true }).getAttribute('aria-selected')).toBe('true')
-          expect(await card.locator('[data-project-request-tab="work"]').getByText('Verify stable Project status', { exact: true }).count()).toBe(1)
+          expect(await card.getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')).toBe('true')
+          expect(await card.locator('[data-project-request-tab="progress"]').getByText('Verify stable Project status', { exact: true }).count()).toBe(1)
         }
         expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
         const restored = (await currentGeometry(page)).composer
