@@ -140,6 +140,39 @@ describe('Session queue commands', () => {
     }
   })
 
+  it('reorders queued turns and refuses next-step items, stale items, and unusable positions', async () => {
+    const { controller, agent, inbox } = await commandHarness()
+    const text = (value: string) => createUserMessage({ content: [{ type: 'text', text: value }], source: { kind: 'user' } })
+    const [first, second, third] = [text('first'), text('second'), text('third')] as [UserMessage, UserMessage, UserMessage]
+    const nextStep = text('step')
+    for (const message of [first, second, third]) inbox.append('next-turn', message)
+    inbox.append('next-step', nextStep)
+
+    expect(await controller.updateQueue({
+      sessionId: agent.id, itemId: third.id, action: { kind: 'move', toIndex: 0 },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn.map(message => message.id)).toEqual([third.id, first.id, second.id])
+    // Positions past either end clamp, and the message keeps its identity.
+    expect(await controller.updateQueue({
+      sessionId: agent.id, itemId: third.id, action: { kind: 'move', toIndex: 99 },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn.map(message => message.id)).toEqual([first.id, second.id, third.id])
+
+    for (const toIndex of [Number.NaN, 1.5, Number.POSITIVE_INFINITY]) {
+      await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+        sessionId: agent.id, itemId: first.id, action: { kind: 'move', toIndex },
+      })), 'gateway/bad-request')
+    }
+    await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+      sessionId: agent.id, itemId: nextStep.id, action: { kind: 'move', toIndex: 0 },
+    })), 'gateway/bad-request')
+    await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+      sessionId: agent.id, itemId: MessageId('missing'), action: { kind: 'move', toIndex: 0 },
+    })), 'session/queue-item-not-found')
+    expect(inbox.nextTurn.map(message => message.id)).toEqual([first.id, second.id, third.id])
+    expect(inbox.nextStep).toEqual([nextStep])
+  })
+
   it('edits, removes, steers, and rejects stale queue occurrences', async () => {
     const { ctx, controller, agent, inbox, steer, cancel } = await commandHarness()
     const queued = createUserMessage({ content: [{ type: 'text', text: 'queued' }], source: { kind: 'user' } })
