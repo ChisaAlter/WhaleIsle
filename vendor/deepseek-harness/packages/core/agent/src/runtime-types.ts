@@ -84,6 +84,15 @@ export interface Inbox {
   remove(messageId: MessageId): boolean
 
   /**
+   * Move one pending message to another position in the list that holds it.
+   * The message keeps its identity, so this is a reorder, not a cancel and re-queue.
+   * @param messageId - identity of the pending message to move.
+   * @param toIndex - destination position in that list, clamped to its bounds.
+   * @returns whether the message was still pending.
+   */
+  move(messageId: MessageId, toIndex: number): boolean
+
+  /**
    * Apply standard splice semantics and durably record the normalized result.
    * @param target - pending list to mutate.
    * @param start - splice position.

@@ -82,7 +82,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/subagent/subagent/src/continuation-messages.ts', includes: ['readonly runId?: SubagentRunId'] },
   { file: 'packages/subagent/subagent/src/lifecycle.ts', includes: ['readonly runId: SubagentRunId'] },
   { file: 'packages/subagent/subagent/src/index.ts', includes: ['registerContinuationPolicy'] },
-  { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation'] },
+  { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation', "case 'move':", 'only queued turns can be reordered'] },
   { file: 'packages/api/session-controller/src/index.ts', includes: ["'session/before-cancel'", 'cancel(request: SessionCancelRequest): Promise<SessionCancelValue>'] },
   // Opened Sessions nobody watches release their resident Agent instead of staying in the Host until restart.
   { file: 'packages/api/session-controller/src/idle-release.ts', includes: ['class IdleSessionRelease', "optionalService(this.ctx, 'jobs')", "stateOf(agent.session, 'sessionListMetadata')"] },
@@ -204,9 +204,19 @@ const FORK_FILE_MARKERS = [
   // Composer docks: the 0fr/1fr track only reserves layout; the card moves on
   // the compositor inside an overflow:clip box cut at the slot's fixed bottom
   // edge, and opacity sits on the backdrop-filter material itself.
-  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .panelBody'] },
-  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.tsx', includes: ['className={css.panelBody}', 'SYSTEM_ROW_SETTLE_MS'], excludes: ['data-dsh-motion="fade"'] },
+  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width', 'overflow: clip', 'transform: translateY(100%)', '.surface[data-state] .panelBody', '.dropBefore::after'] },
+  { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.tsx', includes: ['className={css.panelBody}', 'SYSTEM_ROW_SETTLE_MS', 'DRAG_TYPE', 'moveBeside'], excludes: ['data-dsh-motion="fade"'] },
   { file: 'packages/client/ui-conversation/tests/queue-dock-motion-styles.client.spec.ts', includes: ['QueueDock.module.css motion'] },
+  // Queue reorder: a queued turn moves within the queue (drag its grip, or press the arrow keys). The Inbox moves it with
+  // one splice shaped like an edit, so the message keeps its identity and no consumer reads the move as a claim or a cancel.
+  { file: 'packages/core/agent/src/runtime-types.ts', includes: ['move(messageId: MessageId, toIndex: number): boolean'] },
+  { file: 'packages/core/agent-loop/src/inbox.ts', includes: ['move(messageId: MessageId, toIndex: number): boolean', "outcome: 'canceled',"] },
+  { file: 'packages/api/session-controller/src/types.ts', includes: ["readonly kind: 'move'"] },
+  { file: 'packages/client/ui-conversation/src/client/locales.ts', includes: ["'queue.reorder'", "'queue.moveFailed'"] },
+  { file: 'packages/core/agent-loop/tests/inbox.spec.ts', includes: ['moves a pending message within its list'] },
+  { file: 'packages/api/session-controller/tests/commands-queue-attachment.host.spec.ts', includes: ['reorders queued turns'] },
+  { file: 'packages/client/ui-conversation/tests/queue-dock.client.spec.tsx', includes: ["describe('reordering'"] },
+  { file: 'apps/web/tests/queue-reorder.e2e.ts', includes: ['moves a queued message by dragging its grip'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width', 'grid-template-rows: 0fr', 'margin-bottom: calc(-1 * var(--dsh-composer-stack-gap', 'overflow: clip', 'transform: translateY(100%)', 'transition: none'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.tsx', includes: ["import css from './TaskDock.module.css'", 'className={css.root}', 'className={css.slot}', 'className={css.slide}', 'usePresence(open)', 'usePresence(expanded)'] },
   { file: 'packages/client/ui-primitives/tests/task-dock-motion-styles.client.spec.ts', includes: ['TaskDock.module.css motion'] },
