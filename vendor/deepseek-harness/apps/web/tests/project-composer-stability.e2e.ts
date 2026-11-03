@@ -10,11 +10,19 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { SpawnTeammateRequest } from '@deepseek-ai/dsh-experimental-agent-team'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JobId, JobOutcome } from '@deepseek-ai/dsh-jobs'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
+
+// The Project host's own notice kind, as the Agent loop records it for a notice that wakes the Lead.
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'whale-project:queue': { kind: 'whale-project:queue' } & ContextFormed
+  }
+}
 
 const TEAM_PATCH = fileURLToPath(new URL('./agent-team-panel.overlay.yml', import.meta.url))
 const TEAM_ANCHOR = fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/package.json', import.meta.url))
