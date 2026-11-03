@@ -88,6 +88,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   };
   Object.assign(zh, { requestSections: '需求详情', requestProgress: '进度', requestResults: '成果', leadPlan: '协调者计划', stageRail: '执行阶段', stageArranging: '安排', stageExecuting: '执行', stageSummarizing: '汇总', stageDelivered: '交付', sectionMembers: '成员', panelSections: '面板内容', pinObserver: '固定观察', returnFloat: '返回浮窗', closeObserver: '关闭观察', statusUnknown: '状态未知', statusWaiting: '等待中', statusHandover: '等待交付', statusArranging: '正在安排', statusSummarizing: '正在汇总', retryRead: '重新读取', retainedStatus: '连接中断，以下为上次确认的数据。', queueRetry: '重试队列操作', allRequestDetails: '查看完整需求', workPreviewHint: '完整工作记录正在读取…' });
   Object.assign(en, { requestSections: 'Request details', requestProgress: 'Progress', requestResults: 'Results', leadPlan: 'Coordinator plan', stageRail: 'Execution stages', stageArranging: 'Arrange', stageExecuting: 'Execute', stageSummarizing: 'Summarize', stageDelivered: 'Deliver', sectionMembers: 'Members', panelSections: 'Panel sections', pinObserver: 'Keep observing', returnFloat: 'Return to popover', closeObserver: 'Close observer', statusUnknown: 'Unknown', statusWaiting: 'Waiting', statusHandover: 'Awaiting delivery', statusArranging: 'Arranging', statusSummarizing: 'Summarizing', retryRead: 'Reload', retainedStatus: 'Disconnected; showing the last confirmed data.', queueRetry: 'Retry queue action', allRequestDetails: 'View full request', workPreviewHint: 'Loading full work records…' });
+  Object.assign(zh, { needsYou: '需要你', groupActive: '进行中', stageAwaitingAnswer: '等你回答', stageAwaitingDecision: '等你决定', askFromMember: '成员在等你回答', askPlaceholder: '输入你的回答', askSend: '回答', askSent: '已回复，协调者处理中…', askIfUnanswered: '不回答时：{text}', askAnswer: '{title}：{answer}',
+    blockedRetry: '重试', blockedRetryPrompt: '请重试受阻的需求「{title}」。受阻原因：{reason}。先说明你准备怎么做；如果需要我提供什么，请用 project_ask 问我。', viewResults: '查看成果', statusNeedsYou: '{count} 项等你', statusSummaryRetrying: '汇总遇到临时故障，自动重试中', summaryRetrying: '临时故障，自动重试中（第 {attempt}/{of} 次）' });
+  Object.assign(en, { needsYou: 'Needs you', groupActive: 'In progress', stageAwaitingAnswer: 'Waiting for your answer', stageAwaitingDecision: 'Waiting for your decision', askFromMember: 'A member is waiting for your answer', askPlaceholder: 'Type your answer', askSend: 'Answer', askSent: 'Sent; the coordinator is on it…', askIfUnanswered: 'If you don’t answer: {text}', askAnswer: '{title}: {answer}',
+    blockedRetry: 'Retry', blockedRetryPrompt: 'Please retry the blocked requirement “{title}”. Reason: {reason}. Say how you plan to proceed; if you need something from me, ask with project_ask.', viewResults: 'View results', statusNeedsYou: '{count} need you', statusSummaryRetrying: 'Temporary failure, retrying the summary', summaryRetrying: 'Temporary failure, retrying automatically (attempt {attempt}/{of})' });
   const charterLimit = 16000;
   Object.assign(zh, {
     preferences: '偏好', preferencesHint: '软性的习惯与偏好，例如回复风格、常用命令。必须遵守的内容请写进「项目规则」。',
@@ -288,6 +292,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-task-status-row>.dsh-project-task-state{flex:none;display:inline-flex}
     .dsh-project-task-status-row>span:last-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
     .dsh-project-task-next{display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+  /* The one thing a requirement waits on the user for: a question with its answers, or the action that unblocks it. */
+  .dsh-project-ask{display:flex;flex-direction:column;gap:8px;min-width:0;margin:0 0 8px;padding:10px 12px;border-radius:8px;border-left:3px solid var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-interactive-bg-hover)}
+  .dsh-project-ask-question{margin:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+  .dsh-project-ask-options{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+  .dsh-project-ask-form{display:flex;align-items:center;gap:6px;min-width:0}.dsh-project-ask-form>*:first-child{flex:1;min-width:0}
+  .dsh-project-ask-note{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
     .dsh-project-task-next[data-tone=warning]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 8%,transparent)}
     .dsh-project-task-next[data-tone=info]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 6%,transparent)}
     .dsh-project-task-next>span:first-child:not(:last-child){color:var(--dsw-alias-label-primary)}
@@ -459,10 +469,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       locationOpen ? h('div', { className: 'dsh-project-path' }, file.path) : null);
   }
 
-  function SummaryFailure({ failure, openModelSettings, t }) {
+  function SummaryFailure({ failure, autoRetry, openModelSettings, t }) {
     const credentials = failure.error.code === 'MISSING_CREDENTIAL';
     return h(Fragment, null,
       h('p', { className: 'dsh-project-error' }, t('summaryFailed')),
+      autoRetry ? h('p', { role: 'status', className: 'dsh-project-muted' }, t('summaryRetrying').replace('{attempt}', autoRetry.attempt).replace('{of}', autoRetry.of)) : null,
       h('p', { className: 'dsh-project-muted' }, t(credentials ? 'summaryCredentialHint' : 'summaryErrorHint')),
       credentials ? button(t('modelSettings'), openModelSettings) : null,
       h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, `${failure.error.code}\n${failure.error.message}`)));
@@ -525,7 +536,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     if (previous.current !== value) { previous.current = value; count.current += 1; }
     return count.current;
   }
-  function HeaderPanel({ id, icon, label, badge, tone, status, state, useDismissals, useRequestPanels, sessionId, setRequestPanel, pinRequests, children }) {
+  function HeaderPanel({ id, icon, label, badge, tone, status, state, needs = 0, useDismissals, useRequestPanels, sessionId, setRequestPanel, pinRequests, children }) {
     const local = useRequestPanels(value => value[sessionId]), open = local?.open ?? false;
     const [visited, setVisited] = useState(false), rootRef = useRef(null), triggerRef = useRef(null), panelRef = useRef(null);
     const dismissals = useDismissals(value => value);
@@ -555,10 +566,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape);
       return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
     }, [open]);
-    return h('div', { ref: rootRef, className: 'dsh-project-header-panel', 'data-project-header-panel': id, 'data-state': state },
+    return h('div', { ref: rootRef, className: 'dsh-project-header-panel', 'data-project-header-panel': id, 'data-state': state, 'data-needs-you': needs || undefined },
       h(Tooltip, { label: `${label} · ${status}`, side: 'bottom', disabled: open }, h('button', { type: 'button', ref: triggerRef, className: 'dsh-project-header-trigger', 'aria-label': `${label} · ${status}`, 'aria-haspopup': 'dialog', 'aria-expanded': open,
         onClick: () => change(!open) }, icon, h('span', { className: 'dsh-project-header-trigger-label' }, label),
-        h('span', { key: bump, className: 'dsh-project-header-badge', 'data-tone': tone, 'data-live': LIVE_HEADER_STATES.includes(state), 'data-bump': bump > 0 }, badge), h('span', { className: 'dsh-project-header-state', 'data-tone': tone }, status))),
+        h('span', { key: bump, className: 'dsh-project-header-badge', 'data-tone': tone, 'data-live': !needs && LIVE_HEADER_STATES.includes(state), 'data-bump': bump > 0 }, badge), h('span', { className: 'dsh-project-header-state', 'data-tone': tone }, status))),
       // Retain the same tree while hidden: refreshes and closing do not reset tabs or reading position.
       visited || open ? createPortal(h('div', { ref: panelRef, className: 'dsh-project-header-surface', 'data-project-panel': id, role: 'dialog', tabIndex: -1, 'aria-label': label, hidden: !open,
         style: position ?? { visibility: 'hidden', left: 0, top: 0 } }, children), document.body) : null);
@@ -587,11 +598,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const directory = directoryParts(project).at(-1) || project.canonicalWorkingDirectory;
     const queue = project.queue, waiting = (queue?.queued?.length ?? 0) + (queue?.discussingCount ?? 0);
     const count = (queue?.active ? 1 : 0) + waiting, header = projectHeaderState(project, current, t);
+    // The badge counts what waits on the user, the same list the panel pins on top; otherwise it counts live requirements.
+    const needs = header.state === 'unknown' || header.state === 'loading' ? 0 : project.activity?.needsYou ?? 0;
     return h('div', { className: 'dsh-project-header' },
       h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-header-directory', onClick: () => { void read(project.id, 'open').catch(failure => setOpenFailure(previous => ({ seq: (previous?.seq ?? 0) + 1, text: `${t('openDirectory')}: ${errorText(failure)}` }))); }, title: project.canonicalWorkingDirectory, 'aria-label': `${t('openDirectory')}: ${project.canonicalWorkingDirectory}` },
         h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-header-path', hidden: true }, directory)),
       h(HeaderPanel, { ...props, id: 'requests', icon: h(IconChecklistOutlineRegular, { size: 14 }), label: t('requirements'), useDismissals,
-        badge: header.state === 'unknown' || header.state === 'loading' ? '?' : count > 99 ? '99+' : String(count), status: header.label, state: header.state, tone: header.tone },
+        badge: header.state === 'unknown' || header.state === 'loading' ? '?' : needs ? (needs > 99 ? '99+' : String(needs)) : count > 99 ? '99+' : String(count),
+        status: needs && !['blocked', 'summaryFailed', 'needsReview'].includes(header.state) ? t('statusNeedsYou').replace('{count}', needs) : header.label, state: header.state, tone: needs ? 'warning' : header.tone, needs },
         !panelView?.observing ? h(ProjectRequirements, { ...props, project }) : null),
       openFailure ? h(Toast, { key: openFailure.seq, text: openFailure.text, holdMs: 6000, onDone: () => setOpenFailure(null) }) : null);
   }
@@ -624,6 +638,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     if (card.queue?.state === 'cancelled') return status('neutral', 'statusCancelled', 'nextCancelled');
     if (card.status === 'completed' && card.changes?.revertedAt) return status('neutral', 'statusReverted', 'nextReverted');
     if (card.status === 'completed') return status('success', 'statusDelivered');
+    if (card.stage?.id === 'awaitingAnswer') return status('warning', 'stageAwaitingAnswer');
     if (card.status === 'needsReview') return status('warning', 'statusNeedsReview', 'nextNeedsReview');
     if (card.queue?.state === 'discussing') return status('neutral', 'statusDiscussing', 'nextDiscussing');
     if (card.queue?.state === 'queued') return { ...status('outline', 'statusQueued', queue?.paused ? 'nextQueuedPaused' : steps.some(item => item.status === 'running') ? 'nextQueuedPreparing' : 'nextQueued'),
@@ -631,6 +646,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     if (card.status === 'stopping' || project.activity?.state === 'stopping') return status('neutral', 'statusStopping');
     if (card.status === 'paused' || project.paused) return status('warning', 'statusPaused', 'nextPaused');
     if (card.authorityError) return status('warning', 'statusBlocked', 'nextAuthority', t('authorityErrorHint'));
+    if (card.stage?.retry) return status('info', 'statusSummaryRetrying', '', t('summaryRetrying').replace('{attempt}', card.stage.retry.attempt).replace('{of}', card.stage.retry.of));
     if (card.status === 'summaryFailed' || card.handoverError) return status('warning', 'statusBlocked', 'nextSummary', t('summaryFailed'));
     if (card.status === 'blocked' && card.delivery?.outcome === 'partial') return status('warning', 'statusPartial', 'nextPartial');
     if (waiting?.waitingReason) return card.status === 'blocked'
@@ -725,6 +741,39 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       : h('span', { className: 'dsh-project-task-state-dot', 'data-state': status, 'aria-hidden': true });
   }
 
+  // The one question a requirement waits on. The answer is an ordinary message to the Lead; the host clears the question when
+  // that message enters the Lead's next step, so until then this block only remembers that the answer went out.
+  function ProjectAsk({ card, controls, t }) {
+    const ask = card.stage.ask, [text, setText] = useState(''), [sent, setSent] = useState(false);
+    useEffect(() => { setSent(false); setText(''); }, [ask.id]);
+    const send = async answer => {
+      const value = answer.trim();
+      if (!value || controls.busy || sent) return;
+      setSent(true);
+      if (!await controls.say(card, t('askAnswer').replace('{title}', card.title).replace('{answer}', value))) setSent(false);
+    };
+    return h('div', { className: 'dsh-project-ask', 'data-project-ask': ask.id, role: 'group', 'aria-label': t(ask.by === 'member' ? 'askFromMember' : 'stageAwaitingAnswer') },
+      h('p', { className: 'dsh-project-ask-question' }, ask.question),
+      sent ? h('p', { role: 'status', className: 'dsh-project-ask-note' }, t('askSent')) : h(Fragment, null,
+        ask.options?.length ? h('div', { className: 'dsh-project-ask-options' }, ask.options.map(option => h(Button, { key: option, variant: 'outline', size: 'sm', disabled: controls.busy, onClick: () => { void send(option); } }, option))) : null,
+        h('div', { className: 'dsh-project-ask-form' },
+          h(Input, { value: text, maxLength: 500, 'aria-label': t('askPlaceholder'), placeholder: t('askPlaceholder'), onChange: event => setText(event.target.value), onKeyDown: event => { if (event.key === 'Enter' && !event.nativeEvent?.isComposing) { event.preventDefault(); void send(text); } } }),
+          h(Button, { variant: 'primary', size: 'sm', disabled: controls.busy || !text.trim(), onClick: () => { void send(text); } }, t('askSend'))),
+        ask.ifUnanswered ? h('p', { className: 'dsh-project-ask-note' }, t('askIfUnanswered').replace('{text}', ask.ifUnanswered)) : null));
+  }
+  // Inline actions for the rest of "needs you": retry what is blocked, re-summarize, or look at what was delivered.
+  function ProjectAttention({ card, controls, retryHandover, setTab, t }) {
+    const stage = card.stage;
+    if (stage.id === 'awaitingAnswer') return h(ProjectAsk, { card, controls, t });
+    const action = stage.id === 'blocked' && stage.reason === 'work' ? { label: t('blockedRetry'), run: () => { void controls.say(card, t('blockedRetryPrompt').replace('{title}', card.title).replace('{reason}', stage.detail || '')); } }
+      : stage.id === 'awaitingDecision' && stage.reason === 'summaryFailed' ? { label: t('retrySummary'), run: () => { void retryHandover(card); } }
+      : stage.id === 'awaitingDecision' ? { label: t('viewResults'), run: () => setTab('results') } : null;
+    if (!action && !stage.detail) return null;
+    return h('div', { className: 'dsh-project-ask', 'data-project-attention-actions': stage.id },
+      stage.detail ? h('p', { className: 'dsh-project-ask-question' }, stage.detail) : null,
+      action ? h('div', { className: 'dsh-project-ask-options' }, h(Button, { variant: 'outline', size: 'sm', disabled: controls.busy, onClick: action.run }, action.label)) : null);
+  }
+
   function ProjectTaskCard({ card: preview, project, resourceRevision, mode, setMode, tab, setTab, read, team, sessions, controls, queue, changeQueue, archive, retryHandover, openMember, workstreams, todos, renderFactorySlot, t }) {
     const [saved, setSaved] = useState(null), [error, setError] = useState(''), [menu, setMenu] = useState(false), [readKey, setReadKey] = useState(0);
     const expanded = mode !== 'strip';
@@ -771,6 +820,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           total ? h('span', null, `${finished} / ${total}`) : null),
           human.reason || human.next ? h('div', { className: 'dsh-project-task-next', 'data-tone': human.tone },
             human.reason ? h('span', null, human.reason) : null, human.next ? h('span', null, h('strong', null, t('nextStep')), human.next) : null) : null),
+        card.stage?.needsYou ? h(ProjectAttention, { card, controls, retryHandover, setTab, t }) : null,
         h(SegmentedTabs, { className: 'dsh-project-request-tabs', items: sections, value: tab, onChange: setTab, label: t('requestSections') }),
         h('div', pane('progress'),
         card.authorityError ? h(RequestAuthority, { request: card, t }) : null,
@@ -802,7 +852,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
               stoppable ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('stopWork')}`, title: controls.actionError('stop', item.workstreamId) || t('stopWork'), 'data-error': Boolean(controls.actionError('stop', item.workstreamId)), disabled: controls.busy || item.status === 'stopping', onClick: () => controls.act('stop', { workstreamId: item.workstreamId }) }, t('stopWork')) : null) : null,
             ['blocked', 'failed'].includes(item.status) && item.blockedReason && item.blockedReason !== 'stopped' && !item.waitingReason ? h('p', { className: 'dsh-project-task-step-reason', role: 'alert' }, workBlockedLabel(t, item.blockedReason)) : null,
             stream?.prerequisitesChanged && item.current !== false ? h('p', { className: 'dsh-project-task-step-note', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
-            failure ? h('div', { className: 'dsh-project-task-step-failure' }, h(SummaryFailure, { failure, openModelSettings: controls.openModelSettings, t }),
+            failure ? h('div', { className: 'dsh-project-task-step-failure' }, h(SummaryFailure, { failure, autoRetry: stream?.autoRetry, openModelSettings: controls.openModelSettings, t }),
               !card.authorityError ? h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('summary', item.workstreamId), 'data-error': Boolean(controls.actionError('summary', item.workstreamId)), onClick: () => controls.retrySummary({ id: item.workstreamId, summaryFailure: failure }) }, t('retrySummary')) : null) : null);
         })) : h('p', { className: 'dsh-project-task-waiting' }, t('observerNoTodo')),
         planItems ? h('details', { className: 'dsh-project-result-disclosure dsh-project-lead-plan', open: !steps.length },
@@ -913,6 +963,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const cursorScope = project.id;
     const newCursors = () => ({ scope: cursorScope, current: [null], completed: [null], archived: [null], cancelled: [null] });
     const [cursorState, setCursorState] = useState(savedView?.cursorState ?? newCursors), [pages, setPages] = useState({}), [cardsBusy, setCardsBusy] = useState(false);
+    const [attention, setAttention] = useState({ items: [], total: 0 });
     const activeCursors = cursorState.scope === cursorScope ? cursorState : newCursors();
     const [actionBusy, setActionBusy] = useState(false), [queueFailure, setQueueFailure] = useState(null), [readError, setReadError] = useState(''), [refreshKey, setRefreshKey] = useState(0);
     const [actionFailures, setActionFailures] = useState({}), [actionNotice, setActionNotice] = useState(null);
@@ -951,6 +1002,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         .catch(failure => { if (live) setReadError(errorText(failure)); }).finally(() => { if (live) setCardsBusy(false); });
       return () => { live = false; };
     }, [project.id, detail?.revision, refreshKey, activeCursors.current.at(-1), activeCursors.completed.at(-1), activeCursors.archived.at(-1), activeCursors.cancelled.at(-1)]);
+    // What needs the user is read apart from the paged list: the header counts exactly this, and none of it may hide on a later page.
+    useEffect(() => {
+      let live = true;
+      void read(project.id, 'requests/attention').then(value => { if (live) setAttention({ items: value?.items ?? [], total: value?.total ?? 0 }); }).catch(failure => { if (live) setReadError(errorText(failure)); });
+      return () => { live = false; };
+    }, [project.id, detail?.revision, refreshKey]);
     const archive = item => performAction('archive', item.id, async () => {
       await command(project.id, item.archivedAt ? 'requests/restore' : 'requests/archive', { requestId: item.id });
       setCursorState(newCursors()); setRefreshKey(value => value + 1);
@@ -999,13 +1056,16 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       showDiff: (_id, workstreamId) => props.showDiff(project.id, workstreamId),
       showRequestDiff: id => props.showRequestDiff(project.id, id),
       revert: async item => { await command(project.id, 'requests/revert', { requestId: item.id, requestRevision: item.revision }); setCursorState(newCursors()); setRefreshKey(value => value + 1); },
-      ask: text => sendUserRequest(project.id, text) };
+      ask: text => sendUserRequest(project.id, text),
+      // One message to the Lead on a requirement's behalf: whether it went out, with a failure left on the panel's toast.
+      say: async (item, text) => { setActionBusy(true); try { await sendUserRequest(project.id, text); clearActionFailure('say', item.id); return true; } catch (failure) { recordActionFailure('say', item.id, failure); return false; } finally { setActionBusy(false); } } };
     const cardMode = (item, initialMode = 'strip') => requestModes?.[item.id]?.mode ?? initialMode;
-    const renderCard = (item, initialMode = 'strip') => h(ProjectTaskCard, { key: item.id, card: item, project, resourceRevision: detail?.revision,
-      mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, item.id, mode, item.status === 'completed'), tab: (requestModes?.[item.id]?.tab ?? (item.status === 'completed' ? 'results' : 'progress')) === 'results' ? 'results' : 'progress', setTab: tab => props.setRequestTab(sessionId, item.id, tab),
+    const renderCard = (item, initialMode = 'strip', pinned = false) => h(ProjectTaskCard, { key: item.id, card: item, project, resourceRevision: detail?.revision,
+      mode: pinned ? 'card' : cardMode(item, initialMode), setMode: pinned ? () => {} : mode => setRequestMode(sessionId, item.id, mode, item.status === 'completed'), tab: (requestModes?.[item.id]?.tab ?? (item.status === 'completed' ? 'results' : 'progress')) === 'results' ? 'results' : 'progress', setTab: tab => props.setRequestTab(sessionId, item.id, tab),
       read, team, sessions, controls, queue, changeQueue, archive, retryHandover, todos, openMember: workerSessionId => props.openMember(project, workerSessionId), workstreams: detail?.workstreams, renderFactorySlot, t });
     const current = pages.current?.items ?? [], activeCard = current.find(item => item.id === queue?.active?.id) ?? queue?.active;
     const visible = [...(activeCard && !current.some(item => item.id === activeCard.id) ? [activeCard] : []), ...current, ...(pages.completed?.items ?? [])], ordered = [...readingOrder.map(id => visible.find(item => item.id === id)).filter(Boolean), ...visible.filter(item => !readingOrder.includes(item.id))];
+    const pinnedIds = new Set(attention.items.map(item => item.id));
     const jobIds = new Set(project.activity?.runningJobSessionIds ?? []);
     const membersRunning = new Set((team?.members ?? []).filter(member => member.role !== 'lead' && (sessions[member.id]?.running === true || jobIds.has(member.id))).map(member => member.id)).size;
     const membersKnown = projectsKnown && Boolean(team) && team.failure === undefined;
@@ -1025,8 +1085,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         onChange: next => { if (next === 'members') setMembersVisited(true); setSection(next); } }) : null,
       h('div', { className: 'dsh-project-section-page', 'data-project-section': 'requests', ...(teamShown ? { role: 'tabpanel', id: `${project.id}-page-requests`, 'aria-labelledby': `${project.id}-section-requests`, hidden: shownSection !== 'requests' } : {}) },
       !visible.length && !activeCard && !cardsBusy ? h('div', { className: 'dsh-project-requests-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
+      attention.total ? h('div', { className: 'dsh-project-requests-list', 'data-project-attention': attention.total },
+        h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, `${t('needsYou')} · ${attention.total}`)),
+        attention.items.map(item => renderCard(item, 'card', true))) : null,
       h('div', { className: 'dsh-project-requests-list', 'aria-label': t('taskList') },
-        ordered.map(item => renderCard(item, item.id === activeCard?.id ? 'card' : 'strip'))),
+        attention.total && ordered.some(item => !pinnedIds.has(item.id)) ? h('div', { className: 'dsh-project-task-group-title' }, h('span', null, t('groupActive'))) : null,
+        ordered.filter(item => !pinnedIds.has(item.id)).map(item => renderCard(item, item.id === activeCard?.id ? 'card' : 'strip'))),
       pageControls('current'),
       historyKind ? h('section', { className: 'dsh-project-requests-list' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t(historyKind === 'archived' ? 'taskArchive' : 'taskCancelled')), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setHistoryKind(null) }, t('taskBack'))),
         (pages[historyKind]?.items ?? []).map(item => renderCard(item)), pageControls(historyKind)) : null,

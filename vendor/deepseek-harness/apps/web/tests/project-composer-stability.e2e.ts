@@ -135,6 +135,7 @@ interface RequestRecord {
     at: number
   }[]
   queue: { state: 'active'; order: number }
+  ask?: { id: string; requestRevision: number; question: string; options?: string[]; ifUnanswered?: string; by: 'coordinator' | 'member'; at: number }
   createdAt: number
   updatedAt: number
 }
@@ -639,4 +640,60 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
     expect(tripwire.pageErrors).toEqual([])
   }, 45_000)
+
+  it('pins the question the Lead waits on, counts it in the header and sends the answer as one ordinary message', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-project-composer-needs-you'))
+    await setState('running')
+    await settleViewport(page, 1280)
+    const header = page.locator('[data-project-header-panel="requests"]')
+    expect(await header.getAttribute('data-needs-you'), 'a healthy Project has nothing waiting on the user').toBeNull()
+    const withRequest = (change: (request: RequestRecord) => void): Promise<void> => projects.serial(() => projects.write((catalog) => {
+      const request = catalog.requests.find(item => item.id === REQUEST_ID)
+      if (request === undefined) throw new Error('Project fixture request disappeared')
+      change(request)
+    }))
+    await withRequest((request) => {
+      request.ask = { id: 'ask-fixture', requestRevision: 1, question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I will start with SQLite', by: 'coordinator', at: Date.now() }
+    })
+    await expect.poll(() => header.getAttribute('data-needs-you'), { timeout: 15_000 }).toBe('1')
+    expect(await header.locator('.dsh-project-header-badge').textContent()).toBe('1')
+    expect(await header.locator('.dsh-project-header-badge').getAttribute('data-live'), 'a number to act on does not breathe').toBe('false')
+
+    await header.locator('button').first().click()
+    const requests = page.locator('[data-project-panel="requests"]')
+    await requests.waitFor()
+    await requests.getByRole('tab', { name: 'Requests', exact: true }).click()
+    const pinned = requests.locator('[data-project-attention]')
+    await pinned.waitFor()
+    expect(await pinned.getAttribute('data-project-attention'), 'the pinned count is the list length').toBe('1')
+    expect(await requests.locator(`[data-project-request-id="${REQUEST_ID}"]`).count(), 'a pinned requirement is listed once').toBe(1)
+    const ask = pinned.locator('[data-project-ask="ask-fixture"]')
+    await ask.getByText('Postgres or SQLite?', { exact: true }).waitFor()
+    await ask.getByText('If you don’t answer: I will start with SQLite').waitFor()
+    await assertPopoverInViewport(page, '[data-project-panel="requests"]')
+    const shot = process.env.DSH_PROJECT_SHOT
+    if (shot) await requests.screenshot({ path: shot })
+
+    // The answer is one ordinary prompt to the Lead, naming the requirement it answers.
+    const prompts: string[] = []
+    await page.route('**/api/session/prompt', async (route) => {
+      prompts.push(route.request().postData() ?? '')
+      await route.abort('failed')
+    })
+    try {
+      await ask.getByRole('button', { name: 'SQLite', exact: true }).click()
+      await expect.poll(() => prompts.length).toBe(1)
+      expect(prompts[0]).toContain(`${TITLE}: SQLite`)
+    } finally {
+      await page.unroute('**/api/session/prompt')
+    }
+
+    // The host clears the question when the user's message reaches the Lead; the panel and the count follow.
+    await withRequest((request) => { delete request.ask })
+    await expect.poll(() => header.getAttribute('data-needs-you'), { timeout: 15_000 }).toBeNull()
+    await pinned.waitFor({ state: 'detached', timeout: 15_000 })
+    await page.keyboard.press('Escape')
+    expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
 })

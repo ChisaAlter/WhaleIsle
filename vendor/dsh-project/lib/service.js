@@ -83,6 +83,7 @@ export class ProjectService {
       && item.pendingSummary && item.summaryFailure?.delegationRef === item.currentDelegationRef).length;
     const pendingSummary = project.paused ? 0 : work.filter(item => item.pendingSummary && !item.summaryFailure && !members.get(item.workerSessionId)?.stopped).length;
     const coordinatorRunning = this.ctx.agents.get(project.coordinatorSessionId)?.status === 'running';
+    const needsYou = this.needsYouCount(project.id);
     const pendingDelivery = project.paused ? 0 : activeRequests.filter(row => { const refs = this.requirements.manifest(row); return !refs.length || refs.some(reference => !members.get(this.stream(reference.workstreamId).workerSessionId)?.stopped); }).length;
     const handovers = recent.map(row => (this.state().deliveries ?? []).findLast(item => item.projectId === project.id
       && item.requestId === row.id && item.requestRevision === row.revision && item.status === 'delivered'));
@@ -96,7 +97,7 @@ export class ProjectService {
       : pendingDelivery ? 'pendingDelivery' : pendingSummary ? 'pendingDelivery' : work.some(item => item.status !== 'done') ? 'paused'
       : delivered ? 'done' : 'idle';
     return { ...project, queue: this.queue.summary(project.id), archiving: this.archiving.has(project.id), ...(requests.length ? { currentTaskIds } : {}), currentWorkRefs, currentRequests: currentRequests.slice(0, 20).map(row => this.requirements.view(row)),
-      activity: { running, runningJobSessionIds: workers.filter(worker => this.jobs(worker.sessionId).length > 0).map(worker => worker.sessionId), coordinatorRunning, queued, provisioning, blocked, pendingSummary, pendingDelivery, needsReview, summaryFailed, state }, updatedAt: Math.max(project.updatedAt, ...allWork.map(item => item.updatedAt), ...requests.map(item => item.updatedAt)) };
+      activity: { needsYou, running, runningJobSessionIds: workers.filter(worker => this.jobs(worker.sessionId).length > 0).map(worker => worker.sessionId), coordinatorRunning, queued, provisioning, blocked, pendingSummary, pendingDelivery, needsReview, summaryFailed, state }, updatedAt: Math.max(project.updatedAt, ...allWork.map(item => item.updatedAt), ...requests.map(item => item.updatedAt)) };
   }
   stream(id, projectId) { const row = this.state().workstreams.find(item => item.id === id && (!projectId || item.projectId === projectId)); if (!row) fail('missing', 'Workstream does not belong to this Project.'); return row; }
   worker(id) { const row = this.state().workers.find(item => item.sessionId === id); if (!row) fail('missing', 'Project worker does not exist.'); return row; }
@@ -265,6 +266,22 @@ export class ProjectService {
   }
   coordinatorOnly(actor) { if (actor.role !== 'coordinator') fail('unauthorized', 'Only the coordinator can delegate or stop work.'); }
   acceptRequest(actor, args, exec) { return this.requirements.accept(actor, args, exec); }
+  async askHuman(actor, args, exec) { this.coordinatorOnly(actor); exec.signal.throwIfAborted(); return this.requirements.ask(actor.project.id, args); }
+  // The synchronous view of one Project's work that cards read (no Team task lookup), so the header counts with the same function the list uses.
+  liveWork(projectId) {
+    const workers = new Map(this.state().workers.filter(worker => worker.projectId === projectId).map(worker => [worker.sessionId, worker]));
+    return new Map(this.state().workstreams.filter(work => work.projectId === projectId).map(work => [work.id, { work, worker: workers.get(work.workerSessionId), jobs: this.jobs(work.workerSessionId) }]));
+  }
+  // Whether the host will still retry this failed summary by itself: a temporary error with retries left, while a retry waits or runs.
+  autoRetry(work) {
+    const failure = work.summaryFailure;
+    if (!failure || failure.delegationRef !== work.currentDelegationRef || !TRANSIENT_CODES.has(failure.error.code)) return undefined;
+    const used = failure.autoRetries ?? 0;
+    if (used >= this.summaryRetryDelays.length) return undefined;
+    if (!this.summaryRetryTimers.has(work.projectId) && this.ctx.agents.get(this.project(work.projectId).coordinatorSessionId)?.status !== 'running') return undefined;
+    return { attempt: used + 1, of: this.summaryRetryDelays.length };
+  }
+  needsYouCount(projectId) { try { return this.requirements.attention(projectId).length; } catch { return 0; } }
   async queueRequest(actor, args, exec) {
     this.coordinatorOnly(actor); exec.signal.throwIfAborted();
     if (!this.requirements.inputs(actor, exec).human.length) fail('unauthorized', 'Queue changes require actual human input. A settlement or host activation cannot enqueue, reorder, cancel or resume requirements.');
@@ -373,7 +390,7 @@ export class ProjectService {
   workSummaries(rows) {
     return {
       workstreams: rows.map(({ work, status, delegation, group }) => ({ id: work.id, projectId: work.projectId, title: work.title, status, group,
-        workerSessionId: work.workerSessionId, blockedBy: work.blockedBy, blockedReason: work.blockedReason?.slice(0, 500), pendingSummary: work.pendingSummary, summaryFailure: work.summaryFailure,
+        workerSessionId: work.workerSessionId, blockedBy: work.blockedBy, blockedReason: work.blockedReason?.slice(0, 500), pendingSummary: work.pendingSummary, summaryFailure: work.summaryFailure, autoRetry: this.autoRetry(work),
         currentDelegationRef: work.currentDelegationRef, createdAt: work.createdAt, updatedAt: work.updatedAt,
         request: this.requirements.associated(work), delegation: delegation && { ref: delegation.ref, phase: delegation.phase, scope: delegation.scope, waitingReason: delegation.waitingReason }, hasReport: Boolean(delegation?.report),
         ...this.prerequisiteStatus(delegation?.report, work.projectId) })),
@@ -868,7 +885,9 @@ export class ProjectService {
       if (actualUser) {
         this.userTurns.set(input.agent.id, { agent: input.agent, turn: input.turn }); this.cancelSummaryRetry(project.id);
         if (this.projectHolds.get(project.id) !== actualUser.id) this.projectHolds.delete(project.id);
-        await this.serial(() => this.write(state => { state.projects.find(item => item.id === project.id).updatedAt = Date.now(); }));
+        await this.serial(() => this.write(state => { state.projects.find(item => item.id === project.id).updatedAt = Date.now();
+          // The user's next message is the answer to whatever the Project was waiting to ask; progress alone never is.
+          for (const row of state.requests ?? []) if (row.projectId === project.id) delete row.ask; }));
       }
       for (const message of input.messages.filter(item => item.source.kind === 'subagent-settled')) {
         const barrier = this.terminals.get(message.source.runId); if (barrier) { const result = await barrier.promise; if (result?.error) throw result.error; }
@@ -929,7 +948,7 @@ export class ProjectService {
   guard(exec) {
     if (this.closing) return 'Project is unloading.';
     const coordinator = this.state().projects.find(item => item.coordinatorSessionId === exec.agent?.id);
-    if (coordinator && !['project_request', 'project_queue', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render', 'todo_write'].includes(exec.name)) return 'The Project coordinator may only organize requirements, keep its plan, read materials, visualize results, delegate, deliver or stop work.';
+    if (coordinator && !['project_request', 'project_queue', 'project_ask', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render', 'todo_write'].includes(exec.name)) return 'The Project coordinator may only organize requirements, keep its plan, read materials, visualize results, delegate, deliver or stop work.';
     const worker = this.state().workers.find(item => item.sessionId === exec.agent?.id); if (!worker) return;
     // The optional Agent Teams bundle registers these globally; Project work is arranged only by its coordinator host.
     if (['spawn_teammate', 'wait_agent', 'interrupt_agent', 'team_task_create', 'team_task_get', 'team_task_update'].includes(exec.name)) return 'Project members collaborate through Project tools; the coordinator arranges Team work.';
@@ -1005,13 +1024,17 @@ export class ProjectService {
     if (assignment?.source.requestId && this.queue.state(this.requirements.get(worker.projectId, assignment.source.requestId)) === 'cancelled') fail('obsolete_result', 'The requirement was cancelled. Its late result cannot revive development.');
     if (this.held.has(worker.sessionId) || worker.stopped || worker.consumedDelegationRef !== args.delegationRef || !assignment || assignment.runId !== worker.activeRunId || this.project(worker.projectId).paused) fail('obsolete_result', 'The report is not for the current consumed delegation.');
     if (!['completed', 'blocked', 'failed'].includes(args.outcome)) fail('invalid_result', 'Choose completed, blocked or failed.');
+    const humanAction = args.humanAction === undefined ? undefined : args.outcome === 'completed' ? fail('invalid_result', 'Only a blocked or failed report can ask the user a question.') : this.requirements.askFields(args.humanAction);
     const paths = args.artifacts ?? [], evidence = args.evidence ?? [], remainingIssues = args.remainingIssues ?? [];
     if (!Array.isArray(paths) || paths.length > 64 || !Array.isArray(evidence) || evidence.some(item => typeof item !== 'string') || !Array.isArray(remainingIssues) || remainingIssues.some(item => typeof item !== 'string')) fail('invalid_result', 'Artifacts, evidence and remaining issues must be bounded text lists.');
     for (const path of paths) artifacts.push(await checkedFile(path, [worker.cwd, join(actor.project.storageRoot, 'docs', stream.id)]));
     const report = { delegationRef: args.delegationRef, outcome: args.outcome, summary: required(args.summary, 'result summary'), artifacts, evidence, remainingIssues, at: Date.now(), callId: exec.callId,
       ...(assignment.prerequisites === undefined ? {} : { prerequisites: copy(assignment.prerequisites) }) };
     await this.serial(async () => { const current = this.worker(worker.sessionId); if (current.stopped || current.consumedDelegationRef !== args.delegationRef || assignment.runId !== current.activeRunId) fail('obsolete_result', 'The assignment changed while reporting.');
-      await this.write(state => { const work = state.workstreams.find(item => item.id === stream.id); work.delegations.find(item => item.ref === args.delegationRef).report = report; if (work.currentDelegationRef === args.delegationRef) work.latestReport = report; work.updatedAt = Date.now(); }); await this.notes(worker.projectId); });
+      await this.write(state => { const work = state.workstreams.find(item => item.id === stream.id); work.delegations.find(item => item.ref === args.delegationRef).report = report; if (work.currentDelegationRef === args.delegationRef) work.latestReport = report; work.updatedAt = Date.now();
+        // The member's one question for the user lands on its requirement, replacing a different earlier question.
+        const asked = humanAction && assignment.source.requestId ? state.requests?.find(item => item.id === assignment.source.requestId && item.revision === assignment.source.requestRevision) : undefined;
+        if (asked) this.requirements.placeAsk(asked, humanAction, { by: 'member', workstreamId: stream.id, delegationRef: args.delegationRef }, Date.now()); }); await this.notes(worker.projectId); });
     return { recorded: true, workstreamId: stream.id, report: this.reportView(report, actor.project.id), resultRef: { teamId: actor.project.coordinatorSessionId, taskId: stream.id, assignmentRef: report.delegationRef, reportId: report.callId } };
   }
   async stopTool(actor, args) { this.coordinatorOnly(actor); return this.stop(actor.project.id, args.workstreamId); }
@@ -1325,6 +1348,7 @@ export class ProjectService {
     if (endpoint === 'detail') return this.detail(project.id, input);
     if (endpoint === 'requests/list') return this.requirements.listCards(project.id, input);
     if (endpoint === 'requests/get') return this.requirements.getCard(project.id, required(input.requestId, 'task identity', 200));
+    if (endpoint === 'requests/attention') return this.requirements.listAttention(project.id);
     if (endpoint === 'requests/queue') return this.queue.change(project.id, input);
     if (endpoint === 'requests/changes') return this.requestChanges(project.id, input);
     if (endpoint === 'requests/revert') return this.revertRequest(project.id, input);

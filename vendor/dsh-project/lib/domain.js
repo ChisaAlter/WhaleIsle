@@ -17,6 +17,9 @@ const importedDelivery = z.object({ callId: id, callSeq: z.number(), references:
 const requestVersion = z.object({ revision: z.number().int().positive(), title: id.optional(), goal: id, constraints: z.array(z.string()), conditions: z.array(z.string()), scope: z.enum(['worker', 'readonly', 'docs']), writePaths: z.array(z.string()), source: source.optional(), authorityError: id.optional(), imported035: importedRequest.optional(), at: z.number() });
 const requestQueue = z.object({ state: z.enum(['discussing', 'queued', 'active', 'cancelled']), order: z.number().optional(),
   released: z.boolean().optional(), resumeRequested: z.boolean().optional(), activation: z.object({ messageId: id, requestRevision: z.number().int().positive(), resume: z.boolean().optional() }).optional() });
+// One unanswered question per requirement, about its current revision. Progress never answers it.
+const humanAsk = z.object({ id, requestRevision: z.number().int().positive(), question: id, options: z.array(z.string()).optional(), ifUnanswered: z.string().optional(),
+  by: z.enum(['coordinator', 'member']), workstreamId: id.optional(), delegationRef: id.optional(), at: z.number() });
 const changedFile = z.object({ path: z.string(), status: z.string(), added: z.number(), removed: z.number(), binary: z.boolean().optional(), workingDirectory: z.string().optional() });
 const changeWorkspace = z.object({ workingDirectory: id, workstreamId: id.optional(), workspace: z.unknown().optional(),
   isGit: z.boolean(), error: z.string().optional(), baseline: z.string().optional(), capturedAt: z.number(), end: z.string().optional(), endedAt: z.number().optional(),
@@ -24,7 +27,7 @@ const changeWorkspace = z.object({ workingDirectory: id, workstreamId: id.option
 const requestChanges = z.object({ isGit: z.boolean(), error: z.string().optional(), baseline: z.string().optional(), capturedAt: z.number(), end: z.string().optional(), endedAt: z.number().optional(),
   files: z.array(changedFile).optional(), workspaces: z.array(changeWorkspace).optional(), deliveryId: id.optional(),
   fileCount: z.number().optional(), added: z.number().optional(), removed: z.number().optional(), isolated: z.boolean().optional(), revertedAt: z.number().optional() });
-const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), queue: requestQueue.optional(), archivedAt: z.number().optional(), changes: requestChanges.optional(),
+const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), queue: requestQueue.optional(), ask: humanAsk.optional(), archivedAt: z.number().optional(), changes: requestChanges.optional(),
   identityRecovery: z.object({ originalId: z.literal(''), sessionId: id, callId: id }).optional(), createdAt: z.number(), updatedAt: z.number() });
 const resultReference = z.object({ workstreamId: id, delegationRef: id, reportId: id.optional() });
 const terminalReference = z.object({ workstreamId: id, delegationRef: id, runId: id });

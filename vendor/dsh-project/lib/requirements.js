@@ -10,6 +10,7 @@ const latest = work => work.delegations.find(item => item.ref === work.currentDe
 const deliveryBrief = item => ({ id: item.id, requestId: item.requestId, requestRevision: item.requestRevision, title: item.title, outcome: item.outcome, status: item.status, at: item.at, applicable: item.applicable,
   summary: item.summary.length > 240 ? `${item.summary.slice(0, 240)}…` : item.summary, artifactCount: item.artifacts.length, remainingIssueCount: item.remainingIssues?.length ?? 0 });
 const scope = value => ({ readonly: 'readonly', docs: 'docs', development: 'worker', worker: 'worker' })[value];
+const NEEDS_YOU = ['awaitingAnswer', 'awaitingDecision', 'blocked'];
 const string = (value, label, limit = 32000) => { if (typeof value !== 'string' || !value.trim() || value.length > limit) fail('invalid_request', `Invalid ${label}.`); return value.trim(); };
 const strings = (value = []) => { if (!Array.isArray(value) || value.length > 64 || value.some(item => typeof item !== 'string' || item.length > 8000)) fail('invalid_request', 'Expected bounded text items.'); return [...new Set(value)]; };
 const stableId = (kind, callId) => `${kind}-${createHash('sha256').update(callId).digest('hex')}`;
@@ -86,7 +87,7 @@ export class ProjectRequirements {
       await service.write(state => {
         state.requests ??= []; state.deliveries ??= [];
         const row = state.requests.find(item => item.id === id);
-        if (row) { row.title = title; row.revision = revision; row.versions.push(version); delete row.archivedAt; row.updatedAt = now; service.queue.initialize(state, row, args.disposition ?? row.queue?.state ?? 'queued'); }
+        if (row) { row.title = title; row.revision = revision; row.versions.push(version); delete row.archivedAt; delete row.ask; row.updatedAt = now; service.queue.initialize(state, row, args.disposition ?? row.queue?.state ?? 'queued'); }
         else { const item = { id, projectId: project.id, title, revision, versions: [version], createdAt: now, updatedAt: now }; state.requests.push(item); service.queue.initialize(state, item, disposition); }
         for (const draft of state.deliveries.filter(item => item.requestId === id && item.status === 'draft')) draft.status = 'obsolete';
       });
@@ -375,6 +376,75 @@ export class ProjectRequirements {
     return { latestAttempt, delivered, applicable, completed };
   }
 
+  // One pending question per requirement, about its current revision. Progress never answers it: only the user's
+  // next message (cleared when it enters the Lead's step), a revision, a cancel or an explicit clear does.
+  pendingAsk(row) { return row.ask?.requestRevision === row.revision ? row.ask : undefined; }
+  askFields(args) {
+    const question = string(args?.question, 'question', 300);
+    const options = strings(args.options).map(item => item.trim()).filter(Boolean);
+    if (options.length > 6 || options.some(item => item.length > 120)) fail('invalid_request', 'Offer at most six short options.');
+    const ifUnanswered = args.ifUnanswered === undefined ? undefined : string(args.ifUnanswered, 'default action', 240);
+    return { question, ...(options.length ? { options } : {}), ...(ifUnanswered ? { ifUnanswered } : {}) };
+  }
+  // Mutates one request row inside a catalog write. The same question is kept as it is; a different one replaces it.
+  placeAsk(row, fields, source, at) {
+    const same = value => value.replace(/\s+/g, ' ').trim().toLowerCase();
+    const existing = this.pendingAsk(row);
+    if (existing && same(existing.question) === same(fields.question)) return false;
+    row.ask = { id: `ask-${createHash('sha256').update(`${row.id}\n${row.revision}\n${fields.question}\n${at}`).digest('hex').slice(0, 24)}`, requestRevision: row.revision, ...fields,
+      by: source.by, ...(source.workstreamId ? { workstreamId: source.workstreamId, delegationRef: source.delegationRef } : {}), at };
+    row.updatedAt = at;
+    return true;
+  }
+  async ask(projectId, args) {
+    const service = this.service, requestId = string(args.requestId, 'requirement', 200), clear = args.clear === true;
+    const fields = clear ? undefined : this.askFields(args);
+    let outcome;
+    await service.serial(async () => {
+      const project = service.project(projectId);
+      if (service.closing || service.archiving.has(project.id) || project.lifecycle !== 'ready') fail('unavailable', 'Restore this Project before asking.');
+      const row = this.get(projectId, requestId);
+      if (clear) {
+        outcome = { cleared: Boolean(row.ask) };
+        if (row.ask) await service.write(state => { delete state.requests.find(item => item.id === row.id).ask; });
+        return;
+      }
+      if (service.queue.state(row) === 'cancelled' || this.handover(row).completed) fail('request_closed', 'This requirement is cancelled or already handed over; nothing waits on the user.');
+      let placed = false;
+      await service.write(state => { placed = this.placeAsk(state.requests.find(item => item.id === row.id), fields, { by: 'coordinator' }, Date.now()); });
+      outcome = { asked: true, reused: !placed };
+    });
+    return { requestId, ...outcome };
+  }
+
+  // Requirements that need the user, first match of the stage table: what the user is waited on for, never an internal code.
+  stage({ row, version, completed, status, counts, delivered, ask, retry, work }) {
+    const out = (id, waitingOn, extra = {}) => ({ id, waitingOn, needsYou: NEEDS_YOU.includes(id), ...extra });
+    const queue = this.service.queue.state(row);
+    if (completed) return out('delivered', 'none');
+    if (queue === 'cancelled') return out('cancelled', 'none');
+    if (ask) return out('awaitingAnswer', 'you', { ask: { id: ask.id, question: ask.question, ...(ask.options ? { options: ask.options } : {}),
+      ...(ask.ifUnanswered ? { ifUnanswered: ask.ifUnanswered } : {}), by: ask.by, at: ask.at, ...(ask.workstreamId ? { workstreamId: ask.workstreamId } : {}) } });
+    if (status === 'needsReview') return out('awaitingDecision', 'you', { reason: 'needsReview' });
+    if (status === 'summaryFailed' && !retry) return out('awaitingDecision', 'you', { reason: 'summaryFailed' });
+    if (status === 'blocked' && !version.authorityError && !counts.blocked && delivered?.outcome === 'partial') return out('awaitingDecision', 'you', { reason: 'partial' });
+    if (status === 'blocked') {
+      const item = work.find(entry => entry.status === 'blocked'), detail = item?.blockedReason || item?.reportSummary;
+      return out('blocked', 'you', { reason: version.authorityError ? 'authority' : 'work', ...(item ? { workstreamId: item.workstreamId } : {}), ...(detail ? { detail } : {}) });
+    }
+    if (queue === 'queued' || status === 'queued') return out('queued', 'system');
+    if (queue === 'discussing') return out('discussing', 'you');
+    if (status === 'paused') return out('paused', 'you');
+    return out('running', 'system', retry ? { retry } : {});
+  }
+  // The list the panel pins on top and the header counts: both are this one list.
+  attention(projectId) {
+    const byWork = this.service.liveWork(projectId), rank = { awaitingAnswer: 0, awaitingDecision: 1, blocked: 2 };
+    return this.current(projectId).map(row => this.card(projectId, row, byWork)).filter(card => card.stage.needsYou)
+      .toSorted((a, b) => rank[a.stage.id] - rank[b.stage.id] || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+  }
+  listAttention(projectId) { const items = this.attention(projectId); return { items: items.slice(0, 50), total: items.length }; }
+
   card(projectId, row, byWork, full = false) {
     const service = this.service, project = service.project(projectId), version = this.version(row);
     const { latestAttempt, delivered, applicable, completed } = this.handover(row);
@@ -397,7 +467,7 @@ export class ProjectRequirements {
         status, current, runningJob: current && Boolean(record?.jobs.length ?? service.jobs(worker.sessionId).length), phase: receipt.phase, ...(receipt.waitingReason ? { waitingReason: receipt.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
         createdAt: item.createdAt, updatedAt: item.updatedAt, assignmentAt: receipt.createdAt,
         ...(receipt.report ? { reportId: receipt.report.callId, outcome: receipt.report.outcome, reportAt: receipt.report.at,
-          ...(full ? { summary: receipt.report.summary } : {}) } : {}),
+          ...(full ? { summary: receipt.report.summary } : {}), ...(status === 'blocked' ? { reportSummary: receipt.report.summary.slice(0, 300) } : {}) } : {}),
         ...(terminal ? { terminalStopReason: terminal.stopReason, terminalAt: terminal.at } : {}) };
     }).sort((a, b) => {
       const priority = { blocked: 0, summaryFailed: 0, stopping: 1, running: 2, queued: 3, paused: 4, pendingDelivery: 5, completed: 6 };
@@ -419,12 +489,18 @@ export class ProjectRequirements {
       : counts.running ? 'running' : counts.queued ? 'queued'
       : delivered?.outcome === 'partial' ? 'blocked'
       : project.paused || work.some(item => item.status === 'paused') ? 'paused' : 'pendingDelivery';
+    // A transient summary failure the host will still retry by itself is not waiting on the user.
+    const failedStreams = counts.summaryFailed ? this.manifest(row).map(reference => service.stream(reference.workstreamId, projectId)).filter(item => item.summaryFailure?.delegationRef === item.currentDelegationRef) : [];
+    const retries = failedStreams.map(item => service.autoRetry(item));
+    const retry = status === 'summaryFailed' && !(latestAttempt && latestAttempt.status !== 'delivered' && latestAttempt.error) && retries.length > 0 && retries.every(Boolean)
+      ? { attempt: Math.max(...retries.map(item => item.attempt)), of: retries[0].of } : undefined;
+    const stage = this.stage({ row, version, completed, status, counts, delivered, ask: this.pendingAsk(row), retry, work });
     const memberRows = new Map();
     for (const item of work) if (!memberRows.has(item.workerSessionId)) memberRows.set(item.workerSessionId,
       { sessionId: item.workerSessionId, name: item.memberName, status: item.status });
     const members = [...memberRows.values()];
     const base = { id: row.id, projectId, title: row.title, revision: row.revision, createdAt: row.createdAt,
-      updatedAt: row.updatedAt, ...(row.archivedAt !== undefined ? { archivedAt: row.archivedAt } : {}), queue: service.queue.view(row), status, counts,
+      updatedAt: row.updatedAt, ...(row.archivedAt !== undefined ? { archivedAt: row.archivedAt } : {}), queue: service.queue.view(row), status, stage, counts,
       ...(row.changes ? { changes: { isGit: row.changes.isGit, revertible: service.changesRevertible(row),
         ...(row.changes.isolated ? { isolated: true } : {}),
         ...(row.changes.end || row.changes.endedAt ? { fileCount: row.changes.fileCount ?? 0, added: row.changes.added ?? 0, removed: row.changes.removed ?? 0 } : {}),

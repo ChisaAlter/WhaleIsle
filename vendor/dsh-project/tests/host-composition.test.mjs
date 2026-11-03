@@ -2050,6 +2050,53 @@ test('a summary turn that ends on a temporary model-service failure is retried b
   }
 });
 
+test('the real Lead asks one question through project_ask; the list and the header count see it, and the user\'s next message answers it', { timeout: 180000 }, async () => {
+  class AskingModel extends ScriptedModel {
+    async *stream(options) {
+      const lead = options.tools?.some(tool => tool.name === 'project_delegate');
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
+      if (lead && input?.source.kind === 'user' && messageText(input).includes('ASK_USER')) {
+        this.requests.push(options);
+        const key = `ask:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+        if (stage === 0) yield* call(`ask-request-${++this.counter}`, 'project_request', { title: 'Choose the database', disposition: 'discussing', goal: 'Pick the storage layer', conditions: ['A choice is made'], scopeCeiling: 'readonly' });
+        else if (stage === 1) {
+          const request = JSON.parse(messageText(options.messages.findLast(message => message.role === 'tool')));
+          yield* call(`ask-${++this.counter}`, 'project_ask', { requestId: request.id, question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I will start with SQLite' });
+        } else yield* blocks('I need one answer from you: Postgres or SQLite?');
+        return;
+      }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-ask-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new AskingModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'ask-flow', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'ask-turn', mode: 'queue', content: [{ type: 'text', text: 'ASK_USER' }] }, signal);
+    const asked = await waitFor(() => host.state().requests?.find(row => row.ask), 'the Lead asks its question', 90000);
+    await lead.whenIdle(); await host.tail;
+    assert.equal(asked.ask.question, 'Postgres or SQLite?'); assert.deepEqual(asked.ask.options, ['Postgres', 'SQLite']); assert.equal(asked.ask.by, 'coordinator');
+    assert.ok(model.requests.some(options => options.tools?.some(tool => tool.name === 'project_ask')), 'the real Lead receives project_ask');
+    const pinned = await host.command('requests/attention', { projectId: project.id });
+    assert.equal(pinned.total, 1); assert.equal(pinned.items[0].stage.id, 'awaitingAnswer'); assert.equal(pinned.items[0].stage.ask.ifUnanswered, 'I will start with SQLite');
+    const listed = (await host.command('list')).projects.find(item => item.id === project.id);
+    assert.equal(listed.activity.needsYou, 1, 'the header count equals the pinned list');
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'answer-turn', mode: 'queue', content: [{ type: 'text', text: 'SHORT_QUESTION SQLite please' }] }, signal);
+    await waitFor(() => !host.state().requests.some(row => row.ask), 'the next user message answers it', 90000);
+    await lead.whenIdle(); await host.tail;
+    assert.equal((await host.command('requests/attention', { projectId: project.id })).total, 0);
+    assert.equal((await host.command('list')).projects.find(item => item.id === project.id).activity.needsYou, 0);
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-ask-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('failed warm admission keeps occupancy, expanding stops drain every worker, and notes reject junction replacement', async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-boundaries-')), home = join(root, 'home'), directory = join(root, 'selected'), store = join(home, 'projects', 'project-a');
   assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-boundaries-`));

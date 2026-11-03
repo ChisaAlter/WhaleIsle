@@ -192,6 +192,10 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
         assert.ok(start >= 0); const items = rows.slice(start, start + 10);
         return { ok: true, value: { items, total: rows.length, nextCursor: start + items.length < rows.length ? items.at(-1).id : null } };
       }
+      if (method === 'requests/attention') {
+        const rank = { awaitingAnswer: 0, awaitingDecision: 1, blocked: 2 }, items = cards.filter(card => card.stage?.needsYou).toSorted((a, b) => rank[a.stage.id] - rank[b.stage.id]);
+        return { ok: true, value: { items, total: items.length } };
+      }
       if (method === 'requests/get') {
         const card = cards.find(item => item.id === input.requestId); assert.ok(card, 'Selected task belongs to the current Project');
         return { ok: true, value: { card } };
@@ -2580,5 +2584,61 @@ test('without the native Team there is no Members page and the Requests panel is
     assert.equal(b.activities.size, 0, 'Nothing claims to present a Team that is not there');
     assert.ok(isVisible(b.document.querySelector('[data-project-section=requests]')));
     assert.ok(b.requestElement(request.id));
+  } finally { await b.dispose(); }
+});
+
+test('Needs you: the panel pins what waits on the user first, the header counts that same list, and an answer is one ordinary message', async () => {
+  const asking = taskCard('ask-a', 'Choose the database'), blocked = taskCard('blocked-b', 'Fix login', 'blocked'), running = taskCard('run-c', 'Speed up search');
+  asking.stage = { id: 'awaitingAnswer', waitingOn: 'you', needsYou: true, ask: { id: 'ask-1', question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I will start with SQLite', by: 'coordinator', at: 1 } };
+  blocked.stage = { id: 'blocked', waitingOn: 'you', needsYou: true, reason: 'work', detail: 'Needs a staging account I cannot create.' };
+  running.stage = { id: 'running', waitingOn: 'system', needsYou: false };
+  const b = bench({ cards: [running, blocked, asking], language: 'en', detail: { activity: { running: 1, blocked: 1, queued: 0, needsYou: 2, state: 'running' } } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount();
+    const header = b.document.querySelector('[data-project-header-panel=requests]'), badge = header.querySelector('.dsh-project-header-badge');
+    assert.equal(badge.textContent, '2', 'the badge counts what needs the user, not the live requirements');
+    assert.equal(badge.dataset.live, 'false', 'a number the user must act on does not breathe');
+    assert.equal(header.dataset.needsYou, '2');
+    await b.openObserver();
+    const pinned = b.panel('requests').querySelector('[data-project-attention]');
+    assert.equal(pinned.dataset.projectAttention, '2', 'the pinned count is the length of the pinned list');
+    assert.deepEqual([...pinned.querySelectorAll('[data-project-request-id]')].map(card => card.dataset.projectRequestId), ['ask-a', 'blocked-b'], 'a question comes before blocked work');
+    assert.deepEqual([...b.panel('requests').querySelectorAll('.dsh-project-requests-list:not([data-project-attention]) [data-project-request-id]')].map(card => card.dataset.projectRequestId), ['run-c'], 'a pinned requirement is not listed twice');
+    assert.equal(pinned.querySelector('[data-project-request-id=ask-a]').dataset.projectRequestMode, 'card', 'what waits on you is open');
+    const ask = pinned.querySelector('[data-project-ask=ask-1]');
+    assert.match(ask.textContent, /Postgres or SQLite\?/); assert.match(ask.textContent, /If you don’t answer: I will start with SQLite/);
+
+    await b.press('SQLite');
+    assert.deepEqual(b.sent.map(item => item.text), ['Choose the database: SQLite'], 'one ordinary message, naming the requirement it answers');
+    assert.match(pinned.querySelector('[data-project-ask=ask-1]').textContent, /Sent; the coordinator is on it/);
+    assert.equal(pinned.querySelector('[data-project-ask=ask-1] button'), null, 'the answer cannot be sent twice');
+
+    await b.press('Retry');
+    assert.equal(b.sent.length, 2); assert.match(b.sent[1].text, /Please retry the blocked requirement “Fix login”.*Needs a staging account I cannot create\./);
+  } finally { await b.dispose(); }
+});
+
+test('Needs you: with nothing waiting the header counts live requirements and the panel pins nothing', async () => {
+  const running = taskCard('run-a', 'Speed up search'), queued = taskCard('queued-b', 'Add SSO');
+  queued.queue = { state: 'queued', position: 1 }; running.stage = { id: 'running', waitingOn: 'system', needsYou: false }; queued.stage = { id: 'queued', waitingOn: 'system', needsYou: false };
+  const b = bench({ cards: [running, queued], language: 'en', detail: { activity: { running: 1, blocked: 0, queued: 1, needsYou: 0, state: 'running' } } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount();
+    const header = b.document.querySelector('[data-project-header-panel=requests]');
+    assert.equal(header.querySelector('.dsh-project-header-badge').textContent, '2'); assert.equal(header.dataset.needsYou, undefined);
+    await b.openObserver();
+    assert.equal(b.panel('requests').querySelector('[data-project-attention]'), null, 'a healthy Project takes no space for this');
+  } finally { await b.dispose(); }
+});
+
+test('Needs you: a temporary summary failure the host retries reads as the host working, not as a request for the user', async () => {
+  const card = taskCard('retry-a', 'Fix login', 'summaryFailed');
+  card.stage = { id: 'running', waitingOn: 'system', needsYou: false, retry: { attempt: 2, of: 3 } };
+  const b = bench({ cards: [card], language: 'en', detail: { activity: { running: 0, blocked: 0, queued: 0, needsYou: 0, state: 'pendingDelivery' } } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    assert.match(b.requestElement(card.id).textContent, /Temporary failure, retrying the summary/);
+    assert.match(b.requestElement(card.id).textContent, /retrying automatically \(attempt 2\/3\)/);
+    assert.equal(b.panel('requests').querySelector('[data-project-attention]'), null);
   } finally { await b.dispose(); }
 });
