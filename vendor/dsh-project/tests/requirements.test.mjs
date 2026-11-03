@@ -710,3 +710,37 @@ test('a saved queue activation cannot execute a revised or cancelled requirement
   await f.queue(revised, 'cancel');
   assert.equal((await admit(currentNotice)).kind, 'reject', 'cancelled saved activation cannot revive its requirement');
 });
+
+test('the Lead\'s notes list handovers as one line each and give a requirement\'s full text only when it is named', async () => {
+  const f = fixture();
+  const hand = async (goal, summary) => {
+    f.human([goal]); const { request } = await f.accept({ goal }), work = f.add(request);
+    await f.declare(request, [work.ref], { summary }); await f.reply(`reply-${goal}`); await f.end('completed'); return request;
+  };
+  const first = await hand('First goal', 'A'.repeat(900)), second = await hand('Second goal', 'Short result');
+  const brief = f.service.requirements.deliveriesForLead(f.project.id);
+  assert.equal(brief.brief, true); assert.equal(brief.items.length, 2); assert.match(brief.hint, /requestId/);
+  for (const item of brief.items) {
+    assert.deepEqual(Object.keys(item).toSorted(), ['applicable', 'artifactCount', 'at', 'id', 'outcome', 'remainingIssueCount', 'requestId', 'requestRevision', 'status', 'summary', 'title']);
+  }
+  assert.equal(brief.items.find(item => item.requestId === first.id).summary.length, 241, 'a long summary is cut to a preview');
+  assert.equal(brief.items.find(item => item.requestId === second.id).summary, 'Short result');
+  const full = f.service.requirements.deliveriesForLead(f.project.id, first.id);
+  assert.equal(full.brief, undefined); assert.equal(full.items.length, 1);
+  assert.equal(full.items[0].summary.length, 900); assert.ok(full.items[0].reportRefs.length && full.items[0].evidence.length, 'the named requirement keeps its complete handover');
+  assert.equal(f.service.requirements.deliveries(f.project.id).items.length, 2, 'the Project UI still reads complete handovers');
+  assert.equal(f.service.requirements.deliveries(f.project.id).items[0].reportRefs.length > 0, true);
+});
+
+test('the Lead\'s notes cap long user notes and give them whole on request', async () => {
+  const f = fixture(); f.human(['Read the notes']);
+  f.service.readStore = async () => ({ userText: 'N'.repeat(6000) });
+  const execution = f.exec('project_read_store');
+  const capped = await f.service.readStoreTool(f.actor, { path: 'notes.md' }, execution);
+  assert.equal(capped.userNotes.length, 4001); assert.equal(capped.userNotesChars, 6000); assert.match(capped.userNotesHint, /fullNotes/);
+  const whole = await f.service.readStoreTool(f.actor, { path: 'notes.md', fullNotes: true }, execution);
+  assert.equal(whole.userNotes.length, 6000); assert.equal(whole.userNotesChars, undefined);
+  f.service.readStore = async () => ({ userText: 'short' });
+  const small = await f.service.readStoreTool(f.actor, { path: 'notes.md' }, execution);
+  assert.equal(small.userNotes, 'short'); assert.equal(small.userNotesChars, undefined);
+});

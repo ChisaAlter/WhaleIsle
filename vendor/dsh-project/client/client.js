@@ -2,7 +2,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
   const { createPortal, flushSync } = require('react-dom');
   const { Button, Input, Menu, Modal, Pill, SegmentedTabs, StateDot, Tag, MarkdownText, Toast, Tooltip, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
-  const { TEAM_SIDEBAR_KIND } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
+  const { TEAM_SIDEBAR_KIND, TeamEmbedded } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { subagentChatAddress } = require('@deepseek-ai/dsh-client-ui-subagent');
   const NS = 'dsh-project';
@@ -86,8 +86,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     observerTaskProgress: 'Task progress', observerTodo: 'Current to-dos', observerTodoPending: 'Pending', observerExecutor: 'Current executor', observerFlow: 'From request to delivery', observerNoTodo: 'No work has been assigned yet', observerCard: 'Collapse details', observerIsland: 'Collapse to status strip', observerReturnCurrent: 'Back to current task', observerTaskCount: 'current tasks', observerReports: 'reports submitted', observerAwaitDelivery: 'Awaiting the coordinator’s delivery', observerDeliverToYou: 'Delivery to you', observerRegistered: 'Registered', observerReportCount: '{count} reports', observerNoCurrent: 'No current task',
 
   };
-  Object.assign(zh, { requestSections: '需求详情', requestOverview: '概览', requestPlan: '计划', requestWork: '工作', requestResults: '成果', nativePlanHint: '协调者维护的当前计划，与成员实际执行的工作分别记录。', nativePlanEmpty: '协调者尚未记录当前计划。', historicalPlanHint: '计划反映当前协调者会话；此需求的历史要求和执行记录保留在概览与工作中。', pinObserver: '固定观察', returnFloat: '返回浮窗', closeObserver: '关闭观察', statusUnknown: '状态未知', statusWaiting: '等待中', statusHandover: '等待交付', statusArranging: '正在安排', statusSummarizing: '正在汇总', retryRead: '重新读取', retainedStatus: '连接中断，以下为上次确认的数据。', queueRetry: '重试队列操作', allRequestDetails: '查看完整需求', workPreviewHint: '完整工作记录正在读取…' });
-  Object.assign(en, { requestSections: 'Request details', requestOverview: 'Overview', requestPlan: 'Plan', requestWork: 'Work', requestResults: 'Results', nativePlanHint: 'The coordinator’s current plan is recorded separately from assigned member work.', nativePlanEmpty: 'The coordinator has not recorded a current plan.', historicalPlanHint: 'The plan belongs to the current coordinator conversation. This request’s requirements and execution records remain in Overview and Work.', pinObserver: 'Keep observing', returnFloat: 'Return to popover', closeObserver: 'Close observer', statusUnknown: 'Unknown', statusWaiting: 'Waiting', statusHandover: 'Awaiting delivery', statusArranging: 'Arranging', statusSummarizing: 'Summarizing', retryRead: 'Reload', retainedStatus: 'Disconnected; showing the last confirmed data.', queueRetry: 'Retry queue action', allRequestDetails: 'View full request', workPreviewHint: 'Loading full work records…' });
+  Object.assign(zh, { requestSections: '需求详情', requestProgress: '进度', requestResults: '成果', leadPlan: '协调者计划', stageRail: '执行阶段', stageArranging: '安排', stageExecuting: '执行', stageSummarizing: '汇总', stageDelivered: '交付', sectionMembers: '成员', panelSections: '面板内容', pinObserver: '固定观察', returnFloat: '返回浮窗', closeObserver: '关闭观察', statusUnknown: '状态未知', statusWaiting: '等待中', statusHandover: '等待交付', statusArranging: '正在安排', statusSummarizing: '正在汇总', retryRead: '重新读取', retainedStatus: '连接中断，以下为上次确认的数据。', queueRetry: '重试队列操作', allRequestDetails: '查看完整需求', workPreviewHint: '完整工作记录正在读取…' });
+  Object.assign(en, { requestSections: 'Request details', requestProgress: 'Progress', requestResults: 'Results', leadPlan: 'Coordinator plan', stageRail: 'Execution stages', stageArranging: 'Arrange', stageExecuting: 'Execute', stageSummarizing: 'Summarize', stageDelivered: 'Deliver', sectionMembers: 'Members', panelSections: 'Panel sections', pinObserver: 'Keep observing', returnFloat: 'Return to popover', closeObserver: 'Close observer', statusUnknown: 'Unknown', statusWaiting: 'Waiting', statusHandover: 'Awaiting delivery', statusArranging: 'Arranging', statusSummarizing: 'Summarizing', retryRead: 'Reload', retainedStatus: 'Disconnected; showing the last confirmed data.', queueRetry: 'Retry queue action', allRequestDetails: 'View full request', workPreviewHint: 'Loading full work records…' });
   const charterLimit = 16000;
   Object.assign(zh, {
     preferences: '偏好', preferencesHint: '软性的习惯与偏好，例如回复风格、常用命令。必须遵守的内容请写进「项目规则」。',
@@ -368,6 +368,44 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-requests [data-error=true],.dsh-project-materials [data-error=true]{color:var(--dsw-alias-state-error-primary)}
     @container (max-width:560px){.dsh-project-header-trigger{width:124px;gap:4px}.dsh-project-header-state{width:62px}.dsh-project-requests-toolbar>strong{display:none}}
     @media (max-width:480px){.dsh-project-task-card:not([data-project-request-mode=strip]){padding:10px 12px 8px}.dsh-project-requests-toolbar{gap:2px}}
+    /* Execution motion: transform and opacity only, so a long conversation's layout is never invalidated. Reduced motion stops all of it. */
+    @keyframes dsh-project-halo{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.6);opacity:0}}
+    @keyframes dsh-project-halo-soft{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.5);opacity:0}}
+    @keyframes dsh-project-flow{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    @keyframes dsh-project-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+    @keyframes dsh-project-pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.25);opacity:1}100%{transform:scale(1);opacity:1}}
+    @keyframes dsh-project-bump{0%{transform:scale(1)}40%{transform:scale(1.3)}100%{transform:scale(1)}}
+    .dsh-project-task-state-dot[data-state=running],.dsh-project-task-state-dot[data-tone=info]{position:relative}
+    .dsh-project-task-state-dot[data-state=running]::after,.dsh-project-task-state-dot[data-tone=info]::after{content:'';position:absolute;inset:0;border-radius:50%;background:inherit;pointer-events:none;animation:dsh-project-halo 1.8s ease-out infinite}
+    .dsh-project-header-badge{position:relative}
+    .dsh-project-header-badge[data-live=true]::after{content:'';position:absolute;inset:0;box-sizing:border-box;border-radius:inherit;border:1.5px solid var(--dsw-alias-state-business-primary);pointer-events:none;animation:dsh-project-halo-soft 1.8s ease-out infinite}
+    .dsh-project-header-badge[data-bump=true]{animation:dsh-project-bump calc(var(--ds-transition-duration,200ms)*1.6) ease-out}
+    .dsh-project-stage-rail{--stage-color:var(--dsw-alias-label-tertiary);display:flex;margin:0;padding:6px 0 4px;list-style:none}
+    .dsh-project-stage-rail[data-tone=info]{--stage-color:var(--dsw-alias-state-business-primary)}
+    .dsh-project-stage-rail[data-tone=warning]{--stage-color:var(--dsw-alias-state-warn-primary)}
+    .dsh-project-stage-rail[data-tone=success]{--stage-color:var(--dsw-alias-state-success-primary)}
+    .dsh-project-stage{position:relative;display:flex;flex:1 1 0;flex-direction:column;align-items:center;gap:6px;min-width:0;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}
+    .dsh-project-stage[data-stage=done]{color:var(--dsw-alias-label-secondary)}
+    .dsh-project-stage[data-stage=current]{color:var(--dsw-alias-label-primary)}
+    .dsh-project-stage-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-stage-dot{position:relative;z-index:1;box-sizing:border-box;width:12px;height:12px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid);transition:background-color var(--ds-transition-duration,200ms),border-color var(--ds-transition-duration,200ms)}
+    .dsh-project-stage[data-stage=done] .dsh-project-stage-dot,.dsh-project-stage[data-stage=current] .dsh-project-stage-dot{border-color:var(--stage-color);background:var(--stage-color)}
+    .dsh-project-stage[data-stage=current] .dsh-project-stage-dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--stage-color) 18%,transparent)}
+    .dsh-project-stage-rail[data-tone=info] .dsh-project-stage[data-stage=current] .dsh-project-stage-dot::after{content:'';position:absolute;inset:-2px;border-radius:50%;border:2px solid var(--stage-color);pointer-events:none;animation:dsh-project-halo-soft 1.8s ease-out infinite}
+    .dsh-project-stage::before,.dsh-project-stage::after{content:'';position:absolute;top:5px;left:calc(-50% + 9px);right:calc(50% + 9px);height:2px;border-radius:1px}
+    .dsh-project-stage:first-child::before,.dsh-project-stage:first-child::after{display:none}
+    .dsh-project-stage::before{background:var(--dsw-alias-border-l2)}
+    .dsh-project-stage::after{background:var(--stage-color);transform:scaleX(0);transform-origin:left center;transition:transform calc(var(--ds-transition-duration,200ms)*2) ease-out}
+    .dsh-project-stage[data-stage=done]::after,.dsh-project-stage[data-stage=current]::after{transform:scaleX(1)}
+    .dsh-project-stage-rail[data-tone=info] .dsh-project-stage[data-stage=current]+.dsh-project-stage::before{background:linear-gradient(90deg,var(--dsw-alias-border-l2) 0,var(--stage-color) 50%,var(--dsw-alias-border-l2) 100%);background-size:200% 100%;animation:dsh-project-flow 1.6s linear infinite}
+    .dsh-project-task-step[data-enter=true]{animation:dsh-project-enter calc(var(--ds-transition-duration,200ms)*1.2) ease-out both}
+    .dsh-project-task-check.is-fresh{animation:dsh-project-pop .45s cubic-bezier(.2,1.2,.4,1)}
+    .dsh-project-elapsed{font-variant-numeric:tabular-nums}
+    .dsh-project-lead-plan{margin-top:4px}
+    .dsh-project-section-tabs{position:sticky;top:38px;z-index:1;flex:none;background:var(--dsw-alias-bg-panel-solid)}
+    .dsh-project-section-page{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .dsh-project-section-page[hidden]{display:none}
+    @media (prefers-reduced-motion:reduce){.dsh-project-task-state-dot::after,.dsh-project-header-badge,.dsh-project-header-badge::after,.dsh-project-stage-dot::after,.dsh-project-stage::before,.dsh-project-stage::after,.dsh-project-task-step,.dsh-project-task-check{animation:none!important;transition:none!important}}
   `;
   const requestId = () => globalThis.crypto.randomUUID();
   const button = (label, onClick, disabled = false) => h(Button, { variant: 'outline', onClick, disabled }, label);
@@ -480,10 +518,18 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
 
   // Project panels open only by explicit click and keep their contents mounted while closed.
+  const LIVE_HEADER_STATES = ['running', 'pendingSummary', 'pendingDelivery'];
+  // Counts the changes after the first paint, so the badge can acknowledge each one without animating on mount.
+  function useBump(value) {
+    const previous = useRef(value), count = useRef(0);
+    if (previous.current !== value) { previous.current = value; count.current += 1; }
+    return count.current;
+  }
   function HeaderPanel({ id, icon, label, badge, tone, status, state, useDismissals, useRequestPanels, sessionId, setRequestPanel, pinRequests, children }) {
     const local = useRequestPanels(value => value[sessionId]), open = local?.open ?? false;
     const [visited, setVisited] = useState(false), rootRef = useRef(null), triggerRef = useRef(null), panelRef = useRef(null);
     const dismissals = useDismissals(value => value);
+    const bump = useBump(badge);
     const position = useAnchoredPosition({ open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16 });
     const change = next => {
       if (next) setVisited(true);
@@ -512,7 +558,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     return h('div', { ref: rootRef, className: 'dsh-project-header-panel', 'data-project-header-panel': id, 'data-state': state },
       h(Tooltip, { label: `${label} · ${status}`, side: 'bottom', disabled: open }, h('button', { type: 'button', ref: triggerRef, className: 'dsh-project-header-trigger', 'aria-label': `${label} · ${status}`, 'aria-haspopup': 'dialog', 'aria-expanded': open,
         onClick: () => change(!open) }, icon, h('span', { className: 'dsh-project-header-trigger-label' }, label),
-        h('span', { className: 'dsh-project-header-badge', 'data-tone': tone }, badge), h('span', { className: 'dsh-project-header-state', 'data-tone': tone }, status))),
+        h('span', { key: bump, className: 'dsh-project-header-badge', 'data-tone': tone, 'data-live': LIVE_HEADER_STATES.includes(state), 'data-bump': bump > 0 }, badge), h('span', { className: 'dsh-project-header-state', 'data-tone': tone }, status))),
       // Retain the same tree while hidden: refreshes and closing do not reset tabs or reading position.
       visited || open ? createPortal(h('div', { ref: panelRef, className: 'dsh-project-header-surface', 'data-project-panel': id, role: 'dialog', tabIndex: -1, 'aria-label': label, hidden: !open,
         style: position ?? { visibility: 'hidden', left: 0, top: 0 } }, children), document.body) : null);
@@ -640,9 +686,51 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
   // One requirement: a one-line strip, or its checklist, delivery and actions.
   // Each work item opens its member's live conversation beside this one.
+  // Stages of one requirement, left to right: arranged by the Lead, executed by members, summarized, delivered.
+  const REQUEST_STAGES = ['stageArranging', 'stageExecuting', 'stageSummarizing', 'stageDelivered'];
+  const requestStageIndex = (card, state, steps) => card.status === 'completed' ? 3
+    : state === 'requestArranging' ? 0
+    : state === 'requestHandover' || ['pendingSummary', 'pendingDelivery', 'summaryFailed', 'needsReview'].includes(card.status) || card.handoverError ? 2
+    : steps.length ? 1 : 0;
+  // The rail moves only transform and opacity, so a running requirement never invalidates the page layout.
+  function StageRail({ index, tone, t }) {
+    return h('ol', { className: 'dsh-project-stage-rail', 'data-tone': tone, 'aria-label': t('stageRail') },
+      REQUEST_STAGES.map((key, position) => h('li', { key, className: 'dsh-project-stage', 'data-stage': index === 3 || position < index ? 'done' : position === index ? 'current' : 'todo', 'aria-current': position === index && index < 3 ? 'step' : undefined },
+        h('span', { className: 'dsh-project-stage-dot', 'aria-hidden': true }), h('span', { className: 'dsh-project-stage-label' }, t(key)))));
+  }
+  const elapsedLabel = ms => {
+    const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60), pad = value => String(value).padStart(2, '0');
+    return minutes >= 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}:${pad(seconds % 60)}` : `${minutes}:${pad(seconds % 60)}`;
+  };
+  // Ticks only while its row is on screen; the span keeps its place, so the row never reflows.
+  function Elapsed({ since }) {
+    const [now, setNow] = useState(Date.now), ref = useRef(null);
+    useEffect(() => {
+      const timer = setInterval(() => { if (!document.hidden && ref.current?.offsetParent) setNow(Date.now()); }, 1000);
+      return () => clearInterval(timer);
+    }, []);
+    const age = now - since;
+    return h('span', { ref, className: 'dsh-project-elapsed' }, Number.isFinite(age) && age >= 0 && age < 48 * 3600000 ? ` · ${elapsedLabel(age)}` : '');
+  }
+  // A running member shows a breathing dot; when it finishes the dot becomes a check that pops in once.
+  function StepMark({ status }) {
+    const before = useRef(status), [fresh, setFresh] = useState(false);
+    useEffect(() => {
+      const arrived = before.current !== status && status === 'completed'; before.current = status;
+      if (!arrived) return undefined;
+      setFresh(true); const timer = setTimeout(() => setFresh(false), 700);
+      return () => clearTimeout(timer);
+    }, [status]);
+    return status === 'completed' ? h(IconCheckOutlineRegular, { size: 14, className: `dsh-project-task-check${fresh ? ' is-fresh' : ''}` })
+      : h('span', { className: 'dsh-project-task-state-dot', 'data-state': status, 'aria-hidden': true });
+  }
+
   function ProjectTaskCard({ card: preview, project, resourceRevision, mode, setMode, tab, setTab, read, team, sessions, controls, queue, changeQueue, archive, retryHandover, openMember, workstreams, todos, renderFactorySlot, t }) {
     const [saved, setSaved] = useState(null), [error, setError] = useState(''), [menu, setMenu] = useState(false), [readKey, setReadKey] = useState(0);
     const expanded = mode !== 'strip';
+    // Rows that appear after the card is on screen slide in; the ones present at first paint stay still.
+    const armed = useRef(false), seen = useRef(new Map());
+    useEffect(() => { armed.current = true; }, []);
     useEffect(() => {
       if (!expanded) return;
       let live = true;
@@ -664,8 +752,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, title: controls.actionError('archive', card.id), 'data-error': Boolean(controls.actionError('archive', card.id)), onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) });
     const finished = card.counts?.completed ?? steps.filter(item => item.status === 'completed').length, total = card.counts?.total ?? steps.length;
     const delivery = card.delivery;
-    const sections = ['overview', 'plan', 'work', 'results'].map(value => ({ value, label: t({ overview: 'requestOverview', plan: 'requestPlan', work: 'requestWork', results: 'requestResults' }[value]), id: `${card.id}-tab-${value}`, panelId: `${card.id}-panel-${value}` }));
+    const sections = ['progress', 'results'].map(value => ({ value, label: t({ progress: 'requestProgress', results: 'requestResults' }[value]), id: `${card.id}-tab-${value}`, panelId: `${card.id}-panel-${value}` }));
     const pane = value => ({ role: 'tabpanel', id: `${card.id}-panel-${value}`, 'aria-labelledby': `${card.id}-tab-${value}`, 'data-project-request-tab': value, hidden: tab !== value });
+    const stageIndex = requestStageIndex(card, state, steps);
+    const stageShown = !card.archivedAt && !card.queue?.released && !['discussing', 'queued', 'cancelled'].includes(card.queue?.state);
+    const planItems = queue?.active?.id === card.id && todos?.length ? todos : null;
     return h('article', { className: 'dsh-project-task-card', 'data-project-request-id': card.id, 'data-project-request-mode': expanded ? 'card' : 'strip', 'data-project-request-status': state },
       h('div', { className: 'dsh-project-task-surface', 'aria-hidden': true }),
       !expanded ? h('div', { className: 'dsh-project-task-strip' },
@@ -681,24 +772,29 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           human.reason || human.next ? h('div', { className: 'dsh-project-task-next', 'data-tone': human.tone },
             human.reason ? h('span', null, human.reason) : null, human.next ? h('span', null, h('strong', null, t('nextStep')), human.next) : null) : null),
         h(SegmentedTabs, { className: 'dsh-project-request-tabs', items: sections, value: tab, onChange: setTab, label: t('requestSections') }),
-        h('div', pane('plan'), h('p', { className: 'dsh-project-muted' }, t(queue?.active?.id === card.id ? 'nativePlanHint' : 'historicalPlanHint')),
-          queue?.active?.id === card.id && todos?.length ? h('ul', { className: 'dsh-project-native-plan' }, todos.map((todo, index) => h('li', { key: index, 'data-state': todo.status },
-            h(StateDot, { state: todo.status === 'completed' ? 'done' : todo.status === 'in_progress' ? 'ongoing' : 'idle' }), h('span', null, todo.content)))) : queue?.active?.id === card.id ? h('p', { className: 'dsh-project-muted' }, t('nativePlanEmpty')) : null),
-        h('div', pane('work'), !Array.isArray(card.work) && total > steps.length ? h('p', { className: 'dsh-project-muted' }, t('workPreviewHint')) : null,
+        h('div', pane('progress'),
+        card.authorityError ? h(RequestAuthority, { request: card, t }) : null,
+        card.handoverError && !card.authorityError ? h('div', { className: 'dsh-project-task-next', 'data-tone': 'warning' },
+          h('span', null, t('handoverErrorHint')), h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('handover', card.id), 'data-error': Boolean(controls.actionError('handover', card.id)), onClick: () => retryHandover(card) }, t('retrySummary')),
+          h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, card.handoverError))) : null,
+        stageShown ? h(StageRail, { index: stageIndex, tone: human.tone, t }) : null,
+        !Array.isArray(card.work) && total > steps.length ? h('p', { className: 'dsh-project-muted' }, t('workPreviewHint')) : null,
         steps.length ? h('ul', { className: 'dsh-project-task-checklist', 'aria-label': t('observerTaskProgress') }, steps.map(item => {
           const live = item.status === 'running', canOpen = Boolean(item.workerSessionId);
+          const rowKey = `${item.workstreamId}:${item.delegationRef}`;
+          if (!seen.current.has(rowKey)) seen.current.set(rowKey, armed.current);
           // Current work opens the member's live conversation; an earlier round opens its exact recorded assignment.
           const open = () => item.current === false ? controls.showProcess(project.id, item.workstreamId, false, { delegationRef: item.delegationRef }) : openMember(item.workerSessionId);
           const row = h(Fragment, null,
-            item.status === 'completed' ? h(IconCheckOutlineRegular, { size: 14, className: 'dsh-project-task-check' }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': item.status, 'aria-hidden': true }),
+            h(StepMark, { status: item.status }),
             h('span', { className: 'dsh-project-task-step-title' }, item.title),
-            h('small', null, item.waitingReason ? waitingLabel(t, item.waitingReason) : `${item.executor} · ${stateLabel(t, item.status)}`));
+            h('small', null, item.waitingReason ? waitingLabel(t, item.waitingReason) : `${item.executor} · ${stateLabel(t, item.status)}`, live && !item.waitingReason ? h(Elapsed, { since: item.assignmentAt }) : null));
           const stream = workstreams?.find(work => work.id === item.workstreamId);
           const failure = item.status === 'summaryFailed' && stream?.summaryFailure?.delegationRef === item.delegationRef ? stream.summaryFailure : null;
           // A delivered requirement shows its own changes once, in the delivery; work in progress shows its directory.
           const changes = !done && item.current !== false && Boolean(item.memberRole) && item.memberRole !== 'readonly';
           const stoppable = item.current !== false && !controls.paused && (live || ['queued', 'preparing', 'provisioning', 'stopping'].includes(item.status));
-          return h('li', { key: `${item.workstreamId}:${item.delegationRef}`, className: 'dsh-project-task-step', 'data-state': item.status },
+          return h('li', { key: rowKey, className: 'dsh-project-task-step', 'data-state': item.status, 'data-enter': seen.current.get(rowKey) },
             canOpen ? h('button', { type: 'button', className: 'dsh-project-task-step-open', title: t('viewProcess'), onClick: open }, row) : h('div', { className: 'dsh-project-task-step-open' }, row),
             item.reportId || stoppable || changes ? h('div', { className: 'dsh-project-task-step-actions' },
               item.reportId ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('viewResult')}`, onClick: () => controls.showMaterials(project.id, item.workstreamId, { delegationRef: item.delegationRef }) }, t('viewResult')) : null,
@@ -708,13 +804,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
             stream?.prerequisitesChanged && item.current !== false ? h('p', { className: 'dsh-project-task-step-note', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
             failure ? h('div', { className: 'dsh-project-task-step-failure' }, h(SummaryFailure, { failure, openModelSettings: controls.openModelSettings, t }),
               !card.authorityError ? h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('summary', item.workstreamId), 'data-error': Boolean(controls.actionError('summary', item.workstreamId)), onClick: () => controls.retrySummary({ id: item.workstreamId, summaryFailure: failure }) }, t('retrySummary')) : null) : null);
-        })) : h('p', { className: 'dsh-project-task-waiting' }, t('observerNoTodo'))),
-        h('div', pane('overview'),
-        card.authorityError ? h(RequestAuthority, { request: card, t }) : null,
-        card.handoverError && !card.authorityError ? h('div', { className: 'dsh-project-task-next', 'data-tone': 'warning' },
-          h('span', null, t('handoverErrorHint')), h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('handover', card.id), 'data-error': Boolean(controls.actionError('handover', card.id)), onClick: () => retryHandover(card) }, t('retrySummary')),
-          h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, card.handoverError))) : null,
-        h('details', { className: 'dsh-project-result-disclosure dsh-project-observer-request-info', open: true }, h('summary', null, t('workRequest')),
+        })) : h('p', { className: 'dsh-project-task-waiting' }, t('observerNoTodo')),
+        planItems ? h('details', { className: 'dsh-project-result-disclosure dsh-project-lead-plan', open: !steps.length },
+          h('summary', null, t('leadPlan'), ` · ${planItems.filter(todo => todo.status === 'completed').length}/${planItems.length}`),
+          h('ul', { className: 'dsh-project-native-plan' }, planItems.map((todo, index) => h('li', { key: index, 'data-state': todo.status },
+            h(StateDot, { state: todo.status === 'completed' ? 'done' : todo.status === 'in_progress' ? 'ongoing' : 'idle' }), h('span', null, todo.content))))) : null,
+        h('details', { className: 'dsh-project-result-disclosure dsh-project-observer-request-info', open: !steps.length && !planItems }, h('summary', null, t('workRequest')),
           markdown(t, card.goal),
           card.conditions?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementConditions')), h('ul', null, card.conditions.map((item, index) => h('li', { key: index }, item)))) : null,
           card.constraints?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementConstraints')), h('ul', null, card.constraints.map((item, index) => h('li', { key: index }, item)))) : null,
@@ -811,6 +906,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const { detail, team, sessions } = useProjectLive(props, sessionId, project);
     const requestModes = useRequestModes(value => value[sessionId]?.requests), savedView = props.useRequestPanels(value => value[sessionId]?.view);
     const [historyKind, setHistoryKind] = useState(savedView?.historyKind ?? null), [historyMenu, setHistoryMenu] = useState(false);
+    const teamShown = Boolean(props.useTeamActivity && props.teamT && TeamEmbedded);
+    const [section, setSection] = useState(savedView?.section ?? 'requests'), [membersVisited, setMembersVisited] = useState(savedView?.section === 'members');
+    const shownSection = teamShown ? section : 'requests', projectsKnown = props.useProjects(value => value.available && !value.loading && !value.error);
     const todos = props.useProjectSessions(value => value.projectionsBySession[sessionId]?.values.todos);
     const cursorScope = project.id;
     const newCursors = () => ({ scope: cursorScope, current: [null], completed: [null], archived: [null], cancelled: [null] });
@@ -835,7 +933,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       finally { setActionBusy(false); }
     };
     const queueChanging = useRef(false), panelRef = useRef(null), [readingOrder, setReadingOrder] = useState(savedView?.readingOrder ?? []), viewRef = useRef(null), initialScroll = useRef(savedView?.scrollTop ?? 0);
-    viewRef.current = { historyKind, cursorState, readingOrder };
+    viewRef.current = { historyKind, cursorState, readingOrder, section };
     useLayoutEffect(() => { if (panelRef.current && pages.current) panelRef.current.scrollTop = initialScroll.current; }, [Boolean(pages.current)]);
     const saveView = () => props.setRequestPanel(sessionId, { view: { ...viewRef.current, scrollTop: panelRef.current?.scrollTop ?? initialScroll.current } });
     useEffect(() => () => props.setRequestPanel(sessionId, { view: { ...viewRef.current, scrollTop: initialScroll.current } }), [sessionId]);
@@ -904,10 +1002,13 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       ask: text => sendUserRequest(project.id, text) };
     const cardMode = (item, initialMode = 'strip') => requestModes?.[item.id]?.mode ?? initialMode;
     const renderCard = (item, initialMode = 'strip') => h(ProjectTaskCard, { key: item.id, card: item, project, resourceRevision: detail?.revision,
-      mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, item.id, mode, item.status === 'completed'), tab: requestModes?.[item.id]?.tab ?? 'overview', setTab: tab => props.setRequestTab(sessionId, item.id, tab),
+      mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, item.id, mode, item.status === 'completed'), tab: (requestModes?.[item.id]?.tab ?? (item.status === 'completed' ? 'results' : 'progress')) === 'results' ? 'results' : 'progress', setTab: tab => props.setRequestTab(sessionId, item.id, tab),
       read, team, sessions, controls, queue, changeQueue, archive, retryHandover, todos, openMember: workerSessionId => props.openMember(project, workerSessionId), workstreams: detail?.workstreams, renderFactorySlot, t });
     const current = pages.current?.items ?? [], activeCard = current.find(item => item.id === queue?.active?.id) ?? queue?.active;
     const visible = [...(activeCard && !current.some(item => item.id === activeCard.id) ? [activeCard] : []), ...current, ...(pages.completed?.items ?? [])], ordered = [...readingOrder.map(id => visible.find(item => item.id === id)).filter(Boolean), ...visible.filter(item => !readingOrder.includes(item.id))];
+    const jobIds = new Set(project.activity?.runningJobSessionIds ?? []);
+    const membersRunning = new Set((team?.members ?? []).filter(member => member.role !== 'lead' && (sessions[member.id]?.running === true || jobIds.has(member.id))).map(member => member.id)).size;
+    const membersKnown = projectsKnown && Boolean(team) && team.failure === undefined;
     return h('section', { ref: panelRef, className: 'dsh-project-panel-body dsh-project-requests', 'aria-label': t('requirements'), onScroll: event => { initialScroll.current = event.currentTarget.scrollTop; } },
       h('header', { className: 'dsh-project-requests-toolbar' },
         h('strong', { title: project.canonicalWorkingDirectory }, project.title),
@@ -918,6 +1019,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           items: [{ id: 'cancelled', label: `${t('taskCancelled')} · ${pages.cancelled?.total ?? 0}` }, { id: 'archived', label: `${t('taskArchive')} · ${pages.archived?.total ?? 0}` }],
           onSelect: kind => { setHistoryMenu(false); setHistoryKind(value => value === kind ? null : kind); },
           anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
+      teamShown ? h(SegmentedTabs, { className: 'dsh-project-section-tabs', value: shownSection, label: t('panelSections'),
+        items: [{ value: 'requests', label: t('requirements'), id: `${project.id}-section-requests`, panelId: `${project.id}-page-requests` },
+          { value: 'members', label: `${t('sectionMembers')}${membersKnown ? membersRunning ? ` · ${membersRunning}` : '' : ' · ?'}`, id: `${project.id}-section-members`, panelId: `${project.id}-page-members` }],
+        onChange: next => { if (next === 'members') setMembersVisited(true); setSection(next); } }) : null,
+      h('div', { className: 'dsh-project-section-page', 'data-project-section': 'requests', ...(teamShown ? { role: 'tabpanel', id: `${project.id}-page-requests`, 'aria-labelledby': `${project.id}-section-requests`, hidden: shownSection !== 'requests' } : {}) },
       !visible.length && !activeCard && !cardsBusy ? h('div', { className: 'dsh-project-requests-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
       h('div', { className: 'dsh-project-requests-list', 'aria-label': t('taskList') },
         ordered.map(item => renderCard(item, item.id === activeCard?.id ? 'card' : 'strip'))),
@@ -926,7 +1032,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         (pages[historyKind]?.items ?? []).map(item => renderCard(item)), pageControls(historyKind)) : null,
       pages.completed?.total ? h('div', { className: 'dsh-project-task-group-title' }, h('span', null, `${t('taskCompleted')} · ${pages.completed.total}`), pageControls('completed')) : null,
       cardsBusy && !pages.current ? h('p', { role: 'status', className: 'dsh-project-empty' }, t('loading')) : null,
-      project.diagnostics?.length ? h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), project.diagnostics.map((item, index) => h('pre', { key: index }, typeof item === 'string' ? item : item.message))) : null,
+      project.diagnostics?.length ? h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), project.diagnostics.map((item, index) => h('pre', { key: index }, typeof item === 'string' ? item : item.message))) : null),
+      teamShown && membersVisited ? h('div', { className: 'dsh-project-section-page', 'data-project-section': 'members', role: 'tabpanel', id: `${project.id}-page-members`, 'aria-labelledby': `${project.id}-section-members`, hidden: shownSection !== 'members' },
+        h(TeamEmbedded, { sessionId, useSession: props.useSession ?? (select => select({ subagent: null, openState: 'open' })), useSessions: props.useProjectSessions, useSessionStatus: props.useProjectSessionStatus,
+          useTeamTaskScopes: props.useTeamTaskScopes, useTeamActivity: props.useTeamActivity, t: props.teamT, surfaceActive: shownSection === 'members',
+          openTeammate: (leadId, childId) => { if (childId === leadId) return; if (props.returnFloat) props.openMember(project, childId); else props.openTeamMember(leadId, childId); } })) : null,
       h(OperationToast, { key: queueFailure?.seq, text: queueFailure?.text ?? readError }),
       actionNotice ? h(OperationToast, { key: `action-${actionNotice.seq}`, text: actionNotice.text }) : null);
   }
@@ -1481,7 +1591,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const requestModes = createSnapshotStore({}, { persist: { name: 'dsh-project.request-modes' } });
       const requestPanels = createSnapshotStore({});
       const setRequestPanel = (sessionId, next) => requestPanels.set({ ...requestPanels.getSnapshot(), [sessionId]: { ...requestPanels.getSnapshot()[sessionId], ...next } });
-      let sidebar;
+      let sidebar, teamScopes;
       ctx.inject(['sidebarRight'], scope => {
         sidebar = scope.sidebarRight;
         scope.effect(() => sidebar.openTabs.subscribe(() => {
@@ -1495,18 +1605,19 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       // The Team views' Current page shows this Project's current work, not every open Team record.
       ctx.inject(['agentTeamScopes'], scope => {
         const scoped = new Set();
+        teamScopes = scope.agentTeamScopes;
         const sync = () => {
           const current = snapshot.getSnapshot(), projects = current.projects, live = new Set();
           for (const project of projects) {
             scope.agentTeamScopes.set(project.coordinatorSessionId, project.currentTaskIds);
-            scope.agentTeamScopes.setActivity(project.coordinatorSessionId, { state: current.loading ? 'loading' : !current.available || current.error ? 'unavailable' : 'ready', runningJobSessionIds: project.activity?.runningJobSessionIds ?? [] });
+            scope.agentTeamScopes.setActivity(project.coordinatorSessionId, { state: current.loading ? 'loading' : !current.available || current.error ? 'unavailable' : 'ready', runningJobSessionIds: project.activity?.runningJobSessionIds ?? [], embedded: true });
             live.add(project.coordinatorSessionId);
           }
           for (const id of scoped) if (!live.has(id)) { scope.agentTeamScopes.set(id, undefined); scope.agentTeamScopes.setActivity(id, undefined); }
           scoped.clear(); for (const id of live) scoped.add(id);
         };
         sync();
-        scope.effect(() => { const off = snapshot.subscribe(sync); return () => { off(); for (const id of scoped) { scope.agentTeamScopes.set(id, undefined); scope.agentTeamScopes.setActivity(id, undefined); } }; }, 'dsh-project: Team task scopes');
+        scope.effect(() => { const off = snapshot.subscribe(sync); return () => { off(); teamScopes = undefined; for (const id of scoped) { scope.agentTeamScopes.set(id, undefined); scope.agentTeamScopes.setActivity(id, undefined); } }; }, 'dsh-project: Team task scopes');
       });
       const pinRequests = sessionId => {
         if (!sidebar) throw new Error(t('unavailable'));
@@ -1541,6 +1652,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       // A member's live conversation opens beside the Lead instead of replacing it.
       const openMember = (project, workerSessionId) => sidebar?.openResource(subagentChatAddress({
         parentSessionId: project.coordinatorSessionId, childSessionId: workerSessionId, mode: 'continuable' }), { kind: 'subagentchat' });
+      const openTeamMember = (leadSessionId, childSessionId) => {
+        if (childSessionId === leadSessionId || (ctx.sessions.retainInfo(leadSessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return;
+        ctx.uiWorkspace.openSession({ parentSessionId: leadSessionId, childSessionId, mode: 'continuable' });
+      };
       // Desktop verdicts on whether a folder may host a Project, keyed by comparable path.
       const directoryChecks = createSnapshotStore({});
       const checkDirectory = path => {
@@ -1722,7 +1837,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         for (const card of cards) if (!rows[card.id]) { rows[card.id] = { mode: card.id === snapshot.getSnapshot().projects.find(project => project.coordinatorSessionId === sessionId)?.queue?.active?.id ? 'card' : 'strip' }; changed = true; }
         if (changed) requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: rows } });
       };
-      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, requestPanels, dismissals }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember,
+      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, requestPanels, dismissals, ...(teamScopes ? { teamTaskScopes: teamScopes.source, teamActivity: teamScopes.activitySource } : {}) }, ...(teamScopes ? { teamT: (key, params) => ctx.locale.bind('agent-team')(key, params) } : {}), read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember, openTeamMember,
         setRequestMode, setRequestTab, rememberRequestModes, setRequestPanel, pinRequests, collapseEmptyObserver,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),

@@ -210,6 +210,11 @@ export type QueueAction =
   }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
+  | {
+    readonly kind: 'move'
+    /** Destination position among the queued turns, clamped to the queue's bounds. */
+    readonly toIndex: number
+  }
 
 /** One Session list entry. */
 export interface SessionSummary {

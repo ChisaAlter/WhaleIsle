@@ -2010,6 +2010,46 @@ test('a failed native Lead summary preserves its report and ordinary user summar
   }
 });
 
+test('a summary turn that ends on a temporary model-service failure is retried by the host and then delivers', { timeout: 180000 }, async () => {
+  class TransientSummaryModel extends ScriptedModel {
+    async *stream(options) {
+      const lead = options.tools?.some(tool => tool.name === 'project_delegate');
+      const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled', 'whale-project:summary-retry'].includes(message.source.kind));
+      if (lead && input?.source.kind === 'whale-project:summary-retry') {
+        // The host's retry notice reads like the explicit summary request the script already answers.
+        const messages = options.messages.map(message => message === input ? { ...message, id: 'summary-retry-as-read-pending', source: { kind: 'user' }, content: [{ type: 'text', text: 'READ_PENDING' }] } : message);
+        yield* super.stream({ ...options, messages }); return;
+      }
+      if (lead && input?.source.kind === 'subagent-settled') { this.requests.push(options); throw new LlmError('The scripted provider is overloaded.', 'SERVER'); }
+      yield* super.stream(options);
+    }
+  }
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-summary-retry-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    const model = new TransientSummaryModel(); ctx = await bootHost(home, model); const host = ctx.projects;
+    host.summaryRetryDelays = [50, 50, 50];
+    const { project } = await host.command('create', { requestId: 'summary-retry', workingDirectory: directory });
+    const lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'create-report', mode: 'queue', content: [{ type: 'text', text: 'MAKE_DOCS' }] }, signal);
+    const work = await waitFor(() => host.state().workstreams.find(item => item.title === 'Plan work' && item.latestReport), 'the member reports', 90000);
+    const workerRequests = model.requests.filter(options => options.tools?.some(tool => tool.name === 'project_report')).length;
+    await waitFor(() => host.stream(work.id).latestReport?.summarizedBy, 'the host retries the failed summary and the Lead delivers without a person', 120000);
+    await lead.whenIdle(); await host.tail;
+    assert.equal(host.stream(work.id).summaryFailure, undefined); assert.ok(host.stream(work.id).latestReport.summarizedBy);
+    const events = lead.session.snapshotEvents(), failed = events.filter(event => event.type === 'turn/end' && event.data.reason.kind === 'error');
+    assert.equal(failed.length, 1); assert.equal(failed[0].data.reason.error.code, 'SERVER');
+    assert.equal(events.filter(event => event.type === 'user/message' && event.data.source.kind === 'whale-project:summary-retry').length, 1, 'one automatic retry was enough');
+    assert.equal(model.requests.filter(options => options.tools?.some(tool => tool.name === 'project_report')).length, workerRequests, 'the retry never reopens the member');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-summary-retry-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('failed warm admission keeps occupancy, expanding stops drain every worker, and notes reject junction replacement', async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-boundaries-')), home = join(root, 'home'), directory = join(root, 'selected'), store = join(home, 'projects', 'project-a');
   assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-boundaries-`));
