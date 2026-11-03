@@ -584,6 +584,8 @@ export function TeamAction(props: TeamActionProps) {
     return () => { document.removeEventListener('keydown', dismiss) }
   }, [open])
 
+  // An owner that presents the Team inside its own surface (Project's Requests panel) replaces the Lead's standalone entry.
+  if (project && sessionId === leadSessionId && activity?.embedded === true) return null
   const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
   return (
     <div

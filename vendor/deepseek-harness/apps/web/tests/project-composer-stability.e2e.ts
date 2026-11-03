@@ -182,7 +182,7 @@ interface ProjectFixtureService {
 type FixtureState = 'running' | 'provisioning' | 'queued' | 'stopping' | 'paused' | 'blocked' | 'summaryFailed' | 'pendingDelivery' | 'done'
 const STATES: FixtureState[] = ['running', 'provisioning', 'queued', 'stopping', 'paused', 'blocked', 'summaryFailed', 'pendingDelivery', 'done']
 interface Box { left: number; top: number; width: number; height: number }
-interface Geometry { composer: Box; requests: Box; team: Box; header: Box }
+interface Geometry { composer: Box; requests: Box; header: Box }
 interface GeometryProbe { baseline: Geometry; samples: number; maxShift: number; overflow: number; running: boolean }
 interface ProbeWindow extends Window { __projectComposerProbe?: GeometryProbe }
 
@@ -197,7 +197,6 @@ function currentGeometry(page: Page): Promise<Geometry> {
     return {
       composer: box('[data-composer-seat] [data-composer-card]'),
       requests: box('[data-project-header-panel="requests"] button'),
-      team: box('[data-team-action] button[aria-haspopup="dialog"]'),
       header: box('[data-project-header-panel="requests"]'),
     }
   })
@@ -213,12 +212,11 @@ async function startGeometryProbe(page: Page): Promise<void> {
     const selectors = {
       composer: '[data-composer-seat] [data-composer-card]',
       requests: '[data-project-header-panel="requests"] button',
-      team: '[data-team-action] button[aria-haspopup="dialog"]',
       header: '[data-project-header-panel="requests"]',
     }
     const sample = (): void => {
       if (!probe.running) return
-      for (const key of ['composer', 'requests', 'team', 'header'] as const) {
+      for (const key of ['composer', 'requests', 'header'] as const) {
         const element = document.querySelector<HTMLElement>(selectors[key])
         if (element === null) { probe.maxShift = Number.POSITIVE_INFINITY; continue }
         const rect = element.getBoundingClientRect(), reference = probe.baseline[key]
@@ -357,8 +355,6 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     if (state === 'running') startJob()
     await expect.poll(() => page.locator('[data-project-header-panel="requests"]').getAttribute('data-state'), { timeout: 15_000 })
       .toBe(state)
-    await expect.poll(() => page.locator('[data-team-running-count]').textContent(), { timeout: 15_000 })
-      .toBe(state === 'running' ? '1' : '0')
   }
 
   beforeAll(async () => {
@@ -476,6 +472,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
         await setState(state)
         expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
         expect(await page.locator('[data-sidebar-right-open] [data-team-sidebar], [data-sidebar-right-open] .dsh-project-requests').count()).toBe(0)
+        expect(await page.locator('[data-team-action]').count(), 'The Lead\'s Team lives in its Requests panel, not a second header entry').toBe(0)
         expect(await page.locator('[data-composer-seat] [data-testid="todo-panel"]').count()).toBe(0)
         expect(await page.locator('[data-composer-seat] [data-testid="project-checklist"], [data-composer-seat] .dsh-project-activity').count()).toBe(0)
       }
@@ -487,6 +484,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
       await requestsTrigger.click()
       const requests = page.locator('[data-project-panel="requests"]')
       await assertPopoverInViewport(page, '[data-project-panel="requests"]')
+      await requests.getByRole('tab', { name: 'Requests', exact: true }).click()
       const card = requests.locator(`[data-project-request-id="${REQUEST_ID}"]`)
       const progress = card.locator('[data-project-request-tab="progress"]')
       await progress.getByText('Verify stable Project status', { exact: true }).waitFor()
@@ -495,15 +493,13 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
       await page.keyboard.press('Escape')
       await requests.waitFor({ state: 'hidden' })
 
-      const teamTrigger = page.locator('[data-team-action] button[aria-haspopup="dialog"]')
-      await teamTrigger.hover()
-      await page.waitForTimeout(450)
-      expect(await teamTrigger.getAttribute('aria-expanded')).toBe('false')
-      await teamTrigger.click()
-      await assertPopoverInViewport(page, '[data-team-panel]:not([hidden])')
-      await page.locator('[data-team-panel]:not([hidden])').getByText('Verify stable Project status', { exact: true }).first().waitFor()
+      await requestsTrigger.click()
+      await requests.waitFor()
+      await requests.getByRole('tab', { name: /^Members/ }).click()
+      await requests.locator('[data-team-embedded]').getByText('Verify stable Project status', { exact: true }).first().waitFor()
+      await assertPopoverInViewport(page, '[data-project-panel="requests"]')
       await page.keyboard.press('Escape')
-      await page.locator('[data-team-panel]').waitFor({ state: 'hidden' })
+      await requests.waitFor({ state: 'hidden' })
       const probe = await stopGeometryProbe(page)
       expect(probe.samples).toBeGreaterThan(1)
       expect(probe.maxShift, `Project composer/header movement at ${width}px`).toBeLessThanOrEqual(1)
@@ -523,11 +519,9 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     try {
       disconnected = true
       await expect.poll(() => page.locator('[data-project-header-panel="requests"]').getAttribute('data-state'), { timeout: 15_000 }).toBe('unknown')
-      await expect.poll(() => page.locator('[data-team-running-count]').textContent(), { timeout: 5000 }).toBe('?')
       expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
       disconnected = false
       await expect.poll(() => page.locator('[data-project-header-panel="requests"]').getAttribute('data-state'), { timeout: 15_000 }).toBe('pendingDelivery')
-      await expect.poll(() => page.locator('[data-team-running-count]').textContent(), { timeout: 5000 }).toBe('0')
     } finally {
       disconnected = false
     }
@@ -569,24 +563,23 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 
-  it('restores full composer geometry after explicitly pinning and returning Requests and Team', async () => {
+  it('restores full composer geometry after explicitly pinning and returning Requests with either page', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-project-composer-observer-return'))
     await setState('pendingDelivery')
     const measurements: { width: number; surface: string; maxShift: number }[] = []
     for (const width of [800, 390]) {
       await settleViewport(page, width)
       const original = (await currentGeometry(page)).composer
-      for (const surface of ['requests', 'team'] as const) {
-        const trigger = surface === 'requests'
-          ? page.locator('[data-project-header-panel="requests"] button').first()
-          : page.locator('[data-team-action] button[aria-haspopup="dialog"]')
-        const floating = page.locator(surface === 'requests' ? '[data-project-panel="requests"]:not([hidden])' : '[data-team-panel]:not([hidden])')
-        const observer = page.locator(surface === 'requests'
-          ? '[data-sidebar-right-open] .dsh-project-requests'
-          : '[data-sidebar-right-open] [data-team-sidebar]')
+      for (const surface of ['requests', 'members'] as const) {
+        const trigger = page.locator('[data-project-header-panel="requests"] button').first()
+        const floating = page.locator('[data-project-panel="requests"]:not([hidden])')
+        const observer = page.locator('[data-sidebar-right-open] .dsh-project-requests')
         await trigger.click()
         await floating.waitFor()
-        if (surface === 'requests') await floating.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).click()
+        if (surface === 'requests') {
+          await floating.getByRole('tab', { name: 'Requests', exact: true }).click()
+          await floating.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).click()
+        } else await floating.getByRole('tab', { name: /^Members/ }).click()
         expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(1)
         await floating.getByRole('button', { name: 'Keep observing', exact: true }).click()
         await observer.waitFor()
@@ -594,6 +587,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
         expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(0)
         expect(await page.getByRole('button', { name: 'Return to popover', exact: true }).count()).toBe(1)
         if (surface === 'requests') expect(await observer.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')).toBe('true')
+        else expect(await observer.locator('[data-team-embedded]').isVisible(), 'The pinned panel keeps the Members page').toBe(true)
         await observer.getByRole('button', { name: 'Return to popover', exact: true }).click()
         await floating.waitFor()
         await expect.poll(async () => {
@@ -607,7 +601,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
           const card = floating.locator(`[data-project-request-id="${REQUEST_ID}"]`)
           expect(await card.getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')).toBe('true')
           expect(await card.locator('[data-project-request-tab="progress"]').getByText('Verify stable Project status', { exact: true }).count()).toBe(1)
-        }
+        } else expect(await floating.locator('[data-team-embedded]').isVisible(), 'Returning keeps the Members page').toBe(true)
         expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
         const restored = (await currentGeometry(page)).composer
         measurements.push({ width, surface, maxShift: Math.max(...(['left', 'top', 'width', 'height'] as const).map(key => Math.abs(restored[key] - original[key]))) })
@@ -624,8 +618,10 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     onTestFailed(() => saveFailureShot(page, 'web-project-composer-member'))
     await setState('pendingDelivery')
     await settleViewport(page, 800)
-    await page.locator('[data-team-action] button[aria-haspopup="dialog"]').click()
-    await page.locator('[data-team-panel]:not([hidden])').getByRole('button').filter({ hasText: 'Verify stable Project status' }).first().click()
+    await page.locator('[data-project-header-panel="requests"] button').first().click()
+    const panel = page.locator('[data-project-panel="requests"]:not([hidden])')
+    await panel.getByRole('tab', { name: /^Members/ }).click()
+    await panel.locator('[data-team-embedded]').getByRole('button').filter({ hasText: 'Verify stable Project status' }).first().click()
     const takeover = page.locator('[data-project-composer-takeover] > [role="note"]')
     await takeover.waitFor({ timeout: 15_000 })
     for (const width of WIDTHS) {

@@ -490,6 +490,16 @@ const FORK_FILE_MARKERS = [
   // follows the dedicated terminal-pane token instead — the Appearance
   // terminal-opacity slider keeps it readable over the wallpaper.
   { file: 'packages/client/ui-sidebar-terminal/src/client/terminal.module.css', includes: ['--dsw-alias-terminal-pane'] },
+  // Project presents the native Team inside its Requests panel: the owner marks the Lead's Team facts `embedded`,
+  // the Lead's own header entry steps aside (members keep theirs), and TeamEmbedded is the Team body without a
+  // header entry or surface of its own.
+  { file: 'packages/experimental/client-ui-agent-team/src/client/mount.ts', includes: ['readonly embedded?: boolean'] },
+  { file: 'packages/experimental/client-ui-agent-team/src/client/TeamAction.tsx', includes: ['activity?.embedded === true'] },
+  { file: 'packages/experimental/client-ui-agent-team/src/client/TeamEmbedded.tsx', includes: ['export function TeamEmbedded', 'data-team-embedded'] },
+  { file: 'packages/experimental/client-ui-agent-team/src/client/TeamAction.module.css', includes: ['.embedded .body'] },
+  { file: 'packages/experimental/client-ui-agent-team/src/client/index.ts', includes: ['TeamEmbedded'] },
+  { file: 'packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx', includes: ['embedded Team'] },
+  { file: 'apps/web/tests/project-composer-stability.e2e.ts', includes: ['data-team-embedded'] },
 ];
 
 function readRel(vendorRoot, rel) {

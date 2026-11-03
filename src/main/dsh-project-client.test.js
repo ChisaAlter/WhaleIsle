@@ -48,7 +48,7 @@ function visibleText(element) {
 // The shipped browser module executes in a VM, but its components and hooks
 // use real React and DOM events. Host RPC, slots and primitive appearance are
 // the boundaries substituted here; model execution and desktop UI are separate.
-function bench({ available = true, rejectCreation = false, detail = {}, cards = [], queue, team = null, runtimeSessions = {}, sessionStatuses = {}, factoryRenderer, rpcOverride, previewOverride, approvalActive = false, language, refusedDirectories = {}, memberSessions = {}, leadTodos, navigateSessions = false } = {}) {
+function bench({ withoutTeamScopes = false, available = true, rejectCreation = false, detail = {}, cards = [], queue, team = null, runtimeSessions = {}, sessionStatuses = {}, factoryRenderer, rpcOverride, previewOverride, approvalActive = false, language, refusedDirectories = {}, memberSessions = {}, leadTodos, navigateSessions = false } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', { url: 'http://localhost', pretendToBeVisual: true });
   const savedGlobals = Object.fromEntries(['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true })) {
@@ -56,7 +56,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   }
   const { createRoot } = clientRequire('react-dom/client');
   let registration, directoryAction, timer, root, adopted = false;
-  const ticks = [];
+  const ticks = [], embeds = [];
   const cleanups = [], entries = [], requests = [], navigation = [], asides = [], retained = [], released = [], opened = [], sent = [], resizeObservers = [], factoryCalls = [], events = new Map(), sessionActions = new Map(), sessionNavigation = new Map(), locales = new Map();
   const project = { id: 'project-one', title: 'Project', coordinatorSessionId: 'coordinator-existing', workspaceId: 'workspace-existing',
     storageRoot: 'C:/profile/projects/project-one', canonicalWorkingDirectory: 'C:/workspace/real', lifecycle: 'ready', paused: false, diagnostics: [], ...(queue ? { queue } : {}), activity: detail?.activity ?? { running: 0, blocked: 0, queued: 0, state: 'idle' } };
@@ -96,7 +96,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   const plugin = registration.factory(spec => {
     if (spec === 'react') return React;
     if (spec === 'react-dom') return clientRequire('react-dom');
-    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TEAM_SIDEBAR_KIND: 'agent-team' };
+    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TEAM_SIDEBAR_KIND: 'agent-team', TeamEmbedded: props => { embeds.push(props); return h('div', { 'data-team-embedded': '', 'data-surface-active': String(props.surfaceActive) }, 'Team body'); } };
     if (spec === '@deepseek-ai/dsh-client-ui-subagent') return { subagentChatAddress: address => `subagentchat:${address.parentSessionId}/${address.childSessionId}/${address.mode}` };
     if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
     if (spec === '@deepseek-ai/dsh-client-store') return {
@@ -154,8 +154,9 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   };
   const ctx = {
     inject: (names, install) => {
-      const services = { sidebarRight, sidebarRightTabs, agentTeamScopes: teamScopes };
-      assert.ok(names.every(name => name in services), `Unexpected injected service ${names}`);
+      const services = { sidebarRight, sidebarRightTabs, ...(withoutTeamScopes ? {} : { agentTeamScopes: teamScopes }) };
+      assert.ok(names.every(name => ['sidebarRight', 'sidebarRightTabs', 'agentTeamScopes'].includes(name)), `Unexpected injected service ${names}`);
+      if (!names.every(name => name in services)) return;
       install({ ...Object.fromEntries(names.map(name => [name, services[name]])), slots: ctx.slots,
         effect: setup => { const cleanup = setup(); if (typeof cleanup === 'function') cleanups.push(cleanup); } });
     },
@@ -173,7 +174,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       dom.window.document.querySelector('[data-lead-composer]')?.focus();
     } }) } },
     settingsNavigation: { open: id => navigation.push(['settings', id]) },
-    sessions: { scope: sessionId => ({ sessionId, get: name => { assert.equal(name, 'conversation'); return { send: async text => sent.push({ sessionId, text }) }; } }), list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } }, ...Object.fromEntries(Object.entries(runtimeSessions).map(([id, session]) => [id, { retainedBy: { mainView: id === project.coordinatorSessionId ? 1 : 0 }, ...session }])) },
+    sessions: { retainInfo: sessionId => ({ getSnapshot: () => ({ retainedBy: { mainView: sessionId === project.coordinatorSessionId ? 1 : 0 } }) }), scope: sessionId => ({ sessionId, get: name => { assert.equal(name, 'conversation'); return { send: async text => sent.push({ sessionId, text }) }; } }), list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } }, ...Object.fromEntries(Object.entries(runtimeSessions).map(([id, session]) => [id, { retainedBy: { mainView: id === project.coordinatorSessionId ? 1 : 0 }, ...session }])) },
       projectionsBySession: { [project.coordinatorSessionId]: { values: { agentTeam: team, ...(leadTodos !== undefined ? { todos: leadTodos } : {}) } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
     connection: { rpc: { call: async (prefix, method, input) => {
       assert.equal(prefix, '/dsh-project'); requests.push({ method, input });
@@ -319,7 +320,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     const target = findButton(label); assert.ok(target, `Missing button ${label}`);
     await act(async () => { target.focus(); target.click(); await new Promise(resolve => setImmediate(resolve)); });
   };
-  return { entries, requests, navigation, asides, openTabs, scopes, activities, sidebarTypes, sidebarToggles, isSidebarExpanded: sidebarRight.isExpanded, todos, retained, released, opened, sent, resizeObservers, factoryCalls, sessionNavigation, eventSource, session, stored, project, face, sessionActions, mounted, cards, panel, openPanel, dialog, escape, document: dom.window.document,
+  return { entries, embeds, requests, navigation, asides, openTabs, scopes, activities, sidebarTypes, sidebarToggles, isSidebarExpanded: sidebarRight.isExpanded, todos, retained, released, opened, sent, resizeObservers, factoryCalls, sessionNavigation, eventSource, session, stored, project, face, sessionActions, mounted, cards, panel, openPanel, dialog, escape, document: dom.window.document,
     get action() { return directoryAction; }, flush,
     mount: async () => { root = createRoot(dom.window.document.querySelector('main')); await act(async () => { render(); }); },
     render: async () => { await act(async () => { render(); }); },
@@ -2306,7 +2307,7 @@ test('a failed activity read retains known facts but reports Unknown instead of 
     assert.equal(holder.dataset.state, 'unknown'); assert.match(trigger.textContent, /statusUnknown/);
     assert.equal(trigger.querySelector('.dsh-project-header-badge').textContent, '?');
     assert.doesNotMatch(trigger.textContent, /observerIdle|statusDelivered/);
-    assert.deepEqual(b.activities.get('coordinator-existing'), { state: 'unavailable', runningJobSessionIds: ['worker-job'] });
+    assert.deepEqual(b.activities.get('coordinator-existing'), { state: 'unavailable', runningJobSessionIds: ['worker-job'], embedded: true });
     assert.deepEqual(b.asides, []);
     unavailable = false; await b.poll(); await b.flush();
     assert.equal(holder.dataset.state, 'running'); assert.match(trigger.textContent, /statusActive/);
@@ -2314,7 +2315,7 @@ test('a failed activity read retains known facts but reports Unknown instead of 
     unavailableResult = true; await b.poll(); await b.flush();
     assert.equal(b.document.querySelector('[data-project-header-panel=requests] button') === trigger, true, 'An unavailable list result retains the cached Project header');
     assert.equal(holder.dataset.state, 'unknown'); assert.equal(trigger.querySelector('.dsh-project-header-badge').textContent, '?');
-    assert.deepEqual(b.activities.get('coordinator-existing'), { state: 'unavailable', runningJobSessionIds: ['worker-job'] });
+    assert.deepEqual(b.activities.get('coordinator-existing'), { state: 'unavailable', runningJobSessionIds: ['worker-job'], embedded: true });
     assert.match(trigger.textContent, /statusUnknown/); assert.doesNotMatch(trigger.textContent, /observerIdle/);
     unavailableResult = false; await b.poll(); await b.flush(); assert.equal(holder.dataset.state, 'running');
   } finally { await b.dispose(); }
@@ -2512,5 +2513,72 @@ test('every Project animation stops under reduced motion', async () => {
     for (const [, selectors] of css.slice(0, reducedAt).matchAll(/([^{}@]+)\{[^{}]*\banimation:(?!none)[^{}]*\}/g)) for (const selector of selectors.split(',')) animated.add(selector.trim());
     assert.ok(animated.size >= 5, 'The animated selectors were found');
     for (const selector of animated) assert.ok(covered.has(base(selector)), `${selector} stops under reduced motion`);
+  } finally { await b.dispose(); }
+});
+
+// The native Team is a page of the Requests panel, not a second header entry.
+const sectionTab = (b, name) => b.document.getElementById(`${b.project.id}-section-${name}`);
+
+test('the Requests panel hosts the Team as its Members page, and the Lead publishes that so its own Team entry steps aside', async () => {
+  const request = stageRequest('members', 'running', 'running');
+  const team = { members: [{ id: 'coordinator-existing', name: 'lead', role: 'lead' }, { id: 'members-session', name: 'writer', role: 'teammate' }, { id: 'idle-member', name: 'idle', role: 'teammate' }], tasks: [] };
+  const b = bench({ cards: [request], team, sessionStatuses: { 'members-session': { running: true } }, detail: { activity: { running: 1, blocked: 0, queued: 0, state: 'running' } } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    assert.equal(b.activities.get('coordinator-existing').embedded, true, 'The Lead tells the Team that its owner presents it');
+    assert.deepEqual(['requests', 'members'].map(name => sectionTab(b, name).textContent), ['requirements', 'sectionMembers · 1'], 'The running members are counted on the page label, the Coordinator excluded');
+    assert.equal(b.document.querySelector('[data-team-embedded]'), null, 'The Team body is not mounted until its page is opened');
+    assert.ok(isVisible(b.document.querySelector('[data-project-section=requests]')));
+
+    await b.click(sectionTab(b, 'members'));
+    const page = b.document.querySelector('[data-project-section=members]');
+    assert.ok(isVisible(page) && page.querySelector('[data-team-embedded]'), 'The Members page shows the Team body');
+    assert.equal(isVisible(b.document.querySelector('[data-project-section=requests]')), false);
+    assert.ok(b.document.querySelector(`[data-project-request-id=${request.id}]`), 'The requests stay mounted behind the Members page');
+    const props = b.embeds.at(-1);
+    assert.equal(props.sessionId, 'coordinator-existing'); assert.equal(props.surfaceActive, true);
+    for (const seat of ['useSessions', 'useSessionStatus', 'useTeamActivity', 'useTeamTaskScopes', 't', 'openTeammate']) assert.equal(typeof props[seat], 'function', `${seat} is supplied`);
+    props.openTeammate('coordinator-existing', 'members-session'); props.openTeammate('coordinator-existing', 'coordinator-existing');
+    assert.deepEqual(JSON.parse(JSON.stringify(b.navigation.filter(entry => entry[0] === 'session' && typeof entry[1] === 'object'))),
+      [['session', { parentSessionId: 'coordinator-existing', childSessionId: 'members-session', mode: 'continuable' }]], 'The floating panel opens a member in the main view, as the Team popover did; the Lead is already the current conversation');
+    assert.deepEqual(b.asides.filter(entry => entry[0] === 'resource'), []);
+
+    await b.click(sectionTab(b, 'requests'));
+    assert.equal(isVisible(b.document.querySelector('[data-project-section=members]')), false);
+    assert.ok(b.document.querySelector('[data-team-embedded]'), 'Leaving the Members page keeps its reading state');
+    assert.equal(b.embeds.at(-1).surfaceActive, false);
+    assert.equal(b.sent.length, 0);
+  } finally { await b.dispose(); }
+});
+
+test('the Members page label reports unknown instead of zero, and survives pinning and returning the panel', async () => {
+  const request = stageRequest('members-pin', 'running', 'running');
+  const b = bench({ cards: [request] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    assert.equal(sectionTab(b, 'members').textContent, 'sectionMembers · ?', 'No Team record yet is not an empty Team');
+    await b.click(sectionTab(b, 'members'));
+    await act(async () => { b.openTabs.set([{ sessionId: b.project.coordinatorSessionId, kind: 'guide', tabId: 'existing-guide' }]); });
+    await b.press('pinObserver');
+    assert.equal(b.panel('requests'), null);
+    assert.ok(isVisible(b.document.querySelector('[data-project-section=members]')), 'The pinned panel keeps the Members page');
+    assert.equal(b.document.querySelectorAll('[data-team-embedded]').length, 1, 'Pinning creates no second Team body');
+    b.embeds.at(-1).openTeammate('coordinator-existing', 'members-session');
+    assert.deepEqual(b.asides.filter(entry => entry[0] === 'resource'), [['resource', 'subagentchat:coordinator-existing/members-session/continuable', 'subagentchat']], 'The pinned panel opens a member beside the Lead, like the Team Sidebar page');
+    await b.press('returnFloat');
+    assert.ok(b.panel('requests'));
+    assert.ok(isVisible(b.document.querySelector('[data-project-section=members]')), 'Returning keeps the Members page');
+  } finally { await b.dispose(); }
+});
+
+test('without the native Team there is no Members page and the Requests panel is unchanged', async () => {
+  const request = stageRequest('no-team', 'running', 'running');
+  const b = bench({ cards: [request], withoutTeamScopes: true });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    assert.equal(b.document.querySelector('.dsh-project-section-tabs'), null);
+    assert.equal(b.activities.size, 0, 'Nothing claims to present a Team that is not there');
+    assert.ok(isVisible(b.document.querySelector('[data-project-section=requests]')));
+    assert.ok(b.requestElement(request.id));
   } finally { await b.dispose(); }
 });
