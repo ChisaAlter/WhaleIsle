@@ -7,6 +7,7 @@ import { checkedRoot, checkedFile, projectDirectory, safeProjectSubdirectory, at
 import { ProjectApprovals } from './approvals.js';
 import { ProjectRequirements } from './requirements.js';
 import { ProjectQueue, queuePlugin } from './queue.js';
+import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm';
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const required = (value, label, limit = 32000) => { if (typeof value !== 'string' || !value.trim() || value.length > limit) throw new Error(`Invalid ${label}.`); return value.trim(); };
@@ -29,11 +30,16 @@ const directoryDiagnosticPrefix = root => `Project directory check (${root}): `;
 const isDirectoryDiagnostic = (message, root) => message.startsWith(directoryDiagnosticPrefix(root))
   || /^(ENOENT|ENOTDIR):/.test(message) && message.includes(`'${root}'`);
 
+export const summaryRetryPlugin = 'whale-project:summary-retry';
+// A summary turn that ends on a temporary model-service failure has already been retried by the model layer; the host tries it
+// again later, three times at most, and leaves the explicit retry to the user afterwards.
+const TRANSIENT_CODES = new Set(['SERVER', 'RATE_LIMIT', 'TIMEOUT', 'TRANSPORT']);
 export class ProjectService {
   constructor(ctx, table, { home, desktop, teams = ctx.agentTeams }) {
     this.ctx = ctx; this.teams = teams; this.table = table; this.home = home; this.desktop = desktop; this.available = true;
     this.tail = Promise.resolve(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
     this.background = new Set(); this.closing = false; this.recovering = true; this.scheduling = false; this.scheduleRevision = 0; this.held = new Set(); this.workerStops = new Map(); this.projectHolds = new Map(); this.archiving = new Set();
+    this.summaryRetryDelays = [30000, 120000, 360000]; this.summaryRetryTimers = new Map();
     this.approvals = new ProjectApprovals(this);
     this.requirements = new ProjectRequirements(this);
     this.queue = new ProjectQueue(this);
@@ -860,7 +866,7 @@ export class ProjectService {
       const notices = new Map();
       const actualUser = input.messages.findLast(item => item.source.kind === 'user');
       if (actualUser) {
-        this.userTurns.set(input.agent.id, { agent: input.agent, turn: input.turn });
+        this.userTurns.set(input.agent.id, { agent: input.agent, turn: input.turn }); this.cancelSummaryRetry(project.id);
         if (this.projectHolds.get(project.id) !== actualUser.id) this.projectHolds.delete(project.id);
         await this.serial(() => this.write(state => { state.projects.find(item => item.id === project.id).updatedAt = Date.now(); }));
       }
@@ -959,11 +965,38 @@ export class ProjectService {
       const { code, message } = event.data.reason.error;
       await this.write(state => { for (const entry of failed) {
         const work = state.workstreams.find(item => item.id === entry.id);
-        work.summaryFailure = { turn: event.data.turn, at: event.time, delegationRef: work.currentDelegationRef, ...(entry.runId ? { runId: entry.runId } : {}), error: { code, message } };
+        const retries = work.summaryFailure?.delegationRef === work.currentDelegationRef ? work.summaryFailure.autoRetries ?? 0 : 0;
+        work.summaryFailure = { turn: event.data.turn, at: event.time, delegationRef: work.currentDelegationRef, ...(entry.runId ? { runId: entry.runId } : {}), error: { code, message }, ...(retries ? { autoRetries: retries } : {}) };
         work.updatedAt = event.time;
       } });
       await this.notes(project.id);
+      if (!humanSummary) this.scheduleSummaryRetry(project.id, code);
     });
+  }
+  scheduleSummaryRetry(projectId, code, delay) {
+    if (this.closing || !TRANSIENT_CODES.has(code)) return;
+    const attempt = Math.max(0, ...this.state().workstreams.filter(work => work.projectId === projectId && work.pendingSummary && work.summaryFailure?.delegationRef === work.currentDelegationRef).map(work => work.summaryFailure.autoRetries ?? 0));
+    delay ??= this.summaryRetryDelays[attempt]; if (delay === undefined) return;
+    clearTimeout(this.summaryRetryTimers.get(projectId));
+    const timer = setTimeout(() => { this.summaryRetryTimers.delete(projectId); this.summaryRetry(projectId, code).catch(error => this.ctx.logger.warn('Project summary retry failed: %s', error.message)); }, delay);
+    timer.unref?.(); this.summaryRetryTimers.set(projectId, timer);
+  }
+  cancelSummaryRetry(projectId) { clearTimeout(this.summaryRetryTimers.get(projectId)); this.summaryRetryTimers.delete(projectId); }
+  async summaryRetry(projectId, code) {
+    let message;
+    await this.serial(async () => {
+      const project = this.state().projects.find(item => item.id === projectId);
+      if (!project || this.closing || this.recovering || project.paused || project.lifecycle !== 'ready' || this.archiving.has(projectId) || this.projectHolds.has(projectId)) return;
+      const lead = this.ctx.agents.get(project.coordinatorSessionId);
+      if (lead?.status === 'running') { this.scheduleSummaryRetry(projectId, code, 5000); return; }
+      const failed = this.state().workstreams.filter(work => work.projectId === projectId && work.pendingSummary && work.summaryFailure?.delegationRef === work.currentDelegationRef && !this.worker(work.workerSessionId).stopped);
+      if (!failed.length) return;
+      const text = `The Project host is trying a summary again: the model service reported a temporary error (${code}) while you were summarizing. Read notes.md and summarize the saved results of: ${failed.map(work => `${work.title} (${work.id})`).join('; ')}. This only retries the summary. Do not start, restart or revise work, and it is not new user authorization.`;
+      message = createUserMessage({ source: { kind: summaryRetryPlugin, form: 'notice', summary: boundContextSummary(`Summary retry: ${failed.map(work => work.title).join('; ')}`) }, content: [{ type: 'text', text }] });
+      await this.write(state => { for (const work of failed) { const item = state.workstreams.find(row => row.id === work.id); item.summaryFailure.autoRetries = (item.summaryFailure.autoRetries ?? 0) + 1; } });
+    });
+    if (!message) return;
+    (await this.coordinator(this.project(projectId))).followup(message);
   }
   async report(actor, args, exec) {
     if (actor.role !== 'worker') fail('unauthorized', 'Only the assigned worker can report.');
@@ -1173,11 +1206,11 @@ export class ProjectService {
       }
       return copy({ project: this.projectFacts(this.project(actor.project.id)), total: all.length, nextCursor: args.workstreamId ? history.nextCursor : offset + page.length < all.length ? String(offset + page.length) : null,
         requests: requests.slice(0,20).map(row => this.requirements.view(row)), requestCount: requests.length,
-        deliveries: this.requirements.deliveries(actor.project.id),
+        deliveries: this.requirements.deliveriesForLead(actor.project.id, args.requestId),
         work: page.map(work => ({ id: work.id, title: work.title, status: work.status, replaces: work.replaces, request: this.requirements.associated(work), summaryFailure: work.summaryFailure, requirement: latest(work).brief, report: latest(work).report && this.reportView(latest(work).report, actor.project.id),
           terminal: terminalFor(work, latest(work).report), workerSessionId: work.workerSessionId, resultRef: latest(work).report ? { teamId: actor.project.coordinatorSessionId, taskId: work.id, assignmentRef: latest(work).ref, reportId: latest(work).report.callId } : null })),
         ...(history ? { history } : { historyHint: 'Read notes.md with workstreamId and optional cursor to page through that work\'s actual historical reports and matching settlements.' }),
-        userNotes });
+        ...userNotes.length > 4000 && !args.fullNotes ? { userNotes: `${userNotes.slice(0, 4000)}…`, userNotesChars: userNotes.length, userNotesHint: 'Only the first 4000 characters are shown; pass fullNotes to read all of them.' } : { userNotes } });
     }
     return this.readStore(actor.project.id, args.path);
   }
@@ -1326,7 +1359,7 @@ export class ProjectService {
     fail('unknown_command', 'This Project command is unavailable. Delegation and reporting require actual Agent tool provenance.');
   }
   dispose({ persist = true } = {}) { return this.disposal ??= this.doDispose(persist); }
-  async doDispose(persist) { const projects = this.state().projects; this.persistOnDispose = persist; this.closing = true;
+  async doDispose(persist) { const projects = this.state().projects; this.persistOnDispose = persist; this.closing = true; for (const timer of this.summaryRetryTimers.values()) clearTimeout(timer); this.summaryRetryTimers.clear();
     this.approvals.dispose();
     if (persist) for (const project of projects) await this.stop(project.id);
     const coordinators = this.state().projects.map(project => this.ctx.agents.get(project.coordinatorSessionId)).filter(Boolean);
