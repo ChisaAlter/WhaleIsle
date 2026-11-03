@@ -744,3 +744,123 @@ test('the Lead\'s notes cap long user notes and give them whole on request', asy
   const small = await f.service.readStoreTool(f.actor, { path: 'notes.md' }, execution);
   assert.equal(small.userNotes, 'short'); assert.equal(small.userNotesChars, undefined);
 });
+
+const workerActor = (f, item) => ({ role: 'worker', agent: { id: f.state.workers.find(worker => worker.workstreamId === item.work.id).sessionId }, project: f.project });
+const attentionOf = async f => (await f.service.command('requests/attention', { projectId: f.project.id }));
+const stageOf = async (f, request) => (await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card.stage;
+
+test('one pending question per requirement: repeated is reused, a different one replaces it, limits hold and clearing is explicit', async () => {
+  const f = fixture(); f.human(['Pick the storage layer']); const { request } = await f.accept({ disposition: 'discussing' });
+  const ask = args => f.service.askHuman(f.actor, { requestId: request.id, ...args }, f.exec('project_ask'));
+  const first = await ask({ question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I start with SQLite' });
+  assert.deepEqual(first, { requestId: request.id, asked: true, reused: false });
+  const row = () => f.service.requirements.get(f.project.id, request.id), id = row().ask.id;
+  assert.equal((await ask({ question: '  postgres   OR sqlite?  ' })).reused, true);
+  assert.equal(row().ask.id, id, 'the same question keeps its identity, options and default');
+  assert.deepEqual(row().ask.options, ['Postgres', 'SQLite']);
+  assert.equal((await ask({ question: 'Which port should it listen on?' })).reused, false);
+  assert.notEqual(row().ask.id, id); assert.equal(row().ask.question, 'Which port should it listen on?'); assert.equal(row().ask.by, 'coordinator');
+  await assert.rejects(ask({ question: '   ' }), { code: 'invalid_request' });
+  await assert.rejects(ask({ question: 'Pick one', options: ['1', '2', '3', '4', '5', '6', '7'] }), { code: 'invalid_request' });
+  await assert.rejects(f.service.askHuman(f.actor, { requestId: 'nope', question: 'Anyone?' }, f.exec('project_ask')), { code: 'request_changed' });
+  await assert.rejects(f.service.askHuman({ role: 'worker' }, { requestId: request.id, question: 'Mine' }, f.exec('project_ask')), { code: 'unauthorized' });
+  assert.deepEqual(await ask({ clear: true }), { requestId: request.id, cleared: true }); assert.equal(row().ask, undefined);
+  assert.equal((await ask({ clear: true })).cleared, false);
+  await ask({ question: 'Still relevant?' }); await f.queue(request, 'cancel');
+  assert.equal(row().ask, undefined, 'a cancelled requirement waits on no one');
+  await assert.rejects(ask({ question: 'Too late?' }), { code: 'request_closed' });
+});
+
+test('revising a requirement withdraws its question', async () => {
+  const f = fixture(); f.human(['Pick the storage layer']); const { request } = await f.accept({ disposition: 'discussing' });
+  await f.service.askHuman(f.actor, { requestId: request.id, question: 'Postgres or SQLite?' }, f.exec('project_ask'));
+  f.human(['Use SQLite, and keep the schema small']); await f.accept({ requestId: request.id, goal: 'Store data in SQLite', disposition: 'discussing' });
+  assert.equal(f.service.requirements.get(f.project.id, request.id).ask, undefined);
+});
+
+test('the user\'s next message answers a pending question; progress alone does not', async () => {
+  const f = fixture(); f.human(['Pick the storage layer']); const { request } = await f.accept({ disposition: 'discussing' });
+  await f.service.askHuman(f.actor, { requestId: request.id, question: 'Postgres or SQLite?' }, f.exec('project_ask'));
+  const settled = { id: 'notice-1', role: 'user', source: { kind: 'subagent-settled', senderSessionId: 'nobody', runId: 'none' }, content: [{ type: 'text', text: 'A member finished.' }] };
+  await f.service.preStep({ agent: f.actor.agent, turn: 8, messages: [settled] }, async () => ({ kind: 'enter', messages: [settled] }));
+  assert.ok(f.service.requirements.get(f.project.id, request.id).ask, 'a settlement notice is progress, not an answer');
+  const answer = { id: 'human-answer', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'SQLite' }] };
+  await f.service.preStep({ agent: f.actor.agent, turn: 9, messages: [answer] }, async () => ({ kind: 'enter', messages: [answer] }));
+  assert.equal(f.service.requirements.get(f.project.id, request.id).ask, undefined);
+  assert.equal((await attentionOf(f)).total, 0);
+});
+
+test('the stage table names who is waited on, the first match wins, and the header count is the length of the pinned list', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request: login } = await f.accept({ title: 'Fix login' });
+  f.human(['Maybe add SSO']); const { request: sso } = await f.accept({ title: 'Maybe add SSO', disposition: 'discussing' });
+  f.human(['Speed up search']); const { request: search } = await f.accept({ title: 'Speed up search' });
+  const stages = async () => Object.fromEntries(await Promise.all([login, sso, search].map(async request => [request.title, (await stageOf(f, request)).id])));
+  const count = async () => ({ list: (await attentionOf(f)).total, header: f.service.projectView(f.project).activity.needsYou,
+    cards: (await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' })).items.filter(card => card.stage.needsYou).length });
+  const first = await stages();
+  assert.equal(first['Maybe add SSO'], 'discussing'); assert.equal(first['Speed up search'], 'queued');
+  assert.deepEqual(await count(), { list: 0, header: 0, cards: 0 }, 'healthy and waiting states take no space');
+
+  const item = f.add(login);
+  assert.equal((await stageOf(f, login)).id, 'running');
+  item.work.pendingSummary = false; item.receipt.report.outcome = 'blocked'; item.receipt.report.summary = 'The login page URL needs a staging account I cannot create.';
+  const blocked = await stageOf(f, login);
+  assert.deepEqual([blocked.id, blocked.waitingOn, blocked.needsYou, blocked.reason], ['blocked', 'you', true, 'work']);
+  assert.match(blocked.detail, /staging account/);
+
+  await f.service.askHuman(f.actor, { requestId: sso.id, question: 'Which identity provider?' }, f.exec('project_ask'));
+  await f.service.askHuman(f.actor, { requestId: login.id, question: 'Can you share a staging account?', ifUnanswered: 'I will test against mocks' }, f.exec('project_ask'));
+  assert.equal((await stageOf(f, login)).id, 'awaitingAnswer', 'a question outranks the blocked work it explains');
+  assert.equal((await stageOf(f, sso)).id, 'awaitingAnswer', 'a question outranks being merely discussed');
+  const pinned = await attentionOf(f);
+  assert.deepEqual(pinned.items.map(card => card.title).toSorted(), ['Fix login', 'Maybe add SSO']);
+  assert.deepEqual(await count(), { list: 2, header: 2, cards: 2 });
+  assert.equal(pinned.items.find(card => card.id === login.id).stage.ask.ifUnanswered, 'I will test against mocks');
+
+  await f.service.askHuman(f.actor, { requestId: sso.id, clear: true }, f.exec('project_ask'));
+  await f.service.askHuman(f.actor, { requestId: login.id, clear: true }, f.exec('project_ask'));
+  assert.equal((await stageOf(f, login)).id, 'blocked'); assert.equal((await stageOf(f, sso)).id, 'discussing');
+  assert.deepEqual(await count(), { list: 1, header: 1, cards: 1 });
+});
+
+test('a member\'s blocked report carries its one question onto its requirement; a completed report cannot ask', async () => {
+  const f = fixture(); f.human(['Research the integration']); const { request } = await f.accept({});
+  const item = f.add(request), worker = f.state.workers.at(-1);
+  delete item.receipt.report; delete item.work.latestReport; item.work.status = 'open'; worker.consumedDelegationRef = item.ref.delegationRef; worker.activeRunId = item.ref.runId;
+  const actor = workerActor(f, item), report = args => f.service.report(actor, { delegationRef: item.ref.delegationRef, summary: 'Needs the link.', artifacts: [], evidence: [], remainingIssues: [], ...args }, { callId: 'report-call' });
+  await assert.rejects(report({ outcome: 'completed', humanAction: { question: 'Which link?' } }), { code: 'invalid_result' });
+  await assert.rejects(report({ outcome: 'blocked', humanAction: { question: '' } }), { code: 'invalid_request' });
+  assert.equal(f.service.requirements.get(f.project.id, request.id).ask, undefined, 'a rejected report leaves no question behind');
+  await report({ outcome: 'blocked', humanAction: { question: 'Which repository link should I read?', options: ['The public one', 'The private fork'], ifUnanswered: 'I keep the other stages ready' } });
+  const ask = f.service.requirements.get(f.project.id, request.id).ask;
+  assert.deepEqual([ask.by, ask.question, ask.workstreamId, ask.delegationRef], ['member', 'Which repository link should I read?', item.ref.workstreamId, item.ref.delegationRef]);
+  assert.deepEqual(ask.options, ['The public one', 'The private fork']);
+  assert.equal((await stageOf(f, request)).ask.by, 'member');
+});
+
+test('a temporary summary failure the host will retry is not waiting on the user; an exhausted or permanent one is', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}); const item = f.add(request);
+  const failure = (code, autoRetries) => { item.work.summaryFailure = { turn: 1, at: 1, delegationRef: item.ref.delegationRef, runId: item.ref.runId, error: { code, message: 'x' }, ...(autoRetries ? { autoRetries } : {}) }; };
+  const waiting = setTimeout(() => {}, 1e6); waiting.unref(); f.service.summaryRetryTimers.set(f.project.id, waiting);
+  try {
+    failure('SERVER', 1);
+    const retrying = await stageOf(f, request);
+    assert.deepEqual([retrying.id, retrying.needsYou, retrying.retry], ['running', false, { attempt: 2, of: 3 }]);
+    assert.deepEqual(f.service.autoRetry(item.work), { attempt: 2, of: 3 });
+    failure('SERVER', 3); assert.deepEqual([(await stageOf(f, request)).id, (await stageOf(f, request)).reason], ['awaitingDecision', 'summaryFailed']);
+    failure('AUTH', 0); assert.equal((await stageOf(f, request)).id, 'awaitingDecision', 'a permanent error needs the user');
+    failure('SERVER', 0); f.service.summaryRetryTimers.delete(f.project.id); f.service.ctx.agents.get('lead').status = 'idle';
+    assert.equal((await stageOf(f, request)).id, 'awaitingDecision', 'no retry is waiting or running, for example after a restart');
+    f.service.ctx.agents.get('lead').status = 'running';
+    assert.equal((await stageOf(f, request)).id, 'running', 'a retry turn in flight is still the host working');
+  } finally { clearTimeout(waiting); }
+});
+
+test('a delivered requirement that needs review, or only partly delivered, waits on the user\'s decision', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}); const item = f.add(request);
+  f.human(['Deliver']); await f.declare(request, [item.ref], { outcome: 'partial', remainingIssues: ['SSO is not covered'] });
+  await f.reply('reply-partial'); await f.end('completed');
+  const stage = await stageOf(f, request);
+  assert.deepEqual([stage.id, stage.waitingOn, stage.reason], ['awaitingDecision', 'you', 'partial']);
+  assert.equal((await attentionOf(f)).total, 1);
+});

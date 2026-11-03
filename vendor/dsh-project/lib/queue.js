@@ -66,7 +66,7 @@ export class ProjectQueue {
       if (action === 'cancel') cancelWork = service.state().workstreams.filter(work => work.projectId === projectId && latest(work).source.requestId === row.id).map(work => work.id);
       await service.write(state => {
         const item = state.requests.find(item => item.id === row.id), now = Date.now();
-        if (action === 'cancel') item.queue = { state: 'cancelled' };
+        if (action === 'cancel') { item.queue = { state: 'cancelled' }; delete item.ask; }
         else if (action !== 'resume' || stateName !== 'active') { item.queue = { ...item.queue, state: 'queued' }; delete item.queue.activation; delete item.queue.released; }
         else { item.queue = { ...item.queue, state: 'active', resumeRequested: true }; delete item.queue.activation; }
         if (action === 'resume') item.queue.resumeRequested = true;
