@@ -918,3 +918,42 @@ test('research is its own ceiling: readonly cannot reach the web, research stays
   const f = fixture(); f.human(['Study the linked page']); const { request } = await f.accept({ scopeCeiling: 'research' });
   assert.equal(f.service.requirements.view(f.service.requirements.get(f.project.id, request.id)).scopeCeiling, 'research', 'the requirement view names the ceiling the user authorized');
 });
+
+test('a completed handover that lists remaining issues is told to drop them; a partial one without any is told to name them', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request);
+  await assert.rejects(f.declare(request, [result.ref], { remainingIssues: ['The new section mixes two languages'] }),
+    error => error.code === 'invalid_delivery' && /remainingIssues must be empty/.test(error.message) && /summary/.test(error.message) && !/partial handover/.test(error.message),
+    'the message must not push a model toward partial, which would invent an unmet condition');
+  await assert.rejects(f.declare(request, [result.ref], { outcome: 'partial', remainingIssues: [] }),
+    error => error.code === 'invalid_delivery' && /partial handover must preserve its unmet conditions in remainingIssues/.test(error.message));
+  assert.deepEqual(f.state.deliveries ?? [], []);
+  await f.declare(request, [result.ref]); assert.equal(f.state.deliveries[0].outcome, 'completed');
+});
+
+test('a member result whose notice nobody claimed wakes the coordinator once, and only when nothing else explains the silence', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request), lead = f.service.ctx.agents.get('lead');
+  const check = async () => { await f.service.settlementCheck(f.project.id); f.service.cancelSettlementCheck(f.project.id); return f.followups.length; };
+  lead.status = 'running'; assert.equal(await check(), 0, 'a turn that is really running claims the notice itself');
+  lead.status = 'idle';
+  const settlement = f.state.workstreams[0].settlements[0];
+  settlement.noticeMessageId = 'notice-1'; assert.equal(await check(), 0, 'a claimed notice needs no wake'); settlement.noticeMessageId = '';
+  settlement.summarizedBy = 'reply-1'; assert.equal(await check(), 0, 'a summarized result needs no wake'); settlement.summarizedBy = '';
+  f.state.workers[0].stopped = true; assert.equal(await check(), 0, 'stopped work is not woken for'); f.state.workers[0].stopped = false;
+  f.state.projects[0].paused = true; assert.equal(await check(), 0, 'a paused Project stays quiet'); f.state.projects[0].paused = false;
+  assert.equal(await check(), 1);
+  const [message] = f.followups;
+  assert.equal(message.source.kind, 'whale-project:settlement-check'); assert.equal(message.source.form, 'notice');
+  assert.ok(message.content[0].text.includes(`${result.work.title} (${result.work.id})`)); assert.match(message.content[0].text, /not new user authorization/);
+});
+
+test('settlement checks are one timer per Project and a check that finds a running coordinator looks again later', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}); f.add(request);
+  f.service.scheduleSettlementCheck(f.project.id, 1e6); const first = f.service.settlementCheckTimers.get(f.project.id);
+  f.service.scheduleSettlementCheck(f.project.id, 1e6);
+  assert.equal(f.service.settlementCheckTimers.size, 1); assert.notEqual(f.service.settlementCheckTimers.get(f.project.id), first);
+  f.service.cancelSettlementCheck(f.project.id); assert.equal(f.service.settlementCheckTimers.size, 0);
+  f.service.ctx.agents.get('lead').status = 'running';
+  await f.service.settlementCheck(f.project.id);
+  assert.equal(f.service.settlementCheckTimers.has(f.project.id), true, 'a running coordinator is checked again, not woken');
+  assert.equal(f.followups.length, 0); f.service.cancelSettlementCheck(f.project.id);
+});

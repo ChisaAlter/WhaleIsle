@@ -31,6 +31,7 @@ const isDirectoryDiagnostic = (message, root) => message.startsWith(directoryDia
   || /^(ENOENT|ENOTDIR):/.test(message) && message.includes(`'${root}'`);
 
 export const summaryRetryPlugin = 'whale-project:summary-retry';
+export const settlementCheckPlugin = 'whale-project:settlement-check';
 // Read-only scopes hold no directory, capture no baseline and may not write; research adds only the web tools.
 const readOnly = scope => scope === 'readonly' || scope === 'research';
 const webTools = new Set(['web_search', 'web_fetch']);
@@ -43,6 +44,7 @@ export class ProjectService {
     this.tail = Promise.resolve(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
     this.background = new Set(); this.closing = false; this.recovering = true; this.scheduling = false; this.scheduleRevision = 0; this.held = new Set(); this.workerStops = new Map(); this.projectHolds = new Map(); this.archiving = new Set();
     this.summaryRetryDelays = [30000, 120000, 360000]; this.summaryRetryTimers = new Map();
+    this.settlementCheckDelay = 45000; this.settlementCheckTimers = new Map(); this.settlementChecks = new Map();
     this.approvals = new ProjectApprovals(this);
     this.requirements = new ProjectRequirements(this);
     this.queue = new ProjectQueue(this);
@@ -871,7 +873,7 @@ export class ProjectService {
       await this.notes(worker.projectId);
     });
     result.then(() => this.terminals.get(info.runId)?.resolve(), error => this.terminals.get(info.runId)?.resolve({ error }));
-    result.then(() => this.schedule(), error => this.ctx.logger.warn('Project settlement failed: %s', error.message)); return result;
+    result.then(() => { this.schedule(); this.scheduleSettlementCheck(worker.projectId); }, error => this.ctx.logger.warn('Project settlement failed: %s', error.message)); return result;
   }
   async preStep(input, next) {
     if (this.closing) return { kind: 'reject' };
@@ -1054,6 +1056,41 @@ export class ProjectService {
       const text = `The Project host is trying a summary again: the model service reported a temporary error (${code}) while you were summarizing. Read notes.md and summarize the saved results of: ${failed.map(work => `${work.title} (${work.id})`).join('; ')}. This only retries the summary. Do not start, restart or revise work, and it is not new user authorization.`;
       message = createUserMessage({ source: { kind: summaryRetryPlugin, form: 'notice', summary: boundContextSummary(`Summary retry: ${failed.map(work => work.title).join('; ')}`) }, content: [{ type: 'text', text }] });
       await this.write(state => { for (const work of failed) { const item = state.workstreams.find(row => row.id === work.id); item.summaryFailure.autoRetries = (item.summaryFailure.autoRetries ?? 0) + 1; } });
+    });
+    if (!message) return;
+    (await this.coordinator(this.project(projectId))).followup(message);
+  }
+  // The native Subagent manager steers a member's settlement notice into the coordinator's running turn instead of waking it.
+  // When that turn never claims the notice (the coordinator was busy with something that is not a turn) nothing wakes the
+  // coordinator and the result sits unread. The notice's own claim marks the settlement (noticeMessageId), so one still unmarked
+  // after a grace period gets a single host wake, the way a failed summary does.
+  scheduleSettlementCheck(projectId, delay = this.settlementCheckDelay) {
+    if (this.closing) return;
+    clearTimeout(this.settlementCheckTimers.get(projectId));
+    const timer = setTimeout(() => { this.settlementCheckTimers.delete(projectId); this.settlementCheck(projectId).catch(error => this.ctx.logger.warn('Project settlement check failed: %s', error.message)); }, delay);
+    timer.unref?.(); this.settlementCheckTimers.set(projectId, timer);
+  }
+  cancelSettlementCheck(projectId) { clearTimeout(this.settlementCheckTimers.get(projectId)); this.settlementCheckTimers.delete(projectId); this.settlementChecks.delete(projectId); }
+  unreadSettlements(projectId) {
+    return this.state().workstreams.filter(work => work.projectId === projectId && work.pendingSummary && !work.summaryFailure && !this.worker(work.workerSessionId).stopped
+      && work.settlements.some(item => !item.noticeMessageId && !item.summarizedBy && item.delegationRefs.includes(work.currentDelegationRef)));
+  }
+  async settlementCheck(projectId) {
+    let message;
+    await this.serial(async () => {
+      const project = this.state().projects.find(item => item.id === projectId);
+      if (!project || this.closing || this.recovering || project.paused || project.lifecycle !== 'ready' || this.archiving.has(projectId) || this.projectHolds.has(projectId)) return;
+      const unread = this.unreadSettlements(projectId);
+      if (!unread.length) { this.settlementChecks.delete(projectId); return; }
+      // A turn that is really running claims the notice itself: look again shortly, a bounded number of times.
+      const waited = (this.settlementChecks.get(projectId) ?? 0) + 1;
+      if (this.ctx.agents.get(project.coordinatorSessionId)?.status === 'running') {
+        if (waited <= 120) { this.settlementChecks.set(projectId, waited); this.scheduleSettlementCheck(projectId, 15000); } else this.settlementChecks.delete(projectId);
+        return;
+      }
+      this.settlementChecks.delete(projectId);
+      const text = `The Project host found member results that you have not read yet: ${unread.map(work => `${work.title} (${work.id})`).join('; ')}. Read notes.md and the saved reports, then arrange the next stage or deliver as you normally would after a result arrives. This only brings the results to you; it is not new user authorization.`;
+      message = createUserMessage({ source: { kind: settlementCheckPlugin, form: 'notice', summary: boundContextSummary(`Unread results: ${unread.map(work => work.title).join('; ')}`) }, content: [{ type: 'text', text }] });
     });
     if (!message) return;
     (await this.coordinator(this.project(projectId))).followup(message);
@@ -1424,7 +1461,7 @@ export class ProjectService {
     fail('unknown_command', 'This Project command is unavailable. Delegation and reporting require actual Agent tool provenance.');
   }
   dispose({ persist = true } = {}) { return this.disposal ??= this.doDispose(persist); }
-  async doDispose(persist) { const projects = this.state().projects; this.persistOnDispose = persist; this.closing = true; for (const timer of this.summaryRetryTimers.values()) clearTimeout(timer); this.summaryRetryTimers.clear();
+  async doDispose(persist) { const projects = this.state().projects; this.persistOnDispose = persist; this.closing = true; for (const timer of this.summaryRetryTimers.values()) clearTimeout(timer); this.summaryRetryTimers.clear(); for (const timer of this.settlementCheckTimers.values()) clearTimeout(timer); this.settlementCheckTimers.clear();
     this.approvals.dispose();
     if (persist) for (const project of projects) await this.stop(project.id);
     const coordinators = this.state().projects.map(project => this.ctx.agents.get(project.coordinatorSessionId)).filter(Boolean);

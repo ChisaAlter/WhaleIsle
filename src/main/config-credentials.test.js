@@ -210,3 +210,11 @@ test('an unreadable config file refuses the save instead of writing defaults ove
   assert.throws(() => saveConfig({ theme: 'midnight' }), /设置文件暂时无法读取/);
   assert.equal(fs.statSync(path.join(userData, 'config.json')).isDirectory(), true);
 });
+
+test('a credentials file saved with a byte order mark is still read', () => {
+  resetDisk();
+  setSafeStorageForTests(fakeSafeStorage());
+  saveConfig({ apiKey: 'sk-secret-123', workspace: userData });
+  fs.writeFileSync(credentialsPath(), `\uFEFF${fs.readFileSync(credentialsPath(), 'utf8')}`);
+  assert.equal(loadConfig().apiKey, 'sk-secret-123');
+});

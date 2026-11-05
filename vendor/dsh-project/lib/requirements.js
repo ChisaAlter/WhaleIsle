@@ -218,7 +218,9 @@ export class ProjectRequirements {
     this.service.queue.assertActive(row, args.requestRevision);
     if (!['completed', 'partial'].includes(args.outcome)) fail('invalid_delivery', 'Choose completed or partial.');
     const remainingIssues = strings(args.remainingIssues), evidence = strings(args.evidence);
-    if (args.outcome === 'completed' && remainingIssues.length || args.outcome === 'partial' && !remainingIssues.length) fail('invalid_delivery', 'A partial handover must preserve its unmet conditions.');
+    // Two mistakes, two messages: told only about "partial", a model swaps the outcome and invents an unmet condition.
+    if (args.outcome === 'completed' && remainingIssues.length) fail('invalid_delivery', 'A completed handover leaves nothing unmet, so remainingIssues must be empty. Put remarks that do not block the goal in the summary; choose partial only when required work or a condition is really unmet.');
+    if (args.outcome === 'partial' && !remainingIssues.length) fail('invalid_delivery', 'A partial handover must preserve its unmet conditions in remainingIssues.');
     if (!Array.isArray(args.reportRefs ?? []) || (args.reportRefs ?? []).length > 64) fail('invalid_delivery', 'Supply exact report references.');
     if (!Array.isArray(args.terminalRefs ?? []) || (args.terminalRefs ?? []).length > 64) fail('invalid_delivery', 'Supply exact terminal references.');
     const draft = { id: stableId('delivery', `${actor.agent.id}:${exec.callId}`), projectId: row.projectId, requestId: row.id, requestRevision: row.revision,
