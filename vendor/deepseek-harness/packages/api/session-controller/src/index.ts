@@ -89,7 +89,12 @@ export { SessionSkillCatalog } from './skill-catalog.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
-    /** Stop plugin-owned background work before cancelling its public Agent. @mode serial */
+    /**
+     * Stop plugin-owned background work before cancelling its public Agent.
+     * @param payload.agent - the live public Agent about to be cancelled.
+     * @param payload.request - the Session cancel request that triggered the cancellation.
+     * @mode serial
+     */
     'session/before-cancel'(payload: { agent: Agent; request: SessionCancelRequest }): Promise<void> | void
   }
   interface Context {

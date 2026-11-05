@@ -2151,7 +2151,8 @@ test('the real Lead ends a notice-started turn with project_standby and no messa
 });
 
 test('a research stage gives the member web search and fetch but no shell or directory, and the host records what it opened', { timeout: 240000 }, async () => {
-  const URL_READ = 'https://research-fixture.invalid/spec';
+  // Offline by default: the .invalid name never resolves. DSH_RESEARCH_REAL_URL points the same scenario at a real public page.
+  const URL_READ = process.env.DSH_RESEARCH_REAL_URL ?? 'https://research-fixture.invalid/spec';
   class ResearchModel extends ScriptedModel {
     workerTools = [];
     async *stream(options) {
@@ -2161,7 +2162,7 @@ test('a research stage gives the member web search and fetch but no shell or dir
         this.requests.push(options); this.workerTools = names;
         const ref = /DelegationRef: ([^\n]+)/.exec(envelope)?.[1], stage = this.stages.get(ref) ?? 0; this.stages.set(ref, stage + 1);
         if (!stage) yield* call(`research-fetch-${++this.counter}`, 'web_fetch', { url: URL_READ });
-        else if (stage === 1) yield* call(`research-shell-${++this.counter}`, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo SHOULD_NOT_EXECUTE' });
+        else if (stage === 1) { this.fetched = messageText(options.messages.findLast(message => message.role === 'tool') ?? {}); yield* call(`research-shell-${++this.counter}`, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo SHOULD_NOT_EXECUTE' }); }
         else yield* call(`research-report-${++this.counter}`, 'project_report', { delegationRef: ref, outcome: 'completed', summary: 'Read the linked page as far as it could be fetched.', artifacts: [], evidence: [URL_READ], remainingIssues: [] });
         return;
       }
@@ -2197,6 +2198,7 @@ test('a research stage gives the member web search and fetch but no shell or dir
     assert.deepEqual(work.delegations[0].sources.map(item => [item.kind, item.text]), [['fetch', URL_READ]], 'the host recorded the page the member asked to open');
     assert.ok(model.failures.some(item => ['pwsh', 'bash'].includes(item.name) && /no shell or unrestricted repository write/.test(JSON.stringify(item.error))), 'the shell stays refused for research');
     assert.deepEqual((await host.command('workstreams/get', { projectId: project.id, workstreamId: work.id })).workstream.delegations[0].sources.map(item => item.text), [URL_READ], 'the sources are readable from the Project');
+    if (process.env.DSH_RESEARCH_REAL_URL) { console.log('RESEARCH-FETCH-RESULT', JSON.stringify(model.fetched.slice(0, 600))); assert.doesNotMatch(model.fetched, /^Error:/, 'the real page was fetched'); }
   } finally {
     if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
