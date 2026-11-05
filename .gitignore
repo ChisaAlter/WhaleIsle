@@ -2,6 +2,7 @@ node_modules/
 # Built, self-contained generated UI viewers and resource handlers.
 src/renderer/openui/
 src/renderer/whale-ui/
+mobile/web/whale-ui/
 !vendor/dsh-usage-panel/node_modules/
 !vendor/dsh-usage-panel/node_modules/**
 !vendor/dsh-im/node_modules/

@@ -33,6 +33,9 @@ class EncryptedDeviceStore(context: Context) : DeviceStore {
     override var nativeMigrationDone: Boolean
         get() = prefs.getBoolean("nativeMigrationDone", false)
         set(value) { check(prefs.edit().putBoolean("nativeMigrationDone", value).commit()) }
+    override var catalogCacheJson: String
+        get() = prefs.getString("nativeCatalogCache", "{}").orEmpty()
+        set(value) { prefs.edit().putString("nativeCatalogCache", value).apply() }
 
     override fun clearLegacyHttpCredentials() {
         if (prefs.getBoolean("httpV1CredentialsCleared", false)) return

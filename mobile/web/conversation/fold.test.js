@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { foldEvents, toolDetailView } from './fold.js';
+import { foldEvents, groupTurns, toolDetailView } from './fold.js';
 
 test('foldEvents builds user, assistant, and tool bubbles', () => {
   const rows = foldEvents([
@@ -164,4 +164,114 @@ test('toolDetailView summarizes each detail shape and keeps unknowns visible', (
     summary: 'mystery', body: JSON.stringify({ a: 1 }, null, 2), bodyKind: 'code',
   });
   assert.equal(toolDetailView(null), null);
+});
+
+test('foldEvents extracts whaleUi metadata from streaming and settled render_ui tool calls', () => {
+  const streamingRows = foldEvents([
+    { event: { type: 'turn/start', seq: 1, data: { turn: 1 } } },
+    {
+      event: {
+        type: 'tool/call',
+        seq: 2,
+        data: {
+          callId: 'ui-1',
+          name: 'render_ui',
+          arguments: '{"language":"whale-ui","program":"root = Col([\\n  Title(\\"实时面板\\", \\"xl\\")',
+          turn: 1,
+        },
+      },
+    },
+  ]);
+  assert.equal(streamingRows.length, 1);
+  assert.equal(streamingRows[0].role, 'tool');
+  assert.deepEqual(streamingRows[0].whaleUi, {
+    language: 'whale-ui',
+    program: 'root = Col([\n  Title("实时面板", "xl")',
+    title: '实时面板',
+    streaming: true,
+  });
+
+  const settledRows = foldEvents([
+    { event: { type: 'turn/start', seq: 1, data: { turn: 1 } } },
+    {
+      event: {
+        type: 'tool/call',
+        seq: 2,
+        data: {
+          callId: 'ui-1',
+          name: 'render_ui',
+          arguments: JSON.stringify({ program: 'root = Col([Title("旧草稿", "xl")])' }),
+          turn: 1,
+        },
+      },
+    },
+    {
+      event: {
+        type: 'tool/result',
+        seq: 3,
+        data: {
+          message: {
+            source: { callId: 'ui-1', name: 'render_ui' },
+            content: [{ type: 'tool-result', toolCallId: 'ui-1', content: [{ type: 'text', text: 'ready' }] }],
+          },
+          meta: {
+            whaleUi: {
+              version: 1,
+              language: 'whale-ui',
+              program: 'root = Col([Title("预算计算器", "xl")])',
+            },
+          },
+        },
+      },
+    },
+    { event: { type: 'turn/end', seq: 4, data: { turn: 1 } } },
+  ]);
+  assert.equal(settledRows.length, 1);
+  assert.deepEqual(settledRows[0].whaleUi, {
+    language: 'whale-ui',
+    program: 'root = Col([Title("预算计算器", "xl")])',
+    title: '预算计算器',
+    streaming: false,
+  });
+});
+
+test('groupTurns keeps render_ui Whale UI rows visible outside collapsed turn-process disclosures', () => {
+  const rows = foldEvents([
+    { event: { type: 'user/message', seq: 1, data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: '做个计算器' }] } } },
+    { event: { type: 'turn/start', seq: 2, data: { turn: 1 } } },
+    { event: { type: 'tool/call', seq: 3, data: { callId: 'c1', name: 'read', arguments: '{"path":"a.js"}', turn: 1 } } },
+    { event: { type: 'tool/result', seq: 4, data: { message: { source: { callId: 'c1' }, content: [{ type: 'tool-result', content: [] }] } } } },
+    {
+      event: {
+        type: 'tool/call',
+        seq: 5,
+        data: {
+          callId: 'ui-1',
+          name: 'render_ui',
+          arguments: JSON.stringify({ program: 'root = Col([Title("计算器", "xl")])' }),
+          turn: 1,
+        },
+      },
+    },
+    {
+      event: {
+        type: 'tool/result',
+        seq: 6,
+        data: {
+          message: { source: { callId: 'ui-1', name: 'render_ui' }, content: [{ type: 'tool-result', content: [] }] },
+          meta: { whaleUi: { version: 1, language: 'whale-ui', program: 'root = Col([Title("计算器", "xl")])' } },
+        },
+      },
+    },
+    { event: { type: 'assistant/message', seq: 7, data: { turn: 1, message: { content: [{ type: 'text', text: '已生成交互界面。' }] } } } },
+    { event: { type: 'turn/end', seq: 8, data: { turn: 1 } } },
+  ]);
+  const grouped = groupTurns(rows);
+  assert.deepEqual(grouped.map((row) => [row.role, row.id]), [
+    ['user', 'u1'],
+    ['turn-process', 'turn-process-1-c1'],
+    ['tool', 'ui-1'],
+    ['assistant', 'assistant-7'],
+  ]);
+  assert.equal(grouped[2].whaleUi?.title, '计算器');
 });

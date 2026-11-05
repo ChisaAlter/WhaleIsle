@@ -103,4 +103,52 @@ class NativeChatStateTest {
             obj("seqStart" to 2,"item" to obj("type" to "todo","items" to listOf(obj("text" to "Ship","completed" to true))))))
         assertEquals("u",rows.first().id); assertEquals("✓ Ship",rows.last().text)
     }
+    @Test fun renderUiToolCallAndResultPopulateWhaleUiPayloadAndStayOutsideTurnProcess() {
+        val callEvents = listOf(
+            event(1, "turn/start"),
+            event(2, "assistant/message", obj("id" to "m1", "message" to obj("content" to listOf(obj("type" to "reasoning", "text" to "planning"))))),
+            event(3, "tool/call", obj("callId" to "bash-1", "name" to "shell", "arguments" to obj("command" to "ls"))),
+            event(4, "tool/call", obj(
+                "callId" to "ui-1",
+                "name" to "render_ui",
+                "arguments" to obj("program" to "root = Stack([Title(\"部署面板\")])"),
+            )),
+        )
+        val streamingRows = buildNativeChatRows(callEvents)
+        val uiRowStreaming = streamingRows.last()
+        assertNotNull(uiRowStreaming.whaleUi)
+        assertEquals("tool:ui-1", uiRowStreaming.whaleUi?.instanceKey)
+        assertEquals("部署面板", uiRowStreaming.whaleUi?.title)
+        assertTrue(uiRowStreaming.whaleUi?.streaming == true)
+
+        val completedEvents = callEvents + listOf(
+            event(5, "tool/result", obj(
+                "callId" to "ui-1",
+                "meta" to obj(
+                    "whaleUi" to obj(
+                        "title" to "生产环境部署面板",
+                        "language" to "whale-ui",
+                        "program" to "root = Stack([Title(\"生产环境部署面板\"), Text(\"就绪\")])",
+                    ),
+                ),
+                "message" to obj(
+                    "source" to obj("callId" to "ui-1", "name" to "render_ui"),
+                    "content" to listOf(obj("type" to "text", "text" to "Rendered UI")),
+                ),
+            )),
+            event(6, "turn/end", obj("reason" to obj("kind" to "complete"))),
+        )
+        val finalRows = buildNativeChatRows(completedEvents)
+        val uiRowFinal = finalRows.last()
+        assertEquals("生产环境部署面板", uiRowFinal.whaleUi?.title)
+        assertEquals("root = Stack([Title(\"生产环境部署面板\"), Text(\"就绪\")])", uiRowFinal.whaleUi?.program)
+        assertFalse(uiRowFinal.whaleUi?.streaming ?: true)
+
+        val displayItems = groupNativeDisplayItems(finalRows)
+        assertEquals(2, displayItems.size)
+        assertTrue(displayItems[0] is DisplayItem.TurnProcess)
+        assertEquals(2, (displayItems[0] as DisplayItem.TurnProcess).rows.size)
+        assertTrue(displayItems[1] is DisplayItem.SingleRow)
+        assertEquals("ui-1", (displayItems[1] as DisplayItem.SingleRow).row.id)
+    }
 }

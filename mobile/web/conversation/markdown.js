@@ -80,10 +80,36 @@ function parseInline(text) {
   return spans;
 }
 
+const UI_FENCE_LANG = /^(openui|openui-lang|whale-ui|dsh-ui)$/;
+// Mirrors src/whale-ui/genui/shared/fence-language.ts: labels may carry trailing punctuation.
+const UI_FENCE_TRAILING = /[>`"'.,;:)\]】」』]+$/;
+
+/**
+ * True when a code fence carries an interactive UI program (whale-ui/OpenUI/dsh-ui).
+ * @param {string|null|undefined} lang
+ */
+function isUiFenceLang(lang) {
+  if (typeof lang !== 'string') return false;
+  const trimmed = lang.trim().toLowerCase();
+  if (UI_FENCE_LANG.test(trimmed)) return true;
+  return UI_FENCE_LANG.test(trimmed.replace(UI_FENCE_TRAILING, ''));
+}
+
+/**
+ * Normalize a UI fence/tool language tag to a valid Whale UI protocol language.
+ * @param {string|null|undefined} lang
+ * @returns {'whale-ui'|'openui'|'openui-lang'|'dsh-ui'}
+ */
+function normalizeUiLanguage(lang) {
+  if (typeof lang !== 'string') return 'whale-ui';
+  const trimmed = lang.trim().toLowerCase().replace(UI_FENCE_TRAILING, '');
+  return UI_FENCE_LANG.test(trimmed) ? /** @type {'whale-ui'|'openui'|'openui-lang'|'dsh-ui'} */ (trimmed) : 'whale-ui';
+}
+
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*)$/;
 const UL_ITEM = /^(\s*)[-*+]\s+(.*)$/;
 const OL_ITEM = /^(\s*)(\d+)[.)]\s+(.*)$/;
-const FENCE = /^(\s*)(```|~~~)\s*([\w+#.-]*)\s*$/;
+const FENCE = /^(\s*)(```|~~~)\s*([^\s`~]*)\s*$/;
 const QUOTE = /^\s{0,3}>\s?(.*)$/;
 const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
@@ -124,13 +150,13 @@ function tableAlign(divider) {
 /**
  * Parse markdown text into renderable blocks.
  * @param {string} text
- * @returns {Array<object>} blocks: {kind:'code',lang,text} | {kind:'heading',level,spans}
+ * @returns {Array<object>} blocks: {kind:'code',lang,text,streaming,uiFence} | {kind:'heading',level,spans}
  *   | {kind:'list',ordered,start,items:spans[][],meta:{depth,ordered,checked}[]}
  *   | {kind:'quote',spans} | {kind:'table',align,header,rows} | {kind:'rule'}
  *   | {kind:'paragraph',spans}
  */
 function parseMarkdown(text) {
-  const lines = String(text ?? '').split('\n');
+  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
   let paragraph = [];
   let list = null;
@@ -153,7 +179,13 @@ function parseMarkdown(text) {
     const line = lines[index];
     if (fence) {
       if (new RegExp(`^\\s*${fence.marker}\\s*$`).test(line)) {
-        blocks.push({ kind: 'code', lang: fence.lang, text: fence.lines.join('\n') });
+        blocks.push({
+          kind: 'code',
+          lang: fence.lang,
+          text: fence.lines.join('\n'),
+          streaming: false,
+          uiFence: isUiFenceLang(fence.lang),
+        });
         fence = null;
       } else {
         // Code nested under a list item carries the item's indentation.
@@ -242,11 +274,19 @@ function parseMarkdown(text) {
   }
   // An unterminated fence still renders as code — losing it would hide text.
   if (fence) {
-    blocks.push({ kind: 'code', lang: fence.lang, text: fence.lines.join('\n') });
+    blocks.push({
+      kind: 'code',
+      lang: fence.lang,
+      text: fence.lines.join('\n'),
+      streaming: true,
+      uiFence: isUiFenceLang(fence.lang),
+    });
   }
   flushParagraph();
   flushList();
   return blocks;
 }
 
-export { parseInline, parseMarkdown };
+const parseMarkdownBlocks = parseMarkdown;
+
+export { parseInline, parseMarkdown, parseMarkdownBlocks, isUiFenceLang, normalizeUiLanguage };

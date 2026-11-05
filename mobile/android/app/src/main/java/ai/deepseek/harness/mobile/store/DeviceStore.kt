@@ -7,5 +7,8 @@ interface DeviceStore {
     var draftsJson: String
     var selectedComputer: String
     var nativeMigrationDone: Boolean
+    var catalogCacheJson: String
+        get() = ""
+        set(_) {}
     fun clearLegacyHttpCredentials()
 }

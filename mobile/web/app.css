@@ -1615,6 +1615,45 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 }
 .md-code-copy:hover, .msg-action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
 .md-code-block .md-code { margin: 0; border: 0; border-radius: 0; background: transparent; }
+.whale-ui-card {
+  margin: 0 0 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1); overflow: hidden;
+}
+.whale-ui-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 36px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary);
+  font-size: 12px; line-height: 18px;
+}
+.whale-ui-title {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 500;
+}
+.whale-ui-controls {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+}
+.whale-ui-tabs {
+  display: inline-flex; align-items: center; padding: 2px; border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
+}
+.whale-ui-tab {
+  height: 22px; padding: 0 8px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--dsw-alias-label-tertiary);
+  font-size: 12px; line-height: 18px;
+}
+.whale-ui-tab.is-active {
+  background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+.whale-ui-preview {
+  width: 100%; background: transparent;
+}
+.whale-ui-frame {
+  display: block; width: 100%; min-height: 120px; border: 0; background: transparent;
+}
+.whale-ui-source .md-code {
+  margin: 0; border: 0; border-radius: 0; background: transparent;
+}
 .md-table-wrap { margin: 0 0 8px; max-width: 100%; overflow-x: auto; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; }
 .md-table { border-collapse: collapse; min-width: 100%; font-size: 13px; line-height: 20px; }
 .md-table th, .md-table td {

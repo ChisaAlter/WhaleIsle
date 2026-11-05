@@ -131,6 +131,165 @@ function toolDetailView(detail) {
   };
 }
 
+const WHALE_UI_LANGUAGES = new Set(['whale-ui', 'openui', 'openui-lang', 'dsh-ui']);
+const WHALE_UI_TITLE_RE = /Title\(\s*"([^"]+)"/;
+
+function normalizeWhaleUiLanguage(lang, isSpec = false) {
+  if (typeof lang === 'string') {
+    const cleaned = lang.trim().toLowerCase().replace(/[>`"'.,;:)\]\u3011\u300d\u300f]+$/, '');
+    if (WHALE_UI_LANGUAGES.has(cleaned)) return cleaned;
+  }
+  return isSpec ? 'dsh-ui' : 'whale-ui';
+}
+
+function deriveWhaleUiTitle(program) {
+  if (typeof program !== 'string' || !program) return '';
+  const match = WHALE_UI_TITLE_RE.exec(program);
+  return match ? match[1].trim() : '';
+}
+
+/**
+ * Decode a complete or truncated JSON string field from a raw/streaming JSON object string.
+ * @param {string} raw
+ * @param {string} key
+ * @returns {string|null}
+ */
+function extractPartialJsonString(raw, key) {
+  if (typeof raw !== 'string' || !raw) return null;
+  const pattern = new RegExp(`"${key}"\\s*:\\s*"`);
+  const match = pattern.exec(raw);
+  if (!match) return null;
+  let out = '';
+  let index = match.index + match[0].length;
+  while (index < raw.length) {
+    const ch = raw[index];
+    if (ch === '"') return out;
+    if (ch === '\\') {
+      if (index + 1 >= raw.length) break;
+      const esc = raw[index + 1];
+      if (esc === '"' || esc === '\\' || esc === '/') {
+        out += esc;
+        index += 2;
+      } else if (esc === 'b') {
+        out += '\b';
+        index += 2;
+      } else if (esc === 'f') {
+        out += '\f';
+        index += 2;
+      } else if (esc === 'n') {
+        out += '\n';
+        index += 2;
+      } else if (esc === 'r') {
+        out += '\r';
+        index += 2;
+      } else if (esc === 't') {
+        out += '\t';
+        index += 2;
+      } else if (esc === 'u') {
+        const hex = raw.slice(index + 2, index + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCharCode(parseInt(hex, 16));
+          index += 6;
+        } else {
+          break;
+        }
+      } else {
+        out += esc;
+        index += 2;
+      }
+      continue;
+    }
+    out += ch;
+    index += 1;
+  }
+  return out;
+}
+
+function extractPartialJsonObject(raw, key) {
+  if (typeof raw !== 'string' || !raw) return null;
+  const pattern = new RegExp(`"${key}"\\s*:\\s*\\{`);
+  const match = pattern.exec(raw);
+  if (!match) return null;
+  const start = match.index + match[0].length - 1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return raw.slice(start, i + 1);
+    }
+  }
+  return raw.slice(start);
+}
+
+/**
+ * Extract Whale UI descriptor `{ language, program, title, streaming }` from
+ * a `render_ui` tool call and/or its settled `tool/result` metadata.
+ */
+function extractWhaleUi(call, result = call?.result, streaming = false) {
+  const metaUi = result?.meta?.whaleUi;
+  if (metaUi && typeof metaUi === 'object' && !Array.isArray(metaUi)) {
+    const hasSpec = Boolean(metaUi.spec && typeof metaUi.spec === 'object' && !Array.isArray(metaUi.spec));
+    const program = typeof metaUi.program === 'string'
+      ? metaUi.program
+      : (hasSpec ? JSON.stringify(metaUi.spec) : '');
+    if (program) {
+      return {
+        language: normalizeWhaleUiLanguage(metaUi.language, hasSpec && typeof metaUi.program !== 'string'),
+        program,
+        title: (typeof metaUi.title === 'string' && metaUi.title.trim()) || deriveWhaleUiTitle(program),
+        streaming: false,
+      };
+    }
+  }
+  if (!call || (call.name !== 'render_ui' && !metaUi)) return null;
+  const argsRaw = typeof call.argsRaw === 'string' ? call.argsRaw : '';
+  if (argsRaw) {
+    try {
+      const parsed = JSON.parse(argsRaw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const hasSpec = Boolean(parsed.spec && typeof parsed.spec === 'object' && !Array.isArray(parsed.spec));
+        const program = typeof parsed.program === 'string'
+          ? parsed.program
+          : (hasSpec ? JSON.stringify(parsed.spec) : '');
+        const language = normalizeWhaleUiLanguage(parsed.language, hasSpec && typeof parsed.program !== 'string');
+        const title = (typeof parsed.title === 'string' && parsed.title.trim()) || deriveWhaleUiTitle(program);
+        return { language, program, title, streaming: Boolean(streaming) };
+      }
+    } catch {
+      const partialProgram = extractPartialJsonString(argsRaw, 'program');
+      const partialSpec = partialProgram === null ? extractPartialJsonObject(argsRaw, 'spec') : null;
+      const partialLang = extractPartialJsonString(argsRaw, 'language');
+      const partialTitle = extractPartialJsonString(argsRaw, 'title');
+      const program = partialProgram ?? partialSpec ?? '';
+      return {
+        language: normalizeWhaleUiLanguage(partialLang, partialSpec !== null && partialProgram === null),
+        program,
+        title: (partialTitle && partialTitle.trim()) || deriveWhaleUiTitle(program),
+        streaming: Boolean(streaming),
+      };
+    }
+  }
+  return {
+    language: 'whale-ui',
+    program: '',
+    title: '',
+    streaming: Boolean(streaming),
+  };
+}
+
 function foldTimelineItem(item, entry, fallbackId) {
   if (item.type === 'user_message') {
     return {
@@ -155,14 +314,27 @@ function foldTimelineItem(item, entry, fallbackId) {
     };
   }
   if (item.type === 'tool_call') {
-    return {
+    const name = String(item.name || '');
+    const status = item.status || '';
+    const row = {
       id: String(item.callId || entry.seqStart || fallbackId),
       role: 'tool',
-      text: String(item.name || ''),
-      card: TOOL_STATUS_LABELS[item.status] || item.status || 'tool',
-      status: item.status || '',
+      text: name,
+      card: TOOL_STATUS_LABELS[status] || status || 'tool',
+      status,
       detail: toolDetailView(item.detail),
     };
+    if (name === 'render_ui' || item.whaleUi || item.meta?.whaleUi) {
+      const rawInput = item.arguments ?? item.input ?? item.detail?.input ?? item.detail?.output ?? '';
+      const argsRaw = typeof rawInput === 'string' ? rawInput : (rawInput ? JSON.stringify(rawInput) : '');
+      const metaUi = item.whaleUi || item.meta?.whaleUi;
+      row.whaleUi = extractWhaleUi(
+        { name: 'render_ui', argsRaw },
+        metaUi ? { meta: { whaleUi: metaUi } } : null,
+        status === 'running',
+      );
+    }
+    return row;
   }
   if (item.type === 'error') {
     return {
@@ -202,6 +374,26 @@ function foldTimelineItem(item, entry, fallbackId) {
     };
   }
   if (item.type === 'generative_ui') {
+    const hasSpec = Boolean(item.spec && typeof item.spec === 'object' && !Array.isArray(item.spec));
+    const program = typeof item.program === 'string'
+      ? item.program
+      : (hasSpec ? JSON.stringify(item.spec) : '');
+    if (program) {
+      return {
+        id: String(item.instanceId || entry.seqStart || fallbackId),
+        role: 'tool',
+        text: 'render_ui',
+        card: item.title || 'Whale UI',
+        status: item.streaming === true ? 'running' : 'completed',
+        detail: null,
+        whaleUi: {
+          language: normalizeWhaleUiLanguage(item.language, hasSpec && typeof item.program !== 'string'),
+          program,
+          title: String(item.title || deriveWhaleUiTitle(program) || ''),
+          streaming: item.streaming === true,
+        },
+      };
+    }
     return {
       id: String(entry.seqStart || fallbackId),
       role: 'meta',
@@ -222,7 +414,11 @@ function toolResultOf(data) {
   const content = Array.isArray(block?.content) ? block.content : [];
   const result = { content, isError: block?.isError === true };
   if (data?.error && typeof data.error === 'object') result.error = data.error;
-  if (data?.meta && typeof data.meta === 'object') result.meta = data.meta;
+  const meta = (data?.meta && typeof data.meta === 'object' && data.meta)
+    || (block?.meta && typeof block.meta === 'object' && block.meta)
+    || (data?.result?.meta && typeof data.result.meta === 'object' && data.result.meta)
+    || null;
+  if (meta) result.meta = meta;
   return result;
 }
 
@@ -305,7 +501,7 @@ function foldEvents(entries) {
       flushPartial();
       turnOpen = false;
       for (const row of toolRows.values()) {
-        if (row.turn === turn && row.call.result === null) row.call.interrupted = true;
+        if ((row.turn === turn || row.turn === null) && row.call.result === null) row.call.interrupted = true;
       }
       // A turn that closed in failure paints the desktop's 「本轮运行失败」
       // row; without it the phone shows a bare user bubble and nothing else.
@@ -371,10 +567,23 @@ function foldEvents(entries) {
     if (event.type === 'tool/call') {
       flushPartial();
       const callId = String(data.callId || event.seq);
+      const nextArgsRaw = typeof data.arguments === 'string'
+        ? data.arguments
+        : (data.arguments == null ? '' : JSON.stringify(data.arguments));
+      const existing = toolRows.get(callId);
+      if (existing) {
+        if (typeof data.argumentsDelta === 'string') existing.call.argsRaw += data.argumentsDelta;
+        else if (nextArgsRaw) existing.call.argsRaw = nextArgsRaw;
+        if (data.name) {
+          existing.call.name = String(data.name);
+          existing.text = existing.call.name;
+        }
+        continue;
+      }
       const call = {
         callId,
         name: String(data.name || ''),
-        argsRaw: typeof data.arguments === 'string' ? data.arguments : (data.arguments == null ? '' : JSON.stringify(data.arguments)),
+        argsRaw: typeof data.argumentsDelta === 'string' ? data.argumentsDelta : nextArgsRaw,
         result: null,
         interrupted: false,
         time: event.time,
@@ -400,9 +609,14 @@ function foldEvents(entries) {
       if (row) {
         row.call.result = result;
         row.call.resultTime = event.time;
+        if (!row.call.name && data.message?.source?.name) {
+          row.call.name = String(data.message.source.name);
+          row.text = row.call.name;
+        }
       } else if (callId) {
         // Result whose call scrolled out of the loaded window: still a row.
-        const call = { callId, name: String(data.message?.source?.name || ''), argsRaw: '', result, interrupted: false };
+        const name = String(data.message?.source?.name || (result.meta?.whaleUi ? 'render_ui' : ''));
+        const call = { callId, name, argsRaw: '', result, interrupted: false };
         const orphan = { id: callId, role: 'tool', text: call.name, card: call.name || 'tool', detail: null, call, turn };
         toolRows.set(callId, orphan);
         rows.push(orphan);
@@ -429,7 +643,13 @@ function foldEvents(entries) {
     if (last.role === 'assistant' || last.role === 'reasoning') last.running = true;
   }
   for (const row of rows) {
-    if (row.role === 'tool') row.running = row.call?.result === null && !row.call?.interrupted && turnOpen;
+    if (row.role === 'tool' && row.call) {
+      const unsettled = row.call.result === null && !row.call.interrupted;
+      row.running = unsettled && turnOpen;
+      if (row.call.name === 'render_ui' || row.call.result?.meta?.whaleUi) {
+        row.whaleUi = extractWhaleUi(row.call, row.call.result, unsettled);
+      }
+    }
   }
   return rows;
 }
@@ -437,11 +657,17 @@ function foldEvents(entries) {
 /** Row kinds that make up a turn's process (everything but its final answer). */
 const PROCESS_ROLES = new Set(['reasoning', 'tool', 'assistant', 'meta']);
 
+function isWhaleUiProcessRow(row) {
+  return Boolean(row?.whaleUi) || (row?.role === 'tool' && row?.text === 'render_ui');
+}
+
 /**
  * Group flat rows into what the desktop chat paints: each turn's process
  * (reasoning, tool calls, intermediate replies) folds into one disclosure
  * once the turn has settled with a final answer; while the turn is still
  * running, or when the process is only reasoning, the rows stay inline.
+ * Interactive `render_ui` / Whale UI cards are never hidden inside a collapsed
+ * `turn-process` disclosure.
  *
  * Output entries are either the original rows or
  * `{ role: 'turn-process', id, rows, toolCalls, messages, subagents, running }`.
@@ -477,27 +703,45 @@ function groupTurns(rows, { running = null } = {}) {
       : false;
     const answer = !turnRunning && last.role === 'assistant' ? last : null;
     const process = answer ? group.slice(0, -1) : group;
-    const toolCalls = process.filter((r) => r.role === 'tool').length;
-    const subagents = process.filter((r) => r.role === 'tool' && /^subagent(_|$)/.test(r.text || '')).length;
-    const messages = process.filter((r) => r.role === 'assistant').length;
-    const reasoningOnly = process.length > 0 && process.every((r) => r.role === 'reasoning' || r.role === 'meta');
-    if (!process.length || turnRunning || reasoningOnly) {
-      out.push(...process);
-    } else {
-      out.push({
-        id: `turn-process-${turn}-${process[0].id}`,
-        role: 'turn-process',
-        turn,
-        rows: process,
-        toolCalls: toolCalls - subagents,
-        subagents,
-        messages,
-        running: false,
-      });
+
+    const flushProcessSlice = (slice) => {
+      if (!slice.length) return;
+      const toolCalls = slice.filter((r) => r.role === 'tool').length;
+      const subagents = slice.filter((r) => r.role === 'tool' && /^subagent(_|$)/.test(r.text || '')).length;
+      const messages = slice.filter((r) => r.role === 'assistant').length;
+      const reasoningOnly = slice.every((r) => r.role === 'reasoning' || r.role === 'meta');
+      if (turnRunning || reasoningOnly) {
+        out.push(...slice);
+      } else {
+        out.push({
+          id: `turn-process-${turn}-${slice[0].id}`,
+          role: 'turn-process',
+          turn,
+          rows: slice,
+          toolCalls: toolCalls - subagents,
+          subagents,
+          messages,
+          running: false,
+        });
+      }
+    };
+
+    let currentSlice = [];
+    for (const item of process) {
+      if (isWhaleUiProcessRow(item)) {
+        flushProcessSlice(currentSlice);
+        currentSlice = [];
+        out.push(item);
+      } else {
+        currentSlice.push(item);
+      }
     }
+    flushProcessSlice(currentSlice);
     if (answer) out.push(answer);
   }
   return out;
 }
 
-export { classifyChunk, foldEvents, groupTurns, toolDetailView, toolResultOf };
+const foldHistoryToItems = foldEvents;
+
+export { classifyChunk, extractWhaleUi, foldEvents, foldHistoryToItems, groupTurns, toolDetailView, toolResultOf };

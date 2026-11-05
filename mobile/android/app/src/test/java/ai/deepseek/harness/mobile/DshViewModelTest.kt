@@ -56,6 +56,6 @@ class DshViewModelTest {
     }
     private class FakeStore(
         override var webAppUrl:String="",override var scheme:String="system",override var computersJson:String="[]",
-        override var draftsJson:String="{}",override var selectedComputer:String="",override var nativeMigrationDone:Boolean=false
+        override var draftsJson:String="{}",override var catalogCacheJson:String="{}",override var selectedComputer:String="",override var nativeMigrationDone:Boolean=false
     ):DeviceStore { var legacyClearCalls=0; override fun clearLegacyHttpCredentials() {legacyClearCalls++} }
 }

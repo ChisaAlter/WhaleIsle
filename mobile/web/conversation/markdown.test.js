@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseInline, parseMarkdown } from './markdown.js';
+import { parseInline, parseMarkdown, parseMarkdownBlocks, isUiFenceLang, normalizeUiLanguage } from './markdown.js';
 
 test('parseInline splits code, bold, italic, and safe links', () => {
   assert.deepEqual(parseInline('run `ls` and **read** *this* [doc](https://a.example/x)'), [
@@ -109,6 +109,32 @@ test('fences nested under list items drop the item indentation', () => {
   const blocks = parseMarkdown('- 运行：\n   ```sh\n   npm test\n   ```');
   assert.equal(blocks[1].kind, 'code');
   assert.equal(blocks[1].text, 'npm test');
+});
+
+test('isUiFenceLang recognizes interactive UI program fences, tolerating stray punctuation', () => {
+  for (const lang of ['openui', 'openui-lang', 'whale-ui', 'dsh-ui', 'OpenUI', ' whale-ui ', 'openui>', 'dsh-ui`']) {
+    assert.equal(isUiFenceLang(lang), true, lang);
+  }
+  for (const lang of ['js', 'kotlin', 'sh', '', 'openui-extra', 'dsh-ui-x', null, undefined]) {
+    assert.equal(isUiFenceLang(lang), false, String(lang));
+  }
+});
+
+test('parseMarkdown marks closed and unclosed UI fences with uiFence and streaming flags', () => {
+  const [closed] = parseMarkdown('```openui\nroot = Col([Title("卡片", "xl")])\n```');
+  assert.equal(closed.kind, 'code');
+  assert.equal(closed.lang, 'openui');
+  assert.equal(closed.uiFence, true);
+  assert.equal(closed.streaming, false);
+  assert.ok(isUiFenceLang(closed.lang));
+
+  const [streaming] = parseMarkdownBlocks('```whale-ui>\nroot = Col([\n  Title("实时", "xl")');
+  assert.equal(streaming.kind, 'code');
+  assert.equal(streaming.lang, 'whale-ui>');
+  assert.equal(streaming.uiFence, true);
+  assert.equal(streaming.streaming, true);
+  assert.equal(streaming.text, 'root = Col([\n  Title("实时", "xl")');
+  assert.equal(normalizeUiLanguage(streaming.lang), 'whale-ui');
 });
 
 test('parseMarkdown treats empty input as no blocks', () => {
