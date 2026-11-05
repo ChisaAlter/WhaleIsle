@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { JsonEventStore, TaskRuntime } = require('./task-runtime');
 
-function runtime() {
+function createRuntime() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-proactive-'));
   const store = new JsonEventStore(path.join(directory, 'events.ndjson'));
   return { directory, store, runtime: new TaskRuntime({
@@ -18,7 +18,7 @@ function runtime() {
 }
 
 test('creates a task and projects it into Inbox', () => {
-  const { runtime } = runtime();
+  const { runtime } = createRuntime();
   const task = runtime.createTask({ title: 'Review GitHub issues', autonomy: 2, source: 'github' });
   assert.equal(task.state, 'discovered');
   assert.deepEqual(runtime.listInbox(), [{
@@ -28,7 +28,7 @@ test('creates a task and projects it into Inbox', () => {
 });
 
 test('approval pauses and resumes the exact task', () => {
-  const { runtime } = runtime();
+  const { runtime } = createRuntime();
   const task = runtime.createTask({ title: 'Send report', autonomy: 4 });
   const approval = runtime.requestApproval(task.id, {
     action: 'Send report to the user',
@@ -44,7 +44,7 @@ test('approval pauses and resumes the exact task', () => {
 });
 
 test('replays tasks, approvals and projections after restart', () => {
-  const first = runtime();
+  const first = createRuntime();
   const task = first.runtime.createTask({ title: 'Persist me', autonomy: 3 });
   first.runtime.requestApproval(task.id, { action: 'Run bounded work' });
   const restarted = new TaskRuntime({ store: first.store, idFactory: () => 'restart-id', now: () => '2026-11-05T00:01:00Z' });
@@ -54,7 +54,7 @@ test('replays tasks, approvals and projections after restart', () => {
 });
 
 test('idempotency prevents duplicate transitions', () => {
-  const { runtime } = runtime();
+  const { runtime } = createRuntime();
   const task = runtime.createTask({ title: 'One transition' });
   runtime.transition(task.id, 'queued', { idempotencyKey: 'transition-1' });
   runtime.transition(task.id, 'queued', { idempotencyKey: 'transition-1' });
