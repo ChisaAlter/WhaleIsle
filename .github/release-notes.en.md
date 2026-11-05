@@ -8,6 +8,6 @@
 - **Reorder queued messages**: Drag them, or use the arrow keys, to change the order.
 - **Smoother**: Docks above the composer animate more smoothly, long conversations and the running spinner cost less, idle sessions are released, and the sidebar gets a "Pinned" section at the top.
 - **Mobile web**: Whale UI cards render in a sandbox and can switch between preview and source.
-- **Fixes**: Dark dropdown and light-theme text contrast; Project file links open in the side panel; floating ball placement; the renderer records diagnostics when it hangs.
+- **Fixes**: Dark dropdown and light-theme text contrast; Project file links open in the side panel; floating ball placement; the renderer records diagnostics when it hangs; Project no longer reports finished work as a partial handover, and a member result that goes unread now prompts the coordinator; a settings file saved with a byte order mark is no longer reset.
 
 Windows x64 and macOS Apple Silicon installers are provided (the Mac package is unsigned; right-click and choose Open the first time). Android, WhaleBridge and the ChatGPT plugin are released separately.
