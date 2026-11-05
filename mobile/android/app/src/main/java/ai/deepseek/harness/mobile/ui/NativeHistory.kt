@@ -45,6 +45,64 @@ internal suspend fun resolveHistoryImages(
     }) }
 }
 
+private fun parseJsonObjectOrNull(element: JsonElement?): JsonObject? = when (element) {
+    is JsonObject -> element
+    is JsonPrimitive -> if (element.isString) {
+        try {
+            Json.parseToJsonElement(element.content) as? JsonObject
+        } catch (_: Exception) {
+            null
+        }
+    } else null
+    else -> null
+}
+
+private fun extractWhaleUiFromCall(callId: String, name: String, arguments: JsonElement?, streaming: Boolean): NativeWhaleUiPayload? {
+    if (name != "render_ui") return null
+    val argsObj = parseJsonObjectOrNull(arguments) ?: return null
+    val program = argsObj.string("program").ifBlank { argsObj.string("spec") }.trim()
+    if (program.isBlank()) return null
+    val title = argsObj.string("title").ifBlank { extractWhaleUiTitle(program).orEmpty() }
+    val language = argsObj.string("language").ifBlank { "whale-ui" }
+    return NativeWhaleUiPayload(
+        instanceKey = "tool:$callId",
+        language = language,
+        program = program,
+        title = title,
+        streaming = streaming,
+    )
+}
+
+private fun extractWhaleUiFromMeta(callId: String, metaOwner: JsonObject, fallback: NativeWhaleUiPayload? = null): NativeWhaleUiPayload? {
+    val meta = parseJsonObjectOrNull(metaOwner["meta"])
+        ?: parseJsonObjectOrNull(metaOwner["result"].objectValue()["meta"])
+        ?: metaOwner
+    val whaleUiObj = parseJsonObjectOrNull(meta["whaleUi"]) ?: parseJsonObjectOrNull(metaOwner["whaleUi"])
+    if (whaleUiObj != null) {
+        val program = whaleUiObj.string("program")
+            .ifBlank { whaleUiObj.string("code") }
+            .ifBlank { whaleUiObj.string("spec") }
+            .trim()
+            .ifBlank { fallback?.program.orEmpty() }
+        if (program.isNotBlank()) {
+            val title = whaleUiObj.string("title")
+                .ifBlank { fallback?.title.orEmpty() }
+                .ifBlank { extractWhaleUiTitle(program).orEmpty() }
+            val language = whaleUiObj.string("language").ifBlank { fallback?.language ?: "whale-ui" }
+            return NativeWhaleUiPayload(
+                instanceKey = "tool:$callId",
+                language = language,
+                program = program,
+                title = title,
+                streaming = false,
+            )
+        }
+    }
+    return fallback?.copy(streaming = false)
+}
+
+internal fun buildNativeChatRows(entries: List<JsonObject>): List<NativeRow> = foldNativeHistory(entries)
+
 /** Fold the host's raw events and projected items without discarding loaded pages. */
 internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
     val rows = mutableListOf<NativeRow>()
@@ -53,7 +111,11 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
     var partialSeq = 0L
     var running = false
     fun flush() {
-        partial.forEach { (index, block) -> if (block.second.isNotEmpty()) rows += NativeRow("stream-$partialSeq-$index", block.first, block.second, false) }
+        partial.forEach { (index, block) ->
+            if (block.second.isNotEmpty()) {
+                rows += NativeRow("stream-$partialSeq-$index", block.first, block.second, running && block.first == "assistant")
+            }
+        }
         partial.clear()
     }
     for (entry in entries) {
@@ -70,9 +132,14 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
             when (type) {
                 "user_message", "assistant_message" -> rows += NativeRow(itemId, if (type == "user_message") "user" else "assistant",
                     item.string("text").ifBlank { blocksText(content) }, false, images(content))
-                "tool_call" -> rows += NativeRow(itemId, "tool", item.string("name") + " · " + when(item.string("status")) {
-                    "running" -> "运行中"; "completed" -> "完成"; "failed" -> "失败"; "canceled" -> "已取消"; else -> item.string("status")
-                }, item.string("status") == "running", detail = item["detail"]?.toString().orEmpty())
+                "tool_call" -> {
+                    val isRunning = item.string("status") == "running"
+                    val callWhaleUi = extractWhaleUiFromCall(itemId, item.string("name"), item["arguments"] ?: item["input"], isRunning)
+                    val whaleUi = if (isRunning) callWhaleUi else extractWhaleUiFromMeta(itemId, item, callWhaleUi)
+                    rows += NativeRow(itemId, "tool", item.string("name") + " · " + when(item.string("status")) {
+                        "running" -> "运行中"; "completed" -> "完成"; "failed" -> "失败"; "canceled" -> "已取消"; else -> item.string("status")
+                    }, isRunning, detail = item["detail"]?.toString().orEmpty(), whaleUi = whaleUi)
+                }
                 "reasoning" -> rows += NativeRow(itemId, "reasoning", item.string("text"), false)
                 "error" -> rows += NativeRow(itemId, "error", item.string("message"), false)
                 "todo" -> rows += NativeRow(itemId, "meta", item.objects("items").joinToString("\n") {
@@ -81,7 +148,19 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
                     "${it.string("path")} +${it["additions"].number() ?: 0} -${it["deletions"].number() ?: 0}" },false)
                 "compaction" -> rows += NativeRow(itemId,"meta",when(item.string("status")) {
                     "completed" -> "上下文已压缩"; "failed" -> "上下文压缩失败：${item.string("error")}"; else -> "正在压缩上下文…" },false)
-                "generative_ui" -> rows += NativeRow(itemId,"meta","交互组件「${item.string("title") }」需要在电脑端查看",false)
+                "generative_ui" -> {
+                    val program = item.string("program").ifBlank { item.string("code") }.ifBlank { item.string("spec") }.trim()
+                    val whaleUi = if (program.isNotBlank()) {
+                        NativeWhaleUiPayload(
+                            instanceKey = "gen:$itemId",
+                            language = item.string("language").ifBlank { "whale-ui" },
+                            program = program,
+                            title = item.string("title").ifBlank { extractWhaleUiTitle(program).orEmpty() },
+                            streaming = item.string("status") == "running",
+                        )
+                    } else extractWhaleUiFromMeta(itemId, item)
+                    rows += NativeRow(itemId, "meta", "交互组件「${item.string("title")}」需要在电脑端查看", false, whaleUi = whaleUi)
+                }
                 else -> rows += NativeRow(itemId, "meta", "暂不支持的消息类型：$type", false)
             }
             continue
@@ -99,8 +178,8 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
                 val chunk = data["chunk"]
                 val delta = chunk.objectValue()
                 val type = delta.string("type")
-                val index = delta["index"].number()?.toInt() ?: 0
                 val role = if(type == "reasoning-delta" || type == "reasoning" || delta.string("blockType") == "reasoning") "reasoning" else "assistant"
+                val index = delta["index"].number()?.toInt() ?: if (role == "reasoning") -1 else 0
                 if(type == "block-start") partial.putIfAbsent(index,role to "")
                 else if(type in setOf("", "text", "text-delta", "reasoning", "reasoning-delta")) {
                     val text = if(chunk is JsonPrimitive) chunk.text() else delta.string("text").ifBlank { data.string("text") }
@@ -119,29 +198,61 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
             "tool/call" -> {
                 flush()
                 val callId = data.string("callId").ifBlank { id }
+                val name = data.string("name")
+                val rawArgs = data["arguments"] ?: data["input"]
+                val whaleUi = extractWhaleUiFromCall(callId, name, rawArgs, streaming = true)
                 tools[callId] = rows.size
-                rows += NativeRow(callId, "tool", data.string("name"), true, detail = data["arguments"]?.toString().orEmpty())
+                rows += NativeRow(callId, "tool", name, true, detail = rawArgs?.toString().orEmpty(), whaleUi = whaleUi)
             }
             "tool/result" -> {
                 flush()
                 val message = data["message"].objectValue()
                 val callId = message["source"].objectValue().string("callId").ifBlank { data.string("callId") }
-                val content = message.objects("content").flatMap { if (it.string("type") == "tool-result") it.objects("content") else listOf(it) }
-                val result = blocksText(content)
+                val rawBlocks = message.objects("content")
+                val content = rawBlocks.flatMap { if (it.string("type") == "tool-result") it.objects("content") else listOf(it) }
+                val result = blocksText(content).ifBlank { data.string("output") }
                 val index = tools[callId]
-                if(index != null) rows[index] = rows[index].copy(running = false, detail = rows[index].detail + "\n" + result, images = images(content))
-                else if(callId.isNotBlank()) rows += NativeRow(callId,"tool",message["source"].objectValue().string("name"),false,images = images(content),detail=result)
+                val blockMetaOwner = rawBlocks.firstOrNull { it.containsKey("meta") || it.containsKey("whaleUi") }
+                if(index != null) {
+                    val prev = rows[index]
+                    val resolvedWhaleUi = extractWhaleUiFromMeta(callId, data, null)
+                        ?: extractWhaleUiFromMeta(callId, message, null)
+                        ?: blockMetaOwner?.let { extractWhaleUiFromMeta(callId, it, null) }
+                        ?: prev.whaleUi?.copy(streaming = false)
+                    val combinedDetail = if (prev.detail.isBlank()) result else if (result.isBlank()) prev.detail else prev.detail + "\n" + result
+                    rows[index] = prev.copy(running = false, detail = combinedDetail, images = images(content), whaleUi = resolvedWhaleUi)
+                } else if(callId.isNotBlank()) {
+                    val resolvedWhaleUi = extractWhaleUiFromMeta(callId, data, null)
+                        ?: extractWhaleUiFromMeta(callId, message, null)
+                        ?: blockMetaOwner?.let { extractWhaleUiFromMeta(callId, it, null) }
+                    val toolName = message["source"].objectValue().string("name").ifBlank { data.string("name") }
+                    rows += NativeRow(callId, "tool", toolName, false, images = images(content), detail = result, whaleUi = resolvedWhaleUi)
+                }
             }
             "turn/end", "turn/completed" -> {
                 flush(); running = false
-                for (index in tools.values) rows[index] = rows[index].copy(running = false)
+                for (index in rows.indices) {
+                    val prev = rows[index]
+                    if (prev.running || prev.whaleUi?.streaming == true) {
+                        rows[index] = prev.copy(running = false, whaleUi = prev.whaleUi?.copy(streaming = false))
+                    }
+                }
                 val reason = data["reason"].objectValue()
                 if (reason.string("kind") == "aborted" && reason["reason"].objectValue().string("kind") == "user") rows += NativeRow(id, "meta", "已停止", false)
                 else if (reason.string("kind") in setOf("error", "aborted")) rows += NativeRow(id, "error",
                     reason["error"].objectValue().string("message").ifBlank { reason.string("message").ifBlank { "本轮运行失败" } }, false)
                 else if(reason.string("kind") == "max-tokens") rows += NativeRow(id,"meta","输出达到长度上限",false)
             }
-            "turn/interrupt" -> { flush(); rows += NativeRow(id, "meta", "已停止", false) }
+            "turn/interrupt" -> {
+                flush(); running = false
+                for (index in rows.indices) {
+                    val prev = rows[index]
+                    if (prev.running || prev.whaleUi?.streaming == true) {
+                        rows[index] = prev.copy(running = false, whaleUi = prev.whaleUi?.copy(streaming = false))
+                    }
+                }
+                rows += NativeRow(id, "meta", "已停止", false)
+            }
             "compaction/start" -> { flush(); rows += NativeRow(id,"meta","正在压缩上下文…",false) }
             "compaction/end" -> { flush(); rows += NativeRow(id,"meta","上下文已压缩",false) }
         }

@@ -44,11 +44,27 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets {
+        getByName("main") {
+            assets.srcDir(layout.buildDirectory.dir("generated/whaleUiAssets"))
+        }
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+val syncWhaleUiAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("../../src/renderer/whale-ui")) {
+        include("viewer.html", "build.json", "THIRD_PARTY_NOTICES.txt", "assets/**")
+    }
+    into(layout.buildDirectory.dir("generated/whaleUiAssets/whale-ui"))
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncWhaleUiAssets)
 }
 
 dependencies {

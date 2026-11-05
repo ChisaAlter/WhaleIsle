@@ -10,6 +10,7 @@ import { synchronizeWhaleUiDependencies, whaleUiInstallEnvironment } from './wha
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'src/whale-ui');
 const output = path.join(root, 'src/renderer/whale-ui');
+const mobileOutput = path.join(root, 'mobile/web/whale-ui');
 const guideFile = path.join(root, 'vendor/deepseek-harness/packages/client/ui-chat/src/openui-guide.ts');
 const require = createRequire(import.meta.url);
 
@@ -111,11 +112,22 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
     zod: path.dirname(dependency.resolve('zod/package.json')),
   };
   const shared = { bundle: true, alias: aliases, logLevel: 'warning', jsx: 'automatic', tsconfig: path.join(source, 'tsconfig.json'), loader: { '.woff': 'dataurl', '.woff2': 'dataurl', '.ttf': 'dataurl', '.svg': 'dataurl', '.png': 'dataurl' } };
+  const assets = {
+    'mermaid.js': 'genui/client/asset-mermaid.ts',
+    'three.js': 'genui/client/asset-three.ts',
+    'echarts-core.js': 'genui/client/asset-echarts-core.ts',
+    'echarts-full.js': 'genui/client/asset-echarts.ts',
+    'icons.js': 'genui/client/icons/asset-icons.ts',
+    'standalone-runtime.js': 'genui/client/standalone/runtime.tsx',
+  };
+  const mobileProducts = ['viewer.html', ...Object.keys(assets).map(file => `assets/${file}`)];
   const digest = inputDigest(source);
   const stamp = path.join(output, 'build.json');
   if (!force && !promptOnly && !installed && fs.existsSync(stamp) && fs.existsSync(guideFile)) {
     const record = JSON.parse(fs.readFileSync(stamp, 'utf8'));
-    if (record.digest === digest && record.products?.every(file => fs.existsSync(path.join(output, file)))) return;
+    if (record.digest === digest
+      && record.products?.every(file => fs.existsSync(path.join(output, file)))
+      && mobileProducts.every(file => fs.existsSync(path.join(mobileOutput, file)))) return;
   }
   const guideBundle = await esbuild.build({ ...shared, entryPoints: [path.join(source, 'runtime/guide.ts')], outfile: path.join(root, '.tmp/whale-ui-guide.cjs'), format: 'cjs', platform: 'node', write: false, packages: 'external' });
   // The guide only constructs registry schemas; component browser effects do not execute.
@@ -131,6 +143,7 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
   }
   if (promptOnly) return;
   fs.mkdirSync(path.join(output, 'assets'), { recursive: true });
+  fs.mkdirSync(path.join(mobileOutput, 'assets'), { recursive: true });
   await esbuild.build({ ...shared, entryPoints: [path.join(source, 'runtime/host.ts')], outfile: path.join(output, 'host.cjs'), format: 'cjs', platform: 'node', minify: true, define: { 'process.env.NODE_ENV': '"production"' }, loader: { ...shared.loader, '.css': 'empty' } });
   const worker = fs.readFileSync(dependency.resolve('maplibre-gl/dist/maplibre-gl-worker.mjs'), 'utf8');
   const viewer = await esbuild.build({ ...shared, entryPoints: [path.join(source, 'viewer/index.tsx')], outfile: path.join(output, 'viewer.js'), write: false, format: 'iife', platform: 'browser', target: 'chrome136', minify: true, define: { 'process.env.NODE_ENV': '"production"', __WHALE_MAP_WORKER_SOURCE__: JSON.stringify(worker), 'import.meta.url': '"about:srcdoc"' } });
@@ -138,21 +151,17 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
   const style = viewer.outputFiles.find(file => file.path.endsWith('.css'))?.text ?? '';
   if (!script) throw new Error('Whale UI viewer build produced no script.');
   const { createWhaleDocument } = require(path.join(source, 'viewer/document.cjs'));
-  writeChanged(path.join(output, 'viewer.html'), createWhaleDocument({ script, style }));
-  const assets = {
-    'mermaid.js': 'genui/client/asset-mermaid.ts',
-    'three.js': 'genui/client/asset-three.ts',
-    'echarts-core.js': 'genui/client/asset-echarts-core.ts',
-    'echarts-full.js': 'genui/client/asset-echarts.ts',
-    'icons.js': 'genui/client/icons/asset-icons.ts',
-    'standalone-runtime.js': 'genui/client/standalone/runtime.tsx',
-  };
+  const viewerHtml = createWhaleDocument({ script, style });
+  writeChanged(path.join(output, 'viewer.html'), viewerHtml);
+  writeChanged(path.join(mobileOutput, 'viewer.html'), viewerHtml);
   for (const [filename, entry] of Object.entries(assets)) {
     const result = await esbuild.build({ ...shared, entryPoints: [path.join(source, entry)], outfile: path.join(output, 'assets', filename), write: false, format: 'iife', platform: 'browser', target: 'chrome136', minify: true, define: { 'process.env.NODE_ENV': '"production"' } });
     const js = result.outputFiles.find(file => file.path.endsWith('.js'))?.text;
     const css = result.outputFiles.find(file => file.path.endsWith('.css'))?.text;
     if (!js) throw new Error(`Whale UI engine ${filename} produced no script.`);
-    writeChanged(path.join(output, 'assets', filename), css ? `(function(){const s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})();\n${js}` : js);
+    const assetContent = css ? `(function(){const s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.append(s);})();\n${js}` : js;
+    writeChanged(path.join(output, 'assets', filename), assetContent);
+    writeChanged(path.join(mobileOutput, 'assets', filename), assetContent);
   }
   fs.mkdirSync(path.join(output, 'api'), { recursive: true });
   for (const operation of ['wiki', 'image-search', 'street-route']) {

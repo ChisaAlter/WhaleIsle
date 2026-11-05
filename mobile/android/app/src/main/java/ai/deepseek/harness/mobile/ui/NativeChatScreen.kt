@@ -58,6 +58,46 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal sealed interface DisplayItem {
+    val id: String
+    data class SingleRow(val row: NativeRow) : DisplayItem {
+        override val id: String get() = row.id
+    }
+    data class TurnProcess(val idKey: String, val rows: List<NativeRow>, val running: Boolean) : DisplayItem {
+        override val id: String get() = idKey
+    }
+}
+
+/**
+ * Group intermediate reasoning/tool rows into a TurnProcess item while keeping
+ * any row carrying a Whale UI payload outside TurnProcess as a standalone SingleRow.
+ */
+internal fun groupNativeDisplayItems(rows: List<NativeRow>): List<DisplayItem> {
+    val result = mutableListOf<DisplayItem>()
+    val buffer = mutableListOf<NativeRow>()
+    fun flushBuffer() {
+        if (buffer.isEmpty()) return
+        val firstId = buffer.first().id
+        result += DisplayItem.TurnProcess(
+            idKey = "process-$firstId",
+            rows = buffer.toList(),
+            running = buffer.any { it.running },
+        )
+        buffer.clear()
+    }
+    for (row in rows) {
+        val isCollapsibleProcess = row.whaleUi == null && row.role in setOf("reasoning", "tool")
+        if (isCollapsibleProcess) {
+            buffer += row
+        } else {
+            flushBuffer()
+            result += DisplayItem.SingleRow(row)
+        }
+    }
+    flushBuffer()
+    return result
+}
+
 /** Compose owns conversation state; opening an anchored menu never unmounts the chat. */
 @Composable
 internal fun NativeChatScreen(
@@ -175,6 +215,7 @@ internal fun NativeChatScreen(
     }
     if (picker.isNotBlank()) {
         val chosen = selectedModel
+        val menuInteractive = !state.busy && !state.offline
         NativeAnchoredMenu(anchor = if (picker == "model") modelAnchor else permissionAnchor, viewport = menuViewport,
             title = if (chosen != null) "思考强度" else if (picker == "model") "选择模型" else if (picker == "tools") "输入选项" else "权限",
             onDismiss = ::closePicker,
@@ -183,7 +224,7 @@ internal fun NativeChatScreen(
                 Text(chosen.label, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                 chosen.efforts.forEach { effort ->
                     NativeChoiceRow(effort.label, selected = chosen.provider == state.modelCurrentProvider && chosen.id == state.modelCurrentId && effort.id == state.modelCurrentEffort,
-                        enabled = !state.busy && !state.offline && !state.loading, onClick = {
+                        enabled = menuInteractive, onClick = {
                             onAction(NativeChatAction("model", sessionId, provider = chosen.provider, model = chosen.id, reasoningEffort = effort.id))
                             closePicker()
                         })
@@ -196,17 +237,17 @@ internal fun NativeChatScreen(
                     Text(provider, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
                     models.forEach { model ->
                         NativeChoiceRow(model.label, selected = model.provider == state.modelCurrentProvider && model.id == state.modelCurrentId,
-                            enabled = !state.busy && !state.offline && !state.loading, onClick = {
+                            enabled = menuInteractive, onClick = {
                                 if (model.efforts.isNotEmpty()) { keyboard?.hide(); selectedModel = model }
                                 else { onAction(NativeChatAction("model", sessionId, provider = model.provider, model = model.id)); closePicker() }
                             })
                     }
                 }
             } else {
-                if (picker == "tools" && state.planOn) NativeChoiceRow("关闭 Plan", enabled = !state.busy && !state.offline && !state.loading, onClick = { onAction(NativeChatAction("planOff", sessionId)); closePicker() })
+                if (picker == "tools" && state.planOn) NativeChoiceRow("关闭 Plan", enabled = menuInteractive, onClick = { onAction(NativeChatAction("planOff", sessionId)); closePicker() })
                 if (picker == "tools") Text("权限", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
                 state.permissionOptions.forEach { option ->
-                    NativeChoiceRow(option.label, selected = option.id == state.permissionCurrent, enabled = !state.busy && !state.offline && !state.loading, glyph = NativeGlyph.Shield, onClick = {
+                    NativeChoiceRow(option.label, selected = option.id == state.permissionCurrent, enabled = menuInteractive, glyph = NativeGlyph.Shield, onClick = {
                         onAction(NativeChatAction("permission", sessionId, id = option.id)); closePicker()
                     })
                 }
@@ -320,6 +361,14 @@ internal fun NativePill(label: String, onClick: () -> Unit, primary: Boolean = f
 private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) -> Unit, compactHeight: Boolean) {
     val colors = dsh()
     val preferences = LocalMobilePreferences.current
+    val sendMode = if (state.running && preferences?.runningSendMode == "steer") "steer" else "queue"
+    val sendAssistantPrompt: (String) -> Unit = remember(state.sessionId, sendMode, onAction) {
+        { prompt ->
+            if (prompt.isNotBlank() && state.sessionId.isNotBlank()) {
+                onAction(NativeChatAction("send", state.sessionId, text = prompt, mode = sendMode))
+            }
+        }
+    }
     val rows = state.rows.filter { it.role != "reasoning" || preferences?.showReasoning != false }
     val list = rememberSaveable(state.sessionId, saver = LazyListState.Saver) { LazyListState() }
     val scope = rememberCoroutineScope()
@@ -365,7 +414,9 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
             }
         }
         items(rows, key = { it.id }) { row ->
-            Box(if (row.id == rows.lastOrNull()?.id) Modifier.onSizeChanged { lastSize = it } else Modifier) { NativeMessage(row) }
+            Box(if (row.id == rows.lastOrNull()?.id) Modifier.onSizeChanged { lastSize = it } else Modifier) {
+                NativeMessage(row, sendAssistantPrompt)
+            }
         }
         if (state.queue.isNotEmpty()) item(key = "queue") {
             NativeQueuePanel(state.queue, state.running, !state.offline && !state.loading && !state.busy && state.readOnly.isBlank(), state.banner) { kind, id, text ->
@@ -417,6 +468,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
     LaunchedEffect(draft) { if (fieldValue.text != draft) fieldValue = TextFieldValue(draft, TextRange(draft.length)) }
     val editable = sessionId.isNotBlank() && !state.loading
     val available = editable && !state.offline && !state.busy
+    val controlAvailable = sessionId.isNotBlank() && !state.offline && !state.busy
     fun send() { if (available && state.approval == null && (draft.isNotBlank() || state.attachments.isNotEmpty())) onAction(NativeChatAction("send", sessionId, text = draft, mode = sendMode)) }
     val modelLabel = state.modelOptions.find { it.provider == state.modelCurrentProvider && it.id == state.modelCurrentId }?.label ?: state.model.ifBlank { if (state.loading) "正在同步模型…" else "选择模型" }
     val effortLabel = state.modelOptions.find { it.provider == state.modelCurrentProvider && it.id == state.modelCurrentId }?.efforts?.find { it.id == state.modelCurrentEffort }?.label ?: state.modelCurrentEffort
@@ -472,25 +524,28 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
             }
 
             @Composable fun modelControl(modifier: Modifier) {
-                Row(modifier.nativeMenuAnchor(modelAnchor).heightIn(min = 48.dp).semantics { contentDescription = "选择模型：$modelLabel" + if (effortLabel.isBlank()) "" else " · $effortLabel" }.clip(RoundedCornerShape(14.dp)).clickable(enabled = available && state.modelOptions.isNotEmpty(), role = Role.Button, onClick = onModel).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(modifier.nativeMenuAnchor(modelAnchor).heightIn(min = 48.dp).semantics { contentDescription = "选择模型：$modelLabel" + if (effortLabel.isBlank()) "" else " · $effortLabel" }.clip(RoundedCornerShape(14.dp)).clickable(enabled = controlAvailable, role = Role.Button, onClick = {
+                    if (state.modelOptions.isEmpty()) onAction(NativeChatAction("refresh", sessionId))
+                    else onModel()
+                }).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(modelLabel + if (effortLabel.isBlank()) "" else " · $effortLabel", Modifier.weight(1f), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     NativeIcon(NativeGlyph.Down, tint = colors.labelTertiary)
                 }
             }
             @Composable fun RowScope.actions() {
                 NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = editable && !state.busy)
-                if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = available) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+                if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = controlAvailable) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                 Spacer(Modifier.weight(1f))
-                NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = available && state.permissionOptions.isNotEmpty(), modifier = Modifier.nativeMenuAnchor(permissionAnchor))
-                if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
+                NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = controlAvailable && state.permissionOptions.isNotEmpty(), modifier = Modifier.nativeMenuAnchor(permissionAnchor))
+                if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = controlAvailable, primary = true)
                 NativeIconButton(NativeGlyph.Send, sendLabel, ::send, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
             }
             if (compactHeight) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = editable && !state.busy)
                     modelControl(Modifier.weight(1f))
-                    NativeIconButton(NativeGlyph.More, "权限与 Plan 选项", onTools, enabled = available, modifier = Modifier.nativeMenuAnchor(permissionAnchor))
-                    if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
+                    NativeIconButton(NativeGlyph.More, "权限与 Plan 选项", onTools, enabled = controlAvailable, modifier = Modifier.nativeMenuAnchor(permissionAnchor))
+                    if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = controlAvailable, primary = true)
                     NativeIconButton(NativeGlyph.Send, sendLabel, ::send, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
                 }
             } else if (narrow) {
@@ -500,9 +555,9 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = editable && !state.busy)
                     modelControl(Modifier.weight(1f))
-                    if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = available) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
-                    NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = available && state.permissionOptions.isNotEmpty(), modifier = Modifier.nativeMenuAnchor(permissionAnchor))
-                    if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
+                    if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = controlAvailable) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+                    NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = controlAvailable && state.permissionOptions.isNotEmpty(), modifier = Modifier.nativeMenuAnchor(permissionAnchor))
+                    if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = controlAvailable, primary = true)
                     NativeIconButton(NativeGlyph.Send, sendLabel, ::send, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
                 }
             }
@@ -564,7 +619,7 @@ internal data class NativeChatAction(
 )
 
 @Composable
-private fun NativeMessage(row: NativeRow) {
+private fun NativeMessage(row: NativeRow, onActionPrompt: ((String) -> Unit)? = null) {
     val colors = dsh()
     val preferences = LocalMobilePreferences.current
     val scale = preferences?.messageScale ?: 1f
@@ -575,8 +630,23 @@ private fun NativeMessage(row: NativeRow) {
         if (row.role !in setOf("user", "assistant")) Text(when (row.role) { "tool" -> "工具"; "error" -> "运行失败"; else -> "过程" }, Modifier.padding(start = 8.dp, bottom = 4.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
         Surface(shape = RoundedCornerShape(12.dp), color = background) {
             Column(Modifier.padding(horizontal = if (user) 12.dp else 0.dp, vertical = if (user) 10.dp else 4.dp)) {
-                if (row.role == "assistant") NativeMarkdown(row.text)
-                else SelectionContainer { Text(row.text.ifBlank { if (row.running) "正在思考…" else " " }, color = colors.labelPrimary, fontSize = (14 * scale).sp, lineHeight = (22 * scale).sp) }
+                if (row.role == "assistant") {
+                    NativeMarkdown(
+                        text = row.text,
+                        instanceKey = "md:${row.id}",
+                        streaming = row.running,
+                        onActionPrompt = onActionPrompt,
+                    )
+                } else if (row.whaleUi == null || row.text.isNotBlank()) {
+                    SelectionContainer { Text(row.text.ifBlank { if (row.running) "正在思考…" else " " }, color = colors.labelPrimary, fontSize = (14 * scale).sp, lineHeight = (22 * scale).sp) }
+                }
+                if (row.whaleUi != null) {
+                    NativeWhaleUiCard(
+                        payload = row.whaleUi,
+                        modifier = Modifier.padding(top = if (row.text.isNotBlank()) 6.dp else 0.dp),
+                        onSendAssistantMessage = onActionPrompt,
+                    )
+                }
                 row.images.forEachIndexed { index, image -> NativeImagePreview(image, Modifier.fillMaxWidth().heightIn(max = 280.dp).clickable(enabled = image.data.isNotBlank(), role = Role.Button, onClickLabel = "展开图片") { lightboxIndex = index }) }
                 if (row.detail.isNotBlank()) {
                     var expanded by remember(row.id, preferences?.expandToolDetails) { mutableStateOf(row.role == "tool" && preferences?.expandToolDetails == true) }

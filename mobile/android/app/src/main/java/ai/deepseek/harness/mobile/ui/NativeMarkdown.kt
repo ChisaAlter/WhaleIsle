@@ -49,15 +49,73 @@ import java.util.concurrent.Executors
 internal sealed interface NativeMarkdownPart {
     data class Prose(val document: Document) : NativeMarkdownPart
     data class Code(val text: String) : NativeMarkdownPart
+    data class Ui(
+        val title: String?,
+        val language: String = "whale-ui",
+        val program: String = "",
+        val streaming: Boolean = false,
+        val instanceKey: String = "",
+    ) : NativeMarkdownPart
     data class Grid(val node: TableBlock) : NativeMarkdownPart
     data class Quote(val parts: List<NativeMarkdownPart>) : NativeMarkdownPart
     data class Items(val start: Int?, val delimiter: Char, val items: List<List<NativeMarkdownPart>>) : NativeMarkdownPart
 }
 
+private val UI_FENCE_LANG = Regex("^(openui|openui-lang|whale-ui|dsh-ui)$", RegexOption.IGNORE_CASE)
+private val UI_FENCE_TRAILING = Regex("[>`\"'.,;:)\\]】」』]+$")
+private val UI_FENCE_TITLE = Regex("Title\\(\\s*\"([^\"]+)\"")
+private val FENCE_LINE_REGEX = Regex("^\\s{0,3}(`{3,}|~{3,})(.*)$")
+
+internal fun uiFenceLanguage(info: String?): String? {
+    val raw = info?.substringBefore(' ')?.trim()?.lowercase() ?: return null
+    if (UI_FENCE_LANG.matches(raw)) return raw
+    val stripped = raw.replace(UI_FENCE_TRAILING, "")
+    return if (UI_FENCE_LANG.matches(stripped)) stripped else null
+}
+
+internal fun isWhaleUiFenceLang(lang: String?): Boolean = uiFenceLanguage(lang) != null
+
+/**
+ * Interactive UI programs render as live components via NativeWhaleUiCard.
+ * @param info the fenced code block's info string (language plus optional attrs)
+ */
+internal fun isUiFenceInfo(info: String?): Boolean = uiFenceLanguage(info) != null
+
+internal fun hasUnclosedUiFence(source: String): Boolean {
+    var openChar: Char? = null
+    var openLen = 0
+    var openIsUi = false
+    for (line in source.lineSequence()) {
+        val match = FENCE_LINE_REGEX.matchEntire(line) ?: continue
+        val ticks = match.groupValues[1]
+        val rest = match.groupValues[2]
+        val ch = ticks[0]
+        val len = ticks.length
+        if (openChar == null) {
+            if (ch == '`' && rest.contains('`')) continue
+            openChar = ch
+            openLen = len
+            openIsUi = isUiFenceInfo(rest)
+        } else if (ch == openChar && len >= openLen && rest.isBlank()) {
+            openChar = null
+            openLen = 0
+            openIsUi = false
+        }
+    }
+    return openChar != null && openIsUi
+}
+
 /** Split the parsed AST, retaining resolved links and nested lists/quotes around scrollable blocks. */
-internal fun nativeMarkdownParts(parent: Node): List<NativeMarkdownPart> {
+internal fun nativeMarkdownParts(
+    parent: Node,
+    source: String = "",
+    streaming: Boolean = false,
+    instancePrefix: String = "md-ui",
+): List<NativeMarkdownPart> {
     val result = mutableListOf<NativeMarkdownPart>()
     var prose = Document()
+    var uiCounter = 0
+    val unclosedTail = (streaming || (source.isNotEmpty() && hasUnclosedUiFence(source)))
     fun flush() {
         if (prose.firstChild != null) { result += NativeMarkdownPart.Prose(prose); prose = Document() }
     }
@@ -65,15 +123,38 @@ internal fun nativeMarkdownParts(parent: Node): List<NativeMarkdownPart> {
     while (node != null) {
         val next = node.next
         when (node) {
-            is FencedCodeBlock -> { flush(); result += NativeMarkdownPart.Code(node.literal) }
+            is FencedCodeBlock -> {
+                flush()
+                val uiLang = uiFenceLanguage(node.info)
+                if (uiLang != null) {
+                    val idx = uiCounter++
+                    val isTrailingStreaming = next == null && unclosedTail
+                    val program = node.literal.trimEnd('\r', '\n')
+                    val title = UI_FENCE_TITLE.find(node.literal)?.groupValues?.get(1)
+                    result += NativeMarkdownPart.Ui(
+                        title = title,
+                        language = uiLang,
+                        program = program,
+                        streaming = isTrailingStreaming,
+                        instanceKey = "$instancePrefix-$idx",
+                    )
+                } else {
+                    result += NativeMarkdownPart.Code(node.literal)
+                }
+            }
             is IndentedCodeBlock -> { flush(); result += NativeMarkdownPart.Code(node.literal) }
             is TableBlock -> { flush(); result += NativeMarkdownPart.Grid(node) }
-            is BlockQuote -> { flush(); result += NativeMarkdownPart.Quote(nativeMarkdownParts(node)) }
+            is BlockQuote -> { flush(); result += NativeMarkdownPart.Quote(nativeMarkdownParts(node, instancePrefix = "$instancePrefix-q")) }
             is ListBlock -> {
                 flush()
                 val items = mutableListOf<List<NativeMarkdownPart>>()
                 var item = node.firstChild
-                while (item != null) { val following = item.next; items += nativeMarkdownParts(item); item = following }
+                var itemIdx = 0
+                while (item != null) {
+                    val following = item.next
+                    items += nativeMarkdownParts(item, instancePrefix = "$instancePrefix-i${itemIdx++}")
+                    item = following
+                }
                 result += NativeMarkdownPart.Items((node as? OrderedList)?.startNumber, (node as? OrderedList)?.delimiter ?: '.', items)
             }
             else -> prose.appendChild(node)
@@ -133,7 +214,12 @@ private class NativeMathErrorDrawable(source: String, size: Float, color: Int, w
 }
 
 @Composable
-internal fun NativeMarkdown(text: String) {
+internal fun NativeMarkdown(
+    text: String,
+    instanceKey: String = "md-ui",
+    streaming: Boolean = false,
+    onActionPrompt: ((String) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val colors = dsh()
     val density = LocalDensity.current
@@ -153,8 +239,8 @@ internal fun NativeMarkdown(text: String) {
             .usePlugin(JLatexMathPlugin.create(textSize) { builder ->
                 builder.inlinesEnabled(true).executorService(mathExecutor)
                     .errorHandler { latex, _ ->
-                        val double = source.contains("\u0024\u0024" + latex.trim() + "\u0024\u0024") || source.contains("\u0024\u0024\n" + latex.trim())
-                        val delimiter = if (double) "\u0024\u0024" else "\u0024"
+                        val double = source.contains("$$" + latex.trim() + "$$") || source.contains("$$\n" + latex.trim())
+                        val delimiter = if (double) "$$" else "$"
                         NativeMathErrorDrawable(delimiter + latex.trimEnd() + delimiter, textSize,
                             colors.labelPrimary.toArgb(), context.resources.displayMetrics.widthPixels.coerceAtLeast(1))
                     }
@@ -174,14 +260,24 @@ internal fun NativeMarkdown(text: String) {
                 }
             }).build()
     }
-    val parts = remember(markdown, text) { nativeMarkdownParts(markdown.parse(text)) }
-    NativeMarkdownParts(parts, markdown, colors, lineHeight, scale)
+    val parts = remember(markdown, text, streaming, instanceKey) {
+        nativeMarkdownParts(markdown.parse(text), source = text, streaming = streaming, instancePrefix = instanceKey)
+    }
+    NativeMarkdownParts(parts, markdown, colors, lineHeight, scale, instanceKey, onActionPrompt)
 }
 
 @Composable
-private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markwon, colors: DshPalette, lineHeight: Float, scale: Float) {
+private fun NativeMarkdownParts(
+    parts: List<NativeMarkdownPart>,
+    markdown: Markwon,
+    colors: DshPalette,
+    lineHeight: Float,
+    scale: Float,
+    instanceKey: String = "md-ui",
+    onActionPrompt: ((String) -> Unit)? = null,
+) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        parts.forEach { part -> when (part) {
+        parts.forEachIndexed { idx, part -> when (part) {
             is NativeMarkdownPart.Prose -> {
                 val rendered = remember(markdown, part) { markdown.render(part.document) }
                 AndroidView(modifier = Modifier.fillMaxWidth(), factory = { nativeText(it, colors, lineHeight, scale) }, update = { view ->
@@ -206,6 +302,27 @@ private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markw
                 styleText(view, colors, lineHeight, scale)
                 if (view.text.toString() != part.text) view.text = part.text
             })
+            is NativeMarkdownPart.Ui -> {
+                if (part.program.isNotBlank() || part.streaming) {
+                    NativeWhaleUiCard(
+                        payload = NativeWhaleUiPayload(
+                            instanceKey = part.instanceKey.ifBlank { "$instanceKey-$idx" },
+                            language = part.language,
+                            program = part.program,
+                            title = part.title.orEmpty(),
+                            streaming = part.streaming,
+                        ),
+                        onSendAssistantMessage = onActionPrompt,
+                    )
+                } else {
+                    Row(Modifier.fillMaxWidth().background(colors.bgModule).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        Text(
+                            if (part.title != null) "交互卡片「${part.title}」需要在电脑端查看" else "交互卡片需要在电脑端查看",
+                            color = colors.labelTertiary, fontSize = (13 * scale).sp, lineHeight = (20 * scale).sp,
+                        )
+                    }
+                }
+            }
             is NativeMarkdownPart.Grid -> {
                 val table = remember(markdown, part) { Table.parse(markdown, part.node) }
                 if (table != null) AndroidView(modifier = Modifier.fillMaxWidth(), factory = { context ->
@@ -250,13 +367,13 @@ private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markw
             }
             is NativeMarkdownPart.Quote -> Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Box(Modifier.width(3.dp).fillMaxHeight().background(colors.borderL2))
-                Box(Modifier.weight(1f).padding(start = 10.dp)) { NativeMarkdownParts(part.parts, markdown, colors, lineHeight, scale) }
+                Box(Modifier.weight(1f).padding(start = 10.dp)) { NativeMarkdownParts(part.parts, markdown, colors, lineHeight, scale, "$instanceKey-q$idx", onActionPrompt) }
             }
             is NativeMarkdownPart.Items -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 part.items.forEachIndexed { index, item -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     Text(part.start?.let { "${it + index}${part.delimiter}" } ?: "•", Modifier.widthIn(min = 24.dp).padding(end = 6.dp),
                         color = colors.labelPrimary, fontSize = (14 * scale).sp, lineHeight = (22 * scale).sp)
-                    Box(Modifier.weight(1f)) { NativeMarkdownParts(item, markdown, colors, lineHeight, scale) }
+                    Box(Modifier.weight(1f)) { NativeMarkdownParts(item, markdown, colors, lineHeight, scale, "$instanceKey-i$idx-$index", onActionPrompt) }
                 } }
             }
         } }

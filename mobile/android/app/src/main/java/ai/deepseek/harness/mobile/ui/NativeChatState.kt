@@ -22,7 +22,15 @@ internal data class NativeRow(
     val running: Boolean,
     val images: List<NativeImage> = emptyList(),
     val detail: String = "",
-)
+    val whaleUi: NativeWhaleUiPayload? = null,
+) {
+    val kind: String get() = if (role == "reasoning") "thinking" else role
+    val streaming: Boolean get() = running
+    val status: String get() = if (running) "运行中" else "已完成"
+    val output: String get() = detail
+}
+
+internal typealias NativeChatRow = NativeRow
 
 internal data class NativeImage(val mediaType: String, val data: String, val attachmentId: String = "", val error: String = "")
 internal data class NativeWorkspace(val id: String, val title: String, val path: String)

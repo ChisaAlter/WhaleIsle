@@ -1,8 +1,13 @@
 package ai.deepseek.harness.mobile
 
+import ai.deepseek.harness.mobile.remote.obj
 import ai.deepseek.harness.mobile.ui.NativeInlineMathProcessor
 import ai.deepseek.harness.mobile.ui.NativeMarkdownPart
 import ai.deepseek.harness.mobile.ui.NativeTablePlugin
+import ai.deepseek.harness.mobile.ui.formatWhaleUiAssistantPrompt
+import ai.deepseek.harness.mobile.ui.hasUnclosedUiFence
+import ai.deepseek.harness.mobile.ui.injectWhaleUiBootstrap
+import ai.deepseek.harness.mobile.ui.isWhaleUiFenceLang
 import ai.deepseek.harness.mobile.ui.nativeMarkdownParts
 import io.noties.markwon.ext.latex.JLatexMathNode
 import io.noties.markwon.inlineparser.InlineProcessor
@@ -90,6 +95,60 @@ class NativeMarkdownTest {
         NativeTablePlugin().configureVisitor(builder)
         assertTrue("Native cells use core inline visitors; TablePlugin's TableCell visitor would consume their text",
             consumingVisitors.none { it in setOf(TableCell::class.java, TableBlock::class.java, TableRow::class.java, TableHead::class.java) })
+    }
+
+    @Test fun uiFenceDegradesToPlaceholderPartWhileOrdinaryFencesStayCode() {
+        val source = "前言\n\n```openui\nroot = Col([Title(\"任务监控台\", \"xl\")])\n```\n\n```kotlin\nval x = 1\n```\n\n~~~dsh-ui\n{\"type\":\"Card\"}\n~~~"
+        val parts = nativeMarkdownParts(parser().parse(source), source = source)
+        val ui = parts.filterIsInstance<NativeMarkdownPart.Ui>()
+        assertEquals(2, ui.size)
+        assertEquals("任务监控台", ui[0].title)
+        assertEquals("openui", ui[0].language)
+        assertEquals("root = Col([Title(\"任务监控台\", \"xl\")])", ui[0].program)
+        assertFalse(ui[0].streaming)
+        assertEquals(null, ui[1].title)
+        assertEquals("dsh-ui", ui[1].language)
+        assertEquals("{\"type\":\"Card\"}", ui[1].program)
+        assertFalse(ui[1].streaming)
+        assertEquals(listOf("val x = 1\n"), parts.filterIsInstance<NativeMarkdownPart.Code>().map { it.text })
+        assertEquals("前言", parts.filterIsInstance<NativeMarkdownPart.Prose>()
+            .flatMap { descendants(it.document) }.filterIsInstance<Paragraph>().joinToString("") { descendants(it).filterIsInstance<Text>().joinToString("") { t -> t.literal } })
+    }
+
+    @Test fun unclosedStreamingWhaleUiFenceIsDetectedAndMarkedStreaming() {
+        val streamingSource = "正在为您生成看板：\n\n```whale-ui\nroot = Stack([Title(\"实时指标\"), Text(\"CPU 42%\")])"
+        assertTrue(isWhaleUiFenceLang("whale-ui"))
+        assertTrue(isWhaleUiFenceLang("openui-lang"))
+        assertFalse(isWhaleUiFenceLang("kotlin"))
+        assertTrue(hasUnclosedUiFence(streamingSource))
+        val parts = nativeMarkdownParts(parser().parse(streamingSource), source = streamingSource)
+        val ui = parts.filterIsInstance<NativeMarkdownPart.Ui>().single()
+        assertEquals("whale-ui", ui.language)
+        assertEquals("实时指标", ui.title)
+        assertEquals("root = Stack([Title(\"实时指标\"), Text(\"CPU 42%\")])", ui.program)
+        assertTrue(ui.streaming)
+
+        val closedSource = "$streamingSource\n```"
+        assertFalse(hasUnclosedUiFence(closedSource))
+        val closedUi = nativeMarkdownParts(parser().parse(closedSource), source = closedSource)
+            .filterIsInstance<NativeMarkdownPart.Ui>().single()
+        assertFalse(closedUi.streaming)
+    }
+
+    @Test fun whaleUiHostBridgeAndAssistantActionFormattingFollowProtocolV2() {
+        val prompt = formatWhaleUiAssistantPrompt(
+            message = "提交配置",
+            formState = obj("env" to "prod", "replicas" to 3),
+            context = obj("source" to "deploy-card"),
+        )
+        assertTrue(prompt.contains("提交配置"))
+        assertTrue(prompt.contains("Whale UI form state:\n{\"env\":\"prod\",\"replicas\":3}"))
+        assertTrue(prompt.contains("Whale UI context:\n{\"source\":\"deploy-card\"}"))
+
+        val injected = injectWhaleUiBootstrap("<!doctype html><html><body><script>console.log(1)</script></body></html>", "tool:call-1")
+        assertTrue(injected.contains("window.name = \"whale-ui:\" + instanceId"))
+        assertTrue(injected.contains("AndroidWhaleUiHost.onViewerMessage"))
+        assertTrue(injected.indexOf("window.__dshReceiveFromHost") < injected.indexOf("console.log(1)"))
     }
 
     @Test fun incompleteFencePreservesLiteralTextAndInlineBackticksDoNotCreateScrollableBlocks() {

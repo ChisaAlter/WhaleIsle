@@ -93,6 +93,8 @@ class DshViewModel(
     private var catalogSyncEpoch: Long? = null
     private var refreshingHistory = false
     private var historyDirty = false
+    private var recentMuxActivity = false
+    private var draftSaveJob: Job? = null
     private val imageDrafts = mutableMapOf<String, List<NativeImage>>()
     private data class PendingPrompt(val requestId: String, val text: String, val images: List<NativeImage>, val mode: String)
     private val unconfirmedPrompts = mutableMapOf<String, PendingPrompt>()
@@ -176,6 +178,7 @@ class DshViewModel(
         }
     }
     fun leaveComputer() {
+        if (draftSaveJob?.isActive == true) flushDrafts()
         retireDesktopLogin()
         saveImageDraft()
         cancelGitReview()
@@ -183,7 +186,7 @@ class DshViewModel(
         startupHandled = true; connecting = false; connectionStatus = ""; lastConnectionOffer = null; catalogSyncEpoch = null
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         workspaces = emptyList(); allSessions = emptyList(); history = emptyList(); beforeSeq = null
-        liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); refreshingHistory = false; historyDirty = false
+        liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); refreshingHistory = false; historyDirty = false; recentMuxActivity = false
         desktop.reset()
         chat = NativeChatState(); panel = ""; panelData = obj(); panelBusy = false; route = Route.Connect
     }
@@ -197,9 +200,12 @@ class DshViewModel(
         viewModelScope.launch { computers = readComputers() }
     }
     private fun connect(offer: Offer, saved: SavedComputer?, preserveTasks: Boolean = false) {
+        if (draftSaveJob?.isActive == true) flushDrafts()
         val sameComputer = selectedServer == offer.serverId
         val keepTasks = preserveTasks && sameComputer
         val restoredSession = chat.sessionId.takeIf { sameComputer }.orEmpty()
+        val existingModels = chat.modelOptions.takeIf { sameComputer }.orEmpty()
+        val existingCommands = chat.slashCommands.takeIf { sameComputer }.orEmpty()
         startupHandled = true; lastConnectionOffer = offer
         saveImageDraft()
         cancelGitReview()
@@ -213,9 +219,12 @@ class DshViewModel(
         history = emptyList(); beforeSeq = null
         liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear()
         if (!keepTasks || panel !in RETAINED_TASK_PANELS) { panel = ""; panelData = obj() }
-        panelBusy = false; refreshingHistory = false; historyDirty = false
+        panelBusy = false; refreshingHistory = false; historyDirty = false; recentMuxActivity = false
+        val seededModels = existingModels.ifEmpty { cachedModels(offer.serverId) }
+        val seededCommands = existingCommands.ifEmpty { cachedSlashCommands(offer.serverId) }
         chat = NativeChatState(epoch = generation.toString(), route = "chat", offline = true, loading = true, connLabel = "正在连接电脑…", hostName = saved?.computerName.orEmpty(),
-            sessionId = restoredSession, sessions = if (keepTasks) chat.sessions else emptyList(), draft = draftData.string(draftKey(restoredSession)), attachments = imageDrafts[draftKey(restoredSession)].orEmpty())
+            sessionId = restoredSession, sessions = if (keepTasks) chat.sessions else emptyList(), draft = draftData.string(draftKey(restoredSession)), attachments = imageDrafts[draftKey(restoredSession)].orEmpty(),
+            modelOptions = seededModels, slashCommands = seededCommands)
         error = ""; connecting = !keepTasks; connectionStatus = "正在连接电脑…"
         route = if (keepTasks) Route.Chat else Route.Connect
         connectionJob = viewModelScope.launch {
@@ -322,7 +331,7 @@ class DshViewModel(
             if (epoch == generation) {
                 catalogReady = false
                 if (failConnection) throw failure
-                update { copy(loading = true, error = failure.message ?: "无法同步电脑上的会话") }
+                update { copy(loading = false, error = failure.message ?: "无法同步电脑上的会话") }
             }
         } finally {
             if (catalogSyncEpoch == epoch) catalogSyncEpoch = null
@@ -366,14 +375,95 @@ class DshViewModel(
     }
     internal fun currentSession() = allSessions.find { it.id == chat.sessionId }
     private fun draftKey(sessionId: String) = "$selectedServer/$sessionId"
-    private fun saveDraft(sessionId: String, value: String) {
+    private fun flushDrafts() {
+        draftSaveJob?.cancel()
+        draftSaveJob = null
+        store.draftsJson = draftData.toString()
+    }
+    private fun saveDraft(sessionId: String, value: String, immediate: Boolean = false) {
         val key = draftKey(sessionId)
         draftData = JsonObject(if (value.isEmpty()) draftData - key else draftData + (key to JsonPrimitive(value)))
-        store.draftsJson = draftData.toString()
         if (chat.sessionId == sessionId) update { copy(draft = value) }
+        if (immediate) {
+            flushDrafts()
+        } else {
+            draftSaveJob?.cancel()
+            draftSaveJob = viewModelScope.launch {
+                delay(300)
+                draftSaveJob = null
+                store.draftsJson = draftData.toString()
+            }
+        }
     }
     private fun saveImageDraft() {
         if (chat.sessionId.isNotBlank()) imageDrafts[draftKey(chat.sessionId)] = chat.attachments
+    }
+    private fun readCatalogCache(): JsonObject =
+        runCatching { Json.parseToJsonElement(store.catalogCacheJson.ifBlank { "{}" }).objectValue() }.getOrElse { obj() }
+    private fun cachedModels(serverId: String = selectedServer): List<NativeModelOption> {
+        if (serverId.isBlank()) return emptyList()
+        return readCatalogCache()[serverId].objectValue().objects("models").mapNotNull { item ->
+            val id = item.string("id").ifBlank { item.string("value") }
+            if (id.isBlank()) return@mapNotNull null
+            val provider = item.string("provider")
+            NativeModelOption(
+                provider = provider,
+                id = id,
+                label = item.string("label").ifBlank { id },
+                efforts = item["efforts"].arrayValue().mapNotNull { effort ->
+                    val obj = effort as? JsonObject
+                    val effortId = obj?.string("id")?.ifBlank { obj.string("value") } ?: effort.text()
+                    if (effortId.isBlank()) null else NativeModelEffort(effortId, obj?.string("label")?.ifBlank { effortId } ?: effortId)
+                },
+                supportsImages = (item["supportsImages"] as? JsonPrimitive)?.booleanOrNull,
+                providerLabel = item.string("providerLabel").ifBlank { provider },
+                description = item.string("description"),
+                contextWindow = item["contextWindow"].number(),
+                maxTokens = item["maxTokens"].number(),
+            )
+        }
+    }
+    private fun cachedSelectedModel(serverId: String = selectedServer): JsonObject =
+        if (serverId.isBlank()) obj() else readCatalogCache()[serverId].objectValue()["selected"].objectValue()
+    private fun cachedSlashCommands(serverId: String = selectedServer): List<NativeSlashCommand> {
+        if (serverId.isBlank()) return emptyList()
+        return readCatalogCache()[serverId].objectValue()["slashCommands"].arrayValue().mapNotNull { item ->
+            val obj = item as? JsonObject
+            val name = obj?.string("name") ?: item.text()
+            if (name.isBlank()) null else NativeSlashCommand(name, obj?.string("description").orEmpty(), obj?.string("hint").orEmpty())
+        }
+    }
+    private fun writeCatalogCache(
+        serverId: String = selectedServer,
+        models: List<NativeModelOption>? = null,
+        selected: JsonObject? = null,
+        commands: List<NativeSlashCommand>? = null,
+    ) {
+        if (serverId.isBlank()) return
+        val root = readCatalogCache()
+        val updated = root[serverId].objectValue().toMutableMap()
+        if (models != null) {
+            updated["models"] = JsonArray(models.map { model ->
+                val map = mutableMapOf<String, JsonElement>(
+                    "provider" to JsonPrimitive(model.provider),
+                    "id" to JsonPrimitive(model.id),
+                    "value" to JsonPrimitive(model.id),
+                    "label" to JsonPrimitive(model.label),
+                    "efforts" to JsonArray(model.efforts.map { obj("id" to it.id, "label" to it.label) }),
+                    "providerLabel" to JsonPrimitive(model.providerLabel),
+                    "description" to JsonPrimitive(model.description),
+                )
+                model.supportsImages?.let { map["supportsImages"] = JsonPrimitive(it) }
+                model.contextWindow?.let { map["contextWindow"] = JsonPrimitive(it) }
+                model.maxTokens?.let { map["maxTokens"] = JsonPrimitive(it) }
+                JsonObject(map)
+            })
+        }
+        if (selected != null && selected.isNotEmpty()) updated["selected"] = selected
+        if (commands != null) {
+            updated["slashCommands"] = JsonArray(commands.map { obj("name" to it.name, "description" to it.description, "hint" to it.hint) })
+        }
+        store.catalogCacheJson = JsonObject(root + (serverId to JsonObject(updated))).toString()
     }
     internal fun openSession(id: String, preservePanel: Boolean = false) {
         if (connecting) return
@@ -388,6 +478,7 @@ class DshViewModel(
     }
     private fun prepareSession(id: String, preservePanel: Boolean): Pair<NativeSession?, Long>? {
         if (chat.busy || chat.offline || !catalogReady) return null
+        if (draftSaveJob?.isActive == true) flushDrafts()
         val keepPanel = preservePanel && chat.sessionId == id && panel in RETAINED_TASK_PANELS
         saveImageDraft()
         cancelGitReview()
@@ -397,10 +488,13 @@ class DshViewModel(
         historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); historyImages.clear()
         history = emptyList(); beforeSeq = null
         val session = allSessions.find { it.id == id }
+        val isSubagent = session?.origin == "subagent"
+        val seededModels = if (isSubagent) emptyList() else chat.modelOptions.ifEmpty { cachedModels() }
+        val seededCommands = if (isSubagent) emptyList() else chat.slashCommands.ifEmpty { cachedSlashCommands() }
         update { copy(sessionId = id, title = session?.title ?: "新会话", rows = emptyList(), queue = emptyList(), usage = null, approval = pendingApproval(id),
             hasOlder = false, loading = true, readOnly = if (session?.readOnly == true) "只读会话" else "",
             running = session?.running == true, draft = draftData.string(draftKey(id)), attachments = imageDrafts[draftKey(id)].orEmpty(), error = "",
-            model = "", modelOptions = emptyList(), slashCommands = emptyList(), modelCurrentId = "", modelCurrentProvider = "", modelCurrentEffort = "",
+            model = "", modelOptions = seededModels, slashCommands = seededCommands, modelCurrentId = "", modelCurrentProvider = "", modelCurrentEffort = "",
             permission = "", permissionCurrent = "", permissionOptions = emptyList(), planOn = false, banner = "") }
         return session to revision
     }
@@ -411,26 +505,58 @@ class DshViewModel(
             update { copy(loading = false) }
             return
         }
-        val catalog = connection.host("session.models", obj("sessionId" to id)).objectValue()
-        val commands = connection.host("commands/list", obj("args" to obj("agentId" to id))).arrayValue().map { command ->
-            val item = command.objectValue()
-            NativeSlashCommand(item.string("name"), item.string("description"), item["input"].objectValue().string("hint"))
+        update {
+            copy(
+                loading = false,
+                modelOptions = modelOptions.ifEmpty { cachedModels() },
+                slashCommands = slashCommands.ifEmpty { cachedSlashCommands() },
+            )
+        }
+        val modelsResult = runCatching {
+            connection.host("session.models", obj("sessionId" to id)).objectValue()
+        }.onFailure { failure ->
+            if (failure is CancellationException && failure !is TimeoutCancellationException) throw failure
+        }
+        val commandsResult = runCatching {
+            connection.host("commands/list", obj("args" to obj("agentId" to id))).arrayValue().map { command ->
+                val item = command.objectValue()
+                NativeSlashCommand(item.string("name"), item.string("description"), item["input"].objectValue().string("hint"))
+            }
+        }.onFailure { failure ->
+            if (failure is CancellationException && failure !is TimeoutCancellationException) throw failure
         }
         if (epoch != generation || chat.sessionId != id || sessionRevision != revision) return
-        val routable = catalog["routableProviders"]?.arrayValue()?.map { it.text() }?.toSet()
-        val models = catalog.objects("groups").flatMap { group ->
-            if (routable != null && group.string("id") !in routable) emptyList() else group.objects("models").map { model ->
-                NativeModelOption(group.string("id"), model.string("id"), model.string("name").ifBlank { model.string("id") },
-                    model["reasoning"].objectValue().objects("efforts").map { NativeModelEffort(it.string("id"), it.string("name").ifBlank { it.string("id") }) },
-                    (model["inputModalities"] as? JsonArray)?.any { it.text() == "image" },
-                    providerLabel = group.string("name").ifBlank { group.string("id") }, description = model.string("description"),
-                    contextWindow = model["contextWindow"].number(), maxTokens = model["maxTokens"].number())
+        modelsResult.onSuccess { catalog ->
+            val routable = catalog["routableProviders"]?.arrayValue()?.map { it.text() }?.toSet()
+            val models = catalog.objects("groups").flatMap { group ->
+                if (routable != null && group.string("id") !in routable) emptyList() else group.objects("models").map { model ->
+                    NativeModelOption(group.string("id"), model.string("id"), model.string("name").ifBlank { model.string("id") },
+                        model["reasoning"].objectValue().objects("efforts").map { NativeModelEffort(it.string("id"), it.string("name").ifBlank { it.string("id") }) },
+                        (model["inputModalities"] as? JsonArray)?.any { it.text() == "image" },
+                        providerLabel = group.string("name").ifBlank { group.string("id") }, description = model.string("description"),
+                        contextWindow = model["contextWindow"].number(), maxTokens = model["maxTokens"].number())
+                }
             }
+            val selected = if (chat.modelCurrentId.isNotBlank()) obj("provider" to chat.modelCurrentProvider, "model" to chat.modelCurrentId,
+                "reasoningEffort" to chat.modelCurrentEffort) else (catalog["current"] ?: catalog["default"]).objectValue()
+            writeCatalogCache(models = models, selected = selected)
+            update { copy(modelOptions = models, modelCurrentProvider = selected.string("provider"), modelCurrentId = selected.string("model"),
+                modelCurrentEffort = selected.string("reasoningEffort"), model = selected.string("model")) }
+        }.onFailure {
+            val fallbackModels = chat.modelOptions.ifEmpty { cachedModels() }
+            val cachedSel = cachedSelectedModel()
+            val resolvedProvider = chat.modelCurrentProvider.ifBlank { cachedSel.string("provider").ifBlank { fallbackModels.firstOrNull()?.provider.orEmpty() } }
+            val resolvedModelId = chat.modelCurrentId.ifBlank { cachedSel.string("model").ifBlank { fallbackModels.firstOrNull()?.id.orEmpty() } }
+            val resolvedEffort = if (chat.modelCurrentId.isNotBlank()) chat.modelCurrentEffort else cachedSel.string("reasoningEffort")
+            update { copy(modelOptions = fallbackModels, modelCurrentProvider = resolvedProvider, modelCurrentId = resolvedModelId,
+                modelCurrentEffort = resolvedEffort, model = resolvedModelId) }
         }
-        val selected = if (chat.modelCurrentId.isNotBlank()) obj("provider" to chat.modelCurrentProvider, "model" to chat.modelCurrentId,
-            "reasoningEffort" to chat.modelCurrentEffort) else (catalog["current"] ?: catalog["default"]).objectValue()
-        update { copy(loading = false, modelOptions = models, slashCommands = commands, modelCurrentProvider = selected.string("provider"), modelCurrentId = selected.string("model"),
-            modelCurrentEffort = selected.string("reasoningEffort"), model = selected.string("model")) }
+        commandsResult.onSuccess { commands ->
+            writeCatalogCache(commands = commands)
+            update { copy(slashCommands = commands) }
+        }.onFailure {
+            update { copy(slashCommands = slashCommands.ifEmpty { cachedSlashCommands() }) }
+        }
     }
     private suspend fun loadHistory(connection: RelayClient, epoch: Long, id: String, older: Boolean = false) {
         val revision = sessionRevision
@@ -513,7 +639,33 @@ class DshViewModel(
             ?: liveApprovals.entries.firstOrNull { it.key.first == id && it.key !in resolvedApprovals }?.value
         return pending?.let { if (it.rpcId.isBlank()) it.copy(error = "正在同步审批连接，稍后重试") else it }
     }
+    private fun normalizeStreamEvent(message: JsonObject): JsonObject {
+        val type = message.string("type")
+        val data = message["data"].objectValue()
+        return when (type) {
+            "assistant/delta", "thinking/delta" -> {
+                val chunk = data["chunk"] ?: obj(
+                    "type" to if (type == "thinking/delta") "reasoning-delta" else "text-delta",
+                    "text" to data.string("text").ifBlank { data.string("delta").ifBlank { message.string("text").ifBlank { message.string("delta") } } },
+                )
+                JsonObject(message + ("type" to JsonPrimitive("assistant/chunk")) + ("data" to JsonObject(data + ("chunk" to chunk))))
+            }
+            "tool/result" -> {
+                if (data["message"] is JsonObject) message
+                else {
+                    val callId = data.string("callId").ifBlank { message.string("callId").ifBlank { data.string("id") } }
+                    val name = data.string("name").ifBlank { message.string("name").ifBlank { "tool" } }
+                    val text = data.string("text").ifBlank { data.string("output").ifBlank { message.string("text") } }
+                    val content = (data["content"] as? JsonArray) ?: JsonArray(listOf(obj("type" to "text", "text" to text)))
+                    val synth = obj("source" to obj("callId" to callId, "name" to name), "content" to content)
+                    JsonObject(message + ("data" to JsonObject(data + ("callId" to JsonPrimitive(callId)) + ("message" to synth))))
+                }
+            }
+            else -> message
+        }
+    }
     private fun onMux(payload: JsonObject) {
+        recentMuxActivity = true
         val envelope = payload["envelope"].objectValue()
         val event = (envelope["payload"] ?: envelope).objectValue()
         val type = event.string("type")
@@ -544,15 +696,28 @@ class DshViewModel(
         when (type) {
             "host/session-status", "session/running" -> { update { copy(running = event["running"].flag()) }; refreshHistory() }
             "session/event" -> {
-                val message = event["event"].objectValue()
-                val entry = obj("event" to message)
-                if (history.none { historySeq(it) == historySeq(entry) }) {
-                    history = history + entry
-                    update { copy(rows = nativeHistoryRows(), running = when (message.string("type")) {
-                        "turn/start" -> true; "turn/end" -> false; else -> running
-                    }) }
+                val rawMessage = event["event"] as? JsonObject
+                if (rawMessage == null || rawMessage.isEmpty()) {
+                    refreshHistory()
+                    return
                 }
-                refreshHistory()
+                val eventType = rawMessage.string("type")
+                val message = normalizeStreamEvent(rawMessage)
+                val entry = obj("event" to message)
+                val seq = historySeq(entry)
+                if (seq == null || history.none { historySeq(it) == seq }) {
+                    history = history + entry
+                    update { copy(
+                        rows = nativeHistoryRows(),
+                        approval = pendingApproval(owner),
+                        running = when (eventType) {
+                            "turn/start", "turn/started" -> true
+                            "turn/end", "turn/completed", "turn/error", "turn/interrupt" -> false
+                            else -> running
+                        },
+                    ) }
+                }
+                if (eventType in TERMINAL_OR_INTERACTIVE_SESSION_EVENTS) refreshHistory()
             }
             else -> refreshHistory()
         }
@@ -568,7 +733,16 @@ class DshViewModel(
     }
     private fun startPoll() {
         pollJob?.cancel(); if (!foreground) return
-        pollJob = viewModelScope.launch { while (isActive) { delay(1_500); if (client?.connected == true && (chat.running || chat.approval != null || chat.queue.isNotEmpty())) refreshHistory() } }
+        pollJob = viewModelScope.launch {
+            while (isActive) {
+                delay(4_000)
+                if (recentMuxActivity) {
+                    recentMuxActivity = false
+                    continue
+                }
+                if (client?.connected == true && (chat.running || chat.approval != null || chat.queue.isNotEmpty())) refreshHistory()
+            }
+        }
     }
     fun onForeground() {
         foreground = true
@@ -589,7 +763,7 @@ class DshViewModel(
             if (epoch == generation) startPoll()
         }
     }
-    fun onBackground() { foreground = false; pollJob?.cancel() }
+    fun onBackground() { if (draftSaveJob?.isActive == true) flushDrafts(); foreground = false; pollJob?.cancel() }
     fun onNetworkAvailable() { if (foreground && reconnectEnabled && route == Route.Chat && connectionJob?.isActive != true && client?.connected != true) onForeground() }
     internal fun onChatAction(request: NativeChatAction) {
         if (request.type == "draft") { if (request.sessionId == chat.sessionId && chat.readOnly.isBlank()) saveDraft(request.sessionId, request.text); return }
@@ -626,7 +800,7 @@ class DshViewModel(
                             if (unconfirmedPrompts[owner] === pending) unconfirmedPrompts.remove(owner)
                         }
                         if (epoch == generation && chat.sessionId == id) {
-                            if (chat.draft == submitted) saveDraft(id, "")
+                            if (chat.draft == submitted) saveDraft(id, "", immediate = true)
                             imageDrafts.remove(draftKey(id)); update { copy(attachments = emptyList(), running = true) }; loadHistory(connection, epoch, id)
                         }
                     }
@@ -866,9 +1040,14 @@ class DshViewModel(
         computers = readComputers()
         if (route == Route.Connect && computers.isNotEmpty()) reopenComputer()
     }
-    override fun onCleared() { retireDesktopLogin(); desktop.reset(); client?.close(); super.onCleared() }
+    override fun onCleared() { if (draftSaveJob?.isActive == true) flushDrafts(); retireDesktopLogin(); desktop.reset(); client?.close(); super.onCleared() }
     companion object {
         private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse", "desktop")
+        private val TERMINAL_OR_INTERACTIVE_SESSION_EVENTS = setOf(
+            "turn/end", "turn/completed", "turn/error", "turn/interrupt",
+            "approval/asked", "approval/decided", "approval/requested", "approval/resolved",
+            "question/asked", "question/decided", "question/requested", "question/resolved",
+        )
         internal val PERMISSIONS = listOf(NativePermissionOption("read-only", "仅可查看"),
             NativePermissionOption("workspace-write", "可写入工作区"), NativePermissionOption("danger-full-access", "完全权限"))
     }

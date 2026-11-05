@@ -84,7 +84,7 @@ class DshViewModelRemoteTest {
     }
 
     @Test fun initialFailuresAtEveryRemoteStageBelongToConnectAndDoNotAutomaticallyRetry() = remoteTest {
-        for (stage in listOf("connect", "subscribe", "session.list", "workspace.list", "session.history", "session.projections", "session.models", "commands/list")) {
+        for (stage in listOf("connect", "subscribe", "session.list", "workspace.list", "session.history", "session.projections")) {
             val (vm, clients) = model { _, relay ->
                 when (stage) {
                     "connect" -> relay.connectFailure = IllegalStateException("failed $stage")
@@ -236,7 +236,7 @@ class DshViewModelRemoteTest {
         vm.onChatAction(NativeChatAction("draft", "s2", text = "second offline draft"))
         vm.onChatAction(NativeChatAction("draft", "s1", text = "offline late overwrite"))
         vm.addImage("computer", "s1", NativeImage("image/png", "offline late-image"))
-        runCurrent()
+        advanceTimeBy(300); runCurrent()
         assertEquals(calls, clients.single().hostCalls.size)
         assertEquals("s2", vm.chat.sessionId)
         assertEquals("second offline draft", vm.chat.draft)
@@ -593,7 +593,7 @@ class DshViewModelRemoteTest {
             val catalog = CompletableDeferred<Unit>()
             val controls = CompletableDeferred<Unit>()
             val (vm, clients) = model { index, relay ->
-                if (index == 1) { relay.catalogGate = catalog; relay.modelGate = controls }
+                if (index == 1) { relay.catalogGate = catalog; relay.historyGates["s1"] = controls }
             }
             vm.reopenComputer(); runCurrent()
             vm.panel = "new"; vm.browse(); runCurrent()
@@ -635,7 +635,7 @@ class DshViewModelRemoteTest {
         clients[0].disconnect(IllegalStateException("network lost")); runCurrent()
         advanceTimeBy(1_000); runCurrent()
         assertFalse(vm.chat.offline)
-        assertTrue(vm.chat.loading)
+        assertFalse(vm.chat.loading)
         assertTrue(vm.chat.error.contains("catalog unavailable"))
         val failedCalls = clients[1].hostCalls.size
         val failedError = vm.chat.error
@@ -648,9 +648,9 @@ class DshViewModelRemoteTest {
         assertEquals("browse", vm.panel)
         assertEquals(snapshot, vm.panelData)
         assertEquals(failedError, vm.chat.error)
-        assertTrue(vm.chat.loading)
+        assertFalse(vm.chat.loading)
         clients[1].emitProjection("s1"); runCurrent()
-        assertTrue(vm.chat.loading)
+        assertFalse(vm.chat.loading)
         assertTrue(vm.chat.error.contains("catalog unavailable"))
         vm.onForeground(); runCurrent()
         assertFalse(vm.chat.loading)
@@ -792,11 +792,8 @@ class DshViewModelRemoteTest {
         historyReady.complete(Unit); runCurrent()
         assertEquals("read-only", vm.chat.permissionCurrent)
         assertFalse(vm.chat.planOn)
-        assertTrue(vm.chat.loading)
+        assertFalse(vm.chat.loading)
         modelsReady.complete(Unit); runCurrent()
-        assertTrue(vm.chat.loading)
-        vm.onChatAction(NativeChatAction("permission", "s2", id = "danger-full-access")); runCurrent()
-        assertTrue(relay.hostCalls.none { it.first == "commands/execute" })
         commandsReady.complete(Unit); runCurrent()
         assertFalse(vm.chat.loading)
         assertEquals("read-only", vm.chat.permissionCurrent)
@@ -1112,6 +1109,128 @@ class DshViewModelRemoteTest {
         assertEquals("with picture", vm.chat.draft)
     }
 
+    @Test fun controlRpcFailuresStillFinishSessionLoadAndPreserveCachedModelsAndCommands() = remoteTest {
+        val store = FakeStore()
+        val (firstVm, _) = model(store) { _, relay ->
+            relay.modelCatalog = obj(
+                "current" to obj("provider" to "deepseek", "model" to "deepseek-chat", "reasoningEffort" to "medium"),
+                "groups" to listOf(obj("id" to "deepseek", "name" to "DeepSeek", "models" to listOf(
+                    obj("id" to "deepseek-chat", "name" to "DeepSeek Chat", "reasoning" to obj("efforts" to listOf(obj("id" to "medium", "name" to "Medium"))))
+                ))),
+            )
+            relay.commandsCatalog = listOf(obj("name" to "compact", "description" to "Compact context", "input" to obj("hint" to "[focus]")))
+        }
+        firstVm.reopenComputer(); runCurrent()
+        assertEquals(Route.Chat, firstVm.route)
+        assertFalse(firstVm.chat.loading)
+        assertEquals("deepseek-chat", firstVm.chat.modelCurrentId)
+        assertEquals(listOf("deepseek-chat"), firstVm.chat.modelOptions.map { it.id })
+        assertEquals(listOf("compact"), firstVm.chat.slashCommands.map { it.name })
+        assertTrue(store.catalogCacheJson.contains("deepseek-chat"))
+        assertTrue(store.catalogCacheJson.contains("compact"))
+        firstVm.leaveComputer()
+
+        val (secondVm, secondClients) = model(store) { _, relay ->
+            relay.histories["s1"] = listOf(obj("event" to obj("seq" to 1, "type" to "user/message", "data" to obj("id" to "m1", "source" to obj("kind" to "user"),
+                "content" to listOf(obj("type" to "text", "text" to "loaded despite control failures"))))))
+            relay.histories["s2"] = listOf(obj("event" to obj("seq" to 1, "type" to "user/message", "data" to obj("id" to "m2", "source" to obj("kind" to "user"),
+                "content" to listOf(obj("type" to "text", "text" to "s2 history"))))))
+            relay.hostFailures["session.models"] = IllegalStateException("models rpc failed")
+            relay.hostFailures["commands/list"] = IllegalStateException("commands rpc failed")
+        }
+        secondVm.reopenComputer()
+        assertEquals(listOf("deepseek-chat"), secondVm.chat.modelOptions.map { it.id })
+        assertEquals(listOf("compact"), secondVm.chat.slashCommands.map { it.name })
+        runCurrent()
+        assertEquals(Route.Chat, secondVm.route)
+        assertFalse(secondVm.chat.loading)
+        assertTrue(secondVm.chat.error.isEmpty())
+        assertEquals("loaded despite control failures", secondVm.chat.rows.single().text)
+        assertEquals(listOf("deepseek-chat"), secondVm.chat.modelOptions.map { it.id })
+        assertEquals("deepseek-chat", secondVm.chat.modelCurrentId)
+        assertEquals("deepseek", secondVm.chat.modelCurrentProvider)
+        assertEquals("medium", secondVm.chat.modelCurrentEffort)
+        assertEquals(listOf("compact"), secondVm.chat.slashCommands.map { it.name })
+
+        secondVm.openSession("s2"); runCurrent()
+        assertFalse(secondVm.chat.loading)
+        assertTrue(secondVm.chat.error.isEmpty())
+        assertEquals("s2 history", secondVm.chat.rows.single().text)
+        assertEquals(listOf("deepseek-chat"), secondVm.chat.modelOptions.map { it.id })
+        assertEquals("deepseek-chat", secondVm.chat.modelCurrentId)
+        assertEquals(listOf("compact"), secondVm.chat.slashCommands.map { it.name })
+        assertEquals(2, secondClients.single().hostCalls.count { it.first == "session.models" })
+        assertEquals(2, secondClients.single().hostCalls.count { it.first == "commands/list" })
+    }
+
+    @Test fun streamingSessionEventsUpdateRowsInMemoryWithoutRpcStormAndSyncOnTurnEnd() = remoteTest {
+        val (vm, clients) = model()
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        val historyCallsAfterOpen = relay.hostCalls.count { it.first == "session.history" }
+
+        relay.emitSessionEvent("s1", obj("seq" to 1, "type" to "turn/start", "data" to obj()))
+        relay.emitSessionEvent("s1", obj("seq" to 2, "type" to "thinking/delta", "data" to obj("text" to "thinking step 1")))
+        relay.emitSessionEvent("s1", obj("seq" to 3, "type" to "assistant/delta", "data" to obj("text" to "Hello ")))
+        relay.emitSessionEvent("s1", obj("seq" to 4, "type" to "assistant/delta", "data" to obj("text" to "world!")))
+        relay.emitSessionEvent("s1", obj("seq" to 5, "type" to "tool/call", "data" to obj(
+            "callId" to "call-1", "name" to "bash", "input" to obj("command" to "echo hi")
+        )))
+        relay.emitSessionEvent("s1", obj("seq" to 6, "type" to "tool/result", "data" to obj(
+            "callId" to "call-1", "name" to "bash", "output" to "hi"
+        )))
+        runCurrent()
+
+        assertEquals(historyCallsAfterOpen, relay.hostCalls.count { it.first == "session.history" })
+        assertTrue(vm.chat.running)
+        assertTrue(vm.chat.rows.any { it.kind == "assistant" && it.text == "Hello world!" && it.streaming })
+        assertTrue(vm.chat.rows.any { it.kind == "thinking" && it.text.contains("thinking step 1") })
+        assertTrue(vm.chat.rows.any { it.kind == "tool" && it.status == "已完成" && it.output.contains("hi") })
+
+        // First 4s poll tick skips refreshHistory because recentMuxActivity was set by streaming events.
+        advanceTimeBy(4_000); runCurrent()
+        assertEquals(historyCallsAfterOpen, relay.hostCalls.count { it.first == "session.history" })
+
+        // Terminal turn/end event triggers authoritative refreshHistory.
+        relay.histories["s1"] = listOf(
+            obj("event" to obj("seq" to 1, "type" to "turn/start", "data" to obj())),
+            obj("event" to obj("seq" to 7, "type" to "assistant/message", "data" to obj("id" to "final",
+                "message" to obj("content" to listOf(obj("type" to "text", "text" to "Hello world!")))))),
+            obj("event" to obj("seq" to 8, "type" to "turn/end", "data" to obj())),
+        )
+        relay.emitSessionEvent("s1", obj("seq" to 8, "type" to "turn/end", "data" to obj()))
+        runCurrent()
+        assertEquals(historyCallsAfterOpen + 1, relay.hostCalls.count { it.first == "session.history" })
+        assertFalse(vm.chat.running)
+    }
+
+    @Test fun saveDraftUpdatesStateImmediatelyDebouncesStoreWritesAndFlushesOnSend() = remoteTest {
+        val store = FakeStore()
+        val (vm, _) = model(store)
+        vm.reopenComputer(); runCurrent()
+
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "h"))
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "he"))
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "hello"))
+        runCurrent()
+        assertEquals("hello", vm.chat.draft)
+        assertEquals("{}", store.draftsJson)
+
+        advanceTimeBy(299); runCurrent()
+        assertEquals("{}", store.draftsJson)
+
+        advanceTimeBy(1); runCurrent()
+        assertEquals("hello", Json.parseToJsonElement(store.draftsJson).objectValue().string("computer/s1"))
+
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "send immediately"))
+        runCurrent()
+        assertEquals("hello", Json.parseToJsonElement(store.draftsJson).objectValue().string("computer/s1"))
+
+        vm.onChatAction(NativeChatAction("send", "s1", text = "send immediately")); runCurrent()
+        assertEquals("", vm.chat.draft)
+        assertEquals("", Json.parseToJsonElement(store.draftsJson).objectValue().string("computer/s1"))
+    }
+
     private class FakeRelay(
         val usedOffer: Offer,
         credential: SavedComputer?,
@@ -1130,6 +1249,7 @@ class DshViewModelRemoteTest {
         var modelGate: CompletableDeferred<Unit>? = null
         var modelCatalog = obj("groups" to emptyList<JsonObject>())
         var commandsGate: CompletableDeferred<Unit>? = null
+        var commandsCatalog: List<JsonObject> = emptyList()
         var subscriptions = 0
         var subscribeFailure: Throwable? = null
         val hostFailures = mutableMapOf<String, Throwable>()
@@ -1181,7 +1301,7 @@ class DshViewModelRemoteTest {
                 "session.projections" -> obj("values" to (projections[payload.string("sessionId")] ?: obj()))
                 "session.updateQueue" -> queueReply(payload)
                 "session.models" -> { modelGate?.await(); modelCatalog }
-                "commands/list" -> { commandsGate?.await(); JsonArray(emptyList()) }
+                "commands/list" -> { commandsGate?.await(); JsonArray(commandsCatalog) }
                 "host.listDirectory" -> obj("path" to "C:/new", "entries" to emptyList<JsonObject>())
                 "workspace.create" -> obj("workspace" to obj("workspaceId" to "new-workspace"))
                 "session.attachment" -> attachmentReply(payload.string("attachmentId"))
@@ -1198,10 +1318,11 @@ class DshViewModelRemoteTest {
             obj("type" to "approval/requested", "sessionId" to session, "approvalId" to id, "toolName" to "pwsh", "reason" to "test request"))))
         fun emitResolved(session: String, id: String) = mux(obj("envelope" to obj("payload" to obj("type" to "approval/resolved", "sessionId" to session, "approvalId" to id))))
         fun emitProjection(session: String) = mux(obj("envelope" to obj("payload" to obj("type" to "session/projection", "sessionId" to session, "key" to "modelSelection"))))
+        fun emitSessionEvent(session: String, event: JsonObject) = mux(obj("envelope" to obj("payload" to obj("type" to "session/event", "sessionId" to session, "event" to event))))
     }
     private class FakeStore(
         override var webAppUrl: String = "", override var scheme: String = "system", override var computersJson: String = Json.encodeToString(listOf(saved())),
-        override var draftsJson: String = "{}", override var selectedComputer: String = "computer", override var nativeMigrationDone: Boolean = true,
+        override var draftsJson: String = "{}", override var catalogCacheJson: String = "{}", override var selectedComputer: String = "computer", override var nativeMigrationDone: Boolean = true,
     ) : DeviceStore { override fun clearLegacyHttpCredentials() {} }
     companion object {
         private val KEY = Base64.getEncoder().encodeToString(ByteArray(32) { (it + 1).toByte() })
