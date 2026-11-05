@@ -116,3 +116,16 @@ test('missing, unreadable and corrupt files never reuse a previous good cache', 
   saveConfig({ theme: 'midnight' });
   assert.equal(loadConfig().theme, 'midnight');
 });
+
+test('a settings file saved with a UTF-8 byte order mark is read, not set aside as corrupt', () => {
+  const settings = writeSettings({ closeToTray: false, locale: 'en' });
+  fs.writeFileSync(configPath(), `\uFEFF${JSON.stringify(settings)}`);
+  assert.deepEqual([...fs.readFileSync(configPath()).subarray(0, 3)], [0xEF, 0xBB, 0xBF]);
+  const corrupt = () => fs.readdirSync(userData).filter(name => name.startsWith('config.json.corrupt-')).length, before = corrupt();
+  const config = loadConfig();
+  assert.equal(config.closeToTray, false); assert.equal(config.locale, 'en');
+  assert.equal(corrupt(), before, 'the BOM file must stay where it is');
+  saveConfig({ theme: 'midnight' });
+  assert.notEqual(fs.readFileSync(configPath())[0], 0xEF, 'a save writes plain JSON again');
+  assert.equal(loadConfig().closeToTray, false); assert.equal(loadConfig().theme, 'midnight');
+});

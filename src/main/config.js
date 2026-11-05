@@ -353,6 +353,16 @@ function credentialsPath() {
 }
 
 /**
+ * Parse JSON the way these files are really written: Windows editors and PowerShell 5.1 prepend a UTF-8 byte order mark,
+ * which JSON.parse rejects, so a hand-edited file would otherwise be treated as corrupt and replaced by the defaults.
+ * @param {string} text file contents.
+ * @returns {unknown} the parsed value.
+ */
+function parseJsonText(text) {
+  return JSON.parse(text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text);
+}
+
+/**
  * Read the settings file. A missing file is empty; a file that does not parse
  * is moved aside so its contents survive the defaults written after it. Any
  * other read failure marks the file unreadable: a save must not replace
@@ -366,7 +376,7 @@ function readSettingsFile(file) {
     return error.code === 'ENOENT' ? { stored: {} } : { stored: {}, unreadable: error };
   }
   try {
-    const parsed = JSON.parse(text);
+    const parsed = parseJsonText(text);
     return { stored: isPlainObject(parsed) ? parsed : {} };
   } catch {
     try { fs.renameSync(file, `${file}.corrupt-${Date.now()}`); } catch (error) { return { stored: {}, unreadable: error }; }
@@ -429,7 +439,7 @@ function readCredentials() {
   const file = credentialsPath();
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw = parseJsonText(fs.readFileSync(file, 'utf8'));
   } catch (error) {
     return error.code === 'ENOENT' ? { creds: {}, needsWrite: true } : { creds: {}, needsWrite: false, unreadable: true };
   }
