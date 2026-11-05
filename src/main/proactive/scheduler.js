@@ -32,8 +32,8 @@ class TaskScheduler {
     for (const job of this.jobs.values()) {
       if (job.status !== 'scheduled' || new Date(job.at).getTime() > now) continue;
       due.push({ ...job });
-      if (job.intervalMs) this.#emit({ type: 'schedule.rescheduled', jobId: job.id, at: new Date(new Date(job.at).getTime() + job.intervalMs).toISOString() });
-      else this.#emit({ type: 'schedule.fired', jobId: job.id, at: this.now() });
+      if (job.intervalMs) this.#emit({ type: 'schedule.rescheduled', jobId: job.id, dueAt: new Date(new Date(job.at).getTime() + job.intervalMs).toISOString() });
+      else this.#emit({ type: 'schedule.fired', jobId: job.id });
     }
     return due;
   }
@@ -48,7 +48,7 @@ class TaskScheduler {
   #apply(event) {
     if (event.type === 'schedule.created') this.jobs.set(event.job.id, { ...event.job });
     if (event.type === 'schedule.cancelled' && this.jobs.has(event.jobId)) this.jobs.get(event.jobId).status = 'cancelled';
-    if (event.type === 'schedule.rescheduled' && this.jobs.has(event.jobId)) this.jobs.get(event.jobId).at = event.at;
+    if (event.type === 'schedule.rescheduled' && this.jobs.has(event.jobId)) this.jobs.get(event.jobId).at = event.dueAt;
     if (event.type === 'schedule.fired' && this.jobs.has(event.jobId)) this.jobs.get(event.jobId).status = 'fired';
   }
 }
