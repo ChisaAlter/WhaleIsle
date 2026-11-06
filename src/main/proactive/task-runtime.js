@@ -27,10 +27,32 @@ class JsonEventStore {
 
   read() {
     try {
-      return fs.readFileSync(this.filePath, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map(line => JSON.parse(line));
+      const contents = fs.readFileSync(this.filePath, 'utf8');
+      const lines = contents.split('\n');
+      const events = [];
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (!line.trim()) continue;
+        try {
+          events.push(JSON.parse(line));
+        } catch (cause) {
+          // A process crash can leave a partial final append. Recover the
+          // durable prefix and truncate only that malformed tail; corruption
+          // followed by another record remains a hard startup error.
+          const trailingLinesAreEmpty = lines.slice(index + 1).every(value => !value.trim());
+          if (!trailingLinesAreEmpty) {
+            throw Object.assign(new Error(`Corrupt proactive event log at line ${index + 1}`), {
+              code: 'proactive/event-log-corrupt',
+              cause,
+            });
+          }
+          const validPrefixBytes = Buffer.byteLength(lines.slice(0, index).join('\n'), 'utf8')
+            + (index > 0 ? 1 : 0);
+          fs.truncateSync(this.filePath, validPrefixBytes);
+          break;
+        }
+      }
+      return events;
     } catch (error) {
       if (error.code === 'ENOENT') return [];
       throw error;
@@ -73,6 +95,11 @@ class TaskRuntime {
   createTask(input = {}) {
     const autonomy = Number(input.autonomy ?? 1);
     if (!AUTONOMY_LEVELS.has(autonomy)) throw new RangeError('autonomy must be an integer from 1 to 5');
+    const idempotencyKey = input.idempotencyKey ?? null;
+    if (idempotencyKey) {
+      const existing = [...this.tasks.values()].find(task => task.idempotencyKey === idempotencyKey);
+      if (existing) return clone(existing);
+    }
     const task = {
       id: input.id ?? this.idFactory(),
       title: String(input.title ?? 'Untitled task'),
@@ -83,7 +110,7 @@ class TaskRuntime {
       createdAt: this.now(),
       updatedAt: this.now(),
       approvalId: null,
-      idempotencyKey: input.idempotencyKey ?? null,
+      idempotencyKey,
     };
     this.#emit({ type: 'task.created', task });
     this.#emit({ type: 'inbox.upserted', item: {
