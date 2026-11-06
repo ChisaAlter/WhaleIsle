@@ -1308,6 +1308,7 @@ if (!gotLock) {
     desktopResources = registerIpc({
       updateCenter,
       openUpdateCenter,
+      proactiveService,
       dsh,
       harness,
       startHarness: restartWithCleanup,
