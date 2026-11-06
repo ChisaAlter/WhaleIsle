@@ -18,6 +18,7 @@ let recoveryResolve;
 let recoveryCalls = 0;
 let recoveryNames;
 let statusReadFails = false;
+let pluginAlignResults = [];
 let desktopStatus = { version: '0.3.3', desktop: { state: 'ready' }, downloadRoute: 'github', config: { downloadRoute: 'github' }, routes: [], forensics: { plugins: [] } };
 let installResolve;
 let installCancelCalls = 0;
@@ -39,6 +40,7 @@ const handlers = {
   'shell:check-update': () => { checkCalls++; return new Promise(resolve => { checkResolve = resolve; }); },
   'shell:install-runtime': () => new Promise(resolve => { installResolve = resolve; }),
   'shell:stop-desktop': () => ({ ok: false, error: 'busy' }),
+  'shell:disable-plugin': () => pluginAlignResults.shift(),
   'shell:cancel-runtime-install': () => { installCancelCalls++; return { ok: true }; },
   'shell:run-import': (_event, opts) => { importCalls.push(opts.opId); return new Promise(resolve => { importResolve = resolve; }); },
   'shell:cancel-import': (_event, opts) => { importCancelCalls.push(opts.opId); return { ok: false, error: 'fixture cancellation refused' }; },
@@ -200,6 +202,12 @@ app.whenReady().then(async () => {
       recovery: { skipUserPlugins: true, at: 'original-failure-1', reason: 'dsh-tavern failed to load' },
       forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }, { name: 'healthy-plugin' }] } };
     await js('refreshStatus()');
+    await waitFor("!document.getElementById('home-plugin-guidance').hidden");
+    await delay(200);
+    // A failed start raises neither a popup nor a confirmation by itself.
+    result.recoveryInline = { ...(await read()), guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden"),
+      toastCount: await js("document.querySelectorAll('.shell-feedback-toast').length") };
+    await js("document.getElementById('btn-recover-plugins').click()");
     await waitFor("!document.getElementById('app-confirm').hidden");
     result.recoveryPrompt = await read();
     await capture('plugin-recovery-confirm');
@@ -227,6 +235,9 @@ app.whenReady().then(async () => {
       recovery: { skipUserPlugins: true, at: 'original-failure-2', reason: 'dsh-tavern failed to load' },
       forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }] } };
     await js('refreshStatus()');
+    await waitFor("!document.getElementById('home-plugin-guidance').hidden");
+    result.recoveryStickyInline = { modalHidden: await js("document.getElementById('app-confirm').hidden") };
+    await js("document.getElementById('btn-recover-plugins').click()");
     await waitFor("document.getElementById('app-confirm-title').textContent === '插件加载失败'");
     const callsBeforeStickyRefresh = recoveryCalls;
     desktopStatus = { ...desktopStatus, lastStart: { ok: true, at: 'skip-completed-2' } };
@@ -254,7 +265,7 @@ app.whenReady().then(async () => {
     await clearNotices();
     desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'stop-1' }, forensics: { plugins: [] } };
     await js("void runDesktopAction('stopDesktop', 'stopping')");
-    await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.includes('桌面端正在处理任务'))");
+    await waitFor("document.getElementById('home-recovery-verdict').textContent.includes('桌面端正在处理任务')");
     await delay(100);
     result.stopFailure = await js("({status:document.getElementById('home-status').textContent,verdict:document.getElementById('home-recovery-verdict').textContent,toastCount:document.querySelectorAll('.shell-feedback-toast').length})");
     await clearNotices();
@@ -292,6 +303,22 @@ app.whenReady().then(async () => {
     result.importTerminal.restored = await js("document.getElementById('import-result').checkVisibility() && document.getElementById('import-result').textContent.includes('未完成的导入事务')");
     result.importCalls = importCalls;
     result.importCancelCalls = importCancelCalls;
+    // A restart that fails after a plugin change is reported on the home page, and the
+    // next successful change clears it again.
+    desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'plugin-align-1' },
+      recovery: { skipUserPlugins: false }, forensics: { plugins: [] } };
+    await js("document.querySelector('[data-tab=plugins]').click()");
+    await clearNotices();
+    pluginAlignResults = [{ ok: true, harnessRestarted: false, error: 'fixture restart failed' }];
+    await js("void actPlugin('disablePlugin', 'dsh-tavern', null)");
+    await waitFor("document.getElementById('panel-home').classList.contains('is-active') && document.getElementById('home-status').textContent.includes('启动或关闭未完成')");
+    result.pluginRestartFailure = { toastCount: await js("document.querySelectorAll('.shell-feedback-toast').length"),
+      verdict: await js("document.getElementById('home-recovery-verdict').textContent") };
+    pluginAlignResults = [{ ok: true, harnessRestarted: true }];
+    await js("void actPlugin('disablePlugin', 'dsh-tavern', null)");
+    await waitFor("!document.getElementById('home-status').textContent.includes('启动或关闭未完成')");
+    result.pluginRestartRecovered = { toastCount: await js("document.querySelectorAll('.shell-feedback-toast').length"),
+      boardHidden: await js("document.getElementById('home-recovery').hidden") };
     }
     // Same production feedback assets on the real boot page; controls/logs remain content.
     boot = new BrowserWindow({ width: 1060, height: 660, useContentSize: true, frame: false, show: false,
