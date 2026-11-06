@@ -114,7 +114,10 @@ const { hideOnClose } = require('./close-behavior');
 const { TrayHideNotice } = require('./background-notice');
 const { systemNotificationsSupported } = require('./system-notifications');
 const { installMediaPermissions } = require('./media-permissions');
-const { attachRendererConsoleTail, RendererConsoleTail, writeCrashReport, pruneCrashReports, desktopErrorState } = require('./crash-report');
+const {
+  attachRendererConsoleTail, RendererConsoleTail, writeCrashReport, pruneCrashReports, desktopErrorState,
+  createMainFailureReporter,
+} = require('./crash-report');
 const { UpdateJournal } = require('./update-journal');
 const { UpdateOverlays } = require('./update-overlay');
 const { ShellConfirmDialog } = require('./update-dialog');
@@ -139,7 +142,24 @@ const dsh = new DshManager();
 // 2026-08-28-remote-epipe-hardening.md).
 const { installStdioGuard, installUncaughtBrokenPipeGuard } = require('./stdio-guard');
 installStdioGuard({ log: (message) => dsh.log(message, 'app') });
-installUncaughtBrokenPipeGuard({ log: (message) => dsh.log(message, 'app') });
+installUncaughtBrokenPipeGuard({
+  log: (message) => dsh.log(message, 'app'),
+  // An uncaught error is never answered with a native error box: it lands in the
+  // log and in a crash report file next to the renderer ones.
+  report: createMainFailureReporter({
+    directory: () => crashLogDir(),
+    isReady: () => app.isReady(),
+    describeApp: () => ({
+      name: 'Whale Isle',
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      electron: process.versions.electron || '',
+      node: process.versions.node || '',
+      locale: app.isReady() ? app.getLocale() : '',
+    }),
+  }),
+});
 // Product remote = full ChisaCode daemon + offer v2 (not HTTP RemoteGateway).
 const remote = new DshdRemote({
   getConfig: loadConfig,
