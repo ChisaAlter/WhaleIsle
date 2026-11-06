@@ -19,11 +19,14 @@ test('real Loader, storage, native Agent and tools finish a source-bound task wi
   const { LlmAdapter } = await load('@deepseek-ai/dsh-llm');
   const { provideCmdline } = await load('@deepseek-ai/dsh-cmdline');
   const Whale = await import(pathToFileURL(path.join(root, 'vendor/dsh-whale/lib/index.js')).href);
-  const home = await fs.mkdtemp(path.join(tmpdir(), 'whale-task-composition-'));
+  // Keep fixture paths canonical on Windows, where tmpdir() may use an 8.3
+  // alias while the product resolves inputs through fs.realpath().
+  const tempRoot = await fs.realpath(tmpdir());
+  const home = await fs.mkdtemp(path.join(tempRoot, 'whale-task-composition-'));
   const prior = process.env.DSH_HOME; process.env.DSH_HOME = home;
   let ctx;
   t.after(async () => { await ctx?.get('whaleTasks')?.close(); await ctx?.fiber.dispose(); process.env.DSH_HOME = prior;
-    assert.ok(home.startsWith(path.join(tmpdir(), 'whale-task-composition-'))); await fs.rm(home, { recursive: true, force: true }); });
+    assert.ok(home.startsWith(path.join(tempRoot, 'whale-task-composition-'))); await fs.rm(home, { recursive: true, force: true }); });
   const config = path.join(home, 'cordis.yml'); await fs.writeFile(config, '[]\n');
   const web = path.dirname(cli.resolve('@deepseek-ai/dsh-web-app/package.json'));
   const manifest = JSON.parse(await fs.readFile(path.join(web, 'package.json'), 'utf8'));

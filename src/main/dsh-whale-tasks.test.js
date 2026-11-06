@@ -18,8 +18,12 @@ function domain() {
 }
 async function setup(t, startWorker) {
   const [{ TaskStore }, { WhaleTasks }] = await modules;
-  const dir = await fs.mkdtemp(path.join(tmpdir(), 'whale-task-test-'));
-  t.after(async () => { assert.ok(dir.startsWith(path.join(tmpdir(), 'whale-task-test-'))); await fs.rm(dir, { recursive: true, force: true }); });
+  // Windows may return an 8.3 alias from tmpdir(); the product validates
+  // supplied paths against fs.realpath(), so create fixtures under the
+  // canonical temp root as well.
+  const tempRoot = await fs.realpath(tmpdir());
+  const dir = await fs.mkdtemp(path.join(tempRoot, 'whale-task-test-'));
+  t.after(async () => { assert.ok(dir.startsWith(path.join(tempRoot, 'whale-task-test-'))); await fs.rm(dir, { recursive: true, force: true }); });
   const file = path.join(dir, 'input.txt'); await fs.writeFile(file, 'Source A factual text');
   const events = [];
   const agent = { session: { snapshotEvents: () => events, append(type, data) { events.push({ type, data, seq: events.length }); } } };
