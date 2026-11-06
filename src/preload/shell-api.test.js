@@ -198,6 +198,29 @@ test('pet preload exposes only state, drag, menu, and theme controls', () => {
   assert.equal(Object.keys(api).sort().join(','), 'commitDrag,getState,onState,onTheme,openMenu');
 });
 
+test('harness preload exposes the proactive dispatch bridge only to the Harness role', async () => {
+  const calls = [];
+  const renderer = {
+    ...fakeRenderer(),
+    invoke: async (...args) => {
+      calls.push(args);
+      return { ok: true };
+    },
+  };
+  const api = buildShellApi('harness', renderer);
+  assert.equal(typeof api.proactive?.dispatch, 'function');
+  assert.deepEqual(
+    await api.proactive.dispatch('task/create', { title: 'Renderer task' }),
+    { ok: true },
+  );
+  assert.deepEqual(calls, [
+    ['shell:proactive', 'task/create', { title: 'Renderer task' }],
+  ]);
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
+    assert.equal(buildShellApi(role, renderer).proactive, undefined);
+  }
+});
+
 test('harness preload keeps work loops and remote controls', () => {
   const api = buildShellApi('harness', fakeRenderer(), true);
   assert.equal(api.visualReplyIsolation, true);

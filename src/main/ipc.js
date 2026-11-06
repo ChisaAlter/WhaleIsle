@@ -102,7 +102,7 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 
 function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
-  getLive2dPet, updateCenter = null, openUpdateCenter = () => {},
+  getLive2dPet, proactiveService = null, updateCenter = null, openUpdateCenter = () => {},
 }) {
   const handle = (channel, roles, listener) => {
     ipcMain.handle(channel, (event, ...args) => {
@@ -111,6 +111,12 @@ function registerIpc({
     });
   };
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
+  handle('shell:proactive', HARNESS_ONLY, (_event, action, payload = {}) => {
+    if (!proactiveService || typeof proactiveService.dispatch !== 'function') {
+      throw new Error('Proactive service unavailable');
+    }
+    return proactiveService.dispatch(action, payload);
+  });
   let pendingWorkspaceDirectoryDialog = null;
   // Launcher orchestration lives in the service; handlers below stay thin
   // authorization + renderer-transport delegates so the same service can sit
