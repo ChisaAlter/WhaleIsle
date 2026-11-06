@@ -17,6 +17,7 @@ const { ensureSessionSearchOverlay } = require('./session-search-overlay');
 const { ensureDshImPlugin } = require('./dsh-im-desktop');
 const { ensureDesktopDshProject, projectAvailable } = require('./dsh-project-desktop');
 const { createProjectEnvironment } = require('./project-environment');
+const { createProactiveService } = require('./proactive/service');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
 const { fetchPlatformSession } = require('./platform-session');
@@ -829,6 +830,7 @@ async function confirmTaskStop(operation, inspection) {
 }
 
 const projectEnvironment = createProjectEnvironment({ getGithubToken: () => loadConfig().githubToken });
+const proactiveService = createProactiveService({ userDataPath: app.getPath('userData') });
 const taskProtection = createTaskProtection({
   getBaseUrl: () => (typeof dsh.baseUrl === 'string' ? dsh.baseUrl : ''),
   hostRunning: () => isDesktopKernelRunning() && dsh.webReady === true && Boolean(dsh.baseUrl),
@@ -1195,6 +1197,7 @@ if (!gotLock) {
       // so config writes and plugin toggles share one serialized align
       // chain no matter which surface asked.
       desktop: {
+        proactive: (payload) => proactiveService.dispatch(payload),
         project: (payload) => projectEnvironment.dispatch(payload),
         htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
         project: (payload) => projectEnvironment.dispatch(payload),
@@ -1305,6 +1308,7 @@ if (!gotLock) {
     desktopResources = registerIpc({
       updateCenter,
       openUpdateCenter,
+      proactiveService,
       dsh,
       harness,
       startHarness: restartWithCleanup,

@@ -76,6 +76,9 @@ function bootApi(renderer) {
 
 function harnessApi(renderer, remoteFeature) {
   return {
+    proactive: {
+      dispatch: invoke(renderer, 'shell:proactive'),
+    },
     // Generated pages are interactive only where the host vetoes navigation.
     visualReplyIsolation: true,
     ...windowApi(renderer),
