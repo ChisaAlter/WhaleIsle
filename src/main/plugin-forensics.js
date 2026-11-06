@@ -6,6 +6,7 @@ const { DSH_IM_ALIASES } = require('./dsh-im-desktop');
 const { DSH_PROJECT_ALIASES, projectAvailable } = require('./dsh-project-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
 const { DSH_REMOTE_ALIASES } = require('./dsh-remote-desktop');
+const { DSH_ACP_AGENTS_ALIASES } = require('./dsh-acp-agents-desktop');
 const { USAGE_PANEL_ALIASES } = require('./usage-panel-preset');
 
 const GENERIC_OOM = /heap out of memory|js heap|allocation failed|oom\b/i;
@@ -32,7 +33,7 @@ const WEB_BOOT_AUDIT_ENTRY = /^\s*(?:\[(?:app|error|dsh)\]\s*)?(@?[\w.-]+(?:\/[\
 // desktop built-in modules, but the `preset` marker
 // only gates removal; disable is blocked separately via IPC and config
 // alias-stripping. Project retains this removal guard while honoring disable.
-const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES]);
+const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES, ...DSH_ACP_AGENTS_ALIASES]);
 const EVIDENCE_LINE_MAX = 240;
 
 // In-box names cover the harness fork packages plus the desktop built-in
@@ -44,6 +45,7 @@ const IN_BOX_PACKAGE_NAMES = new Set([
   ...DSH_IM_ALIASES,
   ...DSH_WHALE_ALIASES,
   ...DSH_REMOTE_ALIASES,
+  ...DSH_ACP_AGENTS_ALIASES,
   ...USAGE_PANEL_ALIASES,
 ]);
 
