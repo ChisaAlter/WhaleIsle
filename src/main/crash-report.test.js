@@ -12,6 +12,7 @@ const {
   attachRendererConsoleTail,
   collectHangStack,
   crashReportFileName,
+  createMainFailureReporter,
   desktopErrorState,
   pruneCrashReports,
   renderCrashReport,
@@ -54,6 +55,60 @@ test('report renders header, error, host diagnostic, and console tail', async ()
   assert.ok(body.includes('boom'));
   assert.ok(body.includes('host said nope'));
   assert.ok(body.includes('TypeError: x'));
+});
+
+const MAIN_APP = { name: 'Whale Isle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' };
+
+test('main failure reporter writes one main crash report, then prunes', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-crash-'));
+  const pruned = [];
+  const report = createMainFailureReporter({
+    directory: () => dir,
+    describeApp: () => MAIN_APP,
+    isReady: () => false,
+    now: () => new Date('2026-11-06T12:00:00Z'),
+    prune: async (target) => { pruned.push(target); },
+  });
+  const file = await report(new Error('boom in main'));
+  assert.ok(file && file.endsWith('crash-2026-11-06T12-00-00-000Z-main.log'));
+  const body = fs.readFileSync(file, 'utf8');
+  assert.ok(body.includes('source: main'));
+  assert.ok(body.includes('phase: startup'));
+  assert.ok(body.includes('boom in main'));
+  assert.deepEqual(pruned, [dir]);
+});
+
+test('main failure reporter writes at most one report per interval', async () => {
+  let clock = 1_000_000;
+  const written = [];
+  const report = createMainFailureReporter({
+    directory: () => 'unused',
+    describeApp: () => MAIN_APP,
+    intervalMs: 2000,
+    now: () => new Date(clock),
+    write: async (_dir, input) => { written.push(input.error.message); return 'file'; },
+    prune: async () => {},
+  });
+  await report(new Error('first'));
+  clock += 500;
+  assert.equal(await report(new Error('too soon')), undefined);
+  clock += 2000;
+  await report(new Error('later'));
+  assert.deepEqual(written, ['first', 'later']);
+});
+
+test('main failure reporter never throws when the directory or the write fails', async () => {
+  const noDirectory = createMainFailureReporter({
+    directory: () => { throw new Error('no logs dir'); },
+    describeApp: () => MAIN_APP,
+  });
+  assert.equal(await noDirectory(new Error('x')), undefined);
+  const noWrite = createMainFailureReporter({
+    directory: () => 'd',
+    describeApp: () => MAIN_APP,
+    write: async () => { throw new Error('disk full'); },
+  });
+  assert.equal(await noWrite(new Error('x')), undefined);
 });
 
 test('prune deletes only matching names beyond retained', async () => {

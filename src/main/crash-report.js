@@ -21,6 +21,7 @@ const RENDERER_CONSOLE_MAX_BYTES = 64 * 1024;
 const ERROR_SECTION_MAX_CHARS = 256 * 1024;
 const RENDERER_MEMORY_SAMPLES = 12;
 const HANG_STACK_TIMEOUT_MS = 3000;
+const MAIN_REPORT_INTERVAL_MS = 2000;
 
 /** Preserve nested diagnostics when sending failures to a renderer. */
 function desktopErrorState(error) {
@@ -180,6 +181,42 @@ async function writeCrashReport(directory, input) {
   }
 }
 
+/**
+ * Reporter for an uncaught main-process error. The error goes to a crash
+ * report file, never to a native error box; at most one report per
+ * `intervalMs`, so an error that repeats cannot fill the disk. It never
+ * throws and resolves the file path, or `undefined` when nothing was written.
+ * @param {{ directory: () => string, describeApp: () => object, isReady?: () => boolean,
+ *   now?: () => Date, intervalMs?: number, write?: typeof writeCrashReport,
+ *   prune?: typeof pruneCrashReports }} deps
+ */
+function createMainFailureReporter({
+  directory, describeApp, isReady = () => true, now = () => new Date(),
+  intervalMs = MAIN_REPORT_INTERVAL_MS, write = writeCrashReport, prune = pruneCrashReports,
+}) {
+  let lastAt = Number.NEGATIVE_INFINITY;
+  return async (error) => {
+    const time = now();
+    if (time.getTime() - lastAt < intervalMs) return undefined;
+    lastAt = time.getTime();
+    try {
+      const dir = directory();
+      const file = await write(dir, {
+        source: 'main',
+        phase: isReady() ? 'running' : 'startup',
+        error,
+        rendererConsole: [],
+        app: describeApp(),
+        time,
+      });
+      await prune(dir);
+      return file;
+    } catch {
+      return undefined;
+    }
+  };
+}
+
 /** Delete the oldest reports beyond `retained`, judged by file-name order. */
 async function pruneCrashReports(directory, retained = CRASH_REPORTS_RETAINED) {
   let names;
@@ -229,6 +266,7 @@ module.exports = {
   attachRendererConsoleTail,
   collectHangStack,
   crashReportFileName,
+  createMainFailureReporter,
   desktopErrorState,
   pruneCrashReports,
   renderCrashReport,

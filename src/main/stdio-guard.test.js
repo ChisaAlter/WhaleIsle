@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const {
   guardStream,
@@ -61,28 +63,42 @@ test('uncaught classifier only accepts broken-pipe writes', () => {
 
 test('handleUncaughtException swallows EPIPE write and logs it', () => {
   const logs = [];
-  let shown = 0;
+  let reports = 0;
   const outcome = handleUncaughtException(errWith('EPIPE', 'write'), {
     log: (message) => logs.push(message),
-    showError: () => { shown += 1; },
+    report: () => { reports += 1; },
   });
   assert.equal(outcome, 'swallowed');
-  assert.equal(shown, 0);
+  assert.equal(reports, 0);
   assert.equal(logs.length, 1);
 });
 
-test('handleUncaughtException reports every other error like Electron default', () => {
+test('handleUncaughtException logs every other error and hands it to the crash report', () => {
   const logs = [];
-  const shown = [];
+  const reported = [];
   const boom = new Error('boom');
   const outcome = handleUncaughtException(boom, {
     log: (message) => logs.push(message),
-    showError: (err) => shown.push(err),
+    report: (err) => reported.push(err),
   });
   assert.equal(outcome, 'reported');
-  assert.deepEqual(shown, [boom]);
+  assert.deepEqual(reported, [boom]);
   assert.equal(logs.length, 1);
   assert.match(logs[0], /boom/);
+});
+
+test('a failing or rejecting report never becomes a second uncaught error', async () => {
+  const boom = new Error('boom');
+  assert.equal(handleUncaughtException(boom, { report: () => { throw new Error('report failed'); } }), 'reported');
+  assert.equal(handleUncaughtException(boom, { report: () => Promise.reject(new Error('report failed')) }), 'reported');
+  // An unhandled rejection from the report would fail the test process here.
+  await new Promise((resolve) => setImmediate(resolve));
+});
+
+test('the guard never shows a native error box', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'stdio-guard.js'), 'utf8');
+  assert.doesNotMatch(source, /showErrorBox|showMessageBox/);
+  assert.equal(handleUncaughtException(new Error('boom')), 'reported');
 });
 
 test('isBrokenPipeStreamError covers stdio codes only', () => {
