@@ -1,4 +1,4 @@
-/* dsh-whale client: settings.pet.item block + sidebar panellist row + main page for the whale assistant. */
+/* dsh-whale client: assistant settings, Inbox/Outbox projections, and session affordances. */
 window.__ModuleLoader__.load({
   id: "dsh-whale",
   factory: (require) => {
@@ -11,6 +11,8 @@ window.__ModuleLoader__.load({
 
     const NS = "dsh-whale";
     const PANEL_ID = "whale";
+    const INBOX_PANEL_ID = "whale-inbox";
+    const OUTBOX_PANEL_ID = "whale-outbox";
 
     const zh = {
       "tab": "鲸鱼娘",
@@ -75,6 +77,27 @@ window.__ModuleLoader__.load({
       "retry": "重试",
       "saveFailed": "保存失败：{message}",
       "loadFailed": "读取失败：{message}",
+      "ops.inbox": "收件箱",
+      "ops.outbox": "发件箱",
+      "ops.inboxSubtitle": "查看发现、机会与待分拣事项。",
+      "ops.outboxSubtitle": "审批队列：核对动作、目标、风险与策略状态。",
+      "ops.empty": "这里还没有事项。",
+      "ops.loading": "正在读取收件箱…",
+      "ops.unavailable": "桌面策略桥不可用。",
+      "ops.loadFailed": "读取失败：{message}",
+      "ops.retry": "重试",
+      "ops.refresh": "刷新",
+      "ops.title": "标题",
+      "ops.level": "级别",
+      "ops.status": "状态",
+      "ops.source": "来源",
+      "ops.target": "目标",
+      "ops.action": "动作",
+      "ops.approve": "批准",
+      "ops.reject": "拒绝",
+      "ops.pendingPolicy": "等待运行时策略确认",
+      "ops.waitingApproval": "等待审批",
+      "ops.noDecision": "当前状态不可裁决",
     };
     const en = {
       "tab": "Whale",
@@ -139,6 +162,27 @@ window.__ModuleLoader__.load({
       "retry": "Retry",
       "saveFailed": "Save failed: {message}",
       "loadFailed": "Load failed: {message}",
+      "ops.inbox": "Inbox",
+      "ops.outbox": "Outbox",
+      "ops.inboxSubtitle": "Review discovered items, opportunities, and decisions.",
+      "ops.outboxSubtitle": "Approval queue: verify action, target, risk, and policy state.",
+      "ops.empty": "Nothing here yet.",
+      "ops.loading": "Loading Inbox…",
+      "ops.unavailable": "The desktop policy bridge is unavailable.",
+      "ops.loadFailed": "Load failed: {message}",
+      "ops.retry": "Retry",
+      "ops.refresh": "Refresh",
+      "ops.title": "Title",
+      "ops.level": "Level",
+      "ops.status": "Status",
+      "ops.source": "Source",
+      "ops.target": "Target",
+      "ops.action": "Action",
+      "ops.approve": "Approve",
+      "ops.reject": "Reject",
+      "ops.pendingPolicy": "Waiting for runtime policy confirmation",
+      "ops.waitingApproval": "Waiting for approval",
+      "ops.noDecision": "This item is no longer actionable",
     };
 
     function injectCss() {
@@ -190,6 +234,28 @@ window.__ModuleLoader__.load({
 .dsh-whale-skill-name { font-size: 13px; font-family: var(--ds-font-family-code, monospace); }
 .dsh-whale-gear { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-tertiary, currentColor); cursor: pointer; }
 .dsh-whale-gear:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.14)); color: var(--dsw-alias-label-primary, currentColor); }
+.dsh-whale-ops-page { display: flex; flex-direction: column; gap: 18px; width: 100%; max-width: 880px; padding: 32px; box-sizing: border-box; overflow: auto; }
+.dsh-whale-ops-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.dsh-whale-ops-heading { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dsh-whale-ops-title { font-size: 20px; line-height: 28px; font-weight: 600; }
+.dsh-whale-ops-subtitle { font-size: 13px; line-height: 19px; color: var(--dsw-alias-label-tertiary, currentColor); }
+.dsh-whale-ops-list { display: flex; flex-direction: column; gap: 10px; }
+.dsh-whale-ops-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--dsw-alias-border-primary, rgba(128,128,128,.25)); border-radius: 12px; background: var(--dsw-alias-bg-secondary, transparent); }
+.dsh-whale-ops-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dsh-whale-ops-card-title { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.dsh-whale-ops-card-level { flex: none; padding: 2px 7px; border-radius: 999px; font: 11px/16px var(--ds-font-family-code, monospace); color: var(--dsw-alias-label-secondary, currentColor); background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.14)); }
+.dsh-whale-ops-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.dsh-whale-ops-field { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dsh-whale-ops-label { font-size: 10px; line-height: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--dsw-alias-label-tertiary, currentColor); }
+.dsh-whale-ops-value { min-width: 0; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.dsh-whale-ops-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.dsh-whale-ops-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--dsw-alias-label-tertiary, currentColor); border: 1px dashed var(--dsw-alias-border-primary, rgba(128,128,128,.25)); border-radius: 12px; }
+.dsh-whale-ops-error { font-size: 12px; line-height: 18px; color: var(--dsw-alias-state-error-primary, #c0392b); }
+@media (max-width: 620px) {
+  .dsh-whale-ops-page { padding: 20px 16px; }
+  .dsh-whale-ops-header { flex-direction: column; }
+  .dsh-whale-ops-grid { grid-template-columns: minmax(0, 1fr); }
+}
 `;
       document.head.appendChild(style);
     }
@@ -429,6 +495,177 @@ window.__ModuleLoader__.load({
               h(Button, { variant: "outline", disabled: pending || !bot || !actor, onClick: () => act("tasks/owner", { channel: "feishu", botId: bot, actor }) }, t("tasks.grant")),
               h(Button, { variant: "outline", disabled: pending || !bot, onClick: () => act("tasks/revoke-owner", { botId: bot }) }, t("tasks.revoke"))),
             error ? h(Feedback, { text: error, t }) : null)));
+    }
+
+    function formatAutonomy(value) {
+      const level = Number(value);
+      return Number.isInteger(level) && level >= 1 && level <= 5 ? `L${level}` : "L?";
+    }
+
+    // Approval controls are deliberately disabled unless the durable runtime
+    // still reports a pending approval and the exact task is waiting_approval.
+    // This prevents stale cards from bypassing runtime policy after a reload.
+    function canDecideApproval(item, task) {
+      const level = Number(item?.autonomy ?? task?.autonomy);
+      return item?.status === "pending"
+        && task?.state === "waiting_approval"
+        && Number.isInteger(level) && level >= 1 && level <= 5;
+    }
+
+    function WhaleOpsCard({ item, task, outbox, busy, onDecision, t }) {
+      const title = item?.title || task?.title || item?.action || "Untitled task";
+      const source = item?.source || task?.source || item?.target || "manual";
+      const status = outbox ? (item?.status || task?.state || "unknown") : (item?.state || "unknown");
+      const level = item?.autonomy ?? task?.autonomy;
+      const actionable = outbox && canDecideApproval(item, task);
+      const actionBusy = busy === item?.id;
+      const fields = outbox
+        ? [
+          [t("ops.action"), item?.action || "—"],
+          [t("ops.target"), item?.target || "—"],
+          [t("ops.status"), status],
+          [t("ops.source"), source],
+        ]
+        : [
+          [t("ops.status"), status],
+          [t("ops.source"), source],
+        ];
+      return h("article", {
+        className: "dsh-whale-ops-card",
+        "data-proactive-id": item?.id || "",
+        "data-proactive-kind": outbox ? "outbox" : "inbox",
+      },
+        h("div", { className: "dsh-whale-ops-card-head" },
+          h("div", { className: "dsh-whale-ops-card-title" }, title),
+          h("span", { className: "dsh-whale-ops-card-level", "aria-label": t("ops.level") }, formatAutonomy(level))),
+        h("div", { className: "dsh-whale-ops-grid" },
+          fields.map(([label, value]) => h("div", { key: label, className: "dsh-whale-ops-field" },
+            h("span", { className: "dsh-whale-ops-label" }, label),
+            h("span", { className: "dsh-whale-ops-value", title: String(value) }, String(value)))),
+          outbox ? h("div", { className: "dsh-whale-ops-field" },
+            h("span", { className: "dsh-whale-ops-label" }, t("ops.level")),
+            h("span", { className: "dsh-whale-ops-value" }, formatAutonomy(level))) : null),
+        outbox && !actionable
+          ? h("div", { className: "dsh-whale-ops-error", role: "status" },
+            item?.status === "pending" ? t("ops.pendingPolicy") : t("ops.noDecision"))
+          : null,
+        outbox ? h("div", { className: "dsh-whale-ops-actions" },
+          h(Button, {
+            type: "button",
+            variant: "outline",
+            size: "sm",
+            disabled: !actionable || actionBusy,
+            loading: actionBusy,
+            onClick: () => onDecision(item, "approved"),
+            "aria-label": `${t("ops.approve")}: ${title}`,
+          }, t("ops.approve")),
+          h(Button, {
+            type: "button",
+            variant: "outline",
+            size: "sm",
+            disabled: !actionable || actionBusy,
+            onClick: () => onDecision(item, "rejected"),
+            "aria-label": `${t("ops.reject")}: ${title}`,
+          }, t("ops.reject")),
+        ) : null);
+    }
+
+    function WhaleOperations(props) {
+      const { mode, proactiveDispatch, t } = props;
+      const [items, setItems] = useState([]);
+      const [tasks, setTasks] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState("");
+      const [busy, setBusy] = useState("");
+      const [attempt, setAttempt] = useState(0);
+      const outbox = mode === "outbox";
+
+      const load = useCallback(async () => {
+        if (typeof proactiveDispatch !== "function") {
+          setError(t("ops.unavailable"));
+          setLoading(false);
+          return;
+        }
+        setLoading(true);
+        setError("");
+        try {
+          const value = await proactiveDispatch(outbox ? "outbox/list" : "inbox/list");
+          const nextItems = Array.isArray(value) ? value : [];
+          const nextTasks = {};
+          if (outbox) {
+            await Promise.all(nextItems.map(async (item) => {
+              if (!item?.taskId) return;
+              try {
+                nextTasks[item.taskId] = await proactiveDispatch("task/get", { taskId: item.taskId });
+              } catch {
+                // Keep the card visible and fail closed until the task is readable.
+              }
+            }));
+          }
+          setItems(nextItems);
+          setTasks(nextTasks);
+        } catch (err) {
+          setError(t("ops.loadFailed", { message: err?.message || String(err) }));
+        } finally {
+          setLoading(false);
+        }
+      }, [proactiveDispatch, outbox, t]);
+
+      useEffect(() => { void load(); }, [load]);
+
+      const decide = useCallback(async (item, decision) => {
+        const task = tasks[item?.taskId];
+        if (!canDecideApproval(item, task) || busy) {
+          setError(t("ops.pendingPolicy"));
+          return;
+        }
+        setBusy(item.id);
+        setError("");
+        try {
+          await proactiveDispatch("approval/decide", {
+            approvalId: item.id,
+            decision,
+            actor: "user",
+          });
+          await load();
+        } catch (err) {
+          setError(t("ops.loadFailed", { message: err?.message || String(err) }));
+        } finally {
+          setBusy("");
+        }
+      }, [busy, load, proactiveDispatch, t]);
+
+      const retry = () => {
+        setAttempt((value) => value + 1);
+        void load();
+      };
+      const title = outbox ? t("ops.outbox") : t("ops.inbox");
+      const subtitle = outbox ? t("ops.outboxSubtitle") : t("ops.inboxSubtitle");
+      return h("div", {
+        className: "dsh-whale-ops-page",
+        "data-dsh-whale-inbox": mode === "inbox" ? "true" : undefined,
+        "data-dsh-whale-outbox": mode === "outbox" ? "true" : undefined,
+        "aria-busy": loading,
+      },
+        h("div", { className: "dsh-whale-ops-header" },
+          h("div", { className: "dsh-whale-ops-heading" },
+            h("div", { className: "dsh-whale-ops-title" }, title),
+            h("div", { className: "dsh-whale-ops-subtitle" }, subtitle)),
+          h(Button, { type: "button", variant: "outline", size: "sm", disabled: loading, onClick: retry }, t("ops.refresh"))),
+        error ? h("div", { className: "dsh-whale-ops-error", role: "alert", key: `${attempt}:error` }, error) : null,
+        loading ? h(Feedback, { text: outbox ? t("ops.outbox") + "…" : t("ops.loading"), t, loading: true }) : null,
+        !loading && items.length === 0 ? h("div", { className: "dsh-whale-ops-empty" }, t("ops.empty")) : null,
+        !loading && items.length > 0 ? h("div", { className: "dsh-whale-ops-list" },
+          items.map((item) => h(WhaleOpsCard, {
+            key: item?.id,
+            item,
+            task: tasks[item?.taskId],
+            outbox,
+            busy,
+            onDecision: decide,
+            t,
+          }))) : null,
+      );
     }
 
     function WhaleSettings(props) {
@@ -831,7 +1068,14 @@ window.__ModuleLoader__.load({
       const layout = ctx.layout;
       const rpc = async (endpoint, input = {}) =>
         rpcValue(await connection.rpc.call("/dsh-whale", endpoint, input));
-      const injectFace = () => ({ rpc, sessions, uiWorkspace, openSession, remote, layout, settingsNavigation, t });
+      const proactiveDispatch = async (action, payload = {}) => {
+        const dispatch = window.shell?.proactive?.dispatch;
+        if (typeof dispatch !== "function") throw new Error("proactive bridge unavailable");
+        return rpcValue(await dispatch(action, payload));
+      };
+      const injectFace = () => ({
+        rpc, proactiveDispatch, sessions, uiWorkspace, openSession, remote, layout, settingsNavigation, t,
+      });
 
       // Her fields mount inside the desktop Pet section's 助理 group
       // (`settings.pet.item`) — the assistant and the pet share one page.
@@ -910,9 +1154,21 @@ window.__ModuleLoader__.load({
               name: "sidebar.panellist", id: PANEL_ID, order: 20, label: () => panelName, locale: NS,
             }, WhalePanelGlyph);
           });
+          ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+            name: "sidebar.panellist", id: INBOX_PANEL_ID, order: 21, label: () => "Inbox", locale: NS,
+          }, WhalePanelGlyph));
+          ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+            name: "sidebar.panellist", id: OUTBOX_PANEL_ID, order: 22, label: () => "Outbox", locale: NS,
+          }, WhalePanelGlyph));
           ctx.slots.inject("main", () => ctx.slots.register({
             name: "main", key: PANEL_ID, locale: NS, inject: injectFace,
           }, WhaleRedirect));
+          ctx.slots.inject("main", () => ctx.slots.register({
+            name: "main", key: INBOX_PANEL_ID, locale: NS, inject: injectFace,
+          }, (props) => h(WhaleOperations, { ...props, mode: "inbox" })));
+          ctx.slots.inject("main", () => ctx.slots.register({
+            name: "main", key: OUTBOX_PANEL_ID, locale: NS, inject: injectFace,
+          }, (props) => h(WhaleOperations, { ...props, mode: "outbox" })));
           // Seed the configured name into the row label once the host is up.
           rpc("catalog").then((value) => refreshPanelLabel(value?.name)).catch(() => {});
         } else if (declaresFooterAction()) {
