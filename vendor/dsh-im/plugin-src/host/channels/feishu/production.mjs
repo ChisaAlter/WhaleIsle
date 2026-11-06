@@ -23,6 +23,7 @@ import {
   observeBotWorkspaceRemovals,
 } from '../../../../src/channels/shared/bot-workspace-store.mjs';
 import { listAgentPresetCatalog } from '../../../../src/channels/shared/agent-preset.mjs';
+import { createFeishuTaskBinding } from './whale-tasks.mjs';
 
 function webSocketProxyUrl(env) {
   for (const key of ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY']) {
@@ -178,6 +179,7 @@ export async function createProductionController(ctx, config = {}, internals = {
         botOpenId: botConfig.botOpenId,
         groupResponseMode: botConfig.groupResponseMode,
         ownerOpenIds: botConfig.ownerOpenIds ?? [botConfig.ownerOpenId],
+        taskBinding: createFeishuTaskBinding(ctx, { botId: id, botConfig, workspaces, configStore }),
         harness: workspaceScope.harness,
         state: workspaceScope.state,
         replyTimeoutMs: config.replyTimeoutMs ?? 600_000,

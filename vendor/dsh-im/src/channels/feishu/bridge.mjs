@@ -440,10 +440,12 @@ export class FeishuHarnessBridge {
   /** Earliest completion that still needs delivery for each watch. */
   #failedWatchSeqs = new Map();
   #cardDataTimeoutMs;
+  #taskAdapter;
 
   constructor({
     client,
     channel,
+    taskAdapter,
     harness,
     state,
     status,
@@ -479,6 +481,7 @@ export class FeishuHarnessBridge {
       throw new TypeError('Feishu timing values must be positive numbers');
     }
     this.#client = client;
+    this.#taskAdapter = taskAdapter;
     this.#channel = channel;
     this.#harness = harness;
     this.#state = state;
@@ -937,7 +940,8 @@ export class FeishuHarnessBridge {
     const messageId = event.message.message_id;
     if (!alreadyRecorded) {
       if (this.#state.hasSeen(messageId)) return;
-      await this.#state.markSeen(messageId);
+      const pendingTask = /^\/task(?:\s|$)/u.test(String(extractInboundMessage(event, this.#client).content).trim());
+      if (!pendingTask) await this.#state.markSeen(messageId);
       this.#status.lastMessageAt = new Date().toISOString();
       this.#status.messagesReceived += 1;
     }
@@ -3133,6 +3137,16 @@ export class FeishuHarnessBridge {
     const chatId = event.message.chat_id;
     const messageId = event.message.message_id;
     const text = message.content;
+    if (this.#taskAdapter && /^\/task(?:\s|$)/u.test(String(text).trim())) {
+      const reply = await this.#taskAdapter.command(event, message)
+        ?? await this.#taskAdapter.handle(event, message, this.#harness);
+      if (reply !== null) {
+        if (typeof reply === 'string') await this.#send(chatId, reply);
+        await this.#state.markSeen(messageId);
+        onAskComplete?.();
+        return { textDeliveryErrors: typeof reply === 'string' || reply.taskReplySent ? 0 : 1, artifactSendErrors: 0, userVisible: typeof reply === 'string' || reply.taskReplySent };
+      }
+    }
     let askCompleted = false;
     const markAskComplete = () => {
       if (askCompleted) return;

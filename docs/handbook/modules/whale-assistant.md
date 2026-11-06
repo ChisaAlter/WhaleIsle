@@ -20,6 +20,12 @@
 | IM 接入 | `vendor/dsh-im/src/channels/shared/whale-session.mjs` | 助理启用时 `imDefault` 默认 true；bot 未显式选择其他预设时读取鲸鱼娘持久 `sessionId`，不同聊天共享它。沿用渠道既有访问规则；缺会话时报错，不逐聊天新建；显式其他预设沿用独立会话。 |
 | client | `client/client.js` | `__ModuleLoader__.load({id:'dsh-whale'})`；`settings.pet.item` id `whale`——字段块挂进主窗 `pet` 分区「助理」组、总开关正下方：紧凑行逐个 write-through（名字+称呼一行双输入 blur/Enter 提交、默认模型+推理强度一行双下拉、IM 默认行内开关），额外人设/长期记忆/技能收 `ui-primitives` Modal 弹窗（人设·记忆显式保存、技能开关即时）；无性格控件——桌宠性格由主进程 `applySettings` 经 `/dsh-whale` `settings/update` 镜像进 catalog；不注册独立 `settings.section`；侧栏「新会话」下方 `sidebar.panellist` 面板行（label 跟随配置名，透明品牌头像在 Claude 皮肤下切为大小姐形象；同一头像用于会话标题与准备页）+ `main` keyed 重定向（选中即 `sessions.open` 她的会话并 `selectPanel(null)`），经 `slots.spec`+`subscribe` 门控注册，无 panellist 的宿主回落 `sidebar.footer.action`；会话头部 `conversation.session.header.actions` 注册 ⚙ 齿轮（`presentation.owner` 门控）→ `settingsNavigation.open('pet')` 直达设置 |
 
+## 后台资料整理
+
+`lib/task-service.js` 提供 `whaleTasks`；`task-store.js` 是 schema 和唯一聚合，`task-inputs.js` 捕获获准 UTF-8 快照，`task-worker.js` 通过发布前 setup 创建隐藏 `whale-task-reader`，`task-tools.js` 提供 start/list/status/stop/resume。面板与 `/dsh-whale/tasks/*` 共用该服务。任务停止和退出检查衔接 `dsh-task-control` 的 host admission/inspection；重启只对账，不自动重新执行。
+
+飞书 `plugin-src/host/channels/feishu/whale-tasks.mjs` 接收真实渠道来源，桌面先授权个人 open_id；引用本人原 chat 文件后提交 `/task`，回传固定模板文字。管理命令和投递都复核当前 owner/route/账号代次/开关/预设；异步验证后、实际 SDK 派发前再次核对任务版本与 hold，撤权阻止尚未派发的新发送，在途请求仍保存真实回执。控制授权绑定具体动作和任务版本。回执不等同已读。原型未整体导入。用法和当前限额集中于 [插件说明](../../../vendor/dsh-whale/README.md)，不在此重复。
+
 ## 宠物桥
 
 `pet-dsh-watch.js` 在会话日志尾随之外追加尾随 `data/whale/pet-outbox.jsonl`（纯 jsonl，非 zstd）：撕裂行不消费、偏移量复用 `dsh.files` 游标表、渲染端 `dshWhale` 事件直推 `text` 上汽泡（优先级-2 提醒）。`usage-today.json` 是反向镜像——watcher 轮询时把当日用量快照写进去供 `whale_usage_today` 读，避免插件重扫会话日志。

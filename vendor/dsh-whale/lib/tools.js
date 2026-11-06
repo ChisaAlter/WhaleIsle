@@ -16,6 +16,7 @@ import { registerSessionTools } from './session-tools.js';
 import { registerDesktopTools } from './desktop-tools.js';
 import { registerStickerTools } from './sticker-tools.js';
 import { registerProfileTools } from './profile-tools.js';
+import { registerTaskTools } from './task-tools.js';
 
 export const name = 'dsh-whale-tools';
 export const inject = ['tools', 'agents'];
@@ -325,6 +326,7 @@ export function apply(ctx) {
       ? createWhaleScope(process.env.DSH_HOME).get().sessionId
       : '',
   });
+  registerTaskTools(ctx);
   registerDesktopTools(ctx);
   registerProfileTools(ctx);
   registerStickerTools(ctx);

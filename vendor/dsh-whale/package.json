@@ -25,7 +25,8 @@
     "@deepseek-ai/dsh-tools": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@deepseek-ai/dsh-scope": "0.1.5-rc.2",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "zod": "^4.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -65,6 +66,7 @@
     "client",
     "presets",
     "stickers",
+    "README.md",
     "cordis.patch.yml"
   ]
 }

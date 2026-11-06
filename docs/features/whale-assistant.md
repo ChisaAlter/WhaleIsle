@@ -17,8 +17,14 @@
    - 自身：`whale_watch`（盯某会话 turn/end → 唤醒她自己，once 默认 true）/ `whale_schedule`（inMinutes 一次性 / everyMinutes 间隔 / daily "HH:MM"，到点把 text 作为提示词唤醒；`maxRuns` 封顶）/ `whale_usage_today` / `whale_remember`（追加 MEMORY.md，上限 40k）/ `whale_sticker`（挑鲸鱼娘表情包：可选 `query` 匹配名称/标签、随机兜底，返回可直接粘贴的 markdown 图片语法——她写进回复即渲染成图；`data/whale/stickers/` 里她或用户自增的图片同池参与）。
    - 桌面：`whale_desktop_state`（版本/kernel/插件清单/disabled/非密配置）/ `whale_marketplace`（目录浏览）/ `whale_desktop_config`（renderer 白名单键补丁）/ `whale_desktop_plugin`（list/install/remove/enable/disable）——全部经 `/desktop/*` 回环通道。
    - 桌宠：`whale_pet_say` / `whale_notify`（写 `data/whale/pet-outbox.jsonl`）。
-5. IM 接入默认开启（`imDefault=true`）：未显式选其他预设的 IM bot 每次发问都解析 `data/whale/settings.json` 里的常驻 `sessionId`，不同 IM 聊天与桌面共用这一条会话；不会因新聊天、`/new` 或绑定丢失创建第二条。显式选择其他预设的 bot 保留独立会话。各渠道沿用自身既有的访问规则；用户关闭 IM 接入、助理关闭或常驻会话丢失时拒绝进入鲸鱼娘会话。
+5. IM 接入默认开启（`imDefault=true`）：九种聊天 IM 未显式选其他预设时优先进入同一常驻会话，已有有效人工绑定优先保留。自动绑定持久记录 `whale-auto/auto` 与当时 preset；关闭助理/IM 或切其他 preset 后只使受影响的自动绑定失效，保留历史。来源不明的 legacy whale 绑定在共享关闭时拒绝继续并要求 `/new` 或明确 `/session`，不清全表。人工绑定 whale 在关闭时也拒绝执行。共享 id 已选中但丢失时拒绝，不逐聊天创建第二鲸鱼娘。AI Office 是独立 Job 路径，不使用共享 resolver。
 6. 宠物「找她办事」→ 主窗口聚焦 + 侧栏「新会话」下方的「{名字}」面板行直达她的常驻会话，或会话列表里直接进入。宠物「聊聊」对话卡（助理开启时）即共享此会话：卡内模型/推理下拉写会话本地选择，↗ 钮跳转到同一会话，消息双向互通（卡内发送进会话日志、DSHD 侧消息经 3s 轮询回填进卡）。侧栏入口走 `sidebar.panellist`（list slot，位于新会话按钮与工作区之间，label 跟随配置名——改名后经 ledger 重注册即时换行文字）+ `main` keyed slot 注册一个重定向组件（`assistant/ensure` → `openSession`（优先 `uiWorkspace.openSession`，0.1.5 宿主回退 `sessions.open`）→ `selectPanel(null)`，选中即开会话不驻留中间页）——入口不占用 `sidebar.nav.tab` 顶部区域切换位。会话头部标题右侧有 ⚙ 齿轮（`conversation.session.header.actions` 项，按 `presentation.owner` 门控仅她的会话显示）→ `settingsNavigation.open('pet')` 直达 `pet` 分区（她的字段在「助理」组内）。
+
+## 后台资料任务
+
+设置「聊天与能力」中的后台任务面板可提交指定文本资料、查看结果/投递状态、停止和明确继续；正文内部滚动，标题/关闭始终可达，任务动作位于长结果之前。聊天 `/task` 仅从本轮真实用户原消息取范围，控制授权绑定 status/stop/resume 具体动作和任务版本，停止来源不能授权继续。`whaleTasks` 使用唯一 `whale_tasks` storage-domain，Execution/Result/Delivery 嵌入 Task；一个隐藏只读原生 Worker 只有资料快照 read/search/report 三工具。发布前宿主固定权限/模型并在工具执行与每步请求拒绝越权。接纳、真实结束、资料读取与引用、未满足条件、完成和投递分别记录，重启先对账，不恢复用户取消的任务。
+
+首期飞书 adapter 需桌面明确授权 botId + 个人 open_id；回复本人在原 chat 的文本文件并发送 `/task` JSON，前台回接纳编号，后台以 Task 的固定模板回原 chat。不开新对话人格，不读全会话历史/MEMORY，不发附件，不以最近 sender 选收件人。平台发送未知保留 unknown，不盲重发。完整使用、限制与验证边界见 [dsh-whale README](../../vendor/dsh-whale/README.md)。
 
 ## Invariants
 

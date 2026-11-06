@@ -33,6 +33,12 @@ bridge: channel starts receive the caller-scoped `webServer` service through
 `host-plugin.test.mjs` green to prove every channel receives the same scoped
 server.
 
+## Shared whale routing and background tasks
+
+The nine chat channels use the resident whale default. Persisted binding metadata distinguishes manual bindings from `whale-auto/auto` plus the originating preset. Verified manual non-whale bindings and explicit non-whale presets do not read whale/desktop settings; malformed settings still fail visibly on whale/default routes. Manual non-whale bindings survive policy changes; obsolete automatic bindings stop applying when whale/IM is disabled or a different preset is selected. Unclassified legacy whale bindings require an explicit `/new` or `/session` when shared routing is off, while history is preserved. AI Office retains its separate Job Sessions.
+
+The first background task adapter is Feishu: `plugin-src/host/channels/feishu/whale-tasks.mjs`. It accepts explicit `/task` from a desktop-authorized individual, reads attached or same-author quoted files in the original chat, and records stable ingress identity in `whaleTasks`. It does not create a second task state machine. The runtime registers a destination-bound sender that rechecks bot/account incarnation, task owner, access, switches and preset after asynchronous validation and immediately before SDK dispatch, using the task service's revision/hold admission. All management actions require current original-route authorization; status uses this guarded sender, and a denied command cannot fall through to an ordinary model read. Already admitted provider requests remain in flight and their receipts are retained. The task outbox owns retries/unknown; no recent-sender fallback or file delivery is used. Rebuild `lib/index.js` after these source edits. Usage and validation boundaries live in `vendor/dsh-whale/README.md`.
+
 ## Load contract
 
 1. `scripts/setup-harness.js` / `after-pack.js` must `installPluginRuntimeDeps` then `assertVendoredPluginRuntimeDeps` for `dsh-im` (fail closed).

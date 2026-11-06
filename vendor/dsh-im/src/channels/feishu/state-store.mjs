@@ -1,9 +1,10 @@
+import { bindingValue, normalizeBindings } from '../shared/session-binding.mjs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 const EMPTY_STATE = Object.freeze({
   version: 1,
-  sessions: {},
+  sessions: {}, bindings: {},
   seenMessageIds: [],
   watches: {},
   includeArchivedSessions: false,
@@ -36,6 +37,7 @@ export class StateStore {
         version: 1,
         sessions: parsed.sessions && typeof parsed.sessions === 'object' ? parsed.sessions : {},
         seenMessageIds: Array.isArray(parsed.seenMessageIds) ? parsed.seenMessageIds.slice(-1000) : [],
+        bindings: normalizeBindings(parsed.bindings, parsed.sessions ?? {}),
         watches: parsed.watches && typeof parsed.watches === 'object' ? parsed.watches : {},
         includeArchivedSessions: typeof parsed.includeArchivedSessions === 'boolean'
           ? parsed.includeArchivedSessions
@@ -52,18 +54,24 @@ export class StateStore {
     return this.#state.sessions[key] ?? null;
   }
 
-  async setSession(key, sessionId) {
+  bindingFor(key) { return this.#state.bindings?.[key] ?? null; }
+
+  async setSession(key, sessionId, options) {
     this.#state.sessions[key] = sessionId;
+    this.#state.bindings ??= {};
+    this.#state.bindings[key] = bindingValue(sessionId, options);
     await this.#persist();
   }
 
   async clearSession(key) {
     delete this.#state.sessions[key];
+    if (this.#state.bindings) delete this.#state.bindings[key];
     await this.#persist();
   }
 
   async clearSessions() {
     this.#state.sessions = {};
+    this.#state.bindings = {};
     await this.#persist();
   }
 

@@ -112,6 +112,8 @@ export class FeishuRuntime {
   #repair;
   #client = null;
   #bridge = null;
+  #taskBinding;
+  #taskAdapter;
   #wsClient = null;
   #starting = null;
   #stopping = null;
@@ -129,6 +131,7 @@ export class FeishuRuntime {
     groupResponseMode,
     ownerOpenId,
     ownerOpenIds,
+    taskBinding,
     harness,
     state,
     repair,
@@ -161,6 +164,7 @@ export class FeishuRuntime {
     this.#groupResponseMode = normalizeFeishuGroupResponseMode(groupResponseMode);
     this.#ownerOpenIds = normalizedOwners;
     this.#harness = harness;
+    this.#taskBinding = taskBinding;
     this.#state = state;
     this.#repair = repair ?? null;
     this.#replyTimeoutMs = replyTimeoutMs;
@@ -255,7 +259,9 @@ export class FeishuRuntime {
         client,
         initialText: t('已连接 DeepSeek Harness，正在思考…'),
       });
+      this.#taskAdapter = this.#taskBinding?.attach({ client, signal, allowedSenderOpenIds: new Set(this.#ownerOpenIds) });
       const bridge = new FeishuHarnessBridge({
+        taskAdapter: this.#taskAdapter,
         client,
         channel,
         harness: this.#harness,
@@ -600,6 +606,8 @@ export class FeishuRuntime {
     wsClient?.close({ force: true });
     const bridge = this.#bridge;
     this.#bridge = null;
+    this.#taskAdapter?.close();
+    this.#taskAdapter = null;
     if (bridge) await bridge.waitForIdle();
     this.#client = null;
     this.#status.feishuLongConnectionState = preserveError ? 'failed' : 'idle';

@@ -64,6 +64,10 @@ function postContent(event, parsed = parsedMessageContent(event)) {
     let visibleText = '';
     for (const element of paragraph) {
       const tag = String(element?.tag ?? '').toLowerCase();
+      if (tag === 'file' && nonEmptyString(element.file_key)) {
+        // Explicit file blocks in a post can accompany a /task instruction.
+        continue;
+      }
       if (tag === 'img') {
         const key = nonEmptyString(element?.image_key);
         if (key) imageKeys.push(key);
@@ -126,7 +130,7 @@ async function readBoundedStream(stream, { signal, maxBytes }) {
   }
 }
 
-async function readStream(stream, { signal }) {
+async function readStream(stream, { signal, maxBytes }) {
   if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') {
     throw new Error('Feishu file download returned no readable stream');
   }
@@ -142,6 +146,7 @@ async function readStream(stream, { signal }) {
       signal?.throwIfAborted();
       const data = Buffer.from(chunk);
       size += data.length;
+      if (maxBytes !== undefined && size > maxBytes) { stream.destroy?.(); throw new Error('附件超过后台资料大小限制。'); }
       chunks.push(data);
     }
     signal?.throwIfAborted();
@@ -263,7 +268,7 @@ function feishuFileSource(event, client, file) {
   if (!key) return null;
   return {
     name: nonEmptyString(file?.file_name) ?? 'file',
-    async load({ signal } = {}) {
+    async load({ signal, maxBytes } = {}) {
       signal?.throwIfAborted();
       const resource = await client?.im?.v1?.messageResource?.get?.({
         path: {
@@ -273,7 +278,7 @@ function feishuFileSource(event, client, file) {
         params: { type: 'file' },
       });
       signal?.throwIfAborted();
-      return readStream(resource?.getReadableStream?.(), { signal });
+      return readStream(resource?.getReadableStream?.(), { signal, maxBytes });
     },
   };
 }
@@ -287,10 +292,13 @@ export function extractInboundMessage(event, client) {
     : null;
   const imageKeys = standaloneImageKey ? [standaloneImageKey] : post?.imageKeys ?? [];
   const file = messageType === 'file' ? feishuFileSource(event, client, parsed) : null;
+  const postFiles = messageType === 'post' && Array.isArray(parsed?.content)
+    ? parsed.content.flat().filter(element => element?.tag === 'file').map(element => feishuFileSource(event, client, element)).filter(Boolean)
+    : [];
   return {
     content: messageType === 'text' ? extractText(event) ?? '' : post?.text ?? '',
     images: imageKeys.map((key) => feishuImageSource(event, client, key)),
-    files: file ? [file] : [],
+    files: file ? [file] : postFiles,
   };
 }
 

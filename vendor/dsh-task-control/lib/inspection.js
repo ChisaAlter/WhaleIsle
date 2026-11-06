@@ -153,6 +153,11 @@ export async function collectInspection(ctx, state, options = {}) {
     activeWork.push({ kind: 'request', id: 'pending-requests', count: state.pending.size });
   }
   await collectSchedule(ctx, scheduledWork, coverage);
+  const whaleTasks = ctx.get('whaleTasks');
+  if (whaleTasks) {
+    coverage.whaleTasks = whaleTasks.available ? 'ok' : 'unavailable';
+    if (whaleTasks.available) activeWork.push(...whaleTasks.inspect());
+  }
   return {
     ok: true,
     hostGeneration: state.hostGeneration,
