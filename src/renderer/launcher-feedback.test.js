@@ -139,6 +139,10 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.equal(result.nonPluginFailure.modalHidden, true);
   assert.equal(result.nonPluginFailure.guidanceVisible, false, 'port failures never suggest disabling plugins');
   assert.equal(result.stopFailure.toastCount, 0, 'a failed close raises no popup');
+  assert.equal(result.pluginRestartFailure.toastCount, 0, 'a restart that fails after a plugin change raises no popup');
+  assert.match(result.pluginRestartFailure.verdict, /fixture restart failed/, 'the home diagnostics name the reason');
+  assert.equal(result.pluginRestartRecovered.toastCount, 0);
+  assert.equal(result.pluginRestartRecovered.boardHidden, true, 'the next successful plugin change clears the stale failure');
   assert.doesNotMatch(result.stopFailure.status, /busy|桌面端正在处理任务/, 'the status line stays short');
   assert.equal(result.stopFailure.verdict, '桌面端正在处理任务，请稍后重试。', 'diagnostics show the translated reason, not the code');
 });

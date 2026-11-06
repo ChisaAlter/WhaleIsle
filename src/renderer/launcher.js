@@ -638,6 +638,9 @@ async function actPlugin(method, name, button) {
   }
   const aligning = method === 'disablePlugin' || method === 'enablePlugin';
   const slimPackage = lastStatus?.launcherPackage === true;
+  // A new plugin change supersedes the failure the home page still reports;
+  // no desktop-ready event follows a plugin-change restart to clear it.
+  if (aligning) desktopActionError = '';
   const restore = launcherButtonBusy(button, aligning ? '正在应用插件变更…' : '正在移除插件…');
   try {
     const result = await api[method](name);
@@ -652,7 +655,7 @@ async function actPlugin(method, name, button) {
     if (aligning && result && result.harnessRestarted === false && result.error) {
       // The restart after a plugin change failed: report it where every failed
       // start is reported, not in a popup.
-      desktopActionError = errText(result);
+      desktopActionError = errText(result.error, '插件已变更，但桌面端未能重新启动。');
       activateTab('home');
       void refreshStatus();
       return;

@@ -18,6 +18,7 @@ let recoveryResolve;
 let recoveryCalls = 0;
 let recoveryNames;
 let statusReadFails = false;
+let pluginAlignResults = [];
 let desktopStatus = { version: '0.3.3', desktop: { state: 'ready' }, downloadRoute: 'github', config: { downloadRoute: 'github' }, routes: [], forensics: { plugins: [] } };
 let installResolve;
 let installCancelCalls = 0;
@@ -39,6 +40,7 @@ const handlers = {
   'shell:check-update': () => { checkCalls++; return new Promise(resolve => { checkResolve = resolve; }); },
   'shell:install-runtime': () => new Promise(resolve => { installResolve = resolve; }),
   'shell:stop-desktop': () => ({ ok: false, error: 'busy' }),
+  'shell:disable-plugin': () => pluginAlignResults.shift(),
   'shell:cancel-runtime-install': () => { installCancelCalls++; return { ok: true }; },
   'shell:run-import': (_event, opts) => { importCalls.push(opts.opId); return new Promise(resolve => { importResolve = resolve; }); },
   'shell:cancel-import': (_event, opts) => { importCancelCalls.push(opts.opId); return { ok: false, error: 'fixture cancellation refused' }; },
@@ -301,6 +303,22 @@ app.whenReady().then(async () => {
     result.importTerminal.restored = await js("document.getElementById('import-result').checkVisibility() && document.getElementById('import-result').textContent.includes('未完成的导入事务')");
     result.importCalls = importCalls;
     result.importCancelCalls = importCancelCalls;
+    // A restart that fails after a plugin change is reported on the home page, and the
+    // next successful change clears it again.
+    desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'plugin-align-1' },
+      recovery: { skipUserPlugins: false }, forensics: { plugins: [] } };
+    await js("document.querySelector('[data-tab=plugins]').click()");
+    await clearNotices();
+    pluginAlignResults = [{ ok: true, harnessRestarted: false, error: 'fixture restart failed' }];
+    await js("void actPlugin('disablePlugin', 'dsh-tavern', null)");
+    await waitFor("document.getElementById('panel-home').classList.contains('is-active') && document.getElementById('home-status').textContent.includes('启动或关闭未完成')");
+    result.pluginRestartFailure = { toastCount: await js("document.querySelectorAll('.shell-feedback-toast').length"),
+      verdict: await js("document.getElementById('home-recovery-verdict').textContent") };
+    pluginAlignResults = [{ ok: true, harnessRestarted: true }];
+    await js("void actPlugin('disablePlugin', 'dsh-tavern', null)");
+    await waitFor("!document.getElementById('home-status').textContent.includes('启动或关闭未完成')");
+    result.pluginRestartRecovered = { toastCount: await js("document.querySelectorAll('.shell-feedback-toast').length"),
+      boardHidden: await js("document.getElementById('home-recovery').hidden") };
     }
     // Same production feedback assets on the real boot page; controls/logs remain content.
     boot = new BrowserWindow({ width: 1060, height: 660, useContentSize: true, frame: false, show: false,
