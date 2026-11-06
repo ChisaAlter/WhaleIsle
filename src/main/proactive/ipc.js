@@ -1,6 +1,6 @@
 'use strict';
 
-function createProactiveIpc({ runtime, scheduler }) {
+function createProactiveIpc({ runtime, scheduler, sources = {} }) {
   if (!runtime || !scheduler) throw new TypeError('createProactiveIpc needs runtime and scheduler');
 
   async function dispatch(action, payload = {}) {
@@ -12,6 +12,21 @@ function createProactiveIpc({ runtime, scheduler }) {
       case 'task/trace': return runtime.listExecutionTrace(payload);
       case 'inbox/list': return runtime.listInbox();
       case 'outbox/list': return runtime.listOutbox();
+      case 'source/state':
+      case 'source/state/list': return runtime.listSourceState();
+      case 'source/github/sync': {
+        const github = sources.github;
+        if (!github || (typeof github.sync !== 'function' && typeof github.discover !== 'function')) {
+          throw Object.assign(new Error('GitHub source unavailable'), { code: 'proactive/source-unavailable' });
+        }
+        if (typeof github.sync === 'function') return github.sync(payload);
+        const items = await github.discover(payload);
+        return runtime.ingestSourceItems(items, {
+          source: 'github',
+          autonomy: payload.autonomy,
+          cursor: payload.cursor ?? payload.since ?? null,
+        });
+      }
       case 'approval/request': return runtime.requestApproval(payload.taskId, payload);
       case 'approval/decide': return runtime.decideApproval(payload.approvalId, payload.decision, payload);
       case 'schedule/create': return scheduler.schedule(payload.taskId, payload);
