@@ -60,3 +60,32 @@ test('idempotency prevents duplicate transitions', () => {
   runtime.transition(task.id, 'queued', { idempotencyKey: 'transition-1' });
   assert.equal(runtime.listEvents().filter(event => event.type === 'task.transitioned').length, 1);
 });
+
+test('projects a safe execution trace that survives restart', () => {
+  const first = createRuntime();
+  const task = first.runtime.createTask({
+    title: 'Private task title',
+    description: 'private task description',
+    source: 'github',
+  });
+  first.runtime.transition(task.id, 'queued', { actor: 'scheduler', reason: 'private reason' });
+  first.runtime.requestApproval(task.id, {
+    action: 'Send private report',
+    target: 'private@example.com',
+    dataClass: 'sensitive',
+  });
+
+  const trace = first.runtime.listExecutionTrace({ taskId: task.id });
+  assert.deepEqual(trace.map(({ action, source, fromState, toState }) => ({ action, source, fromState, toState })), [
+    { action: 'task.created', source: 'github', fromState: null, toState: 'discovered' },
+    { action: 'task.transitioned', source: 'github', fromState: 'discovered', toState: 'queued' },
+    { action: 'approval.requested', source: 'github', fromState: 'queued', toState: 'queued' },
+    { action: 'task.transitioned', source: 'github', fromState: 'queued', toState: 'waiting_approval' },
+  ]);
+  assert.ok(trace.every(event => event.taskId === task.id && event.at && event.eventId));
+  const serialized = JSON.stringify(trace);
+  assert.doesNotMatch(serialized, /Private task title|private task description|private@example\.com|Send private report|private reason/);
+
+  const restarted = new TaskRuntime({ store: first.store, idFactory: () => 'restart-id', now: () => '2026-11-05T00:01:00Z' });
+  assert.deepEqual(restarted.listExecutionTrace({ taskId: task.id }), trace);
+});
