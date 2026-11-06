@@ -198,8 +198,8 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
   assert.match(r.failed.detail, /EEXIST/);
   assert.doesNotMatch(r.failed.homeVisibleText, /EEXIST|fixture/, 'raw failure does not grow the home surface');
   assert.equal(r.failed.diagnosticsOpen, false);
-  assert.equal(r.failed.errorToasts.length, 1, 'failed operation has one floating result');
-  assert.match(r.failed.errorToasts[0], /EEXIST/);
+  assert.deepEqual(r.failed.errorToasts, [], 'a failed start raises no popup');
+  assert.match(r.failed.status, /启动或关闭未完成，详见启动诊断/, 'the status line points at the diagnostics');
   assert.equal(r.failed.modalHidden, true);
   assert.equal(r.readyHome.startHidden, true);
   assert.equal(r.readyHome.stopHidden, false);

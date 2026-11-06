@@ -650,7 +650,11 @@ async function actPlugin(method, name, button) {
       return;
     }
     if (aligning && result && result.harnessRestarted === false && result.error) {
-      setHint(errText(result));
+      // The restart after a plugin change failed: report it where every failed
+      // start is reported, not in a popup.
+      desktopActionError = errText(result);
+      activateTab('home');
+      void refreshStatus();
       return;
     }
     if (method === 'removePlugin' && result && result.kernelStopped) {
@@ -693,7 +697,6 @@ let lastStatus = null;
 let desktopOperation = null;
 let desktopActionError = '';
 let pluginGuidancePending = false;
-let promptedPluginFailure = '';
 let statusRequest = 0;
 let installBusy = false;
 let updateBusy = false;
@@ -1136,7 +1139,6 @@ async function refreshStatus() {
   } else {
     syncUpdateNotice(lastUpdateCheck);
   }
-  void maybePromptPluginRecovery();
 }
 
 function desktopActionBusy() {
@@ -1175,9 +1177,8 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     try { await refreshStatus(); }
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
     paint();
-    // One floating result; the status line stays short and the raw detail
-    // lives in the folded startup diagnostics.
-    if (desktopActionError) setHint(errText(desktopActionError, '启动或关闭未完成'));
+    // A failed start or close raises no popup: the status line points at the
+    // folded startup diagnostics, which hold the translated reason.
   }
   return result;
 }
@@ -1188,6 +1189,8 @@ function pluginFailureKey(status, guidance) {
   return JSON.stringify([sticky ? 'sticky' : 'full', sticky ? recovery.at : status?.lastStart?.at, guidance.kind, guidance.names]);
 }
 
+// Opened only by a click on the home guidance card: a failed start never
+// raises this confirmation by itself.
 async function askPluginRecovery(guidance) {
   if (!guidance || desktopActionBusy() || pluginGuidancePending) return;
   pluginGuidancePending = true;
@@ -1196,7 +1199,6 @@ async function askPluginRecovery(guidance) {
     while (confirmResolve) await confirmClosed;
     const current = window.launcherRecovery.startupRecoveryGuidance(lastStatus);
     if (!current || key !== pluginFailureKey(lastStatus, current) || desktopActionBusy()) return;
-    promptedPluginFailure = key;
     if (!(await appConfirm({ ...guidance, cancelText: '暂不处理' }))) return;
     const fresh = window.launcherRecovery.startupRecoveryGuidance(lastStatus);
     if (!fresh || key !== pluginFailureKey(lastStatus, fresh)) {
@@ -1206,14 +1208,12 @@ async function askPluginRecovery(guidance) {
     const result = guidance.kind === 'disable'
       ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
       : await runDesktopAction('skipUserPlugins');
-    // runDesktopAction already raised the failure notice.
+    // runDesktopAction already reported a failed disable or start on the home
+    // page; only a completed start gets a result notice.
     if (!result && desktopActionError) return;
     if (guidance.kind !== 'disable' || !result) return;
-    if (result.ok === false) {
-      await appNotice({ title: '未能禁用插件', body: errText(result.error) });
-    } else if (result.harnessRestarted === false) {
-      await appNotice({ title: '插件已禁用，启动未完成', body: `已禁用 ${guidance.names.join('、')}，但鲸屿尚未启动成功。\n\n${errText(result.error)}` });
-    } else if ((result.forensics?.recovery || lastStatus?.recovery || lastStatus?.desktop?.pluginRecovery)?.skipUserPlugins) {
+    if (result.ok === false || result.harnessRestarted === false) return;
+    if ((result.forensics?.recovery || lastStatus?.recovery || lastStatus?.desktop?.pluginRecovery)?.skipUserPlugins) {
       await appNotice({ title: '插件已禁用，仍需排查', body: `已禁用 ${guidance.names.join('、')}，鲸屿仍以跳过用户插件模式启动。还有插件加载失败，请查看最新诊断；不会自动继续禁用其他插件。` });
     } else {
       await appNotice({ title: '已禁用并启动鲸屿', body: `已禁用 ${guidance.names.join('、')}。未卸载插件或清理用户数据，可在「插件排查」中重新启用。` });
@@ -1221,14 +1221,6 @@ async function askPluginRecovery(guidance) {
   } finally {
     pluginGuidancePending = false;
   }
-}
-
-async function maybePromptPluginRecovery() {
-  if (document.visibilityState !== 'visible' || !document.hasFocus()
-    || desktopActionBusy() || pluginGuidancePending) return;
-  const guidance = window.launcherRecovery.startupRecoveryGuidance(lastStatus);
-  if (!guidance || promptedPluginFailure === pluginFailureKey(lastStatus, guidance)) return;
-  await askPluginRecovery(guidance);
 }
 
 function syncRecoveryActions(status) {
@@ -2707,8 +2699,6 @@ function bind() {
       void refreshStatus();
     });
   }
-  window.addEventListener('focus', () => void maybePromptPluginRecovery());
-  document.addEventListener('visibilitychange', () => void maybePromptPluginRecovery());
   if (api?.onLauncherHint) {
     api.onLauncherHint((payload) => {
       if (payload?.importResume) {

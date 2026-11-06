@@ -107,6 +107,10 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.doesNotMatch(result.boot.saved.ticker, /日志已保存/);
   assert.equal(result.boot.saved.logCount, 1, 'operation feedback does not alter business logs');
   assert.deepEqual(result.errors, []);
+  assert.equal(result.recoveryInline.modalHidden, true, 'a failed start does not open a confirmation by itself');
+  assert.equal(result.recoveryInline.toastCount, 0, 'a failed start raises no popup');
+  assert.equal(result.recoveryInline.guidanceVisible, true, 'the recovery suggestion stays on the home page');
+  assert.equal(result.recoveryStickyInline.modalHidden, true, 'a repeated failure does not open a confirmation either');
   assert.equal(result.recoveryPrompt.title, '插件加载失败');
   assert.match(result.recoveryPrompt.body, /dsh-tavern/);
   assert.equal(result.recoveryPrompt.focus, 'app-confirm-cancel');
@@ -134,7 +138,7 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.match(result.statusReadFailure.body, /暂时无法读取桌面状态/);
   assert.equal(result.nonPluginFailure.modalHidden, true);
   assert.equal(result.nonPluginFailure.guidanceVisible, false, 'port failures never suggest disabling plugins');
-  assert.equal(result.stopFailure.toastCount, 1, 'a failed close raises one floating result');
+  assert.equal(result.stopFailure.toastCount, 0, 'a failed close raises no popup');
   assert.doesNotMatch(result.stopFailure.status, /busy|桌面端正在处理任务/, 'the status line stays short');
   assert.equal(result.stopFailure.verdict, '桌面端正在处理任务，请稍后重试。', 'diagnostics show the translated reason, not the code');
 });
