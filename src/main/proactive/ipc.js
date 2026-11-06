@@ -8,6 +8,8 @@ function createProactiveIpc({ runtime, scheduler }) {
       case 'task/create': return runtime.createTask(payload);
       case 'task/transition': return runtime.transition(payload.taskId, payload.state, payload);
       case 'task/get': return runtime.getTask(payload.taskId);
+      case 'trace/list':
+      case 'task/trace': return runtime.listExecutionTrace(payload);
       case 'inbox/list': return runtime.listInbox();
       case 'outbox/list': return runtime.listOutbox();
       case 'approval/request': return runtime.requestApproval(payload.taskId, payload);

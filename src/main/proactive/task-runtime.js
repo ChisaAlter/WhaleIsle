@@ -13,6 +13,13 @@ const STATES = new Set([
 const TERMINAL_STATES = new Set(['delivered', 'failed', 'cancelled']);
 const AUTONOMY_LEVELS = new Set([1, 2, 3, 4, 5]);
 
+// Sources are labels used for routing and filtering, not user content. Keep
+// the trace projection bounded to a small, non-sensitive identifier set.
+function safeSource(value) {
+  if (typeof value !== 'string' || value.length > 64 || !/^[a-z0-9._:-]+$/i.test(value)) return 'custom';
+  return value;
+}
+
 class JsonEventStore {
   constructor(filePath) {
     this.filePath = filePath;
@@ -93,7 +100,10 @@ class TaskRuntime {
     if (idempotencyKey && this.events.some(event => event.type === 'task.transitioned' && event.idempotencyKey === idempotencyKey)) {
       return clone(this.#task(taskId));
     }
-    this.#emit({ type: 'task.transitioned', taskId, state, actor, reason, evidence: clone(evidence), idempotencyKey });
+    this.#emit({
+      type: 'task.transitioned', taskId, state, fromState: task.state, source: task.source,
+      actor, reason, evidence: clone(evidence), idempotencyKey,
+    });
     return clone(this.#task(taskId));
   }
 
@@ -141,6 +151,27 @@ class TaskRuntime {
   listOutbox() { return clone([...this.outbox.values()]); }
   listEvents() { return clone(this.events); }
 
+  /**
+   * Return a bounded, queryable view of task execution events.
+   *
+   * This deliberately does not expose event payloads. Titles, descriptions,
+   * approval targets, notes and evidence can contain personal or secret data;
+   * the trace only carries routing labels and lifecycle state changes.
+   */
+  listExecutionTrace({ taskId = null, source = null, since = null, until = null, limit = 100 } = {}) {
+    const normalizedTaskId = taskId == null ? null : String(taskId);
+    const normalizedSource = source == null ? null : safeSource(String(source));
+    const max = Number.isInteger(limit) ? Math.max(1, Math.min(limit, 200)) : 100;
+    const traces = this.#executionTrace().filter((event) => {
+      if (normalizedTaskId !== null && event.taskId !== normalizedTaskId) return false;
+      if (normalizedSource !== null && event.source !== normalizedSource) return false;
+      if (since != null && event.at < String(since)) return false;
+      if (until != null && event.at > String(until)) return false;
+      return true;
+    });
+    return clone(traces.slice(-max));
+  }
+
   #task(taskId) {
     const task = this.tasks.get(taskId);
     if (!task) throw new Error('Unknown task');
@@ -171,6 +202,59 @@ class TaskRuntime {
       const item = this.outbox.get(event.approvalId);
       if (item) item.decision = event.decision;
     }
+  }
+
+  #executionTrace() {
+    const stateByTask = new Map();
+    const sourceByTask = new Map();
+    const traces = [];
+    for (const event of this.events) {
+      let taskId = null;
+      let source = null;
+      let state = null;
+      let fromState = null;
+      let toState = null;
+      let action = null;
+
+      if (event.type === 'task.created' && event.task?.id) {
+        taskId = String(event.task.id);
+        source = safeSource(event.task.source);
+        state = event.task.state;
+        toState = state;
+        sourceByTask.set(taskId, source);
+        stateByTask.set(taskId, state);
+        action = 'task.created';
+      } else if (event.type === 'task.transitioned' && event.taskId) {
+        taskId = String(event.taskId);
+        source = sourceByTask.get(taskId) || safeSource(event.source);
+        fromState = event.fromState ?? stateByTask.get(taskId) ?? null;
+        toState = event.state;
+        state = toState;
+        stateByTask.set(taskId, toState);
+        action = 'task.transitioned';
+      } else if (event.type === 'approval.requested' && event.approval?.taskId) {
+        taskId = String(event.approval.taskId);
+        source = sourceByTask.get(taskId) || 'custom';
+        state = stateByTask.get(taskId) ?? null;
+        fromState = state;
+        toState = state;
+        action = 'approval.requested';
+      } else if (event.type === 'approval.decided' && event.approvalId) {
+        const approval = this.outbox.get(event.approvalId);
+        if (approval?.taskId) {
+          taskId = String(approval.taskId);
+          source = sourceByTask.get(taskId) || 'custom';
+          state = stateByTask.get(taskId) ?? null;
+          fromState = state;
+          toState = state;
+          action = 'approval.decided';
+        }
+      }
+
+      if (!action || !taskId) continue;
+      traces.push({ eventId: event.eventId, taskId, at: event.at, source, action, state, fromState, toState });
+    }
+    return traces;
   }
 }
 
