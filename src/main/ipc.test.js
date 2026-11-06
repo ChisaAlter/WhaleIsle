@@ -378,6 +378,7 @@ function loadIpc(options = {}) {
     remote: options.remote === undefined ? null : options.remote,
     onOpenLauncher: options.onOpenLauncher,
     getLive2dPet: options.getLive2dPet,
+    proactiveService: options.proactiveService,
   });
 
   async function invoke(channel, event, ...args) {
@@ -428,6 +429,32 @@ function loadIpc(options = {}) {
     runtimeInstallCalls,
   };
 }
+
+test('proactive IPC delegates only from the trusted Harness role', async () => {
+  const calls = [];
+  const result = { ok: true, taskId: 'task-1' };
+  const ipc = loadIpc({
+    proactiveService: {
+      dispatch: async (...args) => {
+        calls.push(args);
+        return result;
+      },
+    },
+  });
+  try {
+    assert.deepEqual(
+      await ipc.invoke('shell:proactive', harnessEvent(), 'task/create', { title: 'IPC task' }),
+      result,
+    );
+    assert.deepEqual(calls, [['task/create', { title: 'IPC task' }]]);
+    await assert.rejects(
+      () => ipc.invoke('shell:proactive', bootEvent(), 'task/create', { title: 'blocked' }),
+      (error) => error?.code === 'ERR_DSH_IPC_SENDER',
+    );
+  } finally {
+    ipc.restore();
+  }
+});
 
 test('OpenUI IPC accepts only the trusted harness main frame and preserves its result', async () => {
   const mainFrame = { url: 'http://127.0.0.1:3080/' };
