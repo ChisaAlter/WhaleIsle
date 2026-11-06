@@ -20,7 +20,11 @@ function createProactiveService({ userDataPath, now, idFactory, githubSource = n
     const items = await githubSource.discover({ since: effectiveSince });
     // Cursors are monotonic. A manual full sync with an older `since` value
     // must not move the durable checkpoint backwards.
-    const cursorSeed = previous?.cursor ?? null;
+    const cursorSeed = [previous?.cursor, effectiveSince]
+      .filter(value => value !== null && value !== undefined && String(value).trim())
+      .map(String)
+      .sort()
+      .at(-1) ?? null;
     const nextCursor = items.reduce((latest, item) => {
       const updatedAt = item?.updatedAt;
       if (!updatedAt) return latest;
