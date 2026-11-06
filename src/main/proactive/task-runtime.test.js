@@ -61,6 +61,31 @@ test('idempotency prevents duplicate transitions', () => {
   assert.equal(runtime.listEvents().filter(event => event.type === 'task.transitioned').length, 1);
 });
 
+test('durably deduplicates source items by sourceItemId and checkpoints cursor', () => {
+  const first = createRuntime();
+  const item = {
+    sourceItemId: '42', id: 'github:42', title: 'Fix the sync', description: 'Read-only source item',
+    source: 'github', sourceUrl: 'https://github.com/ChisaAlter/WhaleIsle/issues/42',
+    kind: 'issue', labels: ['bug'], updatedAt: '2026-11-05T00:00:00Z',
+  };
+
+  const firstSync = first.runtime.ingestSourceItems([item], { source: 'github', autonomy: 1, cursor: item.updatedAt });
+  const duplicateSync = first.runtime.ingestSourceItems([item], { source: 'github', autonomy: 1, cursor: item.updatedAt });
+  assert.equal(firstSync.created.length, 1);
+  assert.equal(duplicateSync.created.length, 0);
+  assert.equal(duplicateSync.duplicates, 1);
+  assert.equal(first.runtime.listInbox()[0].sourceItemId, '42');
+  assert.equal(first.runtime.listSourceState().github.cursor, item.updatedAt);
+
+  const restarted = new TaskRuntime({ store: first.store, idFactory: () => 'restart-id', now: () => '2026-11-05T00:01:00Z' });
+  const replaySync = restarted.ingestSourceItems([item], {
+    source: 'github', autonomy: 1, cursor: item.updatedAt,
+  });
+  assert.equal(replaySync.created.length, 0);
+  assert.equal(restarted.listInbox().length, 1);
+  assert.equal(restarted.listSourceState().github.cursor, item.updatedAt);
+});
+
 test('projects a safe execution trace that survives restart', () => {
   const first = createRuntime();
   const task = first.runtime.createTask({
