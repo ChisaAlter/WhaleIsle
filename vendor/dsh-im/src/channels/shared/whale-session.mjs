@@ -1,48 +1,42 @@
-import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-/**
- * The desktop whale has one durable Session. IM may enter it, but must never
- * create a second whale Session from a per-chat binding. Explicit non-whale
- * bot presets keep their ordinary independent-session behavior.
- */
-export async function sharedWhaleSessionId(harness, { home = process.env.DSH_HOME } = {}) {
-  let preset = null;
-  if (typeof harness?.agentPresetSettings === 'function') {
-    const current = await harness.agentPresetSettings();
-    preset = current?.agentPreset ?? null;
+/** Resolve policy separately from persisted chat bindings. No Session is created. */
+export async function whaleSessionResolution(harness, { home = process.env.DSH_HOME, state, key } = {}) {
+  const preset = (await harness?.agentPresetSettings?.())?.agentPreset || null;
+  if (preset && preset !== 'whale-girl') return { preset, residentId: '', sessionId: null };
+  const bound = state?.sessionFor(key);
+  if (bound && state.bindingFor?.(key)?.kind === 'manual' && typeof harness.sessionPreset === 'function') {
+    const boundPreset = await harness.sessionPreset(bound);
+    if (boundPreset && boundPreset !== 'whale-girl') return { preset, residentId: '', sessionId: null };
   }
-  if (preset !== null && preset !== '' && preset !== 'whale-girl') return null;
-  const explicitlyWhale = preset === 'whale-girl';
-  const unavailable = () => {
-    if (!explicitlyWhale) return null;
-    const error = new Error('The resident whale assistant is unavailable for IM.');
-    error.code = 'whale-session-unavailable';
-    throw error;
-  };
-  if (typeof home !== 'string' || !home) return unavailable();
-  // In the Desktop host a disabled whale plugin leaves her data on disk.
-  // Persisted data alone must not silently re-enable her through IM.
-  try {
-    const desktop = JSON.parse(await readFile(join(dirname(home), 'config.json'), 'utf8'));
-    if (desktop.whaleAssistantEnabled === false) return unavailable();
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+  return currentWhaleSessionResolution(preset, { home });
+}
+
+/** Final same-process send admission reads the latest switches without yielding. */
+export function currentWhaleSessionResolution(preset, { home = process.env.DSH_HOME } = {}) {
+  if (preset && preset !== 'whale-girl') return { preset, residentId: '', sessionId: null };
+  const explicit = preset === 'whale-girl';
+  let settings = {};
+  let enabled = true;
+  if (typeof home === 'string' && home) {
+    try {
+      enabled = JSON.parse(readFileSync(join(dirname(home), 'config.json'), 'utf8')).whaleAssistantEnabled !== false;
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try {
+      settings = JSON.parse(readFileSync(join(home, 'data', 'whale', 'settings.json'), 'utf8'));
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  let settings;
-  try {
-    settings = JSON.parse(await readFile(join(home, 'data', 'whale', 'settings.json'), 'utf8'));
-  } catch (error) {
-    if (error?.code === 'ENOENT') return unavailable();
-    throw error;
+  const residentId = typeof settings.sessionId === 'string' ? settings.sessionId.trim() : '';
+  const available = enabled && settings.imDefault === true && Boolean(residentId);
+  if (explicit && !available) {
+    throw Object.assign(new Error('The resident whale assistant is unavailable for IM.'),
+      { code: enabled && residentId ? 'whale-im-disabled' : 'whale-session-unavailable' });
   }
-  const sessionId = typeof settings.sessionId === 'string' ? settings.sessionId.trim() : '';
-  if (!sessionId) return unavailable();
-  if (preset === 'whale-girl') {
-    if (settings.imDefault === true) return sessionId;
-    const error = new Error('The whale assistant IM connection is disabled in settings.');
-    error.code = 'whale-im-disabled';
-    throw error;
-  }
-  return settings.imDefault === true ? sessionId : null;
+  return { preset, residentId, sessionId: available && (!preset || explicit) ? residentId : null };
+}
+
+/** The shared default never creates a second whale conversation. */
+export async function sharedWhaleSessionId(harness, options) {
+  return (await whaleSessionResolution(harness, options)).sessionId;
 }

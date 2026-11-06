@@ -1,3 +1,4 @@
+import { bindingValue, normalizeBindings } from '../shared/session-binding.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -6,7 +7,7 @@ import { t } from '../shared/i18n.mjs';
 
 const EMPTY_STATE = Object.freeze({
   version: 1,
-  sessions: {},
+  sessions: {}, bindings: {},
   seenMessageIds: [],
   pendingSenders: {},
 });
@@ -65,6 +66,7 @@ function normalizeState(value) {
   return {
     version: 1,
     sessions,
+    bindings: normalizeBindings(value.bindings, sessions),
     seenMessageIds: Array.isArray(value.seenMessageIds)
       ? [...new Set(value.seenMessageIds.map(nonEmptyString).filter(Boolean))].slice(-1_000)
       : [],
@@ -104,11 +106,15 @@ export class DingtalkStateStore {
     return this.#state.sessions[key] ?? null;
   }
 
-  async setSession(key, sessionId) {
+  bindingFor(key) { return this.#state.bindings?.[key] ?? null; }
+
+  async setSession(key, sessionId, options) {
     const normalizedKey = nonEmptyString(key);
     const normalizedSession = nonEmptyString(sessionId);
     if (!normalizedKey || !normalizedSession) throw new TypeError('key and sessionId are required');
     this.#state.sessions[normalizedKey] = normalizedSession;
+    this.#state.bindings ??= {};
+    this.#state.bindings[normalizedKey] = bindingValue(normalizedSession, options);
     await this.#persist();
   }
 
@@ -116,11 +122,13 @@ export class DingtalkStateStore {
     const normalizedKey = nonEmptyString(key);
     if (!normalizedKey || !(normalizedKey in this.#state.sessions)) return;
     delete this.#state.sessions[normalizedKey];
+    if (this.#state.bindings) delete this.#state.bindings[normalizedKey];
     await this.#persist();
   }
 
   async clearSessions() {
     this.#state.sessions = {};
+    this.#state.bindings = {};
     await this.#persist();
   }
 

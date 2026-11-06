@@ -857,6 +857,11 @@ export class HarnessClient {
     }
   }
 
+  async sessionPreset(sessionId, options = {}) {
+    const response = await this.rpc('session.history', { sessionId, maxMessages: 1 }, 30_000, options);
+    return response.projections?.values?.agentPreset ?? null;
+  }
+
   async sessionExists(sessionId, options = {}) {
     try {
       await this.rpc('session.history', { sessionId, maxMessages: 1 }, 30_000, options);

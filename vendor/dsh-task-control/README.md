@@ -22,6 +22,10 @@ While locked: webServer routes (incl. pre-registered and upgrades) answer 503,
 `connection/request` answers 503, `sessionController.resolveAgent` returns a
 `session/agent-busy` error result, and `jobs.start` rejects.
 
+## Host task admission
+
+`ctx.desktopTaskAdmission.begin(label)` uses the same lock and pending drain as HTTP/resolveAgent/jobs. It returns `done()` plus `assertCurrent()` for the pre-publication commit; `check()` rejects new task steps while locked/stopping. `dsh-whale` uses it around programmatic Worker creation rather than bypassing the desktop maintenance lock. Existing active Tasks are visible in inspection as `whale-task`, including queued/stopping/needs_user; task result delivery and lifecycle remain owned by `whaleTasks`.
+
 ## Coverage semantics
 
 Socket work counts exclude destroyed transports and known loopback peers

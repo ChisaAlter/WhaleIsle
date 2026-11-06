@@ -60,7 +60,7 @@ test('enabled whale host registers its RPC route on its own fiber', async (t) =>
     webServer: { register: (route) => { routes.push(route); return () => {}; } },
     agentPresets: { register: async (definition) => { presets.push(definition); return async () => {}; } },
     sessionController: {},
-    inject: (_deps, start) => { start(ctx); },
+    inject: (deps, start) => { if (deps.includes('storageDomain')) return; start(ctx); },
     effect: (start) => {
       effects.push(Promise.resolve(start()).then(dispose => {
         if (typeof dispose === 'function') disposers.push(dispose);

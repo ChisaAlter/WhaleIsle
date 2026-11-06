@@ -15,6 +15,8 @@ import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm';
 import { createWhaleScope, updateWhaleSettings } from './scope.js';
 import { buildPersonaText, normalizePersonality, PERSONALITIES } from './persona.js';
 import { startPulse } from './observe.js';
+import { mountWhaleTasks } from './task-service.js';
+import { parseTask } from './task-store.js';
 import {
   SYSTEM_REMINDER_RE,
   controllerFrom,
@@ -610,9 +612,50 @@ async function logLookNote(ctx, scope, reply) {
 }
 
 function registerRpc(ctx, scope) {
+  const taskIdFrom = input => {
+    if (!input || typeof input.taskId !== 'string' || !input.taskId || Object.keys(input).some(key => key !== 'taskId')) throw new Error('任务控制仅接受 taskId；动作由专用入口指定，不能修改模型或资料。');
+    return input.taskId;
+  };
   const handle = async (endpoint, input) => {
     const home = dshHomeDir();
     switch (endpoint) {
+      case 'tasks/start': {
+        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
+        const ensured = await ensureAssistantSession(ctx, scope, controllerFrom(ctx)); if (!ensured.ok) throw new Error(ensured.error);
+        const id = crypto.randomUUID();
+        const text = `/task ${JSON.stringify(input)}`;
+        parseTask(text);
+        const origin = { eventId: `desktop-${id}`, kind: 'desktop', actor: 'desktop-owner',
+          sessionId: ensured.sessionId, messageId: `desktop-task-${id}`, rpcId: '', text, files: [] };
+        await tasks.recordInbound(origin, text);
+        const task = await tasks.accept(origin); tasks.schedule(task.id); return task;
+      }
+      case 'tasks/resume': {
+        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
+        const id = taskIdFrom(input); return tasks.resume(id, tasks.desktopControl(id, 'resume'));
+      }
+      case 'tasks/revoke-owner': {
+        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
+        await tasks.revokeOwner(input?.botId); return { ok: true };
+      }
+      case 'tasks/list': {
+        const tasks = ctx.get('whaleTasks');
+        return { available: Boolean(tasks?.available), error: tasks?.error ?? '', tasks: tasks?.available ? tasks.list().map(task => tasks.view(task)) : [] };
+      }
+      case 'tasks/get': {
+        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
+        return tasks.view(tasks.store.get(input?.taskId));
+      }
+      case 'tasks/stop': {
+        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
+        const id = taskIdFrom(input); return tasks.stop(id, 'user', tasks.desktopControl(id, 'stop'));
+      }
+      case 'tasks/owner': {
+        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
+        if (!input || input.channel !== 'feishu' || typeof input.botId !== 'string' || !input.botId || typeof input.actor !== 'string' || !input.actor || input.actor === '*') throw new Error('需明确飞书机器人和个人 open_id，不接受通配符。');
+        await tasks.setOwner(input.botId, input.actor);
+        return { ok: true };
+      }
       case 'catalog': {
         const snap = readSettings(scope);
         return {
@@ -821,6 +864,9 @@ export function apply(ctx) {
   });
 
   registerRpc(ctx, scope);
+  if (home) ctx.inject?.(['storageDomain', 'agents', 'agentPresets', 'sessionController', 'sessions', 'tools'], host => host.effect(async () => {
+    await mountWhaleTasks(host, { home, scope });
+  }));
 
   // Current Harness has no `.agent-presets` directory scanner. Register her
   // composition before attempting to create or reopen her session.

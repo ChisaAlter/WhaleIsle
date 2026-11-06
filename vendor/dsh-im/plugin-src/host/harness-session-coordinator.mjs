@@ -58,7 +58,7 @@ function steeringMessage(text) {
     id: randomUUID(),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'user' },
+    source: { kind: 'dsh-im:steer' },
   });
 }
 

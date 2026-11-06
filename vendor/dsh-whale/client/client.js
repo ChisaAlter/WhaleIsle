@@ -40,6 +40,20 @@ window.__ModuleLoader__.load({
       "field.effortDefault": "默认",
       "field.imDefault": "IM 接入同一对话",
       "field.imDefaultHint": "未指定其他预设的 IM 机器人进入她的常驻会话，消息和桌面共用一份记录。",
+      "tasks.title": "后台资料任务",
+      "tasks.hint": "只读指定文本；完成与投递分别记录，重启后等你继续。",
+      "tasks.refresh": "刷新任务",
+      "tasks.empty": "还没有后台任务。可在聊天发送 /task JSON，或在这里开始。",
+      "tasks.goal": "整理目标",
+      "tasks.files": "资料绝对路径（每行一个）",
+      "tasks.start": "开始只读整理",
+      "tasks.stop": "停止",
+      "tasks.resume": "继续",
+      "tasks.owner": "飞书后台权限",
+      "tasks.bot": "飞书 botId",
+      "tasks.actor": "个人 open_id",
+      "tasks.grant": "授权此人提交附件整理",
+      "tasks.revoke": "撤销此机器人任务授权",
       "skills.title": "技能",
       "skills.manage": "管理",
       "skills.count": "已启用 {enabled} / {total}",
@@ -90,6 +104,20 @@ window.__ModuleLoader__.load({
       "field.effortDefault": "Default",
       "field.imDefault": "Share the conversation with IM",
       "field.imDefaultHint": "IM bots without another selected preset enter her resident session and share its desktop history.",
+      "tasks.title": "Background document tasks",
+      "tasks.hint": "Read selected text only. Completion and delivery are separate; restart waits for you.",
+      "tasks.refresh": "Refresh tasks",
+      "tasks.empty": "No tasks yet. Send /task JSON in chat, or start here.",
+      "tasks.goal": "Summary goal",
+      "tasks.files": "Absolute input paths (one per line)",
+      "tasks.start": "Start read-only summary",
+      "tasks.stop": "Stop",
+      "tasks.resume": "Continue",
+      "tasks.owner": "Feishu task permission",
+      "tasks.bot": "Feishu botId",
+      "tasks.actor": "Personal open_id",
+      "tasks.grant": "Allow this person to summarize attachments",
+      "tasks.revoke": "Revoke this bot's task permission",
       "skills.title": "Skills",
       "skills.manage": "Manage",
       "skills.count": "{enabled} of {total} enabled",
@@ -135,6 +163,15 @@ window.__ModuleLoader__.load({
 .dsh-whale-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-right: 32px; }
 .dsh-whale-item-title { font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-primary); }
 .dsh-whale-item-desc { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-whale-task-dialog { max-height: 100%; }
+.dsh-whale-task-content { min-height: 0; overflow: hidden; }
+.dsh-whale-task-content > [data-dsh-modal-header] { flex: none; }
+.dsh-whale-task-content > :last-child { min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.dsh-whale-task-fields { gap: 16px; }
+.dsh-whale-task-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 8px; }
+.dsh-whale-task-fields label { display: flex; flex-direction: column; gap: 8px; }
+.dsh-whale-task-fields details { padding: 8px 0; overflow-wrap: anywhere; }
+.dsh-whale-task-fields summary { cursor: pointer; }
 .dsh-whale-group { font-size: 12px; line-height: 18px; font-weight: 500; color: var(--dsw-alias-label-secondary); padding: 16px 0 0; }
 .dsh-whale-hint { font-size: 11px; opacity: 0.55; line-height: 1.5; }
 .dsh-whale-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -354,6 +391,46 @@ window.__ModuleLoader__.load({
       return h(WhalePanelGlyph, { size: 16 });
     }
 
+    function WhaleTaskSettings({ rpc, t }) {
+      const [open, setOpen] = useState(false);
+      const [items, setItems] = useState([]);
+      const [goal, setGoal] = useState("");
+      const [files, setFiles] = useState("");
+      const [bot, setBot] = useState("");
+      const [actor, setActor] = useState("");
+      const [error, setError] = useState("");
+      const [pending, setPending] = useState(false);
+      const load = async () => { const value = await rpc("tasks/list"); if (!value.available) throw new Error(value.error || t("loadFailed", { message: "unavailable" })); setItems(value.tasks); };
+      const act = async (method, input) => {
+        setPending(true); setError("");
+        try { await rpc(method, input); await load(); } catch (err) { setError(err.message); } finally { setPending(false); }
+      };
+      return h(Fragment, null,
+        h("div", { className: "dsh-whale-item" },
+          h("div", { className: "dsh-whale-item-text" }, h("div", { className: "dsh-whale-item-title" }, t("tasks.title")), h("div", { className: "dsh-whale-item-desc" }, t("tasks.hint"))),
+          h(Button, { variant: "outline", onClick: () => { setOpen(true); void act("tasks/list"); } }, t("tasks.title"))),
+        h(Modal, { open, title: t("tasks.title"), closeLabel: t("dialog.close"), className: "dsh-whale-task-dialog", contentClassName: "dsh-whale-task-content", onClose: () => setOpen(false) },
+          h("div", { className: "dsh-whale-form dsh-whale-task-fields" },
+            h("label", null, t("tasks.goal"), h(Input, { value: goal, onChange: event => setGoal(event.target.value) })),
+            h("label", null, t("tasks.files"), h("textarea", { className: "dsh-whale-textarea", value: files, onChange: event => setFiles(event.target.value) })),
+            h("div", { className: "dsh-whale-controls" }, h(Button, { disabled: pending || !goal.trim() || !files.trim(), onClick: () => act("tasks/start", { goal, files: files.split(/\r?\n/u).map(value => value.trim()).filter(Boolean) }) }, t("tasks.start")),
+              h(Button, { variant: "outline", disabled: pending, onClick: () => act("tasks/list") }, t("tasks.refresh"))),
+            items.length ? items.map(task => h("details", { key: task.id },
+              h("summary", null, `${task.goal} · ${task.state}`),
+              h("div", { className: "dsh-whale-task-actions" },
+                ["queued", "running", "stopping", "needs_user"].includes(task.state) ? h(Button, { variant: "outline", disabled: pending, onClick: () => act("tasks/stop", { taskId: task.id }) }, t("tasks.stop")) : null,
+                ["interrupted", "failed", "cancelled", "needs_user"].includes(task.state) ? h(Button, { variant: "outline", disabled: pending, onClick: () => act("tasks/resume", { taskId: task.id }) }, t("tasks.resume")) : null),
+              h("p", null, task.id), h("p", null, task.error),
+              task.result ? h("p", { style: { whiteSpace: "pre-wrap" } }, task.result.summary + (task.result.unmet.length ? "\n" + task.result.unmet.join("\n") : "")) : null,
+              h("p", null, task.effects.map(effect => `${effect.target}: ${effect.state}`).join(" · ")))) : h("p", null, t("tasks.empty")),
+            h("details", null, h("summary", null, t("tasks.owner")),
+              h("label", null, t("tasks.bot"), h(Input, { value: bot, onChange: event => setBot(event.target.value) })),
+              h("label", null, t("tasks.actor"), h(Input, { value: actor, onChange: event => setActor(event.target.value) })),
+              h(Button, { variant: "outline", disabled: pending || !bot || !actor, onClick: () => act("tasks/owner", { channel: "feishu", botId: bot, actor }) }, t("tasks.grant")),
+              h(Button, { variant: "outline", disabled: pending || !bot, onClick: () => act("tasks/revoke-owner", { botId: bot }) }, t("tasks.revoke"))),
+            error ? h(Feedback, { text: error, t }) : null)));
+    }
+
     function WhaleSettings(props) {
       const { rpc, t } = props;
       const [catalog, setCatalog] = useState(null);
@@ -554,6 +631,7 @@ window.__ModuleLoader__.load({
       const enabledSkills = skills.filter((skill) => skill.enabled === true).length;
 
       return h("div", { className: "dsh-whale-form", "aria-busy": busy },
+        h(WhaleTaskSettings, { rpc, t }),
         item(t("field.identity"), t("field.identityHint"),
           h("div", { className: "dsh-whale-controls" },
             h(Input, {

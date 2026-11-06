@@ -1,5 +1,6 @@
 import { withSessionBindingLock } from './session-binding-lock.mjs';
-import { sharedWhaleSessionId } from './whale-session.mjs';
+import { whaleSessionResolution } from './whale-session.mjs';
+import { selectConversationSession } from './session-binding.mjs';
 
 export const WORKSPACE_SESSION_STALE = 'workspace-session-stale';
 
@@ -49,9 +50,11 @@ export async function askInWorkspaceSession({
 }) {
   while (true) {
     try {
-      const whaleSessionId = await sharedWhaleSessionId(harness);
       const binding = await withSessionBindingLock(state, key, async () => {
-        let sessionId = whaleSessionId ?? state.sessionFor(key);
+        const resolution = await whaleSessionResolution(harness, { state, key });
+        const selected = await selectConversationSession(harness, state, key, resolution);
+        const whaleSessionId = selected.shared ? selected.sessionId : null;
+        let sessionId = selected.sessionId;
         let session = sessionId ? workspaceSession(harness, sessionId) : null;
         if (!session || !(await sessionExists(session, existsOptions))) {
           if (whaleSessionId) {
@@ -60,10 +63,10 @@ export async function askInWorkspaceSession({
             throw error;
           }
           sessionId = await createSession(harness, createOptions);
-          if (await state.setSession(key, sessionId) === false) return null;
+          if (await state.setSession(key, sessionId, { kind: 'auto', preset: resolution.preset }) === false) return null;
           session = workspaceSession(harness, sessionId);
-        } else if (whaleSessionId && state.sessionFor(key) !== whaleSessionId) {
-          if (await state.setSession(key, whaleSessionId) === false) return null;
+        } else if (whaleSessionId && (state.sessionFor(key) !== whaleSessionId || !state.bindingFor?.(key))) {
+          if (await state.setSession(key, whaleSessionId, selected.origin) === false) return null;
         }
         return { sessionId, session };
       });

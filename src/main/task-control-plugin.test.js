@@ -499,6 +499,7 @@ function lifecycleContext(services) {
   const listeners = new Map();
   return {
     get: name => services[name],
+    provide(name, service) { services[name] = service; disposers.push(() => { if (services[name] === service) delete services[name]; }); },
     effect(setup) { disposers.push(setup()); },
     on(name, handler) {
       const handlers = listeners.get(name) || new Set();
@@ -742,6 +743,28 @@ test('remote Fetch responses compose with admission guards and release before qu
   assert.equal(refused.status, 503);
   assert.equal((await refused.json()).error.code, 'dshd/admission-locked');
   releaseLock(state, { lockId: lock.lockId, owner: 'desktop-quit' });
+});
+
+test('programmatic task admission shares the desktop maintenance lock and cleanup', async t => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const server = lifecycleWebServer();
+  const ctx = lifecycleContext({ webServer: server });
+  apply(ctx);
+  const service = ctx.get('desktopTaskAdmission');
+  const permit = service.begin('task-worker-create');
+  const inspection = await controlReply(server, 'inspect');
+  assert.ok(inspection.activeWork.some(item => item.kind === 'request'));
+  permit.done();
+  const acquired = await controlReply(server, 'acquire', { owner: 'test-maintenance' });
+  assert.equal(acquired.ok, true);
+  assert.equal(service.check(), false);
+  assert.throws(() => service.begin('late-worker'), /locked/);
+  assert.throws(() => permit.assertCurrent(), /失效/);
+  await controlReply(server, 'release', { owner: 'test-maintenance', lockId: acquired.lockId });
+  assert.equal(service.check(), true);
+  ctx.dispose();
+  assert.equal(ctx.get('desktopTaskAdmission'), undefined);
 });
 
 test('response lifecycle setup failure does not leak admission', async () => {

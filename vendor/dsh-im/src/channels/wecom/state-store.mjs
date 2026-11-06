@@ -1,7 +1,8 @@
+import { bindingValue, normalizeBindings } from '../shared/session-binding.mjs';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-const EMPTY_STATE = Object.freeze({ version: 1, sessions: {}, seenMessageIds: [] });
+const EMPTY_STATE = Object.freeze({ version: 1, sessions: {}, bindings: {}, seenMessageIds: [] });
 
 function normalizeState(value) {
   if (!value || typeof value !== 'object') return structuredClone(EMPTY_STATE);
@@ -14,6 +15,7 @@ function normalizeState(value) {
   return {
     version: 1,
     sessions,
+    bindings: normalizeBindings(value.bindings, sessions),
     seenMessageIds: Array.isArray(value.seenMessageIds)
       ? value.seenMessageIds.filter((id) => typeof id === 'string').slice(-1_000)
       : [],
@@ -44,18 +46,24 @@ export class WecomStateStore {
     return this.#state.sessions[key] ?? null;
   }
 
-  async setSession(key, sessionId) {
+  bindingFor(key) { return this.#state.bindings?.[key] ?? null; }
+
+  async setSession(key, sessionId, options) {
     this.#state.sessions[key] = sessionId;
+    this.#state.bindings ??= {};
+    this.#state.bindings[key] = bindingValue(sessionId, options);
     await this.#persist();
   }
 
   async clearSession(key) {
     delete this.#state.sessions[key];
+    if (this.#state.bindings) delete this.#state.bindings[key];
     await this.#persist();
   }
 
   async clearSessions() {
     this.#state.sessions = {};
+    this.#state.bindings = {};
     await this.#persist();
   }
 

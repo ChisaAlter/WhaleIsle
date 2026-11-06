@@ -16,7 +16,7 @@
  * `DSHD_TASK_CONTROL_TOKEN`. No token → the route stays closed.
  */
 
-import { admit, createControlState } from './state.js';
+import { admit, createControlState, lockStatus } from './state.js';
 import { CONTROL_PREFIX, createControlHandler } from './http.js';
 import { admittedBefore, disposeGuards, markAdmitted, undrained, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
 
@@ -28,6 +28,18 @@ export function apply(ctx) {
   const state = createControlState();
   const token = String(process.env.DSHD_TASK_CONTROL_TOKEN || '');
   const controlRoutes = [];
+  ctx.provide('desktopTaskAdmission', {
+    begin(label) {
+      const permit = admit(state, label);
+      if (!permit.accepted) throw new Error(permit.code);
+      const epoch = state.lockEpoch;
+      return { done: permit.done, assertCurrent() {
+        const current = lockStatus(state);
+        if (current.stopping || current.locked || current.lockEpoch !== epoch) throw new Error('桌面正在停止或维护，任务准入已失效。');
+      } };
+    },
+    check() { const current = lockStatus(state); return !current.locked && !current.stopping; },
+  });
 
   ctx.effect(() => () => {
     state.stopping = true;

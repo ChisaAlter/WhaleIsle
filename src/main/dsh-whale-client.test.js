@@ -72,7 +72,7 @@ function loadPlugin({ stateful = false } = {}) {
     return {};
   };
   const exports = spec.current.factory(require);
-  return { exports, window, stateWrites, render: (component, props) => {
+  return { exports, window, stateWrites, resetState: () => { states.length = 0; refs.length = 0; effects.length = 0; }, render: (component, props) => {
     cursor = 0;
     refCursor = 0;
     effectCursor = 0;
@@ -348,6 +348,31 @@ test('an accepted save followed by a failed catalog refresh reports both facts w
   assert.equal(calls.filter((call) => call.method === 'settings/update').length, 1);
   assert.equal(feedback(tree, (props) => props.success === true), null);
   assert.ok(feedback(tree, (props) => props.text.includes('saved') && props.text.includes('catalog refresh rejected') && !props.success));
+});
+
+test('task settings submit explicit files and expose actual stop and resume actions', async () => {
+  const bench = await settingsBench(async () => ({ name: '鲸鱼娘', imDefault: true }));
+  const tasks = findElement(bench.render(), node => node.type?.name === 'WhaleTaskSettings');
+  assert.ok(tasks);
+  const child = bench.plugin; child.resetState();
+  const calls = [];
+  const props = { t: translate, rpc: async (method, input) => { calls.push({ method, input }); return { available: true, tasks: [{ id: 'task-A', goal: 'summary', state: 'interrupted', effects: [], error: '' }] }; } };
+  const draw = () => child.render(tasks.type, props);
+  const button = label => findElement(draw(), node => typeof node.props.onClick === 'function' && node.children.includes(label));
+  button('tasks.title').props.onClick(); await settle();
+  const labels = draw();
+  const goal = findElement(labels, node => node.type === 'label' && node.children.includes('tasks.goal'));
+  goal.children.find(node => node && typeof node === 'object' && typeof node.props?.onChange === 'function').props.onChange({ target: { value: 'summarize these facts' } });
+  findElement(draw(), node => node.type === 'textarea').props.onChange({ target: { value: 'C:\\data\\a.txt\nC:\\data\\b.md' } });
+  button('tasks.start').props.onClick(); await settle();
+  const payload = calls.find(call => call.method === 'tasks/start').input;
+  assert.equal(payload.goal, 'summarize these facts'); assert.equal(payload.files.length, 2);
+  button('tasks.resume').props.onClick(); await settle();
+  assert.equal(calls.find(call => call.method === 'tasks/resume').input.taskId, 'task-A');
+  props.rpc = async (method, input) => { calls.push({ method, input }); return { available: true, tasks: [{ id: 'task-B', goal: 'running task', state: 'running', effects: [], error: '' }] }; };
+  button('tasks.refresh').props.onClick(); await settle();
+  button('tasks.stop').props.onClick(); await settle();
+  assert.equal(calls.find(call => call.method === 'tasks/stop').input.taskId, 'task-B');
 });
 
 test('whale slots use the project head and keep normal sessions untouched', () => {
