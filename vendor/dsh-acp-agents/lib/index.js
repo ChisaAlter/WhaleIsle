@@ -277,7 +277,9 @@ export function createAcpAgentsManager(ctx, options = {}) {
       }
 
       const dshAgent = resolveActiveDshAgent(ctx, callOptions);
-      const dshSessionId = String(dshAgent?.session?.id || dshAgent?.id || 'default-session');
+      const dshSessionId = String(
+        callOptions.sessionId || dshAgent?.session?.id || dshAgent?.id || 'default-session',
+      );
       const cwd = dshAgent?.session?.header?.cwd || process.cwd();
       const connKey = `${dshSessionId}::${agentConfig.id}`;
 
@@ -311,52 +313,63 @@ export function createAcpAgentsManager(ctx, options = {}) {
         conn.activeTurn = turn;
       }
 
-      let openSection = null;
-      const closeSection = function* () {
-        if (openSection === 'reasoning') {
-          yield { type: 'reasoning-end' };
-          openSection = null;
-        } else if (openSection === 'text') {
-          yield { type: 'text-end' };
-          openSection = null;
+      let openIndex = -1;
+      let openType = null;
+      let blockText = '';
+      let nextIndex = 0;
+      const closeBlock = function* () {
+        if (openType === 'reasoning') {
+          yield { type: 'block-end', index: openIndex, block: { type: 'reasoning', text: blockText } };
+        } else if (openType === 'text') {
+          yield { type: 'block-end', index: openIndex, block: { type: 'text', text: blockText } };
         }
+        openType = null;
+        openIndex = -1;
+        blockText = '';
+      };
+      const finishChunk = function* (reason) {
+        if (turn.usage) {
+          yield { type: 'usage', usage: turn.usage };
+        }
+        yield { type: 'finish', reason };
       };
 
       while (true) {
         const { value: item, done } = await turn.queue.next(callOptions.signal);
         if (done || !item) {
-          yield* closeSection();
-          yield {
-            type: 'finish',
-            finish: { kind: 'stop' },
-            usage: turn.usage,
-          };
+          yield* closeBlock();
+          yield* finishChunk({ kind: 'stop' });
           return;
         }
 
         if (item.type === 'thought') {
-          if (openSection !== 'reasoning') {
-            yield* closeSection();
-            yield { type: 'reasoning-start' };
-            openSection = 'reasoning';
+          if (openType !== 'reasoning') {
+            yield* closeBlock();
+            openIndex = nextIndex++;
+            openType = 'reasoning';
+            yield { type: 'block-start', index: openIndex, blockType: 'reasoning' };
           }
-          yield { type: 'reasoning-delta', delta: item.text };
+          blockText += item.text;
+          yield { type: 'reasoning-delta', index: openIndex, text: item.text };
           continue;
         }
 
         if (item.type === 'text') {
-          if (openSection !== 'text') {
-            yield* closeSection();
-            yield { type: 'text-start' };
-            openSection = 'text';
+          if (openType !== 'text') {
+            yield* closeBlock();
+            openIndex = nextIndex++;
+            openType = 'text';
+            yield { type: 'block-start', index: openIndex, blockType: 'text' };
           }
-          yield { type: 'text-delta', delta: item.text };
+          blockText += item.text;
+          yield { type: 'text-delta', index: openIndex, text: item.text };
           continue;
         }
 
         if (item.type === 'tool-call') {
           const entry = item.entry;
-          yield* closeSection();
+          yield* closeBlock();
+          const callIndex = nextIndex++;
           const argsJson = JSON.stringify(entry.args || {});
           pendingToolExecutions.set(entry.toolCallId, {
             entry,
@@ -364,43 +377,31 @@ export function createAcpAgentsManager(ctx, options = {}) {
             dshAgent,
             conn,
           });
-          yield {
-            type: 'tool-call-start',
-            id: entry.toolCallId,
-            name: entry.name,
-          };
+          yield { type: 'block-start', index: callIndex, blockType: 'tool-call' };
           yield {
             type: 'tool-call-delta',
+            index: callIndex,
             id: entry.toolCallId,
             name: entry.name,
             argumentsDelta: argsJson,
           };
           yield {
-            type: 'tool-call-end',
-            id: entry.toolCallId,
-            name: entry.name,
-            arguments: argsJson,
+            type: 'block-end',
+            index: callIndex,
+            block: { type: 'tool-call', id: entry.toolCallId, name: entry.name, arguments: argsJson },
           };
-          yield {
-            type: 'finish',
-            finish: { kind: 'tool-calls' },
-            usage: turn.usage,
-          };
+          yield* finishChunk({ kind: 'tool-calls' });
           return;
         }
 
         if (item.type === 'prompt-error') {
-          yield* closeSection();
+          yield* closeBlock();
           throw item.error || new Error(`ACP agent "${agentConfig.name}" turn failed`);
         }
 
         if (item.type === 'prompt-done') {
-          yield* closeSection();
-          yield {
-            type: 'finish',
-            finish: { kind: 'stop' },
-            usage: turn.usage,
-          };
+          yield* closeBlock();
+          yield* finishChunk({ kind: 'stop' });
           return;
         }
       }

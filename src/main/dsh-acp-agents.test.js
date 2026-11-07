@@ -432,19 +432,19 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     }
 
     assert.equal(
-      chunks1.some((c) => c.type === 'reasoning-delta' && c.delta.includes('Thinking about: Hello USE_TOOL please')),
+      chunks1.some((c) => c.type === 'reasoning-delta' && c.text.includes('Thinking about: Hello USE_TOOL please')),
       true,
     );
-    const toolCallChunk = chunks1.find((c) => c.type === 'tool-call-end');
-    assert.ok(toolCallChunk, 'expected a tool-call-end chunk for the ACP tool call');
-    assert.equal(chunks1.find((c) => c.type === 'finish')?.finish?.kind, 'tool-calls');
+    const toolCallChunk = chunks1.find((c) => c.type === 'block-end' && c.block?.type === 'tool-call');
+    assert.ok(toolCallChunk, 'expected a tool-call block-end chunk for the ACP tool call');
+    assert.equal(chunks1.find((c) => c.type === 'finish')?.reason?.kind, 'tool-calls');
 
     // Simulate ReactLoopAgent running pre-execute and execute for the tool call
-    const parsedArgs = JSON.parse(toolCallChunk.arguments);
+    const parsedArgs = JSON.parse(toolCallChunk.block.arguments);
     const preResult = await preExecuteHook(
       {
-        callId: toolCallChunk.id,
-        name: toolCallChunk.name,
+        callId: toolCallChunk.block.id,
+        name: toolCallChunk.block.name,
         args: parsedArgs,
         agent: fakeDshAgent,
       },
@@ -454,8 +454,8 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
 
     const execResult = await executeHook(
       {
-        callId: toolCallChunk.id,
-        name: toolCallChunk.name,
+        callId: toolCallChunk.block.id,
+        name: toolCallChunk.block.name,
         args: parsedArgs,
         agent: fakeDshAgent,
       },
@@ -464,7 +464,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     assert.equal(execResult.isError, false);
     assert.match(execResult.content[0].text, /Permission outcome: opt_allow_once/);
     assert.equal(approvalCalls.length, 1);
-    assert.equal(approvalCalls[0].callId, toolCallChunk.id);
+    assert.equal(approvalCalls[0].callId, toolCallChunk.block.id);
 
     // Resume stream in the same turn after tool execution completes
     const chunks1Resume = [];
@@ -477,11 +477,11 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
         {
           role: 'assistant',
           content: '',
-          toolCalls: [{ id: toolCallChunk.id, name: toolCallChunk.name, arguments: toolCallChunk.arguments }],
+          toolCalls: [{ id: toolCallChunk.block.id, name: toolCallChunk.block.name, arguments: toolCallChunk.block.arguments }],
         },
         {
           role: 'tool',
-          toolCallId: toolCallChunk.id,
+          toolCallId: toolCallChunk.block.id,
           content: execResult.content[0].text,
         },
       ],
@@ -491,10 +491,10 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
 
     const replyText1 = chunks1Resume
       .filter((c) => c.type === 'text-delta')
-      .map((c) => c.delta)
+      .map((c) => c.text)
       .join('');
     assert.match(replyText1, /Turn 1 reply for: Hello USE_TOOL please/);
-    assert.equal(chunks1Resume.find((c) => c.type === 'finish')?.finish?.kind, 'stop');
+    assert.equal(chunks1Resume.find((c) => c.type === 'finish')?.reason?.kind, 'stop');
 
     // Turn 2: second user message in the same session reuses the persistent ACP connection
     const chunks2 = [];
@@ -512,7 +512,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     }
     const replyText2 = chunks2
       .filter((c) => c.type === 'text-delta')
-      .map((c) => c.delta)
+      .map((c) => c.text)
       .join('');
     assert.match(replyText2, /Turn 2 reply for: Second turn question/);
 

@@ -10,7 +10,7 @@ import {
 } from './presets.js';
 
 const ACP_PROTOCOL_VERSION = 1;
-const HANDSHAKE_TIMEOUT_MS = 20_000;
+const HANDSHAKE_TIMEOUT_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 1_500;
 
 function createDeferred() {
@@ -333,9 +333,9 @@ export class AcpClientConnection {
     if (this.readyPromise) {
       return this.readyPromise;
     }
-    this.readyPromise = this._connectAndInitialize(signal).catch((err) => {
+    this.readyPromise = this._connectAndInitialize(signal).catch(async (err) => {
       this.readyPromise = null;
-      void this.close();
+      await this.close().catch(() => {});
       throw err;
     });
     return this.readyPromise;
