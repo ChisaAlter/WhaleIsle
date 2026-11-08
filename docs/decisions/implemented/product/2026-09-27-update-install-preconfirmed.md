@@ -30,3 +30,5 @@ Status: implemented
 - quit/restart/reload 在活动工作时仍确认一次；quit drain 失败仍出现兜底框（壳层化）。
 - 启动器进程内所有主进程发起的确认共享 `app-confirm` 卡一种形态；原生框只剩「无可见窗」与初始化失败 `showErrorBox` 两类边缘场景。
 - `launcher-stop-preconfirmed` 决策中「preConfirmed 不得扩散到 install/update 路径」的约束被本篇取代（全量清点发现安装链的双确认与停止链同源）。原点原位已注记。
+
+> 2026-11-08 更新：渲染崩溃恢复框与初始化失败 `showErrorBox` 已取消，崩溃改为自动重载并在界面内显示失败页，致命错误只写日志与崩溃报告，见 [desktop-launcher](../../../features/desktop-launcher.md)。

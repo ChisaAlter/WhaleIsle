@@ -16,6 +16,8 @@
     homeEl: null,
     homeList: null,
     refreshing: null,
+    // A failed action stays on its component row until the next action.
+    failures: new Map(),
   };
 
   function escapeHtml(value) {
@@ -101,6 +103,13 @@
     return bits.length ? escapeHtml(bits.join(' · ')) : '';
   }
 
+  function failureLine(row) {
+    const failure = state.failures.get(row.id);
+    return failure
+      ? `<p class="comp-failure" data-comp-failure role="status">操作未完成：${escapeHtml(failure)}</p>`
+      : '';
+  }
+
   function rowActions(row) {
     const buttons = [];
     const btn = (action, label, cls) => `<button type="button" class="${cls} small" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}">${label}</button>`;
@@ -161,6 +170,7 @@
             <div class="row-title">${escapeHtml(row.name || row.id)} ${marks}</div>
             <div class="row-meta">${rowMeta(row)}</div>
             ${detail ? `<div class="row-meta">${detail}</div>` : ''}
+            ${failureLine(row)}
           </div>
         </div>
         <div class="comp-status">
@@ -204,7 +214,7 @@
       const name = row.name || row.id;
       const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}">${running ? '关闭' : '开启'}${escapeHtml(name)}</button>`;
       const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">打开设置</button>` : '';
-      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${row.id === 'whalebridge' ? '' : componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}</div></article>`;
+      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${row.id === 'whalebridge' ? '' : componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p>${failureLine(row)}<div class="home-component-controls">${control}${settings}</div></article>`;
     }).join('');
     bindActions(state.homeList);
     syncPendingButtons();
@@ -257,6 +267,17 @@
     return `${label}${percent}${detail ? `：${detail}` : ''}`;
   }
 
+  // A list that cannot be read is reported where the list would be, not in a
+  // floating notice.
+  function showListFailure(message) {
+    const text = `组件列表读取失败：${message}`;
+    const status = document.getElementById('component-status');
+    if (status) status.textContent = text;
+    if (state.list && !state.rows.size) {
+      state.list.innerHTML = `<li><span class="comp-failure" data-comp-failure role="status">${escapeHtml(text)}</span></li>`;
+    }
+  }
+
   function refresh(checkUpdates = false, notifyError = true) {
     if (!state.shell || typeof state.shell.componentsList !== 'function') {
       return Promise.resolve();
@@ -268,7 +289,7 @@
       try {
         renderRows(await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined));
       } catch (error) {
-        if (notifyError) void window.appNotice({ title: '组件列表读取失败', body: errorText(error, '无法读取组件列表'), tone: 'error' });
+        if (notifyError) showListFailure(errorText(error, '无法读取组件列表'));
       } finally {
         restore();
         state.refreshing = null;
@@ -342,6 +363,7 @@
       restoreButtons: new Map(),
     };
     state.pending.set(id, pending);
+    state.failures.delete(id);
     syncPendingButtons();
     let argument = id;
     let failure = '';
@@ -389,6 +411,7 @@
     } catch (error) {
       failure = errorText(error, action === 'uninstall' ? '无法卸载组件' : '操作失败');
     } finally {
+      if (failure) state.failures.set(id, failure);
       const restoreFocus = canRestoreActionFocus(button, focusHost);
       pending.restoreButtons.forEach(restore => restore());
       state.pending.delete(id);
@@ -398,7 +421,6 @@
     if (failure) {
       const status = document.getElementById('component-status');
       if (status) status.textContent = `${name}操作未完成：${failure}`;
-      void window.appNotice({ title: `${name}操作未完成`, body: failure, tone: 'error' });
     } else if (completed && completionMessage) {
       void window.appNotice({ title: `${name}操作结果`, body: completionMessage });
     }

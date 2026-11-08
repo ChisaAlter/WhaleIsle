@@ -898,6 +898,9 @@ body[data-launcher-state="downloading"] #route-picker {
 .comp-row .row-main { min-width: 0; flex: 1; }
 .comp-row .row-meta { overflow-wrap: anywhere; }
 .comp-status { flex: none; }
+.comp-failure, .update-fail { margin: 4px 0 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
+.comp-failure[hidden], .update-fail[hidden] { display: none; }
+.home-component .comp-failure { margin: 0 0 8px; }
 
 /* Home has one desktop card, one update message, and installed components. */
 #panel-home { max-width: 1040px; margin: 0 auto; }

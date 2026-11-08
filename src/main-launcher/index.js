@@ -19,6 +19,8 @@ const path = require('path');
 
 // Packaged GUI processes have no console: fatal failures must leave a trace.
 let trace = () => {};
+// A fatal failure is answered with a crash report and an exit, never an error box.
+let exitAfterReport = () => app.exit(1);
 try {
   const logDir = path.join(app.getPath('userData'), 'logs');
   fs.mkdirSync(logDir, { recursive: true });
@@ -27,6 +29,27 @@ try {
     try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`); } catch {}
   };
   trace = write;
+  const { createMainFailureReporter } = require('../main/crash-report');
+  const reportFailure = createMainFailureReporter({
+    directory: () => path.join(app.getPath('logs'), 'crash'),
+    isReady: () => app.isReady(),
+    describeApp: () => ({
+      name: LAUNCHER_NAME,
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      electron: process.versions.electron || '',
+      node: process.versions.node || '',
+      locale: app.isReady() ? app.getLocale() : '',
+    }),
+  });
+  exitAfterReport = (error) => {
+    const timer = setTimeout(() => app.exit(1), 3000);
+    void Promise.resolve(reportFailure(error)).finally(() => {
+      clearTimeout(timer);
+      app.exit(1);
+    });
+  };
   let fatalReported = false;
   process.on('uncaughtException', (error) => {
     write(`uncaughtException: ${error && error.stack ? error.stack : error}`);
@@ -36,10 +59,7 @@ try {
       return;
     }
     fatalReported = true;
-    try {
-      dialog.showErrorBox('启动器发生错误', String(error && error.message ? error.message : error));
-    } catch {}
-    app.exit(1);
+    exitAfterReport(error);
   });
   process.on('unhandledRejection', (reason) => {
     write(`unhandledRejection: ${reason && reason.stack ? reason.stack : reason}`);
@@ -281,7 +301,6 @@ if (!gotLock) {
       sendToLauncher,
       recoverInterruptedImport: () => recoverInterruptedImport({ userDataDir: desktopDir }),
       startDesktop: () => runtimeInstall.startExternalDesktop(),
-      drainParkedUpdateCheck: () => drainParkedUpdateCheck.drain({ generation: getLauncherWindow() }),
       log: (line, level) => {
         trace(`gate:${line}`);
         (level === 'error' ? console.error : console.log)(`[launcher] ${line}`);
@@ -290,10 +309,7 @@ if (!gotLock) {
     trace('gate-done');
   }).catch((error) => {
     trace(`whenReady chain failed: ${error && error.stack ? error.stack : error}`);
-    // Never strand a hidden window-less process: tell the user and exit.
-    try {
-      dialog.showErrorBox('启动器初始化失败', String(error && error.message ? error.message : error));
-    } catch {}
-    app.exit(1);
+    // Never strand a hidden window-less process: leave a crash report and exit.
+    exitAfterReport(error);
   });
 }

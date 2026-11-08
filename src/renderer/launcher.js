@@ -1338,10 +1338,27 @@ async function openUpdateCenter(action, arg) {
   return true;
 }
 
+// A failed check or update is written under the check buttons, where the
+// user is looking, instead of a floating notice.
+function showUpdateFailure(text) {
+  document.querySelectorAll('[data-update-fail]').forEach((node) => {
+    node.textContent = text || '';
+    node.hidden = !text;
+  });
+}
+
+function reportUpdateNotice(notice) {
+  if (notice.tone === 'error') showUpdateFailure(`${notice.title}：${notice.body}`);
+  else void appNotice(notice);
+}
+
 function updateCheckNotice(check) {
   const version = check?.currentVersion || check?.current || (lastStatus?.launcherPackage ? lastStatus?.installed?.version : lastStatus?.version);
   if (check?.status === 'current') {
     return { title: '已是最新版本', body: version ? `当前版本 v${String(version).replace(/^v/i, '')}，已是最新版本。` : '当前已是最新版本。', tone: 'success' };
+  }
+  if (check?.status === 'installed') {
+    return { title: '已安装', body: check.hint || '桌面端已安装，可以启动。', tone: 'success' };
   }
   if (check?.status === 'available') {
     return { title: '发现新版本', body: `最新版本 v${String(check.latest || check.stableVersion).replace(/^v/i, '')}。可在首页或版本管理中更新。` };
@@ -1497,6 +1514,7 @@ async function checkUpdateNow() {
     return;
   }
   updateCheckBusy = true;
+  showUpdateFailure('');
   const buttons = ['btn-check-update', 'btn-check-update-versions'].map((id) => $(id));
   const restore = buttons.map((button) => launcherButtonBusy(button, '正在检查更新…'));
   let notice;
@@ -1514,14 +1532,15 @@ async function checkUpdateNow() {
     restore.forEach((done) => done());
   }
   // A new version opens the inline update card; "nothing to do" outcomes
-  // answer on the buttons themselves. Only failures and hints need a notice.
+  // answer on the buttons themselves. Failures are written on the page; only
+  // hints need a notice.
   if (notice.title === '发现新版本') return;
   if (!result?.hint && (result?.status === 'current' || result?.status === 'none')) {
     const label = result.status === 'current' ? '已是最新' : '暂无更新';
     buttons.forEach((button) => { if (button) window.shellFeedback.buttonDone(button, label); });
     return;
   }
-  void appNotice(notice);
+  reportUpdateNotice(notice);
 }
 
 let importSourceHome;
@@ -2710,7 +2729,8 @@ function bind() {
         // Cold-start gate outcome (failed/incomplete update flow): hints are
         // shown verbatim, everything else falls back to the shared rendering.
         renderUpdateCheck(payload?.check);
-        if (payload?.check?.hint || payload?.check?.status === 'error') void appNotice(updateCheckNotice(payload.check));
+        showUpdateFailure('');
+        if (payload?.check?.hint || payload?.check?.status === 'error') reportUpdateNotice(updateCheckNotice(payload.check));
       }
       void refreshStatus();
     });

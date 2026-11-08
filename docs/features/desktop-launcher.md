@@ -4,6 +4,7 @@
 | --- | --- |
 | **id** | `desktop-launcher` |
 | **status** | `active` |
+| **last verified (no failure popups)** | 2026-11-08 — 失败不再弹窗：渲染崩溃、无响应、加载失败不再弹「界面异常」确认，改为自动重载（2 分钟内最多 3 次，依次等 1、3、8 秒；无响应满 30 秒才重载），仍失败则在该界面内显示失败页（诊断路径 +「重新加载」）；启动器进程的致命错误只写日志与崩溃报告后退出，不再弹原生错误框；组件操作失败写在组件行、更新检查失败写在检查按钮下；启动失败后迟到的新版本只出现在首页更新卡，不再弹询问。`renderer-recovery`、`launcher-gate` 与 feedback / bound 真实 Electron 回归通过；崩溃恢复另用真实 Electron 探针验证（强制崩溃渲染进程四次：重载三次后显示失败页，点「重新加载」回到原页，原生对话框 0 次）。启动器进程的致命错误路径只有源码级断言，没有实机触发。 |
 | **last verified (audit update)** | 2026-09-30 — 更新/启动器 79 项、任务保护与渲染反馈定向回归通过；资产按平台和架构选择，DMG 手动安装反馈覆盖设置、版本卡和冷启动提示。未做 macOS 实机安装。 |
 | **last verified (installation recovery)** | 2026-09-29 — 下载断流/重试/取消、完整缓存校验、安装失败优先与同版本待确认回归通过；真实 Electron 明暗 × 两种宽度共 20 场景通过，源码重启与冒烟通过。未构建或验收新的 CI Setup。证据：[安装恢复 QA](../qa/results/2026-09-29-installation-recovery/README.md)。 |
 | **last verified (home state)** | 2026-09-29 — 可选导入不抢占冷启动；首页、门禁与恢复定向 95/95。隐藏 Electron 真实页面覆盖双击只调用一次、延迟/失败/异常/恢复启动/关闭，860×560 下 100%/200% 主操作可达。同批实机复测：`autoStartDesktop:false` 的真实启动器首页只有单一启动入口、诊断默认折叠，点击后进入锁定进行态并显示真实等待秒数。证据见 `docs/qa/results/2026-09-29-four-fix-live/` 与 `docs/qa/results/2026-09-29-boot-reveal/LOCAL-INSTALL.md`；未更新安装版首页，用户要求不操作其桌面。 |
@@ -35,13 +36,14 @@
 
 - 启动器对外显示 Whale Isle Launcher，桌面运行时显示 Whale Isle；两个 appId 与各自旧版 userData 路径保持稳定，启动器继续识别旧版 Deepseek-Harness-Desktop 的注册表与可执行文件。
 
-- 更新确认必须使用确认框展示的 release 快照；冷启动确认路径下载该快照的完整 Setup，不再二次读取 latest 或使用可移动目标的 `latest.yml`。窗口代际失效导致的放弃重新停放结果；自动启动失败后可见启动器消费迟到的新版本提示。
+- 更新确认必须使用确认框展示的 release 快照；冷启动确认路径下载该快照的完整 Setup，不再二次读取 latest 或使用可移动目标的 `latest.yml`。窗口代际失效导致的放弃重新停放结果；自动启动失败后迟到的新版本只出现在首页更新卡，不再弹询问。
 - 同一主进程同一时刻最多一个导入任务；第二个 `shell:run-import` 返回 `import-in-progress`，不能覆盖取消目标或 journal。空选择不写 `import-journal.json`。
 - **更新检查不阻塞自动启动（2026-09-22）**：`runColdStartGate` 不再在本地启动判定前 `await checkUpdate()`。`autoStartDesktop` 为真且无本地 hold 时先 `startDesktop()`；迟到结果只 `parkUpdateCheck` + `shell:launcher-hint`，**不**自动打开启动器、**不**触发第二次启动。`autoStartDesktop === false`、导入 hold、上次失败三条路径照旧停在启动器，结果仍走同一 `presentUpdateAsk` 在可见启动器内呈现。`checkUpdate` 进程内 single-flight，显式刷新不被短期结果挡住。gate → `startDesktop` 的 P95 增量目标 ≤100 ms（相对 0 延迟组）。
 - 会话缓存 `session_projcache` 的 schema 错误单独归因，不标记用户插件可疑；Recovery Board 的缓存诊断优先于 sticky skip，不建议清空原始会话。Loader 的 `failed to apply loader entry … (包名)` 纳入插件证据，排除 `cordis:include` 包装层。
 
 - 端口预检「无监听者 ≠ 可用」：Windows 动态保留 TCP 端口段（Hyper-V/WinNAT；段内无监听者，connect 探测不可见，bind 即 EACCES）。`resolveLaunchTarget → ensureOwnedPort` 在 connect 探测后必须再过 `canBindPort` 绑定试探；保留/无权端口与被占端口同样改跳相邻可绑定端口（`findFreePort` 逐端口双探测：未占用且可绑定）。启动日志含 `listen EACCES` 归因 `port-excluded`（区别于 `port-in-use`），不列插件嫌疑，Recovery Board verdict 与 session-cache/内置组件损坏同级压过 sticky-skip 横幅——跳过或禁用插件都修不了端口保留。
 
+- **失败不弹窗（2026-11-08）**：渲染崩溃/无响应/加载失败（`src/main/renderer-recovery.js`）、启动器进程致命错误（`src/main-launcher/index.js`）、组件操作与列表读取失败、更新检查失败都不再用对话框或浮层回应。渲染面先自动重载，失败页在该界面内显示；启动器致命错误只写 `main.log` 与 `logs/crash` 报告；组件失败写在组件行（`data-comp-failure`），更新检查失败写在检查按钮下（`data-update-fail`）。用户点击按钮得到的动作结果（成功提示、需要确认的操作）不在此列。
 - 同一 Electron 进程、同一安装包；不是第二套 exe。
 - 启动器走官方 `--dsw-alias-*`；`--boot-*` 不得用在启动器页。
 - 启动器浅色/深色跟官方 dsh web 表（`data-ds-dark-theme`），不把 Appearance 壁纸种子写进 token。

@@ -103,7 +103,6 @@ const {
   closeLauncherWindow,
   showMain,
   openHarnessSettings,
-  setRecoveryConfirm,
   setRenderHintsSource,
 } = require('./window');
 const { detectGpuTier } = require('./gpu-tier');
@@ -347,10 +346,6 @@ async function confirmDialog(parent, options) {
   }
   return dialog.showMessageBox(parent || undefined, options);
 }
-
-// Renderer crash/unresponsive recovery prompts go through the same styled
-// overlay when the crashed window is still on screen.
-setRecoveryConfirm(confirmDialog);
 
 const trayHideNotice = new TrayHideNotice({
   markerPath: require('node:path').join(app.getPath('userData'), 'tray-hide-acknowledged'),
@@ -667,7 +662,6 @@ function runColdStartGate(options = {}) {
     startDesktop: launcherPackage
       ? () => runtimeInstall.startExternalDesktop()
       : () => startDesktopFromLauncher(options),
-    drainParkedUpdateCheck: () => drainParkedUpdateCheck.drain({ generation: getLauncherWindow() }),
     log: (line, level) => dsh.log(line, level),
   });
 }

@@ -355,7 +355,6 @@ async function runColdStartGate({
   readImportJournal,
   journalIsBlocked,
   startDesktop,
-  drainParkedUpdateCheck = async () => {},
   log = () => {},
 }) {
   // Start the network check without awaiting it: it must overlap the local
@@ -436,12 +435,11 @@ async function runColdStartGate({
     // user actually opens the launcher. Never re-open the launcher here (that
     // would steal focus from the desktop the user asked for) and never start a
     // second time.
-    void updateCheck.then(async (check) => {
+    // A failed start leaves the launcher open on the failure: the new version
+    // appears on its home card and is not asked about on top of the failure.
+    void updateCheck.then((check) => {
       parkUpdateCheck(check);
       sendToLauncher('shell:launcher-hint', { check });
-      if (desktopFailed && check?.status === 'available') {
-        await drainParkedUpdateCheck();
-      }
     }).catch((error) => {
       log(`迟到更新处理失败：${error && error.message ? error.message : String(error)}`, 'error');
     });

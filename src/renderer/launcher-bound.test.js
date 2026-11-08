@@ -95,10 +95,10 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.equal(r.starting.controls.filter(button => button.action === 'start').every(button => button.busy === 'true'), true);
   assert.equal(r.failedPhase.noticeVisible, false, 'failure phase waits for the operation outcome');
   assert.equal(r.failedPhase.notices.length, 0);
-  assert.equal(r.failed.notices.length, 1, 'failed phase and failed reply produce one result');
-  assert.equal(r.failed.noticeTitle, '鲸桥操作未完成');
-  assert.match(r.failed.noticeBody, /组件进程启动失败/);
-  assert.equal(r.failed.noticeRole, 'alert');
+  assert.equal(r.failed.notices.length, 0, 'a failed start raises no popup');
+  assert.equal(r.failed.noticeVisible, false);
+  assert.ok(r.failed.failureLines.length > 0, 'the failure stays on the component row');
+  assert.match(r.failed.failureLines[0], /^操作未完成：.*组件进程启动失败/);
   assert.equal(r.failed.modalVisible, false, 'failure result keeps confirmation free');
 
   for (const progress of [r.installing, r.downloading, r.verifying, r.updating]) {
@@ -135,9 +135,8 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.equal(r.installed.progressVisible, false);
   assert.equal(r.installed.modalVisible, false);
   assert.match(r.updating.loadingLabel, /正在下载组件 51%/);
-  assert.equal(r.updateFailed.noticeTitle, '鲸桥操作未完成');
-  assert.equal(r.updateFailed.notices.filter(notice => notice.body === 'fixture package refused').length, 1);
-  assert.equal(r.updateFailed.notices.length, 2, 'update has one result after the earlier failure');
+  assert.equal(r.updateFailed.notices.length, 0, 'a failed update raises no popup either');
+  assert.ok(r.updateFailed.failureLines.includes('操作未完成：fixture package refused'));
 
   assert.equal(r.persistentErrorInline, false, 'catalog error stays available without a raw inline message');
   assert.equal(r.statusDetails.noticeTitle, '鲸桥状态');
