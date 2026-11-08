@@ -6,7 +6,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionPresentation, SessionListMetadata } from '../src/types.ts'
-import { createSessionTestRemote, type TestSessionRemote } from './test-remote.ts'
+import { createSessionTestRemote, installSessionReadTestServices, type TestSessionRemote } from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 
@@ -25,6 +25,8 @@ async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote }> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SessionStore)
+  // AgentRegistry injects the projection service, so it mounts after it exists.
+  installSessionReadTestServices(ctx)
   await ctx.plugin(AgentRegistry)
   ctx.agents.setFactory({
     createAgent: (ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> => {

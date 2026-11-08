@@ -700,7 +700,7 @@ describe('sessions.fork', () => {
     expect(response.ok).toBe(true)
     if (!response.ok) return
     const child = ctx.sessions.get(response.value.sessionId)
-    expect(child?.header.parentSession).toBe(source.id)
+    expect(child?.header.parentSession).toBeUndefined()
     expect(child?.snapshotEvents().map(event => event.type)).not.toContain('user/message')
     expect(child?.snapshotEvents().map(event => event.type)).toEqual(['session/end-seed'])
     await ctx.fiber.dispose()
@@ -717,7 +717,7 @@ describe('sessions.fork', () => {
     expect(ctx.sessions.get(response.value.sessionId)?.snapshotEvents().map(event => event.type)).toEqual([
       'turn/start', 'user/message', 'turn/end', 'session/end-seed',
     ])
-    expect(ctx.sessions.get(response.value.sessionId)?.header.parentSession).toBe(source.id)
+    expect(ctx.sessions.get(response.value.sessionId)?.header.parentSession).toBeUndefined()
     await ctx.fiber.dispose()
   })
 

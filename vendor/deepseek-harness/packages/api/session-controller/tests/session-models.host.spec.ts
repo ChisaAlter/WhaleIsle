@@ -472,7 +472,7 @@ describe('Web session model selection', () => {
         id: 'plain', name: 'Plain',
         models: [
         { id: 'plain-model', name: 'Plain Model', contextWindow: 262_144, maxTokens: 32_768 },
-        { id: 'badged-model', name: 'Badged Model', badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
+        { id: 'badged-model', name: 'Badged Model', contextWindow: 262_144, maxTokens: 32_768, badge: { text: { en: 'New', zh: '新' }, tone: 'info' } },
       ],
       },
       {

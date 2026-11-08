@@ -97,6 +97,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/llm/llm-pi-ai/src/adapter.ts', includes: ['configuredCompactionThresholds'] },
   { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number'] },
   { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold'] },
+  // Durable tool-call guard: a successful finish must carry a valid call
+  // identity; a failed stream drops the unusable call instead of throwing.
+  { file: 'packages/llm/llm/src/assembler.ts', includes: ['isValidToolCallIdentity', 'requireValidToolCallIdentity'] },
+  { file: 'packages/llm/llm/src/content.ts', includes: ['export function requireValidToolCallIdentity', 'TOOL_NAME_PATTERN'] },
   { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
   { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold'] },
   // Local Project continuations use explicit cwd/preset and admission policy.

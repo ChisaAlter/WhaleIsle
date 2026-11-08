@@ -78,8 +78,9 @@ async function composed(workspaces: readonly Workspace[] = []): Promise<{
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { personaPrefix: '' })
-  await ctx.plugin(AgentRegistry)
+  // AgentRegistry injects the projection service, so it mounts after it exists.
   installSessionReadTestServices(ctx)
+  await ctx.plugin(AgentRegistry)
   const registry = testWorkspaceRegistry(workspaces)
   ctx.provide('workspaceRegistry', registry as never)
   ctx.agents.setFactory({

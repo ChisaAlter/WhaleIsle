@@ -139,7 +139,7 @@ describe('TokenMeter configuration and registration', () => {
     const session = ctx.sessions.create()
     const rows = ctx.sessionProjections.checkpoint(session)
     expect(Object.keys(rows).sort())
-      .toEqual(['contextBreakdown', 'contextPressure', 'tokenMeasurement', 'tokenUsage'])
+      .toEqual(['billedUsage', 'contextBreakdown', 'contextPressure', 'tokenMeasurement', 'tokenUsage'])
     await fiber.dispose()
     expect(ctx.get('tokenMeter')).toBeUndefined()
     session.append('turn/start', { turn: 1 })
