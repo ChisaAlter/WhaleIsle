@@ -36,7 +36,7 @@ describe('wake while the initiator scope closes', () => {
     // Teardown closes the scope before it disposes the agents; a member or
     // timer may still wake the Lead in between.
     ;(ctx.agents as unknown as { closeInitiators(): void }).closeInitiators()
-    agent.followup(createUserMessage('late wake'))
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'late wake' }], source: { kind: 'user' } }))
 
     expect(agent.status).toBe('idle')
     await expect(Promise.race([
