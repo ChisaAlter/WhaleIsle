@@ -249,15 +249,26 @@ export class ReactLoopAgent implements Agent {
       return
     }
     const driver = Promise.withResolvers<void>()
+    const { lastTurn } = this.phase
     this.activityDone = driver.promise
     this.setPhase({
       kind: 'running',
       abort: new AbortController(),
-      turn: this.phase.lastTurn,
+      turn: lastTurn,
       step: 0,
       wakeRequested: false,
     })
-    this.loopCtx.agents.withInitiator(this, () => this.kick()).then(driver.resolve, driver.reject)
+    let started: Promise<void>
+    try {
+      started = this.loopCtx.agents.withInitiator(this, () => this.kick())
+    } catch {
+      // The initiator scope is closing: this wake can never run. Release the
+      // reservation, or whenIdle() stays open and teardown waits on it forever.
+      this.setPhase({ kind: 'idle', lastTurn })
+      driver.resolve()
+      return
+    }
+    started.then(driver.resolve, driver.reject)
   }
 
   async whenIdle(): Promise<void> {

@@ -325,6 +325,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/llm/llm/src/types.ts': 'compactionThreshold?: number\n',
       'packages/llm/llm/src/index.ts': 'compactionThreshold\n',
       'packages/llm/llm/src/assembler.ts': 'isValidToolCallIdentity\nrequireValidToolCallIdentity\n',
+      'packages/core/agent-loop/src/agent.ts': 'The initiator scope is closing\nresumePendingInteraction\n',
       'packages/llm/llm/src/content.ts': 'export function requireValidToolCallIdentity\nTOOL_NAME_PATTERN\n',
       'packages/compaction/compaction-basic/src/config.ts': 'compactionThreshold\n',
       'packages/compaction/compaction-basic/src/index.ts': 'info.context.compactionThreshold\n',

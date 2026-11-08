@@ -100,6 +100,9 @@ const FORK_FILE_MARKERS = [
   // Durable tool-call guard: a successful finish must carry a valid call
   // identity; a failed stream drops the unusable call instead of throwing.
   { file: 'packages/llm/llm/src/assembler.ts', includes: ['isValidToolCallIdentity', 'requireValidToolCallIdentity'] },
+  // A wake that lands while the initiator scope closes would leave its driver
+  // reservation open and hang teardown (Team members wake the Lead then).
+  { file: 'packages/core/agent-loop/src/agent.ts', includes: ['The initiator scope is closing', 'resumePendingInteraction'] },
   { file: 'packages/llm/llm/src/content.ts', includes: ['export function requireValidToolCallIdentity', 'TOOL_NAME_PATTERN'] },
   { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
   { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold'] },
