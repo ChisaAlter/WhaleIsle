@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { JobListAction, type JobListActionProps } from '../src/client/JobListAction.tsx'
-import { zh } from '../src/client/locales.ts'
+import { zh, ru } from '../src/client/locales.ts'
+
+beforeEach(() => {
+  vi.stubGlobal('CSS', { supports: (property: string) => property === '-webkit-backdrop-filter' })
+})
 
 afterEach(() => {
   cleanup()
@@ -336,6 +340,36 @@ describe('JobListAction observation', () => {
     expect(menu?.style.top).toBe('468px')
   })
 
+  it('follows Visual Viewport panning and resizing and releases its listeners when closed', () => {
+    const viewport = Object.assign(new EventTarget(), { width: 600, height: 500, offsetLeft: 40, offsetTop: 60 })
+    vi.stubGlobal('visualViewport', viewport)
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(120)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(80)
+    const remove = vi.spyOn(viewport, 'removeEventListener')
+    render(<JobListAction {...props([outputJob()])} />)
+    const trigger = screen.getByRole('button', { name: '1 个后台任务运行中' })
+    vi.spyOn(trigger.parentElement!, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 300, 200, 20))
+    fireEvent.click(trigger)
+    const menu = screen.getByRole('list', { name: zh['list.aria'] }).closest<HTMLElement>('[data-menu-material]')!
+    expect(menu.style.left).toBe('140px')
+    expect(menu.style.top).toBe('385px')
+    act(() => {
+      viewport.offsetLeft = 100
+      viewport.offsetTop = 120
+      viewport.dispatchEvent(new Event('scroll'))
+    })
+    expect(menu.style.left).toBe('200px')
+    expect(menu.style.top).toBe('445px')
+    act(() => {
+      viewport.height = 200
+      viewport.dispatchEvent(new Event('resize'))
+    })
+    expect(menu.style.top).toBe('228px')
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
+    expect(remove.mock.calls.map(([type]) => type)).toEqual(expect.arrayContaining(['scroll', 'resize']))
+  })
+
   it('keeps portaled controls interactive and releases observation on dismissal and unmount', () => {
     const stop = vi.fn()
     const observe = vi.fn(() => stop)
@@ -605,4 +639,13 @@ describe('JobListAction human kill', () => {
     expect(screen.queryByTitle(stopTitle('pnpm run build'))).toBeNull()
     expect(document.querySelector('[data-kill-state]')).toBeNull()
   })
+})
+
+it.each([1, 2, 5, 21])('renders count-independent Russian labels for %i jobs', (count) => {
+  const jobs = Array.from({ length: count }, (_, i) => job({ id: `job-${i}` as JobView['id'] }))
+  const translate: JobListActionProps['t'] = makeTranslate(ru)
+  const view = render(<JobListAction {...props(jobs)} t={translate} />)
+  expect(screen.getByRole('button', { name: `Фоновые задачи выполняются: ${count}` })).toBeDefined()
+  view.rerender(<JobListAction {...props(jobs.map(item => ({ ...item, status: 'completed', finishedAt: 1_700_000_003_000 })))} t={translate} />)
+  expect(screen.getByRole('button', { name: `Фоновые задачи: ${count}` })).toBeDefined()
 })

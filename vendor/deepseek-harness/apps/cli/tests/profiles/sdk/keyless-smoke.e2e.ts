@@ -10,22 +10,14 @@ import { execa } from 'execa'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { workspaceDependencyPaths, type PrimaryRuntimeManifest } from '@deepseek-ai/dsh-tool-workspace-dependencies'
 
+import { messagesResponse } from './fixtures/messages-response.ts'
+
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
 const launch = resolveExampleLaunch({
   srcBin: fileURLToPath(new URL('../../../src/bin.ts', import.meta.url)),
   mode: 'lib',
 })
 
-/** Frame one text or tool response from the local Messages endpoint. */
-function messagesResponse(content: Record<string, unknown>, stopReason: 'end_turn' | 'max_tokens' | 'tool_use'): string {
-  return [
-    { type: 'message_start', message: { id: 'sdk-smoke-response', model: 'deepseek-v4-pro', usage: { input_tokens: 3, output_tokens: 0 } } },
-    { type: 'content_block_start', index: 0, content_block: content },
-    { type: 'content_block_stop', index: 0 },
-    { type: 'message_delta', delta: { stop_reason: stopReason }, usage: { output_tokens: 1 } },
-    { type: 'message_stop' },
-  ].map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('')
-}
 
 function waitForLine(
   lines: string[],
@@ -65,9 +57,22 @@ describe('Python SDK dsh profile keyless smoke', () => {
     { label: 'reports max-token turns with mapping enabled through env', envValue: 'true', editorEnabled: false },
     { label: 'reports max-token turns with mapping disabled through env', envValue: 'false', editorEnabled: false },
     { label: 'allows an explicit patch to enable str_replace_editor', envValue: undefined, editorEnabled: true },
-  ])('$label', async ({ envValue, editorEnabled }) => {
+    { label: 'allows an explicit patch to enable apply_patch', envValue: undefined, editorEnabled: false, patchEnabled: true },
+    { label: 'uses the PTC executor overlay despite the retired environment selector', envValue: undefined, editorEnabled: false, ptc: true },
+    // The shipped sdk profile mounts no observation policy: an edit of a file the model never read lands on disk.
+    { label: 'edits a file the model never read through the shipped profile', envValue: undefined, editorEnabled: false, unreadEdit: true },
+  ])('$label', async (scenario) => {
+    const { envValue, editorEnabled } = scenario
+    const ptc = 'ptc' in scenario && scenario.ptc
+    const unreadEdit = 'unreadEdit' in scenario && scenario.unreadEdit
+    const patchEnabled = 'patchEnabled' in scenario && scenario.patchEnabled
+
     const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-runtime-smoke-'))
+    const unreadFile = join(root, 'notes.txt')
+    if (unreadEdit) await writeFile(unreadFile, 'alpha\n')
     const editorPatch = join(root, 'editor.patch.yml')
+    const fsPatch = join(root, 'fs.patch.yml')
+    if (patchEnabled) await writeFile(fsPatch, '- {id: tool-fs, config: {applyPatch: true}}\n')
     if (editorEnabled) await writeFile(editorPatch, [
       '- insert:',
       '    - id: tool-str-replace-editor',
@@ -82,7 +87,14 @@ describe('Python SDK dsh profile keyless smoke', () => {
       request.on('end', () => {
         modelRequests.push(JSON.parse(body) as Record<string, unknown>)
         response.writeHead(200, { 'content-type': 'text/event-stream' })
-        response.end(messagesResponse({ type: 'text', text: 'done' }, 'max_tokens'))
+        if (unreadEdit && modelRequests.length === 1) {
+          response.end(messagesResponse({
+            type: 'tool_use', id: 'unread-edit', name: 'edit',
+            input: { file_path: 'notes.txt', old_string: 'alpha', new_string: 'beta' },
+          }, 'tool_use'))
+          return
+        }
+        response.end(messagesResponse({ type: 'text', text: 'done' }, unreadEdit ? 'end_turn' : 'max_tokens'))
       })
     })
     await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
@@ -95,6 +107,8 @@ describe('Python SDK dsh profile keyless smoke', () => {
       '--profile',
       'sdk',
       ...(editorEnabled ? ['--patch', editorPatch] : []),
+      ...(patchEnabled ? ['--patch', fsPatch] : []),
+      ...(ptc ? ['--patch', join(repoRoot, 'apps/cli/config/examples/ptc.yml')] : []),
     ], {
       cwd: repoRoot,
       env: {
@@ -102,6 +116,7 @@ describe('Python SDK dsh profile keyless smoke', () => {
         DSH_HOME: join(root, '.dsh'),
         DSH_PERMISSION_MODE: 'danger-full-access',
         DSH_TELEMETRY_DISABLED: '1',
+        DSH_TOOLS_MODE: ptc ? 'native' : 'ptc',
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
         DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
         ...(envValue === undefined ? {} : { DSH_MAX_TOKENS_AS_SUCCESS: envValue }),
@@ -166,18 +181,38 @@ describe('Python SDK dsh profile keyless smoke', () => {
           sessionId: 'main',
           event: {
             type: 'turn/end',
-            data: { reason: { kind: 'max-tokens' } },
+            data: { reason: { kind: unreadEdit ? 'completed' : 'max-tokens' } },
           },
         },
       })
+      if (unreadEdit) {
+        expect(modelRequests).toHaveLength(2)
+        expect(await readFile(unreadFile, 'utf8')).toBe('beta\n')
+      }
       expect(modelRequests[0]?.tools).toEqual(expect.any(Array))
       const tools = modelRequests[0]?.tools as { name?: string }[]
       const toolNames = tools.map(tool => tool.name)
       expect(modelRequests[0]?.output_config).toEqual({ effort: 'max' })
       expect(modelRequests[0]?.max_tokens).toBe(1234)
-      expect(toolNames).toEqual(expect.arrayContaining(['read', 'write', 'edit', 'web_fetch', 'web_search']))
-      expect(toolNames.includes('str_replace_editor')).toBe(editorEnabled)
-      expect(toolNames).not.toContain('list_subagent_models')
+      const expectedTools = ['read', 'write', 'edit', 'web_fetch', 'web_search', 'subagent', 'subagent_fork',
+        'present', 'ask_user_question', 'schedule_create', 'schedule_edit', 'schedule_list', 'schedule_view', 'plugin_manager']
+      const requestText = JSON.stringify(modelRequests[0])
+      if (ptc) {
+        expect(toolNames).toEqual(['run_code'])
+        for (const tool of expectedTools) expect(requestText.includes(`${tool}:`), tool).toBe(true)
+        expect(requestText.includes('apply_patch:')).toBe(false)
+      } else {
+        expect(toolNames).toEqual(expect.arrayContaining(expectedTools))
+        expect(toolNames.includes('apply_patch')).toBe(patchEnabled)
+        expect(toolNames.includes('str_replace_editor')).toBe(editorEnabled)
+        expect(toolNames).not.toContain('list_subagent_models')
+      }
+      for (const text of ['Tokens prefixed with @', 'Prefer showing the primary results',
+        'Time sampled while preparing']) {
+        expect(requestText.includes(text), text).toBe(true)
+      }
+      expect(requestText).not.toContain('Current DeepSeek Harness implementation checkout:')
+      expect(requestText).not.toContain('Current DeepSeek Harness Web GUI URL:')
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
       const shutdown = await waitForLine(lines, value => value.id === 3, () => stderr)

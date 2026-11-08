@@ -53,7 +53,7 @@ async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote }> {
   await ctx.plugin(AgentRegistry)
   return {
     ctx,
-    remote: createSessionTestRemote(ctx, {
+    remote: await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
       cwd: '/workspace',
     }),
@@ -331,7 +331,7 @@ describe('session.blankReuse', () => {
       await readerCtx.plugin(AgentRegistry)
       await readerCtx.plugin(JsonlSessionPersistence, { root, compression })
       const resume = vi.spyOn(readerCtx.agents, 'resume')
-      const remote = createSessionTestRemote(readerCtx, {
+      const remote = await createSessionTestRemote(readerCtx, {
         defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
         cwd: '/workspace',
       })

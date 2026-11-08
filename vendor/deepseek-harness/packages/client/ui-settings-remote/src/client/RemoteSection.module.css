@@ -26,8 +26,10 @@
   overflow: hidden;
 }
 
-.trigger:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .trigger:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .trigger:focus-visible {
@@ -197,8 +199,10 @@
   cursor: pointer;
 }
 
-.devices:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .devices:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .footer {

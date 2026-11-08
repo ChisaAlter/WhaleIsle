@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { HarnessRestartRow } from '../src/client/HarnessRestartRow.tsx'
 import type { HarnessRestartRowProps } from '../src/client/HarnessRestartRow.tsx'
 import { en } from '../src/client/locales.ts'
@@ -20,6 +20,7 @@ const t = makeTranslate(en)
 function mount() {
   const props: HarnessRestartRowProps = {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unusedHook,

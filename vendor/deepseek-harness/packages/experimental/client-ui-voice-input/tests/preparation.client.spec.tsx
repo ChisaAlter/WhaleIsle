@@ -10,7 +10,7 @@ import { PreparationCard, VoicePreparation } from '../src/client/PreparationCard
 import type { VoiceInputProps } from '../src/client/VoiceInput.tsx'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
 import { Recording } from '../src/client/audio.ts'
-import { zh } from '../src/client/locales.ts'
+import { zh, en, ja, es, fr, de, ru, pt } from '../src/client/locales.ts'
 import { captureFixture } from './audio-fixture.client.ts'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
@@ -139,7 +139,7 @@ it('persists settings after feedback expires and reports disconnection in the de
   const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
     selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,
     providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', languages: ['auto', 'zh', 'en', 'ja'], preparation: { phase: 'ready' } },
-      { id: 'cloud' as SpeechProviderId, name: 'Cloud', location: 'cloud', languages: ['auto', 'en', 'zh', 'ja', 'fr'], preparation: { phase: 'ready' } }],
+      { id: 'cloud' as SpeechProviderId, name: 'Cloud', location: 'cloud', languages: ['auto', 'en', 'zh', 'ja', 'fr', 'it'], preparation: { phase: 'ready' } }],
   } })
   const configure = vi.fn<VoiceInputProps['configure']>(async () => {})
   const props = { useSpeechReadiness: bindSnapshotSelector(store), configure, t,
@@ -155,8 +155,9 @@ it('persists settings after feedback expires and reports disconnection in the de
   act(() => { store.set({ ...current, catalog: { ...current.catalog!, selection: { providerId: 'cloud' as SpeechProviderId, language: 'en' } } }) })
   expect(screen.getByText(zh.cloud)).toBeTruthy()
   expect(within(screen.getByLabelText(zh.language)).getAllByRole<HTMLOptionElement>('option').map(item => item.value))
-    .toEqual(['auto', 'en', 'zh', 'ja', 'fr'])
-  expect(within(screen.getByLabelText(zh.language)).getByRole('option', { name: 'fr' })).toBeTruthy()
+    .toEqual(['auto', 'en', 'zh', 'ja', 'fr', 'it'])
+  expect(within(screen.getByLabelText(zh.language)).getByRole('option', { name: zh.fr })).toBeTruthy()
+  expect(within(screen.getByLabelText(zh.language)).getByRole('option', { name: 'it' })).toBeTruthy()
   vi.useFakeTimers()
   configure.mockRejectedValueOnce(new Error('settings are read-only'))
   await act(async () => { fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'zh' } }) })
@@ -258,4 +259,15 @@ it('locks source changes while a preparation request is pending and hides them d
   expect(screen.getByLabelText<HTMLSelectElement>(zh.sourceChoice).disabled).toBe(true)
   b.rerender(<PreparationCard {...b.props} provider={{ ...provider, preparation: { phase: 'downloading', resource: 'model.onnx', completedBytes: 0 } }} />)
   expect(screen.queryByLabelText(zh.sourceChoice)).toBeNull()
+})
+
+it('gives each speech recognition language a distinct localized name', () => {
+  for (const dictionary of [zh, en, ja, es, fr, de, ru, pt]) {
+    const names = [
+      dictionary.zh, dictionary.en, dictionary.yue, dictionary.ja, dictionary.es,
+      dictionary.fr, dictionary.de, dictionary.ru, dictionary.pt, dictionary.ko,
+    ]
+    expect(new Set(names).size).toBe(names.length)
+  }
+  expect(zh.fr).toBe('法语')
 })

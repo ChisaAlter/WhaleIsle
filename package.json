@@ -51,7 +51,7 @@
     "docs:check": "node scripts/verify-md-links.mjs"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.9.0"
   },
   "optionalDependencies": {
     "node-pty": "1.2.0-beta.15"

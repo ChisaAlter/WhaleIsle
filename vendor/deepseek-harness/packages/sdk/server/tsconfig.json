@@ -37,6 +37,21 @@
     },
     {
       "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../schedule/schedule"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../goal/goal"
     }
   ]
 }

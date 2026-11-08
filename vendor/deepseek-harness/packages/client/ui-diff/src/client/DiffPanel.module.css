@@ -26,8 +26,10 @@
   cursor: pointer;
 }
 
-.scope:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .scope:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .refresh {
@@ -44,9 +46,11 @@
   cursor: pointer;
 }
 
-.refresh:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .refresh:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .body {
@@ -123,8 +127,10 @@
   cursor: pointer;
 }
 
-.fileTitle:hover {
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .fileTitle:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .group {
@@ -147,7 +153,9 @@
   cursor: pointer;
 }
 
-.action:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .action:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }

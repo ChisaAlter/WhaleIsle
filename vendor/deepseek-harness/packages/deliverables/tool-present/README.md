@@ -25,6 +25,8 @@ Use `present` to declare final files accessible through the Session filesystem, 
 <a id="use-this-package"></a>
 ## Use this package
 
+Shared output and file-link guidance comes from [`dsh-deliverable-file-references`](../deliverable-file-references/README.md), mounted separately by Web and SDK bundles.
+
 `present` validates paths against the Session's current working directory and records absolute paths, so later directory changes do not redirect delivered files.
 
 The `standard`, `ptc`, and `cordis` agent presets mount this plugin. When the user explicitly requests a file deliverable, call `present` with `files: [{ path, description? }]` after creating or updating each requested file and before the final reply. This includes HTML, images, Office documents, spreadsheets, and slide decks; prose links and inline previews do not replace the declaration. Ordinary source-code edits do not require this tool. Files must be regular files accessible through the Session filesystem. Relative paths resolve against the Session working directory; absolute paths may name files outside it, including `/tmp` or Downloads. Missing files, directories, final symbolic links, and provider-denied paths fail the call. Files in a shell sandbox’s private `/tmp` must first be written somewhere the Session filesystem can access.
@@ -73,7 +75,7 @@ The pure `./types` entry declares `PresentedFile` and the Session event without 
 
 #### What the model sees
 
-The [present schema](../../../docs/tool-catalog.md#present) asks for existing accessible files and requires a declaration after creating or updating every explicitly requested file deliverable, before the final response. It names HTML, images, Office documents, spreadsheets, and slide decks, and distinguishes these deliveries from ordinary source-code edits. Prose links and inline previews do not replace declarations. Users open the current files; the tool does not copy their contents. The `files` parameter asks for the 1-2 most important deliverables and at most 4 per call. Results report `Presented <path>` for each file; the program result and durable event contain paths and optional descriptions.
+The [present schema](../../../docs/tool-catalog.md#present) asks for existing accessible files and requires a declaration after creating or updating every explicitly requested file deliverable, before the final response. It names HTML, images, Office documents, spreadsheets, and slide decks, and distinguishes these deliveries from ordinary source-code edits. Prose links and inline previews do not replace declarations. Hosts may show presented files only after the turn ends, so the schema asks the model to call it once the files are final and, when the user must review files earlier (for example before a tool call that waits for their answer), to link them in the message as well. Users open the current files; the tool does not copy their contents. The `files` parameter asks for the 1-2 most important deliverables and at most 4 per call. Results report `Presented <path>` for each file; the program result and durable event contain paths and optional descriptions.
 
 #### Token effect
 

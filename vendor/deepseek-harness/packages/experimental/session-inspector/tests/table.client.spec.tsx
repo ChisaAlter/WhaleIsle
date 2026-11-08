@@ -173,12 +173,12 @@ it('shows the complete row identity in a tooltip outside the table clipping area
   }
   const ui = render(<InspectorTable {...props} />)
   const id = ui.getByText(identity)
-  fireEvent.mouseEnter(id)
+  fireEvent.pointerEnter(id)
   const tooltip = await ui.findByRole('tooltip')
   expect(tooltip.textContent).toBe(identity)
   expect(tooltip.parentElement).toBe(document.body)
   expect(ui.container.contains(tooltip)).toBe(false)
-  fireEvent.mouseLeave(id)
+  fireEvent.pointerLeave(id)
   await waitFor(() => { expect(ui.queryByRole('tooltip')).toBeNull() })
 })
 

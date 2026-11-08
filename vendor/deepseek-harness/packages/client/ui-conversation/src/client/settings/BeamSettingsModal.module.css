@@ -138,10 +138,16 @@
   text-align: left;
 }
 
-.paletteChip:hover,
 .paletteChip[aria-pressed='true'] {
   border-color: var(--dsw-alias-state-business-primary);
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+@media (hover: hover) {
+  .paletteChip:hover {
+    border-color: var(--dsw-alias-state-business-primary);
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .paletteSwatch {
@@ -208,8 +214,10 @@
   cursor: pointer;
 }
 
-.iconButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .iconButton:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .iconButton:disabled {

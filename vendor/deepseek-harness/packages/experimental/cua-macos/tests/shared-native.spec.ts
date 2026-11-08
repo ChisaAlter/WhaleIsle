@@ -131,7 +131,7 @@ async function fixture(options: {
   const config: NativeClientConfig = {
     helperPath, cwd: root, connectTimeoutMs: options.connectTimeoutMs ?? 5000, screenshotTimeoutMs: 5000,
     timeoutMs: 30_000, graceMs: options.graceMs ?? 1000, axTimeoutMs: 3000,
-    maxRequestBytes: 65536, maxResponseBytes: 1048576, textEventIntervalMs: 0.5,
+    maxRequestBytes: 65536, maxResponseBytes: 1048576, textEventIntervalMs: 0.5, maxClickHoldMs: 7000,
   }
   function open(): NativeChannel {
     const channel = createSharedNativeChannel({ subprocess: { spawn } }, config)
@@ -188,7 +188,7 @@ describe.skipIf(process.platform === 'win32')('shared native Unix connection', (
     for (const handle of f.handles) expect(handle.terminate).not.toHaveBeenCalled()
     expect(f.hellos).toEqual([expect.objectContaining({ type: 'hello', protocol: 1, config: {
       axTimeoutMs: 3000, timeoutMs: 30000, screenshotTimeoutMs: 5000, graceMs: 1000,
-      maxRequestBytes: 65536, maxResponseBytes: 1048576, textEventIntervalMs: 0.5,
+      maxRequestBytes: 65536, maxResponseBytes: 1048576, textEventIntervalMs: 0.5, maxClickHoldMs: 7000,
     } }), expect.anything()])
   })
 
@@ -278,6 +278,19 @@ describe.skipIf(process.platform === 'win32')('shared native Unix connection', (
     outcome.resolve({ exitCode: 0, signal: null })
     await pending
     expect(String(await reply)).toContain('created')
+  })
+
+  it('preserves the native startup failure code and message after managed cleanup', async () => {
+    const failure = { type: 'error', code: 'NATIVE_RUNTIME_CONFLICT', message: 'Another helper version is using this executable path' }
+    const output = JSON.stringify(failure)
+    const f = await fixture({ launch: () => ({ ...launcherFixture(),
+      done: Promise.resolve({ exitCode: 1, signal: null }),
+      collected: { stdout: { readFrom: () => ({ text: output, nextOffset: output.length, lossy: false }) } },
+    }) })
+    const channel = f.open()
+    await expect(channel.done).rejects.toMatchObject({ code: failure.code, message: failure.message })
+    await channel.waitForClose()
+    expect(f.hellos).toEqual([])
   })
 
   it('returns a failed launcher outcome with its retained stderr and releases the managed range', async () => {

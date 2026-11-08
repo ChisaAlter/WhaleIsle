@@ -296,8 +296,10 @@
   cursor: pointer;
 }
 
-.action:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .action:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .action:focus-visible {
@@ -324,8 +326,10 @@
   cursor: grab;
 }
 
-.handle:hover:not([aria-disabled]) {
-  color: var(--dsw-alias-label-secondary);
+@media (hover: hover) {
+  .handle:hover:not([aria-disabled]) {
+    color: var(--dsw-alias-label-secondary);
+  }
 }
 
 .handle:active:not([aria-disabled]) {

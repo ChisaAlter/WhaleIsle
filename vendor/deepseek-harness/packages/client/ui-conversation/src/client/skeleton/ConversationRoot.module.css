@@ -101,7 +101,9 @@
   display: none;
 }
 
-/* Blank Sessions retain navigation controls without conversation title or tabs. */
+/* Blank Sessions retain navigation controls without conversation title or tabs.
+   The same 40px row (10px inset + 30px title row) applies before a Session
+   exists, so the Hero centers below one header height in both states. */
 .headerBlank {
   min-height: 0;
   padding-bottom: 0;
@@ -151,12 +153,29 @@
   gap: 0;
 }
 
+/* Header actions do not shrink, so on a narrow row they overflow the cluster.
+   The cluster clips them, hit testing included, so the next control keeps
+   every click. The trailing padding spans the gap before that control and
+   holds the fade: content that fits ends before it, and only overflowing
+   content reaches it. The 4px block and start padding, offset by negative
+   margins, keeps focus rings inside the clip. `clip` rather than `hidden`
+   keeps the cluster from becoming a scroll container that focus could scroll. */
 .titleCluster {
   display: flex;
   flex: 1 1 0;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  --title-cluster-fade: 20px;
+  margin: -4px calc(-1 * var(--title-cluster-fade)) -4px -4px;
+  padding: 4px var(--title-cluster-fade) 4px 4px;
+  overflow: clip;
+  mask-image: linear-gradient(to left, transparent calc(0.3 * var(--title-cluster-fade)), #000 var(--title-cluster-fade));
+}
+
+/* Without utilities the corner's 8px margin is the gap the fade spans. */
+.titleCluster:has(+ .headerUtilities:empty) {
+  --title-cluster-fade: 8px;
 }
 
 /* The auto grid column collapses with an empty or CSS-hidden occupant.
@@ -216,8 +235,10 @@
   line-height: 18px;
 }
 
-button.crumb:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  button.crumb:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .crumbCurrent {
@@ -294,6 +315,12 @@ button.crumb:hover {
   padding-left: 8px;
 }
 
+@media (max-width: 767px) {
+  :global(html:not([data-platform])) .tabs {
+    padding-left: 0;
+  }
+}
+
 .viewTabs {
   display: flex;
   flex-wrap: wrap;
@@ -302,6 +329,8 @@ button.crumb:hover {
   min-height: 27px;
 }
 .tab {
+  --dsh-tab-hit-inline: 10px;
+
   position: relative;
   min-height: 27px;
   padding: 0 0 11px;
@@ -439,16 +468,14 @@ button.crumb:hover {
   left: 4px;
 }
 
-.widthHandle:hover::after,
 .widthHandle[data-dragging]::after {
   opacity: 1;
 }
 
-/* A drag starts above the composer band. Pointer capture keeps it active when
-   crossing the footer; lift only the active handle so its indicator remains
-   visible without making the resting footer gutter draggable. */
-.widthHandle[data-dragging] {
-  z-index: 8;
+@media (hover: hover) {
+  .widthHandle:hover::after {
+    opacity: 1;
+  }
 }
 
 /* Views that elect a composer overlay (trajectory etc.) own their full-bleed
@@ -611,9 +638,14 @@ button.crumb:hover {
   margin: 2px;
 }
 
-.scrollBody::-webkit-scrollbar-thumb:hover,
 .scrollBody::-webkit-scrollbar-thumb:active {
   background: var(--dsw-alias-scrollbar-hover-l1);
+}
+
+@media (hover: hover) {
+  .scrollBody::-webkit-scrollbar-thumb:hover {
+    background: var(--dsw-alias-scrollbar-hover-l1);
+  }
 }
 
 .root[data-phase='active'] .viewArea,

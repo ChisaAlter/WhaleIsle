@@ -9,7 +9,7 @@ import { RunningWhaleGirl } from '../src/client/chat/RunningWhaleGirl.tsx'
 afterEach(cleanup)
 
 function webpChunks(name: string) {
-  const file = readFileSync(resolve(import.meta.dirname, `../src/client/chat/${name}.webp`))
+  const file = readFileSync(resolve(import.meta.dirname, `../src/client/assets/${name}.webp`))
   expect(file.toString('ascii', 0, 4)).toBe('RIFF')
   expect(file.toString('ascii', 8, 12)).toBe('WEBP')
   expect(file.readUInt32LE(4) + 8).toBe(file.length)
@@ -45,7 +45,7 @@ describe('RunningWhaleGirl', () => {
   })
 
   it('ships the same first frame without animation for reduced motion and forced colors', () => {
-    const png = readFileSync(resolve(import.meta.dirname, '../src/client/chat/running-whale-girl-still.png'))
+    const png = readFileSync(resolve(import.meta.dirname, '../src/client/assets/running-whale-girl-still.png'))
     expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
     expect([png.readUInt32BE(16), png.readUInt32BE(20), png[25]]).toEqual([512, 512, 6])
     const chunks: string[] = []

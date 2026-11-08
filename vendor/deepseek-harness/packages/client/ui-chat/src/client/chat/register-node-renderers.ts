@@ -7,7 +7,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PerformanceUsageMode } from '../../chat-settings.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
 import { NS } from '../locale.ts'
-import { AssistantNodeView } from './AssistantNodeView.tsx'
+import { AssistantNodeView, type AssistantNodeInjected } from './AssistantNodeView.tsx'
+import { sessionFilePath } from '../file-path.ts'
 import { CommandNodeView, ManualCompactionNodeView } from './CommandNodeView.tsx'
 import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, TurnErrorNodeView,
@@ -88,6 +89,7 @@ export function registerChatNodeRenderers(
     children: {
       'conversation.chat.user-actions': { kind: 'list', scope: 'session' },
       'conversation.chat.user-editor': { kind: 'single', scope: 'session' },
+      'conversation.chat.user.before': { kind: 'chain', scope: 'session' },
     },
   }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
@@ -107,9 +109,11 @@ export function registerChatNodeRenderers(
       'conversation.chat.message.images': { kind: 'single', scope: 'session' },
     },
     store: whaleUiStore,
-    inject: (sessionId): OpenUiInjected & { hooks: { presentation: typeof presentation } } => ({
+    inject: (sessionId): AssistantNodeInjected => ({
       ...injectWhaleUi(sessionId),
       hooks: { presentation, openUiTheme, openUiLocale },
+      resolveFilePath: sessionFilePath(ctx, sessionId),
+      fileMentions: (owner, getFileTriggerProps) => ctx.get('chatFileMentions')?.forClosing(owner, sessionId, getFileTriggerProps),
     }),
   }, AssistantNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({

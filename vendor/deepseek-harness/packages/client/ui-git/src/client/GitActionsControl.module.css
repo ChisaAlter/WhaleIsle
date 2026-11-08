@@ -33,8 +33,10 @@
   -webkit-app-region: no-drag;
 }
 
-.init:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .init:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .init:disabled {
@@ -85,9 +87,11 @@
   padding: 0;
 }
 
-.primary:hover:not(:disabled),
-.chevron:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .primary:hover:not(:disabled),
+  .chevron:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .primary:disabled,

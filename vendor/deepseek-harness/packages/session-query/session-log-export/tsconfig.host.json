@@ -8,6 +8,7 @@
   "files": [
     "src/archive.ts",
     "src/index.ts",
+    "src/markdown.ts",
     "src/routes.ts",
     "src/export-settings.ts"
   ],
@@ -40,7 +41,8 @@
       "path": "../../settings/settings"
     },
     {
-      "path": "../session-query"
+      "path": "../../session/session-title" },
+    { "path": "../session-query"
     }
   ]
 }

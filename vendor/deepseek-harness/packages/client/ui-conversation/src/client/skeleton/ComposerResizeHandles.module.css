@@ -27,8 +27,10 @@
   transition: opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.resizeHandle:hover::after {
-  opacity: 1;
+@media (hover: hover) {
+  .resizeHandle:hover::after {
+    opacity: 1;
+  }
 }
 
 .resizeHandleWest,

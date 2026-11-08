@@ -13,9 +13,9 @@ describe('ui-conversation host', () => {
     const ctx = new Context()
     const configuration = await liveConfig(ctx, { Config, apply })
     const { fiber } = configuration
-    expect(plainConfig(configuration.fiber.config)).toMatchObject({ busyEnter: DEFAULT_BUSY_ENTER_BEHAVIOR })
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toMatchObject({ busyEnter: DEFAULT_BUSY_ENTER_BEHAVIOR })
     await configuration.update({ busyEnter: 'steer' })
-    expect(plainConfig(configuration.fiber.config)).toMatchObject({ busyEnter: 'steer' })
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toMatchObject({ busyEnter: 'steer' })
     await expect(configuration.update({ busyEnter: 'invalid' })).rejects.toThrow()
     await fiber.dispose()
   })

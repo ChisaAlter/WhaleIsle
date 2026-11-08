@@ -142,8 +142,10 @@ html[data-dsh-skin='codex'] [data-dsh-sidebar-new] {
   font-weight: 500;
 }
 
-html[data-dsh-skin='codex'] [data-dsh-sidebar-new]:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  html[data-dsh-skin='codex'] [data-dsh-sidebar-new]:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 html[data-dsh-skin='codex'] [data-dsh-sidebar-brand] {

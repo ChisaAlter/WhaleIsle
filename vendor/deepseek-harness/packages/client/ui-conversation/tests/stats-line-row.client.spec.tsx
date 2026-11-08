@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { StatsLineRow } from '../src/client/settings/StatsLineRow.tsx'
 import type { StatsLineRowProps } from '../src/client/settings/StatsLineRow.tsx'
@@ -18,6 +18,7 @@ function mount(opts: { enabled?: boolean; writable?: boolean } = {}) {
   const setStatsLine = vi.fn()
   const props: StatsLineRowProps = {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unused,

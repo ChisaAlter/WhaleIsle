@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { ProjectRow } from '../src/client/ProjectRow.tsx'
 import type { ProjectRowProps } from '../src/client/ProjectRow.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -18,6 +18,7 @@ const unusedHook = (() => { throw new Error('unused by ProjectRow') }) as never
 function mount(dict: Record<string, string> = en, leaveProjectLead: () => Promise<void> = async () => {}) {
   const props: ProjectRowProps = {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unusedHook,

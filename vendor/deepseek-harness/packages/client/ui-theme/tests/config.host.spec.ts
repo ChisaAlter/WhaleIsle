@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import type { IndexInjection, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import * as HostPlugin from '../src/index.ts'
 import { liveConfig, omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
 import { plainConfig } from '../../../settings/settings/src/schema.ts'
@@ -9,11 +9,14 @@ import {
 } from '@deepseek-ai/dsh-client-ui-theme'
 import { ThemeSettingsFields } from '../src/theme-settings.ts'
 
+/** The Peer an index render speaks for; this listener reads no field of it. */
+const PAGE_PEER = { principal: { kind: 'owner' } } as Parameters<WebServer['renderIndex']>[1]
+
 
 /** Collect the injection table the way an index render or boot payload does. */
 function collect(ctx: Context): IndexInjection[] {
   const table: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', table)
+  ctx.emit('webserver/index-inject', table, PAGE_PEER)
   return table
 }
 
@@ -28,7 +31,7 @@ describe('ui-theme host', () => {
     const ctx = new Context()
     const configuration = await liveConfig(ctx, { Config, apply })
     const { fiber } = configuration
-    const initial = plainConfig(configuration.fiber.config)
+    const initial = plainConfig(configuration.fiber.effectiveConfig)
     expect(initial).toMatchObject({ preference: DEFAULT_PREFERENCE, fontSize: 14 })
     expect(Object.keys(initial as Record<string, unknown>).sort()).toEqual(Object.keys(ThemeSettingsFields).sort())
     await configuration.update({
@@ -37,7 +40,7 @@ describe('ui-theme host', () => {
       wallpaperImage: 'data:image/png;base64,AA==', backgroundEffectSpeed: 135,
       cursorEffectEnabled: true, metallicPaintEnabled: true, fontFamilyTerminal: 'Consolas',
     })
-    expect(plainConfig(configuration.fiber.config)).toMatchObject({
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toMatchObject({
       preference: 'dark', fontSize: 16, activeDarkThemeId: 'custom-night',
       glassOpacity: 72, terminalOpacity: 83, transparentTheme: true,
       wallpaperImage: 'data:image/png;base64,AA==', backgroundEffectSpeed: 135,

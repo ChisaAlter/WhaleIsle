@@ -26,6 +26,7 @@ const requirePlatform = Object.assign((specifier: string): unknown => {
   throw new Error(`Unexpected Codex sidebar platform import: ${specifier}`)
 }, {
   async: (specifier: string): Promise<never> => Promise.reject(new Error(`Unexpected Codex sidebar async import: ${specifier}`)),
+  asset: (reference: string): string => reference,
 })
 const plugin = registration.factory(requirePlatform)
 if (typeof plugin.apply !== 'function') throw new Error('Codex sidebar factory must export apply')

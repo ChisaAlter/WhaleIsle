@@ -107,7 +107,7 @@ function setPageUrl(url: string): void {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'remote.session', 'configForms', 'shortcuts', 'modules'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'remote.session', 'configForms', 'shortcuts', 'modules', 'remoteAccess'])
   })
 
   it('fills the seats of the shell it declares, with locale-following section labels', async ({ mock, start }) => {

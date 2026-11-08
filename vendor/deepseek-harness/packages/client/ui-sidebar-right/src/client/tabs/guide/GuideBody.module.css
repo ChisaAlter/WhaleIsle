@@ -75,8 +75,10 @@
   min-width: 0;
 }
 
-.entry:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .entry:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 /* The glyph centered at the card's top on the secondary ink. */

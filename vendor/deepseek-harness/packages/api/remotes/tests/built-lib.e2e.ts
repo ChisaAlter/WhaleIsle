@@ -86,10 +86,10 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       })
       await host.plugin({ inject: connectionHost.inject, apply: connectionHost.apply })
       await host.plugin(TypertRegistry)
+      await host.plugin(SessionProjectionRegistry)
       await host.plugin(AgentRegistry)
       await host.plugin(RemoteAccessService)
       await host.plugin(TypertRemoteService)
-      await host.plugin(SessionProjectionRegistry)
       await host.plugin(GoalService)
       host.typert.register(TYPERT)
 
@@ -184,7 +184,7 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
           await client.plugin({ inject: plugin.inject, apply: plugin.apply })
         }
         client.typert.contexts.registerClient('agent', {
-          identity: candidate => candidate.builtAgentId,
+          identity: candidate => 'builtAgentId' in candidate ? candidate.builtAgentId : undefined,
         })
 
         const invalidResult = await client.remote.goals.create(rootAgent.id, { objective: 1 })

@@ -4,6 +4,8 @@
  * @module @deepseek-ai/dsh-token-meter/projection
  */
 
+import type { SessionProjectionSummaryExcluded } from '@deepseek-ai/dsh-session-projection/types'
+
 /**
  * Durable cumulative provider usage for a complete session log.
  *
@@ -120,10 +122,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     /** Provider-reported usage accumulated across the complete durable log. */
     tokenUsage: TokenUsageProjection
     /** Newest request pressure paired with the newest known route capacity. */
-    contextPressure: ContextPressureProjection
+    contextPressure: SessionProjectionSummaryExcluded<ContextPressureProjection>
     /** Heuristic system/tools/message composition of the next request. */
-    contextBreakdown: ContextBreakdownProjection
-    /** Whole-log usage split by the official peak/valley billing windows, per model route. */
-    billedUsage: BilledUsageProjection
+      contextBreakdown: SessionProjectionSummaryExcluded<ContextBreakdownProjection>
+      /** Whole-log usage split by the official peak/valley billing windows, per model route. */
+      billedUsage: BilledUsageProjection
   }
 }

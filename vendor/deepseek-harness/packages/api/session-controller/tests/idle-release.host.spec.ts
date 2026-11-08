@@ -222,7 +222,7 @@ describe('SessionController idle release wiring', () => {
     ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
       list: () => Promise.resolve([]),
     }) as never)
-    createSessionTestController(ctx, defaults)
+    await createSessionTestController(ctx, defaults)
     const added = vi.fn()
     const removed = vi.fn()
     ctx.on('api-session/added', added)
@@ -262,7 +262,7 @@ describe('SessionController idle release wiring', () => {
     }) as never)
     const unwatch = vi.fn()
     const watch = vi.spyOn(IdleSessionRelease.prototype, 'watch').mockReturnValue(unwatch)
-    const controller = createSessionTestController(ctx, defaults)
+    const controller = await createSessionTestController(ctx, defaults)
     const agents = (controller as unknown as { agents: ApiSessionAgentController }).agents
     vi.spyOn(agents, 'resolveObservedAgent').mockResolvedValue({
       agent: { id: sessionId, session: { id: sessionId }, ctx, status: 'idle' } as unknown as Agent,

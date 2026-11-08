@@ -4,6 +4,15 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsSecretField, SettingsValueField } from '../src/settings-form/fields.tsx'
 
+// jsdom has no matchMedia; a mouse can hover, nothing else is requested.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({ matches: query === '(any-hover: hover)', media: query, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+}
+
 afterEach(cleanup)
 
 const frame = {
@@ -60,7 +69,7 @@ describe('SettingsValueField', () => {
     expect(input.getAttribute('aria-describedby')?.split(' ').map(id => document.getElementById(id)?.textContent))
       .toEqual(['How long one command may run.', 'Enter a number.'])
     expect(screen.queryByRole('tooltip')).toBeNull()
-    fireEvent.mouseEnter(input)
+    fireEvent.pointerEnter(input, { pointerType: 'mouse' })
     expect(screen.getByRole('tooltip').textContent).toBe('Enter a number.')
   })
 

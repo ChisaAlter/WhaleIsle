@@ -47,7 +47,7 @@ test('manifest keeps the runtime and build-tool dependencies', () => {
     assert.equal(typeof pkg.devDependencies?.[name], 'string', `devDependencies.${name} is missing`);
   }
   assert.equal(pkg.optionalDependencies?.['node-pty'], '1.2.0-beta.15');
-  assert.equal(pkg.engines?.node, '^22.19.0 || >=24.0.0');
+  assert.equal(pkg.engines?.node, '>=24.9.0');
 });
 
 test('account startup WebSocket dependency is locked for production packaging', () => {

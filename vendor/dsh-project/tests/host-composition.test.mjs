@@ -492,7 +492,7 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
     { id: 'agent-preset-registry', config: { default: 'standard' } },
     ...visualRepliesEnabled ? [{ id: 'visual-replies', config: { enabled: true } }] : [],
     // Project roles explicitly stay native even when a user's ambient mode is PTC.
-    { id: 'tools', config: { mode: 'ptc' } },
+    { id: 'tool-executor-native', disabled: true }, { id: 'tool-executor-ptc', disabled: false },
     ...['webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map(id => ({ id, disabled: true })),
     { insert: [{ id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' }] }];
   const ctx = await boot('project-composition', config, patches, ctx => {
@@ -2150,7 +2150,7 @@ test('the real Lead ends a notice-started turn with project_standby and no messa
   }
 });
 
-test('a research stage gives the member web search and fetch but no shell or directory, and the host records what it opened', { timeout: 240000 }, async () => {
+test('a research stage gives the member web fetch (and search once a provider is ready) but no shell or directory, and the host records what it opened', { timeout: 240000 }, async () => {
   // Offline by default: the .invalid name never resolves. DSH_RESEARCH_REAL_URL points the same scenario at a real public page.
   const URL_READ = process.env.DSH_RESEARCH_REAL_URL ?? 'https://research-fixture.invalid/spec';
   class ResearchModel extends ScriptedModel {
@@ -2194,7 +2194,8 @@ test('a research stage gives the member web search and fetch but no shell or dir
     const work = host.state().workstreams.find(item => item.title === 'Research work'), member = host.state().workers.find(item => item.workstreamId === work.id);
     assert.equal(work.delegations[0].scope, 'research'); assert.equal(member.role, 'research'); assert.equal(member.directoryHeld, false, 'research holds no directory');
     assert.equal(host.state().requests[0].versions[0].scope, 'research', 'the requirement was authorized as research');
-    assert.ok(model.workerTools.includes('web_search') && model.workerTools.includes('web_fetch'), `the research member has the web tools: ${model.workerTools.join(', ')}`);
+    assert.ok(model.workerTools.includes('web_fetch'), `the research member has the fetch tool: ${model.workerTools.join(', ')}`);
+    assert.ok(!model.workerTools.includes('web_search'), 'web_search follows a ready search provider, and this composition has none');
     assert.deepEqual(work.delegations[0].sources.map(item => [item.kind, item.text]), [['fetch', URL_READ]], 'the host recorded the page the member asked to open');
     assert.ok(model.failures.some(item => ['pwsh', 'bash'].includes(item.name) && /no shell or unrestricted repository write/.test(JSON.stringify(item.error))), 'the shell stays refused for research');
     assert.deepEqual((await host.command('workstreams/get', { projectId: project.id, workstreamId: work.id })).workstream.delegations[0].sources.map(item => item.text), [URL_READ], 'the sources are readable from the Project');

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** SettingsSelect: Menu-backed Setting-Cell Selector. */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsSelect } from '../src/SettingsSelect.tsx'
 import css from '../src/SettingsSelect.module.css'
@@ -126,8 +126,7 @@ describe('SettingsSelect', () => {
     fireEvent.keyDown(alpha, { key: 'Tab' })
     expect(onChange).toHaveBeenCalledExactlyOnceWith('a')
     expect(screen.queryByRole('menu')).toBeNull()
-    await Promise.resolve()
-    expect(document.activeElement).toBe(trigger)
+    await waitFor(() => { expect(document.activeElement).toBe(trigger) })
   })
 
   it('opens with end-aligned menus', () => {

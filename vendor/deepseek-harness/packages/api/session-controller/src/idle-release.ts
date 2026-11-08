@@ -136,7 +136,8 @@ export class IdleSessionRelease {
       const goal = optionalService(this.ctx, 'goals')?.get(agent)
       if (goal?.phase === 'active' && goal.activation === 'armed') return false
       // Plugin-owned conversations (Projects) expect their exact live Agent.
-      if (this.ctx.sessionProjections.stateOf(agent.session, 'sessionListMetadata')?.presentation !== undefined) return false
+      const listed = this.ctx.sessionProjections.stateOf(agent.session, 'sessionListMetadata') as { readonly presentation?: unknown } | undefined
+      if (listed?.presentation !== undefined) return false
     } catch {
       return false
     }

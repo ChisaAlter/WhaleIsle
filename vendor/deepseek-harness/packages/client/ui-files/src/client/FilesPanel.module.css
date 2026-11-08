@@ -33,9 +33,11 @@
   cursor: pointer;
 }
 
-.refresh:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .refresh:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .copied {
@@ -80,8 +82,10 @@
   cursor: pointer;
 }
 
-.pickerRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .pickerRow:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .pickerName {

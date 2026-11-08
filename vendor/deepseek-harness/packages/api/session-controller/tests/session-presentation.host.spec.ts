@@ -38,7 +38,7 @@ async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote }> {
     },
     resume: () => Promise.reject(new Error('resume must not run in this fixture')),
   })
-  return { ctx, remote: createSessionTestRemote(ctx, defaults) }
+  return { ctx, remote: await createSessionTestRemote(ctx, defaults) }
 }
 
 function sessionOf(ctx: Context, id: SessionId): Session {

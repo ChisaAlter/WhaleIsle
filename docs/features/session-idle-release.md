@@ -24,7 +24,7 @@
 ## Upstream differences
 
 - 保护的行为：见上方不变量。上游的 follow 会把会话恢复成 Agent，`SessionLifecycle` 永久持有句柄，只有删除会话时才释放；桌面宿主长时间运行时，打开过的会话全部常驻，堆持续增长，GC 停顿拖慢切换和新建。
-- 来源与基线：`dsh-v0.2.1-rc.4`（`504a01a`）。本地新增 `packages/api/session-controller/src/idle-release.ts`，修改同包 `index.ts`（配置项、装配、释放时的列表事件）、`history.ts`（follow 计数）、`lifecycle.ts`（`releasingIds`、`retained()`）、`tsconfig.host.json`、README 与 `docs/config-catalog*.md`；`packages/bundle/base/cordis.patch.yml` 给 `session-query-sqlite` 加 `preparedSessionCacheSize: 1`（上游默认 5）。位置标记见 `src/shared/harness-desktop-forks.js`。
+- 来源与基线：`dsh-v0.2.2-rc.1`（`66491b0`，自 rc.4 `504a01a` 合并）。本地新增 `packages/api/session-controller/src/idle-release.ts`，修改同包 `index.ts`（配置项、装配、释放时的列表事件）、`history.ts`（follow 计数）、`lifecycle.ts`（`releasingIds`、`retained()`）、`tsconfig.host.json`、README 与 `docs/config-catalog*.md`；`packages/bundle/base/cordis.patch.yml` 给 `session-query-sqlite` 加 `preparedSessionCacheSize: 1`（上游默认 5）。位置标记见 `src/shared/harness-desktop-forks.js`。
 - 上游提供等价的驻留管理后，改用上游实现并删除本地文件。
 
 ## Allowed touch

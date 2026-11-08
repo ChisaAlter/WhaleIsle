@@ -12,6 +12,15 @@ import {
 } from '../src/client/branches.ts'
 import { en } from '../src/client/locales.ts'
 
+// jsdom has no matchMedia; a mouse can hover, nothing else is requested.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({ matches: query === '(any-hover: hover)', media: query, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+}
+
 const t: BranchMenuProps['t'] = (key, params) => {
   const template = (en as Record<string, string>)[key] ?? key
   if (!params) return template
@@ -336,7 +345,7 @@ describe('BranchMenu', () => {
     const row = await screen.findByRole<HTMLButtonElement>('menuitem', { name: /_wip/ })
     // The Menu wraps disabled hinted rows in a Tooltip anchor span; a disabled
     // button swallows pointer events, so the hover target is that wrapper.
-    fireEvent.mouseEnter(row.parentElement!)
+    fireEvent.pointerEnter(row.parentElement!, { pointerType: 'mouse' })
     expect((await screen.findByRole('tooltip')).textContent).toBe(
       'Name contains characters the desktop cannot pass to git safely.',
     )

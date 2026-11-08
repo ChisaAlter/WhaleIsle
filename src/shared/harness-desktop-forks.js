@@ -87,7 +87,7 @@ const FORK_FILE_MARKERS = [
   // Opened Sessions nobody watches release their resident Agent instead of staying in the Host until restart.
   { file: 'packages/api/session-controller/src/idle-release.ts', includes: ['class IdleSessionRelease', "optionalService(this.ctx, 'jobs')", "stateOf(agent.session, 'sessionListMetadata')"] },
   { file: 'packages/api/session-controller/src/index.ts', includes: ['new IdleSessionRelease(ctx, this.lifecycle', 'this.lifecycle.releasingIds.has(session.id)', 'idleReleaseMs: z.natural().default(300_000)'] },
-  { file: 'packages/api/session-controller/src/history.ts', includes: ['const unwatch = this.watch(target)'] },
+  { file: 'packages/api/session-controller/src/web/controller.ts', includes: ['using _watched = { [Symbol.dispose]: this.watch(sessionId) }'] },
   { file: 'packages/api/session-controller/src/lifecycle.ts', includes: ['readonly releasingIds', 'retained(): [SessionId, AgentHandle][]'] },
   { file: 'packages/client/ui-sidebar/src/client/index.ts', includes: ['selectTab'] },
   // WhaleBridge thresholds travel with each model and are consumed by
@@ -165,7 +165,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationHeader.tsx', includes: ['data-dsh-header'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.tsx', includes: ['data-dsh-composer'] },
   { file: 'packages/client/ui-chat/src/client/chat/MessageItem.tsx', includes: ['data-dsh-message-role'] },
-  { file: 'packages/client/ui-chat/src/client/chat/MessageItem.module.css', includes: ['--dsh-bubble-radius'] },
+  { file: 'packages/client/ui-primitives/src/UserMessageBubble.module.css', includes: ['--dsh-bubble-radius'] },
   { file: 'packages/client/ui-chat/src/client/chat/UserContent.tsx', includes: ['data-dsh-message-bubble'] },
   { file: 'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx', includes: ['data-dsh-message-role'] },
   { file: 'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx', includes: ['data-dsh-artifact'] },
@@ -195,7 +195,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['data-composer-flow=""'] },
   { file: 'packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx', includes: ['--dsh-composer-flow-width'] },
   // Approval takeover: the card covers the drag-resized composer card's rect.
-  { file: 'packages/client/ui-approval/src/client/ApprovalPanel.tsx', includes: ['--dsh-approval-card-inset-top'] },
+  { file: 'packages/client/ui-approval/src/client/ApprovalCard.tsx', includes: ['--dsh-approval-card-inset-top'] },
   { file: 'packages/client/ui-approval/src/client/ApprovalPanel.module.css', includes: ['var(--dsh-approval-card-inset-top'] },
   { file: 'apps/web/tests/approval-resize-geometry.e2e.ts', includes: ['places the approval card on the input card rect'] },
   // Typing never scrolls a reader-scrolled transcript.
@@ -252,7 +252,7 @@ const FORK_FILE_MARKERS = [
   // :has() rules never end in a featureless or tag-only compound: Chromium
   // merges their invalidation sets, so one such rule restyled the whole
   // transcript (or every icon) on each composer keystroke and row mount.
-  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['.older ~ :global([data-slot="conversation.chat.flow"])', '~ :is([data-chat-flow-key], [data-chat-running], [data-slot])'], excludes: ['.column:has(> .older)'] },
+  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['.column > .older + :global([data-slot="conversation.chat.flow"])', '~ :is([data-chat-flow-key], [data-chat-running], [data-slot])'], excludes: ['.column:has(> .older)'] },
   { file: 'packages/client/ui-dockkit/src/components/dockkit.module.css', includes: ['--dsh-dock-icon-size: 16px'], excludes: ['.floatHeader .iconButton svg'] },
   // Cold rows: every style and layout pass costs in proportion to the whole transcript, so rows far
   // from the reader skip theirs (content-visibility at their measured height; near rows untouched).
@@ -274,7 +274,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-model-selection/src/client/ModelSelect.tsx', includes: ['<FlipText className={css.triggerLabel} text={modelLabel} />', '<FlipText className={css.triggerEffort} text={effortLabel} />'] },
   { file: 'packages/client/ui-model-selection/src/client/ModelSelect.module.css', includes: ["/* FlipText's recipe root is inline-grid;", ".triggerLabel[data-dsh-motion='flip'],", ".triggerEffort[data-dsh-motion='flip'] {", 'display: var(--dsh-composer-model-text-display, inline-grid);'] },
   { file: 'packages/client/ui-chat/src/client/settings/PreferenceRow.tsx', includes: ['<FlipText className={css.selectorLabel} text={selectedLabel} />'] },
-  { file: 'packages/client/ui-primitives/src/Menu.tsx', includes: ['const { mounted, state } = usePresence(open)', 'data-dsh-motion="popover"', 'data-state={state}'] },
+  { file: 'packages/client/ui-primitives/src/Menu.tsx', includes: ['const { mounted, state } = usePresence(open)', "data-dsh-motion={contextual ? undefined : 'popover'}", 'data-state={contextual ? undefined : state}'] },
   { file: 'packages/client/ui-primitives/src/DisclosureRow.tsx', includes: ['const { mounted, state } = usePresence(open)', 'data-dsh-motion="fade"', 'data-state={state}'] },
   { file: 'packages/client/ui-input-trigger/src/client/MenuView.tsx', includes: ['const lastOpen = useRef(state)', 'lastOpenCrumbs', 'lastOpen.current = state', 'const view = state.open ? state : lastOpen.current', 'const { mounted, state: motionState } = usePresence(state.open)', 'data-dsh-motion="popover"', 'data-state={motionState}'] },
   { file: 'packages/client/ui-primitives/src/HoverCard.tsx', includes: ["const compactMotion = variant === 'compact' && !inline", 'usePresence(compactMotion && open)', "data-dsh-motion={compactMotion ? 'popover' : undefined}", "data-state={compactMotion ? cardState : closing ? 'closed' : 'open'}"] },
@@ -304,7 +304,9 @@ const FORK_FILE_MARKERS = [
   // Project Leads list among ordinary conversations; the row's title badge
   // seat carries their Project tag in every row state.
   { file: 'packages/client/ui-workspace/src/client/contract/slots.ts', includes: ["'sidebar.session.row.badge'"] },
-  { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ["renderSlot('sidebar.session.row.badge'", 'directoryItems', 'PinnedSectionHeader', 'css.context'] },
+  { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ["renderSlot('sidebar.session.row.badge'", 'PinnedSectionHeader', 'css.context'] },
+  // Directory actions and archived-Session deletion ride the unified context menu.
+  { file: 'packages/client/ui-workspace/src/client/index.ts', includes: ["id: 'workspace.directory', target: 'workspace'", "id: 'session.delete', target: 'session'"] },
   { file: 'packages/client/ui-workspace/src/client/rows/Rows.module.css', includes: ['.sessionRow .context'] },
   { file: 'packages/client/ui-workspace/tests/tree.client.spec.ts', includes: ["describe('pinned section'"] },
   { file: 'packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx', includes: ['leads the sidebar with a pinned section'] },
@@ -356,6 +358,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-layout/src/client/AppFrame.tsx', includes: ['surfaces: 0'], excludes: ["renderSlot('surfaces'"] },
   { file: 'packages/client/ui-surfaces/src/client/apply.ts', includes: ['openWorkspaceSurface', 'openResourceIn', 'openTabIn'], excludes: ['collapseRightPanel', 'ctx.layout.openSurfaces()'] },
   { file: 'packages/client/ui-sidebar-right/src/client/index.ts', includes: ['layout.openRightbar'], excludes: ['layout.closeSurfaces()'] },
+  // Chromium merges every :has() invalidation set, so the covered-content rules of a navigator row end in a tagged compound, not `:not(.navigator)` alone.
+  { file: 'packages/client/ui-sidebar-files/src/client/FilesBody.module.css', includes: ['> div:not(.navigator)'], excludes: ['> :not(.navigator)'] },
+  // The vendored prebuilt Codex sidebar has no `src/`, so there is no source whose package-asset references could be read.
+  { file: 'scripts/verify-client-packages.ts', includes: ["existsSync(resolve(root, dirname(declaration.manifest), 'src'))"] },
   { file: 'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx', includes: ['data-sidebar-right-guide-only'], excludes: ['restoreClassic'] },
   { file: 'packages/client/ui-titlebar/src/client/apply.ts', includes: ['toggleExpanded()'], excludes: ['layout.toggleSurfaces()'] },
   { file: 'packages/client/ui-titlebar/src/client/PanelToggles.tsx', includes: ['isSurfacesShortcut', 'rightbarShown'] },
@@ -508,6 +514,25 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/experimental/client-ui-agent-team/src/client/index.ts', includes: ['TeamEmbedded'] },
   { file: 'packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx', includes: ['embedded Team'] },
   { file: 'apps/web/tests/project-composer-stability.e2e.ts', includes: ['data-team-embedded'] },
+  // 0.2.2-rc.1 sync. The terminal's Ghostty wasm and fonts are served from beside its bundle: the revisioned
+  // package-asset route only knows images, and without this fallback the terminal would load nothing.
+  { file: 'packages/client/modules/src/index.ts', includes: ['BUNDLE_SIDE_ASSET_TYPES', 'bundleSideAssetResponse'] },
+  { file: 'packages/client/modules/tests/node-half.client.spec.ts', includes: ['serves Ghostty wasm beside a registered client bundle'] },
+  // A menu opened while nothing held the keyboard captured the page body as its opener; focus still returns to its control.
+  { file: 'packages/client/ui-primitives/src/Menu.tsx', includes: ['trigger !== document.body'] },
+  // Types the desktop's `onChange={next => ...}` call sites need.
+  { file: 'packages/client/ui-primitives/src/Switch.tsx', includes: ['ControlledSwitchProps', 'NativeSwitchProps'] },
+  // Pinned-section rows carry no pin marker of their own (the section already says pinned).
+  { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ['node.context === undefined && <PinnedIndicator', "const canCreate = useRemoteAccess('session/create')"] },
+  // The composer parks its own draft attachments across a Session switch and releases the unsettled send's.
+  { file: 'packages/client/ui-conversation/src/client/input/facade.ts', includes: ['const unsettled = new Set(sending.attachmentIds)', 'frozen(phase)'] },
+  { file: 'packages/client/ui-conversation/tests/composer-seat-styles.client.spec.ts', includes: ['lifted only while a trigger menu is open'] },
+  // A model catalog notification refreshes the Session directories too, not only the host catalog.
+  { file: 'packages/client/ui-model-selection/src/client/service.ts', includes: ["ctx.remote.$on('llm/models-updated', refresh)"] },
+  // The reload control of a document preview locks (spinner, aria-busy, disabled) while it loads.
+  { file: 'packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx', includes: ['loading={current?.loading === true}'] },
+  // Desktop-only Host endpoints a viewer must never reach.
+  { file: 'packages/experimental/liveshare/src/endpoint-classification.ts', includes: ["'skillInventory/create': 'owner-only'", "'session/setPresentation': 'owner-only'"] },
 ];
 
 function readRel(vendorRoot, rel) {

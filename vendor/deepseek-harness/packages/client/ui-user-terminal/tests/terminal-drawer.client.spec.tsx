@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { useSyncExternalStore } from 'react'
@@ -219,6 +219,7 @@ async function mount(opts: {
   const surfaceStore = opts.surface ? bindStore(surfaceInstance) : store
   const shared = {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     sessionId: opts.sessionId === null
       ? undefined
       : (opts.sessionId === undefined && opts.cwd === undefined ? undefined : (opts.sessionId ?? SID)),

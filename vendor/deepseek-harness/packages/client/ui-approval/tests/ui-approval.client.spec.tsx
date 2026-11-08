@@ -5,8 +5,10 @@ import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ApprovalCard } from '../src/client/ApprovalCard.tsx'
+import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { ApprovalPanel } from '../src/client/ApprovalPanel.tsx'
-import type { ApprovalComposerProps, ApprovalInjected } from '../src/client/contract/slots.ts'
+import type { ApprovalCardInput, ApprovalComposerProps, ApprovalInjected } from '../src/client/contract/slots.ts'
 import { PendingApproval } from '../src/client/contract/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
@@ -33,6 +35,7 @@ interface PluginBench {
   readonly disposeLocale: ReturnType<typeof vi.fn>
   readonly register: ReturnType<typeof vi.fn>
   readonly injectSlot: ReturnType<typeof vi.fn>
+  readonly shortcuts: ReturnType<typeof vi.fn<(entry: { label: () => string }) => () => void>>
   releasePending(): Promise<void>
   registration(): {
     options: {
@@ -83,8 +86,11 @@ async function setupPlugin(): Promise<PluginBench> {
   } as never)
   ctx.provide('sessions', { scopeOf } as never)
   ctx.provide('uiSession', { registerPendingInteraction } as never)
-  ctx.provide('slots', { inject: injectSlot, register } as never)
+  ctx.provide('slots', { inject: injectSlot, register, registerFactory: vi.fn() } as never)
+  const shortcuts = vi.fn((entry: { label: () => string }) => { entry.label(); return () => {} })
+  ctx.provide('shortcuts', { registerFixed: shortcuts } as never)
   ctx.provide('locale', {
+    bind: () => (key: string) => key,
     register: vi.fn(() => disposeLocale),
     resolveText: (reason: NonNullable<PendingApproval['displayReason']>) => reason.en,
   } as never)
@@ -101,6 +107,7 @@ async function setupPlugin(): Promise<PluginBench> {
     disposeLocale,
     register,
     injectSlot,
+    shortcuts,
     async releasePending() {
       const delegates = [...pending.values()]
       pending.clear()
@@ -212,6 +219,7 @@ describe('approval Remote Event consumer', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(bench.pending.getSnapshot()).toEqual([])
     expect(bench.register).toHaveBeenCalledOnce()
+    expect(bench.shortcuts.mock.calls.map(([entry]) => entry.label())).toEqual(['allow', 'reject'])
   })
 
   it('publishes one scoped takeover, returns the answer, and keeps stable registrations', async () => {
@@ -331,7 +339,7 @@ describe('approval Remote Event consumer', () => {
 
 function panelProps(
   pending: PendingApproval,
-  renderSlot: ApprovalComposerProps['renderSlot'] = vi.fn(() => null),
+  renderSlot: FactoryComponentPropsOf<'conversation.approval.card'>['renderSlot'] = vi.fn(() => null),
 ): ApprovalComposerProps {
   const messages: Record<string, string> = {
     waiting: 'Waiting',
@@ -339,10 +347,12 @@ function panelProps(
     escalation: `Tool ${pending.toolName} asks`,
     reject: 'Reject',
     allowOnce: 'Allow once',
+    allowAlways: 'Always allow',
   }
   return {
     matched: pending,
-    renderSlot,
+    renderFactorySlot: (_name: string, input: ApprovalCardInput) => <ApprovalCard {...{ ...input, renderSlot,
+      t: (key: string) => messages[key] ?? key } as FactoryComponentPropsOf<'conversation.approval.card'>} />,
     resolveReason: (reason: NonNullable<PendingApproval['displayReason']>) => reason.en,
     t: (key: string) => messages[key] ?? key,
   } as ApprovalComposerProps
@@ -351,13 +361,15 @@ function panelProps(
 describe('ApprovalPanel', () => {
   it('renders fallback copy without detail and returns rejection', async () => {
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
-    const props = panelProps(pending)
+    const renderSlot = vi.fn(() => null)
+    const props = panelProps(pending, renderSlot)
     render(<ApprovalPanel {...props} />)
 
     expect(screen.getByText('Tool bash asks')).toBeTruthy()
     expect(document.querySelector('[data-approval-key] [data-state="warning"]')).not.toBeNull()
     expect(screen.getByRole('group', { name: 'Approval details' })).toBeTruthy()
-    expect(props.renderSlot).toHaveBeenCalledExactlyOnceWith('conversation.approval.actions', {})
+    expect(renderSlot).toHaveBeenCalledExactlyOnceWith('conversation.approval.actions', {})
+    expect(screen.queryByText('pnpm test')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
 
     expect(document.querySelector('[data-approval-key]')?.getAttribute('aria-busy')).toBe('true')
@@ -538,4 +550,32 @@ describe('package entries', () => {
     expect(inject).toEqual(['sessions', 'remote', 'uiSession', 'slots', 'locale'])
     expect(() => { nodeApply() }).not.toThrow()
   })
+})
+
+it.each(['allow', 'reject', 'always', 'keyboard'] as const)('settles a fixed application decision through %s without free text', async (choice) => {
+  const onAllow = vi.fn(async () => {}), onReject = vi.fn(async () => {}), onAlways = vi.fn(async () => {})
+  const actions = { allow: onAllow, reject: onReject, always: onAlways }
+  render(<ApprovalCard {...{
+    requestKey: 'app-approval', title: 'Control this app?', description: 'Only for this task.',
+    subject: { name: 'Calculator', ...choice === 'keyboard' ? {} : { icon: 'data:image/png;base64,aWNvbg==' } }, allowLabel: 'Allow for this task',
+    canAnswer: () => true, onAllow, onReject, onAlways, renderSlot: vi.fn(() => null),
+    t: (key: string) => ({ reject: 'Reject', allowAlways: 'Always allow' })[key] ?? key,
+  } as FactoryComponentPropsOf<'conversation.approval.card'>} />)
+  expect(screen.getByText('Calculator')).toBeTruthy()
+  if (choice === 'keyboard') expect(document.querySelector('img')).toBeNull()
+  else expect(document.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,aWNvbg==')
+  expect(screen.queryByRole('textbox')).toBeNull()
+  const action = choice === 'keyboard' ? 'allow' : choice
+  if (choice === 'keyboard') {
+    const detail = screen.getByRole('group')
+    detail.focus()
+    fireEvent.keyDown(detail, { key: 'Enter', code: 'Enter' })
+    fireEvent.keyDown(detail, { key: 'Enter', code: 'Enter' })
+  } else {
+    const label = { allow: 'Allow for this task', reject: 'Reject', always: 'Always allow' }[choice]
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    fireEvent.click(screen.getByRole('button', { name: label }))
+  }
+  await waitFor(() => { expect(actions[action]).toHaveBeenCalledOnce() })
+  expect(Object.values(actions).filter(callback => callback.mock.calls.length > 0)).toEqual([actions[action]])
 })

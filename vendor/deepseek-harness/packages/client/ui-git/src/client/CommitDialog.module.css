@@ -123,8 +123,10 @@
   cursor: pointer;
 }
 
-.pathButton:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .pathButton:hover {
+    text-decoration: underline;
+  }
 }
 
 .pathMuted {

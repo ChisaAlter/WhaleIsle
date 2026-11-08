@@ -80,11 +80,13 @@ export async function registerProjectPresets(ctx) {
       { id: 'tool-result-pruner', name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
         config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 } },
     ] });
-  const worker = [persona(workerPersona), compaction(),
+  // Project roles stay native even when a user's ambient executor is PTC.
+  const native = () => ({ id: 'tool-executor-native', name: '@deepseek-ai/dsh-tool-executor-native' });
+  const worker = [native(), persona(workerPersona), compaction(),
     { id: 'instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } }, { id: 'project-worker', name: new URL('./worker.js', import.meta.url).href }];
   const definitions = [
     { id: 'project-coordinator', name: 'Project coordinator', hidden: true, plugins: [
-      persona(leadPersona), compaction(),
+      native(), persona(leadPersona), compaction(),
       { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } },
       { id: 'project-coordinator', name: new URL('./lead.js', import.meta.url).href } ] },
     { id: 'project-worker', name: 'Project worker', hidden: true, plugins: [...worker,

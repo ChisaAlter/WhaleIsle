@@ -1,10 +1,10 @@
 /**
  * GoalBar: the goal indicator docked above the message composer (input dock
  * strip). A present goal shows a goal glyph, a phase label, the truncated
- * objective, and icon actions — resume when active-disarmed or paused, edit
- * (inline form in the same strip), and clear. Goal creation lives on the
- * `/goal` command, not here: loading (undefined), no goal (null), and complete
- * goals render nothing. Durable state arrives as the projected whole snapshot;
+ * objective, and icon actions — resume when active-disarmed, paused, or
+ * blocked, edit (inline form in the same strip), and clear. Goal creation
+ * lives on the `/goal` command, not here: loading (undefined), no goal
+ * (null), and complete goals render nothing. Durable state arrives as the projected whole snapshot;
  * process-local activation arrives through the injected activation hook.
  */
 
@@ -91,7 +91,7 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   const current = open ? {
     goal,
     label: goal.phase === 'active' ? activeLabel(activation, t) : t(PHASE_LABELS[goal.phase]),
-    showResume: goal.phase === 'paused' || (goal.phase === 'active' && activation === 'disarmed'),
+    showResume: goal.phase !== 'active' || activation === 'disarmed',
     activation,
   } : null
   if (current !== null) retained.current = current

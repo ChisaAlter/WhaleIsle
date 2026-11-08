@@ -2,7 +2,7 @@
 
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
-import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
+import type { SessionProjectionMap, SessionProjectionViewValues } from '@deepseek-ai/dsh-session-projection/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionBlankReuseValue,
@@ -60,9 +60,14 @@ export interface SessionListSnapshot {
 
 }
 
-/** Shared projection values and the lifecycle of their explicit baseline read. */
+/**
+ * Every projection value the store currently holds, with the summary mark
+ * stripped, and the lifecycle of its explicit baseline read. This is the full
+ * attached-Session set, not a list row's summary contract (see
+ * `SessionListEntry.projectionValues`).
+ */
 export interface SessionProjectionSnapshot {
-  readonly values: Readonly<Partial<SessionProjectionMap>>
+  readonly values: Readonly<Partial<SessionProjectionViewValues>>
   readonly state: 'idle' | 'loading' | 'ready' | 'migration-required' | 'error'
   readonly error: RemoteFailure | null
 }
@@ -558,7 +563,7 @@ export class SessionManager {
    * immediately (same synchronous-addressability guarantee as create).
    * Blankness starts provisionally true so the authoritative Host summary can
    * preserve it or lower it after an exact cut before the first `turn/start`;
-   * lineage rides parentSessionId. A child published before Workspace
+   * the fork has no durable source relationship. A child published before Workspace
    * attachment fails is also reconciled into the list.
    * @param opts - source session, optional exact inclusive boundary seq, and permission to start migration.
    * @returns the fork result (the child session id).
@@ -579,7 +584,6 @@ export class SessionManager {
     if (childId !== undefined) {
       this.recordMutation({ kind: 'placeholder', summary: { agentAvailable: true,
         sessionId: childId, updatedAt: Date.now(), running: false, blank: true,
-        parentSessionId: opts.sessionId,
         ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
       } })
     }
@@ -658,15 +662,17 @@ export class SessionManager {
   // ---- Live control and Host-event sinks ----
 
   /**
-   * Apply a complete control baseline or one later replacement frame.
-   * @param frame - baseline or live control replacement from Session Controller.
+   * Apply a complete control baseline or one later per-event projection frame.
+   * @param frame - baseline or live per-event projection change from Session Controller.
    */
   handleControlFrame(frame: SessionControlFrame): void {
     if (frame.type === 'baseline') {
       this.replaceControlBaseline(frame.value)
       return
     }
-    this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
+    const store = this.projectionStore(frame.sessionId)
+    const seq = SessionSeq(frame.seq)
+    for (const change of frame.changes) store.apply(change.key, change.val, seq)
     this.notifier.markDirty()
   }
 

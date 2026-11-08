@@ -259,21 +259,32 @@
     background var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-.detailsCol:hover ~ .handle[data-side='rightbar']::after,
-.handle[data-side='rightbar']:hover::after,
 .handle[data-side='rightbar'][data-dragging='true']::after,
-.surfacesCol:hover ~ .handle[data-side='surfaces']::after,
-.handle[data-side='surfaces']:hover::after,
 .handle[data-side='surfaces'][data-dragging='true']::after {
   opacity: 1;
 }
 
-.handle[data-side='rightbar']:hover::after,
+@media (hover: hover) {
+  .detailsCol:hover ~ .handle[data-side='rightbar']::after,
+  .handle[data-side='rightbar']:hover::after,
+  .surfacesCol:hover ~ .handle[data-side='surfaces']::after,
+  .handle[data-side='surfaces']:hover::after {
+    opacity: 1;
+  }
+}
+
 .handle[data-side='rightbar'][data-dragging='true']::after,
-.handle[data-side='surfaces']:hover::after,
 .handle[data-side='surfaces'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
+}
+
+@media (hover: hover) {
+  .handle[data-side='rightbar']:hover::after,
+  .handle[data-side='surfaces']:hover::after {
+    background: var(--dsw-alias-button-floating-hover);
+    border-color: var(--dsw-alias-border-l3);
+  }
 }
 
 /* First grid child so column paint order keeps this band behind Git,
@@ -409,8 +420,10 @@
   -webkit-app-region: no-drag;
 }
 
-.phoneMenu:hover {
-  background: var(--dsw-alias-button-floating-hover);
+@media (hover: hover) {
+  .phoneMenu:hover {
+    background: var(--dsw-alias-button-floating-hover);
+  }
 }
 
 .phoneBackdrop {

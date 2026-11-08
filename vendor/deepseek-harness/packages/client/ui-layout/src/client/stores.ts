@@ -13,7 +13,7 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-sto
 import type { MainPanelId } from './service.ts'
 import {
   clampWidth, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN,
-  SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
+  SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_DRAWER_BREAKPOINT, SIDEBAR_MAX, SIDEBAR_MIN,
   SURFACES_MAX, SURFACES_MIN, TERMINAL_DRAWER_MIN,
 } from './columns.ts'
 import { lastDrawerHeight, lastSurfacesWidth, readLayoutPersist, writeLayoutPersist } from './persist.ts'
@@ -130,6 +130,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
     actions: {
       selectPanel: (d, panelId: MainPanelId | null) => {
         d.panelInfo.activePanelId = panelId
+        if (d.layoutInfo.viewportWidth < SIDEBAR_DRAWER_BREAKPOINT) d.layoutInfo.narrowExpanded = false
       },
       retainMainPanels: (d, panelIds: readonly string[]) => {
         if (d.panelInfo.activePanelId !== null && !panelIds.includes(d.panelInfo.activePanelId)) {
@@ -156,8 +157,10 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.layoutInfo.rightbarInstant = false
         const wasNarrow = d.layoutInfo.viewportWidth < SIDEBAR_AUTO_COLLAPSE
         const narrow = width < SIDEBAR_AUTO_COLLAPSE
-        if (wasNarrow !== narrow) d.layoutInfo.narrowExpanded = false
+        const crossedDrawer = (d.layoutInfo.viewportWidth < SIDEBAR_DRAWER_BREAKPOINT) !== (width < SIDEBAR_DRAWER_BREAKPOINT)
+        if (wasNarrow !== narrow || crossedDrawer) d.layoutInfo.narrowExpanded = false
         d.layoutInfo.narrow = narrow
+
         d.layoutInfo.viewportWidth = width
       },
       // Landscape rotates report a wide reading at a narrow viewport; changing

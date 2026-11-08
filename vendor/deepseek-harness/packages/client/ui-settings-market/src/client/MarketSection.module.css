@@ -237,8 +237,10 @@
   transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.card:hover {
-  border-color: var(--dsw-alias-border-l3);
+@media (hover: hover) {
+  .card:hover {
+    border-color: var(--dsw-alias-border-l3);
+  }
 }
 
 .cardHead {
@@ -341,10 +343,16 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.cardLink:hover,
 .cardLink:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .cardLink:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .cardLink:focus-visible {
@@ -580,8 +588,10 @@
   padding: 8px;
 }
 
-.installedRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .installedRow:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .installedIdentity {

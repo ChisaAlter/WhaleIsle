@@ -4,4 +4,6 @@
     - id: cua
       name: '../src/index.ts'
       config:
+        agentPreset: false
+        # DSH_CUA_HELPER must name DSH Computer Use.app/Contents/MacOS/dsh-cua-native.
         helperPath: !!js process.env.DSH_CUA_HELPER
