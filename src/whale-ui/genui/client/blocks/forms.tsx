@@ -9,6 +9,7 @@ import { useGenuiComponentState } from '../component-state.tsx'
 import css from '../GenuiBlock.module.css'
 import { GENUI_LIMITS } from '../genui-runtime/index.ts'
 import { useT } from '../i18n/index.ts'
+import { parseDecimalNumber } from '../safe-math.ts'
 import { resolveSubmitState } from '../submission-registry.ts'
 import type { RadioSubmissionMember } from '../submission-registry.ts'
 import type { AnswersState, GenuiBlockProps } from './state.ts'
@@ -88,17 +89,18 @@ export function SubmitNode({ node, onAction, answers }: {
   const recorded = answers?.answers ?? {}
   const multiRecorded = answers?.multiAnswers ?? {}
   const fields = answers?.fields ?? {}
+  const validFields = Object.fromEntries(Object.entries(fields).filter(([id]) => !answers?.invalidNumericFields.has(id)))
   const expected = node.groups
   // One shared notion of "filled fields" for answered/ready/payload: non-blank
   // values only, secrets (password inputs) never collected into submit.
   const filledFields = Object.fromEntries(
-    Object.entries(fields).filter(([id, v]) => v.trim() !== '' && !answers?.secretFields.has(id)),
+    Object.entries(validFields).filter(([id, v]) => v.trim() !== '' && !answers?.secretFields.has(id)),
   )
   const resolved = answers === undefined ? { scope: [], answered: 0, total: expected?.length ?? 0, localGradeEligible: false, hasOutOfScopePayload: false }
     : resolveSubmitState({
       registry: answers.registry,
       ...(expected === undefined ? {} : { groups: expected }),
-      state: { answers: recorded, multiAnswers: multiRecorded, fields, secretFields: answers.secretFields },
+      state: { answers: recorded, multiAnswers: multiRecorded, fields: validFields, secretFields: answers.secretFields },
     })
   const { scope, answered, total } = resolved
   const canSendAction = node.action !== undefined && onAction !== undefined
@@ -106,7 +108,14 @@ export function SubmitNode({ node, onAction, answers }: {
   const submitted = answers?.locked === true
   const collectedAnswers: Record<string, string | string[]> = {
     ...recorded,
-    ...multiRecorded,
+    ...Object.fromEntries(Object.entries(multiRecorded).flatMap(([group, values]) => {
+      const member = answers?.registry.members.get(group)
+      if (member?.kind !== 'checkbox') return []
+      return [[group, values.flatMap(value => {
+        const label = member.choices.get(value)
+        return label === undefined ? [] : [label]
+      })]]
+    })),
   }
   // Ready = enough answers AND the click can do something: either local
   // grading, or a real action name + provider. A submit with neither is a
@@ -234,7 +243,7 @@ export function SliderNode({ node, onAction, answers }: {
 }) {
   const action = node.action
   const id = node.id
-  const restored = id !== undefined && answers?.fields[id] !== undefined
+  const restored = id !== undefined && answers?.fields !== undefined && Object.hasOwn(answers.fields, id)
     ? Number(answers!.fields[id]!)
     : NaN
   const initial = Number.isFinite(restored) ? restored : node.value ?? node.min ?? 0
@@ -270,7 +279,7 @@ export function SliderNode({ node, onAction, answers }: {
           send(v)
         }}
       />
-      <span className={css.sliderValue}>{Math.round(value * 100) / 100}</span>
+      <span className={css.sliderValue}>{value}</span>
     </label>
   )
 }
@@ -330,7 +339,7 @@ export function SelectNode({ node, onAction, answers }: {
   const action = node.action
   const id = node.id
   const options = node.options.slice(0, GENUI_LIMITS.maxOptions)
-  const restored = id !== undefined && answers?.fields[id] !== undefined
+  const restored = id !== undefined && answers?.fields !== undefined && Object.hasOwn(answers.fields, id)
     ? options.indexOf(answers!.fields[id]!)
     : -1
   const defaultValue = restored >= 0
@@ -388,10 +397,14 @@ export function InputNode({ node, onAction, answers }: {
   onAction?: GenuiBlockProps['onAction']
   answers?: AnswersState | undefined
 }) {
+  const t = useT()
   const action = node.action
   const id = node.id
   const secret = node.inputType === 'password'
-  const restored = !secret && id !== undefined ? answers?.fields[id] : undefined
+  const numeric = node.inputType === 'number'
+  const restored = !secret && id !== undefined && answers?.fields !== undefined && Object.hasOwn(answers.fields, id)
+    ? answers.fields[id]
+    : undefined
   // Initial value: durable state wins over the spec default. Secrets always
   // restore as blank so a password can never survive a refresh.
   const initial = secret ? '' : (node.value ?? '')
@@ -408,7 +421,9 @@ export function InputNode({ node, onAction, answers }: {
   // used to fire a pointless action round trip). Seeded with the mount value
   // so the very first unedited blur also stays silent.
   const lastSent = useRef<string | null>(value)
+  const setField = answers?.setField
   const send = (submit: boolean): void => {
+    if (numeric && value.trim() !== '' && parseDecimalNumber(value) === undefined) return
     if (action !== undefined && onAction !== undefined) {
       const sentValue = value
       void onAction(action, { type: 'input', value, ...(id !== undefined ? { id } : {}), ...(submit ? { submit: true } : {}) }).then(ack => {
@@ -417,27 +432,17 @@ export function InputNode({ node, onAction, answers }: {
     }
   }
   const ime = useImeComposing()
-  // Register the displayed initial value, including the native color default.
-  const mounted = useRef(false)
+  // renderNode 按字段标识和类型设置输入项身份，流式更新或切换标签页后不会串到其他字段。
   useEffect(() => {
-    if (mounted.current) return
-    mounted.current = true
-    if (!secret && id !== undefined && value.trim() !== '') {
-      answers?.setField(id, value)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  // Secret fields are filtered from persistence and submit collection.
-  useEffect(() => {
-    if (secret && id !== undefined) answers?.registerSecretField(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [secret, id])
+    if (!secret && id !== undefined && value.trim() !== '') setField?.(id, value)
+  }, [id, value, secret, setField])
   return (
     <label className={css.field}>
       {node.label !== undefined && <span>{renderInline(node.label, false)}</span>}
       <input
         className={css.input}
-        type={node.inputType ?? 'text'}
+        type={numeric ? 'text' : node.inputType ?? 'text'}
+        inputMode={numeric ? 'decimal' : undefined}
         style={node.inputType === 'color' ? {
           width: 64,
           height: 40,
@@ -451,7 +456,7 @@ export function InputNode({ node, onAction, answers }: {
         onChange={e => {
           const v = e.currentTarget.value
           setValue(v)
-          if (id !== undefined) answers?.setField(id, v)
+          if (!secret && id !== undefined) answers?.setField(id, v)
         }}
         onBlur={() => {
           if (value !== lastSent.current) send(false)
@@ -465,6 +470,7 @@ export function InputNode({ node, onAction, answers }: {
           send(true)
         }}
       />
+      {numeric && value.trim() !== '' && parseDecimalNumber(value) === undefined && <span role="alert">{t('block.invalidNumber')}</span>}
     </label>
   )
 }
@@ -481,7 +487,9 @@ export function TextareaNode({ node, onAction, answers }: {
   const action = node.action
   const id = node.id
   // Durable state wins over the spec default (same contract as InputNode).
-  const restored = id !== undefined ? answers?.fields[id] : undefined
+  const restored = id !== undefined && answers?.fields !== undefined && Object.hasOwn(answers.fields, id)
+    ? answers.fields[id]
+    : undefined
   const [localValue, setLocalValue] = useGenuiComponentState('value', node.value ?? '')
   const value = id !== undefined && answers !== undefined ? restored ?? node.value ?? '' : localValue
   const setValue = (next: string): void => { if (id === undefined || answers === undefined) setLocalValue(next) }

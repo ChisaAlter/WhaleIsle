@@ -9,7 +9,7 @@ export interface GenuiChildSlot {
   readonly holder: unknown[]
   readonly index: number
 }
-export interface GenuiWalkOptions { familyCaps?: boolean; maxNodes?: number }
+export interface GenuiWalkOptions { familyCaps?: boolean; carouselCaps?: boolean; maxNodes?: number }
 
 /** Sole definition of renderer-owned children. JSON, file-tree records, chart
  * options, scene meshes and custom payloads stay opaque. Raw inputs are
@@ -34,6 +34,7 @@ export function genuiChildSlots(value: unknown, path = '', options: GenuiWalkOpt
   }
   switch (node.type) {
     case 'row': case 'col': case 'grid': case 'card': add(node.items, 'items'); break
+    case 'carousel': add((options.carouselCaps ?? options.familyCaps !== false) && Array.isArray(node.items) ? node.items.slice(0, GENUI_LIMITS.maxCarouselItems) : node.items, 'items'); break
     case 'list': add(node.items, 'items', true); break
     case 'tabs': sections(node.tabs, 'tabs', GENUI_LIMITS.maxTabs); break
     case 'accordion': sections(node.items, 'items', GENUI_LIMITS.maxAccordionItems); break

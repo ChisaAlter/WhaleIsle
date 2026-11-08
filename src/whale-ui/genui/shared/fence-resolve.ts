@@ -17,7 +17,7 @@ export interface FenceResolution {
   readonly errors: readonly string[]
 }
 function resolveParsedFence(value: unknown, whole: boolean, repaired: boolean, repairs: number, settled: boolean): FenceResolution {
-  const processed = processGenuiSpec(value)
+  const processed = processGenuiSpec(value, { deferPanelReferences: true })
   const spec = partialRepairGenuiSpec(processed)
   // A bounded preview may be safe to display even when policy caps removed
   // component nodes. Keep that preview, but completion must report the loss.

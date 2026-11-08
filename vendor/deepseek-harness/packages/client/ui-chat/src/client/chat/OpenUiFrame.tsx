@@ -9,7 +9,7 @@ import css from './OpenUiFrame.module.css'
 const CHANNEL = 'whale-ui'
 const VERSION = 2
 const API_PATHS = new Set(['/api/wiki', '/api/image-search', '/api/street-route'])
-const BUNDLES = new Set(['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'standalone-runtime.js'])
+const BUNDLES = new Set(['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'maplibre.js', 'standalone-runtime.js'])
 
 interface OpenUiShell {
   openuiViewer(): Promise<string>

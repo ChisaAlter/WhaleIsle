@@ -33,7 +33,7 @@ async function openuiApi(input) {
   return { status: response.status, body: await response.json() };
 }
 
-const WHALE_BUNDLES = new Set(['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'standalone-runtime.js']);
+const WHALE_BUNDLES = new Set(['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'maplibre.js', 'standalone-runtime.js']);
 
 /** The trusted parent can request only packaged rendering engines, never a filesystem path. */
 async function openuiBundle(input) {

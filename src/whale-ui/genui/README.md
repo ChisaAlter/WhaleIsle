@@ -1,7 +1,7 @@
 # Embedded GenUI source
 
-This subtree absorbs the MIT embedded renderer from dsh-genui 0.13.0,
-commit `e64819af5968cf98e8bd28fd72a1cda977309214`. The donor license and
+This subtree absorbs the MIT embedded renderer from `@changfenhuang/dsh-genui`
+0.15.0 (npm, repository `omdsh-dev/dsh-genui`). The donor license and
 OpenAI icon notice are retained here for the central Whale UI notices.
 
 `embed.ts` is the source entry. It exports the renderer, schemas, normalized
@@ -41,7 +41,7 @@ cannot report into the next source. Failures show visible alerts and do not
 start automatic retries. Plot chrome follows the shared locale.
 
 `genuiChildSlots` in `client/walk-spec.ts` defines renderer-owned children for
-layouts, list nodes, tabs, accordion sections and reachable table details.
+layouts, list nodes, carousel items, tabs, accordion sections and reachable table details.
 Repair, validation, normalization, diagnostics, node accounting, rendering,
 submissions and artifacts consume this contract. JSON values, file-tree records, chart option
 objects, diagram data, meshes and unknown component payloads are opaque.
@@ -80,6 +80,7 @@ browser IIFE with dependencies bundled and no cross-entry chunks:
 | `echarts-core.js` | `client/asset-echarts-core.ts` | `window.__GenuiAssets__.echartsCore` |
 | `echarts-full.js` | `client/asset-echarts.ts` | `window.__GenuiAssets__.echartsFull` |
 | `icons.js` | `client/icons/asset-icons.ts` | `window.__GenuiAssets__.icons` |
+| `maplibre.js` | `client/asset-maplibre.ts` | `window.__GenuiAssets__.maplibre` |
 | `standalone-runtime.js` | `client/standalone/runtime.tsx` | `window.__GenuiStandalone__` |
 
 The regular embedded renderer keeps engines out of its eager bundle. Set
@@ -109,7 +110,8 @@ without appearing twice.
 
 Direct runtime dependencies are React 19, ReactDOM 19, KaTeX 0.18.2 and
 mdast-util-from-markdown 2.0.3. Engine builds use Mermaid 11.16.1, three 0.180.0,
-ECharts 6.1.0 and echarts-wordcloud 2.1.0. All are supplied by the owning package.
+ECharts 6.1.0, echarts-wordcloud 2.1.0 and MapLibre GL JS 6.13.0. All are
+supplied by the owning package.
 The primitive adapter is the donor's original standalone implementation, with
 no cross-feature DSH UI value imports. Theme CSS retains scoped `--dsl-g-*`
 tokens and consumes the host's `--dsw-*` token mapping. Localization uses the
