@@ -30,3 +30,5 @@ A full audit of confirmation surfaces found two systematic issues:
 - quit/restart/reload still confirm once when work is active; the quit drain-failure fallback still appears (now shell-styled).
 - Every main-process confirm owned by the launcher shares the single `app-confirm` card form; native boxes remain only for "no visible window" edge cases and the init-failure `showErrorBox`.
 - The `launcher-stop-preconfirmed` record's "preConfirmed must not spread to install/update" constraint is superseded by this record (the full audit showed the install lanes' double-confirm is the same defect class). Annotated in place.
+
+> Update 2026-11-08: the renderer crash-recovery box and the init-failure `showErrorBox` are gone. A crash reloads automatically and ends on a failure page inside the surface; fatal errors only write the log and a crash report. See [desktop-launcher](../../../features/desktop-launcher.md).

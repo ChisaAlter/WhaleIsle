@@ -191,12 +191,12 @@ test('cold-start gate opens the launcher before the update prompt when it stays 
   }
 });
 
-test('cold-start gate reports a returned desktop failure and drains a late update on the visible launcher', async () => {
-  const drained = [];
+test('cold-start gate reports a returned desktop failure and shows a late update without asking about it', async () => {
+  const asked = [];
   const { deps, calls, dir } = gateDeps({
     checkUpdate: async () => ({ status: 'available', latest: '9.9.9' }),
     startDesktop: async () => { calls.startDesktop += 1; return { ok: false, error: 'failed to start' }; },
-    drainParkedUpdateCheck: async () => { drained.push(peekParkedUpdateCheck()?.latest); },
+    confirmUpdate: async (check) => { asked.push(check.latest); return false; },
   });
   try {
     const result = await runColdStartGate(deps);
@@ -204,7 +204,11 @@ test('cold-start gate reports a returned desktop failure and drains a late updat
     assert.equal(result.lastStartFailed, true);
     assert.equal(calls.openLauncher, 1);
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(drained, ['9.9.9']);
+    // The launcher is open on the failure: the update only reaches its home card.
+    assert.deepEqual(asked, []);
+    assert.equal(peekParkedUpdateCheck()?.latest, '9.9.9');
+    const hint = calls.sent.find((message) => message.channel === 'shell:launcher-hint');
+    assert.equal(hint?.payload.check.latest, '9.9.9');
   } finally {
     resetParkedUpdateCheck();
     fs.rmSync(dir, { recursive: true, force: true });

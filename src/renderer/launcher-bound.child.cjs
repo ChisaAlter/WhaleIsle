@@ -489,6 +489,7 @@ app.whenReady().then(async () => {
           okHidden: document.querySelector('#app-confirm-ok').hidden,
           cancelHidden: document.querySelector('#app-confirm-cancel').hidden,
           notices: window.qaComponentNotices,
+          failureLines: [...document.querySelectorAll('[data-comp-failure]')].map(node => node.textContent),
           focusConnected: document.activeElement.isConnected,
           focusVisible: document.activeElement.checkVisibility(),
           focusAction: document.activeElement.dataset.compAction || '',
@@ -521,7 +522,7 @@ app.whenReady().then(async () => {
       await waitForDom('window.qaComponentButton.title.includes("fixture component startup failed")');
       const failedPhase = await readFeedback();
       componentStartResolve({ ok: false, error: 'spawn-failed' });
-      await waitForDom('!!document.querySelector(".shell-feedback-toast")');
+      await waitForDom('!!document.querySelector("[data-comp-failure]")');
       const failed = await readFeedback();
       await captureBound('bound-component-start-failed.png');
       await closeNotice();
@@ -603,7 +604,7 @@ app.whenReady().then(async () => {
       const updating = await readFeedback();
       componentProgress({ phase: 'error', percent: 100, message: 'fixture package refused' });
       componentUpdateResolve({ ok: false, message: 'fixture package refused' });
-      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥操作未完成：")');
+      await waitForDom('[...document.querySelectorAll("[data-comp-failure]")].some(node => node.textContent === "操作未完成：fixture package refused")');
       const updateFailed = await readFeedback();
       win.setSize(860, 560);
       await captureBound('bound-component-update-failed-narrow.png');

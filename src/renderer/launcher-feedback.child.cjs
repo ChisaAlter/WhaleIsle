@@ -101,6 +101,7 @@ app.whenReady().then(async () => {
       extraLines: document.querySelectorAll('#hint, #home-components-hint, #home-start-progress, #import-scan-status, [data-comp-hint], [data-comp-progress]').length,
       versionsBusy: document.getElementById('btn-check-update-versions').getAttribute('aria-busy'),
       updateVisible: document.getElementById('home-update').checkVisibility(), updateText: document.getElementById('home-update-text').textContent,
+      updateFail: [...document.querySelectorAll('[data-update-fail]')].filter(node => !node.hidden && node.checkVisibility()).map(node => node.textContent),
       toastCount: document.querySelectorAll('.shell-feedback-toast').length };
   })()`);
   const clearNotices = () => js("document.querySelectorAll('.shell-feedback-toast').forEach(node => node.remove())");
@@ -164,8 +165,9 @@ app.whenReady().then(async () => {
       checkResolve(payload);
       await waitFor(payload?.status === 'available' ? "document.getElementById('home-update').checkVisibility()"
         : payload?.status === 'none' ? "(document.getElementById('btn-check-update-versions').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update-versions').textContent) === '暂无更新'"
-          : "!!document.querySelector('.shell-feedback-toast')");
+          : "[...document.querySelectorAll('[data-update-fail]')].some(node => !node.hidden && node.checkVisibility() && node.textContent)");
       result.outcomes.push({ status: payload?.status || 'invalid', ...await read() });
+      if (payload?.status === 'error') await capture('update-check-failed');
       await clearNotices();
     }
     // Parallel results remain interactive without replacing a destructive confirmation.
