@@ -33,7 +33,7 @@ Plan: [mobile/web ChisaCode parity](../../../superpowers/plans/2026-08-27-mobile
 
 Browser asset checks do not substitute for relay, physical-device, WebView persistence, or real-provider validation. Blocked rows remain release acceptance work.
 
-Browser evidence: [mobile-web-invalid-offer.png](mobile-web-invalid-offer.png).
+Browser evidence: [mobile-web-invalid-offer.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-invalid-offer.png).
 
 ## Self-review and adversarial review
 

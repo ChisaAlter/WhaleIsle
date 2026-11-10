@@ -38,7 +38,7 @@ Chrome headless 390×844（`/usr/local/bin/google-chrome` + puppeteer-core）。
 | 新会话 | 工作区→提供方→权限模式→**模型** 四步；`createAgent` 收到 `{provider, cwd, workspaceId, modeId:'plan', model:'ds-r3-mini'}` | PASS |
 | Console | 全程 0 应用 console error（favicon 404 为既有 harness 伪影，已按 URL 过滤） | PASS |
 
-截图：[sessions](mobile-web-phase1-sessions.png) · [timeline](mobile-web-phase1-timeline.png) · [slash](mobile-web-phase1-slash.png) · [model](mobile-web-phase1-model.png) · [approval](mobile-web-phase1-approval.png) · [readonly](mobile-web-phase1-readonly.png) · [history](mobile-web-phase1-history.png)
+截图：[sessions](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-sessions.png) · [timeline](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-timeline.png) · [slash](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-slash.png) · [model](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-model.png) · [approval](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-approval.png) · [readonly](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-readonly.png) · [history](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase1-history.png)
 
 ## Manual / real-device matrix
 
