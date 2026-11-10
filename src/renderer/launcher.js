@@ -609,6 +609,7 @@ function renderHomeRecovery(status) {
     $('btn-recover-plugins').textContent = guidance.confirmText;
   }
   const show = !desktopActionBusy() && Boolean(desktopActionError || recovery?.skipUserPlugins
+    || recoveryApi?.skippedBuiltins?.(status?.lastStart)?.length
     || (!desktopIsRunning(status?.desktop)
       && recoveryApi?.shouldShowRecovery?.(status?.lastStart, recovery, forensics, status?.desktop)));
   board.hidden = !show;
@@ -620,7 +621,8 @@ function renderHomeRecovery(status) {
     ? recoveryApi.recoveryVerdict(status?.lastStart, recovery, forensics) : '');
   if ($('home-recovery-verdict').textContent !== verdict) board.open = false;
   $('home-recovery-verdict').textContent = verdict;
-  $('home-recovery-list').hidden = !forensics?.plugins?.length;
+  const builtinsOnly = desktopIsRunning(status?.desktop) && !desktopActionError && !recovery?.skipUserPlugins;
+  $('home-recovery-list').hidden = builtinsOnly || !forensics?.plugins?.length;
   renderPluginBoard(forensics, {
     listId: 'home-recovery-list',
     sortSuspectsFirst: true,
@@ -1103,6 +1105,8 @@ function renderHomeStatus(status) {
   }
   if (!desktopActionBusy() && (desktopActionError || (!desktopIsRunning(desktop) && last?.ok === false))) {
     bits.push('启动或关闭未完成，详见启动诊断');
+  } else if (!desktopActionBusy() && window.launcherRecovery?.skippedBuiltins?.(last)?.length) {
+    bits.push('部分内置功能未加载，详见启动诊断');
   }
   if (desktopOperation) bits.push(`已等待 ${Math.floor((Date.now() - desktopOperation.startedAt) / 1000)} 秒`);
   const statusText = bits.join(' · ');

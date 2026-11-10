@@ -17,7 +17,7 @@
 
 ## 架构要点
 
-- `src/main/dsh-remote-desktop.js` 每次 Harness 启动时检查并准备 `profiles/web/node_modules/dsh-remote` junction 与桌面自有 overlay `desktop-plugins/dsh-remote/desktop-dsh-remote.patch.yml`。开关开启时 overlay 随完整启动和 skip-user-plugins 恢复启动经 `--patch` 传入；启用态 vendor 缺文件或依赖时 fail-closed，skip 不可绕过。关闭时删 overlay、不校验 vendor，也不阻断启动。
+- `src/main/dsh-remote-desktop.js` 每次 Harness 启动时检查并准备 `profiles/web/node_modules/dsh-remote` junction 与桌面自有 overlay `desktop-plugins/dsh-remote/desktop-dsh-remote.patch.yml`。开关开启时 overlay 随完整启动和 skip-user-plugins 恢复启动经 `--patch` 传入；启用态 vendor 缺文件或依赖时本次启动不挂载远程工作区，鲸屿照常启动，启动器「启动诊断」列出原因；skip 不可绕过。关闭时删 overlay、不校验 vendor，也不阻断启动。
 - profile 目录里的同名插件由桌面内置副本接管；`dsh-remote` 在市场过滤和禁止名单中，配置归一化也剔除其 disable alias。用户层 `cordis.patch.yml` 不写入此 overlay。
 - `vendor/dsh-remote/lib/index.js` 提供 SSH/SFTP、镜像同步、远程工具、转发和 API 路由；`lib/client.js` 是注入到 Harness 的客户端 bundle。
 - 远程 picker 是 `ui-directory-picker-browse` flow 的可选子槽 occupant。本机浏览器是 picker 自身能力；子槽未挂载时保留本机-only 路径。

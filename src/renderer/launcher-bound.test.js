@@ -216,6 +216,16 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
     assert.equal(layout.rawErrorCount, 1, 'the home surface keeps raw error in diagnostics');
   }
   assert.ok(r.layouts[1].width < r.layouts[0].width, 'zoom changes actual viewport geometry');
+  assert.equal(r.degraded.stopHidden, false, 'a start that skipped a built-in is still running');
+  assert.match(r.degraded.status, /部分内置功能未加载，详见启动诊断/);
+  assert.equal(r.degraded.diagnosticsHidden, false);
+  assert.equal(r.degraded.diagnosticsOpen, false);
+  assert.deepEqual(r.degraded.errorToasts, [], 'a skipped built-in raises no popup');
+  assert.equal(r.degraded.modalHidden, true);
+  assert.doesNotMatch(r.degraded.homeVisibleText, /missing-source/, 'the reason stays in the folded diagnostics');
+  assert.match(r.degradedOpen.detail, /用量统计（missing-source:node_modules:zod）/);
+  assert.match(r.degradedOpen.detail, /其余功能照常/);
+  assert.equal(r.degradedOpen.recoveryListHidden, true, 'no user-plugin list for a built-in skip');
 });
 
 test('real Electron: delta update starts on click, waits for confirmed installation and only actual success refreshes', { skip: !hasElectron }, async () => {

@@ -25,9 +25,14 @@ function readLastDesktopStart(userDataDir) {
       // launcher's only window into plugin loader errors, since a packaged
       // runtime's console does not reliably reach a piped stderr.
       logTail: Array.isArray(raw.logTail) ? raw.logTail.filter((l) => typeof l === 'string') : [],
+      // Optional built-ins a successful start went without; 启动诊断 lists them.
+      skipped: Array.isArray(raw.skipped)
+        ? raw.skipped.filter((row) => row && typeof row.label === 'string' && row.label)
+          .map((row) => ({ label: row.label, error: typeof row.error === 'string' ? row.error : '' }))
+        : [],
     };
   } catch {
-    return { ok: null, at: '', error: '', logTail: [] };
+    return { ok: null, at: '', error: '', logTail: [], skipped: [] };
   }
 }
 
@@ -56,6 +61,11 @@ function writeLastDesktopStart(userDataDir, payload) {
     at: payload.at || new Date().toISOString(),
     error: payload.error || '',
     logTail,
+    skipped: Array.isArray(payload.skipped)
+      ? payload.skipped.slice(0, 12)
+        .map((row) => ({ label: String(row?.label || ''), error: String(row?.error || '').slice(0, 240) }))
+        .filter((row) => row.label)
+      : [],
   }, null, 2)}\n`);
   fs.renameSync(tmp, file);
 }
@@ -66,10 +76,10 @@ function writeLastDesktopStart(userDataDir, payload) {
  * must go through one writer so a stale `{ ok:false }` can never keep holding
  * the next cold start at the launcher after the desktop actually recovered.
  */
-async function recordLastDesktopStart(userDataDir, work, evidence) {
+async function recordLastDesktopStart(userDataDir, work, evidence, skipped) {
   try {
     const value = await work();
-    writeLastDesktopStart(userDataDir, { ok: true });
+    writeLastDesktopStart(userDataDir, { ok: true, skipped: typeof skipped === 'function' ? skipped() : [] });
     return value;
   } catch (error) {
     writeLastDesktopStart(userDataDir, {
