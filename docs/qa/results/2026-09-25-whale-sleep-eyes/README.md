@@ -6,17 +6,17 @@
 
 正式模型 `avatar/model.onnx` 与母版 `character.png` 不变。使用测试夹具加载真实 `pet-live2d.js`，向 `applyLiveState()` 输入确定的姿态，再以 CPU ONNX 实际推理；对照中从左到右为：中性、单独眨眼闭合、干净睡眠、带困倦与视线的睡眠、带随机笑眼的睡眠。
 
-![修复前模型输出对照](model-before.png)
+![修复前模型输出对照](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-25-whale-sleep-eyes/model-before.png?raw=true)
 
 单独闭眼的宽度和位置正常。困倦的 relaxed-eye、随机 happy-eye 与 iris rotation 未被睡眠状态清除时，模型会输出扩大/偏移的眼线与残留眼形；不是睡姿整身旋转或 Anime4K 才产生的问题。入睡状态还会在动作程序之后重新写入固定困倦表情，因此只清除熟睡时的参数不够。
 
 ## 修复后
 
-![修复后模型输出对照](model-after.png)
+![修复后模型输出对照](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-25-whale-sleep-eyes/model-after.png?raw=true)
 
 入睡逐渐退掉其他面部通道，熟睡时只保留自然闭眼的 12/13。后三列的模型输出逐像素相同，冲突输入不再改变闭眼的大小和位置。身体、头部与呼吸通道保留；没有重画眼睛、覆盖图层或替换模型。
 
-![实际 Electron 睡姿](electron-sleep.png)
+![实际 Electron 睡姿](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-25-whale-sleep-eyes/electron-sleep.png?raw=true)
 
 Electron 重启后，在真实 WebGPU session、Anime4K 已启用的宠物窗口内注入相同冲突输入，经过正式表情程序与推理、绘制后截图。`electron.json` 记录运行后姿态与渲染路径；`electron-raw.png` 是超分和整体旋转前的模型帧。检查眼线未出现冲突输入造成的变粗、错位和残留睁眼形状。截帧结束后重新加载宠物页，恢复正常设置、位置与实时循环。
 
@@ -32,13 +32,13 @@ Electron 重启后，在真实 WebGPU session、Anime4K 已启用的宠物窗口
 
 上述首轮只覆盖睡眠，清醒时的待机眨眼仍会叠加随机笑眼、犯困眼形。以下真实模型推理对照依次为：中性闭眼、带视线闭眼、笑眼中闭合、犯困中闭合、仅笑眼、正常睁眼。前三种冲突场景均由真实 `stepPose()` 组合，未直接手绘或覆盖眼线。姿态快照保存在 `idle-poses-before.json` 与 `idle-poses-after.json`。
 
-![待机修复前](idle-before.png)
+![待机修复前](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-25-whale-sleep-eyes/idle-before.png?raw=true)
 
-![待机修复后](idle-after.png)
+![待机修复后](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-25-whale-sleep-eyes/idle-after.png?raw=true)
 
 修复在 `applyLiveState()` 之后逐眼按自然闭合程度衰减同侧其他眼形，双眼同时闭合时退出共享瞳向。完全闭合时不再叠加笑眼或 relaxed-eye；单眼眨眼保留另一眼的表情与视线，嘴部和眉毛保持表达，重新睁开恢复原表情。睡眠仍沿用首轮较严格的面部独占控制。
 
-![Electron 眨眼阶段与单眼眨眼](electron-idle-contact.png)
+![Electron 眨眼阶段与单眼眨眼](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-25-whale-sleep-eyes/electron-idle-contact.png?raw=true)
 
 Electron 重启后在正式 WebGPU + Anime4K 路径中核对：笑眼与困倦并存时的未眨眼、闭合中、全闭、睁开中、恢复原表情五阶段，以及单眼眨眼。上排是模型脸部放大，下排是实际 Electron 截图的身体区域（保留捕获像素尺寸）；不是连续实时录像。对应输入和渲染路径记录在 `electron-idle.json`；截图及原模型输出逐阶段保留。闭眼线的宽度和位置稳定，未再见冲突形态叠加造成的扩大；截帧后重新加载宠物页恢复正常状态与循环。
 

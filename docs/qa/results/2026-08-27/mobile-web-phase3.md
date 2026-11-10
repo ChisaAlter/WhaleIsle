@@ -36,7 +36,7 @@ Chrome headless 390×844（puppeteer-core）。复现：`npm i --no-save puppete
 | 已保存电脑 | 点选行 sticky 重连进入 chat（`已重连 <serverId>` + 会话目录重拉） | PASS |
 | Console | 全程 0 应用 console error | PASS |
 
-截图：[open-failure](mobile-web-phase3-open-failure.png) · [saved-computers](mobile-web-phase3-saved-computers.png)
+截图：[open-failure](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase3-open-failure.png) · [saved-computers](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase3-saved-computers.png)
 
 ## Manual / real-device matrix
 
