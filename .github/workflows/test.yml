@@ -22,6 +22,7 @@ jobs:
       vendor: ${{ steps.changes.outputs.vendor }}
       tools: ${{ steps.changes.outputs.tools }}
       motion: ${{ steps.changes.outputs.motion }}
+      release: ${{ steps.changes.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -133,7 +134,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   macos:
-    if: github.event_name == 'workflow_dispatch' && inputs.include_macos
+    # Manual runs on request; the main push that bumps the version always, so
+    # Release publishes the DMG with the Windows installer.
+    needs: scope
+    if: (github.event_name == 'workflow_dispatch' && inputs.include_macos) || needs.scope.outputs.release == 'true'
     runs-on: macos-latest
     timeout-minutes: 120
     env:
