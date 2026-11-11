@@ -10,7 +10,7 @@
 - Windows 产品检查构建官方 profile，执行桌面回归，生成 NSIS 安装包并启动 unpacked 应用。后者证明分发树能启动，不冒充已经验证所有安装和升级场景。
 - 上游和窗口检查仅在相应改动时执行。
 - 工具测试独立运行，不混入 `npm test`。
-- 需要 macOS 时手动运行 Development CI，勾选 `include_macos`；默认只交付 Windows。
+- 版本号变化的 main 推送会同时构建 macOS 安装包，Release 把它和 Windows 安装包一起发布；Mac 构建失败时整次 CI 失败，这个版本不会发布。其他时候需要 macOS 包，手动运行 Development CI 并勾选 `include_macos`。
 - `Release macOS single-file diagnosis` 的手动运行负责 Mac 打包与真实包内窗口验收。普通运行检查当前 ref；显式填写 `source_tag` 时检出该不可变产品标签，只覆盖两项已记录哈希的客户端构建工具，并输出产品提交与构建工具提交的来源记录。工作流本身不发布；新版本仍使用同次 main Development CI 原始附件，既有版本的 Mac 补发使用下述独立入口。
 - 汇总检查名为 `CI`，失败或取消不会变成通过。main 的 GitHub 分支保护要求经 PR 合并，并要求 GitHub Actions 的 `CI` 检查通过；管理员同样受保护，禁止强推与删除。不强制第二位审查者批准，合并仍由用户决定。保护设置不要求分支必须追上最新 main，避免仅因无关合并重复构建。
 

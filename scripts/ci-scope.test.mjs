@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { load } from 'js-yaml'
-import { selectChecks } from './ci-scope.mjs'
+import { selectChecks, versionChanged } from './ci-scope.mjs'
 
 test('external component QA and removed source/build paths do not build Harness', () => {
   assert.deepEqual(selectChecks(['vendor/whalebridge/main.go', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge-models.mjs', 'scripts/qa-whalebridge-agents.cjs', '.github/workflows/whalebridge.yml']),
@@ -29,6 +29,16 @@ test('tool test edits run independently and manual builds have full scope', () =
   assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', '.github/workflows/cnb-mirror.yml']),
     { product: false, tools: true, vendor: false, motion: false })
   assert.ok(Object.values(selectChecks([], { manual: true })).every(Boolean))
+})
+test('the main push that bumps the version also builds the macOS installer', () => {
+  assert.equal(versionChanged('{"version":"0.3.14"}', '{"version":"0.3.15"}'), true)
+  assert.equal(versionChanged('{"version":"0.3.14","a":1}', '{"version":"0.3.14","a":2}'), false)
+  const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
+  assert.equal(ci.jobs.scope.outputs.release, '${{ steps.changes.outputs.release }}')
+  assert.equal(ci.jobs.macos.needs, 'scope')
+  assert.match(ci.jobs.macos.if, /needs\.scope\.outputs\.release == 'true'/)
+  assert.match(ci.jobs.macos.if, /github\.event_name == 'workflow_dispatch' && inputs\.include_macos/)
+  assert.ok(ci.jobs.result.needs.includes('macos'))
 })
 test('development CI produces assets; release has no rebuild and no PR trigger', () => {
   const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
