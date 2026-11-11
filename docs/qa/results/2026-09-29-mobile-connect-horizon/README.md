@@ -6,12 +6,12 @@ Feature: `mobile-remote`. Scope is the pre-connection WebView, native permission
 
 - Device: `23124RN87C`, serial `9TUCYX8TBI6DLRMZ`.
 - Installation: `adb install -r` of the final debug APK, without uninstalling or clearing app data; cold launch completed successfully.
-- [light-final.png](light-final.png): final `20260929-connect-horizon-v2` APK WebView with the light mist-sky / blue-sea canvas and saved-device reconnect row.
-- [dark-final.png](dark-final.png): the same final APK WebView with the dark star-sky / deep-sea canvas and recoverable connection failure.
-- [scan-final.png](scan-final.png): the WebView primary action opened the native CameraX scanner, with the themed frame and paste fallback.
-- [paste-final.png](paste-final.png): tapping the native scanner's paste fallback returned to Connect, expanded and focused the input, and opened the software keyboard (`dumpsys input_method`: `mInputShown=true`).
-- [readable-computer-name-device.png](readable-computer-name-device.png): the final `20260929-readable-computer-name-v3` APK preserved the legacy sticky while replacing the protocol-internal `srv_*` title with `我的电脑`.
-- [readable-computer-name-reconnect.png](readable-computer-name-reconnect.png): the same readable fallback remained after restarting the desktop app and retrying the saved relay.
+- [light-final.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-connect-horizon/light-final.png): final `20260929-connect-horizon-v2` APK WebView with the light mist-sky / blue-sea canvas and saved-device reconnect row.
+- [dark-final.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-connect-horizon/dark-final.png): the same final APK WebView with the dark star-sky / deep-sea canvas and recoverable connection failure.
+- [scan-final.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-connect-horizon/scan-final.png): the WebView primary action opened the native CameraX scanner, with the themed frame and paste fallback.
+- [paste-final.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-connect-horizon/paste-final.png): tapping the native scanner's paste fallback returned to Connect, expanded and focused the input, and opened the software keyboard (`dumpsys input_method`: `mInputShown=true`).
+- [readable-computer-name-device.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-connect-horizon/readable-computer-name-device.png): the final `20260929-readable-computer-name-v3` APK preserved the legacy sticky while replacing the protocol-internal `srv_*` title with `我的电脑`.
+- [readable-computer-name-reconnect.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-connect-horizon/readable-computer-name-reconnect.png): the same readable fallback remained after restarting the desktop app and retrying the saved relay.
 
 ## Automated evidence
 

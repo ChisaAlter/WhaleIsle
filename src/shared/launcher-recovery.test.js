@@ -10,7 +10,21 @@ const {
   pluginErrorLabel,
   disableableSuspectNames,
   startupRecoveryGuidance,
+  skippedBuiltins,
+  skippedBuiltinsVerdict,
 } = require('./launcher-recovery');
+
+test('skipped built-ins come only from a successful start and are named in the verdict', () => {
+  const lastStart = { ok: true, skipped: [{ label: '用量统计', error: 'missing-zod' }, { label: '插件市场', error: '' }] };
+  assert.deepEqual(skippedBuiltins(lastStart), [{ label: '用量统计', error: 'missing-zod' }, { label: '插件市场', error: '' }]);
+  assert.deepEqual(skippedBuiltins({ ok: false, error: 'boom', skipped: lastStart.skipped }), []);
+  assert.deepEqual(skippedBuiltins({ ok: true }), []);
+  assert.deepEqual(skippedBuiltins(null), []);
+  assert.match(skippedBuiltinsVerdict(lastStart), /用量统计（missing-zod）、插件市场。/);
+  assert.match(skippedBuiltinsVerdict(lastStart), /其余功能照常/);
+  assert.equal(recoveryVerdict(lastStart, null, null), skippedBuiltinsVerdict(lastStart));
+  assert.match(recoveryVerdict({ ok: false, error: 'boom', skipped: lastStart.skipped }, null, null), /上次启动失败：boom/);
+});
 
 test('shouldShowRecovery covers sticky skip, last failure, suspects, and generic causes', () => {
   assert.equal(shouldShowRecovery(null, { skipUserPlugins: true }, null, null), true);

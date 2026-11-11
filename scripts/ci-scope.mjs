@@ -32,11 +32,21 @@ export function selectChecks(paths, { manual = false } = {}) {
   }
   return scope
 }
+
+// The main push that changes package.json's version is the build Release
+// publishes, so it also builds the macOS installer.
+export function versionChanged(baseManifest, headManifest) {
+  return JSON.parse(headManifest).version !== JSON.parse(baseManifest).version
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const base = process.env.BASE_SHA
   const manual = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' || !base || /^0+$/.test(base)
   const paths = manual ? [] : execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', base, 'HEAD'], { encoding: 'utf8' }).split('\0').filter(Boolean)
   const scope = selectChecks(paths, { manual })
+  const mainPush = !manual && process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF === 'refs/heads/main'
+  const manifest = (rev) => execFileSync('git', ['show', rev + ':package.json'], { encoding: 'utf8' })
+  scope.release = mainPush && versionChanged(manifest(base), manifest('HEAD'))
   const output = Object.entries(scope).map(([name, enabled]) => name + '=' + enabled).join('\n') + '\n'
   console.log(output.trim())
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output)

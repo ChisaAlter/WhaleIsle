@@ -133,6 +133,27 @@ test('recordLastDesktopStart writes ok:true on success and ok:false plus rethrow
   }
 });
 
+test('a successful start records the optional built-ins it skipped; the next start replaces them', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-skipped-start-'));
+  try {
+    assert.deepEqual(readLastDesktopStart(dir).skipped, []);
+    const skipped = [{ label: '用量统计', error: 'missing-zod' }];
+    await recordLastDesktopStart(dir, async () => 'started', () => [], () => skipped);
+    assert.deepEqual(readLastDesktopStart(dir), {
+      ok: true, at: readLastDesktopStart(dir).at, error: '', logTail: [], skipped,
+    });
+    writeLastDesktopStart(dir, { ok: true, skipped: [{ label: '插件市场', error: 'x'.repeat(500) }, { label: '' }, null] });
+    const last = readLastDesktopStart(dir);
+    assert.equal(last.skipped.length, 1);
+    assert.equal(last.skipped[0].label, '插件市场');
+    assert.equal(last.skipped[0].error.length, 240);
+    writeLastDesktopStart(dir, { ok: true });
+    assert.deepEqual(readLastDesktopStart(dir).skipped, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function gateDeps(overrides = {}) {
   const calls = { openLauncher: 0, startDesktop: 0, sent: [] };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cold-gate-'));
@@ -191,12 +212,12 @@ test('cold-start gate opens the launcher before the update prompt when it stays 
   }
 });
 
-test('cold-start gate reports a returned desktop failure and drains a late update on the visible launcher', async () => {
-  const drained = [];
+test('cold-start gate reports a returned desktop failure and shows a late update without asking about it', async () => {
+  const asked = [];
   const { deps, calls, dir } = gateDeps({
     checkUpdate: async () => ({ status: 'available', latest: '9.9.9' }),
     startDesktop: async () => { calls.startDesktop += 1; return { ok: false, error: 'failed to start' }; },
-    drainParkedUpdateCheck: async () => { drained.push(peekParkedUpdateCheck()?.latest); },
+    confirmUpdate: async (check) => { asked.push(check.latest); return false; },
   });
   try {
     const result = await runColdStartGate(deps);
@@ -204,7 +225,11 @@ test('cold-start gate reports a returned desktop failure and drains a late updat
     assert.equal(result.lastStartFailed, true);
     assert.equal(calls.openLauncher, 1);
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(drained, ['9.9.9']);
+    // The launcher is open on the failure: the update only reaches its home card.
+    assert.deepEqual(asked, []);
+    assert.equal(peekParkedUpdateCheck()?.latest, '9.9.9');
+    const hint = calls.sent.find((message) => message.channel === 'shell:launcher-hint');
+    assert.equal(hint?.payload.check.latest, '9.9.9');
   } finally {
     resetParkedUpdateCheck();
     fs.rmSync(dir, { recursive: true, force: true });

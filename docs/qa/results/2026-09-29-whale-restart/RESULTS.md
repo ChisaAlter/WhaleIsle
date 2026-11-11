@@ -18,4 +18,4 @@
 
 ## 默认开启实机复核
 
-共享 Harness 构建完成后，使用不含 `whaleAssistantEnabled` 的独立配置重新启动源码桌面成功。实际设置页开关为开，侧栏有鲸鱼娘入口，助理字段完整加载：[default-result.json](default-result.json)、[default.png](default.png)。此验证运行源码，未重打安装包或覆盖当前安装版。
+共享 Harness 构建完成后，使用不含 `whaleAssistantEnabled` 的独立配置重新启动源码桌面成功。实际设置页开关为开，侧栏有鲸鱼娘入口，助理字段完整加载：[default-result.json](default-result.json)、[default.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-whale-restart/default.png)。此验证运行源码，未重打安装包或覆盖当前安装版。

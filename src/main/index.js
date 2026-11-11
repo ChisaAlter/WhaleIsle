@@ -103,7 +103,6 @@ const {
   closeLauncherWindow,
   showMain,
   openHarnessSettings,
-  setRecoveryConfirm,
   setRenderHintsSource,
 } = require('./window');
 const { detectGpuTier } = require('./gpu-tier');
@@ -348,10 +347,6 @@ async function confirmDialog(parent, options) {
   return dialog.showMessageBox(parent || undefined, options);
 }
 
-// Renderer crash/unresponsive recovery prompts go through the same styled
-// overlay when the crashed window is still on screen.
-setRecoveryConfirm(confirmDialog);
-
 const trayHideNotice = new TrayHideNotice({
   markerPath: require('node:path').join(app.getPath('userData'), 'tray-hide-acknowledged'),
   notify: () => {
@@ -566,7 +561,7 @@ async function startDesktopFromLauncher(options = {}) {
     const stickyAfter = typeof harness.shouldSkipUserPlugins === 'function'
       ? harness.shouldSkipUserPlugins()
       : false;
-    writeLastDesktopStart(app.getPath('userData'), { ok: true });
+    writeLastDesktopStart(app.getPath('userData'), { ok: true, skipped: harness.skippedBuiltins });
     sendToLauncher('shell:desktop-ready', harness.snapshot());
     if (shouldCloseLauncherAfterDesktopStart({
       desktopReady: true,
@@ -667,7 +662,6 @@ function runColdStartGate(options = {}) {
     startDesktop: launcherPackage
       ? () => runtimeInstall.startExternalDesktop()
       : () => startDesktopFromLauncher(options),
-    drainParkedUpdateCheck: () => drainParkedUpdateCheck.drain({ generation: getLauncherWindow() }),
     log: (line, level) => dsh.log(line, level),
   });
 }
@@ -987,7 +981,8 @@ function restartWithCleanup(delegatedToken, { preConfirmed = false, ...options }
       preConfirmed,
       commit: async () => {
         await cleanupDesktopResources();
-        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options), () => kernelLogTail(dsh));
+        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options),
+          () => kernelLogTail(dsh), () => harness.skippedBuiltins);
       },
     }).then((result) => (result.proceeded ? undefined : result))
       .finally(releaseAcquired);

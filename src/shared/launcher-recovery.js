@@ -64,6 +64,23 @@ function desktopRuntimeDamageVerdict(forensics) {
   return `检测到桌面内置组件损坏${names ? `：${names}` : ''}。禁用插件或跳过用户插件都无法修复；请重新安装桌面端安装包（源码运行则执行 npm run setup:harness）。`;
 }
 
+/**
+ * Optional built-ins the last successful start went without.
+ * @param {{ ok?: boolean|null, skipped?: Array<{label:string, error?:string}> }|null|undefined} lastStart
+ * @returns {Array<{label:string, error:string}>}
+ */
+function skippedBuiltins(lastStart) {
+  if (lastStart?.ok !== true || !Array.isArray(lastStart.skipped)) return [];
+  return lastStart.skipped.filter((row) => row && row.label)
+    .map((row) => ({ label: String(row.label), error: String(row.error || '') }));
+}
+
+/** @param {Parameters<typeof skippedBuiltins>[0]} lastStart */
+function skippedBuiltinsVerdict(lastStart) {
+  const rows = skippedBuiltins(lastStart).map((row) => (row.error ? `${row.label}（${row.error}）` : row.label));
+  return `鲸屿已启动，但以下内置功能本次未加载，其余功能照常：${rows.join('、')}。重新安装桌面端安装包通常可以修复（源码运行则执行 npm run setup:harness）。`;
+}
+
 /** Only installed user plugins named by the failure can be disabled for recovery. */
 function disableableSuspectNames(forensics) {
   if (forensics?.genericCause || forensics?.desktopRuntimeDamage) return [];
@@ -140,6 +157,9 @@ function recoveryVerdict(lastStart, recovery, forensics) {
   if (lastStart?.ok === false) {
     return `上次启动失败：${lastStart.error || '原因未知'}`;
   }
+  if (skippedBuiltins(lastStart).length) {
+    return skippedBuiltinsVerdict(lastStart);
+  }
   return '桌面端未就绪。可检查下列插件后重新启动。';
 }
 
@@ -175,6 +195,8 @@ const launcherRecovery = {
   startupRecoveryGuidance,
   recoveryVerdict,
   sortPluginRows,
+  skippedBuiltins,
+  skippedBuiltinsVerdict,
 };
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -25,9 +25,14 @@ function readLastDesktopStart(userDataDir) {
       // launcher's only window into plugin loader errors, since a packaged
       // runtime's console does not reliably reach a piped stderr.
       logTail: Array.isArray(raw.logTail) ? raw.logTail.filter((l) => typeof l === 'string') : [],
+      // Optional built-ins a successful start went without; 启动诊断 lists them.
+      skipped: Array.isArray(raw.skipped)
+        ? raw.skipped.filter((row) => row && typeof row.label === 'string' && row.label)
+          .map((row) => ({ label: row.label, error: typeof row.error === 'string' ? row.error : '' }))
+        : [],
     };
   } catch {
-    return { ok: null, at: '', error: '', logTail: [] };
+    return { ok: null, at: '', error: '', logTail: [], skipped: [] };
   }
 }
 
@@ -56,6 +61,11 @@ function writeLastDesktopStart(userDataDir, payload) {
     at: payload.at || new Date().toISOString(),
     error: payload.error || '',
     logTail,
+    skipped: Array.isArray(payload.skipped)
+      ? payload.skipped.slice(0, 12)
+        .map((row) => ({ label: String(row?.label || ''), error: String(row?.error || '').slice(0, 240) }))
+        .filter((row) => row.label)
+      : [],
   }, null, 2)}\n`);
   fs.renameSync(tmp, file);
 }
@@ -66,10 +76,10 @@ function writeLastDesktopStart(userDataDir, payload) {
  * must go through one writer so a stale `{ ok:false }` can never keep holding
  * the next cold start at the launcher after the desktop actually recovered.
  */
-async function recordLastDesktopStart(userDataDir, work, evidence) {
+async function recordLastDesktopStart(userDataDir, work, evidence, skipped) {
   try {
     const value = await work();
-    writeLastDesktopStart(userDataDir, { ok: true });
+    writeLastDesktopStart(userDataDir, { ok: true, skipped: typeof skipped === 'function' ? skipped() : [] });
     return value;
   } catch (error) {
     writeLastDesktopStart(userDataDir, {
@@ -355,7 +365,6 @@ async function runColdStartGate({
   readImportJournal,
   journalIsBlocked,
   startDesktop,
-  drainParkedUpdateCheck = async () => {},
   log = () => {},
 }) {
   // Start the network check without awaiting it: it must overlap the local
@@ -436,12 +445,11 @@ async function runColdStartGate({
     // user actually opens the launcher. Never re-open the launcher here (that
     // would steal focus from the desktop the user asked for) and never start a
     // second time.
-    void updateCheck.then(async (check) => {
+    // A failed start leaves the launcher open on the failure: the new version
+    // appears on its home card and is not asked about on top of the failure.
+    void updateCheck.then((check) => {
       parkUpdateCheck(check);
       sendToLauncher('shell:launcher-hint', { check });
-      if (desktopFailed && check?.status === 'available') {
-        await drainParkedUpdateCheck();
-      }
     }).catch((error) => {
       log(`迟到更新处理失败：${error && error.message ? error.message : String(error)}`, 'error');
     });

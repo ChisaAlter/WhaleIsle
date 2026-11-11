@@ -59,7 +59,7 @@
 
 - 实际 `app.asar` 的版本 / 产品为 `0.3.3` / `Whale Isle`；七个任务栏身份与通知相关模块逐文件匹配 `953bb20a`，仅归一化换行。首次离线 helper 用 POSIX 分隔符调用 Windows ASAR API 导致读取失败；改用 `path.normalize` 后实际文件读取并比对通过，未改变包内字节或产品代码。
 - 实际 `resources/node.exe --version` 为 `v24.21.0`；随包 Harness pin 为 `dsh-v0.1.7-rc.2` / `477b4f420553e8a52c2fbccc464d7561b239c443` / `0.1.7-rc.2`。运行时 tar 为 1166144512 字节，SHA256 `79c708e03a5f4131402cdff54848ce5df0e8bd83b54123fba0cfbfa07261f2f0` 与随包 manifest 相同。
-- 实际 `Whale Isle.exe` 为 x64，PE 产品名 / 描述是 `Whale Isle`、文件版本 `0.3.3`，图标索引 0 的 32px / 16px 资源均成功提取并释放 HICON；人工查看 32px PNG 是鲸鱼头像。见 [CI EXE 图标](ci-exe-icon-32.png)。这只证明内嵌图标，不认证 Windows 当前分组、快捷方式或可见任务栏。
+- 实际 `Whale Isle.exe` 为 x64，PE 产品名 / 描述是 `Whale Isle`、文件版本 `0.3.3`，图标索引 0 的 32px / 16px 资源均成功提取并释放 HICON；人工查看 32px PNG 是鲸鱼头像。见 [CI EXE 图标](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-exe-icon-32.png)。这只证明内嵌图标，不认证 Windows 当前分组、快捷方式或可见任务栏。
 - 随包 official build record 为 `953bb20` / `official` / `Whale Isle` / `0.1.7-rc.2`，构建前裁剪记录 372 个 client 产物；没有对剥除 maps 的运行时重算该构建前摘要。实际物理模块在 `packages/client`，`.dsh-runtime-links.json` 将公开 package alias 指向这些目录，启动后才重建链接。最初按 `node_modules` 物理路径取样无文件，按真实计划核对后通过；不能将这一预期布局写成缺包。
 - 实际 `ui-files/lib/client.js` 含唯一目录 guide，文件 viewer 仅认 Session 文件资源且不再提供空 viewer guide；旧空 / 内部地址回退 `SidebarFilesPanel`。实际 DockKit CSS 的关闭控件按标题轴居中并保留 `right: 4px`，全文换行归一化后匹配 `953bb20a` 源码；对应组件及右栏入口确实消费该样式和包。此为修复打包存在性证据，不代替实际 UI 工作环。
 
@@ -73,7 +73,7 @@
 
 用户截图确认该安装版任务栏仍显示 Electron 原子，记 Fail。只读检查找到同 AppID 的旧开始菜单 Electron.lnk，目标为源码 Electron、空参数、默认图标；与新 Whale Isle.lnk 冲突。此候选未覆盖存量恢复，不可用之前正确的窗口属性 / EXE 图标证明宣称问题已修。
 
-对精确匹配的旧条目保留完整字节备份并移出开始菜单，再通知 Shell 已完成的精确旧路径 → 备份路径并冷启动。PID 29108 的生产 AppID 任务栏按钮得到有效 66×72 像素，截图前后安装 EXE / socket owner / peer PID 与 generation 相同，人工查看确为鲸鱼头像，见 [恢复后的实际任务栏](ci-taskbar-after-recovery.png)。早期自动定位无结果 / 全黑图片 / helper 取摘要错误均为无效取样，不能作为图标 Pass 或 Fail。该有效样本只证明人工恢复后的当次像素，不证明原候选自动恢复；没有重启 Explorer、清全局缓存或修改用户固定项。此为历史捕获记录，不把 PID 29108 写成持续存活保证。
+对精确匹配的旧条目保留完整字节备份并移出开始菜单，再通知 Shell 已完成的精确旧路径 → 备份路径并冷启动。PID 29108 的生产 AppID 任务栏按钮得到有效 66×72 像素，截图前后安装 EXE / socket owner / peer PID 与 generation 相同，人工查看确为鲸鱼头像，见 [恢复后的实际任务栏](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-after-recovery.png)。早期自动定位无结果 / 全黑图片 / helper 取摘要错误均为无效取样，不能作为图标 Pass 或 Fail。该有效样本只证明人工恢复后的当次像素，不证明原候选自动恢复；没有重启 Explorer、清全局缓存或修改用户固定项。此为历史捕获记录，不把 PID 29108 写成持续存活保证。
 
 后续持久修复按 [任务栏身份决定](../../../decisions/implemented/bug-fix/2026-10-01-windows-taskbar-identity.md)补存量恢复：严格匹配、唯一原字节备份，只在成功移动后异步通知精确路径，不匹配分支不加载原生桥，通知失败保留备份并继续启动。Shell 通知等待自身也有 500ms 期限。此前身份及存量恢复定向累计 97/97，加入原生通知与期限后的旧条目最终定向 32/32；真实 Electron 读取旧用户备份的 TEMP 副本，原字节恢复及精确 SHCNE_RENAMEITEM / SHCNF_PATHW | SHCNF_FLUSHNOWAIT 通知成功（16ms），原用户备份不变，未改实际开始菜单或初始化通知。这不替代新安装版的自动恢复验收。
 
@@ -111,7 +111,7 @@
 - 随包 Node 实际为 `v24.21.0`，与候选 `.nvmrc` 一致。Harness pin 为 `dsh-v0.1.7-rc.2` / `477b4f420553e8a52c2fbccc464d7561b239c443` / `0.1.7-rc.2`，与候选 pin 一致。运行时 tar 为 `1166144512` 字节，SHA256 `3a73173b15ba0500a8cbebb998eb7d82aee1617d26195cf5041e657bb428b992` 与随包 manifest 一致。
 - 从当前已核对摘要的 tar 直接取出的 official build record 为 `e3cdc4d` / `official` / `Whale Isle` / `0.1.7-rc.2`，记录裁剪前 372 个 client 产物；没有以剥除 maps 的 tar 重算裁剪前摘要。Files、DockKit、右栏的物理 package 与运行时 alias 计划一致。实际编译结果包含唯一目录 guide、资源限定的 viewer、旧空地址目录回退；关闭控件按标题轴居中、保留右侧定位，实际 CSS 全文匹配候选源码。
 - 实际 EXE 为 x64，SHA256 `dbaf9016cd260d91717f8aaa253875659370987d4490c1c1e56567d7729332fe`；产品名 / 描述为 `Whale Isle`，Windows 四段 `ProductVersion` 为 `0.3.3.0`，`FileVersion` 为 `0.3.3`。首次 verifier 将 ProductVersion 与三段 package version 直接比较，导致 helper 断言失败；修正为分别精确检查四段 / 三段后整体验证通过，候选字节未改。
-- 从本次 EXE 新提取的图标 index 0 为 32px / 16px，两个 HICON 均释放。32px PNG SHA256 为 `413f4161b6a3ebca708126a530c653812a3caca07f13d4190e8205281e686629`，人工重新查看为产品头像，且与已保存的 [图标资源参考图](ci-exe-icon-32.png) 字节一致。这只认证资源存在与正确，不能认证实际任务栏分组或持续显示。
+- 从本次 EXE 新提取的图标 index 0 为 32px / 16px，两个 HICON 均释放。32px PNG SHA256 为 `413f4161b6a3ebca708126a530c653812a3caca07f13d4190e8205281e686629`，人工重新查看为产品头像，且与已保存的 [图标资源参考图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-exe-icon-32.png) 字节一致。这只认证资源存在与正确，不能认证实际任务栏分组或持续显示。
 
 本节只完成新候选的 CI 身份和离线静态核验。离线 JSON 中安装及 UI 的 `Not Run` 记录该阶段的边界，后续实际执行见下节。旧 `953bb20a` 的原始任务栏 / 退出 Fail、手动环境恢复和隔离夹具结果保留在前文及旧 JSON；任何历史 Pass 均不继承为 e3 安装版 Pass。尚未发布新 Release。
 
@@ -129,9 +129,9 @@
 
 | 实际阶段 | 绑定与结果 |
 | --- | --- |
-| 首次自动恢复后的任务栏 | PID 23668、HWND `0x70CD2`；新观测矩形 `1225,1368,66,72`；有效非全黑小图 SHA256 `54f573dd926d46b2fa5233658e4456912b08f1c82378c5a38065dc37181ae943`。主验收者视觉确认白色空白文档图标，记 **Fail**；见 [首启任务栏](ci-taskbar-e3-first-launch.png) |
+| 首次自动恢复后的任务栏 | PID 23668、HWND `0x70CD2`；新观测矩形 `1225,1368,66,72`；有效非全黑小图 SHA256 `54f573dd926d46b2fa5233658e4456912b08f1c82378c5a38065dc37181ae943`。主验收者视觉确认白色空白文档图标，记 **Fail**；见 [首启任务栏](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-e3-first-launch.png) |
 | 首次 protected quit | 同一已安装 EXE / peer generation 下退出确认通过，主进程与直接 Harness 子进程自然消失，耗时 905ms；未强杀，记此次 protected quit Pass，不认证托盘退出 |
-| 第二次正常快捷方式冷启动 | PID 18420、HWND `0x130C6C`；重新观测正式 AppID 唯一、矩形 `1177,1368,66,72`；有效非全黑小图 SHA256 `cb875fe3e7959c9a256b269ee85af82b5fc0a6baef6a34f7cec2e860992801c7`。主验收者视觉确认产品头像，记本次诊断图片 Pass；见 [第二次冷启动任务栏](ci-taskbar-e3-second-cold-launch.png)。首启 Fail 保持 |
+| 第二次正常快捷方式冷启动 | PID 18420、HWND `0x130C6C`；重新观测正式 AppID 唯一、矩形 `1177,1368,66,72`；有效非全黑小图 SHA256 `cb875fe3e7959c9a256b269ee85af82b5fc0a6baef6a34f7cec2e860992801c7`。主验收者视觉确认产品头像，记本次诊断图片 Pass；见 [第二次冷启动任务栏](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-e3-second-cold-launch.png)。首启 Fail 保持 |
 | 第二次 protected quit | 同一第二次已安装 EXE / peer generation 下退出确认通过，主进程与直接 Harness 子进程自然消失，耗时 895ms；未强杀，记此次 protected quit Pass，不认证托盘退出 |
 
 两次采集仅保存目标按钮的 66×72 像素，均无输入、激活或窗口动作；期间没有手工 Shell 通知、全局缓存清理、Explorer 重启或用户 pin 修改。第二次冷启动是诊断结果，不能抹掉第一次自动恢复后的正式 Fail，也不认证后续持续显示。原因仍在调查，不依据备份扩展名或第二次正确显示先行作根因结论。
@@ -146,9 +146,9 @@
 
 | 对照 | 实际任务栏结果 |
 | --- | --- |
-| 原始 ASAR `435383970cea2496d447850a5679932e7e64973309f37d64884e8358a0d08e25`，PID 36124 | 白色文档图标，**Fail**；[图像](ci-taskbar-6c-rename-control.png)，PNG SHA256 `53a88766d7e68f19844145fe4e7762ae8397083893ab203bc682942c54558013` |
-| 仅改变旧条目通知为 `SHCNE_DELETE=2`、第二项为 `null` 的本地诊断 ASAR `363c0de7e09c71cf7920bf5e673b97fd389c4582d5ef0973c13b6dbe97d32bd3`，PID 27840 | 同一旧条目冲突下首次启动为产品头像，**诊断 Pass**；[图像](diag-taskbar-delete-first.png)，PNG SHA256 `4c2741fd6f0090ccea022d9381e7ad858e2f12df5cf332b6acebde57b2d2c905` |
-| 恢复原始 ASAR并重新播种，PID 1284 | 再次为白色文档图标，**Fail**；[图像](ci-taskbar-6c-rename-restored.png)，PNG SHA256 与首行相同 |
+| 原始 ASAR `435383970cea2496d447850a5679932e7e64973309f37d64884e8358a0d08e25`，PID 36124 | 白色文档图标，**Fail**；[图像](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-6c-rename-control.png)，PNG SHA256 `53a88766d7e68f19844145fe4e7762ae8397083893ab203bc682942c54558013` |
+| 仅改变旧条目通知为 `SHCNE_DELETE=2`、第二项为 `null` 的本地诊断 ASAR `363c0de7e09c71cf7920bf5e673b97fd389c4582d5ef0973c13b6dbe97d32bd3`，PID 27840 | 同一旧条目冲突下首次启动为产品头像，**诊断 Pass**；[图像](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/diag-taskbar-delete-first.png)，PNG SHA256 `4c2741fd6f0090ccea022d9381e7ad858e2f12df5cf332b6acebde57b2d2c905` |
+| 恢复原始 ASAR并重新播种，PID 1284 | 再次为白色文档图标，**Fail**；[图像](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-6c-rename-restored.png)，PNG SHA256 与首行相同 |
 
 诊断包仅改变该模块的两个通知参数及 ASAR 对应完整性字段，EXE、资源和其余模块不变。采集限定正式 AppID 的唯一 66×72 按钮，实际 EXE / CDP owner / 默认 profile 绑定已验证；人工查看图像作上述结论。该对照支持将移出开始菜单的旧入口通知为删除，而不是把其身份延续到不再是快捷方式的备份文件。现已正常退出诊断与对照实例，安装目录恢复原始 ASAR。诊断 Pass 不认证正式新安装包；新候选首启、生产验收和发布签字仍待完成。
 
@@ -168,7 +168,7 @@ A/B/A 之后在本机继续实验：重新播种同一旧条目夹具 → 未修
 | --- | --- |
 | 会话 A（Explorer 启动时磁盘上已存在种子 `Electron.lnk`）首启 | 迁移实际发生：原条目消失，原字节备份 `legacy-system-shortcuts\3667d769…\Electron.lnk.backup`（1279B，22:15:57）落盘；但任务栏按钮为 "Electron - 1 个运行窗口"、白色文档图标，记 **Fail（污染会话边界）** |
 | 干净会话 B（会话起始无该条目）内写入种子后启动 | 迁移再次发生（备份 `3562087c…`，22:26:35），任务栏仍显示 "Electron"——证明会话内缓存于 `.lnk` 写入事件或会话起始即建立，不等到窗口映射；delete-before-window 不能驱逐 |
-| 干净会话 C（磁盘无该条目）正常启动 | 唯一 `Appid: ai.deepseek.harness.gui` 按钮名 "Whale Isle - 1 个运行窗口"，66×72 图像经人工查看为鲸鱼头像，记 **Pass**；见 [干净会话任务栏](ci-taskbar-3af7f-clean-session.png)，PNG SHA256 `16C66FDED9A3DBF291629CD44E278B305ED367230279DBE51B4548521C0AE67F` |
-| 会话 D 前再次播种启动（证据复核） | 迁移第三次发生（备份 `15c97f78…`，22:30:06），任务栏仍 "Electron" + 白色文档；见 [污染会话任务栏](ci-taskbar-3af7f-poisoned-session.png)，PNG SHA256 `8E047136C54F57D9D177FD9A46F8818BE00C61380264AA29F943046F6CC57BAE` |
+| 干净会话 C（磁盘无该条目）正常启动 | 唯一 `Appid: ai.deepseek.harness.gui` 按钮名 "Whale Isle - 1 个运行窗口"，66×72 图像经人工查看为鲸鱼头像，记 **Pass**；见 [干净会话任务栏](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-3af7f-clean-session.png)，PNG SHA256 `16C66FDED9A3DBF291629CD44E278B305ED367230279DBE51B4548521C0AE67F` |
+| 会话 D 前再次播种启动（证据复核） | 迁移第三次发生（备份 `15c97f78…`，22:30:06），任务栏仍 "Electron" + 白色文档；见 [污染会话任务栏](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-01-release-candidate/ci-taskbar-3af7f-poisoned-session.png)，PNG SHA256 `8E047136C54F57D9D177FD9A46F8818BE00C61380264AA29F943046F6CC57BAE` |
 
 结论：候选在文件与通知层面行为正确（精确迁移、原字节备份、`SHCNE_DELETE`、源码侧不再产生 `Electron.lnk`）；但 Explorer 会话内 AppID→快捷方式缓存无法被产品代码驱逐，被污染过的会话首启图标必然保持错误直至 Explorer 重启/下次登录，此后永久正常。真实用户自旧版升级即此路径：迁移当次会话可能仍显示旧图标，重启资源管理器或下次登录即恢复。污染会话首启不计 Pass，亦不以干净会话结果宣称首启通过；发布签字仍待生产 P0 与其余验收项。

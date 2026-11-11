@@ -34,7 +34,7 @@
 
 ## 1. TC-INST-001 · GUI 安装走查 + 品牌 checklist（P0）
 
-双击 Setup，逐页核对。**品牌基准 = 官方浅色表（启动器同源）**，参照 wine 截图 [wizard-welcome.png](wizard-welcome.png) 等：
+双击 Setup，逐页核对。**品牌基准 = 官方浅色表（启动器同源）**，参照 wine 截图 [wizard-welcome.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-25/installer-branding/wizard-welcome.png) 等：
 
 | 页 | 检查点 |
 | --- | --- |
@@ -67,7 +67,7 @@
 
 | 检查点 | 期望 |
 | --- | --- |
-| 卸载欢迎页标题 | 3 行完整显示「Welcome to / Deepseek-Harness-Desktop / Uninstall」（本轮修复；wine 修后证据 [wizard-uninstall-welcome-3lines.png](wizard-uninstall-welcome-3lines.png)，修前裁字 [wizard-uninstall-welcome.png](wizard-uninstall-welcome.png)） |
+| 卸载欢迎页标题 | 3 行完整显示「Welcome to / Deepseek-Harness-Desktop / Uninstall」（本轮修复；wine 修后证据 [wizard-uninstall-welcome-3lines.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-25/installer-branding/wizard-uninstall-welcome-3lines.png)，修前裁字 [wizard-uninstall-welcome.png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-25/installer-branding/wizard-uninstall-welcome.png)） |
 | 卸载侧栏 | 同一浅色构图的**灰阶弱化**版（区分移除语境，不是安装页的彩色蓝线版） |
 | 卸载完成 | 快捷方式（桌面 + 开始菜单）移除；`%LOCALAPPDATA%\Programs\Deepseek-Harness-Desktop` 清掉；**`userData`（dsh-home、会话）不删** |
 

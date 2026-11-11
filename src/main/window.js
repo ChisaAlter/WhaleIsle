@@ -3,6 +3,7 @@ const {
   attachRendererConsoleTail, RendererConsoleTail, RendererMemorySamples, collectHangStack, rendererMemorySample,
   writeCrashReport, desktopErrorState,
 } = require('./crash-report');
+const { attachRecovery, UNRESPONSIVE } = require('./renderer-recovery');
 const { rendererFile, assetFile, preloadFile } = require('./paths');
 const { applyWindowsAppDetails } = require('./window-app-details');
 const { REMOTE_FEATURE_ENABLED } = require('./config');
@@ -92,8 +93,6 @@ async function writeRendererReport(why, contents, diagnostics = {}) {
   });
 }
 
-const RECOVERY_DETAIL_TAIL_LINES = 8;
-const UNRESPONSIVE = '界面无响应';
 // One hour of five-minute readings shows whether memory climbed before an OOM.
 const RENDERER_MEMORY_INTERVAL_MS = 5 * 60 * 1000;
 const hangStackSessions = new WeakSet();
@@ -113,16 +112,6 @@ function allowHangCallStacks(session) {
     },
   );
 }
-const RECOVERY_DETAIL_BUDGET = 1200;
-
-// The composition root injects its productized confirmDialog so the crash
-// recovery prompt renders in-window when the crashed window is still visible;
-// without it the native messagebox is the honest fallback.
-let recoveryConfirm = null;
-
-function setRecoveryConfirm(fn) {
-  recoveryConfirm = typeof fn === 'function' ? fn : null;
-}
 
 function attachRendererRecovery(contents, label) {
   if (!contents || contents.__dshdRecoveryAttached) {
@@ -139,66 +128,15 @@ function attachRendererRecovery(contents, label) {
   const memoryTimer = setInterval(sampleMemory, RENDERER_MEMORY_INTERVAL_MS);
   memoryTimer.unref?.();
   contents.once('destroyed', () => { clearInterval(memoryTimer); });
-  let recovering = false;
-  const recover = async (why) => {
-    if (recovering || contents.isDestroyed()) {
-      return;
-    }
-    recovering = true;
-    try {
-      const { dialog, app, BrowserWindow } = require('electron');
+  // Crash, hang and load failure recover without a dialog: reload, then a
+  // failure page inside the surface (renderer-recovery.js).
+  attachRecovery(contents, {
+    label,
+    report: async (why) => {
       sampleMemory();
       const stack = why === UNRESPONSIVE ? await collectHangStack(contents.mainFrame) : undefined;
-      const reportPath = await writeRendererReport(why, contents, { stack, memory: memory.snapshot() });
-      const reportLine = reportPath ? `\n诊断已写入 ${reportPath}` : '';
-      const tail = String(why).split(/\r\n|[\n\r\u2028\u2029]/u).slice(-RECOVERY_DETAIL_TAIL_LINES).join('\n');
-      const budget = RECOVERY_DETAIL_BUDGET - reportLine.length;
-      const shortened = tail.slice(-budget).replace(/^[\uDC00-\uDFFF]/u, '');
-      const options = {
-        type: 'error',
-        title: '界面异常',
-        message: `${label}界面发生异常`,
-        detail: `${shortened === why ? String(why) : `（已截断）\n${shortened}`}${reportLine}\n\n可重新加载界面；若反复出现请退出后从启动器重新启动。`,
-        buttons: ['重新加载', '退出应用'],
-        defaultId: 0,
-        cancelId: 0,
-        dangerIds: [1],
-        noLink: true,
-      };
-      // The harness surface is a WebContentsView (not a BrowserWindow-owned
-      // webContents), so map it back to the main window explicitly.
-      const owner = contents === (harnessView && harnessView.webContents)
-        ? mainWindow
-        : BrowserWindow.fromWebContents(contents);
-      const anchor = owner && !owner.isDestroyed() && owner.isVisible() ? owner : null;
-      const choice = await (recoveryConfirm
-        ? recoveryConfirm(anchor, options)
-        : dialog.showMessageBox(anchor || undefined, options)
-      ).catch(() => ({ response: 0 }));
-      if (choice.response === 0 && !contents.isDestroyed()) {
-        contents.reloadIgnoringCache();
-      } else if (choice.response === 1) {
-        app.quit();
-      }
-    } finally {
-      recovering = false;
-    }
-  };
-  contents.on('render-process-gone', (_event, details) => {
-    const reason = details && details.reason;
-    if (reason === 'clean-exit' || reason === 'killed') {
-      return;
-    }
-    void recover(reason || '渲染进程退出');
-  });
-  contents.on('did-fail-load', (_event, code, desc, _url, isMainFrame) => {
-    if (isMainFrame === false || code === -3) {
-      return;
-    }
-    void recover(`页面加载失败（${desc || code}）`);
-  });
-  contents.on('unresponsive', () => {
-    void recover(UNRESPONSIVE);
+      return writeRendererReport(why, contents, { stack, memory: memory.snapshot() });
+    },
   });
 }
 
@@ -1079,7 +1017,6 @@ function closeLauncherWindow() {
 module.exports = {
   setRenderHintsSource,
   createMainWindow,
-  setRecoveryConfirm,
   getMainWindow,
   getHarnessView,
   getHarnessWebContents,

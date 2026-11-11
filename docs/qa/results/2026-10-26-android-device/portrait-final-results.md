@@ -68,7 +68,7 @@
 
 手机消息110实际点击Send，之后host同Fork的最后turn为 `completed`，输出含 `PORTRAIT_FINAL_OK` 标题、二行数据的pipe表格、两项bullet、100字符代码、`$E = mc^2$` 及HTTPS链接；见[脱敏输出](evidence/physical-markdown-result.json)。这里仅保留完成原因、ID和输出文本，未复制runtime、skills或完整host上下文。
 
-lead实际滚到输出底部；[最终正文底部图121](evidence/newphone-121-final-markdown-bottom.png)仅保留H1至输入栏的裁切，去掉上方模型推理，原图留本地临时目录。此图显示以下结果，报告编写者已读图核对：
+lead实际滚到输出底部；[最终正文底部图121](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-26-android-device/evidence/newphone-121-final-markdown-bottom.png)仅保留H1至输入栏的裁切，去掉上方模型推理，原图留本地临时目录。此图显示以下结果，报告编写者已读图核对：
 
 | 内容 | 最终包实际显示 | 验收结论 |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ lead实际滚到输出底部；[最终正文底部图121](evidence/newphone-121-
 
 底部输出可滚到并阅读，不能据此称完整Markdown/数学/富内容与桌面一致。以上差距本轮如实保留，不追加产品修改或扩大验收范围。
 
-最终无效配对输入及docked键盘场景中，[图113](evidence/newphone-113-final-invalid-ime-initial.png)初始连接按钮下部裁切；[图114](evidence/newphone-114-final-invalid-ime-scrolled.png)滚动后连接按钮和页脚完整可见，证明本次滚动可达。输入值是 `invalid-final-portrait`；原生click被接受不等于下一帧错误反馈已重新出现，缺少对应最终图证的反馈不提升为全Pass。早期无效链接明确错误与本次最终包滚动可达分别记账。
+最终无效配对输入及docked键盘场景中，[图113](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-26-android-device/evidence/newphone-113-final-invalid-ime-initial.png)初始连接按钮下部裁切；[图114](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-26-android-device/evidence/newphone-114-final-invalid-ime-scrolled.png)滚动后连接按钮和页脚完整可见，证明本次滚动可达。输入值是 `invalid-final-portrait`；原生click被接受不等于下一帧错误反馈已重新出现，缺少对应最终图证的反馈不提升为全Pass。早期无效链接明确错误与本次最终包滚动可达分别记账。
 
 ## 恢复、证据与剩余范围
 

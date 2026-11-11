@@ -22,8 +22,8 @@ Prior FAIL: [../2026-08-28/dshbot-official-cli.md](../2026-08-28/dshbot-official
 | Publish preflight | **PASS** | `check-dshbot-publish.mjs dshbot-v0.2.0` |
 | Official install + list | **PASS** | [dshbot-fallback-install.log](dshbot-fallback-install.txt) |
 | Preset self-install | **PASS** | `.agent-presets/dshbot-room/{preset.yml,agent.cordis.yml}` after web boot |
-| Bots footer trigger visible | **PASS** (was B5 FAIL) | CDP: `data-dshbot-official-trigger` aria-label Bots; [sidebar png](dshbot-official-fallback-sidebar.png) |
-| Panel opens BotPage | **PASS** | empty state “No bots yet…”; [panel png](dshbot-official-fallback-panel.png) |
+| Bots footer trigger visible | **PASS** (was B5 FAIL) | CDP: `data-dshbot-official-trigger` aria-label Bots; [sidebar png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-29/dshbot-official-fallback-sidebar.png) |
+| Panel opens BotPage | **PASS** | empty state “No bots yet…”; [panel png](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-29/dshbot-official-fallback-panel.png) |
 | Desktop tab path | **PASS** (contract) | probe prefers region tabs when both specs exist; no dual footer when tabs present |
 
 ## Notes

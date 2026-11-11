@@ -11,9 +11,9 @@ OpenAI-compatible route (`llm-pi-ai.providers.ayase`) and default model
 | --- | --- | --- |
 | Provider reachable | PASS | `GET /v1/models` lists `grok-4.6`; chat completions ping OK |
 | Headless one-shot | PASS | reply `GROK_OK` ([dshbot-ayase-headless.txt](dshbot-ayase-headless.txt)) |
-| Create bots on official UI | PASS | Alpha + Beta with preview `grok-4.6` ([roster](dshbot-ayase-roster.png) / [json](dshbot-ayase-roster.json)) |
-| 1:1 live turn | PASS | Assistant returned exact `BOT_LIVE_OK` on Grok 4.6 (~11s) ([reply](dshbot-ayase-reply-final.png) / [json](dshbot-ayase-reply.json)) |
-| Group create | PASS | `RoomLive` with Alpha + Beta members ([group-created](dshbot-ayase-group-created.png)) |
+| Create bots on official UI | PASS | Alpha + Beta with preview `grok-4.6` ([roster](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-29/dshbot-ayase-roster.png) / [json](dshbot-ayase-roster.json)) |
+| 1:1 live turn | PASS | Assistant returned exact `BOT_LIVE_OK` on Grok 4.6 (~11s) ([reply](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-29/dshbot-ayase-reply-final.png) / [json](dshbot-ayase-reply.json)) |
+| Group create | PASS | `RoomLive` with Alpha + Beta members ([group-created](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-29/dshbot-ayase-group-created.png)) |
 | Group member rotation | PARTIAL | Room opens on blank “choose workspace” surface; automation did not finish a group turn in this pass (model path already proven on 1:1) |
 
 ## Notes

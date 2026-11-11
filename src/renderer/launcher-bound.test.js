@@ -95,10 +95,10 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.equal(r.starting.controls.filter(button => button.action === 'start').every(button => button.busy === 'true'), true);
   assert.equal(r.failedPhase.noticeVisible, false, 'failure phase waits for the operation outcome');
   assert.equal(r.failedPhase.notices.length, 0);
-  assert.equal(r.failed.notices.length, 1, 'failed phase and failed reply produce one result');
-  assert.equal(r.failed.noticeTitle, '鲸桥操作未完成');
-  assert.match(r.failed.noticeBody, /组件进程启动失败/);
-  assert.equal(r.failed.noticeRole, 'alert');
+  assert.equal(r.failed.notices.length, 0, 'a failed start raises no popup');
+  assert.equal(r.failed.noticeVisible, false);
+  assert.ok(r.failed.failureLines.length > 0, 'the failure stays on the component row');
+  assert.match(r.failed.failureLines[0], /^操作未完成：.*组件进程启动失败/);
   assert.equal(r.failed.modalVisible, false, 'failure result keeps confirmation free');
 
   for (const progress of [r.installing, r.downloading, r.verifying, r.updating]) {
@@ -135,9 +135,8 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.equal(r.installed.progressVisible, false);
   assert.equal(r.installed.modalVisible, false);
   assert.match(r.updating.loadingLabel, /正在下载组件 51%/);
-  assert.equal(r.updateFailed.noticeTitle, '鲸桥操作未完成');
-  assert.equal(r.updateFailed.notices.filter(notice => notice.body === 'fixture package refused').length, 1);
-  assert.equal(r.updateFailed.notices.length, 2, 'update has one result after the earlier failure');
+  assert.equal(r.updateFailed.notices.length, 0, 'a failed update raises no popup either');
+  assert.ok(r.updateFailed.failureLines.includes('操作未完成：fixture package refused'));
 
   assert.equal(r.persistentErrorInline, false, 'catalog error stays available without a raw inline message');
   assert.equal(r.statusDetails.noticeTitle, '鲸桥状态');
@@ -217,6 +216,16 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
     assert.equal(layout.rawErrorCount, 1, 'the home surface keeps raw error in diagnostics');
   }
   assert.ok(r.layouts[1].width < r.layouts[0].width, 'zoom changes actual viewport geometry');
+  assert.equal(r.degraded.stopHidden, false, 'a start that skipped a built-in is still running');
+  assert.match(r.degraded.status, /部分内置功能未加载，详见启动诊断/);
+  assert.equal(r.degraded.diagnosticsHidden, false);
+  assert.equal(r.degraded.diagnosticsOpen, false);
+  assert.deepEqual(r.degraded.errorToasts, [], 'a skipped built-in raises no popup');
+  assert.equal(r.degraded.modalHidden, true);
+  assert.doesNotMatch(r.degraded.homeVisibleText, /missing-source/, 'the reason stays in the folded diagnostics');
+  assert.match(r.degradedOpen.detail, /用量统计（missing-source:node_modules:zod）/);
+  assert.match(r.degradedOpen.detail, /其余功能照常/);
+  assert.equal(r.degradedOpen.recoveryListHidden, true, 'no user-plugin list for a built-in skip');
 });
 
 test('real Electron: delta update starts on click, waits for confirmed installation and only actual success refreshes', { skip: !hasElectron }, async () => {

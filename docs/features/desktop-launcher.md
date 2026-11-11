@@ -4,6 +4,7 @@
 | --- | --- |
 | **id** | `desktop-launcher` |
 | **status** | `active` |
+| **last verified (no failure popups)** | 2026-11-08 — 失败不再弹窗：渲染崩溃、无响应、加载失败不再弹「界面异常」确认，改为自动重载（2 分钟内最多 3 次，依次等 1、3、8 秒；无响应满 30 秒才重载），仍失败则在该界面内显示失败页（诊断路径 +「重新加载」）；启动器进程的致命错误只写日志与崩溃报告后退出，不再弹原生错误框；组件操作失败写在组件行、更新检查失败写在检查按钮下；启动失败后迟到的新版本只出现在首页更新卡，不再弹询问。`renderer-recovery`、`launcher-gate` 与 feedback / bound 真实 Electron 回归通过；崩溃恢复另用真实 Electron 探针验证（强制崩溃渲染进程四次：重载三次后显示失败页，点「重新加载」回到原页，原生对话框 0 次）。启动器进程的致命错误路径只有源码级断言，没有实机触发。 |
 | **last verified (audit update)** | 2026-09-30 — 更新/启动器 79 项、任务保护与渲染反馈定向回归通过；资产按平台和架构选择，DMG 手动安装反馈覆盖设置、版本卡和冷启动提示。未做 macOS 实机安装。 |
 | **last verified (installation recovery)** | 2026-09-29 — 下载断流/重试/取消、完整缓存校验、安装失败优先与同版本待确认回归通过；真实 Electron 明暗 × 两种宽度共 20 场景通过，源码重启与冒烟通过。未构建或验收新的 CI Setup。证据：[安装恢复 QA](../qa/results/2026-09-29-installation-recovery/README.md)。 |
 | **last verified (home state)** | 2026-09-29 — 可选导入不抢占冷启动；首页、门禁与恢复定向 95/95。隐藏 Electron 真实页面覆盖双击只调用一次、延迟/失败/异常/恢复启动/关闭，860×560 下 100%/200% 主操作可达。同批实机复测：`autoStartDesktop:false` 的真实启动器首页只有单一启动入口、诊断默认折叠，点击后进入锁定进行态并显示真实等待秒数。证据见 `docs/qa/results/2026-09-29-four-fix-live/` 与 `docs/qa/results/2026-09-29-boot-reveal/LOCAL-INSTALL.md`；未更新安装版首页，用户要求不操作其桌面。 |
@@ -35,13 +36,14 @@
 
 - 启动器对外显示 Whale Isle Launcher，桌面运行时显示 Whale Isle；两个 appId 与各自旧版 userData 路径保持稳定，启动器继续识别旧版 Deepseek-Harness-Desktop 的注册表与可执行文件。
 
-- 更新确认必须使用确认框展示的 release 快照；冷启动确认路径下载该快照的完整 Setup，不再二次读取 latest 或使用可移动目标的 `latest.yml`。窗口代际失效导致的放弃重新停放结果；自动启动失败后可见启动器消费迟到的新版本提示。
+- 更新确认必须使用确认框展示的 release 快照；冷启动确认路径下载该快照的完整 Setup，不再二次读取 latest 或使用可移动目标的 `latest.yml`。窗口代际失效导致的放弃重新停放结果；自动启动失败后迟到的新版本只出现在首页更新卡，不再弹询问。
 - 同一主进程同一时刻最多一个导入任务；第二个 `shell:run-import` 返回 `import-in-progress`，不能覆盖取消目标或 journal。空选择不写 `import-journal.json`。
 - **更新检查不阻塞自动启动（2026-09-22）**：`runColdStartGate` 不再在本地启动判定前 `await checkUpdate()`。`autoStartDesktop` 为真且无本地 hold 时先 `startDesktop()`；迟到结果只 `parkUpdateCheck` + `shell:launcher-hint`，**不**自动打开启动器、**不**触发第二次启动。`autoStartDesktop === false`、导入 hold、上次失败三条路径照旧停在启动器，结果仍走同一 `presentUpdateAsk` 在可见启动器内呈现。`checkUpdate` 进程内 single-flight，显式刷新不被短期结果挡住。gate → `startDesktop` 的 P95 增量目标 ≤100 ms（相对 0 延迟组）。
 - 会话缓存 `session_projcache` 的 schema 错误单独归因，不标记用户插件可疑；Recovery Board 的缓存诊断优先于 sticky skip，不建议清空原始会话。Loader 的 `failed to apply loader entry … (包名)` 纳入插件证据，排除 `cordis:include` 包装层。
 
 - 端口预检「无监听者 ≠ 可用」：Windows 动态保留 TCP 端口段（Hyper-V/WinNAT；段内无监听者，connect 探测不可见，bind 即 EACCES）。`resolveLaunchTarget → ensureOwnedPort` 在 connect 探测后必须再过 `canBindPort` 绑定试探；保留/无权端口与被占端口同样改跳相邻可绑定端口（`findFreePort` 逐端口双探测：未占用且可绑定）。启动日志含 `listen EACCES` 归因 `port-excluded`（区别于 `port-in-use`），不列插件嫌疑，Recovery Board verdict 与 session-cache/内置组件损坏同级压过 sticky-skip 横幅——跳过或禁用插件都修不了端口保留。
 
+- **失败不弹窗（2026-11-08）**：渲染崩溃/无响应/加载失败（`src/main/renderer-recovery.js`）、启动器进程致命错误（`src/main-launcher/index.js`）、组件操作与列表读取失败、更新检查失败都不再用对话框或浮层回应。渲染面先自动重载，失败页在该界面内显示；启动器致命错误只写 `main.log` 与 `logs/crash` 报告；组件失败写在组件行（`data-comp-failure`），更新检查失败写在检查按钮下（`data-update-fail`）。用户点击按钮得到的动作结果（成功提示、需要确认的操作）不在此列。
 - 同一 Electron 进程、同一安装包；不是第二套 exe。
 - 启动器走官方 `--dsw-alias-*`；`--boot-*` 不得用在启动器页。
 - 启动器浅色/深色跟官方 dsh web 表（`data-ds-dark-theme`），不把 Appearance 壁纸种子写进 token。
@@ -74,7 +76,7 @@
 - skip 只能救用户层（profile patch / manifest bundles）；模板 bundle 挂载的内置组件包（`DESKTOP_PACKAGES`）缺失属运行时损坏，`buildLaunch` 启动前探测并报可操作错误（源码运行 → `npm run setup:harness`；安装包 → 重装），不进入无效 skip 循环。探测覆盖「包不可解析」与「manifest 在但声明入口未构建」两种（与打包门禁共用 `missingDeclaredEntries` 判定）。
 - skip compose 语义由打包门禁背书：after-pack 对打进 dist 的真实 CLI 跑 `dump-config` skip/full 双轮（`scripts/check-skip-compose-contract.js`，临时 DSH_HOME + 用户层 canary + 预埋受管块回放迁移）——skip 轮 canary 必须消失且 install / usage / dsh-im / market 四个桌面行仍挂载，full 轮 canary 必须回来并按 install → usage → session-search → dsh-im → market 顺序组合；session-search 只允许 full 轮出现。每个 always-on 桌面行必须各**恰好一次**（>1 = 受管块残留与 overlay 双挂载），迁移后 `cordis.patch.yml` 不得再含受管记号（install + dsh-im 两代块都回放）且 canary 用户行必须保留；任一违反即打包失败。单测层不能替代此门禁（单测 mock 了 dsh.start）。
 - 启动器自有旗标（`--skip-user-plugins`、`--patch`）必须位于 CLI 语法前缀（首个未知 token 之前），否则被 CLI 当 app args 吞掉——桌面以为跳过、实际满载。`dsh.test.js` 从 vendored `args.ts` 的 web 子命令提取旗标集做语法行走断言，vendor 同步改语法会即刻红。
-- Recovery Board 在 sticky skip、`lastStart.ok===false`、desktop error、genericCause、pluginTreeFailure 或存在 suspects 时于首页提供默认折叠的「启动诊断」；启动/关闭进行中隐藏旧诊断，完整错误只在此处展示一次。首页只有一个启动/关闭主操作，失败时复用为重试；启停与两种插件恢复共享忙碌态，展示真实等待时间而非伪造进度。
+- Recovery Board 在 sticky skip、`lastStart.ok===false`、desktop error、genericCause、pluginTreeFailure 或存在 suspects 时于首页提供默认折叠的「启动诊断」；启动/关闭进行中隐藏旧诊断，完整错误只在此处展示一次。可选内置功能（用量统计、dsh-im、市场、Office、鲸鱼娘助理、远程工作区、dsh-pad）准备失败不阻止启动：该功能本次不挂载，`last-desktop-start.json` 的 `skipped` 记下名称和原因，桌面运行时首页状态行提示「部分内置功能未加载」，「启动诊断」逐项列出，不弹窗、不显示用户插件名单；任务保护失败仍使启动失败。首页只有一个启动/关闭主操作，失败时复用为重试；启停与两种插件恢复共享忙碌态，展示真实等待时间而非伪造进度。
 - 每个 `shell:*` IPC 都必须有 main 侧授权，「preload 没暴露该方法」不构成边界：中央 `registerIpc` 的 `handle` 对每条注册强制 `assertIpcSender(roles)`；不在 wrapper 内的注册点（`chrome.js` 的 `shell:window` / `shell:window-state` / `shell:chrome-metrics`、`pty.js` 四个 `shell:pty-*`、`preview.js` 的 `shell:preview-*`、`preview-file-window.js` 的 `shell:file-preview-state`）必须各自校验。`ipcSenderRole` 对已销毁 sender、非顶层 frame、缺 URL、URL 不属于该 role 的 sender 一律返回 `null`。原生浮窗（桌面宠物 / Live2D）走各自独立门禁，不在中央表内。
 - Recovery Board 诚实化：suspect 命中 `DESKTOP_PACKAGES`、dsh-im 别名（`@xmanrui/dsh-im` / `dsh-im` / `xmanrui-dsh-im`）或 install overlay 路径记号（`desktop-plugins/install-dsh-plugin`）（精确名或子路径 specifier）**且不在 profile 插件清单** → 行标 `inBox`（badge「内置组件」）、payload `desktopRuntimeDamage: true`；verdict 换成「内置组件损坏：禁用/跳过均无效，重装安装包或 `npm run setup:harness`」，并压过 sticky skip 文案（skip 修不了运行时损坏）。inBox 行不进批量禁用集合。同名用户插件**在** profile 清单时仍是普通可禁用 suspect。
 - `shell:stop-desktop`（启动器专用）取消 harness 自动恢复与在途 restart/start、停止 dsh 内核、清理 PTY/预览并销毁主窗；托盘在内核未运行时打开启动器；不退出 Electron 进程、不关启动器。

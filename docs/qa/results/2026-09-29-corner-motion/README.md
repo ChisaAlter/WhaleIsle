@@ -14,7 +14,7 @@
 | 主窗口 + 启动器逐帧录制 | 最终 8 组截图由真实 preload/授权 IPC 触发最大化、还原、最小化；恢复走任务栏等价路径。早期直接调用 ShowWindow 的录制不足以认证按钮路径，已替换 |
 | `npm run pack:launcher` | 成功生成 `dist-launcher/win-unpacked` |
 | `packaged-probe.cjs` | Koffi 与 win32 平台模块均从生成的 ASAR 解析，原生桥成功作用于真实窗口，未回退到源码依赖 |
-| 重启后的实际 Harness | 150% DPI、现有深色主题；20px + 缘线 → 最大化 0px/隐藏缘线 → 还原 20px + 缘线。见 [状态](harness-check.json)、[页面角部](harness-corner.png)、[桌面完整外框](harness-desktop-final.png)、[四角](harness-four-corners-final.png) |
+| 重启后的实际 Harness | 150% DPI、现有深色主题；20px + 缘线 → 最大化 0px/隐藏缘线 → 还原 20px + 缘线。见 [状态](harness-check.json)、[页面角部](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/harness-corner.png)、[桌面完整外框](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/harness-desktop-final.png)、[四角](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/harness-four-corners-final.png) |
 | 治理与文档 | `check:governance` 6/6、`doc-sync` 7/7 通过；命令结果摘录见 [validation.txt](validation.txt) |
 
 独立工厂夹具不启动 Harness，启动页可能显示缺失状态处理器的错误文案，日志也会报告未注册的非窗控 IPC；这里只验窗口外观和窗控，不能据此认证完整产品启动流。临时 profile 与洋红色背景仅用于验收，不修改用户配置。系统动画偏好未修改。
@@ -23,8 +23,8 @@
 
 | 窗口 | 最大化 | 还原 | 最小化 | 从最小化恢复 |
 | --- | --- | --- | --- | --- |
-| 主窗口 / boot | [截图](main-maximize.png) | [截图](main-unmaximize.png) | [截图](main-minimize.png) | [截图](main-restore.png) |
-| 启动器 | [截图](launcher-maximize.png) | [截图](launcher-unmaximize.png) | [截图](launcher-minimize.png) | [截图](launcher-restore.png) |
+| 主窗口 / boot | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/main-maximize.png) | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/main-unmaximize.png) | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/main-minimize.png) | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/main-restore.png) |
+| 启动器 | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/launcher-maximize.png) | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/launcher-unmaximize.png) | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/launcher-minimize.png) | [截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-corner-motion/launcher-restore.png) |
 
 `production-record.cjs` 使用真实工厂、本地页面和 `capture.ps1`。每组 24 帧，按显示器工作区截图并标注经过时间；捕获本身耗时约 60ms，图中可见约 100–230ms 的中间尺寸。捕获脚本通过 ready 文件通知 Node，然后调用实际 preload/授权 IPC；恢复由 BrowserWindow.restore 触发。
 
