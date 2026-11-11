@@ -561,7 +561,7 @@ async function startDesktopFromLauncher(options = {}) {
     const stickyAfter = typeof harness.shouldSkipUserPlugins === 'function'
       ? harness.shouldSkipUserPlugins()
       : false;
-    writeLastDesktopStart(app.getPath('userData'), { ok: true });
+    writeLastDesktopStart(app.getPath('userData'), { ok: true, skipped: harness.skippedBuiltins });
     sendToLauncher('shell:desktop-ready', harness.snapshot());
     if (shouldCloseLauncherAfterDesktopStart({
       desktopReady: true,
@@ -981,7 +981,8 @@ function restartWithCleanup(delegatedToken, { preConfirmed = false, ...options }
       preConfirmed,
       commit: async () => {
         await cleanupDesktopResources();
-        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options), () => kernelLogTail(dsh));
+        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options),
+          () => kernelLogTail(dsh), () => harness.skippedBuiltins);
       },
     }).then((result) => (result.proceeded ? undefined : result))
       .finally(releaseAcquired);

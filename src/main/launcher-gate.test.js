@@ -133,6 +133,27 @@ test('recordLastDesktopStart writes ok:true on success and ok:false plus rethrow
   }
 });
 
+test('a successful start records the optional built-ins it skipped; the next start replaces them', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-skipped-start-'));
+  try {
+    assert.deepEqual(readLastDesktopStart(dir).skipped, []);
+    const skipped = [{ label: '用量统计', error: 'missing-zod' }];
+    await recordLastDesktopStart(dir, async () => 'started', () => [], () => skipped);
+    assert.deepEqual(readLastDesktopStart(dir), {
+      ok: true, at: readLastDesktopStart(dir).at, error: '', logTail: [], skipped,
+    });
+    writeLastDesktopStart(dir, { ok: true, skipped: [{ label: '插件市场', error: 'x'.repeat(500) }, { label: '' }, null] });
+    const last = readLastDesktopStart(dir);
+    assert.equal(last.skipped.length, 1);
+    assert.equal(last.skipped[0].label, '插件市场');
+    assert.equal(last.skipped[0].error.length, 240);
+    writeLastDesktopStart(dir, { ok: true });
+    assert.deepEqual(readLastDesktopStart(dir).skipped, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function gateDeps(overrides = {}) {
   const calls = { openLauncher: 0, startDesktop: 0, sent: [] };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cold-gate-'));

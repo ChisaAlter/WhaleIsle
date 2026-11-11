@@ -211,6 +211,7 @@ function registerIpc({
         // restartWithCleanup), not refused as a foreign caller.
         () => (harness ? harness.retryFullPlugins() : startHarness(acquired)),
         () => kernelLogTail(dsh),
+        () => harness?.skippedBuiltins || [],
       );
     } finally {
       importGuard.releaseMaintenance(acquired);
