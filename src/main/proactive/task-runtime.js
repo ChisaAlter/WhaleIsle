@@ -89,6 +89,11 @@ class TaskRuntime {
     this.tasks = new Map();
     this.inbox = new Map();
     this.outbox = new Map();
+    // Durable source projections are rebuilt from task.created and
+    // source.synced events on every restart. A source item can therefore be
+    // discovered repeatedly without creating another Inbox task.
+    this.sourceItems = new Map();
+    this.sourceState = new Map();
     for (const event of this.events) this.#apply(event);
   }
 
@@ -100,24 +105,88 @@ class TaskRuntime {
       const existing = [...this.tasks.values()].find(task => task.idempotencyKey === idempotencyKey);
       if (existing) return clone(existing);
     }
+    const source = String(input.source ?? 'manual');
+    const sourceItemId = input.sourceItemId === undefined || input.sourceItemId === null
+      ? null : String(input.sourceItemId);
+    if (sourceItemId) {
+      const existingTaskId = this.sourceItems.get(this.#sourceKey(source, sourceItemId));
+      if (existingTaskId && this.tasks.has(existingTaskId)) return clone(this.tasks.get(existingTaskId));
+    }
     const task = {
       id: input.id ?? this.idFactory(),
       title: String(input.title ?? 'Untitled task'),
       description: String(input.description ?? ''),
       autonomy,
       state: 'discovered',
-      source: input.source ?? 'manual',
+      source,
       createdAt: this.now(),
       updatedAt: this.now(),
       approvalId: null,
       idempotencyKey,
     };
+    if (sourceItemId) task.sourceItemId = sourceItemId;
+    if (input.sourceUrl !== undefined) task.sourceUrl = input.sourceUrl;
+    if (input.kind !== undefined) task.kind = input.kind;
+    if (Array.isArray(input.labels)) task.labels = [...input.labels];
+    if (input.updatedAt !== undefined) task.sourceUpdatedAt = input.updatedAt;
     this.#emit({ type: 'task.created', task });
     this.#emit({ type: 'inbox.upserted', item: {
       id: task.id, taskId: task.id, title: task.title, source: task.source,
       autonomy: task.autonomy, state: task.state, createdAt: task.createdAt,
+      ...(task.sourceItemId ? { sourceItemId: task.sourceItemId } : {}),
+      ...(task.sourceUrl !== undefined ? { sourceUrl: task.sourceUrl } : {}),
+      ...(task.kind !== undefined ? { kind: task.kind } : {}),
+      ...(task.labels ? { labels: [...task.labels] } : {}),
+      ...(task.sourceUpdatedAt !== undefined ? { updatedAt: task.sourceUpdatedAt } : {}),
     } });
     return clone(task);
+  }
+
+  /**
+   * Project read-only source candidates into Inbox. The source item key is
+   * scoped by source so two providers may legitimately use the same ID.
+   */
+  ingestSourceItems(items, { source = 'unknown', autonomy = 1, cursor = null } = {}) {
+    if (!Array.isArray(items)) throw new TypeError('source items must be an array');
+    const normalizedSource = String(source || 'unknown');
+    const created = [];
+    let duplicates = 0;
+    for (const item of items) {
+      if (!item || typeof item !== 'object') throw new TypeError('source item must be an object');
+      const sourceItemId = item.sourceItemId ?? item.id;
+      if (sourceItemId === undefined || sourceItemId === null || String(sourceItemId) === '') {
+        throw new TypeError('source item needs an id');
+      }
+      const key = this.#sourceKey(normalizedSource, sourceItemId);
+      if (this.sourceItems.has(key)) {
+        duplicates += 1;
+        continue;
+      }
+      const task = this.createTask({
+        ...item,
+        source: normalizedSource,
+        sourceItemId,
+        autonomy,
+        idempotencyKey: item.idempotencyKey ?? `${normalizedSource}:${String(sourceItemId)}`,
+      });
+      created.push(task);
+    }
+    const sync = {
+      type: 'source.synced',
+      source: normalizedSource,
+      cursor: cursor === null || cursor === undefined ? null : String(cursor),
+      discovered: items.length,
+      created: created.length,
+      duplicates,
+    };
+    this.#emit(sync);
+    return {
+      source: normalizedSource,
+      cursor: sync.cursor,
+      discovered: items.length,
+      duplicates,
+      created: clone(created),
+    };
   }
 
   transition(taskId, state, { actor = 'system', reason = '', idempotencyKey = null, evidence = [] } = {}) {
@@ -176,6 +245,9 @@ class TaskRuntime {
   getTask(taskId) { return clone(this.#task(taskId)); }
   listInbox() { return clone([...this.inbox.values()]); }
   listOutbox() { return clone([...this.outbox.values()]); }
+  listSourceState() {
+    return clone(Object.fromEntries([...this.sourceState.entries()].map(([source, state]) => [source, state])));
+  }
   listEvents() { return clone(this.events); }
 
   /**
@@ -205,6 +277,10 @@ class TaskRuntime {
     return task;
   }
 
+  #sourceKey(source, sourceItemId) {
+    return `${String(source)}:${String(sourceItemId)}`;
+  }
+
   #emit(event) {
     const enriched = { ...event, eventId: this.idFactory(), at: this.now(), sequence: this.events.length + 1 };
     this.store.append(enriched);
@@ -213,7 +289,12 @@ class TaskRuntime {
   }
 
   #apply(event) {
-    if (event.type === 'task.created') this.tasks.set(event.task.id, clone(event.task));
+    if (event.type === 'task.created') {
+      this.tasks.set(event.task.id, clone(event.task));
+      if (event.task.sourceItemId) {
+        this.sourceItems.set(this.#sourceKey(event.task.source, event.task.sourceItemId), event.task.id);
+      }
+    }
     if (event.type === 'task.transitioned') {
       const task = this.tasks.get(event.taskId);
       if (task) Object.assign(task, { state: event.state, updatedAt: event.at, lastReason: event.reason, lastEvidence: clone(event.evidence) });
@@ -229,6 +310,13 @@ class TaskRuntime {
       const item = this.outbox.get(event.approvalId);
       if (item) item.decision = event.decision;
     }
+    if (event.type === 'source.synced') this.sourceState.set(event.source, {
+      cursor: event.cursor,
+      at: event.at,
+      discovered: event.discovered,
+      created: event.created,
+      duplicates: event.duplicates,
+    });
   }
 
   #executionTrace() {

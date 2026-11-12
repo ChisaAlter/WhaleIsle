@@ -18,8 +18,10 @@ const { ensureDshImPlugin } = require('./dsh-im-desktop');
 const { ensureDesktopDshProject, projectAvailable } = require('./dsh-project-desktop');
 const { createProjectEnvironment } = require('./project-environment');
 const { createProactiveService } = require('./proactive/service');
+const { createGitHubApiSource } = require('./proactive/github-source');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
+const { ensureDesktopAcpAgents } = require('./dsh-acp-agents-desktop');
 const { fetchPlatformSession } = require('./platform-session');
 const { DesktopPlatformView, PLATFORM_IPC, platformBounds } = require('./platform-view');
 const { createTaskProtection, installTaskProtection, getTaskProtection } = require('./task-protection');
@@ -694,6 +696,7 @@ const harness = new HarnessController({
   projectAvailable,
   ensureTaskControlPlugin: ensureDesktopTaskControl,
   ensureDesktopPlatformSession,
+  ensureDesktopAcpAgents,
   ensureDshWhalePlugin: ensureDesktopDshWhale,
   ensureDshRemotePlugin: ensureDesktopDshRemote,
   ensureDshPadPlugin: ensureDesktopDshPad,
@@ -844,7 +847,13 @@ async function confirmTaskStop(operation, inspection) {
 }
 
 const projectEnvironment = createProjectEnvironment({ getGithubToken: () => loadConfig().githubToken });
-const proactiveService = createProactiveService({ userDataPath: app.getPath('userData') });
+const proactiveService = createProactiveService({
+  userDataPath: app.getPath('userData'),
+  githubSource: createGitHubApiSource({
+    repository: process.env.WHALEISLE_GITHUB_REPOSITORY || 'ChisaAlter/WhaleIsle',
+    tokenProvider: () => loadConfig().githubToken,
+  }),
+});
 const taskProtection = createTaskProtection({
   getBaseUrl: () => (typeof dsh.baseUrl === 'string' ? dsh.baseUrl : ''),
   hostRunning: () => isDesktopKernelRunning() && dsh.webReady === true && Boolean(dsh.baseUrl),

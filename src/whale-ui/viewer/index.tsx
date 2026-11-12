@@ -10,7 +10,7 @@ import { createWhaleLibrary } from '../library.ts';
 import { compileDocument, genuiComponents } from '../runtime/genui-adapter.tsx';
 import { RenderDiagnosticsContext } from '../runtime/render-diagnostics.ts';
 import { createPersistentStore, documentState, restoreDocumentState } from '../runtime/state.ts';
-import { setGenuiAssetLoader, setGenuiBundleLoader, setGenuiDownloadHandler, setGenuiLocale } from '../genui/embed.ts';
+import { setGenuiAssetLoader, setGenuiBundleLoader, setGenuiDownloadHandler, setGenuiLocale, setGenuiMapConfig } from '../genui/embed.ts';
 import { createHostBridge } from './bridge.ts';
 import { applyTheme } from './theme.ts';
 import type { HostMessage, Diagnostic } from './protocol.ts';
@@ -18,6 +18,22 @@ import type { HostMessage, Diagnostic } from './protocol.ts';
 declare const __WHALE_MAP_WORKER_SOURCE__: string;
 declare global { var __WHALE_OPENUI_MAP_WORKER_URL__: string | undefined; }
 globalThis.__WHALE_OPENUI_MAP_WORKER_URL__ = `data:text/javascript;charset=utf-8,${encodeURIComponent(__WHALE_MAP_WORKER_SOURCE__)}`;
+// Trusted host basemap for the genui `map` node — never model JSON. Raster
+// tiles match the standalone map component's Carto basemap.
+setGenuiMapConfig({
+  style: {
+    version: 8,
+    sources: {
+      carto: {
+        type: 'raster',
+        tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors © CARTO',
+      },
+    },
+    layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
+  },
+});
 const library = createWhaleLibrary(genuiComponents);
 type RenderMessage = Extract<HostMessage, { type: 'render' }>;
 

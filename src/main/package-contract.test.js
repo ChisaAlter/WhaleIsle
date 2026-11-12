@@ -90,7 +90,7 @@ test('manifest keeps the packaging contract after-pack depends on', () => {
 
 test('rounded-window motion bridge is a production dependency unpacked in both packages', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
-  assert.equal(pkg.dependencies.koffi, '3.3.2');
+  assert.equal(pkg.dependencies.koffi, '3.3.3');
   assert.equal(lock.packages[''].dependencies.koffi, pkg.dependencies.koffi);
   assert.notEqual(lock.packages['node_modules/koffi'].dev, true);
   assert.ok(lock.packages['node_modules/@koromix/koffi-win32-x64']);

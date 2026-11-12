@@ -18,6 +18,7 @@ import { PlotBlock } from '../PlotBlock.tsx'
 import { renderNode } from './render-node.tsx'
 import { codeBlockLabels, diffBlockLabels, jsonTreeLabels } from '../primitive-labels.ts'
 import { useT } from '../i18n/index.ts'
+import { CopyPreviewContext } from '../copy-preview-state.ts'
 import type { AnswersState, GenuiBlockProps } from './state.ts'
 import type {
   GenuiAccordion, GenuiBreadcrumb, GenuiCallout, GenuiCode, GenuiCopy, GenuiDiff, GenuiFileTree, GenuiFileTreeNode,
@@ -258,13 +259,26 @@ async function writeCopyText(text: string): Promise<boolean> {
   /* oxlint-enable typescript/no-deprecated */
 }
 
-/** Copy: a one-click copy chip. The live region is a visually-hidden SIBLING
+/** Keep the first N logical preview lines without normalizing line endings. */
+function firstCopyLines(text: string, lines: number): string {
+  let remaining = lines
+  for (const match of text.matchAll(/\r\n|\r|\n/g)) {
+    if (--remaining === 0) return text.slice(0, match.index)
+  }
+  return text
+}
+
+/** Copy: a one-click copy chip, with an opt-in plain-text preview. The live region is a visually-hidden SIBLING
  * (not inside the button) — button content is atomic to screen readers, so a
  * live region inside it would never announce. */
-export const CopyNode = memo(function CopyNode({ node }: { node: GenuiCopy }) {
+export const CopyNode = memo(function CopyNode({ node, path }: { node: GenuiCopy; path?: string }) {
   const t = useT()
   const [copied, setCopied] = useState(false)
-  return (
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const previewState = useContext(CopyPreviewContext)
+  const expanded = path === undefined || previewState === undefined ? localExpanded : previewState.expanded.has(path)
+  const previewId = useId()
+  const chip = (
     <>
       <button
         type="button"
@@ -282,6 +296,35 @@ export const CopyNode = memo(function CopyNode({ node }: { node: GenuiCopy }) {
       </button>
       <span className={css.visuallyHidden} role="status">{copied ? t('label.copiedToClipboard') : ''}</span>
     </>
+  )
+  // Keep legacy markup and clipboard behavior identical unless explicitly enabled.
+  if (node.expandable !== true) return chip
+  const lines = Math.max(0, Math.min(GENUI_LIMITS.maxCopyPreviewLines, Math.trunc(node.previewLines ?? 0)))
+  const bounded = Array.from(node.text).slice(0, GENUI_LIMITS.maxCopyPreview).join('')
+  const preview = expanded ? bounded : lines > 0 ? firstCopyLines(bounded, lines) : ''
+  const visible = expanded || lines > 0
+  return (
+    <div className={css.copyExpandable}>
+      <div className={css.copyControls}>
+        {chip}
+        <button
+          type="button"
+          className={css.copyChip}
+          aria-expanded={expanded}
+          aria-controls={previewId}
+          onClick={() => {
+            if (path === undefined || previewState === undefined) setLocalExpanded(value => !value)
+            else previewState.toggle(path)
+          }}
+        >
+          {expanded ? t('label.copyHideText') : t('label.copyViewText')}
+        </button>
+      </div>
+      <pre id={previewId} className={css.copyPreview} hidden={!visible} tabIndex={0}>{preview}</pre>
+      {visible && preview.length < node.text.length && (
+        <div className={css.copyPreviewHint}>{t('label.copyPreviewTruncated')}</div>
+      )}
+    </div>
   )
 })
 
@@ -332,7 +375,7 @@ export const MermaidNode = memo(function MermaidNode({ node }: { node: GenuiMerm
       for (const entry of entries) {
         visible = entry.isIntersecting
         if (!visible && !finished) { controller?.abort(); controller = undefined }
-        if (visible) start()
+        if (visible) { onTheme(); start() }
       }
     }, { rootMargin: `${window.innerHeight}px 0px` })
     if (ref.current !== null) observer?.observe(ref.current)
@@ -349,11 +392,13 @@ export const MermaidNode = memo(function MermaidNode({ node }: { node: GenuiMerm
           String(window.matchMedia?.('(prefers-color-scheme: dark)').matches))
         .join('\n')
     }
-    let previousTheme = themeKey()
+    let previousTheme: string | undefined
     const onTheme = (): void => {
+      if (!alive || !visible) return
       const nextTheme = themeKey()
-      if (!alive || previousTheme === nextTheme) return
+      const changed = previousTheme !== undefined && previousTheme !== nextTheme
       previousTheme = nextTheme
+      if (!changed) return
       controller?.abort()
       controller = undefined
       finished = false
@@ -378,6 +423,7 @@ export const MermaidNode = memo(function MermaidNode({ node }: { node: GenuiMerm
     document.head.addEventListener('load', onTheme, true)
     const scheme = window.matchMedia?.('(prefers-color-scheme: dark)')
     scheme?.addEventListener('change', onTheme)
+    onTheme()
     start()
     return () => {
       alive = false

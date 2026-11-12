@@ -61,7 +61,7 @@
     "electron": "^44.9.1",
     "electron-builder": "^26.17.0",
     "esbuild": "0.28.2",
-    "pnpm": "12.10.0",
+    "pnpm": "12.12.1",
     "semver": "^7.8.5"
   },
   "overrides": {
@@ -124,7 +124,8 @@
           "dsh-platform-session/**",
           "dsh-whale/**",
           "dsh-remote/**",
-          "dsh-pad/**"
+          "dsh-pad/**",
+          "dsh-acp-agents/**"
         ]
       },
       {
@@ -224,7 +225,7 @@
   },
   "dependencies": {
     "electron-updater": "6.8.10",
-    "koffi": "3.3.2",
+    "koffi": "3.3.3",
     "ws": "8.22.0"
   }
 }

@@ -1,5 +1,5 @@
 /** Engines are host-supplied standalone IIFEs. No plugin or boot-graph lookup. */
-export type GenuiAssetName = 'mermaid' | 'three' | 'echarts-core' | 'echarts-full' | 'icons'
+export type GenuiAssetName = 'mermaid' | 'three' | 'echarts-core' | 'echarts-full' | 'icons' | 'maplibre'
 export type GenuiAssetResolver = (filename: string) => string
 let assetBase: string | undefined
 let resolver: GenuiAssetResolver | undefined

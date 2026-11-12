@@ -30,7 +30,7 @@
 - `pack --dir`、macOS 与旧 tar 布局仍保留启动提取。该路径使用同卷临时树，验证后替换；Windows junction 在正式路径重新构造成功后才写戳。旧运行时通过 `.previous` 保留至切换完成，启动时先恢复中断替换，再清理遗留临时树；空间不足或归档损坏不提前删除旧树。启动时批量链接校验/修复/清理使用异步文件 I/O，仍逐次验证路径边界；准备阶段可取消，正式目录切换须完成重建或回滚。
 - `afterPack` 对完成的 tar 异步流式计算 SHA-256，随包写 version 1 `vendor/deepseek-harness-runtime.json`（`archiveBytes` + `archiveSha256`）。Windows 安装阶段核验实际归档；启动提取路径的复用戳必须匹配内容摘要，缺摘要的旧戳刷新一次。同版本、同 upstream pin、同 tar 长度也不得复用不同内容。该路径稳态仅读小摘要清单，替换前流式核验实际归档；无清单的旧布局通过流式摘要兼容。摘要无效或核验失败不替换旧树。
 
-- 窗口圆角/动画桥 `koffi@3.3.2` 是生产依赖，锁文件保留平台闭包；桌面包与 slim 启动器解包 Koffi 及其 `@koromix` 原生模块，Windows 不得缺桥静默改为不透明窗口。见 [window-motion](window-motion.md)。
+- 窗口圆角/动画桥 `koffi@3.3.3` 是生产依赖，锁文件保留平台闭包；桌面包与 slim 启动器解包 Koffi 及其 `@koromix` 原生模块，Windows 不得缺桥静默改为不透明窗口。见 [window-motion](window-motion.md)。
 
 - 桌面构建 Node 由根 `.nvmrc` 指定，当前选用 Node 24.21.0 LTS。Windows 随包 Harness 与 Office 共用 primary-runtime 锁定的独立 Node，位于 `resources/runtime/primary-runtime/dependencies/node/bin/node.exe`；其它目标仍单独复制构建时 Node。Electron 内置 Node 不作为该共享解释器。跨主版本后按影响重新执行构建、桌面测试和打包启动验证。
 

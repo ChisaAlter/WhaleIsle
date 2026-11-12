@@ -52,6 +52,8 @@ class HarnessController extends EventEmitter {
       || (async () => ({ ok: true, added: false }));
     this.ensureDesktopPlatformSession = options.ensureDesktopPlatformSession
       || (async () => ({ ok: true, added: false }));
+    this.ensureDesktopAcpAgents = options.ensureDesktopAcpAgents
+      || (async () => ({ ok: true, added: false }));
     this.removeDshMarketPreset = options.removeDshMarketPreset
       || (async () => ({ ok: true, changed: false }));
     this.ensureUsagePanelPlugin = options.ensureUsagePanelPlugin
@@ -648,6 +650,24 @@ class HarnessController extends EventEmitter {
         checkCurrent();
         if (isCancellation(error)) throw error;
         this.dsh.log(`平台文档会话路由未接入：${errorMessage(error)}`, 'app');
+      }
+      try {
+        const acpAgents = typeof this.ensureDesktopAcpAgents === 'function'
+          ? await this.ensureDesktopAcpAgents()
+          : null;
+        checkCurrent();
+        if (acpAgents?.overlayFile) {
+          patchFiles.push(acpAgents.overlayFile);
+        }
+        if (acpAgents && acpAgents.ok === false) {
+          this.dsh.log(`外部 ACP 智能体插件未接入：${acpAgents.error || 'unknown'}`, 'app');
+        } else if (acpAgents && acpAgents.ok) {
+          this.dsh.log(acpAgents.added ? '已接入外部 ACP 智能体插件' : '外部 ACP 智能体插件已就绪', 'app');
+        }
+      } catch (error) {
+        checkCurrent();
+        if (isCancellation(error)) throw error;
+        this.dsh.log(`外部 ACP 智能体插件未接入：${errorMessage(error)}`, 'app');
       }
     } catch (error) {
       checkCurrent();

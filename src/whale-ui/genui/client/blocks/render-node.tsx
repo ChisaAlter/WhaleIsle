@@ -28,8 +28,11 @@ import {
 } from './advanced.tsx'
 import { DiagramNode } from './diagram/index.tsx'
 import { ImageNode } from './image.tsx'
+import { CarouselNode } from './carousel.tsx'
+import { ImageGroupNode } from './image-group.tsx'
 import { SvgNode } from './svg.tsx'
 import { IconNode } from './icon.tsx'
+import { MapNode } from './map.tsx'
 import { BlocksNode, readableOn } from './blocks.tsx'
 
 import { EChartNode } from '../EChartNode.tsx'
@@ -170,6 +173,7 @@ function listItemText(item: GenuiList['items'][number]): string {
 
 function boundField(answers: AnswersState | undefined, id: string | undefined): string | undefined {
   if (id === undefined) return undefined
+  if (answers?.fields === undefined || !Object.hasOwn(answers.fields, id)) return undefined
   const value = answers?.fields[id]
   return value === undefined || value === '' ? undefined : value
 }
@@ -191,6 +195,7 @@ function NodeBody({ node, path, onAction, depth, answers }: { node: GenuiNode; p
 }
 
 function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps['onAction'] | undefined, depth: number, answers?: AnswersState): ReactNode {
+  const path = key
   const children = genuiChildSlots(node, key)
   // Depth guard: a pathological spec must never recurse past the limit
   // (stack overflow / DOM explosion). The fence path already repairs specs
@@ -199,6 +204,7 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
   if (depth > GENUI_LIMITS.maxDepth) return null
 
   switch (node.type) {
+    case 'map': return <MapNode key={JSON.stringify([path, node.id, answers?.round ?? 0])} node={node} answers={answers} />
     case 'text': {
       const size = node.size ?? 'body'
       // `align` is canonical; legacy `center: true` maps to the center class.
@@ -232,7 +238,7 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
           className={css.col}
           style={{
             ...(node.gap !== undefined ? { gap: `${node.gap}px` } : {}),
-            ...(node.width !== undefined ? { flex: `0 0 ${node.width}%`, width: `${node.width}%` } : {}),
+            ...(node.width !== undefined ? { flex: `0 1 ${node.width}%`, width: `${node.width}%` } : {}),
           }}
         >
           {children.map(child => renderNode(child.value as GenuiNode, child.path, onAction, depth + 1, answers))}
@@ -300,8 +306,8 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
         </ClickFeedbackButton>
       )
     }
-    case 'input': return <InputNode key={key} node={node} onAction={onAction} answers={answers} />
-    case 'select': return <SelectNode key={key} node={node} onAction={onAction} answers={answers} />
+    case 'input': return <InputNode key={JSON.stringify([path, node.id, node.inputType ?? 'text'])} node={node} onAction={onAction} answers={answers} />
+    case 'select': return <SelectNode key={JSON.stringify([path, node.id])} node={node} onAction={onAction} answers={answers} />
     case 'checkbox': return <CheckboxNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'link': {
       const target = classifyLinkTarget(node.href)
@@ -313,6 +319,11 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
       }
       return <span key={key} className={css.linkText}>{renderInline(node.label, false)}</span>
     }
+    case 'carousel': return <CarouselNode key={key} node={node}>{
+      node.items.slice(0, GENUI_LIMITS.maxCarouselItems).map((child, index) =>
+        renderNode(child, `${path}.items[${index}]`, onAction, depth + 1, answers))
+    }</CarouselNode>
+    case 'image-group': return <ImageGroupNode key={key} node={node} />
     case 'image': return <ImageNode key={`${key}:${node.src}`} node={node} />
     case 'audio': return <AudioNode key={`${key}:${node.src}`} node={node} />
     case 'video': return <VideoNode key={`${key}:${node.src}`} node={node} />
@@ -436,16 +447,16 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
       return <hr key={key} className={css.divider} />
     case 'list': {
       const bound = boundField(answers, node.filter)?.toLowerCase()
-      const all = node.items.slice(0, GENUI_LIMITS.maxListItems)
+      const all = node.items.slice(0, GENUI_LIMITS.maxListItems).map((item, index) => ({ item, index }))
       const items = bound === undefined
         ? all
-        : all.filter(item => listItemText(item).toLowerCase().includes(bound))
+        : all.filter(({ item }) => listItemText(item).toLowerCase().includes(bound))
       return (
         <div key={key} className={css.list}>
-          {items.map((item, i) => (
+          {items.map(({ item, index }, i) => (
             <div key={i} className={css.li}>
               {isListItemNode(item)
-                ? renderNode(item, `${key}.items[${all.indexOf(item)}]`, onAction, depth + 1, answers)
+                ? renderNode(item, `${key}.items[${index}]`, onAction, depth + 1, answers)
                 : <><div className={css.liTitle}>{renderInline(typeof item === 'string' ? item : item.title)}</div>{typeof item !== 'string' && item.desc !== undefined && <div className={css.liDesc}>{renderInline(item.desc)}</div>}</>}
             </div>
           ))}
@@ -517,13 +528,13 @@ function renderNodeBody(node: GenuiNode, key: string, onAction: GenuiBlockProps[
     case 'diff': return <DiffNode key={key} node={node} />
     case 'json': return <JsonNode key={key} node={node} />
     case 'code': return <CodeNode key={key} node={node} />
-    case 'radio': return <RadioNode key={`${key}:r${answers?.round ?? 0}`} node={node} onAction={onAction} answers={answers} />
+    case 'radio': return <RadioNode key={JSON.stringify([path, node.group, answers?.round ?? 0])} node={node} onAction={onAction} answers={answers} />
     case 'submit': return <SubmitNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'switch': return <SwitchNode key={key} node={node} onAction={onAction} />
     case 'slider': return <SliderNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'textarea': return <TextareaNode key={key} node={node} onAction={onAction} answers={answers} />
     case 'accordion': return <AccordionNode key={key} node={node} onAction={onAction} depth={depth} answers={answers} />
-    case 'copy': return <CopyNode key={key} node={node} />
+    case 'copy': return <CopyNode key={key} node={node} path={path} />
     case 'mermaid': return <MermaidNode key={key} node={node} />
     case 'svg': return <SvgNode key={key} node={node} />
     case 'scene3d': return <Scene3DNode key={key} node={node} />

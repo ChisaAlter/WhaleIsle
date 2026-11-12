@@ -99,6 +99,62 @@ function licenseText(resolve) {
   return notices.join('\n\n');
 }
 
+/** Audited MapLibre 6.13.0 dist anchors: the worker factory patch fails closed
+ * on any vendor change; a lockfile update must re-audit these values. */
+const MAPLIBRE_VERSION = '6.13.0';
+const MAPLIBRE_MAIN_SHA256 = '389731e8581cc59d484e867b051db73ae034a76f0691d2890a2a1a7d2495bdf3';
+const MAPLIBRE_WORKER_SHA256 = '53a2dd60f76c7b9201a3cc007b755d98ce4b52403843fef5c90c41780fe62e91';
+const MAPLIBRE_WORKER_FACTORY_PREFIX = 'async function Xy(){let e=On.WORKER_URL||Gy(),t=!Ky(e);';
+
+/** Rebundle the official ESM worker as a self-contained classic IIFE; sandboxed
+ * viewers create it through an owned Blob URL. */
+async function buildMaplibreClassicWorker(esbuild, workerFile) {
+  const source = fs.readFileSync(workerFile, 'utf8');
+  if (crypto.createHash('sha256').update(source).digest('hex') !== MAPLIBRE_WORKER_SHA256) {
+    throw new Error('MapLibre worker adapter requires the audited 6.13.0 worker distribution');
+  }
+  const result = await esbuild.build({ bundle: true, entryPoints: [workerFile], format: 'iife', platform: 'browser', minify: true, write: false, logLevel: 'warning' });
+  const js = result.outputFiles[0]?.text;
+  if (!js) throw new Error('MapLibre worker rebundle produced no script.');
+  return js;
+}
+
+/** Build-time replacements for genui/client/maplibre-resources.ts: the vendor
+ * CSS and classic worker stay inert until the lazy map engine mounts. The main
+ * dist gets the owned-URL patch so the packaged worker bypasses the vendor
+ * fetch/blob dance inside the opaque viewer sandbox. */
+function maplibreResourcesPlugin(esbuild, dependency) {
+  const resourcesFile = path.join(source, 'genui/client/maplibre-resources.ts');
+  const ownershipFile = path.join(source, 'genui/client/map-worker-ownership.ts');
+  let classicWorker;
+  return {
+    name: 'whale-ui-maplibre-resources',
+    setup(build) {
+      build.onLoad({ filter: /maplibre-gl\.mjs$/ }, async args => {
+        const main = dependency.resolve('maplibre-gl/dist/maplibre-gl.mjs');
+        if (fs.realpathSync(args.path) !== fs.realpathSync(main)) return null;
+        const code = fs.readFileSync(main, 'utf8');
+        const pkg = JSON.parse(fs.readFileSync(dependency.resolve('maplibre-gl/package.json'), 'utf8'));
+        if (pkg.version !== MAPLIBRE_VERSION
+          || crypto.createHash('sha256').update(code).digest('hex') !== MAPLIBRE_MAIN_SHA256
+          || code.split(MAPLIBRE_WORKER_FACTORY_PREFIX).length !== 2) {
+          throw new Error('MapLibre worker adapter requires the audited 6.13.0 main distribution');
+        }
+        const patched = `import { isOwnedMapWorkerUrl as __genuiOwnsWorker } from ${JSON.stringify(ownershipFile)};\n`
+          + code.replace(MAPLIBRE_WORKER_FACTORY_PREFIX, MAPLIBRE_WORKER_FACTORY_PREFIX
+            + 'if(e.startsWith("blob:")&&__genuiOwnsWorker(e))return new Worker(e);');
+        return { contents: patched, loader: 'js', resolveDir: path.dirname(main) };
+      });
+      build.onResolve({ filter: /maplibre-resources\.ts$/ }, args => args.resolveDir === path.dirname(resourcesFile) && path.join(args.resolveDir, 'maplibre-resources.ts') === resourcesFile ? { path: resourcesFile, namespace: 'whale-maplibre' } : null);
+      build.onLoad({ filter: /.*/, namespace: 'whale-maplibre' }, async () => {
+        classicWorker ??= await buildMaplibreClassicWorker(esbuild, dependency.resolve('maplibre-gl/dist/maplibre-gl-worker.mjs'));
+        const css = fs.readFileSync(dependency.resolve('maplibre-gl/dist/maplibre-gl.css'), 'utf8');
+        return { contents: `export const maplibreCss = ${JSON.stringify(css)}; export const maplibreWorker = ${JSON.stringify(classicWorker)};`, loader: 'ts' };
+      });
+    },
+  };
+}
+
 export async function prepareWhaleUi({ force = false, promptOnly = false } = {}) {
   const { resolve: dependency, installed } = ensureDependencies();
   const esbuild = require(dependency.resolve('esbuild'));
@@ -118,8 +174,10 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
     'echarts-core.js': 'genui/client/asset-echarts-core.ts',
     'echarts-full.js': 'genui/client/asset-echarts.ts',
     'icons.js': 'genui/client/icons/asset-icons.ts',
+    'maplibre.js': 'genui/client/asset-maplibre.ts',
     'standalone-runtime.js': 'genui/client/standalone/runtime.tsx',
   };
+  const assetPlugins = { 'maplibre.js': () => [maplibreResourcesPlugin(esbuild, dependency)] };
   const mobileProducts = ['viewer.html', ...Object.keys(assets).map(file => `assets/${file}`)];
   const digest = inputDigest(source);
   const stamp = path.join(output, 'build.json');
@@ -155,7 +213,7 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
   writeChanged(path.join(output, 'viewer.html'), viewerHtml);
   writeChanged(path.join(mobileOutput, 'viewer.html'), viewerHtml);
   for (const [filename, entry] of Object.entries(assets)) {
-    const result = await esbuild.build({ ...shared, entryPoints: [path.join(source, entry)], outfile: path.join(output, 'assets', filename), write: false, format: 'iife', platform: 'browser', target: 'chrome136', minify: true, define: { 'process.env.NODE_ENV': '"production"' } });
+    const result = await esbuild.build({ ...shared, plugins: assetPlugins[filename]?.() ?? [], entryPoints: [path.join(source, entry)], outfile: path.join(output, 'assets', filename), write: false, format: 'iife', platform: 'browser', target: 'chrome136', minify: true, define: { 'process.env.NODE_ENV': '"production"' } });
     const js = result.outputFiles.find(file => file.path.endsWith('.js'))?.text;
     const css = result.outputFiles.find(file => file.path.endsWith('.css'))?.text;
     if (!js) throw new Error(`Whale UI engine ${filename} produced no script.`);

@@ -314,8 +314,13 @@ export const PlotBlock = memo(function PlotBlock({
     // A few pixels of slack: a plain click or a text-selection drag must not
     // shift the domain.
     if (Math.abs(e.clientX - d.startX) < 4) return
+    // Pointer coordinates are CSS pixels, while plotW is in SVG viewBox
+    // units. Use the SVG surface (not the event's curve/tick target) so
+    // responsive plots track the pointer at both wide and narrow widths.
+    const width = e.currentTarget.getBoundingClientRect().width
+    if (!Number.isFinite(width) || width <= 0) return
     const span = d.xMax - d.xMin
-    const dx = ((d.startX - e.clientX) / plotW) * span
+    const dx = (((d.startX - e.clientX) * WIDTH / width) / plotW) * span
     setView(prev => ({ xMin: d.xMin + dx, xMax: d.xMax + dx, yMin: prev.yMin, yMax: prev.yMax }))
   }
   const onPointerUp = (): void => { dragRef.current = null }

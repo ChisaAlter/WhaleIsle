@@ -48,9 +48,14 @@ function readToken(name: string, fallback: string, el?: HTMLElement | null): str
   return fallback
 }
 
-/** Read a px-valued font token as a number for ECharts textStyle fields. */
+/** 通过实际计算后的 font-size 获取字号，供 ECharts 的数字字号字段使用。 */
 function readFontSize(name: string, fallback: number, el?: HTMLElement | null): number {
-  const parsed = Number.parseFloat(readToken(name, '', el))
+  if (el === undefined || el === null) return fallback
+  const probe = document.createElement('span')
+  probe.style.fontSize = `var(${name})`
+  el.appendChild(probe)
+  const parsed = Number.parseFloat(getComputedStyle(probe).fontSize)
+  probe.remove()
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
@@ -93,7 +98,10 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
     ? [...node.palette]
     : CHART_COLORS.map((c, i) =>
       readToken(c.replace('var(', '').replace(')', ''), SERIES_FALLBACK[i % SERIES_FALLBACK.length]!, el))
-  const data = node.data ?? node.series?.[0]?.data ?? []
+  // Axis presets keep empty positions; independent marks drop missing values
+  // while preserving real zeros.
+  const independentMarks = ['wordCloud', 'pie', 'gauge', 'funnel', 'treemap'].includes(node.preset ?? '')
+  const data = (node.data ?? node.series?.[0]?.data ?? []).filter(d => !independentMarks || typeof d.value === 'number' && Number.isFinite(d.value))
   const series = node.series
 
   // Shared tooltip base: renderMode 'richText' prevents ECharts from writing
@@ -103,13 +111,13 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
     renderMode: 'richText',
     backgroundColor: t.bgLayer1,
     borderColor: t.border,
-    textStyle: { color: t.labelPrimary },
+    textStyle: { color: t.labelPrimary, fontSize: t.fontData * 14 / 12 },
     ...extra,
   })
 
   const base = {
     color: colors,
-    textStyle: { color: t.labelSecondary, fontFamily: 'inherit' },
+    textStyle: { color: t.labelSecondary, fontFamily: 'inherit', fontSize: t.fontData },
     backgroundColor: 'transparent',
     grid: { left: 48, right: 16, top: 24, bottom: 32 },
     tooltip: tt({ trigger: 'item' }),
@@ -121,7 +129,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
         ...base,
         series: [{
           type: 'wordCloud',
-          sizeRange: [16, 64],
+          sizeRange: [t.fontData * 16 / 12, t.fontData * 64 / 12],
           rotationRange: [0, 0],
           gridSize: 8,
           textStyle: { fontFamily: 'sans-serif' },
@@ -133,13 +141,13 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       return {
         ...base,
         tooltip: tt({ trigger: 'item', formatter: '{b}: {c} ({d}%)' }),
-        legend: { bottom: 0, textStyle: { color: t.labelTertiary } },
+        legend: { bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } },
         series: [{
           type: 'pie',
           radius: ['40%', '70%'],
           avoidLabelOverlap: true,
           itemStyle: { borderRadius: 6, borderColor: t.bgLayer1, borderWidth: 2 },
-          label: { color: t.labelSecondary },
+          label: { color: t.labelSecondary, fontSize: t.fontData },
           data: data.map(d => ({ name: d.label, value: d.value })),
         }],
       }
@@ -150,8 +158,8 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       return {
         ...base,
         tooltip: tt({ trigger: 'item' }),
-        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
-        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series: [{
           type: 'scatter',
           symbolSize: 10,
@@ -163,8 +171,8 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       return {
         ...base,
         tooltip: tt({ trigger: 'axis' }),
-        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary } },
-        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData } },
+        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series: (series ?? [{ label: '', data }]).map((s, i) => ({
           name: s.label,
           type: 'line',
@@ -173,15 +181,15 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           data: s.data.map(d => d.value),
           ...optItemStyleColor(s.color, i, series),
         })),
-        legend: series !== undefined ? { bottom: 0, textStyle: { color: t.labelTertiary } } : undefined,
+        legend: series !== undefined ? { bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } } : undefined,
       }
     }
     case 'line': {
       return {
         ...base,
         tooltip: tt({ trigger: 'axis' }),
-        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary } },
-        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData } },
+        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series: (series ?? [{ label: '', data }]).map((s, i) => ({
           name: s.label,
           type: 'line',
@@ -191,7 +199,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           data: s.data.map(d => d.value),
           ...optItemStyleColor(s.color, i, series),
         })),
-        legend: series !== undefined ? { bottom: 0, textStyle: { color: t.labelTertiary } } : undefined,
+        legend: series !== undefined ? { bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } } : undefined,
       }
     }
     case 'radar': {
@@ -199,26 +207,31 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       // polygon. `data` alone is treated as a single unnamed series.
       const entries = series ?? [{ label: '', data }]
       const indicators = (entries[0]?.data ?? []).map(d => ({ name: d.label, max: undefined as number | undefined }))
-      const max = Math.max(...entries.flatMap(e => e.data.map(d => Number(d.value) || 0)), 1)
+      const completeEntries = entries.flatMap((entry, index) => {
+        const values = entry.data.map(d => typeof d.value === 'number' && Number.isFinite(d.value) ? d.value : null)
+        // 雷达图需要完整坐标；缺失数据不能在原点显示为真实零值。
+        return values.some(value => value === null) ? [] : [{ entry, index, values: values as number[] }]
+      })
+      const max = Math.max(...completeEntries.flatMap(({ values }) => values), 1)
       return {
         ...base,
         tooltip: tt({ trigger: 'item' }),
-        legend: { bottom: 0, textStyle: { color: t.labelTertiary } },
+        legend: { bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } },
         radar: {
           indicator: indicators.map(i => ({ name: i.name, max: Math.ceil(max * 1.1) })),
           splitLine: { lineStyle: { color: t.border } },
           splitArea: { show: false },
           axisLine: { lineStyle: { color: t.border } },
-          axisName: { color: t.labelTertiary },
+          axisName: { color: t.labelTertiary, fontSize: t.fontData },
         },
         series: [{
           type: 'radar',
           symbolSize: 5,
           areaStyle: { opacity: 0.12 },
-          data: entries.map((e, i) => ({
-            name: e.label,
-            value: e.data.map(d => Number(d.value) || 0),
-            ...optItemStyleColor(e.color, i, series),
+          data: completeEntries.map(({ entry, index, values }) => ({
+            name: entry.label,
+            value: values,
+            ...optItemStyleColor(entry.color, index, series),
           })),
         }],
       }
@@ -252,7 +265,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       return {
         ...base,
         tooltip: tt({ trigger: 'item', formatter: '{b}: {c}' }),
-        legend: { bottom: 0, textStyle: { color: t.labelTertiary } },
+        legend: { bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } },
         series: [{
           type: 'funnel',
           left: '8%',
@@ -260,7 +273,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           top: 16,
           bottom: 40,
           gap: 2,
-          label: { position: 'inside', color: '#fff', formatter: '{b} {c}' },
+          label: { position: 'inside', color: '#fff', fontSize: t.fontData, formatter: '{b} {c}' },
           itemStyle: { borderWidth: 0 },
           data: data.map(d => ({ name: d.label, value: Number(d.value) || 0 })),
         }],
@@ -276,7 +289,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           nodeClick: false,
           breadcrumb: { show: false },
           upperLabel: { show: false },
-          label: { color: t.labelPrimary },
+          label: { color: t.labelPrimary, fontSize: t.fontData },
           itemStyle: { borderColor: t.bgLayer1, borderWidth: 2, gapWidth: 2 },
           data: data.map(d => ({ name: d.label, value: Number(d.value) || 0 })),
         }],
@@ -298,7 +311,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           bottom: 12,
           nodeGap: 12,
           lineStyle: { color: 'gradient', curveness: 0.5, opacity: 0.32 },
-          label: { color: t.labelSecondary },
+          label: { color: t.labelSecondary, fontSize: t.fontData },
           emphasis: { focus: 'adjacency' },
           data: names.map(name => ({ name })),
           links: links.map(l => ({ source: l.from, target: l.to, value: l.value ?? 1 })),
@@ -337,16 +350,17 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       // row's labels — the same shape the other presets use.
       const rows = series ?? [{ label: '', data }]
       const cols = (rows[0]?.data ?? []).map(d => d.label)
-      const values = rows.flatMap((row, y) => row.data.map((d, x) => [x, y, Number(d.value) || 0]))
+      const values = rows.flatMap((row, y) => row.data.flatMap((d, x) =>
+        typeof d.value === 'number' && Number.isFinite(d.value) ? [[x, y, d.value]] : []))
       const max = Math.max(...values.map(v => v[2] as number), 1)
       return {
         ...base,
         tooltip: tt({ trigger: 'item', position: 'top' }),
         grid: { left: 64, right: 16, top: 16, bottom: 48 },
-        xAxis: { type: 'category', data: cols, splitArea: { show: false }, axisLabel: { color: t.labelTertiary }, axisLine: { lineStyle: { color: t.border } } },
-        yAxis: { type: 'category', data: rows.map(r => r.label), splitArea: { show: false }, axisLabel: { color: t.labelTertiary }, axisLine: { lineStyle: { color: t.border } } },
-        visualMap: { min: 0, max, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: t.labelTertiary } },
-        series: [{ type: 'heatmap', data: values, label: { show: values.length <= 60, color: t.labelPrimary }, itemStyle: { borderColor: t.bgLayer1, borderWidth: 2 } }],
+        xAxis: { type: 'category', data: cols, splitArea: { show: false }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, axisLine: { lineStyle: { color: t.border } } },
+        yAxis: { type: 'category', data: rows.map(r => r.label), splitArea: { show: false }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, axisLine: { lineStyle: { color: t.border } } },
+        visualMap: { min: 0, max, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } },
+        series: [{ type: 'heatmap', data: values, label: { show: values.length <= 60, color: t.labelPrimary, fontSize: t.fontData }, itemStyle: { borderColor: t.bgLayer1, borderWidth: 2 } }],
       }
     }
     case 'bigline': {
@@ -357,10 +371,10 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
         grid: { left: 48, right: 20, top: 24, bottom: 56 },
         dataZoom: [
           { type: 'inside', start: 0, end: 45 },
-          { type: 'slider', height: 16, bottom: 8, borderColor: t.border, textStyle: { color: t.labelTertiary } },
+          { type: 'slider', height: 16, bottom: 8, borderColor: t.border, textStyle: { color: t.labelTertiary, fontSize: t.fontData } },
         ],
-        xAxis: { type: 'category', boundaryGap: false, data: data.map(d => d.label), axisLabel: { color: t.labelTertiary }, axisLine: { lineStyle: { color: t.border } } },
-        yAxis: { type: 'value', axisLabel: { color: t.labelTertiary }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        xAxis: { type: 'category', boundaryGap: false, data: data.map(d => d.label), axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, axisLine: { lineStyle: { color: t.border } } },
+        yAxis: { type: 'value', axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series: (series ?? [{ label: '', data }]).map((s2, i) => ({
           name: s2.label,
           type: 'line',
@@ -370,7 +384,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           data: s2.data.map(d => d.value),
           ...optItemStyleColor(s2.color, i, series),
         })),
-        legend: series !== undefined ? { bottom: 26, textStyle: { color: t.labelTertiary } } : undefined,
+        legend: series !== undefined ? { bottom: 26, textStyle: { color: t.labelTertiary, fontSize: t.fontData } } : undefined,
       }
     }
     default: {
@@ -378,8 +392,8 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
       return {
         ...base,
         tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow' } }),
-        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary } },
-        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
+        xAxis: { type: 'category', data: data.map(d => d.label), axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData } },
+        yAxis: { type: 'value', axisLine: { lineStyle: { color: t.border } }, axisLabel: { color: t.labelTertiary, fontSize: t.fontData }, splitLine: { lineStyle: { color: t.border, opacity: 0.5 } } },
         series: (series ?? [{ label: '', data }]).map(s => ({
           name: s.label,
           type: 'bar',
@@ -387,7 +401,7 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
           itemStyle: { borderRadius: [4, 4, 2, 2], ...(s.color !== undefined ? { color: s.color } : {}) },
           data: s.data.map(d => d.value),
         })),
-        legend: series !== undefined ? { bottom: 0, textStyle: { color: t.labelTertiary } } : undefined,
+        legend: series !== undefined ? { bottom: 0, textStyle: { color: t.labelTertiary, fontSize: t.fontData } } : undefined,
       }
     }
   }
@@ -397,6 +411,26 @@ export function presetOption(node: GenuiEChart, el?: HTMLElement | null): Record
  * (aligns with the `chart` node which respects `series[].color`). */
 function optItemStyleColor(color: string | undefined, _i: number, _series: unknown): Record<string, unknown> {
   return color !== undefined ? { itemStyle: { color } } : {}
+}
+
+/** Refresh typography without replaying preset data or interactive defaults. */
+function fontSizeOption(option: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(option)) {
+    if (key === 'fontSize' || key === 'sizeRange') {
+      result[key] = value
+    } else if (Array.isArray(value)) {
+      const children = value.map(item => item !== null && typeof item === 'object'
+        ? fontSizeOption(item as Record<string, unknown>) : {})
+      // ECharts merges component arrays by index. Keep empty entries so a
+      // slider's text style cannot be applied to the preceding inside zoom.
+      if (children.some(child => Object.keys(child).length > 0)) result[key] = children
+    } else if (value !== null && typeof value === 'object') {
+      const child = fontSizeOption(value as Record<string, unknown>)
+      if (Object.keys(child).length > 0) result[key] = child
+    }
+  }
+  return result
 }
 
 export function EChartNode({ node }: { node: GenuiEChart }) {
@@ -464,7 +498,20 @@ export function EChartNode({ node }: { node: GenuiEChart }) {
       report(null)
       setErrorMessage(null)
       setStatus('ready')
-    } catch (error) { fail(error) }
+    } catch (error) { fail(error); return }
+    if (node.option !== undefined) return
+    // Host font-size changes rebuild preset text scales (full `option` specs
+    // opt out — the host cannot see inside them).
+    let contentFontSize = getComputedStyle(document.body).getPropertyValue('--dsh-content-font-size').trim()
+    const observer = new MutationObserver(() => {
+      const nextContentFontSize = getComputedStyle(document.body).getPropertyValue('--dsh-content-font-size').trim()
+      if (nextContentFontSize === contentFontSize) return
+      contentFontSize = nextContentFontSize
+      if (instanceRef.current === null) return
+      try { instanceRef.current.setOption(fontSizeOption(presetOption(node, ref.current))) } catch (error) { fail(error) }
+    })
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style'] })
+    return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node, instanceVersion])
 

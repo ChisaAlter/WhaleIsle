@@ -29,6 +29,8 @@ const DROPPED = [
   // Remote workspaces (SSH) ship first-party from vendor/dsh-remote.
   // Reject marketplace installs of the same package to avoid a second mount.
   'dsh-remote',
+  // Antigravity is now unified inside first-party vendor/dsh-acp-agents (Settings -> Agent).
+  'dsh-antigravity',
 ];
 // Exact unscoped basenames of the dropped families. A rename that only moves
 // the package to a new scope (e.g. `@changfenhuang/dsh-genui`) or a new
@@ -45,6 +47,7 @@ const DROPPED_BASENAMES = [
   'dsh-project',
   'dsh-whale',
   'dsh-remote',
+  'dsh-antigravity',
 ];
 
 /** The npm name without its scope (`@scope/name` → `name`). */

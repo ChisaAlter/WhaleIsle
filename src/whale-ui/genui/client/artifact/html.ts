@@ -44,15 +44,27 @@ function bundleElement(name: string, bytes: Uint8Array): string {
 /** 将媒体相对地址转换为导出页面所在站点的绝对地址。 */
 function resolveMediaUrls(spec: GenuiSpec, baseURI: string): GenuiSpec {
   const copy = structuredClone(spec)
+  const resolveUrl = (media: string): string => {
+    if (/^https?:\/\//i.test(media)) return media
+    const url = new URL(media, baseURI)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new GenuiExportError('artifact-invalid', `media URL cannot be exported: ${media}`)
+    return url.href
+  }
   walkGenuiNodes(copy, value => {
-    if (value.type !== 'image' && value.type !== 'audio' && value.type !== 'video') return
     const node = value as unknown as Record<string, unknown>
+    if (value.type === 'image-group') {
+      // Gallery records have no node type. Only visit actual UI components,
+      // never similarly shaped raw JSON/chart data embedded in another component.
+      if (Array.isArray(node.items)) for (const item of node.items) {
+        const image = item as Record<string, unknown>
+        if (typeof image.src === 'string') image.src = resolveUrl(image.src)
+      }
+      return
+    }
+    if (value.type !== 'image' && value.type !== 'audio' && value.type !== 'video') return
     for (const field of value.type === 'video' ? ['src', 'poster'] : ['src']) {
       const media = node[field]
-      if (typeof media !== 'string' || /^https?:\/\//i.test(media)) continue
-      const url = new URL(media, baseURI)
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new GenuiExportError('artifact-invalid', `media URL cannot be exported: ${media}`)
-      node[field] = url.href
+      if (typeof media === 'string') node[field] = resolveUrl(media)
     }
   })
   return copy
