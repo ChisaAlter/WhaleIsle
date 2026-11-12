@@ -26,3 +26,28 @@ test('rejects unknown actions with a stable error code', async () => {
   const ipc = createProactiveIpc({ runtime: {}, scheduler: {} });
   await assert.rejects(() => ipc.dispatch('nope'), error => error.code === 'proactive/unknown-action');
 });
+
+test('dispatches GitHub sync and source state through the IPC boundary', async () => {
+  const calls = [];
+  const runtime = {
+    ingestSourceItems: (items, options) => {
+      calls.push(['ingestSourceItems', items, options]);
+      return { source: 'github', created: items, duplicates: 0 };
+    },
+    listSourceState: () => ({ github: { cursor: '2026-11-05T00:00:00Z' } }),
+  };
+  const scheduler = { list: () => [] };
+  const ipc = createProactiveIpc({
+    runtime,
+    scheduler,
+    sources: { github: { discover: async payload => [{ id: 'github:1', payload }] } },
+  });
+
+  assert.deepEqual(await ipc.dispatch('source/github/sync', { since: 'cursor-1', autonomy: 2 }), {
+    source: 'github', created: [{ id: 'github:1', payload: { since: 'cursor-1', autonomy: 2 } }], duplicates: 0,
+  });
+  assert.deepEqual(await ipc.dispatch('source/state'), { github: { cursor: '2026-11-05T00:00:00Z' } });
+  assert.deepEqual(calls, [['ingestSourceItems', [{ id: 'github:1', payload: { since: 'cursor-1', autonomy: 2 } }], {
+    source: 'github', autonomy: 2, cursor: 'cursor-1',
+  }]]);
+});
