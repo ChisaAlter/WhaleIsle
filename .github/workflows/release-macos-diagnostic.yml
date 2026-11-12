@@ -81,21 +81,21 @@ jobs:
       - id: mac_package
         run: npm run dist:mac
       - run: npm run smoke:packaged
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: Whale-Isle-macos-chrome-evidence
           path: dist/macos-chrome-evidence
           if-no-files-found: warn
           retention-days: 30
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.mac_package.outcome == 'success'
         with:
           name: Whale-Isle-macos-arm64
           path: dist/Whale-Isle-*.dmg
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: success() && inputs.source_tag != ''
         with:
           name: Whale-Isle-macos-build-source
