@@ -21,6 +21,7 @@ const { DSH_PROJECT_ALIASES } = require('./dsh-project-desktop');
 const { DSH_MARKET_ALIASES } = require('./dsh-market-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
 const { DSH_REMOTE_ALIASES } = require('./dsh-remote-desktop');
+const { DSH_ACP_AGENTS_ALIASES } = require('./dsh-acp-agents-desktop');
 const { USAGE_PANEL_ALIASES } = require('./usage-panel-preset');
 const { isPresetPlugin } = require('./plugin-forensics');
 const importGuard = require('./import-guard');
@@ -102,6 +103,7 @@ function pluginDisableGuardError(name) {
     || DSH_MARKET_ALIASES.includes(name)
     || DSH_WHALE_ALIASES.includes(name)
     || DSH_REMOTE_ALIASES.includes(name)
+    || DSH_ACP_AGENTS_ALIASES.includes(name)
     || USAGE_PANEL_ALIASES.includes(name)) {
     return 'desktop-builtin';
   }

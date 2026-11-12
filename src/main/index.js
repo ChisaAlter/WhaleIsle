@@ -20,6 +20,7 @@ const { createProjectEnvironment } = require('./project-environment');
 const { createProactiveService } = require('./proactive/service');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
+const { ensureDesktopAcpAgents } = require('./dsh-acp-agents-desktop');
 const { fetchPlatformSession } = require('./platform-session');
 const { DesktopPlatformView, PLATFORM_IPC, platformBounds } = require('./platform-view');
 const { createTaskProtection, installTaskProtection, getTaskProtection } = require('./task-protection');
@@ -694,6 +695,7 @@ const harness = new HarnessController({
   projectAvailable,
   ensureTaskControlPlugin: ensureDesktopTaskControl,
   ensureDesktopPlatformSession,
+  ensureDesktopAcpAgents,
   ensureDshWhalePlugin: ensureDesktopDshWhale,
   ensureDshRemotePlugin: ensureDesktopDshRemote,
   ensureDshPadPlugin: ensureDesktopDshPad,

@@ -1,0 +1,59 @@
+{
+  "name": "dsh-acp-agents",
+  "description": "First-party DeepSeek Harness plugin for external ACP agents (Claude Code, Codex, Antigravity, Devin, and custom ACP servers) with T3 Code-style Agent settings and Agent-first model selection.",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChisaAlter/Deepseek-Harness-Desktop.git",
+    "directory": "vendor/dsh-acp-agents"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "acp",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "devin"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-general",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./presets": "./lib/presets.js",
+    "./acp-driver": "./lib/acp-driver.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "README.md",
+    "cordis.patch.yml"
+  ]
+}
