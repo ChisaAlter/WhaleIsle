@@ -18,7 +18,7 @@
  * - The whole spec carries a node budget; once exhausted, remaining siblings
  *   are elided.
  */
-import type { GenuiFileTreeNode, GenuiList, GenuiNode, GenuiPlot, GenuiPlotSeries, GenuiScene3D, GenuiSpec, GenuiDiagram, GenuiDiagramTheme, GenuiDiagramKind } from './spec.ts'
+import type { GenuiComputed, GenuiComputedFormat, GenuiComputedRef, GenuiFileTreeNode, GenuiList, GenuiNode, GenuiPlot, GenuiPlotSeries, GenuiScene3D, GenuiSpec, GenuiDiagram, GenuiDiagramTheme, GenuiDiagramKind } from './spec.ts'
 import { isComponentRoot, wrapSingleComponentRoot } from './spec.ts'
 import {
   BADGE_TONES, BUTTON_TONES, CALLOUT_TONES, CARD_TONES, CHART_KINDS, COMPONENT_SCHEMAS, HERO_TONES,
@@ -34,9 +34,13 @@ import { GENUI_LIMITS } from './genui-runtime/limits.ts'
 import { analyzeSubmissionRegistry } from './submission-registry.ts'
 import { isTableDetailReachable, prepareTableRows, tableRowsForDetails } from './table-details.ts'
 import { color, enu, int, num, obj, opt, safeMediaSrc, str } from './genui-runtime/value-utils.ts'
+import { repairMap, validateMap } from './map-data.ts'
 import { classifyLinkTarget } from './file-link.ts'
 import { genuiChildSlots, walkRawGenuiNodes } from './walk-spec.ts'
 import { diagnoseUnsupportedGenuiTypes, unsupportedGenuiComponentMessage, type GenuiUnsupportedComponentDiagnostic } from './genui-runtime/support.ts'
+import { buildComputedGraph, getComputedInputIds, getDuplicateComputedInputIds, getComputedTemplateScope, getComputedChildNodeScope } from './computed.ts'
+import type { ComputedTemplateScope, ComputedNodeScope } from './computed.ts'
+import { SAFE_MATH_LIMITS } from './safe-math.ts'
 
 /** Result of `validateGenuiSpec`. */
 export interface GenuiValidation {
@@ -152,7 +156,12 @@ function validateNestedRecordSchemas(
     const nestedValue = value[field]
     if (nestedValue === undefined) continue
     if (Array.isArray(nestedValue)) {
-      nestedValue.forEach((item, index) => validateRecordSchema(item, `${at}.${field}[${index}]`, nested, errors))
+      const records = value.type === 'image-group' && field === 'items'
+        ? nestedValue.slice(0, GENUI_LIMITS.maxImageGroupItems)
+        : value.type === 'map' && field === 'locations' ? nestedValue.slice(0, GENUI_LIMITS.maxMapLocations)
+        : value.type === 'map' && field === 'routes' ? nestedValue.slice(0, GENUI_LIMITS.maxMapRoutes)
+        : field === 'computed' ? nestedValue.slice(0, GENUI_LIMITS.maxComputedFields) : nestedValue
+      records.forEach((item, index) => validateRecordSchema(item, `${at}.${field}[${index}]`, nested, errors))
     } else {
       validateRecordSchema(nestedValue, `${at}.${field}`, nested, errors)
     }
@@ -213,6 +222,10 @@ function validateRegistryFields(
 interface RepairCtx {
   /** Nodes left in the budget; 0 stops the walk. */
   remaining: number
+  /** Rows, list entries, and tree nodes omitted by their per-component caps. */
+  truncatedTableRows: number
+  truncatedListItems: number
+  truncatedFileTreeItems: number
 }
 
 /** Walk `list` with the shared node budget; drops invalid entries. */
@@ -365,6 +378,25 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
         ...opt('justify', enu(v.justify, ROW_JUSTIFY)),
       }
     }
+    case 'carousel': {
+      const source = Array.isArray(v.items) ? v.items.slice(0, GENUI_LIMITS.maxCarouselItems) : []
+      return {
+        type: 'carousel', items: repairItems(source, ctx, depth + 1),
+        ...opt('title', str(v.title, GENUI_LIMITS.maxString)),
+        ...opt('itemWidth', num(v.itemWidth, 80, 640)),
+        ...opt('gap', num(v.gap, 0, Number.MAX_SAFE_INTEGER / 4)),
+      }
+    }
+    case 'image-group': {
+      const source = Array.isArray(v.items) ? v.items.slice(0, GENUI_LIMITS.maxImageGroupItems) : []
+      const items = source.flatMap(value => {
+        const item = obj(value)
+        const src = safeMediaSrc(item?.src)
+        if (item === undefined || src === undefined) return []
+        return [{ src, ...opt('alt', str(item.alt, GENUI_LIMITS.maxString)), ...opt('caption', str(item.caption, GENUI_LIMITS.maxString)) }]
+      })
+      return { type: 'image-group', items, ...opt('title', str(v.title, GENUI_LIMITS.maxString)) }
+    }
     case 'col': {
       return {
         type: 'col',
@@ -516,12 +548,12 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
       return { type: 'avatar', name, ...opt('color', color(v.color)) }
     }
     case 'list': {
-      const items = repairListItems(v.items, GENUI_LIMITS.maxListItems)
+      const items = repairListItems(v.items, GENUI_LIMITS.maxListItems, ctx, depth)
       if (items === undefined) return null
       return { type: 'list', items, ...opt('filter', str(v.filter, 64)) }
     }
     case 'table': {
-      const prepared = prepareTableRows(v)
+      const prepared = prepareTableRows(v, count => { ctx.truncatedTableRows += count })
       if (prepared === null) return null
       const { columns, rows } = prepared
       // Optional per-column cell types; unknown entries degrade to 'text'.
@@ -693,11 +725,15 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
     case 'copy': {
       const text = str(v.text, GENUI_LIMITS.maxCode)
       if (text === undefined) return null
-      return { type: 'copy', text, ...opt('label', str(v.label, 128)) }
+      return {
+        type: 'copy', text, ...opt('label', str(v.label, 128)),
+        ...opt('expandable', typeof v.expandable === 'boolean' ? v.expandable : undefined),
+        ...opt('previewLines', int(v.previewLines, 0, GENUI_LIMITS.maxCopyPreviewLines)),
+      }
     }
     case 'svg': {
-      const code = str(v.code, GENUI_LIMITS.maxCode)
-      if (code === undefined) return null
+      const code = v.code
+      if (typeof code !== 'string' || code.length > GENUI_LIMITS.maxCode) return null
       return { type: 'svg', code, ...opt('title', str(v.title, GENUI_LIMITS.maxString)), ...opt('height', int(v.height, 100, 800)) }
     }
     case 'mermaid': {
@@ -705,6 +741,7 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
       if (code === undefined) return null
       return { type: 'mermaid', code }
     }
+    case 'map': return repairMap(v)
     case 'scene3d': {
       const meshes = repairMeshes(v.meshes)
       if (meshes === undefined) return null
@@ -720,7 +757,7 @@ function repairNodeFields(value: unknown, ctx: RepairCtx, depth: number): GenuiN
       return { type: 'timeline', items }
     }
     case 'file-tree': {
-      const items = repairTree(v.items, GENUI_LIMITS.maxListItems)
+      const items = repairTree(v.items, GENUI_LIMITS.maxListItems, ctx)
       if (items === undefined) return null
       return { type: 'file-tree', items }
     }
@@ -817,11 +854,16 @@ function repairStrings(v: unknown, cap: number, strCap: number): string[] | unde
 function repairListItems(
   v: unknown,
   cap: number,
+  ctx: RepairCtx,
+  depth: number,
 ): GenuiList['items'] | undefined {
   if (!Array.isArray(v)) return undefined
   const out: GenuiList['items'] = []
   for (const item of v) {
-    if (out.length >= cap) break
+    if (out.length >= cap) {
+      if (isRepairableListItem(item, depth)) ctx.truncatedListItems += 1
+      continue
+    }
     if (typeof item === 'string') {
       out.push(item.slice(0, GENUI_LIMITS.maxString))
       continue
@@ -840,23 +882,41 @@ function repairListItems(
   return out
 }
 
-function repairChartData(v: unknown, cap: number): Array<{ label: string; value: number; color?: string }> | undefined {
+/** 判断超出列表上限的项目是否本可由 repair 保留。 */
+function isRepairableListItem(item: unknown, depth: number): boolean {
+  if (typeof item === 'string') return true
+  const o = obj(item)
+  if (o === undefined) return false
+  if (typeof o.type === 'string') {
+    const ctx: RepairCtx = {
+      remaining: GENUI_LIMITS.maxNodes,
+      truncatedTableRows: 0,
+      truncatedListItems: 0,
+      truncatedFileTreeItems: 0,
+    }
+    return repairNode(o, ctx, depth) !== null
+  }
+  return str(o.title, GENUI_LIMITS.maxString) !== undefined
+}
+
+function repairChartData(v: unknown, cap: number): Array<{ label: string; value: number | GenuiComputedRef; color?: string }> | undefined {
   if (!Array.isArray(v)) return undefined
-  const out: Array<{ label: string; value: number; color?: string }> = []
+  const out: Array<{ label: string; value: number | GenuiComputedRef; color?: string }> = []
   for (const datum of v) {
     if (out.length >= cap) break
     const o = obj(datum)
     const label = o === undefined ? undefined : str(o.label, 128)
     const value = o === undefined ? undefined : num(o.value, -1e12, 1e12)
-    if (label === undefined || value === undefined) continue
-    out.push({ label, value, ...opt('color', o === undefined ? undefined : color(o.color)) })
+    const reference = o === undefined ? undefined : repairComputedRef(o.value)
+    if (label === undefined || (value === undefined && reference === undefined)) continue
+    out.push({ label, value: value ?? reference!, ...opt('color', o === undefined ? undefined : color(o.color)) })
   }
   return out
 }
 
-function repairSeries(v: unknown, cap: number, pointCap: number): Array<{ label: string; color?: string; data: Array<{ label: string; value: number; color?: string }> }> | undefined {
+function repairSeries(v: unknown, cap: number, pointCap: number): Array<{ label: string; color?: string; data: Array<{ label: string; value: number | GenuiComputedRef; color?: string }> }> | undefined {
   if (!Array.isArray(v)) return undefined
-  const out: Array<{ label: string; color?: string; data: Array<{ label: string; value: number; color?: string }> }> = []
+  const out: Array<{ label: string; color?: string; data: Array<{ label: string; value: number | GenuiComputedRef; color?: string }> }> = []
   for (const s of v) {
     if (out.length >= cap) break
     const o = obj(s)
@@ -1136,20 +1196,25 @@ function repairTimeline(v: unknown, cap: number): Array<{ title: string; desc?: 
   return out
 }
 
-function repairTree(v: unknown, cap: number): GenuiFileTreeNode[] | undefined {
+/** 按每层节点上限修复文件树并累计略过的有效节点。 */
+function repairTree(v: unknown, cap: number, ctx: RepairCtx): GenuiFileTreeNode[] | undefined {
   // Recursion is bounded by GENUI_LIMITS.maxTreeDepth (see the inner walk).
-  return walkTree(v, cap, GENUI_LIMITS.maxTreeDepth)
+  return walkTree(v, cap, GENUI_LIMITS.maxTreeDepth, ctx)
 }
 
-function walkTree(v: unknown, cap: number, depthLeft: number): GenuiFileTreeNode[] | undefined {
+/** 递归修复文件树的每一层，并记录各层上限之外的有效节点。 */
+function walkTree(v: unknown, cap: number, depthLeft: number, ctx: RepairCtx): GenuiFileTreeNode[] | undefined {
   if (!Array.isArray(v)) return undefined
   const out: GenuiFileTreeNode[] = []
   for (const item of v) {
-    if (out.length >= cap) break
     const o = obj(item)
     const name = o === undefined ? undefined : str(o.name, 256)
     if (name === undefined) continue
-    const children = o !== undefined && depthLeft > 0 && Array.isArray(o.children) ? walkTree(o.children, cap, depthLeft - 1) : undefined
+    if (out.length >= cap) {
+      ctx.truncatedFileTreeItems += 1
+      continue
+    }
+    const children = o !== undefined && depthLeft > 0 && Array.isArray(o.children) ? walkTree(o.children, cap, depthLeft - 1, ctx) : undefined
     out.push({ name, ...opt('type', o === undefined ? undefined : enu(o.type, FILE_TYPES)), ...opt('children', children) })
   }
   return out
@@ -1268,6 +1333,62 @@ function sanitizeEChartOption(v: unknown, depth: number, budget: EChartSanitizeB
   return Object.keys(out).length > 0 || Object.keys(o).length === 0 ? out : undefined
 }
 
+function repairComputedFields(value: unknown): GenuiComputed[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const output: GenuiComputed[] = []
+  for (const entry of value.slice(0, GENUI_LIMITS.maxComputedFields)) {
+    const item = obj(entry)
+    const id = item !== undefined && typeof item.id === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(item.id)
+      ? item.id
+      : undefined
+    const expr = item === undefined ? undefined : str(item.expr, SAFE_MATH_LIMITS.maxExpressionLength)
+    if (id === undefined || expr === undefined || item === undefined
+      || typeof item.expr !== 'string' || item.expr.length > SAFE_MATH_LIMITS.maxExpressionLength) continue
+    const rawFormat = obj(item.format)
+    let format: GenuiComputedFormat | undefined
+    if (rawFormat !== undefined) {
+      const style = enu(rawFormat.style, ['decimal', 'currency', 'percent'] as const) ?? 'decimal'
+      const currency = typeof rawFormat.currency === 'string' && /^[A-Z]{3}$/.test(rawFormat.currency)
+        ? rawFormat.currency
+        : undefined
+      const locale = typeof rawFormat.locale === 'string' && isValidComputedLocale(rawFormat.locale)
+        ? rawFormat.locale.slice(0, 35)
+        : undefined
+      const minimumFractionDigits = int(rawFormat.minimumFractionDigits, 0, 12)
+      const maximumFractionDigits = int(rawFormat.maximumFractionDigits, 0, 12)
+      if ((style !== 'currency' || currency !== undefined)
+        && (minimumFractionDigits === undefined || maximumFractionDigits === undefined || minimumFractionDigits <= maximumFractionDigits)) {
+        format = {
+          style,
+          ...opt('currency', currency),
+          ...opt('locale', locale),
+          ...opt('minimumFractionDigits', minimumFractionDigits),
+          ...opt('maximumFractionDigits', maximumFractionDigits),
+        }
+      }
+    }
+    output.push({ id, expr, ...opt('format', format) })
+  }
+  return output
+}
+
+/** 检查 locale 标签是否符合 Intl 的语言标签规则。 */
+function isValidComputedLocale(locale: string): boolean {
+  if (locale.length > 35) return false
+  try {
+    return Intl.getCanonicalLocales(locale).length === 1
+  } catch {
+    return false
+  }
+}
+
+function repairComputedRef(value: unknown): GenuiComputedRef | undefined {
+  const reference = obj(value)
+  if (reference === undefined || Object.keys(reference).length !== 1) return undefined
+  const id = reference.$computed
+  return typeof id === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(id) ? { $computed: id } : undefined
+}
+
 /**
  * Deterministically repair a raw spec value into a renderable GenuiSpec.
  * Returns null only when the root is not an object with an `items` array
@@ -1276,7 +1397,15 @@ function sanitizeEChartOption(v: unknown, depth: number, budget: EChartSanitizeB
  * dropping/clamping/truncating. Idempotent: repairing a repaired spec is a
  * no-op.
  */
-function repairCanonicalGenuiSpec(value: unknown): GenuiSpec | null {
+function repairCanonicalGenuiSpec(
+  value: unknown,
+  ctx: RepairCtx = {
+    remaining: GENUI_LIMITS.maxNodes,
+    truncatedTableRows: 0,
+    truncatedListItems: 0,
+    truncatedFileTreeItems: 0,
+  },
+): GenuiSpec | null {
   const v = obj(value)
   if (v === undefined) return null
   // A bare component root (including data components whose `items` is their
@@ -1285,15 +1414,15 @@ function repairCanonicalGenuiSpec(value: unknown): GenuiSpec | null {
   if (isComponentRoot(value)) {
     const wrapped = wrapSingleComponentRoot(value)
     if (wrapped === null) return null
-    return repairCanonicalGenuiSpec(wrapped)
+    return repairCanonicalGenuiSpec(wrapped, ctx)
   }
   if (!Array.isArray(v.items)) return null
-  const ctx: RepairCtx = { remaining: GENUI_LIMITS.maxNodes }
   return {
     ...opt('title', str(v.title, GENUI_LIMITS.maxString)),
     ...opt('gap', num(v.gap, 0, 96)),
     ...opt('panel', v.panel === true ? true : undefined),
     ...opt('append', v.append === true ? true : undefined),
+    ...opt('computed', repairComputedFields(v.computed)),
     items: repairItems(v.items, ctx, 0),
   }
 }
@@ -1334,21 +1463,21 @@ export const GENUI_NODE_TYPES: ReadonlySet<string> = GENUI_NATIVE_TYPES
  *
  * With `familyCaps` (default) the traversal applies the same per-family
  * policy caps repair enforces (tabs ≤ maxTabs, accordion items ≤
- * maxAccordionItems): nodes beyond a cap are policy-truncated, not defects,
+ * maxAccordionItems, carousel items ≤ maxCarouselItems): nodes beyond a cap are policy-truncated, not defects,
  * so the declared-vs-rendered ledger must not count them as vanished (#298).
  */
 function visitDeclaredGenuiNodes(
   value: unknown,
   cap: number,
   visit: (node: Record<string, unknown>, at: string) => void,
-  options: { familyCaps?: boolean } = {},
+  options: { familyCaps?: boolean; carouselCaps?: boolean } = {},
 ): number {
   let count = 0
   walkRawGenuiNodes(value, (node, path) => {
     if (typeof node.type !== 'string' || !GENUI_NODE_TYPES.has(node.type) || count >= cap) return
     count++
     visit(node, path)
-  }, { familyCaps: options.familyCaps !== false, maxNodes: cap })
+  }, { familyCaps: options.familyCaps !== false, carouselCaps: options.carouselCaps, maxNodes: cap })
   return count
 }
 
@@ -1356,10 +1485,10 @@ function visitDeclaredGenuiNodes(
  * Count white-listed nodes declared by a raw spec before repair drops invalid entries.
  * @param value - raw GenUI spec.
  * @param cap - traversal ceiling.
- * @param options - `familyCaps: false` counts beyond per-family policy caps too.
+ * @param options - `familyCaps: false` counts beyond per-family policy caps; `carouselCaps: true` keeps the carousel item cap.
  * @returns declared node count up to the ceiling.
  */
-export function countDeclaredGenuiNodes(value: unknown, cap = Number.POSITIVE_INFINITY, options: { familyCaps?: boolean } = {}): number {
+export function countDeclaredGenuiNodes(value: unknown, cap = Number.POSITIVE_INFINITY, options: { familyCaps?: boolean; carouselCaps?: boolean } = {}): number {
   return visitDeclaredGenuiNodes(value, cap, () => {}, options)
 }
 
@@ -1382,6 +1511,11 @@ export function validateGenuiChartSemantics(value: unknown): string[] {
   return errors
 }
 
+/** 延后围栏中的追加项引用检查，由面板按顺序合并后执行。 */
+interface GenuiValidationOptions {
+  deferPanelReferences?: boolean
+}
+
 /**
  * Validate a raw spec value against the white list and limits, collecting
  * human-readable problems. Unlike repair this never mutates: it is a
@@ -1391,7 +1525,7 @@ export function validateGenuiChartSemantics(value: unknown): string[] {
  * @param value - 未经过别名转换的 GenUI 文档。
  * @returns 完整结构与字段校验结果。
  */
-export function validateCanonicalGenuiSpec(value: unknown): GenuiValidation {
+export function validateCanonicalGenuiSpec(value: unknown, options: GenuiValidationOptions = {}): GenuiValidation {
   const errors: string[] = []
   const v = obj(value)
   if (v === undefined) return { ok: false, errors: ['spec root must be an object'] }
@@ -1399,11 +1533,59 @@ export function validateCanonicalGenuiSpec(value: unknown): GenuiValidation {
   // agrees with the renderer about what is a valid fence body.
   if (isComponentRoot(value)) {
     const wrapped = wrapSingleComponentRoot(value)
-    if (wrapped !== null) return validateCanonicalGenuiSpec(wrapped)
+    if (wrapped !== null) return validateCanonicalGenuiSpec(wrapped, options)
     return { ok: false, errors: ['spec.items must be an array'] }
   }
   if (!Array.isArray(v.items)) return { ok: false, errors: ['spec.items must be an array'] }
   validateSchemaFieldKinds(v, 'spec', GENUI_SPEC_SCHEMA, errors, ['items'])
+  validateNestedRecordSchemas(v, 'spec', GENUI_SPEC_SCHEMA, errors)
+  if (Array.isArray(v.computed)) {
+    if (v.computed.length > GENUI_LIMITS.maxComputedFields) {
+      errors.push(`spec.computed exceeds ${GENUI_LIMITS.maxComputedFields} fields`)
+    }
+    for (const [index, entry] of v.computed.slice(0, GENUI_LIMITS.maxComputedFields).entries()) {
+      const formula = obj(entry)
+      if (formula === undefined) continue
+      const at = `spec.computed[${index}]`
+      if (typeof formula.id === 'string' && !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(formula.id)) {
+        errors.push(`${at}.id must be a field name of at most 64 characters`)
+      }
+      if (typeof formula.expr === 'string' && formula.expr.length > SAFE_MATH_LIMITS.maxExpressionLength) {
+        errors.push(`${at}.expr exceeds ${SAFE_MATH_LIMITS.maxExpressionLength} characters`)
+      }
+      const format = obj(formula.format)
+      if (format !== undefined) {
+        const style = format.style
+        if (style !== undefined && !['decimal', 'currency', 'percent'].includes(String(style))) {
+          errors.push(`${at}.format.style must be decimal, currency, or percent`)
+        }
+        if (style === 'currency' && (typeof format.currency !== 'string' || !/^[A-Z]{3}$/.test(format.currency))) {
+          errors.push(`${at}.format.currency must be a three-letter uppercase currency code`)
+        }
+        if (format.locale !== undefined && (typeof format.locale !== 'string' || !isValidComputedLocale(format.locale))) {
+          errors.push(`${at}.format.locale is invalid`)
+        }
+        for (const field of ['minimumFractionDigits', 'maximumFractionDigits']) {
+          const value = format[field]
+          if (value !== undefined && (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 12)) {
+            errors.push(`${at}.format.${field} must be an integer from 0 to 12`)
+          }
+        }
+        if (typeof format.minimumFractionDigits === 'number' && typeof format.maximumFractionDigits === 'number'
+          && format.minimumFractionDigits > format.maximumFractionDigits) {
+          errors.push(`${at}.format.minimumFractionDigits cannot exceed maximumFractionDigits`)
+        }
+      }
+    }
+  }
+  const repaired = repairCanonicalGenuiSpec(v)
+  if (repaired !== null) {
+    // 追加项是增量；等较早的字段与公式可用后，再由面板顺序合并流程检查外部引用。
+    const append = options.deferPanelReferences === true && repaired.panel === true && repaired.append === true
+    const graph = buildComputedGraph(repaired.computed ?? [], getComputedInputIds(repaired), new Set(), append)
+    for (const [id, error] of Object.entries(graph.errors)) errors.push(`spec.computed.${id}: ${error}`)
+    validateComputedReferences(repaired.title, repaired.items, new Set((repaired.computed ?? []).map(field => field.id)), errors, append)
+  }
   let count = 0
   let capped = false
   const walk = (list: unknown, depth: number, path: string): void => {
@@ -1436,7 +1618,15 @@ export function validateCanonicalGenuiSpec(value: unknown): GenuiValidation {
     if (depth <= GENUI_LIMITS.maxDepth) for (const child of genuiChildSlots(value, path, { familyCaps: false })) visitChild(child.value, depth + 1, child.path)
   }
   walk(v.items, 0, 'items')
-  if (errors.length === 0) errors.push(...analyzeSubmissionRegistry(v as unknown as GenuiSpec).diagnostics)
+  // Submission membership follows the rendered tree: policy-elided fields
+  // cannot conflict with visible fields or require unavailable groups.
+  if (errors.length === 0 && repaired !== null) errors.push(...analyzeSubmissionRegistry(repaired,
+    options.deferPanelReferences === true && repaired.panel === true && repaired.append === true).diagnostics)
+  if (repaired !== null) {
+    for (const id of getDuplicateComputedInputIds(repaired)) {
+      errors.push(`spec.items contains duplicate input field ID '${id}'`)
+    }
+  }
   const uniqueErrors = [...new Set(errors)]
   return { ok: uniqueErrors.length === 0, errors: uniqueErrors }
 }
@@ -1494,34 +1684,70 @@ export interface GenuiProcessResult {
  * @param value - Raw GenUI spec or bare component.
  * @returns Canonical input, repaired output, diagnostics, and node counts.
  */
-export function processGenuiSpec(value: unknown): GenuiProcessResult {
+export function processGenuiSpec(value: unknown, options: GenuiValidationOptions = {}): GenuiProcessResult {
   const normalized = normalizeGenuiSpec(value)
-  const repaired = repairCanonicalGenuiSpec(normalized.value)
-  const validation = validateCanonicalGenuiSpec(normalized.value)
+  const repairCtx: RepairCtx = {
+    remaining: GENUI_LIMITS.maxNodes,
+    truncatedTableRows: 0,
+    truncatedListItems: 0,
+    truncatedFileTreeItems: 0,
+  }
+  const repaired = repairCanonicalGenuiSpec(normalized.value, repairCtx)
+  const validation = validateCanonicalGenuiSpec(normalized.value, options)
   // Policy-aware ledger (#298): nodes beyond a per-family cap (tabs ≤
-  // maxTabs, accordion items ≤ maxAccordionItems) are truncated BY DESIGN, so
+  // maxTabs, accordion items ≤ maxAccordionItems, carousel items ≤
+  // maxCarouselItems) are truncated BY DESIGN, so
   // they are not counted as "declared but vanished" — otherwise the fence
   // below would always degrade to a code block and the truncation in repair
   // could never take effect. The uncapped pass measures the truncation for
   // the teaching warning instead.
   const declaredNativeCount = countDeclaredGenuiNodes(normalized.value, GENUI_LIMITS.maxNodes + 1)
-  const uncappedDeclaredCount = countDeclaredGenuiNodes(normalized.value, GENUI_LIMITS.maxNodes + 1, { familyCaps: false })
+  const uncappedPolicyNodeCount = countDeclaredGenuiNodes(normalized.value, GENUI_LIMITS.maxNodes + 1, { familyCaps: false, carouselCaps: true })
   const renderedNativeCount = repaired === null ? 0 : countRenderedNativeGenuiNodes(repaired)
   const renderedTotalCount = repaired === null ? 0 : countGenuiNodes(repaired)
   const unsupportedComponents = diagnoseUnsupportedGenuiTypes(normalized.value)
   const errors = [...validation.errors, ...unsupportedComponents.map(diagnostic => diagnostic.message)]
   if (repaired !== null && errors.length === 0) {
-    errors.push(...analyzeSubmissionRegistry(repaired).diagnostics)
+    errors.push(...analyzeSubmissionRegistry(repaired,
+      options.deferPanelReferences === true && repaired.panel === true && repaired.append === true).diagnostics)
   }
   if (declaredNativeCount > renderedNativeCount) {
     errors.push(`repair dropped ${declaredNativeCount - renderedNativeCount} declared native node(s): declared ${declaredNativeCount}, rendered ${renderedNativeCount}`)
   }
   const warnings: GenuiDiagnostic[] = [...normalized.warnings, ...diagnoseUnknownGenuiFields(normalized.value)]
-  if (uncappedDeclaredCount > declaredNativeCount) {
+  let carouselItemOverflow = 0
+  let imageGroupOverflow = 0
+  visitDeclaredGenuiNodes(normalized.value, GENUI_LIMITS.maxNodes + 1, node => {
+    if (node.type === 'carousel' && Array.isArray(node.items)) {
+      carouselItemOverflow += Math.max(0, node.items.length - GENUI_LIMITS.maxCarouselItems)
+    } else if (node.type === 'image-group' && Array.isArray(node.items)) {
+      imageGroupOverflow += Math.max(0, node.items.length - GENUI_LIMITS.maxImageGroupItems)
+    }
+  })
+  const truncationReasons: string[] = []
+  if (uncappedPolicyNodeCount > declaredNativeCount) {
+    truncationReasons.push(`${uncappedPolicyNodeCount - declaredNativeCount} 个声明节点超出 tabs ≤ ${GENUI_LIMITS.maxTabs} / accordion ≤ ${GENUI_LIMITS.maxAccordionItems} 的上限`)
+  }
+  if (carouselItemOverflow > 0) {
+    truncationReasons.push(`${carouselItemOverflow} 个 carousel 项超出 carousel ≤ ${GENUI_LIMITS.maxCarouselItems} 的上限`)
+  }
+  if (imageGroupOverflow > 0) {
+    truncationReasons.push(`${imageGroupOverflow} 张图片超出 image-group ≤ ${GENUI_LIMITS.maxImageGroupItems} 的上限`)
+  }
+  if (repairCtx.truncatedTableRows > 0) {
+    truncationReasons.push(`${repairCtx.truncatedTableRows} 行超出 table.rows ≤ ${GENUI_LIMITS.maxTableRows} 的上限`)
+  }
+  if (repairCtx.truncatedListItems > 0) {
+    truncationReasons.push(`${repairCtx.truncatedListItems} 项超出 list.items ≤ ${GENUI_LIMITS.maxListItems} 的上限`)
+  }
+  if (repairCtx.truncatedFileTreeItems > 0) {
+    truncationReasons.push(`${repairCtx.truncatedFileTreeItems} 个节点超出 file-tree 每层 ≤ ${GENUI_LIMITS.maxListItems} 的上限`)
+  }
+  if (truncationReasons.length > 0) {
     warnings.push({
       kind: 'truncated',
       path: 'spec',
-      message: `策略上限截断:${uncappedDeclaredCount - declaredNativeCount} 个声明节点超出 tabs ≤ ${GENUI_LIMITS.maxTabs} / accordion ≤ ${GENUI_LIMITS.maxAccordionItems} 的上限,未渲染;围栏照常渲染,重发时可拆分为多个组件`,
+      message: `策略上限截断:${truncationReasons.join('；')},未渲染;策略限制包括 tabs ≤ ${GENUI_LIMITS.maxTabs} / accordion ≤ ${GENUI_LIMITS.maxAccordionItems} / carousel ≤ ${GENUI_LIMITS.maxCarouselItems} / image-group ≤ ${GENUI_LIMITS.maxImageGroupItems} / table.rows ≤ ${GENUI_LIMITS.maxTableRows} / list.items ≤ ${GENUI_LIMITS.maxListItems} / file-tree 每层 ≤ ${GENUI_LIMITS.maxListItems};围栏照常渲染,重发时可分为多个组件`,
     })
   }
   return {
@@ -1674,6 +1900,47 @@ export function partialRepairGenuiSpec(processed: GenuiProcessResult): GenuiSpec
 }
 
 
+/** 校验模板文字与图表、表格中的计算引用是否指向已声明字段。 */
+function validateComputedReferences(title: unknown, items: unknown, computedIds: ReadonlySet<string>, errors: string[], allowExternalReferences = false): void {
+  const visited = new WeakSet<object>()
+  let visitedCount = 0
+  const visit = (value: unknown, path: string, referenceAllowed: boolean, depth: number, templateAllowed: ComputedTemplateScope = false, nodeScope: ComputedNodeScope = false): void => {
+    if (depth > GENUI_LIMITS.maxDepth * 2 || visitedCount >= GENUI_LIMITS.maxNodes * 8) return
+    if (typeof value === 'string') {
+      if (!templateAllowed) return
+      for (const match of value.matchAll(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g)) {
+        const id = match[1]!
+        if (!allowExternalReferences && !computedIds.has(id)) errors.push(`${path} references unknown computed field '${id}'`)
+      }
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    if (nodeScope === false && !referenceAllowed && !templateAllowed) return
+    if (visited.has(value)) return
+    visited.add(value)
+    visitedCount += 1
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${path}[${index}]`, referenceAllowed, depth + 1, templateAllowed, nodeScope))
+      return
+    }
+    const record = value as Record<string, unknown>
+    const nodeType = nodeScope === true ? record.type : undefined
+    if (referenceAllowed && Object.keys(record).length === 1 && typeof record.$computed === 'string') {
+      if (!allowExternalReferences && !computedIds.has(record.$computed)) errors.push(`${path} references unknown computed field '${record.$computed}'`)
+      return
+    }
+    for (const [key, child] of Object.entries(record)) {
+      const childAllowsReference = referenceAllowed
+        || nodeType === 'table' && key === 'rows'
+        || (nodeType === 'chart' || nodeType === 'echart') && (key === 'data' || key === 'series')
+        || nodeType === 'echart' && key === 'option'
+      visit(child, `${path}.${key}`, childAllowsReference, depth + 1, getComputedTemplateScope(nodeType, key, templateAllowed), getComputedChildNodeScope(nodeType, key, nodeScope))
+    }
+  }
+  visit(title, 'spec.title', false, 0, true)
+  visit(items, 'spec.items', false, 0, false, true)
+}
+
 function validateChartData(value: unknown, at: string, errors: string[]): void {
   if (!Array.isArray(value)) return
   for (let index = 0; index < value.length; index++) {
@@ -1684,7 +1951,8 @@ function validateChartData(value: unknown, at: string, errors: string[]): void {
       continue
     }
     if (typeof datum.label !== 'string') errors.push(`${path}.label must be a string`)
-    if (typeof datum.value !== 'number' || !Number.isFinite(datum.value)) {
+    if ((typeof datum.value !== 'number' || !Number.isFinite(datum.value))
+      && repairComputedRef(datum.value) === undefined) {
       errors.push(`${path}.value must be a finite number`)
     }
     if (datum.color !== undefined && typeof datum.color !== 'string') {
@@ -1764,7 +2032,8 @@ function validateTableRows(value: unknown, at: string, errors: string[]): void {
     }
     for (let cellIndex = 0; cellIndex < row.length; cellIndex++) {
       const cell = row[cellIndex]
-      if (typeof cell !== 'string' && (typeof cell !== 'number' || !Number.isFinite(cell))) {
+      if (typeof cell !== 'string' && (typeof cell !== 'number' || !Number.isFinite(cell))
+        && repairComputedRef(cell) === undefined) {
         errors.push(`${at}[${rowIndex}][${cellIndex}] must be a string or finite number`)
       }
     }
@@ -1796,13 +2065,22 @@ function validateNode(value: unknown, depth: number, at: string, errors: string[
       isStr('content')
       isStr('text')
       break
-    case 'row': case 'col': case 'card': case 'grid':
+    case 'row': case 'col': case 'card': case 'grid': case 'carousel':
       if (!Array.isArray(v.items)) errors.push(`${at}: type '${type}' requires items (array)`)
       if (type === 'grid') isNum('cols')
       break
     case 'button': case 'checkbox': case 'link': case 'switch':
       if (typeof v.label !== 'string') errors.push(`${at}: type '${type}' requires label (string)`)
       isStr('label')
+      break
+    case 'image-group':
+      if (!Array.isArray(v.items)) errors.push(`${at}: type 'image-group' requires items (array)`)
+      else v.items.slice(0, GENUI_LIMITS.maxImageGroupItems).forEach((item, index) => {
+        const image = obj(item)
+        if (image !== undefined && typeof image.src === 'string' && safeMediaSrc(image.src) === undefined) {
+          errors.push(`${at}.items[${index}].src must be an http(s) or relative media URL`)
+        }
+      })
       break
     case 'image': case 'audio': case 'video':
       if (typeof v.src !== 'string') errors.push(`${at}: type '${type}' requires src (string)`)
@@ -1938,10 +2216,16 @@ function validateNode(value: unknown, depth: number, at: string, errors: string[
       break
     case 'svg':
       if (typeof v.code !== 'string') errors.push(`${at}: type 'svg' requires code (string)`)
+      else if (v.code.length > GENUI_LIMITS.maxCode) {
+        errors.push(`${at}.code length ${v.code.length} exceeds SVG limit ${GENUI_LIMITS.maxCode}; simplify or split the SVG`)
+      }
       isNum('height')
       break
     case 'mermaid':
       if (typeof v.code !== 'string') errors.push(`${at}: type 'mermaid' requires code (string)`)
+      break
+    case 'map':
+      validateMap(v, at, errors)
       break
     case 'scene3d':
       if (!Array.isArray(v.meshes)) errors.push(`${at}: type 'scene3d' requires meshes (array)`)

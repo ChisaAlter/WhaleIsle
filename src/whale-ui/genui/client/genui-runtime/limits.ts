@@ -8,12 +8,18 @@ export const GENUI_LIMITS = {
   maxString: 2000,
   /** Maximum length of a `code` body. */
   maxCode: 12_000,
+  /** Copy preview only; clipboard text keeps the existing maxCode limit. */
+  maxCopyPreview: 2000,
+  maxCopyPreviewLines: 30,
   /** Maximum length of a mermaid source. */
   maxMermaid: 8000,
   /** Maximum `grid` columns. */
   maxGridCols: 12,
   /** Maximum `tabs` count. */
   maxTabs: 12,
+  /** Bounded gallery/slide counts; carousel children also consume maxNodes. */
+  maxCarouselItems: 24,
+  maxImageGroupItems: 24,
   /** Maximum `accordion` items. */
   maxAccordionItems: 24,
   /** Maximum `list` items. */
@@ -28,8 +34,13 @@ export const GENUI_LIMITS = {
   /** Maximum `plot` series and per-series parameters. */
   maxPlotSeries: 8,
   maxPlotParams: 6,
+  /** Maximum computed fields evaluated for one GenUI specification. */
+  maxComputedFields: 50,
   /** Maximum `scene3d` meshes. */
   maxMeshes: 5,
+  maxMapLocations: 50,
+  maxMapRoutes: 8,
+  maxMapRoutePoints: 500,
   /** Maximum `quiz` options. */
   maxQuizOptions: 8,
   /** Maximum `steps` / `timeline` / `breadcrumb` / `keyvalue` entries. */

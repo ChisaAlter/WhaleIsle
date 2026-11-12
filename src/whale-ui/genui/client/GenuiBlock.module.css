@@ -7,17 +7,22 @@
   --dsl-g-radius-sm: var(--dsw-radius-sm, 8px);
   --dsl-g-radius-pill: var(--dsw-radius-button-sm, 14px);
 
-  --dsl-g-font-stat: 24px;
-  --dsl-g-font-stat-hero: 24px;
-  --dsl-g-font-mega: 24px;
-  --dsl-g-font-display: 24px;
-  --dsl-g-font-h1: 16px;
-  --dsl-g-font-h2: 16px;
-  --dsl-g-font-h3: 16px;
-  --dsl-g-font-body: 14px;
-  --dsl-g-font-title: 14px;
-  --dsl-g-font-meta: 12px;
-  --dsl-g-font-data: 12px;
+  /* Design system v4: restores display contrast (34/28/24/19/16) against a
+     14.5px body; the reading floor stays 12px. The three big figures are named
+     by owner: stat values, the single hero stat, and the hero cover's mega
+     figure. Sizes track `--dsh-content-font-size` past ~17px, with the
+     original size as the floor. */
+  --dsl-g-font-stat: max(34px, calc(var(--dsh-content-font-size, 14px) * 2));
+  --dsl-g-font-stat-hero: max(44px, calc(var(--dsh-content-font-size, 14px) * 2.588235294));
+  --dsl-g-font-mega: max(52px, calc(var(--dsh-content-font-size, 14px) * 3.058823529));
+  --dsl-g-font-display: max(28px, calc(var(--dsh-content-font-size, 14px) * 1.647058824));
+  --dsl-g-font-h1: max(24px, calc(var(--dsh-content-font-size, 14px) * 1.411764706));
+  --dsl-g-font-h2: max(19px, calc(var(--dsh-content-font-size, 14px) * 1.117647059));
+  --dsl-g-font-h3: max(16px, calc(var(--dsh-content-font-size, 14px) * 0.941176471));
+  --dsl-g-font-body: max(14.5px, calc(var(--dsh-content-font-size, 14px) * 0.852941176));
+  --dsl-g-font-title: max(13.5px, calc(var(--dsh-content-font-size, 14px) * 0.794117647));
+  --dsl-g-font-meta: max(12.5px, calc(var(--dsh-content-font-size, 14px) * 0.735294118));
+  --dsl-g-font-data: max(12px, calc(var(--dsh-content-font-size, 14px) * 0.705882353));
   --dsl-g-line-title: 24px;
   --dsl-g-line-body: 22px;
   --dsl-g-line-meta: 18px;
@@ -86,7 +91,7 @@
 
 /* ---------- layout primitives ---------- */
 
-.col { display: flex; flex-direction: column; gap: var(--dsl-g-gap-md); }
+.col { display: flex; flex-direction: column; gap: var(--dsl-g-gap-md); min-width: 0; }
 .row { display: flex; align-items: center; gap: var(--dsl-g-gap-md); }
 .row.wrap { flex-wrap: wrap; }
 /* Cards contain fluid charts/tables: divide the available row, not their
@@ -1513,6 +1518,25 @@ img.mediaPlayer { aspect-ratio: 16 / 9; object-fit: cover; background: var(--dsl
 .copyChip:hover { background: var(--dsl-g-hover); }
 .copyChip:active { background: var(--dsl-g-hover-strong); }
 .copyChipDone { border-color: var(--dsw-alias-state-success-primary); color: var(--dsl-g-success-text); }
+
+.copyExpandable { min-width: 0; max-width: 100%; }
+.copyControls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dsl-g-gap-xs); }
+.copyPreview {
+  box-sizing: border-box;
+  max-height: 240px;
+  overflow: auto;
+  margin: var(--dsl-g-gap-xs) 0 0;
+  padding: var(--dsl-g-gap-sm);
+  border: 1px solid var(--dsl-g-border);
+  border-radius: var(--dsl-g-radius-control);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsl-g-font-mono);
+  font-size: var(--dsl-g-font-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.copyPreviewHint { margin-top: var(--dsl-g-gap-xs); color: var(--dsw-alias-label-secondary); font-size: var(--dsl-g-font-meta); }
 
 /* ---------- mermaid ---------- */
 

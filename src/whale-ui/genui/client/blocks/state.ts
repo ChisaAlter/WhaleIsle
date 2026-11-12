@@ -26,18 +26,23 @@ export interface GenuiBlockProps {
   onStateSnapshot?: ((state: BlockInteractionState) => void) | undefined
 }
 
+/** Block-wide aggregation state. Grouped radios store one selected label in
+ * `answers`; grouped checkboxes store a selected-label array in `multiAnswers`.
+ * Keeping the two kinds separate preserves the string form used by radios and
+ * local scoring; submission merges them into `answers` (`string | string[]`). */
 export interface AnswersState {
   answers: Record<string, string>
   multiAnswers: Record<string, string[]>
   fields: Record<string, string>
   secretFields: ReadonlySet<string>
+  /** Numeric fields whose visible draft is not a valid decimal value. */
+  invalidNumericFields: ReadonlySet<string>
   registry: SubmissionRegistry
   locked: boolean
   round: number
   setAnswer: (group: string, choice: string) => void
   setMultiAnswer: (group: string, choice: string, checked: boolean) => void
   setField: (id: string, value: string) => void
-  registerSecretField: (id: string) => void
   clear: () => void
   setLocked: (locked: boolean) => void
 }

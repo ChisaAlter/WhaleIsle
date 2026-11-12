@@ -138,13 +138,16 @@ function normalizeRecordTree(
   if (holder === undefined) return value
   const out = { ...holder }
   for (const [alias, canonical] of Object.entries(definition.aliases)) {
-    if (!(alias in out) || canonical in out) continue
-    out[canonical] = out[alias]
+    if (!(alias in out)) continue
+    const keptCanonical = canonical in out
+    if (!keptCanonical) out[canonical] = out[alias]
     delete out[alias]
     warnings.push({
       kind: 'alias',
       path: `${at}.${alias}`,
-      message: `${at}.${alias} normalized/adopted as '${canonical}'`,
+      message: keptCanonical
+        ? `${at}.${alias} is ignored because canonical field '${canonical}' is present`
+        : `${at}.${alias} normalized/adopted as '${canonical}'`,
       type,
       field: alias,
       canonical,
@@ -192,7 +195,19 @@ function normalizeNode(value: unknown, path: string, warnings: GenuiDiagnostic[]
   // Nested data records (keyvalue pairs, file-tree items, …) carry their own
   // field aliases — apply them before validation/repair see the records.
   for (const [field, nested] of Object.entries(definition.nested)) {
-    if (out[field] !== undefined) out[field] = normalizeRecordTree(out[field], nested, `${path}.${field}`, type, warnings)
+    if (out[field] === undefined) continue
+    const nestedValue = out[field]
+    const cap = type === 'image-group' && field === 'items' ? GENUI_LIMITS.maxImageGroupItems
+      : type === 'map' && field === 'locations' ? GENUI_LIMITS.maxMapLocations
+      : type === 'map' && field === 'routes' ? GENUI_LIMITS.maxMapRoutes : undefined
+    if (cap !== undefined && Array.isArray(nestedValue)) {
+      out[field] = [
+        ...normalizeRecordTree(nestedValue.slice(0, cap), nested, `${path}.${field}`, type, warnings) as unknown[],
+        ...nestedValue.slice(cap),
+      ]
+    } else {
+      out[field] = normalizeRecordTree(nestedValue, nested, `${path}.${field}`, type, warnings)
+    }
   }
   const normalizeNodeValue = (child: unknown, childPath: string): unknown => normalizeNode(child, childPath, warnings, depth + 1)
 
