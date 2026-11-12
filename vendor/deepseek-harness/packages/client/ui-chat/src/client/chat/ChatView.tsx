@@ -263,7 +263,7 @@ export function ChatView({
               && (running || motionTail || pendingInputs.length > 0) ? '' : undefined}>
             {(hasMore || historyWasPartial) && (
               <div className={css.older} ref={scroll.historyEdgeRef} data-chat-history={historyLoadStatus}>
-                <button type="button" disabled={!hasMore}
+                <button type="button" disabled={!hasMore || loadingOlder} aria-busy={loadingOlder || undefined}
                   onClick={scroll.loadEarlier}>
                   {([
                     ['more', t('chat.loadOlder')],
@@ -277,7 +277,7 @@ export function ChatView({
                         : scroll.historyInputHeld ? 'more'
                           : scroll.historyProcessing ? 'processing' : 'more'
                     return <span key={state} aria-hidden={state !== current}
-                      className={state === current ? undefined : css.historyHidden}>{label}</span>
+                      className={state === current ? undefined : css.historyHidden}>{state === 'loading' && loadingOlder && <StateDot state="ongoing" size={14} />}{label}</span>
                   })}
                 </button>
               </div>

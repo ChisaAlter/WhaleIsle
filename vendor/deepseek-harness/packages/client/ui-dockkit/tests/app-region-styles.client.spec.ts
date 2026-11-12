@@ -50,9 +50,9 @@ describe('macOS app-region ownership', () => {
     for (const [, value] of regionRules) {
       expect(value).toBe('no-drag')
     }
-    const [selector] = regionRules.find(([name]) => name.includes('.stripTabs'))!
-    for (const part of ['.stripTabs', '.stripChrome', '.paneBody', '.float', '.divider']) {
-      expect(selector, part).toContain(`:global(html[data-platform='darwin']) ${part}`)
+    const [selector] = regionRules.find(([name]) => name.includes('.pane'))!
+    for (const part of ['.pane', '.stripChrome', '.float', '.divider']) {
+      expect(selector, part).toContain(`:global(:where(html[data-platform='darwin'])) ${part}`)
     }
   })
 

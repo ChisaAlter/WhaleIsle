@@ -5066,14 +5066,15 @@ describe('ChatView', () => {
     }
   })
 
-  it('paging keeps its caption and blocks duplicate loads while busy', () => {
+  it('paging shows loading feedback and blocks duplicate loads while busy', async () => {
     const h = makeHarness({ nodes: [user(5, 'later')] }, { hasMore: true })
     const view = render(<h.ChatView {...h.props} />)
     const button = view.getByRole('button', { name: '加载更早' }) as HTMLButtonElement
     fireEvent.click(button)
+    await historyFrame()
     expect(h.loadOlder).toHaveBeenCalledTimes(1)
     act(() => { h.setSession({ loadingOlder: true }) })
-    expect(view.getByRole('button', { name: '加载更早' })).toBe(button)
+    expect(view.getByRole('button', { name: '正在加载' })).toBe(button)
     expect(button.getAttribute('aria-busy')).toBe('true')
     expect(button.disabled).toBe(true)
     expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()

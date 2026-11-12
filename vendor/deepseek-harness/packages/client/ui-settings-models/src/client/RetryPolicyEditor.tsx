@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Checkbox } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Checkbox, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { ModelsKey } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -385,14 +385,14 @@ export function RetryPolicyEditor(props: RetryPolicyEditorProps): ReactNode {
   return (
     <div className={styles['field']} role="group" aria-labelledby={labelId}>
       <span id={labelId} className={styles['fieldLabel']}>{t('retryPolicy')}</span>
-      <select
-        className={`${styles['input']} ${styles['selectInput']}`}
+      <SettingsSelect
+        variant="block"
         value={mode ?? ''}
-        aria-labelledby={labelId}
+        aria-label={t('retryPolicy')}
         aria-describedby={failure !== undefined && failure.path === undefined ? props.failureId : undefined}
         disabled={disabled}
-        onChange={(event) => {
-          const next = defaults.branch(event.target.value)
+        onChange={(value) => {
+          const next = defaults.branch(value)
           setTexts({})
           if (next === undefined) {
             props.onChange(undefined)
@@ -401,12 +401,11 @@ export function RetryPolicyEditor(props: RetryPolicyEditorProps): ReactNode {
           // A switched policy keeps only the fields its new mode declares.
           const declared = new Set(fieldsOf(next).map(([key]) => key))
           const kept = Object.fromEntries(Object.entries(current).filter(([key]) => declared.has(key)))
-          props.onChange({ ...kept, mode: event.target.value })
+          props.onChange({ ...kept, mode: value })
         }}
-      >
-        <option value="">{t('retryModeDefault').replace('{mode}', () => label(defaults.mode))}</option>
-        {defaults.modes.map(value => <option key={value} value={value}>{label(value)}</option>)}
-      </select>
+        options={[{ id: '', label: t('retryModeDefault').replace('{mode}', () => label(defaults.mode)) },
+          ...defaults.modes.map(value => ({ id: value, label: label(value) }))]}
+      />
       {hint === undefined ? null : <span className={styles['advancedHint']}>{t(hint)}</span>}
       {branch === undefined ? null : <div className={styles['retryBody']}>{fields(branch, branch, [])}</div>}
       {failure === undefined || !props.showFailure

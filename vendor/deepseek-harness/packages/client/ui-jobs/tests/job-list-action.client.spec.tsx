@@ -443,7 +443,7 @@ describe('JobListAction rows', () => {
     expect(menu.closest('[data-menu-material]')?.parentElement).toBe(document.body)
     fireEvent.pointerDown(menu)
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'warming up') }))
-    expect(screen.getByRole('button', { name: '1 个后台任务运行中' }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: '1 个后台任务' }).getAttribute('aria-expanded')).toBe('true')
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
   })
@@ -629,7 +629,7 @@ describe('JobListAction observation', () => {
     expect(writeText).toHaveBeenCalledWith('pnpm run build')
   })
 
-  it('anchors the portaled list with CSS without reading geometry on resize or ancestor scroll', () => {
+  it('repositions the portaled list on resize and ancestor scroll', () => {
     const { container } = render(<JobListAction {...props([outputJob()])} />)
     const trigger = screen.getByRole('button', { name: '1 个后台任务' })
     const anchor = trigger.closest('div')!
@@ -640,13 +640,12 @@ describe('JobListAction observation', () => {
     expect(menu.parentElement).toBe(document.body)
     expect(container.contains(list)).toBe(false)
     expect(anchor.style.anchorName).not.toBe('')
-    expect(menu.style.positionAnchor).toBe(anchor.style.anchorName)
-    expect(menu.style.left).toBe('')
-    expect(menu.style.top).toBe('')
+    expect(menu.style.left).toMatch(/px$/)
+    expect(menu.style.top).toMatch(/px$/)
+    const calls = measure.mock.calls.length
     fireEvent(window, new Event('resize'))
     fireEvent.scroll(container)
-    expect(menu.style.positionAnchor).toBe(anchor.style.anchorName)
-    expect(measure).not.toHaveBeenCalled()
+    expect(measure.mock.calls.length).toBeGreaterThan(calls)
   })
 
   it('gives independent job controls separate CSS anchors', () => {
@@ -659,7 +658,7 @@ describe('JobListAction observation', () => {
     expect(first.style.anchorName).not.toBe(second.style.anchorName)
   })
 
-  it('keeps visual viewport changes out of inline placement and closes normally', () => {
+  it('keeps the panel inside the visual viewport and closes normally', () => {
     const viewport = Object.assign(new EventTarget(), { width: 600, height: 500, offsetLeft: 40, offsetTop: 60 })
     vi.stubGlobal('visualViewport', viewport)
     const listen = vi.spyOn(viewport, 'addEventListener')
@@ -676,11 +675,12 @@ describe('JobListAction observation', () => {
       viewport.dispatchEvent(new Event('resize'))
     })
     expect(menu.style.positionAnchor).toBe(placement)
-    expect(menu.style.left).toBe('')
-    expect(menu.style.top).toBe('')
-    expect(menu.style.getPropertyValue('--dsh-anchored-max-width')).toBe('')
-    expect(menu.style.getPropertyValue('--dsh-anchored-max-height')).toBe('')
-    expect(listen).not.toHaveBeenCalled()
+    expect(menu.style.left).toBe('112px')
+    expect(menu.style.top).toBe('132px')
+    expect(menu.style.getPropertyValue('--dsh-anchored-max-width')).toBe('576px')
+    expect(menu.style.getPropertyValue('--dsh-anchored-max-height')).toBe('176px')
+    expect(listen).toHaveBeenCalledWith('scroll', expect.any(Function))
+    expect(listen).toHaveBeenCalledWith('resize', expect.any(Function))
     fireEvent.click(trigger)
     expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
   })

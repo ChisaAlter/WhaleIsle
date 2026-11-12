@@ -73,10 +73,10 @@ it.each(Object.entries({ zh, en, ja, es, fr, de, ru, pt }).flatMap(([locale, dic
   expect(input.selectTeamMode).not.toHaveBeenCalled()
   expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
   fireEvent.keyDown(info, { key: 'Escape' })
-  expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+  expect(screen.queryByRole('tooltip')).toBeNull()
   fireEvent.click(info)
   fireEvent.pointerDown(document.body)
-  expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+  expect(screen.queryByRole('tooltip')).toBeNull()
   expect(input.selectTeamMode).not.toHaveBeenCalled()
 })
 

@@ -5,7 +5,6 @@
 .headerRow { background: var(--changes-fill); }
 .headerRow > :first-child, .fileRow > :first-child { flex: 1; min-width: 0; }
 .actions { display: flex; flex: none; align-items: center; margin-right: 10px; }
-:global(body[data-ds-dark-theme]) .card { --changes-fill: var(--dsw-static-neutral-850); --changes-hover: var(--dsw-static-neutral-800); }
 .header { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: 100%; min-width: 0; height: 60px; margin: 0; padding: 8px 10px; border: 0; background: var(--changes-fill); color: inherit; font: inherit; text-align: left; }
 button.header { cursor: pointer; transition: background-color 120ms ease; }
 button.header:focus-visible { background: var(--changes-hover); }

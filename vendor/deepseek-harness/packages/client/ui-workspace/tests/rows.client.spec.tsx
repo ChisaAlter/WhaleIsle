@@ -730,7 +730,7 @@ describe('workspace browser rows', () => {
     view.rerender(<ProjectRowItem {...props} useWorkspaceAccess={useWorkspaceAccess} />)
     expect(screen.getByRole('treeitem').getAttribute('draggable')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: '在“Project”中新建会话' }))
-    expect(props.onCreate).toHaveBeenCalledExactlyOnceWith(props.group.workspaceId)
+    expect(props.onCreate).toHaveBeenCalledExactlyOnceWith()
   })
 
   it('ungrouped bucket offers no New Session and asks no access', () => {

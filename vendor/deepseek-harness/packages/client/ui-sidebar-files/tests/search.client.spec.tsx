@@ -63,9 +63,9 @@ const emptyHint = (h: Mounted): string | undefined => {
   if (button === null) return undefined
   expect(button.getAttribute('aria-label')).toBe(zh['search.emptyHint.label'])
   fireEvent.click(button)
-  const text = document.querySelector('[role="tooltip"]')?.textContent
+  const text = document.querySelector('[role="tooltip"]:not([aria-hidden="true"])')?.textContent
   fireEvent.click(button)
-  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  expect(document.querySelector('[role="tooltip"]:not([aria-hidden="true"])')).toBeNull()
   return text
 }
 const status = (h: Mounted): string | null | undefined => h.view.container.querySelector('[data-files-search-status]')?.textContent

@@ -387,18 +387,18 @@ it('opens a waiting Desktop sign-in in the system browser once per attempt', asy
   mock.remote.account.startSignIn.mockResolvedValue(ok({ ...view, attempt: { id, phase: 'initializing' } }))
   await actions.start()
   await c.mock.streams.opened('account/watch', 1)
-  c.mock.streams.push('account/watch', waiting)
+  c.mock.streams.push('account/watch', { type: 'snapshot', state: waiting })
   await vi.waitFor(() => { expect(openExternal).toHaveBeenCalledOnce() })
   expect(openExternal).toHaveBeenCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=light')
   const changed = vi.fn()
   actions.hooks.account.subscribe(changed)
-  c.mock.streams.push('account/watch', waiting)
+  c.mock.streams.push('account/watch', { type: 'snapshot', state: waiting })
   await vi.waitFor(() => { expect(changed).toHaveBeenCalledOnce() })
   expect(openExternal).toHaveBeenCalledOnce()
   expect(actions.hooks.account.getSnapshot()).toMatchObject({ view: waiting, loginFailed: false })
-  c.mock.streams.push('account/watch', {
+  c.mock.streams.push('account/watch', { type: 'snapshot', state: {
     ...waiting, attempt: { ...waiting.attempt!, id: 'next-attempt' as SignInAttemptId },
-  })
+  } })
   await vi.waitFor(() => { expect(openExternal).toHaveBeenCalledTimes(2) })
 })
 

@@ -316,8 +316,8 @@ describe('GitActionsControl', () => {
     mount({ cwd: '/work', git: status({ behindCount: 1 }) })
     fireEvent.click(await screen.findByRole('button', { name: 'Git actions' }))
     const push = await screen.findByRole('menuitem', { name: 'Push' })
-    expect(push).toHaveProperty('disabled', true)
-    fireEvent.pointerEnter(push.parentElement!, { pointerType: 'mouse' })
+    expect(push.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.pointerEnter(push, { pointerType: 'mouse' })
     expect((await screen.findByRole('tooltip')).textContent).toBe(
       'Branch is behind upstream. Pull/rebase before pushing.',
     )

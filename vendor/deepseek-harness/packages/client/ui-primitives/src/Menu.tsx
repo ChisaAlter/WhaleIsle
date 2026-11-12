@@ -499,7 +499,7 @@ export function Menu({ material = 'translucent', getAnchorRect, matchAnchorWidth
       onFocus={hasSub ? (event) => { submenu.focusParent(entry.id, event.currentTarget) } : undefined}
       onClick={(event) => {
         if (hasSub) submenu.openChild(entry.id, event.currentTarget, true)
-        else onSelect?.(entry.id)
+        else if (openRef.current && !entry.disabled) onSelect?.(entry.id)
       }}>{entry.label}</MenuRow>
   }
 
@@ -513,7 +513,8 @@ export function Menu({ material = 'translucent', getAnchorRect, matchAnchorWidth
       data-anchor-align={portal ? align : undefined}
       data-exact-anchor-width={portal && matchAnchorWidth ? '' : undefined}
       data-match-anchor-width={portal && minWidthFromAnchor ? '' : undefined}
-      role={open && exiting === undefined && !submenu.page ? 'menu' : undefined}
+      role={contextual && exiting !== undefined ? undefined : 'menu'}
+      {...(!open || exiting !== undefined || submenu.page ? { inert: '' } : {})}
       aria-hidden={open && exiting === undefined && !submenu.page ? undefined : true}
       data-dsh-motion={contextual ? undefined : 'popover'}
       data-state={contextual ? undefined : state}

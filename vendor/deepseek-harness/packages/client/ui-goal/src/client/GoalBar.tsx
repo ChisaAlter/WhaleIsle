@@ -150,20 +150,6 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
                 <span className={css.objective}>{visibleGoal.objective}</span>
                 {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
                 <div className={css.actions}>
-                  {visibleGoal.phase === 'active' && displayed.activation === 'armed' && (
-                    <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
-                      <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
-                        <IconPauseOutlineRegular size={14} />
-                      </Button>
-                    </Tooltip>
-                  )}
-                  {displayed.showResume && (
-                    <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
-                      <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
-                        <IconPlayOutlineRegular size={14} />
-                      </Button>
-                    </Tooltip>
-                  )}
                   <Tooltip portal label={t('action.edit')} side="bottom" delayMs={500}>
                     <button
                       type="button"
@@ -180,6 +166,20 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
                       <IconTrashOutlineRegular size={14} />
                     </Button>
                   </Tooltip>
+                  {visibleGoal.phase === 'active' && (displayed.activation === 'armed' || displayed.activation === undefined) && (
+                    <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
+                      <Button type="button" className={css.iconBtn} disabled={pending || displayed.activation !== 'armed'} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
+                        <IconPauseOutlineRegular size={14} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                  {displayed.showResume && (
+                    <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
+                      <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
+                        <IconPlayOutlineRegular size={14} />
+                      </Button>
+                    </Tooltip>
+                  )}
                 </div>
               </div>
             </div>

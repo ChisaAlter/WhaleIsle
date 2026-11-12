@@ -475,7 +475,7 @@
      drawer, not with the dimmed conversation showing through. The wallpaper
      theme rewrites --dsw-alias-bg-base into a color-mix capped at 45%, so the
      drawer pins the static base the theme mixes over instead. */
-  --dsh-phone-drawer-canvas: var(--dsw-static-neutral-bluish-00);
+  --dsh-phone-drawer-canvas: var(--dsw-alias-phone-drawer-canvas);
   background-color: var(--dsh-phone-drawer-canvas);
   background-image: linear-gradient(
     var(--dsh-sidebar-rail-fill, var(--dsw-specific-sidebar-fill)),
@@ -508,7 +508,7 @@
 /* Same static base pair ui-theme mixes over for a live wallpaper; the dark
    half is picked by the attribute the theme sheets already use. */
 :global(body[data-ds-dark-theme]) .frame[data-phone] .sidebarCol {
-  --dsh-phone-drawer-canvas: var(--dsw-static-neutral-bluish-950);
+  --dsh-phone-drawer-canvas: var(--dsw-alias-phone-drawer-canvas);
 }
 
 .frame[data-phone] .detailsCol {

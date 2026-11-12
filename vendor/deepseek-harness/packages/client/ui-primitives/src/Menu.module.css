@@ -399,6 +399,7 @@
  * supplies the active row's offset within the parent card and the child card's
  * natural height. */
 .submenu {
+  -webkit-app-region: no-drag;
   --dsh-menu-window-top: max(12px, var(--dsh-frame-overlay-top, 12px));
   position: fixed;
   position-anchor: var(--dsh-submenu-parent);

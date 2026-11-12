@@ -369,10 +369,10 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.entries('shell.overlay')).toHaveLength(0)
   })
 
-  it('keeps the file-tree control without an independent Session header opener and removes it on teardown', async () => {
+  it('contributes the file-tree control and Session header opener and removes it on teardown', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ apps: [] }), { status: 200 })))
     const { ctx, fiber } = await bench()
-    expect(headerEntryIds(ctx)).toEqual([])
+    expect(headerEntryIds(ctx)).toEqual(['open-in-app'])
     expect(ctx.slots.entries('sidebar.right.tab.files.actions')[0]?.component).toBe(OpenInAppAction)
     await fiber.dispose()
     expect(headerEntryIds(ctx)).toEqual([])

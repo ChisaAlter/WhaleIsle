@@ -182,6 +182,7 @@ body {
   --dsw-alias-bg-layer-2: color-mix(in srgb, var(--dsw-static-neutral-bluish-00) var(--dsw-alias-glass-opacity), transparent);
   --dsw-alias-terminal-pane: var(--dsw-alias-bg-base);
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-phone-drawer-canvas: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24);
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.12);
   --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);
@@ -344,6 +345,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-bg-layer-2: color-mix(in srgb, var(--dsw-static-neutral-bluish-850) var(--dsw-alias-glass-opacity), transparent);
   --dsw-alias-terminal-pane: var(--dsw-alias-bg-base);
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-phone-drawer-canvas: var(--dsw-static-neutral-bluish-950);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.2);
   --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);

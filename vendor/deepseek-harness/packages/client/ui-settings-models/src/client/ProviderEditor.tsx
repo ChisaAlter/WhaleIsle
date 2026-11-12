@@ -25,7 +25,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialInfo, LlmNativeAuth, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { Button, IconQuestionOutlineRegular, Input, SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconQuestionOutlineRegular, Input, SettingsSelect, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -211,8 +211,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { onBusyChange } = props
   useEffect(() => { onBusyChange?.(busy || listBusy) }, [busy, listBusy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
-  const [failureDismissed, setFailureDismissed] = useState(false)
-  const [failureSequence, setFailureSequence] = useState(0)
   const [customizedOpen, setCustomizedOpen] = useState(false)
   // A settings success advances both retry baselines immediately. Keeping the
   // derived fields in the draft prevents a pushed namespace refresh from
@@ -400,8 +398,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const apply = async (): Promise<void> => {
     setBusy(true)
     setFailure(undefined)
-    setFailureDismissed(false)
-    setFailureSequence(sequence => sequence + 1)
     try {
       const failure = await applyOnce()
       if (failure !== undefined) {
@@ -706,9 +702,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       {layout === 'unknown'
         ? <p className={styles['advancedHint']}>{`${t('advancedHint')} (${namespace.ns})`}</p>
         : curatedFields(layout)}
-      {failure !== undefined && !failureDismissed
-        ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} />
-        : null}
       {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
       {props.credentialOnly === true || modelFailure === undefined
         ? null

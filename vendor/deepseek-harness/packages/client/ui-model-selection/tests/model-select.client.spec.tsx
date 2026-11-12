@@ -580,7 +580,7 @@ describe('ModelSelect reasoning effort', () => {
       .map(row => row.textContent)).toEqual(['Max'])
   })
 
-  it('anchors the body portal with CSS and closes only on truly-outside mousedown', () => {
+  it('positions the body portal from its anchor geometry and closes only on truly-outside mousedown', () => {
     const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
     onTestFinished(() => { measure.mockRestore() })
     const { container } = render(<ModelSelect renderSlot={renderLabel}
@@ -599,10 +599,9 @@ describe('ModelSelect reasoning effort', () => {
     expect(menu.parentElement).toBe(document.body)
     const anchor = trigger.style.getPropertyValue('--dsh-model-anchor')
     expect(anchor).toMatch(/^--dsh-model-/)
-    expect(menu.style.getPropertyValue('--dsh-model-anchor')).toBe(anchor)
-    expect(menu.style.left).toBe('')
-    expect(menu.style.top).toBe('')
-    expect(measure).not.toHaveBeenCalled()
+    expect(menu.style.left).toMatch(/px$/)
+    expect(menu.style.top).toMatch(/px$/)
+    expect(measure).toHaveBeenCalled()
     // Interactions inside the trigger subtree or the portaled card stay open.
     expect(fireEvent.mouseDown(menu)).toBe(true)
     expect(fireEvent.mouseDown(trigger)).toBe(false)

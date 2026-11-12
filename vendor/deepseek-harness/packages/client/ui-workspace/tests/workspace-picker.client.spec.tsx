@@ -48,6 +48,8 @@ function anchor(): { current: HTMLElement } {
     top: 10, left: 20, width: 30, height: 40, right: 50, bottom: 50,
     x: 20, y: 10, toJSON: () => ({}),
   })
+  document.body.appendChild(element)
+  afterEach(() => { element.remove() })
   return { current: element }
 }
 

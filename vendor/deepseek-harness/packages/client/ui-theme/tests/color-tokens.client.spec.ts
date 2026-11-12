@@ -8,6 +8,8 @@ import { packageFiles, parseRules } from './stylesheet-scan.ts'
  * repo-relative suffix.
  */
 const EXEMPT_FILES: Record<string, string> = {
+  'packages/client/ui-conversation/src/client/ComposerBeam.module.css': 'user-customizable composer beam artwork fallbacks',
+  'packages/client/ui-theme/src/wallpaper.ts': 'wallpaper artwork palette independent of semantic surface tokens',
   'packages/client/ui-primitives/src/FileTypeIcon.module.css': 'file-type artwork palette',
   'packages/client/ui-primitives/src/FileTypeIcon.tsx': 'file-type artwork palette',
   'packages/client/ui-primitives/src/ansi.ts': 'ANSI SGR palette mapping',

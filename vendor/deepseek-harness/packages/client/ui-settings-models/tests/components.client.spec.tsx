@@ -1064,7 +1064,7 @@ describe('ModelsSection', () => {
     fireEvent.change(ids[2] as HTMLInputElement, { target: { value: 'deepseek-v4-flash' } })
     fireEvent.click(screen.getByText(en.apply))
 
-    await screen.findByText(`Model 3: ${en.modelIdDuplicate}`)
+    await screen.findByText(`Model 3: ${en.modelIdDuplicate}`, { selector: ':not([class*="visuallyHidden"])' })
     expect(mutate).not.toHaveBeenCalled()
   })
 
@@ -1186,7 +1186,7 @@ describe('ModelsSection', () => {
     expect((windows[0] as HTMLInputElement).value).toBe('1 gazillion')
 
     fireEvent.click(screen.getByText(en.apply))
-    await screen.findByText(`Model 1: ${en.modelContextInvalid}`)
+    await screen.findByText(`Model 1: ${en.modelContextInvalid}`, { selector: ':not([class*="visuallyHidden"])' })
     expect(mutate).not.toHaveBeenCalled()
   })
 
@@ -2827,13 +2827,13 @@ it('migrates account model edits and id renames without losing legacy capacities
   fireEvent.change(screen.getByLabelText(`${en.maxTokens} 1`), { target: { value: '16K' } })
   fireEvent.click(screen.getByText(en.apply))
   await waitFor(() => { expect(writeSettings).toHaveBeenCalledWith('llm-deepseek-account', [
-    { op: 'set', path: ['modelOverrides'], value: {
+    ...Object.entries({
       'deepseek-v4-pro': { disabled: true },
-      'deepseek-v4-flash': { name: 'Personal', contextWindow: 300_000, maxTokens: 12_000,
+      'deepseek-v4-flash': { name: 'Personal', contextWindow: 300_000,
         description: 'Keep this detail', inputModalities: ['text'], disabled: true },
-      'personal-model': { name: 'Renamed', contextWindow: 512_000, maxTokens: 16_000,
-        description: 'Keep this detail', inputModalities: ['text'] },
-    } },
+      'personal-model': { name: 'Renamed', description: 'Keep this detail', contextWindow: 512_000,
+        maxTokens: 16_000, inputModalities: ['text'] },
+    }).flatMap(([id, fields]) => Object.entries(fields).map(([field, value]) => ({ op: 'set', path: ['modelOverrides', id, field], value }))),
     { op: 'unset', path: ['models'] },
   ], 7) })
   expect(storeCredential).not.toHaveBeenCalled()
@@ -2845,7 +2845,7 @@ it('writes only the changed field for a live account model and keeps catalog met
   fireEvent.change(screen.getByLabelText(`${en.contextWindow} 1`), { target: { value: '768K' } })
   fireEvent.click(screen.getByText(en.apply))
   await waitFor(() => { expect(writeSettings).toHaveBeenCalledWith('llm-deepseek-account', [
-    { op: 'set', path: ['modelOverrides'], value: { 'deepseek-v4-flash': { contextWindow: 768_000 } } },
+    { op: 'set', path: ['modelOverrides', 'deepseek-v4-flash', 'contextWindow'], value: 768_000 },
   ], 7) })
 })
 
@@ -2857,10 +2857,9 @@ it.each(['manual-model', '__proto__'])('adds manual account model %s to an empty
   fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Manual' } })
   fireEvent.click(screen.getByText(en.apply))
   await waitFor(() => { expect(writeSettings).toHaveBeenCalledWith('llm-deepseek-account', [
-    { op: 'set', path: ['modelOverrides'], value: {
-      'deepseek-v4-flash': { disabled: true }, 'deepseek-v4-pro': { disabled: true },
-      [id]: { name: 'Manual' },
-    } }, { op: 'unset', path: ['models'] },
+    { op: 'set', path: ['modelOverrides', 'deepseek-v4-flash', 'disabled'], value: true },
+    { op: 'set', path: ['modelOverrides', 'deepseek-v4-pro', 'disabled'], value: true },
+    { op: 'set', path: ['modelOverrides', id, 'name'], value: 'Manual' }, { op: 'unset', path: ['models'] },
   ], 7) })
 })
 
@@ -2869,7 +2868,7 @@ it('disables a removed account model and restores the inherited catalog through 
   fireEvent.click(screen.getByLabelText(`${en.removeModel} 1`))
   fireEvent.click(screen.getByText(en.apply))
   await waitFor(() => { expect(writeSettings).toHaveBeenCalledWith('llm-deepseek-account', [
-    { op: 'set', path: ['modelOverrides'], value: { 'deepseek-v4-flash': { name: 'Personal', disabled: true } } },
+    { op: 'set', path: ['modelOverrides', 'deepseek-v4-flash', 'disabled'], value: true },
   ], 7) })
   cleanup()
   const reset = renderAccountEditor({ models: [{ id: 'manual-model', contextWindow: 300_000 }],

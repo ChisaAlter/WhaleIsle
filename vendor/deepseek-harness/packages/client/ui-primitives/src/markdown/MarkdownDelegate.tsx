@@ -101,7 +101,7 @@ export function MarkdownDelegateProvider({
   renderCode,
 }: MarkdownDelegateProviderProps): ReactNode {
   const delegate = useMemo(() => ({ openExternalLink, openFile, openImage, fileImages, getTriggerProps, renderCode }),
-    [openExternalLink, openFile, openImage, fileImages, getTriggerProps])
+    [openExternalLink, openFile, openImage, fileImages, getTriggerProps, renderCode])
   return (
     <MarkdownDelegateContext.Provider value={delegate}>
       {children}

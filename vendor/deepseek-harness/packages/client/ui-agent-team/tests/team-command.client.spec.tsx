@@ -60,7 +60,8 @@ describe.each([
     fireEvent.keyDown(toggle, { key: 'Enter' })
     expect(view.container.querySelector('pre')?.textContent).toBe(raw)
     fireEvent.keyDown(toggle, { key: ' ' })
-    expect(view.container.querySelector('pre')).toBeNull()
+    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(view.container.querySelector('pre')?.closest('[aria-hidden="true"][inert]')).not.toBeNull()
     expect(JSON.stringify(node)).toBe(original)
   })
 

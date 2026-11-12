@@ -242,7 +242,7 @@ describe('SettingsRoot trigger', () => {
     expect(checkUpdate).not.toHaveBeenCalled()
     expect(screen.getAllByRole('button')).toHaveLength(2)
     const update = screen.getByRole('button', { name: 'Update' })
-    expect(update.textContent).toBe('')
+    expect(update.textContent).toBe('Update')
     fireEvent.click(update)
     expect(mounted.openDesktopUpdate).toHaveBeenCalledOnce()
   })
