@@ -125,7 +125,9 @@ test('writes the Office overlay with absolute resources and the rc.2 Python envi
     assert.match(overlay, new RegExp(`${key}: `), `missing ${key}`);
   }
   assert.match(overlay, /pythonEnvironment: workspace-dependencies/);
-  assert.doesNotMatch(overlay, /        (?:node|cli):/);
+  assert.doesNotMatch(overlay, /^\s*(?:node|cli):/m);
+  assert.doesNotMatch(overlay, /insert:/);
+  assert.equal((overlay.match(/disabled: false/g) ?? []).length, 2);
   assert.equal(result.source, source);
   assert.equal(result.root, path.join(home, 'dsh-runtimes', 'dsh-primary-runtime'));
   assert.equal(result.assetRoot, path.join(path.dirname(source), 'office-skills'));

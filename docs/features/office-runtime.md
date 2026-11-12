@@ -16,7 +16,7 @@
 ## Invariants
 
 - 只用打包进来的 standalone Node runtime + 闭包内的 `libreoffice-kit@0.2.3`（按 `prebuilds.json` 解析 win32-x64 native 引擎）；不回退系统 PATH / 系统 LibreOffice / WASM。
-- `workspace-dependencies`/`skill-office` 两行挂 `desktop-plugins/office/desktop-office.patch.yml` overlay，每次启动（full+skip）都传；绝不写进用户 `cordis.patch.yml`。
+- `workspace-dependencies`/`skill-office` 两行由 `desktop-plugins/office/desktop-office.patch.yml` overlay 配置上游已有行（不重复插入），每次启动（full+skip）都传；绝不写进用户 `cordis.patch.yml`。
 - `source/root/assetRoot` 全是显式绝对路径，`skill-office` 显式使用 `pythonEnvironment: workspace-dependencies`；`DSH_PRIMARY_RUNTIME` 覆盖整目录、空串退出；`DSH_BUNDLED_PRIMARY_RUNTIME` 只作载体默认声明。
 - payload 校验：runtime.json platform/arch/payloadDigest 匹配 + node.exe + 当前四个技能的 SKILL.md；packaged 缺失或已有载荷但资源不完整=运行时损坏：本次启动跳过 Office，鲸屿照常启动，启动器「启动诊断」列出原因；dev 缺少载荷=警告可启动。
 - 依赖安装按 staging→validate→atomic install；失败保留旧 payload，会话/Profile 不受影响。
