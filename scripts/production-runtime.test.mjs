@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { stageOfficeSkills } from './prepare-office-runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const { productionClosure, prunePluginDevDependencies, runtimeFileExclusion,
@@ -264,4 +265,24 @@ test('packaged Office closure accepts current assets and requires every bundled 
     assert.throws(() => assertOfficeRuntime(resources, root), error => error.message.includes(skill), folder);
     fs.writeFileSync(skill, contents);
   }
+});
+
+test('Office preparation stages the current skill package separately from primary-runtime preparation', t => {
+  const { root } = fixture(t);
+  const output = path.join(root, 'office-output');
+  const stale = path.join(output, 'office-skills', 'removed-office-skill', 'SKILL.md');
+  fs.mkdirSync(path.dirname(stale), { recursive: true });
+  fs.writeFileSync(stale, 'obsolete');
+  const staged = stageOfficeSkills(output);
+  assert.equal(fs.existsSync(stale), false);
+  for (const folder of OFFICE_SKILL_FOLDERS) {
+    const source = new URL(`../vendor/deepseek-harness/packages/skill/skill-office/assets/${folder}/SKILL.md`, import.meta.url);
+    assert.equal(fs.readFileSync(path.join(staged, folder, 'SKILL.md'), 'utf8'), fs.readFileSync(source, 'utf8'));
+  }
+  assert.deepEqual(fs.readdirSync(staged).sort(), [...OFFICE_SKILL_FOLDERS].sort());
+  // A damaged source cannot replace the previously prepared resources.
+  const incomplete = path.join(root, 'incomplete');
+  fs.mkdirSync(incomplete);
+  assert.throws(() => stageOfficeSkills(output, incomplete), /Office 技能源文件缺失/);
+  assert.ok(fs.existsSync(path.join(staged, 'office', 'SKILL.md')));
 });
