@@ -329,6 +329,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['conversation-enter-swap'], excludes: ['animation-play-state: paused', '-webkit-app-region: no-drag'] },
   // Caption band: seats and the titlebar cluster leave their blank space to the window drag region.
   { file: 'packages/client/ui-layout/src/client/AppFrame.module.css', includes: ['No app-region: its controls subtract themselves'] },
+  // Phone overlay: the drawer pins an opaque canvas (the wallpaper theme caps
+  // --dsw-alias-bg-base at 45%); the Git cluster clears the menu button and
+  // steps out while the drawer is open.
+  { file: 'packages/client/ui-layout/src/client/AppFrame.module.css', includes: ['--dsh-phone-drawer-canvas', '.frame[data-phone-sidebar] .titlebarTrailing'] },
   { file: 'packages/client/ui-layout/tests/caption-drag-regions.client.spec.ts', includes: ['leaves Session header seats and the titlebar cluster to the band'] },
   { file: 'apps/web/tests/caption-drag-dead-zones.e2e.ts', includes: ['dead no-drag', 'swallowed control'] },
   { file: 'apps/web/tsconfig.json', includes: ['tests/caption-drag-dead-zones.e2e.ts'] },
