@@ -71,7 +71,7 @@ describe('subagent working directories', () => {
     const started = await ctx.subagents.startActivation({
       delivery: 'caller',
       provider: 'spawn', label: 'directory child',
-      request: { parent, cwd: form === 'absolute' ? second : 'second', prompt: [{ type: 'text', text: 'child' }] },
+      parent, cwd: form === 'absolute' ? second : 'second', prompt: [{ type: 'text', text: 'child' }],
       signal: new AbortController().signal,
     })
     await started.result
@@ -80,7 +80,7 @@ describe('subagent working directories', () => {
     await ctx.subagents.sendMessage(parent, started.childId, [{ type: 'text', text: 'continue' }], {
       signal: new AbortController().signal,
     })
-    await ctx.subagents.waitForChildren(parent)
+    await ctx.subagents.waitForTreeWork(parent)
     expect(ctx.agents.get(started.childId) === undefined, 'resumed activation is released before reading persistence').toBe(true)
     using observed = await ctx.sessionQuery.observeSession(started.childId)
     expect(observed.header.cwd).toBe(origin)
@@ -101,7 +101,7 @@ describe('subagent working directories', () => {
       await expect(ctx.subagents.startActivation({
         delivery: 'caller',
         provider: 'spawn', label: 'unavailable directory service', childId,
-        request: { parent, cwd: second, prompt: [{ type: 'text', text: 'child' }] },
+        parent, cwd: second, prompt: [{ type: 'text', text: 'child' }],
         signal: new AbortController().signal,
       })).rejects.toThrow(/subagents require the working-directory service/)
 

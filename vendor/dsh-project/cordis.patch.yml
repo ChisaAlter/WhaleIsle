@@ -5,6 +5,7 @@
       name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
     - id: dsh-project
       name: dsh-project
-- id: ui-agent-team
-  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
+
+# Deduplicate only the retained managed Team profile UI. Native rc.2 Team stays enabled.
+- id: ui-project-team
   disabled: true

@@ -259,7 +259,7 @@ export type TeamBodyProps = Pick<TeamActionProps,
 /** Whether the Team view of a Session is still arriving with its conversation or list. */
 function useTeamLoading({ sessionId, useSession, useSessions }: Pick<TeamBodyProps, 'sessionId' | 'useSession' | 'useSessions'>): boolean {
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
-  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.projectTeam)
   const opening = useSession(snapshot => snapshot.openState === 'loading')
   const listing = useSessions(state => state.phase === 'pending')
   return team === undefined && (opening || listing)
@@ -302,7 +302,7 @@ export function TeamBody({
   const setTaskPage = actions?.setTaskPage ?? setLocalTaskPage
   const viewId = useId()
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
-  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.projectTeam)
   const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
   // The conversation owner's current work, when it names one, scopes the Current view.
   const projectTaskIds = useTeamTaskScopes?.(scopes => scopes[leadSessionId]) ?? injectedTaskIds
@@ -472,7 +472,7 @@ export function TeamBody({
 export function TeamAction(props: TeamActionProps) {
   const { sessionId, useSession, useSessions, useTeamActivity, useStore, actions, openTeamSidebar, t } = props
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
-  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.projectTeam)
   const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
   const [localOpen, setLocalOpen] = useState(false)
   const sharedOpen = useStore?.(state => state.floatingOpen)

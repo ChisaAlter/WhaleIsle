@@ -11,7 +11,7 @@ import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 /** Cordis plugin name. */
 export const name = 'tool-agent-team'
 /** Services required by the Team tool plugin. */
-export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt']
+export const inject = ['agents', 'projectTeams', 'tools', 'systemPrompt']
 
 /** Tool routing configuration. */
 export interface Config {
@@ -177,10 +177,10 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
     }))
     register(scoped.systemPrompt.context({
       name: 'team:identity',
-      order: scoped.systemPrompt.getContextOrder('TEAM_IDENTITY'),
+      order: scoped.systemPrompt.getContextOrder('SUBAGENT_DELEGATION') + 1,
       required: true,
       text: () => {
-        const { role, name } = ctx.agentTeams.membership(agent)
+        const { role, name } = ctx.projectTeams.membership(agent)
         return `${role === 'lead'
           ? 'You are the Team Lead named "lead".'
           : `You are teammate "${name}".\nYour Team Lead is named "lead".\nTo message your Team Lead, use send_message({ target: "lead", message: "..." }).`}
@@ -206,7 +206,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       async execute(args, exec) {
         const agent = callingAgent(exec.agent, 'spawn_teammate')
         const context = args.context ?? 'fresh'
-        const result = await ctx.agentTeams.spawnTeammate(agent, {
+        const result = await ctx.projectTeams.spawnTeammate(agent, {
           name: args.name,
           description: args.description,
           prompt: [{ type: 'text', text: args.prompt }],
@@ -227,7 +227,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       },
       output: jsonOutput(SEND_VALUE_SCHEMA),
       async execute(args, exec) {
-        await ctx.agentTeams.sendMessage(callingAgent(exec.agent, 'send_message'), {
+        await ctx.projectTeams.sendMessage(callingAgent(exec.agent, 'send_message'), {
           target: args.target,
           content: [{ type: 'text', text: args.message }],
           signal: exec.signal,
@@ -242,7 +242,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       parameters: {},
       output: jsonOutput(MEMBER_LIST_VALUE_SCHEMA),
       execute(_args, exec) {
-        return Promise.resolve(ctx.agentTeams.listMembers(callingAgent(exec.agent, 'list_agents')).map(modelMember))
+        return Promise.resolve(ctx.projectTeams.listMembers(callingAgent(exec.agent, 'list_agents')).map(modelMember))
       },
     })))
 
@@ -262,11 +262,11 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
         // Preserve TeamService's authoritative timeout validation before the
         // model-only no-progress shortcut.
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10_000 || timeoutMs > 3_600_000) {
-          return await ctx.agentTeams.waitForChange(caller, timeoutMs, exec.signal)
+          return await ctx.projectTeams.waitForChange(caller, timeoutMs, exec.signal)
         }
         // The active-peer read and waiter registration must remain one synchronous
         // span; awaiting between them can lose the only peer-status edge.
-        const hasActivePeer = ctx.agentTeams.listMembers(caller).some(member =>
+        const hasActivePeer = ctx.projectTeams.listMembers(caller).some(member =>
           member.id !== caller.id && ACTIVE_WAIT_STATUSES.has(member.status))
         if (!hasActivePeer) {
           return {
@@ -277,7 +277,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
             },
           }
         }
-        return await ctx.agentTeams.waitForChange(caller, timeoutMs, exec.signal)
+        return await ctx.projectTeams.waitForChange(caller, timeoutMs, exec.signal)
       },
     })))
 
@@ -290,7 +290,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
         },
         output: jsonOutput(INTERRUPT_VALUE_SCHEMA),
         execute(args, exec) {
-          return Promise.resolve(ctx.agentTeams.interrupt(callingAgent(exec.agent, 'interrupt_agent'), args.target))
+          return Promise.resolve(ctx.projectTeams.interrupt(callingAgent(exec.agent, 'interrupt_agent'), args.target))
         },
       })))
     }
@@ -310,7 +310,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return await ctx.agentTeams.createTask(callingAgent(exec.agent, 'team_task_create'), {
+        return await ctx.projectTeams.createTask(callingAgent(exec.agent, 'team_task_create'), {
           subject: args.subject,
           description: args.description,
           ...args.blocked_by === undefined ? {} : { blockedBy: args.blocked_by.map(TeamTaskId) },
@@ -336,7 +336,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       output: jsonOutput(TASK_LIST_VALUE_SCHEMA),
       execute(args, exec) {
         const status = args.status
-        const filtered = ctx.agentTeams.listTasks(callingAgent(exec.agent, 'team_task_list')).filter(task =>
+        const filtered = ctx.projectTeams.listTasks(callingAgent(exec.agent, 'team_task_list')).filter(task =>
           (status === undefined || task.status === status)
           && (args.owner === undefined || (args.owner === 'unowned' ? task.ownerName === undefined : task.ownerName === args.owner))
           && (args.ready === undefined || task.ready === args.ready))
@@ -359,7 +359,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return Promise.resolve(ctx.agentTeams.getTask(
+        return Promise.resolve(ctx.projectTeams.getTask(
           callingAgent(exec.agent, 'team_task_get'),
           TeamTaskId(args.task_id),
         ))
@@ -386,7 +386,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return await ctx.agentTeams.updateTask(callingAgent(exec.agent, 'team_task_update'), {
+        return await ctx.projectTeams.updateTask(callingAgent(exec.agent, 'team_task_update'), {
           taskId: TeamTaskId(args.task_id),
           expectedRevision: args.expected_revision,
           action: args.action,
@@ -416,7 +416,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
   const installed = new Map<Agent, () => void>()
   const maybeInstall = (agent: Agent): void => {
-    if (installed.has(agent) || ctx.agentTeams.tryMembership(agent) === undefined) return
+    if (installed.has(agent) || ctx.projectTeams.tryMembership(agent) === undefined) return
     installed.set(agent, install(agent, ctx, resolved))
   }
   for (const agent of ctx.agents.list()) maybeInstall(agent)

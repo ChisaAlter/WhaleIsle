@@ -869,6 +869,8 @@ describe('TextPreview — workspace navigator Factories', () => {
     return {
       toggle: header?.lastElementChild?.getAttribute('data-navigator-factory'),
       navigator: row?.lastElementChild?.getAttribute('data-navigator-factory'),
+      // The navigator's filled layout hides the body of the row this attribute names.
+      navigatorRow: row?.hasAttribute('data-files-navigator-row'),
     }
   }
 
@@ -884,7 +886,7 @@ describe('TextPreview — workspace navigator Factories', () => {
     ])
     expect(view.container.querySelector('[data-textpreview-state="loading"]')).not.toBeNull()
     expect(seats(view.container)).toEqual({
-      toggle: 'sidebar.files.navigator.toggle', navigator: 'sidebar.files.navigator',
+      toggle: 'sidebar.files.navigator.toggle', navigator: 'sidebar.files.navigator', navigatorRow: true,
     })
     const navigator = view.container.querySelector<HTMLElement>('[data-textpreview-content] > [data-navigator-factory]')!
     const toggle = view.container.querySelector('[data-textpreview-path]')?.parentElement?.lastElementChild
@@ -898,7 +900,7 @@ describe('TextPreview — workspace navigator Factories', () => {
     await settle()
     expect(view.container.querySelector('[data-textpreview-state="text"]')).not.toBeNull()
     expect(seats(view.container)).toEqual({
-      toggle: 'sidebar.files.navigator.toggle', navigator: 'sidebar.files.navigator',
+      toggle: 'sidebar.files.navigator.toggle', navigator: 'sidebar.files.navigator', navigatorRow: true,
     })
     expect(view.container.querySelector('[data-textpreview-content] > [data-navigator-factory]')).toBe(navigator)
     expect(view.container.querySelector('[data-textpreview-path]')?.parentElement?.lastElementChild).toBe(toggle)

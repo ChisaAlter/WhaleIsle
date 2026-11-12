@@ -61,7 +61,7 @@ Ask the Lead to create a teammate: give it a unique lowercase name such as `revi
 
 The roster shows every member with its role (`lead` or `teammate`) and current status: `running`, `inactive` (no turn is executing, whether loaded or stored), `provisioning`, or `failed`. A member that is not loaded receives its messages when it wakes.
 
-The `agentTeam` client projection also carries each teammate's persisted description, including when it has no owned task. The implicit Lead has no description.
+The `projectTeam` client projection also carries each teammate's persisted description, including when it has no owned task. The implicit Lead has no description.
 
 Only the Lead can create teammates or interrupt them.
 
@@ -120,7 +120,7 @@ The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-
 | [`src/roster.ts`](src/roster.ts) | Team identity, membership resolution, provisioning, and roster teardown |
 | [`src/task-board.ts`](src/task-board.ts) | Task CAS commands, DAG validation, and derived views |
 | [`src/journal.ts`](src/journal.ts) | Serialized Lead-log transactions and commit notification |
-| [`src/projection.ts`](src/projection.ts) | Strict replay projection that decodes and validates Team events and publishes the `agentTeam` client view |
+| [`src/projection.ts`](src/projection.ts) | Strict replay projection that decodes and validates Team events and publishes the `projectTeam` client view |
 | [`src/task-view.ts`](src/task-view.ts) | Pure task readiness, owner-name, and write-overlap derivation shared by the task board and the client view |
 | [`src/activity.ts`](src/activity.ts) | One-shot change waiters and disposal release |
 | [`src/lifecycle.ts`](src/lifecycle.ts) | Shared admission cutoff and bounded settlement |
@@ -164,7 +164,7 @@ The runtime lifecycle tracks sends and complete creation transactions in one ope
 
 Read these pages when the package-level contract is not enough. They move from the shared subsystem types to the tool surface and the decisions behind the design.
 
-- [Agent Teams subsystem](../../../docs/subsystems/agent-team.md) — durable Team types and the `ctx.agentTeams` service API.
+- [Agent Teams subsystem](../../../docs/subsystems/agent-team.md) — durable Team types and the `ctx.projectTeams` service API.
 - [tool-agent-team package](../tool-agent-team/README.md) — the tools that let the model create, message, and coordinate teammates.
 - [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-agent-teams.md) — roster, mailbox, task, and shared-checkout decisions.
 - [Experimental package reference](../AGENTS.md) — placement, publication, and dependency isolation.
@@ -175,7 +175,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 ### Browser projection
 
-The `agentTeam` Session projection publishes the Lead Session's durable roster identities and phases, member errors, non-deleted task views, and any `failure` beside the last valid state. Its `apply` replaces only the touched collection; mailbox-only changes retain the client view reference and produce no frame. The [subsystem reference](../../../docs/subsystems/agent-team.md#web-projection) defines the wire types. A failed projection rejects subsequent Team reads and mutations without appending further Team events.
+The `projectTeam` Session projection publishes the Lead Session's durable roster identities and phases, member errors, non-deleted task views, and any `failure` beside the last valid state. Its `apply` replaces only the touched collection; mailbox-only changes retain the client view reference and produce no frame. The [subsystem reference](../../../docs/subsystems/agent-team.md#web-projection) defines the wire types. A failed projection rejects subsequent Team reads and mutations without appending further Team events.
 
 The [Web UI](../client-ui-agent-team/README.md) reads the shared Session projections and overlays activity from Session status. Task creation and updates belong to Team agents through the service and model tools. The `./client` export supplies browser-safe roster, task, and projection types.
 

@@ -44,11 +44,11 @@ describe('Agent Teams profile bundle', () => {
       name: '@deepseek-ai/dsh-experimental-agent-team',
       config: { maxMembers: 8 },
     })
-    expect(inserted.find(entry => entry.id === 'tool-agent-team')).toMatchObject({
+    expect(inserted.find(entry => entry.id === 'tool-project-team')).toMatchObject({
       name: '@deepseek-ai/dsh-experimental-tool-agent-team',
       config: { freshProvider: 'spawn', forkProvider: 'fork' },
     })
-    expect(inserted.find(entry => entry.id === 'ui-agent-team')).toMatchObject({
+    expect(inserted.find(entry => entry.id === 'ui-project-team')).toMatchObject({
       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team',
     })
   })

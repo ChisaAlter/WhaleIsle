@@ -297,10 +297,10 @@ export class FakeApiClient {
       },
       subagents: {
         prompt: request => this.record('subagents.prompt', request, this.onSubagentPrompt(request)),
-        interruptByParent: (childSessionId, parentSessionId, mode) => this.record(
-          'subagents.interruptByParent',
-          { childSessionId, parentSessionId, mode },
-          this.onSubagentInterrupt({ childSessionId, parentSessionId, mode }),
+        interruptByUser: childSessionId => this.record(
+          'subagents.interruptByUser',
+          { childSessionId },
+          this.onSubagentInterrupt({ childSessionId }),
         ),
       },
       workspace: {

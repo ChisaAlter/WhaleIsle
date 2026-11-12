@@ -492,6 +492,10 @@ export interface SessionLogMetadata {
   readonly surfaceOp?: never
   readonly sourceEventSeqs?: never
 }
+/** One positional event call proposed for append, without assigned sequence or time. */
+export type SessionEventInput = {
+  [K in SessionEventType]: readonly [type: K, data: SessionEventMap[K], ...opts: K extends SurfaceEventType ? [opts: SurfaceIntent<K>] : [opts?: SessionLogMetadata]]
+}[SessionEventType]
 
 /**
  * One immutable entry in the session log.

@@ -126,8 +126,8 @@ export class IdleSessionRelease {
     if (agent.status !== 'idle') return false
     if (agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0) return false
     // Subagents belong to their parent; a parent with live children keeps them reachable.
-    if (hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) return false
-    if (this.ctx.agents.list().some(other => other !== agent && this.ctx.agents.isOwnedBy(other.id, agent))) return false
+    if (hasApiSessionSubagentOwner(agent.session)) return false
+    if (this.ctx.get('subagents')?.hasTreeWork(agent) === true) return false
     try {
       // Background jobs are owned by the Agent and would be killed with it.
       const jobs = optionalService(this.ctx, 'jobs')?.list(id) ?? []

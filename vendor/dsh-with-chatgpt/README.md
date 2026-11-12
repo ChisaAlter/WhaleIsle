@@ -14,8 +14,8 @@ See `bridge/NOTICE.md` for upstream revision and retained license.
 
 ## Install and use
 
-Requires Node 22.19+ and a DSH `0.2.1-alpha.1`, `0.2.1-alpha.3` or `0.2.1-rc.2`
-host providing tools, skills and Agents. The development lockfile targets rc.2
+Requires Node 22.19+ and a DSH `0.2.1-alpha.1`, `0.2.1-alpha.3`, `0.2.1-rc.2`,
+`0.2.1-rc.4`, `0.2.2-rc.1` or `0.2.2-rc.2` host providing tools, skills and Agents. The development lockfile targets `0.2.1-rc.2`
 with Cordis `4.0.5` and Schemastery `3.18.5`; later prereleases need their own
 compatibility check. Use the
 host's Plugin Manager `install_bundle` with this built package's absolute

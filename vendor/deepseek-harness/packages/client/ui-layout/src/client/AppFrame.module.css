@@ -94,9 +94,30 @@
   border-radius: 0;
 }
 
-:global([data-platform='darwin']) .sidebarCol {
-  background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 60%, transparent);
+:global([data-platform='darwin']) .frame:not([data-sidebar-drawer]) .sidebarCol {
+  /* A blue wash over the top of the translucent tint, gone by a third of the
+     column, and a faint blue-grey-violet rising through the bottom third.
+     Every layer stays transparent so vibrancy shows; ui-theme sets each
+     palette's wash strength and tint. */
+  background:
+    linear-gradient(
+      to bottom,
+      var(--dsw-specific-sidebar-wash-top),
+      var(--dsw-specific-sidebar-wash-top-clear) 35%,
+      var(--dsw-specific-sidebar-wash-bottom-clear) 68%,
+      var(--dsw-specific-sidebar-wash-bottom)
+    ),
+    var(--dsw-specific-sidebar-tint);
   border-right: none;
+}
+
+/* macOS Reduce Transparency: the OS flattens the window's vibrancy layer to a
+   solid grey, so the thin tint and washes read washed-out over it. Replace
+   them with a 90%-opaque fill of the same token in both themes. */
+@media (prefers-reduced-transparency: reduce) {
+  :global([data-platform='darwin']) .frame:not([data-sidebar-drawer]) .sidebarCol {
+    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
+  }
 }
 
 :global([data-platform='darwin']) .centerCol {

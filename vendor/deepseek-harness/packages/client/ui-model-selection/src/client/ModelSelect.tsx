@@ -27,7 +27,7 @@
  * chevron, and each row whose value that selection carries shows one in place
  * of its check mark.
  */
-import { MenuGroup, MenuSurface, observeStickyMenuGroups, useAnchoredPosition } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type FocusEvent, type ReactNode,
@@ -37,7 +37,7 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast, usePresence, FlipText,
+  IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast, useAnchoredPosition, usePresence, FlipText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
@@ -54,9 +54,6 @@ interface EffortChoice {
   label: string
 }
 
-/** Unplaced portal card: hidden but laid out at a fixed origin so offsetWidth/offsetHeight are real (Menu primitive's measure pass). */
-const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
-
 /**
  * Render the composer model seat.
  * @param props - owner share (locked) + injected face (shared directory
@@ -66,7 +63,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 export function ModelSelect(
   { locked, available, directory, load, select, resolveText, t, renderSlot }:
   ModelSelectInjected & Pick<PropsRuntime<'conversation.input.model'>, 'locked'> & PropsLocale<'model'>
-    & Omit<PropsRenderSlots<'conversation.input.model.label'>, 'SessionProvider'>,
+    & Omit<PropsRenderSlots<'conversation.input.model.label' | 'conversation.input.model.options'>, 'SessionProvider'>,
 ) {
   const state = useSyncExternalStore(
     fn => directory.subscribe(fn),
@@ -122,6 +119,9 @@ export function ModelSelect(
     menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]') ?? [],
   )
   const id = useId()
+  const anchorStyle: CSSProperties & Record<'--dsh-model-anchor', string> = {
+    '--dsh-model-anchor': `--dsh-model-${id.replaceAll(':', '')}`,
+  }
 
   useEffect(() => {
     if (available) load()
@@ -501,6 +501,7 @@ export function ModelSelect(
         ref={triggerRef}
         type="button"
         className={css.trigger}
+        style={anchorStyle}
         aria-label={triggerAria}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -543,7 +544,7 @@ export function ModelSelect(
           ref={menuRef}
           id={`${id}-menu`}
           className={css.menu}
-          style={menuPos ?? MEASURE_STYLE}
+          style={menuPos ?? { visibility: 'hidden' }}
           role={pane === 'model' ? 'group' : 'menu'}
           aria-label={t('menu.aria')}
           aria-busy={view.state.status === 'loading' || viewBusy}
@@ -568,6 +569,14 @@ export function ModelSelect(
                   <IconChevronRightOutlineRegular className={css.cellChevron} />
                 </button>
               )}
+              {renderSlot('conversation.input.model.options', {
+                locked: locked || busy,
+                dismiss: () => {
+                  close()
+                  triggerRef.current?.focus()
+                },
+                reportFailure: (message) => { setToast({ seq: ++toastSeq.current, text: message }) },
+              })}
             </>
           )}
 

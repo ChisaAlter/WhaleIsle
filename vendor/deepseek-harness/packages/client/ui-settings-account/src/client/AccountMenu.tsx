@@ -9,12 +9,12 @@ import { SignOutDialog } from './SignOutDialog.tsx'
 import { SignInDialog } from './SignInDialog.tsx'
 import { LogoutIcon } from './LogoutIcon.tsx'
 import { AccountAvatar } from './AccountAvatar.tsx'
-import { AccountNoticeStack } from './AccountNotice.tsx'
+import type {} from './account-ui.ts'
 import css from './AccountMenu.module.css'
 
 /** Account launcher composed by the settings shell. */
 export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'settings.account'>
-  & PropsRenderSlots<'settings.launcher.action'> & InjectFace<AccountSectionInjected>
+  & PropsRenderSlots<'settings.launcher.action' | 'settings.launcher.notifications'> & InjectFace<AccountSectionInjected>
 
 /** The signed-in label stays empty while the profile loads.
  * @param props - sidebar geometry, settings navigation and account operations.
@@ -22,10 +22,9 @@ export type AccountMenuProps = PropsRuntime<'settings.launcher'> & PropsLocale<'
  */
 export function AccountMenu({
   subscribeSessionExpired, subscribeModelSignInRequired, wide, settingsShortcut, openSettings, openOnboarding, settingsOpen,
-  useAccount, useTheme, useLauncherActions, signOut, hasRunningAccountTasks, refreshAccount, bonusNoticeShown, bonusNoticeDismissed,
+  useAccount, useTheme, useLauncherActions, signOut, hasRunningAccountTasks, refreshAccount,
   contactUs, showLogin, start, cancel, avatarFailed, renderSlot, t,
 }: AccountMenuProps) {
-  const anchor = useRef<HTMLDivElement>(null)
   // The launcher outlives the panel, so a false-to-true edge is one Settings entry:
   // re-renders, section switches and tab switches inside one open must not read again.
   const settingsWasOpen = useRef(false)
@@ -63,13 +62,13 @@ export function AccountMenu({
   // The plugin's start publishes `loginFailed` before it rejects, so the dialog owns the report.
   const beginSignIn = (): void => { setOpen(false); void start().catch(() => undefined) }
   const closeAction = useCallback((): void => { setSelectedAction(null); trigger.current?.focus() }, [])
-  return <div ref={anchor} className={css.root} data-inset={signedIn && wide}>
+  const openAccount = useCallback(() => { openSettings('account') }, [openSettings])
+  return <div className={css.root} data-inset={signedIn && wide}>
     {signInNotice > 0 && <Toast key={signInNotice} text={t('modelSignInRequired')} onDone={() => { setSignInNotice(0) }} />}
     {expiryNotice && <Toast text={t('sessionExpired')} onDone={() => { setExpiryNotice(false) }} />}
-    {signedIn && !account.desktopOnboardingVisible && !account.onboarding && account.notices && <AccountNoticeStack
-      notices={account.notices}
-      anchor={anchor} title={t('bonusNoticeTitle')} closeLabel={t('close')}
-      onShown={bonusNoticeShown} onDismiss={bonusNoticeDismissed} />}
+    <div className={css.notifications} hidden={!wide}>{renderSlot('settings.launcher.notifications', {
+      active: signedIn && !account.desktopOnboardingVisible && !account.onboarding, openAccount,
+    })}</div>
     <Menu open={open} side="top" portal autoFocus className={css.anchor} listClassName={signedIn ? undefined : css.signedOutMenu}
       anchor={<button ref={trigger} type="button" className={css.trigger} data-collapsed={!wide} data-signed-out={!signedIn} aria-label={t('menu')}
         aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>

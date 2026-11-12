@@ -24,7 +24,7 @@ export function finishError(finish: FinishReason): LlmError | undefined {
     case 'error':
     case 'aborted': {
       const { message, code, status, providerRetryAfterMs, requestId } = finish.failure
-      return new LlmError(message, code, {
+      return LlmError.fromFailure({ message, code,
         ...status === undefined ? {} : { status },
         ...providerRetryAfterMs === undefined ? {} : { providerRetryAfterMs },
         ...requestId === undefined ? {} : { requestId },

@@ -167,12 +167,12 @@ for (const backend of backends) {
       roots.push(liveRoot, crashRoot)
       const first = await stack(backend, liveRoot, ['hang'])
       const lead = await first.ctx.agentLoop.create(SessionId('direct-root'), { provider: 'mock', model: 'mock' })
-      const target = await first.ctx.agentTeams.spawnTeammate(lead, {
+      const target = await first.ctx.projectTeams.spawnTeammate(lead, {
         name: 'worker', description: 'pending inbox recovery', prompt: [{ type: 'text', text: 'initial' }],
         context: 'fresh', provider: 'spawn', signal: SIGNAL,
       })
       const child = first.ctx.agents.get(target.member.id)!
-      const receipt = await first.ctx.agentTeams.sendMessage(lead, {
+      const receipt = await first.ctx.projectTeams.sendMessage(lead, {
         target: 'worker', content: [{ type: 'text', text: 'accepted before crash' }], signal: SIGNAL,
       })
       await first.ctx.sessions.flush(child.session)
@@ -230,10 +230,8 @@ for (const backend of backends) {
         childId,
         provider: 'spawn',
         label: 'recoverable recovery',
-        request: {
-          prompt: [{ type: 'text', text: 'persist before active edge' }],
-          parent: activeRoot,
-        },
+        prompt: [{ type: 'text', text: 'persist before active edge' }],
+        parent: activeRoot,
         signal: SIGNAL,
       })
       await vi.waitFor(() => { expect(first.ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
@@ -257,7 +255,7 @@ for (const backend of backends) {
         expect(failedMember?.error).toContain('child Session recovery failed')
       }, { timeout: 5_000 })
 
-      const receipt = await second.ctx.agentTeams.sendMessage(activeHandle.agent, {
+      const receipt = await second.ctx.projectTeams.sendMessage(activeHandle.agent, {
         target: 'recoverable',
         content: [{ type: 'text', text: 'resume after reconciliation' }],
         signal: SIGNAL,
@@ -321,7 +319,7 @@ for (const backend of backends) {
 
       const first = await stack(backend, storageRoot, [textResponse('initial teammate answer')])
       const firstLead = await first.ctx.agentLoop.create(rootId, { provider: 'mock', model: 'mock' })
-      const started = await first.ctx.agentTeams.spawnTeammate(firstLead, {
+      const started = await first.ctx.projectTeams.spawnTeammate(firstLead, {
         name: 'mail-worker',
         description: 'historical mailbox target',
         prompt: [{ type: 'text', text: 'finish before restart' }],

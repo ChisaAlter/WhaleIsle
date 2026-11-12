@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const DESKTOP_PACKAGES = [
+  { dir: 'packages/experimental/agent-team-profile', name: '@deepseek-ai/dsh-experimental-agent-team-profile' },
   { dir: 'packages/client/ui-agents-panel', name: '@deepseek-ai/dsh-client-ui-agents-panel' },
   { dir: 'packages/client/ui-diff', name: '@deepseek-ai/dsh-client-ui-diff' },
   { dir: 'packages/client/ui-files', name: '@deepseek-ai/dsh-client-ui-files' },
@@ -78,9 +79,9 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/subagent/subagent/src/types.ts', includes: ['interface ContinuableEnvironment', 'readonly cwd?: string', 'readonly agentPreset?: string', 'readonly admissionPolicy?: string'] },
   { file: 'packages/subagent/subagent/src/child-agent.ts', includes: ['const cwd = selectedCwd ?? parentHeader.cwd', 'return presets.mount(childCtx, composition.agentPreset)'] },
   { file: 'packages/subagent/subagent/src/descriptor.ts', includes: ['agentPreset', 'admissionPolicy'] },
-  { file: 'packages/subagent/subagent/src/manager.ts', includes: ['spec.environment?.cwd', 'spec.environment?.agentPreset', 'this.host.admitContinuation', "this.admitActivation(activation, parent, 'message')", 'descriptor.agentPreset', 'await applyChildComposition', 'private async notifySettlement', "reason: 'settlement'", 'activation.observer.runId'] },
+  { file: 'packages/subagent/subagent/src/manager.ts', includes: ['spec.environment?.cwd', 'spec.environment?.agentPreset', 'this.host.admitContinuation', "reason: 'message'", 'descriptor.agentPreset', 'await applyChildComposition', 'private async notifySettlement', "reason: 'settlement'", 'activation.runId'] },
   { file: 'packages/subagent/subagent/src/continuation-messages.ts', includes: ['readonly runId?: SubagentRunId'] },
-  { file: 'packages/subagent/subagent/src/lifecycle.ts', includes: ['readonly runId: SubagentRunId'] },
+  { file: 'packages/subagent/subagent/src/activation.ts', includes: ['readonly runId: SubagentRunId', 'readonly admissionPolicy: string | undefined'] },
   { file: 'packages/subagent/subagent/src/index.ts', includes: ['registerContinuationPolicy'] },
   { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation', "case 'move':", 'only queued turns can be reordered'] },
   { file: 'packages/api/session-controller/src/index.ts', includes: ["'session/before-cancel'", 'cancel(request: SessionCancelRequest): Promise<SessionCancelValue>'] },

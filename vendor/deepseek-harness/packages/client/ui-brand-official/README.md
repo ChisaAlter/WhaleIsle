@@ -55,7 +55,7 @@ The two sidebar occupants install as one declaration-aware registration set: nes
 Read these pages when the brand surface is not enough. They move from the slots this package occupies to the shell that renders them.
 
 - [ui-sidebar](../ui-sidebar/README.md) — declares `sidebar.brand.mark` and `sidebar.brand.name` and renders their fallbacks.
-- [ui-conversation](../ui-conversation/README.md) — declares `conversation.hero.brand.mark` in the hero.
+- [ui-conversation](../ui-conversation/README.md) — declares `conversation.hero.brand.mark` in the hero and the `conversation.hero.frame` layer this package occupies.
 - [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
 
 -----
@@ -77,6 +77,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define how brand presentation is supplied. They are current package constraints, not a brand-design comparison or a task backlog.
 
 - **One occupant set** — alternative presentation belongs in another Cordis package occupying the same slots.
+- **Decorative rendering requires Canvas 2D** — unavailable contexts or reduced-motion preference leave the home clear.
 - **The browser title is independent** — `DSH_CLIENT_TITLE` selects title text at build time rather than through a UI slot.
 
 <a id="dev-note"></a>

@@ -32,7 +32,6 @@ function releaseHarness(policy: { idleMs?: number; keep?: number } = {}) {
     agents: {
       get: (id: SessionId) => agents.get(id),
       list: () => [...agents.values()],
-      isOwnedBy: (id: SessionId, owner: Agent) => owners.get(id) === owner,
     },
     sessionProjections: {
       stateOf: (session: { id: SessionId }) => ({
@@ -42,6 +41,7 @@ function releaseHarness(policy: { idleMs?: number; keep?: number } = {}) {
       }),
     },
   }
+  services.subagents = { hasTreeWork: (root: Agent) => [...owners.values()].includes(root) }
   const emit = (name: string, ...args: unknown[]): void => {
     for (const listener of listeners.get(name) ?? []) listener(...args)
   }

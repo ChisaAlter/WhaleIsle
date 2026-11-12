@@ -65,11 +65,11 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 面向用户调用的 `skills/list` 元数据包含胜出提供方可选的指令文件 `path`。输入框可据此预览文件，无需加载每个 skill 的正文或激活冷态 Agent。
 
-Fork 将 `atSeq` 选定的含边界事件前缀（包括开放轮次内的截点）复制到不带 `parentSession` 的独立 Session。客户端占位项同样省略 `parentSessionId`；列表缩进仅适用于 subagent 来源的行，历史普通 fork 即使保留父 ID 也不缩进。工作区绑定及可选标题递增使用本次操作选定的源会话。子会话在合成的 fork 结果和结束事件之前记录继承标记。省略 `atSeq` 时选择最近已结束轮次及其独立尾部，在下一轮次或排队输入之前停止；不存在的事件会被拒绝。聊天操作选择已结束轮次。
+Fork 将 `atSeq` 选定的含边界事件前缀（包括开放轮次内的截点）复制到不带 `parentSession` 的独立 Session。客户端占位项同样省略 `parentSessionId`；列表缩进仅适用于 subagent 来源的行，历史普通 fork 即使保留父 ID 也不缩进。工作区绑定及可选标题递增使用本次操作选定的源会话；递增时会跳过其他由 Host 列出的标题已使用的编号。子会话在合成的 fork 结果和结束事件之前记录继承标记。省略 `atSeq` 时选择最近已结束轮次及其独立尾部，在下一轮次或排队输入之前停止；不存在的事件会被拒绝。聊天操作选择已结束轮次。
 
 恢复会话时若已有写句柄占用，返回 `session/writer-held`，并携带会话 id；其他恢复失败仍返回 `gateway/internal`。
 
-`loadThrough(seq)` 在共享目标被覆盖或加载结束前私下保留较早页面，随后把成功取得的页面按顺序作为一次前插发布。历史加载期间实时事件仍然可见。后续页面失败时保留已成功取得的部分；历史窗口被替换时丢弃被替换窗口的暂存页面。普通 `loadOlder()` 直接发布 Host 选取的一页结果。
+`loadThrough(seq)` 在共享目标被覆盖或加载结束前私下保留较早页面，随后把成功取得的页面按顺序作为一次前插发布。历史加载期间实时事件仍然可见。后续页面失败时保留已成功取得的部分；历史窗口被替换时丢弃被替换窗口的暂存页面。普通 `loadOlder()` 准备并消费 Host 选取的一页；传入 `{ deferConsumption: true }` 时保留这一页，直到 `consumeOlder()` 同步发布。暂存页阻止重复普通请求，但不阻止实时事件。`historyLoadStatus` 区分 `idle`、`loading`、`pendingConsumption` 和 `error`；`loadingOlder` 从 `loading` 派生，包含 Turn 跳转。失败和无进展页面允许明确重试，不伪装成历史耗尽。`historyWasPartial` 在客户端 Session 生命周期内记住可见窗口曾不完整，重连保留，但不持久化呈现状态。
 
 Client 的首次 `follow`、重连首屏与 `loadOlder()` 至少请求 50 条以 append 方式追加的 `user/message` 和 `assistant/message` 事件，并向前跨过至少两个 `turn/start`，其中包含已加载窗口开头尚未补齐的轮次。Host 在首次同时满足两个下限的轮次开头停止；若先达到 500 条计数消息或历史已耗尽，则立即返回。Steering 不增加轮次分界。区间内的其他事件随页返回，但不计入消息预算。分页和 follow 请求可选的 `turnWindow` 在 `maxMessages` 上限内指定这两个下限。`loadThrough()` 复用相同规则，仅将每页消息数下限设为 200；500 条上限不限制整次跳转。不带 `turnWindow` 的请求保留按消息对齐的分页方式。
 
@@ -77,14 +77,14 @@ Client 的首次 `follow`、重连首屏与 `loadOlder()` 至少请求 50 条以
 
 `session.attachment` 接收 `{ sessionId, attachment: ImageAttachmentRef }`，并把完整引用交给 `AttachmentStore.readImage()`，不读取或遍历 Session 历史。Client 通过 `session.readAttachment(ref)` 传入消息中的引用。连接身份认证和 Gateway 权限检查仍然适用；`sessionId` 为该接口的权限检查指定 Session 资源。授权通过后，处理函数不检查该 Session 是否存在，也不会仅因其不存在而返回 `session/not-found`。获准调用的身份可以读取同一存储中的任意图片，包括仅被其他 Session 引用或未被任何 Session 引用的图片。响应在把 ID、媒体类型、字节数、宽度和高度与存储字节校验后，保留传入的引用。可选的 `name` 和 `originalDimensions` 作为调用方提交的显示信息原样返回，不根据文件校验。对象缺失或无效时返回明确的附件失败。Client 的历史图片缓存按 Session 和附件 ID 保留一份结果与浏览器 URL。
 
-本控制器通过 `ctx.plugin` 组合 `ArchivedSessionGate`：在 Agent 注册表、Session store 与 Workspace 注册表就绪后加载，随控制器一起释放。它的 `agent/pre-step` 监听器会拒绝为已归档会话或其子代理子孙——从 Session header 的血缘字段读出，从不包括 fork——提出的步骤，因此迟到的唤醒投递会让该回合以 `blocked` 收口而不发出模型请求；取消归档即为整条血缘解除门禁。已归档会话仍在跑的工作由各自的 owner 通过 Workspace 注册表的归档准入（[接缝](../../workspace/workspace/README.zh.md)）报告与停止：运行中的回合由 [Agent 注册表](../../core/agent/README.zh.md)负责，所属任务由[任务注册表接缝](../../jobs/jobs/README.zh.md)负责，子代理子孙由 [Subagent](../../subagent/subagent/README.zh.md) runtime 负责，提醒由 [Schedule](../../schedule/schedule/README.zh.md) 插件负责；本控制器自己不报告任何内容。
+本控制器通过 `ctx.plugin` 组合 `ArchivedSessionGate`：在 Agent 注册表、Session store 与 Workspace 注册表就绪后加载，随控制器一起释放。它的 `agent/pre-step` 监听器会拒绝为已归档会话或其子代理子孙——沿可用的 Session header 读取，从不包括 fork——提出的步骤，因此迟到的唤醒投递会让该回合以 `blocked` 收口而不发出模型请求；取消归档即为整条血缘解除门禁。Subagent runtime 另行检查保留的创建祖先，覆盖中间创建者已离线的托管后代。已归档会话仍在跑的工作由各自的 owner 通过 Workspace 注册表的归档准入（[接缝](../../workspace/workspace/README.zh.md)）报告与停止：运行中的回合由 [Agent 注册表](../../core/agent/README.zh.md)负责，所属任务由[任务注册表接缝](../../jobs/jobs/README.zh.md)负责，子代理子孙由 [Subagent](../../subagent/subagent/README.zh.md) runtime 负责，提醒由 [Schedule](../../schedule/schedule/README.zh.md) 插件负责；本控制器自己不报告任何内容。
 
 <a id="client-references"></a>
 ## Client 引用
 
 `sessions.retain(target, { source, signal? })` 立即获取一个精确 Client generation 的引用，并启动其共享的首次历史打开。目标是已知 Session id 或持久的直接父子 subagent 地址；Host 在打开历史时校验显式地址。返回引用支持幂等的 `release()` 和 `Symbol.dispose`；其 `ready` Promise 跟随共享的 `Session.open()` 结果，并在该次尝试结算时解析为确切 binding，包括 Remote failure 以 `openState: 'error'` 表示的情况。仅当 `Session.open()` 拒绝、等待方取消或引用提前释放时，`ready` 才拒绝。取消一个等待方不会取消其他 owner 的打开。`sessions.using(target, options, operation)` 等待该次结算，持有引用直到回调结束，并传播被拒绝的就绪与回调失败。
 
-引用保活本地会话数据、作用域 Context 和历史流，不保活 Host Agent。普通 Session 不因保留引用而添加目录行。已保留且具有明确直接父子地址的 subagent 即使尚未收到父目录，也会保留兜底行并通知列表读取方；这些行不加入 Host 列表成员集合。Fork 标题设置直接发送 rename 并应用返回的标题投影，不 retain 子会话，也不打开其历史。最后一个引用释放时，generation 先退出可访问映射，再执行清理；后续获取可以为同一 id 创建新 generation。`binding(id)` 和 `scope(id)` 只借用已有 generation。`retainInfo(id)` 独立于目录成员关系观察稳定的只读来源计数，不执行历史 I/O。消费方来源键可通过声明合并扩展；导航和完成确认属于 UI 消费方，不属于本控制器。所有权与清理规则见 [Client 会话引用](../../../.agents/notes/implemented/architecture/2026-09-15-client-session-references.zh.md)。 模式未知的子代理地址允许读取历史，但仍校验直接父级。成功恢复 descriptor 后确定展示模式；失败只影响该子会话，控制请求仍要求已确认的 continuable 身份。
+引用保活本地会话数据、作用域 Context 和历史流，不保活 Host Agent。普通 Session 不因保留引用而添加目录行。已保留且具有明确直接父子地址的 subagent 即使尚未收到父目录，也会保留兜底行并通知列表读取方；这些行不加入 Host 列表成员集合。Fork 标题设置直接发送 rename 并应用返回的标题投影，不 retain 子会话，也不打开其历史。最后一个引用释放时，generation 先退出可访问映射，再执行清理；后续获取可以为同一 id 创建新 generation。`binding(id)` 和 `scope(id)` 只借用已有 generation。`retainInfo(id)` 独立于目录成员关系观察稳定的只读来源计数，不执行历史 I/O。消费方来源键可通过声明合并扩展；导航和完成确认属于 UI 消费方，不属于本控制器。所有权与清理规则见 [Client 会话引用](../../../.agents/notes/implemented/architecture/2026-09-15-client-session-references.zh.md)。 模式未知的子代理地址允许读取历史，但仍校验直接父级的一致性；访问权单独按子 Session 检查。成功恢复 descriptor 后确定展示模式；失败只影响该子会话。控制请求仅携带目标 id，由 Host 检查是否支持继续执行。Client 快照仅保留子代理地址；是否能接收续接输入由运行时校验。
 
 <a id="session-media-references"></a>
 ## 会话媒体引用
@@ -113,6 +113,8 @@ GUI 模型选择要求确切提供方／模型对出现在可用目录中；不�
 
 Blockquote 作为普通 prompt 文本传递，不携带 quote 元数据。本地提交回显与持久消息使用同一文本渲染规则；队列编辑替换 content，同时保留 prompt 关联信息。
 
+空的 `prompt.content` 数组仅在普通 Session 空闲、最新失败符合继续条件且使用 queue 模式时请求新轮次。待消费的用户输入阻止准入，非唤醒的注入上下文保留。`conversationContinuation` 提供共用的六码手动策略，独立于提供方重试配置。输入遵循普通 inbox 和 Loop 准入，记录带 `source.kind: 'retry'` 的空 `user/message`；输入身份与调用方元数据用于去重和恢复。仅含空白的文本块仍无效。
+
 <a id="model-experience"></a>
 ## 模型体验
 
@@ -130,6 +132,7 @@ Blockquote 作为普通 prompt 文本传递，不携带 quote 元数据。本地
 - 图片字节上限不校验解码后的尺寸或像素数。
 - follow 恢复失败会对调用方可见，而不会无限重试。
 - 浏览器原始字节上传使用一次不带断点续传偏移的流式 HTTP 请求；重试会从第零字节重新传输整个文件。
+- Fork 标题递增会在 Host 规范化候选标题之前，先将其与客户端列表比较：同一来源的并发 Fork，或被 Host 按字节上限截断的标题，仍可能产生重复标题。
 - 文件引用补全使用共享 Agent lookup，因此可能恢复冷 Session；`skills/list` 目录是不激活 Agent 的 skill 元数据读取路径。
 - 受理/运行的展示记忆只存在于客户端内存，页面重载后即丢失。
 - 该记忆不在 tab 之间共享：同一会话可能在一个 tab 中已转正，在另一个 tab 中仍显示为 `New Session`。

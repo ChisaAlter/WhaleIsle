@@ -320,7 +320,8 @@ export class ThemeRuntime {
   constructor(ctx: ClientContext, host: ConfigForm<ThemeSettings>) {
     this.ctx = ctx
     this.host = host
-    this.preference = DEFAULT_PREFERENCE
+    this.preference = bootstrapPreference()
+    // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
     this.snapshot = this.buildSnapshot()
     if (this.media !== undefined) {
@@ -1092,6 +1093,14 @@ function sameSettings(left: ThemeSettings, right: ThemeSettings): boolean {
     && left.fontFamilyComposer === right.fontFamilyComposer
     && left.fontFamilyTerminal === right.fontFamilyTerminal
     && JSON.stringify(left.customThemes) === JSON.stringify(right.customThemes)
+}
+
+/** Preserve the Host boot palette while the settings scope is loading. */
+function bootstrapPreference(): ThemePreference {
+  /* v8 ignore next -- documentless client compositions have no boot injection */
+  if (typeof document === 'undefined') return DEFAULT_PREFERENCE
+  const preference = document.documentElement.dataset.dsThemeSource
+  return isThemePreference(preference) ? preference : DEFAULT_PREFERENCE
 }
 
 /**

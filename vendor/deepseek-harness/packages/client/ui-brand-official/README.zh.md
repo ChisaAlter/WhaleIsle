@@ -55,7 +55,7 @@ kind: "package-reference"
 当品牌面不够用时阅读以下页面。它们从本包占据的 slot 进入渲染这些 slot 的外壳。
 
 - [ui-sidebar](../ui-sidebar/README.zh.md)——声明 `sidebar.brand.mark` 与 `sidebar.brand.name` 并渲染其回退。
-- [ui-conversation](../ui-conversation/README.zh.md)——在首屏声明 `conversation.hero.brand.mark`。
+- [ui-conversation](../ui-conversation/README.zh.md)——在首屏声明 `conversation.hero.brand.mark`，以及本包占用的 `conversation.hero.frame` 层。
 - [Web 客户端架构](../../../docs/subsystems/web-client.zh.md)——浏览器插件行如何加载并注册 slot。
 
 -----
@@ -77,6 +77,7 @@ kind: "package-reference"
 这些限制界定了品牌呈现的供给方式。它们是当前包约束，不是品牌设计对比或任务积压。
 
 - **只有一组填充**——替代呈现属于占据相同 slot 的另一个 Cordis 包。
+- **装饰绘制需要 Canvas 2D**——上下文不可用或偏好减少动态效果时，首页保持留白。
 - **浏览器标题独立**——`DSH_CLIENT_TITLE` 在构建时选择标题文本，而非通过 UI slot。
 
 <a id="dev-note"></a>

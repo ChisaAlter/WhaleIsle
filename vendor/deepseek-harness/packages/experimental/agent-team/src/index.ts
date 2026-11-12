@@ -42,7 +42,7 @@ export { TeamError } from './error.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    agentTeams: TeamService
+    projectTeams: TeamService
   }
 }
 
@@ -82,7 +82,7 @@ export class TeamService extends Service {
   private tasks!: TeamTaskBoard
 
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'agentTeams')
+    super(ctx, 'projectTeams')
     this.config = {
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
@@ -104,7 +104,7 @@ export class TeamService extends Service {
     this.management = new TeamManagement(this.journal, this.config.maxMembers, this.config.maxTasks)
     this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers, this.management)
     this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks, this.management)
-    ctx.effect(() => () => this.disposeRuntime(), 'agentTeams.runtimeLifecycle()')
+    ctx.effect(() => () => this.disposeRuntime(), 'projectTeams.runtimeLifecycle()')
 
     ctx.on('agent/created', ({ agent }) => { this.scheduleRecovery(agent) })
     ctx.on('agent/status', ({ agent }) => {

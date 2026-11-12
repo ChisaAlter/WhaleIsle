@@ -79,7 +79,7 @@ function projectAvailable(env = process.env, config = {}) {
 
 /**
  * Mount Project without changing the user patch or the configured Team service.
- * Project supplies Team only when absent and owns the single Team UI row.
+ * Project supplies its managed Team only when absent; native Team remains independent.
  */
 async function ensureDesktopDshProject(options = {}) {
   const sourceDir = options.sourceDir || path.join(require('./paths').projectRoot(), 'vendor', DSH_PROJECT_PACKAGE);
@@ -124,7 +124,7 @@ async function ensureDesktopDshProject(options = {}) {
     '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
-    '- id: ui-agent-team',
+    '- id: ui-project-team',
     '  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '  disabled: true',
     '',

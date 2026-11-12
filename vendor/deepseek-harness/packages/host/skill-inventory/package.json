@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-host-skill-inventory",
   "description": "Host Remote for listing and mutating filesystem-backed skills",
-  "version": "0.2.2-rc.1",
+  "version": "0.2.2-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -40,7 +40,8 @@
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts"
+    "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.d.ts.map"
   ],
   "license": "MIT",
   "dependencies": {

@@ -57,7 +57,7 @@ export const Config = z.object({
   customInstructions: ConversationSettingsFields.customInstructions.volatile(),
 })
 
-/** Host preferences are consumed through the configuration form projection.
+/** Register browser conversation preferences.
  * @param ctx Plugin context used for optional settings presentation.
  * @param config Live conversation preferences, including next-message suggestions.
  */

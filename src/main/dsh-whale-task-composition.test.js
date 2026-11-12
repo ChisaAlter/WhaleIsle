@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createRequire } = require('node:module');
-const { tmpdir } = require('node:os');
 const { pathToFileURL } = require('node:url');
 const root = path.resolve('.');
 const harness = path.join(root, 'vendor/deepseek-harness');
@@ -15,13 +14,16 @@ const load = name => import(pathToFileURL(resolve(name)).href);
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 
 test('real Loader, storage, native Agent and tools finish a source-bound task without external I/O', async t => {
-  const { boot, loadOverlayPatches, bundlePatchPaths } = await load('@deepseek-ai/dsh-app-boot');
+  const { boot, loadOverlayPatches, bundlePatchPaths, PluginPackages, createRuntimeResolution } = await load('@deepseek-ai/dsh-app-boot');
   const { LlmAdapter } = await load('@deepseek-ai/dsh-llm');
   const { provideCmdline } = await load('@deepseek-ai/dsh-cmdline');
   const Whale = await import(pathToFileURL(path.join(root, 'vendor/dsh-whale/lib/index.js')).href);
   // Keep fixture paths canonical on Windows, where tmpdir() may use an 8.3
   // alias while the product resolves inputs through fs.realpath().
-  const tempRoot = await fs.realpath(tmpdir());
+  // Preset expressions resolve from the Loader's config directory, inside the
+  // installed CLI just as a production profile's package routing does.
+  await fs.mkdir(path.join(harness, 'apps/cli/.tmp'), { recursive: true });
+  const tempRoot = await fs.realpath(path.join(harness, 'apps/cli/.tmp'));
   const home = await fs.mkdtemp(path.join(tempRoot, 'whale-task-composition-'));
   const prior = process.env.DSH_HOME; process.env.DSH_HOME = home;
   let ctx;
@@ -37,7 +39,9 @@ test('real Loader, storage, native Agent and tools finish a source-bound task wi
     { id: 'agent-default-model', config: { provider: 'scripted', model: 'reader' } },
     ...['webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map(id => ({ id, disabled: true })),
     { insert: [{ id: 'directory-picker-test', name: '@deepseek-ai/dsh-host-directory-picker-browse' }] }];
-  ctx = await boot('whale-task-test', config, patches, context => {
+  const resolution = await createRuntimeResolution({ installAnchor: path.join(harness, 'apps/cli/package.json'), home });
+  ctx = await boot('whale-task-test', config, patches, async context => {
+    await context.plugin(PluginPackages, { resolution });
     provideCmdline(context, { args: [], exit() {} });
     context.provide('connection', { fetch: { register: () => () => {} }, rpc: { intercept: () => () => {} } });
     context.loader.internal = { version: 'v2', import: name => name.startsWith('file:') ? import(name) : load(name) };

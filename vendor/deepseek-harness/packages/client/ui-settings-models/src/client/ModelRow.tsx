@@ -33,6 +33,8 @@ interface ModelRowProps {
   inputLoading?: boolean
   /** Levels the row's `reasoningEfforts` may declare; absent or empty shows no reasoning control. */
   reasoningLevels?: readonly string[] | undefined
+  /** Whether the route's protocol accepts only {@link reasoningLevels}, each sent under its own name. */
+  reasoningLevelsOnly?: boolean | undefined
   expanded: boolean
   disabled: boolean
   validation?: DeepSeekModelsValidationFailure | ReasoningEffortsFailure | undefined
@@ -193,7 +195,8 @@ export function ModelRow(props: ModelRowProps): ReactNode {
               {props.reasoningLevels !== undefined && props.reasoningLevels.length > 0
                 ? (
                   <ModelReasoningEfforts
-                    model={model} levels={props.reasoningLevels} position={position} disabled={disabled} t={t} onChange={props.onChange}
+                    model={model} levels={props.reasoningLevels} levelsOnly={props.reasoningLevelsOnly === true}
+                    position={position} disabled={disabled} t={t} onChange={props.onChange}
                   />
                 )
                 : null}

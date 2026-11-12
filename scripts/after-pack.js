@@ -1853,25 +1853,27 @@ function assertOfficeRuntime(resources, harnessDest) {
   }
 
   const nm = path.join(harnessDest, 'node_modules', '@deepseek-ai');
-  // Resolve the kit the way the runtime does — from the skill package's own
+  // Resolve the kit the way the runtime does — from the provider package's own
   // dir — because flattening may nest it below the top-level slot (which can
   // even hold an unreachable stale store copy of another version).
   const skillDir = path.join(nm, 'dsh-skill-office');
-  const kitDir = resolvePackageFrom(skillDir, '@deepseek-ai/libreoffice-kit', harnessDest);
+  const providerDir = path.join(nm, 'dsh-office-kit');
+  const kitDir = resolvePackageFrom(providerDir, '@deepseek-ai/libreoffice-kit', harnessDest);
   const engineDir = kitDir
     && resolvePackageFrom(kitDir, '@deepseek-ai/libreoffice-kit-win32-x64', harnessDest);
   const requiredClosure = [
-    path.join(nm, 'dsh-office-to-pdf', 'package.json'),
+    path.join(providerDir, 'package.json'),
+    path.join(nm, 'dsh-tool-office', 'package.json'),
     path.join(skillDir, 'package.json'),
     path.join(nm, 'dsh-tool-workspace-dependencies', 'package.json'),
     ...(kitDir ? [path.join(kitDir, 'lib', 'cli.js')] : []),
     ...(engineDir
-      ? [path.join(engineDir, 'bin', 'libreoffice-kit.exe'), path.join(engineDir, 'prebuilds.json')]
+      ? [path.join(engineDir, 'prebuilds.json')]
       : []),
   ];
   if (!kitDir || !engineDir) {
     throw new Error(
-      `安装包的 LibreOffice Kit 闭包不完整：dsh-skill-office 无法解析 kit/engine`
+      `安装包的 LibreOffice Kit 闭包不完整：dsh-office-kit 无法解析 kit/engine`
       + `（kit=${kitDir || 'unresolved'} engine=${engineDir || 'unresolved'}）`,
     );
   }
@@ -1899,8 +1901,14 @@ function assertOfficeRuntime(resources, harnessDest) {
   if (engineManifest.version !== kitVersion
     || prebuilds.version !== kitVersion
     || prebuilds.status !== 'built'
-    || prebuilds.platform !== 'win32-x64') {
+    || prebuilds.platform !== 'win32-x64'
+    || prebuilds.engine?.kind !== 'native' || typeof prebuilds.engine.executable !== 'string'
+    || typeof prebuilds.engine.programDirectory !== 'string') {
     throw new Error(`Office 引擎与 kit 不一致：kit@${kitVersion} engine@${engineManifest.version} prebuilds=${prebuilds.platform}/${prebuilds.status}`);
+  }
+  for (const relative of [prebuilds.engine.executable, prebuilds.engine.programDirectory]) {
+    const file = path.join(engineDir, relative);
+    if (!fs.existsSync(file)) throw new Error(`Office 引擎资源缺失：${file}`);
   }
   console.log(
     `Office 闭包校验通过：kit@${kitVersion} + win32-x64 引擎`

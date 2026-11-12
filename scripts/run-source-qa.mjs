@@ -98,7 +98,7 @@ try {
   writeSmokeConfig(dirs.userData, dirs.workspace, port)
 
   console.log(`Source release QA: ${executable}`)
-  const outcome = await run(executable, ['.', `--user-data-dir=${dirs.userData}`, '--no-first-run'], electronSpawnEnv({
+  const outcome = await run(executable, ['.', `--user-data-dir=${dirs.userData}`, '--no-first-run', '--disable-backgrounding-occluded-windows'], electronSpawnEnv({
     DSH_SMOKE: '1',
     DSH_QA: '1',
   }))

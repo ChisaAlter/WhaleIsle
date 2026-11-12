@@ -1254,7 +1254,17 @@ async function runReleaseUiWalk(wc, helpers) {
   );
   const thinking = await switchComposerThinking(wc, helpers);
   rec('composer.thinkingSwitch', thinking.ok, thinking.detail);
-  // A sent ordinary session owns More actions. A fresh blank draft hides it.
+  // A sent Session owns exports even when its route exposes no reasoning efforts.
+  const hasUserMessage = await pageEval(wc, () =>
+    Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]')).some(dshShown));
+  if (!hasUserMessage) {
+    const probeText = 'Desktop session export check';
+    if (await typeIntoComposer(wc, probeText)) {
+      await pageEval(wc, () => { const send = dshComposerSend(); if (send && !send.disabled) send.click(); });
+      await waitUntil(() => pageEval(wc, () =>
+        Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]')).some(dshShown)), 10_000);
+    }
+  }
   const sessionLog = await probeSessionLogMenu(wc);
   const sessionLogMenu = sessionLog.download;
   rec('titlebar.sessionLog', !sessionLog.extraShortcut && sessionLog.ordinary && sessionLogMenu,

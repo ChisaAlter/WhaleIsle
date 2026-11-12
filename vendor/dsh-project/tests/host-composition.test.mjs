@@ -519,7 +519,7 @@ test('Project and the optional Agent Teams bundle compose one Team service and o
   for (const name of ['@deepseek-ai/dsh-experimental-agent-team', '@deepseek-ai/dsh-experimental-client-ui-agent-team']) {
     assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name === '@deepseek-ai/dsh-experimental-agent-team' ? 'agent-team' : 'dsh-project-team-ui']);
   }
-  assert.ok(rows.some(row => row.id === 'tool-agent-team'), 'Agent Teams tools stay mounted on the shared service');
+  assert.ok(rows.some(row => row.id === 'tool-project-team'), 'Agent Teams tools stay mounted on the shared service');
 });
 
 /** Real preset composition and loop; the external provider alone is scripted. */
@@ -628,11 +628,11 @@ function assertTeamComposition(ctx, expected, project, optionalTeams) {
   assert.equal(activeFibers(TeamService).length, expected ? 1 : 0, 'exactly one live TeamService provider');
   assert.equal(activeFibers(teamUi).length, project || optionalTeams ? 1 : 0, 'exactly one live Team UI plugin');
   assert.equal([...ctx.loader.entries()].filter(entry => entry.options.name === '@deepseek-ai/dsh-experimental-client-ui-agent-team' && !entry.disabled).length, project || optionalTeams ? 1 : 0);
-  if (!expected) { assert.equal(ctx.get('agentTeams'), undefined); return; }
-  assert.deepEqual(ctx.agentTeams.config, expected, 'the actual shared service retains every effective limit');
-  if (project) assert.equal(ctx.projects.teams.config, ctx.agentTeams.config, 'Project consumes the configured provider instance');
+  if (!expected) { assert.equal(ctx.get('projectTeams'), undefined); return; }
+  assert.deepEqual(ctx.projectTeams.config, expected, 'the actual shared service retains every effective limit');
+  if (project) assert.equal(ctx.projects.teams.config, ctx.projectTeams.config, 'Project consumes the configured provider instance');
   if (optionalTeams) {
-    const tool = [...ctx.loader.entries()].find(entry => entry.options.id === 'tool-agent-team');
+    const tool = [...ctx.loader.entries()].find(entry => entry.options.id === 'tool-project-team');
     assert.equal(tool.fiber.state, FiberState.ACTIVE, 'optional Team tools remain active on the shared provider');
   }
 }
@@ -641,19 +641,19 @@ async function assertTeamLimits(ctx, expected, id) {
   const lead = await ctx.agentLoop.create(id, { provider: 'composition', model: 'project-model' });
   let first;
   for (let index = 0; index < expected.maxMembers; index++) {
-    const result = await ctx.agentTeams.spawnTeammate(lead, { name: `member-${index}`, description: `Capacity member ${index}`,
+    const result = await ctx.projectTeams.spawnTeammate(lead, { name: `member-${index}`, description: `Capacity member ${index}`,
       prompt: [{ type: 'text', text: 'Observe Team capacity.' }], context: 'fresh', provider: 'spawn', signal });
     first ??= result.member.name;
   }
-  await waitFor(() => ctx.agentTeams.listMembers(lead).every(member => member.status === 'inactive'), 'capacity members settle through the actual continuable runtime');
-  assert.equal(ctx.agentTeams.listMembers(lead).length, expected.maxMembers + 1, 'the configured teammate limit excludes the Lead');
-  await assert.rejects(ctx.agentTeams.spawnTeammate(lead, { name: 'over-capacity', description: 'Must be rejected before creation',
+  await waitFor(() => ctx.projectTeams.listMembers(lead).every(member => member.status === 'inactive'), 'capacity members settle through the actual continuable runtime');
+  assert.equal(ctx.projectTeams.listMembers(lead).length, expected.maxMembers + 1, 'the configured teammate limit excludes the Lead');
+  await assert.rejects(ctx.projectTeams.spawnTeammate(lead, { name: 'over-capacity', description: 'Must be rejected before creation',
     prompt: [{ type: 'text', text: 'Must not run.' }], context: 'fresh', provider: 'spawn', signal }), { code: 'TEAM_MEMBER_LIMIT' });
-  assert.equal(ctx.agentTeams.listMembers(lead).length, expected.maxMembers + 1, 'rejection does not add a member');
-  await assert.rejects(ctx.agentTeams.sendMessage(lead, { target: first, content: [{ type: 'text', text: '鲸'.repeat(expected.maxMessageBytes) }], signal }), { code: 'TEAM_MESSAGE_TOO_LARGE' });
+  assert.equal(ctx.projectTeams.listMembers(lead).length, expected.maxMembers + 1, 'rejection does not add a member');
+  await assert.rejects(ctx.projectTeams.sendMessage(lead, { target: first, content: [{ type: 'text', text: '鲸'.repeat(expected.maxMessageBytes) }], signal }), { code: 'TEAM_MESSAGE_TOO_LARGE' });
   if (expected.maxTasks <= 4) {
-    for (let index = 0; index < expected.maxTasks; index++) await ctx.agentTeams.createTask(lead, { subject: `Task ${index}`, description: 'Configured task capacity.' });
-    await assert.rejects(ctx.agentTeams.createTask(lead, { subject: 'Overflow task', description: 'Must not be created.' }), { code: 'TEAM_TASK_LIMIT' });
+    for (let index = 0; index < expected.maxTasks; index++) await ctx.projectTeams.createTask(lead, { subject: `Task ${index}`, description: 'Configured task capacity.' });
+    await assert.rejects(ctx.projectTeams.createTask(lead, { subject: 'Overflow task', description: 'Must not be created.' }), { code: 'TEAM_TASK_LIMIT' });
   }
   assert.equal(await ctx.sessions.flush(lead.session), true);
 }
@@ -699,16 +699,16 @@ test('real Loader preserves Team limits through cold restart and Project toggle 
         if (project && scenario.optionalTeams && stage === 'initial') {
           const entries = [...ctx.loader.entries()], provider = entries.find(entry => entry.options.id === 'agent-team');
           await provider.fiber.restart();
-          await waitFor(() => ctx.get('projects')?.available && ctx.projects.teams.config === ctx.agentTeams.config, 'Project follows the configured provider restart');
+          await waitFor(() => ctx.get('projects')?.available && ctx.projects.teams.config === ctx.projectTeams.config, 'Project follows the configured provider restart');
           assertTeamComposition(ctx, expected, true, true);
-          const teamConfig = ctx.agentTeams.config, projectEntry = entries.find(entry => entry.options.id === 'dsh-project');
+          const teamConfig = ctx.projectTeams.config, projectEntry = entries.find(entry => entry.options.id === 'dsh-project');
           await projectEntry.update({ disabled: true }); await projectEntry.fiber.await();
           assert.equal(ctx.get('projects'), undefined);
-          assert.equal(ctx.agentTeams.config, teamConfig, 'live Project disable retains the optional provider instance');
+          assert.equal(ctx.projectTeams.config, teamConfig, 'live Project disable retains the optional provider instance');
           assertTeamComposition(ctx, expected, false, true);
           await projectEntry.update({ disabled: false }); await ctx.loader.await();
           assert.equal(ctx.projects.available, true, ctx.projects.error);
-          assert.equal(ctx.agentTeams.config, teamConfig, 'live Project re-enable reuses the optional provider');
+          assert.equal(ctx.projectTeams.config, teamConfig, 'live Project re-enable reuses the optional provider');
           assertTeamComposition(ctx, expected, true, true);
           assert.equal(model.requests.length, 0, 'live provider restart and Project toggle start no model work');
         }
@@ -1497,14 +1497,14 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     const readPage = JSON.parse(messageText(documentRead.data.message));
     assert.equal(readPage.text, 'A'); assert.equal(readPage.totalLines, 2); assert.equal(readPage.startLine, 2);
     await assert.rejects(readFile(join(directory, 'forbidden.js')), { code: 'ENOENT' }); assert.ok(model.failures.some(item => item.name === 'project_write_document'));
-    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), plan.id).status, 'completed');
+    assert.equal(ctx.projectTeams.getTask(ctx.agents.get(project.coordinatorSessionId), plan.id).status, 'completed');
     const materials = await host.command('store/list', { projectId: project.id });
     assert.equal(materials.results[0].report.summary, 'Plan completed'); assert.equal(materials.results[0].reportCount, 1);
     const artifactRequest = { projectId: project.id, workstreamId: plan.id, delegationRef: plan.currentDelegationRef, path: join(directory, 'docs/plan.md') };
     assert.equal((await host.command('open', artifactRequest)).modifiedSinceReport, false);
     await writeFile(artifactRequest.path, '# Plan\nChanged after the recorded result.\n');
     assert.equal((await host.command('open', artifactRequest)).modifiedSinceReport, true);
-    assert.ok(ctx.agentTeams.listMembers(ctx.agents.get(project.coordinatorSessionId)).some(member => member.id === plan.workerSessionId && member.role === 'teammate'));
+    assert.ok(ctx.projectTeams.listMembers(ctx.agents.get(project.coordinatorSessionId)).some(member => member.id === plan.workerSessionId && member.role === 'teammate'));
     const workerId = plan.workerSessionId; assert.equal(host.worker(workerId).cwd, await realpath(directory));
     const completion = await waitFor(() => model.settlementInputs.find(input => input.facts.reports.some(report => report.delegationRef === plan.currentDelegationRef)), 'parent receives actual report in its one native settlement notice without reading notes');
     assert.match(completion.text, /It left no closing message/); assert.equal(completion.facts.reports[0].summary, 'Plan completed');
@@ -1522,7 +1522,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(resultHistory.total, 2); assert.deepEqual(resultHistory.items.map(report => report.summary), ['Requested work completed', 'Plan completed']);
     await assert.rejects(() => host.command('store/results', { projectId: project.id, workstreamId: plan.id, cursor: 'another-work' }), { code: 'result_cursor' });
     assert.equal(host.stream(plan.id).workerSessionId, workerId); assert.equal(host.worker(workerId).role, 'worker');
-    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), plan.id).description, 'DEVELOP_CONTINUE');
+    assert.equal(ctx.projectTeams.getTask(ctx.agents.get(project.coordinatorSessionId), plan.id).description, 'DEVELOP_CONTINUE');
     const notes = await host.command('store/read', { projectId: project.id, path: 'notes.md' });
     assert.equal(notes.userText, 'My own project notes.'); assert.equal(notes.text.split('<!-- whale-project:user-notes -->').length, 2);
     assert.match(await readFile(join(directory, 'implementation.txt'), 'utf8'), /Same worker continued/);
@@ -1531,14 +1531,14 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     const failuresBeforePeer = model.failures.length; await prompt('PEER_RECEIVER'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     assert.equal(model.failures.length, failuresBeforePeer, JSON.stringify(model.failures.slice(failuresBeforePeer)));
     const receiver = await waitFor(() => host.state().workstreams.find(work => work.title === 'Peer receiver' && work.settlements.length), 'receiver settles without falsely completing');
-    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), receiver.id).status, 'in_progress');
+    assert.equal(ctx.projectTeams.getTask(ctx.agents.get(project.coordinatorSessionId), receiver.id).status, 'in_progress');
     await waitFor(() => !host.stream(receiver.id).pendingSummary, 'the waiting receiver terminal is summarized before changing the parallel workflow');
     await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     await prompt('PEER_DEPENDENT'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     const dependent = host.state().workstreams.find(work => work.title === 'Dependent work');
     assert.equal(host.worker(dependent.workerSessionId).materialized, false, 'dependency waits before spawning');
     assert.deepEqual(dependent.delegations.at(-1).waitingReason, { kind: 'dependencies', workTitles: ['Peer receiver'] });
-    assert.deepEqual(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), dependent.id).blockedBy, [receiver.id]);
+    assert.deepEqual(ctx.projectTeams.getTask(ctx.agents.get(project.coordinatorSessionId), dependent.id).blockedBy, [receiver.id]);
     await prompt('PEER_SENDER');
     await waitFor(() => [receiver.id, dependent.id].every(id => host.stream(id).status === 'done'), 'native peer message resumes receiver and unlocks dependent work');
     assert.deepEqual(host.stream(dependent.id).latestReport.prerequisites, [{ workstreamId: receiver.id, title: receiver.title,
@@ -1547,7 +1547,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     const sender = await waitFor(() => host.state().workstreams.find(work => work.title === 'Peer sender' && work.status === 'done'), 'sender settles');
     const peer = ctx.agents.get(project.coordinatorSessionId).session.snapshotEvents().find(event => event.type === 'team/message/queued' && event.data.message.senderId === sender.workerSessionId && event.data.message.targetId === receiver.workerSessionId);
     assert.ok(peer, 'peer evidence used the native durable mailbox');
-    assert.deepEqual(ctx.agentTeams.messageContext(ctx.agents.get(project.coordinatorSessionId), peer.data.message.id), { senderAssignment: sender.currentDelegationRef, targetAssignment: receiver.currentDelegationRef });
+    assert.deepEqual(ctx.projectTeams.messageContext(ctx.agents.get(project.coordinatorSessionId), peer.data.message.id), { senderAssignment: sender.currentDelegationRef, targetAssignment: receiver.currentDelegationRef });
     assert.equal(model.failures.some(item => ['list_agents', 'send_message'].includes(item.name)), false);
     await waitFor(() => [receiver.id, dependent.id, sender.id].every(id => !host.stream(id).pendingSummary), 'all parallel peer results have their actual visible summaries before starting the next stage'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     await prompt('READ_ONLY'); const investigation = await waitFor(() => host.state().workstreams.find(item => item.title === 'Readonly work' && item.status === 'done'), 'read-only worker settles');
@@ -1623,7 +1623,7 @@ test('native Team dependency changes preserve continuing identity, reject cycles
     const lead = ctx.agents.get(project.coordinatorSessionId); let request = 0;
     const prompt = (...actions) => ctx.sessionController.prompt({ sessionId: lead.id, requestId: `dependency-user-${++request}`, mode: 'queue', content: [{ type: 'text', text: `DEPENDENCY_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
     const work = title => host.state().workstreams.find(item => item.title === title);
-    const task = title => ctx.agentTeams.getTask(lead, work(title).id);
+    const task = title => ctx.projectTeams.getTask(lead, work(title).id);
     const receipt = title => work(title).delegations.find(item => item.ref === work(title).currentDelegationRef);
     const done = async title => { await waitFor(() => work(title)?.status === 'done' && !work(title).pendingSummary, `${title} has its real completed settlement and visible result`); await lead.whenIdle(); };
     const stable = title => structuredClone({ ref: work(title).currentDelegationRef, report: work(title).latestReport, deps: work(title).blockedBy, task: task(title), activeRunId: host.worker(work(title).workerSessionId).activeRunId });
@@ -1754,10 +1754,10 @@ test('native dependency reservation rejects an upstream continuation while its o
       await prompt({ work: 'Upstream A', brief: 'HOLD_SECOND_A' });
       await waitFor(() => atReopen, 'A current delegation is durable before its native task reopens');
       const secondRef = work('Upstream A').currentDelegationRef;
-      assert.notEqual(secondRef, firstRef); assert.equal(ctx.agentTeams.getTask(lead, aId).status, 'completed');
+      assert.notEqual(secondRef, firstRef); assert.equal(ctx.projectTeams.getTask(lead, aId).status, 'completed');
       releaseReservation();
       await waitFor(() => work('Gate G').status === 'done' && receipt('Dependent B').waitingReason?.workTitles?.join() === 'Upstream A', 'B rechecks the current Project receipt even while native A still says completed');
-      assert.equal(ctx.agentTeams.getTask(lead, aId).status, 'completed', 'the native reopen remains genuinely in flight');
+      assert.equal(ctx.projectTeams.getTask(lead, aId).status, 'completed', 'the native reopen remains genuinely in flight');
       assert.equal(receipt('Dependent B').phase, 'queued'); assert.equal(receipt('Dependent B').dispatchedPrerequisites, undefined);
       assert.equal(model.workerInputs.some(item => item.brief === 'AFTER_CURRENT_A'), false);
       releaseReopen();
@@ -1842,7 +1842,7 @@ test('native Team capacity holds accepted work in its queue and starts it after 
     try {
       const model = new ScriptedModel(); const { releaseBeforeQueue, ...limits } = teamConfig; ctx = await bootHost(home, model, limits); const host = ctx.projects;
       let releaseFailure, failureObserved = false;
-      if (releaseBeforeQueue) { const spawn = ctx.agentTeams.spawnTeammate.bind(ctx.agentTeams), gate = new Promise(done => { releaseFailure = done; }); ctx.agentTeams.spawnTeammate = async (...args) => { try { return await spawn(...args); } catch (error) { if (error.code === 'TEAM_MEMBER_LIMIT') { failureObserved = true; await gate; } throw error; } }; }
+      if (releaseBeforeQueue) { const spawn = ctx.projectTeams.spawnTeammate.bind(ctx.projectTeams), gate = new Promise(done => { releaseFailure = done; }); ctx.projectTeams.spawnTeammate = async (...args) => { try { return await spawn(...args); } catch (error) { if (error.code === 'TEAM_MEMBER_LIMIT') { failureObserved = true; await gate; } throw error; } }; }
       const { project } = await host.command('create', { requestId: 'create-capacity', workingDirectory: directory });
       const prompt = text => ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: text, mode: 'queue', content: [{ type: 'text', text }] }, signal);
       await prompt('CAPACITY_HOLDER'); const holder = await waitFor(() => host.state().workstreams.find(work => work.title === 'Capacity holder' && host.worker(work.workerSessionId).activeRunId), 'first native teammate is running');
@@ -1857,7 +1857,7 @@ test('native Team capacity holds accepted work in its queue and starts it after 
       await waitFor(() => host.stream(waiting.id).status === 'done', 'queued original work starts after capacity release');
       assert.equal(host.stream(waiting.id).delegations[0].waitingReason, undefined);
       assert.equal(host.stream(waiting.id).workerSessionId, waiting.workerSessionId); assert.equal(host.stream(waiting.id).delegations.length, 1);
-      assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), waiting.id).status, 'completed');
+      assert.equal(ctx.projectTeams.getTask(ctx.agents.get(project.coordinatorSessionId), waiting.id).status, 'completed');
     } finally {
       if (ctx) await ctx.fiber.dispose(); await bridge.close();
       for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
@@ -1887,7 +1887,7 @@ test('native task capacity releases a failed pre-child launch and recovers its o
     assert.equal(host.worker(workerId).materialized, false); assert.equal(host.worker(workerId).reservationRef, '');
     assert.equal(await ctx.sessionPersistence.stat(workerId), undefined);
     const lead = ctx.agents.get(project.coordinatorSessionId);
-    assert.equal(ctx.agentTeams.getTask(lead, failed.id).status, 'pending', 'cold does not manufacture completion');
+    assert.equal(ctx.projectTeams.getTask(lead, failed.id).status, 'pending', 'cold does not manufacture completion');
     assert.equal(lead.session.snapshotEvents().filter(event => event.type === 'team/control' && event.data.control.kind === 'cold' && event.data.control.taskId === failed.id).at(-1)?.data.control.cold, true);
     await rename(moved, directory);
     await prompt({ title: 'After failure', brief: 'Complete after the failed launch released its task slot' });
@@ -1896,7 +1896,7 @@ test('native task capacity releases a failed pre-child launch and recovers its o
     await waitFor(() => lead.session.snapshotEvents().filter(event => event.type === 'team/control' && event.data.control.kind === 'cold' && event.data.control.taskId === completedId).at(-1)?.data.control.cold === true, 'completed native task releases capacity after its Project result is recorded');
     await lead.whenIdle();
     // Reproduce the durable pre-fix record through the native management API.
-    await ctx.agentTeams.setCold(lead, workerId, failed.id, false);
+    await ctx.projectTeams.setCold(lead, workerId, failed.id, false);
     await ctx.fiber.dispose(); ctx = undefined;
     const restarted = new DependencyModel(); restarted.counter = model.counter;
     ctx = await bootHost(home, restarted, { maxTasks: 1 });
@@ -1915,7 +1915,7 @@ test('native task capacity releases a failed pre-child launch and recovers its o
     await waitFor(() => recovered.stream(failed.id).status === 'done', 'explicit continuation activates the original failed task');
     assert.equal(recovered.stream(failed.id).workerSessionId, workerId);
     assert.equal(recovered.stream(failed.id).delegations[0].ref, failedRef);
-    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), failed.id).status, 'completed');
+    assert.equal(ctx.projectTeams.getTask(ctx.agents.get(project.coordinatorSessionId), failed.id).status, 'completed');
   } finally {
     if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
@@ -2223,7 +2223,7 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
     return id;
   };
   const tasks = new Map();
-  const ctx = { sessionPersistence: { stat: async () => ({}) }, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, agentTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, blockedBy: [], status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
+  const ctx = { sessionPersistence: { stat: async () => ({}) }, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, projectTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, blockedBy: [], status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
     registerContinuationPolicy: () => () => {}, async drainChildren(_parent, ids) { drained.push(...ids); if (ids.includes('worker-a')) await gateA; },
   } };
   const table = { get: () => state, async update(_key, change) { state = change(state); } };

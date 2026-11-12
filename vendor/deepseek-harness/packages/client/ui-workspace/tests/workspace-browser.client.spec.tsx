@@ -23,6 +23,7 @@ import type {
 import { createWorkspaceShortcutControls } from '../src/client/shortcuts.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
+import { renderMenuButton } from './menu-button.tsx'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { ShowArchivedListRow } from '../src/client/ShowArchivedListRow.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -114,13 +115,15 @@ const renderDirectoryFlowOnly: WorkspaceBrowserProps['renderSlot'] = (name: stri
     ? <div data-testid="directory-flow" />
     : null
 
+// Mounted outside a sidebar, the browser binds its list area to nothing.
+const SECTION_SCROLLER = { bindScrollerRef: () => {} }
+
 function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const controls = createWorkspaceShortcutControls()
   const request = createSnapshotStore<WorkspaceActionRequest | null>(null)
   const deleteRequest = createSnapshotStore<SessionDeleteRequest | null>(null)
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
-    openWorkspaceMenu: vi.fn(),
     useWorkspaceActionRequest: bindSnapshotSelector(request),
     settleWorkspaceAction: () => { request.set(null) },
     useSessionDeleteRequest: bindSnapshotSelector(deleteRequest),
@@ -128,7 +131,6 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     settleSessionDelete: vi.fn(() => { deleteRequest.set(null) }),
     useDirectoryActionFailure: select => select(null),
     dismissDirectoryActionFailure: vi.fn(),
-    openSessionMenu: vi.fn(),
     useContextMenuTarget: selector => selector(null),
     useShortcuts: select => select([]),
     useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
@@ -156,6 +158,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     open: vi.fn(),
     searchSessions: vi.fn(async () => ({ items: [], hasMore: false })),
     searchResultLimit: 20,
+    useSectionScroller: () => SECTION_SCROLLER,
     notifyArchivedNotOpenable: vi.fn(),
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
@@ -168,6 +171,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostInfo: selector => selector({ home: undefined, isLoopback: true }),
     renderSlot: renderDirectoryFlowOnly,
+    renderFactorySlot: renderMenuButton,
     t,
     ...overrides,
   }

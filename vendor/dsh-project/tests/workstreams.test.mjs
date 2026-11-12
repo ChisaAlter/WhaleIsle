@@ -13,7 +13,7 @@ function setup() {
   const tasks = [], lead = { id: 'lead', status: 'idle', session: { id: 'lead', snapshotEvents: () => events } };
   const teams = { registerPolicy: () => () => {}, listTasks: () => tasks };
   const ctx = { agents: new Map([['lead', lead]]), sessionPersistence: { stat: async () => ({}) }, sessions: { flush: async () => true }, get: () => undefined,
-    subagents: { registerContinuationPolicy: () => () => {} }, agentTeams: teams };
+    subagents: { registerContinuationPolicy: () => () => {} }, projectTeams: teams };
   ctx.sessionController = { resolveAgent: async id => ({ agent: ctx.agents.get(id) }) };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => { Object.assign(state, change(state)); } }, { home: '', desktop: async () => ({}) });
   function add(id, current, updatedAt) {
@@ -566,7 +566,9 @@ test('research adds only web search and fetch to the read-only tools; every call
   assert.equal(sources().length, 3, 'the same call is recorded once');
 
   for (const role of ['readonly', 'docs']) { member().role = role; assert.equal(call('web_fetch', { url: 'https://example.com' }), 'Web access needs a research assignment.', role); }
-  member().role = 'worker'; assert.equal(call('web_search', { queries: ['x'] }), undefined, 'a development member keeps the tools it always had');
+  member().role = 'worker';
+  for (const name of ['subagent', 'subagent_fork', 'spawn_teammate', 'interrupt_agent']) assert.match(call(name) ?? '', /Project members collaborate through Project tools/);
+  assert.equal(call('web_search', { queries: ['x'] }), undefined, 'a development member keeps the tools it always had');
 
   // The Project names its sites: a host covers its subdomains, everything else is refused and not recorded.
   const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-research-')); f.service.project(f.project.id).storageRoot = root;

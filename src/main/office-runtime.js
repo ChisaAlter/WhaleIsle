@@ -14,10 +14,10 @@
  *   directory `dsh-home/dsh-runtimes/dsh-primary-runtime`). The plugin owns
  *   staging → validate → atomic rename there; the old payload survives a
  *   failed replacement.
- * - `skill-office` gets `assetRoot` (payload-sibling `office-skills`), `node`
- *   (the payload's standalone Node, never the Electron binary or PATH), and
- *   `cli` (the real unpacked `libreoffice-kit/lib/cli.js`). `cli:false` is
- *   never emitted — a kit-less deployment is not a complete Office runtime.
+ * - `skill-office` gets `assetRoot` (payload-sibling `office-skills`) and
+ *   `pythonEnvironment: workspace-dependencies`. The rc.2 `office-kit` provider
+ *   owns rendering/conversion/recalculation and its native Kit dependency.
+ *   The payload still supplies standalone Node for workspace scripts.
  * - Windows x64 requires the native engine package
  *   `@deepseek-ai/libreoffice-kit-win32-x64`; there is no WASM fallback.
  * - The overlay rides EVERY start (full and --skip-user-plugins) — Office is
@@ -44,11 +44,11 @@ const PRIMARY_RUNTIME_DIRNAME = 'dsh-primary-runtime';
 const OFFICE_SKILLS_DIRNAME = 'office-skills';
 const OFFICE_SKILL_FOLDERS = [
   'office', 'office-docx', 'office-pptx', 'office-xlsx',
-  'office-render', 'office-recalculate', 'office-export-pdf',
 ];
 const KIT_PACKAGE = '@deepseek-ai/libreoffice-kit';
 const KIT_CLI_ENTRY = path.join('lib', 'cli.js');
 const WORKSPACE_DEPENDENCIES_PACKAGE = '@deepseek-ai/dsh-tool-workspace-dependencies';
+const OFFICE_KIT_PACKAGE = '@deepseek-ai/dsh-office-kit';
 const SKILL_OFFICE_PACKAGE = '@deepseek-ai/dsh-skill-office';
 
 function writeAtomic(file, contents) {
@@ -156,19 +156,18 @@ function readRuntimeManifest(source) {
 function resolveOfficeKit(harnessRoot) {
   const cliAnchor = path.join(harnessRoot, 'apps', 'cli', 'package.json');
   const requireFromCli = createRequire(cliAnchor);
-  let skillManifestFile;
+  let providerManifestFile;
   try {
-    skillManifestFile = requireFromCli.resolve(`${SKILL_OFFICE_PACKAGE}/package.json`);
+    const webManifestFile = requireFromCli.resolve('@deepseek-ai/dsh-web-app/package.json');
+    providerManifestFile = createRequire(webManifestFile).resolve(`${OFFICE_KIT_PACKAGE}/package.json`);
   } catch {
-    throw new Error(`Office 组件缺失：${SKILL_OFFICE_PACKAGE} 在 Harness 运行时中不可解析`);
+    throw new Error(`Office 组件缺失：${OFFICE_KIT_PACKAGE} 在 Harness 运行时中不可解析`);
   }
-  // skill-office resolves the kit beside itself at runtime; anchor there so
-  // the preflight walks the same path (pnpm links under the package, not the
-  // workspace root).
-  const requireFromSkill = createRequire(skillManifestFile);
+  // Resolve from the rc.2 Office provider, which owns the Kit dependency.
+  const requireFromProvider = createRequire(providerManifestFile);
   let manifestFile;
   try {
-    manifestFile = requireFromSkill.resolve(`${KIT_PACKAGE}/package.json`);
+    manifestFile = requireFromProvider.resolve(`${KIT_PACKAGE}/package.json`);
   } catch {
     throw new Error(`Office 组件缺失：${KIT_PACKAGE} 在 Harness 运行时中不可解析`);
   }
@@ -204,13 +203,17 @@ function resolveOfficeKit(harnessRoot) {
   }
   const prebuilds = JSON.parse(fs.readFileSync(prebuildsFile, 'utf8'));
   const target = `${process.platform}-${process.arch}`;
-  if (prebuilds.status !== 'built' || prebuilds.platform !== target || prebuilds.version !== version) {
+  if (prebuilds.status !== 'built' || prebuilds.platform !== target || prebuilds.version !== version
+    || prebuilds.engine?.kind !== 'native' || typeof prebuilds.engine.executable !== 'string'
+    || typeof prebuilds.engine.programDirectory !== 'string') {
     throw new Error(`Office 引擎清单无效：${prebuildsFile}（platform=${prebuilds.platform}，status=${prebuilds.status}）`);
   }
-  const executable = path.join(enginePackageDir, 'bin', process.platform === 'win32' ? 'libreoffice-kit.exe' : 'libreoffice-kit');
+  const executable = path.join(enginePackageDir, prebuilds.engine.executable);
   if (!fs.existsSync(executable)) {
     throw new Error(`Office 引擎可执行文件缺失：${executable}`);
   }
+  const program = path.join(enginePackageDir, prebuilds.engine.programDirectory);
+  if (!fs.existsSync(program)) throw new Error(`Office 引擎程序目录缺失：${program}`);
   return { cli, packageDir, version, enginePackageDir };
 }
 
@@ -353,8 +356,7 @@ function ensureDesktopOfficeRuntime(options = {}) {
     `      name: ${JSON.stringify(SKILL_OFFICE_PACKAGE)}`,
     '      config:',
     `        assetRoot: ${JSON.stringify(assetRoot)}`,
-    `        node: ${JSON.stringify(node)}`,
-    `        cli: ${JSON.stringify(cli)}`,
+    '        pythonEnvironment: workspace-dependencies',
     '',
   ].join('\n');
   let added = false;

@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm'
+import { bootThemeInjections } from '../src/boot-theme.ts'
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -81,6 +83,34 @@ describe('ThemeRuntime', () => {
     expect(snapshot.backgroundEffectSpeed).toBe(190)
     expect(snapshot.backgroundEffectCount).toBe(5)
     expect(snapshot.backgroundEffectVariant).toBe('orbs')
+  })
+
+  it.each(['light', 'dark', 'system'] as const)('preserves boot preference %s until Host settings arrive', (preference) => {
+    for (const row of bootThemeInjections(preference)) {
+      if (row.kind === 'script') runInNewContext(row.text, { document })
+    }
+    try {
+      const { theme, host, events } = make()
+      expect(theme.getTheme().preference).toBe(preference)
+      expect({ preference: theme.getTheme().preference, palette: theme.getTheme().active.colorScheme }).toMatchSnapshot()
+      expect(events).toEqual([])
+      host.publish({ status: 'ready', value: section({ preference: 'light' }), revision: 1, writable: true })
+      expect(theme.getTheme().preference).toBe('light')
+      expect(host.set).not.toHaveBeenCalled()
+    } finally {
+      delete document.documentElement.dataset.dsThemeSource
+      document.body.removeAttribute('data-ds-dark-theme')
+      document.body.removeAttribute('style')
+    }
+  })
+
+  it('uses the default when the boot preference is invalid', () => {
+    document.documentElement.dataset.dsThemeSource = 'invalid'
+    try {
+      expect(make().theme.getTheme().preference).toBe('system')
+    } finally {
+      delete document.documentElement.dataset.dsThemeSource
+    }
   })
 
   it('seeds the initial font size from the boot-script body variable, ignoring junk', () => {

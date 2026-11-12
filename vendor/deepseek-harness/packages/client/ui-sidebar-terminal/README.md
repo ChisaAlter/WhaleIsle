@@ -74,7 +74,7 @@ None; terminal output travels only between the browser and Host.
 - Shell discovery or native PTY startup can fail. The tab reports the failure without launching a different shell.
 - Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
 - Application OSC color overrides are retained by the mounted renderer; a newly opened renderer cannot recover them from the Host screen snapshot.
-- Terminal history is bounded. The feature does not send terminal output to the Agent, provide split terminal panes inside a tab, or restore processes after Host restart.
+- Terminal history is bounded. The feature does not send terminal output to the Agent itself, provide split terminal panes inside a tab, or restore processes after Host restart; an Agent reads terminals only through a terminal tool package.
 - A failed terminal chunk load requires a page reload because React caches a rejected lazy import for the page lifetime.
 
 <a id="dev-note"></a>
