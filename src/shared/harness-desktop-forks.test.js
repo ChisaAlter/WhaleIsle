@@ -305,7 +305,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-directory-picker-browse/src/client/index.ts': 'pickWorkspaceDirectory createPickerPreferenceStore\n',
       'packages/client/ui-directory-picker-browse/src/client/DirectoryBrowser.tsx': 'nativePicker browser.nativePicker\n',
       'packages/client/ui-layout/src/client/AppFrame.tsx': "surfaces: 0 css.mainPanel data-main-panel\n",
-      'packages/client/ui-layout/src/client/AppFrame.module.css': '.mainPanel { grid-row: 2; }\n/* No app-region: its controls subtract themselves */\n',
+      'packages/client/ui-layout/src/client/AppFrame.module.css': '.mainPanel { grid-row: 2; }\n/* No app-region: its controls subtract themselves */\n--dsh-phone-drawer-canvas: var(--dsw-static-neutral-bluish-00);\n.frame[data-phone-sidebar] .titlebarTrailing { visibility: hidden; }\n',
       'packages/client/ui-primitives/src/ImageLightbox.module.css': '.close { top: calc(20px + var(--dshd-wco-caption, 0px)); }\n',
       'packages/client/ui-layout/src/client/index.ts': "surfaces: number\n    'surfaces': { kind: 'single', scope: 'session-maybe' },\n    'shell.titlebar.trailing': { kind: 'list', scope: 'root' },\n    'shell.terminalDrawer': { kind: 'single', scope: 'session-maybe' },\n    // every other key renders inside the content row only\n",
       'packages/client/ui-surfaces/src/client/apply.ts': "openWorkspaceSurface openResourceIn openTabIn fileAddressFor\n",

@@ -74,4 +74,23 @@ describe('AppFrame.module.css titlebar trailing cluster', () => {
     expect(declarations('.frame[data-titlebar-trailing-hidden] .titlebarTrailing')?.get('display')).toBe('none')
     expect(declarations('.frame[data-compact-header] .titlebarTrailing')).toBeUndefined()
   })
+
+  it('paints an opaque drawer canvas only in the phone overlay', () => {
+    const drawer = declarations('.frame[data-phone] .sidebarCol')
+    expect(drawer?.get('background-color')).toBe('var(--dsh-phone-drawer-canvas)')
+    expect(drawer?.get('--dsh-phone-drawer-canvas')).toBe('var(--dsw-static-neutral-bluish-00)')
+    expect(drawer?.get('background-image')).toContain('var(--dsh-sidebar-rail-fill')
+    expect(
+      declarations(':global(body[data-ds-dark-theme]) .frame[data-phone] .sidebarCol')
+        ?.get('--dsh-phone-drawer-canvas'),
+    ).toBe('var(--dsw-static-neutral-bluish-950)')
+    // The Git cluster clears the phone menu button and leaves the open drawer.
+    expect(declarations('.frame[data-phone] .titlebarTrailing')?.get('max-width')).toBe('calc(100% - 64px)')
+    expect(declarations('.frame[data-phone-sidebar] .titlebarTrailing')?.get('visibility')).toBe('hidden')
+    expect(declarations('.frame[data-phone-sidebar] .titlebarTrailing')?.get('pointer-events')).toBe('none')
+    // Desktop layout keeps the theme's translucent rail fill untouched.
+    const desktop = declarations('.sidebarCol')
+    expect(desktop?.get('background')).toBe('var(--dsh-sidebar-rail-fill, var(--dsw-specific-sidebar-fill))')
+    expect(desktop?.get('background-color')).toBeUndefined()
+  })
 })
