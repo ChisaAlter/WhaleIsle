@@ -12,7 +12,9 @@
  * search field. Provider headings paint their background only while pinned
  * by scrolling. Clearing a query restores the full list and search focus.
  * Selecting restores trigger focus without a ring until the trigger loses focus
- * or the menu reopens. Model names match a case-insensitive ordered subsequence
+ * or the menu reopens. Mobile devices restore button focus when opening or
+ * drilling; model search takes focus only after explicit user input.
+ * Model names match a case-insensitive ordered subsequence
  * within each provider group, ranked by
  * prefix, alignment score, then catalog order. Returning to the root pane
  * hands focus back to the cell that opened it. Data and submission ride the
@@ -25,7 +27,7 @@
  * chevron, and each row whose value that selection carries shows one in place
  * of its check mark.
  */
-import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MenuGroup, MenuSurface, observeStickyMenuGroups, useAnchoredPosition } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type FocusEvent, type ReactNode,
@@ -35,7 +37,7 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, Input, rankByName, StateDot, Toast, usePresence, FlipText,
+  IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast, usePresence, FlipText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
@@ -62,7 +64,7 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, t, renderSlot }:
+  { locked, available, directory, load, select, resolveText, t, renderSlot }:
   ModelSelectInjected & Pick<PropsRuntime<'conversation.input.model'>, 'locked'> & PropsLocale<'model'>
     & Omit<PropsRenderSlots<'conversation.input.model.label'>, 'SessionProvider'>,
 ) {
@@ -98,8 +100,24 @@ export function ModelSelect(
   const searchRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const groupsRef = useRef<HTMLDivElement | null>(null)
+  const livePos = useAnchoredPosition({
+    open: open && available,
+    anchorRef: triggerRef,
+    panelRef: menuRef,
+    side: 'top',
+    align: 'end',
+    gap: 8,
+    margin: 12,
+    layoutKey: pane,
+  })
+  // The exit keeps the last measured origin: a settling pick republishes state
+  // (and relabels the trigger) mid-fade, and re-placing then would teleport the
+  // closing card.
+  const exitPos = useRef<CSSProperties | null>(null)
+  if (open) exitPos.current = livePos ?? exitPos.current
+  else if (!mounted) exitPos.current = null
+  const menuPos = open ? livePos : exitPos.current
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
-  const [menuPos, setMenuPos] = useState<CSSProperties | null>(null)
   const menuItems = (): HTMLButtonElement[] => Array.from(
     menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]') ?? [],
   )
@@ -219,7 +237,7 @@ export function ModelSelect(
     paneFocus.current = null
     if (!open || intent === null) return
     if (intent === 'drill') {
-      if (pane === 'model' && showSearch) {
+      if (pane === 'model' && showSearch && !isMobileDevice()) {
         searchRef.current?.focus()
         return
       }
@@ -247,48 +265,6 @@ export function ModelSelect(
       itemRefs.current[activeModelIndex]?.scrollIntoView({ block: 'nearest' })
     }
   }, [open, pane, activeModelIndex, visibleModels])
-
-  // Portaled placement (the Menu primitive's portal rules: fixed from the
-  // anchor rect, measured before paint, clamped inside the viewport): above
-  // the trigger, right edges aligned. Depends on pane and directory state
-  // because pane switches and async catalog loads resize the card; slot
-  // content can resize it without a parent render. The exit keeps the last
-  // measured origin — a settling pick republishes state (and relabels the
-  // trigger) mid-fade, and re-placing then would teleport the closing card.
-  /* jscpd:ignore-start -- deliberate mirror of ui-primitives useAnchoredPosition:
-     that hook only places from the anchor's LEFT edge, while this card aligns
-     right edges (x = rect.right - width), so the measure-and-clamp plumbing repeats. */
-  useLayoutEffect(() => {
-    if (!available || !mounted) { setMenuPos(null); return }
-    if (!open) return
-    const place = (): void => {
-      /* v8 ignore next 2 -- the trigger ref is attached whenever the menu is open. */
-      const rect = triggerRef.current?.getBoundingClientRect()
-      if (rect === undefined) return
-      const MARGIN = 12
-      const lw = menuRef.current?.offsetWidth ?? 0
-      const lh = menuRef.current?.offsetHeight ?? 0
-      let x = rect.right - lw
-      let y = rect.top - 8 - lh
-      if (lw > 0) x = Math.min(Math.max(x, MARGIN), window.innerWidth - lw - MARGIN)
-      if (lh > 0) y = Math.min(Math.max(y, MARGIN), window.innerHeight - lh - MARGIN)
-      setMenuPos({ left: x, top: y })
-    }
-    place()
-    window.addEventListener('scroll', place, true)
-    window.addEventListener('resize', place)
-    const menu = menuRef.current
-    const observer = typeof ResizeObserver !== 'undefined' && menu !== null
-      ? new ResizeObserver(place)
-      : null
-    if (menu !== null) observer?.observe(menu)
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('scroll', place, true)
-      window.removeEventListener('resize', place)
-    }
-  }, [available, mounted, open, pane, state, query])
-  /* jscpd:ignore-end */
 
   if (!available) return null
 
@@ -492,7 +468,15 @@ export function ModelSelect(
     <span className={className} data-provider-id={provider.id} data-model-id={model.id}>
       {renderSlot('conversation.input.model.label', {
         provider, model, placement, selected,
-      }, { fallback })}
+      }, {
+        fallback: model.badge === undefined ? fallback : (
+          <span className={css.badgedName}>
+            {placement === 'trigger' ? <><Tag className={css.badge} tone={model.badge.tone}>{resolveText(model.badge.text)}</Tag>{' '}</> : null}
+            <span className={css.badgedNameText}>{fallback}</span>
+            {placement === 'trigger' ? null : <>{' '}<Tag className={css.badge} tone={model.badge.tone}>{resolveText(model.badge.text)}</Tag></>}
+          </span>
+        ),
+      })}
     </span>
   )
   let itemIndex = 0
@@ -677,30 +661,32 @@ export function ModelSelect(
 
           {pane === 'effort' && (
             <>
-              {view.effortChoices.length === 0
-                ? <div className={css.empty}>{t('empty.efforts')}</div>
-                : view.effortChoices.map(level => (
-                  <button
-                    ref={itemRef()}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={view.effort === level.effort}
-                    className={clsx(css.option, view.effort === level.effort && css.selected)}
-                    key={level.key}
-                    disabled={viewBusy}
-                    onClick={() => { chooseEffort(level.effort) }}
-                  >
-                    <span className={css.optionCopy}>
-                      <span className={css.modelName}>{level.label}</span>
-                    </span>
-                    <span className={css.check}>
-                      {view.state.pending !== null && view.state.pending.provider === view.state.current?.provider
-                        && view.state.pending.model === view.state.current.model && view.state.pending.reasoningEffort === level.effort
-                        ? <StateDot state="ongoing" />
-                        : view.effort === level.effort ? <IconCheckOutlineRegular /> : null}
-                    </span>
-                  </button>
-                ))}
+              <div className={clsx(css.groups, 'scrollable')}>
+                {view.effortChoices.length === 0
+                  ? <div className={css.empty}>{t('empty.efforts')}</div>
+                  : view.effortChoices.map(level => (
+                    <button
+                      ref={itemRef()}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={view.effort === level.effort}
+                      className={clsx(css.option, view.effort === level.effort && css.selected)}
+                      key={level.key}
+                      disabled={viewBusy}
+                      onClick={() => { chooseEffort(level.effort) }}
+                    >
+                      <span className={css.optionCopy}>
+                        <span className={css.modelName}>{level.label}</span>
+                      </span>
+                      <span className={css.check}>
+                        {view.state.pending !== null && view.state.pending.provider === view.state.current?.provider
+                          && view.state.pending.model === view.state.current.model && view.state.pending.reasoningEffort === level.effort
+                          ? <StateDot state="ongoing" />
+                          : view.effort === level.effort ? <IconCheckOutlineRegular /> : null}
+                      </span>
+                    </button>
+                  ))}
+              </div>
             </>
           )}
         </MenuSurface>,

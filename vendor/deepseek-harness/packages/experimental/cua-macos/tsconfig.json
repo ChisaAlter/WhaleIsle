@@ -12,13 +12,16 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../cua"
+      "path": "../cua/tsconfig.host.json"
     },
     {
       "path": "../../subprocess/subprocess"
     },
     {
       "path": "../../util/atomic-write"
+    },
+    {
+      "path": "../../../vendor/schemastery"
     }
   ]
 }

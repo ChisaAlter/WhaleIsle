@@ -10,9 +10,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   initProfile,
   PROFILE_PATCH_FILENAME,
-  PROFILE_TEMPLATES,
   PROFILES_DIR,
 } from '@deepseek-ai/dsh-app-boot'
+import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import { dumpConfigLayers } from '../src/dump-config.ts'
 
 const tmpDirs: string[] = []

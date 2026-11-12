@@ -95,13 +95,6 @@ export function usageSampleOf(
     : { turn: event.data.turn, step: event.data.step, usage: chunk.usage }
 }
 
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    tokenUsage: TokenUsageState
-    contextPressure: ContextPressureState
-  }
-}
-
 /** The context-pressure state schema and source of its inferred type. */
 const contextPressureStateSchema = z.object({
   contextWindow: z.number().int().positive().optional(),
@@ -115,7 +108,8 @@ const contextPressureStateSchema = z.object({
   }).optional(),
 }).strict()
 
-type ContextPressureState = z.infer<typeof contextPressureStateSchema>
+/** Host fold state for provider pressure and surface adjustments. */
+export type ContextPressureState = z.infer<typeof contextPressureStateSchema>
 
 /**
  * Token-meter's session projection unit.
@@ -220,5 +214,6 @@ export const contextPressureProjectionDefinition = {
         ? {}
         : { projectedTokens: Math.max(0, pressureTokens + surfaceTokens - sampledSurfaceTokens) },
     }),
+    summary: false,
   },
 } satisfies ProjectionDefinition<'contextPressure', ContextPressureState>

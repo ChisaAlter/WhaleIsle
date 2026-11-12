@@ -25,6 +25,15 @@ import type { ComposerModelFact } from '../src/client/input/model-facts.ts'
 import type { SessionCostPrices } from '../src/submission-settings.ts'
 import { en } from '../src/client/locales.ts'
 
+// jsdom has no matchMedia; a mouse can hover, nothing else is requested.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({ matches: query === '(any-hover: hover)', media: query, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+}
+
 // Mirrors the real lookup chain (conversation namespace, then common).
 const tEn = makeTranslate(en, commonEn)
 
@@ -947,12 +956,12 @@ describe('phase tooltip', () => {
     const view = mount({ provider: 'deepseek-official', sessionCost: true, peakValley: true })
     const phaseGroup = view.view.container.querySelector('[class*="phaseGroup"]')!
     expect(screen.queryByRole('tooltip')).toBeNull()
-    fireEvent.mouseEnter(phaseGroup)
+    fireEvent.pointerEnter(phaseGroup, { pointerType: 'mouse' })
     act(() => { vi.advanceTimersByTime(400) })
     const bubble = screen.getByRole('tooltip')
     expect(bubble.textContent).toContain('Peak hours')
     expect(bubble.textContent).toContain('Switches in 02:00:00')
-    fireEvent.mouseLeave(phaseGroup)
+    fireEvent.pointerLeave(phaseGroup, { pointerType: 'mouse' })
     act(() => { vi.advanceTimersByTime(50) })
     expect(screen.queryByRole('tooltip')).toBeNull()
   })

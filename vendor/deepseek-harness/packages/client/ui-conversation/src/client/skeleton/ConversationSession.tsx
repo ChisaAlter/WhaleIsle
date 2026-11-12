@@ -111,8 +111,9 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useConversation, useConversationViews, useViewTabs,
-  useStore, renderSlot, open, selectView, setPinned, t, useEntryPins, useEntryActions,
+  useStore, renderSlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions,
 }: ConversationSessionHeaderProps) {
+  const { getTriggerProps } = useContextMenu()
   const tabs = useConversationViews(value => value)
   const showTabs = useViewTabs(value => value)
   const selectedId = useStore(s => s.view)
@@ -197,7 +198,7 @@ export function ConversationSessionHeader({
                     ...last ? {} : { openTitle: () => { open(summary.id) } },
                   }
                   return (
-                    <span key={summary.id} className={css.crumbSeg}>
+                    <span key={summary.id} className={css.crumbSeg} {...getTriggerProps({ kind: 'session', value: { sessionId: summary.id, displayTitle: summary.displayTitle } })}>
                       {index > 0 && <span className={css.crumbSep}>/</span>}
                       {hideManagedLineage
                         ? title

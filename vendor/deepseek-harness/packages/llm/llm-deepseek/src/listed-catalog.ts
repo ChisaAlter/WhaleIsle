@@ -1,6 +1,7 @@
 /** A listed catalog: version gating, this build's model knowledge, and deployment overrides. */
 import semver from 'semver'
 import { APP_IDENTITY, LlmError } from '@deepseek-ai/dsh-llm'
+import type { LlmModelBadge } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { resolveAdapterOptions } from './config.ts'
 import type { ListedFacts, ListingEntry } from './listing.ts'
@@ -39,7 +40,9 @@ export interface ListedCatalog {
   readonly resolution: readonly DeepSeekCatalogModel[]
   /** Listed models refused before network I/O, by id. */
   readonly refusals: ReadonlyMap<string, CatalogRefusal>
-  /** Listing entries hidden because their declarations are unreadable or unusable. */
+  /** Listed badges of offered models, by id. */
+  readonly badges: ReadonlyMap<string, LlmModelBadge>
+  /** Listing entries hidden because their declarations are unreadable or unusable, and offered models whose badge is dropped. */
   readonly problems: readonly string[]
   /** Configuration diagnostics for `modelOverrides`. */
   readonly overrideErrors: readonly string[]
@@ -122,10 +125,11 @@ export function resolveListedCatalog(input: ListedCatalogInput): ListedCatalog {
   }
   if (input.listing === undefined) {
     const resolution = resolveAdapterOptions({ models: [...input.supported, ...configured.filter(model => !supported.has(model.id))].map(withOverride) }).models
-    return { offered: resolution.filter(enabled), resolution, refusals: new Map(), problems, overrideErrors }
+    return { offered: resolution.filter(enabled), resolution, refusals: new Map(), badges: new Map(), problems, overrideErrors }
   }
   const offered: DeepSeekCatalogModel[] = []
   const refusals = new Map<string, CatalogRefusal>()
+  const badges = new Map<string, LlmModelBadge>()
   for (const entry of input.listing) {
     const refusal = gateOf(entry, supported.has(entry.id) || Object.hasOwn(input.overrides, entry.id), input.clientVersion, problems)
     if (refusal !== undefined) {
@@ -138,6 +142,20 @@ export function resolveListedCatalog(input: ListedCatalogInput): ListedCatalog {
       continue
     }
     offered.push(withOverride(listed(supported.get(entry.id) ?? { id: entry.id }, entry, entry.capabilities.facts, input.routeMaxTokens)))
+    const badge = entry.badge
+    switch (badge?.kind) {
+      case undefined:
+        break
+      case 'badge':
+        badges.set(entry.id, badge.badge)
+        break
+      case 'invalid':
+        problems.push(`model "${entry.id}" shows no badge: ${badge.reason}`)
+        break
+      /* v8 ignore next 2 -- listing decoding produces only the closed badge union */
+      default:
+        assertNever(badge, 'listed badge')
+    }
   }
   const listedIds = new Set(input.listing.map(entry => entry.id))
   offered.push(...configured.filter(model => !listedIds.has(model.id)).map(withOverride))
@@ -145,7 +163,7 @@ export function resolveListedCatalog(input: ListedCatalogInput): ListedCatalog {
   const resolution = resolveAdapterOptions({
     models: [...offered, ...input.supported.filter(model => !offeredIds.has(model.id)).map(withOverride)],
   }).models
-  return { offered: resolution.slice(0, offered.length).filter(enabled), resolution, refusals, problems, overrideErrors }
+  return { offered: resolution.slice(0, offered.length).filter(enabled), resolution, refusals, badges, problems, overrideErrors }
 }
 
 /**

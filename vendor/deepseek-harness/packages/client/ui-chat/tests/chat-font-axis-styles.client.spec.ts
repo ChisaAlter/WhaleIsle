@@ -161,10 +161,10 @@ describe('chat flow font-size axis', () => {
     const empty = declarationsFrom(css, emptySelector)
     expect(empty).toContain('height: 0')
     expect(empty).not.toContain('display: none')
-    expect(css).toContain(`:is(.column, :global([data-slot="conversation.chat.flow"])) > :not([hidden]):not(${emptySelector})`)
+    expect(css).toContain(`:is(.column, :global([data-slot="conversation.chat.flow"])) > :not([hidden]):not(.textInteraction):not(${emptySelector})`)
     // The spaced siblings are named, not featureless: after `~` a featureless
     // right-hand side restyles the whole subtree of every following row.
-    expect(css).toContain(`~ :is([data-chat-flow-key], [data-chat-running], [data-slot]):not([hidden]):not(${emptySelector})`)
+    expect(css).toContain(`~ :is([data-chat-flow-key], [data-chat-running], [data-slot]):not([hidden]):not(.textInteraction):not(${emptySelector})`)
     expect(css).not.toMatch(/~\s*:not\(\[hidden\]\)/)
   })
 

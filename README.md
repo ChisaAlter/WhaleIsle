@@ -122,7 +122,7 @@ Project 默认关闭，关闭只是隐藏入口，已有 Project 的数据会保
 
 ## 从源码运行
 
-需要 Git 和 Node.js 22.19+ 或 24+（CI 版本见 [.nvmrc](.nvmrc)）。运行前先退出安装版及托盘，两者共用单实例锁。
+需要 Git 和 Node.js 24.9+（CI 版本见 [.nvmrc](.nvmrc)）。运行前先退出安装版及托盘，两者共用单实例锁。
 
 ```shell
 git clone https://github.com/ChisaAlter/WhaleIsle.git

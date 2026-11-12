@@ -96,6 +96,7 @@ export class ModelDirectoryResolver extends Service {
       void this.rememberHostCatalog()
     }
     ctx.remote.$on('llm/adapters-updated', refresh)
+    ctx.remote.$on('llm/models-updated', refresh)
     ctx.remote.$on('settings/document-updated', refresh)
     ctx.remote.$on('credentials/record-updated', refresh)
     ctx.remote.$on('credentials/reference-updated', refresh)

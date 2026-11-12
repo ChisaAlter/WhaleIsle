@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { PeakValleySettingsRow } from '../src/client/settings/PeakValleyRow.tsx'
 import type { PeakValleySettingsRowProps } from '../src/client/settings/PeakValleyRow.tsx'
@@ -18,6 +18,7 @@ function mount(opts: { enabled?: boolean; writable?: boolean } = {}) {
   const setPeakValley = vi.fn()
   const props: PeakValleySettingsRowProps = {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unused,

@@ -4,17 +4,28 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
-  Button, IconDownloadOutlineRegular,
+  Button, IconCopyOutlineRegular, IconDownloadOutlineRegular,
   IconEllipsisOutlineRegular, IconPaperPlaneOutlineRegular, Menu, MenuItemButton,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
 import type { SessionLogDownloadState } from './controller.ts'
+import type { SessionMarkdownCopyState } from './copy-controller.ts'
 import { NS } from './locales.ts'
 import css from './HeaderAction.module.css'
 
+/** Markdown copy state and action bound into the Session Header contribution. */
+export interface SessionMarkdownCopyHeaderInjected {
+  hooks: { sessionMarkdownCopy: ObservableSnapshot<SessionMarkdownCopyState> }
+  /**
+   * Copy one complete Session transcript to the clipboard.
+   * @param sessionId - Session captured by the menu click.
+   */
+  copyMarkdown: (sessionId: SessionId) => Promise<void>
+}
+
 /** Session-scoped menu state and actions; the titlebar contribution owns the shared download feedback. */
-export interface SessionLogDownloadHeaderInjected {
-  hooks: {
+export interface SessionLogDownloadHeaderInjected extends SessionMarkdownCopyHeaderInjected {
+  hooks: SessionMarkdownCopyHeaderInjected['hooks'] & {
     sessionLogDownload: ObservableSnapshot<SessionLogDownloadState>
     feedbackAvailable: ObservableSnapshot<boolean>
   }
@@ -29,15 +40,19 @@ export type SessionLogDownloadHeaderProps =
   & InjectFace<SessionLogDownloadHeaderInjected>
 
 /**
- * Keep the Session's more-actions menu and feedback available while its download action is busy.
+ * Keep the Session's more-actions menu, Markdown copy and feedback available while its download action is busy.
  * @param props - current Session, controller state, feedback availability, and copy.
  * @returns the compact Session action following the Agent controls.
  */
 export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderProps): ReactNode {
-  const { sessionId, useSessions, useSessionLogDownload, useFeedbackAvailable, request, openFeedback, t } = props
+  const {
+    sessionId, useSessions, useSessionLogDownload, useSessionMarkdownCopy, useFeedbackAvailable,
+    request, copyMarkdown, openFeedback, t,
+  } = props
   const managedSession = useSessions(state => state.byId[sessionId]?.presentation?.composer === 'managed')
   const feedbackAvailable = useFeedbackAvailable(value => value)
   const entry = useSessionLogDownload(state => state.bySession[String(sessionId)])
+  const copying = useSessionMarkdownCopy(state => state.copying)
   const busy = entry?.status === 'downloading'
   const [open, setOpen] = useState(false)
 
@@ -61,6 +76,20 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
         </Button>
       )}
     >
+      <Button
+        role="menuitem"
+        className={css.downloadItem}
+        icon={<IconCopyOutlineRegular />}
+        aria-busy={copying}
+        loading={copying}
+        disabled={copying}
+        onClick={() => {
+          setOpen(false)
+          void copyMarkdown(sessionId)
+        }}
+      >
+        {t('menu.copyMarkdown')}
+      </Button>
       <Button
         role="menuitem"
         className={css.downloadItem}

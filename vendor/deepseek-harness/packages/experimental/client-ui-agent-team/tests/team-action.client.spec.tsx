@@ -798,7 +798,7 @@ describe('Project Team entry', () => {
     const collapseEmptyObserver = vi.fn(() => { closed.push('collapse') })
     const tabInfo: ReturnType<TeamSidebarProps['useTabInfo']> = {
       sidebar: { expanded: true, fullscreen: false },
-      panel: { id: 'team-pane' as ReturnType<TeamSidebarProps['useTabInfo']>['panel']['id'], host, rect: undefined },
+      panel: { id: 'team-pane' as ReturnType<TeamSidebarProps['useTabInfo']>['panel']['id'], host, rect: undefined, isFloating: host === 'float' },
       tab: {
         id: 'team-tab' as ReturnType<TeamSidebarProps['useTabInfo']>['tab']['id'], kind: 'agent-team', title: 'Team', contentId: 'sidebar://agent-team', visible: true,
         navigation: { address: 'sidebar://agent-team', params: undefined, revision: 1 },

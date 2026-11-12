@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -25,19 +26,21 @@ async function setup(enabled?: boolean, imageCapable = true) {
   const ctx = new Context()
   cleanup.push(async () => { await ctx.fiber.dispose(); await rm(directory, { recursive: true, force: true }) })
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(LocalFileSystem, { cwd: directory })
   await ctx.plugin(LocalAttachmentStore, { dshHome: join(directory, 'home') })
   ctx.provide('llm', {
     resolveModelInfo: () => Promise.resolve({ provider: 'fixture', id: 'model', name: 'Fixture', inputModalities: imageCapable ? ['text', 'image'] : ['text'] }),
   } as never)
   const fiber = await ctx.plugin(VisualReplies, enabled === undefined ? {} : { enabled })
-  const config = fiber.config as Config
+  const config = fiber.effectiveConfig as Config
   const agent = { options: {}, session: { header: { cwd: directory }, requestHeader: () => ({ config: { provider: 'fixture', model: 'model' } }) } }
   let count = 0
-  const call = (name: string, args: unknown) => ctx.tools.execute({
-    name, arguments: args, callId: ToolCallId(`visual-${++count}`), agent: agent as never, signal: new AbortController().signal,
-  })
+  const call = async (name: string, args: unknown) => (await ctx.tools.execute({
+    calls: [{ type: 'tool-call', id: ToolCallId(`visual-${++count}`), name, arguments: JSON.stringify(args) }],
+    agent: agent as never, signal: new AbortController().signal,
+  })).results[0]!.result
   const setEnabled = (value: boolean) => {
     updateVolatile(config.enabled, createVolatile(value))
     ctx.emit('settings/document-updated', 'visual-replies' as never, value ? 1 : 2)

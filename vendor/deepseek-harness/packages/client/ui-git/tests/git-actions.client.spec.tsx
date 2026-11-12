@@ -5,11 +5,20 @@ import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GitActionsProps } from '../src/client/GitActionsControl.tsx'
 import { GitActionsControl } from '../src/client/GitActionsControl.tsx'
 import type { VcsStatus } from '../src/client/git-logic.ts'
 import { en } from '../src/client/locales.ts'
+
+// jsdom has no matchMedia; a mouse can hover, nothing else is requested.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({ matches: query === '(any-hover: hover)', media: query, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+}
 const panelInfoStub = ((selector: (s: unknown) => unknown) => selector({ activePanelId: null })) as never
 const resourceStub = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as never
 
@@ -130,6 +139,7 @@ function mount(opts: {
   const view = render(
     <GitActionsControl
       {...allowAllAccess}
+      useContextMenu={contextMenuHook()}
       usePanelInfo={panelInfoStub}
       useResource={resourceStub}
       surfaces={0}
@@ -307,7 +317,7 @@ describe('GitActionsControl', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Git actions' }))
     const push = await screen.findByRole('menuitem', { name: 'Push' })
     expect(push).toHaveProperty('disabled', true)
-    fireEvent.mouseEnter(push.parentElement!)
+    fireEvent.pointerEnter(push.parentElement!, { pointerType: 'mouse' })
     expect((await screen.findByRole('tooltip')).textContent).toBe(
       'Branch is behind upstream. Pull/rebase before pushing.',
     )
@@ -349,6 +359,7 @@ describe('GitActionsControl', () => {
       : Promise.resolve(status({ aheadCount: 2 })))
     const shared = {
       ...allowAllAccess,
+      useContextMenu: contextMenuHook(),
       surfaces: 0,
       terminalDrawer: 0,
       managedSession: false,
@@ -494,6 +505,7 @@ describe('GitActionsControl', () => {
     b.rerender(
       <GitActionsControl
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         surfaces={0}

@@ -395,3 +395,22 @@ describe('surfaces column and terminal drawer', () => {
     })
   })
 })
+
+describe('drawer navigation', () => {
+  it.each(['plugins' as MainPanelId, null])('closes the narrow drawer on navigation to %s', (panel) => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportWidth(390)
+    actions.toggleSidebar()
+    actions.selectPanel(panel)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+  })
+
+  it('keeps a tablet sidebar open when navigating', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportWidth(768)
+    actions.toggleSidebar()
+    actions.selectPanel(null)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+
+  })
+})

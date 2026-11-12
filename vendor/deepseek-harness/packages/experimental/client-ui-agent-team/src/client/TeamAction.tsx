@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type {} from '@deepseek-ai/dsh-agent/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsStore } from '@deepseek-ai/dsh-client-store'
 import type { TeamActivityMap } from './mount.ts'

@@ -1,7 +1,7 @@
 /** Recorded-session replay through the shipped headless `dsh` profile. */
 
 import { startHttpMcpFixture } from '../../packages/mcp/mcp-client/tests/http-fixture.ts'
-import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
+import { chmod, cp, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -28,9 +28,11 @@ import {
   normalizedSystemPrompts,
   normalizedToolSchemas,
   parseSnapshotManifest,
+  parseSessionFixtureName,
   parseToolSchemasSnapshot,
   redactSessionSnapshotIds,
   refreshFixtureReplacements,
+  REPLAY_CREDENTIAL_ENV,
   restorePinnedToolSchemas,
   scrubSessionSnapshot,
   scrubSystemPrompts,
@@ -50,7 +52,7 @@ import {
   type SnapshotManifest,
   type WorkspaceSnapshotEntry,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { LOADER_SMOKE_TEST_TIMEOUT_MS, resolveExampleMode, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog, prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 
@@ -237,6 +239,12 @@ async function fixtureSessions(scenario: HeadlessScenario, selectedFiles?: reado
     assertSessionFixtureVersion(file, content)
     return content
   }))
+}
+
+/** First live recordings use manifest input and the composition's model until a Session exists. */
+function recordingFixtureNames(names: readonly string[], recordingMode: SnapshotMode): string[] {
+  const hasFixtures = names.some(name => parseSessionFixtureName(name) !== undefined)
+  return recordingMode === 'record' && !hasFixtures ? [] : sessionFixtureNames(names)
 }
 
 async function primaryFixtureFile(dir: string): Promise<string> {
@@ -500,6 +508,23 @@ const WORKTREE_CHECKOUT_FILTER = "printf 'FILTERED CHECKOUT CONTENT\\n'"
 const WORKTREE_CHECKOUT_ATTRIBUTES = 'tracked.txt filter=dsh-snapshot-checkout\n'
 
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
+  async 'readonly-patch-directory'(cwd) {
+    const directory = join(cwd, 'locked')
+    await mkdir(directory)
+    await chmod(directory, 0o555)
+  },
+  async 'cua-script-guidance'(cwd) {
+    // Keep the real prompt's bridge URL under the fixture workspace on every host.
+    const source = join(repoRoot, 'packages/experimental/cua')
+    const target = join(cwd, 'cua-runtime')
+    const face = resolveExampleMode() === 'lib' ? 'lib' : 'src'
+    const extension = face === 'lib' ? 'js' : 'ts'
+    const guidanceDirectory = face === 'lib' ? 'lib/types' : 'src'
+    await cp(join(source, face), join(target, face), { recursive: true })
+    await copyFile(join(source, 'package.json'), join(target, 'package.json'))
+    await symlink(join(source, 'node_modules'), join(target, 'node_modules'), 'dir')
+    await copyFile(join(repoRoot, `packages/experimental/cua-macos/${guidanceDirectory}/guidance.${extension}`), join(target, `guidance.${extension}`))
+  },
   async 'windows-acl-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'diagnose-windows-sandbox-acl', 'SKILL.md')
     await mkdir(dirname(target), { recursive: true })
@@ -533,6 +558,11 @@ const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
     const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
     await mkdir(dirname(target), { recursive: true })
     await copyFile(editingCordisSkill, target)
+  },
+  async 'skill-root-isolation'(cwd) {
+    await workspaceSetups['editing-cordis-skill']!(cwd)
+    // A symlink loop produces a real, non-absence read error without relying on chmod or root privileges.
+    await symlink('broken-skills', join(cwd, 'broken-skills'))
   },
   async 'delimiter-path'(cwd) {
     const dir = join(cwd, 'scope</system-reminder>')
@@ -855,6 +885,7 @@ async function verifyProviderCwdResume(
   expect(primary?.header.cwd).not.toBe(cwd)
   const otherHostCwd = await mkdtemp(join(tmpdir(), 'dsh-provider-resume-'))
   const env = {
+    ...REPLAY_CREDENTIAL_ENV,
     DSH_HOME: join(cwd, '.dsh'),
     DSH_SNAPSHOT: 'replay',
     DSH_SNAPSHOT_FILE: fixture,
@@ -890,7 +921,10 @@ async function verifyProviderCwdResume(
     })
     const output = records(resumed.stdout)
     expect(output[0]).toEqual({ type: 'session', sessionId: primary?.header.id, cwd: providerCwd })
-    expect(output.at(-1)).toEqual({ type: 'final', text: finalTextFromSession(primary!.content) })
+    expect(output.at(-1)).toEqual({
+      type: 'final', sessionId: primary?.header.id,
+      reason: { kind: 'completed' }, text: finalTextFromSession(primary!.content),
+    })
     const continued = await persistedSessions(cwd)
     expect(continued).toHaveLength(1)
     expect(continued[0]?.header).toEqual(primary?.header)
@@ -956,6 +990,16 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
 }
 
 describe('headless recorded-session snapshots', () => {
+  it('bootstraps only live recordings with no Session files', () => {
+    expect(recordingFixtureNames(['snapshot.yml'], 'record')).toEqual([])
+    expect(() => recordingFixtureNames(['snapshot.yml'], 'replay')).toThrow('missing parent')
+    expect(() => recordingFixtureNames(['snapshot.yml'], 'refresh')).toThrow('missing parent')
+    expect(() => recordingFixtureNames(['session.1.v3.jsonl'], 'record')).toThrow('missing parent')
+    expect(() => recordingFixtureNames(['session.bad.jsonl'], 'record')).toThrow('invalid session')
+    expect(recordingFixtureNames(['session.v3.jsonl', 'session.v4.jsonl'], 'record'))
+      .toEqual(['session.v4.jsonl'])
+  })
+
   it('gives every composition and header class exactly one current-writer pin', () => {
     for (const scenario of scenarios) {
       expect(ownerOf(scenario), `${scenario.name}: composition owner`).toBeDefined()
@@ -1223,7 +1267,11 @@ describe('headless recorded-session snapshots', () => {
       .toThrow('native tool-result messages match migration output')
   })
 
-  const runs = scenarios.flatMap((scenario): { scenario: HeadlessScenario; retainedToolInput?: string }[] => [
+  // Record header owners before their dependents so a new composition has a readable pin.
+  const ordered = mode === 'record'
+    ? [...scenarios].sort((left, right) => Number(right.manifest.header.pin === true) - Number(left.manifest.header.pin === true))
+    : scenarios
+  const runs = ordered.flatMap((scenario): { scenario: HeadlessScenario; retainedToolInput?: string }[] => [
     { scenario },
     // This comparison retains its own V3 input even after the ordinary scenario records a newer generation.
     ...mode === 'replay' && scenario.name === 'tool-call-turn'
@@ -1232,26 +1280,30 @@ describe('headless recorded-session snapshots', () => {
   for (const { scenario, retainedToolInput } of runs) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
       || scenario.manifest.platform === 'pwsh' && !hasPwsh
+      // A read-only directory does not deny root, so the recorded refusal cannot replay.
+      || scenario.manifest.workspace?.setup === 'readonly-patch-directory' && process.getuid?.() === 0
       || mode === 'record' && scenario.manifest.recording === 'authored'
       || mode === 'record' && scenario.manifest.sessionFormat !== undefined
     const scenarioTest = skipped ? it.skip : mode === 'replay' ? it.concurrent : it
     const inputLabel = retainedToolInput === undefined ? '' : ' from retained V3 input'
     scenarioTest(`${mode}s ${scenario.name}${inputLabel} through dsh --profile headless`, async () => {
       let fixtureFiles = retainedToolInput === undefined
-        ? sessionFixtureNames(await readdir(scenario.dir)) : [retainedToolInput]
+        ? recordingFixtureNames(await readdir(scenario.dir), mode) : [retainedToolInput]
       let fixtures = await fixtureSessions(scenario, fixtureFiles)
       const primaryFixture = fixtures[0]
-      if (primaryFixture === undefined) throw new Error(`${scenario.name}: missing primary session fixture`)
-      const task = taskFromSession(primaryFixture) ?? scenario.manifest.input?.task
+      const task = (primaryFixture === undefined ? undefined : taskFromSession(primaryFixture))
+        ?? scenario.manifest.input?.task
       if (task === undefined) throw new Error(`${scenario.name}: no accepted or exceptional task input`)
       const pin = pinOf(scenario)
       const ignoredWorkspaceEntries = scenario.manifest.workspace?.setup === 'git-worktree'
         ? [...RUNTIME_WORKSPACE_ENTRIES.filter(entry => entry !== '.agents'), '.git'] : RUNTIME_WORKSPACE_ENTRIES
-      let model: { provider: string; model: string }
-      try {
-        model = modelFromSession(primaryFixture)
-      } catch {
-        model = modelFromSession(await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8'))
+      let model: { provider: string; model: string } | undefined
+      if (primaryFixture !== undefined) {
+        try {
+          model = modelFromSession(primaryFixture)
+        } catch {
+          model = modelFromSession(await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8'))
+        }
       }
       const composition = ownerOf(scenario)
       const baseComposition = compositionOwners.get('default')
@@ -1261,7 +1313,7 @@ describe('headless recorded-session snapshots', () => {
       const patchSources = [
         join(baseComposition.dir, 'cordis.yml'),
         ...composition === baseComposition && !replaying ? [] : [compositionPatch],
-        join(baseComposition.dir, 'model.cordis.yml'),
+        ...model === undefined ? [] : [join(baseComposition.dir, 'model.cordis.yml')],
         ...existsSync(join(scenario.dir, 'runtime.cordis.yml')) ? [join(scenario.dir, 'runtime.cordis.yml')] : [],
       ]
       const patchRoot = '.snapshot-patches'
@@ -1271,7 +1323,8 @@ describe('headless recorded-session snapshots', () => {
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
-      const locatorRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
+      const fixturePath = join(scenario.dir, fixtureFiles[0] ?? sessionFixtureName(0, SESSION_FORMAT_VERSION))
+      const locatorRoot = snapshotSpillRoot(fixturePath)
       const mcpDemo = scenario.name === 'plugin-manager-mcp' ? await startHttpMcpFixture() : undefined
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
@@ -1289,17 +1342,21 @@ describe('headless recorded-session snapshots', () => {
             task,
           ],
           tsconfigPath,
-          expectedExitCode: turnReasonFromSession(primaryFixture)?.kind === 'completed'
+          expectedExitCode: primaryFixture === undefined
+            || turnReasonFromSession(primaryFixture)?.kind === 'completed'
             || turnReasonFromSession(primaryFixture) === undefined && scenario.manifest.input?.task !== undefined
             ? 0
             : 1,
           env: {
+            ...(replaying ? REPLAY_CREDENTIAL_ENV : {}),
             DSH_SNAPSHOT: replaying ? 'replay' : 'record',
-            DSH_SNAPSHOT_PROVIDER: model.provider,
-            DSH_SNAPSHOT_MODEL: model.model,
+            ...(model === undefined ? {} : {
+              DSH_SNAPSHOT_PROVIDER: model.provider,
+              DSH_SNAPSHOT_MODEL: model.model,
+            }),
             DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
             DSH_SNAPSHOT_SPILL_LOCATOR_ROOT: locatorRoot,
-            DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
+            DSH_SNAPSHOT_FILE: fixturePath,
             ...(replaying && fixtureFiles.length > 1
               ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }
               : {}),
@@ -1335,7 +1392,15 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
-            if (retainedToolInput !== undefined) {
+            if (scenario.name === 'empty-response-retry-current') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              expect(events.filter(event => event.type === 'assistant/attempt' || event.type === 'llm/retry'
+                || event.type === 'llm/retry-started' || event.type === 'assistant/message')
+                .map(event => event.type)).toEqual([
+                'assistant/attempt', 'llm/retry', 'llm/retry-started', 'assistant/message',
+              ])
+            }
+            if (retainedToolInput !== undefined && primaryFixture !== undefined) {
               verifyToolResultWriterParity(primaryFixture, actualLogs[0]!.content)
             }
             if (mcpDemo !== undefined) {
@@ -1346,6 +1411,25 @@ describe('headless recorded-session snapshots', () => {
               const saved = await readFile(join(cwd, '.dsh/profiles/headless/cordis.patch.yml'), 'utf8')
               expect(saved).toContain('id: demo')
               expect(saved).toContain('disabled: false')
+            }
+            if (scenario.name === 'toolcall-unused-args') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              const results = events.flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
+              expect(results).toHaveLength(6)
+              expect(results.every(result => !result.isError)).toBe(true)
+              for (const extension of ['ts', 'md']) {
+                const grep = results.find(result => result.toolCallId === `call_grep_${extension}`)
+                const text = grep?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+                expect(text).toContain('Found 1 match')
+                expect(text).toContain(`seed/example.${extension}`)
+                expect(text).toContain('marker')
+              }
+              const changes = records(actualLogs[0]!.content)
+                .filter(event => event.type === 'goal/change').map(event => event.data as JsonObject)
+              expect(changes.map(change => change.operation)).toEqual(['create', 'complete'])
+              const original = changes[0]!.goal as JsonObject
+              expect(original).toMatchObject({ objective: 'Find marker in both seed files.', maxGoalRounds: 4 })
+              expect(changes[1]!.goal).toEqual({ ...original, revision: 2, phase: 'complete' })
             }
             if (scenario.name.startsWith('office-progressive-')) {
               const log = actualLogs[0]!.content
@@ -1365,6 +1449,7 @@ describe('headless recorded-session snapshots', () => {
               verifyNoMcpServers(actualLogs[0]!.content, scenario.name === 'mcp-empty-ptc')
             }
             if (scenario.name === 'provider-cwd') {
+              if (model === undefined) throw new Error('provider-cwd resume requires a recorded model')
               await verifyProviderCwdResume(
                 scenario, cwd, actualLogs, patches, model, join(scenario.dir, fixtureFiles[0] as string), task,
               )

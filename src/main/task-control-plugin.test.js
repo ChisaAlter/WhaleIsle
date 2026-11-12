@@ -348,6 +348,36 @@ test('gated http handler returns 503 while locked and drains on finish', async (
   assert.ok(calls.length === 0);
 });
 
+test('a resource fallback stays registered as given while locked', async () => {
+  const { createControlState, acquireLock } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const makeServer = (fallback) => ({
+    prefixes: new Map(),
+    exact: new Map(),
+    upgrades: new Map(),
+    fallback,
+    register() { return () => {}; },
+    registerUpgrade() { return () => {}; },
+    registerFallback(next) { this.fallback = next; return () => {}; },
+  });
+  // The web server answers a resource only for GET/HEAD, so the seat keeps the
+  // very object it was given and never reaches the admission gate.
+  const state = createControlState();
+  const webServer = makeServer(undefined);
+  assert.equal(wrapWebServer(state, webServer), true);
+  const fallback = { resource: async () => new Response('spa') };
+  webServer.registerFallback(fallback);
+  assert.equal(webServer.fallback, fallback);
+  assert.equal((await acquireLock(state, { owner: 'desktop-quit' })).ok, true);
+  assert.equal(await (await webServer.fallback.resource(new Request('http://x/'))).text(), 'spa');
+
+  // A resource already seated before the wrap is left alone as well.
+  const seated = { resource: async () => new Response('seated') };
+  const early = makeServer(seated);
+  assert.equal(wrapWebServer(createControlState(), early), true);
+  assert.equal(early.fallback, seated);
+});
+
 test('a pending next-prompt suggestion does not block drain but is refused while locked', async () => {
   const { createControlState, acquireLock } = await load('state.js');
   const { wrapWebServer } = await load('wrap.js');

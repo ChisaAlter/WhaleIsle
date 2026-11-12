@@ -9,7 +9,7 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { ToolCallId } from './brand.ts'
-import { requireValidToolCallIdentity } from './content.ts'
+import { isValidToolCallIdentity, requireValidToolCallIdentity } from './content.ts'
 import { createAssistantMessage } from './message.ts'
 import type { AssistantMessage, ModelMessageSource } from './message.ts'
 import type { ContentBlock, FinishReason, ReplayEnvelope, StreamChunk, TokenUsage } from './types.ts'
@@ -138,13 +138,21 @@ export class BlockAssembler {
     const kept = this.finish.kind === 'max-tokens'
       ? all.map(block => block.type !== 'tool-call')
       : undefined
-    const blocks = kept === undefined ? all : all.filter((_, position) => kept[position])
-    for (const block of blocks) {
-      if (block.type === 'tool-call') requireValidToolCallIdentity(block.id, block.name)
+    const alive = kept === undefined ? all : all.filter((_, position) => kept[position])
+    // A successful finish must carry valid calls. A failed stream can stop before
+    // a call's identity arrives; that call cannot run, so it is dropped, not rejected.
+    const failed = this.finish.kind === 'error'
+    const blocks = failed
+      ? alive.filter(block => block.type !== 'tool-call' || isValidToolCallIdentity(block.id, block.name))
+      : alive
+    if (!failed) {
+      for (const block of blocks) {
+        if (block.type === 'tool-call') requireValidToolCallIdentity(block.id, block.name)
+      }
     }
     const envelope = this._replayState
     if (envelope?.blocks === undefined) return { blocks, replay: envelope }
-    if (envelope.blocks.length !== all.length) return { blocks, replay: undefined }
+    if (envelope.blocks.length !== all.length || blocks.length !== alive.length) return { blocks, replay: undefined }
     return {
       blocks,
       replay: kept === undefined || blocks.length === all.length

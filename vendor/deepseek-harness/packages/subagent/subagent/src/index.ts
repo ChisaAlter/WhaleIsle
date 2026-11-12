@@ -29,7 +29,7 @@
  */
 import type { Volatile } from '@deepseek-ai/cordis'
 
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import type {} from '@deepseek-ai/dsh-attachment'
@@ -200,7 +200,7 @@ export class SubagentRuntime extends TypertRemoteService {
     maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1).volatile(),
     maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8).volatile(),
   })
-  static inject = ['workingDirectory']
+  static inject = ['workingDirectory', 'sessionProjections']
   private readonly continuationPolicies = new Map<string, (admission: ContinuationAdmission) => Promise<void>>()
   private providers = new Map<string, SubagentProvider>()
   private manager: SubagentManager | undefined
@@ -234,11 +234,6 @@ export class SubagentRuntime extends TypertRemoteService {
         if (this.manager === manager) this.manager = undefined
       }, 'subagents.managerBinding()')
     })
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(subagentCatalogProjectionDefinition)
-      projectionCtx.sessionProjections.register(subagentTimingProjectionDefinition)
-      projectionCtx.sessionProjections.register(subagentIdentityProjectionDefinition)
-    })
     // Archive admission: this runtime is the owner that knows which live
     // children descend from a Session and how a parent stops them.
     ctx.inject(['agents'], (agentsCtx: Context) => { installSubagentArchiveAdmission(agentsCtx) })
@@ -249,6 +244,14 @@ export class SubagentRuntime extends TypertRemoteService {
     if (!key.trim() || this.continuationPolicies.has(key)) throw new Error(`duplicate or empty continuation policy "${key}"`)
     this.continuationPolicies.set(key, policy)
     return () => { if (this.continuationPolicies.get(key) === policy) this.continuationPolicies.delete(key) }
+  }
+
+  protected async [Service.init](): Promise<void> {
+    const { sessionProjections } = this.ctx
+    await sessionProjections.register(subagentCatalogProjectionDefinition)
+    await sessionProjections.register(subagentTimingProjectionDefinition)
+    await sessionProjections.register(subagentIdentityProjectionDefinition)
+
   }
 
   /**

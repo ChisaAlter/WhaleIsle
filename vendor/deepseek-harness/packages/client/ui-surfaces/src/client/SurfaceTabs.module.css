@@ -36,9 +36,11 @@
   cursor: pointer;
 }
 
-.tab:hover:not(.active) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .tab:hover:not(.active) {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .active {
@@ -84,10 +86,12 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.close:hover,
-.add:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .close:hover,
+  .add:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .contextAnchor {

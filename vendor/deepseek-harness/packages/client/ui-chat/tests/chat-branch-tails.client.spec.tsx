@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
   ChatConversationViewNode, ConversationNode,
@@ -34,6 +35,11 @@ afterEach(() => {
 
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderUserImages: Parameters<ReturnType<typeof createUserContentFixture>>[1] = () => null
+const userSlots: PropsRenderSlots<'conversation.chat.user.before' | 'conversation.chat.user-actions' | 'conversation.chat.user-editor'> = {
+  renderSlot: () => null,
+  renderSlotChain: (_key, _owner, opts) => opts?.fallback ?? null,
+  SessionProvider: ({ children }) => <>{children}</>,
+}
 let renderUserContent: ReturnType<typeof createUserContentFixture>
 beforeEach(() => { renderUserContent = createUserContentFixture() })
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
@@ -82,13 +88,7 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames }: Messag
   }
   switch (node.kind) {
     case 'user':
-      return (
-        <UserMessageNodeView
-          {...props as unknown as ChatNodeViewProps<'user'>}
-          renderSlot={() => null}
-          SessionProvider={({ children }) => children}
-        />
-      )
+      return <UserMessageNodeView {...props as ChatNodeViewProps<'user'>} {...userSlots} />
     case 'steering':
       return <SteeringMessageNodeView {...props as ChatNodeViewProps<'steering'>} />
     case 'context':

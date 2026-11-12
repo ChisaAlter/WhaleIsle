@@ -4,7 +4,7 @@
 // cannot ship it without an accessible name; the native-checkbox form is the
 // desktop fork's original shape and stays until its render sites migrate.
 
-import type { InputHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, ReactElement } from 'react'
 import clsx from 'clsx'
 import { StateDot } from './StateDot.tsx'
 import css from './Switch.module.css'
@@ -56,7 +56,9 @@ function isControlled(props: SwitchProps): props is ControlledSwitchProps {
  * @param props.className - extra class for layout placement.
  * @returns the switch element.
  */
-export function Switch(props: SwitchProps) {
+export function Switch(props: ControlledSwitchProps): ReactElement
+export function Switch(props: NativeSwitchProps): ReactElement
+export function Switch(props: SwitchProps): ReactElement {
   if (isControlled(props)) {
     const { checked, onChange, label, disabled = false, loading = false, title, className } = props
     return (

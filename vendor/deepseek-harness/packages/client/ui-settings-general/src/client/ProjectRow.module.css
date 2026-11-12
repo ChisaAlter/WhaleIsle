@@ -39,8 +39,10 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.helpButton:hover:not(:disabled) {
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .helpButton:hover:not(:disabled) {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .desc {

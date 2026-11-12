@@ -320,7 +320,7 @@ export function applyNextPrompt(ctx: Context, enabled: () => boolean): void {
   const requestSuggestion = async (session: Session, signal: AbortSignal): Promise<NextPromptResult> => {
     signal.throwIfAborted()
     if (!enabled()) return noSuggestion()
-    const state = ctx.sessionProjections.stateOf(session, 'nextPromptContext')
+    const state = ctx.sessionProjections.stateOf(session, 'nextPromptContext') as PromptContext | undefined
     if (state === undefined || state.turn === null || state.seq === null) return noSuggestion()
     const cached = contexts.get(session)
     const context: TurnContext = cached?.seq === state.seq ? cached : {

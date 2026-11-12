@@ -1,6 +1,7 @@
 /** Consumer-owned navigation for Markdown links. */
 import { createContext, useContext, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
+import type { FileDragActions } from '../file-drag-actions.ts'
 import type { ImageLightboxLabels } from '../ImageLightbox.tsx'
 
 /**
@@ -18,12 +19,24 @@ export interface MarkdownPreviewImage {
   /** Authored destination exactly as written. */
   readonly destination: string
 }
+/** Explicit object and viewport coordinates from the element owning a context gesture. */
+export type MarkdownMenuTarget =
+  | { kind: 'file'; path: string; line?: number }
+  | { kind: 'url'; url: string }
+  | { kind: 'image'; url: string; path?: string; name?: string; mediaType?: string }
 
 /** Navigation capabilities supplied by the nearest Markdown owner. */
 export interface MarkdownDelegate {
-  /** Image previews for decoded local paths in this owner's workspace. */
+  /** Open an object menu without executing its normal activation. */
+  readonly getTriggerProps?: ((target: MarkdownMenuTarget) => Pick<HTMLAttributes<HTMLElement>, 'onContextMenu' | 'onKeyDown' | 'tabIndex'>) | undefined
+  /**
+   * Image previews for decoded local paths in this owner's workspace. The renderer
+   * appends a per-mount `load` query parameter to `api/file` route URLs.
+   */
   readonly fileImages?: {
+    fileDrag: FileDragActions
     resolve: (path: string) => string | undefined
+    resourceAddress?: ((path: string) => string) | undefined
     labels: ImageLightboxLabels & { open: string; loading: string; failed: string }
   } | undefined
   /** Ordinary HTTP(S) activation; absent handlers retain native anchor behavior. */
@@ -61,8 +74,10 @@ export function MarkdownDelegateProvider({
   openFile,
   openImage,
   fileImages,
+  getTriggerProps,
 }: MarkdownDelegateProviderProps): ReactNode {
-  const delegate = useMemo(() => ({ openExternalLink, openFile, openImage, fileImages }), [openExternalLink, openFile, openImage, fileImages])
+  const delegate = useMemo(() => ({ openExternalLink, openFile, openImage, fileImages, getTriggerProps }),
+    [openExternalLink, openFile, openImage, fileImages, getTriggerProps])
   return (
     <MarkdownDelegateContext.Provider value={delegate}>
       {children}

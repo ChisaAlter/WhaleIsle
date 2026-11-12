@@ -104,7 +104,7 @@ describe('desktop market profile selection', () => {
   it('selects the market once for a new web profile and leaves its user patch empty', async () => {
     const fixture = installation()
     const app = await import('../src/index.ts')
-    expect(app.PROFILE_TEMPLATES.web!.bundles).toEqual([BASE, WEB, MARKET])
+    expect((await import('@deepseek-ai/dsh-official-bundles')).PROFILE_TEMPLATES.web!.bundles).toEqual([BASE, WEB, MARKET])
     const profile = app.loadProfile('dsh', 'web', fixture.installAnchor, fixture.home)
     expect(profile.skippedBundles).toEqual([])
     expect(profile.layers.map(layer => layer.packageName)).toEqual([BASE, WEB, MARKET])
@@ -221,7 +221,7 @@ describe('desktop market profile selection', () => {
     vi.stubEnv('DSHD_PLUGIN_MARKET_INDEX', index)
     const fixture = installation()
     const app = await import('../src/index.ts')
-    expect(app.PROFILE_TEMPLATES.web!.bundles).toEqual([BASE, WEB])
+    expect((await import('@deepseek-ai/dsh-official-bundles')).PROFILE_TEMPLATES.web!.bundles).toEqual([BASE, WEB])
     const created = app.loadProfile('dsh', 'web', fixture.installAnchor, fixture.home)
     expect(created.skippedBundles).toEqual([])
     expect(created.layers.map(layer => layer.packageName)).toEqual([BASE, WEB])

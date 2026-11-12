@@ -1,6 +1,6 @@
 {
   "repo": "https://github.com/deepseek-ai/deepseek-harness.git",
-  "ref": "dsh-v0.2.1-rc.4",
-  "sha": "504a01a9578abc2c6f1fb896b1dc322c9fe24f66",
-  "npm": "0.2.1-rc.4"
+  "ref": "dsh-v0.2.2-rc.1",
+  "sha": "66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db",
+  "npm": "0.2.2-rc.1"
 }

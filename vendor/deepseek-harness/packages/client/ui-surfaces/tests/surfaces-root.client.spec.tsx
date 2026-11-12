@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { en } from '../src/client/locales.ts'
@@ -71,6 +71,7 @@ function mount(opts: {
     <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
       usePanelInfo={panelInfoStub}
       useResource={resourceStub}
       sessionId={'session-1' as SessionId}
@@ -194,6 +195,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -356,6 +358,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -410,6 +413,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -474,6 +478,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -596,6 +601,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -625,6 +631,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={other}
@@ -651,6 +658,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -686,6 +694,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={undefined}
@@ -720,6 +729,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={undefined}
@@ -770,6 +780,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -817,6 +828,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -947,6 +959,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -975,6 +988,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={other}
@@ -1003,6 +1017,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -1029,6 +1044,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={other}
@@ -1107,6 +1123,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1179,6 +1196,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1261,6 +1279,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1296,6 +1315,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1357,6 +1377,7 @@ describe('SurfacesRoot', () => {
       <SurfacesRoot
         SessionProvider={({ children }) => children}
         {...allowAllAccess}
+        useContextMenu={contextMenuHook()}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}

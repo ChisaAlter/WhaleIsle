@@ -20,29 +20,38 @@ kind: "package-reference"
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+helper 为授权提示和已授权应用列表提供 64 像素 PNG 图标。读取图标不会启动应用或检查窗口，图标不决定可复用授权。
+
+helper 通过 LaunchServices 作为独立应用 `DSH Computer Use.app` 运行。辅助功能和屏幕录制权限属于此应用。授权引导使用启动时记录的责任应用 bundle URL、标识、文件名和系统图标；系统归属信息不可用时使用独立 helper 自身的 bundle。拖动和 Finder 选择通过应用发现模块读取磁盘上当前的 bundle 标识及可执行文件。页面和引导框统一显示应用的 `.app` 文件名。其他构建更新 `current.json` 后，已有连接仍指向正在运行的应用版本。
+
+权限请求打开对应隐私设置页和原生悬浮引导框。引导框首次选择面积最大的设置窗口，随后按窗口 ID 跟随。它使用普通窗口层级，紧邻所选窗口上方排列，使认证弹窗保持在其上方。定位读取窗口边界，不申请辅助功能权限。引导框等到识别出设置窗口后才显示；打开设置失败时独立显示手动导航说明。材质的透明度遮罩为面板和阴影提供圆角。最新请求替换共享引导，连接清理只关闭自身创建的引导。应用不可用时仍尝试打开设置，并在页面报告失败原因。权限已授予时只打开设置；显式进入设置会关闭原有引导。系统拒绝打开设置时报告 `SETTINGS_UNAVAILABLE`；应用目标缺失或被替换时报告 `APPLICATION_UNAVAILABLE`。系统设置决定是否接收拖入的应用，以及是否要求重新启动。
+
+provider 按当前界面语言生成引导和恢复文案，不支持的语言使用英语。将引导框内的应用拖入权限列表并开启开关；已有此应用时直接开启现有条目。拖动时隐藏引导框，放置被接收后关闭，拖动取消或被拒绝后恢复。返回按钮关闭引导框并返回之前的应用。右键点击应用行，或点击它使引导框获得键盘焦点后按 Return、空格，可在 Finder 中选中同一应用。原生引导打开期间，每隔 `permissionPollIntervalMs` 检查权限和窗口位置，默认 1000 毫秒；在确认授权、用户关闭、系统设置窗口消失或所属连接清理时关闭。拖动应用不代表授权完成。若 macOS 提示退出并重新打开应用，请按提示操作；系统不会自动终止共享 helper。
+
 -----
 
 <a id="use-this-package"></a>
 ## 使用本包
 
-该实验性提供方需要在 macOS 14 及以上通过源码配置显式启用。Windows 支持正在开发中。默认配置不加载它。先准备原生组件，再加载注册表和提供方覆盖层：
+本包是仅限 macOS 的可选依赖。本地开发时运行 `pnpm --dir packages/experimental/cua-macos run build:native`，在 `native/bin` 下生成临时签名应用及 `current.json`。正式打包需要指定 `--identity "Developer ID Application: <name> (<team>)"` 并完成公证，参见[原生构建与服务](native/README.zh.md#build-and-service)。安装版保留分发时的签名。源码准备需要 Apple Command Line Tools 提供的 Swift 和 Python 3。
+
+从仓库运行 Web 时，在插件页开启 [Computer Use](../cua-bundle/README.zh.md)。首次启用会在 macOS 14 及以上准备本机组件，Windows 支持正在开发中。现有 Web profile 保持选中时，后续构建继续检查更新。未开启的 profile 不准备原生组件。也可以显式加载源码覆盖层：
 
 ```sh
-swift build --package-path packages/experimental/cua-macos/native --configuration release
-cua_native_root="$PWD/packages/experimental/cua-macos/native"
-export DSH_CUA_HELPER="$cua_native_root/.build/release/dsh-cua-native"
 pnpm dsh headless --patch packages/experimental/cua-macos/examples/macos.cordis.yml --dump-config
 ```
 
-配置输出命令不发起模型请求。执行真实任务时，将 `--dump-config` 替换为任务提示，并配置该 profile 的模型凭据。配置挂载 computer-use 注册表和本 provider；使用前需移除已有的竞争 provider。负责执行的宿主或辅助进程需要辅助功能权限来读取 AX 和输入，需要屏幕录制权限来截图。`getCapabilities` 查询权限和锁屏状态，不弹出系统授权窗口。桌面会话锁定或不可用时，界面观察与输入会在分派前拒绝，需由用户解锁 macOS 后继续。`listApps` 和 `cua.getState` 列出运行中的应用。`findApps(query)` 按名称、bundle ID 或绝对路径搜索 macOS 标准应用目录。`getApp` 按唯一名称、bundle ID、路径或运行中的 PID 选择应用，取得应用许可后，在需要时后台启动尚未运行的应用。启动前先确认可执行文件身份，授权后在启动前后再次核对；未签名代码只取得任务许可。返回的对象读取初始 AX，不自动激活应用。启动被取消时，应用可能已经运行。模型指引要求先在后台观察和输入，不在初始化或每次动作前激活应用。窗口隐藏或最小化时，先尝试 `app.show()` 或 `window.show()`，再重新观察。它请求取消隐藏和恢复最小化，不主动激活、抬起窗口或切换桌面空间；应用级恢复选择焦点窗口、主窗口或唯一 AX 窗口。结果通过 `windowId` 指明选中的窗口，未选中时为 null；`foregroundChanged` 比较操作前后的前台应用和最上层窗口，无法取得完整观察时为 null，返回后仍可能发生焦点变化。恢复失败或窗口仍不可用时，说明需要前台的步骤，再调用 `app.activate()` 或窗口的 `raise` 动作并重新观察。必须使用前台时，以完成任务为先。应用收到输入后仍可能改变焦点，后台投递不保证用户操作始终不受干扰。
+配置输出命令不发起模型请求。执行真实任务时，将 `--dump-config` 替换为任务提示，并配置该 profile 的模型凭据。配置挂载 computer-use 注册表和本 provider；使用前需移除已有的竞争 provider。`DSH Computer Use.app` 需要辅助功能权限来读取 AX 和输入，需要屏幕录制权限来截图；通过 Computer Use 权限页打开系统设置并添加 helper。`getCapabilities` 查询权限和锁屏状态，不弹出系统授权窗口。桌面会话锁定或不可用时，界面观察与输入会在分派前拒绝，需由用户解锁 macOS 后继续。`listApps` 和 `cua.getState` 列出运行中的应用。`findApps(query)` 按名称、bundle ID 或绝对路径搜索 macOS 标准应用目录。`getApp` 按唯一名称、bundle ID、路径或运行中的 PID 选择应用，取得应用许可后，在需要时后台启动尚未运行的应用。授权前从磁盘读取应用的 Bundle ID 和可执行路径，在启动前后重新读取并核对；没有 Bundle ID 的应用使用规范化的可执行路径复用授权。选择尚未运行的安装副本时，会请求为该副本创建新实例。helper 等待应用完成启动后才返回其 PID。启动后验证失败会使待启动句柄失效，但进程可能仍在运行；应先查看运行中的应用，再取得新句柄。返回的对象读取初始 AX，不自动激活应用。启动被取消时，应用可能已经运行。模型指引要求先在后台观察和输入，不在初始化或每次动作前激活应用。窗口隐藏或最小化时，先尝试 `app.show()` 或 `window.show()`，再重新观察。它请求取消隐藏和恢复最小化，不主动激活、抬起窗口或切换桌面空间；应用级恢复选择焦点窗口、主窗口或唯一 AX 窗口。结果通过 `windowId` 指明选中的窗口，未选中时为 null；`foregroundChanged` 比较操作前后的前台应用和最上层窗口，无法取得完整观察时为 null，返回后仍可能发生焦点变化。恢复失败或窗口仍不可用时，说明需要前台的步骤，再调用 `app.activate()` 或窗口的 `raise` 动作并重新观察。必须使用前台时，以完成任务为先。应用收到输入后仍可能改变焦点，后台投递不保证用户操作始终不受干扰。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `allowedApps` | `[]` | 当前配置档的动态应用授权，绑定可执行文件路径和已验证的代码签名要求。 |
-| `helperPath` | 包内可执行文件 | 可选的原生可执行文件绝对路径覆盖。 |
+| `agentPreset` | `ptc` | 仅为绑定该 preset 的 Agent 注册工具和指引；`false` 表示全局注册。 |
+| `allowedApps` | `[]` | 旧路径和签名许可，只导入 profile 存储一次供撤销，不授予新 Bundle ID 身份访问权限。 |
+| `helperPath` | 包内可执行文件 | 已签名 helper `.app` 内可执行文件的绝对路径；裸二进制会触发 `NATIVE_APPLICATION_REQUIRED`。 |
 | `buildTimeoutMs` | `300000` | 原生组件准备的最长时间。 |
 | `timeoutMs` | `30000` | 单次操作截止时间，取消后可能已发生部分输入。 |
 | `connectTimeoutMs` | `5000` | 连接或启动共享 helper 的截止时间。 |
+| `permissionPollIntervalMs` | `1000` | 原生引导打开期间检查权限和窗口位置的间隔，单位为毫秒。 |
 | `screenshotTimeoutMs` | `5000` | 截图总期限，包含排队时间，且不超过 `timeoutMs`。 |
 | `axTimeoutMs` | `3000` | 每次 Accessibility 系统调用的截止时间，与完整操作截止独立配置。 |
 | `maxRequestBytes` / `maxResponseBytes` | `1048576` / `33554432` | UTF-8 请求与响应字节限制。 |
@@ -50,6 +59,7 @@ pnpm dsh headless --patch packages/experimental/cua-macos/examples/macos.cordis.
 | `pasteReadTimeoutMs` | `1000` | Paste 命令返回后等待剪贴板读取的上限；到期返回 `PASTE_NOT_CONSUMED`。 |
 | `maxAppMatches` | `20` | 已安装应用搜索的结果上限；范围过大的查询会被拒绝，需要缩小名称范围。 |
 | `maxElements` / `maxDepth` | `2000` / `25` | 辅助功能树遍历限制。 |
+| `maxClickHoldMs` | `5000` | 显式点击按住时长的上限，单位为毫秒，接受非负整数。设为 0 时只允许立即松开。 |
 | `dragDurationMs` / `dragSteps` | `400` / `20` | 拖动时长和移动分段数。 |
 | `textEventIntervalMs` | `0.25` | 每个 Unicode 按下或抬起事件后的间隔，范围为 0 至 1000 毫秒。组合键的节奏独立。 |
 
@@ -59,7 +69,7 @@ pnpm dsh headless --patch packages/experimental/cua-macos/examples/macos.cordis.
 
 Agent 销毁和插件卸载会取消并等待完整工具调用，包括图像接入检查和附件存储。已经开始的图像写入必须结束后，销毁才会返回；已取消的调用不会返回成功截图。
 
-CUA 工具在读取 AX、窗口标题、截图、激活和输入之前检查应用授权。User Questions 提供任务级允许和拒绝选项；应用签名可验证且组合支持配置持久化时，也可保存授权。任务授权绑定所选进程句柄，长期授权绑定真实可执行路径和指定代码签名要求。拒绝后，同一任务不再反复询问。删除保存的 `allowedApps` 条目会取消相关操作并使原生组件中的句柄失效；重新授权需要重新选择应用。同一 Agent 连接中的其他句柄也会失效，已保存的授权仍可复用。Agent 或提供方销毁时等待对应连接的原生状态清理。设计理由见[应用授权决策](../../../.agents/notes/implemented/architecture/2026-09-26-cua-application-consent.zh.md)。这些检查约束 CUA 调用；持久 PTC 和另行授权的 shell 工具保留各自的执行权限。
+CUA 工具在读取 AX、窗口标题、截图、激活和输入前检查应用授权。首次选择应用时询问用户，可选择本会话允许、拒绝；profile 提供持久存储时还可保存长期授权。会话许可按对话和应用身份持久化，重启 DSH 或关闭 Computer Use 后仍可复用，其他对话需要单独授权。应用身份使用区分大小写的 Bundle ID，因此不同路径下的版本和副本共用许可与撤销决定，不受签名状态影响。运行中应用具有有效 Bundle ID 时，即使操作系统无法提供可执行路径，也可以授权。路径可取得时仍核对所选目标，进程实例和窗口归属检查始终保留。缺少 Bundle ID 时，授权必须取得规范化可执行路径。在同一路径下重启或更新会沿用许可，移动或复制到另一个路径则需要重新决定。这项规则不验证发布者身份，其他程序声明相同标识，或替换路径授权所对应的可执行文件时，也会继承许可。拒绝后，同一会话不会反复询问。撤销与长期许可的保存共用队列，在队列内读取并移除许可，然后使相关 Agent 连接失效并等待原生清理完成，不自动重放输入。同一 Agent 连接中的其他应用也需要重新选择，其他应用的会话许可和长期许可仍可复用。设计理由见[应用授权决策](../../../.agents/notes/implemented/architecture/2026-09-26-cua-application-consent.zh.md)。这些检查的范围是 CUA 调用。persistent PTC 与已授权的 shell 仍按各自执行权限运行。
 
 原始 `getState` 操作返回经过校验的状态字段，以及按本次披露选项生成的完整文本。原生 helper 还返回供原生检查使用的结构化元素诊断数组；工具投影会从模型文本和结构化工具值中移除这份重复数组。
 
@@ -71,7 +81,7 @@ AX 观察默认只展示菜单栏入口。使用 `app.getAXState({ includeMenus:
 
 截图诊断使用带工具请求 ID 的 `[cua-screenshot]` 记录。原生阶段记录经本次 Agent 连接返回，覆盖窗口及 AX 几何检查、系统截图、PNG/Base64 编码和响应写出。Host 调试日志补充发送、响应和清理耗时。每次请求最多保留 8192 字节完整诊断记录，超限会明确标记；截图失败时附在错误中，保留到 Session trace。记录只含阶段、耗时和错误码，不含窗口标题、AX 正文或图片内容。
 
-原生准备复用文件锁，串行检查编译和发布。构建更新包内产物，并从 native/.build/prepared 下按内容摘要区分的副本运行，保留旧源码进程使用的可执行文件。相同构建复用同一文件；保留的副本损坏时拒绝使用。取消或准备失败后，先完成受管进程清理再释放锁。
+原生准备通过文件锁串行构建和签名，将完整应用保存在 `native/.build/prepared` 下的内容摘要目录中，再原子更新 `current.json`。旧连接继续使用原应用，相同构建复用已有文件，损坏的副本拒绝使用。取消或准备失败后，先完成受管进程清理再释放锁。
 
 ### 接入外部执行环境
 
@@ -96,7 +106,7 @@ void await app.getScreenshot()
 
 截图要求附件服务可用，并确认当前模型支持图片输入。共享附件接入校验规范 Base64、图像数据及配置容量，然后保存一次图片。程序调用方仍可取得原生数据，模型内容包含坐标元数据和持久图片引用。响应字节上限在解析前执行。
 
-hover、click、scroll 和 drag 的绝对坐标默认使用最近返回截图中的像素。传入 `relative: true` 时使用窗口宽高的千分比整数；省略或传入 `false` 时使用像素。相对坐标可基于成功的 AX 读取或截图，绝对坐标必须先截图。Host 根据实际送入模型的图片尺寸换算原生 point，包含附件归一化和模型请求阶段的缩放。1000 映射到窗口边缘以内。坐标选项不适用于 AX 元素索引。窗口宽高与最近一次观察不同时，在输入前返回 `WINDOW_CHANGED`，原始调用即使不传快照 ID 也会检查；重新读取 AX 或截图后再操作。单纯移动窗口不使窗口内坐标失效。截图和鼠标输入会核对所选窗口的辅助功能框与显示边界；已知两者不一致时，在发送任何鼠标事件前返回 `WINDOW_CHANGED`。当 AX 保留完整窗口框时，这也会拦住 Stage Manager 变换后的窗口。需要重新读取状态；激活应用或抬起窗口仍须显式调用。元素声明的 AX 动作保持可用。缺少 AX 几何时保留无 AX 路径，不代表变换后的窗口一定可以操作。
+hover、click、scroll 和 drag 的绝对坐标默认使用最近返回截图中的像素。传入 `relative: true` 时使用0～999 的千分比整数；省略或传入 `false` 时使用像素。相对坐标可基于成功的 AX 读取或截图，绝对坐标必须先截图。Host 根据实际送入模型的图片尺寸换算原生 point，包含附件归一化和模型请求阶段的缩放。999 映射到窗口边缘以内。坐标选项不适用于 AX 元素索引。窗口宽高与最近一次观察不同时，在输入前返回 `WINDOW_CHANGED`，原始调用即使不传快照 ID 也会检查；重新读取 AX 或截图后再操作。单纯移动窗口不使窗口内坐标失效。截图和鼠标输入会核对所选窗口的辅助功能框与显示边界；已知两者不一致时，在发送任何鼠标事件前返回 `WINDOW_CHANGED`。当 AX 保留完整窗口框时，这也会拦住 Stage Manager 变换后的窗口。需要重新读取状态；激活应用或抬起窗口仍须显式调用。元素声明的 AX 动作保持可用。缺少 AX 几何时保留无 AX 路径，不代表变换后的窗口一定可以操作。
 
 保留的对象会在每次调用时获取当前工具绑定。外部运行时负责持久化、导入、取消和最终表达式值的序列化。截图返回编码字节及其 MIME 类型、像素尺寸和窗口 ID，标准工具链负责将图片作为附件传递一次。`emit: false` 只控制对象层的输出。使用其他分派器的宿主可以通过 `./api` 的 `createCuaApi` 创建对象。
 
@@ -147,7 +157,7 @@ AppKit sheet 可以通过其窗口 ID 单独选择，也会出现在所属文档
 ##### 操作指导文本（原文）
 
 ```markdown
-Use cua with method getCapabilities and params {} to inspect permissions and sessionLocked. If sessionLocked is true or an operation reports SESSION_LOCKED, stop UI attempts and ask the user to unlock macOS. A null sessionLocked means no usable console session was verified. After unlocking, read fresh state; screenshots from a locked desktop are not current observations. Use listApps or cua.getState to discover running applications, and findApps(query) to search installed applications by name, bundle ID or absolute path. getApp requests user consent before launching a stopped application in the background, or before observations and input on a running one. If access is denied or revoked, stop using that application until the user explicitly grants access again. Never switch tools to bypass a refusal. Keep the returned appHandle; every app operation requires it. listWindows returns window IDs and point bounds. Raw getState returns AX text and snapshotId. Menu-bar entries are shown by default; includeMenus=true expands their contents. details=true adds identifiers, global-point bounds and complete action names. Both options also apply to getAXState. Each read replaces the indices for that app/window scope. Use its element indices only with that snapshotId. Raw screenshot and coordinate operations require a windowId. Coordinates are pixels in the latest returned screenshot, measured from its top-left. Set relative:true for integer thousandths from 0 to 1000 instead. The Host converts both modes to native window points; AX detail bounds remain global macOS points. A verified window can expose no AX elements. Its empty snapshot permits screenshots and coordinate input; element-index actions require an element from a fresh AX observation.
+Use cua with method getCapabilities and params {} to inspect permissions and sessionLocked. If sessionLocked is true or an operation reports SESSION_LOCKED, stop UI attempts and ask the user to unlock macOS. A null sessionLocked means no usable console session was verified. After unlocking, read fresh state; screenshots from a locked desktop are not current observations. Use listApps or cua.getState to discover running applications, and findApps(query) to search installed applications by name, bundle ID or absolute path. getApp requests user consent before launching a stopped application in the background, or before observations and input on a running one. If access is denied or revoked, stop using that application until the user explicitly permits another authorization request. Never switch tools to bypass a refusal. Keep the returned appHandle; every app operation requires it. listWindows returns window IDs and point bounds. Raw getState returns AX text and snapshotId. Menu-bar entries are shown by default; includeMenus=true expands their contents. details=true adds identifiers, global-point bounds and complete action names. Both options also apply to getAXState. Each read replaces the indices for that app/window scope. Use its element indices only with that snapshotId. Raw screenshot and coordinate operations require a windowId. Coordinates are pixels in the latest returned screenshot, measured from its top-left. Set relative:true for integer thousandths from 0 to 999 instead. The Host converts both modes to native window points; AX detail bounds remain global macOS points. A verified window can expose no AX elements. Its empty snapshot permits screenshots and coordinate input; element-index actions require an element from a fresh AX observation.
 
 Initialize the object API once in persistent PTC. Reuse its variables in later calls; put temporary declarations inside { ... } blocks to avoid redeclaration errors. All object methods are async. getAXState returns text, not a structured state object. Its text separates values and placeholders, and reports subroles, help, URLs, disabled/focused/selected/expanded state and UTF-16 selection ranges when available. Writability is true, false or unknown on relevant controls; omitted state fields do not assert false. selection=unavailable means the reported range exceeds the observed text. Compact output omits ordinary Press/Pick (click), ShowMenu (right click) and ScrollToVisible actions; details=true lists every available action. Use the displayed action name with performSecondaryAction; ambiguous aliases require the complete name from details=true. Truncation reports the reached provider limit. Narrow the window or increase that provider limit before reading again.
 
@@ -175,7 +185,7 @@ App and Window methods:
 - getScreenshot(options?: { emit?: boolean }) -> CuaScreenshot
 - getAXStateAndScreenshot(options?) -> { state: string, screenshot: CuaScreenshot }
 - hover(target: number | [x, y], options?: { relative?: boolean }) -> { dispatched, verified, hoverRoute, systemPointerMoved }
-- click(target: number | [x, y], options?: { mouseButton?: "left" | "right" | "middle", clickCount?: 1 | 2, modifiers?: Array<"command" | "control" | "option" | "shift" | "fn">, relative?: boolean }) -> action result
+- click(target: number | [x, y], options?: { mouseButton?: "left" | "right" | "middle", clickCount?: 1 | 2, holdMs?: number, modifiers?: Array<"command" | "control" | "option" | "shift" | "fn">, relative?: boolean }) -> action result
 - setValue(elementIndex: number, value: string) -> action result
 - selectText(elementIndex: number, text: string, options?: { prefix?: string, suffix?: string, selectionType?: "text" | "cursor_before" | "cursor_after" }) -> action result
 - performSecondaryAction(elementIndex: number, action: string) -> action result
@@ -184,11 +194,11 @@ App and Window methods:
 
 Raw operation tools use { method, params }, including params: {} for parameterless methods. getApp selects without activating the app. Keep applications in the background for observation and routine input. Do not activate or raise an app during initialization, before each action, or merely because another app is foreground. Prefer advertised AX actions. If a window is hidden or minimized, try app.show() or window.show() and read fresh state. show requests unhide and unminimize without activation, raising or switching Spaces; it chooses the explicit, focused, main or sole AX window. A null windowId means no window was selected for restoration. foregroundChanged compares the front app and top window before and after the request; null means unavailable, and delayed focus changes remain possible. If restoration is unsupported or the window remains unusable, including another Space or Stage Manager, explain the needed foreground step, use app.activate() or an advertised raise action, and read fresh state. Completing the task takes priority when foreground access is necessary. Avoid repeated activation when the user switches away; continue background-capable steps and report what requires foreground access. Applications may still change focus in response to input.
 
-Await operations sequentially. After input, read fresh state to verify the effect. A successful action means dispatched, not verified completion. Cancellation may leave partial effects; never retry uncertain input without observing. STALE_APP requires getApp again; STALE_SNAPSHOT requires getState again. Absolute coordinate input requires a fresh screenshot of that window. Relative input can use a successful AX observation or screenshot. SCREENSHOT_REQUIRED means capture a fresh screenshot before using pixel coordinates. For click and hover, coordinate targets must be [x, y], for example hover([650, 400], {relative:true}). A bare number such as hover(650) is always an AX element index. The relative option applies only to coordinate targets, not AX indices. Window resizing since the latest observation rejects coordinate input; movement alone preserves window-local coordinates. WINDOW_CHANGED requires fresh state before any retry; use an advertised AX action or explicitly restore the window before screenshot or coordinate input, then observe again. PERMISSION_DENIED requires the user to grant macOS Accessibility or Screen Recording access in System Settings. After granting access, observe fresh state before continuing; do not automatically replay prior input.
+Await operations sequentially. After input, read fresh state to verify the effect. A successful action means dispatched, not verified completion. Cancellation may leave partial effects; never retry uncertain input without observing. STALE_APP requires getApp again; STALE_SNAPSHOT requires getState again. Absolute coordinate input requires a fresh screenshot of that window. Relative input can use a successful AX observation or screenshot. SCREENSHOT_REQUIRED means capture a fresh screenshot before using pixel coordinates. For click and hover, coordinate targets must be [x, y], for example hover([650, 400], {relative:true}). A bare number such as hover(650) is always an AX element index. The relative option applies only to coordinate targets, not AX indices. Window resizing since the latest observation rejects coordinate input; movement alone preserves window-local coordinates. WINDOW_CHANGED requires fresh state before any retry; use an advertised AX action or explicitly restore the window before screenshot or coordinate input, then observe again. PERMISSION_DENIED requires the user to grant the required macOS system permissions for macOS Accessibility or Screen Recording. After granting access, observe fresh state before continuing; do not automatically replay prior input.
 
 Hover first uses advertised AX alternate UI without moving the system cursor, preserving revealed descendants until the pointer target leaves their region. When unavailable, it moves the visible system cursor without pressing a button; that route requires the target point to be unobscured in the foreground app. FOREGROUND_REQUIRED requires explicit activation or raising and a fresh observation before retrying. Returning, AX reads and screenshots do not restore the previous point. Wait for the application's hover delay, observe, then hover into the revealed controls before clicking. Use successive hover calls for intermediate points. The result reports hoverRoute and systemPointerMoved. Other input or application changes can interrupt the interaction; app objects do not reserve applications between calls.
 
-Use selectText only on controls advertising selectionWritable. It selects a unique literal occurrence, or places the cursor before/after it; prefix and suffix must be immediately adjacent. AMBIGUOUS_TEXT requires more context; TEXT_NOT_FOUND or SELECTION_CHANGED requires a fresh observation before deciding on input. Left clicks support single/double clicks; right and middle clicks support single clicks. Modified clicks use pointer input. Keypad names such as KP_0 and KP_Enter retain their physical key identity. Window objects expose observation and pointer/AX actions; keyboard input remains app-scoped and follows current focus. Scroll deltas are integer lines from -10 to 10; positive values reveal content above or left. Paste delivers plain text or HTML through the application's enabled standard Paste menu command. Paste follows the target app's focused text input. Foreground requirements vary by application; for example, ChatGPT/Codex was observed to accept background Paste without reading clipboard data. PASTE_NOT_CONSUMED means the command was dispatched but no clipboard read was observed before the configured deadline. Inspect the target contents, explicitly activate the app and focus the intended input, then observe again before deciding whether to retry; a delayed paste may still run. Original clipboard formats are restored if the clipboard still belongs to this paste; a later copy is preserved. Unsupported Paste commands fail without typing fallback. CLIPBOARD_CHANGED means another writer intervened; observe before deciding on further input. Browser applications can be controlled with getApp like other native apps; browser tabs are unavailable. Installed-app search covers standard macOS application directories; use an absolute application path for another location. Launch does not restore a window or document, and cancellation may leave an application already started. The execution host must install the object API and own variable persistence; this plugin does not preload a cua global. In persistent PTC, use the host-provided initialization snippet below once. Its installation-owned file URL works independently of the project directory. Retain app objects between calls. Observation methods emit by default and also return their value. Use void await app.getAXState() to avoid a duplicate REPL completion, or pass emit:false and print the returned text once. End screenshot calls with void await app.getScreenshot() or void await app.getAXStateAndScreenshot() so image bytes are not serialized as the program completion value.
+Use selectText only on controls advertising selectionWritable. It selects a unique literal occurrence, or places the cursor before/after it; prefix and suffix must be immediately adjacent. AMBIGUOUS_TEXT requires more context; TEXT_NOT_FOUND or SELECTION_CHANGED requires a fresh observation before deciding on input. Left clicks support single/double clicks; right and middle clicks support single clicks. Modified clicks use pointer input. Optional holdMs is a nonnegative integer in milliseconds for each press, including each press of a double-click. Zero releases without an additional hold. The configured maximum is stated below. It uses pointer input even for AX targets; omission preserves ordinary clicks. The operation deadline still applies, and cancellation or timeout releases the held button. Keypad names such as KP_0 and KP_Enter retain their physical key identity. Window objects expose observation and pointer/AX actions; keyboard input remains app-scoped and follows current focus. Scroll deltas are integer lines from -10 to 10; positive values reveal content above or left. Paste delivers plain text or HTML through the application's enabled standard Paste menu command. Paste follows the target app's focused text input. Foreground requirements vary by application; for example, ChatGPT/Codex was observed to accept background Paste without reading clipboard data. PASTE_NOT_CONSUMED means the command was dispatched but no clipboard read was observed before the configured deadline. Inspect the target contents, explicitly activate the app and focus the intended input, then observe again before deciding whether to retry; a delayed paste may still run. Original clipboard formats are restored if the clipboard still belongs to this paste; a later copy is preserved. Unsupported Paste commands fail without typing fallback. CLIPBOARD_CHANGED means another writer intervened; observe before deciding on further input. Browser applications can be controlled with getApp like other native apps; browser tabs are unavailable. Installed-app search covers standard macOS application directories; use an absolute application path for another location. Launch does not restore a window or document, and cancellation may leave an application already started. The execution host must install the object API and own variable persistence; this plugin does not preload a cua global. In persistent PTC, use the host-provided initialization snippet below once. Its installation-owned file URL works independently of the project directory. Retain app objects between calls. Observation methods emit by default and also return their value. Use void await app.getAXState() to avoid a duplicate REPL completion, or pass emit:false and print the returned text once. End screenshot calls with void await app.getScreenshot() or void await app.getAXStateAndScreenshot() so image bytes are not serialized as the program completion value.
 ```
 
 #### Token 影响
@@ -205,12 +215,17 @@ Use selectText only on controls advertising selectionWritable. It selects a uniq
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- 最低支持 macOS 14；设置导航、拖放接收和权限刷新需要在各支持版本验收。若 macOS 要求在修改屏幕录制权限后退出并重新打开 helper，权限检查在重启前可能仍返回未授权。可以关闭引导框，不必终止其他连接。
+- 所选设置窗口离开可见窗口列表时，引导框会关闭，包括切换桌面空间或最小化导致窗口不再可见的情况。返回后再次申请权限可重新打开引导。
 - 只提供 macOS 原生实现，Windows 支持正在开发中。本包暂放在 `experimental`，待 Windows 支持完成后迁回 `computer-use` 组。不支持浏览器标签、启动应用、AX 差分、无法确认应用归属的系统面板，以及仅后台辅助类型的应用。
-- 坐标使用包含标题栏的返回截图像素；`relative: true` 使用千分比整数，由 Host 换算原生 point。窗口移动、应用变化及其他桌面使用者的操作可能与观察和输入交错。
+- 坐标使用包含标题栏的返回截图像素；`relative: true` 使用 0～999 的整数，由 Host 换算原生 point。窗口移动、应用变化及其他桌面使用者的操作可能与观察和输入交错。
 - macOS 台前调度可能将后台窗口的尺寸与截图变为缩略图，当前无法保证这种状态下的完整画面与坐标输入；模型指引要求说明前台需求并避免反复抢回焦点。
 - 后台输入依赖私有 SkyLight 符号，macOS 升级可能使其不可用，需在目标系统版本验证。
 - 实测 Blender Unicode 输入曾出现分派成功但界面未显示文本，后台 AppKit 的 Command+A 曾未选中全文。输入后必须检查应用状态；工具返回成功只表示已分派。
-- 原生二进制需要本地构建。签名、分发和系统权限引导留待后续。
+- 源码构建使用临时签名，源码变化后可能需要重新授权。正式分发应以固定 Developer ID 签名并完成公证；构建命令支持 `--identity` 指定签名身份，安装版保留分发时的签名。[权限页面](../cua/README.zh.md)提供 helper 授权入口和目标应用许可撤销。
+- 发布打包不自动验证 GUI 启动、helper 身份或退出清理。发布维护者可在发布前，在已登录桌面的 Mac 上执行[分发 smoke](native/README.zh.md#build-and-service)；打包成功不能证明这些运行行为已通过验收。
+- 已保存许可的条目显示一个已批准副本的名称、路径和图标，不枚举共享身份的所有安装副本。删除该副本后图标可能不可用，撤销仍作用于同一身份的所有副本。
+- macOS 无法提供运行中应用的 Bundle ID 时，helper 仅在其报告的 bundle 可执行路径与实际进程路径相同时读取该 bundle，仍无标识则使用路径。只有 Bundle ID 和实际可执行路径均不可用时才拒绝生成授权身份；进程实例验证仍可能独立失败。
 - 持久 PTC 是对外部运行环境的假设，本包不实现它。真实模型任务成功率需要在原生测试和协议测试之外单独评估。
 
 -----

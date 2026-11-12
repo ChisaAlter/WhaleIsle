@@ -68,6 +68,12 @@
     },
     {
       "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../ui-context-menu"
+    },
+    {
+      "path": "../../core/tool-executor-ptc"
     }
   ]
 }

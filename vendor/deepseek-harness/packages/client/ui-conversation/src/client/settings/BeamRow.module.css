@@ -52,8 +52,10 @@
   cursor: pointer;
 }
 
-.settingsButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .settingsButton:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .settingsButton:disabled {

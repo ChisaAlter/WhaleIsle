@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
 import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import type { StartedToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-api-session-controller/client'
-import { allowAllAccess, makeTranslate, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, makeTranslate, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import { en } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
@@ -23,7 +23,8 @@ import { toolRowModel } from '../src/client/tool/models/tool-call-model.ts'
 
 afterEach(cleanup)
 
-type Props = Parameters<typeof TodoRow>[0] & Parameters<typeof ReadImageRow>[0] & Parameters<typeof AskQuestionRow>[0]
+type Props = Parameters<typeof GenericToolCard>[0] & Parameters<typeof TodoRow>[0]
+  & Parameters<typeof ReadImageRow>[0] & Parameters<typeof AskQuestionRow>[0]
 
 function useAbsentProjection<K extends Extract<keyof SessionProjectionMap, string>>(key: K): SessionProjectionMap[K] | undefined
 function useAbsentProjection<K extends Extract<keyof SessionProjectionMap, string>, S>(
@@ -39,12 +40,14 @@ function preparation(name: string, args = new PartialArguments()): Extract<Props
   const sessionId = 'preparing-session' as Props['sessionId']
   return {
     ...allowAllAccess,
+    getFileTriggerProps: () => ({}),
+    useContextMenu: contextMenuHook(), resolveFilePath: path => path,
     phase: 'preparing', callId: 'call', toolName: name,
     sessionId,
     useConversation: vi.fn(), useInput: vi.fn(),
     inputActions: {
       captureInsertion: vi.fn<Props['inputActions']['captureInsertion']>(),
-      insertText: vi.fn(() => false), setDraft: vi.fn(), persistDraft: vi.fn(),
+      insertText: vi.fn(() => false), insertQuote: vi.fn(() => false), setDraft: vi.fn(), persistDraft: vi.fn(),
       addAttachments: vi.fn(() => false), removeAttachment: vi.fn(), pruneAttachments: vi.fn(), submit: vi.fn(),
     },
     useSessions: vi.fn(),

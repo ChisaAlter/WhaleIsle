@@ -32,8 +32,10 @@
   cursor: pointer;
 }
 
-.row:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .row:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .twist {
@@ -78,14 +80,21 @@
   opacity: 0;
 }
 
-.item:hover > .mention,
 .mention:focus-visible {
   opacity: 1;
 }
 
-.mention:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .item:hover > .mention {
+    opacity: 1;
+  }
+}
+
+@media (hover: hover) {
+  .mention:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .item > ul {

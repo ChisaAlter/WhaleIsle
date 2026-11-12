@@ -3,7 +3,6 @@ import { projectTool } from './tool.js';
 export const name = 'project-coordinator';
 export const inject = ['tools', 'systemPrompt'];
 export function apply(ctx) {
-  ctx.tools.presentAs('native');
   registerTeamTools(ctx);
   ctx.tools.guard(exec => {
     const service = ctx.get('projects');

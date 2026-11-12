@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { CostSettingsRow } from '../src/client/settings/CostSettingsRow.tsx'
 import type { CostSettingsRowProps } from '../src/client/settings/CostSettingsRow.tsx'
 import { ComposerSubmissionPolicy } from '../src/client/input/submission-policy.ts'
@@ -28,6 +28,7 @@ function mount(opts: {
   const setSessionCost = vi.fn()
   const props: CostSettingsRowProps = {
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unused,

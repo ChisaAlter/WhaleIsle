@@ -27,6 +27,8 @@ const FIXED_NO_DRAG_EXEMPT = new Set([
   // pointer-events: none background layer behind #root; a no-drag hole here
   // would cover the viewport and delete the caption band geometrically.
   'packages/client/ui-theme/src/styles/wallpaper.css :: #dsh-wallpaper',
+  // pointer-events: none drag image that follows the pointer.
+  'packages/client/ui-primitives/src/RowDragPreview.module.css :: .preview',
 ])
 
 /* Manual walk: fs recursive readdir follows pnpm's cyclic node_modules

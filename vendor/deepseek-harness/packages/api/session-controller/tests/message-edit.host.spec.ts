@@ -1,13 +1,10 @@
 /** Same-session edits through the real controller, inbox, loop, and model surface. */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { createSessionTestRemote } from './test-remote.ts'
 import type { SessionRequestId } from '../src/types.ts'
@@ -27,17 +24,12 @@ afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.fibe
 async function bench() {
   const ctx = new Context()
   contexts.push(ctx)
-  await ctx.plugin(LlmRuntime)
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  await ctx.plugin(AgentRegistry)
+  await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new MockAdapter(Array.from({ length: 8 }, (_, i) => textResponse(`reply-${i}`)))
   ctx.llm.registerAdapter(['mock'], adapter)
   ctx.provide('workspaceRegistry', { list: () => [], archivedSessionIds: [] } as never)
-  const remote = createSessionTestRemote(ctx, {
+  const remote = await createSessionTestRemote(ctx, {
     cwd: '/workspace', defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }),
   })
   const agent = await ctx.agentLoop.create(SessionId('edit-session'), { provider: 'mock', model: 'mock' })

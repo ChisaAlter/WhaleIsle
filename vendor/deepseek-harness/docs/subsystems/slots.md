@@ -12,6 +12,10 @@ The plugin catalog declares `plugins.add.actions`, a root-scoped list for `MenuI
 
 The root-scoped lists `sidebar.panellist.actions`, `conversation.session.header.views.actions`, and `sidebar.right.tab.guide.actions` supply the rows of the More menus after the panel rows, the View tabs, and the right-sidebar guide cards. A region draws its More button and menu only while its list has registrations, and passes the customizable entries with their pin state, `onOpen`, `onPinnedChange`, and `onDismiss`. Panel and View entries also carry optional `active` state for the current selection, independently of pin state. Each region keeps its own unpinned entry ids in memory; [`ui-entry-customization`](../../packages/client/ui-entry-customization/README.md) registers the shipped rows.
 
+[ui-workspace](../../packages/client/ui-workspace/README.md#understand-the-implementation) documents Session-row extension positions, visibility, and keyboard behavior.
+
+[ui-settings](../../packages/client/ui-settings/README.md#filling-the-settings-slots) documents the settings page and navigation-icon extension points.
+
 ## Declaration and lifecycle
 
 `SlotMap` is the compile-time registry. A package declaration-merges the key, cardinality, scope, owner props, keyed props, and optional slot-level inject face. The runtime declaration is the matching `children` entry on the component that owns the render location.
@@ -62,6 +66,8 @@ The slot declaration fixes two independent axes.
 | scope | `session` | Requires a resolved surrounding Provider binding and receives definite Session values. |
 
 `priority` is a shadowing rank for `single`, `list`, and `keyed` cells and an election order for `chain`. Lower values run or render first. Ordinary additive contributions should choose a fresh list `id` or keyed `key`; intentionally reusing a shipped cell replaces its presentation.
+
+The [context-menu plugin](../../packages/client/ui-context-menu/README.md) contributes `useContextMenu` through `provideRoot`; every scope receives the same plugin-owned trigger factory. Its prop and retained handlers retire when the provider unloads. Its root-scoped keyed `contextMenu.icon` Slot renders business-owned icons from action metadata.
 
 ## Component inputs
 
@@ -135,9 +141,13 @@ Factory: conversation.content [ConversationContent]
 ├─ conversation.session [ConversationSession / DefaultConversationViews]
 │  └─ conversation.view
 │     ├─ id=chat [ChatView]
+│     │  ├─ conversation.chat.text-interaction [list]
 │     │  └─ conversation.chat.flow [ChatFlow]
 │     │     └─ conversation.chat.node [ChatNodeSeat dispatch]
-│     │        ├─ key=user,steering [UserMessageNodeView]
+│     │        ├─ key=user [UserMessageNodeView]
+│     │        │  ├─ conversation.chat.user.before [chain]
+│     │        │  └─ calls Factory: conversation.chat.user.content
+│     │        ├─ key=steering [UserMessageNodeView]
 │     │        │  └─ calls Factory: conversation.chat.user.content
 │     │        ├─ key=assistant-step [AssistantNodeView / AssistantMarkdown]
 │     │        │  ├─ conversation.chat.message.images [MessageImages]

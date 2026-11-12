@@ -17,7 +17,9 @@ import {
 import SessionStore, { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { createSessionTestRemote, testSessionPersistence, type TestSessionRemote } from './test-remote.ts'
+import {
+  createSessionTestRemote, installSessionReadTestServices, testSessionPersistence, type TestSessionRemote,
+} from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 
@@ -50,10 +52,12 @@ async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote }> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SessionStore)
+  // AgentRegistry injects the projection service, so it mounts after it exists.
+  installSessionReadTestServices(ctx)
   await ctx.plugin(AgentRegistry)
   return {
     ctx,
-    remote: createSessionTestRemote(ctx, {
+    remote: await createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
       cwd: '/workspace',
     }),
@@ -328,10 +332,11 @@ describe('session.blankReuse', () => {
       expect(before.length).toBeGreaterThan(0)
       const readerCtx = new Context()
       await readerCtx.plugin(SessionStore)
+      installSessionReadTestServices(readerCtx)
       await readerCtx.plugin(AgentRegistry)
       await readerCtx.plugin(JsonlSessionPersistence, { root, compression })
       const resume = vi.spyOn(readerCtx.agents, 'resume')
-      const remote = createSessionTestRemote(readerCtx, {
+      const remote = await createSessionTestRemote(readerCtx, {
         defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
         cwd: '/workspace',
       })

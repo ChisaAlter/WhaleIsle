@@ -17,6 +17,7 @@ import type {
   SessionControlFrame,
   SessionFollowFrame,
   SessionFollowRequest,
+  SessionEventsPage,
   SessionPage,
   SessionPageRequest,
   SessionProjectionBaseline,
@@ -285,6 +286,12 @@ export class FakeApiClient {
         ),
         projections: payload => this.record('session.projections', payload, this.onProjections(payload)),
         page: request => this.page(request),
+        events: request => this.page(request),
+        observeEvent: () => streamHandle((async function* () {})()) as never,
+        observeProjections: () => streamHandle((async function* () {})()) as never,
+        observeState: () => streamHandle((async function* () {})()) as never,
+        state: () => Promise.reject(new Error('fake session API: session.state is not scripted')) as never,
+        wait: () => Promise.reject(new Error('fake session API: session.wait is not scripted')) as never,
         follow: (request, signal) => streamHandle(this.openFollow(request, signal)),
         control: signal => streamHandle(this.openControl(signal)),
       },
@@ -381,19 +388,19 @@ export class FakeApiClient {
     return response
   }
 
-  private page(request: SessionPageRequest): Promise<RemoteResult<SessionPage>> {
+  private page(request: SessionPageRequest): Promise<RemoteResult<SessionEventsPage>> {
     return this.fetchPage(request)
   }
 
   private async fetchPage(
     request: SessionPageRequest,
     response?: Promise<RemoteResult<SessionPage>>,
-  ): Promise<RemoteResult<SessionPage>> {
+  ): Promise<RemoteResult<SessionEventsPage>> {
     const sessionId = addressSessionId(request.address)
     const payload = request.address.kind === 'session'
       ? {
         sessionId,
-        throughSeq: request.throughSeq,
+        ...request.throughSeq === undefined ? {} : { throughSeq: request.throughSeq },
         ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
         ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
       }
@@ -401,24 +408,26 @@ export class FakeApiClient {
         parentSessionId: request.address.parentSessionId,
         childSessionId: request.address.childSessionId,
         mode: request.address.mode,
-        throughSeq: request.throughSeq,
+        ...request.throughSeq === undefined ? {} : { throughSeq: request.throughSeq },
         ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
         ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
       }
     const method = request.address.kind === 'session' ? 'session.history' : 'subagent.history'
     const result = await this.record(method, payload, response ?? this.onHistory({
       sessionId,
-      throughSeq: request.throughSeq,
+      ...request.throughSeq === undefined ? {} : { throughSeq: request.throughSeq },
       ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
       ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
     }))
     if (!result.ok) return result
+    const records = result.value.records
+      .filter(record => request.throughSeq === undefined || historyRecordLastSeq(record) <= request.throughSeq)
     return {
       ok: true,
       value: {
         ...result.value,
-        records: result.value.records
-          .filter(record => historyRecordLastSeq(record) <= request.throughSeq),
+        records,
+        cursor: request.throughSeq ?? Math.max(0, ...records.map(historyRecordLastSeq)),
       },
     }
   }

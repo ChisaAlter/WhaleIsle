@@ -3,6 +3,15 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConfigField, type ConfigFieldProps } from '../src/ConfigField.tsx'
 
+// jsdom has no matchMedia; a mouse can hover, nothing else is requested.
+if (typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({ matches: query === '(any-hover: hover)', media: query, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+}
+
 afterEach(cleanup)
 
 it('shares controlled inputs and reset actions between generated and custom forms', () => {
@@ -21,9 +30,9 @@ it('shares controlled inputs and reset actions between generated and custom form
   const invalidControl = screen.getByRole('combobox')
   expect(invalidControl.getAttribute('aria-invalid')).toBe('true')
   expect(document.getElementById(invalidControl.getAttribute('aria-describedby')!)?.textContent).toBe('Invalid value')
-  fireEvent.mouseEnter(invalidControl)
+  fireEvent.pointerEnter(invalidControl, { pointerType: 'mouse' })
   expect(screen.getByRole('tooltip').textContent).toBe('Invalid value')
-  fireEvent.mouseLeave(invalidControl)
+  fireEvent.pointerLeave(invalidControl, { pointerType: 'mouse' })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } })
   fireEvent.change(screen.getByRole('combobox'), { target: { value: '600' } })
   expect(props.onReset).toHaveBeenCalledTimes(2)

@@ -81,7 +81,9 @@
     "@deepseek-ai/dsh-attachment-local": "workspace:*",
     "@deepseek-ai/cosmokit": "workspace:~",
     "@deepseek-ai/dsh-tools": "workspace:*",
-    "@deepseek-ai/dsh-attachment": "workspace:*"
+    "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-tool-executor-native": "workspace:*",
+    "@deepseek-ai/dsh-tool-executor-ptc": "workspace:*"
   },
   "files": [
     "lib/index.js",
