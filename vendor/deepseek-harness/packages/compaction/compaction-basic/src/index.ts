@@ -273,6 +273,12 @@ export class BasicCompactionEngine extends CompactionEngine {
     signal?: AbortSignal,
   ): Promise<SummaryResult> {
     const target = conversationTarget(agent)
+    if (target !== undefined && this.ctx.llm.listProviders().some(provider => provider.id === target.provider)) {
+      const info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+      if (info.contextManagement === 'provider') {
+        throw new Error('This agent manages its own context; harness transcript summarization is unavailable.')
+      }
+    }
     const config = target === undefined
       ? this.config
       : resolveTargetPolicy(this.config, target)
@@ -300,6 +306,11 @@ export class BasicCompactionEngine extends CompactionEngine {
       case 'pressure':
         return this.compactPressure(agent, header, signal, false)
       case 'context-overflow': {
+        // Historical routes without a current adapter still retain the existing recovery path.
+        if (this.ctx.llm.listProviders().some(provider => provider.id === header.config.provider)) {
+          const info = await this.ctx.llm.resolveModelInfo(header.config.provider, header.config.model, signal)
+          if (info.contextManagement === 'provider') return null
+        }
         this.ctx.get('toolResultPruner')?.pruneSession(agent.session)
         const measurement = this.ctx.tokenMeter.measure(agent.session)
         const range = selectCompactableRange(agent.session, measurement, 0)
@@ -325,6 +336,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     let measurement = meter.measure(agent.session, header)
     const prune = this.ctx.get('toolResultPruner')
     const info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+    if (info.contextManagement === 'provider') return null
     assertNoActiveCompaction(agent.session, 'automatic pressure compaction')
     const targetKey = `${target.provider}/${target.model}`
     if (info.context === undefined) {

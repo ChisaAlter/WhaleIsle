@@ -1,4 +1,4 @@
-/** Desktop-only Built-in features row: toggle the built-in Project plugin mount (default off). */
+/** Desktop-only Built-in features row: toggle the built-in Project plugin mount (default on). */
 import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -26,7 +26,7 @@ export type ProjectRowProps =
  * @returns the preference row.
  */
 export function ProjectRow({ leaveProjectLead, t }: ProjectRowProps) {
-  const [enabled, setEnabled] = useState(false)
+  const [enabled, setEnabled] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)

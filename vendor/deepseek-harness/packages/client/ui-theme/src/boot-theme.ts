@@ -24,6 +24,8 @@ import { TRANSPARENT_GLASS_SOLIDITY, isWallpaperDataUrl } from './wallpaper.ts'
 
 /** Payload embedded in the pre-plugin bootstrap script. */
 export interface ThemeBootPayload {
+  /** Rendering mode applied before plugin activation. */
+  minimalMode?: boolean
   /** Durable color-scheme preference. */
   preference: ThemePreference
   /** Conversation content font size in px. */
@@ -60,6 +62,7 @@ function tokensFor(settings: ThemeSettings, mode: 'light' | 'dark'): ThemeTokens
   // Same rewrite composeActive applies; the pre-plugin interval must not
   // flash the masked rail back.
   if (settings.sidebarMaskHidden) tokens[SIDEBAR_RAIL_FILL_TOKEN] = SIDEBAR_UNMASKED_FILL
+  if (settings.minimalMode) tokens['--dsw-alias-glass-opacity'] = '100%'
   return tokens
 }
 
@@ -82,6 +85,7 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
   // slider, so the pre-plugin interval already paints see-through chrome.
   const transparent = settings.transparentTheme && isWallpaperDataUrl(settings.wallpaperImage)
   return {
+    minimalMode: settings.minimalMode,
     preference: settings.preference,
     fontSize: settings.fontSize,
     fontSizes: sectionFontSizes(settings),
@@ -93,7 +97,7 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
     lightBackground: backgroundFor(settings, 'light'),
     darkBackground: backgroundFor(settings, 'dark'),
     fontSizeInterface: settings.fontSizeInterface,
-    glassOpacity: transparent ? TRANSPARENT_GLASS_SOLIDITY : settings.glassOpacity,
+    glassOpacity: settings.minimalMode ? 100 : transparent ? TRANSPARENT_GLASS_SOLIDITY : settings.glassOpacity,
   }
 }
 
@@ -152,6 +156,7 @@ function bootThemeScript(payload: ThemeBootPayload): string {
   const skin = dark ? darkSkin : lightSkin
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   document.documentElement.style.fontSize = fontSizeInterface + 'px'
+  document.documentElement.toggleAttribute('data-dsh-minimal', ${JSON.stringify(payload.minimalMode === true)})
   document.documentElement.dataset.dsThemeSource = preference
   if (skin === 'default') document.documentElement.removeAttribute('data-dsh-skin')
   else document.documentElement.setAttribute('data-dsh-skin', skin)

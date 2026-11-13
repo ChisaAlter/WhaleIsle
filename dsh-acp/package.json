@@ -1,0 +1,79 @@
+{
+  "name": "dsh-acp-agents",
+  "description": "Independent DeepSeek Harness plugin for configured coding agents, conversation switching, and managed subagent delegation.",
+  "version": "0.4.5",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "scripts": {
+    "build:runtime": "npm --prefix tools/runtime-build run build",
+    "test": "node --test tests/plugin.test.mjs tests/tasks.test.mjs tests/auth.test.mjs tests/reliability.test.mjs",
+    "test:client": "node --test tests/client-compat.test.mjs",
+    "test:host-compat": "node --test tests/host-compat.test.mjs",
+    "test:host": "node tests/host-integration.mjs",
+    "test:installed-host": "node --test tests/installed-host.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChisaAlter/dsh-acp-agents.git"
+  },
+  "homepage": "https://github.com/ChisaAlter/dsh-acp-agents#readme",
+  "bugs": {
+    "url": "https://github.com/ChisaAlter/dsh-acp-agents/issues"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "acp",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "devin"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-general",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    }
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./presets": "./lib/presets.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "tests",
+    "tools/runtime-build/build.mjs",
+    "tools/runtime-build/entry.ts",
+    "tools/runtime-build/bridge-entry.ts",
+    "tools/runtime-build/package.json",
+    "tools/runtime-build/package-lock.json",
+    "tools/runtime-build/upstream",
+    "tools/host-compat",
+    "cordis.patch.yml"
+  ]
+}

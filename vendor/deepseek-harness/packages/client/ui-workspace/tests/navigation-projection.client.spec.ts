@@ -60,6 +60,24 @@ describe('owner Session directory navigation', () => {
     expect(groups[0]?.navigationOnly).toBe(true)
   })
 
+  it('does not leave an empty directory at the bottom after removing a Workspace with an archived Project', () => {
+    const archivedState = { ...rowState, archivedSessionIds: [lead.id] }
+    const before = projectSessionNavigation(list, [workspace], [{ ...entry, archived: true }])
+    expect(deriveGroups(before.list, before.workspaces, archivedState, new Map(),
+      { expandedGroups: [] }, undefined).map(group => group.key)).toEqual([workspace.workspaceId])
+
+    const after = projectSessionNavigation(list, [], [{ ...entry, archived: true }])
+    expect(deriveGroups(after.list, after.workspaces, archivedState, new Map(),
+      { expandedGroups: [] }, undefined)).toEqual([])
+
+    // Explicit archive views still expose the Project and its display directory.
+    for (const archivedFilter of ['show', 'only'] as const) {
+      expect(deriveGroups(after.list, after.workspaces, { ...archivedState, archivedFilter }, new Map(),
+        { expandedGroups: [after.workspaces[0]!.workspaceId] }, undefined)[0]?.sessions)
+        .toMatchObject([{ id: lead.id, archived: true }])
+    }
+  })
+
   it('requires current presentation ownership and the authoritative display directory', () => {
     expect(projectSessionNavigation(list, [], [{ ...entry, workingDirectory: materials }]).workspaces).toEqual([])
     expect(projectSessionNavigation(list, [], [{ ...entry, owner: 'other' }]).workspaces).toEqual([])

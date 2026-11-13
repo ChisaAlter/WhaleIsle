@@ -146,3 +146,18 @@ test('manifest keeps the NSIS installer branding contract', () => {
   assert.deepEqual(nsis?.installerLanguages, ['zh_CN', 'en_US']);
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
 });
+
+test('ACP resource filter includes the runtime but excludes independent-repository state', () => {
+  const { FileMatcher } = require('app-builder-lib/out/fileMatcher');
+  const resource = pkg.build.extraResources.find(entry => entry.to === 'dsh-acp');
+  assert.equal(resource.from, 'dsh-acp');
+  const source = path.join(ROOT, resource.from);
+  const filter = new FileMatcher(source, path.join(ROOT, 'dist', 'resources', 'dsh-acp'), value => value, resource.filter).createFilter();
+  const file = { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false };
+  for (const name of ['package.json', 'cordis.patch.yml', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'lib/index.js', 'lib/vendor/agent-runtime.cjs', 'lib/vendor/mcp-bridge.cjs', 'client/client.js']) {
+    assert.equal(filter(path.join(source, name), file), true, `missing ACP resource: ${name}`);
+  }
+  for (const name of ['.git/config', '.env', 'node_modules/private/config.json', 'tests/plugin.test.mjs', 'tools/runtime-build/upstream/package.json']) {
+    assert.equal(filter(path.join(source, name), file), false, `private/build-only resource: ${name}`);
+  }
+});

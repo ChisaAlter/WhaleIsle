@@ -1,0 +1,60 @@
+/* The mode overrides rendering, never the saved appearance preferences. */
+:root[data-dsh-minimal] {
+  --ds-transition-duration: 0s !important;
+  --ds-transition-duration-fast: 0s !important;
+  --ds-transition-duration-slow: 0s !important;
+  --ds-motion-duration-overlay: 0s !important;
+  --ds-motion-duration-overlay-out: 0s !important;
+  --ds-motion-duration-popover: 0s !important;
+  --ds-motion-duration-swap: 0s !important;
+  --ds-motion-duration-flip: 0s !important;
+}
+
+:root[data-dsh-minimal] *,
+:root[data-dsh-minimal] *::before,
+:root[data-dsh-minimal] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+/* Preserve keyboard focus even where the regular treatment uses a shadow. */
+:root[data-dsh-minimal] :focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)) !important;
+  outline-offset: 2px;
+}
+
+:root[data-dsh-minimal] [data-typing-fx-root] { display: none !important; }
+:root[data-dsh-minimal] [contenteditable] { caret-color: auto !important; }
+
+/* Motion recipes must expose their final state even before Presence commits. */
+:root[data-dsh-minimal] [data-dsh-motion][data-state='open'] {
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+:root[data-dsh-minimal] [data-composer-beam],
+:root[data-dsh-minimal] [data-dsh-motion='flip'] [data-dsh-motion-part='outgoing'] {
+  display: none !important;
+}
+:root[data-dsh-minimal] [data-dsh-motion='flip'] [data-dsh-motion-part='current'] {
+  opacity: 1 !important;
+  transform: none !important;
+}
+:root[data-dsh-minimal] [data-composer-entering] {
+  transform: none !important;
+}
+
+:root[data-dsh-minimal] [role='dialog'],
+:root[data-dsh-minimal] [role='menu'],
+:root[data-dsh-minimal] [data-composer-card] {
+  outline: 1px solid var(--dsw-alias-border-l2);
+  outline-offset: -1px;
+}
+:root[data-dsh-minimal] body {
+  --dsw-alias-glass-opacity: 100% !important;
+}

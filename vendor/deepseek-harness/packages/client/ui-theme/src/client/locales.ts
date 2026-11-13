@@ -2,6 +2,15 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'minimal.title': '极简模式',
+  'minimal.description': '关闭装饰特效和界面动画，降低资源占用，保留全部功能。',
+  'minimal.suggestions': '卡顿时建议开启极简模式',
+  'minimal.paused': '极简模式下，壁纸、透明材质和装饰特效暂停。下方偏好仍会保存，关闭极简模式后恢复。',
+  'minimal.prompt.title': '界面运行不够流畅',
+  'minimal.prompt.description': '检测到多次界面卡顿。开启极简模式可关闭装饰特效、降低渲染负担，所有功能保持可用。你可以随时在设置 → 外观中恢复。',
+  'minimal.prompt.enable': '开启极简模式',
+  'minimal.prompt.later': '暂不开启',
+  'minimal.prompt.never': '不再提醒',
   'fontFamily.text.title': '正文字体',
   'fontFamily.text.description': '用于界面与会话正文。多个字体用逗号分隔，留空使用默认字体',
   'fontFamily.code.title': '代码字体',
@@ -187,6 +196,15 @@ export type ThemeKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'minimal.title': 'Minimal mode',
+  'minimal.description': 'Turn off decorative effects and interface animation to reduce resource use. All features stay available.',
+  'minimal.suggestions': 'Suggest Minimal mode when the interface stalls',
+  'minimal.paused': 'Minimal mode pauses wallpaper, translucent materials and decorative effects. Preferences below are still saved and restored when Minimal mode is off.',
+  'minimal.prompt.title': 'The interface is running slowly',
+  'minimal.prompt.description': 'Repeated interface stalls were detected. Minimal mode reduces rendering work by turning off decorative effects, keeping all features available. Restore your appearance in Settings → Appearance at any time.',
+  'minimal.prompt.enable': 'Enable Minimal mode',
+  'minimal.prompt.later': 'Not now',
+  'minimal.prompt.never': 'Do not remind me',
   'fontFamily.text.title': 'Text font',
   'fontFamily.text.description': 'Used for the interface and conversation text. Separate fonts with commas; leave empty for the default',
   'fontFamily.code.title': 'Code font',

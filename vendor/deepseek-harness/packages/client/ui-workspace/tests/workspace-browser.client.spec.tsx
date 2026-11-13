@@ -194,6 +194,45 @@ function mainListRows(): HTMLElement[] {
 }
 
 describe('WorkspaceBrowser', () => {
+  it.each(['workspace', 'workspace-tree'] as const)('hides the archived Project directory after Workspace removal in %s mode', mode => {
+    const lead = summary('lead', 4, { cwd: '/dsh-home/projects/project',
+      presentation: { owner: 'project', title: 'Archived Project', workingDirectory: '/projects/project' } })
+    const navigation = hook([{ owner: 'project', sessionId: lead.id,
+      workingDirectory: '/projects/project', archived: true }])
+    const registered = workspace('project', [])
+    const b = mount({
+      useSessions: hook(sessionState([lead])),
+      useSessionNavigation: navigation,
+      useWorkspaces: hook(workspaceState([registered, workspace('empty', [])])),
+    })
+    act(() => { b.store.actions.setGroupBy(mode) })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+
+    rerender(b, { useWorkspaces: hook(workspaceState([workspace('empty', [])])) })
+    expect(screen.queryByRole('treeitem', { name: /^project$/ })).toBeNull()
+    expect(screen.getByRole('treeitem', { name: /^empty$/ })).toBeTruthy()
+    expect(screen.queryByText('Archived Project')).toBeNull()
+
+    act(() => {
+      b.store.actions.setArchivedFilter('show')
+      b.store.actions.setGroupExpanded('navigation:/projects/project', true)
+    })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+    expect(screen.getByText('Archived Project')).toBeTruthy()
+    act(() => { b.store.actions.setArchivedFilter('default') })
+    expect(screen.queryByRole('treeitem', { name: /^project$/ })).toBeNull()
+
+    // Restoring the Project, or adding its directory as a real Workspace, brings it back.
+    rerender(b, { useSessionNavigation: hook([{ owner: 'project', sessionId: lead.id,
+      workingDirectory: '/projects/project', archived: false }]) })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+    rerender(b, {
+      useSessionNavigation: navigation,
+      useWorkspaces: hook(workspaceState([registered, workspace('empty', [])])),
+    })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+  })
+
   it('keeps a Project directory in its category without a duplicate unused ordinary blank', () => {
     const lead = summary('lead', 4, { cwd: '/dsh-home/projects/project',
       presentation: { owner: 'project', title: 'Project', workingDirectory: '/projects/project' } })

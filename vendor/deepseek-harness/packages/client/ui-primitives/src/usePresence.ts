@@ -5,6 +5,7 @@
 // `data-state="open"` still waits two animation frames so the enter recipe runs.
 
 import { useEffect, useLayoutEffect, useState } from 'react'
+import { useMinimalMode } from './reduced-effects.ts'
 
 /** Exit hold in milliseconds; matches `--ds-motion-duration-overlay` (200ms). */
 export const PRESENCE_EXIT_MS = 200
@@ -30,13 +31,14 @@ export function usePresence(open: boolean, durationMs: number = PRESENCE_EXIT_MS
   mounted: boolean
   state: PresenceState
 } {
+  const minimal = useMinimalMode()
   const [mounted, setMounted] = useState(open)
   const [state, setState] = useState<PresenceState>(open && prefersReducedMotion() ? 'open' : 'closed')
 
   useLayoutEffect(() => {
     if (open) {
       setMounted(true)
-      if (prefersReducedMotion()) {
+      if (minimal || prefersReducedMotion()) {
         setState('open')
         return
       }
@@ -50,17 +52,17 @@ export function usePresence(open: boolean, durationMs: number = PRESENCE_EXIT_MS
       }
     }
     setState('closed')
-  }, [open])
+  }, [open, minimal])
 
   useEffect(() => {
     if (open || !mounted) return
-    if (prefersReducedMotion()) {
+    if (minimal || prefersReducedMotion()) {
       setMounted(false)
       return
     }
     const timer = setTimeout(() => { setMounted(false) }, durationMs)
     return () => { clearTimeout(timer) }
-  }, [open, mounted, durationMs])
+  }, [open, mounted, durationMs, minimal])
 
   // Mount in the opening render itself: consumer focus/placement effects run
   // in that commit and must see the new refs, even before this hook's state update.

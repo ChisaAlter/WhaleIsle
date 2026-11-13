@@ -54,6 +54,13 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Reversible rendering policy and bounded desktop startup recommendation.
+  { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['minimalMode', 'minimalModeSuggestions', 'minimalModeSnoozedUntil'] },
+  { file: 'packages/client/ui-theme/src/appearance-apply.ts', includes: ['data-dsh-minimal', 'dsh:render-mode'] },
+  { file: 'packages/client/ui-theme/src/client/startup-responsiveness.ts', includes: ['observeStartupResponsiveness', 'maxFrameSamples', 'dsh:render-resume'] },
+  { file: 'packages/client/ui-theme/src/client/minimal-mode-lifecycle.ts', includes: ['claimSuggestion', 'stopWaiting'] },
+  { file: 'packages/client/ui-layout/src/client/MinimalModePrompt.tsx', includes: ['minimal.prompt.enable', 'minimal.prompt.never'] },
+  { file: 'packages/client/ui-primitives/src/reduced-effects.ts', includes: ['useMinimalMode', 'dsh:render-mode'] },
   // Mac menu ownership and the noninteractive shell-decoration drag exclusion.
   { file: 'packages/client/web/src/base.css', includes: ['[data-window-decoration]'] },
   { file: 'packages/client/ui-workspace/src/client/shortcuts.ts', includes: ['workspace.reveal', 'openWorkspacePath'] },
@@ -97,8 +104,8 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/llm/llm-pi-ai/src/catalog.ts', includes: ['compactionThreshold?: number'] },
   { file: 'packages/llm/llm-pi-ai/src/config.ts', includes: ['configuredCompactionThresholds', 'compactionThreshold: z.number()'] },
   { file: 'packages/llm/llm-pi-ai/src/adapter.ts', includes: ['configuredCompactionThresholds'] },
-  { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number'] },
-  { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold'] },
+  { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number', "contextManagement?: 'provider'"] },
+  { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold', 'contextManagement'] },
   // Durable tool-call guard: a successful finish must carry a valid call
   // identity; a failed stream drops the unusable call instead of throwing.
   { file: 'packages/llm/llm/src/assembler.ts', includes: ['isValidToolCallIdentity', 'requireValidToolCallIdentity'] },
@@ -107,7 +114,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/core/agent-loop/src/agent.ts', includes: ['The initiator scope is closing', 'resumePendingInteraction'] },
   { file: 'packages/llm/llm/src/content.ts', includes: ['export function requireValidToolCallIdentity', 'TOOL_NAME_PATTERN'] },
   { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
-  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold'] },
+  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold', "info.contextManagement === 'provider'"] },
   // Local Project continuations use explicit cwd/preset and admission policy.
   // Ordinary Team and Session ownership are not changed by this feature.
   // SettingsSelect: official Menu pill for every settings value dropdown.

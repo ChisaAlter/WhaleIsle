@@ -7,6 +7,7 @@
  * snapshot. Durable fields live in the Host `ui-theme` settings section.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { NormalizedBinding } from '@deepseek-ai/dsh-client-shortcuts/protocol'
@@ -27,6 +28,7 @@ import { ICON_SYMBOLS, type IconSymbolId } from '@deepseek-ai/dsh-client-ui-prim
 import { installIconSprite, type IconReplacements } from './icon-sprite.ts'
 import { installThemeStyles } from './styles.ts'
 import { en, ja, es, fr, de, ru, pt, zh, type ThemeKey } from './locales.ts'
+import { installMinimalModeLifecycle } from './minimal-mode-lifecycle.ts'
 import { wallpaperShell } from './wallpaper-shell.ts'
 import { deriveThemeTokens } from '../derive.ts'
 import {
@@ -141,6 +143,10 @@ export interface ThemeDefinition {
 
 /** Immutable theme state published on every change. */
 export interface ThemeSnapshot {
+  /** Saved rendering mode and startup suggestion preferences. */
+  minimalMode?: boolean
+  minimalModeSuggestions?: boolean
+  minimalModeSnoozedUntil?: number
   /** The persisted color-scheme preference (may be `system`). */
   preference: ThemePreference
   /** Conversation content font size in px (integer within FONT_SIZE_MIN..FONT_SIZE_MAX). */
@@ -294,6 +300,17 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
  * only through the `theme/change` event.
  */
 export class ThemeRuntime {
+  /** Startup recommendation shared with the layout-owned dialog. */
+  readonly minimalSuggestion = createSnapshotStore(false)
+
+  /** Apply a recommendation decision using the normal durable preference path. */
+  decideMinimalSuggestion(choice: 'enable' | 'later' | 'never'): void {
+    this.minimalSuggestion.set(false)
+    if (choice === 'enable') this.setMinimalMode(true)
+    else if (choice === 'never') this.setMinimalModeSuggestions(false)
+    else this.snoozeMinimalMode()
+  }
+
   private readonly ctx: ClientContext
   private readonly host: ConfigForm<ThemeSettings>
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
@@ -320,6 +337,7 @@ export class ThemeRuntime {
   constructor(ctx: ClientContext, host: ConfigForm<ThemeSettings>) {
     this.ctx = ctx
     this.host = host
+    this.settings = { ...this.settings, minimalMode: typeof document !== 'undefined' && document.documentElement.hasAttribute('data-dsh-minimal') }
     this.preference = bootstrapPreference()
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
@@ -597,6 +615,29 @@ export class ThemeRuntime {
     if (this.settings.sidebarMaskHidden === sidebarMaskHidden) return
     this.settings = { ...this.settings, sidebarMaskHidden }
     this.queueWrite(THEME_SIDEBAR_MASK_FIELD, sidebarMaskHidden)
+    this.publish()
+  }
+
+  /** Persist the rendering override without editing individual effect preferences. */
+  setMinimalMode(minimalMode: boolean): void {
+    if (this.settings.minimalMode === minimalMode) return
+    this.settings = { ...this.settings, minimalMode }
+    this.queueWrite('minimalMode', minimalMode)
+    this.publish()
+  }
+
+  /** Persist whether startup responsiveness suggestions are allowed. */
+  setMinimalModeSuggestions(value: boolean): void {
+    this.settings = { ...this.settings, minimalModeSuggestions: value }
+    this.queueWrite('minimalModeSuggestions', value)
+    this.publish()
+  }
+
+  /** Defer the suggestion for seven days without changing appearance. */
+  snoozeMinimalMode(): void {
+    const until = Date.now() + 7 * 24 * 60 * 60 * 1000
+    this.settings = { ...this.settings, minimalModeSnoozedUntil: until }
+    this.queueWrite('minimalModeSnoozedUntil', until)
     this.publish()
   }
 
@@ -949,6 +990,9 @@ export class ThemeRuntime {
         ? skinWallpaperImage
         : ''
     return Object.freeze({
+      minimalMode: this.settings.minimalMode,
+      minimalModeSuggestions: this.settings.minimalModeSuggestions,
+      minimalModeSnoozedUntil: this.settings.minimalModeSnoozedUntil,
       preference: isThemePreference(this.preference) ? this.preference : this.settings.preference,
       fontSize: this.fontSize,
       fontSizes: this.fontSizes,
@@ -1006,14 +1050,14 @@ export class ThemeRuntime {
     // The ambient gradient is a backdrop too: while it is live (and no image
     // covers it) chrome surfaces mix to the same glass solidity so the blooms
     // show through like a wallpaper does.
-    const backdropLive = wallpapered || this.settings.backgroundEffect === 'gradient'
+    const backdropLive = !this.settings.minimalMode && (wallpapered || this.settings.backgroundEffect === 'gradient')
     // 透明主题 needs the wallpaper: fully transparent chrome over an opaque
     // canvas would leave menus and dialogs invisible, so the flag is inert
     // until an image is set.
     // A flat skin (Codex) opts out of glass and the backdrop entirely: its
     // chrome is opaque, so neither the wallpaper nor the ambient gradient may
     // wash the surfaces, and the family's own solid tokens stay authoritative.
-    const flatChrome = active.skin === 'codex'
+    const flatChrome = active.skin === 'codex' || this.settings.minimalMode
     const solidity = flatChrome
       ? 100
       : this.settings.transparentTheme && wallpapered
@@ -1056,7 +1100,10 @@ export class ThemeRuntime {
 }
 
 function sameSettings(left: ThemeSettings, right: ThemeSettings): boolean {
-  return left.preference === right.preference
+  return left.minimalMode === right.minimalMode
+    && left.minimalModeSuggestions === right.minimalModeSuggestions
+    && left.minimalModeSnoozedUntil === right.minimalModeSnoozedUntil
+    && left.preference === right.preference
     && left.fontSize === right.fontSize
     && left.terminalFontSize === right.terminalFontSize
     && left.activeLightThemeId === right.activeLightThemeId
@@ -1275,6 +1322,7 @@ export function apply(ctx: ClientContext): void {
 
   const extras = (snapshot: ThemeSnapshot): void => {
     applyAppearanceDocumentExtras({
+      minimalMode: snapshot.minimalMode === true,
       fontFamilySans: snapshot.fontFamilySans,
       fontFamilyCode: snapshot.fontFamilyCode,
       fontSizeInterface: snapshot.fontSizeInterface,
@@ -1300,6 +1348,7 @@ export function apply(ctx: ClientContext): void {
   }
   extras(theme.getTheme())
   ctx.on('theme/change', extras)
+  installMinimalModeLifecycle(ctx, theme, host)
 
   const store = createAppearanceRowStore()
   let bound: BoundActions<typeof store> | undefined
@@ -1316,6 +1365,8 @@ export function apply(ctx: ClientContext): void {
     sync(theme.getTheme())
     const desktopWallpaper = wallpaperShell() !== null
     return {
+      setMinimalMode: value => { theme.setMinimalMode(value) },
+      setMinimalModeSuggestions: value => { theme.setMinimalModeSuggestions(value) },
       setTheme: (id) => { theme.setTheme(id) },
       setThemeHalf: (mode, id) => { theme.setThemeHalf(mode, id) },
       setCustomThemes: (families) => { theme.setCustomThemes(families) },

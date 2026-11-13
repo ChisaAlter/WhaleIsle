@@ -1,6 +1,7 @@
 /** Shared running-beam renderer used by InputBar and the Settings preview. */
 import { useEffect, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
+import { useMinimalMode } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   COMPOSER_BEAM_PALETTE_COLORS,
   normalizeComposerBeamStyle,
@@ -112,16 +113,18 @@ export function ComposerBeam({ active, appearance }: {
   active: boolean
   appearance: ComposerBeamStyle
 }) {
+  const minimal = useMinimalMode()
   const style = normalizeComposerBeamStyle(appearance)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (!active || !style.night.enabled) return
+    if (minimal || !active || !style.night.enabled) return
     const update = () => { setNow(Date.now()) }
     update()
     const timer = window.setInterval(update, 60_000)
     return () => { window.clearInterval(timer) }
-  }, [active, style.night.enabled])
+  }, [active, style.night.enabled, minimal])
 
+  if (minimal) return null
   return (
     <div
       className={clsx(css.beamLayer, active && css.cardBeam)}

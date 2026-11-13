@@ -217,7 +217,7 @@ function createMainWindow({ activate = true } = {}) {
     }),
     webPreferences: {
       preload: preloadFile(),
-      additionalArguments: ['--dshd-shell-role=boot'],
+      additionalArguments: ['--dshd-shell-role=boot', ...(require('./render-mode').getMinimalMode() ? ['--dshd-minimal=1'] : [])],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -499,7 +499,7 @@ async function revealHarnessView(win) {
     if (!current()) return;
     // The cross-fade captures and composites two full-window layers; a
     // low-power GPU shows the view directly.
-    const reduced = renderHints.lowPowerGpu || await view.webContents.executeJavaScript(
+    const reduced = require('./render-mode').getMinimalMode() || renderHints.lowPowerGpu || await view.webContents.executeJavaScript(
       `matchMedia('(prefers-reduced-motion: reduce)').matches`,
     );
     if (!current()) return;
@@ -765,10 +765,16 @@ function ensureHarnessView(win) {
     }
     const { powerMonitor } = require('electron');
     if (powerMonitor && typeof powerMonitor.on === 'function') {
+      const resumeRendering = () => {
+        if (harnessView && !harnessView.webContents.isDestroyed()) {
+          harnessView.webContents.send('shell:render-resume');
+        }
+        relayoutOnMetricsChange();
+      };
       for (const eventName of ['resume', 'unlock-screen']) {
-        powerMonitor.on(eventName, relayoutOnMetricsChange);
+        powerMonitor.on(eventName, resumeRendering);
         win.once('closed', () => {
-          powerMonitor.removeListener(eventName, relayoutOnMetricsChange);
+          powerMonitor.removeListener(eventName, resumeRendering);
         });
       }
     }
