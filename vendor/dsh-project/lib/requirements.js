@@ -136,6 +136,11 @@ export class ProjectRequirements {
     const version = this.version(row);
     if (version.authorityError || !version.source) fail('request_authority', 'The saved requirement has no verified original authorization. Accept a new actual user revision before arranging work.');
     const related = input.messages.some(event => {
+        if (event.data.source.kind === 'whale-project:settlement-check') return service.state().workstreams.some(item => {
+          const receipt = latest(item);
+          return item.projectId === actor.project.id && receipt.source.requestId === row.id && receipt.source.requestRevision === row.revision
+            && service.settlementNoticeMatches(item, receipt, event.data);
+        });
         if (event.data.source.kind !== 'subagent-settled') return false;
         const source = event.data.source, original = service.state().workstreams.find(item => item.projectId === actor.project.id && item.workerSessionId === source.senderSessionId);
         const receipt = original && original.delegations.find(item => item.runId === source.runId && item.source.requestId === row.id && item.source.requestRevision === row.revision);

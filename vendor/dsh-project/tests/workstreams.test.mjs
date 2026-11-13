@@ -602,3 +602,17 @@ test('the research sites list is an ordinary editable material that the guard re
     await assert.rejects(f.service.command('store/write', { projectId: f.project.id, path: 'decisions.md', text: 'x' }), { code: 'store_path' });
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('an unreadable research sites policy blocks fetch instead of removing the restriction', async () => {
+  const f = setup(), item = f.add('Research work', true, 1), agent = { id: item.worker.sessionId };
+  const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-hosts-error-'));
+  f.service.project(f.project.id).storageRoot = root;
+  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.role = 'research';
+  try {
+    // A directory where the policy file belongs produces a real read error on Windows and Linux.
+    await fs.mkdir(join(root, 'research-hosts.txt'));
+    assert.match(f.service.guard({ name: 'web_fetch', arguments: { url: 'https://outside.test/' }, agent }), /research sites list could not be read/);
+    await f.service.serial(async () => {});
+    assert.deepEqual(f.service.stream(item.work.id).delegations[0].sources ?? [], [], 'a denied fetch is not recorded as research');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

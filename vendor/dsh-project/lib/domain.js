@@ -46,7 +46,7 @@ const workstream = z.object({ id, projectId: id, title: id, brief: id, status: z
   replaces: z.object({ workstreamId: id, delegationRef: id, requestId: id, requestRevision: z.number().int().positive(), reason: id }).optional(),
   workerSessionId: id, blockedBy: z.array(id).optional(), blockedReason: z.string(), currentDelegationRef: id, delegations: z.array(delegation), latestReport: report.optional(),
   settlements: z.array(z.object({ runId: id, delegationRefs: z.array(id), stopReason: id, summary: z.string(), at: z.number(),
-    merged: z.boolean(), noticeMessageId: z.string(), summarizedBy: z.string() })),
+    merged: z.boolean(), noticeMessageId: z.string(), recoveryNoticeMessageId: z.string().optional(), summarizedBy: z.string() })),
   pendingSummary: z.boolean(), summaryFailure: z.object({ turn: z.number(), at: z.number(), delegationRef: id, runId: id.optional(),
     error: z.object({ code: id, message: id }), autoRetries: z.number().optional() }).optional(), archived: z.boolean(), createdAt: z.number(), updatedAt: z.number() });
 const worker = z.object({ sessionId: id, projectId: id, workstreamId: id, cwd: z.string(),

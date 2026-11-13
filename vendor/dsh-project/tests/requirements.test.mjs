@@ -944,6 +944,30 @@ test('a member result whose notice nobody claimed wakes the coordinator once, an
   const [message] = f.followups;
   assert.equal(message.source.kind, 'whale-project:settlement-check'); assert.equal(message.source.form, 'notice');
   assert.ok(message.content[0].text.includes(`${result.work.title} (${result.work.id})`)); assert.match(message.content[0].text, /not new user authorization/);
+  assert.equal(await check(), 1, 'the same unclaimed settlement receives only one recovery wake');
+  assert.equal(f.service.stream(result.work.id).settlements[0].recoveryNoticeMessageId, message.id);
+});
+
+test('an exact recovery notice advances only its original requirement and cannot revive stopped or revised work', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request);
+  const { request: other } = await f.accept({ title: 'A separate goal' });
+  f.service.ctx.agents.get('lead').status = 'idle';
+  await f.service.settlementCheck(f.project.id);
+  const [message] = f.followups;
+  const assign = (row = request) => f.service.requirements.assignment(f.actor,
+    { requestId: row.id, requestRevision: row.revision, scope: 'readonly' }, f.exec('project_delegate'));
+  f.activate({ ...message, id: 'forged-notice' });
+  await assert.rejects(assign(), { code: 'unauthorized' });
+  f.activate(message);
+  const next = await assign();
+  assert.equal(next.source.authorizationCallId, request.versions[0].source.authorizationCallId);
+  await assert.rejects(assign(other), { code: 'unauthorized' }, 'the notice cannot authorize a different queued goal');
+  f.service.worker(result.work.workerSessionId).stopped = true;
+  await assert.rejects(assign(), { code: 'unauthorized' });
+  f.service.worker(result.work.workerSessionId).stopped = false;
+  f.human(['Change the login requirements']); await f.accept({ requestId: request.id, goal: 'Revised login' });
+  f.activate(message);
+  await assert.rejects(assign(f.service.requirements.get(f.project.id, request.id)), { code: 'unauthorized' });
 });
 
 test('settlement checks are one timer per Project and a check that finds a running coordinator looks again later', async () => {
