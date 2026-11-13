@@ -355,6 +355,9 @@ html[data-dsh-skin='claude'] [data-dsh-composer] [data-composer-placeholder] {
  * action row below it sit directly on the paper, never on a painted surface. */
 html[data-dsh-skin='claude'] [data-dsh-message-role='user'] [data-dsh-message-bubble] {
   font-family: var(--dsh-claude-prose-font);
+  background: var(--dsw-specific-bubble);
+  backdrop-filter: none;
+  box-shadow: none;
 }
 
 /* Markdown type tokens resolve the product family on `body`, so the prose

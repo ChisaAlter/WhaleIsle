@@ -12,6 +12,7 @@
 - `openSettings` / `settings-jump` 可深链到 section（如 `market`、`usage-stats`、`appearance`）。
 - 设置 → General：视觉回复开关默认关闭，保存到活动 profile，立即限制新的 HTML 预览和发布；关闭后已发布页面仍可查看。
 - 设置 → 对话：「下一句提示」开关默认打开；内置建议的生成、采纳和取消行为见 [ui-conversation](../../../vendor/deepseek-harness/packages/client/ui-conversation/README.md#next-prompt-suggestions)。
+- 设置 → Agent：默认随包集成独立的 `dsh-acp-agents` 插件，无需从市场另装。配置并启用智能体后，在对话原生模型菜单选择智能体、模型及其支持的推理选项；插件也提供向已配置智能体委派任务的能力。默认加载插件不会自动登录账号或启用尚未配置的智能体。
 - 设置导航按「账户 / 通用 / 智能体 / 功能 / 其他」分组，顶部搜索框按标题、说明和分区名过滤；点结果进入对应分区（隐藏标签页会先切换），滚动到该行并短暂高亮。索引在首次输入时以 `indexOnly` 渲染各分区读取文字，覆盖市场插件的分区，面板关闭即丢弃；用量统计在此模式只提供标题和偏好行，不触发全量日志扫描。
 - 设置 → 关于：「打开运行目录」打开桌面 `dsh-home`（见 [dsh-home.md](dsh-home.md)）。  
 - Section id 表：[../appendix/settings-sections.md](../appendix/settings-sections.md)

@@ -4,13 +4,35 @@ Configure a coding agent once, then use it either as the current conversation's 
 
 Source and issues: [ChisaAlter/dsh-acp-agents](https://github.com/ChisaAlter/dsh-acp-agents). This repository contains the plugin and its bundled runtime, not the desktop host.
 
+## Install v0.4.5
+
+Download [`dsh-acp-agents-0.4.5.tgz`](https://github.com/ChisaAlter/dsh-acp-agents/releases/download/v0.4.5/dsh-acp-agents-0.4.5.tgz) from the [v0.4.5 release](https://github.com/ChisaAlter/dsh-acp-agents/releases/tag/v0.4.5), then install it into the profile you use:
+
+```sh
+dsh plugin --profile web add ./dsh-acp-agents-0.4.5.tgz
+```
+
+Use your host's bundled CLI for a desktop-managed profile. Restart the host normally after installation, then open **Settings → Agent**. Existing agents, credentials, and conversation mappings are retained. The package is distributed through GitHub Releases, not the npm registry.
+
+### What changed
+
+- Native model menu integration preserves model selection, reasoning, keyboard navigation and Team controls. Models without advertised reasoning no longer receive an invented `medium` setting.
+- The account-settings shortcut opens the existing Agent settings page on standard DSH, including hosts without `settingsNavigation`.
+- Generic ACP select/boolean options, empty Automatic values, v2 credential forms and native background completion use the same capability-driven path across agents.
+- Ordinary sign-in verifies existing native credentials first; explicit reauthentication remains separate. Restoration, cancellation, provider errors and managed child cleanup retain their actual outcome.
+- A paired DSH server update declares provider-managed context for stateful ACP sessions without guessing a context capacity or disabling ordinary LLM protection.
+
+### Supported and pending host behavior
+
+**DSH `0.2.2-rc.2`:** settings navigation and capability-driven reasoning were exercised in the stock Web host. Switching models after a conversation has history requires the paired [server context-ownership update](tools/host-compat/README.md); the plugin archive alone does not update host modules. Windows terminal sign-in also requires the host's native PTY lifecycle fix.
+
+**DSH `0.2.2-rc.3`:** a reported inability to select models remains under investigation. This release has not been runtime-validated against rc.3. Its published source still contains the unknown-context model-switch guard, and the rc.2 server update must not be applied to rc.3.
+
 ## Switch agents in a conversation
 
 1. Open **Settings → Agent**, add an agent instance, complete its authentication, and enable it.
 2. Open the conversation's model selector and choose that agent, its model, and reasoning effort.
 3. Continue in the same conversation. Switching to another agent does not change the conversation's identity. A newly selected agent receives the visible conversation text; returning to an existing agent relays missed turns while retaining its own ACP session.
-
-**DSH 0.2.2-rc.2 requires the paired [server context-ownership update](tools/host-compat/README.md) for switching models after a conversation has history.** Its stock compaction guard rejects target models without declared context capacity. The plugin does not invent a capacity to bypass that guard. Settings navigation and capability-driven reasoning work without this server update.
 
 Claude Code, Codex, and Antigravity can use managed ACP Registry distributions. Devin uses its local CLI. Other ACP servers can be configured with a command, arguments, and environment. Multiple instances of the same agent can have separate profiles and credentials.
 
@@ -101,6 +123,8 @@ npm run build:runtime
 ## Verify changes
 
 Run `npm test` for native menu contribution, handoff, discovery, and delegation contracts. For client activation against real Cordis, set `DSH_CLIENT_HOST_ROOT` to a supported DSH package directory and run `npm run test:client`. Set `DSH_HARNESS_ROOT` to a built DeepSeek Harness checkout, then run `npm run test:host` for the real Cordis, AgentLoop, child lifecycle, ACP subprocess, and HTTP/MCP bridge integration. The integration test uses scripted ACP agents rather than a paid model or a user's account, and stores its artifacts in a new temporary directory.
+
+For the paired server update, set `DSH_COMPAT_HOST_PACKAGE` to the supported host CLI's `package.json` and run `npm run test:host-compat`. This checks the actual published server transformations, ordinary LLM capacity guards, unsupported versions and preparation cleanup without modifying the installed host.
 
 To verify the shipped desktop contract, set `DSH_INSTALLED_HOST_ROOT` to its `resources/vendor/deepseek-harness` directory and run `npm run test:installed-host`. This loads the installed production host libraries and exercises scripted delegation, running status, HTTP/MCP child listing, agent switching with tools, bounded waiting, follow-up recovery, exact earlier results and cancellation in isolated sessions. An explicit real-account check can additionally set `DSH_NATIVE_HOME`, `DSH_TEST_NATIVE_AGENT` and `DSH_TEST_NATIVE_MODEL`; it uses that configured agent's existing native profile for one short model reply, without starting authentication or changing the daily agent/session/task JSON.
 

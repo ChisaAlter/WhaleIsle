@@ -58,3 +58,7 @@
 :root[data-dsh-minimal] body {
   --dsw-alias-glass-opacity: 100% !important;
 }
+
+:root[data-dsh-minimal] [data-dsh-message-bubble] {
+  background: var(--dsw-specific-bubble);
+}
