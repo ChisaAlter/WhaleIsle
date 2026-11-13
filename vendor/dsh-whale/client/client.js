@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
     const react = require("react");
     const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
     const { createElement: h, useState, useEffect, useMemo, useCallback, useRef, Fragment } = react;
-    const { Button, Input, Modal, SettingsSelect, StateDot, Switch, Toast, Tooltip, IconSettingsOutline16 } = primitives;
+    const { Button, Input, Modal, SettingsSelect, StateDot, Switch, Toast, Tooltip, IconSettingsOutline16, IconDownloadOutlineRegular } = primitives;
 
     const NS = "dsh-whale";
     const PANEL_ID = "whale";
@@ -78,7 +78,7 @@ window.__ModuleLoader__.load({
       "saveFailed": "保存失败：{message}",
       "loadFailed": "读取失败：{message}",
       "ops.inbox": "收件箱",
-      "ops.outbox": "发件箱",
+      "ops.outbox": "待审批",
       "ops.inboxSubtitle": "查看发现、机会与待分拣事项。",
       "ops.outboxSubtitle": "审批队列：核对动作、目标、风险与策略状态。",
       "ops.empty": "这里还没有事项。",
@@ -163,7 +163,7 @@ window.__ModuleLoader__.load({
       "saveFailed": "Save failed: {message}",
       "loadFailed": "Load failed: {message}",
       "ops.inbox": "Inbox",
-      "ops.outbox": "Outbox",
+      "ops.outbox": "Approvals",
       "ops.inboxSubtitle": "Review discovered items, opportunities, and decisions.",
       "ops.outboxSubtitle": "Approval queue: verify action, target, risk, and policy state.",
       "ops.empty": "Nothing here yet.",
@@ -303,6 +303,19 @@ window.__ModuleLoader__.load({
       return h(Fragment, null,
         h("img", { ...imageProps, src: WHALE_HEAD_URL, "data-dsh-mascot": "default" }),
         h("img", { ...imageProps, src: "claude-isle-head.png", "data-dsh-mascot": "claude" }),
+      );
+    }
+
+    // No document-check glyph ships in ui-primitives. Match its regular
+    // 16px, current-color artwork without adding a separate icon library.
+    function ApprovalPanelGlyph({ size = 18 }) {
+      return h("svg", {
+        width: size, height: size, viewBox: "0 0 16 16",
+        fill: "none", stroke: "currentColor", strokeWidth: 1,
+        strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true",
+      },
+        h("path", { d: "M9.5 1.5H4A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 1.5Z" }),
+        h("path", { d: "M9.5 1.5v4h4M5.5 9l1.75 1.75 3.25-3.25" }),
       );
     }
 
@@ -1155,11 +1168,11 @@ window.__ModuleLoader__.load({
             }, WhalePanelGlyph);
           });
           ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
-            name: "sidebar.panellist", id: INBOX_PANEL_ID, order: 21, label: () => "Inbox", locale: NS,
-          }, WhalePanelGlyph));
+            name: "sidebar.panellist", id: INBOX_PANEL_ID, order: 21, label: () => t("ops.inbox"), locale: NS,
+          }, IconDownloadOutlineRegular));
           ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
-            name: "sidebar.panellist", id: OUTBOX_PANEL_ID, order: 22, label: () => "Outbox", locale: NS,
-          }, WhalePanelGlyph));
+            name: "sidebar.panellist", id: OUTBOX_PANEL_ID, order: 22, label: () => t("ops.outbox"), locale: NS,
+          }, ApprovalPanelGlyph));
           ctx.slots.inject("main", () => ctx.slots.register({
             name: "main", key: PANEL_ID, locale: NS, inject: injectFace,
           }, WhaleRedirect));
