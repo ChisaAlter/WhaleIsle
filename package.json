@@ -124,8 +124,14 @@
           "dsh-platform-session/**",
           "dsh-whale/**",
           "dsh-remote/**",
-          "dsh-pad/**",
-          "dsh-acp-agents/**"
+          "dsh-pad/**"
+        ]
+      },
+      {
+        "from": "dsh-acp",
+        "to": "dsh-acp",
+        "filter": [
+          "**/*"
         ]
       },
       {

@@ -29,7 +29,7 @@ const DROPPED = [
   // Remote workspaces (SSH) ship first-party from vendor/dsh-remote.
   // Reject marketplace installs of the same package to avoid a second mount.
   'dsh-remote',
-  // Antigravity is now unified inside first-party vendor/dsh-acp-agents (Settings -> Agent).
+  // Antigravity is now unified inside first-party dsh-acp (Settings -> Agent).
   'dsh-antigravity',
 ];
 // Exact unscoped basenames of the dropped families. A rename that only moves
