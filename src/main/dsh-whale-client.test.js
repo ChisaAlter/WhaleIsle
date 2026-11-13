@@ -252,6 +252,27 @@ test('inject face openSession prefers uiWorkspace and resolves uiWorkspace via c
   await assert.rejects(() => face.openSession('   '), /no-session/);
 });
 
+test('first assistant entry prompts once; declining and mode exit persist without changing ordinary layout', async () => {
+  const { exports } = loadPlugin();
+  const { ctx, registrations, calls } = makeCtx();
+  let settings = { name: '鲸鱼娘', bigFishPrompted: false, bigFishEnabled: false, bigFishTab: 'panel' };
+  ctx.connection.rpc.call = async (_prefix, endpoint, input) => {
+    if (endpoint === 'assistant/ensure') return { result: { value: { sessionId: 'resident' } } };
+    if (endpoint === 'settings/update') Object.assign(settings, input);
+    return { result: { value: { ...settings } } };
+  };
+  exports.apply(ctx);
+  const mode = faceOf(registrations, 'main').mode;
+  await mode.openAssistant(); assert.equal(mode.get().prompt, true); assert.equal(mode.get().active, false);
+  await mode.choose(false); assert.equal(settings.bigFishPrompted, true); assert.equal(mode.get().active, false);
+  await mode.openAssistant(); assert.equal(mode.get().prompt, false);
+  await mode.choose(true); assert.equal(mode.get().active, true);
+  await mode.tab('task'); assert.equal(settings.bigFishTab, 'task');
+  await mode.exit(); assert.equal(mode.get().active, false); assert.equal(settings.bigFishEnabled, false);
+  assert.deepEqual(Object.keys(ctx.layout), ['selectPanel'], 'mode needs no layout geometry writes or snapshots');
+  assert.equal(calls.openSession.length, 2);
+});
+
 test('main-panel redirect opens her session through uiWorkspace on a 0.1.6 host', async () => {
   const { exports } = loadPlugin();
   const { ctx, calls, registrations } = makeCtx({ specs: ['sidebar.panellist', 'main'] });
