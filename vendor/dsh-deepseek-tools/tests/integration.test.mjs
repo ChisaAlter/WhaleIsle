@@ -10,7 +10,8 @@ import { spawn } from 'node:child_process';
 import { apiEndpoint, requestApi, wavChunks } from '../lib/api.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const harness = join(root, 'vendor/deepseek-harness');
+// Optional read-only reuse of an installed Harness for cross-version acceptance.
+const harness = process.env.DSH_DEEPSEEK_TEST_HARNESS_ROOT || join(root, 'vendor/deepseek-harness');
 const require = createRequire(join(harness, 'apps/cli/package.json'));
 const { createLaunchEnvironmentSnapshot } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-launch-environment')).href);
 const { LlmAdapter, createUserMessage } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-llm')).href);
@@ -52,7 +53,7 @@ test('streaming WAV validation rejects truncated or non-audio responses', async 
 test('real web profile: persistent settings, native tools, file permissions, streamed attachments and cancellation', { timeout: 180000 }, async t => {
   const scratch = await mkdtemp(join(tmpdir(), 'whale-deepseek-tools-'));
   const home = join(scratch, 'home'), profileDir = join(home, 'profiles/web');
-  const oldEnv = { DSH_HOME: process.env.DSH_HOME, DSHD_DEEPSEEK_TOOLS_ENABLED: process.env.DSHD_DEEPSEEK_TOOLS_ENABLED, DSH_TELEMETRY_DISABLED: process.env.DSH_TELEMETRY_DISABLED };
+  const oldEnv = { DSH_HOME: process.env.DSH_HOME, DSHD_DEEPSEEK_TOOLS_ENABLED: process.env.DSHD_DEEPSEEK_TOOLS_ENABLED, DSH_TELEMETRY_DISABLED: process.env.DSH_TELEMETRY_DISABLED, DSHD_PROFILE_DEFAULT_PATCH: process.env.DSHD_PROFILE_DEFAULT_PATCH };
   Object.assign(process.env, { DSH_HOME: home, DSHD_DEEPSEEK_TOOLS_ENABLED: '1', DSH_TELEMETRY_DISABLED: '1' });
   let ctx;
   let current = 'ok';
@@ -91,6 +92,13 @@ test('real web profile: persistent settings, native tools, file permissions, str
     console.log('DeepSeek integration: owned scratch removed');
   });
   await mkdir(home, { recursive: true });
+  if (process.env.DSH_DEEPSEEK_TEST_HARNESS_ROOT) {
+    // An installed runtime predates this PR's base row. Supply the same row
+    // through its supported desktop-default layer, beneath profile settings.
+    const defaults = join(scratch, 'application-tools.patch.yml');
+    await writeFile(defaults, '- insert:\n    - id: dsh-deepseek-tools\n      name: dsh-deepseek-tools\n');
+    process.env.DSHD_PROFILE_DEFAULT_PATCH = defaults;
+  }
   prepareProfile('web');
   const mount = ensureDesktopDeepSeekTools({ sourceDir: join(root, 'vendor/dsh-deepseek-tools'), profileDir });
   assert.equal(mount.ok, true, mount.error);
@@ -106,7 +114,16 @@ test('real web profile: persistent settings, native tools, file permissions, str
   for (const name of ['deepseek_tts', 'deepseek_asr', 'deepseek_ocr']) assert.ok(ctx.tools.schemas().some(tool => tool.name === name), name);
   const signal = new AbortController().signal;
   let number = 0;
-  const execute = (name, args, callerSignal = signal) => ctx.tools.execute({ callId: `qa-${++number}`, name, arguments: args, signal: callerSignal });
+  const execute = async (name, args, callerSignal = signal) => {
+    const callId = `qa-${++number}`;
+    // Current main uses the plugin-owned batch executor; this branch's pinned
+    // Harness still has the single-call registry. Exercise each real entry point.
+    if (typeof ctx.tools.setExecutor === 'function') {
+      const batch = await ctx.tools.execute({ calls: [{ type: 'tool-call', id: callId, name, arguments: JSON.stringify(args) }], signal: callerSignal });
+      return batch.results[0].result;
+    }
+    return ctx.tools.execute({ callId, name, arguments: args, signal: callerSignal });
+  };
   const spoken = await execute('deepseek_tts', { text: '你好，鲸屿。' });
   assert.equal(spoken.isError, false, JSON.stringify(spoken));
   assert.deepEqual(await readFile(spoken.value.path), wav());
