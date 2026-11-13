@@ -138,6 +138,9 @@ try {
     await add('等待停止'); await start('等待停止');
     await card('等待停止').getByText('正在执行', { exact: true }).waitFor();
     await page.getByRole('button', { name: '退出模式', exact: true }).click();
+    // The native header's ResizeObserver remeasures its trailing reserve after
+    // display:none is released. Assert the settled layout, not that first frame.
+    await page.waitForFunction(expected => document.querySelector('[data-dsh-frame]')?.getAttribute('style') === expected, geometry, { timeout: 10000 });
     assert.equal(await page.locator('[data-dsh-frame]').getAttribute('style'), geometry);
     assert.equal(await composer.innerText(), draft);
     assert.equal(app.ctx.get('whaleTodos').list().find(value => value.title === '等待停止').state, 'running', 'exit does not cancel work');
