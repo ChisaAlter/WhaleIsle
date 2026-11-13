@@ -70,9 +70,9 @@ try {
   // --serve is useful for inspecting the same candidate, with cleanup on Ctrl+C.
   if (process.argv.includes('--serve')) await new Promise(resolve => { process.once('SIGINT', resolve); process.once('SIGTERM', resolve); });
   else {
-    const playwright = createRequire(import.meta.url)(arg('--playwright') ?? 'playwright');
-    browser = await playwright.chromium.launch({ ...(arg('--browser-executable') ? { executablePath: arg('--browser-executable') } : { channel: 'msedge' }), headless: true });
-    page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    const playwright = createRequire(path.join(runtime, 'apps/web/package.json'))(arg('--playwright') ?? 'playwright');
+    browser = await playwright.chromium.launch({ ...(arg('--browser-executable') ? { executablePath: arg('--browser-executable') } : {}), headless: true });
+    page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: 'zh-CN' });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(10000);
     const wait = condition => page.waitForFunction(condition, undefined, { timeout: 10000 });
