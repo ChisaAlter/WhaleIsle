@@ -1939,6 +1939,7 @@ module.exports = async function afterPack(context) {
   assertVendoredPluginRuntimeDeps(resources, 'dsh-platform-session');
   // dsh-pad peers are supplied by Harness's linked-plugin resolver at startup.
   assertVendoredPluginRuntimeDeps(resources, 'dsh-pad');
+  assertVendoredPluginRuntimeDeps(resources, 'dsh-deepseek-tools');
   for (const name of ['dsh-usage-panel', 'dsh-im', 'dsh-whale', 'dsh-remote']) {
     const root = path.join(resources, 'vendor', name);
     const removed = prunePluginDevDependencies(root, resolvePackageFrom, runtimeDependencyEntries, target);

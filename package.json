@@ -16,7 +16,8 @@
     "start": "node scripts/prestart-ensure.mjs && node scripts/run-electron.js",
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
-    "test": "node --test \"src/**/*.test.js\" \"mobile/web/**/*.test.js\" \"vendor/dsh-project/tests/*.test.mjs\"",
+    "test": "node --test \"src/**/*.test.js\" \"mobile/web/**/*.test.js\" \"vendor/dsh-project/tests/*.test.mjs\" \"vendor/dsh-deepseek-tools/tests/*.test.mjs\"",
+    "test:deepseek-tools": "node --test vendor/dsh-deepseek-tools/tests/*.test.mjs",
     "test:project-composition": "node --test vendor/dsh-project/tests/host-composition.test.mjs",
     "setup:harness": "node scripts/setup-harness.js",
     "sync:harness": "node scripts/sync-upstream.js",
@@ -124,7 +125,9 @@
           "dsh-platform-session/**",
           "dsh-whale/**",
           "dsh-remote/**",
-          "dsh-pad/**"
+          "dsh-pad/**",
+          "dsh-deepseek-tools/**",
+          "!dsh-deepseek-tools/tests/**"
         ]
       },
       {

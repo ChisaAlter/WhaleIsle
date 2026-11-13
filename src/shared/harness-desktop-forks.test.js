@@ -36,6 +36,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   writeFile(root, 'tsconfig.client.json', `{\n  "references": [\n${clientRefs.join(',\n')}\n  ]\n}\n`);
   writeFile(root, 'packages/bundle/base/cordis.patch.yml', [
     '- insert:',
+    '    - id: dsh-deepseek-tools',
+    '      name: dsh-deepseek-tools',
     '    - id: llm-vision-fallback',
     "      name: '@deepseek-ai/dsh-llm-vision-fallback'",
     '      config:',

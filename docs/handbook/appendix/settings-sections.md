@@ -10,6 +10,7 @@
 | `features` | 内置功能：鲸鱼娘助理、Project、远程工作区开关 | `IconPersonalizationOutline16` | `settings.features.item`；仅桌面 |
 | `appearance` | 外观、主题、壁纸行 | `IconLightOutline16` | `ui-theme` |
 | `models` | 提供方与模型 | `IconDataOutline16` | QA §2 |
+| `deepseek-apis` | DeepSeek API：TTS、ASR、OCR 配置 | 回退齿轮 | 内置 `dsh-deepseek-tools`；导航在功能组，标题为「DeepSeek 应用接口」 |
 | `agent-presets` | Agent 预设 | `IconAgentPresetOutline16` | 组合模型与能力 |
 | `plugins` | 已装插件管理 | `IconPersonalizationOutline16` | 与市场分区配合 |
 | `skills` | 技能 | `IconSkillOutline16` | QA `TC-EXT-006` |

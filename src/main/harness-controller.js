@@ -70,6 +70,8 @@ class HarnessController extends EventEmitter {
       || (async () => ({ ok: true, added: false }));
     this.ensureDshPadPlugin = options.ensureDshPadPlugin
       || (async () => ({ ok: true, added: false }));
+    this.ensureDeepSeekToolsPlugin = options.ensureDeepSeekToolsPlugin
+      || (async () => ({ ok: true, added: false }));
     this.ensureDesktopMarket = options.ensureDesktopMarket
       || (async () => ({ ok: true, added: false }));
     this.ensureDesktopOfficeRuntime = options.ensureDesktopOfficeRuntime
@@ -829,6 +831,9 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置 dsh-whale 失败：${errorMessage(error)}`);
     }
+    const deepseekTools = await this.ensureDeepSeekToolsPlugin();
+    checkCurrent();
+    if (deepseekTools?.ok === false) throw new Error(`DeepSeek 应用接口不可用：${deepseekTools.error}`);
     // dsh-remote is the desktop built-in SSH remote-workspace host — same
     // contract as dsh-whale: its overlay rides --patch on every start
     // (including skipUserPlugins recovery) while `remoteWorkspaceEnabled` is on in
