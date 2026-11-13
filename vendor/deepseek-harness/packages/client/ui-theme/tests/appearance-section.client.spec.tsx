@@ -137,6 +137,8 @@ function mount(
 ) {
   const store = createAppearanceRowStore().create()
   store.actions.sync(snap({ preference, ...overrides }), 0)
+  const setMinimalMode = vi.fn()
+  const setMinimalModeSuggestions = vi.fn()
   const setTheme = vi.fn()
   const setThemeHalf = vi.fn()
   const setCustomThemes = vi.fn()
@@ -162,6 +164,7 @@ function mount(
     t: (key: string) => COPY[key as keyof typeof COPY] ?? key,
     close: vi.fn(),
     renderSlot,
+    setMinimalMode, setMinimalModeSuggestions,
     setTheme,
     setThemeHalf,
     setCustomThemes,
@@ -178,7 +181,7 @@ function mount(
   }
   const view = render(<AppearanceSection {...props} />)
   return {
-    store, setTheme, setThemeHalf, setCustomThemes, previewTheme, setGlassOpacity, setTerminalOpacity,
+    store, setMinimalMode, setMinimalModeSuggestions, setTheme, setThemeHalf, setCustomThemes, previewTheme, setGlassOpacity, setTerminalOpacity,
     setTransparentTheme, setSidebarMask, setWallpaper, setCursorFx, setMetallicPaint, setTypography,
     setWallpaperSources, setWallpaperFavorites, ...view,
   }
@@ -188,6 +191,18 @@ const cube = (name: string) => screen.getByRole('button', { name: new RegExp(`^$
 const pressed = (name: string): string | null => cube(name).getAttribute('aria-pressed')
 
 describe('AppearanceSection', () => {
+  it('toggles Minimal mode and suggestions without rewriting appearance preferences', () => {
+    const b = mount('dark', { minimalMode: true })
+    expect((screen.getByRole('switch', { name: COPY['minimal.title'] }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByRole('status').textContent).toContain(COPY['minimal.paused'])
+    fireEvent.click(screen.getByRole('switch', { name: COPY['minimal.title'] }))
+    expect(b.setMinimalMode).toHaveBeenCalledWith(false)
+    fireEvent.click(screen.getByRole('switch', { name: COPY['minimal.suggestions'] }))
+    expect(b.setMinimalModeSuggestions).toHaveBeenCalledWith(false)
+    expect(b.setWallpaper).not.toHaveBeenCalled()
+    expect(b.setCursorFx).not.toHaveBeenCalled()
+  })
+
   it('renders color-scheme tiles with the preference cube selected', () => {
     mount('dark')
     expect(screen.getByRole('heading', { name: '颜色模式' })).toBeDefined()
@@ -540,7 +555,7 @@ describe('AppearanceSection', () => {
     expect(screen.queryByRole('heading', { name: '图源' })).toBeNull()
     expect(screen.queryByRole('heading', { name: '图库来源' })).toBeNull()
     // Transparent theme, sidebar mask, background effect, cursor effect, and button sheen are the only switches; no source switches.
-    expect(screen.getAllByRole('switch')).toHaveLength(5)
+    expect(screen.getAllByRole('switch')).toHaveLength(7)
     expect(screen.getByRole('switch', { name: COPY['glass.transparent'] })).toBeDefined()
     expect(screen.getByRole('switch', { name: COPY['glass.sidebarMask'] })).toBeDefined()
     expect(screen.getByRole('switch', { name: COPY['cursorFx.title'] })).toBeDefined()

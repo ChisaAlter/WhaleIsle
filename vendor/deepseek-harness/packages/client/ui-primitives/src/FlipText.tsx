@@ -3,6 +3,7 @@
 // drops. Reduced motion replaces the text immediately.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useMinimalMode } from './reduced-effects.ts'
 
 /** Exit hold in milliseconds; matches `--ds-motion-duration-flip` (400ms). */
 export const FLIP_TEXT_MS = 400
@@ -29,6 +30,7 @@ export interface FlipTextProps {
  * @returns the flipping label.
  */
 export function FlipText({ text, className }: FlipTextProps) {
+  const minimal = useMinimalMode()
   const shownRef = useRef(text)
   const [outgoing, setOutgoing] = useState<string | null>(null)
 
@@ -36,18 +38,19 @@ export function FlipText({ text, className }: FlipTextProps) {
     if (text === shownRef.current) return
     const previous = shownRef.current
     shownRef.current = text
-    if (prefersReducedMotion()) {
+    if (minimal || prefersReducedMotion()) {
       setOutgoing(null)
       return
     }
     setOutgoing(previous)
-  }, [text])
+  }, [text, minimal])
 
   useEffect(() => {
+    if (minimal) { setOutgoing(null); return }
     if (outgoing === null) return
     const timer = setTimeout(() => { setOutgoing(null) }, FLIP_TEXT_MS)
     return () => { clearTimeout(timer) }
-  }, [outgoing])
+  }, [outgoing, minimal])
 
   return (
     <span className={className} data-dsh-motion="flip">

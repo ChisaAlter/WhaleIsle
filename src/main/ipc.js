@@ -110,6 +110,10 @@ function registerIpc({
       return listener(event, ...args);
     });
   };
+  const renderMode = require('./render-mode');
+  handle('shell:get-render-mode', ALL_SURFACES, () => renderMode.getMinimalMode());
+  handle('shell:set-render-mode', HARNESS_ONLY, (_event, minimal) => renderMode.setMinimalMode(minimal));
+  handle('shell:claim-minimal-suggestion', HARNESS_ONLY, () => renderMode.claimMinimalSuggestion());
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
   handle('shell:proactive', HARNESS_ONLY, (_event, action, payload = {}) => {
     if (!proactiveService || typeof proactiveService.dispatch !== 'function') {

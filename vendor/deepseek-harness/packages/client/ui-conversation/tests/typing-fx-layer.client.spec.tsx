@@ -17,6 +17,7 @@ import { DEFAULT_TYPING_FX_STYLE, type TypingFxStyle } from '../src/submission-s
 
 afterEach(() => {
   cleanup()
+  document.documentElement.removeAttribute('data-dsh-minimal')
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -64,6 +65,28 @@ function mount(opts: { enabled?: boolean; style?: Partial<TypingFxStyle> } = {})
 }
 
 describe('TypingFxLayer', () => {
+  it('removes the live overlay and selection listener in Minimal mode without changing editor content', () => {
+    const { editor, view } = mount({ style: { cursor: 'block' } })
+    mockCaret(editor)
+    type(editor, 'A')
+    expect(view.container.querySelector('[data-typing-fx-echo]')).not.toBeNull()
+    const remove = vi.spyOn(document, 'removeEventListener')
+    act(() => {
+      document.documentElement.setAttribute('data-dsh-minimal', '')
+      document.dispatchEvent(new Event('dsh:render-mode'))
+    })
+    expect(view.container.querySelector('[data-typing-fx]')).toBeNull()
+    expect(remove).toHaveBeenCalledWith('selectionchange', expect.any(Function))
+    type(editor, 'B')
+    expect(editor.getRootElement()?.textContent).toContain('B')
+    act(() => {
+      document.documentElement.removeAttribute('data-dsh-minimal')
+      document.dispatchEvent(new Event('dsh:render-mode'))
+    })
+    expect(view.container.querySelector('[data-typing-fx]')).not.toBeNull()
+    expect(view.container.querySelector('[data-typing-fx-echo]')).toBeNull()
+  })
+
   it('renders nothing while disabled or editor-less', () => {
     const disabled = mount({ enabled: false })
     expect(disabled.view.container.querySelector('[data-typing-fx]')).toBeNull()

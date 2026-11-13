@@ -95,6 +95,7 @@ export interface FlowMotion extends FlowMotionRows {
  */
 export function motionEnabled(element: HTMLElement): boolean {
   if (element.closest(MOTION_SCOPE) === null) return false
+  if (document.documentElement.hasAttribute('data-dsh-minimal')) return false
   return typeof matchMedia !== 'function' || !matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
@@ -241,7 +242,8 @@ export function createFlowMotion(
       }
     }
     freezeTravelling()
-    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reduced = document.documentElement.hasAttribute('data-dsh-minimal')
+      || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
     let started: number | undefined
     let displacement = 0
     const settle = (finishCancelled: boolean): void => {
@@ -268,7 +270,8 @@ export function createFlowMotion(
     const tick = (now: number): void => {
       frameRequest = null
       started ??= now
-      const elapsed = reduced ? CLOSE_DELAY_MS + CLOSE_MS : now - started
+      const elapsed = reduced || document.documentElement.hasAttribute('data-dsh-minimal')
+        ? CLOSE_DELAY_MS + CLOSE_MS : now - started
       const linear = Math.min(1, Math.max(0, (elapsed - CLOSE_DELAY_MS) / CLOSE_MS))
       const progress = linear * linear * (3 - 2 * linear)
       current.prepare(progress, cancelled)
@@ -320,7 +323,8 @@ export function createFlowMotion(
     if (batch) return
     const current = [...boxes.values()].some(box => box.closing) ? driver() : null
     if (current !== null && runBatch(current)) return
-    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reduced = document.documentElement.hasAttribute('data-dsh-minimal')
+      || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
     // Without a batch, a held closing row finishes at once and a held revealing row starts its own transition.
     for (const box of [...boxes.values()]) {
       if (reduced || (box.held && box.closing)) box.finish()

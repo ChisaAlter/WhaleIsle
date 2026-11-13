@@ -10,6 +10,7 @@
  * input/editor/typing-fx.ts).
  */
 import { useEffect, useRef, useState } from 'react'
+import { useMinimalMode } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { CSSProperties, ReactNode } from 'react'
 import { COMPOSITION_END_TAG, COMPOSITION_START_TAG, type LexicalEditor } from 'lexical'
 import { resolveTypingFxColors, type TypingFxStyle } from '../submission-settings.ts'
@@ -69,7 +70,9 @@ export interface TypingFxLayerProps {
  * @param props - editor binding, enablement, and the active style.
  * @returns the echo/caret layer, or null while disabled.
  */
-export function TypingFxLayer({ editor, enabled, style }: TypingFxLayerProps): ReactNode {
+export function TypingFxLayer({ editor, enabled: requested, style }: TypingFxLayerProps): ReactNode {
+  const minimal = useMinimalMode()
+  const enabled = requested && !minimal
   const rootRef = useRef<HTMLDivElement | null>(null)
   const echoSeq = useRef(0)
   const [echoes, setEchoes] = useState<readonly Echo[]>([])
@@ -87,6 +90,7 @@ export function TypingFxLayer({ editor, enabled, style }: TypingFxLayerProps): R
   useEffect(() => {
     if (editor === null || !enabled) {
       compositionBase.current = null
+      setEchoes([])
       return
     }
     return editor.registerUpdateListener(({ editorState, prevEditorState, tags }) => {

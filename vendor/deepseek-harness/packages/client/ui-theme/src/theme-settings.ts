@@ -283,6 +283,12 @@ export type FontFamilies = Readonly<Record<FontRole, string>>
 
 /** Durable theme section shared by the Host schema and the browser scope. */
 export interface ThemeSettings {
+  /** Suspend decorative rendering without changing saved appearance preferences. */
+  minimalMode: boolean
+  /** Offer Minimal mode after repeated foreground UI stalls. */
+  minimalModeSuggestions: boolean
+  /** Epoch milliseconds until the startup suggestion may be offered again. */
+  minimalModeSnoozedUntil: number
   /** Selected built-in color-scheme preference. */
   preference: ThemePreference
   /** Conversation content font size in px (integer within {@link FONT_SIZE_MIN}..{@link FONT_SIZE_MAX}). */
@@ -390,6 +396,9 @@ export interface ThemeSettings {
 
 /** Default durable section used when Host has no override. */
 export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
+  minimalMode: false,
+  minimalModeSuggestions: true,
+  minimalModeSnoozedUntil: 0,
   terminalFontSize: FONT_SIZE_SPECS.terminal.default,
   preference: DEFAULT_PREFERENCE,
   fontSize: DEFAULT_FONT_SIZE,
@@ -453,6 +462,9 @@ function arrayWithoutDefault(inner: z): z {
 
 /** Shared field definitions for durable theme settings and live Host config. */
 export const ThemeSettingsFields = {
+  minimalMode: z.boolean().default(false),
+  minimalModeSuggestions: z.boolean().default(true),
+  minimalModeSnoozedUntil: z.number().min(0).default(0),
   terminalFontSize: fontSizeSchema(FONT_SIZE_SPECS.terminal),
   [THEME_PREFERENCE_FIELD]: z.union([...THEME_PREFERENCES]).default(DEFAULT_PREFERENCE),
   [FONT_SIZE_FIELD]: z.number().step(1).min(FONT_SIZE_MIN).max(FONT_SIZE_MAX).default(DEFAULT_FONT_SIZE),
