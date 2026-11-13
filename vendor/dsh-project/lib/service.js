@@ -953,14 +953,16 @@ export class ProjectService {
   // The sites a Project lets research read: one host per line in research-hosts.txt (a host covers its subdomains). No file, no limit.
   researchHosts(project) {
     try { return readFileSync(join(project.storageRoot, 'research-hosts.txt'), 'utf8').split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().toLowerCase().replace(/^\*\./, '')).filter(Boolean).slice(0, 200); }
-    catch { return []; }
+    catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   }
   // The host's own account of what a member read on the web: the Project's allowed sites when it names any, and every search and
   // fetch recorded on the delegation being worked, as the calls were made.
   researchCall(worker, exec) {
     const args = exec.arguments && typeof exec.arguments === 'object' ? exec.arguments : {}, fetching = exec.name === 'web_fetch';
     if (fetching) {
-      const allowed = this.researchHosts(this.project(worker.projectId));
+      let allowed;
+      try { allowed = this.researchHosts(this.project(worker.projectId)); }
+      catch (error) { return `The Project research sites list could not be read (${error.code || error.message}). Repair research-hosts.txt before fetching a page.`; }
       if (allowed.length) {
         let host; try { host = new URL(String(args.url)).hostname.toLowerCase(); } catch { return 'Give a complete http or https URL.'; }
         if (!allowed.some(entry => host === entry || host.endsWith(`.${entry}`))) return `This Project lets research read only these sites: ${allowed.join(', ')}.`;
@@ -1047,10 +1049,15 @@ export class ProjectService {
   cancelSettlementCheck(projectId) { clearTimeout(this.settlementCheckTimers.get(projectId)); this.settlementCheckTimers.delete(projectId); this.settlementChecks.delete(projectId); }
   unreadSettlements(projectId) {
     return this.state().workstreams.filter(work => work.projectId === projectId && work.pendingSummary && !work.summaryFailure && !this.worker(work.workerSessionId).stopped
-      && work.settlements.some(item => !item.noticeMessageId && !item.summarizedBy && item.delegationRefs.includes(work.currentDelegationRef)));
+      && work.settlements.some(item => !item.noticeMessageId && !item.recoveryNoticeMessageId && !item.summarizedBy && item.delegationRefs.includes(work.currentDelegationRef)));
+  }
+  settlementNoticeMatches(work, receipt, message) {
+    return message.source.kind === settlementCheckPlugin && work.currentDelegationRef === receipt.ref
+      && !this.worker(work.workerSessionId).stopped && work.settlements.some(item => item.runId === receipt.runId
+        && item.delegationRefs.includes(receipt.ref) && item.recoveryNoticeMessageId === message.id);
   }
   async settlementCheck(projectId) {
-    let message;
+    let message, lead;
     await this.serial(async () => {
       const project = this.state().projects.find(item => item.id === projectId);
       if (!project || this.closing || this.recovering || project.paused || project.lifecycle !== 'ready' || this.archiving.has(projectId) || this.projectHolds.has(projectId)) return;
@@ -1063,11 +1070,17 @@ export class ProjectService {
         return;
       }
       this.settlementChecks.delete(projectId);
+      lead = await this.coordinator(project);
       const text = `The Project host found member results that you have not read yet: ${unread.map(work => `${work.title} (${work.id})`).join('; ')}. Read notes.md and the saved reports, then arrange the next stage or deliver as you normally would after a result arrives. This only brings the results to you; it is not new user authorization.`;
       message = createUserMessage({ source: { kind: settlementCheckPlugin, form: 'notice', summary: boundContextSummary(`Unread results: ${unread.map(work => work.title).join('; ')}`) }, content: [{ type: 'text', text }] });
+      await this.write(state => { for (const work of unread) {
+        const current = state.workstreams.find(item => item.id === work.id);
+        for (const item of current.settlements) if (!item.noticeMessageId && !item.recoveryNoticeMessageId && !item.summarizedBy && item.delegationRefs.includes(current.currentDelegationRef)) item.recoveryNoticeMessageId = message.id;
+      } });
     });
     if (!message) return;
-    (await this.coordinator(this.project(projectId))).followup(message);
+    if (this.closing || this.project(projectId).paused || this.projectHolds.has(projectId) || this.archiving.has(projectId)) return;
+    lead.followup(message);
   }
   async report(actor, args, exec) {
     if (actor.role !== 'worker') fail('unauthorized', 'Only the assigned worker can report.');
