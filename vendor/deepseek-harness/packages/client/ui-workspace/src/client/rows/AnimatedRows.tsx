@@ -55,6 +55,7 @@ export class AnimatedRows extends Component<AnimatedRowsProps> {
     if (!this.armed || sameRows(previous, this.props) || previous.resetKey !== this.props.resetKey
       || !previous.ready || !this.props.ready || list === null
       || typeof list.animate !== 'function'
+      || document.documentElement.hasAttribute('data-dsh-minimal')
       || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null
 
     const viewport = list.getBoundingClientRect()

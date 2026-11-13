@@ -50,6 +50,8 @@ export function appearanceFontStack(custom: string, defaultStack: string): strin
 
 /** Font and size extras applied on the document root. */
 export interface AppearanceDocumentExtras {
+  /** Suspend decorative layers; saved values remain unchanged. */
+  minimalMode?: boolean
   /** Interface font preference. */
   fontFamilySans: string
   /** Monospace font preference. */
@@ -101,6 +103,11 @@ export interface AppearanceDocumentExtras {
 export function applyAppearanceDocumentExtras(extras: AppearanceDocumentExtras): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
+  const minimal = extras.minimalMode === true
+  if (root.hasAttribute('data-dsh-minimal') !== minimal) {
+    root.toggleAttribute('data-dsh-minimal', minimal)
+    document.dispatchEvent(new Event('dsh:render-mode'))
+  }
   root.style.fontSize = `${extras.fontSizeInterface || DEFAULT_INTERFACE_FONT_SIZE}px`
   const sans = appearanceFontStack(extras.fontFamilySans, DEFAULT_SANS_STACK)
   const code = appearanceFontStack(extras.fontFamilyCode, DEFAULT_CODE_STACK)
@@ -115,19 +122,19 @@ export function applyAppearanceDocumentExtras(extras: AppearanceDocumentExtras):
     '--dsw-font-family-terminal',
     appearanceFontStack(extras.fontFamilyTerminal ?? '', code),
   )
-  const wallpaperImage = extras.wallpaperImage ?? ''
+  const wallpaperImage = minimal ? '' : extras.wallpaperImage ?? ''
   applyWallpaperLayer({
     wallpaperImage,
     wallpaperBlur: extras.wallpaperBlur ?? 0,
     wallpaperPixelate: extras.wallpaperPixelate ?? 0,
-    backgroundEffect: extras.backgroundEffect ?? 'none',
+    backgroundEffect: minimal ? 'none' : extras.backgroundEffect ?? 'none',
     backgroundEffectColors: extras.backgroundEffectColors ?? [],
     backgroundEffectSpeed: extras.backgroundEffectSpeed,
     backgroundEffectCount: extras.backgroundEffectCount,
     backgroundEffectVariant: extras.backgroundEffectVariant,
   })
   applyCursorFxLayer({
-    cursorEffectEnabled: extras.cursorEffectEnabled,
+    cursorEffectEnabled: !minimal && extras.cursorEffectEnabled === true,
     cursorEffect: extras.cursorEffect,
     cursorEffectColors: extras.cursorEffectColors ?? [],
     cursorEffectSpeed: extras.cursorEffectSpeed,
@@ -135,7 +142,7 @@ export function applyAppearanceDocumentExtras(extras: AppearanceDocumentExtras):
   })
   root.toggleAttribute(
     TRANSPARENT_ATTR,
-    extras.transparentTheme === true && isWallpaperDataUrl(wallpaperImage),
+    !minimal && extras.transparentTheme === true && isWallpaperDataUrl(wallpaperImage),
   )
-  root.toggleAttribute(METALLIC_PAINT_ATTR, extras.metallicPaintEnabled === true)
+  root.toggleAttribute(METALLIC_PAINT_ATTR, !minimal && extras.metallicPaintEnabled === true)
 }

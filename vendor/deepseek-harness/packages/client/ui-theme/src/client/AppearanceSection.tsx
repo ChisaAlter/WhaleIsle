@@ -56,6 +56,10 @@ function writeTypographyAdvanced(open: boolean): void {
 
 /** Injected business face for the Appearance page. */
 export interface AppearanceSectionInjected {
+  /** Toggle the reversible rendering override. */
+  setMinimalMode: (value: boolean) => void
+  /** Allow startup responsiveness suggestions. */
+  setMinimalModeSuggestions: (value: boolean) => void
   /** Switch the color-scheme preference. */
   setTheme: (id: ThemePreference) => void
   /** Assign a family to one color-scheme half. */
@@ -118,6 +122,8 @@ export function AppearanceSection({
   t,
   renderSlot,
   useStore,
+  setMinimalMode,
+  setMinimalModeSuggestions,
   setTheme,
   setThemeHalf,
   setCustomThemes,
@@ -133,6 +139,8 @@ export function AppearanceSection({
   setWallpaperFavorites,
   setTypography,
 }: AppearanceSectionComponentProps) {
+  const minimalMode = useStore(s => s.minimalMode) === true
+  const suggestions = useStore(s => s.minimalModeSuggestions) !== false
   const preference = useStore(s => s.preference)
   const resolvedMode = useStore(s => s.resolvedMode)
   const families = useStore(s => s.families)
@@ -178,6 +186,24 @@ export function AppearanceSection({
 
   return (
     <div className={css.page}>
+      <section className={css.block} aria-labelledby="appearance-minimal-heading">
+        <div className={css.effectRow}>
+          <div className={css.effectText}>
+            <h2 id="appearance-minimal-heading" className={css.rowTitle}>{t('minimal.title')}</h2>
+            <p className={css.hint}>{t('minimal.description')}</p>
+          </div>
+          <Switch checked={minimalMode} aria-label={t('minimal.title')}
+            onChange={event => { setMinimalMode(event.currentTarget.checked) }} />
+        </div>
+        <label className={css.field}>
+          <span className={css.rowHead}>
+            <span>{t('minimal.suggestions')}</span>
+            <Switch checked={suggestions} aria-label={t('minimal.suggestions')}
+              onChange={event => { setMinimalModeSuggestions(event.currentTarget.checked) }} />
+          </span>
+        </label>
+        {minimalMode && <p role="status" className={css.hint}>{t('minimal.paused')}</p>}
+      </section>
       <section className={css.block} aria-labelledby="appearance-scheme-heading">
         <h2 id="appearance-scheme-heading" className={css.heading}>{t('scheme.title')}</h2>
         <p className={css.hint}>{t('scheme.description')}</p>

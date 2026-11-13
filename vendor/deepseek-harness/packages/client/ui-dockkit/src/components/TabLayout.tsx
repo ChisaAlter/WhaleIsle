@@ -177,6 +177,7 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
     if (lifted || !previous
       || previous.width === next.width && previous.height === next.height
       || Math.min(next.width, next.height) <= 0
+      || document.documentElement.hasAttribute('data-dsh-minimal')
       || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const style = getComputedStyle(section)
     const token = style.getPropertyValue('--ds-motion-duration-flip').trim()
@@ -254,10 +255,12 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
   useEffect(() => {
     if (!host.current?.querySelector('[data-dockkit-float-motion="morph"]')) return
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const stop = (): void => { if (preference.matches) stopMorph() }
+    const stop = (): void => { if (preference.matches || document.documentElement.hasAttribute('data-dsh-minimal')) stopMorph() }
     preference.addEventListener('change', stop)
+    document.addEventListener('dsh:render-mode', stop)
     return () => {
       preference.removeEventListener('change', stop)
+      document.removeEventListener('dsh:render-mode', stop)
       stopMorph()
     }
   }, [contentChrome, floating])

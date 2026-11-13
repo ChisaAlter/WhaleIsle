@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PanelInfo } from './service.ts'
+import { MinimalModePrompt } from './MinimalModePrompt.tsx'
 import { AppFrame } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
@@ -272,6 +273,14 @@ export function apply(ctx: ClientContext): void {
       void disposeService()
     }
   }, 'ui-layout: service + root registration')
+
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay', id: 'minimal-mode-suggestion', locale: 'settings.theme',
+    inject: () => ({
+      hooks: { minimalSuggestion: ctx.theme.minimalSuggestion },
+      decide: (choice: 'enable' | 'later' | 'never') => { ctx.theme.decideMinimalSuggestion(choice) },
+    }),
+  }, MinimalModePrompt))
 
   // Theme presentation: pure DOM writes from resolved snapshots — initial
   // state through the getter once, then event-driven only; no React path.

@@ -53,6 +53,13 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Reversible rendering policy and bounded desktop startup recommendation.
+  { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['minimalMode', 'minimalModeSuggestions', 'minimalModeSnoozedUntil'] },
+  { file: 'packages/client/ui-theme/src/appearance-apply.ts', includes: ['data-dsh-minimal', 'dsh:render-mode'] },
+  { file: 'packages/client/ui-theme/src/client/startup-responsiveness.ts', includes: ['observeStartupResponsiveness', 'maxFrameSamples', 'dsh:render-resume'] },
+  { file: 'packages/client/ui-theme/src/client/minimal-mode-lifecycle.ts', includes: ['claimSuggestion', 'stopWaiting'] },
+  { file: 'packages/client/ui-layout/src/client/MinimalModePrompt.tsx', includes: ['minimal.prompt.enable', 'minimal.prompt.never'] },
+  { file: 'packages/client/ui-primitives/src/reduced-effects.ts', includes: ['useMinimalMode', 'dsh:render-mode'] },
   // Mac menu ownership and the noninteractive shell-decoration drag exclusion.
   { file: 'packages/client/web/src/base.css', includes: ['[data-window-decoration]'] },
   { file: 'packages/client/ui-workspace/src/client/shortcuts.ts', includes: ['workspace.reveal', 'openWorkspacePath'] },

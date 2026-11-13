@@ -3,6 +3,7 @@
  */
 
 export type { CodeToolbarLabels } from './CodeToolbar.tsx'
+export { minimalModeActive, useMinimalMode } from './reduced-effects.ts'
 export { StateDot } from './StateDot.tsx'
 export { TaskDock } from './TaskDock.tsx'
 export type { StateDotState } from './StateDot.tsx'

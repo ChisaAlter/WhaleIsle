@@ -25,6 +25,9 @@ export type Config = { [K in keyof ThemeSettings]: Volatile<ThemeSettings[K]> }
 
 /** Live preferences projected to the browser, using the durable field schema. */
 export const Config = z.object({
+  minimalMode: ThemeSettingsFields.minimalMode.volatile(),
+  minimalModeSuggestions: ThemeSettingsFields.minimalModeSuggestions.volatile(),
+  minimalModeSnoozedUntil: ThemeSettingsFields.minimalModeSnoozedUntil.volatile(),
   preference: ThemeSettingsFields.preference.volatile(),
   fontSize: ThemeSettingsFields.fontSize.volatile(),
   terminalFontSize: ThemeSettingsFields.terminalFontSize.volatile(),

@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import base from '../styles/base.css?inline'
 import motion from '../styles/motion.css?inline'
+import minimal from '../styles/minimal.css?inline'
 import cornerShape from '../styles/corner-shape.css?inline'
 import designPlatform from '../styles/design-platform.css?inline'
 import skins from '../styles/skins.css?inline'
@@ -30,6 +31,7 @@ const STYLES = [
   ['gradient-shadow-text.css', gradientShadowText],
   ['metallic-paint.css', metallicPaint],
   ['shiki.css', shiki],
+  ['minimal.css', minimal],
 ] as const
 
 /**

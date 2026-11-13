@@ -82,6 +82,12 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   ].join('\n'));
   for (const marker of FORK_FILE_MARKERS) {
     const content = {
+      'packages/client/ui-theme/src/theme-settings.ts': 'minimalMode minimalModeSuggestions minimalModeSnoozedUntil\n',
+      'packages/client/ui-theme/src/appearance-apply.ts': 'data-dsh-minimal dsh:render-mode\n',
+      'packages/client/ui-theme/src/client/startup-responsiveness.ts': 'observeStartupResponsiveness maxFrameSamples dsh:render-resume\n',
+      'packages/client/ui-theme/src/client/minimal-mode-lifecycle.ts': 'claimSuggestion stopWaiting\n',
+      'packages/client/ui-layout/src/client/MinimalModePrompt.tsx': 'minimal.prompt.enable minimal.prompt.never\n',
+      'packages/client/ui-primitives/src/reduced-effects.ts': 'useMinimalMode dsh:render-mode\n',
       'packages/experimental/plugin-market-bundle/cordis.patch.yml': 'DSHD_PLUGIN_MARKET_INDEX\n',
       'packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx': 'data-dsh-hero-headline\ndata-dsh-hero-preview\ndata-dsh-hero-mark\n',
       'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-panel={id}\ndata-dsh-sidebar\ndata-dsh-sidebar-new\ndata-dsh-sidebar-brand-identity\ndata-dsh-sidebar-toggle\n',
