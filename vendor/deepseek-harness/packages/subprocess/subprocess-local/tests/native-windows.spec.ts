@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
+import { execa } from 'execa'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { targetEnvironment } from '../src/runner-launch.ts'
 import { bindManagedProcess } from '../src/spawn.ts'
@@ -79,6 +80,36 @@ function directSpawnFailure(argv: readonly string[], cwd = scratch): Promise<Spa
 }
 
 const windowsNative = process.platform === 'win32' && probeWindowsJob()
+
+describe.skipIf(process.platform !== 'win32')('Windows PTY transport disposal', () => {
+  it.each(['natural', 'cancel'] as const)('releases the native conout worker after %s exit', { timeout: 20_000 }, async (mode) => {
+    const cordis = new URL('../../../../vendor/cordis/lib/index.js', import.meta.url).href
+    const provider = new URL('../lib/index.js', import.meta.url).href
+    const script = `
+      const { Context } = await import(${JSON.stringify(cordis)})
+      const { default: LocalSubprocess } = await import(${JSON.stringify(provider)})
+      const ctx = new Context()
+      await ctx.plugin(LocalSubprocess)
+      const handle = await ctx.subprocess.spawnTerminal({
+        argv: [process.execPath, '-e', ${JSON.stringify(mode === 'natural' ? 'setTimeout(() => console.log("finished"), 50)' : 'console.log("ready"); setInterval(() => {}, 1000)')}],
+        cwd: process.cwd(), rows: 24, cols: 80, terminalType: 'xterm-256color', graceMs: 5000,
+      })
+      const ready = new Promise(resolve => {
+        let output = ''
+        handle.output.on('data', chunk => { output += chunk; if (output.includes('ready')) resolve() })
+      })
+      handle.output.resume()
+      if (${JSON.stringify(mode)} === 'natural') await handle.done
+      else await ready
+      await handle.terminate()
+      await ctx.fiber.dispose()
+      console.log('PTY_TRANSPORT_RELEASED')
+    `
+    const result = await execa(process.execPath, ['--input-type=module', '-e', script], { timeout: 15_000 })
+    expect(result.stdout).toContain('PTY_TRANSPORT_RELEASED')
+    expect(result.exitCode).toBe(0)
+  })
+})
 
 describe.skipIf(!windowsNative)('Windows Job native containment', () => {
   it('keeps ordinary descendants free of visible console windows', async () => {

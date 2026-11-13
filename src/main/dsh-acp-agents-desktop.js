@@ -13,6 +13,7 @@ const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtim
 const { webProfileDir } = require('./plugins');
 
 const DSH_ACP_AGENTS_PACKAGE = 'dsh-acp-agents';
+const DSH_ACP_AGENTS_DIR = 'dsh-acp';
 const DSH_ACP_AGENTS_INSERT_ID = 'dsh-acp-agents';
 const DSH_ACP_AGENTS_ALIASES = [DSH_ACP_AGENTS_PACKAGE, DSH_ACP_AGENTS_INSERT_ID];
 const DSH_ACP_AGENTS_OVERLAY_FILENAME = 'desktop-dsh-acp-agents.patch.yml';
@@ -20,9 +21,9 @@ const DSH_ACP_AGENTS_OVERLAY_FILENAME = 'desktop-dsh-acp-agents.patch.yml';
 function defaultSourceDir() {
   try {
     const { projectRoot } = require('./paths');
-    return path.join(projectRoot(), 'vendor', DSH_ACP_AGENTS_PACKAGE);
+    return path.join(projectRoot(), DSH_ACP_AGENTS_DIR);
   } catch {
-    return path.join(__dirname, '..', '..', 'vendor', DSH_ACP_AGENTS_PACKAGE);
+    return path.join(__dirname, '..', '..', DSH_ACP_AGENTS_DIR);
   }
 }
 

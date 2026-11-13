@@ -1,0 +1,23 @@
+# Keep this repository limited to the distributable plugin and its sources.
+# Local desktop helpers, diagnostics, screenshots and account data stay local.
+/*
+!/.gitignore
+!/LICENSE
+!/README.md
+!/THIRD_PARTY_NOTICES.md
+!/package.json
+!/cordis.patch.yml
+!/lib/
+!/client/
+!/tests/
+!/tools/
+/tools/*
+!/tools/runtime-build/
+!/tools/host-compat/
+
+node_modules/
+artifacts/
+*.tgz
+*.log
+.env
+.env.*

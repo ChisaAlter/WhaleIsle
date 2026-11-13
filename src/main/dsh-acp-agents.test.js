@@ -17,10 +17,10 @@ const {
   BUILTIN_AGENT_PRESETS,
   loadAgentsConfig,
   saveAgentsConfig,
-} = require('../../vendor/dsh-acp-agents/lib/presets');
+} = require('../../dsh-acp/lib/presets');
 const {
   apply: applyAcpAgentsPlugin,
-} = require('../../vendor/dsh-acp-agents/lib/index');
+} = require('../../dsh-acp/lib/index');
 
 function createMockAcpServerScript(dir) {
   const scriptPath = path.join(dir, 'mock-acp-server.js');
@@ -216,7 +216,7 @@ rl.on('line', async (line) => {
   return scriptPath;
 }
 
-test('ensureDesktopAcpAgents writes overlay and links vendor package into profile node_modules', () => {
+test('ensureDesktopAcpAgents writes overlay and links dsh-acp package into profile node_modules', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-acp-overlay-'));
   try {
     const result = ensureDesktopAcpAgents({ profileDir: tmpDir });
@@ -351,7 +351,15 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     });
 
     applyAcpAgentsPlugin(strictCordisCtx, { storeFile: path.join(tmpHome, 'acp-agents.json') });
-    assert.equal(registeredAdapters.length, 0);
+    assert.equal(registeredAdapters.length, 1);
+    assert.deepEqual(registeredAdapters[0].providers, [
+      'acp:claude-code',
+      'acp:codex',
+      'acp:antigravity',
+      'acp:devin',
+    ]);
+    assert.deepEqual(await registeredAdapters[0].adapter.listModels('acp:codex'), []);
+    assert.equal(registeredAdapters[0].adapter.providerRetryPolicy('acp:codex'), undefined);
 
     const routeHandler = routes.get('/dsh-acp-agents');
     assert.equal(typeof routeHandler, 'function');
@@ -404,7 +412,22 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       },
     });
     assert.equal(saveRes.statusCode, 200);
-    assert.deepEqual(registeredAdapters[0].providers, ['acp:codex']);
+    assert.equal((await registeredAdapters[0].adapter.listModels('acp:codex')).length > 0, true);
+
+    // 2b. Verify background session-title purpose fast-path does not collide with activeTurn
+    const titleChunks = [];
+    for await (const chunk of registeredAdapters[0].adapter.stream({
+      provider: 'acp:codex',
+      model: 'gpt-5.4',
+      purpose: 'session-title',
+      messages: [{ role: 'user', content: '{"currentTitle":null,"messages":["帮我修复反重力报错"]}' }],
+    })) {
+      titleChunks.push(chunk);
+    }
+    assert.equal(
+      titleChunks.filter((c) => c.type === 'text-delta').map((c) => c.text).join(''),
+      '帮我修复反重力报错',
+    );
 
     // 3. Test ACP handshake endpoint
     const testRes = await callRpc('agent/test', { id: 'codex' });
@@ -529,7 +552,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
 
 test('client bundle registers Settings -> Agent (agent-presets) and T3 Code-style conversation.input.model selector', () => {
   const clientCode = fs.readFileSync(
-    path.join(__dirname, '..', '..', 'vendor', 'dsh-acp-agents', 'client', 'client.js'),
+    path.join(__dirname, '..', '..', 'dsh-acp', 'client', 'client.js'),
     'utf8',
   );
   let capturedEntry = null;

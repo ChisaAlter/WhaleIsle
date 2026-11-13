@@ -23,8 +23,12 @@ if (!electronBin) {
   process.exit(1);
 }
 
+const childEnv = { ...process.env };
+delete childEnv.ELECTRON_RUN_AS_NODE;
+
 const child = spawn(electronBin, ['.'], {
   cwd: repoRoot,
+  env: childEnv,
   stdio: 'inherit',
   windowsHide: false,
 });

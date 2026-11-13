@@ -1,0 +1,573 @@
+import * as Schema from "effect/Schema";
+import * as HttpApiSchema from "effect/http-api/HttpApiSchema";
+
+import {
+  AuthSessionId,
+  ForwardCompatibleArray,
+  ClientSurface,
+  ClientWebDeployment,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+
+export const ServerAuthPolicy = Schema.Literals([
+  "desktop-managed-local",
+  "loopback-browser",
+  "remote-reachable",
+  "unsafe-no-auth",
+]);
+export type ServerAuthPolicy = typeof ServerAuthPolicy.Type;
+
+export const ServerAuthBootstrapMethod = Schema.Literals(["desktop-bootstrap", "one-time-token"]);
+export type ServerAuthBootstrapMethod = typeof ServerAuthBootstrapMethod.Type;
+
+export const ServerAuthSessionMethod = Schema.Literals([
+  "browser-session-cookie",
+  "bearer-access-token",
+  "dpop-access-token",
+]);
+export type ServerAuthSessionMethod = typeof ServerAuthSessionMethod.Type;
+
+export const AuthOrchestrationReadScope = "orchestration:read" as const;
+export const AuthOrchestrationOperateScope = "orchestration:operate" as const;
+export const AuthSettingsWriteScope = "settings:write" as const;
+export const AuthProvidersManageScope = "providers:manage" as const;
+export const AuthEnvironmentMaintainScope = "environment:maintain" as const;
+export const AuthPreviewOperateScope = "preview:operate" as const;
+export const AuthDiagnosticsReadScope = "diagnostics:read" as const;
+export const AuthTerminalReadScope = "terminal:read" as const;
+export const AuthTerminalOperateScope = "terminal:operate" as const;
+export const AuthSourceControlWriteScope = "source-control:write" as const;
+export const AuthFilesystemReadScope = "filesystem:read" as const;
+export const AuthFilesystemWriteScope = "filesystem:write" as const;
+/** Retained for decoding existing credentials; grants no current RPC access. */
+const AuthReviewWriteScope = "review:write" as const;
+export const AuthAccessReadScope = "access:read" as const;
+export const AuthAccessWriteScope = "access:write" as const;
+export const AuthRelayReadScope = "relay:read" as const;
+export const AuthRelayWriteScope = "relay:write" as const;
+export const AuthEnvironmentScope = Schema.Literals([
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
+  AuthProvidersManageScope,
+  AuthEnvironmentMaintainScope,
+  AuthPreviewOperateScope,
+  AuthDiagnosticsReadScope,
+  AuthTerminalReadScope,
+  AuthTerminalOperateScope,
+  AuthFilesystemReadScope,
+  AuthFilesystemWriteScope,
+  AuthReviewWriteScope,
+  AuthSourceControlWriteScope,
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthRelayReadScope,
+  AuthRelayWriteScope,
+]);
+export type AuthEnvironmentScope = typeof AuthEnvironmentScope.Type;
+export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope);
+export type AuthEnvironmentScopes = typeof AuthEnvironmentScopes.Type;
+
+export const AuthGrantScope = Schema.Literals(
+  AuthEnvironmentScope.literals.filter((scope) => scope !== AuthReviewWriteScope),
+);
+export type AuthGrantScope = typeof AuthGrantScope.Type;
+export const AuthGrantScopes = Schema.Array(AuthGrantScope);
+export type AuthGrantScopes = typeof AuthGrantScopes.Type;
+
+const legacyScopes = new Set<AuthEnvironmentScope>([
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  AuthReviewWriteScope,
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthRelayReadScope,
+  AuthRelayWriteScope,
+]);
+
+export function authScopeResponse(scopes: ReadonlyArray<AuthEnvironmentScope>) {
+  return { scopes: scopes.filter((scope) => legacyScopes.has(scope)), permissions: scopes };
+}
+
+const authScopeResponseFields = {
+  scopes: AuthEnvironmentScopes,
+  permissions: Schema.optionalKey(ForwardCompatibleArray(AuthEnvironmentScope)),
+};
+
+// Client-only fallback for old servers. Servers never expand grants; empty permissions grant nothing.
+const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>> = {
+  [AuthFilesystemReadScope]: AuthOrchestrationReadScope,
+  [AuthDiagnosticsReadScope]: AuthOrchestrationReadScope,
+  [AuthSettingsWriteScope]: AuthOrchestrationOperateScope,
+  [AuthProvidersManageScope]: AuthOrchestrationOperateScope,
+  [AuthEnvironmentMaintainScope]: AuthOrchestrationOperateScope,
+  [AuthPreviewOperateScope]: AuthOrchestrationOperateScope,
+  [AuthSourceControlWriteScope]: AuthOrchestrationOperateScope,
+  [AuthFilesystemWriteScope]: AuthOrchestrationOperateScope,
+  [AuthTerminalReadScope]: AuthTerminalOperateScope,
+};
+
+/** Keep permission denials decodable by clients with the original scope enum. */
+export function authScopeRequiredResponse(requiredPermission: AuthEnvironmentScope) {
+  return {
+    requiredScope: legacyParents[requiredPermission] ?? requiredPermission,
+    requiredPermission,
+  };
+}
+
+export interface SessionGrantInput {
+  readonly authenticated: boolean;
+  readonly scopes?: ReadonlyArray<AuthEnvironmentScope> | undefined;
+  readonly permissions?: ReadonlyArray<AuthEnvironmentScope> | undefined;
+  readonly auth?: { readonly serverUpdateScope?: string | undefined } | undefined;
+}
+
+export function sessionGrantsScope(
+  session: SessionGrantInput,
+  scope: AuthEnvironmentScope,
+): boolean {
+  if (!session.authenticated) return false;
+  if (session.permissions !== undefined) return session.permissions.includes(scope);
+  if (session.scopes?.includes(scope)) return true;
+  if (session.auth?.serverUpdateScope !== undefined) return false;
+  const parent = legacyParents[scope];
+  return parent !== undefined && session.scopes?.includes(parent) === true;
+}
+
+export function sessionHasLegacyPermissions(session: SessionGrantInput): boolean {
+  const permissions = session.permissions;
+  return (
+    session.authenticated &&
+    permissions !== undefined &&
+    permissions.every((scope) => legacyScopes.has(scope)) &&
+    Object.values(legacyParents).some((parent) => permissions.includes(parent))
+  );
+}
+
+// Shell and full-access agent scopes already confer access and relay authority.
+export const AuthStandardClientScopes = [
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
+  AuthProvidersManageScope,
+  AuthEnvironmentMaintainScope,
+  AuthPreviewOperateScope,
+  AuthDiagnosticsReadScope,
+  AuthTerminalReadScope,
+  AuthTerminalOperateScope,
+  AuthSourceControlWriteScope,
+  AuthFilesystemReadScope,
+  AuthFilesystemWriteScope,
+  AuthRelayReadScope,
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
+] as const;
+
+export const AuthTokenExchangeGrantType =
+  "urn:ietf:params:oauth:grant-type:token-exchange" as const;
+export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
+export const AuthEnvironmentBootstrapTokenType =
+  "urn:t3:params:oauth:token-type:environment-bootstrap" as const;
+
+export const ServerAuthDescriptor = Schema.Struct({
+  policy: ServerAuthPolicy,
+  bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
+  sessionMethods: Schema.Array(ServerAuthSessionMethod),
+  sessionCookieName: TrimmedNonEmptyString,
+  /** Older servers omit this and authorize self-updates with orchestration:operate. */
+  serverUpdateScope: Schema.optionalKey(Schema.Literal(AuthEnvironmentMaintainScope)),
+});
+export type ServerAuthDescriptor = typeof ServerAuthDescriptor.Type;
+
+export const AuthBrowserSessionRequest = Schema.Struct({
+  credential: TrimmedNonEmptyString,
+});
+export type AuthBrowserSessionRequest = typeof AuthBrowserSessionRequest.Type;
+
+export const AuthBrowserSessionResult = Schema.Struct({
+  authenticated: Schema.Literal(true),
+  ...authScopeResponseFields,
+  sessionMethod: ServerAuthSessionMethod,
+  expiresAt: Schema.DateTimeUtc,
+});
+export type AuthBrowserSessionResult = typeof AuthBrowserSessionResult.Type;
+
+export const AuthClientMetadataDeviceType = Schema.Literals([
+  "desktop",
+  "mobile",
+  "tablet",
+  "bot",
+  "unknown",
+]);
+export type AuthClientMetadataDeviceType = typeof AuthClientMetadataDeviceType.Type;
+
+export const AuthClientPresentationMetadata = Schema.Struct({
+  label: Schema.optionalKey(TrimmedNonEmptyString),
+  deviceType: Schema.optionalKey(AuthClientMetadataDeviceType),
+  os: Schema.optionalKey(TrimmedNonEmptyString),
+  osMajorVersion: Schema.optionalKey(Schema.Int),
+  deviceModel: Schema.optionalKey(TrimmedNonEmptyString),
+  surface: Schema.optionalKey(ClientSurface),
+  webDeployment: Schema.optionalKey(ClientWebDeployment),
+  browser: Schema.optionalKey(TrimmedNonEmptyString),
+  appVersion: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetadata.Type;
+
+export const AuthTokenExchangeRequest = Schema.Struct({
+  grant_type: Schema.Literal(AuthTokenExchangeGrantType),
+  subject_token: TrimmedNonEmptyString,
+  subject_token_type: Schema.Literal(AuthEnvironmentBootstrapTokenType),
+  requested_token_type: Schema.Literal(AuthAccessTokenType),
+  scope: Schema.optionalKey(TrimmedNonEmptyString),
+  client_label: Schema.optionalKey(TrimmedNonEmptyString),
+  client_device_type: Schema.optionalKey(AuthClientMetadataDeviceType),
+  client_os: Schema.optionalKey(TrimmedNonEmptyString),
+}).pipe(HttpApiSchema.asFormUrlEncoded());
+export type AuthTokenExchangeRequest = typeof AuthTokenExchangeRequest.Type;
+
+export const AuthAccessTokenResult = Schema.Struct({
+  access_token: TrimmedNonEmptyString,
+  issued_token_type: Schema.Literal(AuthAccessTokenType),
+  token_type: Schema.Literals(["Bearer", "DPoP"]),
+  expires_in: Schema.Number,
+  scope: TrimmedNonEmptyString,
+});
+export type AuthAccessTokenResult = typeof AuthAccessTokenResult.Type;
+
+export const AuthWebSocketTicketResult = Schema.Struct({
+  ticket: TrimmedNonEmptyString,
+  expiresAt: Schema.DateTimeUtc,
+});
+export type AuthWebSocketTicketResult = typeof AuthWebSocketTicketResult.Type;
+
+/**
+ * Media routes share a ticket across requests; RPC uses a separate ticket.
+ * Use a path segment so the DPoP mint proof covers it; `htu` excludes query parameters,
+ * which could be stripped to change the ticket's use.
+ * Older clients mint at the bare path and receive tickets valid for either use.
+ */
+export const AuthWebSocketTicketUse = Schema.Literals(["rpc", "media"]);
+export type AuthWebSocketTicketUse = typeof AuthWebSocketTicketUse.Type;
+
+export const AuthWebSocketTicketParams = Schema.Struct({ use: AuthWebSocketTicketUse });
+
+export const AuthPairingCredentialResult = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  credential: TrimmedNonEmptyString,
+  label: Schema.optionalKey(TrimmedNonEmptyString),
+  expiresAt: Schema.DateTimeUtc,
+});
+export type AuthPairingCredentialResult = typeof AuthPairingCredentialResult.Type;
+
+export const AuthPairingLink = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  ...authScopeResponseFields,
+  subject: TrimmedNonEmptyString,
+  label: Schema.optionalKey(TrimmedNonEmptyString),
+  createdAt: Schema.DateTimeUtc,
+  expiresAt: Schema.DateTimeUtc,
+});
+export type AuthPairingLink = typeof AuthPairingLink.Type;
+
+export const AuthClientMetadata = Schema.Struct({
+  label: Schema.optionalKey(TrimmedNonEmptyString),
+  ipAddress: Schema.optionalKey(TrimmedNonEmptyString),
+  userAgent: Schema.optionalKey(TrimmedNonEmptyString),
+  deviceType: AuthClientMetadataDeviceType,
+  os: Schema.optionalKey(TrimmedNonEmptyString),
+  browser: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type AuthClientMetadata = typeof AuthClientMetadata.Type;
+
+export const AuthClientSession = Schema.Struct({
+  sessionId: AuthSessionId,
+  subject: TrimmedNonEmptyString,
+  ...authScopeResponseFields,
+  method: ServerAuthSessionMethod,
+  client: AuthClientMetadata,
+  issuedAt: Schema.DateTimeUtc,
+  expiresAt: Schema.DateTimeUtc,
+  lastConnectedAt: Schema.NullOr(Schema.DateTimeUtc),
+  connected: Schema.Boolean,
+  current: Schema.Boolean,
+});
+export type AuthClientSession = typeof AuthClientSession.Type;
+
+export const AuthAccessSnapshot = Schema.Struct({
+  pairingLinks: Schema.Array(AuthPairingLink),
+  clientSessions: Schema.Array(AuthClientSession),
+});
+export type AuthAccessSnapshot = typeof AuthAccessSnapshot.Type;
+
+export const AuthAccessStreamSnapshotEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("snapshot"),
+  payload: AuthAccessSnapshot,
+});
+export type AuthAccessStreamSnapshotEvent = typeof AuthAccessStreamSnapshotEvent.Type;
+
+export const AuthAccessStreamPairingLinkUpsertedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("pairingLinkUpserted"),
+  payload: AuthPairingLink,
+});
+export type AuthAccessStreamPairingLinkUpsertedEvent =
+  typeof AuthAccessStreamPairingLinkUpsertedEvent.Type;
+
+export const AuthAccessStreamPairingLinkRemovedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("pairingLinkRemoved"),
+  payload: Schema.Struct({
+    id: TrimmedNonEmptyString,
+  }),
+});
+export type AuthAccessStreamPairingLinkRemovedEvent =
+  typeof AuthAccessStreamPairingLinkRemovedEvent.Type;
+
+export class AuthAccessStreamError extends Schema.TaggedError<AuthAccessStreamError>()(
+  "AuthAccessStreamError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnvironmentAuthorizationError extends Schema.TaggedError<EnvironmentAuthorizationError>()(
+  "EnvironmentAuthorizationError",
+  {
+    message: Schema.String,
+    requiredScope: AuthEnvironmentScope,
+    requiredPermission: Schema.optionalKey(Schema.String),
+  },
+) {}
+
+export const AuthAccessStreamClientUpsertedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("clientUpserted"),
+  payload: AuthClientSession,
+});
+export type AuthAccessStreamClientUpsertedEvent = typeof AuthAccessStreamClientUpsertedEvent.Type;
+
+export const AuthAccessStreamClientRemovedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("clientRemoved"),
+  payload: Schema.Struct({
+    sessionId: AuthSessionId,
+  }),
+});
+export type AuthAccessStreamClientRemovedEvent = typeof AuthAccessStreamClientRemovedEvent.Type;
+
+export const AuthAccessStreamEvent = Schema.Union([
+  AuthAccessStreamSnapshotEvent,
+  AuthAccessStreamPairingLinkUpsertedEvent,
+  AuthAccessStreamPairingLinkRemovedEvent,
+  AuthAccessStreamClientUpsertedEvent,
+  AuthAccessStreamClientRemovedEvent,
+]);
+export type AuthAccessStreamEvent = typeof AuthAccessStreamEvent.Type;
+
+export const AuthRevokePairingLinkInput = Schema.Struct({
+  id: TrimmedNonEmptyString,
+});
+export type AuthRevokePairingLinkInput = typeof AuthRevokePairingLinkInput.Type;
+
+export const AuthRevokeClientSessionInput = Schema.Struct({
+  sessionId: AuthSessionId,
+});
+export type AuthRevokeClientSessionInput = typeof AuthRevokeClientSessionInput.Type;
+
+export const AuthCreatePairingCredentialInput = Schema.Struct({
+  label: Schema.optionalKey(TrimmedNonEmptyString),
+  scopes: Schema.optionalKey(AuthGrantScopes),
+});
+export type AuthCreatePairingCredentialInput = typeof AuthCreatePairingCredentialInput.Type;
+
+export const AuthSessionState = Schema.Struct({
+  authenticated: Schema.Boolean,
+  auth: ServerAuthDescriptor,
+  scopes: Schema.optionalKey(AuthEnvironmentScopes),
+  permissions: authScopeResponseFields.permissions,
+  sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
+  expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
+});
+export type AuthSessionState = typeof AuthSessionState.Type;
+
+export const AuthMcpClientAccess = Schema.Literals([
+  "read-only",
+  "approval-required",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+]);
+export type AuthMcpClientAccess = typeof AuthMcpClientAccess.Type;
+
+/** The scopes an agent session gets for an access level, and a pairing code must carry. */
+export const mcpClientScopes = (access: AuthMcpClientAccess): ReadonlyArray<AuthGrantScope> =>
+  access === "read-only"
+    ? [AuthOrchestrationReadScope]
+    : access === "full-access"
+      ? [
+          AuthOrchestrationReadScope,
+          AuthOrchestrationOperateScope,
+          AuthSettingsWriteScope,
+          AuthSourceControlWriteScope,
+        ]
+      : [AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
+
+export const AuthMcpProtectedResourceMetadata = Schema.Struct({
+  resource: Schema.String,
+  authorization_servers: Schema.Array(Schema.String),
+  scopes_supported: Schema.Array(AuthEnvironmentScope),
+  bearer_methods_supported: Schema.Array(Schema.Literal("header")),
+  resource_name: Schema.String,
+});
+export type AuthMcpProtectedResourceMetadata = typeof AuthMcpProtectedResourceMetadata.Type;
+
+export const AuthMcpAuthorizationServerMetadata = Schema.Struct({
+  issuer: Schema.String,
+  authorization_endpoint: Schema.String,
+  token_endpoint: Schema.String,
+  registration_endpoint: Schema.String,
+  response_types_supported: Schema.Array(Schema.Literal("code")),
+  grant_types_supported: Schema.Array(Schema.Literal("authorization_code")),
+  code_challenge_methods_supported: Schema.Array(Schema.Literal("S256")),
+  token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")),
+  scopes_supported: Schema.Array(AuthEnvironmentScope),
+  authorization_response_iss_parameter_supported: Schema.Boolean,
+});
+export type AuthMcpAuthorizationServerMetadata = typeof AuthMcpAuthorizationServerMetadata.Type;
+
+/**
+ * The `software_id` another T3 Code environment registers with when it links
+ * to this one. Its session is then a peer link: the work it starts here stays
+ * within that link. Claiming it only ever adds limits.
+ */
+export const MCP_PEER_LINK_SOFTWARE_ID = "t3code-peer-link";
+
+export const AuthMcpClientRegistration = Schema.Struct({
+  client_name: Schema.optionalKey(Schema.String),
+  software_id: Schema.optionalKey(Schema.String),
+  redirect_uris: Schema.optionalKey(Schema.Array(Schema.String)),
+  token_endpoint_auth_method: Schema.optionalKey(Schema.String),
+});
+export type AuthMcpClientRegistration = typeof AuthMcpClientRegistration.Type;
+
+export const AuthMcpRegisteredClient = Schema.Struct({
+  client_id: Schema.String,
+  client_name: Schema.String,
+  redirect_uris: Schema.Array(Schema.String),
+  grant_types: Schema.Array(Schema.Literal("authorization_code")),
+  response_types: Schema.Array(Schema.Literal("code")),
+  token_endpoint_auth_method: Schema.Literal("none"),
+}).pipe(HttpApiSchema.status(201));
+export type AuthMcpRegisteredClient = typeof AuthMcpRegisteredClient.Type;
+
+export class AuthMcpRegistrationError extends Schema.Error<AuthMcpRegistrationError>(
+  "AuthMcpRegistrationError",
+)(
+  {
+    error: Schema.Literals(["invalid_client_metadata", "invalid_redirect_uri"]),
+    error_description: Schema.String,
+  },
+  { httpApiStatus: 400 },
+) {
+  override get message(): string {
+    return this.error_description;
+  }
+}
+
+/** Fields are optional here because the server validates them. */
+export const AuthMcpAuthorizationRequest = Schema.Struct({
+  response_type: Schema.optionalKey(Schema.String),
+  client_id: Schema.optionalKey(Schema.String),
+  redirect_uri: Schema.optionalKey(Schema.String),
+  code_challenge: Schema.optionalKey(Schema.String),
+  code_challenge_method: Schema.optionalKey(Schema.String),
+  state: Schema.optionalKey(Schema.String),
+  resource: Schema.optionalKey(Schema.String),
+});
+export type AuthMcpAuthorizationRequest = typeof AuthMcpAuthorizationRequest.Type;
+
+/** Server-validated request details, trusted by the client only for display. */
+export const AuthMcpApprovalDetails = Schema.Struct({
+  /** Self-declared by the client, so shown as such. */
+  clientName: Schema.String,
+  redirectHost: Schema.String,
+  environmentHost: Schema.String,
+  csrfToken: Schema.optionalKey(Schema.String),
+  /** Only scopes held by this session qualify; others need a pairing code. Absent with `csrfToken`. */
+  oneClickAccess: Schema.optionalKey(Schema.Array(AuthMcpClientAccess)),
+});
+export type AuthMcpApprovalDetails = typeof AuthMcpApprovalDetails.Type;
+
+export const AuthMcpApprovalRedirect = Schema.Struct({
+  redirectTo: Schema.String,
+});
+export type AuthMcpApprovalRedirect = typeof AuthMcpApprovalRedirect.Type;
+
+export const AuthMcpApprovalDecision = Schema.Union([
+  Schema.TaggedStruct("deny", {}),
+  Schema.TaggedStruct("pairing-code", {
+    access: AuthMcpClientAccess,
+    code: TrimmedNonEmptyString,
+  }),
+  Schema.TaggedStruct("browser-session", {
+    access: AuthMcpClientAccess,
+    csrfToken: Schema.String,
+  }),
+]);
+export type AuthMcpApprovalDecision = typeof AuthMcpApprovalDecision.Type;
+
+export const AuthMcpApprovalDecisionRequest = Schema.Struct({
+  authorization: AuthMcpAuthorizationRequest,
+  decision: AuthMcpApprovalDecision,
+});
+export type AuthMcpApprovalDecisionRequest = typeof AuthMcpApprovalDecisionRequest.Type;
+
+export class AuthMcpApprovalError extends Schema.TaggedError<AuthMcpApprovalError>()(
+  "AuthMcpApprovalError",
+  { message: Schema.String },
+  { httpApiStatus: 400 },
+) {}
+
+export const AuthMcpTokenRequest = Schema.Struct({
+  grant_type: Schema.optionalKey(Schema.String),
+  code: Schema.optionalKey(Schema.String),
+  redirect_uri: Schema.optionalKey(Schema.String),
+  client_id: Schema.optionalKey(Schema.String),
+  code_verifier: Schema.optionalKey(Schema.String),
+  resource: Schema.optionalKey(Schema.String),
+}).pipe(HttpApiSchema.asFormUrlEncoded());
+export type AuthMcpTokenRequest = typeof AuthMcpTokenRequest.Type;
+
+export const AuthMcpTokenResult = Schema.Struct({
+  access_token: Schema.String,
+  token_type: Schema.Literal("Bearer"),
+  expires_in: Schema.Number,
+  scope: Schema.String,
+});
+export type AuthMcpTokenResult = typeof AuthMcpTokenResult.Type;
+
+export class AuthMcpTokenError extends Schema.Error<AuthMcpTokenError>("AuthMcpTokenError")(
+  {
+    error: Schema.Literals([
+      "invalid_request",
+      "invalid_client",
+      "invalid_grant",
+      "unsupported_grant_type",
+    ]),
+    error_description: Schema.String,
+  },
+  { httpApiStatus: 400 },
+) {
+  override get message(): string {
+    return this.error_description;
+  }
+}

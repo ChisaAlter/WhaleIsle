@@ -359,7 +359,13 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       owner,
       scope?.resolveOutcome,
       activity,
-      () => { this.terminals.delete(handle as LocalTerminalHandle) },
+      () => {
+        // Process-range settlement does not release the bundled ConPTY
+        // transport: natural exit leaves node-pty's conout worker alive.
+        // Close the owned native PTY only after the range is quiescent.
+        if (platform === 'win32') terminal.kill()
+        this.terminals.delete(handle as LocalTerminalHandle)
+      },
       spec.shellActivity === true,
     )
     this.terminals.add(handle)
