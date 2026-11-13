@@ -598,6 +598,22 @@ describe('pressure measurement and retention', () => {
     retainTokens: 180,
   }
 
+  it('retains native-agent history without inventing capacity or running host summarization', async () => {
+    const ctx = createContext()
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({ provider: MODEL, id: MODEL, name: MODEL, contextManagement: 'provider' })
+    const compact = new BasicCompactionEngine(ctx, compactConfig)
+    const session = conversation()
+    const generation = session.surface.replaceGeneration
+    for (const trigger of ['pressure', 'context-overflow'] as const) {
+      await expect(compact.compactIfNeeded(agent(session, MODEL), trigger, SIGNAL)).resolves.toBeNull()
+    }
+    const range = selectCompactableRange(session, ctx.tokenMeter.measure(session), 0)
+    expect(range).not.toBeNull()
+    await expect(compact.compactRegion(range!.start, range!.end, agent(session, MODEL), SIGNAL))
+      .rejects.toThrow('This agent manages its own context')
+    expect(session.surface.replaceGeneration).toBe(generation)
+  })
+
   it('skips when no durable routed model exists instead of using AgentOptions fallback', async () => {
     const compact = service(compactConfig)
     const session = Session.create(SessionId('headerless'))
@@ -1712,6 +1728,19 @@ describe('model-switch pressure', () => {
     })
     return { ctx, adapter, compact }
   }
+
+  it('switches history to a native context owner without host summaries or guessed capacity', async () => {
+    const { ctx, adapter } = harness()
+    const native = new ContextAdapter(1_000)
+    vi.spyOn(native, 'resolveModel').mockResolvedValue({ provider: 'native', id: 'native', name: 'Native', contextManagement: 'provider' })
+    ctx.llm.registerAdapter(['native'], native)
+    const session = conversation(4)
+    const generation = session.surface.replaceGeneration
+    const selected = { provider: 'native', model: 'native' }
+    await expect(request(ctx, session, selected)).resolves.toEqual(selected)
+    expect(adapter.lastOptions).toBeUndefined()
+    expect(session.surface.replaceGeneration).toBe(generation)
+  })
 
   it('checks the newly routed window and summarizes with the previous model before returning it', async () => {
     const { ctx, adapter } = harness()

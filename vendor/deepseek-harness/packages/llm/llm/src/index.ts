@@ -811,6 +811,10 @@ export class LlmRuntime extends TypertRemoteService {
       )
     }
     const context = resolved.context
+    const contextManagement: string | undefined = resolved.contextManagement
+    if (contextManagement !== undefined && contextManagement !== 'provider') {
+      throw new LlmError('adapter returned invalid context management', 'INVALID_MODEL_INFO')
+    }
     if (context !== undefined && (!Number.isInteger(context.contextWindow) || context.contextWindow <= 0)) {
       throw new LlmError(
         `adapter returned invalid context metadata for provider "${provider}" model "${model}"`,
@@ -852,6 +856,7 @@ export class LlmRuntime extends TypertRemoteService {
       provider,
       id: model,
       name: resolved.name,
+      ...contextManagement === undefined ? {} : { contextManagement },
       ...resolved.description === undefined ? {} : { description: resolved.description },
       ...inputModalities === undefined ? {} : { inputModalities },
       ...context === undefined ? {} : { context: {

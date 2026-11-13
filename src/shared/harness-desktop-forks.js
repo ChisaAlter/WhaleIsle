@@ -104,8 +104,8 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/llm/llm-pi-ai/src/catalog.ts', includes: ['compactionThreshold?: number'] },
   { file: 'packages/llm/llm-pi-ai/src/config.ts', includes: ['configuredCompactionThresholds', 'compactionThreshold: z.number()'] },
   { file: 'packages/llm/llm-pi-ai/src/adapter.ts', includes: ['configuredCompactionThresholds'] },
-  { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number'] },
-  { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold'] },
+  { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number', "contextManagement?: 'provider'"] },
+  { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold', 'contextManagement'] },
   // Durable tool-call guard: a successful finish must carry a valid call
   // identity; a failed stream drops the unusable call instead of throwing.
   { file: 'packages/llm/llm/src/assembler.ts', includes: ['isValidToolCallIdentity', 'requireValidToolCallIdentity'] },
@@ -114,7 +114,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/core/agent-loop/src/agent.ts', includes: ['The initiator scope is closing', 'resumePendingInteraction'] },
   { file: 'packages/llm/llm/src/content.ts', includes: ['export function requireValidToolCallIdentity', 'TOOL_NAME_PATTERN'] },
   { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
-  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold'] },
+  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold', "info.contextManagement === 'provider'"] },
   // Local Project continuations use explicit cwd/preset and admission policy.
   // Ordinary Team and Session ownership are not changed by this feature.
   // SettingsSelect: official Menu pill for every settings value dropdown.
