@@ -14,18 +14,18 @@ export function selectChecks(paths, { manual = false } = {}) {
     if (/^(docs\/|\.devin\/|\.cursor\/|\.agents\/)/.test(path) ||
         /^[^/]+\.(md|i18n\.yaml)$/.test(path) ||
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
-        /^vendor\/[^/]+\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
+        /^(vendor\/[^/]+|dsh-acp)\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
     if (path.startsWith('scripts/')) scope.tools = true
     if (path === '.github/workflows/cnb-mirror.yml') { scope.tools = true; continue }
     if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
     if (/\.test\.(js|mjs)$/.test(path)) {
       if (!path.startsWith('scripts/')) scope.product = true
-      if (path.startsWith('vendor/')) scope.vendor = true
+      if (/^(vendor|dsh-acp)\//.test(path)) scope.vendor = true
       continue
     }
-    if (/^(src\/|mobile\/|vendor\/|assets\/|build\/|scripts\/|\.github\/workflows\/)/.test(path) ||
+    if (/^(src\/|mobile\/|vendor\/|dsh-acp\/|assets\/|build\/|scripts\/|\.github\/workflows\/)/.test(path) ||
         /^(package(-lock)?\.json|pnpm(-lock\.yaml|-workspace\.yaml)|\.nvmrc|\.npmrc|electron-builder.*\.yml)$/.test(path)) scope.product = true
-    if (/^vendor\//.test(path) || /^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.vendor = true
+    if (/^(vendor|dsh-acp)\//.test(path) || /^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.vendor = true
     if (/^src\/main\/(native-window-motion|window-|index\.js|chrome-theme|shell-silhouette)/.test(path) ||
         /^(package(-lock)?\.json|vendor\/deepseek-harness\/)/.test(path)) scope.motion = true
     if (/^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.tools = true

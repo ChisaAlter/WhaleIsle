@@ -18,6 +18,13 @@ test('desktop code gets product checks without the upstream matrix', () => {
   assert.deepEqual(selectChecks(['src/main/update.js']),
     { product: true, tools: false, vendor: false, motion: false })
 })
+test('relocated ACP source and tests retain plugin checks while its docs stay lightweight', () => {
+  for (const file of ['dsh-acp/lib/index.js', 'dsh-acp/client/client.js', 'dsh-acp/tests/plugin.test.mjs']) {
+    assert.deepEqual(selectChecks([file]), { product: true, vendor: true, tools: false, motion: false })
+  }
+  assert.deepEqual(selectChecks(['dsh-acp/README.md']),
+    { product: false, vendor: false, tools: false, motion: false })
+})
 test('upstream runtime, lock and native window changes select their actual consumers', () => {
   assert.equal(selectChecks(['vendor/deepseek-harness/packages/core/session/src/index.ts']).vendor, true)
   assert.equal(selectChecks(['package-lock.json']).tools, true)
