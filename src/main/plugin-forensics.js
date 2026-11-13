@@ -168,7 +168,7 @@ function inspectPlugins({
   plugins,
   bundles,
   disabledPlugins,
-  projectEnabled = false,
+  projectEnabled = true,
 } = {}) {
   const logText = Array.isArray(logs) ? logs.join('\n') : String(logs || '');
   const corpus = [logText, lastStartError, recovery?.reason].filter(Boolean).join('\n');

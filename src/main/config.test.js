@@ -62,6 +62,23 @@ test('whale assistant defaults on while an explicit opt-out persists', () => {
   assert.equal(loadConfig().whaleAssistantEnabled, true);
 });
 
+test('Project defaults on for new and existing settings without a saved choice, while explicit opt-out persists', () => {
+  const before = loadConfig();
+  try {
+    assert.equal(DEFAULTS.projectEnabled, true);
+    fs.unlinkSync(path.join(userData, 'config.json'));
+    assert.equal(loadConfig().projectEnabled, true, 'new profile');
+    fs.writeFileSync(path.join(userData, 'config.json'), '{}');
+    assert.equal(loadConfig().projectEnabled, true, 'existing profile without a saved Project choice');
+    saveConfig({ projectEnabled: false });
+    assert.equal(loadConfig().projectEnabled, false);
+    saveConfig({ projectEnabled: true });
+    assert.equal(loadConfig().projectEnabled, true);
+  } finally {
+    saveConfig(before);
+  }
+});
+
 test('retired Bots flags are discarded on load and save', () => {
   const before = loadConfig();
   try {
@@ -84,7 +101,7 @@ test('Harness recovery defaults are bounded and enabled', () => {
   assert.equal(DEFAULTS.harnessRestartMaxAttempts, 3);
   assert.equal(DEFAULTS.harnessRestartBaseDelayMs, 1000);
   assert.equal(Object.hasOwn(DEFAULTS, 'dshbotEnabled'), false);
-  assert.equal(DEFAULTS.projectEnabled, false);
+  assert.equal(DEFAULTS.projectEnabled, true);
   assert.deepEqual(normalizeHarnessRecovery({}), {
     harnessAutoRestart: true,
     harnessRestartMaxAttempts: 3,

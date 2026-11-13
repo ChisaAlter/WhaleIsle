@@ -33,16 +33,16 @@ function mount(dict: Record<string, string> = en, leaveProjectLead: () => Promis
 }
 
 describe('ProjectRow', () => {
-  it('stays off when the config has no Project setting and persists the toggle', async () => {
-    const saveConfig = vi.fn(async () => ({ projectEnabled: true }))
+  it('defaults on when the config has no Project setting and persists an explicit opt-out', async () => {
+    const saveConfig = vi.fn(async () => ({ projectEnabled: false }))
     ;(window as Window & { shell?: unknown }).shell = { getConfig: async () => ({}), saveConfig }
     mount()
     const toggle = screen.getByRole('switch', { name: 'Project' })
     await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
-    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
-    await waitFor(() => { expect(saveConfig).toHaveBeenCalledWith({ projectEnabled: true }) })
-    await waitFor(() => { expect(screen.getByRole('switch', { name: 'Project' }).getAttribute('aria-checked')).toBe('true') })
+    await waitFor(() => { expect(saveConfig).toHaveBeenCalledWith({ projectEnabled: false }) })
+    await waitFor(() => { expect(screen.getByRole('switch', { name: 'Project' }).getAttribute('aria-checked')).toBe('false') })
   })
 
   it('loads the enabled state from the desktop config', async () => {
@@ -74,6 +74,7 @@ describe('ProjectRow', () => {
     mount(en, leave)
     const toggle = screen.getByRole('switch', { name: 'Project' })
     await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
     fireEvent.click(toggle)
     await waitFor(() => { expect(order).toEqual(['leave', 'save:false']) })
     await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
@@ -88,6 +89,7 @@ describe('ProjectRow', () => {
     mount(en, async () => { throw new Error('navigation failed') })
     const toggle = screen.getByRole('switch', { name: 'Project' })
     await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
     fireEvent.click(toggle)
     expect((await screen.findByRole('alert')).textContent).toBe('Could not save settings: navigation failed')
     expect(screen.getByRole('switch', { name: 'Project' }).getAttribute('aria-checked')).toBe('true')

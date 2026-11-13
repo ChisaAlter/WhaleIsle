@@ -70,11 +70,11 @@ function copyRuntime(source, target) {
   }
 }
 
-// Project is off by default and enabled from Settings › Interface. Hidden
+// Project is on by default and can be disabled from Settings › Interface. Hidden
 // means not mounted: its data on disk is kept. WHALE_PROJECT=1 mounts it for
 // development regardless of the setting.
 function projectAvailable(env = process.env, config = {}) {
-  return env.WHALE_PROJECT === '1' || config?.projectEnabled === true;
+  return env.WHALE_PROJECT === '1' || config?.projectEnabled !== false;
 }
 
 /**

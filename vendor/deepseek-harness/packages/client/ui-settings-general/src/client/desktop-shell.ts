@@ -125,7 +125,7 @@ export type DesktopConfig = {
   downloadRoute?: DownloadRoute | ''
   dshHome?: string
   /**
-   * Whether the desktop mounts the built-in Project plugin (default off);
+   * Whether the desktop mounts the built-in Project plugin (default on);
    * the shell restarts Harness after this field changes.
    */
   projectEnabled?: boolean
