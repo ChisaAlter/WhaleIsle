@@ -293,7 +293,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const launcher = renderSlot('settings.launcher', {
     wide,
     settingsOpen: open,
-    openSettings: () => { openSettings() },
+    openSettings: (sectionId?: string) => { openSettings(sectionId) },
     ...(shortcut?.keys.length ? { settingsShortcut: { keys: shortcut.keys, aria: shortcut.aria } } : {}),
     openOnboarding: (id: string) => { setExplicitOnboarding(id) },
   })

@@ -94,10 +94,10 @@ describe('Agent Teams projection events', () => {
     await ctx.sessionProjections.register(teamProjectionDefinition)
     const session = ctx.sessions.create(ROOT)
     const restore = (val: unknown) => ctx.sessionProjections.restore({
-      agentTeam: { ver: teamProjectionDefinition.stateVersion, seq: -1, val },
+      projectTeam: { ver: teamProjectionDefinition.stateVersion, seq: -1, val },
     }, [], SessionLogOffset(0), session.header, SessionLogOffset(0))
     const valid = { ...project(ROOT, []), messages: [message()] }
-    expect(restore(JSON.parse(JSON.stringify(valid))).checkpoint['agentTeam']?.val).toEqual(valid)
+    expect(restore(JSON.parse(JSON.stringify(valid))).checkpoint['projectTeam']?.val).toEqual(valid)
     const retiredMessage = message({ content: [{
       type: 'tool-result', toolCallId: 'retired', content: [{ type: 'text', text: 'old result' }],
     }] as unknown as TeamMessageSnapshot['content'] })
@@ -370,13 +370,13 @@ describe('Agent Teams projection events', () => {
         version: 2, teamId: TEAM, message: message({ content: oldContent as ContentBlock[] }),
       }, SessionSeq(0))])
       const restored = ctx.sessionProjections.restore(
-        { agentTeam: { ver: 3, seq: SessionSeq(0), val: oldState } },
+        { projectTeam: { ver: 3, seq: SessionSeq(0), val: oldState } },
         [queued],
         SessionLogOffset(0),
         { version: SESSION_FORMAT_VERSION, id: ROOT, createdAt: 0, isSeeded: false },
         SessionLogOffset(0),
       )
-      const state = teamProjectionDefinition.stateSchema.parse(restored.checkpoint['agentTeam']!.val)
+      const state = teamProjectionDefinition.stateSchema.parse(restored.checkpoint['projectTeam']!.val)
       expect(state.messages[0]?.content).toEqual([extension])
     } finally {
       await registry.dispose()
@@ -552,7 +552,7 @@ describe('Agent Teams projection events', () => {
       expect(teamProjectionDefinition.wire.viewSchema.parse(view)).toEqual(view)
     })
 
-    it('drives live agentTeam publications per Session through the projection registry', async () => {
+    it('drives live projectTeam publications per Session through the projection registry', async () => {
       const ctx = new Context()
       onTestFinished(() => ctx.fiber.dispose())
       await ctx.plugin(SessionStore)
@@ -564,7 +564,7 @@ describe('Agent Teams projection events', () => {
       })
       const lead = ctx.sessions.create(ROOT)
       const other = ctx.sessions.create(SessionId('other-root'))
-      expect(ctx.sessionProjections.snapshot(lead).values['agentTeam']).toEqual({
+      expect(ctx.sessionProjections.snapshot(lead).values['projectTeam']).toEqual({
         members: [{ id: ROOT, name: 'lead', role: 'lead', phase: 'active' }],
         tasks: [],
       })
@@ -573,7 +573,7 @@ describe('Agent Teams projection events', () => {
       expect(published).toHaveLength(1)
       expect(published[0]).toMatchObject({
         session: ROOT,
-        key: 'agentTeam',
+        key: 'projectTeam',
         value: { tasks: [{ id: 'task-1', ready: true }] },
       })
 
@@ -587,7 +587,7 @@ describe('Agent Teams projection events', () => {
         session: other.id,
         value: { members: [{ id: other.id, name: 'lead', role: 'lead', phase: 'active' }] },
       })
-      expect(ctx.sessionProjections.snapshot(lead).values['agentTeam']).toMatchObject({
+      expect(ctx.sessionProjections.snapshot(lead).values['projectTeam']).toMatchObject({
         tasks: [{ id: 'task-1' }],
       })
     })

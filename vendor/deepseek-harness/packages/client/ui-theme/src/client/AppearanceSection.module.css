@@ -84,7 +84,7 @@
   height: 16px;
   margin-top: -5px;
   border-radius: 999px;
-  background: var(--dsw-static-neutral-bluish-00);
+  background: var(--dsw-alias-label-on-color);
   border: 2px solid var(--dsw-alias-brand-primary);
   box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
@@ -170,7 +170,7 @@
 
 .selected {
   background: var(--dsw-alias-bg-module-platform);
-  border-color: var(--dsw-static-neutral-bluish-400);
+  border-color: var(--dsw-alias-border-selected);
 }
 
 .library {
@@ -320,7 +320,7 @@
   height: 16px;
   border-radius: 999px;
   background: var(--dsw-alias-brand-primary);
-  color: var(--dsw-static-neutral-bluish-00);
+  color: var(--dsw-alias-label-on-color);
   font-size: 10px;
   line-height: 1;
   corner-shape: round;

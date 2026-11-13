@@ -232,7 +232,7 @@ servers:
       env: {},
       cwd: '',
       toolCallTimeoutMs: 1,
-      failOnStartupError: false,
+      failOnStartupError: false, closeTimeoutMs: 5000, expandTemplates: false,
     })
     expect(handle.phase()).toBe('active')
     void handle.dispose()
@@ -256,7 +256,7 @@ servers:
       env: {},
       cwd: '',
       toolCallTimeoutMs: 1,
-      failOnStartupError: false,
+      failOnStartupError: false, closeTimeoutMs: 5000, expandTemplates: false,
     })
     await Promise.resolve()
     await Promise.resolve()

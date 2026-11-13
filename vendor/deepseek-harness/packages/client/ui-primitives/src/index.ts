@@ -48,6 +48,7 @@ export type { AnchoredPositionOptions } from './useAnchoredPosition.ts'
 export { useDismissOnOutsidePointer } from './useDismissOnOutsidePointer.ts'
 export { HoverCard } from './HoverCard.tsx'
 export { HoverCardGroup } from './HoverCardGroup.tsx'
+export { usePointerGrace } from './pointer-grace.ts'
 export { ShortcutKeys } from './ShortcutKeys.tsx'
 export { observeComposition } from './keyboard-composition.ts'
 export { focusWithoutRing, isMobileDevice } from './focus.ts'
@@ -129,10 +130,12 @@ export type {
 } from './WebBlock.tsx'
 export { CodeBlock } from './markdown/CodeBlock.tsx'
 export type { CodeBlockProps } from './markdown/CodeBlock.tsx'
+export { FenceCodeBlock, FenceMathBlock } from './markdown/FenceBlocks.tsx'
+export type { FenceCodeBlockProps } from './markdown/FenceBlocks.tsx'
 export { JsonBlock } from './markdown/JsonBlock.tsx'
 export { MarkdownDelegateProvider, useMarkdownDelegate } from './markdown/MarkdownDelegate.tsx'
 export type {
-  MarkdownDelegate, MarkdownDelegateProviderProps, MarkdownExternalLinkHandler, MarkdownPreviewImage,
+  MarkdownDelegate, MarkdownDelegateProviderProps, MarkdownExternalLinkHandler, MarkdownPreviewImage, MarkdownDelegateFenceInfo,
 } from './markdown/MarkdownDelegate.tsx'
 export { DetailDocument, detailDocumentState, useDetailDocumentLabels } from './DetailDocument.tsx'
 export type { DetailDocumentCopy, DetailDocumentLabels, DetailDocumentRead, DetailDocumentState } from './DetailDocument.tsx'
@@ -149,7 +152,7 @@ export { ImageLightbox } from './ImageLightbox.tsx'
 export type { ImageLightboxLabels } from './ImageLightbox.tsx'
 
 export { QuotePreview } from './QuotePreview.tsx'
-export type { QuotePreviewProps, QuotePreviewRemoval } from './QuotePreview.tsx'
+export type { QuotePreviewProps, QuotePreviewRemoval, QuoteSummary } from './QuotePreview.tsx'
 export { formatQuoteText } from './markdown/quote-text.ts'
 
 export type { MarkdownMenuTarget } from './markdown/MarkdownDelegate.tsx'

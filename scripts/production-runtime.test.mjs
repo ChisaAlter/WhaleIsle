@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { stageOfficeSkills } from './prepare-office-runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const { productionClosure, prunePluginDevDependencies, runtimeFileExclusion,
@@ -247,14 +248,15 @@ test('packaged Office closure accepts current assets and requires every bundled 
   writeFile(payload, 'runtime.json', JSON.stringify(manifest));
   const assets = path.join(resources, 'runtime', 'office-skills');
   fs.cpSync(new URL('../vendor/deepseek-harness/packages/skill/skill-office/assets/', import.meta.url), assets, { recursive: true });
-  for (const name of ['dsh-office-to-pdf', 'dsh-skill-office', 'dsh-tool-workspace-dependencies',
+  for (const name of ['dsh-office-kit', 'dsh-tool-office', 'dsh-skill-office', 'dsh-tool-workspace-dependencies',
     'libreoffice-kit', 'libreoffice-kit-win32-x64']) {
     write(`@deepseek-ai/${name}`, { version: '0.1.1' });
   }
   writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js');
-  writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe');
+  writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/bin/dsoffice.exe');
+  writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/program/program/fundamental.ini');
   writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/prebuilds.json',
-    JSON.stringify({ version: '0.1.1', platform: 'win32-x64', status: 'built' }));
+    JSON.stringify({ version: '0.1.1', platform: 'win32-x64', status: 'built', engine: { kind: 'native', executable: 'bin/dsoffice.exe', programDirectory: 'program/program' } }));
   assert.doesNotThrow(() => assertOfficeRuntime(resources, root));
   for (const folder of OFFICE_SKILL_FOLDERS) {
     const skill = path.join(assets, folder, 'SKILL.md');
@@ -263,4 +265,24 @@ test('packaged Office closure accepts current assets and requires every bundled 
     assert.throws(() => assertOfficeRuntime(resources, root), error => error.message.includes(skill), folder);
     fs.writeFileSync(skill, contents);
   }
+});
+
+test('Office preparation stages the current skill package separately from primary-runtime preparation', t => {
+  const { root } = fixture(t);
+  const output = path.join(root, 'office-output');
+  const stale = path.join(output, 'office-skills', 'removed-office-skill', 'SKILL.md');
+  fs.mkdirSync(path.dirname(stale), { recursive: true });
+  fs.writeFileSync(stale, 'obsolete');
+  const staged = stageOfficeSkills(output);
+  assert.equal(fs.existsSync(stale), false);
+  for (const folder of OFFICE_SKILL_FOLDERS) {
+    const source = new URL(`../vendor/deepseek-harness/packages/skill/skill-office/assets/${folder}/SKILL.md`, import.meta.url);
+    assert.equal(fs.readFileSync(path.join(staged, folder, 'SKILL.md'), 'utf8'), fs.readFileSync(source, 'utf8'));
+  }
+  assert.deepEqual(fs.readdirSync(staged).sort(), [...OFFICE_SKILL_FOLDERS].sort());
+  // A damaged source cannot replace the previously prepared resources.
+  const incomplete = path.join(root, 'incomplete');
+  fs.mkdirSync(incomplete);
+  assert.throws(() => stageOfficeSkills(output, incomplete), /Office 技能源文件缺失/);
+  assert.ok(fs.existsSync(path.join(staged, 'office', 'SKILL.md')));
 });

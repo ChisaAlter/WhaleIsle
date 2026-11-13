@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包向 Web 会话页头添加 Agent Teams action，并在右侧 Sidebar 提供同一个 Team 页面，让用户检查当前 roster、查看共享任务板并导航到 teammate 会话。它从共享 Session store 读取 Lead Session 的 `agentTeam` 投影，Host 投影 frame 使其保持最新而无需刷新控件，并让普通 child history 导航继续使用稳定的 addressed-subagent 路径。通过公开发布的实验性 Agent Teams bundle 选择本包。这个浏览器 projection 不扩展稳定 API Proxy、不存储 Team 状态，也不注册面向模型的输入。
+本包向 Web 会话页头添加 Agent Teams action，并在右侧 Sidebar 提供同一个 Team 页面，让用户检查当前 roster、查看共享任务板并导航到 teammate 会话。它从共享 Session store 读取 Lead Session 的 `projectTeam` 投影，Host 投影 frame 使其保持最新而无需刷新控件，并让普通 child history 导航继续使用稳定的 addressed-subagent 路径。通过公开发布的实验性 Agent Teams bundle 选择本包。这个浏览器 projection 不扩展稳定 API Proxy、不存储 Team 状态，也不注册面向模型的输入。
 
 ## 目录
 
@@ -65,7 +65,7 @@ Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversati
 
 面板渲染在会话容器外；`useAnchoredPosition` 在浏览器缩放、Visual Viewport 平移及尺寸变化时跟随触发按钮，并保留视口边距。成员卡片在静止、选中和悬停状态下均使用共享 elevation 描边绘制轮廓。普通会话中，悬停触发按钮 150ms 后打开面板；指针离开触发按钮和面板后，经过 120ms 宽限关闭。点击会固定该浮层，并在首次定位完成后移入焦点。页头较窄时，普通入口折叠为图标，只响应点击打开。Project 入口在窄宽度仍保留人数，并始终要求点击。
 
-组件从 `useSessions`、`useSessionStatus` 与 `useSession` 座位派生每一行：Lead 身份来自当前 Session 的 subagent address，Team 视图来自 `projectionsBySession[lead].values.agentTeam`，成员活动来自 Session 状态并以列表摘要为后备，model 来自 `projectionsBySession[member].values.modelSelection.next`。明确的实时未运行状态优先于旧的运行中摘要。每个 roster 行只选择自己的运行状态。窄范围的注入回调打开 roster Session 或原生 Team Sidebar。两种 Project 展示由共享的 Session 级视图 store 连接。切换会话关闭浮层、清除导航失败，保留该会话的视图选择。
+组件从 `useSessions`、`useSessionStatus` 与 `useSession` 座位派生每一行：Lead 身份来自当前 Session 的 subagent address，Team 视图来自 `projectionsBySession[lead].values.projectTeam`，成员活动来自 Session 状态并以列表摘要为后备，model 来自 `projectionsBySession[member].values.modelSelection.next`。明确的实时未运行状态优先于旧的运行中摘要。每个 roster 行只选择自己的运行状态。窄范围的注入回调打开 roster Session 或原生 Team Sidebar。两种 Project 展示由共享的 Session 级视图 store 连接。切换会话关闭浮层、清除导航失败，保留该会话的视图选择。
 
 | 文件 | 职责 |
 |---|---|

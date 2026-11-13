@@ -262,7 +262,7 @@ export class TeamTaskBoard {
 
   /** Remove an optional owner field under exactOptionalPropertyTypes. */
   private withoutOwner(task: TeamTaskSnapshot): TeamTaskSnapshot {
-    const { ownerId: _ownerId, ...without } = task
+    const { ownerId: _ownerId, ownerName: _ownerName, ...without } = task
     return without
   }
 }

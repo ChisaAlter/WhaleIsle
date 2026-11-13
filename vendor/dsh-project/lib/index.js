@@ -13,13 +13,13 @@ export const Config = z.object({});
 
 /** Reuse the configured Team provider before mounting the Project consumer. */
 export async function apply(ctx) {
-  if (!ctx.get('agentTeams')) {
+  if (!ctx.get('projectTeams')) {
     // Loader imports entries concurrently; an enabled provider may still be importing.
     const configured = [...ctx.loader.entries()].find(entry => entry.options.name === '@deepseek-ai/dsh-experimental-agent-team' && !entry.disabled);
     if (configured) { if (!configured.fiber) await configured.init(); await configured.fiber?.await(); }
     else await ctx.plugin(TeamService);
   }
-  await ctx.inject(['agentTeams'], mountProject);
+  await ctx.inject(['projectTeams'], mountProject);
 }
 
 /** Optional Project failure must leave ordinary conversations available. */
@@ -30,7 +30,7 @@ async function mountProject(ctx) {
     finally { try { await domain?.close(); } finally { await releaseWriter?.(); } }
   });
   try {
-    const teams = ctx.agentTeams;
+    const teams = ctx.projectTeams;
     const home = process.env.DSH_HOME || process.env.DSHD_HOME;
     if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
     releaseWriter = await acquireWriter(home, randomUUID());

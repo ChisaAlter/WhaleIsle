@@ -287,7 +287,7 @@ export class VisionFallback extends Service {
     } catch (error: unknown) {
       signal.throwIfAborted()
       const timeout = timeoutOf(callDeadline.signal, VISION_DESCRIBE_TIMEOUT_CODE)
-      if (timeout !== undefined) throw new LlmError(timeout.message, timeout.code)
+      if (timeout !== undefined) throw LlmError.fromFailure({ message: timeout.message, code: timeout.code })
       throw error
     }
     const terminalError = finishError(assembler.finish)

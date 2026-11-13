@@ -44,7 +44,7 @@
   max-height: 100%;
   padding-bottom: 0;
   /* Page and source reading need a solid ground even with translucent themes. */
-  background: rgb(from var(--dsw-alias-bg-layer-2) r g b / 1);
+  background: var(--dsw-alias-bg-panel-solid);
 }
 .dialog .actions { display: inline-flex; vertical-align: middle; }
 .dialog .actions + button { vertical-align: middle; }

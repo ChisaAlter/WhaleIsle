@@ -242,7 +242,7 @@ describe('SettingsRoot trigger', () => {
     expect(checkUpdate).not.toHaveBeenCalled()
     expect(screen.getAllByRole('button')).toHaveLength(2)
     const update = screen.getByRole('button', { name: 'Update' })
-    expect(update.textContent).toBe('')
+    expect(update.textContent).toBe('Update')
     fireEvent.click(update)
     expect(mounted.openDesktopUpdate).toHaveBeenCalledOnce()
   })
@@ -682,6 +682,14 @@ it('opens Account from the contributed sidebar launcher', () => {
   expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]).toMatchObject({ settingsOpen: true })
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]).toMatchObject({ settingsOpen: false })
+})
+
+it('opens the section requested by the contributed sidebar launcher', () => {
+  const { renderSlot } = mount({ rows: [{ id: 'general', order: 0, label: 'General' }, { id: 'account', order: 1, label: 'Account' }] })
+  const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')!
+  act(() => { (launcher[1] as { openSettings: (sectionId?: string) => void }).openSettings('account') })
+  expect(screen.getByTestId('section-account')).toBeTruthy()
+  expect(screen.queryByTestId('section-general')).toBeNull()
 })
 
 it('shows the effective settings binding on focus and exposes it to assistive technology', () => {

@@ -43,16 +43,16 @@ it('clamps a resting floating panel\'s position and size into the viewport and b
 })
 
 describe('macOS app-region ownership', () => {
-  it('subtracts the chip run, strip-end chrome, pane body, and divider, and declares no drag itself', () => {
+  it('subtracts panes, strip-end chrome, floats, and dividers without declaring drag', () => {
     // The strip row's drag is the markup mark's job: a sheet that declares it
     // here would drag the same box twice and hide the row from the ownership gate.
     expect(regionRules).toHaveLength(3)
     for (const [, value] of regionRules) {
       expect(value).toBe('no-drag')
     }
-    const [selector] = regionRules.find(([name]) => name.includes('.stripTabs'))!
-    for (const part of ['.stripTabs', '.stripChrome', '.paneBody', '.float', '.divider']) {
-      expect(selector, part).toContain(`:global(html[data-platform='darwin']) ${part}`)
+    const [selector] = regionRules.find(([name]) => name.includes('.pane'))!
+    for (const part of ['.pane', '.stripChrome', '.float', '.divider']) {
+      expect(selector, part).toContain(`:global(:where(html[data-platform='darwin'])) ${part}`)
     }
   })
 

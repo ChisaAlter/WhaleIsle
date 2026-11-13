@@ -275,10 +275,10 @@ export class TeamRoster {
         provider: request.provider,
         ...request.environment === undefined ? {} : { environment: request.environment },
         label: description,
-        request: {
-          prompt: request.prompt,
-          parent: root,
-        },
+        // The durable Team roster owns its 64-character member names. rc.2
+        // allocates a separate catalog alias under its 32-character contract.
+        prompt: request.prompt,
+        parent: root,
         signal,
       })
       await this.checkpointInitialPrompt(childId, started.messageId, signal)

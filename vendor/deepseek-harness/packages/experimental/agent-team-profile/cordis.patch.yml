@@ -10,6 +10,12 @@
 - id: tool-subagent-fork
   disabled: true
 
+- id: tool-agent-team
+  disabled: true
+
+- id: ui-agent-team
+  disabled: true
+
 - insert:
     - id: agent-team
       name: '@deepseek-ai/dsh-experimental-agent-team'
@@ -19,11 +25,11 @@
         maxMessageBytes: 65536
         disposalTimeoutMs: 5000
 
-    - id: tool-agent-team
+    - id: tool-project-team
       name: '@deepseek-ai/dsh-experimental-tool-agent-team'
       config:
         freshProvider: spawn
         forkProvider: fork
 
-    - id: ui-agent-team
+    - id: ui-project-team
       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'

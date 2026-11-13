@@ -335,6 +335,8 @@ describe('Chat apply wiring', () => {
   it('removes only Chat contributions when Chat unloads', async () => {
     const b = await bench()
     await b.chat.dispose()
+    expect(b.runtime.slots.spec('conversation.chat.markdown.fence')).toBeUndefined()
+    expect(b.runtime.slots.entries('conversation.chat.markdown.fence')).toHaveLength(0)
     expect(b.runtime.slots.entries('conversation.view')).toHaveLength(0)
     expect(b.runtime.slots.spec('conversation.chat.node')).toBeUndefined()
     expect(b.runtime.slots.entries('main').map(row => row.options.key)).toEqual(['conversation'])

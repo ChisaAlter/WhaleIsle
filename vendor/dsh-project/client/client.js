@@ -581,7 +581,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   function useProjectLive({ useProjects, useProjectSessions, useProjectSessionStatus }, sessionId, project) {
     const detail = useProjects(value => project ? value.details[project.id] : undefined);
-    const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.agentTeam);
+    const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.projectTeam);
     const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
     const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
     return { detail, team, sessions };
@@ -1908,7 +1908,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         for (const card of cards) if (!rows[card.id]) { rows[card.id] = { mode: card.id === snapshot.getSnapshot().projects.find(project => project.coordinatorSessionId === sessionId)?.queue?.active?.id ? 'card' : 'strip' }; changed = true; }
         if (changed) requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: rows } });
       };
-      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, requestPanels, dismissals, ...(teamScopes ? { teamTaskScopes: teamScopes.source, teamActivity: teamScopes.activitySource } : {}) }, ...(teamScopes ? { teamT: (key, params) => ctx.locale.bind('agent-team')(key, params) } : {}), read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember, openTeamMember,
+      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, requestPanels, dismissals, ...(teamScopes ? { teamTaskScopes: teamScopes.source, teamActivity: teamScopes.activitySource } : {}) }, ...(teamScopes ? { teamT: (key, params) => ctx.locale.bind('project-team')(key, params) } : {}), read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember, openTeamMember,
         setRequestMode, setRequestTab, rememberRequestModes, setRequestPanel, pinRequests, collapseEmptyObserver,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),

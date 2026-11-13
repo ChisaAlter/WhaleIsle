@@ -111,10 +111,10 @@ describe('ui-team browser plugin', () => {
     const b = await bench()
     expect(inject).toEqual(['sessions', 'uiWorkspace', 'slots', 'locale'])
     expect(b.entry()).toMatchObject({
-      options: { id: 'agent-team', order: -20 },
-      locale: 'agent-team',
+      options: { id: 'project-team', order: -20 },
+      locale: 'project-team',
     })
-    const t = b.ctx.locale.bind('agent-team')
+    const t = b.ctx.locale.bind('project-team')
     expect(t('trigger')).toBe('Agent team')
 
     expect(b.navigation).toEqual([])
@@ -173,7 +173,7 @@ describe('ui-team browser plugin', () => {
     const b = await bench({ sidebar: true })
     expect([...b.tabTypes].map(type => [type.id, type.kind, type.title()]))
       .toEqual([[TEAM_SIDEBAR_ID, TEAM_SIDEBAR_KIND, 'Agent Team']])
-    expect(b.page()).toMatchObject({ locale: 'agent-team' })
+    expect(b.page()).toMatchObject({ locale: 'project-team' })
 
     await b.fiber.dispose()
     expect(b.tabTypes.size).toBe(0)

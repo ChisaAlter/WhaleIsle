@@ -15,10 +15,7 @@ import type { ToolFileInjected } from '../tool/file-menu.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /**
-     * Keyed Tool call view; register any Tool name with `key: '<tool name>'`. A typo never renders; occupied keys
-     * replace their view, unclaimed keys use the generic row. The owner passes call identity and the stage's current block.
-     */
+    /** Keyed Tool call view: register with `key: '<tool name>'`. Claimed keys replace their view, typos never render, and unclaimed calls use the generic row. Receives call identity and the stage's current block. */
     'tool.call.toolview': {
       kind: 'keyed'
       scope: 'session'
@@ -77,8 +74,7 @@ export interface ToolCallCommonProps {
 }
 
 /** Stage-specific tool data; only start/result expose the dispatched call material. */
-export type ToolCallPhaseProps =
-  | { readonly phase: 'preparing'; readonly block: PreparingToolCall }
+export type ToolCallPhaseProps = { readonly phase: 'preparing'; readonly block: PreparingToolCall }
   | { readonly phase: 'start'; readonly block: StartedToolCall }
   | { readonly phase: 'result'; readonly block: ToolResultNode }
 

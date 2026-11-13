@@ -8,6 +8,7 @@ import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-agent/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ComponentProps } from 'react'
+import type { OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
 import { ModelDirectory } from '../src/client/directory.ts'
 import { ModelCatalogDirectory } from '../src/client/catalog.ts'
@@ -101,6 +102,7 @@ describe('ModelSelect label slot', () => {
     })
     await runtime.root.declare({
       'conversation.input.model.label': { kind: 'single', scope: 'session', inline: true },
+      'conversation.input.model.options': { kind: 'list', scope: 'session' },
     }, ({ renderSlot, SessionProvider }) => <SessionProvider session={session}>
       <ModelSelect locked={false} available directory={directory} load={vi.fn()}
         resolveText={resolveText} select={select} t={t} renderSlot={renderSlot} />
@@ -578,41 +580,35 @@ describe('ModelSelect reasoning effort', () => {
       .map(row => row.textContent)).toEqual(['Max'])
   })
 
-  it('portals the placed menu card to body and closes only on truly-outside mousedown', () => {
-    const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
-    const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 200 })
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 300 })
-    try {
-      const { container } = render(<ModelSelect renderSlot={renderLabel}
-        locked={false}
-        available
-        directory={createSnapshotStore(state())}
-        load={vi.fn()} resolveText={resolveText}
-        select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
-        t={t}
-      />)
-      const trigger = screen.getByRole('button', { name: /选择模型/ })
-      fireEvent.click(trigger)
-      const menu = screen.getByRole('menu')
-      // Outside the composer subtree — column overflow clips cannot crop it.
-      expect(container.contains(menu)).toBe(false)
-      expect(menu.parentElement).toBe(document.body)
-      // jsdom anchor rects are all zero, so the measured 200x300 card clamps
-      // to the 12px viewport margin on both axes.
-      expect(menu.style.left).toBe('12px')
-      expect(menu.style.top).toBe('12px')
-      // Interactions inside the trigger subtree or the portaled card stay open.
-      expect(fireEvent.mouseDown(menu)).toBe(true)
-      expect(fireEvent.mouseDown(trigger)).toBe(false)
-      fireEvent.blur(trigger, { relatedTarget: menu })
-      expect(screen.getByRole('menu')).toBeTruthy()
-      fireEvent.mouseDown(document.body)
-      expect(screen.queryByRole('menu')).toBeNull()
-    } finally {
-      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', offsetWidth)
-      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight)
-    }
+  it('positions the body portal from its anchor geometry and closes only on truly-outside mousedown', () => {
+    const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    onTestFinished(() => { measure.mockRestore() })
+    const { container } = render(<ModelSelect renderSlot={renderLabel}
+      locked={false}
+      available
+      directory={createSnapshotStore(state())}
+      load={vi.fn()} resolveText={resolveText}
+      select={vi.fn().mockResolvedValue({ ok: true, value: undefined })}
+      t={t}
+    />)
+    const trigger = screen.getByRole('button', { name: /选择模型/ })
+    fireEvent.click(trigger)
+    const menu = screen.getByRole('menu')
+    // Outside the composer subtree — column overflow clips cannot crop it.
+    expect(container.contains(menu)).toBe(false)
+    expect(menu.parentElement).toBe(document.body)
+    const anchor = trigger.style.getPropertyValue('--dsh-model-anchor')
+    expect(anchor).toMatch(/^--dsh-model-/)
+    expect(menu.style.left).toMatch(/px$/)
+    expect(menu.style.top).toMatch(/px$/)
+    expect(measure).toHaveBeenCalled()
+    // Interactions inside the trigger subtree or the portaled card stay open.
+    expect(fireEvent.mouseDown(menu)).toBe(true)
+    expect(fireEvent.mouseDown(trigger)).toBe(false)
+    fireEvent.blur(trigger, { relatedTarget: menu })
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('renders no Agent-bound control for an addressed subagent session', () => {
@@ -1263,4 +1259,21 @@ it('restores the account model name after login without changing the saved route
   expect([...restored.querySelectorAll('[data-dsh-motion-part="current"]')].map(node => node.textContent))
     .toEqual(['DeepSeek Flash', 'High'])
   expect(directory.getSnapshot().current).toEqual(selected)
+})
+
+
+it('dismisses contributed options with focus on the trigger before opening another overlay', () => {
+  const renderSlot = vi.fn((_name: string, _owner: object) => null)
+  render(<ModelSelect locked={false} available directory={createSnapshotStore(state())}
+    load={vi.fn()} resolveText={resolveText} select={vi.fn()} t={t} renderSlot={renderSlot} />)
+  const trigger = screen.getByRole('button', { name: /^选择模型/ })
+  fireEvent.click(trigger)
+  const options = renderSlot.mock.calls.find(call => call[0] === 'conversation.input.model.options')
+  if (options?.[0] !== 'conversation.input.model.options') throw new Error('Missing model options')
+  act(() => {
+    screen.getAllByRole('menuitem')[0]!.focus()
+    ;(options[1] as OwnerOf<'conversation.input.model.options'>).dismiss()
+    expect(document.activeElement).toBe(trigger)
+  })
+  expect(screen.queryByRole('menu')).toBeNull()
 })

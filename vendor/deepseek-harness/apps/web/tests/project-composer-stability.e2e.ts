@@ -421,7 +421,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
       })
     }))
     member = await scaffold.ctx.agents.create({
-      sessionId: MEMBER_ID, parentAgent: lead,
+      sessionId: MEMBER_ID,
       meta: { cwd: scaffold.workspaceCwd, parentSession: lead.id, origin: 'subagent', agentPreset: 'project-worker', delegationDepth: 1 },
       agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     })
@@ -432,7 +432,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     })
     member.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await scaffold.ctx.sessions.flush(member.agent.session)
-    await scaffold.ctx.agentTeams.adoptMember(lead, projects.memberRequest(worker, work))
+    await scaffold.ctx.projectTeams.adoptMember(lead, projects.memberRequest(worker, work))
     await projects.ensureTask(work)
     await projects.assignTask(lead, work, worker)
     await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)

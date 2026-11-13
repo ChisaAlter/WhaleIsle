@@ -71,13 +71,13 @@ it('keeps the newest event, hides for connection priority, and invokes only the 
     await f.emit({ phase: 'downloading', version: available.version, percent: 58 })
     f.view.rerender(<f.Indicator />)
     fireEvent.click(screen.getByRole('button', { name: '58%…' }))
-    expect(f.open).toHaveBeenCalledOnce()
+    expect(f.open).toHaveBeenCalledTimes(2)
     await f.emit({ phase: 'error', version: available.version, failure: 'download' })
     const retry = screen.getByRole('button', { name: '重试更新' })
     fireEvent.focus(retry)
     expect((await screen.findByRole('tooltip')).textContent).toBe('下载更新失败，请重试。')
     fireEvent.click(screen.getByRole('button', { name: '重试更新' }))
-    expect(f.open).toHaveBeenCalledTimes(2)
+    expect(f.open).toHaveBeenCalledTimes(3)
   } finally { f.view.unmount(); f.status.resolve(available) }
   expect(f.unsubscribe).toHaveBeenCalledOnce()
 })
@@ -196,4 +196,44 @@ it('localizes fullscreen timeout guidance and preserves the retry action', async
     fireEvent.click(screen.getByRole('button'))
     expect(f.open).toHaveBeenCalledOnce()
   } finally { f.view.unmount(); f.status.resolve(available) }
+})
+
+
+it('keeps a configuration error actionable while download progress continues', async () => {
+  const f = fixture()
+  await f.emit({ phase: 'idle', configurationError: 'format' })
+  const error = screen.getByRole('button', { name: '配置不可用' })
+  fireEvent.click(error)
+  await act(async () => {})
+  expect(f.open).toHaveBeenCalledOnce()
+  await f.emit({ phase: 'downloading', percent: 58, configurationError: 'cleanup' })
+  fireEvent.click(screen.getByRole('button', { name: '配置不可用' }))
+  await act(async () => {})
+  expect(f.open).toHaveBeenCalledTimes(2)
+  f.view.unmount()
+  f.status.resolve({ phase: 'idle' })
+})
+
+it('opens download status while the original download action remains pending and coalesces status clicks', async () => {
+  const f = fixture()
+  const download = Promise.withResolvers<undefined>()
+  const statusDialog = Promise.withResolvers<undefined>()
+  try {
+    await act(async () => { f.status.resolve(available) })
+    f.open.mockImplementationOnce(() => download.promise).mockImplementationOnce(() => statusDialog.promise)
+    fireEvent.click(screen.getByRole('button', { name: '新版本' }))
+    await f.emit({ phase: 'downloading', percent: 12, version: available.version })
+    const progress = screen.getByRole('button', { name: '12%…' })
+    fireEvent.click(progress)
+    fireEvent.click(progress)
+    expect(f.open).toHaveBeenCalledTimes(2)
+    await act(async () => { download.resolve(undefined) })
+    expect(progress.getAttribute('aria-disabled')).toBe('true')
+    await act(async () => { statusDialog.resolve(undefined) })
+    expect(progress.getAttribute('aria-disabled')).toBe('false')
+  } finally {
+    f.view.unmount()
+    download.resolve(undefined)
+    statusDialog.resolve(undefined)
+  }
 })

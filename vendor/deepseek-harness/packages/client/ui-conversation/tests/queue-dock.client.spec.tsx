@@ -56,7 +56,7 @@ interface TestSnapshot extends SessionSnapshot {
 function snapshotWith(queue: UserMessage[], nextStep: UserMessage[] = []): TestSnapshot {
   return {
     sessionId: SID, running: true, removed: false, openState: 'open', openError: null,
-    hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null,
+    hasMore: false, loadingOlder: false, historyLoadStatus: 'idle', historyWasPartial: false, promptError: null, blank: false, subagent: null,
     pendingSubmissions: [],
     lastAgentError: null, promptAttempted: true, awaitingFirstTurn: false,
     testInbox: { 'next-turn': queue, 'next-step': nextStep },
@@ -873,7 +873,6 @@ describe('QueueDock', () => {
           childSessionId: SID,
           mode: 'continuable' as const,
         },
-        parentAvailable: false,
       },
     }
     const source = liveSession(snap)
@@ -896,7 +895,6 @@ describe('QueueDock', () => {
           childSessionId: SID,
           mode: 'one-shot' as const,
         },
-        parentAvailable: true,
       },
     }
     const source = liveSession(snap)

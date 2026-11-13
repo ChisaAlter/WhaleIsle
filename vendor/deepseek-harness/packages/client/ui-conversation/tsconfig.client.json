@@ -114,6 +114,7 @@
   ],
   "exclude": [
     "src/next-prompt.ts",
-    "src/index.ts"
+    "src/index.ts",
+    "src/host"
   ]
 }

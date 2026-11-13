@@ -35,6 +35,8 @@ export interface SettingsSelectProps {
   onChange: (id: string) => void
   /** Accessible name of the trigger. */
   'aria-label': string
+  /** Validation description associated with the trigger. */
+  'aria-describedby'?: string | undefined
   /** Disable the trigger and block opens. */
   disabled?: boolean
   /**
@@ -66,6 +68,7 @@ export function SettingsSelect({
   options,
   onChange,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
   disabled = false,
   loading = false,
   placeholder = '',
@@ -111,6 +114,7 @@ export function SettingsSelect({
             type="button"
             className={css.trigger}
             aria-label={ariaLabel}
+            aria-describedby={ariaDescribedBy}
             aria-haspopup="menu"
             aria-expanded={open && !blocked}
             aria-busy={loading || undefined}

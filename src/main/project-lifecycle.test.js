@@ -18,7 +18,7 @@ async function fixture() {
       delegations: [{ ref: id, source: { messageId: 'human-A' }, scope: 'worker', writePaths: [], phase: 'accepted', runId: '' }] })) };
   const warnings = [], agents = new Map([['main', parent]]);
   const tasks = new Map(state.workstreams.map(work => [work.id, { id: work.id, revision: 1, status: 'in_progress', blockedBy: [] }]));
-  const ctx = { agentTeams: { registerPolicy: () => () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
+  const ctx = { projectTeams: { registerPolicy: () => () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
     registerContinuationPolicy: () => () => {}, drainChildren: async () => {},
   } };
   const table = { get: () => state, update: async (_key, change) => { state = change(state); } };

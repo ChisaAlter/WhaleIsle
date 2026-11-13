@@ -326,7 +326,7 @@ describe('BranchMenu', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
     const row = await screen.findByRole<HTMLButtonElement>('menuitem', { name: /_wip/ })
-    expect(row.disabled).toBe(true)
+    expect(row.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(row)
     expect(b.gitSwitchBranch).not.toHaveBeenCalled()
   })
@@ -345,7 +345,7 @@ describe('BranchMenu', () => {
     const row = await screen.findByRole<HTMLButtonElement>('menuitem', { name: /_wip/ })
     // The Menu wraps disabled hinted rows in a Tooltip anchor span; a disabled
     // button swallows pointer events, so the hover target is that wrapper.
-    fireEvent.pointerEnter(row.parentElement!, { pointerType: 'mouse' })
+    fireEvent.pointerEnter(row, { pointerType: 'mouse' })
     expect((await screen.findByRole('tooltip')).textContent).toBe(
       'Name contains characters the desktop cannot pass to git safely.',
     )

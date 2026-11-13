@@ -167,7 +167,7 @@ function ContextMeterControl({
         <div
           ref={panelRef}
           className={css.panel}
-          style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
+          style={position ?? { visibility: 'hidden' }}
           role="dialog"
           aria-label={t('context.used')}
           data-dsh-motion="popover"

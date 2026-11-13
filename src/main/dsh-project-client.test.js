@@ -96,7 +96,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
   const plugin = registration.factory(spec => {
     if (spec === 'react') return React;
     if (spec === 'react-dom') return clientRequire('react-dom');
-    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TEAM_SIDEBAR_KIND: 'agent-team', TeamEmbedded: props => { embeds.push(props); return h('div', { 'data-team-embedded': '', 'data-surface-active': String(props.surfaceActive) }, 'Team body'); } };
+    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TEAM_SIDEBAR_KIND: 'project-team', TeamEmbedded: props => { embeds.push(props); return h('div', { 'data-team-embedded': '', 'data-surface-active': String(props.surfaceActive) }, 'Team body'); } };
     if (spec === '@deepseek-ai/dsh-client-ui-subagent') return { subagentChatAddress: address => `subagentchat:${address.parentSessionId}/${address.childSessionId}/${address.mode}` };
     if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
     if (spec === '@deepseek-ai/dsh-client-store') return {
@@ -175,7 +175,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
     } }) } },
     settingsNavigation: { open: id => navigation.push(['settings', id]) },
     sessions: { retainInfo: sessionId => ({ getSnapshot: () => ({ retainedBy: { mainView: sessionId === project.coordinatorSessionId ? 1 : 0 } }) }), scope: sessionId => ({ sessionId, get: name => { assert.equal(name, 'conversation'); return { send: async text => sent.push({ sessionId, text }) }; } }), list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } }, ...Object.fromEntries(Object.entries(runtimeSessions).map(([id, session]) => [id, { retainedBy: { mainView: id === project.coordinatorSessionId ? 1 : 0 }, ...session }])) },
-      projectionsBySession: { [project.coordinatorSessionId]: { values: { agentTeam: team, ...(leadTodos !== undefined ? { todos: leadTodos } : {}) } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
+      projectionsBySession: { [project.coordinatorSessionId]: { values: { projectTeam: team, ...(leadTodos !== undefined ? { todos: leadTodos } : {}) } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
     connection: { rpc: { call: async (prefix, method, input) => {
       assert.equal(prefix, '/dsh-project'); requests.push({ method, input });
       // The real RPC boundary returns independent JSON snapshots, never mutable fixture objects.
@@ -2211,7 +2211,7 @@ test('returning from a sidebar member replaces only that page and exposes the co
       const page = notice.parentElement;
       Object.assign(page.dataset, { sidebarRightSession: 'coordinator-existing', sidebarRightTab: 'member-tab', dockkitPane: 'member-pane', dockkitHost: presentation.startsWith('float') ? 'float' : 'dock', sidebarRightPanel: presentation.includes('fullscreen') ? 'fullscreen' : 'push' });
       await act(async () => { b.openTabs.set([
-        { sessionId: 'coordinator-existing', tabId: 'agent-team-coordinator-existing', kind: 'agent-team' },
+        { sessionId: 'coordinator-existing', tabId: 'project-team-coordinator-existing', kind: 'project-team' },
         { sessionId: 'coordinator-existing', tabId: 'member-tab', kind: 'subagentchat' },
         { sessionId: 'coordinator-existing', tabId: 'other-member', kind: 'subagentchat' },
         { sessionId: 'other-lead', tabId: 'other-project-member', kind: 'subagentchat' },
@@ -2221,9 +2221,9 @@ test('returning from a sidebar member replaces only that page and exposes the co
       await b.press('backToLead');
       assert.equal(b.document.activeElement, editor); assert.equal(editor.value, 'Keep my draft');
       assert.equal(b.openTabs.getSnapshot().some(tab => tab.tabId === 'member-tab'), false);
-      assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['agent-team-coordinator-existing', 'other-member', 'other-project-member']);
+      assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['project-team-coordinator-existing', 'other-member', 'other-project-member']);
       if (presentation.startsWith('float')) assert.deepEqual(b.asides.findLast(entry => entry[0] === 'close'), ['close', 'coordinator-existing', 'member-tab']);
-      else assert.deepEqual(b.asides.findLast(entry => entry[0] === 'tab'), ['tab', 'coordinator-existing', 'agent-team', { paneId: 'member-pane', replaceTab: 'member-tab' }]);
+      else assert.deepEqual(b.asides.findLast(entry => entry[0] === 'tab'), ['tab', 'coordinator-existing', 'project-team', { paneId: 'member-pane', replaceTab: 'member-tab' }]);
       assert.equal(b.isSidebarExpanded(), !presentation.includes('fullscreen'));
       assert.deepEqual(b.sidebarToggles, presentation.includes('fullscreen') ? [false] : []);
       assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);

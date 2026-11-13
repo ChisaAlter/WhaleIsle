@@ -201,9 +201,9 @@ describe('SessionMediaReferences /api/file', () => {
       const path = join(outside, 'image.png')
       await writeFile(path, PNG_BYTES)
       expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
-      const link = join(root, 'linked.png')
-      await symlink(path, link)
-      expect(await responseBytes(await route.call(link))).toEqual(PNG_BYTES)
+      const link = join(root, 'linked')
+      await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+      expect(await responseBytes(await route.call(join(link, 'image.png')))).toEqual(PNG_BYTES)
     } finally {
       await rm(outside, { recursive: true, force: true })
     }

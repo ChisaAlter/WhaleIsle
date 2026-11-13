@@ -1,3 +1,4 @@
+import { createComposerFileIntake } from '../src/client/input/file-intake.ts'
 // @vitest-environment jsdom
 import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 /**
@@ -183,6 +184,7 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
     addFiles: () => null,
     useFileUploads: bindSnapshotSelector(createSnapshotStore({})),
     retryFileUpload: undefined,
+    registerFileIntake: createComposerFileIntake(),
     removeAttachment: () => {},
     // Every id resolves so the bar's registry prune never drops a test image.
     resolveDraftAttachments: ids => ids.map(id => ({
@@ -215,9 +217,11 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
     setComposerResizeSize: () => {},
     renderSlot: (() => null) as InputBarProps['renderSlot'],
     stop: vi.fn(),
+    retry: undefined,
     useStopShortcut: bindSnapshotSelector(createSnapshotStore<readonly string[]>([])),
     t: makeTranslate(zh, commonZh),
     variant: 'composer',
+    occurrence: 'main',
   }
   const view = render(<InputBar {...barProps} />)
   const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!
