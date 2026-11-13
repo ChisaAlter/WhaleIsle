@@ -408,9 +408,10 @@ function groupByWorkspace(
       if (!sessionVisible(summary, current, archived, archivedFilter)) continue
       members.push(summary)
     }
-    // The archived-only view lists archives, not the Workspace inventory, so
-    // a Workspace without archived Sessions contributes no group.
-    if (archivedFilter === 'only' && members.length === 0) continue
+    // Virtual directories exist only to display owner Sessions, not as
+    // Workspace registrations. Hidden archives must not leave empty folders.
+    if (members.length === 0
+      && (archivedFilter === 'only' || (workspace as NavigationWorkspace).navigationOnly === true)) continue
     const group = buildGroup(
       workspace.workspaceId, workspace.workspaceId, workspace.path,
       (workspace as NavigationWorkspace).navigationOnly ? undefined : Date.parse(workspace.createdAt), workspace.title, members,
@@ -532,8 +533,8 @@ export function deriveArchived(
  * Derive the workspace browser groups with every session as a top-level row.
  *
  * Groups containing only feature-owned conversations use that feature's navigation.
- * Other groups show, except that the archived-only filter drops groups
- * without visible members; sessions populate under expanded groups with
+ * Real Workspace groups show even when empty, except under the archived-only
+ * filter. Virtual directory groups require visible members. Sessions populate under expanded groups with
  * pinned rows leading in the selected local order. Blank sessions are
  * excluded except for the selected provisional New Session row; archived
  * sessions keep their slots and appear per the archived filter. Content
