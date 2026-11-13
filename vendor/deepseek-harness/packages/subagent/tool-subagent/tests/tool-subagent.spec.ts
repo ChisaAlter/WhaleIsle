@@ -57,6 +57,31 @@ async function delegationGuidance(ctx: Context, agent?: Agent): Promise<string[]
 
 describe('dsh-tool-subagent', () => {
 
+  it('lets a host schedule validated delegation without starting a duplicate native activation', async () => {
+    const ctx = await setup({ provider: 'mock' })
+    const start = vi.spyOn(ctx.subagents, 'startActivation')
+    const schedule = vi.fn(async (request: { provider: string; args: Record<string, unknown>; options: Record<string, unknown> }) => {
+      expect(request.provider).toBe('mock')
+      expect(request.args.prompt).toBe('Keep the accepted goal')
+      expect(request.options).toHaveProperty('maxDepth')
+      return { kind: 'queued' as const, name: 'managed-work' }
+    })
+    ctx.on('subagent/delegate', schedule)
+    const result = await callSubagent(ctx, { description: 'Scheduled work', prompt: 'Keep the accepted goal' })
+    expect(result.isError).toBe(false)
+    expect(schedule).toHaveBeenCalledOnce()
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('continues the ordinary native path when the host does not own this conversation', async () => {
+    const ctx = await setup({ provider: 'mock' }, { reply: 'ordinary child' })
+    const start = vi.spyOn(ctx.subagents, 'startActivation')
+    ctx.on('subagent/delegate', async () => undefined)
+    const result = await callSubagent(ctx, { description: 'Ordinary work', prompt: 'Use the normal path' })
+    expect(result.isError).toBe(false)
+    expect(start).toHaveBeenCalledOnce()
+  })
+
   it('rejects configured child agent options at mount when the provider cannot apply them', async () => {
     await expect(setup(
       { provider: 'mock', maxDepth: 'provider-managed', agentOptions: { model: 'configured-model' } },

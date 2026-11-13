@@ -5,7 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 async function fixture() {
-  const { ProjectService } = await import('../../vendor/dsh-project/tests/harness-runtime.mjs');
+  const { ProjectService, resolvePackage } = await import('../../vendor/dsh-project/tests/harness-runtime.mjs');
+  const { deliverSubagentPrompt } = await import(require('node:url').pathToFileURL(resolvePackage('@deepseek-ai/dsh-subagent/internal')).href);
   const events = [
     { seq: 10, type: 'turn/start', data: { turn: 2 } },
     { seq: 11, type: 'user/message', data: { id: 'human-B', source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop the earlier work.' }] } },
@@ -18,7 +19,7 @@ async function fixture() {
       delegations: [{ ref: id, source: { messageId: 'human-A' }, scope: 'worker', writePaths: [], phase: 'accepted', runId: '' }] })) };
   const warnings = [], agents = new Map([['main', parent]]);
   const tasks = new Map(state.workstreams.map(work => [work.id, { id: work.id, revision: 1, status: 'in_progress', blockedBy: [] }]));
-  const ctx = { projectTeams: { registerPolicy: () => () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
+  const ctx = { agentTeams: { setEnabled: async () => {}, listTasks: () => [...tasks.values()], getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
     registerContinuationPolicy: () => () => {}, drainChildren: async () => {},
   } };
   const table = { get: () => state, update: async (_key, change) => { state = change(state); } };
@@ -26,7 +27,7 @@ async function fixture() {
   service.recovering = false;
   service.notes = async () => {};
   service.schedule = () => {};
-  return { service, parent, agents, warnings, state: () => state };
+  return { service, parent, agents, warnings, deliverSubagentPrompt, tasks, state: () => state };
 }
 
 test('writers in overlapping Project directories queue while siblings and readonly work remain independent', async t => {
@@ -69,7 +70,7 @@ test('recovery clears only resolved directory diagnostics and reconciles the ori
   const inspected = [], reconciled = []; let inspectionFailed = true;
   service.ctx.sessionController.inspect = async id => { inspected.push(id); if (inspectionFailed) throw new Error('Unresolved settlement accounting failure'); };
   service.ctx.sessionPersistence = { stat: async () => ({}) };
-  service.teams.bindPolicy = async root => { reconciled.push(root.id); };
+  service.teams.setEnabled = async (root, enabled) => { assert.equal(enabled, true); reconciled.push(root.id); };
   await service.recover();
   assert.equal(state().projects[0].diagnostics.length, 2, 'a missing directory does not overwrite another recorded fault');
   assert.match(state().projects[0].diagnostics[1], /Project directory check/);
@@ -104,7 +105,7 @@ test('interrupted Project creation resumes its stored coordinator without creati
     create: async () => assert.fail('a stored coordinator must not use new-conversation creation'),
   };
   service.ctx.sessions = { flush: async session => flushed.push(session) };
-  service.teams.bindPolicy = async root => bound.push(root.id);
+  service.teams.setEnabled = async (root, enabled) => { assert.equal(enabled, true); bound.push(root.id); };
   await service.finishCreation(project);
   assert.deepEqual(resolved, ['main']);
   assert.deepEqual(flushed, [parent.session]);
@@ -136,22 +137,26 @@ test('explicit continuation after finding the original directory removes only it
   const { projectDirectory } = await import('../../vendor/dsh-project/lib/files.js');
   const selected = path.join(temporary, 'selected'), home = path.join(temporary, 'home');
   const storage = await projectDirectory(home, 'p');
-  const { service, state, parent } = await fixture();
+  const { service, state, parent, deliverSubagentPrompt, tasks } = await fixture();
   service.home = home;
   Object.assign(state().projects[0], { storageRoot: storage, canonicalWorkingDirectory: selected,
     diagnostics: [`Project directory check (${selected}): ENOENT`, 'Unresolved settlement accounting failure'] });
   const work = state().workstreams[0], member = state().workers[0];
   Object.assign(work, { title: 'Continue original work', brief: 'Inspect the restored directory', blockedBy: [] });
   Object.assign(member, { cwd: selected, workspace: { canonicalPath: selected }, materialized: true });
+  Object.assign(tasks.get(work.id), { ready: true });
   work.delegations[0].phase = 'queued';
   service.ensureTask = async () => ({ ready: true, status: 'pending', blockedBy: [] });
   service.ctx.sessionPersistence = { stat: async () => ({}) };
   service.preferencesFor = () => '';
   const resumed = [];
-  service.teams.bindPolicy = async () => {};
-  service.teams.adoptMember = async (_parent, request) => resumed.push(request.childId);
+  service.ctx.subagents[deliverSubagentPrompt] = async (root, childId, content, source, signal, mode) => {
+    assert.equal(root, parent); assert.equal(mode, 'steer');
+    assert.equal(source.senderSessionId, parent.id);
+    assert.match(content[0].text, /Explicitly continue after restoring the original directory/);
+    resumed.push(childId); return 'continued-original-member';
+  };
   service.assignTask = async () => {};
-  service.teams.sendMessage = async (_parent, request) => ({ messageId: request.messageId });
   await assert.rejects(service.doLaunch(work.id, new AbortController().signal), { code: 'ENOENT' });
   assert.equal(state().workstreams[0].status, 'blocked');
   assert.equal(resumed.length, 0);
@@ -193,7 +198,7 @@ test('unwritable generated notes do not prevent cancellation and native draining
   agents.set('a', { status: 'running', cancel() { cancelled++; }, async whenIdle() {} });
   service.ctx.subagents.drainChildren = async () => { drained++; };
   service.notes = async () => { throw new Error('Disk write failed'); };
-  await service.sessionStop('main'); await Promise.all([...service.stops.values()]);
+  await service.stop('p'); await Promise.all([...service.stops.values()]);
   assert.equal(cancelled, 2); assert.equal(drained, 2);
   assert.equal(state().projects[0].paused, true); assert.equal(state().workers[0].directoryHeld, false);
   assert.ok(warnings.some(args => args.includes('Disk write failed')));

@@ -1,4 +1,4 @@
-import TeamService from '@deepseek-ai/dsh-experimental-agent-team';
+import TeamService from '@deepseek-ai/dsh-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
 import { projectDomain, initialState } from './domain.js';
@@ -13,13 +13,13 @@ export const Config = z.object({});
 
 /** Reuse the configured Team provider before mounting the Project consumer. */
 export async function apply(ctx) {
-  if (!ctx.get('projectTeams')) {
+  if (!ctx.get('agentTeams')) {
     // Loader imports entries concurrently; an enabled provider may still be importing.
-    const configured = [...ctx.loader.entries()].find(entry => entry.options.name === '@deepseek-ai/dsh-experimental-agent-team' && !entry.disabled);
+    const configured = [...ctx.loader.entries()].find(entry => entry.options.name === '@deepseek-ai/dsh-agent-team' && !entry.disabled);
     if (configured) { if (!configured.fiber) await configured.init(); await configured.fiber?.await(); }
     else await ctx.plugin(TeamService);
   }
-  await ctx.inject(['projectTeams'], mountProject);
+  await ctx.inject(['agentTeams'], mountProject);
 }
 
 /** Optional Project failure must leave ordinary conversations available. */
@@ -30,7 +30,7 @@ async function mountProject(ctx) {
     finally { try { await domain?.close(); } finally { await releaseWriter?.(); } }
   });
   try {
-    const teams = ctx.projectTeams;
+    const teams = ctx.agentTeams;
     const home = process.env.DSH_HOME || process.env.DSHD_HOME;
     if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
     releaseWriter = await acquireWriter(home, randomUUID());
@@ -49,6 +49,9 @@ async function mountProject(ctx) {
     service = new ProjectService(ctx, table, { home, desktop, teams });
     // Dynamic role tool lookup works during recovery without an inject cycle.
     ctx.provide('projects', service);
+    ctx.on('subagent/delegate', async (request, exec) => {
+      if (service.state().projects.some(project => project.coordinatorSessionId === exec.agent?.id) || service.state().workers.some(worker => worker.sessionId === exec.agent?.id)) return service.nativeDelegate(request, exec);
+    });
     ctx.tools.guard(exec => {
       if (!service.state().projects.some(item => item.coordinatorSessionId === exec.agent?.id)
         && !service.state().workers.some(item => item.sessionId === exec.agent?.id)) return;
@@ -71,8 +74,6 @@ async function mountProject(ctx) {
     ctx.on('subagent/end', info => { service.track(service.runEnded(info), 'Project end accounting failed'); });
     ctx.on('agent/pre-step', (input, next) => service.preStep(input, next));
     ctx.on('session/event', (session, event) => { service.track(service.assistantReply(session, event), 'Project summary accounting failed'); });
-    ctx.on('session/before-cancel', ({ agent }) => service.sessionStop(agent.id));
-    ctx.on('workspace/session-stop', ({ sessionId }) => service.sessionStop(sessionId));
     ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { service.track(service.jobChanged(event), 'Project job observation failed'); })));
     await service.recover();
   } catch (error) {

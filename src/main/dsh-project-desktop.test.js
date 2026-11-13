@@ -32,10 +32,9 @@ test('optional Project mount preserves user Team settings and data across disabl
   const overlay = fs.readFileSync(first.overlayFile, 'utf8');
   const projectName = JSON.stringify(pathToFileURL(path.join(first.runtimeDir, 'lib', 'index.js')).href);
   assert.equal(overlay.split(`name: ${projectName}`).length - 1, 1);
-  // Keep the optional provider and its effective config; deduplicate only the managed Team UI, not native Team.
+  // Project changes neither native nor optional Team UI selection.
+  assert.doesNotMatch(overlay, /experimental|ui-agent-team|ui-project-team/);
   assert.doesNotMatch(overlay, /disabled: false|- id: agent-team\b|dsh-project-teams/);
-  assert.match(overlay, /- id: dsh-project-team-ui\n {6}name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n/);
-  assert.match(overlay, /\n- id: ui-project-team\n  name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n  disabled: true\n/);
   assert.doesNotMatch(overlay, /(?:^|\n)- id: ui-agent-team\n/);
   const data = path.join(profileDir, 'projects', 'existing'); fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(data, 'notes.md'), 'user material');

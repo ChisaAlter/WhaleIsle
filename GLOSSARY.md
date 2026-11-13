@@ -1,6 +1,6 @@
 # WhaleIsle 产品领域
 
-这些术语区分用户目标、执行过程和实际交付。Project 的完整目标设计见 docs/superpowers/specs/2026-10-08-project-product-redesign.md。
+这些术语区分用户目标、执行过程和实际交付。Project 下一版目标见 [简化与 Super Agent 设计](docs/superpowers/specs/2026-11-13-project-superagent-redesign.md)（当前开发方向）；[旧设计](docs/superpowers/specs/2026-10-08-project-product-redesign.md)保留为历史参考。
 
 ## Language
 

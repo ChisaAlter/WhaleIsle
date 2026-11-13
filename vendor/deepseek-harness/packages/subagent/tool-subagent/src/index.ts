@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -36,6 +36,13 @@ import {
 
 export const name = 'tool-subagent'
 export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Host scheduling may accept a model delegation into a durable queue instead of starting it immediately. */
+    'subagent/delegate'(request: { provider: string; args: Record<string, unknown>; options: Record<string, unknown> }, exec: ToolExecution): Promise<{ kind: 'activation' | 'queued'; name: string } | void>
+  }
+}
 
 // Definition identity keeps shared guidance scoped to the actual visible tools,
 // including scoped overrides and independently loaded tool registries.
@@ -263,11 +270,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           type: 'object',
           additionalProperties: false,
           properties: {
-            kind: { type: 'string', required: true, const: 'activation' },
+            kind: { type: 'string', required: true, enum: ['activation', 'queued'] },
             name: { type: 'string', required: true },
           },
         },
-        render: (_args, value) => [{ type: 'text', text: `started subagent ${value.name}` }],
+        render: (_args, value) => [{ type: 'text', text: `${value.kind === 'queued' ? 'queued delegation' : 'started subagent'} ${value.name}` }],
         presentationMeta: (_args, value) => ({ kind: value.kind, name: value.name }),
       },
       isConcurrencySafe: () => true,
@@ -322,6 +329,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           ...requestedChildAgentOptions !== undefined ? { agentOptions: requestedChildAgentOptions } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},
         }
+
+        const managed = await ctx.serial('subagent/delegate', { provider: config.provider, args, options: { agentPreset, agentOptions: requestedChildAgentOptions, maxDepth } }, exec)
+        if (managed !== undefined) return managed
 
         const started = await ctx.subagents.startActivation({
           provider: config.provider,

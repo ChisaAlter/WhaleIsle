@@ -1,11 +1,4 @@
-# Project reuses a configured Team service, or supplies one when absent.
-# Its Team UI row replaces the optional bundle's duplicate UI only.
+# Project consumes the native Team/Subagent tree without replacing their UI.
 - insert:
-    - id: dsh-project-team-ui
-      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
     - id: dsh-project
       name: dsh-project
-
-# Deduplicate only the retained managed Team profile UI. Native rc.2 Team stays enabled.
-- id: ui-project-team
-  disabled: true
