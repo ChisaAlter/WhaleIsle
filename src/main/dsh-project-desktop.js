@@ -79,7 +79,7 @@ function projectAvailable(env = process.env, config = {}) {
 
 /**
  * Mount Project without changing the user patch or the configured Team service.
- * Project supplies its managed Team only when absent; native Team remains independent.
+ * Project enables the native Team on its own root; ordinary conversations retain their selection.
  */
 async function ensureDesktopDshProject(options = {}) {
   const sourceDir = options.sourceDir || path.join(require('./paths').projectRoot(), 'vendor', DSH_PROJECT_PACKAGE);
@@ -120,13 +120,8 @@ async function ensureDesktopDshProject(options = {}) {
     '# Desktop-owned optional Project overlay.',
     '# The user cordis.patch.yml is never changed by this overlay.',
     '- insert:',
-    '    - id: dsh-project-team-ui',
-    '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
-    '- id: ui-project-team',
-    '  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
-    '  disabled: true',
     '',
   ].join('\n');
   fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');

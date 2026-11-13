@@ -6,7 +6,7 @@ import { checkedRoot, within, atomicText, samePath } from './files.js';
 export const name = 'project-file-scope';
 export const inject = ['tools'];
 const output = { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] };
-const context = (ctx, exec) => { const service = ctx.get('projects'); if (!service?.available) throw new Error('Project Host is unavailable.'); const actor = service.actor(exec.agent); if (actor.role !== 'worker') throw new Error('Only the assigned worker can inspect its directory.'); return { service, actor, worker: service.worker(exec.agent.id) }; };
+const context = (ctx, exec) => { const service = ctx.get('projects'); if (!service?.available) throw new Error('Project Host is unavailable.'); const actor = service.actor(exec.agent); return { service, actor, worker: actor.role === 'coordinator' ? { cwd: actor.project.canonicalWorkingDirectory } : service.worker(exec.agent.id) }; };
 async function pathFor(worker, input) {
   if (typeof input !== 'string' || isAbsolute(input) || input.split(/[\\/]/).some(part => part === '..' || part.toLowerCase() === '.git')) throw new Error('Use a path relative to the assigned directory.');
   const root = await checkedRoot(worker.cwd), path = await fs.realpath(resolve(root, input));

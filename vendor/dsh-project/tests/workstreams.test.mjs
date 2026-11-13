@@ -13,7 +13,7 @@ function setup() {
   const tasks = [], lead = { id: 'lead', status: 'idle', session: { id: 'lead', snapshotEvents: () => events } };
   const teams = { registerPolicy: () => () => {}, listTasks: () => tasks };
   const ctx = { agents: new Map([['lead', lead]]), sessionPersistence: { stat: async () => ({}) }, sessions: { flush: async () => true }, get: () => undefined,
-    subagents: { registerContinuationPolicy: () => () => {} }, projectTeams: teams };
+    subagents: { registerContinuationPolicy: () => () => {} }, agentTeams: teams };
   ctx.sessionController = { resolveAgent: async id => ({ agent: ctx.agents.get(id) }) };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => { Object.assign(state, change(state)); } }, { home: '', desktop: async () => ({}) });
   function add(id, current, updatedAt) {
@@ -27,7 +27,7 @@ function setup() {
     const worker = { sessionId: work.workerSessionId, projectId: project.id, workstreamId: id, phase: 'idle', stopped: false,
       cwd: '/original-cwd', role: 'readonly', mode: 'existing', error: '' };
     state.workstreams.push(work); state.workers.push(worker);
-    tasks.push({ id, status: current ? 'pending' : 'completed', description: receipt.brief });
+    tasks.push({ id, blockedBy: [], status: current ? 'pending' : 'completed', description: receipt.brief });
     return { work, worker, receipt, report };
   }
   const read = (endpoint, input = {}) => service.command(endpoint, { projectId: project.id, ...input });
@@ -416,50 +416,20 @@ test('the actual consumed native run may report its prior receipt while a later 
   await assert.rejects(f.service.report(actor, { delegationRef: next.ref, outcome: 'completed', summary: 'Never consumed' }, { callId: 'forged-next-report' }), { code: 'obsolete_result' });
 });
 
-test('peer messages retain their consumed assignment and reject a replacement before binding or native send', async () => {
-  const f = setup(), item = f.add('Continuing sender', true, 1), scopes = new Map(), bound = [], delivered = [];
-  const agent = { id: item.worker.sessionId };
+test('native peer messages cannot grant a stale worker replacement execution authority', async () => {
+  const f = setup(), item = f.add('Continuing sender', true, 1), agent = { id: item.worker.sessionId };
   f.service.ctx.agents.set(agent.id, agent); f.service.recovering = false;
   item.worker.consumedDelegationRef = item.receipt.ref;
   const next = { ...item.receipt, ref: 'next-assignment', phase: 'preparing', messageId: '', runId: '' };
   item.work.delegations.push(next); item.work.currentDelegationRef = next.ref;
-  const teams = f.service.teams;
-  teams.listMembers = () => [{ id: f.lead.id, name: 'lead' }];
-  teams.messageContext = (_root, id) => scopes.get(id);
-  let bindingEntered, releaseBinding;
-  teams.bindMessage = async (_root, id, senderAssignment, targetAssignment) => {
-    bound.push(id); scopes.set(id, { senderAssignment, targetAssignment });
-    if (bindingEntered) { bindingEntered(); await new Promise(resolve => { releaseBinding = resolve; }); }
-  };
-  teams.sendMessage = async (caller, request) => {
-    await f.service.teamAdmission(f.lead, 'send', { caller, request });
-    const message = { id: request.messageId, senderId: caller.id, targetId: f.lead.id };
-    await f.service.teamAdmission(f.lead, 'deliver', message);
-    delivered.push(message); return message;
-  };
-  const send = callId => f.service.teamSend(f.service.actor(agent), { target: 'lead', message: 'Result from the consumed work' },
-    { callId, signal: new AbortController().signal });
-  await assert.rejects(send('old-round'), { code: 'team_source' });
-  assert.equal(bound.length, 0, 'an unconsumed replacement cannot acquire peer-message context');
-  assert.equal(delivered.length, 0);
-  const input = { agent, turn: 1, messages: [{ id: 'consume-next', source: { kind: 'user' },
-    content: [{ type: 'text', text: `DelegationRef: ${next.ref}` }] }] };
-  assert.equal((await f.service.preStep(input, async () => ({ kind: 'enter', messages: input.messages }))).kind, 'enter');
-  assert.equal(f.service.worker(agent.id).consumedDelegationRef, next.ref);
-  const message = await send('consumed-round');
-  assert.equal(scopes.get(message.id).senderAssignment, next.ref);
-  assert.equal(delivered.length, 1);
-  const binding = new Promise(resolve => { bindingEntered = resolve; });
-  const racing = send('replaced-during-bind');
-  await binding;
-  await f.service.write(state => {
-    const work = state.workstreams.find(row => row.id === item.work.id);
-    work.delegations.push({ ...next, ref: 'later-assignment', phase: 'queued' }); work.currentDelegationRef = 'later-assignment';
-  });
-  releaseBinding();
-  await assert.rejects(racing, { code: 'team_source' });
-  assert.equal(bound.length, 2); assert.equal(delivered.length, 1, 'native send admission rejects an assignment changed during binding');
-  await assert.rejects(f.service.teamAdmission(f.lead, 'deliver', message), { code: 'obsolete_message' }, 'a previously sent message also becomes obsolete at delivery');
+  assert.match(f.service.guard({ agent, name: 'send_message' }), /not been consumed/);
+  const message = { id: 'consume-next', source: { kind: 'agent-message', senderSessionId: f.lead.id }, content: [{ type: 'text', text: 'DelegationRef: ' + next.ref }] };
+  const input = { agent, turn: 1, messages: [message] };
+  assert.equal((await f.service.preStep(input, async () => ({ kind: 'enter', messages: [message] }))).kind, 'enter');
+  assert.equal(f.service.guard({ agent, name: 'send_message' }), undefined);
+  assert.equal(f.service.validTeamInputs(f.lead, f.service.worker(agent.id), [{ source: { kind: 'agent-message', senderSessionId: 'outside-project' } }]), false);
+  await f.service.write(state => { const work = state.workstreams.find(row => row.id === item.work.id); work.delegations.push({ ...next, ref: 'later-assignment', phase: 'queued' }); work.currentDelegationRef = 'later-assignment'; });
+  assert.match(f.service.guard({ agent, name: 'send_message' }), /not been consumed/);
 });
 
 test('archive waits only for its own Project drain and preserves a failed stopping worker', async t => {
@@ -512,8 +482,8 @@ test('archive waits only for its own Project drain and preserves a failed stoppi
   assert.equal(failed.service.archiving.has(failed.project.id), false);
 });
 
-test('the native launch boundary cannot execute discussed, queued or superseded requirement revisions', async () => {
-  for (const kind of ['discussing', 'queued', 'superseded', 'queued-readonly']) {
+test('the native launch boundary cannot execute discussed, suspended, cancelled or superseded requirement revisions', async () => {
+  for (const kind of ['discussing', 'suspended', 'cancelled', 'superseded']) {
     const f = setup(); f.service.recovering = false; f.service.notes = async () => {};
     const actor = f.service.actor(f.lead);
     const accept = async (title, extra = {}) => {
@@ -522,23 +492,17 @@ test('the native launch boundary cannot execute discussed, queued or superseded 
       f.append('tool/call', { turn: 1, callId, name: 'project_request' });
       return f.service.acceptRequest(actor, { title, goal: title, scopeCeiling: 'readonly', ...extra }, { callId, signal: new AbortController().signal });
     };
-    if (kind.startsWith('queued')) await accept('A is still developing');
+
     const request = await accept('B', { disposition: kind === 'discussing' ? 'discussing' : 'queued' });
     const work = f.add(`work-${kind}`, true, 1);
     work.receipt.source = { ...f.service.requirements.version(f.service.requirements.get(f.project.id, request.id)).source };
-    if (kind === 'queued') work.receipt.scope = 'worker';
+    if (kind === 'suspended') f.service.requirements.get(f.project.id, request.id).queue.suspended = true;
+    if (kind === 'cancelled') f.service.requirements.get(f.project.id, request.id).queue.state = 'cancelled';
     if (kind === 'superseded') await accept('B revised before launch', { requestId: request.id });
     f.service.ensureTask = async () => ({ id: work.work.id, status: 'pending', ready: true });
     f.tasks.find(task => task.id === work.work.id).ready = true;
     let workspaceCalls = 0;
     f.service.desktop = async () => { workspaceCalls++; throw new Error('An ineligible requirement reached workspace preparation'); };
-    if (kind === 'queued-readonly') {
-      f.service.teams.setCold = async () => {}; f.service.teams.cancelMessages = async () => {};
-      await f.service.doLaunch(work.work.id, new AbortController().signal).catch(() => {});
-      // Passing the requirement gate reserves the work; this fixture's materials root then stops it before preparation.
-      assert.notEqual(f.service.stream(work.work.id).delegations[0].phase, 'queued', 'an authorized queued requirement may start read-only preparation');
-      continue;
-    }
     await f.service.doLaunch(work.work.id, new AbortController().signal);
     assert.equal(workspaceCalls, 0, `${kind} requirements never prepare or start worker work`);
     const saved = f.service.stream(work.work.id), worker = f.service.worker(work.worker.sessionId);
@@ -567,7 +531,7 @@ test('research adds only web search and fetch to the read-only tools; every call
 
   for (const role of ['readonly', 'docs']) { member().role = role; assert.equal(call('web_fetch', { url: 'https://example.com' }), 'Web access needs a research assignment.', role); }
   member().role = 'worker';
-  for (const name of ['subagent', 'subagent_fork', 'spawn_teammate', 'interrupt_agent']) assert.match(call(name) ?? '', /Project members collaborate through Project tools/);
+  for (const name of ['subagent', 'subagent_fork', 'wait_agent', 'send_message']) assert.equal(call(name), undefined, 'native collaboration remains available within the assignment');
   assert.equal(call('web_search', { queries: ['x'] }), undefined, 'a development member keeps the tools it always had');
 
   // The Project names its sites: a host covers its subdomains, everything else is refused and not recorded.

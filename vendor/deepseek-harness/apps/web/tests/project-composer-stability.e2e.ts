@@ -8,7 +8,6 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-workspace'
-import type { SpawnTeammateRequest } from '@deepseek-ai/dsh-experimental-agent-team'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JobId, JobOutcome } from '@deepseek-ai/dsh-jobs'
@@ -24,8 +23,6 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
-const TEAM_PATCH = fileURLToPath(new URL('./agent-team-panel.overlay.yml', import.meta.url))
-const TEAM_ANCHOR = fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/package.json', import.meta.url))
 const PROJECT_DIR = fileURLToPath(new URL('../../../../dsh-project/', import.meta.url))
 const REQUEST_ID = 'project-composer-request'
 const WORK_ID = 'project-composer-work'
@@ -183,8 +180,7 @@ interface ProjectFixtureService {
   write(change: (catalog: ProjectCatalog) => void): Promise<void>
   held: Set<string>
   ensureTask(work: WorkRecord): Promise<unknown>
-  assignTask(root: Agent, work: WorkRecord, worker: WorkerRecord): Promise<void>
-  memberRequest(worker: WorkerRecord, work: WorkRecord): SpawnTeammateRequest
+  assignTask(work: WorkRecord, worker: WorkerRecord): Promise<void>
   state(): ProjectCatalog
 }
 
@@ -205,8 +201,8 @@ function currentGeometry(page: Page): Promise<Geometry> {
     }
     return {
       composer: box('[data-composer-seat] [data-composer-card]'),
-      requests: box('[data-project-header-panel="requests"] button'),
-      header: box('[data-project-header-panel="requests"]'),
+      requests: box('.dsh-project-rail-toggle'),
+      header: box('.dsh-project-header'),
     }
   })
 }
@@ -220,8 +216,8 @@ async function startGeometryProbe(page: Page): Promise<void> {
     host.__projectComposerProbe = probe
     const selectors = {
       composer: '[data-composer-seat] [data-composer-card]',
-      requests: '[data-project-header-panel="requests"] button',
-      header: '[data-project-header-panel="requests"]',
+      requests: '.dsh-project-rail-toggle',
+      header: '.dsh-project-header',
     }
     const sample = (): void => {
       if (!probe.running) return
@@ -252,7 +248,7 @@ async function stopGeometryProbe(page: Page): Promise<GeometryProbe> {
 
 async function settleViewport(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: 1000 })
-  await page.locator('[data-composer-seat]').evaluate(async (seat) => {
+  await page.locator('[data-composer-seat]').first().evaluate(async (seat) => {
     let previous = seat.getBoundingClientRect().width, stable = 0
     const deadline = performance.now() + 5000
     while (performance.now() < deadline) {
@@ -266,14 +262,6 @@ async function settleViewport(page: Page, width: number): Promise<void> {
   })
 }
 
-async function assertPopoverInViewport(page: Page, selector: string): Promise<void> {
-  await expect.poll(() => page.locator(selector).evaluate((panel) => {
-    const rect = panel.getBoundingClientRect()
-    return panel.parentElement === document.body && rect.left >= 15 && rect.top >= 15
-      && rect.right <= innerWidth - 15 && rect.bottom <= innerHeight - 15
-      && panel.contains(document.elementFromPoint(rect.left + 12, rect.top + 12))
-  }), { timeout: 5000 }).toBe(true)
-}
 
 describe('web e2e: Project composer stays fixed while status changes', () => {
   let scaffold: WebScaffold
@@ -362,14 +350,14 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     // Jobs alone must count as a running member even when no model turn is active.
     scaffold.ctx.emit('api-session/status', MEMBER_ID, false)
     if (state === 'running') startJob()
-    await expect.poll(() => page.locator('[data-project-header-panel="requests"]').getAttribute('data-state'), { timeout: 15_000 })
+    await expect.poll(() => page.locator('.dsh-project-header').getAttribute('data-state'), { timeout: 15_000 })
       .toBe(state)
   }
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
-      extraOverlayPath: [TEAM_PATCH, join(PROJECT_DIR, 'cordis.patch.yml')],
-      extraInstallAnchors: [TEAM_ANCHOR, join(PROJECT_DIR, 'package.json')],
+      extraOverlayPath: [join(PROJECT_DIR, 'cordis.patch.yml')],
+      extraInstallAnchors: [join(PROJECT_DIR, 'package.json')],
     })
     const service = scaffold.ctx.get('projects') as ProjectFixtureService | undefined
     if (service === undefined || !service.available) throw new Error(`Project Host did not mount: ${service?.error ?? 'missing service'}`)
@@ -432,9 +420,10 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     })
     member.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await scaffold.ctx.sessions.flush(member.agent.session)
-    await scaffold.ctx.projectTeams.adoptMember(lead, projects.memberRequest(worker, work))
+    lead.session.append('subagent/catalog', { version: 3, childId: MEMBER_ID, childCreatedAt: now, mode: 'continuable', name: 'geometry-member', label: work.title })
+    await scaffold.ctx.sessions.flush(lead.session)
     await projects.ensureTask(work)
-    await projects.assignTask(lead, work, worker)
+    await projects.assignTask(work, worker)
     await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
     releaseController = scaffold.ctx.jobs.attachController('project-composer-browser-fixture')
 
@@ -455,7 +444,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     }
     await row.waitFor({ state: 'visible', timeout: 30_000 })
     await row.click()
-    await page.locator('[data-project-header-panel="requests"]').waitFor({ timeout: 30_000 })
+    await page.locator('.dsh-project-header').waitFor({ timeout: 30_000 })
     await page.locator('[data-composer-input][contenteditable="true"]').first().fill(DRAFT)
   }, 120_000)
 
@@ -470,9 +459,8 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     if (failures.length) throw new AggregateError(failures, 'Project composer fixture cleanup failed')
   })
 
-  it('keeps card and header rectangles fixed through real Project states and click-open details', async () => {
+  it('keeps the folded composer fixed through real Project states', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-project-composer-stability'))
-    const measurements: { width: number; states: number; frames: number; maxShift: number; overflow: number }[] = []
     for (const width of WIDTHS) {
       await setState('running')
       await settleViewport(page, width)
@@ -480,44 +468,15 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
       for (const state of STATES) {
         await setState(state)
         expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
-        expect(await page.locator('[data-sidebar-right-open] [data-team-sidebar], [data-sidebar-right-open] .dsh-project-requests').count()).toBe(0)
-        expect(await page.locator('[data-team-action]').count(), 'The Lead\'s Team lives in its Requests panel, not a second header entry').toBe(0)
-        expect(await page.locator('[data-composer-seat] [data-testid="todo-panel"]').count()).toBe(0)
+        expect(await page.locator('.dsh-project-task-rail').count()).toBe(0)
         expect(await page.locator('[data-composer-seat] [data-testid="project-checklist"], [data-composer-seat] .dsh-project-activity').count()).toBe(0)
       }
-      await setState('pendingDelivery')
-      const requestsTrigger = page.locator('[data-project-header-panel="requests"] button').first()
-      await requestsTrigger.hover()
-      await page.waitForTimeout(450)
-      expect(await requestsTrigger.getAttribute('aria-expanded')).toBe('false')
-      await requestsTrigger.click()
-      const requests = page.locator('[data-project-panel="requests"]')
-      await assertPopoverInViewport(page, '[data-project-panel="requests"]')
-      await requests.getByRole('tab', { name: 'Requests', exact: true }).click()
-      const card = requests.locator(`[data-project-request-id="${REQUEST_ID}"]`)
-      const progress = card.locator('[data-project-request-tab="progress"]')
-      await progress.getByText('Verify stable Project status', { exact: true }).waitFor()
-      await progress.locator('summary', { hasText: 'Coordinator plan' }).click()
-      for (const todo of PLAN) await progress.getByText(todo.content, { exact: true }).waitFor()
-      await page.keyboard.press('Escape')
-      await requests.waitFor({ state: 'hidden' })
-
-      await requestsTrigger.click()
-      await requests.waitFor()
-      await requests.getByRole('tab', { name: /^Members/ }).click()
-      await requests.locator('[data-team-embedded]').getByText('Verify stable Project status', { exact: true }).first().waitFor()
-      await assertPopoverInViewport(page, '[data-project-panel="requests"]')
-      await page.keyboard.press('Escape')
-      await requests.waitFor({ state: 'hidden' })
       const probe = await stopGeometryProbe(page)
       expect(probe.samples).toBeGreaterThan(1)
-      expect(probe.maxShift, `Project composer/header movement at ${width}px`).toBeLessThanOrEqual(1)
-      expect(probe.overflow, `page overflow at ${width}px`).toBeLessThanOrEqual(1)
-      measurements.push({ width, states: STATES.length, frames: probe.samples, maxShift: probe.maxShift, overflow: probe.overflow })
+      expect(probe.maxShift).toBeLessThanOrEqual(1)
+      expect(probe.overflow).toBeLessThanOrEqual(1)
     }
-    console.log('Project composer geometry:', JSON.stringify(measurements))
     expect(tripwire.pageErrors).toEqual([])
-    expect(tripwire.warnings).toEqual([])
   }, 240_000)
 
   it('retains draft and geometry when Project status becomes unknown and recovers', async () => {
@@ -527,10 +486,10 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     await startGeometryProbe(page)
     try {
       disconnected = true
-      await expect.poll(() => page.locator('[data-project-header-panel="requests"]').getAttribute('data-state'), { timeout: 15_000 }).toBe('unknown')
+      await expect.poll(() => page.locator('.dsh-project-header').getAttribute('data-state'), { timeout: 15_000 }).toBe('unknown')
       expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
       disconnected = false
-      await expect.poll(() => page.locator('[data-project-header-panel="requests"]').getAttribute('data-state'), { timeout: 15_000 }).toBe('pendingDelivery')
+      await expect.poll(() => page.locator('.dsh-project-header').getAttribute('data-state'), { timeout: 15_000 }).toBe('pendingDelivery')
     } finally {
       disconnected = false
     }
@@ -572,135 +531,97 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 
-  it('restores full composer geometry after explicitly pinning and returning Requests with either page', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-project-composer-observer-return'))
+  it('folds the rail without losing its expanded card, draft or reading position', async () => {
     await setState('pendingDelivery')
-    const measurements: { width: number; surface: string; maxShift: number }[] = []
-    for (const width of [800, 390]) {
+    for (const width of [1680, 800, 390]) {
       await settleViewport(page, width)
-      const original = (await currentGeometry(page)).composer
-      for (const surface of ['requests', 'members'] as const) {
-        const trigger = page.locator('[data-project-header-panel="requests"] button').first()
-        const floating = page.locator('[data-project-panel="requests"]:not([hidden])')
-        const observer = page.locator('[data-sidebar-right-open] .dsh-project-requests')
-        await trigger.click()
-        await floating.waitFor()
-        if (surface === 'requests') {
-          await floating.getByRole('tab', { name: 'Requests', exact: true }).click()
-          await floating.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).click()
-        } else await floating.getByRole('tab', { name: /^Members/ }).click()
-        expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(1)
-        await floating.getByRole('button', { name: 'Keep observing', exact: true }).click()
-        await observer.waitFor()
-        await floating.waitFor({ state: 'hidden' })
-        expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(0)
-        expect(await page.getByRole('button', { name: 'Return to popover', exact: true }).count()).toBe(1)
-        if (surface === 'requests') expect(await observer.locator(`[data-project-request-id="${REQUEST_ID}"]`).getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')).toBe('true')
-        else expect(await observer.locator('[data-team-embedded]').isVisible(), 'The pinned panel keeps the Members page').toBe(true)
-        await observer.getByRole('button', { name: 'Return to popover', exact: true }).click()
-        await floating.waitFor()
-        await expect.poll(async () => {
-          const current = (await currentGeometry(page)).composer
-          return Math.max(...(['left', 'top', 'width', 'height'] as const).map(key => Math.abs(current[key] - original[key])))
-        }, { timeout: 5000 }).toBeLessThanOrEqual(1)
-        expect(await page.locator('[data-sidebar-right-panel][data-sidebar-right-open]').count()).toBe(0)
-        expect(await page.getByRole('button', { name: 'Return to popover', exact: true }).count()).toBe(0)
-        expect(await page.getByRole('button', { name: 'Keep observing', exact: true }).count()).toBe(1)
-        if (surface === 'requests') {
-          const card = floating.locator(`[data-project-request-id="${REQUEST_ID}"]`)
-          expect(await card.getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')).toBe('true')
-          expect(await card.locator('[data-project-request-tab="progress"]').getByText('Verify stable Project status', { exact: true }).count()).toBe(1)
-        } else expect(await floating.locator('[data-team-embedded]').isVisible(), 'Returning keeps the Members page').toBe(true)
-        expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
-        const restored = (await currentGeometry(page)).composer
-        measurements.push({ width, surface, maxShift: Math.max(...(['left', 'top', 'width', 'height'] as const).map(key => Math.abs(restored[key] - original[key]))) })
-        await page.keyboard.press('Escape')
-        await floating.waitFor({ state: 'hidden' })
-      }
+      const before = (await currentGeometry(page)).composer
+      const trigger = page.locator('.dsh-project-rail-toggle')
+      await trigger.hover()
+      expect(await trigger.getAttribute('aria-expanded')).toBe('false')
+      await trigger.click()
+      const rail = page.locator('.dsh-project-task-rail')
+      await rail.waitFor()
+      const card = rail.locator('[data-project-request="' + REQUEST_ID + '"]')
+      const title = card.locator('.dsh-project-rail-card-title')
+      if (await title.getAttribute('aria-expanded') !== 'true') await title.click()
+      await card.getByText('Keep the main conversation composer fixed while Project state changes.', { exact: true }).waitFor()
+      await expect.poll(() => rail.evaluate(panel => {
+        const rect = panel.getBoundingClientRect()
+        const composer = document.querySelector('[data-composer-seat]')!.getBoundingClientRect()
+        return rect.left >= 0 && rect.right <= innerWidth && (rect.bottom <= composer.top || rect.left >= composer.right)
+      })).toBe(true)
+      const body = rail.locator('.dsh-project-rail-body')
+      const scroll = await body.evaluate(element => { element.scrollTop = 24; element.dispatchEvent(new Event('scroll')); return element.scrollTop })
+      await trigger.click()
+      await rail.waitFor({ state: 'detached' })
+      await trigger.click()
+      await rail.waitFor()
+      expect(await title.getAttribute('aria-expanded')).toBe('true')
+      expect(await body.evaluate(element => element.scrollTop)).toBe(scroll)
+      await title.focus()
+      await page.keyboard.press('Escape')
+      await rail.waitFor({ state: 'detached' })
+      expect(await trigger.evaluate(element => document.activeElement === element)).toBe(true)
+      await expect.poll(async () => {
+        const after = (await currentGeometry(page)).composer
+        return Math.max(...(['left', 'top', 'width', 'height'] as const).map(key => Math.abs(after[key] - before[key])))
+      }).toBeLessThanOrEqual(1)
+      expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
     }
-    console.log('Project observer return geometry:', JSON.stringify(measurements))
     expect(tripwire.pageErrors).toEqual([])
-    expect(tripwire.warnings).toEqual([])
-  }, 45_000)
+  }, 90_000)
 
   it('uses the resident member card geometry while reading its managed conversation', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-project-composer-member'))
     await setState('pendingDelivery')
-    await settleViewport(page, 800)
-    await page.locator('[data-project-header-panel="requests"] button').first().click()
-    const panel = page.locator('[data-project-panel="requests"]:not([hidden])')
-    await panel.getByRole('tab', { name: /^Members/ }).click()
-    await panel.locator('[data-team-embedded]').getByRole('button').filter({ hasText: 'Verify stable Project status' }).first().click()
-    const takeover = page.locator('[data-project-composer-takeover] > [role="note"]')
-    await takeover.waitFor({ timeout: 15_000 })
+    await page.locator('.dsh-project-rail-toggle').click()
+    const panel = page.locator('.dsh-project-task-rail')
+    const title = panel.locator('.dsh-project-rail-card-title')
+    if (await title.getAttribute('aria-expanded') !== 'true') await title.click()
     for (const width of WIDTHS) {
       await settleViewport(page, width)
-      await expect.poll(() => page.evaluate(() => {
-        const card = document.querySelector('[data-composer-seat] [data-chain-overlay-fallback="conversation.composer"] [data-composer-card]')
-        const managed = document.querySelector('[data-project-composer-takeover] > [role="note"]')
-        if (card === null || managed === null) return Number.POSITIVE_INFINITY
+      await panel.getByRole('button', { name: 'Verify stable Project status', exact: true }).click()
+      const takeover = page.locator('[data-project-composer-takeover] > [role="note"]')
+      await takeover.waitFor({ timeout: 15_000 })
+      await expect.poll(() => takeover.evaluate(managed => {
+        const card = managed.closest('[data-composer-seat]')?.querySelector('[data-chain-overlay-fallback="conversation.composer"] [data-composer-card]')
+        if (!card) return Number.POSITIVE_INFINITY
         const input = card.getBoundingClientRect(), output = managed.getBoundingClientRect()
         return Math.max(...(['left', 'top', 'width', 'height'] as const).map(key => Math.abs(input[key] - output[key])))
       }), { timeout: 5000 }).toBeLessThanOrEqual(1)
+      await takeover.getByRole('button', { name: 'Back to coordinator', exact: true }).click()
+      await takeover.waitFor({ state: 'detached', timeout: 15_000 })
+      expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
     }
-    await takeover.getByRole('button', { name: 'Back to coordinator', exact: true }).click()
-    await takeover.waitFor({ state: 'detached', timeout: 15_000 })
-    expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
+    await page.locator('.dsh-project-rail-toggle').click()
     expect(tripwire.pageErrors).toEqual([])
-  }, 45_000)
+  }, 60_000)
 
-  it('pins the question the Lead waits on, counts it in the header and sends the answer as one ordinary message', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-project-composer-needs-you'))
+  it('shows a task question and sends its answer as one ordinary message without replacing the draft', async () => {
     await setState('running')
     await settleViewport(page, 1280)
-    const header = page.locator('[data-project-header-panel="requests"]')
-    expect(await header.getAttribute('data-needs-you'), 'a healthy Project has nothing waiting on the user').toBeNull()
-    const withRequest = (change: (request: RequestRecord) => void): Promise<void> => projects.serial(() => projects.write((catalog) => {
+    const withRequest = async (change: (request: RequestRecord) => void): Promise<void> => projects.serial(() => projects.write(catalog => {
       const request = catalog.requests.find(item => item.id === REQUEST_ID)
-      if (request === undefined) throw new Error('Project fixture request disappeared')
+      if (!request) throw new Error('Project fixture request disappeared')
       change(request)
     }))
-    await withRequest((request) => {
-      request.ask = { id: 'ask-fixture', requestRevision: 1, question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I will start with SQLite', by: 'coordinator', at: Date.now() }
-    })
-    await expect.poll(() => header.getAttribute('data-needs-you'), { timeout: 15_000 }).toBe('1')
-    expect(await header.locator('.dsh-project-header-badge').textContent()).toBe('1')
-    expect(await header.locator('.dsh-project-header-badge').getAttribute('data-live'), 'a number to act on does not breathe').toBe('false')
-
-    await header.locator('button').first().click()
-    const requests = page.locator('[data-project-panel="requests"]')
-    await requests.waitFor()
-    await requests.getByRole('tab', { name: 'Requests', exact: true }).click()
-    const pinned = requests.locator('[data-project-attention]')
-    await pinned.waitFor()
-    expect(await pinned.getAttribute('data-project-attention'), 'the pinned count is the list length').toBe('1')
-    expect(await requests.locator(`[data-project-request-id="${REQUEST_ID}"]`).count(), 'a pinned requirement is listed once').toBe(1)
-    const ask = pinned.locator('[data-project-ask="ask-fixture"]')
-    await ask.getByText('Postgres or SQLite?', { exact: true }).waitFor()
-    await ask.getByText('If you don’t answer: I will start with SQLite').waitFor()
-    await assertPopoverInViewport(page, '[data-project-panel="requests"]')
-    const shot = process.env.DSH_PROJECT_SHOT
-    if (shot) await requests.screenshot({ path: shot })
-
-    // The answer is one ordinary prompt to the Lead, naming the requirement it answers.
+    await withRequest(request => { request.ask = { id: 'ask-fixture', requestRevision: 1, question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], by: 'coordinator', at: Date.now() } })
+    await page.locator('.dsh-project-rail-toggle').click()
+    const rail = page.locator('.dsh-project-task-rail')
+    await rail.getByText('Postgres or SQLite?', { exact: true }).waitFor({ timeout: 15_000 })
+    expect(await rail.locator('[data-project-request="' + REQUEST_ID + '"]').count()).toBe(1)
     const prompts: string[] = []
-    await page.route('**/api/session/prompt', async (route) => {
-      prompts.push(route.request().postData() ?? '')
-      await route.abort('failed')
-    })
+    await page.route('**/api/session/prompt', async route => { prompts.push(route.request().postData() ?? ''); await route.abort('failed') })
     try {
-      await ask.getByRole('button', { name: 'SQLite', exact: true }).click()
+      await rail.getByRole('button', { name: 'SQLite', exact: true }).click()
       await expect.poll(() => prompts.length).toBe(1)
-      expect(prompts[0]).toContain(`${TITLE}: SQLite`)
-    } finally {
-      await page.unroute('**/api/session/prompt')
-    }
-
-    // The host clears the question when the user's message reaches the Lead; the panel and the count follow.
-    await withRequest((request) => { delete request.ask })
-    await expect.poll(() => header.getAttribute('data-needs-you'), { timeout: 15_000 }).toBeNull()
-    await pinned.waitFor({ state: 'detached', timeout: 15_000 })
-    await page.keyboard.press('Escape')
+      expect(prompts[0]).toContain('Postgres or SQLite?')
+      expect(prompts[0]).toContain('SQLite')
+    } finally { await page.unroute('**/api/session/prompt') }
+    await withRequest(request => { delete request.ask })
+    await rail.getByText('Postgres or SQLite?', { exact: true }).waitFor({ state: 'detached', timeout: 15_000 })
+    await page.locator('.dsh-project-rail-toggle').click()
     expect(await page.locator('[data-composer-input]').first().textContent()).toBe(DRAFT)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

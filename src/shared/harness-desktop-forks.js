@@ -83,6 +83,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/subagent/subagent/src/continuation-messages.ts', includes: ['readonly runId?: SubagentRunId'] },
   { file: 'packages/subagent/subagent/src/activation.ts', includes: ['readonly runId: SubagentRunId', 'readonly admissionPolicy: string | undefined'] },
   { file: 'packages/subagent/subagent/src/index.ts', includes: ['registerContinuationPolicy'] },
+  { file: 'packages/subagent/tool-subagent/src/index.ts', includes: ["'subagent/delegate'", "ctx.serial('subagent/delegate'"] },
   { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation', "case 'move':", 'only queued turns can be reordered'] },
   { file: 'packages/api/session-controller/src/index.ts', includes: ["'session/before-cancel'", 'cancel(request: SessionCancelRequest): Promise<SessionCancelValue>'] },
   // Opened Sessions nobody watches release their resident Agent instead of staying in the Host until restart.
@@ -516,16 +517,15 @@ const FORK_FILE_MARKERS = [
   // failure the retry policy retries, not a non-retryable PI_AI_ERROR that ends the turn.
   { file: 'packages/llm/llm-pi-ai/src/stream.ts', includes: ['over capacity|at capacity|temporarily unavailable'] },
   { file: 'packages/llm/llm-pi-ai/tests/convert.spec.ts', includes: ['reports itself overloaded'] },
-  // Project presents the native Team inside its Requests panel: the owner marks the Lead's Team facts `embedded`,
-  // the Lead's own header entry steps aside (members keep theirs), and TeamEmbedded is the Team body without a
-  // header entry or surface of its own.
+  // Retained experimental Team embedding for existing consumers. Project no longer
+  // mounts or filters it: the Project rail and native Team UI are independent.
   { file: 'packages/experimental/client-ui-agent-team/src/client/mount.ts', includes: ['readonly embedded?: boolean'] },
   { file: 'packages/experimental/client-ui-agent-team/src/client/TeamAction.tsx', includes: ['activity?.embedded === true'] },
   { file: 'packages/experimental/client-ui-agent-team/src/client/TeamEmbedded.tsx', includes: ['export function TeamEmbedded', 'data-team-embedded'] },
   { file: 'packages/experimental/client-ui-agent-team/src/client/TeamAction.module.css', includes: ['.embedded .body'] },
   { file: 'packages/experimental/client-ui-agent-team/src/client/index.ts', includes: ['TeamEmbedded'] },
   { file: 'packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx', includes: ['embedded Team'] },
-  { file: 'apps/web/tests/project-composer-stability.e2e.ts', includes: ['data-team-embedded'] },
+  { file: 'apps/web/tests/project-composer-stability.e2e.ts', includes: ['dsh-project-task-rail'] },
   // 0.2.2-rc.1 sync. The terminal's Ghostty wasm and fonts are served from beside its bundle: the revisioned
   // package-asset route only knows images, and without this fallback the terminal would load nothing.
   { file: 'packages/client/modules/src/index.ts', includes: ['BUNDLE_SIDE_ASSET_TYPES', 'bundleSideAssetResponse'] },
