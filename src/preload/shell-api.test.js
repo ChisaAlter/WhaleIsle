@@ -466,10 +466,12 @@ test('desktop shell main frames track initial and native fullscreen state in the
     const attributes = new Set();
     const root = {
       dataset: {},
+      hasAttribute: (name) => attributes.has(name),
       toggleAttribute(name, value) { if (value) attributes.add(name); else attributes.delete(name); },
     };
     globalThis.window = { addEventListener() {} };
-    globalThis.document = { documentElement: root, readyState: 'complete' };
+    globalThis.document = { documentElement: root, readyState: 'complete',
+      createElement: () => ({ dataset: {} }), head: { appendChild() {} }, dispatchEvent() {} };
     const listeners = new Map();
     const calls = [];
     loadPreload(['electron', `--dshd-shell-role=${role}`], {
@@ -481,7 +483,7 @@ test('desktop shell main frames track initial and native fullscreen state in the
     });
     await Promise.resolve();
     assert.equal(root.dataset.platform, process.platform);
-    assert.deepEqual(calls, ['shell:window-state']);
+    assert.deepEqual(calls, role === 'harness' ? ['shell:window-state'] : ['shell:window-state', 'shell:get-render-mode']);
     assert.equal(attributes.has('data-fullscreen'), true, `${role} must seed the native fullscreen state`);
     listeners.get('shell:window-state')({}, { fullscreen: false });
     assert.equal(attributes.has('data-fullscreen'), false);
@@ -506,15 +508,18 @@ test('desktop window state arriving before DOMContentLoaded is retained for the 
     else delete globalThis.document;
   });
   const events = new Map();
-  globalThis.window = { addEventListener: (name, listener) => events.set(name, listener) };
-  globalThis.document = { documentElement: null };
+  globalThis.window = { addEventListener: (name, listener) => {
+    const previous = events.get(name); events.set(name, (...args) => { previous?.(...args); listener(...args); });
+  } };
+  globalThis.document = { documentElement: null, readyState: 'loading',
+    createElement: () => ({ dataset: {} }), head: { appendChild() {} }, dispatchEvent() {} };
   loadPreload(['electron', '--dshd-shell-role=launcher'], {
     ipcRenderer: { ...fakeRenderer(), invoke: async () => ({ fullscreen: true }) },
   });
   await Promise.resolve();
   const attributes = new Set();
   globalThis.document.documentElement = {
-    dataset: {},
+    dataset: {}, hasAttribute: name => attributes.has(name),
     toggleAttribute(name, value) { if (value) attributes.add(name); else attributes.delete(name); },
   };
   events.get('DOMContentLoaded')();

@@ -101,7 +101,7 @@ test('curtain waits for native animation completion instead of a wall-clock cuto
   assert.deepEqual(states, ['ready', 'in']);
 });
 
-function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animation = Promise.resolve(), reduced = false, lowPowerGpu = false } = {}) {
+function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animation = Promise.resolve(), reduced = false, lowPowerGpu = false, minimal = false } = {}) {
   const events = [];
   const view = { webContents: {
     isDestroyed: () => false,
@@ -124,6 +124,7 @@ function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animatio
   const source = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8');
   const snippet = source.slice(source.indexOf('const HARNESS_FADE_'), source.indexOf('function watchPluginBoot'));
   const context = {
+    require: () => ({ getMinimalMode: () => minimal }),
     harnessView: view, harnessRevealed: false,
     renderHints: { lowPowerGpu },
     rendererFile: name => name,
@@ -186,6 +187,14 @@ test('reduced motion never captures or creates a curtain renderer', async () => 
 
 test('a low-power GPU shows the desktop without the curtain cross-fade', async () => {
   const fixture = revealFixture({ lowPowerGpu: true });
+  await fixture.reveal(fixture.win);
+  assert.ok(!fixture.events.includes('create-curtain'));
+  assert.ok(!fixture.events.includes('animate'));
+  assert.ok(fixture.events.includes('covered'));
+});
+
+test('Minimal mode reveals the desktop without snapshot curtains', async () => {
+  const fixture = revealFixture({ minimal: true });
   await fixture.reveal(fixture.win);
   assert.ok(!fixture.events.includes('create-curtain'));
   assert.ok(!fixture.events.includes('animate'));

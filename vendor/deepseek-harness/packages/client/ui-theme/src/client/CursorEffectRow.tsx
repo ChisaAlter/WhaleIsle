@@ -1,3 +1,4 @@
+import { useMinimalMode } from '@deepseek-ai/dsh-client-ui-primitives'
 /**
  * Appearance pointer-effect row (指针特效): the switch plus a settings-gear
  * entry that opens the scheme dialog — one of two decorations (fading pixel
@@ -96,13 +97,14 @@ function CursorEffectModal({ open, values, onClose, onSave, t }: {
   // draft from the stored values on every open — no reset effect, and a
   // theme publish while the dialog is open can never clobber the draft.
   const [draft, setDraft] = useState<CursorDraft>(values)
+  const minimal = useMinimalMode()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<CursorFxHandle | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     /* v8 ignore next -- the canvas ref attaches before the open effect can run */
-    if (!open || canvas === null) return
+    if (!open || minimal || canvas === null) return
     const handle = mountCursorFx(canvas, draft.effect, {
       colors: resolveCursorFxPalette(draft.colors),
       speed: draft.speed,
@@ -115,7 +117,7 @@ function CursorEffectModal({ open, values, onClose, onSave, t }: {
       if (engineRef.current === handle) engineRef.current = null
     }
     // Remount only on effect changes; tunables ride the update channel below.
-  }, [open, draft.effect])
+  }, [open, draft.effect, minimal])
 
   useEffect(() => {
     /* v8 ignore next -- the mount effect above seeds the ref before this runs */

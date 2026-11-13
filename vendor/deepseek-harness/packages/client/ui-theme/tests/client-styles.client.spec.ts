@@ -51,6 +51,7 @@ describe('ui-theme client styles', () => {
       `${PLUGIN_ID}/gradient-shadow-text.css`,
       `${PLUGIN_ID}/metallic-paint.css`,
       `${PLUGIN_ID}/shiki.css`,
+      `${PLUGIN_ID}/minimal.css`,
     ])
     await fiber.dispose()
     expect(document.head.querySelectorAll(`style[data-plugin="${PLUGIN_ID}"]`)).toHaveLength(0)

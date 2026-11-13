@@ -1,3 +1,4 @@
+import { useMinimalMode } from '@deepseek-ai/dsh-client-ui-primitives'
 /** Settings modal for the composer typing effect's bounded visual tuning. */
 import { useEffect, useState, type ChangeEvent, type CSSProperties } from 'react'
 import {
@@ -137,11 +138,12 @@ const PREVIEW_TYPE_MS = 150
  * settled line.
  */
 function TypingFxPreview({ draft, text }: { draft: TypingFxStyle; text: string }) {
+  const minimal = useMinimalMode()
   const [count, setCount] = useState(0)
   useEffect(() => {
     setCount(0)
-    if (typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (minimal || (typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
       setCount(text.length)
       return
     }
@@ -149,7 +151,7 @@ function TypingFxPreview({ draft, text }: { draft: TypingFxStyle; text: string }
       setCount(current => (current >= text.length ? 0 : current + 1))
     }, PREVIEW_TYPE_MS)
     return () => { window.clearInterval(timer) }
-  }, [text])
+  }, [text, minimal])
   const shown = text.slice(0, count)
   const colors = resolveTypingFxColors(draft.colors)
   return (

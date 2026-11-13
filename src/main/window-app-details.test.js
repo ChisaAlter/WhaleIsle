@@ -91,7 +91,7 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
   const api = vm.runInNewContext(`let mainWindow = null, launcherWindow = null;\nfunction getMainWindow() { return mainWindow; }\n${attach}\n${main}\n${boot}\n${showMain}\n${launcherFactory}\n({ createMainWindow, createLauncherWindow, showBoot, showMain, showLauncher })`, {
     app: { isPackaged, getAppPath: () => sourceOptions.appPath },
     process: { platform, execPath: sourceOptions.execPath, argv: ['--auth-token=private', '--qa'] },
-    require: () => ({ isLauncherPackage: () => launcher }),
+    require: () => ({ isLauncherPackage: () => launcher, getMinimalMode: () => false }),
     applyWindowsAppDetails,
     assetFile: () => sourceOptions.iconPath,
     iconImage: () => 'whale-icon',

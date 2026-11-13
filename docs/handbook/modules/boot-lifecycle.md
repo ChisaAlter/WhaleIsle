@@ -27,6 +27,7 @@
 - 主 frame preload 的 `dshDesktop.onboarding: false` 同时关闭首次用途/过程引导，不创建 controller、不写完成标记或默认偏好；通用设置保留这些选项。冒烟不代点继续/稍后配置。
 - 渲染档位：`whenReady` 后 `gpu-tier.js` 按实际渲染的显卡分类（Intel 核显与非 A/B 型号 Arc、AMD APU、高通、软件渲染或软件合成为低功耗；NVIDIA、Apple、独立 AMD/Intel Arc 为完整）。Harness 视图最多等 3 秒拿到结果，经 `--dshd-low-power-gpu=1` 传给 preload 的 `dshDesktop.renderHints`；低功耗时用户未设置过的背景特效默认关闭（外观页说明原因），开幕过渡直接揭示。用户自己设置过的值不受影响。
 - 空闲重绘：环境渐变以 12 帧/秒的时钟推进，窗口最小化或在托盘时（`shell:window-state.visible` → `data-dshd-window-hidden`）停止；被主界面覆盖的 boot 场景动画移除。主窗在用户已切到其他应用后才就绪时不抢前台，改为任务栏闪烁（`foreground.js`）。
+- 极简模式从活动 profile 读取，不依赖 Harness 启动后再关闭特效。boot 与壳页面停止装饰动画，揭示直接挂载主界面，不捕获启动页快照或创建幕布窗口。主界面的限时卡顿建议不改变启动流程，详见[设置导航](settings.md#极简模式与卡顿建议)。
 - 流程详述：[../flows/boot-to-ready.md](../flows/boot-to-ready.md)
 - 启动器使用 `src/renderer/launcher.html` / `launcher.css` / `launcher.js` 与共享 `dsh-webui-tokens.css`。`html[data-shell-theme=official]` 下 `theme.js` 只选择 `theme.scheme` 的明暗表，不写 Appearance 壁纸种子，不新增 `data-theme` / `prefers-color-scheme` 色板。首页启停共享操作锁，故障原文保存在默认折叠的「启动诊断」；启动失败不弹窗，插件恢复建议留在首页，点按钮才出现确认。
 

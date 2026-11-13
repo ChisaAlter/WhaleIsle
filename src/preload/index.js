@@ -371,6 +371,10 @@ if (role === 'harness' && isMainFrame) {
     onboarding: false,
     // Integrated or software GPU: ui-theme starts with heavy effects off.
     renderHints: { lowPowerGpu: lowPowerGpu() },
+    rendering: {
+      setMinimalMode: invoke(ipcRenderer, 'shell:set-render-mode'),
+      claimSuggestion: invoke(ipcRenderer, 'shell:claim-minimal-suggestion'),
+    },
     keyboard: {
       closeWindow: invoke(ipcRenderer, 'shell:shortcuts-close-window'),
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-input'),
@@ -471,4 +475,31 @@ if (api) {
 
 if (typeof module !== 'undefined') {
   module.exports = { buildShellApi, shellRole, remoteFeatureEnabled };
+}
+
+
+if (isMainFrame && typeof document !== 'undefined' && ['boot', 'harness', 'launcher'].includes(role)) {
+  const applyRendering = (minimal) => {
+    if (!document.documentElement) return;
+    if (document.documentElement.hasAttribute('data-dsh-minimal') !== minimal) {
+      document.documentElement.toggleAttribute('data-dsh-minimal', minimal);
+      document.dispatchEvent(new Event('dsh:render-mode'));
+    }
+  };
+  const initializeRendering = async () => {
+    if (process.argv.includes('--dshd-minimal=1')) applyRendering(true);
+    const style = document.createElement('style');
+    style.dataset.dshRenderPolicy = '';
+    style.textContent = `html[data-dsh-minimal] *,html[data-dsh-minimal] *::before,html[data-dsh-minimal] *::after {
+      animation:none!important;transition:none!important;backdrop-filter:none!important;
+      -webkit-backdrop-filter:none!important;box-shadow:none!important;text-shadow:none!important;scroll-behavior:auto!important;
+    }`;
+    document.head.appendChild(style);
+    // Harness receives the authoritative profile mode in its boot theme payload.
+    if (role !== 'harness') applyRendering((await ipcRenderer.invoke('shell:get-render-mode')) === true);
+  };
+  ipcRenderer.on('shell:render-mode', (_event, value) => applyRendering(value === true));
+  ipcRenderer.on('shell:render-resume', () => document.dispatchEvent(new Event('dsh:render-resume')));
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initializeRendering, { once: true });
+  else void initializeRendering();
 }

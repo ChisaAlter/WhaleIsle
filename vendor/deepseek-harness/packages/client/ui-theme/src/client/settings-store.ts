@@ -13,6 +13,9 @@ import { normalizeCursorEffect } from '../cursor-fx.ts'
 
 /** Fields the Appearance page mirrors from a theme snapshot. */
 export interface AppearanceSyncSnapshot {
+  /** Rendering mode and startup suggestion preference. */
+  minimalMode?: boolean
+  minimalModeSuggestions?: boolean
   /** Persisted color-scheme preference. */
   preference: ThemePreference
   /** Resolved active theme; only its color scheme is mirrored. */
@@ -95,6 +98,9 @@ export interface AppearanceSyncSnapshot {
 
 /** Store state mirrored from the theme snapshot. */
 export interface AppearanceRowState {
+  /** Rendering mode and startup suggestion preference. */
+  minimalMode?: boolean
+  minimalModeSuggestions?: boolean
   /** Persisted color-scheme preference. */
   preference: ThemePreference
   /** Which half is currently painting (`system` resolved). */
@@ -183,6 +189,8 @@ type AppearanceRowActions = {
 }
 
 const EMPTY: Omit<AppearanceRowState, 'revision'> = {
+  minimalMode: false,
+  minimalModeSuggestions: true,
   preference: DEFAULT_THEME_SETTINGS.preference,
   resolvedMode: 'light',
   activeLightThemeId: DEFAULT_FAMILY_ID,
@@ -234,6 +242,8 @@ export function createAppearanceRowStore(): EngineStoreHandle<AppearanceRowState
     actions: {
       sync: (d, snapshot: AppearanceSyncSnapshot, revision: number) => {
         if (revision <= d.revision) return
+        d.minimalMode = snapshot.minimalMode === true
+        d.minimalModeSuggestions = snapshot.minimalModeSuggestions !== false
         d.preference = snapshot.preference
         d.resolvedMode = snapshot.active.colorScheme
         d.activeLightThemeId = snapshot.activeLightThemeId

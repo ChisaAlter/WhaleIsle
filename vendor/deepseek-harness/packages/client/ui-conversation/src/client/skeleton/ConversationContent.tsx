@@ -186,7 +186,7 @@ export function ConversationContent(props: ConversationContentProps) {
     const card = stack?.querySelector<HTMLElement>('[data-composer-card]')
     if (stack === null || card === undefined || card === null) return
     const top = card.getBoundingClientRect().top
-    if (!hero && previous !== null) {
+    if (!hero && previous !== null && !document.documentElement.hasAttribute('data-dsh-minimal')) {
       // The first-send commit mounts the transcript, running chrome and dock
       // projections, and the main thread can stay busy with that work for
       // several frames. The glide therefore starts in this same commit, before
