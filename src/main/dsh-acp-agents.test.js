@@ -106,6 +106,10 @@ rl.on('line', async (line) => {
             category: 'thought_level',
             type: 'select',
             currentValue: 'medium',
+            options: [
+              { value: 'medium', name: 'Medium' },
+              { value: 'high', name: 'High' },
+            ],
           },
         ],
       },
@@ -113,7 +117,16 @@ rl.on('line', async (line) => {
     return;
   }
 
-  if (method === 'session/set_model' || method === 'session/set_config_option') {
+  if (method === 'session/set_config_option') {
+    send({ jsonrpc: '2.0', id, result: { configOptions: [{
+      id: 'reasoning_effort', name: 'Reasoning Effort', category: 'thought_level',
+      type: 'select', currentValue: params.value,
+      options: [{ value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }],
+    }] } });
+    return;
+  }
+
+  if (method === 'session/set_model') {
     send({
       jsonrpc: '2.0',
       id,
@@ -137,7 +150,7 @@ rl.on('line', async (line) => {
       },
     });
 
-    if (promptText.includes('USE_TOOL')) {
+    if (turnCount === 1 && promptText.includes('USE_TOOL')) {
       sendNotification('session/update', {
         sessionId,
         update: {
@@ -173,6 +186,7 @@ rl.on('line', async (line) => {
           title: 'Edit file src/demo.js',
           kind: 'edit',
           status: selectedOption === 'opt_allow_once' ? 'completed' : 'failed',
+          rawOutput: 'Permission outcome: ' + selectedOption,
           content: [
             {
               type: 'content',
@@ -269,13 +283,13 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-acp-host-'));
   const prevHome = process.env.DSH_HOME;
   process.env.DSH_HOME = tmpHome;
+  const disposeCallbacks = [];
 
   try {
     const mockScript = createMockAcpServerScript(tmpHome);
     const registeredAdapters = [];
     const routes = new Map();
     const waterfalls = new Map();
-    const disposeCallbacks = [];
     const approvalCalls = [];
     const fakeDshAgent = {
       id: 'dsh_agent_1',
@@ -284,6 +298,10 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
 
     const mockCtx = {
       baseDir: tmpHome,
+      agents: {
+        get: id => id === fakeDshAgent.session.id ? fakeDshAgent : undefined,
+        currentInitiator: () => fakeDshAgent,
+      },
       on(name, fn) {
         if (name === 'dispose') disposeCallbacks.push(fn);
         else waterfalls.set(name, fn);
@@ -291,6 +309,9 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       effect(fn) {
         const cleanup = fn();
         if (typeof cleanup === 'function') disposeCallbacks.push(cleanup);
+      },
+      inject(deps, fn) {
+        if (deps.every(name => mockCtx[name])) fn(mockCtx);
       },
       tools: {
         canonicalResults: new WeakMap(),
@@ -320,6 +341,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
         },
       },
       approval: {
+        policyOf() { return 'ask'; },
         async request(req) {
           approvalCalls.push(req);
           return 'allowed-once';
@@ -334,12 +356,14 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       'baseDir',
       'on',
       'effect',
+      'inject',
       'get',
       'llm',
       'connection',
       'webServer',
       'tools',
       'approval',
+      'agents',
     ]);
     const strictCordisCtx = new Proxy(mockCtx, {
       get(target, prop) {
@@ -351,15 +375,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     });
 
     applyAcpAgentsPlugin(strictCordisCtx, { storeFile: path.join(tmpHome, 'acp-agents.json') });
-    assert.equal(registeredAdapters.length, 1);
-    assert.deepEqual(registeredAdapters[0].providers, [
-      'acp:claude-code',
-      'acp:codex',
-      'acp:antigravity',
-      'acp:devin',
-    ]);
-    assert.deepEqual(await registeredAdapters[0].adapter.listModels('acp:codex'), []);
-    assert.equal(registeredAdapters[0].adapter.providerRetryPolicy('acp:codex'), undefined);
+    assert.equal(registeredAdapters.length, 0, 'default presets must not enable unconfigured agents');
 
     const routeHandler = routes.get('/dsh-acp-agents');
     assert.equal(typeof routeHandler, 'function');
@@ -406,19 +422,25 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       agent: {
         id: 'codex',
         enabled: true,
+        registrySource: 'local',
+        authMethod: '',
         command: process.execPath,
         args: [mockScript],
         permissionPolicy: 'ask',
       },
     });
     assert.equal(saveRes.statusCode, 200);
+    assert.equal(registeredAdapters.length, 1);
+    assert.deepEqual(registeredAdapters[0].providers, ['acp:codex']);
+    assert.equal(registeredAdapters[0].adapter.providerRetryPolicy('acp:codex').maxRetries, 0);
+    assert.deepEqual(registeredAdapters[0].adapter.providerRetryPolicy('acp:codex').retryableCodes, []);
     assert.equal((await registeredAdapters[0].adapter.listModels('acp:codex')).length > 0, true);
 
-    // 2b. Verify background session-title purpose fast-path does not collide with activeTurn
+    // Auxiliary work must not start an ACP turn or invent a title.
     const titleChunks = [];
     for await (const chunk of registeredAdapters[0].adapter.stream({
       provider: 'acp:codex',
-      model: 'gpt-5.4',
+      model: 'mock-fast',
       purpose: 'session-title',
       messages: [{ role: 'user', content: '{"currentTitle":null,"messages":["帮我修复反重力报错"]}' }],
     })) {
@@ -426,14 +448,15 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     }
     assert.equal(
       titleChunks.filter((c) => c.type === 'text-delta').map((c) => c.text).join(''),
-      '帮我修复反重力报错',
+      '',
     );
 
     // 3. Test ACP handshake endpoint
     const testRes = await callRpc('agent/test', { id: 'codex' });
     assert.equal(testRes.statusCode, 200);
-    assert.equal(testRes.data.ok, true);
-    assert.equal(testRes.data.agentInfo.name, 'mock-acp-agent');
+    assert.equal(testRes.data.ok, true, testRes.data.error);
+    assert.equal(testRes.data.binaryPath, process.execPath);
+    assert.ok(testRes.data.modelsFound >= 2, 'the live probe must discover the fixture model catalog');
 
     // 4. Multi-turn streaming with tool_call + session/request_permission + tool_call_update
     const adapter = registeredAdapters[0].adapter;
@@ -446,17 +469,18 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     const chunks1 = [];
     for await (const chunk of adapter.stream({
       provider: 'acp:codex',
-      model: 'gpt-5.4',
+      model: 'mock-fast',
       agent: fakeDshAgent,
-      messages: [{ role: 'user', content: 'Hello USE_TOOL please' }],
+      messages: [{ id: 'user-1', role: 'user', content: 'Hello USE_TOOL please' }],
       reasoningEffort: 'high',
     })) {
       chunks1.push(chunk);
     }
 
     assert.equal(
-      chunks1.some((c) => c.type === 'reasoning-delta' && c.text.includes('Thinking about: Hello USE_TOOL please')),
+      chunks1.some((c) => c.type === 'reasoning-delta' && c.text.includes('Thinking about:') && c.text.includes('Hello USE_TOOL please')),
       true,
+      JSON.stringify(chunks1),
     );
     const toolCallChunk = chunks1.find((c) => c.type === 'block-end' && c.block?.type === 'tool-call');
     assert.ok(toolCallChunk, 'expected a tool-call block-end chunk for the ACP tool call');
@@ -484,19 +508,19 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       },
       async () => ({ content: [{ type: 'text', text: 'fallback' }], isError: false }),
     );
-    assert.equal(execResult.isError, false);
+    assert.equal(execResult.isError, false, JSON.stringify(execResult));
     assert.match(execResult.content[0].text, /Permission outcome: opt_allow_once/);
     assert.equal(approvalCalls.length, 1);
-    assert.equal(approvalCalls[0].callId, toolCallChunk.block.id);
+    assert.equal(approvalCalls[0].callId, 'call_acp_1', 'approval refers to the ACP server tool call');
 
     // Resume stream in the same turn after tool execution completes
     const chunks1Resume = [];
     for await (const chunk of adapter.stream({
       provider: 'acp:codex',
-      model: 'gpt-5.4',
+      model: 'mock-fast',
       agent: fakeDshAgent,
       messages: [
-        { role: 'user', content: 'Hello USE_TOOL please' },
+        { id: 'user-1', role: 'user', content: 'Hello USE_TOOL please' },
         {
           role: 'assistant',
           content: '',
@@ -516,19 +540,19 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       .filter((c) => c.type === 'text-delta')
       .map((c) => c.text)
       .join('');
-    assert.match(replyText1, /Turn 1 reply for: Hello USE_TOOL please/);
+    assert.match(replyText1, /Turn 1 reply for:[\s\S]*Hello USE_TOOL please/);
     assert.equal(chunks1Resume.find((c) => c.type === 'finish')?.reason?.kind, 'stop');
 
     // Turn 2: second user message in the same session reuses the persistent ACP connection
     const chunks2 = [];
     for await (const chunk of adapter.stream({
       provider: 'acp:codex',
-      model: 'gpt-5.4',
+      model: 'mock-fast',
       agent: fakeDshAgent,
       messages: [
-        { role: 'user', content: 'Hello USE_TOOL please' },
+        { id: 'user-1', role: 'user', content: 'Hello USE_TOOL please' },
         { role: 'assistant', content: replyText1 },
-        { role: 'user', content: 'Second turn question' },
+        { id: 'user-2', role: 'user', content: 'Second turn question' },
       ],
     })) {
       chunks2.push(chunk);
@@ -537,20 +561,17 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       .filter((c) => c.type === 'text-delta')
       .map((c) => c.text)
       .join('');
-    assert.match(replyText2, /Turn 2 reply for: Second turn question/);
+    assert.match(replyText2, /Turn 2 reply for:[\s\S]*Second turn question/);
 
-    // Cleanup
-    for (const fn of disposeCallbacks) {
-      await fn();
-    }
   } finally {
+    for (const fn of disposeCallbacks.reverse()) await fn();
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
 
-test('client bundle registers Settings -> Agent (agent-presets) and T3 Code-style conversation.input.model selector', () => {
+test('client bundle registers Settings -> Agent and extends the native model menu without replacing it', () => {
   const clientCode = fs.readFileSync(
     path.join(__dirname, '..', '..', 'dsh-acp', 'client', 'client.js'),
     'utf8',
@@ -623,6 +644,8 @@ test('client bundle registers Settings -> Agent (agent-presets) and T3 Code-styl
   assert.equal(typeof pluginFn, 'function');
 
   const fakeSlots = {
+    entriesOfSlot() { return []; },
+    subscribe() { return () => {}; },
     inject(slotName, fn) {
       fn();
     },
@@ -655,7 +678,7 @@ test('client bundle registers Settings -> Agent (agent-presets) and T3 Code-styl
       subagentAddress: () => undefined,
     },
     inject(_deps, fn) {
-      fn(fakeCtx);
+      if (_deps.every(name => fakeCtx[name])) fn(fakeCtx);
     },
   };
 
@@ -673,8 +696,11 @@ test('client bundle registers Settings -> Agent (agent-presets) and T3 Code-styl
   assert.equal(settingsSlot.spec.id, 'acp-agents');
   assert.equal(settingsSlot.spec.order, 12);
 
-  const modelSlot = registeredSlots.find((s) => s.spec.name === 'conversation.input.model');
-  assert.ok(modelSlot, 'expected conversation.input.model registration');
-  assert.equal(modelSlot.spec.priority, -10);
+  const modelSlot = registeredSlots.find((s) => s.spec.name === 'conversation.input.model.options');
+  assert.ok(modelSlot, 'expected native model menu options registration');
+  assert.equal(modelSlot.spec.id, 'dsh-acp-options');
+  assert.equal(modelSlot.spec.order, 20);
+  assert.equal(registeredSlots.some(s => s.spec.name === 'conversation.input.model'), false,
+    'the host retains ownership of its picker, reasoning and Team controls');
   assert.equal(modelSlot.spec.children, undefined, 'must not redeclare child slot keys owned by ui-model-selection');
 });

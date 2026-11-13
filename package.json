@@ -131,7 +131,13 @@
         "from": "dsh-acp",
         "to": "dsh-acp",
         "filter": [
-          "**/*"
+          "package.json",
+          "cordis.patch.yml",
+          "LICENSE",
+          "README.md",
+          "THIRD_PARTY_NOTICES.md",
+          "lib/**",
+          "client/**"
         ]
       },
       {
