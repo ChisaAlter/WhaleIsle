@@ -15,6 +15,6 @@ it('keeps the frosted backdrop supported by Chromium after the production CSS tr
   expect(bubble).toBeTruthy()
   const rule = code.toString().split(`.${bubble}{`)[1]?.split('}')[0]
   expect(rule).toMatch(/(?:^|;)backdrop-filter:var\(--dsw-menu-backdrop-filter\)/u)
-  expect(rule).toContain('color-mix(in srgb, var(--dsw-specific-bubble) 65%, transparent)')
+  expect(rule).toContain('color-mix(in srgb, var(--dsw-specific-bubble) 40%, transparent)')
   expect(rule).not.toMatch(/(?:^|;)opacity:/u)
 })
