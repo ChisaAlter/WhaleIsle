@@ -2258,12 +2258,12 @@ class SuperAgentModel extends LlmAdapter {
 }
 
 async function superFixture(t) {
-  const root = await mkdtemp(join(tmpdir(), 'whale-superagent-')), home = join(root, 'home'), directory = join(root, 'selected');
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'whale-superagent-'))), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root), model = new SuperAgentModel();
   const keys = ['DSH_HOME','DSHD_HOME','DSH_DESKTOP_INSTALL_URL','DSH_DESKTOP_INSTALL_TOKEN','DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
   let ctx;
-  t.after(async () => { for (const release of model.releases.values()) release(); if (ctx) await disposeProfileApplication(ctx); await bridge.close(); for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key]; assert.ok(root.startsWith(join(tmpdir(), 'whale-superagent-'))); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const release of model.releases.values()) release(); if (ctx) await disposeProfileApplication(ctx); await bridge.close(); for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key]; assert.ok(root.startsWith(join(await realpath(tmpdir()), 'whale-superagent-'))); await rm(root, { recursive: true, force: true }); });
   ctx = await bootHost(home, model); model.service = ctx.projects;
   const project = (await ctx.projects.create({ requestId: 'super-create', workingDirectory: directory })).project, lead = (await ctx.projects.coordinator(project));
   let number = 0; const prompt = async text => { await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'super-human-' + (++number), mode: 'queue', content: [{ type: 'text', text }] }, signal); await lead.whenIdle(); };
