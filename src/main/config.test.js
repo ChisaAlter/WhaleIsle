@@ -504,3 +504,13 @@ test('saved Gitee route migrates to CNB and remains selected after persistence',
     saveConfig({ downloadRoute: before.downloadRoute });
   }
 });
+
+test('the update proxy is stored in canonical form and a stored invalid value falls back to the system proxy', () => {
+  assert.equal(DEFAULTS.updateProxy, '');
+  assert.equal(saveConfig({ updateProxy: '127.0.0.1:7890' }).updateProxy, 'http://127.0.0.1:7890');
+  assert.equal(loadConfig().updateProxy, 'http://127.0.0.1:7890');
+  assert.equal(saveConfig({ updateProxy: 'socks5://127.0.0.1:1080' }).updateProxy, '');
+  assert.equal(loadConfig().updateProxy, '');
+  assert.equal(saveConfig({ updateProxy: 'http://proxy.lan:8080' }).updateProxy, 'http://proxy.lan:8080');
+  assert.equal(saveConfig({ updateProxy: '' }).updateProxy, '');
+});

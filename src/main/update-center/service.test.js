@@ -34,7 +34,7 @@ function fixture(t, overrides = {}) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const payload = crypto.randomBytes(1000);
   const calls = { install: [], download: [], delta: 0, resolve: [] };
-  const config = { route: 'cnb', explicit: false, autoDownload: true };
+  const config = { route: 'cnb', explicit: false, autoDownload: true, proxy: '' };
   const control = { stallAt: null, deltaResult: null, failRoutes: new Set(), installResult: { launched: true } };
   const logs = [];
   const deps = {
@@ -46,6 +46,11 @@ function fixture(t, overrides = {}) {
     saveRoute: (route) => { config.route = route; config.explicit = true; },
     getAutoDownload: () => config.autoDownload,
     saveAutoDownload: (value) => { config.autoDownload = value; },
+    getProxy: () => config.proxy,
+    saveProxy: (value) => {
+      if (/^socks/i.test(value)) throw new Error('更新代理只支持普通 HTTP 代理');
+      config.proxy = value;
+    },
     resolveRelease: async (route, tag) => {
       calls.resolve.push([route, tag]);
       if (control.failRoutes.has(route)) throw Object.assign(new Error('GitHub 请求超时（10s）'), { code: 'ETIMEDOUT' });
@@ -227,6 +232,39 @@ test('switching the route re-checks on the new route and keeps downloaded bytes'
   assert.equal(ready.phase, 'ready');
   assert.equal(ready.route, 'github');
   assert.equal(f.calls.download.at(-1).offset, 500);
+});
+
+test('changing the update proxy re-checks and resumes from the downloaded bytes, an invalid one changes nothing', async (t) => {
+  const f = fixture(t);
+  f.control.plan = { ok: false };
+  f.control.stallAt = 500;
+  const center = f.make();
+  center.start();
+  assert.equal(center.snapshot().proxy, '');
+  await center.command('check');
+  for (let i = 0; i < 200 && (center.snapshot().progress?.received || 0) < 500; i++) await tick();
+  f.control.stallAt = null;
+  await assert.rejects(center.command('setProxy', 'socks5://127.0.0.1:1080'), /只支持普通 HTTP/);
+  assert.equal(f.config.proxy, '');
+  assert.equal(center.snapshot().proxy, '');
+  await center.command('setProxy', 'http://127.0.0.1:7890');
+  const ready = await settle(center, ['ready', 'error']);
+  assert.equal(ready.phase, 'ready');
+  assert.equal(ready.proxy, 'http://127.0.0.1:7890');
+  assert.equal(f.calls.download.at(-1).offset, 500);
+});
+
+test('a failing update proxy is reported as itself, not as a route to switch', async (t) => {
+  const proxyDown = Object.assign(new Error('无法通过更新代理 http://127.0.0.1:7890 连接'), { code: 'ERR_UPDATE_PROXY' });
+  const f = fixture(t, { resolveRelease: async () => { throw proxyDown; } });
+  f.config.explicit = true;
+  const center = f.make();
+  center.start();
+  const failed = await center.command('check');
+  assert.equal(failed.phase, 'error');
+  assert.equal(failed.error.code, 'ERR_UPDATE_PROXY');
+  assert.equal(failed.error.network, false);
+  assert.equal(failed.error.suggestRoute, '');
 });
 
 test('with auto download off a found update waits for the user', async (t) => {
