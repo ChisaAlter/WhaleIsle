@@ -1247,6 +1247,7 @@ test('start passes its default patch to the actual child environment', async (t)
   const defaultPatchFile = 'C:/desktop/pad.patch.yml';
   await h.manager.start({ defaultPatchFile });
   assert.equal(h.calls.spawn.options.env.DSHD_PROFILE_DEFAULT_PATCH, defaultPatchFile);
+  assert.equal(h.calls.spawn.options.env.DSHD_DEEPSEEK_TOOLS_ENABLED, '1');
 });
 
 test('spawnEnv supplies only the selected desktop default patch', () => {

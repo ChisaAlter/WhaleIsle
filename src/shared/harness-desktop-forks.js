@@ -27,6 +27,7 @@ const DESKTOP_PACKAGES = [
 ];
 
 const COMPOSITION_ROWS = [
+  { file: 'packages/bundle/base/cordis.patch.yml', id: 'dsh-deepseek-tools', name: 'dsh-deepseek-tools', configIncludes: [] },
   { file: 'packages/bundle/base/cordis.patch.yml', id: 'llm-vision-fallback', name: '@deepseek-ai/dsh-llm-vision-fallback', configIncludes: ['maxOutputTokens: 2048', 'timeoutMs: 120000'] },
   { file: 'packages/bundle/base/cordis.patch.yml', id: 'mcp-servers-file', name: '@deepseek-ai/dsh-mcp-servers-file' },
   { file: 'packages/bundle/base/cordis.patch.yml', id: 'session-query-sqlite', name: '@deepseek-ai/dsh-session-query-sqlite', configIncludes: ['preparedSessionCacheSize: 1'] },

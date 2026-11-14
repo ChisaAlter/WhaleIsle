@@ -868,6 +868,8 @@ class DshManager extends EventEmitter {
     Object.assign(env, desktopInstallEnv());
     // Default rows precede user patches so plugin management can configure and disable them.
     delete env.DSHD_PROFILE_DEFAULT_PATCH;
+    // A base-layer row keeps its settings writable beneath profile and home overrides.
+    env.DSHD_DEEPSEEK_TOOLS_ENABLED = '1';
     if (config.defaultPatchFile) env.DSHD_PROFILE_DEFAULT_PATCH = config.defaultPatchFile;
     // Carrier declaration for Office rows in any profile layer that reads it;
     // the desktop overlay already carries absolute paths, so a missing
