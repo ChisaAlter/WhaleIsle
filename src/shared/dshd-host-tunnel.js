@@ -238,10 +238,8 @@ function spaHistoryRequest(payload) {
       throw new Error('无效的会话历史地址');
     }
   }
-  const request = {
-    address,
-    throughSeq: Number.isInteger(payload?.throughSeq) ? payload.throughSeq : 1_000_000_000,
-  };
+  const request = { address };
+  if (Number.isInteger(payload?.throughSeq)) request.throughSeq = payload.throughSeq;
   if (Number.isInteger(payload?.beforeSeq)) request.beforeSeq = payload.beforeSeq;
   if (Number.isInteger(payload?.maxMessages)) request.maxMessages = payload.maxMessages;
   return request;
@@ -294,11 +292,6 @@ function adaptHostValue(method, value) {
     return { path: value };
   }
   return value;
-}
-
-function cursorFromPageError(message) {
-  const match = /past cursor (-?\d+)/.exec(String(message || ''));
-  return match ? Number(match[1]) : null;
 }
 
 function sanitizeHarnessCookie(raw) {
@@ -546,19 +539,6 @@ async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, sign
     throw new Error(`rpcId mismatch for ${method}`);
   }
   if (!full.result || full.result.ok !== true) {
-    const cursor = method === 'session.history'
-      ? cursorFromPageError(full.result?.error?.message)
-      : null;
-    if (cursor !== null && !Number.isInteger(payload?.throughSeq)) {
-      return forwardHostRpc({
-        origin,
-        method,
-        payload: { ...(payload || {}), throughSeq: cursor },
-        cookie,
-        fetchImpl,
-        signal,
-      });
-    }
     return {
       ok: false,
       rpcId,
