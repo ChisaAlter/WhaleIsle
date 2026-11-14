@@ -198,6 +198,33 @@
     return node;
   }
 
+  // A rejected proxy is an input problem, not a failed check: report it beside
+  // the field, keep what the user typed, and leave the update state alone.
+  let proxyRejected = false;
+  function showProxyError(message) {
+    proxyRejected = Boolean(message);
+    $('proxy-error').textContent = message;
+    $('proxy-error').hidden = !message;
+    $('proxy').setAttribute('aria-invalid', String(proxyRejected));
+  }
+
+  async function saveProxy(value) {
+    if (pending) return;
+    pending = true;
+    try {
+      render(await api.command('setProxy', value));
+      showProxyError('');
+    } catch (error) {
+      // Same IPC prefix stripping as the launcher's error text.
+      showProxyError(String(error?.message || error)
+        .replace(/^Error invoking remote method '[^']*':\s*/i, '')
+        .replace(/^Error:\s*/, ''));
+    } finally {
+      pending = false;
+      if (view) render(view);
+    }
+  }
+
   async function run(id, arg) {
     if (id === 'close') { void api.close(); return; }
     if (pending) return;
@@ -275,7 +302,7 @@
     }));
     $('auto-download').checked = Boolean(view.autoDownload);
     // Do not overwrite what the user is typing; the saved value is shown whenever the field is not focused.
-    if (document.activeElement !== $('proxy')) $('proxy').value = view.proxy || '';
+    if (document.activeElement !== $('proxy') && !proxyRejected) $('proxy').value = view.proxy || '';
     $('proxy').disabled = pending;
     $('auto-download').disabled = pending;
     $('actions').replaceChildren(...model.actions.map(button));
@@ -284,7 +311,8 @@
 
   $('proxy').addEventListener('change', (event) => {
     const value = event.target.value.trim();
-    if (value !== (view?.proxy || '')) void run('setProxy', value);
+    if (value !== (view?.proxy || '')) void saveProxy(value);
+    else showProxyError('');
   });
   $('proxy').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.target.blur(); });
   $('auto-download').addEventListener('change', (event) => { void run('setAutoDownload', event.target.checked); });

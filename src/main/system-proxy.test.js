@@ -170,8 +170,15 @@ test('inside Electron the update proxy is set on the updater session and its fai
   assert.equal((await systemFetch('https://example.test/a')).via, 'updater-session');
   assert.deepEqual(fetchCalls[0], ['https://example.test/a', { cache: 'no-store' }]);
   netError = 'net::ERR_PROXY_CONNECTION_FAILED';
-  await assert.rejects(systemFetch('https://example.test/a'), { code: 'ECONNREFUSED' });
+  await assert.rejects(systemFetch('https://example.test/a'), (error) => {
+    assert.equal(error.code, 'ERR_UPDATE_PROXY');
+    assert.match(error.message, /无法通过更新代理 http:\/\/127\.0\.0\.1:7890 连接/);
+    assert.doesNotMatch(error.message, /net::/);
+    return true;
+  });
   assert.equal(global.fetch.mock.callCount(), 0, 'a user-chosen proxy is not bypassed');
+  netError = 'net::ERR_CONNECTION_RESET';
+  await assert.rejects(systemFetch('https://example.test/a'), { code: 'ECONNRESET' }, 'non-proxy failures keep their own code');
 
   await setUpdateProxy('');
   assert.deepEqual(proxyCalls.at(-1), { mode: 'system' });

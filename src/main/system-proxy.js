@@ -118,6 +118,17 @@ function setUpdateProxy(value) {
   return run;
 }
 
+/**
+ * A failure of the user's own update proxy, said plainly: switching route would
+ * not help, so it must not read as an unstable network. Other errors pass through.
+ */
+function explainUpdateProxyFailure(error) {
+  if (!updateProxy || !error || error.code === 'ERR_UPDATE_PROXY') return error;
+  if (!error.proxyFailure && !PROXY_NET_ERROR.test(String(error.message || ''))) return error;
+  return Object.assign(new Error(`无法通过更新代理 ${updateProxy.url} 连接，请确认代理正在运行且无需登录，或清空「更新代理」以跟随系统代理`),
+    { code: 'ERR_UPDATE_PROXY', cause: error });
+}
+
 /** True while the user's update proxy is in force; its failures must surface instead of dropping to direct. */
 function hasUpdateProxy() {
   return Boolean(updateProxy);
@@ -213,8 +224,8 @@ async function systemFetch(url, init = {}) {
     return await net.fetch(url, { cache: 'no-store', ...init });
   } catch (error) {
     if (!explicit && PROXY_NET_ERROR.test(String(error?.message || '')) && !init.signal?.aborted) return fetch(url, init);
-    throw withNetworkCode(error);
+    throw explicit ? explainUpdateProxyFailure(withNetworkCode(error)) : withNetworkCode(error);
   }
 }
 
-module.exports = { agentFor, systemFetch, parseProxyRule, withNetworkCode, TunnelAgent, parseUpdateProxy, normalizeUpdateProxy, setUpdateProxy, hasUpdateProxy };
+module.exports = { agentFor, systemFetch, parseProxyRule, withNetworkCode, TunnelAgent, parseUpdateProxy, normalizeUpdateProxy, setUpdateProxy, hasUpdateProxy, explainUpdateProxyFailure };

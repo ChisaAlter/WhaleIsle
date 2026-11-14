@@ -71,7 +71,7 @@ test('a proxy the user chose is retried and never bypassed by a direct request',
   await setUpdateProxy('127.0.0.1:7890');
   const f = fixture(t, () => assert.fail('no request may reach the origin directly'));
   await assert.rejects(downloadFile('https://example.test/Setup.exe', f.dest, null,
-    { ...options, agent: { refuse: true }, maxAttempts: 3 }), { code: 'ECONNREFUSED' });
+    { ...options, agent: { refuse: true }, maxAttempts: 3 }), { code: 'ERR_UPDATE_PROXY' });
   assert.ok(f.requests.length > 1, 'transient proxy failures are retried');
   assert.ok(f.requests.every(request => request.agent), 'every attempt stayed on the proxy');
 });

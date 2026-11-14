@@ -254,6 +254,19 @@ test('changing the update proxy re-checks and resumes from the downloaded bytes,
   assert.equal(f.calls.download.at(-1).offset, 500);
 });
 
+test('a failing update proxy is reported as itself, not as a route to switch', async (t) => {
+  const proxyDown = Object.assign(new Error('无法通过更新代理 http://127.0.0.1:7890 连接'), { code: 'ERR_UPDATE_PROXY' });
+  const f = fixture(t, { resolveRelease: async () => { throw proxyDown; } });
+  f.config.explicit = true;
+  const center = f.make();
+  center.start();
+  const failed = await center.command('check');
+  assert.equal(failed.phase, 'error');
+  assert.equal(failed.error.code, 'ERR_UPDATE_PROXY');
+  assert.equal(failed.error.network, false);
+  assert.equal(failed.error.suggestRoute, '');
+});
+
 test('with auto download off a found update waits for the user', async (t) => {
   const f = fixture(t);
   f.config.autoDownload = false;
