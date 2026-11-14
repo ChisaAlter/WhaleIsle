@@ -32,14 +32,8 @@ export function ConversationMainPanel(props: ConversationSlotProps) {
   // The exemption is deliberately open-state-wide, not loading-only: a
   // summary-blank session is the hero before its open starts (`cold`) and
   // after one fails (`error`) for the same reason — there is no history.
-  // A restored continuable subagent waits for a Host summary to establish
-  // parent availability. This keeps the composer
-  // hidden instead of briefly rendering the parent-offline takeover.
-  const parentAvailabilityPending = session?.subagent?.address.mode === 'continuable'
-    && session.subagent.parentAvailable === undefined
   const settling = sessionId !== undefined && !presentationOwned && (
     (shellPhase === 'blank' && openState === 'loading' && summaryBlank !== true)
-    || parentAvailabilityPending
   )
   const hero = sessionId === undefined
     || (!presentationOwned && shellPhase === 'blank' && (openState === 'open' || summaryBlank === true))

@@ -90,6 +90,7 @@ export class ProjectRequirements {
         if (row) { row.title = title; row.revision = revision; row.versions.push(version); delete row.archivedAt; delete row.ask; row.updatedAt = now; service.queue.initialize(state, row, args.disposition ?? row.queue?.state ?? 'queued'); }
         else { const item = { id, projectId: project.id, title, revision, versions: [version], createdAt: now, updatedAt: now }; state.requests.push(item); service.queue.initialize(state, item, disposition); }
         for (const draft of state.deliveries.filter(item => item.requestId === id && item.status === 'draft')) draft.status = 'obsolete';
+        if (service.queue.accepts(state.requests.find(item => item.id === id))) state.projects.find(item => item.id === project.id).paused = false;
       });
       service.projectHolds.delete(project.id);
     });
@@ -136,6 +137,11 @@ export class ProjectRequirements {
     const version = this.version(row);
     if (version.authorityError || !version.source) fail('request_authority', 'The saved requirement has no verified original authorization. Accept a new actual user revision before arranging work.');
     const related = input.messages.some(event => {
+        if (event.data.source.kind === 'whale-project:settlement-check') return service.state().workstreams.some(item => {
+          const receipt = latest(item);
+          return item.projectId === actor.project.id && receipt.source.requestId === row.id && receipt.source.requestRevision === row.revision
+            && service.settlementNoticeMatches(item, receipt, event.data);
+        });
         if (event.data.source.kind !== 'subagent-settled') return false;
         const source = event.data.source, original = service.state().workstreams.find(item => item.projectId === actor.project.id && item.workerSessionId === source.senderSessionId);
         const receipt = original && original.delegations.find(item => item.runId === source.runId && item.source.requestId === row.id && item.source.requestRevision === row.revision);
@@ -188,6 +194,7 @@ export class ProjectRequirements {
     if (!report || reference.reportId && report.callId !== reference.reportId) fail('result_changed', 'This delivery must reference an actual recorded report.');
     const terminal = work.settlements.find(item => item.runId === receipt.runId && item.delegationRefs.includes(receipt.ref));
     if (!terminal || completed && (terminal.stopReason !== 'completed' || report.outcome !== 'completed')) fail('result_unsettled', 'A complete delivery needs successful matching report and native settlement.');
+    if (completed && receipt.review?.decision === 'returned' && receipt.review.reportId === report.callId) fail('result_returned', 'Reassess and accept the returned report before complete delivery.');
     if (completed && service.prerequisiteStatus(report, projectId).prerequisitesChanged) fail('result_changed', 'The required evidence has changed and must be reassessed.');
     return { workstreamId: work.id, delegationRef: receipt.ref, reportId: report.callId };
   }
@@ -198,8 +205,9 @@ export class ProjectRequirements {
   }
   validate(draft) {
     const row = this.get(draft.projectId, draft.requestId, draft.requestRevision), service = this.service, current = this.manifest(row);
-    service.queue.assertActive(row, draft.requestRevision);
     if (this.version(row).authorityError || !this.version(row).source) fail('request_authority', 'The saved requirement needs a new actual user revision before delivery can be confirmed.');
+    if (draft.outcome === 'partial' && service.queue.state(row) === 'active' && !row.queue?.released && row.revision === draft.requestRevision) { /* Reading stopped results never resumes execution. */ }
+    else service.queue.assertActive(row, draft.requestRevision);
     if (JSON.stringify(current) !== JSON.stringify(draft.requiredDelegations)) fail('request_changed', 'Required work changed after this handover was declared.');
     for (const reference of draft.reportRefs) this.validReport(row.projectId, reference, draft.outcome === 'completed');
     for (const reference of draft.terminalRefs ?? []) this.validTerminal(row.projectId, reference);
@@ -215,9 +223,10 @@ export class ProjectRequirements {
   async declare(actor, args, exec) {
     const service = this.service; service.coordinatorOnly(actor); exec.signal.throwIfAborted();
     const input = this.inputs(actor, exec), row = this.get(actor.project.id, args.requestId, args.requestRevision);
-    this.service.queue.assertActive(row, args.requestRevision);
+    if (args.outcome !== 'partial' || service.queue.state(row) !== 'active' || row.queue?.released || row.revision !== args.requestRevision) service.queue.assertActive(row, args.requestRevision);
     if (!['completed', 'partial'].includes(args.outcome)) fail('invalid_delivery', 'Choose completed or partial.');
     const remainingIssues = strings(args.remainingIssues), evidence = strings(args.evidence);
+    if (args.outcome === 'completed' && !evidence.length) fail('review_evidence', 'Complete delivery is final acceptance: include the actual inspection evidence.');
     // Two mistakes, two messages: told only about "partial", a model swaps the outcome and invents an unmet condition.
     if (args.outcome === 'completed' && remainingIssues.length) fail('invalid_delivery', 'A completed handover leaves nothing unmet, so remainingIssues must be empty. Put remarks that do not block the goal in the summary; choose partial only when required work or a condition is really unmet.');
     if (args.outcome === 'partial' && !remainingIssues.length) fail('invalid_delivery', 'A partial handover must preserve its unmet conditions in remainingIssues.');
@@ -309,6 +318,10 @@ export class ProjectRequirements {
         for (const reference of item.reportRefs) {
           const work = state.workstreams.find(work => work.id === reference.workstreamId), receipt = work.delegations.find(receipt => receipt.ref === reference.delegationRef);
           receipt.report.summarizedBy = item.replyMessageId;
+          // A durable complete handover is also explicit final acceptance. Partial
+          // summaries and failed/unpersisted declarations never release dependencies.
+          if (item.outcome === 'completed' && receipt.review?.decision !== 'accepted') receipt.review = {
+            reportId: receipt.report.callId, decision: 'accepted', reason: item.summary, evidence: item.evidence, at: Date.now() };
           for (const terminal of work.settlements.filter(terminal => terminal.runId === receipt.runId && terminal.delegationRefs.includes(receipt.ref))) terminal.summarizedBy = item.replyMessageId;
           work.pendingSummary = work.delegations.some(receipt => receipt.report && !receipt.report.summarizedBy) || work.settlements.some(terminal => !terminal.summarizedBy);
           if (work.summaryFailure?.delegationRef === reference.delegationRef) delete work.summaryFailure;
@@ -473,17 +486,18 @@ export class ProjectRequirements {
         : receipt.phase === 'failed' || receipt.report && receipt.report.outcome !== 'completed'
           || terminal && (terminal.stopReason !== 'completed' || !receipt.report) ? 'blocked'
         : receipt.phase === 'queued' || receipt.phase === 'preparing' ? 'queued'
-        : receipt.report?.outcome === 'completed' && terminal?.stopReason === 'completed' ? 'completed'
+        : receipt.review?.decision === 'returned' ? 'blocked'
+        : receipt.report?.outcome === 'completed' && terminal?.stopReason === 'completed' ? (service.acceptedWork(item) ? 'completed' : 'needsReview')
         : worker.stopped || project.paused ? 'paused' : receipt.report || terminal ? 'pendingDelivery' : 'blocked';
       return { workstreamId: item.id, delegationRef: receipt.ref, runId: reference.runId, title: item.title,
-        workerSessionId: worker.sessionId, memberName: service.memberName(worker), memberRole: worker.role, memberPhase: worker.phase,
+        workerSessionId: worker.sessionId, parentSessionId: worker.parentSessionId ?? project.coordinatorSessionId, memberName: service.memberName(worker), memberRole: worker.role, memberPhase: worker.phase,
         status, current, runningJob: current && Boolean(record?.jobs.length ?? service.jobs(worker.sessionId).length), phase: receipt.phase, ...(receipt.waitingReason ? { waitingReason: receipt.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
         createdAt: item.createdAt, updatedAt: item.updatedAt, assignmentAt: receipt.createdAt,
         ...(receipt.report ? { reportId: receipt.report.callId, outcome: receipt.report.outcome, reportAt: receipt.report.at,
           ...(full ? { summary: receipt.report.summary } : {}), ...(status === 'blocked' ? { reportSummary: receipt.report.summary.slice(0, 300) } : {}) } : {}),
         ...(terminal ? { terminalStopReason: terminal.stopReason, terminalAt: terminal.at } : {}) };
     }).sort((a, b) => {
-      const priority = { blocked: 0, summaryFailed: 0, stopping: 1, running: 2, queued: 3, paused: 4, pendingDelivery: 5, completed: 6 };
+      const priority = { blocked: 0, summaryFailed: 0, stopping: 1, running: 2, queued: 3, paused: 4, needsReview: 5, pendingDelivery: 5, completed: 6 };
       return priority[a.status] - priority[b.status] || b.updatedAt - a.updatedAt || a.workstreamId.localeCompare(b.workstreamId);
     });
     const counts = { total: work.length, members: new Set(work.map(item => item.workerSessionId)).size,
@@ -497,11 +511,11 @@ export class ProjectRequirements {
       : version.authorityError || counts.blocked ? 'blocked'
       : request?.handoverError || latestAttempt?.status === 'historical' && latestAttempt.error || counts.summaryFailed ? 'summaryFailed'
       : work.some(item => item.status === 'stopping') ? 'stopping'
-      : delivered?.outcome === 'completed' && !applicable ? 'needsReview'
+      : delivered?.outcome === 'completed' && !applicable || work.some(item => item.status === 'needsReview') ? 'needsReview'
       : latestAttempt?.status === 'draft' ? 'pendingDelivery'
       : counts.running ? 'running' : counts.queued ? 'queued'
       : delivered?.outcome === 'partial' ? 'blocked'
-      : project.paused || work.some(item => item.status === 'paused') ? 'paused' : 'pendingDelivery';
+      : project.paused || row.queue?.suspended || work.some(item => item.status === 'paused') ? 'paused' : 'pendingDelivery';
     // A transient summary failure the host will still retry by itself is not waiting on the user.
     const failedStreams = counts.summaryFailed ? this.manifest(row).map(reference => service.stream(reference.workstreamId, projectId)).filter(item => item.summaryFailure?.delegationRef === item.currentDelegationRef) : [];
     const retries = failedStreams.map(item => service.autoRetry(item));

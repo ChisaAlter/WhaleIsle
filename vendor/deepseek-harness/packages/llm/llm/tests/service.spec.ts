@@ -239,8 +239,13 @@ describe('LlmRuntime', () => {
         tools: [search],
         toolHistory: { tools: [], updates: [{ messageId: added.id, additions: [search] }] },
       }))
-      expect(adapter.lastOptions?.tools).toEqual([{ ...search, deferLoading: true }])
-      expect(adapter.lastOptions?.messages).toEqual([added])
+      if (mode === 'in-history') {
+        expect(adapter.lastOptions?.tools).toEqual([{ ...search, deferLoading: true }])
+        expect(adapter.lastOptions?.messages).toEqual([added])
+      } else {
+        expect(adapter.lastOptions?.tools).toEqual([search])
+        expect(adapter.lastOptions?.messages).toEqual([])
+      }
 
       const afterRemoval = await ctx.llm.prepareCall({ provider: 'test-provider', model: 'test-model' })
       await collect(afterRemoval.stream({
@@ -427,7 +432,7 @@ describe('LlmRuntime', () => {
   })
 
   it.each(['done', 'value'] as const)('normalizes a throwing IteratorResult.%s getter', async (field) => {
-    const original = new LlmError(`${field} getter failed`, 'RESULT_GETTER_FAILED')
+    const original = LlmError.fromFailure({ message: `${field} getter failed`, code: 'RESULT_GETTER_FAILED' })
     const result = field === 'done' ? {} : { done: false }
     Object.defineProperty(result, field, { get: () => { throw original } })
     let cleanupLookups = 0
@@ -466,7 +471,7 @@ describe('LlmRuntime', () => {
   })
 
   it.each(['dispatch', 'iterator'] as const)('normalizes synchronous adapter %s failures', async (boundary) => {
-    const original = new LlmError(`${boundary} failed`, 'BOUNDARY_FAILED')
+    const original = LlmError.fromFailure({ message: `${boundary} failed`, code: 'BOUNDARY_FAILED' })
     const adapter = new class extends LlmAdapter {
       stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
         if (boundary === 'dispatch') throw original
@@ -696,6 +701,22 @@ describe('LlmRuntime', () => {
     }])
   })
 
+  it('detaches advertised model badges, including their translations', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const translated = { text: { en: 'New', zh: '新' }, tone: 'info' as const }
+    const literal = { text: '1017', tone: 'neutral' as const }
+    ctx.llm.registerAdapter(['catalog'], new CatalogAdapter({ id: 'catalog', name: 'Catalog' }, [
+      { provider: 'catalog', id: 'new', name: 'New', badge: translated },
+      { provider: 'catalog', id: 'dated', name: 'Dated', badge: literal },
+    ]))
+    const [first, second] = await ctx.llm.listModels('catalog')
+    expect(first?.badge).toEqual(translated)
+    expect(first?.badge).not.toBe(translated)
+    expect(first?.badge?.text).not.toBe(translated.text)
+    expect(second?.badge).toEqual(literal)
+  })
+
   it('defaults adapters to their route name and an empty advisory model list', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -718,6 +739,7 @@ describe('LlmRuntime', () => {
     [{ provider: 'route', id: 'model', name: '' }, 'empty name'],
     [{ provider: 'route', id: 'model', name: 'Model', description: 1 }, 'non-string description'],
     [{ provider: 'route', id: 'model', name: 'Model', toolUpdate: 'sometimes' }, 'unknown tool update mode'],
+    [{ provider: 'route', id: 'model', name: 'Model', contextManagement: 'ignore' }, 'unknown context owner'],
   ] as const)('rejects invalid exact model metadata (%s: %s)', async (metadata, _label) => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -740,6 +762,7 @@ describe('LlmRuntime', () => {
         return Promise.resolve({
           provider: 'route', id: 'model', name: 'Model',
           inputModalities: ['text', 'image'],
+          contextManagement: 'provider',
           toolUpdate: 'in-history',
         })
       }
@@ -751,6 +774,7 @@ describe('LlmRuntime', () => {
     await expect(ctx.llm.resolveModelInfo('route', 'model')).resolves.toEqual({
       provider: 'route', id: 'model', name: 'Model',
       inputModalities: ['text', 'image'],
+      contextManagement: 'provider',
       toolUpdate: 'in-history',
     })
     expect((await ctx.llm.prepareCall({ provider: 'route', model: 'model' })).toolUpdate).toBe('in-history')
@@ -1580,7 +1604,7 @@ describe('LlmRuntime', () => {
   })
 
   it('creates LlmError with a code for programmatic handling', () => {
-    const err = new LlmError('something went wrong', 'CUSTOM_CODE')
+    const err = LlmError.fromFailure({ message: 'something went wrong', code: 'CUSTOM_CODE' })
     expect(err).toBeInstanceOf(Error)
     expect(err.name).toBe('LlmError')
     expect(err.message).toBe('something went wrong')

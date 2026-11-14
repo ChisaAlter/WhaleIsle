@@ -340,19 +340,69 @@ test('normal and recovery starts detach retired Bots without mounting it', async
   }
 });
 
-test('a failed usage-panel ensure blocks Harness start (desktop runtime damage)', async () => {
+const OPTIONAL_BUILTINS = [
+  ['ensureDesktopOfficeRuntime', 'Office 运行时'],
+  ['ensureUsagePanelPlugin', '用量统计'],
+  ['ensureDshImPlugin', '消息渠道（dsh-im）'],
+  ['ensureDesktopMarket', '插件市场'],
+  ['ensureDshWhalePlugin', '鲸鱼娘助理（dsh-whale）'],
+  ['ensureDshRemotePlugin', '远程工作区（dsh-remote）'],
+  ['ensureDshPadPlugin', '悬浮面板（dsh-pad）'],
+];
+
+test('a broken optional built-in is skipped and listed; Harness still starts on full and skip starts', async () => {
+  const stale = 'C:/stale/broken.patch.yml';
+  for (const [option, label] of OPTIONAL_BUILTINS) {
+    for (const failure of [{ ok: false, error: 'missing-source:package.json', overlayFile: stale }, new Error('vendor copy unreadable')]) {
+      for (const skipUserPlugins of [false, true]) {
+        const f = fixture({ [option]: async () => { if (failure instanceof Error) throw failure; return failure; } });
+        if (skipUserPlugins) f.controller.writePluginSkip(new Error('recovery'));
+        await f.controller.start();
+        const reason = failure instanceof Error ? failure.message : failure.error;
+        const where = `${option} ${failure instanceof Error ? 'throw' : 'ok:false'} skip=${skipUserPlugins}`;
+        assert.equal(f.dsh.startCalls, 1, where);
+        assert.equal(f.dsh.startOptions[0].skipUserPlugins, skipUserPlugins, where);
+        assert.ok(!f.dsh.startOptions[0].patchFiles.includes(stale), where);
+        assert.notEqual(f.dsh.startOptions[0].defaultPatchFile, stale, where);
+        assert.deepEqual(f.controller.skippedBuiltins, [{ label, error: reason }], where);
+        assert.deepEqual(f.controller.snapshot().skippedBuiltins, [{ label, error: reason }], where);
+        assert.ok(f.dsh.logs.some((line) => line.includes(`${label}不可用`) && line.includes(reason)), where);
+        await f.controller.shutdown();
+      }
+    }
+  }
+});
+
+test('each start reports only the built-ins it skipped itself', async () => {
+  let broken = true;
   const f = fixture({
-    ensureUsagePanelPlugin: async () => ({ ok: false, error: 'missing-zod' }),
+    ensureDesktopMarket: async () => (broken ? { ok: false, error: 'missing-source:package.json' } : { ok: true }),
   });
-  await assert.rejects(
-    () => f.controller.start(),
-    (error) => {
-      assert.match(String(error.message), /桌面内置用量统计失败/);
-      assert.match(String(error.message), /missing-zod/);
-      return true;
-    },
-  );
+  await f.controller.start();
+  assert.equal(f.controller.skippedBuiltins.length, 1);
+  broken = false;
+  await f.controller.restart();
+  assert.equal(f.dsh.startCalls, 2);
+  assert.deepEqual(f.controller.skippedBuiltins, []);
+  await f.controller.shutdown();
+});
+
+test('broken task protection still fails the start before spawning Harness', async () => {
+  for (const failure of [{ ok: false, error: 'guard-missing' }, new Error('guard-missing')]) {
+    const f = fixture({ ensureTaskControlPlugin: async () => { if (failure instanceof Error) throw failure; return failure; } });
+    await assert.rejects(f.controller.start(), /桌面内置任务保护失败：guard-missing/);
+    assert.equal(f.dsh.startCalls, 0);
+    assert.deepEqual(f.controller.skippedBuiltins, []);
+  }
+});
+
+test('cancellation while preparing an optional built-in still cancels the start', async () => {
+  const f = fixture({
+    ensureUsagePanelPlugin: async () => { throw Object.assign(new Error('cancelled'), { code: 'DSH_CANCELLED' }); },
+  });
+  await assert.rejects(f.controller.start(), (error) => ['DSH_CANCELLED', 'HARNESS_OPERATION_CANCELLED'].includes(error.code));
   assert.equal(f.dsh.startCalls, 0);
+  assert.deepEqual(f.controller.skippedBuiltins, []);
 });
 
 test('skip-user-plugins still wires first-party usage-panel and dsh-im', async () => {
@@ -379,21 +429,6 @@ test('skip-user-plugins still wires first-party usage-panel and dsh-im', async (
   assert.ok(f.dsh.logs.some((line) => /桌面内置 dsh-im/.test(line)));
 });
 
-test('a failed Office runtime ensure blocks Harness start (desktop runtime damage)', async () => {
-  const f = fixture({
-    ensureDesktopOfficeRuntime: async () => ({ ok: false, error: 'missing-payload' }),
-  });
-  await assert.rejects(
-    () => f.controller.start(),
-    (error) => {
-      assert.match(String(error.message), /桌面内置 Office 运行时失败/);
-      assert.match(String(error.message), /missing-payload/);
-      return true;
-    },
-  );
-  assert.equal(f.dsh.startCalls, 0);
-});
-
 test('Office overlay rides full and skip-user-plugins starts', async () => {
   const officeOverlay = 'C:/profiles/web/desktop-plugins/office/desktop-office.patch.yml';
   for (const skipUserPlugins of [false, true]) {
@@ -416,21 +451,6 @@ test('an explicitly disabled Office runtime mounts no overlay but still starts',
   assert.equal(f.dsh.startCalls, 1);
   assert.ok(!f.dsh.startOptions[0].patchFiles.some((file) => /office/.test(file)));
   assert.ok(f.dsh.logs.some((line) => /Office.*关闭/.test(line)));
-});
-
-test('dsh-im failure blocks Harness start', async () => {
-  const f = fixture({
-    ensureDshImPlugin: async () => ({ ok: false, error: 'missing-source:node_modules:zod' }),
-  });
-  await assert.rejects(
-    () => f.controller.start(),
-    (error) => {
-      assert.match(String(error.message), /桌面内置 dsh-im 失败/);
-      assert.match(String(error.message), /missing-source/);
-      return true;
-    },
-  );
-  assert.equal(f.dsh.startCalls, 0);
 });
 
 test('logs and continues when legacy preset cleanup fails', async () => {
@@ -641,15 +661,6 @@ test('pad overlay loads by default on both normal and recovery starts', async ()
   }
 });
 
-test('broken pad runtime prevents normal and recovery starts before spawning Harness', async () => {
-  for (const skip of [false, true]) {
-    const f = fixture({ ensureDshPadPlugin: async () => ({ ok: false, error: 'missing-source:lib/client.js' }) });
-    if (skip) f.controller.writePluginSkip(new Error('recovery'));
-    await assert.rejects(f.controller.start(), /桌面内置 dsh-pad 失败：missing-source:lib\/client.js/);
-    assert.equal(f.dsh.startCalls, 0);
-  }
-});
-
 test('remote workspace can be disabled without mounting its overlay', async () => {
   const remoteOverlay = 'C:/profiles/web/desktop-plugins/dsh-remote/desktop-dsh-remote.patch.yml';
   let args;
@@ -690,61 +701,6 @@ test('remote workspace is ensured before disabled bundles and Harness spawn', as
   assert.ok(events.indexOf('remote') < events.indexOf('disabled-bundles'));
   assert.ok(events.indexOf('disabled-bundles') < events.indexOf('start'));
   assert.ok(f.dsh.startOptions[0].patchFiles.includes(remoteOverlay));
-});
-
-test('broken enabled remote runtime fails closed on full and skip starts', async () => {
-  for (const skipUserPlugins of [false, true]) {
-    const f = fixture({
-      ensureDshRemotePlugin: async () => ({
-        ok: false,
-        error: 'missing-source:package.json',
-        overlayFile: 'C:/stale/remote.patch.yml',
-      }),
-    });
-    if (skipUserPlugins) f.controller.writePluginSkip(new Error('recovery'));
-    await assert.rejects(
-      () => f.controller.start(),
-      (error) => {
-        assert.match(String(error.message), /桌面内置 dsh-remote 失败/);
-        assert.match(String(error.message), /missing-source:package.json/);
-        return true;
-      },
-    );
-    assert.equal(f.dsh.startCalls, 0);
-    assert.equal(f.dsh.startOptions.length, 0);
-  }
-});
-
-test('a failed usage-panel ensure blocks Harness start and never passes a stale overlay', async () => {
-  const installOverlay = 'C:/profiles/web/desktop-plugins/install-dsh-plugin/desktop-install.patch.yml';
-  const f = fixture({
-    ensureDesktopInstallPlugin: () => ({ ok: true, overlayFile: installOverlay }),
-    ensureUsagePanelPlugin: async () => ({ ok: false, error: 'missing-zod', overlayFile: 'C:/stale.yml' }),
-  });
-  await assert.rejects(
-    () => f.controller.start(),
-    (error) => {
-      assert.match(String(error.message), /桌面内置用量统计失败/);
-      return true;
-    },
-  );
-  assert.equal(f.dsh.startCalls, 0);
-});
-
-test('a failed market ensure blocks Harness start and never passes a stale overlay', async () => {
-  const installOverlay = 'C:/profiles/web/desktop-plugins/install-dsh-plugin/desktop-install.patch.yml';
-  const f = fixture({
-    ensureDesktopInstallPlugin: () => ({ ok: true, overlayFile: installOverlay }),
-    ensureDesktopMarket: async () => ({ ok: false, error: 'missing-source:package.json', overlayFile: 'C:/stale-market.yml' }),
-  });
-  await assert.rejects(
-    () => f.controller.start(),
-    (error) => {
-      assert.match(String(error.message), /桌面内置市场失败/);
-      return true;
-    },
-  );
-  assert.equal(f.dsh.startCalls, 0);
 });
 
 test('skip start without a desktop-owned overlay passes no patch files', async () => {

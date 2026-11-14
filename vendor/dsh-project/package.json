@@ -25,8 +25,8 @@
     "@deepseek-ai/dsh-tools": "*",
     "@deepseek-ai/schemastery": "^3.18.2",
     "zod": "^4.0.0",
-    "@deepseek-ai/dsh-experimental-agent-team": "*",
-    "@deepseek-ai/dsh-experimental-client-ui-agent-team": "*"
+    "@deepseek-ai/dsh-agent-team": "*",
+    "@deepseek-ai/dsh-subagent": "*"
   },
   "dsh": {
     "bundle": {
@@ -40,8 +40,7 @@
         "@deepseek-ai/dsh-client-ui-workspace",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-settings-general",
-        "@deepseek-ai/dsh-client-ui-subagent",
-        "@deepseek-ai/dsh-experimental-client-ui-agent-team"
+        "@deepseek-ai/dsh-client-ui-subagent"
       ],
       "platform": "web"
     }

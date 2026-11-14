@@ -344,6 +344,20 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
 describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', () => {
   testProfileResolution('lib')
 
+  it.runIf(process.platform === 'win32')('resolves the installed entry before loading CLI dependencies', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-cli-alias-'))
+    try {
+      const alias = join(home, 'launcher')
+      symlinkSync(join(repoRoot, 'apps/cli/lib'), alias, 'junction')
+      const { stdout } = await execa(process.execPath, [
+        '--preserve-symlinks-main', join(alias, 'bin.js'), '--version',
+      ], { timeout: SPAWN_TIMEOUT_MS, env: { DSH_HOME: home, DSH_TELEMETRY_DISABLED: '1' } })
+      expect(stdout).toBe(cliVersion)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, SPAWN_TIMEOUT_MS + 5_000)
+
   it('requires a profile and rejects removed flags', async () => {
     const bare = await runBuiltBin()
     expect(bare.code).toBe(1)
@@ -1274,6 +1288,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         ['session-title', '@deepseek-ai/dsh-session-title'],
         ['system-prompt', '@deepseek-ai/dsh-system-prompt'],
         ['tools', '@deepseek-ai/dsh-tools'],
+        ['tool-executor-native', '@deepseek-ai/dsh-tool-executor-native'],
         ['mcp-resources', '@deepseek-ai/dsh-mcp-resources'],
         ['agent', '@deepseek-ai/dsh-agent'],
         ['llm-retry', '@deepseek-ai/dsh-llm-retry'],
@@ -1282,6 +1297,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         ['persistent-bash', '@deepseek-ai/dsh-tool-bash-persistent'],
         ['persistent-pwsh', '@deepseek-ai/dsh-tool-pwsh-persistent'],
         ['sessions', '@deepseek-ai/dsh-session-persistence-jsonl'],
+        ['session-checkpoint-policy', '@deepseek-ai/dsh-session-checkpoint-policy'],
       ])
       expect(stdout).toContain('# == @deepseek-ai/dsh-sdk-minimal')
       expect(stdout).not.toContain('@deepseek-ai/dsh-base')

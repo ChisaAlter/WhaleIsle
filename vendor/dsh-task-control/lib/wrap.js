@@ -213,6 +213,10 @@ export function wrapWebServer(state, webServer) {
 }
 
 function gateFallback(state, guard, handler) {
+  // The fallback seat also takes a `{ resource }` responder (frontend-static
+  // serves the SPA that way). A resource only ever answers GET and HEAD, the
+  // read path this gate leaves open, so there is no handler to wrap.
+  if (typeof handler !== 'function') return handler;
   const gated = async function gatedFallback(req, res) {
     if (!guard.active) return handler(req, res);
     // The fallback serves SPA assets; locking it would white-out a visible

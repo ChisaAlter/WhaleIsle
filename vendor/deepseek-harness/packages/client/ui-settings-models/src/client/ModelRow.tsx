@@ -1,15 +1,17 @@
 /** Shared model fields and actions for both adapter catalog editors. */
 
-import { useId, type ReactNode } from 'react'
+import { useId } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import {
-  Button, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconTrashOutlineRegular,
-  Input, Tooltip,
+  Button, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconDragHandleOutlineRegular,
+  IconTrashOutlineRegular, Input, Tooltip, useRowDragPreview,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekModelDraft, DeepSeekModelsValidationFailure } from './DeepSeekModelsEditor.tsx'
 import type { ModelsKey } from './locales.ts'
 import { ModelInputTypes } from './ModelInputTypes.tsx'
 import { ModelReasoningEfforts } from './ModelReasoningEfforts.tsx'
 import type { ReasoningEffortsFailure } from './ModelReasoningEfforts.tsx'
+import type { ModelRowOrder } from './useModelRows.ts'
 import styles from './ModelsSection.module.css'
 
 /** A capacity's editable text and adapter-specific inherited hint. */
@@ -23,12 +25,16 @@ interface CapacityInput {
 /** Adapter-owned data and actions for one model row. */
 interface ModelRowProps {
   model: DeepSeekModelDraft
+  rowKey: number
   position: number
+  order: ModelRowOrder
   inputField: 'inputModalities' | 'input'
   inputFallback?: readonly string[] | undefined
   inputLoading?: boolean
   /** Levels the row's `reasoningEfforts` may declare; absent or empty shows no reasoning control. */
   reasoningLevels?: readonly string[] | undefined
+  /** Whether the route's protocol accepts only {@link reasoningLevels}, each sent under its own name. */
+  reasoningLevelsOnly?: boolean | undefined
   expanded: boolean
   disabled: boolean
   validation?: DeepSeekModelsValidationFailure | ReasoningEffortsFailure | undefined
@@ -44,13 +50,19 @@ interface ModelRowProps {
   onRemove: () => void
 }
 
+function rowHalf(event: DragEvent<HTMLElement>): 'before' | 'after' {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+}
+
 /**
- * Render consistent model identity, capacity, and input-type controls.
+ * Render model fields with the display name in the expanded area of narrow rows.
  * @param props - drafted fields and their owning editor's actions.
  * @returns one expandable model entry.
  */
 export function ModelRow(props: ModelRowProps): ReactNode {
   const { model, position, t, disabled } = props
+  const preview = useRowDragPreview(styles['modelDragPreview'] as string)
   const errorId = useId()
   const optionsId = useId()
   const validation = props.validation?.index === position - 1 ? props.validation : undefined
@@ -60,36 +72,89 @@ export function ModelRow(props: ModelRowProps): ReactNode {
         : validation.key === 'modelContextInvalid' ? 'contextWindow'
           : validation.key === 'modelMaxTokensInvalid' ? 'maxTokens' : 'reasoningEfforts'
   const error = validation === undefined ? '' : `${t('model')} ${String(position)}: ${t(validation.key)}`
+  const modelField = (field: 'id' | 'name') => (
+    <label className={`${styles['modelField']} ${field === 'name' ? styles['modelName'] : ''}`}>
+      {field === 'name'
+        ? <span className={`${styles['modelFieldLabel']} ${styles['modelNameLabel']}`}>{t('modelName')}</span>
+        : null}
+      <Tooltip label={error} disabled={invalidField !== field} portal side="bottom">
+        <Input variant="form"
+          className={styles['input']}
+          type="text"
+          value={typeof model[field] === 'string' ? model[field] : ''}
+          placeholder={t(field === 'id' ? 'modelId' : 'modelName')}
+          aria-label={`${t(field === 'id' ? 'modelId' : 'modelName')} ${String(position)}`}
+          aria-invalid={invalidField === field}
+          aria-describedby={invalidField === field ? errorId : undefined}
+          disabled={disabled}
+          onFocus={field === 'name' && !props.expanded ? props.onToggle : undefined}
+          onChange={(event) => {
+            const value = event.target.value
+            props.onFieldChange(field, field === 'name' && value === '' ? undefined : value)
+          }}
+          onBlur={field === 'id' ? event => props.onIdBlur?.(event.target.value) : undefined}
+        />
+      </Tooltip>
+    </label>
+  )
   return (
-    <div className={styles['modelEntry']}>
+    <div
+      className={styles['modelEntry']}
+      data-row-key={props.rowKey}
+      data-dragging={props.order.dragging || undefined}
+      data-drop-target={props.order.dragging ? undefined : props.order.target}
+      onDragOver={(event) => {
+        if (!props.order.canDrop) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        props.order.onOver(rowHalf(event))
+      }}
+      onDragLeave={(event) => {
+        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+        props.order.onLeave()
+      }}
+      onDrop={(event) => {
+        if (!props.order.canDrop) return
+        event.preventDefault()
+        props.order.onDrop(rowHalf(event))
+      }}
+    >
       {validation === undefined ? null : <span className={styles['visuallyHidden']} id={errorId}>{error}</span>}
-      <div className={styles['modelRow']}>
-        {(['id', 'name'] as const).map(field => (
-          <Tooltip key={field} label={error} disabled={invalidField !== field} portal side="bottom">
-            <Input variant="form"
-              className={styles['input']}
-              type="text"
-              value={typeof model[field] === 'string' ? model[field] : ''}
-              placeholder={t(field === 'id' ? 'modelId' : 'modelName')}
-              aria-label={`${t(field === 'id' ? 'modelId' : 'modelName')} ${String(position)}`}
-              aria-invalid={invalidField === field}
-              aria-describedby={invalidField === field ? errorId : undefined}
-              disabled={disabled}
-              onChange={(event) => {
-                const value = event.target.value
-                props.onFieldChange(field, field === 'name' && value === '' ? undefined : value)
-              }}
-              onBlur={field === 'id' ? event => props.onIdBlur?.(event.target.value) : undefined}
-            />
-          </Tooltip>
-        ))}
+      <div className={styles['modelRow']} data-expanded={props.expanded || undefined}>
+        <Tooltip label={t('reorderModelHelp')} portal>
+          <button
+            type="button"
+            className={`${styles['iconButton']} ${styles['modelDragHandle']}`}
+            aria-label={`${t('reorderModel')} ${String(position)}`}
+            aria-keyshortcuts="ArrowUp ArrowDown"
+            aria-description={t('reorderModelHelp')}
+            disabled={disabled}
+            draggable={!disabled}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = 'move'
+              event.dataTransfer.setData('application/x-dsh-model-order', String(position))
+              props.order.onStart()
+              preview.start(event, event.currentTarget.closest('[data-row-key]') as HTMLElement)
+            }}
+            onDragEnd={() => { if (preview.clear()) props.order.onEnd() }}
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+              event.preventDefault()
+              event.stopPropagation()
+              props.order.onMove(event.key === 'ArrowUp' ? -1 : 1)
+            }}
+          >
+            <IconDragHandleOutlineRegular size={14} />
+          </button>
+        </Tooltip>
+        {modelField('id')}
         <Tooltip label={invalidField === 'contextWindow' || invalidField === 'maxTokens' ? error : t('modelAdvanced')} portal>
           <Button size="sm" className={styles['iconButton']}
             icon={props.expanded ? <IconChevronDownOutlineRegular size={16} /> : <IconChevronRightOutlineRegular size={16} />}
             aria-label={`${t('modelAdvanced')} ${String(position)}`}
             aria-expanded={props.expanded} aria-controls={optionsId}
             aria-describedby={invalidField === 'contextWindow' || invalidField === 'maxTokens' ? errorId : undefined}
-            onClick={props.onToggle}
+            onClick={(event) => { event.currentTarget.focus(); props.onToggle() }}
           />
         </Tooltip>
         <Tooltip label={t('removeModel')} portal>
@@ -99,44 +164,46 @@ export function ModelRow(props: ModelRowProps): ReactNode {
             disabled={disabled} onClick={props.onRemove}
           />
         </Tooltip>
-      </div>
-      {props.expanded
-        ? (
-          <div className={styles['modelAdvanced']} id={optionsId}>
-            {(['contextWindow', 'maxTokens'] as const).map(field => (
-              <label className={styles['modelField']} key={field}>
-                <span className={styles['modelFieldLabel']}>{t(field)}</span>
-                <Tooltip label={error} disabled={invalidField !== field} portal side="bottom">
-                  <Input variant="form"
-                    className={styles['input']}
-                    type="text"
-                    inputMode="numeric"
-                    value={props[field].value}
-                    placeholder={props[field].placeholder}
-                    aria-label={`${t(field)} ${String(position)}`}
-                    aria-invalid={invalidField === field}
-                    aria-describedby={invalidField === field ? errorId : undefined}
-                    disabled={disabled}
-                    onChange={(event) => { props[field].onChange(event.target.value) }}
-                    onBlur={props[field].onBlur}
+        {modelField('name')}
+        {props.expanded
+          ? (
+            <div className={styles['modelAdvanced']} id={optionsId}>
+              {(['contextWindow', 'maxTokens'] as const).map(field => (
+                <label className={styles['modelField']} key={field}>
+                  <span className={styles['modelFieldLabel']}>{t(field)}</span>
+                  <Tooltip label={error} disabled={invalidField !== field} portal side="bottom">
+                    <Input variant="form"
+                      className={styles['input']}
+                      type="text"
+                      inputMode="numeric"
+                      value={props[field].value}
+                      placeholder={props[field].placeholder}
+                      aria-label={`${t(field)} ${String(position)}`}
+                      aria-invalid={invalidField === field}
+                      aria-describedby={invalidField === field ? errorId : undefined}
+                      disabled={disabled}
+                      onChange={(event) => { props[field].onChange(event.target.value) }}
+                      onBlur={props[field].onBlur}
+                    />
+                  </Tooltip>
+                </label>
+              ))}
+              <ModelInputTypes
+                model={model} field={props.inputField} position={position}
+                fallback={props.inputFallback} disabled={disabled || props.inputLoading === true} t={t} onChange={props.onChange}
+              />
+              {props.reasoningLevels !== undefined && props.reasoningLevels.length > 0
+                ? (
+                  <ModelReasoningEfforts
+                    model={model} levels={props.reasoningLevels} levelsOnly={props.reasoningLevelsOnly === true}
+                    position={position} disabled={disabled} t={t} onChange={props.onChange}
                   />
-                </Tooltip>
-              </label>
-            ))}
-            <ModelInputTypes
-              model={model} field={props.inputField} position={position}
-              fallback={props.inputFallback} disabled={disabled || props.inputLoading === true} t={t} onChange={props.onChange}
-            />
-            {props.reasoningLevels !== undefined && props.reasoningLevels.length > 0
-              ? (
-                <ModelReasoningEfforts
-                  model={model} levels={props.reasoningLevels} position={position} disabled={disabled} t={t} onChange={props.onChange}
-                />
-              )
-              : null}
-          </div>
-        )
-        : null}
+                )
+                : null}
+            </div>
+          )
+          : null}
+      </div>
       {props.extra}
     </div>
   )

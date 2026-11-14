@@ -2,9 +2,20 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 const output = { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] };
 export function registerTaskTools(ctx) {
+  const todos = () => { const value = ctx.get('whaleTodos'); if (!value?.available) throw new Error(value?.error || '任务卡服务尚未就绪。'); return value; };
   const service = () => { const value = ctx.get('whaleTasks'); if (!value?.available) throw new Error('后台任务不可用，请检查桌面任务状态。'); return value; };
   const register = (name, description, parameters, execute) => ctx.tools.register(defineTool({ name, description, parameters, output,
     presentCall: () => ({ card: 'generic', title: description, kind: 'other', content: [] }), execute }));
+  register('whale_todo_create', '用户明确让你记下待办时创建一张任务卡；不自动执行，闲聊和同一任务的补充不要重复创建。', {
+    title: { type: 'string', required: true }, description: { type: 'string' }, criteria: { type: 'string' },
+  }, async (args, exec) => {
+    if (service().actorFor(exec) !== 'desktop-owner') throw new Error('个人任务卡仅供桌面用户管理。');
+    return todos().create(args);
+  });
+  register('whale_todo_list', '查看个人任务卡及真实执行状态，用于回答进展；回合结束后仍需用户确认完成。', {}, async (_args, exec) => {
+    if (service().actorFor(exec) !== 'desktop-owner') throw new Error('个人任务卡仅供桌面用户管理。');
+    return { cards: todos().list() };
+  });
   register('whale_task_start', '接下本轮明确的 /task 资料整理委托；范围从用户原消息解析', {}, async (_args, exec) => {
     const tasks = service(); const origin = await tasks.originFor(exec);
     const task = await tasks.accept(origin); tasks.schedule(task.id);

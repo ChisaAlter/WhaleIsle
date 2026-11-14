@@ -13,12 +13,12 @@ import { subagentChatAddress } from '@deepseek-ai/dsh-client-ui-subagent/client'
 import { TeamAction, type TeamActionInjected } from './TeamAction.tsx'
 import { TeamSidebar } from './TeamSidebar.tsx'
 import { createTeamViewStore } from './view-state.ts'
-import { en, NS, zh, type TeamKey } from './locales.ts'
+import { en, ja, es, fr, de, ru, pt, NS, zh, type TeamKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Agent Teams roster and task-board copy. */
-    'agent-team': TeamKey
+    'project-team': TeamKey
   }
 }
 
@@ -76,16 +76,16 @@ export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale']
 export const TEAM_SIDEBAR_ID = '@deepseek-ai/dsh-experimental-client-ui-agent-team'
 
 /** The Team page kind opened through the right Sidebar. */
-export const TEAM_SIDEBAR_KIND = 'agent-team'
+export const TEAM_SIDEBAR_KIND = 'project-team'
 
 /**
  * Register the Team locale dictionaries and the conversation-header action.
- * The panel reads the Lead Session's `agentTeam` projection from the shared
+ * The panel reads the Lead Session's `projectTeam` projection from the shared
  * Session store; this registration performs no Team RPC.
  * @param ctx - Client Context carrying the injected navigation, locale, slot, and Session services.
  */
 export function registerAgentTeamUi(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'client-ui-agent-team: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'client-ui-agent-team: dictionaries')
   const scopeStore = createSnapshotStore<TeamTaskScopeMap>({})
   const activityStore = createSnapshotStore<TeamActivityMap>({})
   const viewStore = createTeamViewStore()
@@ -130,7 +130,7 @@ export function registerAgentTeamUi(ctx: ClientContext): void {
     'conversation.session.header.actions',
     () => ctx.slots.register({
       name: 'conversation.session.header.actions',
-      id: 'agent-team',
+      id: 'project-team',
       order: -20,
       locale: NS,
       store: viewStore,

@@ -34,3 +34,6 @@ export { setGenuiDownloadHandler } from './client/artifact/download.ts'
 export type { GenuiDownloadHandler } from './client/artifact/download.ts'
 export { ExportableGenuiBlock } from './client/artifact/ExportableGenuiBlock.tsx'
 export type { GenuiArtifactV1, GenuiPortabilityReport } from './client/artifact/index.ts'
+/** Trusted host configuration, separate from model-authored JSON. */
+export { GenuiMapContext, setGenuiMapConfig } from './client/map-config.ts'
+export type { GenuiMapConfig, GenuiMapStyle } from './client/map-config.ts'

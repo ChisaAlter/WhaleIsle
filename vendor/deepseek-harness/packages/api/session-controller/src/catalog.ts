@@ -47,6 +47,7 @@ export async function buildModelCatalog(
           ...(resolved.defaultMaxTokens === undefined ? {} : { maxTokens: resolved.defaultMaxTokens }),
           ...(reasoning === undefined ? {} : { reasoning }),
           ...(model.inputModalities === undefined ? {} : { inputModalities: [...model.inputModalities] }),
+          ...(model.badge === undefined ? {} : { badge: model.badge }),
         }
       }))
       return {

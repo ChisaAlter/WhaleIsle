@@ -5,13 +5,18 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { SessionMarkdownCopyToast } from '../src/client/CopyToast.tsx'
+import type { SessionMarkdownCopyToastInjected } from '../src/client/CopyToast.tsx'
 import { SessionLogDownloadHeaderAction, SessionLogDownloadTitlebarAction } from '../src/client/HeaderAction.tsx'
 import type { SessionLogDownloadHeaderInjected } from '../src/client/HeaderAction.tsx'
 import { apply, inject } from '../src/client/index.ts'
 
 const SID = 'session-export-apply' as SessionId
 
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 function declare(slots: SlotRegistry): () => void {
   return slots.register({
@@ -21,8 +26,14 @@ function declare(slots: SlotRegistry): () => void {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'shell.titlebar.trailing': { kind: 'list', scope: 'root' },
       'settings.interface.item': { kind: 'list', scope: 'root' },
+      'shell.overlay': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
+}
+
+function injectedOf(entry: { inject?: ((...args: never[]) => object) | undefined } | undefined): object {
+  if (entry?.inject === undefined) throw new Error('slot entry has no injection')
+  return entry.inject()
 }
 
 async function bench(titlebarAction = false) {
@@ -96,6 +107,7 @@ describe('session-log-download browser plugin', () => {
     injected.openFeedback(SID)
     expect(openSession).toHaveBeenCalledOnce()
     await b.fiber.dispose()
+    expect(b.slots.entries('shell.overlay')).toHaveLength(0)
   })
 
   it('downloads only for an export execution acknowledged by this browser client', async () => {
@@ -124,10 +136,12 @@ describe('session-log-download browser plugin', () => {
     b.declaration()
     expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     expect(b.slots.entries('shell.titlebar.trailing')).toHaveLength(0)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(0)
     const redeclare = declare(b.slots)
     await Promise.resolve()
     expect(b.slots.entries('conversation.session.header.actions')[0]?.component).toBe(SessionLogDownloadHeaderAction)
     expect(b.slots.entries('shell.titlebar.trailing')[0]?.component).toBe(SessionLogDownloadTitlebarAction)
+    expect(b.slots.entries('shell.overlay')[0]?.component).toBe(SessionMarkdownCopyToast)
     redeclare()
     await b.fiber.dispose()
   })

@@ -43,7 +43,7 @@ describe('web shell base.css', () => {
     // One source for the selector: the model constant. The shared rule must
     // declare the same list, so a new interactive role is added in one place
     // and a drift between the sheet and the composition model fails here.
-    const rule = /(?:^|\})\s*:is\(([^)]*)\)\s*\{[^}]*app-region:\s*no-drag/.exec(normalizedCss)
+    const rule = /(?:^|\})\s*:is\(([^)]*)\):where\(:not\(\[data-window-drag-exclude\] \*\)\)\s*\{[^}]*app-region:\s*no-drag/.exec(normalizedCss)
     expect(rule, 'base.css declares no cross-platform interactive no-drag rule').not.toBeNull()
     const declared = rule![1]!.split(',').map(part => part.trim()).join(', ')
     expect(declared).toBe(INTERACTIVE_SELECTOR)

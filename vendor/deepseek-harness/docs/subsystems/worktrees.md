@@ -2,7 +2,7 @@
 
 English | [中文](worktrees.zh.md)
 
-The experimental [`dsh-experimental-worktree`](../../packages/experimental/worktree/README.md) service provides `ctx.worktrees`. Its [`create_worktree`](../../packages/experimental/tool-worktree/README.md) consumer creates a new Git branch and checkout, then selects it through the [working-directory service](working-directory.md). The [Git Worktrees optional bundle](../../packages/experimental/tool-worktree/README.md#use-this-package) loads both packages through the GUI plugin manager. It ships switched off; explicit compositions can also mount the two packages.
+The experimental [`dsh-experimental-worktree`](../../packages/experimental/worktree/README.md) service provides `ctx.worktrees`. Its [`create_worktree`](../../packages/experimental/tool-worktree/README.md) consumer creates a new Git branch and checkout, then selects it through the [working-directory service](working-directory.md). The [Change requests & worktrees bundle](../../packages/experimental/forge-bundle/README.md#use-this-package) loads both packages through the GUI plugin manager and ships switched off. Other profiles can select the [standalone worktree bundle](../../packages/experimental/tool-worktree/README.md#use-this-package) or mount the two packages explicitly.
 
 ## Creation and retention
 
@@ -14,7 +14,7 @@ Leaving through `working_directory({ cd: path })` retains the checkout and branc
 
 ## Request and result
 
-The request selects only the new name and local revision. The result identifies the created checkout and exact commit; it does not change the Session's original project or write permissions.
+The request selects only the new name and local revision. The result identifies the created checkout and exact commit; it does not change the Session's original project or write permissions. An optional callback receives each stage of the creation before it begins. A restoration checks a removed checkout out again at its recorded directory, from its branch or, when the branch is gone, from its base commit.
 
 ```ts type-equiv
 /** A new checkout from a locally available Git commit, branch, or tag. */
@@ -40,6 +40,63 @@ interface CreatedWorktree {
 }
 ```
 
+```ts type-equiv
+/**
+ * Stage of one creation or restoration, reported before it begins: `prepare`
+ * validates the request, allocates the checkout directory, and creates the
+ * branch, which a restoration creates again only when it is gone; `checkout`
+ * writes the files and, for a creation, enters the checkout.
+ */
+type CreateWorktreePhase = 'prepare' | 'checkout'
+```
+
+```ts type-equiv
+/** A removed checkout to check out again at its recorded directory. */
+interface RestoreWorktreeRequest {
+  /** Canonical checkout directory the worktree had. */
+  path: string
+  /** Branch the worktree had checked out. */
+  branch: string
+  /** Commit the branch started from; a branch that no longer exists is created again here. */
+  baseCommit: string
+  /** Canonical root of the source checkout. */
+  repositoryRoot: string
+}
+```
+
+```ts type-equiv
+/** Outcome of one restoration. */
+interface RestoredWorktree {
+  /** Checkout directory, present again. */
+  path: string
+  /** Whether the branch no longer existed and was created again at the base commit, without the commits it had gained. */
+  branchRecreated: boolean
+}
+```
+
+```ts type-equiv
+/** One checkout in a Session's log and whether that Session, rather than a fork ancestor, created it. */
+interface WorktreeCreation {
+  readonly worktree: CreatedWorktree
+  /** False for a creation inside the fork-inherited prefix. */
+  readonly owned: boolean
+}
+```
+
+```ts type-equiv
+/** Process-local state of one archive-triggered cleanup of a checkout. */
+interface WorktreeCleanup {
+  /** Monotonic attempt number within this Host lifetime; a Remote waits on a specific one. */
+  readonly revision: number
+  /**
+   * `scheduled` until the background inspection ends; `retained` when a use,
+   * policy, or Git state keeps the checkout; `removed` after `git worktree
+   * remove`; `failed` when removal threw and may have left a partial directory.
+   */
+  readonly status: 'scheduled' | 'retained' | 'removed' | 'failed'
+}
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -52,7 +109,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.worktrees` — `WorktreeService`
 
-Creates retained Git worktrees under the mounted filesystem and sandbox providers.
+Creates retained Git worktrees under the mounted filesystem and sandbox providers, records each creation in the Session log, and reclaims a clean, unreferenced checkout when the Session that created it is archived.
 
 ```ts cordis-catalog
 /**
@@ -65,12 +122,62 @@ Creates retained Git worktrees under the mounted filesystem and sandbox provider
  * @param agent - caller whose current directory selects the source repository and file policy.
  * @param request - optional new name and local revision; defaults are generated name and HEAD.
  * @param signal - cancellation of lookup, creation, and working-directory publication.
+ * @param onPhase - receives each stage before it begins; it must not throw.
  * @returns canonical checkout path, branch name, pinned commit, and source repository root.
  */
-async create(agent: Agent, request: CreateWorktreeRequest = {}, signal?: AbortSignal): Promise<CreatedWorktree>
+async create( agent: Agent, request: CreateWorktreeRequest = {}, signal?: AbortSignal, onPhase?: (phase: CreateWorktreePhase) => void, ): Promise<CreatedWorktree>
+
+/**
+ * Check out a removed worktree again at its recorded directory: its branch
+ * when the branch still exists, otherwise a new branch of the same name at
+ * `baseCommit`. Only the missing target's unlocked registration is removed, and an
+ * existing directory fails. Changes that were never committed are not
+ * recovered. Checkout disables configured clean, smudge, and process filters,
+ * as creation does. The calling Session's working directory does not change.
+ * Failures may retain newly allocated Git/filesystem artifacts.
+ * @param agent - caller whose sandbox policy confines the commands.
+ * @param request - recorded directory, branch, base commit, and source repository root.
+ * @param signal - cancellation of the restoration.
+ * @param onPhase - receives each stage before it begins; it must not throw.
+ * @returns the directory and whether the branch was created again.
+ */
+async restore( agent: Agent, request: RestoreWorktreeRequest, signal?: AbortSignal, onPhase?: (phase: CreateWorktreePhase) => void, ): Promise<RestoredWorktree>
+
+/**
+ * Read the archive cleanup of a Session's created checkout; waiting never
+ * starts one. Absent without the Workspace and query providers.
+ * @param session - archived Session whose cleanup is read.
+ * @param revision - null reads at once; a matching revision waits for that attempt to settle.
+ * @returns the attempt state, or null when none exists, the revision was superseded, or the service is stopping.
+ */
+async cleanupOf(session: Session, revision: number | null): Promise<WorktreeCleanup | null>
 ```
 
-Types: [Agent](core.md)
+Types: [Agent](core.md) · [Session](session.md)
 
 Source: [`packages/experimental/worktree/src/index.ts`](../../packages/experimental/worktree/src/index.ts)
+
+<a id="worktree-events"></a>
+
+### `worktree/*` events
+
+<a id="worktreecleanup--emit"></a>
+
+#### `worktree/cleanup` — emit
+
+A cleanup attempt changed state. Fires once at admission with `scheduled` and once at settlement with the final status.
+
+```ts cordis-catalog
+/**
+ * A cleanup attempt changed state. Fires once at admission with
+ * `scheduled` and once at settlement with the final status.
+ * @param info - the archived Session, the checkout, and the attempt state.
+ * @mode emit
+ */
+'worktree/cleanup'(info: { sessionId: SessionId; path: string; cleanup: WorktreeCleanup }): void
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/experimental/worktree/src/archive.ts`](../../packages/experimental/worktree/src/archive.ts)
 <!-- END GENERATED cordis-surface -->

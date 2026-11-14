@@ -817,8 +817,9 @@ describe('PreviewPanel', () => {
     expect(input.value).toBe('http://127.0.0.1:9')
   })
 
-  it('lists Hard reload, Appearance Dark, Clear cache, and later-task More actions', () => {
-    mount()
+  it('lists Hard reload, Appearance Dark, Clear cache, and later-task More actions', async () => {
+    const b = mount()
+    await openGuest(b)
     openMore()
     expect(screen.getByRole('menuitem', { name: 'Hard reload' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Clear cache' })).toBeTruthy()

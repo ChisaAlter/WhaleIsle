@@ -54,6 +54,9 @@
     },
     {
       "path": "../store"
+    },
+    {
+      "path": "../../core/tool-executor-ptc"
     }
   ]
 }

@@ -13,7 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PresentedFile } from '@deepseek-ai/dsh-tool-present/types'
-import type {} from '@deepseek-ai/dsh-tools/types'
+import type {} from '@deepseek-ai/dsh-tool-executor-ptc/client'
 import { isChangesEvent } from '../changes.ts'
 import { basename, isPresentedData, isPresentedFile } from '../presented.ts'
 
@@ -24,7 +24,6 @@ export interface PresentedPath extends PresentedFile {
 }
 
 interface ProducedPath {
-  readonly seq: number
   readonly path: string
   readonly argumentPath?: string
 }
@@ -149,20 +148,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * The Conversation Location index owns turn membership before this function
  * runs, so paths cannot spill across turns and this derivation does not infer
- * boundaries from neighboring presentation Nodes.
+ * boundaries from neighboring presentation Nodes. Mutations settled after the
+ * closing reply are included, matching {@link presentedForClosing}.
  * @param data - engine-published Deliverables data for one Turn.
- * @param seq - closing Assistant seq; later Tool settlements are excluded.
  * @returns Produced paths in first-seen order; empty when the turn wrote nothing.
  */
 export function producedForClosing(
   data: Readonly<DeliverablesTurnData> | undefined,
-  seq = Number.POSITIVE_INFINITY,
 ): readonly string[] {
   if (data === undefined) return []
   const paths: string[] = []
   const seen = new Set<string>()
   for (const produced of data.produced) {
-    if (produced.seq > seq || seen.has(produced.path)) continue
+    if (seen.has(produced.path)) continue
     seen.add(produced.path)
     paths.push(produced.path)
   }
@@ -175,7 +173,7 @@ export function producedForClosing(
  * @returns Produced paths as the component's match, or null to decline before mount.
  */
 export function selectProducedFiles(owner: TurnTailOwnerProps): readonly string[] | null {
-  const paths = producedForClosing(owner.turn.data.get('deliverables'), owner.seq)
+  const paths = producedForClosing(owner.turn.data.get('deliverables'))
   return paths.length === 0 ? null : paths
 }
 
@@ -243,7 +241,7 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
       : {
         ...context.state,
         produced: [...context.state.produced, {
-          seq: match.event.seq, path, ...path === argumentPath ? {} : { argumentPath },
+          path, ...path === argumentPath ? {} : { argumentPath },
         }],
       }
   },
@@ -283,15 +281,14 @@ export function changesForClosing(owner: TurnTailOwnerProps): ChangesTurnData | 
 }
 
 /**
- * Select the latest declaration of each path before the closing reply.
- * @param owner - closing turn and sequence.
+ * Select the latest declaration of each path in the closing turn, including
+ * declarations recorded after the closing reply.
+ * @param owner - closing turn.
  * @returns replayable deliveries in first-seen path order.
  */
 export function presentedForClosing(owner: TurnTailOwnerProps): PresentedPath[] {
   const files = new Map<string, PresentedPath>()
-  for (const file of owner.turn.data.get('deliverables')?.presented ?? []) {
-    if (file.seq < owner.seq) files.set(file.path, file)
-  }
+  for (const file of owner.turn.data.get('deliverables')?.presented ?? []) files.set(file.path, file)
   return [...files.values()]
 }
 
@@ -305,6 +302,7 @@ export { basename } from '../presented.ts'
  * @param openFile - The chat view's file opener.
  * @param label - Localizes the accessible open-label for a resolved path.
  * @param operations - successful mutations whose literal arguments may name the same canonical targets.
+ * @param getFileTriggerProps - optional gesture bindings for the resolved original path.
  * @returns The resolver MarkdownText consumes; the full path rides `title`,
  * the same disambiguator the row's chips carry.
  */
@@ -313,6 +311,7 @@ export function producedFileMentions(
   openFile: (path: string) => void,
   label: (path: string) => string,
   operations: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[] = [],
+  getFileTriggerProps?: (path: string) => NonNullable<ReturnType<MarkdownFileMentions['resolve']>>['contextMenuProps'],
 ): MarkdownFileMentions {
   return {
     resolve(value) {
@@ -322,7 +321,9 @@ export function producedFileMentions(
       }
       const path = matches.size === 1 ? matches.values().next().value : undefined
       if (path === undefined) return undefined
-      return { open: () => { openFile(path) }, label: label(path), title: path }
+      const contextMenuProps = getFileTriggerProps?.(path)
+      return { open: () => { openFile(path) }, label: label(path), title: path,
+        ...(contextMenuProps === undefined ? {} : { contextMenuProps }) }
     },
   }
 }

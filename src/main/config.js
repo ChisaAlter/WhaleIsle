@@ -57,7 +57,7 @@ const DEFAULTS = {
   // enum mirrors src/launcher/release-source.js ROUTES keys).
   downloadRoute: '',
   disabledPlugins: [],
-  projectEnabled: false,
+  projectEnabled: true,
   // Built-in assistant is available on first launch; persisted opt-outs win.
   whaleAssistantEnabled: true,
   // Remote workspaces (SSH) — on by default; toggling restarts Harness so

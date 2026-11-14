@@ -140,7 +140,7 @@ function ContextMeterControl({
 
   return (
     <span ref={rootRef} className={css.root}>
-      <Tooltip label={t('context.aria', { percent: reading })} side="top" delayMs={200} disabled={open}>
+      <Tooltip label={t('context.aria', { percent: reading })} side="top" delayMs={200} disabled={open} portal>
         <button
           type="button"
           className={css.trigger}
@@ -167,7 +167,7 @@ function ContextMeterControl({
         <div
           ref={panelRef}
           className={css.panel}
-          style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
+          style={position ?? { visibility: 'hidden' }}
           role="dialog"
           aria-label={t('context.used')}
           data-dsh-motion="popover"

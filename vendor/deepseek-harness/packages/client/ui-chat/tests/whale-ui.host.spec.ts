@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Chat from '../src/index.ts'
@@ -21,11 +22,14 @@ async function setup(enabled: boolean) {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   const fiber = await ctx.plugin(Chat)
   let callId = 0
-  const execute = (args: unknown) => ctx.tools.execute({ name: 'render_ui', arguments: args,
-    callId: ToolCallId(`whale-ui-host-${++callId}`), signal: new AbortController().signal })
+  const execute = async (args: unknown) => (await ctx.tools.execute({
+    calls: [{ type: 'tool-call', id: ToolCallId(`whale-ui-host-${++callId}`), name: 'render_ui', arguments: JSON.stringify(args) }],
+    signal: new AbortController().signal,
+  })).results[0]!.result
   return { ctx, fiber, execute }
 }
 

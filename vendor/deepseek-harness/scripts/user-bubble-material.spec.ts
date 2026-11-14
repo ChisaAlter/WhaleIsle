@@ -4,7 +4,7 @@ import { transform } from 'lightningcss'
 import { expect, it } from 'vitest'
 
 it('keeps the frosted backdrop supported by Chromium after the production CSS transform', () => {
-  const filename = fileURLToPath(new URL('../packages/client/ui-chat/src/client/chat/MessageItem.module.css', import.meta.url))
+  const filename = fileURLToPath(new URL('../packages/client/ui-primitives/src/UserMessageBubble.module.css', import.meta.url))
   const { code, exports } = transform({
     filename,
     code: readFileSync(filename),

@@ -20,14 +20,26 @@
     "src/history.ts",
     "src/idle-release.ts",
     "src/lifecycle.ts",
+    "src/history/controller.ts",
+    "src/history/listener.ts",
+    "src/history/assistant-stream.ts",
+    "src/state/controller.ts",
+    "src/state/listener.ts",
+    "src/web/controller.ts",
     "src/list.ts",
     "src/media-references.ts",
     "src/message-edit.ts",
-    "src/model-selection-projection.ts",
     "src/archived-session-gate.ts",
-    "src/skill-catalog.ts"
+    "src/skill-catalog.ts",
+    "src/continuation.ts"
   ],
   "references": [
+    {
+      "path": "../gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../util/timeout"
+    },
     {
       "path": "../../../vendor/cordis"
     },
@@ -120,6 +132,9 @@
     },
     {
       "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../util/brand"
     }
   ]
 }

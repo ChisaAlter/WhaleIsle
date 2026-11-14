@@ -20,7 +20,7 @@ const settle = async () => {
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
 };
 
-function loadPlugin({ stateful = false } = {}) {
+function loadPlugin({ stateful = false, primitives = {} } = {}) {
   const spec = { current: null };
   const window = {
     __ModuleLoader__: { load: (entry) => { spec.current = entry; } },
@@ -69,6 +69,7 @@ function loadPlugin({ stateful = false } = {}) {
   };
   const require = (name) => {
     if (name === 'react') return react;
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
     return {};
   };
   const exports = spec.current.factory(require);
@@ -150,7 +151,7 @@ test('the settings model control preserves slashes inside the selected model id'
 // Builds the host ctx. `sessionsShape: '0.1.6'` carries catalog methods only
 // (no open); `'0.1.5'` adds open(). `uiWorkspace` may be provided as a direct
 // ctx property or only through ctx.get.
-function makeCtx({ sessionsShape = '0.1.6', uiWorkspace = undefined, viaGet = false, specs = [] } = {}) {
+function makeCtx({ sessionsShape = '0.1.6', uiWorkspace = undefined, viaGet = false, specs = [], language } = {}) {
   const calls = { openSession: [], sessionsOpen: [], selectPanel: [] };
   const sessions = {
     retain() {}, create() {}, search() {},
@@ -167,10 +168,14 @@ function makeCtx({ sessionsShape = '0.1.6', uiWorkspace = undefined, viaGet = fa
   const rpcCalls = [];
   const disposers = [];
   const services = { sessions, uiWorkspace: workspace };
+  const dictionaries = {};
 
   const ctx = {
     effect: (fn) => { disposers.push(fn()); },
-    locale: { register: () => () => {}, bind: () => (key) => key },
+    locale: {
+      register: (ns, value) => { dictionaries[ns] = value; return () => {}; },
+      bind: (ns) => (key) => language ? dictionaries[ns][language][key] : key,
+    },
     connection: {
       rpc: {
         call: async (_prefix, endpoint) => {
@@ -245,6 +250,27 @@ test('inject face openSession prefers uiWorkspace and resolves uiWorkspace via c
   await face.openSession('session-whale-1');
   assert.deepEqual(calls.openSession, ['session-whale-1']);
   await assert.rejects(() => face.openSession('   '), /no-session/);
+});
+
+test('first assistant entry prompts once; declining and mode exit persist without changing ordinary layout', async () => {
+  const { exports } = loadPlugin();
+  const { ctx, registrations, calls } = makeCtx();
+  let settings = { name: '鲸鱼娘', bigFishPrompted: false, bigFishEnabled: false, bigFishTab: 'panel' };
+  ctx.connection.rpc.call = async (_prefix, endpoint, input) => {
+    if (endpoint === 'assistant/ensure') return { result: { value: { sessionId: 'resident' } } };
+    if (endpoint === 'settings/update') Object.assign(settings, input);
+    return { result: { value: { ...settings } } };
+  };
+  exports.apply(ctx);
+  const mode = faceOf(registrations, 'main').mode;
+  await mode.openAssistant(); assert.equal(mode.get().prompt, true); assert.equal(mode.get().active, false);
+  await mode.choose(false); assert.equal(settings.bigFishPrompted, true); assert.equal(mode.get().active, false);
+  await mode.openAssistant(); assert.equal(mode.get().prompt, false);
+  await mode.choose(true); assert.equal(mode.get().active, true);
+  await mode.tab('task'); assert.equal(settings.bigFishTab, 'task');
+  await mode.exit(); assert.equal(mode.get().active, false); assert.equal(settings.bigFishEnabled, false);
+  assert.deepEqual(Object.keys(ctx.layout), ['selectPanel'], 'mode needs no layout geometry writes or snapshots');
+  assert.equal(calls.openSession.length, 2);
 });
 
 test('main-panel redirect opens her session through uiWorkspace on a 0.1.6 host', async () => {
@@ -404,3 +430,45 @@ test('whale slots use the project head and keep normal sessions untouched', () =
   });
   assert.equal(other, null);
 });
+
+test('assistant, inbox and approvals keep distinct glyphs at expanded and rail sizes', () => {
+  const InboxIcon = () => {};
+  const { exports } = loadPlugin({ primitives: { IconDownloadOutlineRegular: InboxIcon } });
+  const { ctx, registrations } = makeCtx();
+  exports.apply(ctx);
+  const panels = registrations.filter(entry => entry.decl.name === 'sidebar.panellist');
+  assert.deepEqual(panels.map(entry => entry.decl.id), ['whale', 'whale-inbox', 'whale-outbox']);
+  assert.deepEqual(panels.map(entry => entry.decl.order), [20, 21, 22]);
+  const [assistant, inbox, approvals] = panels;
+  assert.equal(inbox.component, InboxIcon, 'Inbox reuses the shared down-arrow tray');
+  assert.equal(new Set(panels.map(entry => entry.component)).size, 3);
+  for (const size of [16, 18]) {
+    assert.equal(findElement(assistant.component({ size }), node => node.type === 'img').props.width, size);
+    const glyph = approvals.component({ size });
+    assert.equal(glyph.type, 'svg');
+    assert.equal(glyph.props.width, size);
+    assert.equal(glyph.props.height, size);
+    assert.equal(glyph.props.stroke, 'currentColor');
+    assert.equal(glyph.props.strokeWidth, 1);
+    assert.equal(glyph.props['aria-hidden'], 'true');
+    assert.equal(glyph.children.length, 2, 'document outline and check mark');
+    assert.equal(findElement(glyph, node => node.type === 'img'), null);
+  }
+});
+
+for (const [language, labels] of [['zh', ['收件箱', '待审批']], ['en', ['Inbox', 'Approvals']]]) {
+  test(`${language} navigation and page headings share Inbox/Approvals labels without changing panel identities`, () => {
+    const { exports } = loadPlugin();
+    const { ctx, registrations } = makeCtx({ language });
+    exports.apply(ctx);
+    for (const [index, id] of ['whale-inbox', 'whale-outbox'].entries()) {
+      const panel = registrations.find(entry => entry.decl.name === 'sidebar.panellist' && entry.decl.id === id);
+      assert.equal(panel.decl.label(), labels[index]);
+      const page = registrations.find(entry => entry.decl.name === 'main' && entry.decl.key === id);
+      const operations = page.component(page.decl.inject());
+      assert.equal(operations.props.mode, index === 0 ? 'inbox' : 'outbox');
+      const tree = operations.type({ ...operations.props, proactiveDispatch: async () => [] });
+      assert.equal(findElement(tree, node => node.props.className === 'dsh-whale-ops-title').children[0], labels[index]);
+    }
+  });
+}

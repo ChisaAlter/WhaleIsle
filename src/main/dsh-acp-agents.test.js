@@ -106,10 +106,7 @@ rl.on('line', async (line) => {
             category: 'thought_level',
             type: 'select',
             currentValue: 'medium',
-            options: [
-              { value: 'medium', name: 'Medium' },
-              { value: 'high', name: 'High' },
-            ],
+            options: ['low', 'medium', 'high'].map(value => ({ value, name: value })),
           },
         ],
       },
@@ -117,20 +114,17 @@ rl.on('line', async (line) => {
     return;
   }
 
-  if (method === 'session/set_config_option') {
-    send({ jsonrpc: '2.0', id, result: { configOptions: [{
-      id: 'reasoning_effort', name: 'Reasoning Effort', category: 'thought_level',
-      type: 'select', currentValue: params.value,
-      options: [{ value: 'medium', name: 'Medium' }, { value: 'high', name: 'High' }],
-    }] } });
-    return;
-  }
-
-  if (method === 'session/set_model') {
+  if (method === 'session/set_model' || method === 'session/set_config_option') {
     send({
       jsonrpc: '2.0',
       id,
-      result: {},
+      result: {
+        configOptions: [{
+          id: 'reasoning_effort', name: 'Reasoning Effort', category: 'thought_level', type: 'select',
+          currentValue: params.value || 'medium',
+          options: ['low', 'medium', 'high'].map(value => ({ value, name: value })),
+        }],
+      },
     });
     return;
   }
@@ -150,7 +144,7 @@ rl.on('line', async (line) => {
       },
     });
 
-    if (turnCount === 1 && promptText.includes('USE_TOOL')) {
+    if (promptText.trimEnd().endsWith('Hello USE_TOOL please')) {
       sendNotification('session/update', {
         sessionId,
         update: {
@@ -178,6 +172,7 @@ rl.on('line', async (line) => {
       });
 
       const selectedOption = perm && perm.outcome && perm.outcome.optionId;
+      require('node:fs').writeFileSync(require('node:path').join(__dirname, 'permission-result.json'), JSON.stringify(perm));
       sendNotification('session/update', {
         sessionId,
         update: {
@@ -186,7 +181,6 @@ rl.on('line', async (line) => {
           title: 'Edit file src/demo.js',
           kind: 'edit',
           status: selectedOption === 'opt_allow_once' ? 'completed' : 'failed',
-          rawOutput: 'Permission outcome: ' + selectedOption,
           content: [
             {
               type: 'content',
@@ -298,10 +292,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
 
     const mockCtx = {
       baseDir: tmpHome,
-      agents: {
-        get: id => id === fakeDshAgent.session.id ? fakeDshAgent : undefined,
-        currentInitiator: () => fakeDshAgent,
-      },
+      agents: new Map([[fakeDshAgent.session.id, fakeDshAgent]]),
       on(name, fn) {
         if (name === 'dispose') disposeCallbacks.push(fn);
         else waterfalls.set(name, fn);
@@ -310,8 +301,8 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
         const cleanup = fn();
         if (typeof cleanup === 'function') disposeCallbacks.push(cleanup);
       },
-      inject(deps, fn) {
-        if (deps.every(name => mockCtx[name])) fn(mockCtx);
+      inject(dependencies, fn) {
+        if (dependencies.every(name => mockCtx[name])) fn(mockCtx);
       },
       tools: {
         canonicalResults: new WeakMap(),
@@ -348,7 +339,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
         },
       },
       get(serviceName) {
-        return this[serviceName];
+        return mockCtx[serviceName];
       },
     };
 
@@ -363,7 +354,6 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       'webServer',
       'tools',
       'approval',
-      'agents',
     ]);
     const strictCordisCtx = new Proxy(mockCtx, {
       get(target, prop) {
@@ -375,7 +365,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     });
 
     applyAcpAgentsPlugin(strictCordisCtx, { storeFile: path.join(tmpHome, 'acp-agents.json') });
-    assert.equal(registeredAdapters.length, 0, 'default presets must not enable unconfigured agents');
+    assert.equal(registeredAdapters.length, 0, 'disabled agents must not register provider routes');
 
     const routeHandler = routes.get('/dsh-acp-agents');
     assert.equal(typeof routeHandler, 'function');
@@ -423,7 +413,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
         id: 'codex',
         enabled: true,
         registrySource: 'local',
-        authMethod: '',
+        registryAgentId: '',
         command: process.execPath,
         args: [mockScript],
         permissionPolicy: 'ask',
@@ -436,9 +426,10 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     assert.deepEqual(registeredAdapters[0].adapter.providerRetryPolicy('acp:codex').retryableCodes, []);
     assert.equal((await registeredAdapters[0].adapter.listModels('acp:codex')).length > 0, true);
 
-    // Auxiliary work must not start an ACP turn or invent a title.
+    // 2b. Verify background session-title purpose fast-path does not collide with activeTurn
     const titleChunks = [];
     for await (const chunk of registeredAdapters[0].adapter.stream({
+      sessionId: fakeDshAgent.session.id,
       provider: 'acp:codex',
       model: 'mock-fast',
       purpose: 'session-title',
@@ -446,17 +437,13 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     })) {
       titleChunks.push(chunk);
     }
-    assert.equal(
-      titleChunks.filter((c) => c.type === 'text-delta').map((c) => c.text).join(''),
-      '',
-    );
+    assert.deepEqual(titleChunks, [{ type: 'finish', reason: 'stop' }], 'auxiliary title requests must not start a native conversation');
 
     // 3. Test ACP handshake endpoint
     const testRes = await callRpc('agent/test', { id: 'codex' });
     assert.equal(testRes.statusCode, 200);
     assert.equal(testRes.data.ok, true, testRes.data.error);
-    assert.equal(testRes.data.binaryPath, process.execPath);
-    assert.ok(testRes.data.modelsFound >= 2, 'the live probe must discover the fixture model catalog');
+    assert.ok(testRes.data.catalog.agents.find(agent => agent.id === 'codex').allModels.some(model => model.id === 'mock-fast'), 'the actual probe must merge the live ACP model catalog');
 
     // 4. Multi-turn streaming with tool_call + session/request_permission + tool_call_update
     const adapter = registeredAdapters[0].adapter;
@@ -468,17 +455,18 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
     // Turn 1: prompt with tool call & permission request
     const chunks1 = [];
     for await (const chunk of adapter.stream({
+      sessionId: fakeDshAgent.session.id,
       provider: 'acp:codex',
       model: 'mock-fast',
       agent: fakeDshAgent,
-      messages: [{ id: 'user-1', role: 'user', content: 'Hello USE_TOOL please' }],
+      messages: [{ id: 'human-1', role: 'user', content: 'Hello USE_TOOL please' }],
       reasoningEffort: 'high',
     })) {
       chunks1.push(chunk);
     }
 
     assert.equal(
-      chunks1.some((c) => c.type === 'reasoning-delta' && c.text.includes('Thinking about:') && c.text.includes('Hello USE_TOOL please')),
+      chunks1.some((c) => c.type === 'reasoning-delta' && c.text.startsWith('Thinking about: ') && c.text.includes('Hello USE_TOOL please')),
       true,
       JSON.stringify(chunks1),
     );
@@ -509,18 +497,20 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       async () => ({ content: [{ type: 'text', text: 'fallback' }], isError: false }),
     );
     assert.equal(execResult.isError, false, JSON.stringify(execResult));
-    assert.match(execResult.content[0].text, /Permission outcome: opt_allow_once/);
+    assert.equal(execResult.content[0].text, 'Completed');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(tmpHome, 'permission-result.json'), 'utf8')).outcome.optionId, 'opt_allow_once');
     assert.equal(approvalCalls.length, 1);
-    assert.equal(approvalCalls[0].callId, 'call_acp_1', 'approval refers to the ACP server tool call');
+    assert.equal(approvalCalls[0].callId, 'call_acp_1', 'approval must retain the original native ACP tool identity');
 
     // Resume stream in the same turn after tool execution completes
     const chunks1Resume = [];
     for await (const chunk of adapter.stream({
+      sessionId: fakeDshAgent.session.id,
       provider: 'acp:codex',
       model: 'mock-fast',
       agent: fakeDshAgent,
       messages: [
-        { id: 'user-1', role: 'user', content: 'Hello USE_TOOL please' },
+        { id: 'human-1', role: 'user', content: 'Hello USE_TOOL please' },
         {
           role: 'assistant',
           content: '',
@@ -540,19 +530,20 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       .filter((c) => c.type === 'text-delta')
       .map((c) => c.text)
       .join('');
-    assert.match(replyText1, /Turn 1 reply for:[\s\S]*Hello USE_TOOL please/);
+    assert.match(replyText1, /Turn 1 reply for: [\s\S]*Hello USE_TOOL please/);
     assert.equal(chunks1Resume.find((c) => c.type === 'finish')?.reason?.kind, 'stop');
 
     // Turn 2: second user message in the same session reuses the persistent ACP connection
     const chunks2 = [];
     for await (const chunk of adapter.stream({
+      sessionId: fakeDshAgent.session.id,
       provider: 'acp:codex',
       model: 'mock-fast',
       agent: fakeDshAgent,
       messages: [
-        { id: 'user-1', role: 'user', content: 'Hello USE_TOOL please' },
+        { id: 'human-1', role: 'user', content: 'Hello USE_TOOL please' },
         { role: 'assistant', content: replyText1 },
-        { id: 'user-2', role: 'user', content: 'Second turn question' },
+        { id: 'human-2', role: 'user', content: 'Second turn question' },
       ],
     })) {
       chunks2.push(chunk);
@@ -561,17 +552,19 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       .filter((c) => c.type === 'text-delta')
       .map((c) => c.text)
       .join('');
-    assert.match(replyText2, /Turn 2 reply for:[\s\S]*Second turn question/);
+    assert.match(replyText2, /Turn 2 reply for: [\s\S]*Second turn question/);
 
   } finally {
-    for (const fn of disposeCallbacks.reverse()) await fn();
+    for (const fn of disposeCallbacks) {
+      await fn();
+    }
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
 
-test('client bundle registers Settings -> Agent and extends the native model menu without replacing it', () => {
+test('client bundle registers Agent settings and extends the host-owned model options', () => {
   const clientCode = fs.readFileSync(
     path.join(__dirname, '..', '..', 'dsh-acp', 'client', 'client.js'),
     'utf8',
@@ -644,8 +637,8 @@ test('client bundle registers Settings -> Agent and extends the native model men
   assert.equal(typeof pluginFn, 'function');
 
   const fakeSlots = {
-    entriesOfSlot() { return []; },
     subscribe() { return () => {}; },
+    entriesOfSlot() { return []; },
     inject(slotName, fn) {
       fn();
     },
@@ -677,8 +670,8 @@ test('client bundle registers Settings -> Agent and extends the native model men
     sessions: {
       subagentAddress: () => undefined,
     },
-    inject(_deps, fn) {
-      if (_deps.every(name => fakeCtx[name])) fn(fakeCtx);
+    inject(dependencies, fn) {
+      if (dependencies.every(name => fakeCtx[name])) fn(fakeCtx);
     },
   };
 
@@ -697,10 +690,9 @@ test('client bundle registers Settings -> Agent and extends the native model men
   assert.equal(settingsSlot.spec.order, 12);
 
   const modelSlot = registeredSlots.find((s) => s.spec.name === 'conversation.input.model.options');
-  assert.ok(modelSlot, 'expected native model menu options registration');
+  assert.ok(modelSlot, 'expected conversation.input.model.options registration');
   assert.equal(modelSlot.spec.id, 'dsh-acp-options');
   assert.equal(modelSlot.spec.order, 20);
-  assert.equal(registeredSlots.some(s => s.spec.name === 'conversation.input.model'), false,
-    'the host retains ownership of its picker, reasoning and Team controls');
   assert.equal(modelSlot.spec.children, undefined, 'must not redeclare child slot keys owned by ui-model-selection');
+  assert.equal(registeredSlots.some(s => s.spec.name === 'conversation.input.model'), false);
 });

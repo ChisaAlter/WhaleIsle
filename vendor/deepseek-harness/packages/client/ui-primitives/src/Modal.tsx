@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import type { KeyboardEventHandler, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCloseOutline16 } from './icons/index.tsx'
+import { IconCloseOutline16, IconWarningOutlineRegular } from './icons/index.tsx'
 import { usePresence } from './usePresence.ts'
 import { modalHasToastControls, useModalLayer } from './useModalLayer.ts'
 import css from './Modal.module.css'
@@ -11,6 +11,7 @@ interface ModalBaseProps {
   open: boolean
   onClose: () => void
   title: string
+  tone?: 'warning'
   description?: string
   children?: ReactNode
   footer?: ReactNode
@@ -33,6 +34,7 @@ type ModalProps = ModalBaseProps & (
  * @param props.onClose - application close command, Escape, or mask click; while a menu is open inside the
  * dialog, Escape belongs to that menu first.
  * @param props.title - dialog heading (aria-label in every mode).
+ * @param props.tone - warning adds an amber title icon and compact title-to-body spacing; ignored for headless dialogs.
  * @param props.closeLabel - localized accessible close-button label.
  * @param props.description - optional supporting sentence under the title.
  * @param props.children - dialog body; mark its initial-focus control with
@@ -50,7 +52,7 @@ type ModalProps = ModalBaseProps & (
  */
 export function Modal({
   open, onClose, title, closeLabel, description, children, footer, headerActions, className, contentClassName,
-  onKeyDownCapture, headless = false, backdropBlur = true, shortcutModal,
+  onKeyDownCapture, headless = false, backdropBlur = true, shortcutModal, tone,
 }: ModalProps) {
   const { mounted, state } = usePresence(open)
   const dialog = useRef<HTMLDivElement>(null)
@@ -77,7 +79,7 @@ export function Modal({
         ref={dialog}
         tabIndex={-1}
         data-shortcut-modal={shortcutModal}
-        className={clsx(css.dialog, className)}
+        className={clsx(css.dialog, !headless && tone === 'warning' && css.warning, className)}
         data-dsh-motion-part="panel"
         role="dialog"
         aria-modal="true"
@@ -89,7 +91,7 @@ export function Modal({
             <>
               <div className={clsx(css.content, contentClassName)}>
                 <div className={css.header} data-dsh-modal-header="">
-                  <h2 className={css.title}>{title}</h2>
+                  <h2 className={css.title}>{tone === 'warning' && <IconWarningOutlineRegular size={18} className={css.warningIcon} aria-hidden="true" />}{title}</h2>
                   <div className={css.headerEnd}>
                     {headerActions}
                     <button type="button" className={css.close} aria-label={closeLabel} onClick={onClose}>

@@ -31,7 +31,7 @@ Chrome headless 390×844（`/usr/local/bin/google-chrome` + puppeteer-core）。
 | Sticky | 无 hash 刷新 → 用已存 `deviceSecret` 重连回 chat | PASS |
 | Console | 全程 0 个应用 console error（浏览器自动请求 `/favicon.ico` 404 为 harness 伪影，index.html 未声明 favicon，属既有状态非本轮回归） | PASS |
 
-截图：[paired-chat](mobile-web-phase0-paired-chat.png) · [mode-rollback](mobile-web-phase0-mode-rollback.png) · [workspace-chooser](mobile-web-phase0-workspace-chooser.png) · [offline-banner](mobile-web-phase0-offline-banner.png)
+截图：[paired-chat](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase0-paired-chat.png) · [mode-rollback](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase0-mode-rollback.png) · [workspace-chooser](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase0-workspace-chooser.png) · [offline-banner](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase0-offline-banner.png)
 
 Harness 复现：本地起静态 server（root `mobile/web`，仅 `chisacode/daemon-client.bundle.js` 路由到 fake 模块），fake 暴露 `window.__qa.emitStatus/calls`；粘贴 `http://127.0.0.1:3180/#offer=QAFAKE` 走全真配对栈。harness 为本地 QA 工具，未随产品资产提交。
 

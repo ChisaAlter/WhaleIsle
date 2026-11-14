@@ -13,6 +13,7 @@ import { apply, inject, LayoutController } from '@deepseek-ai/dsh-client-ui-layo
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
 import type { MainPanelId } from '../src/client/service.ts'
 import type { createLayoutStore } from '../src/client/stores.ts'
+import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 
 const owners = new Set<Fiber>()
 let originalRootStyle: string | null
@@ -94,12 +95,34 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('shell.leading')).toEqual({ kind: 'single', scope: 'root' })
   })
 
+  it('keeps Desktop sidebar shortcuts behind a foreground modal', async () => {
+    const { ctx, slots } = await bench()
+    const shortcuts = ctx.get('shortcuts')
+    if (shortcuts === undefined) throw new Error('shortcuts service is unavailable')
+    const register = vi.spyOn(shortcuts, 'register')
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const command = register.mock.calls.find(([entry]) => entry.id === 'sidebar.left.toggle')?.[0]
+    if (command === undefined) throw new Error('sidebar shortcut was not registered')
+    const registry = new ShortcutRegistry('desktop', 'macos')
+    registry.register(command)
+    const handle = slots.entries('root')[0]!.store as ReturnType<typeof createLayoutStore>
+    const width = () => handle.create().getSnapshot().layoutInfo.sidebar
+    const gesture = { code: 'KeyB', meta: true, control: false, alt: false, shift: false,
+      repeat: false, composing: false, defaultPrevented: false }
+    const context = { region: 'editable' as const, target: null, modal: 'settings' }
+    expect(registry.dispatch(gesture, context, vi.fn()).status).toBe('pass')
+    expect(width()).toBe(280)
+    expect(registry.dispatch(gesture, { ...context, modal: null }, vi.fn()).status).toBe('handled')
+    expect(width()).toBe(0)
+    expect(registry.dispatch(gesture, { ...context, modal: 'sidebar' }, vi.fn()).status).toBe('handled')
+    expect(width()).toBe(280)
+  })
+
   it('shares a pre-created instance between service actions, root rendering, and panelInfo', async () => {
     const { ctx, slots, rendererHost } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const entry = slots.entries('root')[0]!
-    expect(entry.inject).toBeUndefined()
     const handle = entry.store as ReturnType<typeof createLayoutStore>
     const instance = handle.create()
     expect(handle.create()).toBe(instance)

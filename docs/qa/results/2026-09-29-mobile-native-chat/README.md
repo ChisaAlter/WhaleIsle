@@ -12,12 +12,12 @@ Feature: `mobile-remote`。浏览器 Web 继续使用 `mobile/web` SPA；本轮 
 
 | 场景 | 结果 | 证据/边界 |
 | --- | --- | --- |
-| 保存设备冷启动重连与 Compose 主界面 | Pass | [最终原生空会话](final-native-chat.png)。前一候选在桌面 `sessionController` 未就绪时显示可重试错误（[初始状态](cold-launch.png)）；只重启本仓库 Electron 后恢复。 |
-| 会话目录与打开历史 | Pass | [原生目录](native-sessions.png)显示既有「你好」会话；[历史时间线](native-history.png)显示真实 assistant 文本与模型标签。富文本仍按纯文本投影，Markdown 符号可见。 |
-| 软键盘与返回 | Pass | [输入卡与 IME](native-ime.png)：输入不遮挡工具行，`dumpsys input_method` 为 `mInputShown=true`；一次系统返回后为 `false`，草稿仍在原会话。 |
-| 旧版工作页与草稿 | Pass | [显式 Web 入口](legacy-page.png)可用；[返回原生](return-draft.png)后 `QA_draft_123` 仍在 Compose 输入卡。结束时已删除该测试草稿，未发送。 |
+| 保存设备冷启动重连与 Compose 主界面 | Pass | [最终原生空会话](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/final-native-chat.png)。前一候选在桌面 `sessionController` 未就绪时显示可重试错误（[初始状态](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/cold-launch.png)）；只重启本仓库 Electron 后恢复。 |
+| 会话目录与打开历史 | Pass | [原生目录](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/native-sessions.png)显示既有「你好」会话；[历史时间线](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/native-history.png)显示真实 assistant 文本与模型标签。富文本仍按纯文本投影，Markdown 符号可见。 |
+| 软键盘与返回 | Pass | [输入卡与 IME](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/native-ime.png)：输入不遮挡工具行，`dumpsys input_method` 为 `mInputShown=true`；一次系统返回后为 `false`，草稿仍在原会话。 |
+| 旧版工作页与草稿 | Pass | [显式 Web 入口](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/legacy-page.png)可用；[返回原生](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/return-draft.png)后 `QA_draft_123` 仍在 Compose 输入卡。结束时已删除该测试草稿，未发送。 |
 | 后台 WebView 触控/无障碍隔离 | Pass（当前设备） | 原生页的 `uiautomator` 树中 WebView 节点数为 0，只有 Compose 菜单/输入；旧版页显式打开时 WebView 节点为 1。未进行真人 TalkBack 语音走查。 |
-| 模型与权限选择层 | 部分 Pass | [模型列表](model-picker.png)与权限列表能展示真实选项，返回不提交改变；未执行模型/权限切换的 host 写动作。 |
+| 模型与权限选择层 | 部分 Pass | [模型列表](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-mobile-native-chat/model-picker.png)与权限列表能展示真实选项，返回不提交改变；未执行模型/权限切换的 host 写动作。 |
 | 新消息发送/停止、流式增量、审批 | Not run | 为避免向用户既有会话写入测试消息或触发模型计费，本轮没有发起真实 prompt/审批。JS/JVM 单测及历史读取不能代替这些 T3 用例。 |
 | 新配对扫码、正式签名升级、前后台长时重连 | Not run | 本轮验证的是保留 sticky 的 debug 覆盖安装与冷启动，不是生产签名兼容性或完整配对流程。 |
 

@@ -17,13 +17,21 @@
   cursor: pointer;
 }
 
-.indicator:hover:not([aria-disabled="true"]) {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 14%, transparent);
+@media (hover: hover) {
+  .indicator:hover:not([aria-disabled="true"]) {
+    background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 14%, transparent);
+  }
 }
 
 .indicator:focus-visible {
   outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 2px;
+}
+
+.progress {
+  min-inline-size: calc(3ch + 1em);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
 }
 
 .icon {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Model-list editing, endpoint interrogation, and hand-declared provider creation. */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
@@ -33,7 +33,18 @@ beforeEach(() => {
 
 const t: ModelsSectionInjected['t'] = key => en[key]
 
-const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages']
+const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai']
+function chooseProtocol(value: string): void {
+  fireEvent.click(screen.getByLabelText(en.customApi))
+  const labels: Record<string, string> = {
+    'google-generative-ai': en.protocolGemini,
+    'openai-completions': en.protocolOpenAiCompletions,
+    'openai-responses': en.protocolOpenAiResponses,
+    'anthropic-messages': en.protocolAnthropicMessages,
+  }
+  fireEvent.click(screen.getByRole('menuitem', { name: labels[value] ?? value }))
+}
+
 const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
 /** The pi-ai profile shape as the host serializes it, including the layer-1 fields. */
@@ -321,6 +332,8 @@ describe('model list editing', () => {
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     expandModel(1)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 1`).placeholder).toBe('1M')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder).toBe('128K')
     fireEvent.change(screen.getByLabelText(`${en.contextWindow} 1`), { target: { value: '65536' } })
     fireEvent.click(within(screen.getByRole('group', { name: `${en.modelInputTypes} 1` })).getByRole('checkbox', { name: en.modelInputImage }))
     fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Acme' } })
@@ -347,7 +360,7 @@ describe('model list editing', () => {
 
     // The create card refuses this in place; an edited route must not have to
     // learn it from the host's refusal instead.
-    expect(screen.getByText(`${en.model} 2: ${en.modelIdDuplicate}`)).toBeTruthy()
+    expect(screen.getByText(`${en.model} 2: ${en.modelIdDuplicate}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
     expect(buttonNamed(en.apply).disabled).toBe(true)
     expect(mutate).not.toHaveBeenCalled()
   })
@@ -387,7 +400,7 @@ describe('model list editing', () => {
     // Silently dropping it would store a route sized differently from what the
     // field shows, so the text stays put and the write is refused instead.
     expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).value).toBe('abc')
-    expect(screen.getByText(`${en.model} 1: ${en.modelMaxTokensInvalid}`)).toBeTruthy()
+    expect(screen.getByText(`${en.model} 1: ${en.modelMaxTokensInvalid}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
     expect(buttonNamed(en.apply).disabled).toBe(true)
     expect(mutate).not.toHaveBeenCalled()
   })
@@ -474,7 +487,7 @@ describe('model list editing', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-think' } })
     fireEvent.click(screen.getByLabelText(`${en['effort.off']} 1`))
     expect(buttonNamed(en.apply).disabled).toBe(true)
-    expect(screen.getByText(`${en.model} 1: ${en.effortOffAlone}`)).toBeTruthy()
+    expect(screen.getByText(`${en.model} 1: ${en.effortOffAlone}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
   })
 
   it('drops reasoningEfforts when every thinking intensity is unchecked', async () => {
@@ -689,7 +702,7 @@ describe('endpoint interrogation', () => {
     })
   })
 
-  it('adopts only the picked candidates, keeping a row the user already tuned', async () => {
+  it('opens on the configured models and appends a newly checked one, keeping a row the user already tuned', async () => {
     const discover = vi.fn(() => Promise.resolve(ok([
       { id: 'kept', contextWindow: 999, inputModalities: ['text', 'image'] },
       { id: 'fresh', contextWindow: 4096, maxTokens: 2048, name: 'Fresh', inputModalities: ['text', 'image'] },
@@ -702,14 +715,14 @@ describe('endpoint interrogation', () => {
 
     fireEvent.click(screen.getByText(en.fetchModels))
     await screen.findByText(en.fetchTitle)
-    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'fresh' }).checked).toBe(true)
     expect(screen.queryByRole('checkbox', { name: 'Fresh' })).toBeNull()
-    // The already-configured row starts unchecked; the new one starts checked.
     // Scoped to the adopt dialog: the model rows behind it carry their own
-    // thinking-intensity checkboxes.
+    // thinking-intensity checkboxes. The picker opens on the current list: the
+    // configured row starts checked, the new one unchecked.
     const dialog = screen.getByRole('dialog')
     const boxes = [...within(dialog).getAllByRole('checkbox')] as HTMLInputElement[]
-    expect(boxes.map(box => box.checked)).toEqual([false, true])
+    expect(boxes.map(box => box.checked)).toEqual([true, false])
+    fireEvent.click(screen.getByRole<HTMLInputElement>('checkbox', { name: 'fresh' }))
     fireEvent.click(screen.getByText(en.fetchAdopt))
 
     expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 2`).value).toBe('fresh')
@@ -828,6 +841,93 @@ describe('endpoint interrogation', () => {
     expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'acme-large' }])
   })
 
+  it('removes an unchecked configured model and keeps one the provider does not list', async () => {
+    const discover = vi.fn(() => Promise.resolve(ok([{ id: 'gone' }, { id: 'stays' }, { id: 'new' }])))
+    const { mutate } = await mountSection({
+      discover,
+      providers: { openai: { baseURL: 'https://proxy.example/v1', models: [
+        { id: 'gone' }, { id: 'unlisted', maxTokens: 512 }, { id: 'stays', contextWindow: 111 },
+      ] } },
+    })
+    openEditor('openai')
+    expandModel(3)
+
+    fireEvent.click(screen.getByText(en.fetchModels))
+    await screen.findByText(en.fetchTitle)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'gone' }))
+    fireEvent.click(screen.getByText(en.fetchAdopt))
+
+    // The disclosure follows its row up the list.
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.contextWindow} 2`).value).toBe('111')
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'unlisted', maxTokens: 512 }, { id: 'stays', contextWindow: 111 },
+    ])
+  })
+
+  it('checks a row drafted while the fetch is in flight', async () => {
+    const reply = Promise.withResolvers<ReturnType<typeof ok>>()
+    const discover = vi.fn(() => reply.promise)
+    const { mutate } = await mountSection({
+      discover,
+      providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'a' }] } },
+    })
+    openEditor('openai')
+
+    fireEvent.click(screen.getByText(en.fetchModels))
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 2`), { target: { value: 'b' } })
+    await act(async () => { reply.resolve(ok([{ id: 'a' }, { id: 'b' }, { id: 'c' }])) })
+    const dialog = await screen.findByRole('dialog')
+    const boxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    expect(boxes.map(box => box.checked)).toEqual([true, true, false])
+    fireEvent.click(screen.getByText(en.fetchAdopt))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'a' }, { id: 'b' }])
+  })
+
+  it('refuses to empty the list, since an empty list serves the whole catalog', async () => {
+    const discover = vi.fn(() => Promise.resolve(ok([{ id: 'a' }, { id: 'b' }, { id: 'c' }])))
+    await mountSection({
+      discover,
+      providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'a' }, { id: 'b' }] } },
+    })
+    openEditor('openai')
+
+    fireEvent.click(screen.getByText(en.fetchModels))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within_(dialog, en.fetchSelectAll))
+    fireEvent.click(within_(dialog, en.fetchDeselectAll))
+    const adopt = within_(dialog, en.fetchAdopt) as HTMLButtonElement
+    expect(adopt.disabled).toBe(true)
+    expect(adopt.title).toBe(en.fetchKeepOne)
+
+    // Removing several configured models at once still leaves one.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'c' }))
+    expect(adopt.disabled).toBe(false)
+    fireEvent.click(adopt)
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('c')
+    expect(screen.queryByLabelText(`${en.modelId} 2`)).toBeNull()
+  })
+
+  it('lists a repeated candidate id once and starts it checked beside a blank row', async () => {
+    const discover = vi.fn(() => Promise.resolve(ok([{ id: 'x' }, { id: 'x', maxTokens: 64 }])))
+    await mountSection({ discover, providers: { openai: { baseURL: 'https://proxy.example/v1' } } })
+    openEditor('openai')
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+
+    fireEvent.click(screen.getByText(en.fetchModels))
+    await screen.findByText(en.fetchTitle)
+    expect(screen.getAllByRole<HTMLInputElement>('checkbox', { name: 'x' }).map(box => box.checked)).toEqual([true])
+    fireEvent.click(screen.getByText(en.fetchAdopt))
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 2`).value).toBe('x')
+    expect(screen.queryByLabelText(`${en.modelId} 3`)).toBeNull()
+  })
+
   it('keeps the rows editable when the provider cannot be interrogated', async () => {
     const discover = vi.fn(() => Promise.resolve(
       fail('https://proxy.example/v1/models answered 401; check the API key', 'llm/model-discovery-rejected'),
@@ -940,7 +1040,7 @@ describe('endpoint interrogation', () => {
     expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'a' }, { id: 'b', maxTokens: 2048 }])
   })
 
-  it('filters by model id or name, selects visible candidates, and clears every selection', async () => {
+  it('filters by model id or name and selects or deselects only visible candidates', async () => {
     const discover = vi.fn(() => Promise.resolve(ok([
       { id: 'alpha' }, { id: 'opaque-id', name: 'Beta Display' }, { id: 'gamma' },
     ])))
@@ -971,10 +1071,14 @@ describe('endpoint interrogation', () => {
     expect([...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
       .map(box => box.checked)).toEqual([false])
 
-    // Deselecting a filtered result must also clear hidden selections so they
-    // cannot be adopted accidentally.
+    // Hidden candidates keep their state, so a configured model is never
+    // removed unseen.
     fireEvent.change(search, { target: { value: '' } })
     const boxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    expect(boxes.map(box => box.checked)).toEqual([true, false, true])
+    fireEvent.click(within_(dialog, en.fetchSelectAll))
+    expect(boxes.map(box => box.checked)).toEqual([true, true, true])
+    fireEvent.click(within_(dialog, en.fetchDeselectAll))
     expect(boxes.map(box => box.checked)).toEqual([false, false, false])
 
     // Selecting while filtered adds only visible candidates.
@@ -1143,6 +1247,50 @@ describe('hand-declared providers', () => {
     ])
   })
 
+  it('requires a key before a keyless declared route switches to the Gemini protocol', async () => {
+    const { mutate, set } = await mountSection({
+      providers: { 'acme-gateway': { api: 'openai-completions', baseURL: 'https://acme.test/v1beta' } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+    chooseProtocol('google-generative-ai')
+
+    expect(screen.getByText(en.keyRequired)).toBeTruthy()
+    expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).required).toBe(true)
+    expect(buttonNamed(en.apply).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gemini-key' } })
+    expect(screen.queryByText(en.keyRequired)).toBeNull()
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(set).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toContainEqual(
+      { op: 'set', path: ['providers', 'acme-gateway', 'apiKeyEnv'], value: 'ACME_GATEWAY_API_KEY' })
+  })
+
+  it('needs no typed key on a Gemini route that names its key reference', async () => {
+    await mountSection({
+      providers: { 'acme-gateway': { apiKeyEnv: 'ACME_KEY', api: 'google-generative-ai', baseURL: 'https://acme.test/v1beta' } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+    expect(screen.queryByText(en.keyRequired)).toBeNull()
+    expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).required).toBe(false)
+  })
+
+  it('blocks a protocol switch that the route\'s inherited reasoning levels would break', async () => {
+    await mountSection({
+      providers: { 'acme-gateway': {
+        apiKeyEnv: 'ACME_KEY', api: 'openai-completions', baseURL: 'https://acme.test/v1',
+        models: [{ id: 'm', reasoningEfforts: { off: null, high: 'high' } }],
+      } },
+      userProviders: { 'acme-gateway': { apiKeyEnv: 'ACME_KEY', api: 'openai-completions', baseURL: 'https://acme.test/v1' } },
+      baseProviders: { 'acme-gateway': { models: [{ id: 'm', reasoningEfforts: { off: null, high: 'high' } }] } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+    chooseProtocol('google-generative-ai')
+    expect(buttonNamed(en.apply).disabled).toBe(true)
+  })
+
   it('renames a declared route and falls back to its id when the name is cleared', async () => {
     const { mutate } = await mountSection({
       providers: {
@@ -1288,7 +1436,7 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    expect(screen.getByText(`${en.model} 1: ${en[key]}`)).toBeTruthy()
+    expect(screen.getByText(`${en.model} 1: ${en[key]}`, { selector: ':not([class*="visuallyHidden"])' })).toBeTruthy()
     expect(buttonNamed(en.apply).disabled).toBe(true)
   })
 
@@ -1673,6 +1821,8 @@ describe('hand-declared providers', () => {
     fireEvent.click(protocol)
     fireEvent.click(screen.getByRole('menuitem', { name: en.protocolOpenAiResponses }))
     expect(baseUrl.placeholder).toBe('https://gateway.example/v1')
+    chooseProtocol('google-generative-ai')
+    expect(baseUrl.placeholder).toBe('https://gateway.example/v1beta')
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(baseUrl, { target: { value: 'https://acme.test/anthropic' } })
@@ -1741,14 +1891,56 @@ describe('hand-declared providers', () => {
   })
 
   it('names each protocol by its product name and falls back to the identifier of an unknown one', () => {
-    mountCard({ protocols: [...PROTOCOLS, 'google-generative-ai'] })
+    mountCard({ protocols: [...PROTOCOLS, 'future-api'] })
     fireEvent.click(screen.getByLabelText(en.customApi))
     expect(screen.getAllByRole('menuitem').map(option => option.textContent)).toEqual([
       en.protocolOpenAiCompletions,
       en.protocolOpenAiResponses,
       en.protocolAnthropicMessages,
-      'google-generative-ai',
+      en.protocolGemini,
+      'future-api',
     ])
+  })
+
+  it('requires a key for the Gemini protocol, which cannot authenticate without one', async () => {
+    const { mutate, set, onClose } = mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'gemini-gateway' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://gateway.example/v1beta' } })
+    chooseProtocol('google-generative-ai')
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'gemini-pro' } })
+
+    expect(screen.getByText(en.keyRequired)).toBeTruthy()
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gemini-key' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    expect(firstMutate(mutate).ops[0]?.value).toMatchObject({ api: 'google-generative-ai', apiKeyEnv: 'GEMINI_GATEWAY_API_KEY' })
+    expect(set).toHaveBeenCalledOnce()
+  })
+
+  it('treats a whitespace key as missing on the Gemini protocol', () => {
+    mountCard()
+    chooseProtocol('google-generative-ai')
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '   ' } })
+    expect(screen.getByText(en.keyRequired)).toBeTruthy()
+    expect(screen.queryByText(en.keyBlankNew)).toBeNull()
+  })
+
+  it('offers a Gemini model only the levels the protocol accepts', () => {
+    mountCard()
+    chooseProtocol('google-generative-ai')
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.click(screen.getByRole('switch', { name: `${en.modelReasoning} 1` }))
+
+    const level = screen.getByRole('button', { name: `${en.modelReasoningLevel} 1` })
+    expect(level.textContent).toContain('low')
+    fireEvent.click(level)
+    expect(screen.getAllByRole('menuitem').map(option => option.textContent)).toEqual(['minimal', 'low'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'low' }))
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: `low ${en.modelReasoningValue}` }).disabled).toBe(true)
   })
 
   it('refuses an unusable key on the field and blocks creation', () => {

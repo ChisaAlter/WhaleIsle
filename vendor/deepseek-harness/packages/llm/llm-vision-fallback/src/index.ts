@@ -26,6 +26,12 @@ import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import { deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { finishError } from './finish-error.ts'
 
+declare module '@deepseek-ai/dsh-llm/types' {
+  interface LlmRequestPurposeMap {
+    'vision-describe': true
+  }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Designated vision-model routing and image-to-text rewriting. */
@@ -281,7 +287,7 @@ export class VisionFallback extends Service {
     } catch (error: unknown) {
       signal.throwIfAborted()
       const timeout = timeoutOf(callDeadline.signal, VISION_DESCRIBE_TIMEOUT_CODE)
-      if (timeout !== undefined) throw new LlmError(timeout.message, timeout.code)
+      if (timeout !== undefined) throw LlmError.fromFailure({ message: timeout.message, code: timeout.code })
       throw error
     }
     const terminalError = finishError(assembler.finish)

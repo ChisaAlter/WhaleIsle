@@ -8,6 +8,7 @@ import VisionFallback from '@deepseek-ai/dsh-llm-vision-fallback'
 import SessionStore, { KNOWN_SESSION_EVENT_TYPES, Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { textResponse } from './mock-adapter.ts'
 
@@ -52,6 +53,7 @@ async function setup(model = 'text', timeoutMs = 1000) {
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(VisionFallback, { maxOutputTokens: 128, timeoutMs, provider: 'mock', model: 'vision' })
   await ctx.plugin(AgentLoop, { agents: [] })

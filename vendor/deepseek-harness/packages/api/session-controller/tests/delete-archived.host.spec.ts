@@ -78,8 +78,9 @@ async function composed(workspaces: readonly Workspace[] = []): Promise<{
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { personaPrefix: '' })
-  await ctx.plugin(AgentRegistry)
+  // AgentRegistry injects the projection service, so it mounts after it exists.
   installSessionReadTestServices(ctx)
+  await ctx.plugin(AgentRegistry)
   const registry = testWorkspaceRegistry(workspaces)
   ctx.provide('workspaceRegistry', registry as never)
   ctx.agents.setFactory({
@@ -161,7 +162,7 @@ describe('sessions.delete', () => {
   it('rejects a live session that is not archived', async () => {
     const { ctx } = await composed()
     const source = await liveAgent(ctx, 'session-live', 1)
-    const response = await remote(ctx).delete(request({ sessionId: source.id }))
+    const response = await (await remote(ctx)).delete(request({ sessionId: source.id }))
     expect(response).toMatchObject({
       ok: false,
       error: { code: 'session-not-archived', details: { sessionId: source.id } },
@@ -172,7 +173,7 @@ describe('sessions.delete', () => {
   it('rejects an unknown id that is not in the archive set', async () => {
     const { ctx } = await composed()
     const sessionId = sid('missing')
-    const response = await remote(ctx).delete(request({ sessionId }))
+    const response = await (await remote(ctx)).delete(request({ sessionId }))
     expect(response).toMatchObject({
       ok: false,
       error: { code: 'session/not-found', details: { sessionId } },
@@ -184,7 +185,7 @@ describe('sessions.delete', () => {
     const { ctx, registry } = await composed()
     const source = await liveAgent(ctx, 'session-unowned', 1)
     await registry.archiveSession(source.id)
-    const response = await remote(ctx).delete(request({ sessionId: source.id }))
+    const response = await (await remote(ctx)).delete(request({ sessionId: source.id }))
     expect(response).toMatchObject({
       ok: false,
       error: { code: 'session-live-unowned', details: { sessionId: source.id } },
@@ -208,7 +209,7 @@ describe('sessions.delete', () => {
       delete: persistDelete,
     }) as never)
 
-    const proxy = remote(ctx)
+    const proxy = await remote(ctx)
     const source = await liveAgent(ctx, 'session-archived', 1)
     listed.push(source.header)
     retainLiveHandle(ctx, source.id)

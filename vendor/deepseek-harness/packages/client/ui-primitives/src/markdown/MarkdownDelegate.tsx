@@ -1,6 +1,7 @@
 /** Consumer-owned navigation for Markdown links. */
 import { createContext, useContext, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
+import type { FileDragActions } from '../file-drag-actions.ts'
 import type { ImageLightboxLabels } from '../ImageLightbox.tsx'
 
 /**
@@ -18,12 +19,39 @@ export interface MarkdownPreviewImage {
   /** Authored destination exactly as written. */
   readonly destination: string
 }
+/** Explicit object and viewport coordinates from the element owning a context gesture. */
+export type MarkdownMenuTarget =
+  | { kind: 'file'; path: string; line?: number }
+  | { kind: 'url'; url: string }
+  | { kind: 'image'; url: string; path?: string; name?: string; mediaType?: string }
+
+/** One Markdown code fence whose language is final, as {@link MarkdownDelegate.renderCode} receives it. */
+export interface MarkdownDelegateFenceInfo {
+  /**
+   * The info string's language word, cut at its first character outside
+   * letters, digits, `_`, and `-`, then lowercased (`c++` yields `c`).
+   */
+  readonly lang: string
+  /** The fence body without its closing newline. */
+  readonly code: string
+  /** The surrounding document is still streaming, so `code` may still change. */
+  readonly streaming: boolean
+  /** The info string after the language word, as the author wrote it; absent when the fence names only a language. */
+  readonly meta?: string | undefined
+}
 
 /** Navigation capabilities supplied by the nearest Markdown owner. */
 export interface MarkdownDelegate {
-  /** Image previews for decoded local paths in this owner's workspace. */
+  /** Open an object menu without executing its normal activation. */
+  readonly getTriggerProps?: ((target: MarkdownMenuTarget) => Pick<HTMLAttributes<HTMLElement>, 'onContextMenu' | 'onKeyDown' | 'tabIndex'>) | undefined
+  /**
+   * Image previews for decoded local paths in this owner's workspace. The renderer
+   * appends a per-mount `load` query parameter to `api/file` route URLs.
+   */
   readonly fileImages?: {
+    fileDrag: FileDragActions
     resolve: (path: string) => string | undefined
+    resourceAddress?: ((path: string) => string) | undefined
     labels: ImageLightboxLabels & { open: string; loading: string; failed: string }
   } | undefined
   /** Ordinary HTTP(S) activation; absent handlers retain native anchor behavior. */
@@ -40,6 +68,14 @@ export interface MarkdownDelegate {
    * @param image - The rendered image's resolved source and authored fields.
    */
   readonly openImage?: ((image: MarkdownPreviewImage) => void) | undefined
+  /**
+   * Render one fence whose language is final: it has a language and content.
+   * Absent, the document renders fences with its built-in code and math blocks;
+   * present, the owner renders every such fence, including `diff` and `math`.
+   * @param fence - language, body, and streaming state.
+   * @returns the rendered block.
+   */
+  readonly renderCode?: ((fence: MarkdownDelegateFenceInfo) => ReactNode) | undefined
 }
 
 const MarkdownDelegateContext = createContext<MarkdownDelegate>({})
@@ -61,8 +97,11 @@ export function MarkdownDelegateProvider({
   openFile,
   openImage,
   fileImages,
+  getTriggerProps,
+  renderCode,
 }: MarkdownDelegateProviderProps): ReactNode {
-  const delegate = useMemo(() => ({ openExternalLink, openFile, openImage, fileImages }), [openExternalLink, openFile, openImage, fileImages])
+  const delegate = useMemo(() => ({ openExternalLink, openFile, openImage, fileImages, getTriggerProps, renderCode }),
+    [openExternalLink, openFile, openImage, fileImages, getTriggerProps, renderCode])
   return (
     <MarkdownDelegateContext.Provider value={delegate}>
       {children}

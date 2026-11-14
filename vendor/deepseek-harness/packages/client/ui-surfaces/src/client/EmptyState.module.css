@@ -62,8 +62,10 @@
   flex: 1;
 }
 
-.card:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .card:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .card:disabled,
@@ -72,9 +74,11 @@
   cursor: not-allowed;
 }
 
-.card:disabled:hover,
-.disabled:hover {
-  background: var(--dsw-alias-bg-layer-2);
+@media (hover: hover) {
+  .card:disabled:hover,
+  .disabled:hover {
+    background: var(--dsw-alias-bg-layer-2);
+  }
 }
 
 .icon {

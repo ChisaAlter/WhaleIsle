@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage, ToolCallId, LlmError, ReasoningEffortId, StreamChunk, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import AgentRegistry, { type Agent, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -35,6 +37,7 @@ async function harness(adapter: MockAdapter, persona = '') {
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt, { personaPrefix: persona })
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -602,24 +605,11 @@ describe('agent loop', () => {
     expect(turnEnds[1]?.type === 'turn/end' && turnEnds[1].data.reason.kind).toBe('completed')
   })
 
-  it('supports the model-via-agent/request path with a {{model}} persona: the supplier states it via the assemble waterfall', async () => {
-    // AgentOptions.model unset: the model arrives in the agent/request
-    // waterfall (the loop's documented fallback — see runStep's no-model
-    // error). {{model}} renders BEFORE that waterfall, so the SAME plugin
-    // states the fact early on system-prompt/assemble — the owner of a
-    // late-bound fact owns stating it wherever it is claimed.
+  it('uses a recorded selection for both the request and the {{model}} persona', async () => {
     const adapter = new MockAdapter([textResponse('ok')])
     const ctx = await harness(adapter, 'You run on {{model}}.')
-    ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
-      assembly.variables['provider'] = 'mock'
-      assembly.variables['model'] = 'mock'
-      return next()
-    })
-    ctx.on('agent/request', async (_payload, next) => {
-      const config = await next()
-      return { ...config, provider: 'mock', model: 'mock' }
-    })
-    const agent = await ctx.agentLoop.create(SessionId('a-late-model'), {})
+    const agent = await ctx.agentLoop.create(SessionId('a-recorded-model'), {})
+    agent.model.select({ provider: 'mock', model: 'mock' })
 
     send(agent, 'hi')
     await waitForIdle(ctx, agent)
@@ -706,7 +696,7 @@ describe('agent loop', () => {
     expect(contextEvents()).toHaveLength(1)
     expect(contextEvents()[0]?.data.content).toEqual([{
       type: 'text',
-      text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
+      text: '<system-reminder>\nThe following information describes your current session:\n\nMode: read-only.\n</system-reminder>',
     }])
 
     send(agent, 'unchanged')
@@ -728,7 +718,7 @@ describe('agent loop', () => {
     expect(contextEvents()).toHaveLength(3)
     expect(contextEvents()[2]?.data.content).toEqual([{
       type: 'text',
-      text: 'Current runtime context: none. Earlier runtime-context snapshots no longer apply.',
+      text: '<system-reminder>\nCurrent runtime context: none. Earlier runtime-context snapshots no longer apply.\n</system-reminder>',
     }])
 
     send(agent, 'still clear')
@@ -825,7 +815,7 @@ describe('agent loop', () => {
       await agent.whenIdle()
       const users = adapter.requests[0]?.messages.filter(message => message.role === 'user') ?? []
       expect(users.map(message => message.source?.kind)).toEqual(['runtime-context', 'user'])
-      expect(users[0]?.content).toEqual([{ type: 'text', text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nafter' }])
+      expect(users[0]?.content).toEqual([{ type: 'text', text: '<system-reminder>\nThe following information describes your current session:\n\nafter\n</system-reminder>' }])
       expect(users[1]?.content).toEqual([{ type: 'text', text: 'accepted user' }])
       expect(agent.session.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(2)
     } finally {
@@ -875,7 +865,7 @@ describe('agent loop', () => {
   })
 
   it('restores runtime context during a retry without admitting the user batch twice', async () => {
-    const adapter = new MockAdapter([textResponse('one'), () => { throw new LlmError('overflow', 'CONTEXT_LENGTH') }, textResponse('two')])
+    const adapter = new MockAdapter([textResponse('one'), () => { throw LlmError.fromFailure({ message: 'overflow', code: 'CONTEXT_LENGTH' }) }, textResponse('two')])
     const ctx = await harness(adapter)
     try {
       ctx.systemPrompt.context({ name: 'directory', order: 0, required: true, text: 'Current working directory: /workspace.' })
@@ -945,7 +935,7 @@ describe('agent loop', () => {
       message.role === 'user' && message.source?.kind === 'runtime-context')
     expect(clearing?.content).toEqual([{
       type: 'text',
-      text: 'Current runtime context: none. Earlier runtime-context snapshots no longer apply.',
+      text: '<system-reminder>\nCurrent runtime context: none. Earlier runtime-context snapshots no longer apply.\n</system-reminder>',
     }])
   })
 
@@ -991,7 +981,7 @@ describe('agent loop', () => {
     expect(runtimeContexts).toHaveLength(2)
     expect(runtimeContexts[1]?.data.content).toEqual([{
       type: 'text',
-      text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
+      text: '<system-reminder>\nThe following information describes your current session. It replaces earlier versions of this context, including any retained in conversation summaries.\n\nMode: read-only.\n</system-reminder>',
     }])
   })
 
@@ -1309,27 +1299,27 @@ describe('agent loop', () => {
     expect(texts).toContain('late steering')
   })
 
-  it('agent/request waterfall switches models by returning a replacement config; the switch is logged', async () => {
-    const adapter = new MockAdapter([textResponse('ok')])
+  it.each(['provider', 'model'] as const)('rejects an agent/request replacement that changes %s after step preparation', async (field) => {
+    const adapter = new MockAdapter([textResponse('never')])
     const ctx = await harness(adapter)
     const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
-
     ctx.on('agent/request', async (_payload, next) => {
       const config = await next()
-      // The seed is frozen — config is not a mutable per-call knob; a switch
-      // is proposed by returning a replacement, and the loop logs it.
       expect(Object.isFrozen(config)).toBe(true)
       expect(() => { (config as { model: string }).model = 'other-model' }).toThrow(TypeError)
-      return { ...config, model: 'other-model' }
+      return { ...config, [field]: 'other' }
     })
 
     send(agent, 'hi')
     await waitForIdle(ctx, agent)
-    expect(adapter.requests[0]!.model).toBe('other-model')
-    // The header event records what the request ACTUALLY used — the switch is
-    // a reconstructable fact, not silent drift.
-    const headerEvent = agent.session.snapshotEvents().find(e => e.type === 'request/header')
-    expect(headerEvent?.type === 'request/header' && headerEvent.data.header.config.model).toBe('other-model')
+    expect(adapter.requests).toEqual([])
+    expect(agent.session.snapshotEvents().filter(event => ['request/header', 'user/message', 'system/message'].includes(event.type)))
+      .toEqual([])
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end', data: { reason: { kind: 'error', error: {
+        message: `agent "a1": agent/request proposed "${field === 'provider' ? 'other/mock' : 'mock/other'}" after step preparation fixed "mock/mock"; use agent.model.select() before step preparation`,
+      } } },
+    })
   })
 
   it('agent/pre-step fires once per proposed step before the step is opened', async () => {
@@ -1912,17 +1902,20 @@ describe('agent loop', () => {
       defaultEffort: effort,
     })
     const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, {
       agents: [{ id: SessionId('config-agent'), provider: 'mock', model: 'mock', reasoningEffort: effort }],
     })
     ctx.llm.registerAdapter(['mock'], adapter)
 
+    await vi.waitFor(() => { expect(ctx.agents.list()).toHaveLength(1) })
     const agent = ctx.agents.list()[0]!
     expect(agent).toBeDefined()
     expect(agent.id).toBe(agent.session.id)
@@ -1940,16 +1933,19 @@ describe('agent loop', () => {
 
   it('attaches config agent cwd to the fresh session header', async () => {
     const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, {
       agents: [{ id: SessionId('config-agent'), provider: 'mock', model: 'mock', cwd: '/work/project' }],
     })
 
+    await vi.waitFor(() => { expect(ctx.agents.list()).toHaveLength(1) })
     const agent = ctx.agents.list()[0]!
     expect(agent.session.header.cwd).toBe('/work/project')
   })

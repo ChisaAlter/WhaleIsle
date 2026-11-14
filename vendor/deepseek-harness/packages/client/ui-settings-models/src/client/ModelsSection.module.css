@@ -171,11 +171,13 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-.dangerButton:hover:not(:disabled),
-.iconButtonDanger:hover:not(:disabled),
-.deleteConfirm:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
+@media (hover: hover) {
+  .dangerButton:hover:not(:disabled),
+  .iconButtonDanger:hover:not(:disabled),
+  .deleteConfirm:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover-danger);
+    color: var(--dsw-alias-state-error-primary);
+  }
 }
 
 .deleteConfirm:not(:disabled) {
@@ -248,9 +250,18 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.helpButton:hover:not(:disabled),
-.iconButton:hover:not(:disabled) {
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .helpButton:hover:not(:disabled),
+  .iconButton:hover:not(:disabled) {
+    color: var(--dsw-alias-label-primary);
+  }
+}
+
+@media (hover: hover) {
+  .helpButton:hover {
+    color: var(--dsw-alias-label-primary);
+    border-color: var(--dsw-alias-label-tertiary);
+  }
 }
 
 .linkButton {
@@ -329,9 +340,17 @@
   transform: rotate(0);
 }
 
-.customizedSummary:hover {
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
+/* The nested fold labels a part of the retry policy, so it reads at field-label weight. */
+.retryFold > .customizedSummary {
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+@media (hover: hover) {
+  .customizedSummary:hover {
+    color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .customizedSummary:focus-visible {
@@ -349,6 +368,7 @@
 }
 
 .modelCatalog {
+  position: relative;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
@@ -394,6 +414,8 @@
 }
 
 .modelEntry {
+  container: model-row / inline-size;
+  position: relative;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md);
   padding: 8px;
@@ -402,16 +424,147 @@
 
 .modelRow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
 }
 
+.modelName {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.modelNameLabel {
+  display: none;
+}
+
+@container model-row (max-width: 440px) {
+  .modelRow {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+  }
+
+  .modelRow .modelName {
+    display: none;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding: 2px 4px 0;
+  }
+
+  .modelRow[data-expanded] .modelName {
+    display: flex;
+  }
+
+  .modelNameLabel {
+    display: block;
+  }
+}
+
+.modelDragHandle:not(:disabled) {
+  cursor: grab;
+}
+
+.modelEntry[data-dragging] {
+  opacity: 0.5;
+}
+
+.modelEntry[data-drop-target] {
+  z-index: 1;
+}
+
+.modelDragPreview {
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+/* Each row owns half of the 8px gap so native drops reach the insertion line. */
+.modelEntry::before,
+.modelEntry::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  height: 4px;
+}
+
+.modelEntry::before {
+  top: -4px;
+}
+
+.modelEntry::after {
+  bottom: -4px;
+}
+
+.modelEntry[data-drop-target='before']::before,
+.modelEntry[data-drop-target='after']::after {
+  height: 12px;
+  background:
+    linear-gradient(
+      55deg,
+      transparent calc(50% - 1px),
+      var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ) 0 0 / 5px 7px no-repeat,
+    linear-gradient(
+      125deg,
+      transparent calc(50% - 1px),
+      var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ) 0 5px / 5px 7px no-repeat,
+    linear-gradient(
+      var(--dsw-alias-state-business-primary) 0 0
+    ) 4px 5px / calc(100% - 4px) 2px no-repeat;
+}
+
+.modelEntry[data-drop-target='before']::before {
+  top: -10px;
+}
+
+.modelEntry[data-drop-target='after']::after {
+  bottom: -10px;
+}
+
 .modelAdvanced {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding-top: 12px;
+}
+
+/* Retry-policy fields under the mode select: codes and count, then the folded backoff values. */
+.retryBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+/* Code checkboxes in as many even columns as fit. */
+.retryCodeChoices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 16px;
+}
+
+/* Custom error-code input beside its Add action. */
+.retryCodeAdd {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* One backoff column wide, so the count lines up with the delay fields below. */
+.retryCount {
+  width: max(112px, calc((100% - 16px) / 3));
+  max-width: 100%;
+}
+
+.retryBackoff {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  align-items: end;
+  gap: 12px 8px;
+  padding-top: 8px;
 }
 
 .modelField {
@@ -518,6 +671,11 @@
   min-width: 0;
 }
 
+.savedKeyInput .input::placeholder {
+  color: var(--dsw-alias-label-primary);
+  opacity: 1;
+}
+
 .keyInputFilled {
   padding-right: 40px;
 }
@@ -577,8 +735,10 @@
   border-radius: var(--dsw-radius-sm);
 }
 
-.candidate:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .candidate:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .candidateLabel {

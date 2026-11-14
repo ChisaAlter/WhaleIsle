@@ -90,7 +90,7 @@ function resolveCli() {
   const source = sourceHarnessStatus();
   const binJs = path.join(harnessRoot(), 'apps', 'cli', 'lib', 'bin.js');
   if (!nodeBin) {
-    return { ok: false, error: '未找到 Node.js。请安装 Node.js 22.19+ 或 24+。' };
+    return { ok: false, error: '未找到 Node.js。请安装 Node.js 24.9+。' };
   }
   if (!fs.existsSync(binJs) && !source.bin) {
     return { ok: false, error: '未找到 dsh CLI。请先运行 npm run setup:harness。' };

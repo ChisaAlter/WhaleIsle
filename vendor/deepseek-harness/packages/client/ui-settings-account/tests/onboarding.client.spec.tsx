@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 /** The credential onboarding step owns login until dismissal or completion. */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -28,6 +29,7 @@ it('claims onboarding while loading, offers API key fallback, and completes afte
     usePanelInfo: unused, useSessions: unused, useSessionStatus: unused,
     useSessionRetainInfo: unused, useResource: unused, useWorkspaces: unused,
     ...allowAllAccess,
+    useContextMenu: contextMenuHook(),
   }
   const props = {
     ...globals,
@@ -38,7 +40,7 @@ it('claims onboarding while loading, offers API key fallback, and completes afte
     useLauncherActions: <T,>(select: (actions: readonly []) => T) => select([]),
     start: vi.fn(async () => {}), cancel: vi.fn(async () => {}), signOut: vi.fn(async () => {}),
     contactUs: vi.fn(), t: makeTranslate(en),
-    refreshAccount: vi.fn(async () => {}), bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
+    refreshAccount: vi.fn(async () => {}),
     avatarFailed: vi.fn(),
   }
   const view = render(<AccountOnboarding {...props} />)

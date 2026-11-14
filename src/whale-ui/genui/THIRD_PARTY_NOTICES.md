@@ -44,9 +44,9 @@ Standalone HTML exports embed only the assets required by their component tree,
 plus the standalone runtime and KaTeX styles/fonts. Distribution must retain the
 engines' notices and licenses alongside the central Whale UI notices.
 
-This subtree absorbs dsh-genui 0.13.0 at
-`e64819af5968cf98e8bd28fd72a1cda977309214` (MIT), including the embedded
+This subtree absorbs `@changfenhuang/dsh-genui` 0.15.0 (npm,
+repository `omdsh-dev/dsh-genui`, MIT), including the embedded
 component renderer, schemas, JSON guard/repair, math/diagram/engine helpers and
 artifact formats. Its MIT text is retained in `LICENSE`. Host plugin entry,
-DOM scanning, session resolver, panel store and achievement runtime were not
-absorbed.
+DOM scanning, session resolver, panel store, sidechat surface and achievement
+runtime were not absorbed.

@@ -26,12 +26,12 @@ import {
   reportSkippedBundles,
   PluginPackages,
   PROFILE_PATCH_FILENAME,
-  PROFILE_TEMPLATES,
   resolveProfileDir,
   type ProfileContext,
   type Profile,
   type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
+import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -295,6 +295,17 @@ export interface RunProfileOptions {
 }
 
 /**
+ * Render a profile name as an RFC 9110 `User-Agent` product version: bytes outside `tchar`, and `%`, are percent-encoded,
+ * so spaces, `/`, and non-ASCII names stay readable and reversible.
+ * @param name - the booted profile name.
+ * @returns the encoded name.
+ */
+export function userAgentProfile(name: string): string {
+  // encodeURIComponent leaves only `(` and `)` outside tchar.
+  return encodeURIComponent(name).replace(/[()]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+/**
  * Boot one profile invocation end to end and leave process lifetime to the
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
@@ -302,6 +313,8 @@ export interface RunProfileOptions {
  * @throws after disposing startup resources; cleanup failures retain the original error.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  // Model providers see which profile sent a request.
+  process.env.DSH_USER_AGENT_SUFFIX = `dsh-profile/${userAgentProfile(options.profile)}`
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
   // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
   // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer

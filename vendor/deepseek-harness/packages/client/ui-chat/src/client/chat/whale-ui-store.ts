@@ -63,7 +63,8 @@ function merge(previous: Record<string, unknown> | null, next: Record<string, un
   const left = tabs(previous)
   const right = tabs(next)
   const title = previous.title ?? next.title
-  const base = { ...previous, ...(title === undefined ? {} : { title }) }
+  const computed = [...(Array.isArray(previous.computed) ? previous.computed : []), ...(Array.isArray(next.computed) ? next.computed : [])]
+  const base = { ...previous, ...(title === undefined ? {} : { title }), ...(computed.length === 0 ? {} : { computed }) }
   if (left === undefined || right === undefined) return { ...base, items: [...items(previous), ...items(next)] }
   const merged: (Record<string, unknown> & { items: unknown[] })[] = left.map(tab => ({ ...tab, items: [...tab.items as unknown[]] }))
   for (const tab of right) {

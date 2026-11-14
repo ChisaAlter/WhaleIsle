@@ -18,6 +18,7 @@ const { ensureDshImPlugin } = require('./dsh-im-desktop');
 const { ensureDesktopDshProject, projectAvailable } = require('./dsh-project-desktop');
 const { createProjectEnvironment } = require('./project-environment');
 const { createProactiveService } = require('./proactive/service');
+const { createGitHubApiSource } = require('./proactive/github-source');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
 const { ensureDesktopAcpAgents } = require('./dsh-acp-agents-desktop');
@@ -105,7 +106,6 @@ const {
   closeLauncherWindow,
   showMain,
   openHarnessSettings,
-  setRecoveryConfirm,
   setRenderHintsSource,
 } = require('./window');
 const { detectGpuTier } = require('./gpu-tier');
@@ -116,7 +116,10 @@ const { hideOnClose } = require('./close-behavior');
 const { TrayHideNotice } = require('./background-notice');
 const { systemNotificationsSupported } = require('./system-notifications');
 const { installMediaPermissions } = require('./media-permissions');
-const { attachRendererConsoleTail, RendererConsoleTail, writeCrashReport, pruneCrashReports, desktopErrorState } = require('./crash-report');
+const {
+  attachRendererConsoleTail, RendererConsoleTail, writeCrashReport, pruneCrashReports, desktopErrorState,
+  createMainFailureReporter,
+} = require('./crash-report');
 const { UpdateJournal } = require('./update-journal');
 const { UpdateOverlays } = require('./update-overlay');
 const { ShellConfirmDialog } = require('./update-dialog');
@@ -141,7 +144,24 @@ const dsh = new DshManager();
 // 2026-08-28-remote-epipe-hardening.md).
 const { installStdioGuard, installUncaughtBrokenPipeGuard } = require('./stdio-guard');
 installStdioGuard({ log: (message) => dsh.log(message, 'app') });
-installUncaughtBrokenPipeGuard({ log: (message) => dsh.log(message, 'app') });
+installUncaughtBrokenPipeGuard({
+  log: (message) => dsh.log(message, 'app'),
+  // An uncaught error is never answered with a native error box: it lands in the
+  // log and in a crash report file next to the renderer ones.
+  report: createMainFailureReporter({
+    directory: () => crashLogDir(),
+    isReady: () => app.isReady(),
+    describeApp: () => ({
+      name: 'Whale Isle',
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      electron: process.versions.electron || '',
+      node: process.versions.node || '',
+      locale: app.isReady() ? app.getLocale() : '',
+    }),
+  }),
+});
 // Product remote = full ChisaCode daemon + offer v2 (not HTTP RemoteGateway).
 const remote = new DshdRemote({
   getConfig: loadConfig,
@@ -329,10 +349,6 @@ async function confirmDialog(parent, options) {
   }
   return dialog.showMessageBox(parent || undefined, options);
 }
-
-// Renderer crash/unresponsive recovery prompts go through the same styled
-// overlay when the crashed window is still on screen.
-setRecoveryConfirm(confirmDialog);
 
 const trayHideNotice = new TrayHideNotice({
   markerPath: require('node:path').join(app.getPath('userData'), 'tray-hide-acknowledged'),
@@ -548,7 +564,7 @@ async function startDesktopFromLauncher(options = {}) {
     const stickyAfter = typeof harness.shouldSkipUserPlugins === 'function'
       ? harness.shouldSkipUserPlugins()
       : false;
-    writeLastDesktopStart(app.getPath('userData'), { ok: true });
+    writeLastDesktopStart(app.getPath('userData'), { ok: true, skipped: harness.skippedBuiltins });
     sendToLauncher('shell:desktop-ready', harness.snapshot());
     if (shouldCloseLauncherAfterDesktopStart({
       desktopReady: true,
@@ -649,7 +665,6 @@ function runColdStartGate(options = {}) {
     startDesktop: launcherPackage
       ? () => runtimeInstall.startExternalDesktop()
       : () => startDesktopFromLauncher(options),
-    drainParkedUpdateCheck: () => drainParkedUpdateCheck.drain({ generation: getLauncherWindow() }),
     log: (line, level) => dsh.log(line, level),
   });
 }
@@ -834,7 +849,13 @@ async function confirmTaskStop(operation, inspection) {
 }
 
 const projectEnvironment = createProjectEnvironment({ getGithubToken: () => loadConfig().githubToken });
-const proactiveService = createProactiveService({ userDataPath: app.getPath('userData') });
+const proactiveService = createProactiveService({
+  userDataPath: app.getPath('userData'),
+  githubSource: createGitHubApiSource({
+    repository: process.env.WHALEISLE_GITHUB_REPOSITORY || 'ChisaAlter/WhaleIsle',
+    tokenProvider: () => loadConfig().githubToken,
+  }),
+});
 const taskProtection = createTaskProtection({
   getBaseUrl: () => (typeof dsh.baseUrl === 'string' ? dsh.baseUrl : ''),
   hostRunning: () => isDesktopKernelRunning() && dsh.webReady === true && Boolean(dsh.baseUrl),
@@ -971,7 +992,8 @@ function restartWithCleanup(delegatedToken, { preConfirmed = false, ...options }
       preConfirmed,
       commit: async () => {
         await cleanupDesktopResources();
-        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options), () => kernelLogTail(dsh));
+        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options),
+          () => kernelLogTail(dsh), () => harness.skippedBuiltins);
       },
     }).then((result) => (result.proceeded ? undefined : result))
       .finally(releaseAcquired);

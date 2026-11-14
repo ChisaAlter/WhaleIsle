@@ -232,7 +232,7 @@ describe('published visual replies', () => {
       <SessionProvider session={reference}>
         {renderSlot('conversation.chat.node', {
           node, openFile: vi.fn(), inspectCall: undefined, forkAt: vi.fn(),
-          loadImage: vi.fn(), fileMentions: () => undefined,
+          loadImage: vi.fn(),
         }, { entryKey: 'visual-reply', hookContext })}
       </SessionProvider>)
     const view = runtime.renderRoot()

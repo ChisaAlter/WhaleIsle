@@ -9,6 +9,7 @@ import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/cli
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import { apply as applyMenus, inject as injectMenus } from '../../ui-context-menu/src/client/index.ts'
 import { apply as applySidebar, inject as sidebarInject } from '../../ui-sidebar-right/src/client/index.ts'
 import { readSidebarLayout, sidebarPersistence } from '../../ui-sidebar-right/src/client/persistence.ts'
 import type { createSidebarRightStore, SurfaceState } from '../../ui-sidebar-right/src/client/stores.ts'
@@ -73,6 +74,7 @@ async function mountFiles(options: { missingCwd?: boolean; workingDirectory?: st
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore<readonly ShortcutCatalogEntry[]>([]) } as never)
+  await runtime.mount({ inject: [...injectMenus], apply: applyMenus })
   await runtime.declare({
     rightbar: { kind: 'single', scope: 'root' },
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },

@@ -86,6 +86,12 @@ docs/qa/results/**/ci-installer/*.exe
 docs/qa/results/**/ci-installer/*.exe.blockmap
 docs/qa/results/**/ci-installer/*.dmg
 docs/qa/results/**/ci-installer/artifact/
+docs/qa/results/**/*.png
+docs/qa/results/**/*.jpg
+docs/qa/results/**/*.jpeg
+docs/qa/results/**/*.gif
+docs/qa/results/**/*.webp
+docs/qa/results/**/*.bmp
 .zcode/
 plugins/
 .final-gates/

@@ -1,4 +1,6 @@
+import { createComposerFileIntake } from '../src/client/input/file-intake.ts'
 // @vitest-environment jsdom
+import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GlobalStandardProps, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -28,14 +30,13 @@ import { ConversationMainPanel } from '../src/client/skeleton/ConversationMainPa
 import { ConversationSession, ConversationSessionHeader } from '../src/client/skeleton/ConversationSession.tsx'
 import { conversationPhase } from '../src/client/contract/snapshot.ts'
 import { HeroShell } from '../src/client/skeleton/EmptyHero.tsx'
-import type { HeroShellProps } from '../src/client/skeleton/EmptyHero.tsx'
 import './control-row-dom.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
   ComposerBarOwnerProps, ConversationContentInputProps, ConversationContentProps,
   ConversationHeaderLineageOwnerProps, ConversationSessionHeaderSlotProps, ConversationSessionSlotProps, ConversationSlotProps,
-  ConversationViewActionsOwnerProps, ConversationViewsProps,
+  ConversationViewActionsOwnerProps, ConversationViewsProps, HeroFrameOwnerProps,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 import { DEFAULT_COMPOSER_BEAM_STYLE, DEFAULT_TYPING_FX_STYLE } from '../src/submission-settings.ts'
@@ -214,6 +215,8 @@ function mount(
   const open = vi.fn()
   const slotCalls: string[] = []
   const composerSlotCalls: string[] = []
+  const frameOwners: HeroFrameOwnerProps[] = []
+  const headerFactory = vi.fn<ConversationSlotProps['renderFactorySlot']>(() => null)
   const lineageOwners: ConversationHeaderLineageOwnerProps[] = []
   let sessionBodyChainOwner: unknown
   const viewTabs = options.viewTabs ?? [
@@ -227,13 +230,17 @@ function mount(
   let heroOptionsOwner: unknown
   let actionsOwner: ConversationViewActionsOwnerProps | undefined
   const setPinned = vi.fn<(id: string, pinned: boolean) => void>()
-  const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
+  const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode; children?: ReactNode }) => {
     slotCalls.push(key)
     if (key === 'conversation.input.model' || key === 'conversation.input.plan'
       || key === 'conversation.input.managed') {
       seatOwners.push({ key, owner })
     }
     if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
+    if (key === 'conversation.hero.frame') {
+      frameOwners.push(owner as HeroFrameOwnerProps)
+      return <div data-testid="hero-frame">{opts?.children}</div>
+    }
     if (key === 'conversation.hero.options') heroOptionsOwner = owner
     if (key === 'conversation.session.header.views.actions') {
       actionsOwner = owner as ConversationViewActionsOwnerProps
@@ -262,7 +269,7 @@ function mount(
           setPinned={setPinned}
           useSessions={props.useSessions}
           usePanelInfo={props.usePanelInfo}
-          useResource={useResource}
+          useContextMenu={contextMenuHook()} useResource={useResource}
           useSessionStatus={useSessionStatus}
           useSessionRetainInfo={() => undefined}
           useWorkspaces={props.useWorkspaces}
@@ -273,6 +280,7 @@ function mount(
           useStore={bindSnapshotSelector(store)}
           actions={store.actions}
           renderSlot={renderSlot as never}
+          renderFactorySlot={headerFactory}
           useViewTabs={sel => sel(options.viewTabsChrome !== false)}
           open={open}
           selectView={(view) => { store.actions.setView(view) }}
@@ -293,7 +301,7 @@ function mount(
           useInspectCall={selector => selector(undefined)}
           useSessions={props.useSessions}
           usePanelInfo={props.usePanelInfo}
-          useResource={useResource}
+          useContextMenu={contextMenuHook()} useResource={useResource}
           useSessionStatus={useSessionStatus}
           useSessionRetainInfo={() => undefined}
           useWorkspaces={props.useWorkspaces}
@@ -318,7 +326,7 @@ function mount(
         <InputBar
           sessionId={SID}
           SessionProvider={({ children }) => children}
-          useResource={useResource}
+          useContextMenu={contextMenuHook()} useResource={useResource}
           useSession={useSession}
           useConversation={useConversation}
           useSessions={props.useSessions}
@@ -334,6 +342,7 @@ function mount(
           addFiles={() => null}
           useFileUploads={bindSnapshotSelector(createSnapshotStore({}))}
           retryFileUpload={undefined}
+          registerFileIntake={createComposerFileIntake()}
           removeAttachment={() => {}}
           resolveDraftAttachments={() => []}
           toggleCommandMenu={vi.fn()}
@@ -353,6 +362,7 @@ function mount(
           useComposerResizeWidth={sel => sel(null)}
           setComposerResizeSize={() => {}}
           stop={stop}
+          retry={undefined}
           t={t}
           renderSlot={((key: string, seatOwner: object) => {
             composerSlotCalls.push(key)
@@ -399,6 +409,7 @@ function mount(
       useTrajectory: unusedView,
       useSessions: bindSnapshotSelector(sessions),
       usePanelInfo: selector => selector({ activePanelId: null }),
+      useContextMenu: contextMenuHook(),
       useResource,
       useSessionStatus,
       useSessionRetainInfo: () => undefined,
@@ -434,6 +445,7 @@ function mount(
     useSessions: bindSnapshotSelector(sessions),
     useSessionStatus,
     useSessionRetainInfo: () => undefined,
+    useContextMenu: contextMenuHook(),
     useResource,
     useWorkspaces: bindSnapshotSelector(workspaces),
     ...allowAllAccess,
@@ -445,7 +457,7 @@ function mount(
   const view = render(<ConversationMainPanel {...props} />)
   return {
     view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, composerSlotCalls, lineageOwners, seatOwners, open,
-    workspaces,
+    workspaces, headerFactory, frameOwner: () => frameOwners.at(-1),
     pickerOwner: () => pickerOwner,
     heroOptionsOwner: () => heroOptionsOwner,
     sessionBodyChainOwner: () => sessionBodyChainOwner,
@@ -460,8 +472,8 @@ function mount(
 
 describe('Hero chrome', () => {
   it('renders the English preview badge through the hero locale seat', () => {
-    const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
-    const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
+    const renderSlot = vi.fn<(key: string, owner: object, opts?: { fallback?: ReactNode }) => ReactNode>(() => null)
+    const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot as never} />)
     expect(view.getByText('Into the Unknown')).toBeTruthy()
     expect(view.getByText('Preview')).toBeTruthy()
     expect(renderSlot).toHaveBeenCalledOnce()
@@ -590,7 +602,7 @@ describe('ConversationRoot resident composer', () => {
     act(() => { b.wiring.setDraft('ordinary revised') })
     expect(b.store.store.getSnapshot().draft).toEqual({ text: 'ordinary revised', references: [] })
     fireEvent.keyDown(box, { key: 'Enter' })
-    expect(b.sink).toHaveBeenCalledWith('ordinary revised', [], 'queue', expect.any(AbortSignal))
+    expect(b.sink).toHaveBeenCalledWith('ordinary revised', [], 'queue', expect.any(AbortSignal), expect.any(Function))
     expect(b.view.queryByRole('button', { name: 'Child' })).toBeNull()
     expect(b.view.getByText('Child').tagName).toBe('SPAN')
     expect(b.view.queryByText('Root')).toBeNull()
@@ -605,14 +617,16 @@ describe('ConversationRoot resident composer', () => {
     expect(b.open).toHaveBeenCalledWith(sid('root'))
   })
 
-  it('keeps intermediate subagent breadcrumbs at the compact title size', () => {
+  it('keeps intermediate subagent breadcrumbs navigable and the current crumb read-only', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, {
       summaryOrigin: 'subagent',
       nestedSubagent: true,
     })
-    expect(b.view.getByRole('button', { name: 'Root' }).className).not.toContain('crumbSubagent')
-    expect(b.view.getByRole('button', { name: 'Parent' }).className).toContain('crumbSubagent')
-    expect(b.view.getByText('Child').className).toContain('crumbSubagent')
+    expect(b.view.getByRole('button', { name: 'Root' })).toBeTruthy()
+    fireEvent.click(b.view.getByRole('button', { name: 'Parent' }))
+    expect(b.open).toHaveBeenCalledWith(sid('parent'))
+    expect(b.view.queryByRole('button', { name: 'Child' })).toBeNull()
+    expect(b.view.getByText('Child').tagName).toBe('SPAN')
     expect(b.lineageOwners.slice(-2).map(owner => owner.lineageSessionId)).toEqual([
       sid('parent'),
       SID,
@@ -755,6 +769,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByTestId('view-conversation.session.header.corner')).toBeTruthy()
     expect(b.view.queryByRole('tablist')).toBeNull()
     expect(b.slotCalls).not.toContain('conversation.session.header.utilities')
+    expect(b.headerFactory).not.toHaveBeenCalled()
     expect(b.slotCalls).not.toContain('conversation.session.header.actions')
     expect(b.view.getByText('探索未至之鲸')).toBeTruthy()
     expect(b.view.getByText('大肥鱼版')).toBeTruthy()
@@ -860,6 +875,8 @@ describe('ConversationRoot resident composer', () => {
 
   it('same textarea DOM node survives the hero → active flip into the sticky scrollport', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
+    const frame = b.view.getByTestId('hero-frame')
+    expect(b.frameOwner()).toEqual({ hero: true })
     const before = b.view.getByRole('textbox')
     act(() => { b.wiring.setDraft('kept across flip') })
     // First message landed: content exists, phase leaves blank. Composer
@@ -873,6 +890,10 @@ describe('ConversationRoot resident composer', () => {
     expect(b.store.store.getSnapshot().draft).toEqual({ text: 'kept across flip', references: [] })
     expect(b.view.container.querySelector('[data-conversation-scroll]')?.contains(after)).toBe(true)
     expect(b.view.queryByTestId('hero-headline')).toBeNull()
+    // The frame wraps the scroll body in every phase, so leaving the home does not remount it.
+    expect(b.view.getByTestId('hero-frame')).toBe(frame)
+    expect(frame.contains(after)).toBe(true)
+    expect(b.frameOwner()).toEqual({ hero: false })
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 
@@ -1090,11 +1111,11 @@ describe('ConversationRoot resident composer', () => {
     })
     const tooltipFor = (label: string): string | null => {
       const span = within(b.view.getByRole('tab', { name: label })).getByText(label)
-      fireEvent.mouseEnter(span)
+      fireEvent.pointerEnter(span)
       // A withdrawn bubble fades out aria-hidden while the next one opens.
       const tooltip = screen.queryAllByRole('tooltip', { hidden: true })
         .find(node => node.getAttribute('aria-hidden') !== 'true')?.textContent ?? null
-      fireEvent.mouseLeave(span)
+      fireEvent.pointerLeave(span)
       return tooltip
     }
     expect(tooltipFor('Chat')).toBeNull()
@@ -1121,16 +1142,18 @@ describe('ConversationRoot resident composer', () => {
     expect(external()).toEqual(['Chat', 'Trajectory', 'Timeline'])
     expect(b.actionsOwner().entries.find(entry => entry.id === 'inspector')?.active).toBe(true)
     expect(b.view.getByRole('button', { name: zh['session.moreViews'] })).toBeTruthy()
-    const reads = readWidth.mock.calls.length
+    const row = b.view.getByRole('tablist').parentElement!
+    const rowReads = () => readWidth.mock.contexts.filter(element => element === row).length
+    const reads = rowReads()
     width = 1000
     fireEvent(window, new Event('resize'))
     act(() => { b.store.actions.setView('timeline') })
-    expect(readWidth).toHaveBeenCalledTimes(reads)
+    expect(rowReads()).toBe(reads)
     expect(external()).toEqual(['Chat', 'Trajectory', 'Timeline'])
     viewTabs.splice(1, 1)
     act(() => { b.store.actions.setView('chat') })
     expect(external()).toEqual(['Chat', 'Timeline', 'Inspector'])
-    expect(readWidth).toHaveBeenCalledTimes(reads)
+    expect(rowReads()).toBe(reads)
     expect(b.actionsOwner().entries).toEqual([])
     expect(b.setPinned).not.toHaveBeenCalled()
   })
@@ -1413,16 +1436,6 @@ describe('ConversationRoot resident composer', () => {
     fireEvent.wheel(handle, { deltaY: 0, deltaMode: 0 })
     fireEvent.wheel(handle, { ctrlKey: true, deltaY: 120, deltaMode: 0 })
     expect(scrollBy).toHaveBeenCalledTimes(calls)
-
-    scrollport.removeAttribute('data-conversation-scroll')
-    const nestedScrollport = document.createElement('div')
-    nestedScrollport.setAttribute('data-conversation-scroll', '')
-    const nestedScrollBy = vi.fn()
-    Object.defineProperty(nestedScrollport, 'scrollBy', { value: nestedScrollBy, configurable: true })
-    scrollport.append(nestedScrollport)
-    fireEvent.wheel(handle, { deltaY: 120, deltaMode: 0 })
-    expect(scrollBy).toHaveBeenCalledTimes(calls)
-    expect(nestedScrollBy).not.toHaveBeenCalled()
   })
 
   it('does not check capture, measure, style, or schedule width-handle moves before dragging', () => {

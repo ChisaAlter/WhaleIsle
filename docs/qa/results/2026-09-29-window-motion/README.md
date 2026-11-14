@@ -16,13 +16,13 @@
 
 | 窗口 | 最大化 | 还原 | 最小化 | 从最小化恢复 |
 | --- | --- | --- | --- | --- |
-| 主窗口 / boot | [逐帧图](main-maximize.png) | [逐帧图](main-unmaximize.png) | [逐帧图](main-minimize.png) | [逐帧图](main-restore.png) |
-| 启动器 | [逐帧图](launcher-maximize.png) | [逐帧图](launcher-unmaximize.png) | [逐帧图](launcher-minimize.png) | [逐帧图](launcher-restore.png) |
+| 主窗口 / boot | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/main-maximize.png) | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/main-unmaximize.png) | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/main-minimize.png) | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/main-restore.png) |
+| 启动器 | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/launcher-maximize.png) | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/launcher-unmaximize.png) | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/launcher-minimize.png) | [逐帧图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/launcher-restore.png) |
 
 八条路径均观察到系统缩放/位移中间帧。IPC 自动检查和可见 Win32 过渡验证互补，不把单纯状态通过等同于动画播放。
 
 ## 真实应用重启
 
-源码 prestart 首次构建在凭据记录阶段缺少 `apps/cli/lib/bin.js`；单独构建该 CLI 产物后重新运行 prestart，官方构建记录 374 项产物并输出 ready。已停止本仓库旧应用/守护进程并从源码重启，Harness 成功加载。通过真实 Harness 的 `window.shell` 执行最大化与还原，分别读到原生 `maximized:true/false`；`nativeFrame:true`、body 和 AppFrame 外缘半径 `0px`、自绘缘线 `display:none`，深色渐变背景铺满客户区，见 [Harness 截图](harness.png)。未发送模型请求、改会话内容或改用户偏好。
+源码 prestart 首次构建在凭据记录阶段缺少 `apps/cli/lib/bin.js`；单独构建该 CLI 产物后重新运行 prestart，官方构建记录 374 项产物并输出 ready。已停止本仓库旧应用/守护进程并从源码重启，Harness 成功加载。通过真实 Harness 的 `window.shell` 执行最大化与还原，分别读到原生 `maximized:true/false`；`nativeFrame:true`、body 和 AppFrame 外缘半径 `0px`、自绘缘线 `display:none`，深色渐变背景铺满客户区，见 [Harness 截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-09-29-window-motion/harness.png)。未发送模型请求、改会话内容或改用户偏好。
 
 未在本轮认证：多显示器/DPI 切换、系统关闭动画、完整明暗壁纸排列组合；这些继续列在 `TC-WS-008` 发布验收中。非 Windows 保留已有实现，本轮未做该平台实机验收。

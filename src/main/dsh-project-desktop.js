@@ -70,16 +70,16 @@ function copyRuntime(source, target) {
   }
 }
 
-// Project is off by default and enabled from Settings › Interface. Hidden
+// Project is on by default and can be disabled from Settings › Interface. Hidden
 // means not mounted: its data on disk is kept. WHALE_PROJECT=1 mounts it for
 // development regardless of the setting.
 function projectAvailable(env = process.env, config = {}) {
-  return env.WHALE_PROJECT === '1' || config?.projectEnabled === true;
+  return env.WHALE_PROJECT === '1' || config?.projectEnabled !== false;
 }
 
 /**
  * Mount Project without changing the user patch or the configured Team service.
- * Project supplies Team only when absent and owns the single Team UI row.
+ * Project enables the native Team on its own root; ordinary conversations retain their selection.
  */
 async function ensureDesktopDshProject(options = {}) {
   const sourceDir = options.sourceDir || path.join(require('./paths').projectRoot(), 'vendor', DSH_PROJECT_PACKAGE);
@@ -120,13 +120,8 @@ async function ensureDesktopDshProject(options = {}) {
     '# Desktop-owned optional Project overlay.',
     '# The user cordis.patch.yml is never changed by this overlay.',
     '- insert:',
-    '    - id: dsh-project-team-ui',
-    '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
-    '- id: ui-agent-team',
-    '  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
-    '  disabled: true',
     '',
   ].join('\n');
   fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');

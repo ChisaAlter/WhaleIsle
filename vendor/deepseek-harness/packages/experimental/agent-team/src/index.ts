@@ -42,7 +42,7 @@ export { TeamError } from './error.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    agentTeams: TeamService
+    projectTeams: TeamService
   }
 }
 
@@ -74,15 +74,15 @@ export class TeamService extends Service {
   private readonly config: Required<Config>
 
   private readonly managedSends = new Map<TeamMessageId, Promise<SendTeamMessageResult>>()
-  private readonly management: TeamManagement
+  private management!: TeamManagement
   private readonly activity: TeamActivity
   private readonly lifecycle: TeamRuntimeLifecycle
-  private readonly journal: TeamJournal
-  private readonly roster: TeamRoster
-  private readonly tasks: TeamTaskBoard
+  private journal!: TeamJournal
+  private roster!: TeamRoster
+  private tasks!: TeamTaskBoard
 
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'agentTeams')
+    super(ctx, 'projectTeams')
     this.config = {
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
@@ -95,26 +95,22 @@ export class TeamService extends Service {
 
     this.activity = new TeamActivity()
     this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs)
-    this.journal = new TeamJournal(ctx, (root) => { this.activity.notify(TeamId(root.id)) })
+  }
+
+  protected async [Service.init](): Promise<void> {
+    const ctx = this.ctx
+    const teamProjectionHandle = await ctx.sessionProjections.register(teamProjectionDefinition)
+    this.journal = new TeamJournal(ctx, teamProjectionHandle, (root) => { this.activity.notify(TeamId(root.id)) })
     this.management = new TeamManagement(this.journal, this.config.maxMembers, this.config.maxTasks)
     this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers, this.management)
     this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks, this.management)
+    ctx.effect(() => () => this.disposeRuntime(), 'projectTeams.runtimeLifecycle()')
 
     ctx.on('agent/created', ({ agent }) => { this.scheduleRecovery(agent) })
     ctx.on('agent/status', ({ agent }) => {
       const membership = this.roster.tryMembership(agent)
       if (membership !== undefined) this.activity.notify(membership.id)
     })
-    ctx.effect(() => {
-      const disposeProjection = ctx.root.sessionProjections.register(teamProjectionDefinition)
-      return async () => {
-        try {
-          await this.disposeRuntime()
-        } finally {
-          disposeProjection()
-        }
-      }
-    }, 'agentTeams.runtimeLifecycle()')
     for (const agent of ctx.agents.list()) this.scheduleRecovery(agent)
   }
 

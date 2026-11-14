@@ -96,7 +96,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
   const plugin = registration.factory(spec => {
     if (spec === 'react') return React;
     if (spec === 'react-dom') return clientRequire('react-dom');
-    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TEAM_SIDEBAR_KIND: 'agent-team', TeamEmbedded: props => { embeds.push(props); return h('div', { 'data-team-embedded': '', 'data-surface-active': String(props.surfaceActive) }, 'Team body'); } };
+    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TEAM_SIDEBAR_KIND: 'project-team', TeamEmbedded: props => { embeds.push(props); return h('div', { 'data-team-embedded': '', 'data-surface-active': String(props.surfaceActive) }, 'Team body'); } };
     if (spec === '@deepseek-ai/dsh-client-ui-subagent') return { subagentChatAddress: address => `subagentchat:${address.parentSessionId}/${address.childSessionId}/${address.mode}` };
     if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
     if (spec === '@deepseek-ai/dsh-client-store') return {
@@ -175,7 +175,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
     } }) } },
     settingsNavigation: { open: id => navigation.push(['settings', id]) },
     sessions: { retainInfo: sessionId => ({ getSnapshot: () => ({ retainedBy: { mainView: sessionId === project.coordinatorSessionId ? 1 : 0 } }) }), scope: sessionId => ({ sessionId, get: name => { assert.equal(name, 'conversation'); return { send: async text => sent.push({ sessionId, text }) }; } }), list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } }, ...Object.fromEntries(Object.entries(runtimeSessions).map(([id, session]) => [id, { retainedBy: { mainView: id === project.coordinatorSessionId ? 1 : 0 }, ...session }])) },
-      projectionsBySession: { [project.coordinatorSessionId]: { values: { agentTeam: team, ...(leadTodos !== undefined ? { todos: leadTodos } : {}) } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
+      projectionsBySession: { [project.coordinatorSessionId]: { values: { projectTeam: team, ...(leadTodos !== undefined ? { todos: leadTodos } : {}) } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
     connection: { rpc: { call: async (prefix, method, input) => {
       assert.equal(prefix, '/dsh-project'); requests.push({ method, input });
       // The real RPC boundary returns independent JSON snapshots, never mutable fixture objects.
@@ -223,6 +223,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
       } : {}) } };
       if (method === 'store/write') { stored[input.path] = input.path === 'notes.md' ? `${generatedNotes}\n${notesMarker}\n${input.text}` : input.text; return { ok: true, value: { written: true, ...(input.path === 'notes.md' ? { generatedText: generatedNotes } : {}) } }; }
       if (method === 'open') return { ok: true, value: { canonicalPath: `C:/workspace/real/${input.path}`, root: 'C:/workspace/real' } };
+      if (method === 'requests/changes') return { ok: true, value: { isGit: false, files: [], workspaces: [] } };
       if (method === 'diff') return { ok: true, value: { worker: { cwd: 'C:/workspace/real', mode: 'existing' }, snapshot: { isGit: false, diff: '', dirty: null } } };
       if (['stop', 'pause'].includes(method)) return { ok: true, value: { state: 'stopped' } };
       if (['resume', 'archive', 'restore'].includes(method)) return { ok: true, value: { project } };
@@ -264,7 +265,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
   }
   function Slots() {
     const sessionId = useSyncExternalStore(mounted.subscribe, mounted.getSnapshot, mounted.getSnapshot);
-    return h(React.Fragment, null, entries.filter(entry => entry.active && entry.options.name !== 'sidebar.nav.tab'
+    return h('div', { 'data-dsh-chat': '', style: { width: '1200px', height: '800px' } }, entries.filter(entry => entry.active && entry.options.name !== 'sidebar.nav.tab'
       && (approvalActive ? !['conversation.input.right', 'conversation.input.dock'].includes(entry.options.name) : entry.options.name !== 'conversation.approval.actions'))
       .map(entry => h(Slot, { key: `${entry.options.name}:${entry.options.id ?? entry.options.key}`, entry, sessionId })),
       navigateSessions && sessionId === project.coordinatorSessionId ? h('textarea', { 'data-lead-composer': true, defaultValue: 'Unsent coordinator draft' }) : null);
@@ -272,35 +273,28 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
   const setSidebarExpanded = async expanded => { await act(async () => { sidebarExpanded = expanded; }); };
   const render = () => root.render(h(Slots));
   const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
-  const findButton = label => [...dom.window.document.querySelectorAll('button')].find(element => isVisible(element) && (element.textContent === label || element.getAttribute('aria-label') === label));
-  const panel = id => dom.window.document.querySelector(`[data-project-panel="${id}"]:not([hidden])`);
+  const findButton = label => { const buttons = [...dom.window.document.querySelectorAll('[role=dialog] button'), ...dom.window.document.querySelectorAll('button')]; return buttons.find(element => isVisible(element) && (element.textContent === label || element.getAttribute('aria-label') === label || label === 'real' && element.title === project.canonicalWorkingDirectory)); };
+  const panel = id => dom.window.document.querySelector('.dsh-project-task-rail');
   const openPanel = async id => {
     if (panel(id)) return;
-    const target = dom.window.document.querySelector(`[data-project-header-panel="${id}"] button`);
+    const target = dom.window.document.querySelector('.dsh-project-rail-toggle');
     assert.ok(target && isVisible(target), 'The Project conversation-header entry must be reachable');
     await act(async () => { target.focus(); target.click(); await new Promise(resolve => setImmediate(resolve)); });
     assert.ok(panel(id), `The ${id} header panel opens`);
   };
   const openObserver = () => openPanel('requests');
   let focusedRequestId;
-  const requestElement = id => [...dom.window.document.querySelectorAll('[data-project-request-id="' + id + '"]')].find(isVisible) ?? null;
+  const requestElement = id => [...dom.window.document.querySelectorAll('[data-project-request="' + id + '"]')].find(isVisible) ?? null;
   const click = async target => { assert.ok(target && isVisible(target), 'The selected public control is visible'); await act(async () => { target.focus(); target.click(); await new Promise(resolve => setImmediate(resolve)); }); };
   const openRequest = async id => {
     await openObserver();
+    if (!requestElement(id) && cards.find(card => card.id === id)?.status === 'completed') { const select = dom.window.document.querySelector('.dsh-project-rail-tools select'); await act(async () => { select.value = 'completed'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await new Promise(resolve => setImmediate(resolve)); }); }
     const card = requestElement(id); assert.ok(card && isVisible(card), 'The selected Request is visible in this Project');
     focusedRequestId = id;
-    if (card.dataset.projectRequestMode === 'strip') await click(card.querySelector('.dsh-project-task-strip-open'));
-    assert.equal(card.dataset.projectRequestMode, 'card');
+    if (card.querySelector('.dsh-project-rail-card-title')?.getAttribute('aria-expanded') !== 'true') await click(card.querySelector('.dsh-project-rail-card-title'));
     return card;
   };
-  const selectRequestTab = async (tab, id = focusedRequestId) => {
-    const card = requestElement(id); assert.ok(card && isVisible(card), 'The Request being inspected is visible');
-    const target = card.querySelector('[id="' + id + '-tab-' + tab + '"]');
-    assert.ok(target && isVisible(target), `The ${tab} section is reachable on its Request`);
-    await click(target);
-    assert.ok(isVisible(card.querySelector('[data-project-request-tab="' + tab + '"]')), `The ${tab} section is shown`);
-    return card;
-  };
+  const selectRequestTab = async (tab, id = focusedRequestId) => openRequest(id);
   const revealActionTab = async label => {
     if (findButton(label) || !focusedRequestId || !requestElement(focusedRequestId)) return;
     const card = requestElement(focusedRequestId);
@@ -436,31 +430,6 @@ test('a folder the desktop refuses disables the New Session option and drops the
   } finally { await b.dispose(); }
 });
 
-test('background list failures surface as a notice and clear when the list recovers', async () => {
-  let failure = 'Project Host stopped responding';
-  const b = bench({ language: 'zh', rpcOverride: (method, _input, project) => method === 'list' ? (failure ? { ok: false, error: { code: 'project/unavailable', message: failure } } : { ok: true, value: { projects: [project], available: true } }) : undefined });
-  try {
-    await b.flush(); await b.mount(); await b.flush();
-    const alerts = () => [...b.document.querySelectorAll('[role=alert]')].map(alert => alert.textContent);
-    assert.deepEqual(alerts(), [`Project 出错：${failure}`]);
-    await b.poll(); assert.equal(alerts().length, 1, 'A repeated failure is not stacked');
-    failure = ''; await b.poll(); assert.deepEqual(alerts(), [], 'A recovered list clears the notice');
-    failure = 'Project catalog is unreadable'; await b.poll(); assert.deepEqual(alerts(), [`Project 出错：${failure}`]);
-  } finally { await b.dispose(); }
-});
-
-test('a failed New Session Project start stays on the blank Session with a visible reason', async () => {
-  const blank = 'blank-session';
-  const b = bench({ rejectCreation: true, runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' } } });
-  try {
-    await b.flush(); await b.mount(); await b.mountSession(blank);
-    await act(async () => { b.document.querySelector('.dsh-project-hero-option').click(); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
-    assert.match(b.document.body.textContent, /Creation failed/);
-    assert.deepEqual(b.navigation, []);
-    assert.equal(b.document.querySelector('.dsh-project-hero-option').disabled, false);
-  } finally { await b.dispose(); }
-});
-
 test('a rejected creation preserves the previous conversation and publishes no phantom Project', async () => {
   const b = bench({ rejectCreation: true });
   try { await b.flush(); await assert.rejects(b.action.adopt('C:/workspace/alias'), /Creation failed/); assert.deepEqual(b.navigation, []);
@@ -501,6 +470,161 @@ const taskCard = (id, title, status = 'running') => ({ id, projectId: 'project-o
   ...(status === 'completed' ? { delivery: { id: `${id}-delivery`, outcome: 'completed', summary: `${title} was delivered`,
     summaryPreview: `${title} was delivered`, evidence: ['Verified output'], remainingIssues: [], at: 200, applicable: true, reportRefs: [], terminalRefs: [], artifacts: [] } } : {}) });
 
+test('the task rail starts folded, leaves native Team scope alone and preserves expansion and reading position across folding', async () => {
+  const card = taskCard('goal', 'An independent goal'), b = bench({ cards: [card] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount();
+    assert.equal(Boolean(b.panel()), false); assert.equal(b.scopes.size, 0, 'Project does not filter the native task board');
+    await b.openRequest(card.id);
+    const list = b.document.querySelector('.dsh-project-rail-body'); list.scrollTop = 180;
+    await act(async () => { list.dispatchEvent(new b.document.defaultView.Event('scroll', { bubbles: true })); });
+    await b.click(b.document.querySelector('.dsh-project-rail-toggle')); assert.equal(Boolean(b.panel()), false);
+    await b.openObserver();
+    assert.equal(b.document.querySelector('.dsh-project-rail-body').scrollTop, 180);
+    assert.equal(b.requestElement(card.id).querySelector('button').getAttribute('aria-expanded'), 'true');
+    const title = b.requestElement(card.id).querySelector('button');
+    await act(async () => { title.dispatchEvent(new b.document.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    assert.equal(Boolean(b.panel()), false); assert.equal(b.document.activeElement.className, 'dsh-project-rail-toggle');
+  } finally { await b.dispose(); }
+});
+
+test('an open rail refreshes a delivered card in place until explicit reopening and paginates real history', async () => {
+  const cards = Array.from({ length: 12 }, (_, i) => taskCard('goal-' + i, 'Goal ' + i));
+  const b = bench({ cards });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(cards[0].id);
+    assert.equal(b.document.querySelectorAll('[data-project-request]').length, 10);
+    Object.assign(cards[0], taskCard(cards[0].id, cards[0].title, 'completed'), { updatedAt: 300 });
+    b.project.updatedAt = 300; await b.poll(); await b.flush();
+    assert.ok(b.requestElement(cards[0].id), 'completion cannot move the card being read');
+    assert.match(b.requestElement(cards[0].id).textContent, /was delivered/);
+    await b.click(b.document.querySelector('.dsh-project-rail-toggle')); await b.openObserver();
+    assert.equal(Boolean(b.requestElement(cards[0].id)), false, 'reopening applies the current grouping');
+    await b.press('more'); assert.equal(b.document.querySelectorAll('[data-project-request]').length, 11);
+    const select = b.document.querySelector('select');
+    await act(async () => { select.value = 'completed'; select.dispatchEvent(new b.document.defaultView.Event('change', { bubbles: true })); });
+    assert.equal(b.document.querySelectorAll('[data-project-request]').length, 1); assert.ok(b.requestElement(cards[0].id));
+  } finally { await b.dispose(); }
+});
+
+test('the floating rail measures the actual chat column and leaves the narrow composer unobstructed', async () => {
+  const b = bench();
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const chat = b.document.querySelector('[data-dsh-chat]'), composer = b.document.createElement('div'); composer.dataset.composerSeat = '';
+    composer.getBoundingClientRect = () => ({ height: 144 }); chat.append(composer);
+    Object.defineProperty(chat, 'clientWidth', { configurable: true, value: 1200 });
+    b.resizeObservers.find(observer => observer.elements.includes(chat)).callback();
+    assert.equal(chat.dataset.projectRailCompact, 'false');
+    Object.defineProperty(chat, 'clientWidth', { configurable: true, value: 680 });
+    b.resizeObservers.find(observer => observer.elements.includes(chat)).callback();
+    assert.equal(chat.dataset.projectRailCompact, 'true'); assert.equal(chat.style.getPropertyValue('--project-composer-height'), '144px');
+  } finally { await b.dispose(); }
+});
+
+test('task actions target the exact work and goal; answering a question uses the ordinary coordinator conversation', async () => {
+  const card = taskCard('goal', 'Goal'), work = { workstreamId: 'work-a', workerSessionId: 'member-a', title: 'A running work', status: 'running' };
+  card.queue = { state: 'active', suspended: true }; card.work = [work];
+  card.stage = { ask: { question: 'Which database?', options: ['SQLite', 'Postgres'] } };
+  const b = bench({ cards: [card] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    await b.press('stopWork'); assert.equal(b.requests.filter(row => row.method === 'stop').at(-1).input.workstreamId, work.workstreamId);
+    await b.press('requestResume'); const resume = b.requests.filter(row => row.method === 'requests/queue').at(-1);
+    assert.equal(resume.input.requestId, card.id); assert.equal(resume.input.action, 'resume');
+    await b.press('SQLite'); assert.deepEqual(b.sent, [{ sessionId: b.project.coordinatorSessionId, text: 'Which database?\nSQLite' }]);
+    await b.press('requestCancel'); assert.equal(b.requests.filter(row => row.method === 'requests/queue').at(-1).input.action, 'cancel');
+  } finally { await b.dispose(); }
+});
+
+test('the rail retains completed-card archive/restore and confirms safe revert before dispatch', async () => {
+  const card = taskCard('finished-goal', 'Delivered goal', 'completed');
+  card.changes = { isGit: true, revertible: true, fileCount: 1 };
+  const b = bench({ cards: [card], rpcOverride: method => method === 'requests/revert' ? { ok: true, value: { applied: true } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const select = b.document.querySelector('.dsh-project-rail-tools select');
+    const group = async value => { await act(async () => { select.value = value; select.dispatchEvent(new b.document.defaultView.Event('change', { bubbles: true })); }); await b.flush(); };
+    await group('completed'); await b.openRequest(card.id);
+    await b.press('revertChanges');
+    assert.equal(b.requests.some(row => row.method === 'requests/revert'), false, 'opening confirmation cannot mutate files');
+    await b.press('revertConfirm');
+    assert.equal(b.requests.find(row => row.method === 'requests/revert').input.requestId, card.id);
+    await b.press('taskArchiveAction');
+    assert.equal(b.requests.filter(row => row.method === 'requests/archive').at(-1).input.requestId, card.id);
+    await group('archived');
+    if (b.requestElement(card.id).querySelector('.dsh-project-rail-card-title').getAttribute('aria-expanded') !== 'true') await b.openRequest(card.id);
+    await b.press('taskRestoreAction');
+    assert.equal(b.requests.filter(row => row.method === 'requests/restore').at(-1).input.requestId, card.id);
+  } finally { await b.dispose(); }
+});
+
+test('nested member navigation uses its actual direct parent rather than the Project root', async () => {
+  const card = taskCard('nested-goal', 'Nested work');
+  card.work = [{ workstreamId: 'nested-work', workerSessionId: 'nested-member', parentSessionId: 'direct-parent', title: 'Inspect nested result', status: 'running' }];
+  const b = bench({ cards: [card] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    await b.press('Inspect nested result');
+    const opened = b.asides.find(row => row[0] === 'resource');
+    assert.ok(opened); assert.equal(opened[1], 'subagentchat:direct-parent/nested-member/continuable');
+  } finally { await b.dispose(); }
+});
+
+test('a disconnected task rail retains cards, shows an unknown count and recovers through reread', async () => {
+  for (const unavailable of [false, true]) {
+    let disconnected = false;
+    const card = taskCard('retained-goal', 'Retained goal');
+    const b = bench({ cards: [card], rpcOverride: method => {
+      if (method !== 'list' || !disconnected) return;
+      return unavailable ? { ok: true, value: { projects: [], available: false } } : Promise.reject(new Error('Actual disconnected service'));
+    } });
+    try {
+      await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+      disconnected = true; await b.poll();
+      assert.equal(b.document.querySelector('.dsh-project-rail-count').textContent, '?');
+      assert.equal(b.document.querySelector('.dsh-project-rail-toggle').title, 'statusUnknown');
+      assert.ok(b.requestElement(card.id), 'the last known task remains readable');
+      const alert = b.panel().querySelector('[role=alert]');
+      assert.match(alert.textContent, /retainedStatus/);
+      assert.match(alert.textContent, unavailable ? /unavailable/ : /Actual disconnected service/);
+      disconnected = false; await b.press('retryRead'); await b.flush();
+      assert.equal(b.document.querySelector('.dsh-project-rail-count').textContent, '1');
+      assert.equal(b.panel().querySelector('[role=alert]'), null);
+      assert.ok(b.requestElement(card.id));
+    } finally { await b.dispose(); }
+  }
+});
+
+test('missing request authority explains the blocked goal without offering a summary retry', async () => {
+  const card = taskCard('missing-authority', 'Historical goal', 'summaryFailed');
+  Object.assign(card, { authorityError: 'Missing original authorization record', handoverError: 'Earlier handover failed' });
+  const b = bench({ cards: [card] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    assert.match(b.requestElement(card.id).querySelector('[role=alert]').textContent, /authorityErrorHint/);
+    assert.equal(b.button('retrySummary'), undefined);
+    assert.equal(b.sent.length, 0);
+  } finally { await b.dispose(); }
+});
+
+test('summary failures retain credential settings recovery and the actual automatic retry status', async () => {
+  const detail = workDetail(), work = detail.workstreams[0];
+  Object.assign(work, { status: 'summaryFailed', summaryFailure: { delegationRef: work.currentDelegationRef,
+    error: { code: 'MISSING_CREDENTIAL', message: 'No credential for the selected model' } }, autoRetry: { attempt: 2, of: 3 } });
+  const card = taskForWork(detail, 'summaryFailed');
+  const b = bench({ cards: [card], detail, language: 'en' });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    const content = visibleText(b.requestElement(card.id));
+    assert.match(content, /attempt 2\/3/);
+    assert.match(content, /credential/i);
+    await b.press('Model settings');
+    assert.ok(b.navigation.some(item => item[0] === 'settings' && item[1] === 'models'));
+    assert.equal(b.sent.length, 0, 'opening settings cannot resend the original work');
+  } finally { await b.dispose(); }
+});
+
 function taskForWork(detail, status = 'running') {
   const work = detail.workstreams[0], card = taskCard('request-one', work.title, status);
   card.work = [{ workstreamId: work.id, delegationRef: work.currentDelegationRef, workerSessionId: work.workerSessionId,
@@ -509,390 +633,73 @@ function taskForWork(detail, status = 'running') {
   return card;
 }
 
-test('the Lead Project opens one requirement panel from the header and each Request changes its own shape', async () => {
-  const active = taskCard('active-a', 'Current development'), completed = taskCard('complete-b', 'Earlier result', 'completed');
-  const b = bench({ cards: [active, completed] });
+test('stopping a work keeps errors through reads and clears them only when that work is retried', async () => {
+  let failStop = true;
+  const detail = workDetail(), card = taskForWork(detail);
+  const b = bench({ detail, cards: [card], rpcOverride: method => method === 'stop' && failStop
+    ? { ok: false, error: { code: 'stop/failed', message: 'The member could not be stopped' } } : undefined });
   try {
-    await b.flush(); await b.adopt(); await b.mount();
-    assert.equal(b.panel('requests'), null);
-    await b.openObserver();
-    const root = b.panel('requests');
-    assert.ok(root);
-    assert.equal(b.entries.some(entry => entry.options.name === 'sidebar.right.pane.tab' && entry.options.key === 'dsh-project-requests'), true, 'Requests may be observed in the existing Sidebar after an explicit action');
-    assert.equal(b.asides.length, 0, 'Opening a header panel does not change the Sidebar layout');
-    assert.equal(b.requestElement(active.id).dataset.projectRequestMode, 'card');
-    assert.equal(b.requestElement(completed.id).dataset.projectRequestMode, 'strip');
-    await b.openRequest(completed.id);
-    assert.equal(b.requestElement(active.id).dataset.projectRequestMode, 'card');
-    await b.press(completed.title + ' · observerStrip');
-    assert.equal(b.requestElement(completed.id).dataset.projectRequestMode, 'strip');
-    await b.openObserver();
-    assert.equal(b.panel('requests'), root);
-    assert.deepEqual(b.sent, []);
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    await b.press('stopWork');
+    assert.match(b.requestElement(card.id).querySelector('[role=alert]').textContent, /could not be stopped/);
+    detail.revision = 'new-read'; await b.poll(); await b.flush();
+    assert.match(b.requestElement(card.id).querySelector('[role=alert]').textContent, /could not be stopped/);
+    failStop = false; await b.press('stopWork');
+    assert.equal(b.requestElement(card.id).querySelector('[role=alert]'), null);
+    assert.deepEqual(b.requests.filter(row => row.method === 'stop').map(row => row.input.workstreamId), ['work-one', 'work-one']);
   } finally { await b.dispose(); }
 });
 
-test('header panels count requirements, keep portaled menus inside and close on Escape or an outside pointer', async () => {
-  const active = taskCard('active-request', 'Current objective'), queued = taskCard('queued-request', 'Next objective');
-  queued.queue = { state: 'queued', position: 1 };
-  const b = bench({ cards: [active, queued], language: 'en' });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const trigger = b.document.querySelector('[data-project-header-panel=requests] button');
-    assert.equal(trigger.querySelector('.dsh-project-header-badge').textContent, '2');
-    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-    await b.openObserver(); assert.equal(trigger.getAttribute('aria-expanded'), 'true');
-    const pointer = target => act(async () => { target.dispatchEvent(new b.document.defaultView.Event('pointerdown', { bubbles: true })); await new Promise(resolve => setImmediate(resolve)); });
-    const menu = b.document.createElement('div'); menu.setAttribute('role', 'menu'); b.document.body.append(menu);
-    await pointer(menu); assert.ok(b.panel('requests'), 'A portaled menu list belongs to the panel'); menu.remove();
-    b.panel('requests').focus(); await b.escape();
-    assert.equal(b.panel('requests'), null); assert.equal(b.document.activeElement, trigger);
-    await b.openObserver(); await pointer(b.document.querySelector('main'));
-    assert.equal(b.panel('requests'), null);
-    assert.equal(b.document.querySelector('[data-project-header-panel=team]'), null, 'The native Agent Team action owns the Team entry');
-  } finally { await b.dispose(); }
+test('queued and preparing work can be withdrawn without opening a nonexistent member', async () => {
+  for (const status of ['queued', 'preparing']) {
+    const card = taskCard('queued-goal', 'Goal');
+    card.work = [{ workstreamId: 'queued-work', title: 'Not yet materialized', status }];
+    const b = bench({ cards: [card] });
+    try {
+      await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+      assert.equal(b.button('Not yet materialized').disabled, true);
+      await b.press('stopWork');
+      assert.equal(b.requests.find(row => row.method === 'stop').input.workstreamId, 'queued-work');
+      assert.equal(b.asides.length, 0);
+      assert.equal(b.sent.length, 0);
+    } finally { await b.dispose(); }
+  }
 });
 
-test('an empty Project opens through its original header and stays closed after navigation', async () => {
-  const b = bench({ language: 'zh' });
+test('stopping work stays disabled until the actual drained state is read and its saved result stays inspectable', async () => {
+  const detail = workDetail(), card = taskForWork(detail);
+  card.work[0].status = 'stopping';
+  const b = bench({ detail, cards: [card] });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); assert.equal(b.panel('requests'), null);
-    await b.openObserver(); const root = b.panel('requests');
-    const empty = root.querySelector('.dsh-project-requests-empty'); assert.ok(isVisible(empty));
-    assert.equal(empty.querySelector('strong').textContent, '还没有任务');
-    assert.match(empty.querySelector('p').textContent, /直接在主对话里说你要完成什么/);
-    assert.match(b.document.querySelector('[data-project-header-panel=requests] button').getAttribute('aria-label'), /^需求 · /); assert.equal(b.document.querySelector('[data-project-header-panel=team]'), null); assert.ok(b.button('成果与资料'));
-    await b.escape(); assert.equal(b.panel('requests'), null); await b.poll(); await b.mountSession(null); await b.mountSession(b.project.coordinatorSessionId);
-    assert.equal(b.panel('requests'), null);
-    const lead = b.project.coordinatorSessionId;
-    assert.deepEqual(b.asides, [], 'Showing a Project and polling its state never opens a Sidebar page');
-    await act(async () => { b.openTabs.set([]); }); await b.mountSession(null); await b.mountSession(lead);
-    assert.deepEqual(b.asides, [], 'Navigating back to the Lead leaves the user-selected layout unchanged');
-    assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message', 'store/write'].includes(request.method)), false); assert.deepEqual(b.sent, []);
-  } finally { await b.dispose(); }
-});
-
-test('completed requirements remain bottom strips without changing the active requirement or Project activity', async () => {
-  const active = taskCard('active-current', 'Current objective', 'pendingDelivery'), previous = taskCard('previous-delivered', 'Earlier objective', 'completed');
-  const detail = { activity: { state: 'running', coordinatorRunning: true, running: 1 } };
-  const b = bench({ cards: [previous, active], detail });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const current = b.requestElement(active.id), historical = b.requestElement(previous.id);
-    assert.equal(current.dataset.projectRequestMode, 'card'); assert.equal(historical.dataset.projectRequestMode, 'strip');
-    assert.equal(historical.parentElement === current.parentElement, true, 'Stable Request keys share one list so delivery cannot remount the card being read');
-    assert.equal(historical.querySelector('.dsh-project-task-strip-open').getAttribute('aria-label'), previous.title + ' · completed');
-    await b.openRequest(previous.id); await b.selectRequestTab('results');
-    assert.match(visibleText(historical), /Earlier objective was delivered/);
-    assert.equal(current.dataset.projectRequestMode, 'card'); assert.equal(b.project.activity.state, 'running');
-    assert.doesNotMatch(visibleText(current), /Earlier objective was delivered/);
-    assert.equal(b.requests.some(request => ['stop', 'delegate', 'store/write'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('each queued and completed requirement keeps its own strip or card state', async () => {
-  const active = taskCard('active-current', 'Current objective'), queued = taskCard('queued-next', 'Next objective'), done = taskCard('completed-old', 'Delivered objective', 'completed');
-  queued.queue = { state: 'queued', position: 1 };
-  const b = bench({ cards: [active, queued, done] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    assert.deepEqual([active, queued, done].map(card => b.requestElement(card.id).dataset.projectRequestMode), ['card', 'strip', 'strip']);
-    await b.openRequest(queued.id); await b.openRequest(done.id);
-    await b.press(done.title + ' · observerStrip');
-    assert.deepEqual([active, queued, done].map(card => b.requestElement(card.id).dataset.projectRequestMode), ['card', 'card', 'strip']);
-    const saved = b.face().hooks.requestModes.getSnapshot()[b.project.coordinatorSessionId].requests;
-    assert.equal(saved[queued.id].mode, 'card'); assert.equal(saved[done.id].mode, 'strip');
-  } finally { await b.dispose(); }
-});
-
-test('delivery retains the requirement being inspected while the next active requirement becomes visible', async () => {
-  const first = taskCard('first-request', 'First objective'), next = taskCard('next-request', 'Next objective');
-  next.queue = { state: 'queued', position: 1 };
-  const detail = { revision: 'before-delivery' }, b = bench({ cards: [first, next], detail });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(first.id);
-    assert.equal(b.requestElement(first.id).dataset.projectRequestMode, 'card');
-    Object.assign(first, taskCard(first.id, first.title, 'completed')); delete next.queue;
-    b.project.queue = { active: next, queued: [], paused: false }; detail.revision = 'after-delivery';
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    assert.equal(b.button('stopWork').disabled, true);
+    card.work[0].status = 'paused'; card.updatedAt++; detail.revision = 'after-drain';
     await b.poll(); await b.flush();
-    assert.equal(b.requestElement(first.id).dataset.projectRequestMode, 'card', 'Delivery does not collapse the card the user is inspecting');
-    assert.ok(isVisible(b.requestElement(first.id)));
-    assert.equal(b.requestElement(next.id).dataset.projectRequestMode, 'strip', 'An existing queued card retains its reading state when it becomes active');
-    assert.equal(b.requestElement(next.id).dataset.projectRequestStatus, 'running');
-    assert.equal(b.requests.some(request => ['stop', 'delegate', 'requests/archive'].includes(request.method)), false);
+    assert.equal(Boolean(b.button('stopWork')), false);
+    assert.equal(Boolean(b.requestElement(card.id).querySelector('[role=alert]')), false);
+    await b.press('viewResult'); await b.flush();
+    assert.match(b.dialog().textContent, /Actual worker summary/);
+    await b.press('viewProcess'); await b.flush(); await b.press('backToResults');
+    assert.match(b.dialog().textContent, /Actual worker summary/);
+    await b.press('close'); assert.ok(b.requestElement(card.id));
+    assert.equal(b.sent.length, 0);
   } finally { await b.dispose(); }
 });
 
-test('native live Session status overrides stale summary state and resolves a reassigned work owner by task identity', async () => {
-  const current = taskCard('native-status-request', 'Repair current module');
-  current.counts = { total: 1, completed: 0 };
-  current.work = [{ workstreamId: 'native-task', delegationRef: 'round-a', workerSessionId: 'previous-worker', title: 'Saved task name', status: 'running', current: true }];
-  const team = { members: [{ id: 'current-worker', name: 'Current engineer', role: 'member' }], tasks: [{ id: 'native-task', subject: 'Actual assigned task', ownerName: 'Current engineer', status: 'in_progress' }] };
-  const b = bench({ cards: [current], team, runtimeSessions: { 'current-worker': { id: 'current-worker', running: true } }, sessionStatuses: { 'current-worker': { running: false } } });
+test('request version disclosure retains complete original goals, restrictions and completion conditions', async () => {
+  const card = taskCard('versioned-goal', 'Revised goal');
+  const goal = 'The complete original goal. '.repeat(50), constraint = 'Original constraint. '.repeat(20), condition = 'Original completion condition. '.repeat(20);
+  card.revision = 2;
+  card.versions = [{ revision: 1, title: 'Original goal', goal, constraints: [constraint], conditions: [condition] },
+    { revision: 2, title: card.title, goal: card.goal, constraints: [], conditions: [] }];
+  const b = bench({ cards: [card] });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    await b.openRequest(current.id); await b.selectRequestTab('progress');
-    const card = b.requestElement(current.id); assert.match(visibleText(card), /Actual assigned task.*Current engineer.*teamAssigned/s);
-    assert.doesNotMatch(visibleText(card), /Saved task name|previous-worker/);
-    await act(async () => { b.sessionStatus.set(new Map([['current-worker', { running: true }]])); });
-    assert.match(visibleText(card), /Actual assigned task.*Current engineer.*running/s);
-    assert.equal(card.querySelector('.dsh-project-task-status-row').textContent.endsWith('0 / 1'), true);
-  } finally { await b.dispose(); }
-});
-
-test('a saved per-requirement strip reopens without expanding another requirement', async () => {
-  const current = taskCard('saved-request', 'Saved objective'), b = bench({ cards: [current] });
-  try {
-    await b.flush(); await b.adopt();
-    b.face().hooks.requestModes.set({ [b.project.coordinatorSessionId]: { requests: { [current.id]: { mode: 'strip', completed: false } } } });
-    await b.mount(); await b.openObserver(); const root = b.panel('requests');
-    assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'strip');
-    await b.openRequest(current.id); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'card');
-    assert.equal(b.panel('requests'), root);
-  } finally { await b.dispose(); }
-});
-
-test('a narrow window keeps the exact requirement controls reachable in the header panel', async () => {
-  const current = taskCard('narrow-request', 'Long readable requirement'), b = bench({ cards: [current], language: 'zh' });
-  try {
-    Object.defineProperty(b.document.defaultView, 'innerWidth', { configurable: true, value: 236 });
-    Object.defineProperty(b.document.defaultView, 'innerHeight', { configurable: true, value: 420 });
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    await b.press(current.title + ' · 收起'); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'strip');
-    await b.openRequest(current.id); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'card');
-    assert.ok(isVisible(b.button(current.title + ' · 收起'))); assert.ok(isVisible(b.button('成果与资料')));
-  } finally { await b.dispose(); }
-});
-
-test('task cards open the exact Request with its checklist, result and original goal under one Project', async () => {
-  const task = taskCard('task-a', 'Repair search', 'completed');
-  task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', title: 'Implement feature', memberName: 'Engineer',
-    workerSessionId: 'worker-one', status: 'completed', current: true, reportId: 'saved-report', updatedAt: 150, assignmentAt: 120, reportAt: 180, terminalAt: 190 }];
-  const b = bench({ detail: workDetail(), cards: [task] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.flush(); await b.openObserver();
-    const card = await b.openRequest(task.id);
-    assert.equal(b.requests.filter(request => request.method === 'requests/get').at(-1).input.requestId, task.id);
-    assert.ok(card.querySelector('[role=tablist]'), 'The retained Request owns its Progress and Results pages');
-    assert.equal(isVisible(card.querySelector('[data-project-request-tab=results]')), true, 'A delivered Request opens on its Results');
-    assert.match(visibleText(card), /Repair search was delivered/);
-    await b.selectRequestTab('progress');
-    await b.disclose('workRequest', card); assert.match(visibleText(card), /Repair search with an actual requirement/);
-    const steps = [...card.querySelectorAll('.dsh-project-task-step')];
-    assert.deepEqual(steps.map(step => step.dataset.state), ['completed']);
-    assert.match(visibleText(steps[0]), /Implement feature.*Engineer/s);
-    await b.click(steps[0].querySelector('.dsh-project-task-step-open'));
-    assert.deepEqual(b.asides.at(-1), ['resource', 'subagentchat:coordinator-existing/worker-one/continuable', 'subagentchat'], 'A member opens beside the Lead');
-    assert.equal(b.navigation.some(entry => entry[0] === 'session' && entry[1] === 'worker-one'), false);
-    await b.click(b.button('Implement feature · viewResult'));
-    assert.ok(b.dialog(), 'The member result opens in the Project dialog');
-  } finally { await b.dispose(); }
-});
-
-test('requirement versions expand to their full original goal, constraints and completion conditions', async () => {
-  for (const language of ['en', 'zh']) {
-    const task = taskCard('versioned-request', 'Repair login');
-    const oldGoal = 'Original goal '.repeat(30) + 'Preserve the complete original goal ending.';
-    const oldConstraint = 'Keep saved credentials unchanged '.repeat(12) + 'Original restriction ending.';
-    const oldCondition = 'Verify the original login path '.repeat(12) + 'Original completion ending.';
-    task.revision = 2; task.goal = 'Current revised goal';
-    task.versions = [
-      { revision: 1, title: task.title, goal: oldGoal, constraints: [oldConstraint], conditions: [oldCondition], at: 100 },
-      { revision: 2, title: task.title, goal: task.goal, constraints: [], conditions: [], at: 200 },
-    ];
-    const b = bench({ cards: [task], language });
-    try {
-      await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-      const card = await b.openRequest(task.id);
-      await b.disclose(language === 'en' ? 'Assignment' : '工作要求', card);
-      assert.ok(visibleText(card).includes(task.goal));
-      const versions = [...card.querySelectorAll('.dsh-project-task-version')];
-      assert.equal(versions.length, 2); assert.equal(versions.every(version => !version.open), true);
-      const original = versions.find(version => version.querySelector('strong').textContent.endsWith(' 1'));
-      await b.disclose(original.querySelector('summary').textContent, card);
-      const originalText = visibleText(original);
-      for (const text of [oldGoal, oldConstraint, oldCondition]) assert.ok(originalText.includes(text), 'the entire saved field is visible');
-      assert.equal(originalText.includes(task.goal), false, 'the original version does not borrow the current goal');
-      const current = versions.find(version => version.querySelector('strong').textContent.endsWith(' 2'));
-      await b.disclose(current.querySelector('summary').textContent, card);
-      assert.ok(visibleText(current).includes(language === 'en' ? 'No constraints recorded.' : '未记录约束。'));
-      assert.ok(visibleText(current).includes(language === 'en' ? 'No completion conditions recorded.' : '未记录完成条件。'));
-      assert.equal(b.requests.some(request => ['store/write', 'requests/archive', 'requests/restore'].includes(request.method)), false);
-      assert.equal(b.sent.length, 0, 'viewing a version sends no user or worker request');
-    } finally { await b.dispose(); }
-  }
-});
-
-test('a completed requirement opens its exact result from its own bottom strip', async () => {
-  const task = taskCard('delivered-result', 'Delivered analysis', 'completed'), b = bench({ language: 'en', cards: [task] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const card = b.requestElement(task.id); assert.ok(isVisible(card)); assert.equal(card.dataset.projectRequestMode, 'strip');
-    await b.openRequest(task.id); await b.selectRequestTab('results');
-    assert.match(visibleText(card), /Delivered analysis was delivered/); assert.doesNotMatch(visibleText(card), /actual requirement/);
-    assert.equal(b.requests.filter(request => request.method === 'requests/get').at(-1).input.requestId, task.id);
-    assert.equal(b.requests.some(request => request.method === 'session/create' || request.method === 'archive'), false);
-  } finally { await b.dispose(); }
-});
-
-test('the current card exposes the real requirement queue and sends exact enqueue, reorder and cancel actions', async () => {
-  const current = taskCard('active-a', 'Current A'), first = taskCard('queued-b', 'Queued B'), second = taskCard('queued-c', 'Queued C'), draft = taskCard('draft-d', 'Discuss D');
-  current.queue = { state: 'active', released: false };
-  first.queue = { state: 'queued', position: 1 }; second.queue = { state: 'queued', position: 2 }; draft.queue = { state: 'discussing' };
-  const queue = { active: current, queued: [{ ...first, position: 1 }, { ...second, position: 2 }], paused: false };
-  const b = bench({ cards: [current, first, second, draft], queue });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const card = b.requestElement(current.id);
-    assert.ok(isVisible(card)); assert.equal(card.dataset.projectRequestMode, 'card');
-    assert.deepEqual([first, second].map(item => b.requestElement(item.id).dataset.projectRequestMode), ['strip', 'strip']);
-    assert.match(visibleText(b.requestElement(first.id)), /Queued B.*statusQueuePosition/s);
-    assert.match(visibleText(b.requestElement(second.id)), /Queued C.*statusQueuePosition/s);
-    await b.openTaskList(); await b.openRequest(second.id); await b.press(`${second.title} · more`); await b.press('requestMoveUp');
-    const actions = () => b.requests.filter(request => request.method === 'requests/queue').map(request => ({ ...request.input }));
-    assert.deepEqual(actions()[0], { projectId: b.project.id, requestId: second.id, requestRevision: 1, action: 'move', beforeRequestId: first.id });
-    await b.press(`${second.title} · more`); await b.press('requestCancel');
-    assert.deepEqual(actions()[1], { projectId: b.project.id, requestId: second.id, requestRevision: 1, action: 'cancel' });
-    await b.openTaskList(); await b.openRequest(draft.id); await b.press(`${draft.title} · more`); await b.press('requestEnqueue');
-    assert.deepEqual(actions()[2], { projectId: b.project.id, requestId: draft.id, requestRevision: 1, action: 'enqueue' });
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(request => ['delegate', 'stop', 'archive', 'store/write'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('paused active requirements resume while released or cancelled requirements rejoin without a project resume', async () => {
-  for (const state of ['active', 'released', 'cancelled', 'paused-head']) {
-    const request = taskCard('retained-request', 'Retained work', 'paused');
-    request.queue = { state: state === 'released' ? 'active' : state === 'paused-head' ? 'queued' : state, released: state === 'released', position: state === 'paused-head' ? 1 : null };
-    const queue = { active: state === 'active' ? request : null, queued: state === 'paused-head' ? [request] : [], paused: true };
-    const b = bench({ cards: [request], queue });
-    try {
-      await b.flush(); await b.adopt(); await b.mount();
-      if (state === 'cancelled') {
-        await b.openTaskList(); await b.press('more'); await b.press('taskCancelled · 1'); await b.openRequest(request.id);
-        await b.press(`${request.title} · more`);
-      } else await b.openRequest(request.id, false);
-      const label = state === 'active' ? 'requestResume' : state === 'paused-head' ? 'requestResumeQueue' : 'requestRejoin';
-      assert.ok(b.button(label));
-      assert.equal(b.button(state === 'active' ? 'requestRejoin' : 'requestResume'), undefined);
-      await b.press(label);
-      assert.equal(b.requests.filter(item => item.method === 'requests/queue').at(-1).input.action, ['active', 'paused-head'].includes(state) ? 'resume' : 'enqueue');
-      assert.equal(b.requests.some(item => item.method === 'resume'), false, 'Rejoining a requirement never issues the whole-project resume command');
-    } finally { await b.dispose(); }
-  }
-});
-
-test('queue action failures stay visible as a Toast and preserve the requirement view and queue', async () => {
-  const draft = taskCard('draft-requirement', 'Discussed objective'); draft.queue = { state: 'discussing' };
-  let reject;
-  const b = bench({ cards: [draft], queue: { active: null, queued: [], paused: false }, rpcOverride: method => method === 'requests/queue' ? new Promise((_resolve, fail) => { reject = fail; }) : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(draft.id, false);
-    const body = b.panel('requests');
-    await b.press('requestEnqueue');
-    assert.ok(b.button('requestEnqueue').disabled);
-    await act(async () => { reject(new Error('The requirement changed before queue admission')); await new Promise(resolve => setImmediate(resolve)); });
-    const toast = b.document.querySelector('[role=alert]');
-    assert.equal(toast.textContent, 'The requirement changed before queue admission'); assert.equal(body.contains(toast), false);
-    assert.equal(b.requestElement(draft.id).dataset.projectRequestMode, 'card'); assert.equal(b.button('requestEnqueue').disabled, false);
-    assert.equal(draft.queue.state, 'discussing'); assert.equal(b.project.queue.queued.length, 0); assert.equal(b.sent.length, 0);
-  } finally { await b.dispose(); }
-});
-
-test('a historical file preview closes the requirement panel and reopens with each requirement in its own shape', async () => {
-  const current = taskCard('current-request', 'Continue the current objective', 'pendingDelivery'), completed = taskCard('completed-request', 'Inspect the earlier delivery', 'completed');
-  completed.delivery.artifacts = [{ path: 'historical.txt', workstreamId: 'old-work', delegationRef: 'old-assignment', location: 'project', size: 3 }];
-  const b = bench({ cards: [current, completed] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(completed.id);
-    await b.press('openFile: historical.txt');
-    assert.equal(b.opened.at(-1).path, 'C:/workspace/real/historical.txt');
-    assert.equal(b.panel('requests'), null, 'The native preview is not covered by the requirement panel');
-    await b.openObserver();
-    assert.equal(b.requestElement(completed.id).dataset.projectRequestMode, 'card'); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'card');
-    assert.match(visibleText(b.requestElement(current.id)), /Continue the current objective/); assert.doesNotMatch(visibleText(b.requestElement(current.id)), /Inspect the earlier delivery|was delivered/);
-   
-    assert.match(visibleText(b.requestElement(completed.id)), /Inspect the earlier delivery was delivered/);
-    assert.equal(b.requests.some(request => ['store/write', 'requests/archive', 'delegate', 'resume'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('idle members and submitted reports keep the active requirement awaiting delivery beside completed bottom strips', async () => {
-  const detail = workDetail(); detail.activity = { running: 0, blocked: 0, queued: 0, state: 'idle' }; detail.workstreams[0].status = 'completed';
-  const current = taskForWork(detail, 'pendingDelivery'), completed = taskCard('previous-delivery', 'Earlier delivered objective', 'completed'); current.counts = { total: 1, completed: 1 };
-  const b = bench({ detail, cards: [current, completed] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const active = b.requestElement(current.id), saved = b.requestElement(completed.id);
-    assert.equal(active.dataset.projectRequestStatus, 'requestHandover'); assert.equal(saved.dataset.projectRequestMode, 'strip');
-    assert.equal(active.querySelector('.dsh-project-task-status-row').textContent.endsWith('1 / 1'), true);
-    assert.equal(current.status, 'pendingDelivery'); assert.doesNotMatch(visibleText(active), /Earlier delivered objective/);
-    await b.openRequest(completed.id); await b.selectRequestTab('results');
-    assert.equal(active.dataset.projectRequestMode, 'card'); assert.match(visibleText(saved), /Earlier delivered objective was delivered/);
-    assert.ok(isVisible(active)); assert.ok(isVisible(saved));
-    assert.equal(b.requests.some(request => ['requests/archive', 'archive', 'store/write', 'delegate', 'message'].includes(request.method)), false); assert.deepEqual(b.sent, []);
-  } finally { await b.dispose(); }
-});
-
-test('collapsing a historical result leaves the current card and both requirement identities intact', async () => {
-  const current = taskCard('current-request', 'Continue the current objective'), completed = taskCard('completed-request', 'Inspect the earlier delivery', 'completed'); const b = bench({ cards: [current, completed] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver(); const active = b.requestElement(current.id);
-    await b.openRequest(completed.id); await b.selectRequestTab('results'); assert.match(visibleText(b.requestElement(completed.id)), /Inspect the earlier delivery was delivered/);
-    await b.press(completed.title + ' · observerStrip'); assert.equal(b.requestElement(completed.id).dataset.projectRequestMode, 'strip');
-    assert.equal(b.requestElement(current.id), active); assert.equal(active.dataset.projectRequestMode, 'card'); assert.ok(isVisible(active));
-    assert.doesNotMatch(visibleText(active), /Inspect the earlier delivery was delivered/);
-    assert.equal(b.requests.some(request => ['store/write', 'requests/archive', 'archive'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('the completed bottom group pages independently and opens the exact saved result without hiding active progress', async () => {
-  const current = taskCard('current-paged', 'Current objective', 'pendingDelivery'), completed = Array.from({ length: 14 }, (_, i) => taskCard('completed-' + i, 'Completed objective ' + i, 'completed'));
-  const b = bench({ cards: [current, ...completed] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const group = b.document.querySelector('.dsh-project-requests-list'), ids = () => [...group.querySelectorAll('[data-project-request-id]')].filter(card => card.dataset.projectRequestId !== current.id).map(card => card.dataset.projectRequestId);
-    assert.deepEqual(ids(), completed.slice(0,10).map(card => card.id)); await b.press('taskMore');
-    assert.deepEqual(ids(), completed.slice(10).map(card => card.id)); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'card');
-    await b.openRequest(completed[13].id); await b.selectRequestTab('results');
-    assert.match(visibleText(b.requestElement(completed[13].id)), /Completed objective 13 was delivered/);
-    await b.press(completed[13].title + ' · observerStrip'); assert.deepEqual(ids(), completed.slice(10).map(card => card.id));
-    await b.press('previous'); assert.deepEqual(ids(), completed.slice(0,10).map(card => card.id));
-    assert.equal(b.requests.some(request => ['requests/archive', 'archive', 'delegate', 'message', 'store/write'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('independent requirement shapes preserve unsaved materials and the coordinator composer draft', async () => {
-  const current = taskCard('current-with-notes', 'Continue while retaining notes'), b = bench({ cards: [current] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.press('notes'); await b.changeNotes('Unsaved material for the current Project');
-    const editor = b.document.querySelector('.dsh-project-materials textarea'), draft = b.document.createElement('textarea'); draft.value = 'Unsent coordinator follow-up'; b.document.body.append(draft);
-    await b.openRequest(current.id); await b.press(current.title + ' · observerStrip'); await b.openRequest(current.id);
-    assert.equal(b.document.querySelector('.dsh-project-materials textarea'), editor); assert.equal(editor.value, 'Unsaved material for the current Project'); assert.ok(isVisible(editor));
-    assert.equal(draft.value, 'Unsent coordinator follow-up'); assert.equal(b.document.querySelector('[role=dialog][aria-label=unsaved]'), null);
-    assert.equal(b.requests.some(request => ['store/write', 'delegate', 'prompt', 'message', 'resume'].includes(request.method)), false); assert.deepEqual(b.sent, []);
-    await b.press('close'); assert.ok(b.document.querySelector('[role=dialog][aria-label=unsaved]')); await b.press('keepEditing'); assert.equal(editor.value, 'Unsaved material for the current Project');
-  } finally { await b.dispose(); }
-});
-
-test('completed Request cards move to the second-level archive without archiving the Project', async () => {
-  const current = taskCard('task-open', 'Current request');
-  const completed = taskCard('task-done', 'Delivered request', 'completed');
-  const b = bench({ cards: [current, completed] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.flush(); await b.openTaskList();
-    const listed = () => [...b.document.querySelectorAll('[data-project-request-id]')].map(element => element.dataset.projectRequestId);
-    assert.deepEqual(listed(), ['task-open', 'task-done']);
-    await b.openRequest(completed.id);
-    await b.press('Delivered request · more'); await b.press('taskArchiveAction'); await b.flush();
-    assert.deepEqual(b.requests.filter(request => request.method === 'requests/archive').map(request => ({ ...request.input })), [{ projectId: 'project-one', requestId: 'task-done' }]);
-    assert.equal(b.project.lifecycle, 'ready'); assert.equal(b.requests.some(request => request.method === 'archive'), false);
-    assert.equal(b.requestElement(completed.id), null);
-    await b.press('more'); await b.press('taskArchive · 1');
-    assert.equal(b.document.querySelector('.dsh-project-requests-list [data-project-request-id=task-done]')?.textContent.includes('Delivered request'), true);
-    await b.press('Delivered request · more'); await b.press('taskRestoreAction'); await b.flush();
-    assert.deepEqual(b.requests.filter(request => request.method === 'requests/restore').map(request => ({ ...request.input })), [{ projectId: 'project-one', requestId: 'task-done' }]);
-    await b.press('taskBack');
-    assert.deepEqual(listed(), ['task-open', 'task-done']);
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(card.id);
+    assert.equal(visibleText(b.requestElement(card.id)).includes(goal), false);
+    await b.disclose('requestVersion', b.requestElement(card.id));
+    for (const text of [goal, constraint, condition, card.goal]) assert.ok(visibleText(b.requestElement(card.id)).includes(text));
+    assert.equal(b.sent.length, 0);
+    assert.equal(b.requests.some(row => row.method === 'store/write'), false);
   } finally { await b.dispose(); }
 });
 
@@ -1007,134 +814,7 @@ test('opening a Project material uses the native mini preview and leaves unrelat
   try {
     await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.disclose('docs (1)'); await b.press('openFile: report.md');
     assert.equal(b.opened.at(-1).path, 'C:/workspace/real/docs/report.md'); assert.equal(b.opened.at(-1).options.presentation, 'mini');
-    assert.ok(b.document.querySelector('.dsh-project-materials')); await b.openObserver(); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'card');
-  } finally { await b.dispose(); }
-});
-
-test('requirement shape changes preserve the exact queued page without duplicating cards', async () => {
-  const cards = Array.from({ length: 14 }, (_, index) => taskCard('task-' + index, 'Task ' + index)), b = bench({ cards });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver(); const listed = () => [...b.document.querySelectorAll('[data-project-request-id]')].map(card => card.dataset.projectRequestId);
-    assert.deepEqual(listed(), cards.slice(0,10).map(card => card.id)); await b.press('taskMore');
-    assert.deepEqual(listed(), [cards[0].id, ...cards.slice(10).map(card => card.id)]); const reads = b.requests.filter(request => request.method === 'requests/list').length;
-    await b.openRequest(cards[13].id); await b.press(cards[13].title + ' · observerStrip');
-    assert.deepEqual(listed(), [cards[0].id, ...cards.slice(10).map(card => card.id)]); assert.equal(b.requestElement(cards[0].id).dataset.projectRequestMode, 'card');
-    assert.equal(b.requests.filter(request => request.method === 'requests/list').length, reads);
-  } finally { await b.dispose(); }
-});
-
-test('a slower obsolete Request page cannot replace the refreshed selected page and only the user returns to the first page', async () => {
-  const cards = Array.from({ length: 14 }, (_, index) => taskCard(`task-${index}`, `Task ${index}`));
-  let releaseOld, pageReads = 0;
-  const detail = { revision: 'request-page-1' };
-  const b = bench({ cards, detail, rpcOverride: (method, input, project) => {
-    if (method === 'list') return { ok: true, value: { projects: [project], available: true } };
-    if (method !== 'requests/list' || input.kind !== 'current' || input.cursor !== 'task-9') return;
-    const page = { items: cards.slice(10).map(item => ({ ...item, title: detail.revision === 'request-page-1' ? `Old ${item.title}` : `New ${item.title}` })), total: 14, nextCursor: null };
-    pageReads++;
-    return pageReads === 1 ? new Promise(resolve => { releaseOld = () => resolve({ ok: true, value: page }); }) : { ok: true, value: page };
-  } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.press('taskMore');
-    assert.equal(typeof releaseOld, 'function');
-    detail.revision = 'request-page-2';
-    cards[0].title = 'New Task 0';
-    await b.poll(); await b.flush();
-    const list = b.panel('requests');
-    assert.match(list.textContent, /New Task 0/); assert.match(list.textContent, /New Task 10/); assert.doesNotMatch(list.textContent, /Old Task 10/);
-    assert.ok(b.requestElement(cards[0].id), 'The active Request remains present beside the selected page');
-    await act(async () => { releaseOld(); await new Promise(resolve => setImmediate(resolve)); });
-    assert.match(list.textContent, /New Task 0/); assert.match(list.textContent, /New Task 10/); assert.doesNotMatch(list.textContent, /Old Task 10/);
-    assert.equal(pageReads, 2, 'The selected cursor is refreshed once for the changed detail revision');
-    await b.press('previous');
-    assert.deepEqual([...list.querySelectorAll('[data-project-request-id]')].map(card => card.dataset.projectRequestId), cards.slice(0, 10).map(card => card.id));
-  } finally { await b.dispose(); }
-});
-
-test('the Request checklist preserves real member stop, live record and non-Git diff controls', async () => {
-  const task = taskCard('task-running', 'Implement feature');
-  task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', workerSessionId: 'worker-one', title: 'Implement feature',
-    memberName: 'Engineer', memberRole: 'worker', status: 'running', current: true, updatedAt: 1000, reportId: 'actual-report' }];
-  const b = bench({ detail: workDetail(), cards: [task] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.flush();
-    const card = await b.openRequest(task.id); await b.selectRequestTab('progress'); await b.flush();
-    const step = card.querySelector('.dsh-project-task-step'); assert.equal(step.dataset.state, 'running');
-    await b.press('Implement feature · stopWork');
-    assert.deepEqual({ ...b.requests.filter(request => request.method === 'stop').at(-1).input },
-      { projectId: 'project-one', workstreamId: 'work-one', requestId: b.requests.filter(request => request.method === 'stop').at(-1).input.requestId });
-    await b.click(step.querySelector('.dsh-project-task-step-open'));
-    assert.deepEqual(b.asides.at(-1), ['resource', 'subagentchat:coordinator-existing/worker-one/continuable', 'subagentchat']);
-    await b.press('Implement feature · viewChanges'); await b.flush();
-    assert.match(b.dialog().textContent, /diffScope|notGit/);
-    await b.press('close'); assert.equal(b.dialog(), null); assert.ok(isVisible(card.querySelector('.dsh-project-task-step')));
-  } finally { await b.dispose(); }
-});
-
-test('a failed member stop retains its error through successful reads until that exact stop is retried', async () => {
-  let failStop = true;
-  const detail = workDetail(), request = taskForWork(detail);
-  const b = bench({ detail, cards: [request], rpcOverride: method => method === 'stop' && failStop
-    ? { ok: false, error: { code: 'stop/failed', message: 'The member could not be stopped' } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(request.id); await b.selectRequestTab('progress');
-    const card = b.requestElement(request.id), stop = b.button('Implement feature · stopWork'); assert.ok(stop && isVisible(stop));
-    const draft = b.document.createElement('textarea'); draft.value = 'Keep this unsent follow-up'; b.document.body.append(draft);
-    await b.click(stop);
-    assert.equal(stop.dataset.error, 'true'); assert.equal(stop.title, 'The member could not be stopped');
-    let toast = b.document.querySelector('[role=alert]'); assert.ok(toast && isVisible(toast)); assert.equal(toast.textContent, 'The member could not be stopped');
-    const listReads = b.requests.filter(row => row.method === 'requests/list').length;
-    detail.revision = 'successful-read-after-stop-failure'; await b.poll(); await b.flush();
-    assert.equal(b.requests.filter(row => row.method === 'requests/list').length > listReads, true, 'The failed operation survives a successful Request list refresh');
-    assert.equal(b.button('Implement feature · stopWork') === stop, true, 'Refreshing retains the exact work Stop control');
-    assert.equal(stop.dataset.error, 'true'); assert.equal(stop.title, 'The member could not be stopped');
-    toast = b.document.querySelector('[role=alert]'); assert.ok(toast && isVisible(toast)); assert.equal(toast.textContent, 'The member could not be stopped');
-    assert.ok(isVisible(card.querySelector('[data-project-request-tab=progress]'))); assert.equal(draft.value, 'Keep this unsent follow-up');
-    failStop = false; await b.click(stop); await b.flush();
-    assert.equal(stop.dataset.error, 'false'); assert.doesNotMatch(stop.title, /could not be stopped/);
-    assert.equal(b.button('Implement feature · stopWork') === stop, true); assert.ok(isVisible(card.querySelector('[data-project-request-tab=progress]')));
-    const stops = b.requests.filter(row => row.method === 'stop'); assert.equal(stops.length, 2);
-    for (const row of stops) assert.deepEqual({ ...row.input }, { projectId: 'project-one', workstreamId: 'work-one', requestId: row.input.requestId });
-    assert.equal(draft.value, 'Keep this unsent follow-up'); assert.deepEqual(b.sent, []);
-  } finally { await b.dispose(); }
-});
-
-test('an accepted objective without a worker shows its goal, revision and pending delivery', async () => {
-  const card = taskCard('real-request', 'Explain the saved API decision', 'pendingDelivery');
-  card.revision = 2;
-  const b = bench({ cards: [card], detail: { workstreams: [], workers: [] } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList();
-    const detail = await b.openRequest(card.id);
-    await b.disclose('workRequest', detail);
-    assert.match(visibleText(detail), /Explain the saved API decision/);
-    assert.match(visibleText(detail), /requestVersion 2/);
-    assert.match(visibleText(detail), /statusHandover/);
-    assert.doesNotMatch(visibleText(detail.querySelector('.dsh-project-task-state')), /statusActive/, 'Awaiting delivery is not an active member run');
-    assert.equal(detail.querySelector('.dsh-project-task-step'), null);
-    assert.equal(b.requests.some(request => request.method === 'workstreams/get'), false);
-  } finally { await b.dispose(); }
-});
-
-test('supporting member reports page independently beside a committed delivery', async () => {
-  const rows = Array.from({ length: 25 }, (_, index) => ({ workstreamId: `work-${index}`, title: `Member result ${index}`, current: true, reportCount: 1,
-    report: { delegationRef: `ref-${index}`, outcome: 'completed', summary: `Actual report ${index}`, at: index + 1, artifacts: [] } }));
-  const delivery = { id: 'committed-delivery', requestId: 'real-request', title: 'User objective', outcome: 'completed', requestRevision: 1, at: 1, summary: 'Delivered objective', reportRefs: [], artifacts: [], evidence: [], remainingIssues: [], applicable: true };
-  const b = bench({ rpcOverride: (method, input) => {
-    if (method !== 'store/list') return;
-    const start = input.resultsCursor ? rows.findIndex(row => row.report.delegationRef === input.resultsCursor) + 1 : 0, results = rows.slice(start, start + 10);
-    return { ok: true, value: { docs: [], deliveries: { items: [delivery], total: 1, nextCursor: null }, results, resultsTotal: rows.length, nextResultsCursor: start + results.length < rows.length ? results.at(-1).report.delegationRef : null } };
-  } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.disclose('memberReports');
-    await b.press('next'); await b.press('next');
-    const dialog = b.document.querySelector('.dsh-project-materials');
-    assert.equal(dialog.querySelectorAll('[data-result-workstream-id]').length, 5); assert.match(dialog.textContent, /Actual report 24/);
-    assert.match(dialog.textContent, /Delivered objective/); assert.equal(b.button('next'), undefined);
-    await b.press('previous'); assert.match(dialog.textContent, /Actual report 10/);
-    const requests = b.requests.filter(row => row.method === 'store/list');
-    assert.deepEqual(requests.map(row => row.input.resultsCursor), [undefined, 'ref-9', 'ref-19', 'ref-9']);
-    assert.ok(requests.every(row => row.input.kind !== 'deliveries' && row.input.cursor === undefined));
+    assert.ok(b.document.querySelector('.dsh-project-materials')); await b.openObserver(); assert.ok(b.requestElement(current.id), 'the original task remains reachable after material navigation');
   } finally { await b.dispose(); }
 });
 
@@ -1178,55 +858,6 @@ test('an old delivery opens its actual assignment round and returning preserves 
   } finally { await b.dispose(); }
 });
 
-test('stopped work remains inspectable without a failure or a promised automatic summary', async () => {
-  const detail = workDetail();
-  Object.assign(detail.activity, { running: 0, state: 'paused' });
-  Object.assign(detail.workstreams[0], { status: 'blocked', blockedReason: 'stopped' });
-  Object.assign(detail.workers[0], { phase: 'idle', stopped: true, activeRunId: '' });
-  const task = taskForWork(detail, 'paused'); task.work[0].status = 'paused';
-  const b = bench({ detail, cards: [task] });
-  try {
-    b.project.paused = true;
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList();
-    const card = await b.openRequest(task.id); await b.selectRequestTab('progress'); await b.flush();
-    const step = card.querySelector('.dsh-project-task-step');
-    assert.equal(step.dataset.state, 'paused'); assert.doesNotMatch(visibleText(step), /pendingSummary|stopped/);
-    assert.equal(step.querySelector('.dsh-project-error'), null); assert.equal(b.button('Implement feature · stopWork'), undefined);
-    await b.click(step.querySelector('.dsh-project-task-step-open'));
-    assert.deepEqual(b.asides.at(-1), ['resource', 'subagentchat:coordinator-existing/worker-one/continuable', 'subagentchat']);
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(request => ['delegate', 'prompt', 'resume'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('an individual worker remains stopping until its actual drain finishes', async () => {
-  const detail = workDetail(); Object.assign(detail.workers[0], { phase: 'stopping', stopped: true });
-  const task = taskForWork(detail); task.work[0].status = 'stopping';
-  const b = bench({ detail, cards: [task], rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList();
-    const card = await b.openRequest(task.id); await b.selectRequestTab('progress'); await b.flush();
-    const step = () => card.querySelector('.dsh-project-task-step');
-    assert.equal(step().dataset.state, 'stopping'); assert.match(visibleText(step()), /stopping/);
-    assert.equal(b.button('Implement feature · stopWork').disabled, true, 'A stop in progress cannot be repeated');
-    Object.assign(detail.workers[0], { phase: 'idle', activeRunId: '' }); detail.workstreams[0].status = 'blocked'; detail.revision = 'revision-2'; task.work[0].status = 'paused';
-    await b.poll(); await b.flush(); assert.equal(step().dataset.state, 'paused'); assert.doesNotMatch(visibleText(step()), /stopping/);
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(request => ['delegate', 'resume'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('result records return to the same result dialog and closing it leaves the requirement panel in place', async () => {
-  const detail = workDetail(), task = taskForWork(detail), b = bench({ detail, cards: [task] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(task.id); await b.flush();
-    await b.selectRequestTab('progress'); const origin = b.button('viewResult'); await b.press('viewResult'); await b.flush();
-    const report = b.dialog(); assert.match(report.textContent, /Actual worker summary/);
-    await b.press('viewProcess'); await b.flush(); assert.doesNotMatch(visibleText(b.dialog()), /Actual worker summary/);
-    await b.press('backToResults'); assert.match(visibleText(b.dialog()), /Actual worker summary/);
-    await b.press('close'); assert.equal(b.dialog(), null);
-    assert.ok(isVisible(origin), 'The requirement panel stays open beneath the dialog'); assert.equal(b.requestElement(task.id).dataset.projectRequestMode, 'card');
-  } finally { await b.dispose(); }
-});
-
 test('registered artifacts open in the application under their authorized directory and non-Git diff stays explicit', async () => {
   const detail = workDetail(), task = taskForWork(detail), b = bench({ detail, cards: [task] });
   try {
@@ -1237,9 +868,9 @@ test('registered artifacts open in the application under their authorized direct
     await b.press('openFile: app.js'); const artifact = b.requests.filter(request => request.method === 'open').at(-1); assert.equal(artifact.input.workstreamId, 'work-one'); assert.equal(artifact.input.path, 'src/app.js'); assert.equal(artifact.input.delegationRef, 'actual-assignment');
     assert.equal(b.opened[0].path, 'C:/workspace/real/src/app.js');
     assert.equal(b.opened[0].options.sessionId, 'coordinator-existing'); assert.equal(b.opened[0].options.workingDirectory, 'C:/workspace/real'); assert.equal(b.opened[0].options.presentation, 'mini');
-    assert.ok(result); assert.equal(b.dialog(), null, 'The native preview replaces the result dialog'); assert.equal(b.panel('requests'), null);
-    await b.expandObserver(); assert.equal(b.requestElement(task.id).dataset.projectRequestMode, 'card');
-    await b.press('Implement feature · viewChanges'); assert.match(b.dialog().textContent, /diffScope|notGit/);
+    assert.ok(result); assert.equal(b.dialog(), null, 'The native preview replaces the result dialog'); assert.ok(b.panel('requests'), 'native file preview leaves the task rail available');
+    await b.expandObserver(); assert.equal(b.requestElement(task.id).querySelector('.dsh-project-rail-card-title').getAttribute('aria-expanded'), 'true');
+    await b.press('viewChanges'); assert.match(b.dialog().textContent, /diffScope|notGit/);
   } finally { await b.dispose(); }
 });
 
@@ -1354,45 +985,6 @@ test('file preview preserves a draft in its original Project and a different Pro
     await b.press('keepEditing'); assert.ok(isVisible(editor)); await b.press('save'); const write = b.requests.filter(request => request.method === 'store/write').at(-1);
     assert.equal(write.input.projectId, 'project-one'); assert.equal(write.input.path, 'notes.md'); assert.equal(write.input.text, 'An unsaved original Project draft');
   } finally { await b.dispose(); }
-});
-
-test('a reused member keeps an earlier requirement failure or report reachable by its exact assignment across detail pages', async () => {
-  for (const [hasReport, onPage] of [[false, true], [true, false]]) {
-    const detail = workDetail(), currentWork = detail.workstreams[0], worker = detail.workers[0];
-    currentWork.title = 'Current requirement B';
-    const old = { ref: 'requirement-a-assignment', messageId: 'native-requirement-a', runId: 'native-a-run', createdAt: 1000, requestId: 'request-a', requestRevision: 2 };
-    currentWork.delegations = [old, { ref: currentWork.currentDelegationRef, messageId: 'native-requirement-b', runId: 'run-one', createdAt: 2000, requestId: 'request-b', requestRevision: 1 }];
-    const oldReport = { delegationRef: old.ref, at: 1100, outcome: 'completed', summary: 'Actual earlier inspection', artifacts: [], request: { id: old.requestId, title: 'Request A', revision: 2 } };
-    const previous = taskCard(old.requestId, 'Request A', hasReport ? 'pendingDelivery' : 'blocked'); previous.revision = 2;
-    previous.work = [{ workstreamId: currentWork.id, delegationRef: old.ref, workerSessionId: currentWork.workerSessionId,
-      title: 'Original inspection', memberName: 'Engineer', status: hasReport ? 'completed' : 'failed', current: false,
-      blockedReason: hasReport ? undefined : 'Actual failure from requirement A', ...(hasReport ? { reportId: 'old-report' } : {}), updatedAt: 1100 }];
-    const current = taskForWork(detail); current.id = 'request-b';
-    const b = bench({ detail: onPage ? detail : { ...detail, workstreams: [], workers: [] }, cards: [previous, current], rpcOverride: (method, input) => method === 'workstreams/get' ? { ok: true, value: { workstream: currentWork, worker } }
-      : method === 'store/results' ? { ok: true, value: { items: input.delegationRef === old.ref ? [oldReport] : [currentWork.latestReport], total: 2, nextCursor: null } } : undefined });
-    b.project.currentRequests = [
-      { id: old.requestId, title: 'Request A', revision: 2, requiredWork: [{ workstreamId: currentWork.id, delegationRef: old.ref, currentDelegationRef: currentWork.currentDelegationRef, runId: old.runId, title: 'Original inspection', phase: hasReport ? 'accepted' : 'failed', hasReport, outcome: hasReport ? 'completed' : undefined, error: hasReport ? '' : 'Actual failure from requirement A', at: 1100 }] },
-      { id: 'request-b', title: 'Request B', revision: 1, requiredWork: [{ workstreamId: currentWork.id, delegationRef: currentWork.currentDelegationRef, currentDelegationRef: currentWork.currentDelegationRef, phase: 'accepted', hasReport: true }] },
-    ];
-    b.eventSource.set({ revision: 2, hasMore: false, entries: [{ type: 'event', event: { type: 'user/message', seq: 90, time: 1000, data: { id: old.messageId, source: { kind: 'team-message' }, content: [{ type: 'text', text: 'Original requirement A assignment' }] } } }, turnRecord(91)] });
-    try {
-      await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(previous.id); await b.selectRequestTab('progress');
-      const task = b.requestElement(previous.id), member = task.querySelector('.dsh-project-task-step');
-      assert.equal(task.querySelectorAll('.dsh-project-task-step').length, 1); assert.equal(task.querySelector('[data-project-request-id=request-b]'), null);
-      assert.equal(task.querySelector('.dsh-project-task-title').textContent, 'Request A');
-      assert.match(task.textContent, /requestVersion 2/); assert.match(member.textContent, hasReport ? /completed/ : /failed/);
-      if (!hasReport) assert.match(member.textContent, /Actual failure from requirement A/);
-      if (hasReport) {
-        await b.press('viewResult'); const exact = b.requests.filter(request => request.method === 'store/results').at(-1); assert.equal(exact.input.projectId, 'project-one'); assert.equal(exact.input.workstreamId, currentWork.id); assert.equal(exact.input.delegationRef, old.ref);
-        const report = b.dialog();
-        assert.match(report.textContent, /Actual earlier inspection/); assert.doesNotMatch(report.textContent, /Actual worker summary/); await b.press('close');
-      } else { assert.equal([...member.querySelectorAll('button')].some(button => button.textContent === 'viewResult'), false); }
-      await b.click(member.querySelector('.dsh-project-task-step-open')); await b.flush(); assert.deepEqual(b.asides, [], 'An earlier round opens its exact saved record without changing the Sidebar');
-      const records = b.dialog();
-      assert.match(records.textContent, /Original requirement A assignment/); assert.doesNotMatch(records.textContent, /runRecordsMissing/);
-      assert.equal(b.retained.at(-1).address.childSessionId, 'worker-one'); assert.equal(b.sent.length, 0); assert.equal(b.requests.some(request => ['delegate', 'resume', 'stop'].includes(request.method)), false);
-    } finally { await b.dispose(); }
-  }
 });
 
 test('Project-owned lifecycle commands use the shared rename and active-archive flow and never fall back for a missing Project', async () => {
@@ -1528,88 +1120,11 @@ test('partial lifecycle command receipts refresh real details and preserve worke
       assert.ok(b.requests.filter(request => request.method === 'detail').length > before);
       await b.render();
       if (action === 'archive') { assert.match(b.document.body.textContent, /archivedHint/); assert.ok(b.button('restore')); }
-      else { assert.ok(b.requestElement(task.id).querySelector('.dsh-project-task-step')); await b.press('viewResult'); await b.flush();
+      else { assert.ok(b.requestElement(task.id).querySelector('.dsh-project-rail-work')); await b.press('viewResult'); await b.flush();
         assert.match(b.dialog().textContent, /Actual worker summary/);
         await b.press('close'); assert.doesNotMatch(b.document.body.textContent, /archivedHint/); }
     }
   } finally { await b.dispose(); }
-});
-
-test('stop controls invoke the same Host stop command and incremental polling preserves unchanged details', async () => {
-  const detail = workDetail(), task = taskForWork(detail);
-  const b = bench({ detail, cards: [task], rpcOverride: (method, input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } }
-    : method === 'detail' && input.since ? { ok: true, value: { unchanged: true, revision: input.since } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
-    await b.press('Implement feature · stopWork'); await b.press('stop');
-    const stops = b.requests.filter(request => request.method === 'stop'); assert.equal(stops.length, 2); assert.equal(stops[0].input.workstreamId, 'work-one'); assert.equal(stops[1].input.workstreamId, undefined); assert.ok(stops.every(request => request.input.projectId === 'project-one' && request.input.requestId));
-    await b.poll();
-    assert.ok(b.requests.some(request => request.method === 'detail' && request.input.since === 'revision-1'));
-    await b.press('viewResult'); await b.flush(); assert.match(b.dialog().textContent, /Actual worker summary/);
-  } finally { await b.dispose(); }
-});
-
-test('a later Project navigation supersedes an older detail response', async () => {
-  let defer = false, finishOlder;
-  const b = bench({ rpcOverride: (method, input, project) => {
-    if (method !== 'detail') return;
-    if (input.projectId === 'project-two') return { ok: true, value: { project: { ...project, id: 'project-two', coordinatorSessionId: 'coordinator-two' }, workers: [], workstreams: [] } };
-    if (defer) return new Promise(resolve => { finishOlder = () => resolve({ ok: true, value: { project, workers: [], workstreams: [] } }); });
-  } });
-  try {
-    await b.flush(); await b.adopt(); defer = true;
-    const older = b.face().openProject('project-one'); await b.face().openProject('project-two'); const before = b.navigation.length; finishOlder(); await older;
-    assert.equal(b.navigation.length, before); assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-two']);
-  } finally { await b.dispose(); }
-});
-
-test('approval takeover keeps the Host stop action available while the coordinator runs or a worker prepares', async () => {
-  for (const activity of [{ coordinatorRunning: true, running: 1, state: 'running' }, { provisioning: 1, state: 'provisioning' }]) {
-    const b = bench({ approvalActive: true, detail: { activity }, rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
-    try {
-      await b.flush(); await b.mount(); await b.flush();
-      assert.equal(b.document.querySelector('[data-testid=project-progress]'), null);
-      assert.equal(b.document.querySelectorAll('button[aria-label=stop]').length, 1);
-      assert.equal(b.button('stop').textContent, 'stop');
-      await b.press('stop');
-      const stop = b.requests.find(request => request.method === 'stop');
-      assert.equal(stop.input.projectId, 'project-one'); assert.equal(stop.input.workstreamId, undefined); assert.ok(stop.input.requestId);
-    } finally { await b.dispose(); }
-  }
-});
-
-test('archiving confirms whole-project activity even when its active member is outside the displayed page', async () => {
-  for (const activity of [{ running: 1, state: 'running' }, { queued: 1, state: 'queued' }, { provisioning: 1, state: 'provisioning' }]) {
-    const b = bench({ detail: { activity, workers: [], workstreams: [] }, rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
-    try {
-      await b.flush(); await b.mount(); await b.flush();
-      const owned = b.sessionActions.get('project'); assert.equal(typeof owned.archive, 'function');
-      await act(async () => { owned.archive(b.project.coordinatorSessionId); await new Promise(resolve => setImmediate(resolve)); });
-      assert.ok(b.document.querySelector('[role=dialog][aria-label=archiveActive]'));
-      assert.equal(b.requests.some(request => request.method === 'archive'), false);
-      await b.press('cancel'); assert.equal(b.requests.some(request => request.method === 'archive'), false);
-      await act(async () => { owned.archive(b.project.coordinatorSessionId); await new Promise(resolve => setImmediate(resolve)); });
-      await b.press('archiveActive');
-      assert.equal(b.requests.filter(request => request.method === 'archive').length, 1);
-    } finally { await b.dispose(); }
-  }
-});
-
-test('queued and preparing work can be withdrawn individually without stopping other Project work', async () => {
-  for (const phase of ['queued', 'preparing']) {
-    const detail = workDetail();
-    Object.assign(detail.workstreams[0], { status: 'open', delegation: { phase } });
-    Object.assign(detail.workers[0], { activeRunId: '', phase, jobs: [] });
-    const task = taskCard('request-one', 'Implement feature', phase);
-    task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', title: 'Implement feature', memberName: 'Engineer',
-      status: phase, workerSessionId: 'worker-one', current: true }];
-    const b = bench({ detail, cards: [task] });
-    try {
-      await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush(); await b.press('Implement feature · stopWork');
-      const stops = b.requests.filter(request => request.method === 'stop');
-      assert.equal(stops.length, 1); assert.equal(stops[0].input.projectId, 'project-one'); assert.equal(stops[0].input.workstreamId, 'work-one');
-    } finally { await b.dispose(); }
-  }
 });
 
 test('summary failures offer an ordinary scoped user request for saved reports or real terminals without replacing drafts', async () => {
@@ -1627,7 +1142,7 @@ test('summary failures offer an ordinary scoped user request for saved reports o
     try {
       await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
       const draft = b.document.createElement('textarea'); draft.value = 'Keep my unsent requirement'; b.document.body.append(draft);
-      assert.match(b.requestElement(task.id).querySelector('.dsh-project-task-step').textContent, /Actual provider failed/);
+      await b.disclose('errorDetails', b.requestElement(task.id)); assert.match(visibleText(b.requestElement(task.id)), /Actual provider failed/);
       await b.press('retrySummary');
       assert.equal(b.sent.length, 1); assert.equal(b.sent[0].sessionId, b.project.coordinatorSessionId);
       assert.match(b.sent[0].text, /retrySummaryPrompt\nImplement feature · 1970-01-01T00:00:0[12]\.000Z/);
@@ -1637,65 +1152,216 @@ test('summary failures offer an ordinary scoped user request for saved reports o
   }
 });
 
-test('a migrated requirement without original authority preserves the goal and diagnostics without a summary recovery action', async () => {
-  const detail = workDetail(), work = detail.workstreams[0];
-  const request = { id: 'imported-request', revision: 4, title: 'Retained original goal', goal: 'Original user objective',
-    authorityError: 'Actual migration diagnostic: original user message is unavailable', handoverError: 'Older handover failure' };
-  Object.assign(detail.activity, { running: 0, blocked: 1, state: 'blocked' });
-  Object.assign(work, { status: 'done', pendingSummary: false, request, summaryFailure: { delegationRef: work.currentDelegationRef, error: { code: 'ORIGINAL_PROVIDER_FAILURE', message: 'Saved native failure' } } });
-  Object.assign(detail.workers[0], { phase: 'idle', activeRunId: '' });
-  const task = { ...taskCard(request.id, request.title, 'blocked'), ...request };
-  task.work = [{ workstreamId: work.id, delegationRef: work.currentDelegationRef, title: work.title,
-    memberName: 'Engineer', workerSessionId: 'worker-one', status: 'summaryFailed', current: true }];
-  const b = bench({ detail, cards: [task] });
+test('a failed Request handover without member rows offers a fresh scoped summary and preserves the composer draft', async () => {
+  const task = taskCard('request-one', 'Repair the import', 'summaryFailed');
+  Object.assign(task, { revision: 2, goal: 'Fix and verify the import', handoverError: 'Actual checkpoint write failed' });
+  const b = bench({ cards: [task], detail: { workstreams: [], workers: [] }, rpcOverride: (method, input, project) => {
+    if (method === 'detail') project.currentRequests = [{ ...task, revision: stale ? 3 : 2,
+      ...(authorityMissing ? { authorityError: 'Actual missing authorization' } : {}) }];
+  } });
+  let stale = false, authorityMissing = false;
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
-    const recovery = b.document.querySelector('[data-request-recovery-id=imported-request]');
-    assert.equal(recovery.querySelector('strong').textContent, 'Retained original goal · requestVersion 4');
-    assert.match(recovery.textContent, /authorityErrorHint/); assert.doesNotMatch(b.requestElement(task.id).textContent, /handoverErrorHint|summaryCredentialHint/);
-    assert.equal(b.button('retrySummary'), undefined); assert.equal(b.button('modelSettings'), undefined);
-    const diagnostic = recovery.querySelector('.dsh-project-error-details'); assert.equal(diagnostic.open, false);
-    await b.disclose('errorDetails', recovery); assert.equal(diagnostic.querySelector('pre').textContent, request.authorityError);
-    await b.selectRequestTab('progress');
-    const step = b.requestElement(task.id).querySelector('.dsh-project-task-step');
-    await b.disclose('errorDetails', step); assert.match(step.textContent, /ORIGINAL_PROVIDER_FAILURE\nSaved native failure/);
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(item => ['delegate', 'prompt', 'resume', 'store/write'].includes(item.method)), false);
+    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id);
+    const draft = b.document.createElement('textarea'); draft.value = 'Unsent follow-up'; b.document.body.append(draft);
+    assert.match(b.requestElement(task.id).textContent, /Repair the import|requestVersion 2/);
+    await b.disclose('errorDetails', b.requestElement(task.id)); assert.match(visibleText(b.requestElement(task.id)), /Actual checkpoint write failed/);
+    await b.press('retrySummary'); assert.equal(b.sent.length, 1);
+    assert.match(b.sent[0].text, /retrySummaryPrompt\nRepair the import · requestVersion 2\nFix and verify the import/);
+    assert.equal(draft.value, 'Unsent follow-up');
+    stale = true; await b.press('retrySummary'); assert.equal(b.sent.length, 1);
+    assert.match(b.document.querySelector('[role=alert]').textContent, /resultUpdated/);
+    stale = false; authorityMissing = true; await b.press('retrySummary'); assert.equal(b.sent.length, 1);
+    assert.match(b.document.querySelector('[role=alert]').textContent, /authorityErrorHint/);
+    assert.equal(b.requests.some(request => ['delegate', 'resume', 'store/write'].includes(request.method)), false);
   } finally { await b.dispose(); }
 });
 
-test('authority requirement original goals remain readable in Request detail and bounded Materials pages', async () => {
-  const rows = Array.from({ length: 25 }, (_, i) => ({ id: `stored-request-${i}`, title: `Original objective ${i}`, revision: i + 1,
-    goal: `Original detailed goal ${i}\n${'Preserve the exact saved requirement. '.repeat(80)}`, authorityError: `Original authorization diagnostic ${i}` }));
-  const delivery = { id: 'kept-delivery', requestId: 'delivered-request', title: 'Existing delivered result', status: 'delivered', outcome: 'completed',
-    requestRevision: 1, at: 1, summary: 'Existing conclusion remains available', reportRefs: [], applicable: true };
-  const requestCard = { ...taskCard(rows[0].id, rows[0].title, 'blocked'), ...rows[0] };
-  const b = bench({ cards: [requestCard], detail: { workstreams: [], workers: [] }, rpcOverride: (method, input) => {
-    if (method !== 'store/list') return;
-    const start = input.kind === 'requests' ? rows.findIndex(row => row.id === input.cursor) + 1 : 0;
-    const items = rows.slice(start, start + 10), requests = { items, total: rows.length, nextCursor: start + items.length < rows.length ? items.at(-1).id : null };
-    return { ok: true, value: input.kind === 'requests' ? { requests } : { requests, docs: [], results: [], deliveries: { items: [delivery], total: 1, nextCursor: null } } };
+test('same-named results retain distinct source locations and open the exact recorded artifact', async () => {
+  const files = [{ path: 'C:\\project\\src\\app.js', location: 'existing', size: 1024 }, { path: 'C:\\owned-branch\\src\\app.js', location: 'worktree', size: 4096 }];
+  const reports = files.map((file, i) => ({ delegationRef: `actual-report-${i}`, outcome: 'completed', at: i + 1, summary: 'Actual result', artifacts: [file] }));
+  const b = bench({ rpcOverride: method => method === 'store/list' ? { ok: true, value: { docs: [], results: reports.map((report, i) => ({ workstreamId: `work-${i}`, title: `Work ${i}`, current: true, reportCount: 1, report })) } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush();
+    const rows = [...b.document.querySelectorAll('.dsh-project-artifact')]; assert.equal(rows.length, 2);
+    assert.deepEqual(rows.map(e => e.querySelector('button').textContent), ['app.js', 'app.js']);
+    assert.match(rows[0].textContent, /artifactExisting/); assert.match(rows[1].textContent, /artifactWorktree/);
+    for (const [i, row] of rows.entries()) {
+      assert.equal(row.querySelector('.dsh-project-path'), null); assert.equal(row.querySelector('button').title, files[i].path);
+      const reportDetails = row.closest('article').querySelector('.dsh-project-result-disclosure'); assert.equal(reportDetails.open, false);
+      await act(async () => { row.querySelector('button').focus(); row.querySelector('button').click(); await new Promise(resolve => setImmediate(resolve)); });
+      const opened = b.requests.filter(r => r.method === 'open').at(-1);
+      assert.equal(opened.input.path, files[i].path); assert.equal(opened.input.delegationRef, reports[i].delegationRef); assert.equal(opened.input.workstreamId, `work-${i}`);
+      await b.press('materials'); assert.equal(b.document.querySelectorAll('.dsh-project-artifact')[i], row);
+      await act(async () => { row.querySelector('[aria-label="fileMore: app.js"]').click(); });
+      await act(async () => { row.querySelector('[role=menuitem]').click(); });
+      assert.equal(row.querySelector('.dsh-project-path').textContent, files[i].path); assert.equal(b.requests.filter(r => r.method === 'open').length, i + 1);
+    }
+  } finally { await b.dispose(); }
+});
+
+test('archive keeps its read-only composer throughout the request and archived materials cannot be edited', async () => {
+  let finishArchive;
+  const b = bench({ rpcOverride: (method, _input, project) => method === 'archive' ? new Promise(resolve => { finishArchive = () => { project.lifecycle = 'archived'; resolve({ ok: true, value: { project } }); }; })
+    : method === 'restore' ? (project.lifecycle = 'ready', { ok: true, value: { project } }) : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount();
+    let command; await act(async () => { command = b.face().command('project-one', 'archive'); await new Promise(resolve => setImmediate(resolve)); }); await b.render();
+    assert.match(b.document.body.textContent, /archiving/); assert.equal(b.button('restore').disabled, true, 'The restore control retains its place and cannot run before archiving finishes');
+    await act(async () => { finishArchive(); await command; }); await b.render();
+    assert.match(b.document.body.textContent, /archivedHint/); assert.ok(b.button('restore'));
+    await b.press('materials'); await b.flush(); await b.press('notes'); assert.equal(b.document.querySelector('textarea').readOnly, true); assert.equal(b.button('save'), undefined);
+    await b.press('close'); await b.press('restore'); await b.render(); assert.doesNotMatch(b.document.body.textContent, /archivedHint/);
+    assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message'].includes(request.method)), false);
+  } finally { await b.dispose(); }
+});
+
+test('results keep earlier reports reachable and opening changed artifacts explains the current preview', async () => {
+  const old = { delegationRef: 'old-assignment', outcome: 'completed', at: 1, summary: 'Earlier completed result', artifacts: [{ path: 'src/old.js' }] };
+  const current = { delegationRef: 'current-assignment', outcome: 'blocked', at: 2, summary: 'Current result needs an external check', artifacts: [] };
+  const b = bench({ rpcOverride: (method, _input, _project) => method === 'store/list' ? { ok: true, value: { docs: [], results: [{ workstreamId: 'work-one', title: 'Continuing work', current: true, reportCount: 2, report: current }] } }
+    : method === 'store/results' ? { ok: true, value: { items: [current, old], total: 2, hasMore: false, nextCursor: null } }
+      : method === 'open' ? { ok: true, value: { canonicalPath: 'C:/workspace/real/src/old.js', root: 'C:/workspace/real', modifiedSinceReport: true } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); assert.match(b.document.querySelector('.dsh-project-materials').textContent, /Current result needs an external check/);
+    const history = [...b.document.querySelectorAll('details')].find(element => element.querySelector('summary')?.textContent.startsWith('resultHistory'));
+    assert.equal(history.querySelector('summary').textContent, 'resultHistory (1)');
+    await act(async () => { history.open = true; history.dispatchEvent(new b.document.defaultView.Event('toggle')); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
+    assert.equal(b.requests.filter(request => request.method === 'store/results').length, 1);
+    assert.match(history.textContent, /Earlier completed result/); await b.press('openFile: old.js');
+    const opened = b.requests.filter(request => request.method === 'open').at(-1); assert.equal(opened.input.delegationRef, 'old-assignment'); assert.equal(opened.input.workstreamId, 'work-one'); assert.equal(opened.input.path, 'src/old.js');
+    await b.press('materials');
+    const notice = b.document.querySelector('[role=alert]'); assert.ok(notice && isVisible(notice)); assert.match(notice.textContent, /modifiedArtifact/);
+    assert.equal(b.document.querySelector('.dsh-project-materials').contains(notice), false, 'A changed artifact notice does not create a new result row');
+  } finally { await b.dispose(); }
+});
+
+test('a requirement bound to a repository subdirectory keeps repository-relative paths separate from its workspace label', async () => {
+  const task = taskCard('subdirectory-changes', 'App directory result', 'completed');
+  task.changes = { isGit: true, revertible: true, fileCount: 1, added: 1, removed: 0 };
+  const diff = ['diff --git a/app/result.txt b/app/result.txt', 'new file mode 100644', '--- /dev/null', '+++ b/app/result.txt', '@@ -0,0 +1 @@', '+result', ''].join('\n');
+  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true,
+    workspaces: [{ workingDirectory: 'C:/repo/app', files: [{ path: 'app/result.txt', status: 'A', added: 1, removed: 0 }], diff }] } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
+    const file = b.document.querySelector('.dsh-project-diff-file');
+    assert.equal(file.dataset.diffPath, 'app/result.txt'); assert.equal(file.dataset.diffDirectory, 'C:/repo/app');
+    const name = file.querySelector('.dsh-project-diff-name');
+    assert.equal(name.textContent, 'app/result.txt · …/app');
+    assert.equal(name.title, 'diffWorkingDirectory: C:/repo/app\ndiffRepositoryPath: app/result.txt');
+    assert.doesNotMatch(file.textContent + name.title, /C:\/repo\/app\/app\/result\.txt/, 'the workspace cwd is not the repository-relative path root');
+    assert.match(file.textContent, /\+result/);
+  } finally { await b.dispose(); }
+});
+
+test('diff scope labels use unique directory suffixes when final components match and preserve roots', async () => {
+  const task = taskCard('matching-directory-names', 'Distinct app scopes', 'completed');
+  task.changes = { isGit: true, revertible: true, fileCount: 4, added: 4, removed: 0 };
+  const directories = ['C:/repo/primary/app', 'C:/repo/isolated/app', 'C:\\', '/'];
+  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true,
+    workspaces: directories.map(workingDirectory => ({ workingDirectory, files: [{ path: 'result.txt', status: 'A', added: 1, removed: 0 }], diff: '' })) } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
+    const names = [...b.document.querySelectorAll('.dsh-project-diff-name')];
+    assert.deepEqual(names.map(name => name.textContent), ['result.txt · …/primary/app', 'result.txt · …/isolated/app', 'result.txt · C:\\', 'result.txt · /']);
+    assert.deepEqual(names.map(name => name.title), directories.map(directory => `diffWorkingDirectory: ${directory}\ndiffRepositoryPath: result.txt`));
+    assert.deepEqual([...b.document.querySelectorAll('.dsh-project-diff-file')].map(file => file.dataset.diffPath), directories.map(() => 'result.txt'));
+  } finally { await b.dispose(); }
+});
+
+test('notes show the Project decision log without its internal markers', async () => {
+  const b = bench({ rpcOverride: (method, input, _project, stored) => {
+    if (method === 'store/read' && input.path === 'decisions.md') stored['decisions.md'] = '# 决策日志\n\n## 2026-10-16 · Remember me（第 1 版）\n<!-- decision:delivery-a -->\n- 结果：完整交付\n- 决策：Use an HttpOnly cookie.\n';
   } });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(requestCard.id);
-    const requestDetail = b.requestElement(requestCard.id);
-    const progressGoal = requestDetail.querySelector('[data-markdown]'); assert.equal(progressGoal.textContent, rows[0].goal);
-    assert.match(requestDetail.textContent, /authorityErrorHint/); assert.equal(b.button('retrySummary'), undefined);
-    await b.press('materials'); await b.flush();
-    const dialog = b.document.querySelector('.dsh-project-materials'), visibleIds = () => [...dialog.querySelectorAll('[data-request-recovery-id]')].map(card => card.dataset.requestRecoveryId);
-    assert.deepEqual(visibleIds(), rows.slice(0, 10).map(row => row.id));
-    const card = dialog.querySelector('[data-request-recovery-id]'), goal = card.querySelector('[data-markdown]');
-    assert.equal(card.querySelector('strong').textContent, `${rows[0].title} · requestVersion ${rows[0].revision}`);
-    assert.equal(isVisible(goal), false); await b.disclose('workRequest', card); assert.equal(goal.textContent, rows[0].goal); assert.equal(isVisible(goal), true);
-    assert.doesNotMatch(card.textContent, /stored-request-0/); assert.equal(b.button('retrySummary'), undefined);
-    const diagnostic = card.querySelector('.dsh-project-error-details'); assert.equal(diagnostic.open, false);
-    await b.disclose('errorDetails', card); assert.equal(diagnostic.querySelector('pre').textContent, rows[0].authorityError);
-    await b.press('earlierRequests'); assert.deepEqual(visibleIds(), rows.slice(10, 20).map(row => row.id));
-    await b.press('earlierRequests'); assert.deepEqual(visibleIds(), rows.slice(20).map(row => row.id)); assert.equal(b.button('earlierRequests'), undefined);
-    await b.press('previous'); assert.deepEqual(visibleIds(), rows.slice(10, 20).map(row => row.id));
-    assert.deepEqual(b.requests.filter(item => item.method === 'store/list' && item.input.kind === 'requests').map(item => item.input.cursor), ['stored-request-9', 'stored-request-19', 'stored-request-9']);
-    assert.match(dialog.querySelector('[data-delivery-id=kept-delivery]').textContent, /Existing conclusion remains available/);
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(item => ['delegate', 'prompt', 'resume', 'store/write'].includes(item.method)), false);
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('notes'); await b.flush();
+    await b.disclose('decisionLog');
+    const log = b.document.querySelector('[data-decision-log]');
+    assert.match(log.textContent, /Use an HttpOnly cookie/); assert.doesNotMatch(log.textContent, /decision:delivery-a|# 决策日志/);
   } finally { await b.dispose(); }
+});
+
+test('returning from the main member view mounts the coordinator before focusing its unchanged draft', async () => {
+  const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, navigateSessions: true });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
+    assert.equal(b.document.querySelector('[data-lead-composer]'), null);
+    await b.press('backToLead');
+    const editor = b.document.querySelector('[data-lead-composer]');
+    assert.ok(editor); assert.equal(b.document.activeElement, editor);
+    assert.equal(editor.value, 'Unsent coordinator draft');
+    assert.equal(b.document.querySelector('.dsh-project-composer-notice'), null);
+    assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);
+    assert.equal(b.sent.length, 0);
+  } finally { await b.dispose(); }
+});
+
+test('the research sites list is edited from Project materials like the other plain materials', async () => {
+  const b = bench({ detail: workDetail() });
+  b.stored['research-hosts.txt'] = '';
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.press('researchHosts');
+    await b.flush(); await b.changeNotes('docs.example.org  # the spec lives here\n'); await b.press('save'); await b.flush();
+    const write = b.requests.findLast(request => request.method === 'store/write');
+    assert.deepEqual([write.input.path, write.input.text], ['research-hosts.txt', 'docs.example.org  # the spec lives here\n']);
+  } finally { await b.dispose(); }
+});
+
+test('background list failures surface as a notice and clear when the list recovers', async () => {
+  let failure = 'Project Host stopped responding';
+  const b = bench({ language: 'zh', rpcOverride: (method, _input, project) => method === 'list' ? (failure ? { ok: false, error: { code: 'project/unavailable', message: failure } } : { ok: true, value: { projects: [project], available: true } }) : undefined });
+  try {
+    await b.flush(); await b.mount(); await b.flush();
+    const alerts = () => [...b.document.querySelectorAll('[role=alert]')].map(alert => alert.textContent);
+    assert.deepEqual(alerts(), [`Project 出错：${failure}`]);
+    await b.poll(); assert.equal(alerts().length, 1, 'A repeated failure is not stacked');
+    failure = ''; await b.poll(); assert.deepEqual(alerts(), [], 'A recovered list clears the notice');
+    failure = 'Project catalog is unreadable'; await b.poll(); assert.deepEqual(alerts(), [`Project 出错：${failure}`]);
+  } finally { await b.dispose(); }
+});
+
+test('a failed New Session Project start stays on the blank Session with a visible reason', async () => {
+  const blank = 'blank-session';
+  const b = bench({ rejectCreation: true, runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' } } });
+  try {
+    await b.flush(); await b.mount(); await b.mountSession(blank);
+    await act(async () => { b.document.querySelector('.dsh-project-hero-option').click(); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
+    assert.match(b.document.body.textContent, /Creation failed/);
+    assert.deepEqual(b.navigation, []);
+    assert.equal(b.document.querySelector('.dsh-project-hero-option').disabled, false);
+  } finally { await b.dispose(); }
+});
+
+test('a later Project navigation supersedes an older detail response', async () => {
+  let defer = false, finishOlder;
+  const b = bench({ rpcOverride: (method, input, project) => {
+    if (method !== 'detail') return;
+    if (input.projectId === 'project-two') return { ok: true, value: { project: { ...project, id: 'project-two', coordinatorSessionId: 'coordinator-two' }, workers: [], workstreams: [] } };
+    if (defer) return new Promise(resolve => { finishOlder = () => resolve({ ok: true, value: { project, workers: [], workstreams: [] } }); });
+  } });
+  try {
+    await b.flush(); await b.adopt(); defer = true;
+    const older = b.face().openProject('project-one'); await b.face().openProject('project-two'); const before = b.navigation.length; finishOlder(); await older;
+    assert.equal(b.navigation.length, before); assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-two']);
+  } finally { await b.dispose(); }
+});
+
+test('archiving confirms whole-project activity even when its active member is outside the displayed page', async () => {
+  for (const activity of [{ running: 1, state: 'running' }, { queued: 1, state: 'queued' }, { provisioning: 1, state: 'provisioning' }]) {
+    const b = bench({ detail: { activity, workers: [], workstreams: [] }, rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
+    try {
+      await b.flush(); await b.mount(); await b.flush();
+      const owned = b.sessionActions.get('project'); assert.equal(typeof owned.archive, 'function');
+      await act(async () => { owned.archive(b.project.coordinatorSessionId); await new Promise(resolve => setImmediate(resolve)); });
+      assert.ok(b.document.querySelector('[role=dialog][aria-label=archiveActive]'));
+      assert.equal(b.requests.some(request => request.method === 'archive'), false);
+      await b.press('cancel'); assert.equal(b.requests.some(request => request.method === 'archive'), false);
+      await act(async () => { owned.archive(b.project.coordinatorSessionId); await new Promise(resolve => setImmediate(resolve)); });
+      await b.press('archiveActive');
+      assert.equal(b.requests.filter(request => request.method === 'archive').length, 1);
+    } finally { await b.dispose(); }
+  }
 });
 
 test('imported historical deliveries keep their original result references without claiming current completion', async () => {
@@ -1730,64 +1396,6 @@ test('imported historical deliveries keep their original result references witho
       assert.equal(b.sent.length, 0); assert.equal(b.requests.some(item => ['delegate', 'prompt', 'resume', 'store/write'].includes(item.method)), false);
     } finally { await b.dispose(); }
   }
-});
-
-test('a failed Request handover without member rows offers a fresh scoped summary and preserves the composer draft', async () => {
-  const task = taskCard('request-one', 'Repair the import', 'summaryFailed');
-  Object.assign(task, { revision: 2, goal: 'Fix and verify the import', handoverError: 'Actual checkpoint write failed' });
-  const b = bench({ cards: [task], detail: { workstreams: [], workers: [] }, rpcOverride: (method, input, project) => {
-    if (method === 'detail') project.currentRequests = [{ ...task, revision: stale ? 3 : 2,
-      ...(authorityMissing ? { authorityError: 'Actual missing authorization' } : {}) }];
-  } });
-  let stale = false, authorityMissing = false;
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id);
-    const draft = b.document.createElement('textarea'); draft.value = 'Unsent follow-up'; b.document.body.append(draft);
-    assert.match(b.requestElement(task.id).textContent, /Repair the import|requestVersion 2/);
-    await b.disclose('errorDetails', b.requestElement(task.id)); assert.match(visibleText(b.requestElement(task.id)), /Actual checkpoint write failed/);
-    await b.press('retrySummary'); assert.equal(b.sent.length, 1);
-    assert.match(b.sent[0].text, /retrySummaryPrompt\nRepair the import · requestVersion 2\nFix and verify the import/);
-    assert.equal(draft.value, 'Unsent follow-up');
-    stale = true; await b.press('retrySummary'); assert.equal(b.sent.length, 1);
-    assert.match(b.document.querySelector('[role=alert]').textContent, /resultUpdated/);
-    stale = false; authorityMissing = true; await b.press('retrySummary'); assert.equal(b.sent.length, 1);
-    assert.match(b.document.querySelector('[role=alert]').textContent, /authorityErrorHint/);
-    assert.equal(b.requests.some(request => ['delegate', 'resume', 'store/write'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('a changed result cannot be submitted as the failed result by the summary action', async () => {
-  const detail = workDetail(); Object.assign(detail.workstreams[0], { currentDelegationRef: 'old-ref', summaryFailure: { delegationRef: 'old-ref', error: { message: 'Failed' } } });
-  detail.workers[0].phase = 'idle'; detail.workers[0].activeRunId = '';
-  const task = taskCard('request-one', 'Implement feature', 'summaryFailed');
-  task.work = [{ workstreamId: 'work-one', delegationRef: 'old-ref', title: 'Implement feature', memberName: 'Engineer', status: 'summaryFailed', current: true }];
-  let reads = 0;
-  const b = bench({ detail, cards: [task], rpcOverride: method => method === 'workstreams/get' && ++reads > 1 ?
-    { ok: true, value: { workstream: { title: 'New result', latestReport: { delegationRef: 'new-ref', at: 2 }, summaryFailure: { delegationRef: 'old-ref' } } } } : undefined });
-  try { await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
-    await b.press('retrySummary'); assert.equal(b.sent.length, 0); assert.match(b.document.body.textContent, /resultUpdated/); }
-  finally { await b.dispose(); }
-});
-
-test('a missing credential has an actionable settings entry and preserves the complete diagnostic on demand', async () => {
-  const detail = workDetail(), work = detail.workstreams[0];
-  Object.assign(detail.activity, { running: 0, summaryFailed: 1, state: 'summaryFailed' });
-  Object.assign(work, { status: 'done', currentDelegationRef: 'current', summaryFailure: { delegationRef: 'current', error: { code: 'MISSING_CREDENTIAL', message: 'Exact native provider diagnostic' } } });
-  Object.assign(work.latestReport, { delegationRef: 'current' }); Object.assign(detail.workers[0], { activeRunId: '', phase: 'idle' });
-  const task = taskCard('request-one', 'Implement feature', 'summaryFailed');
-  task.work = [{ workstreamId: work.id, delegationRef: work.currentDelegationRef, title: work.title,
-    memberName: 'Engineer', workerSessionId: 'worker-one', status: 'summaryFailed', current: true, updatedAt: 1000 }];
-  const b = bench({ detail, cards: [task] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
-    const workRow = b.requestElement(task.id).querySelector('.dsh-project-task-step');
-    assert.match(workRow.textContent, /summaryCredentialHint/);
-    const diagnostics = [...workRow.querySelectorAll('details')].find(e => e.querySelector('summary')?.textContent === 'errorDetails');
-    assert.equal(diagnostics.open, false); assert.equal(diagnostics.querySelector('pre').textContent, 'MISSING_CREDENTIAL\nExact native provider diagnostic');
-    await b.press('modelSettings'); assert.deepEqual(b.navigation.at(-1), ['settings', 'models']);
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(r => ['delegate', 'resume', 'store/write'].includes(r.method)), false);
-    await b.disclose('errorDetails'); assert.equal(diagnostics.open, true);
-  } finally { await b.dispose(); }
 });
 
 test('a partial delivery without a report opens its exact terminal records and returns to the same Project results', async () => {
@@ -1848,29 +1456,6 @@ test('result conclusions preserve saved operators and literal Markdown inside co
   } finally { await b.dispose(); }
 });
 
-test('same-named results retain distinct source locations and open the exact recorded artifact', async () => {
-  const files = [{ path: 'C:\\project\\src\\app.js', location: 'existing', size: 1024 }, { path: 'C:\\owned-branch\\src\\app.js', location: 'worktree', size: 4096 }];
-  const reports = files.map((file, i) => ({ delegationRef: `actual-report-${i}`, outcome: 'completed', at: i + 1, summary: 'Actual result', artifacts: [file] }));
-  const b = bench({ rpcOverride: method => method === 'store/list' ? { ok: true, value: { docs: [], results: reports.map((report, i) => ({ workstreamId: `work-${i}`, title: `Work ${i}`, current: true, reportCount: 1, report })) } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush();
-    const rows = [...b.document.querySelectorAll('.dsh-project-artifact')]; assert.equal(rows.length, 2);
-    assert.deepEqual(rows.map(e => e.querySelector('button').textContent), ['app.js', 'app.js']);
-    assert.match(rows[0].textContent, /artifactExisting/); assert.match(rows[1].textContent, /artifactWorktree/);
-    for (const [i, row] of rows.entries()) {
-      assert.equal(row.querySelector('.dsh-project-path'), null); assert.equal(row.querySelector('button').title, files[i].path);
-      const reportDetails = row.closest('article').querySelector('.dsh-project-result-disclosure'); assert.equal(reportDetails.open, false);
-      await act(async () => { row.querySelector('button').focus(); row.querySelector('button').click(); await new Promise(resolve => setImmediate(resolve)); });
-      const opened = b.requests.filter(r => r.method === 'open').at(-1);
-      assert.equal(opened.input.path, files[i].path); assert.equal(opened.input.delegationRef, reports[i].delegationRef); assert.equal(opened.input.workstreamId, `work-${i}`);
-      await b.press('materials'); assert.equal(b.document.querySelectorAll('.dsh-project-artifact')[i], row);
-      await act(async () => { row.querySelector('[aria-label="fileMore: app.js"]').click(); });
-      await act(async () => { row.querySelector('[role=menuitem]').click(); });
-      assert.equal(row.querySelector('.dsh-project-path').textContent, files[i].path); assert.equal(b.requests.filter(r => r.method === 'open').length, i + 1);
-    }
-  } finally { await b.dispose(); }
-});
-
 test('same-named Projects list under their exact directories with their own coordinator', async () => {
   let other;
   const b = bench({ rpcOverride: (method, input, project) => {
@@ -1884,78 +1469,6 @@ test('same-named Projects list under their exact directories with their own coor
       { sessionId: 'other-lead', workingDirectory: 'C:/another/real', archived: false }]);
     for (const sessionId of ['coordinator-existing', 'other-lead']) { await b.mountSession(sessionId); assert.equal(b.document.querySelector('.dsh-project-row-badge')?.textContent, 'tab'); }
     assert.equal(b.requests.some(r => ['create', 'delegate', 'resume'].includes(r.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('queued work explains the actual gate and an open report refreshes changed prerequisites without rerunning it', async () => {
-  for (const [kind, label] of [['dependencies', 'waitingDependencies'], ['directory', 'waitingDirectory'], ['capacity', 'waitingCapacity']]) {
-    const detail = workDetail(), work = detail.workstreams[0]; Object.assign(work, { delegation: { phase: 'queued', waitingReason: { kind, workTitles: kind === 'capacity' ? [] : ['API contract'] } } });
-    const task = taskForWork(detail); Object.assign(task.work[0], { status: 'queued', waitingReason: work.delegation.waitingReason });
-    const b = bench({ detail, cards: [task], rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
-    try {
-      await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList();
-      const card = await b.openRequest(task.id); await b.selectRequestTab('progress'); assert.match(visibleText(card.querySelector('.dsh-project-task-step')), new RegExp(label));
-      if (kind !== 'capacity') assert.match(visibleText(card.querySelector('.dsh-project-task-step')), /API contract/);
-      assert.doesNotMatch(visibleText(card), /prerequisitesChanged/);
-      work.prerequisitesChanged = true; work.latestReport.prerequisitesChanged = true; detail.revision = 'dependency-result-changed';
-      await b.poll(); await b.flush(); assert.match(visibleText(card.querySelector('.dsh-project-task-step')), /prerequisitesChanged/, 'a changed prerequisite shows on its work even when the work itself is unchanged');
-      assert.equal(b.requests.some(request => request.method === 'delegate'), false);
-    } finally { await b.dispose(); }
-  }
-});
-
-test('archive keeps its read-only composer throughout the request and archived materials cannot be edited', async () => {
-  let finishArchive;
-  const b = bench({ rpcOverride: (method, _input, project) => method === 'archive' ? new Promise(resolve => { finishArchive = () => { project.lifecycle = 'archived'; resolve({ ok: true, value: { project } }); }; })
-    : method === 'restore' ? (project.lifecycle = 'ready', { ok: true, value: { project } }) : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    let command; await act(async () => { command = b.face().command('project-one', 'archive'); await new Promise(resolve => setImmediate(resolve)); }); await b.render();
-    assert.match(b.document.body.textContent, /archiving/); assert.equal(b.button('restore').disabled, true, 'The restore control retains its place and cannot run before archiving finishes');
-    await act(async () => { finishArchive(); await command; }); await b.render();
-    assert.match(b.document.body.textContent, /archivedHint/); assert.ok(b.button('restore'));
-    await b.press('materials'); await b.flush(); await b.press('notes'); assert.equal(b.document.querySelector('textarea').readOnly, true); assert.equal(b.button('save'), undefined);
-    await b.press('close'); await b.press('restore'); await b.render(); assert.doesNotMatch(b.document.body.textContent, /archivedHint/);
-    assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('results keep earlier reports reachable and opening changed artifacts explains the current preview', async () => {
-  const old = { delegationRef: 'old-assignment', outcome: 'completed', at: 1, summary: 'Earlier completed result', artifacts: [{ path: 'src/old.js' }] };
-  const current = { delegationRef: 'current-assignment', outcome: 'blocked', at: 2, summary: 'Current result needs an external check', artifacts: [] };
-  const b = bench({ rpcOverride: (method, _input, _project) => method === 'store/list' ? { ok: true, value: { docs: [], results: [{ workstreamId: 'work-one', title: 'Continuing work', current: true, reportCount: 2, report: current }] } }
-    : method === 'store/results' ? { ok: true, value: { items: [current, old], total: 2, hasMore: false, nextCursor: null } }
-      : method === 'open' ? { ok: true, value: { canonicalPath: 'C:/workspace/real/src/old.js', root: 'C:/workspace/real', modifiedSinceReport: true } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); assert.match(b.document.querySelector('.dsh-project-materials').textContent, /Current result needs an external check/);
-    const history = [...b.document.querySelectorAll('details')].find(element => element.querySelector('summary')?.textContent.startsWith('resultHistory'));
-    assert.equal(history.querySelector('summary').textContent, 'resultHistory (1)');
-    await act(async () => { history.open = true; history.dispatchEvent(new b.document.defaultView.Event('toggle')); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
-    assert.equal(b.requests.filter(request => request.method === 'store/results').length, 1);
-    assert.match(history.textContent, /Earlier completed result/); await b.press('openFile: old.js');
-    const opened = b.requests.filter(request => request.method === 'open').at(-1); assert.equal(opened.input.delegationRef, 'old-assignment'); assert.equal(opened.input.workstreamId, 'work-one'); assert.equal(opened.input.path, 'src/old.js');
-    await b.press('materials');
-    const notice = b.document.querySelector('[role=alert]'); assert.ok(notice && isVisible(notice)); assert.match(notice.textContent, /modifiedArtifact/);
-    assert.equal(b.document.querySelector('.dsh-project-materials').contains(notice), false, 'A changed artifact notice does not create a new result row');
-  } finally { await b.dispose(); }
-});
-
-test('each card states its plain status, next step and undo', async () => {
-  const current = taskCard('active-a', 'Current A'), first = taskCard('queued-b', 'Queued B'), draft = taskCard('draft-d', 'Discuss D'), done = taskCard('done-e', 'Delivered E', 'completed');
-  current.queue = { state: 'active', released: false }; first.queue = { state: 'queued', position: 1 }; draft.queue = { state: 'discussing' };
-  const queue = { active: current, queued: [{ ...first, position: 1 }], discussingCount: 1, paused: false };
-  const b = bench({ cards: [current, first, draft, done], queue });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    assert.equal(b.document.querySelector('.dsh-project-board'), null, 'Counts stay on the header badge; the panel lists the requirements themselves');
-    assert.match(visibleText(b.requestElement(current.id).querySelector('.dsh-project-task-state')), /statusArranging/);
-    assert.match(visibleText(b.requestElement(first.id)), /Queued B.*statusQueued/s);
-    const discussing = await b.openRequest(draft.id);
-    assert.match(visibleText(discussing.querySelector('.dsh-project-task-state')), /statusDiscussing/);
-    assert.match(visibleText(discussing.querySelector('.dsh-project-task-next')), /nextStep.*nextDiscussing/s);
-    await b.press('requestUndo');
-    assert.deepEqual({ ...b.requests.filter(request => request.method === 'requests/queue').at(-1).input }, { projectId: b.project.id, requestId: draft.id, requestRevision: 1, action: 'cancel' });
-    assert.equal(b.sent.length, 0);
   } finally { await b.dispose(); }
 });
 
@@ -1975,37 +1488,6 @@ test('Project rules edit charter.md with common-rule toggles, a size meter and a
     await b.changeNotes('x'.repeat(16001));
     assert.equal(b.document.querySelector('.dsh-project-charter-meter').dataset.over, 'true');
     assert.equal(b.button('save').disabled, true);
-  } finally { await b.dispose(); }
-});
-
-test('a delivered card lists its files, opens them with exact authority and shows a per-file colored diff', async () => {
-  const task = taskCard('delivered-files', 'Login remember me', 'completed');
-  task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', workerSessionId: 'worker-one', title: 'Remember-me login', status: 'completed', memberRole: 'worker', current: true }];
-  task.delivery.artifacts = [{ path: 'src/login.js', size: 120, sha256: 'a', type: 'file', workstreamId: 'work-one', delegationRef: 'actual-assignment' },
-    { path: 'src/login.test.js', size: 80, sha256: 'b', type: 'file', workstreamId: 'work-one', delegationRef: 'actual-assignment' }];
-  task.delivery.pages = [];
-  const diff = ['diff --git a/src/login.js b/src/login.js', 'index 1..2 100644', '--- a/src/login.js', '+++ b/src/login.js', '@@ -1,2 +1,3 @@', ' const a = 1;', '-const b = 2;', '+const b = 3;', '+const remember = true;',
-    'diff --git a/src/new.js b/src/new.js', 'new file mode 100644', '--- /dev/null', '+++ b/src/new.js', '@@ -0,0 +1 @@', '+export {};', ''].join('\n');
-  const b = bench({ cards: [task], rpcOverride: method => method === 'diff' ? { ok: true, value: { worker: { cwd: 'C:/workspace/real', mode: 'existing' },
-    snapshot: { isGit: true, diff, truncated: false, files: [{ path: 'src/login.js', status: ' M' }, { path: 'src/new.js', status: 'A ' }, { path: 'notes.txt', status: '??' }] } } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const card = await b.openRequest(task.id); await b.selectRequestTab('results'); await b.flush();
-    const delivery = card.querySelector('.dsh-project-task-delivery'); assert.ok(delivery && isVisible(delivery));
-    assert.deepEqual([...delivery.querySelectorAll('.dsh-project-task-file')].map(item => item.getAttribute('title')), ['src/login.js', 'src/login.test.js']);
-    await b.press('viewChanges'); await b.flush();
-    const files = [...b.document.querySelectorAll('.dsh-project-diff-file')];
-    assert.deepEqual(files.map(item => item.dataset.diffPath), ['src/login.js', 'src/new.js', 'notes.txt']);
-    assert.match(files[0].querySelector('summary').textContent, /diff_modified.*\+2.*−1/s);
-    assert.match(files[1].querySelector('summary').textContent, /diff_added/);
-    assert.match(files[2].textContent, /diff_untracked.*diffUntrackedHint/s);
-    assert.deepEqual([...files[0].querySelectorAll('.dsh-project-diff-line')].map(line => line.dataset.kind), ['hunk', 'context', 'del', 'add', 'add']);
-    assert.match(b.document.querySelector('.dsh-project-diff-summary').textContent, /diffFileCount.*\+3.*−1/s);
-    assert.match(b.dialog().textContent, /diffScope/);
-    // Opening a file contracts the observer for the native preview, so it comes last.
-    await b.press('openFile: login.js');
-    const opened = b.requests.filter(request => request.method === 'open').at(-1).input;
-    assert.equal(opened.workstreamId, 'work-one'); assert.equal(opened.delegationRef, 'actual-assignment'); assert.equal(opened.path, 'src/login.js');
   } finally { await b.dispose(); }
 });
 
@@ -2071,124 +1553,6 @@ test('requirement diffs distinguish same-named files in actual workspaces and re
   } finally { await b.dispose(); }
 });
 
-test('a requirement bound to a repository subdirectory keeps repository-relative paths separate from its workspace label', async () => {
-  const task = taskCard('subdirectory-changes', 'App directory result', 'completed');
-  task.changes = { isGit: true, revertible: true, fileCount: 1, added: 1, removed: 0 };
-  const diff = ['diff --git a/app/result.txt b/app/result.txt', 'new file mode 100644', '--- /dev/null', '+++ b/app/result.txt', '@@ -0,0 +1 @@', '+result', ''].join('\n');
-  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true,
-    workspaces: [{ workingDirectory: 'C:/repo/app', files: [{ path: 'app/result.txt', status: 'A', added: 1, removed: 0 }], diff }] } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
-    const file = b.document.querySelector('.dsh-project-diff-file');
-    assert.equal(file.dataset.diffPath, 'app/result.txt'); assert.equal(file.dataset.diffDirectory, 'C:/repo/app');
-    const name = file.querySelector('.dsh-project-diff-name');
-    assert.equal(name.textContent, 'app/result.txt · …/app');
-    assert.equal(name.title, 'diffWorkingDirectory: C:/repo/app\ndiffRepositoryPath: app/result.txt');
-    assert.doesNotMatch(file.textContent + name.title, /C:\/repo\/app\/app\/result\.txt/, 'the workspace cwd is not the repository-relative path root');
-    assert.match(file.textContent, /\+result/);
-  } finally { await b.dispose(); }
-});
-
-test('diff scope labels use unique directory suffixes when final components match and preserve roots', async () => {
-  const task = taskCard('matching-directory-names', 'Distinct app scopes', 'completed');
-  task.changes = { isGit: true, revertible: true, fileCount: 4, added: 4, removed: 0 };
-  const directories = ['C:/repo/primary/app', 'C:/repo/isolated/app', 'C:\\', '/'];
-  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true,
-    workspaces: directories.map(workingDirectory => ({ workingDirectory, files: [{ path: 'result.txt', status: 'A', added: 1, removed: 0 }], diff: '' })) } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
-    const names = [...b.document.querySelectorAll('.dsh-project-diff-name')];
-    assert.deepEqual(names.map(name => name.textContent), ['result.txt · …/primary/app', 'result.txt · …/isolated/app', 'result.txt · C:\\', 'result.txt · /']);
-    assert.deepEqual(names.map(name => name.title), directories.map(directory => `diffWorkingDirectory: ${directory}\ndiffRepositoryPath: result.txt`));
-    assert.deepEqual([...b.document.querySelectorAll('.dsh-project-diff-file')].map(file => file.dataset.diffPath), directories.map(() => 'result.txt'));
-  } finally { await b.dispose(); }
-});
-
-test('notes show the Project decision log without its internal markers', async () => {
-  const b = bench({ rpcOverride: (method, input, _project, stored) => {
-    if (method === 'store/read' && input.path === 'decisions.md') stored['decisions.md'] = '# 决策日志\n\n## 2026-10-16 · Remember me（第 1 版）\n<!-- decision:delivery-a -->\n- 结果：完整交付\n- 决策：Use an HttpOnly cookie.\n';
-  } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('notes'); await b.flush();
-    await b.disclose('decisionLog');
-    const log = b.document.querySelector('[data-decision-log]');
-    assert.match(log.textContent, /Use an HttpOnly cookie/); assert.doesNotMatch(log.textContent, /decision:delivery-a|# 决策日志/);
-  } finally { await b.dispose(); }
-});
-
-test('a queued requirement that is already investigating says so while development still waits', async () => {
-  const current = taskCard('active-a', 'Current A'), next = taskCard('queued-b', 'Queued B');
-  current.queue = { state: 'active', released: false }; next.queue = { state: 'queued', position: 1 };
-  next.workPreview = [{ workstreamId: 'work-b', delegationRef: 'b-read', title: 'Investigate B', status: 'running', memberName: 'member-b', workerSessionId: 'worker-b' }];
-  next.work = [{ ...next.workPreview[0], memberRole: 'readonly', current: true }];
-  const b = bench({ cards: [current, next], queue: { active: current, queued: [{ ...next, position: 1 }], paused: false } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    const card = await b.openRequest(next.id, false);
-    assert.match(visibleText(card.querySelector('.dsh-project-task-state')), /statusQueued/);
-    assert.match(visibleText(card.querySelector('.dsh-project-task-next')), /nextStep.*nextQueuedPreparing/s);
-  } finally { await b.dispose(); }
-});
-
-test('Project activity updates the retained header without registering composer rows or opening the Team', async () => {
-  const team = { members: [{ id: 'coordinator-existing', name: 'lead', role: 'lead' }, { id: 'worker-one', name: 'engineer', role: 'teammate' }, { id: 'worker-two', name: 'reviewer', role: 'teammate' }],
-    tasks: [{ id: 'task-one', subject: 'Merge the branch', ownerName: 'engineer', status: 'in_progress' }, { id: 'task-two', subject: 'Review the merge', ownerName: 'reviewer', status: 'pending', blockedBy: ['task-one'] }] };
-  const detail = { activity: { running: 1, queued: 1, state: 'running' } };
-  const b = bench({ team, sessionStatuses: { 'worker-one': { running: true } }, detail });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.flush();
-    let header = b.document.querySelector('[data-project-header-panel=requests] button'); assert.ok(header);
-    assert.match(header.textContent, /statusActive/);
-    assert.equal(b.entries.some(entry => ['conversation.input.dock', 'conversation.composer.dock'].includes(entry.options.name)), false, 'Project contributes no dynamic row above or below the input');
-    assert.equal(b.document.querySelector('[data-project-activity], [data-testid=project-checklist]'), null);
-    assert.deepEqual(b.asides, [], 'Starting members does not open a Team Sidebar');
-    await b.mountSession(null); await b.mountSession('coordinator-existing');
-    assert.deepEqual(b.asides, [], 'Returning to a Project does not reopen a Sidebar');
-    header = b.document.querySelector('[data-project-header-panel=requests] button');
-    detail.activity = { running: 0, queued: 1, state: 'queued' }; b.project.activity = detail.activity;
-    await act(async () => { b.sessionStatus.set(new Map([['worker-one', { running: false }]])); }); await b.poll(); await b.flush();
-    assert.equal(b.document.querySelector('[data-project-header-panel=requests] button'), header, 'The same header control survives a state update');
-    assert.match(header.textContent, /statusWaiting/);
-    detail.activity = { running: 0, queued: 0, state: 'idle' }; b.project.activity = detail.activity; await b.poll(); await b.flush();
-    assert.equal(b.document.querySelector('[data-project-header-panel=requests] button'), header);
-    assert.equal(b.document.querySelector('[data-project-activity]'), null);
-    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(request => ['stop', 'delegate'].includes(request.method)), false);
-  } finally { await b.dispose(); }
-});
-
-test('a member conversation explains that work goes through the coordinator and keeps the exact work stop', async () => {
-  const detail = workDetail();
-  const b = bench({ detail, memberSessions: { 'worker-one': 'coordinator-existing', 'unrelated-child': 'other-lead' },
-    rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await act(async () => { await b.face().readDetail('project-one'); }); await b.mountSession('worker-one'); await b.flush();
-    const notice = b.document.querySelector('.dsh-project-composer-notice'); assert.ok(notice);
-    assert.match(visibleText(notice), /memberComposerHint/);
-    await b.press('stopWork');
-    assert.deepEqual({ ...b.requests.filter(request => request.method === 'stop').at(-1).input }, { projectId: 'project-one', workstreamId: 'work-one',
-      requestId: b.requests.filter(request => request.method === 'stop').at(-1).input.requestId });
-    await b.press('backToLead'); assert.deepEqual(b.navigation.slice(-3), [['tab', 'sessions'], ['session', 'coordinator-existing'], ['focus', 'coordinator-existing']]);
-    await b.mountSession('unrelated-child'); assert.equal(b.document.querySelector('.dsh-project-composer-notice'), null, 'Children of other Leads keep their own composer');
-  } finally { await b.dispose(); }
-});
-
-test('returning from the main member view mounts the coordinator before focusing its unchanged draft', async () => {
-  const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, navigateSessions: true });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
-    assert.equal(b.document.querySelector('[data-lead-composer]'), null);
-    await b.press('backToLead');
-    const editor = b.document.querySelector('[data-lead-composer]');
-    assert.ok(editor); assert.equal(b.document.activeElement, editor);
-    assert.equal(editor.value, 'Unsent coordinator draft');
-    assert.equal(b.document.querySelector('.dsh-project-composer-notice'), null);
-    assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);
-    assert.equal(b.sent.length, 0);
-  } finally { await b.dispose(); }
-});
-
 test('returning from a main member also uncovers the coordinator when its fullscreen Sidebar is restored', async () => {
   const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, navigateSessions: true });
   try {
@@ -2202,7 +1566,7 @@ test('returning from a main member also uncovers the coordinator when its fullsc
   } finally { await b.dispose(); }
 });
 
-test('returning from a sidebar member replaces only that page and exposes the coordinator in fullscreen', async () => {
+test('returning from a sidebar member closes only that page without opening the old Project panel', async () => {
   for (const presentation of ['push', 'fullscreen', 'float', 'float-fullscreen']) {
     const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' } });
     try {
@@ -2211,7 +1575,7 @@ test('returning from a sidebar member replaces only that page and exposes the co
       const page = notice.parentElement;
       Object.assign(page.dataset, { sidebarRightSession: 'coordinator-existing', sidebarRightTab: 'member-tab', dockkitPane: 'member-pane', dockkitHost: presentation.startsWith('float') ? 'float' : 'dock', sidebarRightPanel: presentation.includes('fullscreen') ? 'fullscreen' : 'push' });
       await act(async () => { b.openTabs.set([
-        { sessionId: 'coordinator-existing', tabId: 'agent-team-coordinator-existing', kind: 'agent-team' },
+        { sessionId: 'coordinator-existing', tabId: 'project-team-coordinator-existing', kind: 'project-team' },
         { sessionId: 'coordinator-existing', tabId: 'member-tab', kind: 'subagentchat' },
         { sessionId: 'coordinator-existing', tabId: 'other-member', kind: 'subagentchat' },
         { sessionId: 'other-lead', tabId: 'other-project-member', kind: 'subagentchat' },
@@ -2221,9 +1585,9 @@ test('returning from a sidebar member replaces only that page and exposes the co
       await b.press('backToLead');
       assert.equal(b.document.activeElement, editor); assert.equal(editor.value, 'Keep my draft');
       assert.equal(b.openTabs.getSnapshot().some(tab => tab.tabId === 'member-tab'), false);
-      assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['agent-team-coordinator-existing', 'other-member', 'other-project-member']);
-      if (presentation.startsWith('float')) assert.deepEqual(b.asides.findLast(entry => entry[0] === 'close'), ['close', 'coordinator-existing', 'member-tab']);
-      else assert.deepEqual(b.asides.findLast(entry => entry[0] === 'tab'), ['tab', 'coordinator-existing', 'agent-team', { paneId: 'member-pane', replaceTab: 'member-tab' }]);
+      assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['project-team-coordinator-existing', 'other-member', 'other-project-member']);
+      assert.deepEqual(b.asides.findLast(entry => entry[0] === 'close'), ['close', 'coordinator-existing', 'member-tab']);
+      assert.equal(b.asides.some(entry => entry[0] === 'tab'), false);
       assert.equal(b.isSidebarExpanded(), !presentation.includes('fullscreen'));
       assert.deepEqual(b.sidebarToggles, presentation.includes('fullscreen') ? [false] : []);
       assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);
@@ -2244,428 +1608,99 @@ test('member stop failures stay outside the notice and leave return navigation a
   } finally { await b.dispose(); }
 });
 
-test('the coordinator plan folds under the member rows on Progress and never replaces them', async () => {
-  for (const leadTodos of [undefined, [{ content: 'Lead plan item', status: 'in_progress' }]]) {
-    const active = taskCard('active-checklist', 'Ship the changelog'), historical = taskCard('old-checklist', 'Earlier release', 'completed');
-    active.work = [
-      { workstreamId: 'work-write', delegationRef: 'ref-write', workerSessionId: 'worker-one', title: 'Write CHANGELOG.md', memberName: 'Writer', status: 'completed', current: true },
-      { workstreamId: 'work-check', delegationRef: 'ref-check', workerSessionId: 'worker-two', title: 'Check CHANGELOG.md', memberName: 'Reviewer', status: 'running', current: true },
-      { workstreamId: 'work-later', delegationRef: 'ref-later', workerSessionId: 'worker-three', title: 'Publish notes', memberName: 'Writer', status: 'queued', current: true, waitingReason: { kind: 'dependencies', workTitles: ['Check CHANGELOG.md'] } },
-    ];
-    const b = bench({ cards: [active, historical], leadTodos });
-    try {
-      await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(active.id);
-      assert.equal(b.document.querySelector('[data-testid=project-checklist]'), null, 'Project does not add a checklist to the composer');
-      const card = b.requestElement(active.id), progress = card.querySelector('[data-project-request-tab=progress]');
-      assert.ok(isVisible(progress), 'A running Request opens on Progress');
-      const rows = [...progress.querySelectorAll('.dsh-project-task-step')];
-      assert.deepEqual(rows.map(row => row.dataset.state), ['completed', 'running', 'queued']);
-      assert.match(visibleText(rows[1]), /Check CHANGELOG\.md.*Reviewer · running/);
-      assert.match(visibleText(rows[2]), /waitingDependencies · Check CHANGELOG\.md/);
-      if (leadTodos) {
-        const plan = progress.querySelector('.dsh-project-lead-plan');
-        assert.equal(plan.open, false, 'The plan folds away once members have work');
-        assert.equal(plan.querySelector('summary').textContent, 'leadPlan · 0/1');
-        await b.disclose('leadPlan · 0/1', card);
-        assert.match(visibleText(plan), /Lead plan item/); assert.doesNotMatch(visibleText(plan), /Write CHANGELOG|Check CHANGELOG|Publish notes/, 'Member assignments are not relabelled as the coordinator plan');
-      } else assert.equal(progress.querySelector('.dsh-project-lead-plan'), null, 'No plan is invented when the coordinator has recorded none');
-      await act(async () => { b.todos.set([{ content: 'Revised lead plan', status: 'completed' }]); });
-      const plan = progress.querySelector('.dsh-project-lead-plan');
-      assert.equal(plan.querySelector('summary').textContent, 'leadPlan · 1/1');
-      assert.match(plan.textContent, /Revised lead plan/); assert.doesNotMatch(plan.textContent, /Lead plan item/);
-      await b.openRequest(historical.id);
-      assert.equal(b.requestElement(historical.id).querySelector('.dsh-project-lead-plan'), null, 'A historical Request does not acquire the current plan');
-      assert.equal(b.sent.length, 0);
-    } finally { await b.dispose(); }
-  }
-});
 
-test('Request progress uses authoritative totals while the available work preview has only three rows', async () => {
-  const request = taskCard('preview-count-request', 'Inspect all work');
-  request.counts = { completed: 5, total: 12 }; delete request.work;
-  request.workPreview = Array.from({ length: 3 }, (_, index) => ({ workstreamId: 'preview-' + index, delegationRef: 'preview-ref-' + index, title: 'Preview task ' + index, status: index < 2 ? 'completed' : 'running' }));
-  const b = bench({ cards: [request], rpcOverride: method => method === 'requests/get' ? new Promise(() => {}) : undefined });
+test('returning from the last member collapses its empty guide without discarding other tabs', async () => {
+  const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, navigateSessions: true });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); const card = await b.openRequest(request.id);
-    assert.match(card.querySelector('.dsh-project-task-status-row').textContent, /5 \/ 12$/);
-    await b.selectRequestTab('progress');
-    assert.equal(card.querySelectorAll('.dsh-project-task-step').length, 3);
-    assert.match(visibleText(card), /workPreviewHint/); assert.doesNotMatch(card.querySelector('.dsh-project-task-status-row').textContent, /\/ 3$/);
-    await b.press(request.title + ' · observerStrip');
-    assert.match(visibleText(card), /5\/12/);
-    assert.equal(b.requests.filter(row => row.method === 'requests/get').length, 1);
+    await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
+    const page = b.document.querySelector('.dsh-project-composer-notice').parentElement;
+    Object.assign(page.dataset, { sidebarRightSession: 'coordinator-existing', sidebarRightTab: 'member-tab', dockkitPane: 'member-pane' });
+    await act(async () => { b.openTabs.set([
+      { sessionId: 'coordinator-existing', tabId: 'guide', kind: 'guide' },
+      { sessionId: 'coordinator-existing', tabId: 'member-tab', kind: 'subagentchat' },
+    ]); });
+    await b.setSidebarExpanded(true); await b.press('backToLead');
+    assert.equal(b.isSidebarExpanded(), false);
+    assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['guide']);
+    assert.equal(b.document.activeElement.value, 'Unsent coordinator draft');
   } finally { await b.dispose(); }
 });
 
-test('a failed activity read retains known facts but reports Unknown instead of idle or zero', async () => {
-  let unavailable = false, unavailableResult = false;
-  const detail = { activity: { running: 1, queued: 0, state: 'running', runningJobSessionIds: ['worker-job'] } };
-  const b = bench({ detail, rpcOverride: method => method === 'list' && unavailable ? Promise.reject(new Error('Project connection unavailable'))
-    : method === 'list' && unavailableResult ? { ok: true, value: { available: false, projects: [], error: 'Project service unavailable' } } : undefined });
+test('authority requirement original goals remain readable in Request detail and bounded Materials pages', async () => {
+  const rows = Array.from({ length: 25 }, (_, i) => ({ id: `stored-request-${i}`, title: `Original objective ${i}`, revision: i + 1,
+    goal: `Original detailed goal ${i}\n${'Preserve the exact saved requirement. '.repeat(80)}`, authorityError: `Original authorization diagnostic ${i}` }));
+  const delivery = { id: 'kept-delivery', requestId: 'delivered-request', title: 'Existing delivered result', status: 'delivered', outcome: 'completed',
+    requestRevision: 1, at: 1, summary: 'Existing conclusion remains available', reportRefs: [], applicable: true };
+  const requestCard = { ...taskCard(rows[0].id, rows[0].title, 'blocked'), ...rows[0] };
+  const b = bench({ cards: [requestCard], detail: { workstreams: [], workers: [] }, rpcOverride: (method, input) => {
+    if (method !== 'store/list') return;
+    const start = input.kind === 'requests' ? rows.findIndex(row => row.id === input.cursor) + 1 : 0;
+    const items = rows.slice(start, start + 10), requests = { items, total: rows.length, nextCursor: start + items.length < rows.length ? items.at(-1).id : null };
+    return { ok: true, value: input.kind === 'requests' ? { requests } : { requests, docs: [], results: [], deliveries: { items: [delivery], total: 1, nextCursor: null } } };
+  } });
   try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const trigger = b.document.querySelector('[data-project-header-panel=requests] button');
-    assert.match(trigger.textContent, /statusActive/);
-    unavailable = true; await b.poll(); await b.flush();
-    const holder = b.document.querySelector('[data-project-header-panel=requests]');
-    assert.equal(holder.dataset.state, 'unknown'); assert.match(trigger.textContent, /statusUnknown/);
-    assert.equal(trigger.querySelector('.dsh-project-header-badge').textContent, '?');
-    assert.doesNotMatch(trigger.textContent, /observerIdle|statusDelivered/);
-    assert.deepEqual(b.activities.get('coordinator-existing'), { state: 'unavailable', runningJobSessionIds: ['worker-job'], embedded: true });
-    assert.deepEqual(b.asides, []);
-    unavailable = false; await b.poll(); await b.flush();
-    assert.equal(holder.dataset.state, 'running'); assert.match(trigger.textContent, /statusActive/);
-    assert.equal(b.activities.get('coordinator-existing').state, 'ready');
-    unavailableResult = true; await b.poll(); await b.flush();
-    assert.equal(b.document.querySelector('[data-project-header-panel=requests] button') === trigger, true, 'An unavailable list result retains the cached Project header');
-    assert.equal(holder.dataset.state, 'unknown'); assert.equal(trigger.querySelector('.dsh-project-header-badge').textContent, '?');
-    assert.deepEqual(b.activities.get('coordinator-existing'), { state: 'unavailable', runningJobSessionIds: ['worker-job'], embedded: true });
-    assert.match(trigger.textContent, /statusUnknown/); assert.doesNotMatch(trigger.textContent, /observerIdle/);
-    unavailableResult = false; await b.poll(); await b.flush(); assert.equal(holder.dataset.state, 'running');
+    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(requestCard.id);
+    const requestDetail = b.requestElement(requestCard.id);
+    const progressGoal = requestDetail.querySelector('.dsh-project-rail-details > p'); assert.equal(progressGoal.textContent, rows[0].goal);
+    assert.match(requestDetail.textContent, /authorityErrorHint/); assert.equal(b.button('retrySummary'), undefined);
+    await b.press('materials'); await b.flush();
+    const dialog = b.document.querySelector('.dsh-project-materials'), visibleIds = () => [...dialog.querySelectorAll('[data-request-recovery-id]')].map(card => card.dataset.requestRecoveryId);
+    assert.deepEqual(visibleIds(), rows.slice(0, 10).map(row => row.id));
+    const card = dialog.querySelector('[data-request-recovery-id]'), goal = card.querySelector('[data-markdown]');
+    assert.equal(card.querySelector('strong').textContent, `${rows[0].title} · requestVersion ${rows[0].revision}`);
+    assert.equal(isVisible(goal), false); await b.disclose('workRequest', card); assert.equal(goal.textContent, rows[0].goal); assert.equal(isVisible(goal), true);
+    assert.doesNotMatch(card.textContent, /stored-request-0/); assert.equal(b.button('retrySummary'), undefined);
+    const diagnostic = card.querySelector('.dsh-project-error-details'); assert.equal(diagnostic.open, false);
+    await b.disclose('errorDetails', card); assert.equal(diagnostic.querySelector('pre').textContent, rows[0].authorityError);
+    await b.press('earlierRequests'); assert.deepEqual(visibleIds(), rows.slice(10, 20).map(row => row.id));
+    await b.press('earlierRequests'); assert.deepEqual(visibleIds(), rows.slice(20).map(row => row.id)); assert.equal(b.button('earlierRequests'), undefined);
+    await b.press('previous'); assert.deepEqual(visibleIds(), rows.slice(10, 20).map(row => row.id));
+    assert.deepEqual(b.requests.filter(item => item.method === 'store/list' && item.input.kind === 'requests').map(item => item.input.cursor), ['stored-request-9', 'stored-request-19', 'stored-request-9']);
+    assert.match(dialog.querySelector('[data-delivery-id=kept-delivery]').textContent, /Existing conclusion remains available/);
+    assert.equal(b.sent.length, 0); assert.equal(b.requests.some(item => ['delegate', 'prompt', 'resume', 'store/write'].includes(item.method)), false);
   } finally { await b.dispose(); }
 });
 
-test('the Requests popover opens and closes only on explicit clicks and leaves Sidebar choices untouched', async () => {
-  const request = taskCard('click-request', 'Read current state'), b = bench({ cards: [request] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const trigger = b.document.querySelector('[data-project-header-panel=requests] button');
-    await act(async () => { trigger.dispatchEvent(new b.document.defaultView.MouseEvent('mouseover', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 180)); });
-    assert.equal(b.panel('requests'), null, 'Hover does not open Requests or take focus');
-    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-    await b.click(trigger); const panel = b.panel('requests'); assert.ok(panel);
-    await act(async () => { trigger.dispatchEvent(new b.document.defaultView.MouseEvent('mouseout', { bubbles: true, relatedTarget: b.document.body })); await new Promise(resolve => setTimeout(resolve, 160)); });
-    assert.equal(isVisible(panel), true, 'Moving away from the trigger does not dismiss an opened Request');
-    assert.deepEqual(b.asides, []); assert.equal(b.openTabs.getSnapshot().length, 0);
-    await b.click(trigger); assert.equal(b.panel('requests'), null); assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-  } finally { await b.dispose(); }
+test('a changed result cannot be submitted as the failed result by the summary action', async () => {
+  const detail = workDetail(); Object.assign(detail.workstreams[0], { currentDelegationRef: 'old-ref', summaryFailure: { delegationRef: 'old-ref', error: { message: 'Failed' } } });
+  detail.workers[0].phase = 'idle'; detail.workers[0].activeRunId = '';
+  const task = taskCard('request-one', 'Implement feature', 'summaryFailed');
+  task.work = [{ workstreamId: 'work-one', delegationRef: 'old-ref', title: 'Implement feature', memberName: 'Engineer', status: 'summaryFailed', current: true }];
+  let reads = 0;
+  const b = bench({ detail, cards: [task], rpcOverride: method => method === 'workstreams/get' && ++reads > 1 ?
+    { ok: true, value: { workstream: { title: 'New result', latestReport: { delegationRef: 'new-ref', at: 2 }, summaryFailure: { delegationRef: 'old-ref' } } } } : undefined });
+  try { await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
+    await b.press('retrySummary'); assert.equal(b.sent.length, 0); assert.match(b.document.body.textContent, /resultUpdated/); }
+  finally { await b.dispose(); }
 });
 
-test('explicit observation retains the selected page, Request tab, scroll and history without duplicate action trees', async () => {
-  const request = taskCard('observe-request', 'Observe saved work');
-  const queued = Array.from({ length: 13 }, (_, index) => ({ ...taskCard('observe-queued-' + index, 'Queued observed work ' + index), queue: { state: 'queued', position: index + 1 } }));
-  const archived = { ...taskCard('observe-history', 'Retained historical result', 'completed'), archivedAt: 1000 };
-  const b = bench({ cards: [request, ...queued, archived] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(request.id); await b.selectRequestTab('progress');
-    await b.press('taskMore'); await b.press('more'); await b.press('taskArchive · 1');
-    const requestRoot = () => [...b.document.querySelectorAll('.dsh-project-requests')].find(isVisible);
-    const listIds = () => [...requestRoot().querySelector('.dsh-project-requests-list').querySelectorAll('[data-project-request-id]')].map(element => element.dataset.projectRequestId);
-    const selectedIds = [request.id, ...queued.slice(9).map(item => item.id)];
-    assert.deepEqual(listIds(), selectedIds); assert.ok(b.requestElement(archived.id));
-    await act(async () => { requestRoot().scrollTop = 127; requestRoot().dispatchEvent(new b.document.defaultView.Event('scroll')); });
-    const definition = b.sidebarTypes.get('dsh-project-requests'); assert.ok(definition); assert.equal(definition.kind, 'project-requests');
-    assert.deepEqual(b.asides, []); assert.equal(b.isSidebarExpanded(), false);
-    await act(async () => { b.openTabs.set([{ sessionId: b.project.coordinatorSessionId, kind: 'guide', tabId: 'existing-guide' }]); });
-    await b.press('pinObserver');
-    assert.deepEqual(b.asides, [['tab', 'coordinator-existing', 'project-requests']]);
-    assert.equal(b.isSidebarExpanded(), true);
-    assert.equal(b.panel('requests'), null);
-    let card = b.requestElement(request.id); assert.ok(card && isVisible(card.querySelector('[data-project-request-tab=progress]')));
-    assert.equal(b.document.querySelectorAll('[data-project-request-id=observe-request]').length, 1, 'Observation creates no duplicate business action tree');
-    assert.deepEqual(listIds(), selectedIds); assert.ok(b.requestElement(archived.id)); assert.equal(requestRoot().scrollTop, 127);
-    await b.poll(); await b.flush(); await b.mountSession(null); await b.mountSession('coordinator-existing');
-    assert.equal(b.asides.length, 1, 'Polling and returning to the Lead do not change Sidebar placement');
-    await b.press('returnFloat');
-    assert.equal(b.openTabs.getSnapshot().some(tab => tab.kind === 'project-requests'), false);
-    assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.kind), ['guide']);
-    assert.equal(b.isSidebarExpanded(), false, 'Returning from the only content page restores the conversation width');
-    assert.deepEqual(b.sidebarToggles, [false], 'Returning collapses the now-empty observer once');
-    assert.ok(b.panel('requests')); card = b.requestElement(request.id);
-    assert.ok(isVisible(card.querySelector('[data-project-request-tab=progress]')));
-    assert.deepEqual(listIds(), selectedIds); assert.ok(b.requestElement(archived.id)); assert.equal(requestRoot().scrollTop, 127);
-    assert.equal(b.asides.length, 1); assert.equal(b.sent.length, 0);
-  } finally { await b.dispose(); }
-});
-
-test('returning Requests to the popover leaves an existing Sidebar content page expanded', async () => {
-  const request = taskCard('observe-with-files', 'Observe beside existing files'), b = bench({ cards: [request] });
-  const existing = { sessionId: 'coordinator-existing', kind: 'text', tabId: 'existing-file-preview' };
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(request.id); await b.selectRequestTab('progress');
-    await act(async () => { b.openTabs.set([existing, { sessionId: 'coordinator-existing', kind: 'guide', tabId: 'existing-guide' }]); });
-    await b.press('pinObserver'); assert.equal(b.isSidebarExpanded(), true);
-    await b.press('returnFloat');
-    assert.equal(b.openTabs.getSnapshot().includes(existing), true, 'Returning closes only the Requests observer');
-    assert.equal(b.openTabs.getSnapshot().some(tab => tab.kind === 'project-requests'), false);
-    assert.equal(b.isSidebarExpanded(), true, 'An existing content page keeps the user-selected Sidebar width');
-    assert.deepEqual(b.sidebarToggles, []);
-    assert.ok(b.panel('requests')); assert.ok(isVisible(b.requestElement(request.id).querySelector('[data-project-request-tab=progress]')));
-    assert.deepEqual(b.asides, [['tab', 'coordinator-existing', 'project-requests']]); assert.deepEqual(b.sent, []);
-  } finally { await b.dispose(); }
-});
-
-test('Project-owned work blockers outrank a generic Team assignment and owned Jobs remain active after the turn', async () => {
-  for (const state of ['blocked', 'failed', 'summaryFailed', 'paused', 'stopping', 'running-job', 'completed-task-with-job']) {
-    const request = taskCard('state-request', 'Read authoritative work'), runningJob = ['running-job', 'completed-task-with-job'].includes(state);
-    request.work = [{ workstreamId: 'owned-task', delegationRef: 'owned-assignment', workerSessionId: 'owned-worker', title: 'Owned work', status: runningJob ? 'running' : state, current: true, ...(runningJob ? { runningJob: true } : {}) }];
-    const team = { members: [{ id: 'owned-worker', name: 'Owner', role: 'teammate' }], tasks: [{ id: 'owned-task', subject: 'Owned work', ownerName: 'Owner', status: state === 'completed-task-with-job' ? 'completed' : 'in_progress' }] };
-    const b = bench({ cards: [request], team, sessionStatuses: { 'owned-worker': { running: false } } });
-    try {
-      await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(request.id); await b.selectRequestTab('progress');
-      const row = b.requestElement(request.id).querySelector('.dsh-project-task-step');
-      assert.equal(row.dataset.state, runningJob ? 'running' : state);
-      assert.doesNotMatch(visibleText(row), /teamAssigned/);
-      assert.deepEqual(b.asides, []);
-    } finally { await b.dispose(); }
-  }
-});
-
-test('the Team views read the Project\'s current work and forget it when the Project leaves', async () => {
-  const b = bench({ rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [{ ...project, currentTaskIds: ['task-new', 'task-older'] }], available: true } } : undefined });
-  let disposed = false;
-  try {
-    await b.flush(); await b.adopt(); await b.poll(); await b.flush();
-    assert.deepEqual(b.scopes.get('coordinator-existing'), ['task-new', 'task-older']);
-    disposed = true; await b.dispose();
-    assert.equal(b.scopes.size, 0, 'Unloading clears every scope this plugin published');
-    assert.equal(b.activities.size, 0, 'Unloading clears Project-owned background activity too');
-  } finally { if (!disposed) await b.dispose(); }
-});
-
-// A requirement's progress is one page: the stage rail, the member rows, the coordinator plan, then the original request.
-const stageRequest = (id, status, workStatus) => {
-  const request = taskCard(id, `Ship ${id}`, status);
-  request.queue = { state: 'active', released: false };
-  if (workStatus) {
-    request.work = [{ workstreamId: `${id}-work`, delegationRef: `${id}-ref`, workerSessionId: `${id}-session`, title: 'Write notes', memberName: 'Writer', status: workStatus, current: true }];
-    request.counts = { total: 1, completed: workStatus === 'completed' ? 1 : 0 };
-  }
-  return request;
-};
-
-async function railOf(request) {
-  const b = bench({ cards: [request] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const card = await b.openRequest(request.id), rail = card.querySelector('.dsh-project-stage-rail');
-    return rail && {
-      stages: [...rail.querySelectorAll('.dsh-project-stage')].map(item => item.dataset.stage), tone: rail.dataset.tone,
-      current: rail.querySelector('[aria-current=step]')?.textContent ?? null,
-      tab: ['progress', 'results'].find(name => isVisible(card.querySelector(`[data-project-request-tab=${name}]`))),
-    };
-  } finally { await b.dispose(); }
-}
-
-test('the stage rail follows a requirement from arrangement to delivery, and Progress or Results opens by state', async () => {
-  assert.deepEqual(await railOf(stageRequest('arranging', 'running')), { stages: ['current', 'todo', 'todo', 'todo'], tone: 'info', current: 'stageArranging', tab: 'progress' });
-  assert.deepEqual(await railOf(stageRequest('executing', 'running', 'running')), { stages: ['done', 'current', 'todo', 'todo'], tone: 'info', current: 'stageExecuting', tab: 'progress' });
-  assert.deepEqual(await railOf(stageRequest('handover', 'pendingDelivery', 'completed')), { stages: ['done', 'done', 'current', 'todo'], tone: 'info', current: 'stageSummarizing', tab: 'progress' });
-  assert.deepEqual(await railOf(stageRequest('delivered', 'completed', 'completed')), { stages: ['done', 'done', 'done', 'done'], tone: 'success', current: null, tab: 'results' });
-  assert.deepEqual(await railOf(stageRequest('stalled', 'blocked', 'blocked')), { stages: ['done', 'current', 'todo', 'todo'], tone: 'warning', current: 'stageExecuting', tab: 'progress' },
-    'A stalled requirement keeps its place and stops looking busy');
-  const waiting = taskCard('waiting', 'Queued work'); waiting.queue = { state: 'queued', position: 1 };
-  assert.equal(await railOf(waiting), null, 'A queued requirement has not started, so it shows no stages');
-});
-
-test('running work breathes and counts its time, and only rows that arrive after the first paint enter', async () => {
-  const request = stageRequest('live', 'running', 'running'), detail = { revision: 'live-1' };
-  request.work[0].assignmentAt = Date.now() - 125000;
-  const b = bench({ cards: [request], detail });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const card = await b.openRequest(request.id), [first] = card.querySelectorAll('.dsh-project-task-step');
-    assert.equal(first.dataset.enter, 'false', 'Rows present at the first paint stay still');
-    assert.equal(first.querySelector('.dsh-project-task-state-dot').dataset.state, 'running');
-    const seconds = () => { const [, minutes, rest] = first.querySelector('.dsh-project-elapsed').textContent.match(/(\d+):(\d\d)$/); return Number(minutes) * 60 + Number(rest); };
-    assert.match(visibleText(first), /Writer · running · 2:0[5-9]/);
-    const before = seconds();
-    // jsdom has no layout, so give the row an offset parent the way a visible row has one.
-    Object.defineProperty(b.document.defaultView.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { return this.parentNode; } });
-    await new Promise(resolve => setTimeout(resolve, 1100)); await b.tick();
-    assert.ok(seconds() > before, 'The elapsed time moves while the row is on screen');
-
-    request.work.push({ workstreamId: 'live-second', delegationRef: 'live-second-ref', workerSessionId: 'live-second-session', title: 'Check notes', memberName: 'Reviewer', status: 'queued', current: true });
-    request.counts = { total: 2, completed: 0 }; detail.revision = 'live-2'; await b.poll(); await b.flush();
-    assert.deepEqual([...card.querySelectorAll('.dsh-project-task-step')].map(row => row.dataset.enter), ['false', 'true'], 'Only the row that arrived later slides in');
-
-    request.work[0].status = 'completed'; detail.revision = 'live-3'; await b.poll(); await b.flush();
-    assert.ok(card.querySelector('.dsh-project-task-step[data-state=completed] .dsh-project-task-check.is-fresh'), 'A member that finishes pops its check in');
-    assert.equal(card.querySelector('.dsh-project-elapsed'), null, 'Finished work stops counting');
-  } finally { await b.dispose(); }
-});
-
-test('the header badge breathes while work runs and acknowledges each change after the first paint', async () => {
-  const request = stageRequest('badge', 'running', 'running'), queued = taskCard('badge-queued', 'Next', 'running');
-  queued.queue = { state: 'queued', position: 1 };
-  const detail = { revision: 'badge-1', activity: { running: 1, blocked: 0, queued: 0, state: 'running' } };
-  const b = bench({ cards: [request, queued], detail });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const badge = () => b.document.querySelector('[data-project-header-panel=requests] .dsh-project-header-badge');
-    assert.equal(badge().dataset.live, 'true'); assert.equal(badge().dataset.bump, 'false', 'The first paint is not a change');
-    const first = badge(), count = badge().textContent;
-    b.project.queue.queued = [...b.project.queue.queued, taskCard('badge-extra', 'Extra', 'running')];
-    await b.poll(); await b.flush();
-    assert.notEqual(badge().textContent, count); assert.equal(badge().dataset.bump, 'true'); assert.notEqual(badge(), first, 'A new count remounts the badge so the bump plays again');
-    detail.activity.state = 'idle'; await b.poll(); await b.flush();
-    assert.equal(badge().dataset.live, 'false', 'An idle Project stops breathing');
-  } finally { await b.dispose(); }
-});
-
-test('every Project animation stops under reduced motion', async () => {
-  const b = bench();
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const css = [...b.document.querySelectorAll('style')].map(style => style.textContent).join('\n');
-    const reducedAt = css.indexOf('@media (prefers-reduced-motion:reduce)'); assert.ok(reducedAt >= 0, 'The Project styles declare a reduced-motion block');
-    const reduced = css.slice(reducedAt), animated = new Set();
-    const first = reduced.indexOf('{'), covered = new Set(reduced.slice(first + 1, reduced.indexOf('{', first + 1)).split(',').map(selector => selector.trim()));
-    assert.match(reduced, /\{animation:none!important/, 'The reduced-motion block removes animations');
-    // The last compound of a selector without its state attributes or extra classes; `!important` makes the broader rule enough.
-    const base = selector => selector.split(/[\s+>~]+/).at(-1).replace(/\[[^\]]*\]/g, '').replace(/(\.[\w-]+)(\.[\w-]+)+/, '$1');
-    for (const [, selectors] of css.slice(0, reducedAt).matchAll(/([^{}@]+)\{[^{}]*\banimation:(?!none)[^{}]*\}/g)) for (const selector of selectors.split(',')) animated.add(selector.trim());
-    assert.ok(animated.size >= 5, 'The animated selectors were found');
-    for (const selector of animated) assert.ok(covered.has(base(selector)), `${selector} stops under reduced motion`);
-  } finally { await b.dispose(); }
-});
-
-// The native Team is a page of the Requests panel, not a second header entry.
-const sectionTab = (b, name) => b.document.getElementById(`${b.project.id}-section-${name}`);
-
-test('the Requests panel hosts the Team as its Members page, and the Lead publishes that so its own Team entry steps aside', async () => {
-  const request = stageRequest('members', 'running', 'running');
-  const team = { members: [{ id: 'coordinator-existing', name: 'lead', role: 'lead' }, { id: 'members-session', name: 'writer', role: 'teammate' }, { id: 'idle-member', name: 'idle', role: 'teammate' }], tasks: [] };
-  const b = bench({ cards: [request], team, sessionStatuses: { 'members-session': { running: true } }, detail: { activity: { running: 1, blocked: 0, queued: 0, state: 'running' } } });
+test('a delivered card lists its files, opens them with exact authority and shows a per-file colored diff', async () => {
+  const task = taskCard('delivered-files', 'Login remember me', 'completed');
+  task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', workerSessionId: 'worker-one', title: 'Remember-me login', status: 'completed', memberRole: 'worker', current: true }];
+  task.delivery.artifacts = [{ path: 'src/login.js', size: 120, sha256: 'a', type: 'file', workstreamId: 'work-one', delegationRef: 'actual-assignment' },
+    { path: 'src/login.test.js', size: 80, sha256: 'b', type: 'file', workstreamId: 'work-one', delegationRef: 'actual-assignment' }];
+  task.delivery.pages = [];
+  const diff = ['diff --git a/src/login.js b/src/login.js', 'index 1..2 100644', '--- a/src/login.js', '+++ b/src/login.js', '@@ -1,2 +1,3 @@', ' const a = 1;', '-const b = 2;', '+const b = 3;', '+const remember = true;',
+    'diff --git a/src/new.js b/src/new.js', 'new file mode 100644', '--- /dev/null', '+++ b/src/new.js', '@@ -0,0 +1 @@', '+export {};', ''].join('\n');
+  const b = bench({ cards: [task], rpcOverride: method => method === 'diff' ? { ok: true, value: { worker: { cwd: 'C:/workspace/real', mode: 'existing' },
+    snapshot: { isGit: true, diff, truncated: false, files: [{ path: 'src/login.js', status: ' M' }, { path: 'src/new.js', status: 'A ' }, { path: 'notes.txt', status: '??' }] } } } : undefined });
   try {
     await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    assert.equal(b.activities.get('coordinator-existing').embedded, true, 'The Lead tells the Team that its owner presents it');
-    assert.deepEqual(['requests', 'members'].map(name => sectionTab(b, name).textContent), ['requirements', 'sectionMembers · 1'], 'The running members are counted on the page label, the Coordinator excluded');
-    assert.equal(b.document.querySelector('[data-team-embedded]'), null, 'The Team body is not mounted until its page is opened');
-    assert.ok(isVisible(b.document.querySelector('[data-project-section=requests]')));
-
-    await b.click(sectionTab(b, 'members'));
-    const page = b.document.querySelector('[data-project-section=members]');
-    assert.ok(isVisible(page) && page.querySelector('[data-team-embedded]'), 'The Members page shows the Team body');
-    assert.equal(isVisible(b.document.querySelector('[data-project-section=requests]')), false);
-    assert.ok(b.document.querySelector(`[data-project-request-id=${request.id}]`), 'The requests stay mounted behind the Members page');
-    const props = b.embeds.at(-1);
-    assert.equal(props.sessionId, 'coordinator-existing'); assert.equal(props.surfaceActive, true);
-    for (const seat of ['useSessions', 'useSessionStatus', 'useTeamActivity', 'useTeamTaskScopes', 't', 'openTeammate']) assert.equal(typeof props[seat], 'function', `${seat} is supplied`);
-    props.openTeammate('coordinator-existing', 'members-session'); props.openTeammate('coordinator-existing', 'coordinator-existing');
-    assert.deepEqual(JSON.parse(JSON.stringify(b.navigation.filter(entry => entry[0] === 'session' && typeof entry[1] === 'object'))),
-      [['session', { parentSessionId: 'coordinator-existing', childSessionId: 'members-session', mode: 'continuable' }]], 'The floating panel opens a member in the main view, as the Team popover did; the Lead is already the current conversation');
-    assert.deepEqual(b.asides.filter(entry => entry[0] === 'resource'), []);
-
-    await b.click(sectionTab(b, 'requests'));
-    assert.equal(isVisible(b.document.querySelector('[data-project-section=members]')), false);
-    assert.ok(b.document.querySelector('[data-team-embedded]'), 'Leaving the Members page keeps its reading state');
-    assert.equal(b.embeds.at(-1).surfaceActive, false);
-    assert.equal(b.sent.length, 0);
-  } finally { await b.dispose(); }
-});
-
-test('the Members page label reports unknown instead of zero, and survives pinning and returning the panel', async () => {
-  const request = stageRequest('members-pin', 'running', 'running');
-  const b = bench({ cards: [request] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    assert.equal(sectionTab(b, 'members').textContent, 'sectionMembers · ?', 'No Team record yet is not an empty Team');
-    await b.click(sectionTab(b, 'members'));
-    await act(async () => { b.openTabs.set([{ sessionId: b.project.coordinatorSessionId, kind: 'guide', tabId: 'existing-guide' }]); });
-    await b.press('pinObserver');
-    assert.equal(b.panel('requests'), null);
-    assert.ok(isVisible(b.document.querySelector('[data-project-section=members]')), 'The pinned panel keeps the Members page');
-    assert.equal(b.document.querySelectorAll('[data-team-embedded]').length, 1, 'Pinning creates no second Team body');
-    b.embeds.at(-1).openTeammate('coordinator-existing', 'members-session');
-    assert.deepEqual(b.asides.filter(entry => entry[0] === 'resource'), [['resource', 'subagentchat:coordinator-existing/members-session/continuable', 'subagentchat']], 'The pinned panel opens a member beside the Lead, like the Team Sidebar page');
-    await b.press('returnFloat');
-    assert.ok(b.panel('requests'));
-    assert.ok(isVisible(b.document.querySelector('[data-project-section=members]')), 'Returning keeps the Members page');
-  } finally { await b.dispose(); }
-});
-
-test('without the native Team there is no Members page and the Requests panel is unchanged', async () => {
-  const request = stageRequest('no-team', 'running', 'running');
-  const b = bench({ cards: [request], withoutTeamScopes: true });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    assert.equal(b.document.querySelector('.dsh-project-section-tabs'), null);
-    assert.equal(b.activities.size, 0, 'Nothing claims to present a Team that is not there');
-    assert.ok(isVisible(b.document.querySelector('[data-project-section=requests]')));
-    assert.ok(b.requestElement(request.id));
-  } finally { await b.dispose(); }
-});
-
-test('Needs you: the panel pins what waits on the user first, the header counts that same list, and an answer is one ordinary message', async () => {
-  const asking = taskCard('ask-a', 'Choose the database'), blocked = taskCard('blocked-b', 'Fix login', 'blocked'), running = taskCard('run-c', 'Speed up search');
-  asking.stage = { id: 'awaitingAnswer', waitingOn: 'you', needsYou: true, ask: { id: 'ask-1', question: 'Postgres or SQLite?', options: ['Postgres', 'SQLite'], ifUnanswered: 'I will start with SQLite', by: 'coordinator', at: 1 } };
-  blocked.stage = { id: 'blocked', waitingOn: 'you', needsYou: true, reason: 'work', detail: 'Needs a staging account I cannot create.' };
-  running.stage = { id: 'running', waitingOn: 'system', needsYou: false };
-  const b = bench({ cards: [running, blocked, asking], language: 'en', detail: { activity: { running: 1, blocked: 1, queued: 0, needsYou: 2, state: 'running' } } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const header = b.document.querySelector('[data-project-header-panel=requests]'), badge = header.querySelector('.dsh-project-header-badge');
-    assert.equal(badge.textContent, '2', 'the badge counts what needs the user, not the live requirements');
-    assert.equal(badge.dataset.live, 'false', 'a number the user must act on does not breathe');
-    assert.equal(header.dataset.needsYou, '2');
-    await b.openObserver();
-    const pinned = b.panel('requests').querySelector('[data-project-attention]');
-    assert.equal(pinned.dataset.projectAttention, '2', 'the pinned count is the length of the pinned list');
-    assert.deepEqual([...pinned.querySelectorAll('[data-project-request-id]')].map(card => card.dataset.projectRequestId), ['ask-a', 'blocked-b'], 'a question comes before blocked work');
-    assert.deepEqual([...b.panel('requests').querySelectorAll('.dsh-project-requests-list:not([data-project-attention]) [data-project-request-id]')].map(card => card.dataset.projectRequestId), ['run-c'], 'a pinned requirement is not listed twice');
-    assert.equal(pinned.querySelector('[data-project-request-id=ask-a]').dataset.projectRequestMode, 'card', 'what waits on you is open');
-    const ask = pinned.querySelector('[data-project-ask=ask-1]');
-    assert.match(ask.textContent, /Postgres or SQLite\?/); assert.match(ask.textContent, /If you don’t answer: I will start with SQLite/);
-
-    await b.press('SQLite');
-    assert.deepEqual(b.sent.map(item => item.text), ['Choose the database: SQLite'], 'one ordinary message, naming the requirement it answers');
-    assert.match(pinned.querySelector('[data-project-ask=ask-1]').textContent, /Sent; the coordinator is on it/);
-    assert.equal(pinned.querySelector('[data-project-ask=ask-1] button'), null, 'the answer cannot be sent twice');
-
-    await b.press('Retry');
-    assert.equal(b.sent.length, 2); assert.match(b.sent[1].text, /Please retry the blocked requirement “Fix login”.*Needs a staging account I cannot create\./);
-  } finally { await b.dispose(); }
-});
-
-test('Needs you: with nothing waiting the header counts live requirements and the panel pins nothing', async () => {
-  const running = taskCard('run-a', 'Speed up search'), queued = taskCard('queued-b', 'Add SSO');
-  queued.queue = { state: 'queued', position: 1 }; running.stage = { id: 'running', waitingOn: 'system', needsYou: false }; queued.stage = { id: 'queued', waitingOn: 'system', needsYou: false };
-  const b = bench({ cards: [running, queued], language: 'en', detail: { activity: { running: 1, blocked: 0, queued: 1, needsYou: 0, state: 'running' } } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount();
-    const header = b.document.querySelector('[data-project-header-panel=requests]');
-    assert.equal(header.querySelector('.dsh-project-header-badge').textContent, '2'); assert.equal(header.dataset.needsYou, undefined);
-    await b.openObserver();
-    assert.equal(b.panel('requests').querySelector('[data-project-attention]'), null, 'a healthy Project takes no space for this');
-  } finally { await b.dispose(); }
-});
-
-test('Needs you: a temporary summary failure the host retries reads as the host working, not as a request for the user', async () => {
-  const card = taskCard('retry-a', 'Fix login', 'summaryFailed');
-  card.stage = { id: 'running', waitingOn: 'system', needsYou: false, retry: { attempt: 2, of: 3 } };
-  const b = bench({ cards: [card], language: 'en', detail: { activity: { running: 0, blocked: 0, queued: 0, needsYou: 0, state: 'pendingDelivery' } } });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
-    assert.match(b.requestElement(card.id).textContent, /Temporary failure, retrying the summary/);
-    assert.match(b.requestElement(card.id).textContent, /retrying automatically \(attempt 2\/3\)/);
-    assert.equal(b.panel('requests').querySelector('[data-project-attention]'), null);
-  } finally { await b.dispose(); }
-});
-
-test('a research report lists the pages the member opened and what it searched, and a research member shows no file changes', async () => {
-  const detail = workDetail(), task = taskForWork(detail);
-  detail.workstreams[0].latestReport.sources = [{ kind: 'fetch', text: 'https://example.com/spec', at: 1 }, { kind: 'search', text: 'harness web tools', at: 2 }];
-  task.work[0].memberRole = 'research';
-  const b = bench({ detail, cards: [task] });
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.flush();
-    assert.equal([...b.requestElement(task.id).querySelectorAll('button')].some(button => button.textContent === 'viewChanges'), false, 'a read-only research member has no changes to view');
-    await b.press('viewResult'); await b.flush();
-    const result = b.dialog()?.querySelector('[data-result-workstream-id=work-one]');
-    assert.equal(result.querySelector('[data-project-sources]').dataset.projectSources, '2');
-    await b.disclose('researchSources · 2', result);
-    assert.match(result.textContent, /https:\/\/example\.com\/spec/); assert.match(result.textContent, /searchedPrefix.*harness web tools/);
-  } finally { await b.dispose(); }
-});
-
-test('the research sites list is edited from Project materials like the other plain materials', async () => {
-  const b = bench({ detail: workDetail() });
-  b.stored['research-hosts.txt'] = '';
-  try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.press('researchHosts');
-    await b.flush(); await b.changeNotes('docs.example.org  # the spec lives here\n'); await b.press('save'); await b.flush();
-    const write = b.requests.findLast(request => request.method === 'store/write');
-    assert.deepEqual([write.input.path, write.input.text], ['research-hosts.txt', 'docs.example.org  # the spec lives here\n']);
+    const card = await b.openRequest(task.id); await b.selectRequestTab('results'); await b.flush();
+    const delivery = card.querySelector('.dsh-project-task-delivery'); assert.ok(delivery && isVisible(delivery));
+    assert.deepEqual([...delivery.querySelectorAll('.dsh-project-task-file')].map(item => item.getAttribute('title')), ['src/login.js', 'src/login.test.js']);
+    await b.press('viewChanges'); await b.flush();
+    const files = [...b.document.querySelectorAll('.dsh-project-diff-file')];
+    assert.deepEqual(files.map(item => item.dataset.diffPath), ['src/login.js', 'src/new.js', 'notes.txt']);
+    assert.match(files[0].querySelector('summary').textContent, /diff_modified.*\+2.*−1/s);
+    assert.match(files[1].querySelector('summary').textContent, /diff_added/);
+    assert.match(files[2].textContent, /diff_untracked.*diffUntrackedHint/s);
+    assert.deepEqual([...files[0].querySelectorAll('.dsh-project-diff-line')].map(line => line.dataset.kind), ['hunk', 'context', 'del', 'add', 'add']);
+    assert.match(b.document.querySelector('.dsh-project-diff-summary').textContent, /diffFileCount.*\+3.*−1/s);
+    assert.match(b.dialog().textContent, /diffScope/);
+    // Opening a file contracts the observer for the native preview, so it comes last.
+    await b.press('openFile: login.js');
+    const opened = b.requests.filter(request => request.method === 'open').at(-1).input;
+    assert.equal(opened.workstreamId, 'work-one'); assert.equal(opened.delegationRef, 'actual-assignment'); assert.equal(opened.path, 'src/login.js');
   } finally { await b.dispose(); }
 });

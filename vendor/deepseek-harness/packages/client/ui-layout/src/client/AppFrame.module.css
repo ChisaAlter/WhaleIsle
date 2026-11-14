@@ -94,9 +94,30 @@
   border-radius: 0;
 }
 
-:global([data-platform='darwin']) .sidebarCol {
-  background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 60%, transparent);
+:global([data-platform='darwin']) .frame:not([data-sidebar-drawer]) .sidebarCol {
+  /* A blue wash over the top of the translucent tint, gone by a third of the
+     column, and a faint blue-grey-violet rising through the bottom third.
+     Every layer stays transparent so vibrancy shows; ui-theme sets each
+     palette's wash strength and tint. */
+  background:
+    linear-gradient(
+      to bottom,
+      var(--dsw-specific-sidebar-wash-top),
+      var(--dsw-specific-sidebar-wash-top-clear) 35%,
+      var(--dsw-specific-sidebar-wash-bottom-clear) 68%,
+      var(--dsw-specific-sidebar-wash-bottom)
+    ),
+    var(--dsw-specific-sidebar-tint);
   border-right: none;
+}
+
+/* macOS Reduce Transparency: the OS flattens the window's vibrancy layer to a
+   solid grey, so the thin tint and washes read washed-out over it. Replace
+   them with a 90%-opaque fill of the same token in both themes. */
+@media (prefers-reduced-transparency: reduce) {
+  :global([data-platform='darwin']) .frame:not([data-sidebar-drawer]) .sidebarCol {
+    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
+  }
 }
 
 :global([data-platform='darwin']) .centerCol {
@@ -259,21 +280,32 @@
     background var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-.detailsCol:hover ~ .handle[data-side='rightbar']::after,
-.handle[data-side='rightbar']:hover::after,
 .handle[data-side='rightbar'][data-dragging='true']::after,
-.surfacesCol:hover ~ .handle[data-side='surfaces']::after,
-.handle[data-side='surfaces']:hover::after,
 .handle[data-side='surfaces'][data-dragging='true']::after {
   opacity: 1;
 }
 
-.handle[data-side='rightbar']:hover::after,
+@media (hover: hover) {
+  .detailsCol:hover ~ .handle[data-side='rightbar']::after,
+  .handle[data-side='rightbar']:hover::after,
+  .surfacesCol:hover ~ .handle[data-side='surfaces']::after,
+  .handle[data-side='surfaces']:hover::after {
+    opacity: 1;
+  }
+}
+
 .handle[data-side='rightbar'][data-dragging='true']::after,
-.handle[data-side='surfaces']:hover::after,
 .handle[data-side='surfaces'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
+}
+
+@media (hover: hover) {
+  .handle[data-side='rightbar']:hover::after,
+  .handle[data-side='surfaces']:hover::after {
+    background: var(--dsw-alias-button-floating-hover);
+    border-color: var(--dsw-alias-border-l3);
+  }
 }
 
 /* First grid child so column paint order keeps this band behind Git,
@@ -409,8 +441,10 @@
   -webkit-app-region: no-drag;
 }
 
-.phoneMenu:hover {
-  background: var(--dsw-alias-button-floating-hover);
+@media (hover: hover) {
+  .phoneMenu:hover {
+    background: var(--dsw-alias-button-floating-hover);
+  }
 }
 
 .phoneBackdrop {
@@ -438,8 +472,11 @@
   transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
   padding-top: env(safe-area-inset-top, 0px);
   /* Opaque canvas under sidebar-fill: wallpaper glass must mix with the
-     drawer, not with the dimmed conversation showing through. */
-  background-color: var(--dsw-alias-bg-base);
+     drawer, not with the dimmed conversation showing through. The wallpaper
+     theme rewrites --dsw-alias-bg-base into a color-mix capped at 45%, so the
+     drawer pins the static base the theme mixes over instead. */
+  --dsh-phone-drawer-canvas: var(--dsw-alias-phone-drawer-canvas);
+  background-color: var(--dsh-phone-drawer-canvas);
   background-image: linear-gradient(
     var(--dsh-sidebar-rail-fill, var(--dsw-specific-sidebar-fill)),
     var(--dsh-sidebar-rail-fill, var(--dsw-specific-sidebar-fill))
@@ -453,6 +490,25 @@
   pointer-events: auto;
   transform: none;
   -webkit-app-region: no-drag;
+}
+
+/* Phone overlay: the menu button owns the leading corner and the open drawer
+   owns the caption band. The desktop Git cluster keeps its seat beside the
+   button and steps out while the drawer is open (visibility keeps the measured
+   reserve stable). */
+.frame[data-phone] .titlebarTrailing {
+  max-width: calc(100% - 64px);
+}
+
+.frame[data-phone-sidebar] .titlebarTrailing {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Same static base pair ui-theme mixes over for a live wallpaper; the dark
+   half is picked by the attribute the theme sheets already use. */
+:global(body[data-ds-dark-theme]) .frame[data-phone] .sidebarCol {
+  --dsh-phone-drawer-canvas: var(--dsw-alias-phone-drawer-canvas);
 }
 
 .frame[data-phone] .detailsCol {

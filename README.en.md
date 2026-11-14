@@ -122,7 +122,7 @@ Common shortcuts: `Ctrl+N` new session · `Ctrl+\` right sidebar · `` Ctrl+` ``
 
 ## Run from source
 
-Requires Git and Node.js 22.19+ or 24+ (the CI version is in [.nvmrc](.nvmrc)). Quit the installed app, including its tray process, first: both share a single-instance lock.
+Requires Git and Node.js 24.9+ (the CI version is in [.nvmrc](.nvmrc)). Quit the installed app, including its tray process, first: both share a single-instance lock.
 
 ```shell
 git clone https://github.com/ChisaAlter/WhaleIsle.git

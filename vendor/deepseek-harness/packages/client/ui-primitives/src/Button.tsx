@@ -33,7 +33,7 @@ function captionText(children: ReactNode): string {
 
 /**
  * Render a button.
- * @param props.variant - visual family (default 'ghost').
+ * @param props.variant - visual family (default 'ghost'); outlined buttons use a DPR-aware inset stroke.
  * @param props.size - 'md' 36px control or 'sm' 28px control.
  * @param props.shape - 'rounded' 12px/8px corners (default) or 'pill' 18px/14px circular corners.
  * @param props.icon - optional leading 16px icon node.

@@ -20,6 +20,8 @@ const ALLOWED_SIBLING = new Set([
   'client/ui-workspace/src/client/rows/Rows.module.css: .sessionRunInner > * + *',
   'client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css: .flatList > * + *',
   'client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css: .groupSection > * + *',
+  // The experimental computer-use permission card: a few rows in a dialog, nowhere near the transcript.
+  'experimental/cua/src/client/PermissionPanel.module.css: .card > * + *',
 ]);
 
 // Attributes that toggle on transcript ancestors at every Turn start/end or

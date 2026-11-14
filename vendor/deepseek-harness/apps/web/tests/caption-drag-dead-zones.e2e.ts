@@ -180,13 +180,16 @@ describe('desktop fork: caption band drags everywhere except over controls', () 
     agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await scaffold.ctx.sessions.flush(agent.session)
     await page.getByText('Caption band ready.').waitFor({ timeout: 10_000 })
-    const started = await scaffold.ctx.tools.execute({
+    const started = (await scaffold.ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: ToolCallId('caption-drag-dead-zones-e2e'),
-      name: 'bash',
-      arguments: { command: COMMAND, description: 'Hold one background job', run_in_background: true },
+      calls: [{
+        type: 'tool-call',
+        id: ToolCallId('caption-drag-dead-zones-e2e'),
+        name: 'bash',
+        arguments: JSON.stringify({ command: COMMAND, description: 'Hold one background job', run_in_background: true }),
+      }],
       agent,
-    })
+    })).results[0]!.result
     const matched = /\bbash-[0-9a-f]{16}\b/.exec(started.content.map(block => block.type === 'text' ? block.text : '').join(''))
     if (matched === null) throw new Error('background bash reported no job id')
     jobId = JobId(matched[0])

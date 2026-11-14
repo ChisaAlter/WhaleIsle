@@ -22,11 +22,12 @@ jobs:
       vendor: ${{ steps.changes.outputs.vendor }}
       tools: ${{ steps.changes.outputs.tools }}
       motion: ${{ steps.changes.outputs.motion }}
+      release: ${{ steps.changes.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
       - id: changes
@@ -40,7 +41,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -58,7 +59,7 @@ jobs:
       LEFTHOOK: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -67,6 +68,16 @@ jobs:
         run: npm run setup:harness
       - name: Install the Chromium build apps/web's Playwright pins
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install --with-deps chromium
+      - name: Big Fish workbench, panels and task cards
+        run: node scripts/run-whale-big-fish-qa.mjs
+      - name: Big Fish UI evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: big-fish-ui
+          path: work/whale-big-fish-qa
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Desktop profile defaults and package reload
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/boot/app-boot/tests/desktop-pad.spec.ts packages/boot/hmr/tests/package-reload.spec.ts --maxWorkers 2
       - name: Desktop web composition lanes
@@ -80,7 +91,7 @@ jobs:
       LEFTHOOK: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -123,7 +134,7 @@ jobs:
         env:
           DSH_SMOKE_TIMEOUT_MS: '600000'
         run: npm run smoke:packaged
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: Whale-Isle-windows-x64
           path: |
@@ -133,7 +144,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   macos:
-    if: github.event_name == 'workflow_dispatch' && inputs.include_macos
+    # Manual runs on request; the main push that bumps the version always, so
+    # Release publishes the DMG with the Windows installer.
+    needs: scope
+    if: (github.event_name == 'workflow_dispatch' && inputs.include_macos) || needs.scope.outputs.release == 'true'
     runs-on: macos-latest
     timeout-minutes: 120
     env:
@@ -144,7 +158,7 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -157,14 +171,14 @@ jobs:
       - id: mac_package
         run: npm run dist:mac
       - run: npm run smoke:packaged
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: Whale-Isle-macos-chrome-evidence
           path: dist/macos-chrome-evidence
           if-no-files-found: warn
           retention-days: 30
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.mac_package.outcome == 'success'
         with:
           name: Whale-Isle-macos-arm64

@@ -1,3 +1,5 @@
+// rc.2 owns the shared durable Team event declarations; desktop preserves their wire format.
+import type {} from '@deepseek-ai/dsh-agent-team/types'
 /** Public Agent Teams identities, durable records, and service request values. */
 
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -79,6 +81,7 @@ export interface TeamTaskSnapshot {
   readonly description: string
   readonly status: TeamTaskStatus
   readonly ownerId?: SessionId
+  readonly ownerName?: string
   readonly blockedBy: TeamTaskId[]
   readonly writeScopes: string[]
 }
@@ -97,7 +100,7 @@ export interface TeamTaskView {
   readonly writeScopeWarnings: string[]
 }
 
-/** One durable roster row published through the `agentTeam` Session projection. */
+/** One durable roster row published through the `projectTeam` Session projection. */
 export interface TeamMemberProjection {
   readonly id: SessionId
   readonly name: string
@@ -111,7 +114,7 @@ export interface TeamMemberProjection {
 
 /**
  * Durable Team state published to browser clients through the Lead Session's
- * `agentTeam` projection. `failure` names the first rejected persisted Team
+ * `projectTeam` projection. `failure` names the first rejected persisted Team
  * record; members and tasks then stay at the last valid state.
  */
 export interface TeamProjection {
@@ -123,7 +126,7 @@ export interface TeamProjection {
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Durable roster and non-deleted task board of the Team rooted at the projected Session. */
-    agentTeam: TeamProjection
+    projectTeam: TeamProjection
   }
 }
 
@@ -233,22 +236,4 @@ export interface UpdateTeamTaskRequest {
 /** Result of waiting for Team activity. */
 export interface TeamWaitResult {
   readonly timedOut: boolean
-}
-
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    /** Whole teammate lifecycle value, stored only in the Team Lead Session. */
-    'team/member': { version: 2; teamId: TeamId; member: TeamMemberSnapshot }
-    /** Whole shared-task value, stored only in the Team Lead Session. */
-    'team/task': { version: 2; teamId: TeamId; task: TeamTaskSnapshot }
-    /** Historical mailbox or managed input fact; direct sends use the target Agent inbox. */
-    'team/message/queued': { version: 2; teamId: TeamId; message: TeamMessageSnapshot }
-    /** Historical acknowledgement that the target Session recorded a queued message. */
-    'team/message/delivered': {
-      version: 2
-      teamId: TeamId
-      messageId: TeamMessageId
-      targetId: SessionId
-    }
-  }
 }

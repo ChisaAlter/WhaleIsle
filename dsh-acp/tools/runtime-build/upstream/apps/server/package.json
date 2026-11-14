@@ -66,7 +66,7 @@
     "proper-lockfile": "4.1.2",
     "saxes": "6.0.0",
     "stream-chain": "^4.2.5",
-    "stream-json": "3.6.0",
+    "stream-json": "3.7.0",
     "undici": "catalog:",
     "yaml": "catalog:",
     "yauzl": "^3.4.0",
@@ -75,7 +75,7 @@
   "devDependencies": {
     "@effect/graphql-generator": "catalog:",
     "@effect/vitest": "catalog:",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/provider-testing": "workspace:*",
     "@t3tools/shared": "workspace:*",

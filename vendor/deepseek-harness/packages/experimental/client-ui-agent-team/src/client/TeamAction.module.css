@@ -54,9 +54,14 @@
   white-space: nowrap;
 }
 
-.trigger:hover,
 .trigger:focus-visible {
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .trigger:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 /* The row accounts for sidebars and native caption controls. */
@@ -106,7 +111,7 @@
   z-index: 100;
   box-sizing: border-box;
   width: min(500px, 100vw - 32px);
-  max-height: min(680px, calc(100vh - 32px));
+  max-height: min(680px, calc(100vh - 32px), var(--dsh-anchored-max-height, 100vh));
   /* Horizontal insets live on the toolbar and scroll body, not the panel, so
      member-card hover shadows stay inside the body's clip box; the thumb hugs
      the panel edge (2px) while the body's stable gutter and trailing padding
@@ -117,6 +122,7 @@
   border-radius: 12px;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
+  max-width: var(--dsh-anchored-max-width, none);
 }
 
 .panel[hidden] {
@@ -342,7 +348,6 @@
   box-shadow: var(--dsw-elevation-stroke), inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
 }
 
-.member:not(:disabled):hover,
 .member:not(:disabled):focus-visible {
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   box-shadow: var(--dsw-elevation-panel);
@@ -351,6 +356,13 @@
 .member[data-error] {
   --dsw-elevation-stroke-color: var(--dsw-alias-state-error-primary);
   box-shadow: var(--dsw-elevation-stroke);
+}
+
+@media (hover: hover) {
+  .member:not(:disabled):hover {
+    --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+    box-shadow: var(--dsw-elevation-panel);
+  }
 }
 
 /* Seat height 1lh tracks the member name's first text line, so any dot
@@ -386,15 +398,20 @@
   text-overflow: ellipsis;
 }
 
-/* Model details stay behind a hover/focus reveal to keep the resting card to
-   its name and activity. */
+/* Hover-capable cards reveal model details on hover or focus; touch cards
+   keep the details visible beside the name and activity. */
 .memberModel {
   display: none;
 }
 
-.member:hover .memberModel,
 .member:focus-visible .memberModel {
   display: inline;
+}
+
+@media (hover: hover) {
+  .member:hover .memberModel {
+    display: inline;
+  }
 }
 
 /* The member card is denser than the surfaces the standard capsule ships for,
@@ -487,9 +504,14 @@
   cursor: pointer;
 }
 
-.expandToggle:hover,
 .expandToggle:focus-visible {
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .expandToggle:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .expandToggle svg {
@@ -515,4 +537,10 @@
   gap: 6px;
   padding: 9px;
   font-size: 12px;
+}
+
+@media (hover: none) {
+  .memberModel {
+    display: inline;
+  }
 }

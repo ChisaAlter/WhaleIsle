@@ -11,7 +11,7 @@
  * resizes are driven through the ResizeObserver stub.
  */
 import type { GlobalStandardProps, RenderOpts } from '@deepseek-ai/dsh-client-ui-slots'
-import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { AppFrame } from '../src/client/AppFrame.tsx'
@@ -133,6 +133,7 @@ function mountFrame(windowWidth = initialWindowWidth ?? frameWidth) {
       useResource={useResource}
       useWorkspaces={sel => sel(workspaceState)}
       {...allowAllAccess}
+      useContextMenu={contextMenuHook()}
       t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
     />
   )

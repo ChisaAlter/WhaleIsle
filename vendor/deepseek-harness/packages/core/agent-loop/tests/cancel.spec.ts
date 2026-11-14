@@ -1,4 +1,3 @@
-import { ToolCallId, createUserMessage, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 /**
  * Tests for the queue-aware `Agent.cancel()` primitive. The default clears
  * queued and steering work, while `keepInbox` preserves pending input for a
@@ -7,13 +6,16 @@ import { ToolCallId, createUserMessage, expandAssistantStream } from '@deepseek-
  * the cause each cancelled turn records.
  * @module dsh-agent-loop/tests/cancel
  */
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { ToolCallId, createUserMessage, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, SessionLogOffset, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import AgentRegistry, { type Agent, type AgentCancelCause } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -30,6 +32,7 @@ async function harness(adapter: MockAdapter) {
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -316,18 +319,49 @@ describe('Agent.cancel()', () => {
     })
     const agent = handle.agent
 
+    const streaming = Promise.withResolvers<undefined>()
+    ctx.on('agent/assistant-stream', ({ frame }) => { if (frame.type === 'chunk') streaming.resolve(undefined) })
     send(agent, 'active')
-    await new Promise(resolve => setTimeout(resolve, 30))
-
-    // Dispose cancels with `{ kind: 'disposed' }`; a wake landing in the
-    // abort-to-idle window must not latch, so `whenIdle()` does not wait on
-    // a model turn over the session being torn down.
+    await streaming.promise
     const disposal = handle.dispose()
-    setTimeout(() => { send(agent, 'late wake') }, 10)
+    send(agent, 'late wake')
     await disposal
 
     expect(adapter.requests).toHaveLength(1)
     expect(userTexts(agent)).toEqual(['active'])
+  })
+
+  it.each(['before scope cleanup', 'during scope cleanup'])('does not start an idle Agent after disposal begins %s', async (window) => {
+    const adapter = new MockAdapter([textResponse('late reply')])
+    const ctx = await harness(adapter)
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const releaseCleanup = Promise.withResolvers<undefined>()
+    let disposal: Promise<void> | undefined
+    try {
+      const handle = await ctx.agents.create({
+        sessionId: SessionId('idle-disposal-wake'),
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+      const agent = handle.agent
+      agent.ctx.effect(() => async () => {
+        cleanupStarted.resolve(undefined)
+        await releaseCleanup.promise
+      })
+      disposal = handle.dispose()
+      if (window === 'during scope cleanup') await cleanupStarted.promise
+      send(agent, 'late wake')
+      await agent.whenIdle()
+
+      expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(0)
+      expect(adapter.requests).toHaveLength(0)
+    } finally {
+      releaseCleanup.resolve(undefined)
+      try {
+        await disposal
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    }
   })
 
   it('cancel after waking send closes its synchronously opened turn without a step', async () => {
@@ -828,6 +862,7 @@ describe('Agent.cancel()', () => {
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     ctx.llm.registerAdapter(['mock'], adapter)

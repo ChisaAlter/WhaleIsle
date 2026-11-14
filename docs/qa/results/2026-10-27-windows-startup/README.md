@@ -66,7 +66,7 @@ Low token 实验只复制当前 token 并改变新 token 的完整性等级，�
 
 首次空 profile 的运行时提取完成，产品 boot/launcher 页面可用，但 Harness 服务无输出等待到 180 秒超时，首次总驱动也在 15 分钟期限退出。这不是原生崩溃，不能记作完整通过。随后同一隔离 profile 启动并在服务上仅内存加独立 inspector 参数诊断、普通重启服务，完整 Harness 页面于 14:29:15 可用：`document.readyState=complete`、27 个按钮、一个可编辑输入区，截图人工检查通过。主进程 PID29464 以 `app.quit()` 走正常退出流程，14:29:20 exit 0。没有替换产品文件或旧外壳。此次冷启动超时及诊断重启不用于声称冷启动性能通过。
 
-最终追加一次没有服务诊断参数或内存补丁的启动：PID33448，14:30:51 启动，14:31:31 完整页面 ready，14:31:33 普通 `app.quit()` exit 0。该次未修改原包 exe、app.asar、Node 或 Harness tar。约 40 秒的暖启动只证明启动功能恢复，不能视作性能达标；首次冷启动超时没有被抹去。见[完整产品结果](full-product.json)、[页面截图](page-ready.png)及[最小 GUI 对照](minimal-results.json)。
+最终追加一次没有服务诊断参数或内存补丁的启动：PID33448，14:30:51 启动，14:31:31 完整页面 ready，14:31:33 普通 `app.quit()` exit 0。该次未修改原包 exe、app.asar、Node 或 Harness tar。约 40 秒的暖启动只证明启动功能恢复，不能视作性能达标；首次冷启动超时没有被抹去。见[完整产品结果](full-product.json)、[页面截图](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-10-27-windows-startup/page-ready.png)及[最小 GUI 对照](minimal-results.json)。
 
 ## 重现与实际处理
 

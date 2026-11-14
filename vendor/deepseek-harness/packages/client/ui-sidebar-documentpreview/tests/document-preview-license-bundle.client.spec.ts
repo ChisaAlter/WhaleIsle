@@ -65,10 +65,10 @@ describe('published document preview licenses', () => {
       const tarball = isAbsolute(packed.filename) ? packed.filename : join(output, packed.filename)
       const client = run('tar', ['-xOf', basename(tarball), 'package/lib/client.js'], dirname(tarball), task.timeout)
       const pdf = run('tar', ['-xOf', basename(tarball), 'package/lib/client.pdf.js'], dirname(tarball), task.timeout)
-      expect([...client.matchAll(/require\.async\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+      expect([...client.matchAll(/require\.async\(["'\x60](\.\/client[^"'\x60/]*\.js)["'\x60]\)/gu)].map(match => match[1]))
         .toEqual(['./client.frontmatter-fields.js', './client.pdf.js', './client.excel.js'])
-      expect(client).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
-      expect([...pdf.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
+      expect(client).not.toMatch(/\brequire\((["'`])\.\/client[^"'`/]*\.js\1\)/u)
+      expect([...pdf.matchAll(/require\((["'`])(\.\/client[^"'`/]*\.js)\1\)/gu)].map(match => match[2]))
         .toEqual([])
       expect(client).not.toContain('//! Bundled PDF.js license notices')
       expect(client).not.toContain('/pdfjs-dist/')
@@ -85,7 +85,7 @@ describe('published document preview licenses', () => {
         expect(excel).toContain(license.split('\n').map(line => `// ${line}`).join('\n'))
       }
       const frontmatter = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.frontmatter-fields.js'], packageRoot, task.timeout)
-      expect(frontmatter).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
+      expect(frontmatter).not.toMatch(/\brequire\((["'`])\.\/client[^"'`/]*\.js\1\)/u)
       let frontmatterInitialized = false
       runInNewContext(frontmatter, { window: { __ModuleLoader__: { load: (registration: {
         factory: (resolve: (specifier: string) => unknown) => { FrontmatterFields: unknown }

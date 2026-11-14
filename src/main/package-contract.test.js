@@ -47,7 +47,7 @@ test('manifest keeps the runtime and build-tool dependencies', () => {
     assert.equal(typeof pkg.devDependencies?.[name], 'string', `devDependencies.${name} is missing`);
   }
   assert.equal(pkg.optionalDependencies?.['node-pty'], '1.2.0-beta.15');
-  assert.equal(pkg.engines?.node, '^22.19.0 || >=24.0.0');
+  assert.equal(pkg.engines?.node, '>=24.9.0');
 });
 
 test('account startup WebSocket dependency is locked for production packaging', () => {
@@ -90,7 +90,7 @@ test('manifest keeps the packaging contract after-pack depends on', () => {
 
 test('rounded-window motion bridge is a production dependency unpacked in both packages', () => {
   const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
-  assert.equal(pkg.dependencies.koffi, '3.3.2');
+  assert.equal(pkg.dependencies.koffi, '3.3.3');
   assert.equal(lock.packages[''].dependencies.koffi, pkg.dependencies.koffi);
   assert.notEqual(lock.packages['node_modules/koffi'].dev, true);
   assert.ok(lock.packages['node_modules/@koromix/koffi-win32-x64']);
@@ -145,4 +145,19 @@ test('manifest keeps the NSIS installer branding contract', () => {
   assert.equal(nsis?.include, 'build/installer.nsh');
   assert.deepEqual(nsis?.installerLanguages, ['zh_CN', 'en_US']);
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+});
+
+test('ACP resource filter includes the runtime but excludes independent-repository state', () => {
+  const { FileMatcher } = require('app-builder-lib/out/fileMatcher');
+  const resource = pkg.build.extraResources.find(entry => entry.to === 'dsh-acp');
+  assert.equal(resource.from, 'dsh-acp');
+  const source = path.join(ROOT, resource.from);
+  const filter = new FileMatcher(source, path.join(ROOT, 'dist', 'resources', 'dsh-acp'), value => value, resource.filter).createFilter();
+  const file = { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false };
+  for (const name of ['package.json', 'cordis.patch.yml', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'lib/index.js', 'lib/vendor/agent-runtime.cjs', 'lib/vendor/mcp-bridge.cjs', 'client/client.js']) {
+    assert.equal(filter(path.join(source, name), file), true, `missing ACP resource: ${name}`);
+  }
+  for (const name of ['.git/config', '.env', 'node_modules/private/config.json', 'tests/plugin.test.mjs', 'tools/runtime-build/upstream/package.json']) {
+    assert.equal(filter(path.join(source, name), file), false, `private/build-only resource: ${name}`);
+  }
 });

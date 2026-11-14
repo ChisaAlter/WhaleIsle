@@ -1,6 +1,9 @@
 /**
  * Settings shell root: the sidebar-foot trigger row plus the centered modal
- * panel (figma 501:29947, 1080x700) with the section nav rail. The shell is
+ * panel (figma 501:29947, 1080x700) with the section nav rail. In browsers below
+ * 768px the panel fills the viewport and the rail turns into a horizontal strip;
+ * Windows and macOS desktop windows retain the rail (SettingsRoot.module.css).
+ * The shell is
  * a pure composition face — slot-owned text (trigger label, panel title,
  * close label, sections) arrives from registrants through slots; accessible
  * names resolve from localized content (trigger: shell locale; dialog:
@@ -62,7 +65,7 @@ const HIT_HIGHLIGHT_MS = 1_600
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
   const Icon = NAV_ICONS[id] ?? IconSettingsOutline16
-  return <Icon className={css.navIcon} size={16} />
+  return <Icon size={16} />
 }
 
 type PanelProps = {
@@ -197,9 +200,14 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
                     data-dsh-settings-section={row.id}
                     aria-current={!searching && row.id === active ? 'true' : undefined}
                     data-modal-autofocus={row.id === active ? '' : undefined}
+                    onFocus={(event) => { event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }}
                     onClick={() => { setQuery(''); onSelect(row.id) }}
                   >
-                    {navIcon(row.id)}
+                    <span className={css.navIcon} aria-hidden="true">
+                      {renderSlot('settings.section.icon', { size: 16, active: !searching && row.id === active }, {
+                        only: row.id, fallback: navIcon(row.id),
+                      })}
+                    </span>
                     <span className={css.navLabel}>{row.label}</span>
                   </button>
                 ))}
@@ -285,7 +293,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const launcher = renderSlot('settings.launcher', {
     wide,
     settingsOpen: open,
-    openSettings: () => { openSettings() },
+    openSettings: (sectionId?: string) => { openSettings(sectionId) },
     ...(shortcut?.keys.length ? { settingsShortcut: { keys: shortcut.keys, aria: shortcut.aria } } : {}),
     openOnboarding: (id: string) => { setExplicitOnboarding(id) },
   })

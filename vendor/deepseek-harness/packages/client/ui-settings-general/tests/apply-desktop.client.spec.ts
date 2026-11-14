@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { stubConfigForm, TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { stubConfigForm, StaticRemoteAccess, TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { CloseBehaviorRow } from '../src/client/CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from '../src/client/AutoStartDesktopRow.tsx'
@@ -37,6 +37,7 @@ async function bench() {
   ctx.provide('configForms', { get: () => stubConfigForm().scope } as never)
   ctx.provide('shortcuts', { register: () => () => {} } as never)
   ctx.provide('modules', { entries: { dismissRelease: () => {}, releaseChange: () => {} } } as never)
+  new StaticRemoteAccess(ctx)
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
 

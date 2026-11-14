@@ -63,7 +63,7 @@ export const TEXT_SIZES = ['display', 'h1', 'h2', 'h3', 'body', 'muted', 'captio
 export const TEXT_ALIGNS = ['left', 'center', 'right'] as const
 export const BUTTON_TONES = ['primary', 'danger', 'success', 'ghost'] as const
 export const BADGE_TONES = ['success', 'warn', 'danger', 'accent'] as const
-export const INPUT_TYPES = ['text', 'email', 'password', 'color'] as const
+export const INPUT_TYPES = ['text', 'email', 'password', 'color', 'number'] as const
 export const CALLOUT_TONES = ['info', 'success', 'warning', 'error'] as const
 export const CHART_KINDS = ['bars', 'line', 'donut'] as const
 export const PLOT_KINDS = ['line', 'area', 'scatter'] as const
@@ -156,9 +156,23 @@ const nodeFields = { type: 'string', span: 'number' } as const
 
 const chartDatumSchema = recordSchema(['label', 'value'], {
   label: 'string',
-  value: 'number',
+  value: 'unknown',
   color: 'string',
 })
+
+const computedFormatSchema = recordSchema([], {
+  locale: 'string',
+  style: 'string',
+  currency: 'string',
+  minimumFractionDigits: 'number',
+  maximumFractionDigits: 'number',
+}, {}, { style: ['decimal', 'currency', 'percent'] })
+
+const computedFieldSchema = recordSchema(['id', 'expr'], {
+  id: 'string',
+  expr: 'string',
+  format: 'object',
+}, { format: computedFormatSchema })
 
 const chartSeriesSchema = recordSchema(['label', 'data'], {
   label: 'string',
@@ -201,6 +215,10 @@ function fileTreeRecordSchema(depth: number): ComponentRecordSchema {
 }
 
 const fileTreeNodeSchema = fileTreeRecordSchema(6)
+
+const imageGroupItemSchema = recordSchema(['src'], {
+  src: 'string', alt: 'string', caption: 'string',
+}, {}, {}, { url: 'src', link: 'src' })
 
 const tabHolderSchema = recordSchema(['label', 'items'], {
   label: 'string',
@@ -259,8 +277,9 @@ export const GENUI_SPEC_SCHEMA = schema(['items'], {
   gap: 'number',
   panel: 'boolean',
   append: 'boolean',
+  computed: 'array',
   items: 'nodes',
-})
+}, {}, { nested: { computed: computedFieldSchema } })
 
 /** Backwards-friendly short alias for the root specification schema. */
 export const SPEC_SCHEMA = GENUI_SPEC_SCHEMA
@@ -291,6 +310,8 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
   // `flat` drops the elevation/shadow: figure panels must read as printed
   // blocks, not as floating cards (the reference diagrams are drawn flat).
   card: schema(['items'], { ...nodeFields, title: 'string', eyebrow: 'string', items: 'nodes', tone: 'string', accent: 'string', flat: 'boolean' }, { label: 'title', content: 'items' }, { enums: { tone: CARD_TONES } }),
+  carousel: schema(['items'], { ...nodeFields, items: 'nodes', title: 'string', itemWidth: 'number', gap: 'number' }, { children: 'items' }),
+  'image-group': schema(['items'], { ...nodeFields, items: 'array', title: 'string' }, {}, { nested: { items: imageGroupItemSchema } }),
   chart: schema([], {
     ...nodeFields,
     kind: 'string',
@@ -314,7 +335,7 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
   checkbox: schema(['label'], { ...nodeFields, label: 'string', checked: 'boolean', action: 'string', group: 'string' }),
   code: schema(['code'], { ...nodeFields, lang: 'string', code: 'string' }, { content: 'code', text: 'code' }),
   col: schema(['items'], { ...nodeFields, items: 'nodes', gap: 'number', width: 'number' }),
-  copy: schema(['text'], { ...nodeFields, label: 'string', text: 'string' }, { content: 'text', code: 'text', value: 'text' }),
+  copy: schema(['text'], { ...nodeFields, label: 'string', text: 'string', expandable: 'boolean', previewLines: 'number' }, { content: 'text', code: 'text', value: 'text' }),
   diagram: schema(['kind', 'nodes'], { ...nodeFields, kind: 'string', variant: 'string', title: 'string', nodes: 'array', edges: 'array', zones: 'array', theme: 'object' }, {}, {
     nested: { nodes: diagramNodeSchema, edges: diagramEdgeSchema, zones: diagramZoneSchema, theme: diagramThemeSchema },
     enums: { kind: DIAGRAM_KINDS, variant: DIAGRAM_VARIANTS },
@@ -345,6 +366,7 @@ export const COMPONENT_SCHEMAS: Readonly<Record<string, ComponentSchema>> = {
   keyvalue: schema(['pairs'], { ...nodeFields, pairs: 'array' }, { items: 'pairs', rows: 'pairs', entries: 'pairs' }, { nested: { pairs: keyValueRecordSchema } }),
   link: schema(['label'], { ...nodeFields, label: 'string', href: 'string' }),
   list: schema(['items'], { ...nodeFields, items: 'array', filter: 'string' }),
+  map: schema(['locations'], { ...nodeFields, id: 'string', title: 'string', locations: 'array', routes: 'array', selected: 'string', center: 'array', zoom: 'number', height: 'number' }, {}, { nested: { locations: recordSchema(['id', 'label', 'coordinates'], { id: 'string', label: 'string', coordinates: 'array', description: 'string' }), routes: recordSchema(['id', 'label', 'coordinates'], { id: 'string', label: 'string', coordinates: 'array' }) } }),
   mermaid: schema(['code'], { ...nodeFields, code: 'string' }),
   svg: schema(['code'], { ...nodeFields, code: 'string', title: 'string', height: 'number' }),
   plot: schema(['series'], { ...nodeFields, series: 'array', xMin: 'number', xMax: 'number', yMin: 'number', yMax: 'number', title: 'string' }, {}, { nested: { series: plotSeriesSchema } }),

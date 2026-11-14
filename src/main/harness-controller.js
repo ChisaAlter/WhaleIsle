@@ -30,6 +30,7 @@ class HarnessController extends EventEmitter {
   constructor(options) {
     super();
     this.dsh = options.dsh;
+    this.skippedBuiltins = [];
     this.remote = options.remote;
     this.loadConfig = options.loadConfig;
     this.createMainWindow = options.createMainWindow;
@@ -166,6 +167,7 @@ class HarnessController extends EventEmitter {
       // consumers; the boot drawer owns the full capped ring buffer.
       logs: this.dsh.logs.slice(),
       pluginRecovery: { ...this.pluginRecovery },
+      skippedBuiltins: this.skippedBuiltins.map((row) => ({ ...row })),
       recovery: {
         ...this.recovery,
         enabled: policy.enabled,
@@ -517,6 +519,36 @@ class HarnessController extends EventEmitter {
     }
   }
 
+  /**
+   * Prepare one optional built-in. A failure (`ok:false` or a throw) leaves the
+   * feature off for this start: its overlay is not mounted, the reason goes to
+   * the start log and `skippedBuiltins`, which the launcher's 启动诊断 shows.
+   * Task protection is not optional — it installs permission guards — and keeps
+   * failing the start. Cancellation always propagates.
+   */
+  async prepareOptionalBuiltin(label, ensure, checkCurrent) {
+    let result;
+    try {
+      result = await ensure();
+    } catch (error) {
+      checkCurrent();
+      if (isCancellation(error)) throw error;
+      this.skipBuiltin(label, errorMessage(error));
+      return null;
+    }
+    checkCurrent();
+    if (result && result.ok === false) {
+      this.skipBuiltin(label, result.error || 'unknown');
+      return null;
+    }
+    return result;
+  }
+
+  skipBuiltin(label, reason) {
+    this.skippedBuiltins.push({ label, error: String(reason) });
+    this.dsh.log(`${label}不可用，本次启动已跳过：${reason}`, 'app');
+  }
+
   async performStartOnce({ showBoot, generation, skipUserPlugins, assertCurrent = () => {} }) {
     const checkCurrent = () => {
       this.assertOperationCurrent(generation);
@@ -524,6 +556,7 @@ class HarnessController extends EventEmitter {
     };
     checkCurrent();
     this.dsh.beginStartLog?.();
+    this.skippedBuiltins = [];
     this.dsh.setState('starting', { error: '', failure: null });
     const win = this.createMainWindow();
     if (showBoot) {
@@ -579,8 +612,10 @@ class HarnessController extends EventEmitter {
     // cordis.patch.yml is purely user-owned (ensure only strips legacy
     // managed blocks). Never pass that file to --patch: overlays still apply
     // under --skip-user-plugins, so it would re-mount every user row the
-    // skip exists to bypass. The install, usage-panel, dsh-im, and market
-    // overlays are required on all starts; full starts insert session-search
+    // skip exists to bypass. The install and task-control overlays are
+    // required on all starts; the optional built-ins (usage-panel, dsh-im,
+    // market, Office, whale, remote, pad) mount when they prepare and are
+    // otherwise skipped for this start; full starts insert session-search
     // before dsh-im.
     const patchFiles = [];
     // Task control mounts first among the overlay plugins so its webServer /
@@ -650,31 +685,18 @@ class HarnessController extends EventEmitter {
     // Office is desktop built-in: the workspace-dependencies + skill-office
     // rows ride --patch on every start (including skipUserPlugins recovery);
     // the disable list never applies. A missing required Windows payload or an
-    // incomplete provided kit closure is desktop runtime damage — fail the start;
-    // skip cannot fix it.
-    try {
-      const office = await this.ensureDesktopOfficeRuntime();
-      checkCurrent();
-      if (office && office.ok === false) {
-        throw new Error(`桌面内置 Office 运行时失败：${office.error || 'unknown'}`);
-      }
-      if (office?.overlayFile) {
-        patchFiles.push(office.overlayFile);
-      }
-      if (office && office.ok && office.disabled) {
-        this.dsh.log('桌面内置 Office 已按环境变量关闭', 'app');
-      } else if (office && office.ok && office.present) {
-        this.dsh.log(office.added ? '已接入桌面内置 Office 运行时' : '桌面内置 Office 运行时已就绪', 'app');
-      } else if (office && office.warning) {
-        this.dsh.log(office.warning, 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置 Office 运行时失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置 Office 运行时失败：${errorMessage(error)}`);
+    // incomplete provided kit closure is desktop runtime damage: Office stays
+    // off for this start and the launcher's 启动诊断 lists it.
+    const office = await this.prepareOptionalBuiltin('Office 运行时', () => this.ensureDesktopOfficeRuntime(), checkCurrent);
+    if (office?.overlayFile) {
+      patchFiles.push(office.overlayFile);
+    }
+    if (office && office.ok && office.disabled) {
+      this.dsh.log('桌面内置 Office 已按环境变量关闭', 'app');
+    } else if (office && office.ok && office.present) {
+      this.dsh.log(office.added ? '已接入桌面内置 Office 运行时' : '桌面内置 Office 运行时已就绪', 'app');
+    } else if (office && office.warning) {
+      this.dsh.log(office.warning, 'app');
     }
     // Clear retired dshmarket preset residue without changing user installs.
     try {
@@ -692,26 +714,13 @@ class HarnessController extends EventEmitter {
     // Usage stats is desktop built-in Settings → 用量统计 — not a user
     // plugin. Its overlay rides --patch on every start (including
     // skipUserPlugins recovery); the disable list never applies; missing
-    // vendor deps fail start (desktop runtime damage, skip cannot fix it).
-    try {
-      const usage = await this.ensureUsagePanelPlugin();
-      checkCurrent();
-      if (usage && usage.ok === false) {
-        throw new Error(`桌面内置用量统计失败：${usage.error || 'unknown'}`);
-      }
-      if (usage?.overlayFile) {
-        patchFiles.push(usage.overlayFile);
-      }
-      if (usage && usage.ok) {
-        this.dsh.log(usage.added ? '已接入桌面内置用量统计' : '桌面内置用量统计已就绪', 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置用量统计失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置用量统计失败：${errorMessage(error)}`);
+    // vendor deps leave it off for this start (listed in 启动诊断).
+    const usage = await this.prepareOptionalBuiltin('用量统计', () => this.ensureUsagePanelPlugin(), checkCurrent);
+    if (usage?.overlayFile) {
+      patchFiles.push(usage.overlayFile);
+    }
+    if (usage && usage.ok) {
+      this.dsh.log(usage.added ? '已接入桌面内置用量统计' : '桌面内置用量统计已就绪', 'app');
     }
     if (!skipUserPlugins) {
       try {
@@ -732,47 +741,22 @@ class HarnessController extends EventEmitter {
     // dsh-im is desktop built-in Settings → Remote → Channels — not a user
     // plugin. Its overlay rides --patch on every start (including
     // skipUserPlugins recovery); the disable list never applies; missing
-    // vendor deps fail start (desktop runtime damage, skip cannot fix it).
-    try {
-      const im = await this.ensureDshImPlugin();
-      checkCurrent();
-      if (im && im.ok === false) {
-        throw new Error(`桌面内置 dsh-im 失败：${im.error || 'unknown'}`);
-      }
-      if (im?.overlayFile) {
-        patchFiles.push(im.overlayFile);
-      }
-      if (im && im.ok) {
-        this.dsh.log(im.added ? '已接入桌面内置 dsh-im（消息渠道）' : '桌面内置 dsh-im 已就绪', 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置 dsh-im 失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置 dsh-im 失败：${errorMessage(error)}`);
+    // vendor deps leave it off for this start (listed in 启动诊断).
+    const im = await this.prepareOptionalBuiltin('消息渠道（dsh-im）', () => this.ensureDshImPlugin(), checkCurrent);
+    if (im?.overlayFile) {
+      patchFiles.push(im.overlayFile);
     }
-    // Keep the built-in Settings market available on full and recovery starts.
-    try {
-      const market = await this.ensureDesktopMarket();
-      checkCurrent();
-      if (market && market.ok === false) {
-        throw new Error(`桌面内置市场失败：${market.error || 'unknown'}`);
-      }
-      if (market?.overlayFile) {
-        patchFiles.push(market.overlayFile);
-      }
-      if (market && market.ok) {
-        this.dsh.log('桌面内置插件市场已就绪：设置 → 市场', 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置市场失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置市场失败：${errorMessage(error)}`);
+    if (im && im.ok) {
+      this.dsh.log(im.added ? '已接入桌面内置 dsh-im（消息渠道）' : '桌面内置 dsh-im 已就绪', 'app');
+    }
+    // Keep the built-in Settings market available on full and recovery starts;
+    // a broken market copy leaves it off for this start (listed in 启动诊断).
+    const market = await this.prepareOptionalBuiltin('插件市场', () => this.ensureDesktopMarket(), checkCurrent);
+    if (market?.overlayFile) {
+      patchFiles.push(market.overlayFile);
+    }
+    if (market && market.ok) {
+      this.dsh.log('桌面内置插件市场已就绪：设置 → 市场', 'app');
     }
     try {
       const removed = await this.removeLegacyDshbotPreset();
@@ -805,31 +789,19 @@ class HarnessController extends EventEmitter {
         return null;
       }
     };
-    // The built-in whale assistant mounts on every start while enabled;
-    // the disable list never applies and missing vendor files fail the start.
-    try {
-      const whale = await this.ensureDshWhalePlugin({
-        enabled: startConfig.whaleAssistantEnabled === true,
-      });
-      checkCurrent();
-      if (whale && whale.ok === false) {
-        throw new Error(`桌面内置 dsh-whale 失败：${whale.error || 'unknown'}`);
-      }
-      if (whale?.overlayFile) {
-        patchFiles.push(whale.overlayFile);
-      }
-      if (whale && whale.ok && whale.disabled) {
-        this.dsh.log('桌面内置 dsh-whale 已按设置关闭', 'app');
-      } else if (whale && whale.ok) {
-        this.dsh.log(whale.added ? '已接入桌面内置 dsh-whale（鲸鱼娘助理）' : '桌面内置 dsh-whale 已就绪', 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置 dsh-whale 失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置 dsh-whale 失败：${errorMessage(error)}`);
+    // The built-in whale assistant mounts on every start while enabled; the
+    // disable list never applies and missing vendor files leave it off for
+    // this start (listed in 启动诊断).
+    const whale = await this.prepareOptionalBuiltin('鲸鱼娘助理（dsh-whale）', () => this.ensureDshWhalePlugin({
+      enabled: startConfig.whaleAssistantEnabled === true,
+    }), checkCurrent);
+    if (whale?.overlayFile) {
+      patchFiles.push(whale.overlayFile);
+    }
+    if (whale && whale.ok && whale.disabled) {
+      this.dsh.log('桌面内置 dsh-whale 已按设置关闭', 'app');
+    } else if (whale && whale.ok) {
+      this.dsh.log(whale.added ? '已接入桌面内置 dsh-whale（鲸鱼娘助理）' : '桌面内置 dsh-whale 已就绪', 'app');
     }
     const deepseekTools = await this.ensureDeepSeekToolsPlugin();
     checkCurrent();
@@ -838,46 +810,24 @@ class HarnessController extends EventEmitter {
     // contract as dsh-whale: its overlay rides --patch on every start
     // (including skipUserPlugins recovery) while `remoteWorkspaceEnabled` is on in
     // 内置功能 (default ON); the disable list never applies; a missing
-    // vendor copy fails start (desktop runtime damage, skip cannot fix it).
-    try {
-      const remotePlugin = await this.ensureDshRemotePlugin({
-        enabled: startConfig.remoteWorkspaceEnabled !== false,
-      });
-      checkCurrent();
-      if (remotePlugin && remotePlugin.ok === false) {
-        throw new Error(`桌面内置 dsh-remote 失败：${remotePlugin.error || 'unknown'}`);
-      }
-      if (remotePlugin?.overlayFile) {
-        patchFiles.push(remotePlugin.overlayFile);
-      }
-      if (remotePlugin && remotePlugin.ok && remotePlugin.disabled) {
-        this.dsh.log('桌面内置 dsh-remote 已按设置关闭', 'app');
-      } else if (remotePlugin && remotePlugin.ok) {
-        this.dsh.log(remotePlugin.added ? '已接入桌面内置 dsh-remote（远程工作区）' : '桌面内置 dsh-remote 已就绪', 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置 dsh-remote 失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置 dsh-remote 失败：${errorMessage(error)}`);
+    // vendor copy leaves remote workspaces off for this start (listed in 启动诊断).
+    const remotePlugin = await this.prepareOptionalBuiltin('远程工作区（dsh-remote）', () => this.ensureDshRemotePlugin({
+      enabled: startConfig.remoteWorkspaceEnabled !== false,
+    }), checkCurrent);
+    if (remotePlugin?.overlayFile) {
+      patchFiles.push(remotePlugin.overlayFile);
     }
-    let defaultPatchFile;
-    try {
-      const pad = await this.ensureDshPadPlugin({ skipUserPlugins, disabledPlugins: startConfig.disabledPlugins });
-      checkCurrent();
-      if (pad?.ok === false) throw new Error(`桌面内置 dsh-pad 失败：${pad.error || 'unknown'}`);
-      defaultPatchFile = pad?.overlayFile;
-      if (pad?.userProvided) this.dsh.log('已保留用户安装的 dsh-pad 及其配置', 'app');
-      else if (pad?.disabled) this.dsh.log('dsh-pad 已按用户设置关闭', 'app');
-      else if (pad?.ok) this.dsh.log(pad.added ? '已接入桌面内置 dsh-pad（悬浮面板）' : '桌面内置 dsh-pad 已就绪', 'app');
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置 dsh-pad 失败：')) throw error;
-      throw new Error(`桌面内置 dsh-pad 失败：${errorMessage(error)}`);
+    if (remotePlugin && remotePlugin.ok && remotePlugin.disabled) {
+      this.dsh.log('桌面内置 dsh-remote 已按设置关闭', 'app');
+    } else if (remotePlugin && remotePlugin.ok) {
+      this.dsh.log(remotePlugin.added ? '已接入桌面内置 dsh-remote（远程工作区）' : '桌面内置 dsh-remote 已就绪', 'app');
     }
+    const pad = await this.prepareOptionalBuiltin('悬浮面板（dsh-pad）',
+      () => this.ensureDshPadPlugin({ skipUserPlugins, disabledPlugins: startConfig.disabledPlugins }), checkCurrent);
+    const defaultPatchFile = pad?.overlayFile;
+    if (pad?.userProvided) this.dsh.log('已保留用户安装的 dsh-pad 及其配置', 'app');
+    else if (pad?.disabled) this.dsh.log('dsh-pad 已按用户设置关闭', 'app');
+    else if (pad?.ok) this.dsh.log(pad.added ? '已接入桌面内置 dsh-pad（悬浮面板）' : '桌面内置 dsh-pad 已就绪', 'app');
     try {
       const disabled = this.applyDisabledBundles(startConfig.disabledPlugins);
       if (disabled && disabled.changed) {

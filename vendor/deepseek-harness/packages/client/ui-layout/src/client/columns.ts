@@ -28,6 +28,8 @@ export const SIDEBAR_MAX = 420
 export const SIDEBAR_DEFAULT = 280
 /** Closed-sidebar rail: a 24px icon column between 16px horizontal paddings. */
 export const SIDEBAR_COLLAPSED = 56
+/** Frame width below which the sidebar overlays the main content without a rail. */
+export const SIDEBAR_DRAWER_BREAKPOINT = 768
 /** Viewport width below which the sidebar auto-collapses to the rail in
  * portrait (deepsuite LG breakpoint); a manual toggle below it re-expands
  * over the squeezed center (stores.ts narrowExpanded). Landscape skips this
@@ -94,7 +96,8 @@ export function surfacesMaxForViewport(viewport: number): number {
   * @param surfaces - surfaces width preference in px (0 = closed).
  * @param collapsedWidth - track width of the closed sidebar; the default keeps
  *   the icon rail, while 0 hides the column for native caption controls.
-  * @returns resolved widths; a closed sidebar keeps its compact rail while
+  * @param centeredSidebar - place an expanded sidebar's edge at the frame midpoint.
+ * @returns resolved widths; a closed sidebar keeps its compact rail while
   *   closed rightbar and surfaces resolve to zero width (never unmounted).
  */
 export function computeColumns(
@@ -103,9 +106,10 @@ export function computeColumns(
   rightbar: number,
   surfaces = 0,
   collapsedWidth = SIDEBAR_COLLAPSED,
+  centeredSidebar = false,
 ): Columns {
   // The sidebar is fixed at its preference (or the rail) — it never concedes.
-  const s = sidebar === 0 ? collapsedWidth : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
+  const s = sidebar === 0 ? collapsedWidth : centeredSidebar ? viewport / 2 : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
   const r0 = rightbar === 0
     ? 0
     : clampWidth(rightbar, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO))

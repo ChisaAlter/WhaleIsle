@@ -1,4 +1,4 @@
-/** Client-safe Agent Teams roster and task views plus the `agentTeam` projection vocabulary. */
+/** Client-safe Agent Teams roster and task views plus the `projectTeam` projection vocabulary. */
 
 export type {
   TeamMemberPhase,

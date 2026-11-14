@@ -20,8 +20,10 @@
   -webkit-app-region: no-drag;
 }
 
-.toggle:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .toggle:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .pressed {

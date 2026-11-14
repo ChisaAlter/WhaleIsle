@@ -51,6 +51,8 @@ Each flow entry also declares a `<flow>.remote` child slot so a remote-workspace
 
 The dialog is a 680×500 Miller-column view (clamped on short or narrow viewports), driven by the host `listDirectory` and `createDirectory` primitives through `ctx.workspaces`. Both registrations install as one transactional effect through nested `ctx.slots.inject()` calls, because either declaring entry may activate later or replace its declaration; the dialog's copy lives in this package's own locale namespace so the two dictionaries land as a unit. Each registration declares its own `<flow>.remote` child in the same call — the registry rejects a child key declared twice, so the two holes are distinct keys per parent — and binds an occupancy `HostObservable` into the `useRemoteFlow` selector hook, which is what hides the tab strip while no remote occupant is mounted. Browse failures stay inside the dialog's own alert surfaces, so this occupant never drives the owner's `onError` arm. The node half is an empty `apply` that keeps the plugin on the host roster.
 
+The New folder and Cancel actions use the shared [Button](../ui-primitives/README.md)'s inset hairline, which preserves their layout border and keeps the stroke complete at fractional button widths.
+
 </details>
 
 -----

@@ -11,6 +11,7 @@ import { resolveInspectorOptions, startInspector, type InspectorHandle, type Ins
 import type { InspectorClientBootstrap } from '../shared/bridge/messages/control.ts'
 import { createInspectorService } from '../shared/service.ts'
 import { publishCordisTree } from './inspection/cordis.ts'
+import { maxStatePayloadBytes } from '../shared/bridge/buffer.ts'
 import { INSPECTOR_BOOTSTRAP_PATH, INSPECTOR_CLIENT_QUERY, readInspectorClientSelection } from '../shared/web.ts'
 import { disposeInspectorResources } from '../shared/dispose.ts'
 
@@ -63,7 +64,7 @@ export async function apply(ctx: Context, config: HostPluginConfig): Promise<voi
     try {
       disposers.push(ctx.connection.fetch.register({
         path: INSPECTOR_BOOTSTRAP_PATH, methods: ['GET'], requestBody: 'buffered',
-        fetch: request => bootstrapResponse(ready.promise, request.signal),
+        fetch: request => bootstrapResponse(ready.promise, request),
       }))
       const handle = await startInspector(spec).catch((error: unknown) => {
         if (!isUnavailableOnPlatform(error)) throw error
@@ -79,7 +80,7 @@ export async function apply(ctx: Context, config: HostPluginConfig): Promise<voi
       const { default: serveStatic } = await import('serve-static')
       disposers.push(publishCordisTree(ctx, handle.source, {
         maxNodes: spec.maxCordisNodes,
-        maxBytes: spec.maxSourceFrameBytes - 4_096,
+        maxBytes: maxStatePayloadBytes(spec.maxSourceFrameBytes),
       }))
       disposers.push(ctx.provide('inspector', createInspectorService(handle.source)))
       disposers.push(ctx.on('webserver/index-inject', (table: IndexInjection[]) => {
@@ -196,10 +197,11 @@ function isUnavailableOnPlatform(error: unknown): boolean {
 /**
  * Answer one bootstrap request once Host initialization settles or the browser abandons the request.
  * @param ready - Resolves with the Client bootstrap, or with undefined after initialization failed or found the platform unavailable.
- * @param signal - Request signal; an aborted request stops waiting and receives no endpoint.
+ * @param request - Retained until settlement so Node keeps forwarding the caller's abort to its signal.
  * @returns The bootstrap JSON, or 503 when the Inspector is unavailable or the request was aborted.
  */
-async function bootstrapResponse(ready: Promise<InspectorClientBootstrap | undefined>, signal: AbortSignal): Promise<Response> {
+async function bootstrapResponse(ready: Promise<InspectorClientBootstrap | undefined>, request: Request): Promise<Response> {
+  const signal = request.signal
   const headers = { 'cache-control': 'no-store' }
   const abandoned = Promise.withResolvers<undefined>()
   const abandon = () => { abandoned.resolve(undefined) }
@@ -209,6 +211,6 @@ async function bootstrapResponse(ready: Promise<InspectorClientBootstrap | undef
     const client = await Promise.race([ready, abandoned.promise])
     return client === undefined ? new Response(null, { status: 503, headers }) : Response.json(client, { headers })
   } finally {
-    signal.removeEventListener('abort', abandon)
+    request.signal.removeEventListener('abort', abandon)
   }
 }

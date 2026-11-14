@@ -1,3 +1,4 @@
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -10,10 +11,10 @@ import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobEvent, JobEventFilter, JobHandle, JobHooks, JobKind, JobOutcome, JobOutputSource, JobSpec, JobView,
+  JobErrorCode, JobEvent, JobEventFilter, JobHandle, JobHooks, JobKind, JobOutcome, JobOutputSource, JobSpec, JobView,
 } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry, { type Config as JobsConfig } from '@deepseek-ai/dsh-jobs-local'
-import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { unsupportedModel, unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 
 vi.mock('node:crypto', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:crypto')>()
@@ -48,6 +49,7 @@ function stubAgent(ctx: Context, rawId: string, presetScope?: ScopeKey): Agent {
     id,
     options: {},
     session,
+    model: unsupportedModel(),
     inbox: unsupportedInbox(),
     status: 'idle' as const,
     ctx: agentCtx,
@@ -117,6 +119,7 @@ function producer(overrides: ProducerOverrides = {}) {
 
 async function harness(config: JobsConfig = {}) {
   const ctx = new Context()
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalJobRegistry, config)
   ctx.jobs.attachController('test-controller')
@@ -169,6 +172,9 @@ function scriptedSource(reads: { text: string; lossy?: boolean }[], channel?: 's
   }
 }
 
+/** The structured identity a registry refusal carries. */
+const jobError = (code: JobErrorCode): { name: 'JobError'; code: JobErrorCode } => ({ name: 'JobError', code })
+
 describe('LocalJobRegistry.start', () => {
   it('preserves the SessionId brand on public owner projections', () => {
     expectTypeOf<JobView['owner']>().toEqualTypeOf<SessionId | undefined>()
@@ -179,10 +185,12 @@ describe('LocalJobRegistry.start', () => {
     await ctx.plugin(LocalJobRegistry)
     expect(() => ctx.jobs.start(producer().spec))
       .toThrow('background jobs unavailable: no job controller serves this agent (load @deepseek-ai/dsh-tool-jobs in its composition)')
+    expect(() => ctx.jobs.start(producer().spec)).toThrow(expect.objectContaining(jobError('JOB_CONTROLLER_UNAVAILABLE')))
   })
 
   it('refuses an owner whose own composition attaches no controller', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LocalJobRegistry)
     // Two standing preset mounts over one registry; only the first loads the
@@ -204,6 +212,7 @@ describe('LocalJobRegistry.start', () => {
 
   it('lets a controller attached without a scope serve every owner', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LocalJobRegistry)
     // The host-plane composition's own controls: no scope, so the global layer
@@ -250,6 +259,7 @@ describe('LocalJobRegistry.start', () => {
     const run = vi.fn((job: JobHandle) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('background job limit reached for this owner (limit: 10)')
+    expect(() => ctx.jobs.start({ ...blocked.spec, run })).toThrow(expect.objectContaining(jobError('JOB_LIMIT_REACHED')))
     expect(run).not.toHaveBeenCalled()
     for (const job of live) job.settle({ status: 'completed' })
   })
@@ -409,6 +419,7 @@ describe('LocalJobRegistry reads and settlement', () => {
     const ctx = await harness()
     expect(() => ctx.jobs.read(JobId('bash-99'))).toThrow('unknown job bash-99')
     expect(() => ctx.jobs.get(JobId('bash-99'))).toThrow('unknown job bash-99')
+    expect(() => ctx.jobs.get(JobId('bash-99'))).toThrow(expect.objectContaining(jobError('JOB_NOT_FOUND')))
   })
 
   it('announces settlement once with containment across listeners', async () => {
@@ -596,11 +607,13 @@ describe('LocalJobRegistry.wait', () => {
     const wait = ctx.jobs.wait(id, 5_000, undefined, controller.signal)
     controller.abort()
     await expect(wait).rejects.toThrow('wait aborted')
+    await expect(wait).rejects.toMatchObject({ name: 'AbortError' })
     expect(ctx.jobs.list()[0]).toMatchObject({ status: 'running' })
 
     const preAborted = new AbortController()
     preAborted.abort()
     await expect(ctx.jobs.wait(id, 5_000, undefined, preAborted.signal)).rejects.toThrow('wait aborted')
+    await expect(ctx.jobs.wait(id, 5_000, undefined, preAborted.signal)).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('an abort racing settlement in the same tick rejects the wait and leaves the settlement intact', async () => {
@@ -731,6 +744,7 @@ describe('LocalJobRegistry owner isolation', () => {
     expect(() => foreign.kill(owned, other.id)).toThrow('belongs to another session')
     await expect(foreign.wait(owned, 10, other.id)).rejects.toThrow('belongs to another session')
     expect(() => ctx.jobs.read(owned)).toThrow('belongs to another session')
+    expect(() => ctx.jobs.read(owned)).toThrow(expect.objectContaining(jobError('JOB_FOREIGN_SESSION')))
   })
 
   it('list() shows only caller-owned plus unowned jobs', async () => {
@@ -753,6 +767,8 @@ describe('LocalJobRegistry owner isolation', () => {
     ctx.jobs.attachController('test-controller')
     expect(() => ctx.jobs.start({ ...producer().spec, owner: SessionId('a') }))
       .toThrow('background job ownership requires the agent registry')
+    expect(() => ctx.jobs.start({ ...producer().spec, owner: SessionId('a') }))
+      .toThrow(expect.objectContaining(jobError('JOB_OWNER_REGISTRY_UNAVAILABLE')))
     // The failed registration mutated nothing: no stored job.
     expect(ctx.jobs.list()).toEqual([])
     expect(ctx.jobs.start(producer().spec)).toMatch(/^bash-[0-9a-f]{16}$/)
@@ -765,6 +781,7 @@ describe('LocalJobRegistry owner isolation', () => {
     // Owner resolution precedes registry mutation and cleanup attachment.
     expect(() => ctx.jobs.start(producer({ owner: ghost }).spec))
       .toThrow('has no live agent')
+    expect(() => ctx.jobs.start(producer({ owner: ghost }).spec)).toThrow(expect.objectContaining(jobError('JOB_OWNER_NOT_LIVE')))
     expect(ctx.jobs.list(ghost.id)).toEqual([])
 
     // A later valid registration must still attach cleanup for the live instance.
@@ -911,6 +928,7 @@ describe('LocalJobRegistry owner cleanup', () => {
 
   it('registers owner cleanup on the agent scope rather than the jobs fiber', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     const tasksFiber = await ctx.plugin(LocalJobRegistry)
     ctx.jobs.attachController('test-controller')
@@ -977,6 +995,7 @@ describe('LocalJobRegistry owner cleanup', () => {
 describe('LocalJobRegistry disposal', () => {
   it('cancels live jobs, awaits settlement, and announces the teardown to outside subscribers', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     const fiber = await ctx.plugin(LocalJobRegistry)
     await ctx.plugin(Object.assign((inner: Context) => {
@@ -1007,6 +1026,7 @@ describe('LocalJobRegistry disposal', () => {
 
   it('force-fails a throwing cancel so service disposal does not await producer done', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     const fiber = await ctx.plugin(LocalJobRegistry)
     ctx.jobs.attachController('test-controller')
@@ -1044,6 +1064,7 @@ describe('LocalJobRegistry disposal', () => {
 
   it('detaches owner effects from still-live agent scopes when the service unloads', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     const tasksFiber = await ctx.plugin(LocalJobRegistry)
     ctx.jobs.attachController('test-controller')
@@ -1069,6 +1090,7 @@ describe('LocalJobRegistry disposal', () => {
 
   it('drops a scoped layer when its registrations dispose', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LocalJobRegistry)
     const standing = createScope(ctx, {})

@@ -45,7 +45,7 @@ Chrome headless 390×844（puppeteer-core）。harness：`tools/mobile-web-qa/`�
 | Kill-list | 全程零写 RPC：`upsertAgentMcpServer`/`patchAgentMcpServerPolicy`/`deleteAgentMcpServer`/`installAgentSkills`/`uninstallAgentSkill`/`patchAgentSkillPolicy`/`writeFile`/`saveFile` 调用数 = 0（QA 记录全部 client 调用后断言） | PASS |
 | Console | 全程 0 应用 console error | PASS |
 
-截图：[diff](mobile-web-phase2-diff.png) · [files](mobile-web-phase2-files.png) · [preview](mobile-web-phase2-preview.png) · [search](mobile-web-phase2-search.png) · [mcp](mobile-web-phase2-mcp.png) · [skills](mobile-web-phase2-skills.png)
+截图：[diff](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase2-diff.png) · [files](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase2-files.png) · [preview](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase2-preview.png) · [search](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase2-search.png) · [mcp](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase2-mcp.png) · [skills](https://github.com/ChisaAlter/WhaleIsle/blob/6503942ca0c9b26144300a2b8001d0b07a324d84/docs/qa/results/2026-08-27/mobile-web-phase2-skills.png)
 
 ## Manual / real-device matrix
 

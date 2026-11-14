@@ -14,29 +14,39 @@ export function selectChecks(paths, { manual = false } = {}) {
     if (/^(docs\/|\.devin\/|\.cursor\/|\.agents\/)/.test(path) ||
         /^[^/]+\.(md|i18n\.yaml)$/.test(path) ||
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
-        /^vendor\/[^/]+\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
+        /^(vendor\/[^/]+|dsh-acp)\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
     if (path.startsWith('scripts/')) scope.tools = true
     if (path === '.github/workflows/cnb-mirror.yml') { scope.tools = true; continue }
     if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
     if (/\.test\.(js|mjs)$/.test(path)) {
       if (!path.startsWith('scripts/')) scope.product = true
-      if (path.startsWith('vendor/')) scope.vendor = true
+      if (/^(vendor|dsh-acp)\//.test(path)) scope.vendor = true
       continue
     }
-    if (/^(src\/|mobile\/|vendor\/|assets\/|build\/|scripts\/|\.github\/workflows\/)/.test(path) ||
+    if (/^(src\/|mobile\/|vendor\/|dsh-acp\/|assets\/|build\/|scripts\/|\.github\/workflows\/)/.test(path) ||
         /^(package(-lock)?\.json|pnpm(-lock\.yaml|-workspace\.yaml)|\.nvmrc|\.npmrc|electron-builder.*\.yml)$/.test(path)) scope.product = true
-    if (/^vendor\//.test(path) || /^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.vendor = true
+    if (/^(vendor|dsh-acp)\//.test(path) || /^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.vendor = true
     if (/^src\/main\/(native-window-motion|window-|index\.js|chrome-theme|shell-silhouette)/.test(path) ||
         /^(package(-lock)?\.json|vendor\/deepseek-harness\/)/.test(path)) scope.motion = true
     if (/^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.tools = true
   }
   return scope
 }
+
+// The main push that changes package.json's version is the build Release
+// publishes, so it also builds the macOS installer.
+export function versionChanged(baseManifest, headManifest) {
+  return JSON.parse(headManifest).version !== JSON.parse(baseManifest).version
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const base = process.env.BASE_SHA
   const manual = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' || !base || /^0+$/.test(base)
   const paths = manual ? [] : execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', base, 'HEAD'], { encoding: 'utf8' }).split('\0').filter(Boolean)
   const scope = selectChecks(paths, { manual })
+  const mainPush = !manual && process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF === 'refs/heads/main'
+  const manifest = (rev) => execFileSync('git', ['show', rev + ':package.json'], { encoding: 'utf8' })
+  scope.release = mainPush && versionChanged(manifest(base), manifest('HEAD'))
   const output = Object.entries(scope).map(([name, enabled]) => name + '=' + enabled).join('\n') + '\n'
   console.log(output.trim())
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output)

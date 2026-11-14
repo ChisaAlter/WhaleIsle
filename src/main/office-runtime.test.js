@@ -57,10 +57,13 @@ function writeHarnessFixture(root, { engineVersion = '0.1.1', kitVersion = '0.1.
     name: '@deepseek-ai/libreoffice-kit', version: kitVersion,
   })}\n`, 'utf8');
   fs.writeFileSync(path.join(kitDir, 'lib', 'cli.js'), '// stub\n', 'utf8');
-  // Also stand in for skill-office so the CLI anchor resolves the plugin name.
-  const skillDir = path.join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-skill-office');
+  const webDir = path.join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-web-app');
+  fs.mkdirSync(webDir, { recursive: true });
+  fs.writeFileSync(path.join(webDir, 'package.json'), '{"name":"@deepseek-ai/dsh-web-app"}\n');
+  // The rc.2 Office provider, not the skill package, owns the Kit dependency.
+  const skillDir = path.join(webDir, 'node_modules', '@deepseek-ai', 'dsh-office-kit');
   fs.mkdirSync(skillDir, { recursive: true });
-  fs.writeFileSync(path.join(skillDir, 'package.json'), '{"name":"@deepseek-ai/dsh-skill-office","version":"0.0.0"}\n', 'utf8');
+  fs.writeFileSync(path.join(skillDir, 'package.json'), '{"name":"@deepseek-ai/dsh-office-kit","version":"0.0.0"}\n', 'utf8');
   const engineName = requiredEnginePackage();
   if (engineName) {
     const engineDir = path.join(harnessRoot, 'node_modules', ...engineName.split('/'));
@@ -73,10 +76,11 @@ function writeHarnessFixture(root, { engineVersion = '0.1.1', kitVersion = '0.1.
       schemaVersion: 1,
       status: 'built',
       platform: `${process.platform}-${process.arch}`,
-      engine: { kind: 'native' },
+      engine: { kind: 'native', executable: process.platform === 'win32' ? 'bin/dsoffice.exe' : 'bin/dsoffice', programDirectory: 'program/program' },
     })}\n`, 'utf8');
+    fs.mkdirSync(path.join(engineDir, 'program/program'), { recursive: true });
     fs.writeFileSync(
-      path.join(engineDir, 'bin', process.platform === 'win32' ? 'libreoffice-kit.exe' : 'libreoffice-kit'),
+      path.join(engineDir, 'bin', process.platform === 'win32' ? 'dsoffice.exe' : 'dsoffice'),
       'stub\n',
       'utf8',
     );
@@ -105,7 +109,7 @@ test('Office asset requirements match the current bundled provider', () => {
   assert.deepEqual([...OFFICE_SKILL_FOLDERS].sort(), bundled.sort());
 });
 
-test('writes the office overlay with absolute source/root/assetRoot/node/cli', () => {
+test('writes the Office overlay with absolute resources and the rc.2 Python environment', () => {
   const home = tempHome();
   const source = writePayload(home);
   const result = ensureDesktopOfficeRuntime(options(home, { bundledRuntimeDir: source }));
@@ -117,9 +121,13 @@ test('writes the office overlay with absolute source/root/assetRoot/node/cli', (
   assert.match(overlay, /id: skill-office/);
   assert.match(overlay, /name: "@deepseek-ai\/dsh-tool-workspace-dependencies"/);
   assert.match(overlay, /name: "@deepseek-ai\/dsh-skill-office"/);
-  for (const key of ['source', 'root', 'assetRoot', 'node', 'cli']) {
+  for (const key of ['source', 'root', 'assetRoot']) {
     assert.match(overlay, new RegExp(`${key}: `), `missing ${key}`);
   }
+  assert.match(overlay, /pythonEnvironment: workspace-dependencies/);
+  assert.doesNotMatch(overlay, /^\s*(?:node|cli):/m);
+  assert.doesNotMatch(overlay, /insert:/);
+  assert.equal((overlay.match(/disabled: false/g) ?? []).length, 2);
   assert.equal(result.source, source);
   assert.equal(result.root, path.join(home, 'dsh-runtimes', 'dsh-primary-runtime'));
   assert.equal(result.assetRoot, path.join(path.dirname(source), 'office-skills'));

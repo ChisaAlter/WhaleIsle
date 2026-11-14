@@ -75,16 +75,20 @@
   cursor: pointer;
 }
 
-.open:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .open:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .open:disabled {
   cursor: default;
 }
 
-.open:disabled:hover {
-  background: transparent;
+@media (hover: hover) {
+  .open:disabled:hover {
+    background: transparent;
+  }
 }
 
 .label {

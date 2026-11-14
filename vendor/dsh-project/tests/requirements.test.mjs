@@ -30,7 +30,7 @@ function fixture() {
   const accept = async args => { const execution = exec('project_request'); const value = await service.acceptRequest(actor, { goal: 'Repair and validate login', scopeCeiling: 'development', conditions: ['Login works'], constraints: ['Preserve user work'], ...args }, execution); result(execution, value); return { request: state.requests.find(row => row.id === value.id) }; };
   const add = (request, outcome = 'completed') => {
     const id = `work-${state.workstreams.length}`, ref = `ref-${id}`, runId = `run-${id}`, report = { delegationRef: ref, callId: `report-${id}`, outcome, summary: 'Actual worker finding', artifacts: [], evidence: ['Observed result'], remainingIssues: [], at: Date.now() };
-    const receipt = { ref, runId, phase: 'accepted', scope: 'readonly', report, source: { ...service.requirements.version(request).source }, writePaths: [] };
+    const receipt = { ref, runId, phase: 'accepted', scope: 'readonly', report, review: { reportId: report.callId, decision: 'accepted', reason: 'Fixture result inspected', evidence: report.evidence, at: Date.now() }, source: { ...service.requirements.version(request).source }, writePaths: [] };
     const work = { id, title: id, status: 'done', updatedAt: Date.now(), projectId: project.id, workerSessionId: `member-${id}`, currentDelegationRef: ref, delegations: [receipt], settlements: [{ runId, delegationRefs: [ref], stopReason: 'completed', summarizedBy: '' }], pendingSummary: true, latestReport: report };
     state.workstreams.push(work); state.workers.push({ sessionId: work.workerSessionId, workstreamId: id, projectId: project.id, stopped: false, phase: 'idle' });
     return { get work() { return state.workstreams.find(row => row.id === id); }, get receipt() { return this.work.delegations.find(row => row.ref === ref); }, ref: { workstreamId: id, delegationRef: ref, runId, reportId: report.callId } };
@@ -114,8 +114,8 @@ test('an end-tree failure keeps delivery pending and does not release the next w
   assert.equal(f.state.deliveries[0].status, 'draft');
   assert.match(f.state.deliveries[0].error, /End tree capture failed/);
   assert.equal(f.service.queue.active(f.project.id)?.id, a.id);
-  assert.equal(f.service.requirements.get(f.project.id, b.id).queue.state, 'queued');
-  assert.equal(f.followups.length, 0);
+  assert.equal(f.service.requirements.get(f.project.id, b.id).queue.state, 'active');
+  assert.equal(f.followups.length, 1);
 });
 
 test('empty Project history still supplies the authoritative bound repository in notes and Lead context', async () => {
@@ -368,7 +368,7 @@ test('a new requirement reuses saved evidence without a worker, and changed exec
 
 test('duplicate declaration and failed flush preserve a single delivery for exact reply recovery', async () => {
   const f = fixture(); f.human(['Explain existing facts']); const { request } = await f.accept({ scopeCeiling: 'readonly' });
-  const exec = f.exec('project_deliver'), args = { requestId: request.id, requestRevision: 1, outcome: 'completed', summary: 'Existing facts explained', reportRefs: [], evidence: [], remainingIssues: [] };
+  const exec = f.exec('project_deliver'), args = { requestId: request.id, requestRevision: 1, outcome: 'completed', summary: 'Existing facts explained', reportRefs: [], evidence: ['Inspected the existing facts'], remainingIssues: [] };
   const value = await f.service.deliver(f.actor, args, exec); await f.service.deliver(f.actor, args, exec); f.result(exec, value);
   assert.equal(f.state.deliveries.length, 1); await f.reply('exact-reply'); f.persist(new Error('disk persistence failed')); await assert.rejects(f.end('completed'), /disk persistence failed/);
   assert.equal(f.state.deliveries[0].status, 'draft'); assert.match(f.state.deliveries[0].error, /disk persistence/);
@@ -485,7 +485,7 @@ test('request card pages have stable identities and never archive an unproven re
   const first = await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' });
   const second = await f.service.command('requests/list', { projectId: f.project.id, kind: 'current', cursor: first.nextCursor });
   assert.equal(first.total, 11); assert.deepEqual([first.items.length, second.items.length], [10, 1]);
-  assert.equal(first.items[0].title, 'Goal 1'); assert.equal(second.nextCursor, null);
+  assert.equal(first.items[0].title, 'Goal 11'); assert.equal(second.nextCursor, null);
   const completed = await f.service.command('requests/list', { projectId: f.project.id, kind: 'completed' });
   assert.equal(completed.total, 1); assert.equal(completed.items[0].id, oldest.id);
   await assert.rejects(f.service.command('requests/list', { projectId: f.project.id, kind: 'archived', cursor: first.nextCursor }), { code: 'request_cursor' });
@@ -561,50 +561,20 @@ test('requirement history returns each full goal, restrictions and completion co
   assert.deepEqual(f.state, before, 'opening requirement history is read-only');
 });
 
-test('discussion, approval, reordering and cancellation preserve one whole-goal queue until durable delivery', async () => {
-  const f = fixture();
-  f.human(['Develop A and verify the result']); const { request: a } = await f.accept({ title: 'A' }), work = f.add(a);
-  f.human(['Discuss B, but do not develop it yet']);
-  const { request: draft } = await f.accept({ title: 'B', goal: 'Export the project report', disposition: 'discussing', constraints: ['Keep existing exports'], conditions: ['CSV includes all rows'] });
-  const assignment = (request, scope = 'readonly') => f.service.requirements.assignment(f.actor, { requestId: request.id, requestRevision: request.revision, scope }, f.exec('project_delegate'));
+test('discussion and approval preserve whole goals while independent accepted goals may execute together', async () => {
+  const f = fixture(); f.human(['Develop A']); const { request: a } = await f.accept({ title: 'A' }), work = f.add(a);
+  f.human(['Discuss B only']); const { request: draft } = await f.accept({ title: 'B', disposition: 'discussing' });
+  const assignment = request => f.service.requirements.assignment(f.actor, { requestId: request.id, requestRevision: request.revision, scope: 'readonly' }, f.exec('project_delegate'));
   await assert.rejects(assignment(draft), { code: 'request_queued' });
-  await f.service.queue.pump(f.project.id);
-  assert.equal(f.followups.length, 0); assert.equal(f.service.projectView(f.project).queue.discussingCount, 1);
-
-  f.human(['B should also preserve Unicode']);
-  const { request: b } = await f.accept({ requestId: draft.id, title: 'B', goal: 'Export the project report', constraints: ['Keep existing exports', 'Preserve Unicode'], conditions: ['CSV includes all rows', 'Unicode survives export'] });
-  assert.equal(b.queue.state, 'discussing', 'refining a discussion does not approve development');
-  await assert.rejects(f.queue(draft, 'enqueue'), { code: 'request_changed' });
+  f.human(['B must preserve Unicode']); const { request: b } = await f.accept({ requestId: draft.id, title: 'B', constraints: ['Preserve Unicode'] });
+  assert.equal(b.queue.state, 'discussing'); await assert.rejects(f.queue(draft, 'enqueue'), { code: 'request_changed' });
   await f.queue(b, 'enqueue');
-  f.human(['Develop C after A']); const { request: c } = await f.accept({ title: 'C', goal: 'Add report sorting' });
-  await f.queue(c, 'move', { beforeRequestId: b.id });
-  assert.deepEqual(f.service.projectView(f.project).queue.queued.map(row => [row.id, row.position]), [[c.id, 1], [b.id, 2]]);
-  await f.queue(c, 'cancel');
-  assert.deepEqual(f.service.projectView(f.project).queue.queued.map(row => [row.id, row.position]), [[b.id, 1]]);
-  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'cancelled' })).items[0].id, c.id);
-  await assert.rejects(assignment(b, 'development'), { code: 'request_queued' }, 'a queued requirement cannot start writing');
-  await assert.rejects(assignment(b, 'docs'), { code: 'request_queued' });
-  await assignment(b); // an authorized queued requirement may already investigate read-only
-
-  f.human(['Report what remains for A']);
-  await f.declare(a, [work.ref], { outcome: 'partial', remainingIssues: ['A still needs final acceptance'] });
-  await f.reply('a-partial'); await f.end('completed');
-  assert.equal(f.service.projectView(f.project).queue.active.id, a.id);
-  assert.equal(f.followups.length, 0, 'worker completion and a partial delivery cannot activate B');
-
-  f.human(['A is fully verified; deliver it']);
-  await f.declare(a, [work.ref]); await f.reply('a-completed');
-  assert.equal(f.service.projectView(f.project).queue.active.id, a.id, 'a visible reply without durable turn completion does not advance the queue');
-  await f.end('completed');
-  assert.equal(f.service.projectView(f.project).queue.active.id, b.id);
-  assert.equal(f.followups.length, 1);
-  f.activate(f.followups[0]);
-  const accepted = await assignment(b);
-  assert.equal(accepted.source.requestId, b.id); assert.equal(accepted.source.requestRevision, 2);
-  assert.deepEqual(accepted.request.versions.at(-1).constraints, ['Keep existing exports', 'Preserve Unicode']);
-  await assert.rejects(f.service.queueRequest(f.actor, { requestId: b.id, requestRevision: b.revision, action: 'cancel' }, f.exec('project_queue')), { code: 'unauthorized' }, 'host activation cannot invent queue authorization');
-  await f.service.queue.pump(f.project.id); await f.service.queue.pump(f.project.id);
-  assert.equal(f.followups.length, 1, 'the accepted activation is not reissued by later schedule passes');
+  assert.deepEqual(f.service.projectView(f.project).queue.activeRequests.map(row => row.id), [a.id, b.id]);
+  f.activate(f.followups.at(-1)); const accepted = await assignment(b); assert.deepEqual(accepted.request.versions.at(-1).constraints, ['Preserve Unicode']);
+  await assert.rejects(f.service.queueRequest(f.actor, { requestId: b.id, requestRevision: b.revision, action: 'cancel' }, f.exec('project_queue')), { code: 'unauthorized' });
+  const notices = f.followups.length; await f.service.queue.pump(f.project.id); assert.equal(f.followups.length, notices);
+  f.human(['Deliver A']); await f.declare(a, [work.ref]); await f.reply('A'); await f.end('completed');
+  assert.equal(f.service.queue.accepts(f.service.requirements.get(f.project.id, b.id)), true);
 });
 
 test('cancelled requirements reject late results and retain their full saved requirement for explicit re-enqueue', async () => {
@@ -615,7 +585,7 @@ test('cancelled requirements reject late results and retain their full saved req
   assert.deepEqual(cancelled.constraints, ['Preserve user data']); assert.deepEqual(cancelled.conditions, ['B works']);
   await assert.rejects(f.service.requirements.assignment(f.actor, { requestId: b.id, requestRevision: b.revision, scope: 'readonly' }, f.exec('project_delegate')), { code: 'request_queued' });
   await f.queue(b, 'enqueue');
-  assert.equal(f.service.projectView(f.project).queue.active.id, a.id); assert.equal(f.service.projectView(f.project).queue.queued[0].id, b.id);
+  assert.equal(f.service.projectView(f.project).queue.active.id, a.id); assert.ok(f.service.projectView(f.project).queue.activeRequests.some(row => row.id === b.id));
   await f.queue(a, 'cancel');
   assert.equal(f.service.projectView(f.project).queue.active.id, b.id);
   const actor = { role: 'worker', agent: { id: work.work.workerSessionId }, project: f.project };
@@ -623,32 +593,22 @@ test('cancelled requirements reject late results and retain their full saved req
   assert.equal(f.service.requirements.get(f.project.id, a.id).queue.state, 'cancelled');
 });
 
-test('reordering waiting requirements never resumes a stopped Project; explicit resume uses a new native activation', async () => {
+test('stop all suspends each goal and explicit resume restarts only the selected goal, including goals with no work', async () => {
   const f = fixture(); f.human(['Develop A']); const { request: a } = await f.accept({ title: 'A' });
-  f.human(['Develop B and C afterwards']); const { request: b } = await f.accept({ title: 'B' }), { request: c } = await f.accept({ title: 'C' });
-  await f.service.stop(f.project.id);
-  const held = f.service.project(f.project.id).holdSourceMessageId;
-  await f.queue(c, 'move', { beforeRequestId: b.id }); await f.service.queue.pump(f.project.id);
-  assert.equal(f.service.project(f.project.id).paused, true); assert.equal(f.service.project(f.project.id).holdSourceMessageId, held);
-  assert.equal(f.followups.length, 0);
-  assert.deepEqual(f.service.projectView(f.project).queue.queued.map(row => row.id), [c.id, b.id]);
-  await f.queue(b, 'cancel');
-  const beforeRejectedResume = structuredClone(f.state);
-  await assert.rejects(f.queue(b, 'resume'), { code: 'request_not_active' }, 'continuing cancelled B cannot resume the stopped active A');
-  assert.deepEqual(f.state, beforeRejectedResume); assert.equal(f.followups.length, 0);
-  await f.queue(b, 'enqueue');
-  assert.equal(f.service.project(f.project.id).paused, true); assert.equal(f.service.project(f.project.id).holdSourceMessageId, held);
-  assert.equal(f.service.projectView(f.project).queue.active.id, a.id); assert.equal(f.followups.length, 0);
-  await f.queue(a, 'resume');
-  assert.equal(f.service.project(f.project.id).paused, false); assert.equal(f.followups.length, 1);
-  f.activate(f.followups[0]);
-  const assignment = await f.service.requirements.assignment(f.actor, { requestId: a.id, requestRevision: a.revision, scope: 'readonly' }, f.exec('project_delegate'));
+  f.human(['Develop B and C']); const { request: b } = await f.accept({ title: 'B' }), { request: c } = await f.accept({ title: 'C' });
+  await f.service.stop(f.project.id); await f.service.queue.pump(f.project.id); assert.equal(f.followups.length, 0);
+  for (const request of [a,b,c]) assert.equal(f.service.requirements.get(f.project.id, request.id).queue.suspended, true);
+  await f.queue(b, 'cancel'); await assert.rejects(f.queue(b, 'resume'), { code: 'request_not_active' });
+  await f.queue(b, 'enqueue'); assert.equal(f.followups.length, 0);
+  await f.queue(c, 'resume'); assert.equal(f.project.paused, false); assert.equal(f.followups.length, 1);
+  assert.equal(f.service.queue.accepts(f.service.requirements.get(f.project.id, c.id)), true);
+  for (const request of [a,b]) assert.equal(f.service.queue.accepts(f.service.requirements.get(f.project.id, request.id)), false);
+  f.activate(f.followups[0]); const assignment = await f.service.requirements.assignment(f.actor, { requestId: c.id, requestRevision: c.revision, scope: 'readonly' }, f.exec('project_delegate'));
   assert.equal(assignment.source.continuationMessageId, f.followups[0].id);
-  await f.service.stop(f.project.id); await f.queue(a, 'cancel');
-  assert.equal(f.service.project(f.project.id).paused, true); assert.equal(f.service.projectView(f.project).queue.active, null);
-  await f.queue(c, 'resume');
-  assert.equal(f.service.project(f.project.id).paused, false); assert.equal(f.service.projectView(f.project).queue.active.id, c.id);
-  assert.deepEqual(f.service.projectView(f.project).queue.queued.map(row => row.id), [b.id], 'explicitly continuing the waiting head resumes only that requirement');
+  await f.service.queue.pump(f.project.id); assert.equal(f.followups.length, 1, 'resuming C does not wake A or B');
+  f.human(['Continue A with revised scope']); await f.accept({ requestId: a.id, goal: 'A revised' });
+  assert.equal(f.service.queue.accepts(f.service.requirements.get(f.project.id, a.id)), true);
+  assert.equal(f.service.requirements.get(f.project.id, b.id).queue.suspended, true);
 });
 
 test('failed cancellation drain keeps the next requirement waiting and exposes the actual stopping error', async () => {
@@ -660,8 +620,7 @@ test('failed cancellation drain keeps the next requirement waiting and exposes t
   await f.queue(a, 'cancel'); await f.service.queue.pump(f.project.id);
   assert.equal(f.service.requirements.get(f.project.id, a.id).queue.state, 'cancelled');
   assert.equal(f.service.worker(workerId).phase, 'stopping'); assert.equal(f.service.worker(workerId).error, 'Native child could not stop');
-  assert.equal(f.service.projectView(f.project).queue.active, null);
-  assert.equal(f.service.projectView(f.project).queue.queued[0].id, b.id); assert.equal(f.followups.length, 0);
+  assert.equal(f.service.projectView(f.project).queue.active.id, b.id, 'unrelated goals do not wait behind another cancellation');
   assert.equal(f.service.projectView(f.project).activity.state, 'stopping');
 });
 
@@ -684,17 +643,17 @@ test('an invalidated prior delivery stays reviewable without preempting the next
   assert.deepEqual(f.state, beforeRejectedResume); assert.equal(f.followups.length, notices);
   await f.queue(a, 'enqueue');
   const rejoined = (await f.service.command('requests/get', { projectId: f.project.id, requestId: a.id })).card;
-  assert.equal(rejoined.queue.state, 'queued'); assert.notEqual(rejoined.queue.released, true);
+  assert.equal(rejoined.queue.state, 'active'); assert.notEqual(rejoined.queue.released, true);
   assert.equal(rejoined.goal, original.goal); assert.equal(rejoined.revision, original.revision);
   assert.deepEqual(rejoined.constraints, original.constraints); assert.deepEqual(rejoined.conditions, original.conditions);
-  assert.equal(f.service.project(f.project.id).paused, true); assert.equal(f.service.projectView(f.project).queue.active.id, b.id);
-  assert.deepEqual(f.service.projectView(f.project).queue.queued.map(row => row.id), [a.id]); assert.equal(f.followups.length, notices);
+  assert.equal(f.service.project(f.project.id).paused, true); assert.equal(f.service.projectView(f.project).queue.active, null);
+  assert.equal(rejoined.queue.suspended, true); assert.equal(f.followups.length, notices);
 });
 
 test('a saved queue activation cannot execute a revised or cancelled requirement', async () => {
   const f = fixture(); f.human(['Develop A']); const { request: a } = await f.accept({ title: 'A' });
   f.human(['Develop B next']); const { request: b } = await f.accept({ title: 'B' });
-  await f.declare(a, []); await f.reply('a-completed'); await f.end('completed');
+  await f.declare(a, []); await f.reply('a-completed'); await f.end('completed'); await f.service.queue.pump(f.project.id);
   const oldNotice = f.followups[0]; assert.ok(oldNotice);
   f.human(['B must also preserve the existing shortcut']);
   const { request: revised } = await f.accept({ requestId: b.id, title: 'B', constraints: ['Preserve the existing shortcut'] });
@@ -702,7 +661,7 @@ test('a saved queue activation cannot execute a revised or cancelled requirement
   const admit = message => f.service.preStep({ agent: f.actor.agent, turn: 99, messages: [message] }, async () => ({ kind: 'enter', messages: [message] }));
   assert.equal((await admit(oldNotice)).kind, 'reject', 'a notice bound to revision 1 cannot consume revision 2');
   await f.service.queue.pump(f.project.id);
-  const currentNotice = f.followups[1]; assert.ok(currentNotice); assert.notEqual(currentNotice.id, oldNotice.id);
+  const currentNotice = f.followups.at(-1); assert.ok(currentNotice); assert.notEqual(currentNotice.id, oldNotice.id);
   f.activate(currentNotice);
   const assigned = await f.service.requirements.assignment(f.actor, { requestId: revised.id, requestRevision: revised.revision, scope: 'readonly' }, f.exec('project_delegate'));
   assert.equal(assigned.source.requestRevision, 2);
@@ -798,7 +757,7 @@ test('the stage table names who is waited on, the first match wins, and the head
   const count = async () => ({ list: (await attentionOf(f)).total, header: f.service.projectView(f.project).activity.needsYou,
     cards: (await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' })).items.filter(card => card.stage.needsYou).length });
   const first = await stages();
-  assert.equal(first['Maybe add SSO'], 'discussing'); assert.equal(first['Speed up search'], 'queued');
+  assert.equal(first['Maybe add SSO'], 'discussing'); assert.equal(first['Speed up search'], 'running');
   assert.deepEqual(await count(), { list: 0, header: 0, cards: 0 }, 'healthy and waiting states take no space');
 
   const item = f.add(login);
@@ -944,6 +903,30 @@ test('a member result whose notice nobody claimed wakes the coordinator once, an
   const [message] = f.followups;
   assert.equal(message.source.kind, 'whale-project:settlement-check'); assert.equal(message.source.form, 'notice');
   assert.ok(message.content[0].text.includes(`${result.work.title} (${result.work.id})`)); assert.match(message.content[0].text, /not new user authorization/);
+  assert.equal(await check(), 1, 'the same unclaimed settlement receives only one recovery wake');
+  assert.equal(f.service.stream(result.work.id).settlements[0].recoveryNoticeMessageId, message.id);
+});
+
+test('an exact recovery notice advances only its original requirement and cannot revive stopped or revised work', async () => {
+  const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request);
+  const { request: other } = await f.accept({ title: 'A separate goal' });
+  f.service.ctx.agents.get('lead').status = 'idle';
+  await f.service.settlementCheck(f.project.id);
+  const [message] = f.followups;
+  const assign = (row = request) => f.service.requirements.assignment(f.actor,
+    { requestId: row.id, requestRevision: row.revision, scope: 'readonly' }, f.exec('project_delegate'));
+  f.activate({ ...message, id: 'forged-notice' });
+  await assert.rejects(assign(), { code: 'unauthorized' });
+  f.activate(message);
+  const next = await assign();
+  assert.equal(next.source.authorizationCallId, request.versions[0].source.authorizationCallId);
+  await assert.rejects(assign(other), { code: 'unauthorized' }, 'the notice cannot authorize a different queued goal');
+  f.service.worker(result.work.workerSessionId).stopped = true;
+  await assert.rejects(assign(), { code: 'unauthorized' });
+  f.service.worker(result.work.workerSessionId).stopped = false;
+  f.human(['Change the login requirements']); await f.accept({ requestId: request.id, goal: 'Revised login' });
+  f.activate(message);
+  await assert.rejects(assign(f.service.requirements.get(f.project.id, request.id)), { code: 'unauthorized' });
 });
 
 test('settlement checks are one timer per Project and a check that finds a running coordinator looks again later', async () => {

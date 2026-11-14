@@ -36,6 +36,7 @@ let startResolve = null;
 let startReject = null;
 let stopResolve = null;
 let startupState = 'idle';
+let startupSkipped = [];
 const startupError = "EEXIST: symlink C:\\fixture\\vendor\\dsh-im -> C:\\fixture\\profile\\dsh-im";
 ipcMain.handle('shell:start-desktop', () => {
   results.calls.push({ op: 'start-desktop' });
@@ -77,7 +78,7 @@ ipcMain.handle('shell:launcher-status', () => { statusReads++; return ({
     installed: { version: '0.3.6', registeredInstall: true, installPath: visualSourceHome } } : {}),
   ...(process.env.QA_STARTUP_FLOW === '1' ? {
     version: '0.3.3', desktop: { state: startupState },
-    lastStart: { ok: startupState === 'ready', error: startupError },
+    lastStart: { ok: startupState === 'ready', error: startupError, skipped: startupState === 'ready' ? startupSkipped : [] },
     forensics: { plugins: [], suspects: [] },
   } : {}),
   state: 'idle',
@@ -489,6 +490,7 @@ app.whenReady().then(async () => {
           okHidden: document.querySelector('#app-confirm-ok').hidden,
           cancelHidden: document.querySelector('#app-confirm-cancel').hidden,
           notices: window.qaComponentNotices,
+          failureLines: [...document.querySelectorAll('[data-comp-failure]')].map(node => node.textContent),
           focusConnected: document.activeElement.isConnected,
           focusVisible: document.activeElement.checkVisibility(),
           focusAction: document.activeElement.dataset.compAction || '',
@@ -521,7 +523,7 @@ app.whenReady().then(async () => {
       await waitForDom('window.qaComponentButton.title.includes("fixture component startup failed")');
       const failedPhase = await readFeedback();
       componentStartResolve({ ok: false, error: 'spawn-failed' });
-      await waitForDom('!!document.querySelector(".shell-feedback-toast")');
+      await waitForDom('!!document.querySelector("[data-comp-failure]")');
       const failed = await readFeedback();
       await captureBound('bound-component-start-failed.png');
       await closeNotice();
@@ -603,7 +605,7 @@ app.whenReady().then(async () => {
       const updating = await readFeedback();
       componentProgress({ phase: 'error', percent: 100, message: 'fixture package refused' });
       componentUpdateResolve({ ok: false, message: 'fixture package refused' });
-      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥操作未完成：")');
+      await waitForDom('[...document.querySelectorAll("[data-comp-failure]")].some(node => node.textContent === "操作未完成：fixture package refused")');
       const updateFailed = await readFeedback();
       win.setSize(860, 560);
       await captureBound('bound-component-update-failed-narrow.png');
@@ -758,6 +760,7 @@ app.whenReady().then(async () => {
           stopBusy: get('btn-stop').getAttribute('aria-busy'), stopLabel: get('btn-stop').getAttribute('aria-label'),
           skipDisabled: get('btn-skip').disabled, fullDisabled: get('btn-retry-full').disabled,
           diagnosticsHidden: get('home-recovery').hidden, diagnosticsOpen: get('home-recovery').open === true,
+          recoveryListHidden: get('home-recovery-list').hidden,
           visibleText: visibleText.join(' '),
           homeVisibleText: homeVisibleText.join(' '),
           errorToasts: [...document.querySelectorAll('.shell-feedback-toast[role="alert"] .shell-feedback-text')].map(node => node.textContent),
@@ -814,8 +817,22 @@ app.whenReady().then(async () => {
       stopResolve({ ok: true });
       await new Promise(r => setTimeout(r, 120));
       const stopped = await readHome();
+      // A start that went without an optional built-in: no popup; the status
+      // line points at the folded diagnostics, which name it and the reason.
+      await win.webContents.executeJavaScript(`document.getElementById('btn-start').click()`);
+      await new Promise(r => setTimeout(r, 80));
+      startupState = 'ready';
+      startupSkipped = [{ label: '用量统计', error: 'missing-source:node_modules:zod' }];
+      startResolve({ ok: true });
+      await new Promise(r => setTimeout(r, 120));
+      const degraded = await readHome();
+      await captureHome('home-degraded.png');
+      await win.webContents.executeJavaScript(`document.getElementById('home-recovery').open = true`);
+      await new Promise(r => setTimeout(r, 120));
+      const degradedOpen = await readHome();
+      await captureHome('home-degraded-open.png');
       process.stdout.write('BOUND_RESULT:' + JSON.stringify({ initial, pending, failed, rejected, readyHome,
-        stopping, stopped, layouts, startsWhilePending, stops: results.calls.filter(c => c.op === 'stop-desktop').length }));
+        stopping, stopped, degraded, degradedOpen, layouts, startsWhilePending, stops: results.calls.filter(c => c.op === 'stop-desktop').length }));
       app.exit(0);
       return;
     }

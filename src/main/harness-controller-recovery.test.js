@@ -365,7 +365,7 @@ test('failed plugin recovery releases its maintenance token without scheduling a
   const f = fixture();
   try {
     await f.controller.start();
-    f.controller.ensureUsagePanelPlugin = async () => { throw new Error('broken built-in'); };
+    f.controller.ensureTaskControlPlugin = async () => { throw new Error('broken built-in'); };
     f.dsh.crash('plugin tree failed to load');
     await assert.rejects(f.controller.pluginRecoveryTask, /broken built-in/);
     assert.equal(f.dsh.starts.length, 1);

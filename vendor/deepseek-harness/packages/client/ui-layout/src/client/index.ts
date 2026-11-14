@@ -19,7 +19,7 @@ import { AppFrame } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
-import { en, zh } from './shortcut-locales.ts'
+import { en, ja, es, fr, de, ru, pt, zh } from './shortcut-locales.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 import type { TitlebarDensity } from './titlebar-density.ts'
 
@@ -66,8 +66,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the seats it declares disappear with it. To add something to the
      * sidebar, register into one of those inner seats instead.
      *
-     * The occupant receives the frame's live column state (collapsed, width)
-     * and is expected to render the compact control rail while collapsed.
+     * The occupant receives the frame's collapsed state, width and drawer mode.
+     * Drawer content stays mounted while hidden; other browser columns retain
+     * a compact control rail while collapsed.
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
@@ -136,9 +137,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'shell.terminalDrawer': { kind: 'single'; scope: 'session-maybe'; owner: TerminalDrawerOwnerProps }
     /**
      * Window-chrome seat at the frame's top-left, over every main panel.
-     * Mounted only while the sidebar column is fully hidden (macOS desktop
-     * collapse; other platforms keep the rail), so the occupant can assume the
-     * frame edge is the window edge and the macOS traffic lights sit before it.
+     * Mounted for narrow drawers and collapsed macOS desktop sidebars. macOS
+     * traffic lights sit before it outside native fullscreen; browser controls
+     * start at the frame edge.
      * OCCUPIED by ui-sidebar's reopen/New Session controls.
      *
      * While the seat is mounted the frame publishes
@@ -158,10 +159,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Sidebar owner share: live column state from the frame's concession solve. */
 export interface SidebarOwnerProps {
-  /** True when the sidebar is closed (the column renders the compact control rail). */
+  /** True when closed; a drawer is hidden, while other browser columns retain a rail. */
   collapsed: boolean
   /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed, 0 in a closed phone drawer). */
   width: number
+  /** Present the retained sidebar content as an overlay drawer; the desktop frame leaves it unset and keeps its own phone overlay. */
+  drawer?: boolean
 }
 
 /** Right column owner share: resolved normal geometry and opening eligibility. */
@@ -214,7 +217,7 @@ export const inject = ['slots', 'theme', 'locale', 'shortcuts']
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register('shortcuts.layout', { zh, en }), 'layout: command labels')
+  ctx.effect(() => ctx.locale.register('shortcuts.layout', { zh, en, ja, es, fr, de, ru, pt }), 'layout: command labels')
   const t = ctx.locale.bind('shortcuts.layout')
 
   ctx.effect(() => {
@@ -258,8 +261,10 @@ export function apply(ctx: ClientContext): void {
         'web:macos': { code: 'KeyB', modifiers: ['primary', 'alt'] },
         'web:windows': { code: 'KeyB', modifiers: ['primary', 'alt'] },
       },
-      regions: ['page', 'editable'], modals: [],
-      resolve: () => ({ status: 'handled', run: () => { layout.toggleSidebar() } }),
+      regions: ['page', 'editable'], modals: ['sidebar'],
+      resolve: ({ modal }) => modal !== null && modal !== 'sidebar'
+        ? { status: 'pass' }
+        : { status: 'handled', run: () => { layout.toggleSidebar() } },
     })
     const disposePanels = ctx.slots.subscribe('main', retainMainPanels)
     retainMainPanels()

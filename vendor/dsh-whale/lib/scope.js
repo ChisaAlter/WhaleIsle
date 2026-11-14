@@ -12,6 +12,7 @@ const defaults = {
   name: '鲸鱼娘', personality: 'natural', userTitle: '', personaText: '',
   modelProvider: '', modelModel: '', modelReasoningEffort: '',
   imDefault: true, sessionId: '',
+  bigFishPrompted: false, bigFishEnabled: false, bigFishTab: 'panel',
 };
 
 function values(source) {

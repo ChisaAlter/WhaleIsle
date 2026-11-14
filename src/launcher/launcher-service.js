@@ -119,7 +119,7 @@ function createLauncherService(deps) {
       plugins: listed.plugins || [],
       bundles: listed.bundles || [],
       disabledPlugins: config.disabledPlugins,
-      projectEnabled: config.projectEnabled === true,
+      projectEnabled: config.projectEnabled !== false,
     });
   }
 

@@ -18,9 +18,11 @@
  *    in-process (phase 2 of the remote plan moves it to a child process),
  *    writes to already-dead provider child stdin surface as uncaught EPIPEs
  *    the stream guard cannot reach. Swallow only broken-pipe *write* errors;
- *    every other uncaught error reproduces Electron's default behaviour
- *    (error dialog + keep running) because registering any listener suppresses
- *    Electron's built-in handler.
+ *    every other uncaught error is logged and handed to `report` (a crash
+ *    report file). Registering a listener suppresses Electron's built-in
+ *    "A JavaScript error occurred in the main process" box, and this guard
+ *    deliberately never brings it back: a failure is not answered with a
+ *    native popup, and the app keeps running as it did with that box.
  */
 
 const STREAM_SWALLOWED_CODES = new Set(['EPIPE', 'EIO', 'EBADF', 'ERR_STREAM_DESTROYED']);
@@ -85,27 +87,9 @@ function installStdioGuard(options = {}) {
 }
 
 /**
- * Electron suppresses its default "A JavaScript error occurred in the main
- * process" dialog once the app registers any uncaughtException listener, so
- * non-swallowed errors must reproduce it here.
- * @param {Error} err
- */
-function defaultShowError(err) {
-  try {
-    const { dialog } = require('electron');
-    dialog.showErrorBox(
-      'A JavaScript error occurred in the main process',
-      (err && err.stack) || String(err),
-    );
-  } catch {
-    // Plain-node context (tests): nothing to show.
-  }
-}
-
-/**
  * Decide + act on one uncaught exception. Split from the listener for tests.
  * @param {Error} err
- * @param {{ log?: (message: string) => void, showError?: (err: Error) => void }} deps
+ * @param {{ log?: (message: string) => void, report?: (err: Error) => unknown }} deps
  * @returns {'swallowed' | 'reported'}
  */
 function handleUncaughtException(err, deps = {}) {
@@ -115,12 +99,17 @@ function handleUncaughtException(err, deps = {}) {
     return 'swallowed';
   }
   log(`主进程未捕获异常：${(err && err.stack) || err}`);
-  (deps.showError || defaultShowError)(err);
+  // The report is a diagnostic aid: it may fail, but never into a second uncaught error.
+  try {
+    void Promise.resolve(deps.report?.(err)).catch(() => {});
+  } catch {
+    // Reporting failed synchronously; the error is already in the log.
+  }
   return 'reported';
 }
 
 /**
- * @param {{ log?: (message: string) => void, showError?: (err: Error) => void }} [options]
+ * @param {{ log?: (message: string) => void, report?: (err: Error) => unknown }} [options]
  */
 function installUncaughtBrokenPipeGuard(options = {}) {
   if (process.__dshUncaughtBrokenPipeGuard) {

@@ -29,12 +29,20 @@
   white-space: nowrap;
 }
 
-.part:is(:hover, :focus-visible:not([data-dsh-automatic-focus]), :has(:focus-visible:not([data-dsh-automatic-focus])), [aria-expanded='true'], :has([aria-expanded='true'])) .label,
+.part:is(:focus-visible:not([data-dsh-automatic-focus]), :has(:focus-visible:not([data-dsh-automatic-focus])), [aria-expanded='true'], :has([aria-expanded='true'])) .label,
 .toolbar[data-git-reveal-branch] [data-git-part='branch'] .label,
 .toolbar[data-git-reveal-action] [data-git-part='action'] .label {
   grid-template-columns: 1fr;
   opacity: 1;
   transform: translateX(0);
+}
+
+@media (hover: hover) {
+  .part:hover .label {
+    grid-template-columns: 1fr;
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @media (hover: none), (pointer: coarse) {

@@ -98,8 +98,10 @@
   line-height: 22px;
 }
 
-.trigger:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .trigger:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .trigger:focus-visible {
@@ -290,8 +292,10 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.searchClear:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .searchClear:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 /* Nav cells share a flat, neutral selection across theme families. */
@@ -315,8 +319,10 @@
   text-align: left;
 }
 
-.navCell:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
+@media (hover: hover) {
+  .navCell:hover {
+    background: var(--dsw-specific-sidebar-nav-item-hover);
+  }
 }
 
 .navCell.active {
@@ -387,8 +393,10 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.close:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .close:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 /* Options area (figma Options 501:29983): pad (24,0,24,24), scrolls. */
@@ -431,8 +439,10 @@
   text-align: left;
 }
 
-.result:hover {
-  background: var(--dsw-specific-sidebar-nav-item-hover);
+@media (hover: hover) {
+  .result:hover {
+    background: var(--dsw-specific-sidebar-nav-item-hover);
+  }
 }
 
 .result:focus-visible {

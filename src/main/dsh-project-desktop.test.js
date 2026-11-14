@@ -32,10 +32,10 @@ test('optional Project mount preserves user Team settings and data across disabl
   const overlay = fs.readFileSync(first.overlayFile, 'utf8');
   const projectName = JSON.stringify(pathToFileURL(path.join(first.runtimeDir, 'lib', 'index.js')).href);
   assert.equal(overlay.split(`name: ${projectName}`).length - 1, 1);
-  // Keep the optional provider and its effective config; deduplicate only Team UI.
+  // Project changes neither native nor optional Team UI selection.
+  assert.doesNotMatch(overlay, /experimental|ui-agent-team|ui-project-team/);
   assert.doesNotMatch(overlay, /disabled: false|- id: agent-team\b|dsh-project-teams/);
-  assert.match(overlay, /- id: dsh-project-team-ui\n {6}name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n/);
-  assert.match(overlay, /\n- id: ui-agent-team\n  name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n  disabled: true\n/);
+  assert.doesNotMatch(overlay, /(?:^|\n)- id: ui-agent-team\n/);
   const data = path.join(profileDir, 'projects', 'existing'); fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(data, 'notes.md'), 'user material');
   for (const option of [{ enabled: false }, { skipUserPlugins: true }]) {
@@ -117,11 +117,11 @@ test('mount refuses unknown package data and linked runtime files without modify
   assert.equal(fs.readFileSync(path.join(unknown, 'sentinel'), 'utf8'), 'keep');
 });
 
-test('Project mounts only when enabled in settings or by development opt-in', () => {
+test('Project mounts by default, preserves explicit opt-out and supports development opt-in', () => {
   const { projectAvailable } = require('./dsh-project-desktop');
-  assert.equal(projectAvailable({}, {}), false, 'Project is off by default');
+  assert.equal(projectAvailable({}, {}), true, 'Project is on by default');
   assert.equal(projectAvailable({}, { projectEnabled: false }), false);
-  assert.equal(projectAvailable({ WHALE_PROJECT: '0' }, {}), false);
+  assert.equal(projectAvailable({ WHALE_PROJECT: '0' }, {}), true);
   assert.equal(projectAvailable({}, { projectEnabled: true }), true);
   assert.equal(projectAvailable({ WHALE_PROJECT: '1' }, { projectEnabled: false }), true);
 });

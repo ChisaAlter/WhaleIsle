@@ -107,10 +107,14 @@
     },
     {
       "path": "../product-analytics/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-context-menu"
     }
   ],
   "exclude": [
     "src/next-prompt.ts",
-    "src/index.ts"
+    "src/index.ts",
+    "src/host"
   ]
 }

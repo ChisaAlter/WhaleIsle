@@ -1,13 +1,9 @@
-# Whale Isle 0.3.14
+# Whale Isle 0.3.15
 
-- **Project request cards**: Two pages, "Progress" and "Results", with a stage bar and elapsed timer, and a tick when done. The native Team moves into the "Members" page of the Requests panel, leaving a single entry in the header.
-- **Project "Needs you"**: When the coordinator needs a decision from you it asks one concrete question, pinned at the top of the panel, which you can answer or retry in place; the header badge shows how many are waiting.
-- **A quieter coordinator**: Turns triggered by notifications stay quiet by default, and Project notifications show a one-line summary.
-- **Project research**: Members can search and read web pages (read-only, no shell); sources are recorded and listed under the report, and an allowlist of research sites can be set in the materials.
-- **Steadier delegation**: Member capabilities are checked before work is handed out, summaries retry automatically after transient failures, and an "overloaded" reply from the model provider is retried too.
-- **Reorder queued messages**: Drag them, or use the arrow keys, to change the order.
-- **Smoother**: Docks above the composer animate more smoothly, long conversations and the running spinner cost less, idle sessions are released, and the sidebar gets a "Pinned" section at the top.
-- **Mobile web**: Whale UI cards render in a sandbox and can switch between preview and source.
-- **Fixes**: Dark dropdown and light-theme text contrast; Project file links open in the side panel; floating ball placement; the renderer records diagnostics when it hangs; Project no longer reports finished work as a partial handover, and a member result that goes unread now prompts the coordinator; a settings file saved with a byte order mark is no longer reset.
+- **Whale background document tasks**: Pick files and describe the goal in the Whale panel, and she summarizes them in the background from read-only copies, then delivers the result back to the original chat. Tasks can be stopped and resumed after a restart. Feishu `/task` requires granting the bot and the person on the desktop first.
+- **Inbox / Outbox**: Two new sidebar entries. Inbox collects discoveries, opportunities and items waiting to be sorted; Outbox is the approval queue showing action, target, risk and policy state, where you can approve or reject in place and the list refreshes afterwards.
+- **No more failure popups**: Launcher, main-window and page failures no longer raise native error boxes or floating notices; the failure stays on the page. A crashed or unresponsive page reloads automatically (up to 3 times in 2 minutes), and a final failure shows an in-page error with a retry button.
+- **One broken built-in no longer blocks startup**: If an optional built-in (Office runtime, usage stats, messaging channels, plugin market, Whale assistant, remote workspace, floating panel) fails to load, this start skips it and lists the reason in the launcher's startup diagnostics. Task protection still stops the start.
+- **macOS installer ships with every version**: A version-bump push now builds the macOS Apple Silicon package and publishes it with the Windows installer.
 
 Windows x64 and macOS Apple Silicon installers are provided (the Mac package is unsigned; right-click and choose Open the first time). Android, WhaleBridge and the ChatGPT plugin are released separately.

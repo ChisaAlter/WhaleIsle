@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SurfacesToggleRow, TerminalToggleRow } from '../src/client/PanelToggleRow.tsx'
 import type { PanelToggleRowProps } from '../src/client/PanelToggleRow.tsx'
@@ -23,6 +23,7 @@ function props(opts: { visible?: boolean; writable?: boolean } = {}): {
     setVisible,
     value: {
       ...allowAllAccess,
+      useContextMenu: contextMenuHook(),
       usePanelInfo: panelInfoStub,
       useResource: resourceStub,
       useSessions: unused,

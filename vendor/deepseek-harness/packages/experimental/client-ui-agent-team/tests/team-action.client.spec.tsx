@@ -69,7 +69,7 @@ function bench(options: {
   if (options.project) byId[SESSION] = { ...summary(SESSION, false), presentation: { owner: 'project', title: 'Local project' } }
   const sessions = createSnapshotStore<SessionListState>({
     ids: Object.keys(byId) as SessionId[], byId, phase: 'ready',
-    projectionsBySession: options.projections ?? { [SESSION]: { state: 'ready', error: null, values: { agentTeam: team } } },
+    projectionsBySession: options.projections ?? { [SESSION]: { state: 'ready', error: null, values: { projectTeam: team } } },
   })
   const statuses = createSnapshotStore<SessionStatusSnapshot>(options.statuses ?? new Map())
   const session = createSnapshotStore<SessionSnapshot>({
@@ -82,7 +82,7 @@ function bench(options: {
     removed: false,
     openState: options.openState ?? 'open',
     openError: null,
-    hasMore: false,
+    hasMore: false, historyWasPartial: false, historyLoadStatus: 'idle',
     loadingOlder: false,
     promptError: null,
     blank: false,
@@ -125,13 +125,13 @@ function setProjectionSnapshot(
 }
 
 function setProjection(sessions: ReturnType<typeof bench>['sessions'], sessionId: SessionId, value: TeamProjection): void {
-  setProjectionSnapshot(sessions, sessionId, { state: 'ready', error: null, values: { agentTeam: value } })
+  setProjectionSnapshot(sessions, sessionId, { state: 'ready', error: null, values: { projectTeam: value } })
 }
 
 describe('TeamAction', () => {
   it.each([false, true])('uses readable Project labels without changing native identities (project: %s)', (project) => {
     const b = bench({ project, projections: {
-      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+      [SESSION]: { state: 'ready', error: null, values: { projectTeam: {
         members: [lead, worker],
         tasks: [
           { ...task, subject: '修复登录', ownerName: worker.name, status: 'pending', blockedBy: [TASK_2], writeScopeWarnings: [] },
@@ -170,15 +170,15 @@ describe('TeamAction', () => {
     }
     fireEvent.click(member)
     expect(b.injected.openTeammate).toHaveBeenCalledWith(SESSION, WORKER)
-    expect(b.sessions.getSnapshot().projectionsBySession[SESSION]?.values.agentTeam?.members[1]?.name).toBe('worker')
-    expect(b.sessions.getSnapshot().projectionsBySession[SESSION]?.values.agentTeam?.tasks[0]?.description).toBe(task.description)
+    expect(b.sessions.getSnapshot().projectionsBySession[SESSION]?.values.projectTeam?.members[1]?.name).toBe('worker')
+    expect(b.sessions.getSnapshot().projectionsBySession[SESSION]?.values.projectTeam?.tasks[0]?.description).toBe(task.description)
   })
 
   it.each([false, true])('retains the member label while a reopened task waits without an owner (project: %s)', (project) => {
     const member = { ...worker, name: 'member-uuid', description: '修复登录' }
     const { ownerName: _ownerName, ...unownedTask } = task
     const b = bench({ project, projections: {
-      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+      [SESSION]: { state: 'ready', error: null, values: { projectTeam: {
         members: [lead, member],
         tasks: [{ ...unownedTask, subject: '修复登录', status: 'pending', blockedBy: [TASK_2], writeScopeWarnings: [] }],
       } } },
@@ -223,7 +223,7 @@ describe('TeamAction', () => {
       projections: {
         [SESSION]: {
           state: 'ready', error: null,
-          values: { agentTeam: team, modelSelection: { lastUsed: null, next: { provider: 'p', model: 'lead-model' } } },
+          values: { projectTeam: team, modelSelection: { lastUsed: null, next: { provider: 'p', model: 'lead-model' } } },
         },
         [WORKER]: {
           state: 'ready', error: null,
@@ -267,7 +267,7 @@ describe('TeamAction', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(zh.loading)
     act(() => { b.session.set({ ...b.session.getSnapshot(), openState: 'open' }) })
     expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
-    setProjectionSnapshot(b.sessions, SESSION, { state: 'idle', error: null, values: { agentTeam: team } })
+    setProjectionSnapshot(b.sessions, SESSION, { state: 'idle', error: null, values: { projectTeam: team } })
     expect(screen.getByText('Implement runtime')).toBeTruthy()
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
@@ -285,7 +285,7 @@ describe('TeamAction', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(zh.loading)
     act(() => { b.sessions.set({
       ...b.sessions.getSnapshot(), phase: 'ready',
-      projectionsBySession: { [SESSION]: { state: 'idle', error: null, values: { agentTeam: team } } },
+      projectionsBySession: { [SESSION]: { state: 'idle', error: null, values: { projectTeam: team } } },
     }) })
     expect(screen.getByText('Implement runtime')).toBeTruthy()
     expect(screen.queryByRole('status')).toBeNull()
@@ -308,7 +308,7 @@ describe('TeamAction', () => {
         byId: { ...current.byId, ['unrelated' as SessionId]: summary('unrelated' as SessionId, true) },
         projectionsBySession: {
           ...projectionsBySession,
-          ['unrelated' as SessionId]: { state: 'ready', error: null, values: { agentTeam: { members: [], tasks: [] } } },
+          ['unrelated' as SessionId]: { state: 'ready', error: null, values: { projectTeam: { members: [], tasks: [] } } },
         },
       })
       b.statuses.set(new Map([['unrelated' as SessionId, { running: true, pendingInteraction: undefined, completionUnread: false }]]))
@@ -334,7 +334,7 @@ describe('TeamAction', () => {
 
   it('surfaces a Team projection failure beside the last valid state', () => {
     const b = bench({
-      projections: { [SESSION]: { state: 'ready', error: null, values: { agentTeam: { ...team, failure: 'revision is not contiguous' } } } },
+      projections: { [SESSION]: { state: 'ready', error: null, values: { projectTeam: { ...team, failure: 'revision is not contiguous' } } } },
     })
     render(<TeamAction {...b.props} />)
     openPanel()
@@ -349,7 +349,7 @@ describe('TeamAction', () => {
         [SESSION]: {
           state: 'ready', error: null,
           values: {
-            agentTeam: {
+            projectTeam: {
               members: [
                 lead,
                 worker,
@@ -665,7 +665,7 @@ describe('Project Team entry', () => {
     const failed = { ...worker, id: 'failed-job' as SessionId, name: 'failed-job', phase: 'failed' as const, error: 'Turn failed' }
     const provisioning = { ...worker, id: 'preparing' as SessionId, name: 'preparing', phase: 'provisioning' as const }
     const b = bench({ project: true, running: { [SESSION]: true, [WORKER]: true }, projections: {
-      [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead, worker, jobOnly, failed, provisioning], tasks: [] } } },
+      [SESSION]: { state: 'ready', error: null, values: { projectTeam: { members: [lead, worker, jobOnly, failed, provisioning], tasks: [] } } },
     } })
     const activity = createSnapshotStore<TeamActivityMap>({ [SESSION]: {
       state: 'ready', runningJobSessionIds: [SESSION, WORKER, WORKER, jobOnly.id, failed.id, 'not-in-team' as SessionId],
@@ -731,7 +731,7 @@ describe('Project Team entry', () => {
     act(() => { b.sessions.set({ ...b.sessions.getSnapshot(), phase: 'ready' }) })
     expect(counter?.textContent).toBe('1')
     for (const state of ['loading', 'error', 'migration-required'] as const) {
-      setProjectionSnapshot(b.sessions, SESSION, { state, error: null, values: { agentTeam: team } })
+      setProjectionSnapshot(b.sessions, SESSION, { state, error: null, values: { projectTeam: team } })
       expect(counter?.textContent).toBe('?')
     }
     openPanel()
@@ -743,7 +743,7 @@ describe('Project Team entry', () => {
 
   it('keeps a capped visual count and an exact accessible count for a large roster', () => {
     const members = Array.from({ length: 105 }, (_, index) => ({ ...worker, id: `worker-${index}` as SessionId, name: `worker-${index}` }))
-    const b = bench({ project: true, projections: { [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead, ...members], tasks: [] } } } } })
+    const b = bench({ project: true, projections: { [SESSION]: { state: 'ready', error: null, values: { projectTeam: { members: [lead, ...members], tasks: [] } } } } })
     const activity = createSnapshotStore<TeamActivityMap>({ [SESSION]: { state: 'ready', runningJobSessionIds: members.map(member => member.id) } })
     const { container } = render(<TeamAction {...b.props} useTeamActivity={bindSnapshotSelector(activity)} />)
     expect(container.querySelector('[data-team-running-count]')?.textContent).toBe('99+')
@@ -798,9 +798,9 @@ describe('Project Team entry', () => {
     const collapseEmptyObserver = vi.fn(() => { closed.push('collapse') })
     const tabInfo: ReturnType<TeamSidebarProps['useTabInfo']> = {
       sidebar: { expanded: true, fullscreen: false },
-      panel: { id: 'team-pane' as ReturnType<TeamSidebarProps['useTabInfo']>['panel']['id'], host, rect: undefined },
+      panel: { id: 'team-pane' as ReturnType<TeamSidebarProps['useTabInfo']>['panel']['id'], host, rect: undefined, isFloating: host === 'float' },
       tab: {
-        id: 'team-tab' as ReturnType<TeamSidebarProps['useTabInfo']>['tab']['id'], kind: 'agent-team', title: 'Team', contentId: 'sidebar://agent-team', visible: true,
+        id: 'team-tab' as ReturnType<TeamSidebarProps['useTabInfo']>['tab']['id'], kind: 'project-team', title: 'Team', contentId: 'sidebar://agent-team', visible: true,
         navigation: { address: 'sidebar://agent-team', params: undefined, revision: 1 },
         signal: new AbortController().signal,
         actions: { close, openResource: vi.fn(), openTab: vi.fn(), bindCommands: () => () => {} },
@@ -847,7 +847,7 @@ describe('Project Team entry', () => {
 describe('TeamSidebar', () => {
   it('shows the Project roster and reports a failed member opening without a flow alert', async () => {
     const b = bench({ project: true, running: { [WORKER]: true }, projections: {
-      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+      [SESSION]: { state: 'ready', error: null, values: { projectTeam: {
         members: [lead, worker],
         tasks: [{ ...task, subject: '修复登录', ownerName: worker.name, writeScopeWarnings: [] }],
       } } },
@@ -885,7 +885,7 @@ describe('owner task scopes', () => {
   it('limit the Project Current view to the owner\'s current work', () => {
     const older: TeamMemberProjection = { id: 'older-worker' as SessionId, name: 'older', role: 'teammate', phase: 'active' }
     const b = bench({ project: true, running: { [WORKER]: true }, projections: {
-      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+      [SESSION]: { state: 'ready', error: null, values: { projectTeam: {
         members: [lead, worker, older],
         tasks: [
           { ...task, subject: '当前工作', ownerName: worker.name, writeScopeWarnings: [] },
@@ -927,7 +927,7 @@ describe('embedded Team', () => {
 
   it('shows the Project roster inside the owner\'s page and reports a failed member opening there', async () => {
     const b = bench({ project: true, running: { [WORKER]: true }, projections: {
-      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+      [SESSION]: { state: 'ready', error: null, values: { projectTeam: {
         members: [lead, worker],
         tasks: [{ ...task, subject: '修复登录', ownerName: worker.name, writeScopeWarnings: [] }],
       } } },

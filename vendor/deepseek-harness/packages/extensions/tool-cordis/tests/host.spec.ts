@@ -1,9 +1,11 @@
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { Context } from '@deepseek-ai/cordis'
 import { CordisInspectRegistryService } from '@deepseek-ai/dsh-cordis-host-runner'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
 import { describe, expect, it } from 'vitest'
 import * as CordisInspectProviders from '../src/host.ts'
+import * as CordisInspectTools from '../src/index.ts'
 
 /**
  * The Host inspect providers are one process-global set: the host entry
@@ -17,6 +19,7 @@ async function host(): Promise<Context> {
   // The tool registry injects `systemPrompt`; nothing under test registers a prompt section.
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRegistry)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(CordisInspectRegistryService, 10_000)
   return ctx
 }
@@ -31,5 +34,16 @@ describe('the cordis-inspect-providers host entry', () => {
 
     await fiber.dispose()
     expect(ctx.cordisInspect.list()).toEqual([])
+  })
+})
+
+describe('the cordis inspect tools', () => {
+  it('declares both read-only tools parallel-safe', async () => {
+    const ctx = await host()
+    const fiber = ctx.plugin(CordisInspectTools)
+    await fiber
+    expect(ctx.tools.get('cordis_inspect_list')?.isConcurrencySafe?.({})).toBe(true)
+    expect(ctx.tools.get('cordis_inspect_query')?.isConcurrencySafe?.({ platform: 'host', provider: 'Service', method: 'get' })).toBe(true)
+    await fiber.dispose()
   })
 })

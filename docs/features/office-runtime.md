@@ -8,17 +8,18 @@
 
 ## User paths
 
-1. 对话内 `office` 技能路由至 `office-docx`/`office-pptx`/`office-xlsx` 创建、定点编辑、结构校验 DOCX/PPTX/XLSX；按需加载 `office-render`、`office-recalculate`、`office-export-pdf`。Files 树与对话文件点开二进制 Office 文档进入原生只读预览（DOCX/PPTX→PDF，XLSX/XLS→Spreadsheet）。
+1. 对话内 `office` 技能路由至 `office-docx`/`office-pptx`/`office-xlsx` 创建、定点编辑、结构校验 DOCX/PPTX/XLSX；加载 `office` 后按需使用 `office_render`、`office_recalculate`、`office_convert` 工具。Files 树与对话文件点开二进制 Office 文档进入原生只读预览（DOCX/PPTX→PDF，XLSX/XLS→Spreadsheet）。
 2. `load_workspace_dependencies` 首调把锁定 payload（Python+numpy/pandas/python-docx/python-pptx/openpyxl/Pillow/lxml/XlsxWriter + standalone Node/pnpm）原子安装进 `dsh-home/dsh-runtimes/dsh-primary-runtime`。
 3. 预览路由：Files 树/surfaces 打开 `doc/docx/ppt/pptx/xls/xlsx` 走 `sidebarRight.openResourceIn`→documentpreview；csv/tsv 留在可编辑文本视图（有意分叉）。
-4. CLI 区域图/PDF 导出走 `libreoffice-kit/lib/cli.js`（payload 内 standalone Node 执行）。
+4. 区域图、重算与 PDF 导出由 `office-kit` provider 的原生引擎处理；payload 内 standalone Node 供工作区脚本使用。
 
 ## Invariants
 
-- 只用打包进来的 standalone Node runtime + 闭包内的 `libreoffice-kit@0.1.1`（按 `prebuilds.json` 解析 win32-x64 native 引擎）；不回退系统 PATH / 系统 LibreOffice / WASM。
-- `workspace-dependencies`/`skill-office` 两行挂 `desktop-plugins/office/desktop-office.patch.yml` overlay，每次启动（full+skip）都传；绝不写进用户 `cordis.patch.yml`。
-- `source/root/assetRoot/node/cli` 全是显式绝对路径；`DSH_PRIMARY_RUNTIME` 覆盖整目录、空串退出；`DSH_BUNDLED_PRIMARY_RUNTIME` 只作载体默认声明。
-- payload 校验：runtime.json platform/arch/payloadDigest 匹配 + node.exe + 当前七个技能的 SKILL.md；packaged 缺失=运行时损坏 fail start，dev 缺少载荷=警告可启动，已有载荷但资源不完整仍报错。
+- 只用打包进来的 standalone Node runtime + 闭包内的 `libreoffice-kit@0.2.3`（按 `prebuilds.json` 解析 win32-x64 native 引擎）；不回退系统 PATH / 系统 LibreOffice / WASM。
+- `workspace-dependencies`/`skill-office` 两行由 `desktop-plugins/office/desktop-office.patch.yml` overlay 配置上游已有行（不重复插入），每次启动（full+skip）都传；绝不写进用户 `cordis.patch.yml`。
+- `source/root/assetRoot` 全是显式绝对路径，`skill-office` 显式使用 `pythonEnvironment: workspace-dependencies`；`DSH_PRIMARY_RUNTIME` 覆盖整目录、空串退出；`DSH_BUNDLED_PRIMARY_RUNTIME` 只作载体默认声明。
+- `prepare-office-runtime.mjs` 先调用上游准备 Python/Node 载荷，再独立复制当前 `skill-office/assets` 到 `build/office-runtime/office-skills`；rc.2 的上游准备器不再输出技能目录。
+- payload 校验：runtime.json platform/arch/payloadDigest 匹配 + node.exe + 当前四个技能的 SKILL.md；packaged 缺失或已有载荷但资源不完整=运行时损坏：本次启动跳过 Office，鲸屿照常启动，启动器「启动诊断」列出原因；dev 缺少载荷=警告可启动。
 - 依赖安装按 staging→validate→atomic install；失败保留旧 payload，会话/Profile 不受影响。
 - 每访问走 workspace 授权；拒绝 symlink/junction 逃逸；缓存随版本/代际失效。
 - 加载、取消、错误、大小限制、加密、缺字体失败都显式上报，不静默吞。
@@ -50,5 +51,5 @@
 - Decision: [桌面文档运行时](../decisions/implemented/architecture/2026-09-25-desktop-office-runtime.md)
 - Plan: `docs/superpowers/plans/2026-09-25-upstream-adoption-plan.md` §5/P3/F7
 - Engine resolution: `vendor/deepseek-harness/scripts/libreoffice-packages.mjs` + `prebuilds.json`
-- Upstream composition: `vendor/deepseek-harness/apps/desktop-host/src/office.ts`
+- Upstream composition: `vendor/deepseek-harness/packages/bundle/web-app/cordis.patch.yml`
 - Evidence: `docs/superpowers/evidence/2026-09-25-upstream-adoption/`

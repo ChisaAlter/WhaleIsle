@@ -1,10 +1,7 @@
-import { registerTeamTools } from './team-tools.js';
 import { projectTool } from './tool.js';
 export const name = 'project-worker';
 export const inject = ['tools'];
 export function apply(ctx) {
-  ctx.tools.presentAs('native');
-  registerTeamTools(ctx);
   ctx.tools.guard(exec => {
     const service = ctx.get('projects');
     return service?.available ? service.guard(exec) : 'Project Host is unavailable.';

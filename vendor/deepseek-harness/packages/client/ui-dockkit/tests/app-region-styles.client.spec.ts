@@ -32,17 +32,27 @@ it('keeps Windows floating headers 20px below the caption, including restored po
   expect(css).toMatch(/:global\(html\[data-windows-titlebar\]\[data-fullscreen\]\) \.float\s*\{\s*--dsh-dockkit-float-top: 20px;/)
 })
 
+it('clamps a resting floating panel\'s position and size into the viewport and below the caption floor', () => {
+  const floatRule = /(?:^|\})\s*\.float\s*\{(?<body>[^}]*)\}/.exec(css)?.groups?.['body']
+  expect(floatRule).toContain('left: max(0px, min(var(--dsh-dockkit-float-x), 100vw - var(--dsh-dockkit-float-width)));')
+  expect(floatRule).toContain(
+    'top: max(var(--dsh-dockkit-float-top, 0px), min(var(--dsh-dockkit-float-y), 100dvh - var(--dsh-dockkit-float-height)));',
+  )
+  expect(floatRule).toContain('width: min(var(--dsh-dockkit-float-width), 100vw);')
+  expect(floatRule).toContain('height: min(var(--dsh-dockkit-float-height), 100dvh - var(--dsh-dockkit-float-top, 0px));')
+})
+
 describe('macOS app-region ownership', () => {
-  it('subtracts the chip run, strip-end chrome, pane body, and divider, and declares no drag itself', () => {
+  it('subtracts panes, strip-end chrome, floats, and dividers without declaring drag', () => {
     // The strip row's drag is the markup mark's job: a sheet that declares it
     // here would drag the same box twice and hide the row from the ownership gate.
     expect(regionRules).toHaveLength(3)
     for (const [, value] of regionRules) {
       expect(value).toBe('no-drag')
     }
-    const [selector] = regionRules.find(([name]) => name.includes('.stripTabs'))!
-    for (const part of ['.stripTabs', '.stripChrome', '.paneBody', '.float', '.divider']) {
-      expect(selector, part).toContain(`:global(html[data-platform='darwin']) ${part}`)
+    const [selector] = regionRules.find(([name]) => name.includes('.pane'))!
+    for (const part of ['.pane', '.stripChrome', '.float', '.divider']) {
+      expect(selector, part).toContain(`:global(:where(html[data-platform='darwin'])) ${part}`)
     }
   })
 

@@ -14,6 +14,7 @@
 import { memo, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
+import { copyKatexAsTex } from './copy-tex.ts'
 import { IncrementalMarkdownParser } from './incremental.ts'
 import { parseGfm, parseGfmWithMath } from './parse.ts'
 import {
@@ -33,6 +34,7 @@ function renderSettled(
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
   renderCodeFence: MarkdownCodeFenceRenderer | undefined,
+  omitHtml: boolean,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -43,6 +45,7 @@ function renderSettled(
     fileMentions,
     pathImages,
     renderCodeFence,
+    omitHtml,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -76,10 +79,15 @@ class StreamingRenderer {
   private lastText: string | null = null
   private lastRendered: ReactNode[] = []
 
-  /** @param labels - Localized Markdown chrome baked into cached elements; the owner replaces the renderer when it changes. */
+  /**
+   * @param labels - Localized Markdown chrome baked into cached elements; the owner replaces the renderer when it changes.
+   * @param renderCodeFence - Optional code-fence renderer; the owner replaces the renderer when it changes.
+   * @param omitHtml - Whether raw HTML renders nothing; the owner replaces the renderer when it changes.
+   */
   constructor(
     private readonly labels: MarkdownLabels,
     private readonly renderCodeFence: MarkdownCodeFenceRenderer | undefined,
+    readonly omitHtml: boolean,
   ) {}
 
   /**
@@ -116,6 +124,7 @@ class StreamingRenderer {
         renderCodeFence: this.renderCodeFence,
         fileMentions: undefined,
         pathImages: undefined,
+        omitHtml: this.omitHtml,
         targets: frameTargets,
         footnoteOrder: this.frozenFootnoteOrder,
         footnoteCounts: this.frozenFootnoteCounts,
@@ -136,6 +145,7 @@ class StreamingRenderer {
       renderCodeFence: this.renderCodeFence,
       fileMentions: undefined,
       pathImages: undefined,
+      omitHtml: this.omitHtml,
       targets: frameTargets,
       footnoteOrder: [...this.frozenFootnoteOrder],
       footnoteCounts: new Map(this.frozenFootnoteCounts),
@@ -173,15 +183,22 @@ class StreamingRenderer {
  * images into preview activators (images inside links keep the anchor's
  * navigation). `variant="compact"` uses secondary
  * text sizing, uniform bold headings, and tight block spacing; the default
- * `body` variant uses the full document typography.
+ * `body` variant uses the full document typography. `omitHtml` renders raw
+ * HTML as nothing instead of literal text, for documents written for HTML
+ * renderers, such as package READMEs. `textInteractionSource` marks the
+ * existing root as a source for text selection interactions.
  * The provider's `openFile` enables local Markdown links in settled messages,
- * including `#L24` and `#L24-L30` destinations (ranges open at their first line).
- * @returns A GFM document with TeX math rendered through KaTeX; raw HTML and
- * unsafe protocols are disabled. Local links without an opener remain text;
+ * including `#L24` / `#L24-L30` fragments and `:24` / `:24-30` / `:24:5` suffixes
+ * (ranges open at their first line, columns are ignored, and invalid locations
+ * open only the file; see the README for URL/path classification).
+ * Copying a selection inside the document writes selected formulas as
+ * `$…$` / `$$…$$` TeX source.
+ * @returns A GFM document with TeX math rendered through KaTeX; raw HTML never
+ * renders as markup, and unsafe protocols are disabled. Local links without an opener remain text;
  * absolute HTTP(S) images render directly.
  */
 export const MarkdownText = memo(function MarkdownText({
-  text, streaming = false, labels, fileMentions, pathImages, renderCodeFence, variant = 'body',
+  text, streaming = false, labels, fileMentions, pathImages, renderCodeFence, variant = 'body', omitHtml = false, textInteractionSource = false,
 }: {
   text: string
   streaming?: boolean
@@ -191,6 +208,8 @@ export const MarkdownText = memo(function MarkdownText({
   /** Reference-stable renderer for this document's explicitly supported fenced blocks. */
   renderCodeFence?: MarkdownCodeFenceRenderer | undefined
   variant?: 'body' | 'compact'
+  omitHtml?: boolean
+  textInteractionSource?: boolean
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
@@ -198,15 +217,19 @@ export const MarkdownText = memo(function MarkdownText({
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, fileMentions, pathImages, renderCodeFence)
+      return renderSettled(text, labels, fileMentions, pathImages, renderCodeFence, omitHtml)
     }
-    if (streamRef.current === null || streamLabelsRef.current !== labels || streamFenceRef.current !== renderCodeFence) {
-      streamRef.current = new StreamingRenderer(labels, renderCodeFence)
+    if (streamRef.current === null || streamLabelsRef.current !== labels || streamFenceRef.current !== renderCodeFence
+      || streamRef.current.omitHtml !== omitHtml) {
+      streamRef.current = new StreamingRenderer(labels, renderCodeFence, omitHtml)
       streamLabelsRef.current = labels
       streamFenceRef.current = renderCodeFence
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, fileMentions, pathImages, renderCodeFence])
+  }, [text, streaming, labels, fileMentions, pathImages, renderCodeFence, omitHtml])
+
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
-    data-markdown-variant={variant === 'compact' ? variant : undefined}>{children}</div>
+    data-text-interaction-source={textInteractionSource ? '' : undefined}
+    data-markdown-variant={variant === 'compact' ? variant : undefined}
+    onCopy={(event) => { copyKatexAsTex(event.nativeEvent, event.currentTarget) }}>{children}</div>
 })

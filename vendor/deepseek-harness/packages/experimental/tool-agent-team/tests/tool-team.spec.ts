@@ -1,3 +1,5 @@
+import { withResultDeliveryGuidance } from '../../../subagent/subagent/src/continuation-messages.ts'
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,7 +18,7 @@ import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { renderPrompt, renderContextSnapshot } from '@deepseek-ai/dsh-system-prompt'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { serialize } from '@deepseek-ai/dsh-llm-deepseek/src/serialize.ts'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
@@ -98,7 +100,7 @@ function execute(
   args: unknown,
   signal: AbortSignal = SIGNAL,
 ) {
-  return ctx.tools.execute({
+  return executeToolFixture(ctx, {
     callId: ToolCallId(`team-call-${++callNumber}`),
     name,
     arguments: args,
@@ -113,7 +115,7 @@ function text(result: Awaited<ReturnType<typeof execute>>): string {
 
 function spawnedChildId(ctx: Context, lead: Agent, result: Awaited<ReturnType<typeof execute>>): SessionId {
   const parsed = JSON.parse(text(result)) as { member: { target: string } }
-  const member = ctx.agentTeams.listMembers(lead).find(member => member.name === parsed.member.target)
+  const member = ctx.projectTeams.listMembers(lead).find(member => member.name === parsed.member.target)
   if (member === undefined) throw new Error('spawn_teammate target has no roster member')
   return member.id
 }
@@ -149,8 +151,8 @@ describe('dsh-tool-team', () => {
         id: SessionId('private-member-session'), name: 'reviewer', role: 'teammate' as const,
         status, description: 'review changes', diagnostics: [],
       }
-      vi.spyOn(ctx.agentTeams, 'spawnTeammate').mockResolvedValue({ member })
-      vi.spyOn(ctx.agentTeams, 'listMembers').mockReturnValue([member])
+      vi.spyOn(ctx.projectTeams, 'spawnTeammate').mockResolvedValue({ member })
+      vi.spyOn(ctx.projectTeams, 'listMembers').mockReturnValue([member])
       const expected = {
         target: 'reviewer', role: 'teammate', status,
         description: 'review changes', diagnostics: [],
@@ -172,13 +174,13 @@ describe('dsh-tool-team', () => {
         expect(schema?.properties).not.toHaveProperty('name')
         expect(schema?.properties?.status?.enum).toEqual(['running', 'inactive', 'provisioning', 'failed'])
       }
-      expect(ctx.agentTeams.listMembers(lead)).toEqual([member])
+      expect(ctx.projectTeams.listMembers(lead)).toEqual([member])
     },
   )
 
   it.each(['running', 'inactive'] as const)('returns interrupted %s status', async (previousStatus) => {
     const { ctx, lead } = await setup([])
-    const interrupt = vi.spyOn(ctx.agentTeams, 'interrupt').mockReturnValue({ previousStatus })
+    const interrupt = vi.spyOn(ctx.projectTeams, 'interrupt').mockReturnValue({ previousStatus })
     const result = await execute(ctx, lead, 'interrupt_agent', { target: 'reviewer' })
     expect(JSON.parse(text(result))).toEqual({ previousStatus })
     expect(interrupt).toHaveBeenCalledWith(lead, 'reviewer')
@@ -205,7 +207,7 @@ describe('dsh-tool-team', () => {
     }
     expect(child.status).toBe('running')
     expect((await execute(ctx, lead, 'list_agents', {})).isError).toBe(false)
-    expect(ctx.agentTeams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'running' })
+    expect(ctx.projectTeams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'running' })
     await waitNoAgent(ctx, childId)
   })
 
@@ -237,10 +239,10 @@ describe('dsh-tool-team', () => {
     expect(interrupted.isError).toBe(false)
     await child.whenIdle()
     expect(child.status).toBe('idle')
-    expect(ctx.agentTeams.interrupt(lead, member.target)).toEqual({ previousStatus: 'inactive' })
+    expect(ctx.projectTeams.interrupt(lead, member.target)).toEqual({ previousStatus: 'inactive' })
     const stored = await execute(ctx, lead, 'list_agents', {})
     expect(JSON.parse(text(stored))).toContainEqual(expect.objectContaining({ target: member.target, status: 'inactive' }))
-    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ id: childId, name: member.target, status: 'inactive' })
+    expect(ctx.projectTeams.listMembers(lead)[1]).toMatchObject({ id: childId, name: member.target, status: 'inactive' })
   })
 
   it('installs the complete scoped schema and shared-checkout policy for roots and teammates', async () => {
@@ -275,7 +277,7 @@ describe('dsh-tool-team', () => {
       && event.data.source.kind === 'user')
     expect(initialPrompt?.type === 'user/message'
       ? initialPrompt.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
-      : []).toEqual(['stay available'])
+      : []).toEqual(withResultDeliveryGuidance([{ type: 'text', text: 'stay available' }]).map(block => block.type === 'text' ? block.text : ''))
 
     const denied = await execute(ctx, child, 'spawn_teammate', {
       name: 'nested', description: 'not allowed', prompt: 'no',
@@ -315,9 +317,7 @@ describe('dsh-tool-team', () => {
     await using persisted = await ctx.sessionPersistence.open(childId, 'read')
     const { events } = await persisted.read()
     const initial = events.findLast(event => event.type === 'user/message' && event.data.source.kind === 'user')
-    expect(initial?.type === 'user/message' ? initial.data.content : []).toEqual([
-      { type: 'text', text: 'Review the work' },
-    ])
+    expect(initial?.type === 'user/message' ? initial.data.content : []).toEqual(withResultDeliveryGuidance([{ type: 'text', text: 'Review the work' }]))
   })
 
   it('reuses unchanged Lead identity in an ordinary Lead fork', async () => {
@@ -339,9 +339,9 @@ describe('dsh-tool-team', () => {
     expect(childRequest.tools).toEqual(parentRequest.tools)
     expect(childRequest.messages.slice(0, parentRequest.messages.length)).toEqual(parentRequest.messages)
     expect(childRequest.messages.at(-1)?.content).toContainEqual({ type: 'text', text: 'Continue independently' })
-    expect(JSON.stringify(childRequest.messages)).not.toContain('system-reminder')
+    expect(childRequest.messages.slice(parentRequest.messages.length).flatMap(message => message.content)).not.toContainEqual(expect.objectContaining({ text: expect.stringContaining('system-reminder') }))
     expect(handle.agent.session.snapshotEvents().slice(0, seed.length)).toEqual(seed)
-    expect(ctx.agentTeams.listMembers(handle.agent).map(member => member.name)).toEqual(['lead'])
+    expect(ctx.projectTeams.listMembers(handle.agent).map(member => member.name)).toEqual(['lead'])
     await handle.dispose()
   })
 
@@ -429,7 +429,7 @@ describe('dsh-tool-team', () => {
     await execute(ctx, lead, 'spawn_teammate', {
       name: 'reviewer', description: 'review', prompt: 'Review the work',
     })
-    const childId = SessionId(ctx.agentTeams.listMembers(lead).find(member => member.name === 'reviewer')!.id)
+    const childId = SessionId(ctx.projectTeams.listMembers(lead).find(member => member.name === 'reviewer')!.id)
     await waitNoAgent(ctx, childId)
     expect(adapter.requests.filter(request => request.sessionId === childId)).toEqual([])
     await using persisted = await ctx.sessionPersistence.open(childId, 'read')
@@ -676,7 +676,7 @@ describe('dsh-tool-team', () => {
 
     await fiber.dispose()
     const legacySchema = (await assembly(ctx, lead)).tools.find(schema => schema.name === 'send_message')
-    expect(JSON.stringify(legacySchema)).toContain('agent_id')
+    expect(legacySchema?.parameters).toMatchObject({ required: ['agent', 'message'] })
   })
 
   it('rolls back partial scoped installation after a same-scope collision', async () => {
@@ -706,7 +706,7 @@ describe('dsh-tool-team', () => {
       delivery: 'parent',
       provider: 'spawn',
       label: 'ordinary child',
-      request: { prompt: [{ type: 'text', text: 'finish' }], parent: lead },
+      prompt: [{ type: 'text', text: 'finish' }], parent: lead,
       signal: SIGNAL,
     })
     await vi.waitFor(() => { expect(ctx.agents.get(ordinary.childId)).toBeUndefined() }, { timeout: 5_000 })
@@ -724,7 +724,7 @@ describe('dsh-tool-team', () => {
     })
     const childId = spawnedChildId(ctx, lead, spawned)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
-    expect(await ctx.subagents.listChildren(lead.id)).toContainEqual(expect.objectContaining({
+    expect(await ctx.subagents.listDescendants(lead.id)).toContainEqual(expect.objectContaining({
       id: childId,
       mode: 'continuable',
     }))
@@ -733,7 +733,7 @@ describe('dsh-tool-team', () => {
     })
     await lead.whenIdle()
 
-    const receipt = await ctx.agentTeams.sendMessage(lead, {
+    const receipt = await ctx.projectTeams.sendMessage(lead, {
       target: 'cold-worker',
       content: [{ type: 'text', text: 'resume with Team scope' }],
       signal: SIGNAL,
@@ -751,7 +751,7 @@ describe('dsh-tool-team', () => {
     expect(childRequests()[1]!.messages.slice(0, firstMessages.length)).toEqual(firstMessages)
     expect(resumed.session.snapshotEvents().filter(event => event.type === 'user/message'
       && event.data.source.kind === 'user')).toHaveLength(1)
-    ctx.agentTeams.interrupt(lead, 'cold-worker')
+    ctx.projectTeams.interrupt(lead, 'cold-worker')
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
   })
 
@@ -762,7 +762,7 @@ describe('dsh-tool-team', () => {
     expect(text(result)).toContain('unknown tool "list_agents"')
     expect('default' in toolTeam).toBe(false)
     expect(toolTeam.name).toBe('tool-agent-team')
-    expect(toolTeam.inject).toEqual(['agents', 'agentTeams', 'tools', 'systemPrompt'])
+    expect(toolTeam.inject).toEqual(['agents', 'projectTeams', 'tools', 'systemPrompt'])
   })
 
   it('uses configured fresh and fork provider names', async () => {
@@ -776,6 +776,6 @@ describe('dsh-tool-team', () => {
     expect(result.isError).toBe(false)
     const childId = spawnedChildId(ctx, lead, result)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
-    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ provider: 'team-fresh' })
+    expect(ctx.projectTeams.listMembers(lead)[1]).toMatchObject({ provider: 'team-fresh' })
   })
 })

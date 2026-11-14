@@ -1,7 +1,7 @@
 {
   "name": "deepseek-harness-desktop",
   "productName": "Whale Isle",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "Whale Isle desktop app based on DeepSeek Harness",
   "author": "Chisa",
   "license": "MIT",
@@ -52,7 +52,7 @@
     "docs:check": "node scripts/verify-md-links.mjs"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.9.0"
   },
   "optionalDependencies": {
     "node-pty": "1.2.0-beta.15"
@@ -62,7 +62,7 @@
     "electron": "^44.9.1",
     "electron-builder": "^26.17.0",
     "esbuild": "0.28.2",
-    "pnpm": "12.10.0",
+    "pnpm": "12.12.1",
     "semver": "^7.8.5"
   },
   "overrides": {
@@ -134,13 +134,13 @@
         "from": "dsh-acp",
         "to": "dsh-acp",
         "filter": [
+          "lib/**",
+          "client/**",
           "package.json",
           "cordis.patch.yml",
-          "LICENSE",
           "README.md",
-          "THIRD_PARTY_NOTICES.md",
-          "lib/**",
-          "client/**"
+          "LICENSE",
+          "THIRD_PARTY_NOTICES.md"
         ]
       },
       {
@@ -240,7 +240,7 @@
   },
   "dependencies": {
     "electron-updater": "6.8.10",
-    "koffi": "3.3.2",
+    "koffi": "3.3.3",
     "ws": "8.22.0"
   }
 }

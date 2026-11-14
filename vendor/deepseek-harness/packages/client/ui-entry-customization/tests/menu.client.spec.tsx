@@ -2,11 +2,12 @@
 /** The plugin fills each region's More menu with the discovery and Creator actions. */
 import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { useState } from 'react'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TrackProductEvent } from '@deepseek-ai/dsh-client-product-analytics/client'
 import { EntryMenuContent } from '../src/client/EntryMenuContent.tsx'
@@ -18,7 +19,7 @@ const SEATS = ['sidebar.panellist.actions', 'conversation.session.header.views.a
 const runtimes = new Set<SlotTestRuntime>()
 afterEach(async () => {
   try { for (const runtime of runtimes) await runtime.dispose() }
-  finally { runtimes.clear(); cleanup(); vi.useRealTimers() }
+  finally { runtimes.clear(); cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() }
 })
 
 type ContentProps = ComponentProps<typeof EntryMenuContent>
@@ -33,17 +34,18 @@ function content(overrides: Partial<ContentProps> = {}) {
   const props = {
     entries: [{ id: 'notes', label: 'Notes', pinned: true }, { id: 'tasks', label: 'Tasks', pinned: false }],
     region: 'sidebar', t: makeTranslate(en),
+    usePluginNavigation: <T,>(select: (present: boolean) => T): T => select(true),
     usePanelInfo: unused, useSessions: unused, useSessionStatus: unused, useSessionRetainInfo: unused,
-    useResource: unused, useWorkspaces: unused,
+    useResource: unused, useWorkspaces: unused, renderFactorySlot: () => null,
     ...callbacks,
     ...overrides,
   } as ContentProps
   const view = render(<div role="menu"><EntryMenuContent {...props} /></div>)
-  return { view, ...callbacks }
+  return { view, props, ...callbacks }
 }
 
 describe('More menu rows', () => {
-  it.each(['sidebar', 'rightbar'] as const)('shows only discovery and creation in %s regardless of entries', (region) => {
+  it.each(['rightbar'] as const)('shows only discovery and creation in %s regardless of entries', (region) => {
     const b = content({ region, entries: [
       { id: 'notes', label: 'Notes', pinned: true, active: true },
       { id: 'tasks', label: 'Tasks', pinned: false },
@@ -60,13 +62,47 @@ describe('More menu rows', () => {
     expect(b.onPinnedChange).not.toHaveBeenCalled()
   })
 
-  it('opens folded Conversation Views and marks the active View without pin controls', () => {
-    const b = content({ region: 'conversation', entries: [
-      { id: 'notes', label: 'Notes', pinned: true, active: true },
-      { id: 'tasks', label: 'Tasks', pinned: true, active: false },
-    ] })
+  it('lists only unpinned sidebar entries and pins without navigating', () => {
+    const b = content()
+    expect(b.view.queryByRole('menuitem', { name: 'Notes' })).toBeNull()
+    fireEvent.click(b.view.getByRole('menuitem', { name: 'Tasks' }))
+    expect(b.onOpen).toHaveBeenCalledExactlyOnceWith('tasks')
+    expect(b.onPinnedChange).not.toHaveBeenCalled()
+    b.onOpen.mockClear()
+    fireEvent.click(b.view.getByRole('menuitem', { name: 'Pin Tasks to sidebar' }))
+    expect(b.onPinnedChange).toHaveBeenCalledExactlyOnceWith('tasks', true)
+    expect(b.onOpen).not.toHaveBeenCalled()
+  })
+
+  it('returns focus to More after keyboard pinning without opening the entry', async () => {
+    const b = content()
+    b.view.unmount()
+    function PinMenu() {
+      const [open, setOpen] = useState(true)
+      return <Menu open={open} onClose={() => { setOpen(false) }} autoFocus
+        anchor={<button type="button">More</button>}>
+        <EntryMenuContent {...b.props} onDismiss={() => { setOpen(false) }} />
+      </Menu>
+    }
+    const view = render(<PinMenu />)
+    const pin = view.getByRole('menuitem', { name: 'Pin Tasks to sidebar' })
+    act(() => { pin.focus() })
+    fireEvent.keyDown(pin, { key: 'Tab' })
+    await waitFor(() => { expect(document.activeElement).toBe(view.getByRole('button', { name: 'More' })) })
+    expect(b.onPinnedChange).toHaveBeenCalledExactlyOnceWith('tasks', true)
+    expect(b.onOpen).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('opens folded Views and marks the active View with plugin navigation present=%s', (browsable) => {
+    const b = content({ region: 'conversation',
+      usePluginNavigation: select => select(browsable),
+      entries: [
+        { id: 'notes', label: 'Notes', pinned: true, active: true },
+        { id: 'tasks', label: 'Tasks', pinned: true, active: false },
+      ],
+    })
     expect(b.view.getAllByRole('menuitem').map(row => row.textContent))
-      .toEqual(['Notes', 'Tasks', 'Browse other plugins', 'Create your plugin'])
+      .toEqual(['Notes', 'Tasks', ...(browsable ? ['Browse other plugins'] : []), 'Create your plugin'])
     const currentRow = b.view.getByRole('menuitem', { name: 'Notes' })
     expect(currentRow.getAttribute('aria-current')).toBe('page')
     expect(currentRow.querySelector('svg')?.previousElementSibling?.textContent).toBe('Notes')
@@ -78,10 +114,21 @@ describe('More menu rows', () => {
     expect(b.onPinnedChange).not.toHaveBeenCalled()
   })
 
-  it('keeps both actions for an empty roster', () => {
-    const b = content({ entries: [] })
-    expect(b.view.getAllByRole('menuitem').map(row => row.textContent)).toEqual(['Browse other plugins', 'Create your plugin'])
+  it.each([true, false])('keeps actions unseparated for an empty roster with plugin navigation present=%s', (browsable) => {
+    const b = content({ region: 'conversation', entries: [], usePluginNavigation: select => select(browsable) })
+    expect(b.view.getAllByRole('menuitem').map(row => row.textContent))
+      .toEqual([...(browsable ? ['Browse other plugins'] : []), 'Create your plugin'])
     expect(b.view.queryByRole('separator')).toBeNull()
+  })
+
+  it.each(['sidebar', 'rightbar'] as const)('keeps only creation in %s without plugin navigation', (region) => {
+    const b = content({ region, entries: [], usePluginNavigation: select => select(false) })
+    expect(b.view.getAllByRole('menuitem').map(row => row.textContent)).toEqual(['Create your plugin'])
+    expect(b.view.queryByRole('separator')).toBeNull()
+    fireEvent.click(b.view.getByRole('menuitem', { name: 'Create your plugin' }))
+    expect(b.createPlugin).toHaveBeenCalledExactlyOnceWith()
+    expect(b.onOpen).not.toHaveBeenCalled()
+    expect(b.onPinnedChange).not.toHaveBeenCalled()
   })
 })
 
@@ -102,7 +149,10 @@ function Frame({ renderSlot }: PropsRenderSlots<Seats>) {
   </>
 }
 
-async function bench(language: 'en' | 'zh' = 'en', { analytics = true }: { analytics?: boolean } = {}) {
+async function bench(
+  language: 'en' | 'zh' = 'en',
+  { analytics = true, navigation = true }: { analytics?: boolean; navigation?: boolean } = {},
+) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
   const openList = vi.fn(), startSession = vi.fn(), track = vi.fn<TrackProductEvent>()
@@ -113,7 +163,7 @@ async function bench(language: 'en' | 'zh' = 'en', { analytics = true }: { analy
       locale.setLocale(language)
       ctx.provide('locale', locale)
       ctx.slots.installLocale(locale)
-      ctx.provide('pluginNavigation', { openList } as never)
+      if (navigation) ctx.provide('pluginNavigation', { openList } as never)
       ctx.provide('uiWorkspace', { startSession } as never)
       if (analytics) ctx.provide('productAnalytics', { track } as never)
     },
@@ -129,6 +179,28 @@ async function bench(language: 'en' | 'zh' = 'en', { analytics = true }: { analy
 }
 
 describe('More menu registrations', () => {
+  it('shows plugin discovery only while the Plugins page navigation is present', async () => {
+    const b = await bench('en', { navigation: false })
+    const sidebar = () => within(b.view.getByRole('menu', { name: 'sidebar.panellist.actions' }))
+    expect(sidebar().queryByRole('menuitem', { name: 'Browse other plugins' })).toBeNull()
+    expect(sidebar().getByRole('menuitem', { name: 'Create your plugin' })).toBeTruthy()
+    expect(sidebar().queryByRole('separator')).toBeNull()
+    const injected = b.runtime.slots.entries('sidebar.panellist.actions')[0]!.inject!() as { browsePlugins: () => void }
+    expect(() => { injected.browsePlugins() }).not.toThrow()
+
+    const navigation = await b.runtime.mount({
+      inject: [],
+      apply(ctx: Context) { ctx.provide('pluginNavigation', { openList: b.openList } as never) },
+    })
+    await act(async () => { await Promise.resolve() })
+    fireEvent.click(sidebar().getByRole('menuitem', { name: 'Browse other plugins' }))
+    expect(b.openList).toHaveBeenCalledExactlyOnceWith()
+
+    await navigation.dispose()
+    await act(async () => { await Promise.resolve() })
+    expect(sidebar().queryByRole('menuitem', { name: 'Browse other plugins' })).toBeNull()
+  })
+
   it('registers one row set per region and removes all of them when the plugin unloads', async () => {
     const b = await bench()
     for (const seat of SEATS) {

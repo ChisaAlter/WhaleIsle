@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { WorkspaceSnapshot as WorkspaceListState } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { PanelTogglesProps } from '../src/client/PanelToggles.tsx'
 import { PanelToggles } from '../src/client/PanelToggles.tsx'
@@ -39,6 +39,7 @@ function mount(opts: {
   render(
     <PanelToggles
       {...allowAllAccess}
+      useContextMenu={contextMenuHook()}
       usePanelInfo={panelInfoStub}
       useResource={resourceStub}
       surfaces={opts.surfaces ?? 0}

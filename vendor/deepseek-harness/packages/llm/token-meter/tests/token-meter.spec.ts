@@ -106,8 +106,7 @@ function appendSuccessfulCall(
 
 function meter(config: TokenMeterConfig = {}): TokenMeter {
   const ctx = new Context()
-  // The registry is a required injection of the service (its three projection
-  // units register in the constructor); mount it synchronously.
+  // Pure measurement tests use the service without mounting its projection contributions.
   new SessionProjectionRegistry(ctx)
   return new TokenMeter(ctx, config)
 }
@@ -137,8 +136,17 @@ describe('TokenMeter configuration and registration', () => {
     await ctx.plugin(SessionProjectionRegistry)
     const fiber = await ctx.plugin(TokenMeter)
     expect(ctx.get('tokenMeter')).toBeInstanceOf(TokenMeter)
+    const session = ctx.sessions.create()
+    const rows = ctx.sessionProjections.checkpoint(session)
+    expect(Object.keys(rows).sort())
+      .toEqual(['billedUsage', 'contextBreakdown', 'contextPressure', 'tokenMeasurement', 'tokenUsage'])
     await fiber.dispose()
     expect(ctx.get('tokenMeter')).toBeUndefined()
+    session.append('turn/start', { turn: 1 })
+    // The released units keep their last rows and fold no event after the unload.
+    expect(ctx.sessionProjections.checkpoint(session)).toEqual(rows)
+    expect(ctx.sessionProjections.checkpoint(ctx.sessions.create())).toEqual({})
+    await ctx.fiber.dispose()
   })
 })
 
