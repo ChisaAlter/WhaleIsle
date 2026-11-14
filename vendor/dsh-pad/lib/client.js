@@ -625,8 +625,8 @@ var PadClient = class {
   }
   /** Panels the Host should poll: everything visible in an expanded dock. */
   watchIds() {
-    if (!this.snapshot.layout.expanded) return [];
-    return this.snapshot.panels.filter((p) => !p.collapsed && !p.needsApproval).map((p) => p.id);
+    const dock = this.snapshot.layout.expanded ? this.snapshot.panels.filter((p) => !p.collapsed && !p.needsApproval).map((p) => p.id) : [];
+    return [...new Set([...dock, ...this.embeddedWatch ?? []])];
   }
   /** (Re)open the stream when the watched set changed. */
   reconnect() {
@@ -1192,7 +1192,7 @@ var MenuIcon = {
   ] }),
   trash: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M3 4.6h10M6.4 4.6V2.9h3.2v1.7M4.9 4.6l.5 8.5h5.2l.5-8.5" }) })
 };
-function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTarget, dropZone, onAsk, onExpand, onDragStart }) {
+function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTarget, dropZone, onAsk, onExpand, onDragStart, sidebarActions, onRemove }) {
   const [menuOpen, setMenuOpen] = (0, import_react2.useState)(false);
   const [confirmDelete, setConfirmDelete] = (0, import_react2.useState)(false);
   const [modelOpen, setModelOpen] = (0, import_react2.useState)(false);
@@ -1350,13 +1350,14 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("card.model") }),
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-menu-value", children: modelLabel })
               ] }),
+              ...(sidebarActions ?? []).map(action => (0, import_jsx_runtime2.jsx)("button", { type: "button", role: "menuitem", disabled: action.disabled, onClick: () => { setMenuOpen(false); action.run(); }, children: action.label }, action.label)),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("hr", {}),
-              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", role: "menuitem", className: "is-danger", onClick: () => {
+              /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", role: "menuitem", className: onRemove ? void 0 : "is-danger", onClick: () => {
                 setMenuOpen(false);
-                setConfirmDelete(true);
+                if (onRemove) onRemove(); else setConfirmDelete(true);
               }, children: [
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: MenuIcon.trash }),
-                t("card.delete")
+                onRemove ? (lang === "zh-CN" ? "从侧栏移除" : "Remove from sidebar") : t("card.delete")
               ] })
             ] }) : null
           ] }),
@@ -2948,6 +2949,62 @@ var DOCK_CSS = `
 // src/client/index.ts
 var NS = "dsh-pad";
 var inject = ["slots", "locale"];
+// DSHD: an additive, read-only view onto the SAME PadClient and PanelCard.
+// Separate display preferences never rewrite the floating dock's layout or delete panels.
+function createWhalePanels(client) {
+  const { createElement: h, useState, useEffect, useRef, useSyncExternalStore } = import_react4;
+  return function WhalePanels({ t, requestAdd = 0, active = true }) {
+    const { Button, Input, Modal } = require("@deepseek-ai/dsh-client-ui-primitives");
+    const snap = useSyncExternalStore(client.subscribe, client.getSnapshot);
+    const root = useRef(null);
+    const [theme, setTheme] = useState({ mode: "light", css: ":root{}" });
+    const [add, setAdd] = useState(false), [prompt, setPrompt] = useState("");
+    const [notice, setNotice] = useState("");
+    const [prefs, setPrefs] = useState(() => {
+      try { const saved = JSON.parse(localStorage.getItem("dsh-whale:pad-display") || "{}"); return { hidden: Array.isArray(saved.hidden) ? saved.hidden : [], order: Array.isArray(saved.order) ? saved.order : [] }; }
+      catch { return { hidden: [], order: [] }; }
+    });
+    const now = useNow(10000), zh = t("dock.title") === "\u9762\u677F", lang = zh ? "zh-CN" : "en";
+    const label = (cn, en) => zh ? cn : en;
+    const visible = snap.panels.filter(p => !prefs.hidden.includes(p.id)).sort((a, b) => {
+      const ai = prefs.order.indexOf(a.id), bi = prefs.order.indexOf(b.id);
+      return (ai < 0 ? Number.MAX_SAFE_INTEGER : ai) - (bi < 0 ? Number.MAX_SAFE_INTEGER : bi);
+    });
+    const persist = next => { localStorage.setItem("dsh-whale:pad-display", JSON.stringify(next)); setPrefs(next); };
+    useEffect(() => { if (requestAdd) setAdd(true); }, [requestAdd]);
+    useEffect(() => {
+      const update = () => { if (root.current) setTheme(readTheme(root.current)); };
+      update(); return watchTheme(update);
+    }, []);
+    useEffect(() => {
+      if (!active) return;
+      const ids = visible.filter(p => !p.collapsed && !p.needsApproval).map(p => p.id);
+      client.embeddedWatch = ids; client.reconnect();
+      return () => { client.embeddedWatch = []; client.reconnect(); };
+    }, [active, visible.map(p => `${p.id}:${p.collapsed}:${p.needsApproval}`).join(",")]);
+    const ask = text => { const result = composer.insert(text); setNotice(result === "unavailable" ? label("输入框尚未就绪，请回到鲸鱼娘对话重试。", "Open the assistant conversation and try again.") : label("已放入输入框；检查后发送。", "Added to your draft. Review and send.")); };
+    const move = (id, delta) => {
+      const order = visible.map(p => p.id), i = order.indexOf(id), to = i + delta;
+      if (to >= 0 && to < order.length) { [order[i], order[to]] = [order[to], order[i]]; persist({ ...prefs, order }); }
+    };
+    return h("div", { className: "dshpad-root dshpad-whale-panels", ref: root },
+      !snap.connected ? h("p", { role: "status", className: "dshpad-whale-notice" }, label("面板连接中；保留上次读数。", "Connecting; keeping the last readings.")) : null,
+      notice ? h("p", { role: "status", className: "dshpad-whale-notice" }, notice) : null,
+      visible.length ? visible.map((view, index) => h(PanelCard, { key: view.id, view, client, theme, lang, t, now, fresh: snap.fresh === view.id,
+        onAsk: ask, onExpand: () => client.setPanelHeight(view.id, client.panelHeight(view.id) ? void 0 : 480), onDragStart: () => {},
+        onRemove: () => persist({ ...prefs, hidden: [...prefs.hidden, view.id] }),
+        sidebarActions: [{ label: label("上移", "Move up"), disabled: index === 0, run: () => move(view.id, -1) }, { label: label("下移", "Move down"), disabled: index === visible.length - 1, run: () => move(view.id, 1) }],
+      })) : h("div", { className: "dshpad-whale-empty" }, h("p", null, label("把想看的内容放在这里", "Keep useful panels here")), h(Button, { variant: "outline", onClick: () => setAdd(true) }, label("添加面板", "Add panel"))),
+      h(Modal, { open: add, title: label("添加自定义面板", "Add a custom panel"), closeLabel: label("关闭", "Close"), onClose: () => setAdd(false) },
+        h("div", { className: "dshpad-whale-add" },
+          snap.panels.filter(p => prefs.hidden.includes(p.id)).map(view => h(Button, { key: view.id, variant: "outline", onClick: () => { persist({ ...prefs, hidden: prefs.hidden.filter(id => id !== view.id) }); setAdd(false); } }, label("添加已有：", "Restore: ") + view.definition.title)),
+          h("label", null, label("想创建什么面板？", "What should the new panel show?"), h(Input, { value: prompt, onChange: e => setPrompt(e.target.value), placeholder: label("例如：服务器性能、今日备忘", "For example: server health or notes") })),
+          h("p", null, label("需求会追加到当前草稿，发送后由鲸鱼娘创建；数据源仍需原有授权。", "Append a request to your draft, then send it. Existing data-source approvals still apply.")),
+          h(Button, { disabled: !prompt.trim(), onClick: () => { ask(t("new.prefix") + prompt.trim()); setAdd(false); setPrompt(""); } }, label("放入对话", "Add to draft")),
+        )),
+    );
+  };
+}
 function ComposerBridge({ inputActions }) {
   (0, import_react4.useEffect)(() => composer.attach(inputActions), [inputActions]);
   return null;
@@ -3000,6 +3057,8 @@ function start(ctx) {
     return () => client.stop();
   }, "dsh-pad: stream");
   const Dock = createDock(client);
+  const WhalePanels = createWhalePanels(client);
+  ctx.slots.inject("whale.panels", () => ctx.slots.register({ name: "whale.panels", id: "dsh-pad.whale", locale: NS }, WhalePanels));
   ctx.slots.inject("shell.overlay", () => ctx.slots.register({
     name: "shell.overlay",
     id: "dsh-pad",

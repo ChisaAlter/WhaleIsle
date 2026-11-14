@@ -7,7 +7,8 @@ window.__ModuleLoader__.load({
     const react = require("react");
     const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
     const { createElement: h, useState, useEffect, useMemo, useCallback, useRef, Fragment } = react;
-    const { Button, Input, Modal, SettingsSelect, StateDot, Switch, Toast, Tooltip, IconSettingsOutline16, IconDownloadOutlineRegular } = primitives;
+    const { Button, Input, Modal, Menu, SettingsSelect, StateDot, Switch, Toast, Tooltip, IconSettingsOutline16,
+      IconDownloadOutlineRegular, IconEllipsisOutline16, IconPlusOutline16, IconPanelRightOutline16, IconPinOutlineRegular } = primitives;
 
     const NS = "dsh-whale";
     const PANEL_ID = "whale";
@@ -339,7 +340,7 @@ window.__ModuleLoader__.load({
     // Footer fallback for hosts without sidebar region tabs: a single
     // button that opens the assistant session directly.
     function WhaleFooterEntry(props) {
-      const { rpc, openSession, t, wide } = props;
+      const { rpc, openSession, mode, t, wide } = props;
       const [busy, setBusy] = useState(false);
       const [error, setError] = useState("");
       const [attempt, setAttempt] = useState(0);
@@ -349,6 +350,7 @@ window.__ModuleLoader__.load({
         setBusy(true);
         setError("");
         try {
+          if (mode) { await mode.openAssistant(); return; }
           const ensured = await rpc("assistant/ensure");
           const sessionId = ensured?.sessionId;
           if (!sessionId) throw new Error("no-session");
@@ -358,7 +360,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(false);
         }
-      }, [rpc, openSession, t, busy]);
+      }, [rpc, openSession, mode, t, busy]);
       return h(Fragment, null, h(Button, {
         type: "button",
         variant: "ghost",
@@ -382,12 +384,13 @@ window.__ModuleLoader__.load({
     // entry exists only to satisfy selectPanel(id) — it immediately hands off
     // to the conversation panel with the whale session selected.
     function WhaleRedirect(props) {
-      const { rpc, openSession, layout, settingsNavigation, t } = props;
+      const { rpc, openSession, mode, layout, settingsNavigation, t } = props;
       const [error, setError] = useState("");
       useEffect(() => {
         let cancelled = false;
         (async () => {
           try {
+            if (mode) { await mode.openAssistant(); return; }
             const ensured = await rpc("assistant/ensure");
             const sessionId = ensured?.sessionId;
             if (!sessionId) throw new Error("no-session");
@@ -398,7 +401,7 @@ window.__ModuleLoader__.load({
           }
         })();
         return () => { cancelled = true; };
-      }, [rpc, openSession, layout]);
+      }, [rpc, openSession, mode, layout]);
       const openSettings = useCallback(async () => {
         try {
           if (typeof settingsNavigation?.open !== "function") throw new Error(t("page.settingsUnavailable"));
@@ -426,7 +429,7 @@ window.__ModuleLoader__.load({
     // Title-adjacent gear on her session header — only for the whale-owned
     // session; every other conversation keeps its stock action row.
     function WhaleHeaderGear(props) {
-      const { sessionId, useSessions, settingsNavigation, t } = props;
+      const { sessionId, useSessions, settingsNavigation, mode, t } = props;
       const [error, setError] = useState("");
       const [busy, setBusy] = useState(false);
       const [attempt, setAttempt] = useState(0);
@@ -447,7 +450,7 @@ window.__ModuleLoader__.load({
         }
       }, [settingsNavigation, t, busy]);
       if (!isWhale) return null;
-      return h(Fragment, null, h(Tooltip, { label: t("gear.tooltip"), side: "bottom" },
+      return h(Fragment, null, mode ? h(Button, { variant: "ghost", size: "sm", disabled: mode.get().busy, onClick: () => void mode.choose(true) }, mode.tr("大肥鱼模式", "Big Fish mode")) : null, h(Tooltip, { label: t("gear.tooltip"), side: "bottom" },
         h(Button, {
           type: "button",
           variant: "ghost",
@@ -1048,6 +1051,250 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // One client-owned presentation. No writes to the ordinary layout store:
+    // hiding its tracks retains the exact widths, surfaces, terminals and drafts.
+    function createBigFish({ rpc, openSession, settingsNavigation, layout, t }) {
+      let state = { active: false, prompted: false, enabled: false, prompt: false, tab: "panel", sideOpen: true, width: 360, error: "", busy: false, sessionId: "", homeDir: "" };
+      const listeners = new Set();
+      const set = patch => { state = { ...state, ...patch }; for (const fn of listeners) fn(state); };
+      const tr = (cn, en) => t("dialog.cancel") === "取消" ? cn : en;
+      const fail = error => set({ error: error?.message || String(error), busy: false });
+      const persist = input => rpc("settings/update", input);
+      const mode = {
+        get: () => state, subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn); }, set, tr,
+        async openAssistant() {
+          const catalog = await rpc("catalog");
+          const ensured = await rpc("assistant/ensure");
+          if (!ensured.sessionId) throw new Error("no-session");
+          await openSession(ensured.sessionId);
+          layout?.selectPanel?.(null);
+          set({ sessionId: ensured.sessionId, homeDir: catalog.homeDir, prompted: catalog.bigFishPrompted === true,
+            enabled: catalog.bigFishEnabled === true, tab: catalog.bigFishTab === "task" ? "task" : "panel",
+            ...(!catalog.bigFishPrompted ? { prompt: true } : catalog.bigFishEnabled ? { active: true } : {}) });
+          return ensured.sessionId;
+        },
+        async choose(enabled) {
+          set({ busy: true, error: "" });
+          try { await persist({ bigFishPrompted: true, bigFishEnabled: enabled }); set({ active: enabled, prompt: false, prompted: true, enabled, busy: false }); }
+          catch (error) { fail(error); }
+        },
+        async exit() {
+          // Always allow leaving the presentation, even when the Host is offline.
+          set({ active: false, enabled: false });
+          try { await persist({ bigFishEnabled: false }); } catch (error) { fail(error); }
+        },
+        async tab(next) {
+          set({ tab: next });
+          try { await persist({ bigFishTab: next }); } catch (error) { fail(error); }
+        },
+        settings() { Promise.resolve(settingsNavigation.open("pet")).catch(fail); },
+        dispose() { listeners.clear(); document.documentElement.removeAttribute("data-dsh-whale-mode"); document.documentElement.style.removeProperty("--dsh-whale-track"); },
+      };
+      return mode;
+    }
+
+    function useBigFish(mode) {
+      const [value, setValue] = useState(mode.get);
+      useEffect(() => { const dispose = mode.subscribe(setValue); setValue(mode.get()); return dispose; }, [mode]);
+      return value;
+    }
+
+    function injectBigFishCss() {
+      const style = document.createElement("style");
+      style.id = "dsh-whale-big-fish-css";
+      style.textContent = `
+html[data-dsh-whale-mode] [data-dsh-frame]{grid-template-columns:0px minmax(0,1fr) var(--dsh-whale-track,360px) 0px!important;grid-template-rows:52px minmax(0,1fr) 0px 0px!important;--dshd-titlebar-conversation-reserve:0px!important}
+html[data-dsh-whale-mode] [data-dsh-frame-region="sidebar"],html[data-dsh-whale-mode] [data-dsh-frame-region="rightbar"],html[data-dsh-whale-mode] [data-dsh-frame-region="terminal"],html[data-dsh-whale-mode] [data-shell-bottom],html[data-dsh-whale-mode] [data-titlebar-trailing],html[data-dsh-whale-mode] [data-shell-leading-band],html[data-dsh-whale-mode] [data-dsh-header],html[data-dsh-whale-mode] [data-dsh-frame]>[data-side],html[data-dsh-whale-mode] [data-dsh-frame][data-phone]>button{display:none!important}
+html[data-dsh-whale-mode] .dshpad-root:not(.dshpad-whale-panels){display:none!important}
+.dsh-whale-mode-head{position:absolute;top:var(--dsh-frame-chrome-top,0px);left:20px;right:calc(var(--dsh-whale-track,360px) + 16px);height:52px;display:flex;align-items:center;gap:8px;-webkit-app-region:drag!important;pointer-events:none!important}
+.dsh-whale-mode-head>*{-webkit-app-region:no-drag;pointer-events:auto}.dsh-whale-mode-name{display:flex;align-items:center;gap:8px;min-width:0;margin-right:auto;font-size:14px;line-height:22px;font-weight:500}.dsh-whale-mode-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-whale-mode-exit{white-space:nowrap}
+html[data-platform="darwin"] .dsh-whale-mode-head{left:88px}
+.dsh-whale-mode-side{position:absolute;inset:var(--dsh-frame-chrome-top,0px) 0 0 auto;width:var(--dsh-whale-width,360px);max-width:100%;display:flex;flex-direction:column;min-height:0;background:var(--dsw-specific-sidebar-fill);border-left:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);pointer-events:auto}
+.dsh-whale-mode-tabs{height:52px;min-height:52px;display:flex;align-items:center;gap:8px;padding:8px 12px}.dsh-whale-mode-tablist{display:flex;gap:2px;border-radius:20px;padding:3px;background:var(--dsw-alias-interactive-bg-hover);margin-right:auto}.dsh-whale-mode-tablist button{background:transparent;border:0;border-radius:16px;font:inherit;font-size:14px;line-height:22px;color:var(--dsw-alias-label-secondary);padding:3px 14px;white-space:nowrap}.dsh-whale-mode-tablist button[aria-selected="true"]{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-panel-solid,var(--dsw-alias-bg-layer-1));box-shadow:var(--dsw-shadow-lv2);font-weight:500}
+.dsh-whale-mode-scroll{overflow:auto;min-height:0;flex:1;padding:12px 16px 20px;scrollbar-gutter:stable}.dsh-whale-mode-scroll>[hidden]{display:none}.dsh-whale-mode-resize{position:absolute;top:0;bottom:0;left:-4px;width:8px;cursor:col-resize;touch-action:none}.dsh-whale-mode-resize:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}.dsh-whale-mode-mask{position:absolute;inset:var(--dsh-frame-chrome-top,0px) 0 0;border:0;background:var(--dsw-alias-bg-mask-1);pointer-events:auto}
+.dsh-whale-todo-group{margin:0 0 20px}.dsh-whale-todo-group>summary{display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);list-style:none;cursor:pointer;padding:4px 0}.dsh-whale-todo-group>summary::before{content:'⌄';margin-right:2px}.dsh-whale-todo-group>summary>span:first-of-type{margin-right:auto}.dsh-whale-todo-card{padding:12px;background:var(--dsw-alias-bg-panel-solid,var(--dsw-alias-bg-layer-1));border:.5px solid var(--dsw-alias-border-l2);border-radius:12px;margin-top:8px;overflow-wrap:anywhere}.dsh-whale-todo-row{display:flex;align-items:flex-start;gap:8px;justify-content:space-between}.dsh-whale-todo-title{min-width:0;flex:1;background:transparent;border:0;text-align:left;color:inherit;font:inherit;font-size:14px;line-height:22px;font-weight:500;padding:0;cursor:pointer}.dsh-whale-todo-title:hover{text-decoration:underline;text-underline-offset:3px}.dsh-whale-todo-meta{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);margin-top:8px;display:flex;gap:6px;align-items:center}.dsh-whale-todo-meta svg{flex:none}.dsh-whale-todo-error{color:var(--dsw-alias-state-error-primary)}.dsh-whale-todo-result{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;margin:8px 0 0;overflow-wrap:anywhere}.dsh-whale-todo-result h4{font-size:12px;font-weight:500;color:var(--dsw-alias-label-primary);margin:12px 0 4px}.dsh-whale-todo-result p{margin:0}.dsh-whale-todo-footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:8px}.dsh-whale-todo-empty{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);padding:10px 0}.dsh-whale-todo-fields{display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow:auto}.dsh-whale-todo-fields label{display:flex;flex-direction:column;gap:8px;font-size:14px}.dsh-whale-todo-fields p,.dsh-whale-mode-intro p{font-size:14px;line-height:22px;color:var(--dsw-alias-label-secondary);margin:0 0 12px}.dsh-whale-mode-intro{max-width:420px}.dsh-whale-todo-confirm{font-size:14px;line-height:22px;max-width:420px;white-space:pre-wrap}
+.dshpad-root.dshpad-whale-panels{position:relative;inset:auto;width:100%;height:auto;z-index:auto;display:flex;flex-direction:column;gap:12px}.dshpad-whale-panels .dshpad-card-grip{display:none}.dshpad-whale-panels .dshpad-card{width:100%;flex:none}.dshpad-whale-empty{padding:16px 0;display:flex;flex-direction:column;align-items:flex-start;gap:12px;font-size:14px}.dshpad-whale-notice{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);margin:0}.dshpad-whale-add{display:flex;flex-direction:column;gap:16px}.dshpad-whale-add label{display:flex;flex-direction:column;gap:8px}.dshpad-whale-add p{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dsh-whale-mode-side[hidden]{display:none}
+@media(max-width:900px){html[data-dsh-whale-mode] [data-dsh-frame]{grid-template-columns:0px minmax(0,1fr) 0px 0px!important}.dsh-whale-mode-head{right:12px}.dsh-whale-mode-side{z-index:2;width:min(var(--dsh-whale-width,360px),100%);background:var(--dsw-alias-bg-panel-solid,var(--dsw-alias-bg-layer-1))}.dsh-whale-mode-resize{display:none}}
+@media(max-width:500px){.dsh-whale-mode-head{left:12px;gap:4px}.dsh-whale-mode-name span{max-width:84px}.dsh-whale-mode-exit{font-size:12px}}
+@media(prefers-reduced-motion:reduce){html[data-dsh-whale-mode] [data-dsh-frame]{transition:none}}
+`;
+      document.head.appendChild(style);
+      return () => style.remove();
+    }
+
+    const todoBusy = card => ["starting", "running", "stopping"].includes(card.state);
+    const todoGroup = card => todoBusy(card) ? "running" : card.state === "pending" ? "pending" : "executed";
+
+    function WhaleTodoCard({ card, tr, pending, onAction, onEdit, onConfirm, onOpen, onExpand, expanded }) {
+      const [menu, setMenu] = useState(false);
+      const labels = { pending: tr("尚未开始", "Not started"), starting: tr("正在启动", "Starting"), running: tr("正在执行", "Running"), stopping: tr("正在停止", "Stopping"), review: tr("执行结束 · 待确认", "Run ended · Review needed"), completed: tr("已完成", "Completed"), cancelled: tr("已取消", "Cancelled"), failed: tr("执行失败", "Failed"), interrupted: tr("执行中断 · 需检查", "Interrupted · Check session") };
+      const entries = [{ id: "pin", label: card.pinned ? tr("取消置顶", "Unpin") : tr("置顶", "Pin") }, { id: "detail", label: tr("查看详情", "View details") }];
+      if (card.state === "pending") entries.push({ id: "edit", label: tr("编辑任务", "Edit task") }, { id: "start", label: tr("交给鲸鱼娘执行…", "Run with Whale…") });
+      if (todoBusy(card)) entries.push({ id: "cancel", label: tr("停止执行…", "Stop run…"), disabled: card.state === "stopping" && !card.error });
+      else {
+        if (card.state !== "completed") entries.push({ id: "complete", label: tr("标记完成", "Mark complete") });
+        if (card.state === "pending") entries.push({ id: "cancel", label: tr("取消任务", "Cancel task") });
+        else entries.push({ id: "reopen", label: tr("重新打开", "Reopen") }, { id: "archive", label: card.archived ? tr("移出归档", "Unarchive") : tr("归档", "Archive") });
+        entries.push({ type: "separator", id: "destructive" }, { id: "delete", label: tr("删除任务卡…", "Delete task card…"), danger: true });
+      }
+      const choose = id => {
+        setMenu(false);
+        if (id === "detail") onExpand(!expanded);
+        else if (id === "edit") onEdit(card);
+        else if (id === "start" || id === "delete" || id === "cancel" && todoBusy(card)) onConfirm(card, id);
+        else onAction(card, id);
+      };
+      return h("article", { className: "dsh-whale-todo-card", "data-whale-todo": card.id },
+        h("div", { className: "dsh-whale-todo-row" }, h("button", { type: "button", className: "dsh-whale-todo-title", "aria-expanded": expanded, onClick: () => onExpand(!expanded) }, card.title),
+          h(Menu, { open: menu, portal: true, align: "end", items: entries.map(item => ({ ...item, disabled: item.disabled || pending })), onSelect: choose, onClose: () => setMenu(false), anchor: h(Button, { variant: "ghost", size: "sm", iconOnly: true, "aria-label": tr("任务操作：", "Task actions: ") + card.title, "aria-expanded": menu, onClick: () => setMenu(!menu) }, h(IconEllipsisOutline16)) })),
+        h("div", { className: "dsh-whale-todo-meta", role: pending ? "status" : undefined }, todoBusy(card) ? h(StateDot, { state: "ongoing", size: 12 }) : null, labels[card.state], card.pinned ? h("span", { role: "img", "aria-label": tr("已置顶", "Pinned") }, h(IconPinOutlineRegular, { size: 12 })) : null),
+        card.error ? h("p", { className: "dsh-whale-todo-result dsh-whale-todo-error" }, card.error) : null,
+        expanded ? h("div", { className: "dsh-whale-todo-result" },
+          card.description ? h(Fragment, null, h("h4", null, tr("任务说明", "Description")), h("p", null, card.description)) : null,
+          card.criteria ? h(Fragment, null, h("h4", null, tr("完成条件", "Acceptance criteria")), h("p", null, card.criteria)) : null,
+          h("h4", null, tr("工作目录", "Working directory")), h("p", null, card.cwd),
+          card.summary ? h(Fragment, null, h("h4", null, tr("执行结果", "Run result")), h("p", null, card.summary)) : null,
+          card.sessionId ? h(Button, { variant: "ghost", size: "sm", onClick: () => onOpen(card.sessionId) }, tr("打开关联对话", "Open linked conversation")) : null,
+        ) : null,
+        card.state === "pending" ? h("div", { className: "dsh-whale-todo-footer" }, h(Button, { variant: "outline", size: "sm", disabled: pending, onClick: () => onConfirm(card, "start") }, tr("开始执行", "Start"))) : null,
+        card.state === "review" ? h("div", { className: "dsh-whale-todo-footer" }, h(Button, { variant: "ghost", size: "sm", onClick: () => onExpand(true) }, tr("查看成果", "Review result")), h(Button, { variant: "outline", size: "sm", disabled: pending, onClick: () => onAction(card, "complete") }, tr("确认完成", "Confirm complete"))) : null,
+      );
+    }
+
+    function WhaleTodosView({ rpc, mode, requestAdd, openSession, t, visible }) {
+      const tr = mode.tr;
+      const [cards, setCards] = useState([]), [loaded, setLoaded] = useState(false), [error, setError] = useState("");
+      const [editor, setEditor] = useState(null), [confirm, setConfirm] = useState(null), [pending, setPending] = useState("");
+      const [expanded, setExpanded] = useState(null), [archive, setArchive] = useState(false);
+      const heldGroup = useRef(null), alive = useRef(true), lastConfirm = useRef(null);
+      if (confirm) lastConfirm.current = confirm;
+      const confirmView = confirm ?? lastConfirm.current;
+      const load = useCallback(async () => { const value = await rpc("todos/list"); if (alive.current) { setCards(value.cards); setLoaded(true); setError(""); } }, [rpc]);
+      useEffect(() => {
+        alive.current = true;
+        if (!visible) return;
+        const refresh = () => { void load().catch(err => { if (alive.current) setError(err.message); }); };
+        refresh(); const timer = setInterval(refresh, 3000);
+        return () => { alive.current = false; clearInterval(timer); };
+      }, [load, visible]);
+      const add = () => setEditor({ title: "", description: "", criteria: "", cwd: mode.get().homeDir || "" });
+      useEffect(() => { if (requestAdd) add(); }, [requestAdd]);
+      const action = async (card, id) => {
+        setPending(card.id); setError("");
+        try {
+          if (id === "pin" || id === "archive") await rpc("todos/update", { id: card.id, patch: id === "pin" ? { pinned: !card.pinned } : { archived: !card.archived } });
+          else await rpc("todos/action", { id: card.id, action: id });
+          setConfirm(null); await load();
+        } catch (err) { setError(err.message); }
+        finally { setPending(""); }
+      };
+      const save = async () => {
+        setPending("editor"); setError("");
+        try {
+          const { id, title, description, criteria, cwd } = editor;
+          if (id) await rpc("todos/update", { id, patch: { title, description, criteria, cwd } });
+          else await rpc("todos/create", { title, description, criteria, cwd });
+          setEditor(null); await load();
+        } catch (err) { setError(err.message); } finally { setPending(""); }
+      };
+      const groupOf = card => heldGroup.current?.id === card.id ? heldGroup.current.group : todoGroup(card);
+      const renderCard = card => h(WhaleTodoCard, { key: card.id, card, tr, pending: pending === card.id,
+        onAction: action, onEdit: setEditor, onConfirm: (value, id) => setConfirm({ card: value, action: id }),
+        onOpen: id => { Promise.resolve(openSession(id)).catch(err => setError(err.message)); }, expanded: expanded === card.id,
+        onExpand: value => { heldGroup.current = value ? { id: card.id, group: groupOf(card) } : null; setExpanded(value ? card.id : null); },
+      });
+      const fields = [["title", tr("任务名称", "Task name")], ["description", tr("任务说明", "Description")], ["criteria", tr("完成条件", "Acceptance criteria")], ["cwd", tr("工作目录", "Working directory")]];
+      const messages = {
+        start: tr("在独立任务会话中执行，使用鲸鱼娘当前模型和宿主标准权限。不会占用或替换主对话。", "Run in an isolated task session with Whale's current model and standard Host permissions. The resident conversation stays intact."),
+        cancel: tr("只停止这项任务的执行；保留已产生的结果。", "Stop only this task's run; keep existing results."),
+        delete: tr("只删除任务卡，不删除关联对话或已经生成的文件。", "Delete the card only, not linked conversations or generated files."),
+      };
+      return h(Fragment, null,
+        error ? h(Feedback, { text: error, t, actions: [{ label: t("retry"), onClick: () => void load().catch(err => setError(err.message)) }] }) : null,
+        !loaded ? h("p", { className: "dsh-whale-todo-empty", role: "status" }, t("loading")) : null,
+        [["running", tr("进行中", "In progress")], ["pending", tr("未执行", "Not started")], ["executed", tr("已执行", "Executed")]].map(([group, label]) => {
+          const items = cards.filter(card => !card.archived && groupOf(card) === group).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt - a.createdAt);
+          return h("details", { key: group, className: "dsh-whale-todo-group", open: true }, h("summary", null, h("span", null, label), h("span", null, items.length)),
+            items.length ? items.map(renderCard) : h("p", { className: "dsh-whale-todo-empty" }, group === "running" ? tr("没有正在执行的任务", "No active runs") : group === "pending" ? tr("添加任务，或让鲸鱼娘记下待办。", "Add a task, or ask Whale to note one.") : tr("执行结束的任务会留在这里。", "Finished runs stay here.")));
+        }),
+        h("details", { className: "dsh-whale-todo-group", open: archive, onToggle: e => setArchive(e.currentTarget.open) }, h("summary", null, h("span", null, tr("归档", "Archive")), h("span", null, cards.filter(card => card.archived).length)), cards.filter(card => card.archived).map(renderCard)),
+        h(Modal, { open: Boolean(editor), title: editor?.id ? tr("编辑任务", "Edit task") : tr("新增任务", "New task"), closeLabel: t("dialog.close"), onClose: () => { if (!pending) setEditor(null); }, footer: h(Fragment, null, h(Button, { variant: "outline", disabled: Boolean(pending), onClick: () => setEditor(null) }, t("dialog.cancel")), h(Button, { loading: pending === "editor", disabled: Boolean(pending) || !editor?.title.trim(), onClick: save }, t("save"))) },
+          editor ? h("div", { className: "dsh-whale-todo-fields" }, fields.map(([key, label]) => h("label", { key }, label,
+            key === "description" || key === "criteria" ? h("textarea", { className: "dsh-whale-textarea", value: editor[key], maxLength: 6000, onChange: e => setEditor({ ...editor, [key]: e.target.value }) }) : h(Input, { value: editor[key], maxLength: key === "title" ? 200 : 2000, "data-modal-autofocus": key === "title" ? "" : undefined, onChange: e => setEditor({ ...editor, [key]: e.target.value }) }))),
+            h("p", null, tr("保存到未执行列表，不会自动开始。", "Save to Not started. Nothing runs automatically."))) : null),
+        h(Modal, { open: Boolean(confirm), title: confirmView?.card.title || "", closeLabel: t("dialog.close"), onClose: () => { if (!pending) setConfirm(null); }, footer: h(Fragment, null, h(Button, { variant: "outline", disabled: Boolean(pending), onClick: () => setConfirm(null) }, t("dialog.cancel")), h(Button, { loading: Boolean(pending), disabled: Boolean(pending), onClick: () => action(confirmView.card, confirmView.action) }, confirmView?.action === "start" ? tr("开始执行", "Start run") : confirmView?.action === "delete" ? tr("删除任务卡", "Delete card") : tr("停止执行", "Stop run"))) }, h("p", { className: "dsh-whale-todo-confirm" }, messages[confirmView?.action])),
+      );
+    }
+
+    function WhaleWorkbench({ mode, rpc, openSession, renderSlot, t }) {
+      const state = useBigFish(mode), tr = mode.tr;
+      const [add, setAdd] = useState({ task: 0, panel: 0 });
+      const [narrow, setNarrow] = useState(() => window.innerWidth <= 900);
+      const drag = useRef(null), side = useRef(null), reopen = useRef(null);
+      useEffect(() => { if (!state.active) setAdd({ task: 0, panel: 0 }); }, [state.active]);
+      useEffect(() => { const resize = () => setNarrow(window.innerWidth <= 900); window.addEventListener("resize", resize); return () => window.removeEventListener("resize", resize); }, []);
+      useEffect(() => {
+        const html = document.documentElement;
+        if (state.active) {
+          html.setAttribute("data-dsh-whale-mode", "");
+          html.style.setProperty("--dsh-whale-track", state.sideOpen && !narrow ? `${state.width}px` : "0px");
+        } else { html.removeAttribute("data-dsh-whale-mode"); html.style.removeProperty("--dsh-whale-track"); }
+        return () => { html.removeAttribute("data-dsh-whale-mode"); html.style.removeProperty("--dsh-whale-track"); };
+      }, [state.active, state.sideOpen, state.width, narrow]);
+      useEffect(() => {
+        if (!state.active || !state.sideOpen || !narrow) return;
+        const center = document.querySelector('[data-dsh-frame-region="center"]');
+        const wasInert = center?.inert;
+        if (center) center.inert = true;
+        side.current?.querySelector('[aria-selected="true"]')?.focus();
+        return () => { if (center) center.inert = wasInert; reopen.current?.focus(); };
+      }, [state.active, state.sideOpen, narrow]);
+      const sideKey = e => {
+        if (!narrow || e.defaultPrevented) return;
+        if (e.key === "Escape") { e.preventDefault(); mode.set({ sideOpen: false }); return; }
+        if (e.key !== "Tab") return;
+        const targets = [...side.current.querySelectorAll('button:not(:disabled),[href],input,textarea,select,[tabindex="0"]')].filter(node => node.getClientRects().length && node.tabIndex >= 0);
+        const first = targets[0], last = targets.at(-1);
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      };
+      const tabKey = e => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+        e.preventDefault(); const next = e.key === "Home" ? "panel" : e.key === "End" ? "task" : state.tab === "panel" ? "task" : "panel";
+        void mode.tab(next); document.getElementById(`dsh-whale-mode-${next}`)?.focus();
+      };
+      return h(Fragment, null,
+        state.error ? h(Feedback, { text: state.error, t }) : null,
+        h(Modal, { open: state.prompt, title: tr("进入大肥鱼模式？", "Enter Big Fish mode?"), closeLabel: t("dialog.close"), onClose: () => { if (!state.busy) void mode.choose(false); }, footer: h(Fragment, null,
+          h(Button, { variant: "outline", disabled: state.busy, onClick: () => void mode.choose(false) }, tr("暂不进入", "Not now")), h(Button, { disabled: state.busy, loading: state.busy, onClick: () => void mode.choose(true) }, tr("进入大肥鱼模式", "Enter Big Fish mode"))) },
+          h("div", { className: "dsh-whale-mode-intro" }, h("p", null, tr("把界面留给你和鲸鱼娘。", "Make room for you and Whale.")), h("p", null, tr("隐藏原来的左右侧栏、Git 和终端工具，只保留对话，以及「面板 / 任务」右边栏。", "Hide the original sidebars, Git and terminal tools. Keep the conversation and a Panels / Tasks sidebar.")), h("p", null, tr("随时退出，恢复原来的工作布局。正在进行的任务不会中断。", "Leave anytime to restore your layout. Running tasks continue.")))),
+        state.active ? h(Fragment, null,
+          h("div", { className: "dsh-whale-mode-head" },
+            h("button", { type: "button", className: "dsh-whale-todo-title dsh-whale-mode-name", onClick: () => { void mode.openAssistant().catch(err => mode.set({ error: err.message })); }, "aria-label": tr("返回鲸鱼娘", "Return to Whale") }, h(WhalePanelGlyph, { size: 18 }), h("span", null, panelName)),
+            h(Button, { variant: "ghost", size: "sm", iconOnly: true, "aria-label": tr("鲸鱼娘设置", "Whale settings"), onClick: () => mode.settings() }, h(IconSettingsOutline16)),
+            h(Button, { variant: "ghost", size: "sm", className: "dsh-whale-mode-exit", onClick: () => void mode.exit() }, tr("退出模式", "Exit mode")),
+            !state.sideOpen ? h(Button, { ref: reopen, variant: "ghost", size: "sm", iconOnly: true, "aria-label": tr("展开右边栏", "Open sidebar"), onClick: () => mode.set({ sideOpen: true }) }, h(IconPanelRightOutline16)) : null),
+          narrow && state.sideOpen ? h("button", { type: "button", tabIndex: -1, className: "dsh-whale-mode-mask", "aria-label": tr("收起右边栏", "Close sidebar"), onClick: () => mode.set({ sideOpen: false }) }) : null,
+          h("aside", { ref: side, className: "dsh-whale-mode-side", hidden: !state.sideOpen, role: narrow ? "dialog" : undefined, "aria-modal": narrow ? true : undefined, "aria-label": tr("鲸鱼娘右边栏", "Whale sidebar"), onKeyDown: sideKey, style: { "--dsh-whale-width": `${state.width}px` } },
+            h("div", { className: "dsh-whale-mode-resize", role: "separator", "aria-label": tr("调整右边栏宽度", "Resize sidebar"), "aria-orientation": "vertical", "aria-valuemin": 300, "aria-valuemax": 520, "aria-valuenow": state.width, tabIndex: 0,
+              onKeyDown: e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); mode.set({ width: Math.max(300, Math.min(520, state.width + (e.key === "ArrowLeft" ? 16 : -16))) }); } },
+              onPointerDown: e => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, width: state.width }; },
+              onPointerMove: e => { if (drag.current) mode.set({ width: Math.max(300, Math.min(520, drag.current.width + drag.current.x - e.clientX)) }); },
+              onPointerUp: () => { drag.current = null; }, onPointerCancel: () => { drag.current = null; }, onLostPointerCapture: () => { drag.current = null; },
+            }),
+            h("div", { className: "dsh-whale-mode-tabs" }, h("div", { className: "dsh-whale-mode-tablist", role: "tablist", "aria-label": tr("右边栏内容", "Sidebar content"), onKeyDown: tabKey },
+              [ ["panel", tr("面板", "Panels")], ["task", tr("任务", "Tasks")] ].map(([id, label]) => h("button", { key: id, type: "button", role: "tab", id: `dsh-whale-mode-${id}`, "aria-selected": state.tab === id, "aria-controls": `dsh-whale-mode-${id}-content`, tabIndex: state.tab === id ? 0 : -1, onClick: () => void mode.tab(id) }, label))),
+              h(Button, { variant: "ghost", size: "sm", iconOnly: true, "aria-label": state.tab === "task" ? tr("新增任务", "New task") : tr("添加面板", "Add panel"), onClick: () => setAdd(value => ({ ...value, [state.tab]: value[state.tab] + 1 })) }, h(IconPlusOutline16)),
+              h(Button, { variant: "ghost", size: "sm", iconOnly: true, "aria-label": tr("收起右边栏", "Close sidebar"), onClick: () => mode.set({ sideOpen: false }) }, h(IconPanelRightOutline16))),
+            h("div", { className: "dsh-whale-mode-scroll" },
+              h("div", { id: "dsh-whale-mode-panel-content", role: "tabpanel", "aria-labelledby": "dsh-whale-mode-panel", hidden: state.tab !== "panel" }, renderSlot("whale.panels", { requestAdd: add.panel, active: state.sideOpen && state.tab === "panel" }, { fallback: h("p", { className: "dsh-whale-todo-empty" }, tr("面板嵌入不可用。请在设置中启用内置 dsh-pad；若使用独立安装版，请更新到支持鲸鱼娘侧栏的版本。", "Panel embedding is unavailable. Enable bundled dsh-pad in settings, or update your independently installed copy to a version supporting the Whale sidebar.")) })),
+              h("div", { id: "dsh-whale-mode-task-content", role: "tabpanel", "aria-labelledby": "dsh-whale-mode-task", hidden: state.tab !== "task" }, h(WhaleTodosView, { rpc, mode, requestAdd: add.task, openSession, t, visible: state.sideOpen && state.tab === "task" })),
+            )),
+        ) : null,
+      );
+    }
+
     function apply(ctx) {
       injectCss();
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-whale: dictionaries");
@@ -1086,9 +1333,18 @@ window.__ModuleLoader__.load({
         if (typeof dispatch !== "function") throw new Error("proactive bridge unavailable");
         return rpcValue(await dispatch(action, payload));
       };
-      const injectFace = () => ({
-        rpc, proactiveDispatch, sessions, uiWorkspace, openSession, remote, layout, settingsNavigation, t,
-      });
+      const mode = createBigFish({ rpc, openSession, settingsNavigation, layout, t });
+      ctx.effect(() => { const remove = injectBigFishCss(); return () => { mode.dispose(); remove(); }; });
+      const injectFace = () => ({ rpc, proactiveDispatch, sessions, uiWorkspace, openSession, mode, remote, layout, settingsNavigation, t });
+      let workbenchInstalled = false;
+      const installWorkbench = () => {
+        if (workbenchInstalled || !ctx.slots?.spec?.("shell.overlay")) return;
+        workbenchInstalled = true;
+        ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+          name: "shell.overlay", id: "dsh-whale.workbench", order: 60, locale: NS, inject: injectFace,
+          children: { "whale.panels": { kind: "single", scope: "root" } },
+        }, WhaleWorkbench));
+      };
 
       // Her fields mount inside the desktop Pet section's 助理 group
       // (`settings.pet.item`) — the assistant and the pet share one page.
@@ -1195,13 +1451,7 @@ window.__ModuleLoader__.load({
       // executeJavaScript — same ensure→open→hand-off as the sidebar row.
       ctx.effect(() => {
         window.__dshWhaleOpen = async () => {
-          const ensured = await rpc("assistant/ensure");
-          const sessionId = ensured?.sessionId;
-          if (sessionId) {
-            await openSession(sessionId);
-            layout?.selectPanel?.(null);
-          }
-          return sessionId || null;
+          return mode.openAssistant();
         };
         return () => { try { delete window.__dshWhaleOpen; } catch { window.__dshWhaleOpen = undefined; } };
       });
@@ -1212,10 +1462,13 @@ window.__ModuleLoader__.load({
           .map((key) => ctx.slots.subscribe?.(key, installHeaderGear));
         const lineageSubscriptions = ["conversation.session.header.leading"]
           .map((key) => ctx.slots.subscribe?.(key, installHeaderMark));
+        const workbenchSubscription = ctx.slots.subscribe?.("shell.overlay", installWorkbench);
         installSidebar();
         installHeaderGear();
         installHeaderMark();
+        installWorkbench();
         return () => {
+          workbenchSubscription?.();
           for (const unsubscribe of [...subscriptions, ...headerSubscriptions, ...lineageSubscriptions]) unsubscribe?.();
         };
       });

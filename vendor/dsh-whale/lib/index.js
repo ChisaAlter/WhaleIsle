@@ -16,6 +16,7 @@ import { createWhaleScope, updateWhaleSettings } from './scope.js';
 import { buildPersonaText, normalizePersonality, PERSONALITIES } from './persona.js';
 import { startPulse } from './observe.js';
 import { mountWhaleTasks } from './task-service.js';
+import { mountWhaleTodos } from './todo-service.js';
 import { parseTask } from './task-store.js';
 import {
   SYSTEM_REMINDER_RE,
@@ -54,6 +55,9 @@ const WhaleSchema = z.object({
   modelReasoningEffort: live(z.string().default('')),
   imDefault: live(z.boolean().default(true)),
   sessionId: live(z.string().default('')),
+  bigFishPrompted: live(z.boolean().default(false)),
+  bigFishEnabled: live(z.boolean().default(false)),
+  bigFishTab: live(z.string().default('panel')),
 });
 export const Config = WhaleSchema;
 
@@ -219,6 +223,16 @@ function sanitizePatch(input) {
     }
     if (Object.prototype.hasOwnProperty.call(input, 'imDefault')) {
       patch.imDefault = input.imDefault === true;
+    }
+    for (const key of ['bigFishPrompted', 'bigFishEnabled']) {
+      if (Object.prototype.hasOwnProperty.call(input, key)) {
+        if (typeof input[key] !== 'boolean') throw new Error(`${key} must be a boolean`);
+        patch[key] = input[key];
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(input, 'bigFishTab')) {
+      if (!['panel', 'task'].includes(input.bigFishTab)) throw new Error('Unknown big fish tab');
+      patch.bigFishTab = input.bigFishTab;
     }
     if (input.model && typeof input.model === 'object') {
       patch.modelProvider = trimTo(input.model.provider, 128);
@@ -618,6 +632,19 @@ function registerRpc(ctx, scope) {
   };
   const handle = async (endpoint, input) => {
     const home = dshHomeDir();
+    if (endpoint.startsWith('todos/')) {
+      const service = ctx.get('whaleTodos');
+      if (!service?.available) throw new Error(service?.error || '任务卡服务尚未就绪。');
+      if (endpoint === 'todos/list') return { cards: service.list() };
+      if (endpoint === 'todos/create') return service.create(input ?? {});
+      if (endpoint === 'todos/update') return service.update(input?.id, input?.patch ?? {});
+      if (endpoint === 'todos/action') {
+        if (input?.action === 'start') return service.start(input.id);
+        if (input?.action === 'cancel') return service.stop(input.id);
+        return service.transition(input?.id, input?.action);
+      }
+      throw new Error('未知任务卡接口。');
+    }
     switch (endpoint) {
       case 'tasks/start': {
         const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
@@ -864,6 +891,9 @@ export function apply(ctx) {
   });
 
   registerRpc(ctx, scope);
+  if (home) ctx.inject?.(['storageDomain', 'sessionController', 'agents'], host => host.effect(async () => {
+    await mountWhaleTodos(host, { home, scope });
+  }));
   if (home) ctx.inject?.(['storageDomain', 'agents', 'agentPresets', 'sessionController', 'sessions', 'tools'], host => host.effect(async () => {
     await mountWhaleTasks(host, { home, scope });
   }));
