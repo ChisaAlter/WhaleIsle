@@ -27,7 +27,7 @@ import {
 } from './ui/settings-hub.js?v=20261028-mobile';
 import { callShell, UnauthorizedError } from './shell/remote-shell.js';
 import { parseVcsStatus, parseBranchList } from './git/vcs-parse.js';
-import { resolveGitQuick } from './git/quick.js';
+import { resolveGitQuick, gitPillLabel as gitPillText } from './git/quick.js';
 import { runStackedGit } from './git/stack.js?v=20260906-interaction';
 import { gitCommitPayload, gitTunnelAction } from './git/bridge.js';
 import { gitCall, hostCall } from './host/backend.js';
@@ -942,8 +942,8 @@ function renderHeader() {
   // The center slot is either the Git pill or the session title, never both.
   chatTitle.classList.toggle('hidden', showPill);
   if (showPill) {
-    const hasRef = state.gitStatus.refName != null;
-    gitPillLabel.textContent = hasRef ? state.gitStatus.refName : 'Initialize Git';
+    const hasRef = state.gitStatus.refName != null && !state.gitAuthError;
+    gitPillLabel.textContent = gitPillText(state.gitStatus, state.gitAuthError);
     gitPillCount.textContent = hasRef && state.gitStatus.aheadCount > 0 ? `↑${state.gitStatus.aheadCount}` : '';
   }
   syncRunning();
