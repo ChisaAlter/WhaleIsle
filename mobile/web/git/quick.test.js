@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveGitQuick } from './quick.js';
+import { resolveGitQuick, gitPillLabel } from './quick.js';
 import { parseVcsStatus } from './vcs-parse.js';
 
 function status(extra = {}) {
@@ -85,4 +85,19 @@ test('clean synced branch is disabled Commit with up-to-date hint', () => {
   assert.equal(quick.label, 'Commit');
   assert.equal(quick.disabled, true);
   assert.equal(quick.hint, '分支已是最新，无需操作。');
+});
+
+test('git pill shows the branch name when a ref is checked out', () => {
+  assert.equal(gitPillLabel(status({ refName: 'main' }), ''), 'main');
+});
+
+test('git pill offers Initialize Git only for a real non-repo', () => {
+  const nonRepo = parseVcsStatus({ isRepo: false, refName: null });
+  assert.equal(gitPillLabel(nonRepo, ''), 'Initialize Git');
+});
+
+test('git pill shows Git instead of Initialize Git when authorization fails', () => {
+  const denied = parseVcsStatus({ isRepo: false, refName: null });
+  assert.equal(gitPillLabel(denied, 'Git 未授权该目录'), 'Git');
+  assert.equal(gitPillLabel(status({ refName: 'main' }), 'Git 状态不可用'), 'Git');
 });
