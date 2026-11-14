@@ -13,7 +13,7 @@ const UPDATE_CENTER_IPC = Object.freeze({
 });
 
 const COMMANDS = new Set(['check', 'download', 'downloadFull', 'pause', 'resume', 'cancel', 'install',
-  'installVersion', 'setRoute', 'setAutoDownload']);
+  'installVersion', 'setRoute', 'setAutoDownload', 'setProxy']);
 
 /** Center snapshot → upstream DesktopUpdatePresentation for the Web status chip. */
 function presentation(view) {

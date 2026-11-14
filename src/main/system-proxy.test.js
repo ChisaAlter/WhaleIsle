@@ -5,7 +5,10 @@ const https = require('node:https');
 const net = require('node:net');
 const { once } = require('node:events');
 const Module = require('node:module');
-const { agentFor, systemFetch, parseProxyRule, withNetworkCode, TunnelAgent } = require('./system-proxy');
+const {
+  agentFor, systemFetch, parseProxyRule, withNetworkCode, TunnelAgent,
+  parseUpdateProxy, normalizeUpdateProxy, setUpdateProxy, hasUpdateProxy,
+} = require('./system-proxy');
 
 async function listen(t, server) {
   server.listen(0, '127.0.0.1');
@@ -106,4 +109,100 @@ test('inside Electron, fetch follows net and drops to direct only when the proxy
   netError = 'net::ERR_CONNECTION_RESET';
   await assert.rejects(systemFetch('https://example.test/a'), { code: 'ECONNRESET' });
   assert.equal(global.fetch.mock.callCount(), 1);
+});
+
+test('an update proxy must be a bare plain HTTP host and port', () => {
+  assert.equal(normalizeUpdateProxy(''), '');
+  assert.equal(normalizeUpdateProxy('  '), '');
+  assert.equal(normalizeUpdateProxy('127.0.0.1:7890'), 'http://127.0.0.1:7890');
+  assert.equal(normalizeUpdateProxy('http://proxy.lan:8080'), 'http://proxy.lan:8080');
+  assert.equal(normalizeUpdateProxy('http://proxy.lan:80'), 'http://proxy.lan:80');
+  assert.equal(normalizeUpdateProxy('proxy.lan:080'), 'http://proxy.lan:80');
+  assert.equal(normalizeUpdateProxy('[::1]:7890'), 'http://[::1]:7890');
+  assert.deepEqual(parseUpdateProxy('[::1]:7890'), { host: '::1', port: 7890, url: 'http://[::1]:7890' });
+  for (const bad of ['socks5://127.0.0.1:1080', 'https://proxy.lan:443', 'http://user:pass@proxy.lan:8080',
+    '127.0.0.1', 'http://proxy.lan:0', 'http://proxy.lan:8080/path', 'http://proxy.lan:8080?x=1', '::::', 'http://']) {
+    assert.throws(() => normalizeUpdateProxy(bad), /更新代理/, bad);
+  }
+});
+
+test('an update proxy replaces the system decision and an invalid one changes nothing', async (t) => {
+  t.after(() => setUpdateProxy(''));
+  assert.equal(hasUpdateProxy(), false);
+  await setUpdateProxy('127.0.0.1:7890');
+  assert.equal(hasUpdateProxy(), true);
+  const agent = await agentFor('https://github.com/x');
+  assert.ok(agent instanceof TunnelAgent);
+  assert.deepEqual({ host: agent.proxy.host, port: agent.proxy.port }, { host: '127.0.0.1', port: 7890 });
+  assert.equal(await agentFor('http://plain.example.test/x'), null, 'only https goes through the tunnel');
+  await assert.rejects(setUpdateProxy('socks5://127.0.0.1:1080'), /只支持普通 HTTP/);
+  assert.equal(hasUpdateProxy(), true, 'the previous proxy stays in force');
+  assert.equal((await agentFor('https://github.com/x')).proxy.port, 7890);
+  await setUpdateProxy('');
+  assert.equal(hasUpdateProxy(), false);
+  assert.equal(await agentFor('https://github.com/x'), null);
+});
+
+test('inside Electron the update proxy is set on the updater session and its failures never go direct', async (t) => {
+  t.after(() => setUpdateProxy(''));
+  const proxyCalls = [];
+  const fetchCalls = [];
+  let netError;
+  const updaterSession = {
+    setProxy: async (config) => { proxyCalls.push(config); },
+    fetch: async (url, init) => {
+      fetchCalls.push([url, init]);
+      if (netError) throw new Error(netError);
+      return { ok: true, via: 'updater-session' };
+    },
+  };
+  const electron = { app: { isReady: () => true }, net: { fetch: async () => ({ ok: true, via: 'default-net' }) } };
+  const load = Module._load;
+  t.mock.method(Module, '_load', function (id, ...args) {
+    if (id === 'electron') return electron;
+    if (id === 'electron-updater/out/electronHttpExecutor') return { getNetSession: () => updaterSession };
+    return load.call(this, id, ...args);
+  });
+  t.mock.method(global, 'fetch', async () => ({ ok: true, via: 'direct' }));
+
+  await setUpdateProxy('127.0.0.1:7890');
+  assert.deepEqual(proxyCalls, [{ mode: 'fixed_servers', proxyRules: 'http://127.0.0.1:7890' }]);
+  assert.equal((await systemFetch('https://example.test/a')).via, 'updater-session');
+  assert.deepEqual(fetchCalls[0], ['https://example.test/a', { cache: 'no-store' }]);
+  netError = 'net::ERR_PROXY_CONNECTION_FAILED';
+  await assert.rejects(systemFetch('https://example.test/a'), { code: 'ECONNREFUSED' });
+  assert.equal(global.fetch.mock.callCount(), 0, 'a user-chosen proxy is not bypassed');
+
+  await setUpdateProxy('');
+  assert.deepEqual(proxyCalls.at(-1), { mode: 'system' });
+  netError = undefined;
+  assert.equal((await systemFetch('https://example.test/a')).via, 'default-net');
+});
+
+test('a failed or concurrent proxy change leaves the saved choice and the updater session in agreement', async (t) => {
+  t.after(() => setUpdateProxy(''));
+  const applied = [];
+  let failNext = false;
+  let slowFirst = true;
+  const updaterSession = { setProxy: async (config) => {
+    if (failNext) { failNext = false; throw new Error('session refused'); }
+    if (slowFirst) { slowFirst = false; await new Promise((resolve) => setTimeout(resolve, 20)); }
+    applied.push(config.proxyRules || config.mode);
+  } };
+  const electron = { app: { isReady: () => true } };
+  const load = Module._load;
+  t.mock.method(Module, '_load', function (id, ...args) {
+    if (id === 'electron') return electron;
+    if (id === 'electron-updater/out/electronHttpExecutor') return { getNetSession: () => updaterSession };
+    return load.call(this, id, ...args);
+  });
+
+  // The slow first change must not be overtaken by the second: last call wins on both sides.
+  await Promise.all([setUpdateProxy('127.0.0.1:1111'), setUpdateProxy('127.0.0.1:2222')]);
+  assert.deepEqual(applied, ['http://127.0.0.1:1111', 'http://127.0.0.1:2222']);
+  assert.equal((await agentFor('https://github.com/x')).proxy.port, 2222);
+
+  failNext = true;
+  await assert.rejects(setUpdateProxy('127.0.0.1:3333'), /session refused/);
+  assert.equal((await agentFor('https://github.com/x')).proxy.port, 2222, 'a refused session leaves the previous choice');
 });

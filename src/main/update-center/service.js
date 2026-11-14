@@ -80,6 +80,8 @@ function createUpdateCenter(deps) {
     saveRoute = () => {},
     getAutoDownload = () => true,
     saveAutoDownload = () => {},
+    getProxy = () => '',
+    saveProxy = () => {},
     resolveRelease,
     planDelta = async () => ({ ok: false, reason: 'unsupported' }),
     readChecksum,
@@ -117,6 +119,7 @@ function createUpdateCenter(deps) {
       routeExplicit: isRouteExplicit(),
       routes,
       autoDownload: getAutoDownload(),
+      proxy: getProxy(),
       target: target ? {
         version: target.version, tag: target.tag, route: target.route, publishedAt: target.publishedAt,
         notes: target.notes, htmlUrl: target.htmlUrl,
@@ -508,6 +511,16 @@ function createUpdateCenter(deps) {
       const wasDownloading = Boolean(controller);
       if (wasDownloading) await stopActive('pause');
       await saveRoute(route);
+      if (saved.job) saved.job.userPaused = !wasDownloading && Boolean(saved.job.userPaused);
+      if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
+      return check({ manual: true });
+    },
+    // Same shape as setRoute: the transfer is interrupted, the new network path is saved, then re-checked.
+    // saveProxy validates first, so an invalid address changes nothing.
+    setProxy: async (value) => {
+      const wasDownloading = Boolean(controller);
+      await saveProxy(value);
+      if (wasDownloading) await stopActive('pause');
       if (saved.job) saved.job.userPaused = !wasDownloading && Boolean(saved.job.userPaused);
       if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
       return check({ manual: true });

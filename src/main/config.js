@@ -10,6 +10,7 @@ const { normalizeRemotePatch } = require('./remote-patch');
 const { normalizeGrowthState } = require('./pet-growth');
 const { normalizeStats } = require('./pet-stats');
 const petSettings = require('./pet-settings');
+const { normalizeUpdateProxy } = require('./system-proxy');
 const { PRODUCT_NAME, LEGACY_PRODUCT_NAME } = require('../shared/product-identity');
 
 const REMOTE_FEATURE_ENABLED = true;
@@ -53,6 +54,8 @@ const DEFAULTS = {
   askOnUpdate: true,
   // Update center: download new versions in the background, then offer the install.
   autoDownloadUpdates: true,
+  // Plain HTTP proxy for update downloads ('' = follow the system proxy).
+  updateProxy: '',
   // Download route for the managed DSHD runtime ('' = user has not picked yet;
   // enum mirrors src/launcher/release-source.js ROUTES keys).
   downloadRoute: '',
@@ -298,6 +301,11 @@ function normalizeDisabledPlugins(list) {
   ))))))];
 }
 
+/** A stored proxy that no longer parses is dropped rather than breaking every update check. */
+function validUpdateProxy(value) {
+  try { return normalizeUpdateProxy(value); } catch { return ''; }
+}
+
 function normalizeLauncherSettings(config) {
   return {
     ...config,
@@ -305,6 +313,7 @@ function normalizeLauncherSettings(config) {
     autoStartDesktop: config.autoStartDesktop !== false,
     askOnUpdate: config.askOnUpdate !== false,
     autoDownloadUpdates: config.autoDownloadUpdates !== false,
+    updateProxy: validUpdateProxy(config.updateProxy),
     downloadRoute: config.downloadRoute === 'gitee' ? 'cnb' : ['github', 'cnb'].includes(config.downloadRoute) ? config.downloadRoute : '',
     disabledPlugins: normalizeDisabledPlugins(config.disabledPlugins),
   };

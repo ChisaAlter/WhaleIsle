@@ -38,6 +38,12 @@
           <span class="pref-label" id="route-label">下载线路</span>
           <div id="routes" class="segmented" role="radiogroup" aria-labelledby="route-label"></div>
         </div>
+        <label class="pref-row">
+          <span class="pref-label">更新代理</span>
+          <input id="proxy" class="text-field" type="text" inputmode="url" spellcheck="false" autocomplete="off"
+            placeholder="留空跟随系统代理，例如 http://127.0.0.1:7890" aria-describedby="proxy-hint">
+        </label>
+        <p id="proxy-hint" class="pref-hint">用于更新与组件下载，只支持普通 HTTP 代理；修改后会重新检查更新。</p>
         <label class="pref-row toggle">
           <span class="pref-label">有新版本时在后台自动下载</span>
           <input id="auto-download" type="checkbox" role="switch">

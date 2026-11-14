@@ -274,11 +274,19 @@
       return node;
     }));
     $('auto-download').checked = Boolean(view.autoDownload);
+    // Do not overwrite what the user is typing; the saved value is shown whenever the field is not focused.
+    if (document.activeElement !== $('proxy')) $('proxy').value = view.proxy || '';
+    $('proxy').disabled = pending;
     $('auto-download').disabled = pending;
     $('actions').replaceChildren(...model.actions.map(button));
     document.body.classList.add('visible');
   }
 
+  $('proxy').addEventListener('change', (event) => {
+    const value = event.target.value.trim();
+    if (value !== (view?.proxy || '')) void run('setProxy', value);
+  });
+  $('proxy').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.target.blur(); });
   $('auto-download').addEventListener('change', (event) => { void run('setAutoDownload', event.target.checked); });
   $('close').addEventListener('click', () => { void api.close(); });
   document.addEventListener('keydown', (event) => {

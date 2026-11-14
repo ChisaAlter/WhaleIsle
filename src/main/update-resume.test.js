@@ -10,6 +10,7 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { createHash } = require('node:crypto');
 const { downloadFile, downloadReleaseAsset, setGithubTokenProvider } = require('./update');
+const { setUpdateProxy } = require('./system-proxy');
 
 function fixture(t, respond) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-resume-'));
@@ -63,6 +64,16 @@ test('a system proxy that refuses connections falls back to a direct retry', asy
   await downloadFile('https://example.test/Setup.exe', f.dest, null, { ...options, agent: { refuse: true } });
   assert.deepEqual(f.requests.map(request => Boolean(request.agent)), [true, false]);
   assert.ok(fs.readFileSync(f.dest).equals(bytes));
+});
+
+test('a proxy the user chose is retried and never bypassed by a direct request', async t => {
+  t.after(() => setUpdateProxy(''));
+  await setUpdateProxy('127.0.0.1:7890');
+  const f = fixture(t, () => assert.fail('no request may reach the origin directly'));
+  await assert.rejects(downloadFile('https://example.test/Setup.exe', f.dest, null,
+    { ...options, agent: { refuse: true }, maxAttempts: 3 }), { code: 'ECONNREFUSED' });
+  assert.ok(f.requests.length > 1, 'transient proxy failures are retried');
+  assert.ok(f.requests.every(request => request.agent), 'every attempt stayed on the proxy');
 });
 
 test('checksum-backed retries resume written bytes and verify the entire reconstructed file', async t => {
