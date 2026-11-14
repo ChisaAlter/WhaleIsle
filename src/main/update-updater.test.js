@@ -510,6 +510,10 @@ test('a base replaced during its SHA512 scan is not memoized as verified', async
   const mocked = t.mock.method(update, 'sha512HexOfFile', async (...args) => {
     const result = await hash(...args);
     fs.writeFileSync(fixture.installer, 'official installed versioN');
+    // Same-size in-place rewrite: Windows timestamps tick at ~15 ms, so a tiny fixture hashed in
+    // under a tick would keep an identical stat signature. Real installers hash for seconds.
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(fixture.installer, later, later);
     return result;
   });
   await assert.rejects(prepareDifferentialBase(fixture.updater, expectedCheck, fixture.deps), /缓存已变化/);
