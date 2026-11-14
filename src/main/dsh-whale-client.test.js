@@ -472,3 +472,14 @@ for (const [language, labels] of [['zh', ['收件箱', '待审批']], ['en', ['I
     }
   });
 }
+
+test('Big Fish mode headers leave the injected window controls uncovered', () => {
+  // Windows and Linux draw minimize/maximize/close as a fixed top-right strip
+  // (--dshd-wco-controls wide). Both mode headers must end before it, or the
+  // strip covers Exit mode / Open sidebar / New and Close sidebar.
+  const css = fs.readFileSync(CLIENT_FILE, 'utf8');
+  const rule = (selector) => css.match(new RegExp(`${selector.replace(/[.]/g, '\\.')}\\{([^}]*)\\}`))?.[1] || '';
+  assert.match(rule('.dsh-whale-mode-head'), /right:max\(calc\(var\(--dsh-whale-track,360px\) \+ 16px\),var\(--dshd-wco-controls,16px\)\)/);
+  assert.match(rule('.dsh-whale-mode-tabs'), /padding:8px var\(--dshd-wco-controls,12px\) 8px 12px/);
+  assert.match(css, /@media\(max-width:900px\)\{[^@]*\.dsh-whale-mode-head\{right:var\(--dshd-wco-controls,12px\)\}/);
+});
