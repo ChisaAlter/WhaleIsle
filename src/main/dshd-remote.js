@@ -391,7 +391,7 @@ function ensureDshAcpShim({ home, harnessRoot = defaultHarnessRoot(), execPath =
  * @returns {NodeJS.ProcessEnv}
  */
 function buildDaemonChildEnv({
-  baseEnv, home, vendorDir, shimDir, config, harnessOrigin, gitTunnelUrl, gitTunnelToken,
+  baseEnv, home, vendorDir, shimDir, config, harnessOrigin, gitTunnelUrl,
 }) {
   const env = { ...baseEnv };
   env.ELECTRON_RUN_AS_NODE = '1';
@@ -407,7 +407,6 @@ function buildDaemonChildEnv({
   }
   if (harnessOrigin) env.DSHD_HARNESS_ORIGIN = harnessOrigin;
   if (gitTunnelUrl) env.DSHD_GIT_TUNNEL_URL = gitTunnelUrl;
-  if (gitTunnelToken) env.DSHD_GIT_TUNNEL_TOKEN = gitTunnelToken;
   // Same credential law as `dsh web` children: official https host only.
   applyOfficialDeepSeekSpawnEnv(env, { apiKey: config.apiKey, baseUrl: config.baseUrl });
   return env;
@@ -889,7 +888,6 @@ class DshdRemote extends EventEmitter {
       config,
       harnessOrigin: this.getHarnessOrigin() || '',
       gitTunnelUrl: this.gitTunnel?.url || '',
-      gitTunnelToken: this.gitTunnel?.token || '',
     });
 
     const child = spawn(this.execPath, [this.runnerPath, launchFile], {
@@ -899,6 +897,15 @@ class DshdRemote extends EventEmitter {
       // POSIX group leader so the forced stop can reach daemon descendants.
       ...spawnTreeOptions(),
     });
+    // The tunnel token is a credential: it rides the stdin control channel
+    // (same law as `harness-cookie`), never the child env or launch file.
+    if (this.gitTunnel?.token) {
+      try {
+        child.stdin.write(`git-tunnel-token ${this.gitTunnel.token}\n`);
+      } catch {
+        // Child already gone; the ready wait reports the real failure.
+      }
+    }
     const handle = { child, stopping: false, stderrTail: '' };
     this.pendingDaemon = handle;
 

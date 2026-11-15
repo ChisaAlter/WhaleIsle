@@ -186,6 +186,28 @@ describe('GatewaySettingsTab', () => {
     expect(blocked).not.toHaveBeenCalled()
   })
 
+  it('shows the LAN plaintext credential warning only while LAN mode is selected', async () => {
+    const saveRemote = vi.fn(async (patch: RemotePatch) => ({
+      ...SNAP,
+      mode: patch.remoteMode ?? SNAP.mode,
+    }))
+    renderGateway({ saveRemote })
+    // SNAP starts in LAN mode: the warning is already visible on entry.
+    expect(await screen.findByText(en.lanPlaintextWarning)).toBeTruthy()
+    fireEvent.click(await screen.findByRole('radio', { name: en.modeRelay }))
+    await waitFor(() => { expect(saveRemote).toHaveBeenCalledWith({ remoteMode: 'relay' }) })
+    await waitFor(() => { expect(screen.queryByText(en.lanPlaintextWarning)).toBeNull() })
+    fireEvent.click(await screen.findByRole('radio', { name: en.modeLan }))
+    await waitFor(() => { expect(saveRemote).toHaveBeenCalledWith({ remoteMode: 'lan' }) })
+    expect(await screen.findByText(en.lanPlaintextWarning)).toBeTruthy()
+  })
+
+  it('keeps the LAN credential warning off when a relay-mode snapshot loads', async () => {
+    renderGateway({ getRemote: vi.fn(async () => ({ ...SNAP, mode: 'relay' as const })) })
+    await screen.findByLabelText(en.relayUrl)
+    expect(screen.queryByText(en.lanPlaintextWarning)).toBeNull()
+  })
+
   it('switches to relay when credentials exist (T4/T5)', async () => {
     const saveRemote = vi.fn(async (patch: RemotePatch) => ({
       ...SNAP,

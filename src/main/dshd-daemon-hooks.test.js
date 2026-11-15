@@ -28,6 +28,31 @@ test('applyDaemonStdinLine stores a sanitized harness-cookie for host RPC', asyn
   }
 });
 
+test('applyDaemonStdinLine stores the git tunnel token for gitRpc', async () => {
+  const { applyDaemonStdinLine, installDesktopRpcHooks } = await import('./dshd-daemon-hooks.mjs');
+  installDesktopRpcHooks();
+  assert.equal(applyDaemonStdinLine('git-tunnel-token tok-git-1'), 'git-tunnel-token');
+  process.env.DSHD_GIT_TUNNEL_URL = 'http://127.0.0.1:9';
+  let seen = null;
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen = { url: String(url), headers: init.headers };
+    return new Response(JSON.stringify({ ok: true, value: { branch: 'main' } }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const value = await globalThis.__dshdDesktopRpc.gitRpc({ action: 'git-status', cwd: '/repo', payload: {} });
+    assert.deepEqual(value, { branch: 'main' });
+    assert.equal(seen.url, 'http://127.0.0.1:9/git');
+    assert.equal(seen.headers['x-dshd-git-token'], 'tok-git-1');
+  } finally {
+    delete process.env.DSHD_GIT_TUNNEL_URL;
+    applyDaemonStdinLine('git-tunnel-token ');
+    globalThis.fetch = prev;
+  }
+});
+
 test('shared mux replays only current pending approvals to a later subscriber', async () => {
   const { applyDaemonStdinLine, installDesktopRpcHooks } = await import('./dshd-daemon-hooks.mjs');
   const previousSocket = globalThis.WebSocket;

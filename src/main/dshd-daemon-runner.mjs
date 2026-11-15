@@ -21,6 +21,8 @@
  *   - `dshd_daemon_start_failed` startup threw; process exits 1
  *   - `dshd_daemon_stopped`      graceful stop completed; process exits 0
  *   - stdin line `stop`          graceful stop request from the parent
+ *   - stdin line `harness-origin|harness-cookie|git-tunnel-token …`
+ *                                parent-delivered credentials (never env/argv)
  *   - stdin end/close            parent died → graceful stop
  *
  * argv[2] is the path to a launch JSON file:

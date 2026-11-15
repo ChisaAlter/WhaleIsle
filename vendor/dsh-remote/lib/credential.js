@@ -26,6 +26,14 @@ const TIMEOUT = 8000
 // harmless on PowerShell 7, where the type is already available.
 const PS_SECURITY_ASSEMBLY = 'Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue;'
 
+// The DPAPI protect script reads the plaintext password from stdin as UTF-8.
+// Keeping it out of argv keeps it out of the Windows process list (issue #30
+// fix for credential.js).
+const PS_PROTECT_STDIN_SCRIPT = PS_SECURITY_ASSEMBLY +
+  '$p=(New-Object IO.StreamReader([Console]::OpenStandardInput(),[Text.Encoding]::UTF8)).ReadToEnd();' +
+  '$s=[System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($p),$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);' +
+  '[Convert]::ToBase64String($s)'
+
 function run(bin, args, input) {
   return new Promise((resolve, reject) => {
     execFile(bin, args, { timeout: TIMEOUT, maxBuffer: 1 << 20, ...(input != null ? { input } : {}) }, (err, stdout, stderr) => {
@@ -57,50 +65,63 @@ function safeReason(err, password) {
   return scrubbed.replace(/\s+/g, ' ').trim().slice(0, 300)
 }
 
-/** PowerShell one-liner that DPAPI-protects a password (CurrentUser scope).
- *  Exported because the issue #30 fix (the mandatory Add-Type preamble) is only
- *  observable here — a Windows host cannot be exercised from the test suite. */
-export function dpapiProtectScript(password) {
-  return PS_SECURITY_ASSEMBLY +
-    `$p='${String(password).replace(/'/g, "''")}';` +
-    `$s=[System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($p),$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser);` +
-    `[Convert]::ToBase64String($s)`
-}
-
-/** PowerShell one-liner that reverses dpapiProtectScript(). */
+/** PowerShell one-liner that reverses DPAPI protect (CurrentUser scope). The
+ *  base64 ciphertext is argv-visible but is the on-disk value anyway; only the
+ *  plaintext password must stay off the process list. */
 export function dpapiUnprotectScript(b64) {
   return PS_SECURITY_ASSEMBLY +
     `$s=[Convert]::FromBase64String('${String(b64).replace(/'/g, "''")}');` +
     `[Text.Encoding]::UTF8.GetString([System.Security.Cryptography.ProtectedData]::Unprotect($s,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser))`
 }
 
+/** One token on the `security -i` stdin command stream: the plaintext password
+ *  travels inside the command, never on argv. Single quotes carry literal
+ *  bytes; an embedded quote splices a '"'"' segment. Newlines cannot ride one
+ *  command line, so they fail out to the plaintext fallback. */
+function securityInteractiveArg(value) {
+  const text = String(value)
+  if (/[\r\n]/.test(text)) {
+    throw new Error('secret contains a newline the security interactive command stream cannot carry')
+  }
+  return `'${text.replace(/'/g, `'"'"'`)}'`
+}
+
 /** Save a password to the OS store. Resolves {ok, backend, error} — ok:false on
  * any failure (caller falls back to plaintext). `error` is a password-free
- * diagnostic for the UI. */
-export async function saveSecret(machineId, password, secretsDir) {
+ * diagnostic for the UI. The plaintext password never appears on argv:
+ * macOS gets `security -i` with the command on stdin, Windows a fixed
+ * PowerShell script that reads the password from stdin, Linux secret-tool
+ * stdin (unchanged).
+ * `io` injects { run, platform } for tests. */
+export async function saveSecret(machineId, password, secretsDir, io = {}) {
+  const runCmd = io.run || run
+  const platform = io.platform || process.platform
   const acc = account(machineId)
   try {
-    if (process.platform === 'darwin') {
-      await run('security', ['add-generic-password', '-U', '-s', SERVICE, '-a', acc, '-w', String(password)])
+    if (platform === 'darwin') {
+      const command = 'add-generic-password -U' +
+        ` -s ${securityInteractiveArg(SERVICE)}` +
+        ` -a ${securityInteractiveArg(acc)}` +
+        ` -w ${securityInteractiveArg(String(password))}\n`
+      await runCmd('security', ['-i'], command)
       return { ok: true, backend: 'keychain', error: '' }
     }
-    if (process.platform === 'win32') {
+    if (platform === 'win32') {
       // DPAPI-encrypt and store under the harness home.
-      const script = dpapiProtectScript(password)
-      const b64 = await run('powershell', ['-NoProfile', '-STA', '-Command', script])
+      const b64 = await runCmd('powershell', ['-NoProfile', '-STA', '-Command', PS_PROTECT_STDIN_SCRIPT], String(password))
       if (!b64) return { ok: false, backend: 'windows', error: 'DPAPI returned no ciphertext' }
       mkdirSync(secretsDir || '.', { recursive: true })
       writeFileSync(joinPath(secretsDir || '.', acc + '.bin'), b64, 'utf8')
       return { ok: true, backend: 'windows', error: '' }
     }
-    if (process.platform === 'linux') {
-      await run('secret-tool', ['store', '--label=' + SERVICE, 'service', SERVICE, 'account', acc], String(password) + '\n')
+    if (platform === 'linux') {
+      await runCmd('secret-tool', ['store', '--label=' + SERVICE, 'service', SERVICE, 'account', acc], String(password) + '\n')
       return { ok: true, backend: 'secret', error: '' }
     }
   } catch (err) {
     return { ok: false, backend: platformBackend(), error: safeReason(err, password) || 'secret store write failed' }
   }
-  return { ok: false, backend: platformBackend(), error: `unsupported platform: ${process.platform}` }
+  return { ok: false, backend: platformBackend(), error: `unsupported platform: ${platform}` }
 }
 
 /** Decide where a machine password is persisted (issue #30).

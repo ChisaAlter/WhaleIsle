@@ -1,7 +1,7 @@
 /** Settings → Remote → Gateway: offer v2 connections and local daemon settings. */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, DisclosureRow, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, DisclosureRow, IconWarningOutline16, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
 import { ipcErrorMessage } from './relay-copy.ts'
@@ -300,6 +300,13 @@ export function GatewaySettingsTab({
           </Button>
         </div>
       </div>
+
+      {mode === 'lan' ? (
+        <div className={css.lanWarning} role="note">
+          <IconWarningOutline16 aria-hidden="true" />
+          <span>{t('lanPlaintextWarning')}</span>
+        </div>
+      ) : null}
 
       <div className={css.row}>
         <div className={css.rowText}>

@@ -4,11 +4,28 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { dispatchGitTunnel } = require('./dshd-git-dispatch');
 
+const MAX_BODY_BYTES = 1024 * 1024;
+
 function readJson(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
+    let size = 0;
+    let failed = false;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        if (!failed) {
+          failed = true;
+          const error = new Error('payload too large');
+          error.statusCode = 413;
+          reject(error);
+        }
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
+      if (failed) return;
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
       } catch (error) {
@@ -21,6 +38,13 @@ function readJson(req) {
 
 function mintGitTunnelToken() {
   return crypto.randomBytes(24).toString('hex');
+}
+
+function tokenMatches(header, token) {
+  if (typeof header !== 'string') return false;
+  const given = Buffer.from(header, 'utf8');
+  const expected = Buffer.from(token, 'utf8');
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
 /**
@@ -40,7 +64,7 @@ function startGitTunnelServer(options) {
       fail(403, 'loopback only');
       return;
     }
-    if (req.headers['x-dshd-git-token'] !== token) {
+    if (!tokenMatches(req.headers['x-dshd-git-token'], token)) {
       fail(403, 'unauthorized');
       return;
     }
@@ -59,6 +83,10 @@ function startGitTunnelServer(options) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, value }));
     } catch (error) {
+      if (error && error.statusCode === 413) {
+        fail(413, 'payload too large');
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: message }));
@@ -79,6 +107,7 @@ function startGitTunnelServer(options) {
 }
 
 module.exports = {
+  MAX_BODY_BYTES,
   mintGitTunnelToken,
   startGitTunnelServer,
 };
