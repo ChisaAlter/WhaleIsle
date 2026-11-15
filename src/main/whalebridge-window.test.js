@@ -23,6 +23,10 @@ function fixture() {
       this.webContents = new EventEmitter();
       this.webContents.getURL = () => this.url || '';
       this.webContents.mainFrame = { url: '' };
+      this.webContents.session = {
+        setPermissionRequestHandler: handler => { this.webContents.session.requestHandler = handler; },
+        setPermissionCheckHandler: handler => { this.webContents.session.checkHandler = handler; },
+      };
       this.webContents.ipc = new EventEmitter();
       this.webContents.ipc.handlers = new Map();
       this.webContents.ipc.handle = (channel, callback) => this.webContents.ipc.handlers.set(channel, callback);
@@ -252,4 +256,16 @@ test('the isolated preload exposes only three window methods to the exact manage
   assert.deepEqual(state, { maximized: true });
   unsubscribe();
   assert.equal(ipcRenderer.listenerCount('whalebridge:window-state'), 0);
+});
+
+test('the WhaleBridge session denies every permission request and check', () => {
+  const { openWhaleBridgeWindow, windows } = fixture();
+  openWhaleBridgeWindow('http://127.0.0.1:19198/');
+  const { session } = windows[0].webContents;
+  const decisions = [];
+  for (const permission of ['geolocation', 'clipboard-read', 'media', 'openExternal']) {
+    session.requestHandler(windows[0].webContents, permission, allowed => decisions.push(allowed));
+  }
+  assert.deepEqual(decisions, [false, false, false, false]);
+  assert.equal(session.checkHandler(windows[0].webContents, 'clipboard-read', 'http://127.0.0.1:19198', {}), false);
 });
