@@ -24,6 +24,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 // The vendored harness ships inside resources/vendor/deepseek-harness.tar in
 // packaged builds, so the bridge binds a snapshot under src/main instead of
@@ -65,9 +66,7 @@ function ariaToAccelerator(aria, platform) {
 }
 
 function writeFileAtomic(file, raw) {
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, raw, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, raw, { encoding: 'utf8', mode: 0o600 });
 }
 
 /**

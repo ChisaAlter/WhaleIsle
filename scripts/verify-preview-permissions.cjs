@@ -86,6 +86,7 @@ function establishProfileRoot() {
     };
   }
 
+  // eslint-disable-next-line no-restricted-syntax -- Electron userData 由 detached cleanup supervisor 在宿主退出后回收（含归属标记与 receipt）
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-preview-permissions-'));
   const ownerPid = process.pid;
   const token = crypto.randomBytes(24).toString('hex');

@@ -218,3 +218,12 @@ test('a credentials file saved with a byte order mark is still read', () => {
   fs.writeFileSync(credentialsPath(), `\uFEFF${fs.readFileSync(credentialsPath(), 'utf8')}`);
   assert.equal(loadConfig().apiKey, 'sk-secret-123');
 });
+
+test('credentials.json is owner-only on POSIX, encrypted or plaintext', { skip: process.platform === 'win32' }, () => {
+  for (const available of [true, false]) {
+    resetDisk();
+    setSafeStorageForTests(fakeSafeStorage({ available }));
+    saveConfig({ apiKey: `mode-check-${available}`, workspace: userData });
+    assert.equal(fs.statSync(credentialsPath()).mode & 0o777, 0o600, `keychain available=${available}`);
+  }
+});

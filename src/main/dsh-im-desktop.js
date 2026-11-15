@@ -6,6 +6,7 @@ const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { pathToFileURL } = require('url');
 const { missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir, stripBlockFromFile } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 /** npm package name (also used for market/forensics aliases). */
 const DSH_IM_PACKAGE = '@xmanrui/dsh-im';
@@ -149,9 +150,7 @@ function ensureDesktopDshIm(options = {}) {
   const existed = fs.existsSync(overlayFile);
   const existing = existed ? fs.readFileSync(overlayFile, 'utf8') : '';
   if (existing !== overlayContents) {
-    const tmp = `${overlayFile}.tmp`;
-    fs.writeFileSync(tmp, overlayContents, 'utf8');
-    fs.renameSync(tmp, overlayFile);
+    atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
   }
   return {
     ok: true,

@@ -57,11 +57,6 @@
       "count": 3
     }
   },
-  "src/main/update-updater.js": {
-    "no-unsafe-finally": {
-      "count": 1
-    }
-  },
   "src/main/updates-state.js": {
     "whaleisle/ipc-handler-reads-event": {
       "count": 3

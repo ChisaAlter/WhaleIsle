@@ -36,6 +36,7 @@ async function launch() {
   }
   const executable = process.env.ELECTRON_PATH || electron;
   assert.ok(fs.existsSync(executable), 'provide ELECTRON_PATH for an installed Electron');
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync（含重试）回收
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-update-net-'));
   env.TEMP = env.TMP = path.join(dir, 'temp'); fs.mkdirSync(env.TEMP);
   try {

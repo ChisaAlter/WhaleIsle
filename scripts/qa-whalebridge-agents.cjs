@@ -30,6 +30,7 @@ const agentEnvironment = [
 async function launch() {
  const electron = process.env.ELECTRON_PATH || path.join(repo, 'node_modules/electron/dist/electron.exe');
  assert.ok(fs.existsSync(electron), 'provide ELECTRON_PATH for the production Electron runtime');
+ // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'whalebridge-agents-'));
  const output = path.resolve(process.env.WHALEBRIDGE_QA_SCREENSHOTS || path.join(repo, '.tmp/whalebridge-agents-qa'));
  const payload = path.resolve(process.env.WHALEBRIDGE_QA_PACKAGE || path.join(repo, '.tmp/whalebridge-package'));

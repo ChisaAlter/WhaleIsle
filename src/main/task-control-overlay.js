@@ -5,6 +5,7 @@ const path = require('path');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 /** npm package name (also the profile node_modules junction name). */
 const TASK_CONTROL_PACKAGE = 'dsh-task-control';
@@ -81,9 +82,7 @@ function ensureDesktopTaskControl(options = {}) {
     `      name: ${JSON.stringify(TASK_CONTROL_PACKAGE)}`,
     '',
   ].join('\n');
-  const tmp = `${overlayFile}.tmp`;
-  fs.writeFileSync(tmp, overlayContents, 'utf8');
-  fs.renameSync(tmp, overlayFile);
+  atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
   return {
     ok: true,
     added: !existed,

@@ -2,10 +2,10 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { copyFile, lstat, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { cnbClient, supplementMacosMirror, validateMirrorAssets } from './sync-cnb.mjs'
 
 const workflow = '.github/workflows/release-macos-diagnostic.yml'
@@ -161,8 +161,7 @@ export async function supplementMacosRelease({ repo, runId, tag, request, gh, mi
   ])
   const { macosName, oldNames } = macosSupplementDecision({ repo, tag, run, release: before.release, tagSha: before.sha, artifacts })
   requireAssets(before.release, oldNames, macosName)
-  const directory = await mkdtemp(join(tmpdir(), 'whale-macos-supplement-'))
-  try {
+  return withOwnedTempDir('whale-macos-supplement-', async (directory) => {
     const sourceDir = join(directory, 'build-source')
     await gh(['run', 'download', String(runId), '--repo', repo, '--name', sourceArtifactName, '--dir', sourceDir])
     const sourceNames = await readdir(sourceDir)
@@ -216,7 +215,7 @@ export async function supplementMacosRelease({ repo, runId, tag, request, gh, mi
       request: mirrorRequest, fetchImpl, repo: mirrorRepo, expectedMacos: macos, output })
     output('Verified macOS supplement: ' + after.release.html_url)
     return { url: after.release.html_url, sha: before.sha, macos, mirror: mirrored }
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  })
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

@@ -67,6 +67,71 @@ const BROWSER_MODULE_FILES = [
   'vendor/dsh-remote/plugin-src/client/**/*.js',
 ];
 
+// Base no-restricted-syntax selectors. File-scoped blocks below must re-include
+// these because a later flat-config entry replaces the whole option array.
+const RESTRICTED_SYNTAX_BASE = [
+  {
+    selector: 'Property[key.name="sandbox"][value.value=false], Property[key.value="sandbox"][value.value=false]',
+    message: '渲染进程必须开启 Chromium 沙箱；确有必要时用 eslint-disable-next-line 并在 -- 后写明理由。',
+  },
+  {
+    selector: 'CallExpression[callee.object.name="process"][callee.property.name="kill"][arguments.0.type="UnaryExpression"][arguments.0.operator="-"]',
+    message: '按进程组发信号请改用 src/shared/process-tree.js 的 killProcessTree。',
+  },
+  {
+    selector: "CallExpression[callee.name=/^(spawn|spawnSync|exec|execSync|execFile|execFileSync)$/][arguments.0.value='taskkill']:has(Literal[value=/^\\/t$/i])",
+    message: 'taskkill /T 按树终止请改用 src/shared/process-tree.js 的 killProcessTree。',
+  },
+  {
+    selector: "CallExpression[callee.object.name=/^(child_process|cp)$/][callee.property.name=/^(spawn|spawnSync|exec|execSync|execFile|execFileSync)$/][arguments.0.value='taskkill']:has(Literal[value=/^\\/t$/i])",
+    message: 'taskkill /T 按树终止请改用 src/shared/process-tree.js 的 killProcessTree。',
+  },
+];
+
+// Direct removal primitives that must go through src/shared/fs-safe.js
+// safeRemove (never throws, can log). Member calls on the conventional
+// fs / fs.promises / fsPromises handles are all covered.
+const RESTRICTED_FS_REMOVE = [
+  {
+    selector: 'CallExpression[callee.object.name="fs"][callee.property.name=/^(rmSync|unlinkSync)$/]',
+    message: '删除改用 src/shared/fs-safe.js 的 safeRemove/safeRemoveSync（失败不抛出、可记录）；不得直接调用 fs.rmSync/fs.unlinkSync。',
+  },
+  {
+    selector: 'CallExpression[callee.object.object.name="fs"][callee.object.property.name="promises"][callee.property.name=/^(rm|unlink)$/]',
+    message: '删除改用 src/shared/fs-safe.js 的 safeRemove（失败不抛出、可记录）；不得直接调用 fs.promises.rm/fs.promises.unlink。',
+  },
+  {
+    selector: 'CallExpression[callee.object.name="fsPromises"][callee.property.name=/^(rm|unlink)$/]',
+    message: '删除改用 src/shared/fs-safe.js 的 safeRemove（失败不抛出、可记录）；不得直接调用 fsPromises.rm/fsPromises.unlink。',
+  },
+];
+
+// Direct writes that must go through src/shared/fs-safe.js atomicWriteFile
+// (same-directory temp + rename; a crash mid-write cannot truncate the file).
+const RESTRICTED_FS_WRITE = [
+  {
+    selector: 'CallExpression[callee.object.name="fs"][callee.property.name=/^(writeFile|writeFileSync)$/]',
+    message: '写入改用 src/shared/fs-safe.js 的 atomicWriteFile/atomicWriteFileSync（同目录临时文件 + rename）；不得直接调用 fs.writeFile/fs.writeFileSync。',
+  },
+  {
+    selector: 'CallExpression[callee.object.object.name="fs"][callee.object.property.name="promises"][callee.property.name="writeFile"]',
+    message: '写入改用 src/shared/fs-safe.js 的 atomicWriteFile（同目录临时文件 + rename）；不得直接调用 fs.promises.writeFile。',
+  },
+  {
+    selector: 'CallExpression[callee.object.name="fsPromises"][callee.property.name="writeFile"]',
+    message: '写入改用 src/shared/fs-safe.js 的 atomicWriteFile（同目录临时文件 + rename）；不得直接调用 fsPromises.writeFile。',
+  },
+];
+
+// Raw mkdtemp in scripts must go through src/shared/fs-safe.js
+// withOwnedTempDir, which owns recursive cleanup even when the callback throws.
+const RESTRICTED_MKDTEMP = [
+  {
+    selector: 'CallExpression[callee.name=/^(mkdtemp|mkdtempSync)$/], CallExpression[callee.property.name=/^(mkdtemp|mkdtempSync)$/]',
+    message: '临时目录改用 src/shared/fs-safe.js 的 withOwnedTempDir（finally 自动回收）；确需特殊回收方式时用 eslint-disable-next-line 并在 -- 后写明理由。',
+  },
+];
+
 export default [
   {
     ignores: [
@@ -141,24 +206,7 @@ export default [
       'no-setter-return': 'error',
       'no-async-promise-executor': 'error',
       'whaleisle/open-external-http': 'error',
-      'no-restricted-syntax': ['error',
-        {
-          selector: 'Property[key.name="sandbox"][value.value=false], Property[key.value="sandbox"][value.value=false]',
-          message: '渲染进程必须开启 Chromium 沙箱；确有必要时用 eslint-disable-next-line 并在 -- 后写明理由。',
-        },
-        {
-          selector: 'CallExpression[callee.object.name="process"][callee.property.name="kill"][arguments.0.type="UnaryExpression"][arguments.0.operator="-"]',
-          message: '按进程组发信号请改用 src/shared/process-tree.js 的 killProcessTree。',
-        },
-        {
-          selector: "CallExpression[callee.name=/^(spawn|spawnSync|exec|execSync|execFile|execFileSync)$/][arguments.0.value='taskkill']:has(Literal[value=/^\\/t$/i])",
-          message: 'taskkill /T 按树终止请改用 src/shared/process-tree.js 的 killProcessTree。',
-        },
-        {
-          selector: "CallExpression[callee.object.name=/^(child_process|cp)$/][callee.property.name=/^(spawn|spawnSync|exec|execSync|execFile|execFileSync)$/][arguments.0.value='taskkill']:has(Literal[value=/^\\/t$/i])",
-          message: 'taskkill /T 按树终止请改用 src/shared/process-tree.js 的 killProcessTree。',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE],
     },
   },
   {
@@ -223,5 +271,26 @@ export default [
     ],
     plugins: { whaleisle },
     rules: { 'whaleisle/no-raw-html': 'error' },
+  },
+  // fs-safe (#432): deletion in update-center and the workspace writer must not
+  // throw or truncate; every call goes through safeRemove/atomicWriteFile.
+  {
+    files: [
+      'src/main/update-center/**/*.{js,cjs}',
+      'src/main/workspace-fs.js',
+    ],
+    ignores: ['**/*.test.{js,mjs,cjs}'],
+    rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE, ...RESTRICTED_FS_REMOVE] },
+  },
+  {
+    files: ['src/main/workspace-fs.js', 'src/main/config.js'],
+    ignores: ['**/*.test.{js,mjs,cjs}'],
+    rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE, ...RESTRICTED_FS_REMOVE, ...RESTRICTED_FS_WRITE] },
+  },
+  // scripts/** non-test code must not leak or hand-roll temp dirs.
+  {
+    files: ['scripts/**/*.{js,mjs,cjs}'],
+    ignores: ['**/*.test.{js,mjs,cjs}'],
+    rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE, ...RESTRICTED_MKDTEMP] },
   },
 ];

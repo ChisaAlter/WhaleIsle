@@ -23,6 +23,7 @@ const executable = process.env.ELECTRON_PATH;
 assert.ok(executable && existsSync(executable), 'ELECTRON_PATH must name the existing Electron executable');
 mkdirSync(output, { recursive: true });
 mkdirSync(join(root, '.tmp'), { recursive: true });
+// eslint-disable-next-line no-restricted-syntax -- QA 验收证据目录按设计保留供复核
 const dir = mkdtempSync(join(root, '.tmp', 'whalebridge-community-qa-'));
 const data = join(dir, 'component');
 const home = join(dir, 'isolated-home');

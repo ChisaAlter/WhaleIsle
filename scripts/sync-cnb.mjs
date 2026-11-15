@@ -2,11 +2,11 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, openAsBlob } from 'node:fs'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
+import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { validateReleaseAssets } from './check-release-assets.mjs'
 import { validateManifest } from '../src/launcher/whalebridge.js'
 
@@ -271,16 +271,16 @@ export async function supplementMacosMirror({ release, directory, sha, request, 
 
 export async function syncSource({ repo, token, git = (args, options) => execFileSync('git', args, options) }) {
   if (!safeRepo.test(repo) || !token) throw new Error('CNB repository and push credentials are required')
-  const directory = await mkdtemp(join(tmpdir(), 'cnb-auth-'))
-  try {
+  return withOwnedTempDir('cnb-auth-', async (directory) => {
     const askpass = join(directory, 'askpass.sh')
-    await writeFile(askpass, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "cnb" ;;\n  *) printf "%s\\n" "$CNB_TOKEN" ;;\nesac\n', { mode: 0o700 })
-    git(['-c', 'credential.helper=', '-c', 'core.askPass=' + askpass, 'push', 'https://cnb.cool/' + repo + '.git',
-      'refs/remotes/origin/main:refs/heads/main', '--tags'], {
-      env: { ...process.env, CNB_TOKEN: token, GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'],
-    })
-  } catch { throw new Error('CNB source push failed; check token permissions, repository limits and branch/tag divergence (no force push)') }
-  finally { await rm(directory, { recursive: true, force: true }) }
+    try {
+      await writeFile(askpass, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "cnb" ;;\n  *) printf "%s\\n" "$CNB_TOKEN" ;;\nesac\n', { mode: 0o700 })
+      git(['-c', 'credential.helper=', '-c', 'core.askPass=' + askpass, 'push', 'https://cnb.cool/' + repo + '.git',
+        'refs/remotes/origin/main:refs/heads/main', '--tags'], {
+        env: { ...process.env, CNB_TOKEN: token, GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch { throw new Error('CNB source push failed; check token permissions, repository limits and branch/tag divergence (no force push)') }
+  })
 }
 
 async function main() {
@@ -298,13 +298,12 @@ async function main() {
   const release = JSON.parse(gh(['api', 'repos/' + repo + '/releases/' + (tag ? 'tags/' + tag : 'latest')]))
   if (!stableTag.test(release.tag_name) || release.draft || release.prerelease) throw new Error('Only stable published releases can be mirrored')
   const sha = execFileSync('git', ['rev-parse', 'refs/tags/' + release.tag_name + '^{commit}'], { encoding: 'utf8' }).trim()
-  const directory = await mkdtemp(join(tmpdir(), 'cnb-release-'))
-  try {
+  await withOwnedTempDir('cnb-release-', async (directory) => {
     gh(['release', 'download', release.tag_name, '--repo', repo, '--dir', directory])
     const downloaded = await readdir(directory)
     if (downloaded.length !== release.assets.length) throw new Error('GitHub download did not contain the expected release assets')
     await mirrorRelease({ release, directory, sha, request, repo: mirrorRepo })
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  })
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch(error => { console.error(error.message); process.exitCode = 1 })

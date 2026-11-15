@@ -6,6 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { safeRemove } = require('../shared/fs-safe');
 const { EventEmitter } = require('events');
 const { app } = require('electron');
 
@@ -348,7 +349,9 @@ async function prepareDifferentialBase(autoUpdater, info, deps = {}) {
         checkedBases.set(key, { stat: recovered, result });
         return result;
       } finally {
-        try { await fs.promises.unlink(staged); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        // Best-effort only: a leftover staging file must not mask a
+        // successful recovery commit, and ENOENT is the common case.
+        await safeRemove(staged);
       }
     }
     const mismatch = Boolean(stat || sources.some(source => source.stat));

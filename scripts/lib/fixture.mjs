@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 export function makeFixture(t, files) {
+  // eslint-disable-next-line no-restricted-syntax -- 测试夹具由 t.after 回收
   const root = mkdtempSync(join(tmpdir(), 'dshd-gate-'))
   for (const [rel, content] of Object.entries(files)) {
     const p = join(root, rel)

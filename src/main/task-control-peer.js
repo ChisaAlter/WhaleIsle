@@ -12,6 +12,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { randomBytes, randomUUID } = require('crypto');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const PEER_FILENAME = 'task-control-peer.json';
 const MAX_BODY_BYTES = 16 * 1024;
@@ -53,9 +54,7 @@ function writePeerFile(stateDir, peer) {
   const file = path.join(stateDir, PEER_FILENAME);
   const contents = JSON.stringify({ ...peer, schemaVersion: 1 }, null, 2);
   fs.mkdirSync(stateDir, { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, contents, 'utf8');
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, contents, { encoding: 'utf8' });
   return file;
 }
 

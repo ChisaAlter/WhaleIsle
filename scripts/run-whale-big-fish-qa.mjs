@@ -14,6 +14,7 @@ const output = path.resolve(arg('--output') ?? path.join(root, 'work/whale-big-f
 const cli = createRequire(path.join(runtime, 'apps/cli/package.json'));
 const load = name => import(pathToFileURL(cli.resolve(name)).href);
 const parent = await fs.realpath(os.tmpdir());
+// eslint-disable-next-line no-restricted-syntax -- 目录已在下方 finally 中 fs.rm 回收
 const home = await fs.mkdtemp(path.join(parent, 'whale-big-fish-qa-'));
 const priorHome = process.env.DSH_HOME, priorTelemetry = process.env.DSH_TELEMETRY_DISABLED;
 process.env.DSH_HOME = home; process.env.DSH_TELEMETRY_DISABLED = '1';

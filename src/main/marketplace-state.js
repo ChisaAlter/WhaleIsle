@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const { randomUUID } = require('crypto');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const MAX_HISTORY = 30;
 const MAX_LOG = 16000;
@@ -49,8 +50,7 @@ function readState() {
 function writeState(state) {
   const file = stateFile();
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(state), 'utf8');
-  fs.renameSync(`${file}.tmp`, file);
+  atomicWriteFileSync(file, JSON.stringify(state), { encoding: 'utf8' });
 }
 
 function listMarketplaceState() {

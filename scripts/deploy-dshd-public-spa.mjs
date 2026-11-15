@@ -7,10 +7,10 @@
  * Do not put DSHD_SSH_PASS in the repo, scripts, docs, or reports.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LOCAL_ROOT = join(ROOT, 'mobile', 'web');
@@ -347,34 +347,36 @@ if (!python) {
   process.exit(1);
 }
 
-const work = mkdtempSync(join(tmpdir(), 'dshd-spa-deploy-'));
-const workerPath = join(work, 'worker.py');
-const manifestPath = join(work, 'manifest.json');
-writeFileSync(workerPath, PYTHON_WORKER, 'utf8');
-writeFileSync(
-  manifestPath,
-  JSON.stringify({
-    remoteRoot: REMOTE_ROOT,
-    snippetPath: SNIPPET_PATH,
-    snippetBody: NGINX_SNIPPET,
-    deployStamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z'),
-    files,
-  }),
-  'utf8',
-);
+const exitCode = await withOwnedTempDir('dshd-spa-deploy-', async (work) => {
+  const workerPath = join(work, 'worker.py');
+  const manifestPath = join(work, 'manifest.json');
+  writeFileSync(workerPath, PYTHON_WORKER, 'utf8');
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      remoteRoot: REMOTE_ROOT,
+      snippetPath: SNIPPET_PATH,
+      snippetBody: NGINX_SNIPPET,
+      deployStamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z'),
+      files,
+    }),
+    'utf8',
+  );
 
-const result = spawnSync(python, [workerPath, manifestPath], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    PYTHONUNBUFFERED: '1',
-    DSHD_SSH_HOST: process.env.DSHD_SSH_HOST || DEFAULT_HOST,
-    DSHD_SSH_USER: process.env.DSHD_SSH_USER || DEFAULT_USER,
-    DSHD_SSH_PORT: process.env.DSHD_SSH_PORT || '22',
-  },
+  const result = spawnSync(python, [workerPath, manifestPath], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: '1',
+      DSHD_SSH_HOST: process.env.DSHD_SSH_HOST || DEFAULT_HOST,
+      DSHD_SSH_USER: process.env.DSHD_SSH_USER || DEFAULT_USER,
+      DSHD_SSH_PORT: process.env.DSHD_SSH_PORT || '22',
+    },
+  });
+  return result.status === 0 ? 0 : result.status || 1;
 });
 
-if (result.status !== 0) {
-  process.exit(result.status || 1);
+if (exitCode !== 0) {
+  process.exit(exitCode);
 }

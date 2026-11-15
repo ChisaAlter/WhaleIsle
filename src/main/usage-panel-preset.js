@@ -5,6 +5,7 @@ const path = require('path');
 const { linkInfo, directoryLinkMatches, ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir, stripBlockFromFile } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 /** npm package name (also used for market/forensics aliases). */
 const USAGE_PANEL_PACKAGE = 'dsh-usage-panel';
@@ -288,9 +289,7 @@ async function ensureDesktopUsagePanel(options = {}) {
     ].join('\n');
     const existing = fs.existsSync(overlayFile) ? fs.readFileSync(overlayFile, 'utf8') : '';
     if (existing !== overlayContents) {
-      const tmp = `${overlayFile}.tmp`;
-      fs.writeFileSync(tmp, overlayContents, 'utf8');
-      fs.renameSync(tmp, overlayFile);
+      atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
       overlayWritten = true;
     }
     return {

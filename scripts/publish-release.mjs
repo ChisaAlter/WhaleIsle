@@ -2,11 +2,11 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
+import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { assertReleaseVersion } from './check-release-version.mjs'
 import { validateReleaseAssets } from './check-release-assets.mjs'
 
@@ -59,39 +59,40 @@ export async function publish({ repo, runId, request, gh, sha, root = process.cw
     if (tagged.sha !== sha) throw new Error('Existing tag belongs to another commit')
   }
 
-  const directory = await mkdtemp(join(tmpdir(), 'whale-release-'))
-  const windowsDir = join(directory, 'windows')
-  await gh(['run', 'download', String(runId), '--repo', repo, '--name', 'Whale-Isle-windows-x64', '--dir', windowsDir])
-  const setupName = 'Whale-Isle-Setup-' + version + '.exe'
-  const digest = await hash(join(windowsDir, setupName), 'sha256')
-  const verified = await validateReleaseAssets({ assetDir: windowsDir, releaseTag: tag, packageVersion: version, expectedSetupSha256: digest })
-  const files = [setupName, verified.blockmapName, 'latest.yml'].map(name => join(windowsDir, name))
-  if (decision.macos) {
-    const macDir = join(directory, 'macos')
-    await gh(['run', 'download', String(runId), '--repo', repo, '--name', 'Whale-Isle-macos-arm64', '--dir', macDir])
-    const names = await readdir(macDir)
-    const expected = 'Whale-Isle-' + version + '-mac-arm64.dmg'
-    if (names.length !== 1 || names[0] !== expected) throw new Error('macOS artifact does not match the release version')
-    files.push(join(macDir, expected))
-  }
-  // The installed updater consumes this filename and SHA-512 format.
-  const sums = await Promise.all(files.map(async file => (await hash(file, 'sha512')) + '  ' + basename(file)))
-  const checksumFile = join(directory, 'SHA512SUMS.txt')
-  await writeFile(checksumFile, sums.join('\n') + '\n')
-  files.push(checksumFile)
-  const notes = await readFile(join(root, '.github/release-notes.md'), 'utf8')
-  const english = await readFile(join(root, '.github/release-notes.en.md'), 'utf8')
-  const body = notes + '\n\n<details>\n<summary>English</summary>\n\n' + english + '\n\n</details>\n'
-  const release = existing || await request(prefix + '/releases', {
-    method: 'POST', body: { tag_name: tag, target_commitish: sha, name: 'Whale Isle ' + tag, body, draft: true },
+  return withOwnedTempDir('whale-release-', async (directory) => {
+    const windowsDir = join(directory, 'windows')
+    await gh(['run', 'download', String(runId), '--repo', repo, '--name', 'Whale-Isle-windows-x64', '--dir', windowsDir])
+    const setupName = 'Whale-Isle-Setup-' + version + '.exe'
+    const digest = await hash(join(windowsDir, setupName), 'sha256')
+    const verified = await validateReleaseAssets({ assetDir: windowsDir, releaseTag: tag, packageVersion: version, expectedSetupSha256: digest })
+    const files = [setupName, verified.blockmapName, 'latest.yml'].map(name => join(windowsDir, name))
+    if (decision.macos) {
+      const macDir = join(directory, 'macos')
+      await gh(['run', 'download', String(runId), '--repo', repo, '--name', 'Whale-Isle-macos-arm64', '--dir', macDir])
+      const names = await readdir(macDir)
+      const expected = 'Whale-Isle-' + version + '-mac-arm64.dmg'
+      if (names.length !== 1 || names[0] !== expected) throw new Error('macOS artifact does not match the release version')
+      files.push(join(macDir, expected))
+    }
+    // The installed updater consumes this filename and SHA-512 format.
+    const sums = await Promise.all(files.map(async file => (await hash(file, 'sha512')) + '  ' + basename(file)))
+    const checksumFile = join(directory, 'SHA512SUMS.txt')
+    await writeFile(checksumFile, sums.join('\n') + '\n')
+    files.push(checksumFile)
+    const notes = await readFile(join(root, '.github/release-notes.md'), 'utf8')
+    const english = await readFile(join(root, '.github/release-notes.en.md'), 'utf8')
+    const body = notes + '\n\n<details>\n<summary>English</summary>\n\n' + english + '\n\n</details>\n'
+    const release = existing || await request(prefix + '/releases', {
+      method: 'POST', body: { tag_name: tag, target_commitish: sha, name: 'Whale Isle ' + tag, body, draft: true },
+    })
+    // Failed uploads leave a draft. Retry the same run without rebuilding.
+    await gh(['release', 'upload', tag, ...files, '--repo', repo, '--clobber'])
+    const published = await request(prefix + '/releases/' + release.id, {
+      method: 'PATCH', body: { body, draft: false, make_latest: 'true' },
+    })
+    output(published.html_url)
+    return { url: published.html_url, sha256: verified.sha256 }
   })
-  // Failed uploads leave a draft. Retry the same run without rebuilding.
-  await gh(['release', 'upload', tag, ...files, '--repo', repo, '--clobber'])
-  const published = await request(prefix + '/releases/' + release.id, {
-    method: 'PATCH', body: { body, draft: false, make_latest: 'true' },
-  })
-  output(published.html_url)
-  return { url: published.html_url, sha256: verified.sha256 }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {

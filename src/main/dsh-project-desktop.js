@@ -7,6 +7,7 @@ const { createRequire } = require('node:module');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const DSH_PROJECT_PACKAGE = 'dsh-project';
 const DSH_PROJECT_ALIASES = [DSH_PROJECT_PACKAGE];
@@ -124,8 +125,7 @@ async function ensureDesktopDshProject(options = {}) {
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
     '',
   ].join('\n');
-  fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');
-  fs.renameSync(`${overlayFile}.tmp`, overlayFile);
+  atomicWriteFileSync(overlayFile, contents, { encoding: 'utf8' });
   return { ok: true, sourceDir, runtimeDir, overlayFile, added };
 }
 

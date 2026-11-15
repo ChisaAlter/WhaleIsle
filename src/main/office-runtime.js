@@ -37,6 +37,7 @@ const path = require('path');
 const { createRequire } = require('module');
 const { getDesktopDshHome } = require('../shared/dsh-home');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const OFFICE_DIR_NAME = 'office';
 const OFFICE_OVERLAY_FILENAME = 'desktop-office.patch.yml';
@@ -53,9 +54,7 @@ const SKILL_OFFICE_PACKAGE = '@deepseek-ai/dsh-skill-office';
 
 function writeAtomic(file, contents) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, contents, 'utf8');
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, contents, { encoding: 'utf8' });
 }
 
 /**

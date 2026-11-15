@@ -4,6 +4,7 @@ const { app } = require('electron');
 const { DROPPED, isDroppedPluginName } = require('./plugins');
 const { isValidPackageName } = require('../host/install-dsh-plugin-client');
 const { isAllowedMarketplaceSpec } = require('./marketplace-spec');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const DEFAULT_REGISTRY_URL = 'https://awesome-dsh-plugin.com/plugins.json';
 const CACHE_VERSION = 3;
@@ -233,13 +234,11 @@ function readDiskCache() {
 
 function writeDiskCache(registry, fetchedAt) {
   fs.mkdirSync(path.dirname(cachePath()), { recursive: true });
-  const tmp = `${cachePath()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({
+  atomicWriteFileSync(cachePath(), JSON.stringify({
     version: CACHE_VERSION,
     fetchedAt,
     registry,
-  }, null, 2), 'utf8');
-  fs.renameSync(tmp, cachePath());
+  }, null, 2), { encoding: 'utf8' });
 }
 
 function readSnapshot() {

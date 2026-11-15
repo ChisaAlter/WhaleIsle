@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 // Local copy of the blocked predicate so the gate can honor an unreadable
 // journal the same way the service/index admission paths do (fail closed),
@@ -52,11 +53,10 @@ function kernelLogTail(dsh, limit = LAST_START_LOG_TAIL) {
 function writeLastDesktopStart(userDataDir, payload) {
   fs.mkdirSync(userDataDir, { recursive: true });
   const file = lastDesktopStartPath(userDataDir);
-  const tmp = `${file}.tmp`;
   const logTail = Array.isArray(payload.logTail)
     ? payload.logTail.slice(-LAST_START_LOG_TAIL).map((l) => String(l).slice(0, 240))
     : [];
-  fs.writeFileSync(tmp, `${JSON.stringify({
+  atomicWriteFileSync(file, `${JSON.stringify({
     ok: payload.ok === true,
     at: payload.at || new Date().toISOString(),
     error: payload.error || '',
@@ -66,8 +66,7 @@ function writeLastDesktopStart(userDataDir, payload) {
         .map((row) => ({ label: String(row?.label || ''), error: String(row?.error || '').slice(0, 240) }))
         .filter((row) => row.label)
       : [],
-  }, null, 2)}\n`);
-  fs.renameSync(tmp, file);
+  }, null, 2)}\n`, { encoding: 'utf8' });
 }
 
 /**

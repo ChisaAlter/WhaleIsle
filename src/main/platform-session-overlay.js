@@ -13,6 +13,7 @@ const path = require('path');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const PLATFORM_PACKAGE = 'dsh-platform-session';
 const PLATFORM_INSERT_ID = 'dsh-platform-session';
@@ -83,9 +84,7 @@ function ensureDesktopPlatformSession(options = {}) {
     `      name: ${JSON.stringify(PLATFORM_PACKAGE)}`,
     '',
   ].join('\n');
-  const tmp = `${overlayFile}.tmp`;
-  fs.writeFileSync(tmp, overlayContents, 'utf8');
-  fs.renameSync(tmp, overlayFile);
+  atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
   return {
     ok: true,
     added: !existed,
