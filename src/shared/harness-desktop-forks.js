@@ -148,7 +148,12 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-primitives/src/Input.tsx', includes: ["variant?: 'default' | 'form'"] },
   { file: 'packages/client/ui-primitives/src/Button.tsx', includes: ["shape?: 'rounded' | 'pill'"] },
   { file: 'packages/client/ui-settings-models/src/client/ModelRow.tsx', includes: ['Input variant="form"'] },
-  { file: 'packages/client/ui-settings-models/src/client/ModelsSection.module.css', includes: ['--dsw-radius-dialog'] },
+  { file: 'packages/client/ui-settings-models/src/client/ModelsSection.module.css', includes: ['--dsw-radius-dialog', '@container (max-width: 480px)'] },
+  // A hand-declared route has no catalog beneath its override, so the editor
+  // hides reset instead of letting it erase the whole model list.
+  { file: 'packages/client/ui-settings-models/src/client/ProviderEditor.tsx', includes: ['inherited.length === 0 ? undefined : catalogProps.onReset'] },
+  { file: 'packages/client/ui-settings-models/src/client/ModelListEditor.tsx', includes: ['onReset?: (() => void) | undefined'] },
+  { file: 'packages/client/ui-settings-models/tests/provider-form.client.spec.tsx', includes: ['offers no restore for a declared route with nothing to inherit'] },
   { file: 'packages/client/ui-settings-models/src/client/models-dev-metadata.ts', includes: ['models.dev'] },
   { file: 'packages/client/ui-settings-models/scripts/live-fetch-enrich-probe.ts', includes: [] },
   // Presentation skins (Claude / Codex): a family-level skin id and the

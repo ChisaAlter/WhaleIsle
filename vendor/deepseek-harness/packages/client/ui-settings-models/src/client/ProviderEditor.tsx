@@ -462,7 +462,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const ownsIdentity = family === 'pi-ai' && props.declared === true
     const customModels = schema.getPath(draft, ['models'])
     const modelsOverridden = schema.hasPath(draft, ['models'])
-    const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
+    const inherited = modelDrafts(inheritedModels())
+    const models = modelsOverridden ? modelDrafts(customModels) : inherited
     const defaultContextWindow = schema.getPath(fallback, ['defaultContextWindow'])
     const defaultMaxTokens = schema.getPath(fallback, ['maxTokens'])
     const defaultInput = schema.getPath(fallback, ['defaultInput'])
@@ -671,6 +672,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               : (
                 <ModelListEditor
                   {...catalogProps}
+                  // A route with nothing underneath restores an empty list, so
+                  // the reset affordance only exists when reset has a catalog
+                  // to return to.
+                  onReset={inherited.length === 0 ? undefined : catalogProps.onReset}
                   catalogProvider={props.declared === true ? undefined : props.provider}
                   reasoningLevels={reasoning.levels}
                   reasoningLevelsOnly={reasoning.levelsOnly}

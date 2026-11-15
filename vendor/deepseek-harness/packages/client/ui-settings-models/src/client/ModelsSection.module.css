@@ -766,14 +766,6 @@
 }
 
 @container (max-width: 480px) {
-  .modelRow {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-
-  .modelRow > :first-child {
-    grid-column: 1 / -1;
-  }
-
   .modelAdvanced {
     grid-template-columns: minmax(0, 1fr);
   }
