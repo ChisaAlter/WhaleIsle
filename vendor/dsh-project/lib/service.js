@@ -831,7 +831,9 @@ export class ProjectService {
           const reservation = work.delegations.find(item => item.ref === member.reservationRef);
           const preparing = reservation?.phase === 'preparing' && !reservation.runId;
           member.phase = member.stopped ? 'stopping' : preparing ? 'provisioning' : 'idle';
-          member.directoryHeld = Boolean(preparing && !readOnly(reservation.scope)) || (!readOnly(member.role) && this.jobs(member.sessionId).length > 0);
+          member.directoryHeld = member.stopped || this.held.has(member.sessionId)
+            ? member.directoryHeld || !readOnly(member.role) && this.jobs(member.sessionId).length > 0
+            : Boolean(preparing && !readOnly(reservation.scope)) || !readOnly(member.role) && this.jobs(member.sessionId).length > 0;
         }
         const receipt = latest(work);
         if (refs.includes(receipt.ref)) {
@@ -1171,10 +1173,10 @@ export class ProjectService {
   async jobChanged(event) {
     if (this.closing && !this.persistOnDispose) return;
     if (event.type !== 'settled' && event.type !== 'removed') return;
-    const id = event.job.owner, member = this.state().workers.find(item => item.sessionId === id); if (!member || member.activeRunId || this.launches.has(member.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || member.phase === 'stopping') return;
+    const id = event.job.owner, member = this.state().workers.find(item => item.sessionId === id); if (!member || member.activeRunId || this.launches.has(member.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || member.phase === 'stopping' || member.stopped || this.held.has(id)) return;
     await this.serial(async () => {
       const current = this.worker(id);
-      if (current.activeRunId || this.launches.has(current.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || current.phase === 'stopping') return;
+      if (current.activeRunId || this.launches.has(current.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || current.phase === 'stopping' || current.stopped || this.held.has(id)) return;
       await this.write(state => { const worker = state.workers.find(item => item.sessionId === id); worker.directoryHeld = false; const work = state.workstreams.find(item => item.id === worker.workstreamId), receipt = latest(work);
       if (!worker.stopped && receipt.report && work.settlements.some(terminal => terminal.delegationRefs.includes(receipt.ref) && terminal.stopReason === 'completed')) { work.status = receipt.report.outcome === 'completed' ? 'done' : 'blocked'; work.blockedReason = receipt.report.outcome === 'completed' ? '' : receipt.report.summary; }
     }); await this.completeTask(this.stream(member.workstreamId)); await this.notes(member.projectId); }); this.schedule();
