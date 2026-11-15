@@ -203,7 +203,7 @@ describe('GatewaySettingsTab', () => {
   })
 
   it('keeps the LAN credential warning off when a relay-mode snapshot loads', async () => {
-    renderGateway({ getRemote: vi.fn(async () => ({ ...SNAP, mode: 'relay' })) })
+    renderGateway({ getRemote: vi.fn(async () => ({ ...SNAP, mode: 'relay' as const })) })
     await screen.findByLabelText(en.relayUrl)
     expect(screen.queryByText(en.lanPlaintextWarning)).toBeNull()
   })
