@@ -16,6 +16,7 @@
     "start": "node scripts/prestart-ensure.mjs && node scripts/run-electron.js",
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
+    "lint": "eslint .",
     "test": "node --test \"src/**/*.test.js\" \"mobile/web/**/*.test.js\" \"vendor/dsh-project/tests/*.test.mjs\" \"vendor/dsh-deepseek-tools/tests/*.test.mjs\"",
     "test:deepseek-tools": "node --test vendor/dsh-deepseek-tools/tests/*.test.mjs",
     "test:project-composition": "node --test vendor/dsh-project/tests/host-composition.test.mjs",
@@ -58,10 +59,13 @@
     "node-pty": "1.2.0-beta.15"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/ws": "^8.18.2",
     "electron": "^44.9.1",
     "electron-builder": "^26.17.0",
     "esbuild": "0.28.2",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
     "pnpm": "12.12.1",
     "semver": "^7.8.5"
   },

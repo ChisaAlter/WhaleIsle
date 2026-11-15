@@ -42,6 +42,7 @@ function welcomeWindowOptions(locale) {
       additionalArguments: [`--dsh-welcome-locale=${locale.id}`],
       nodeIntegration: false,
       contextIsolation: true,
+      // eslint-disable-next-line no-restricted-syntax -- 未打包 preload 需要 require 本地语言表；页面是静态 file:// 文档，导航与 window.open 均已禁用
       sandbox: false,
       webSecurity: true,
     },

@@ -16,6 +16,7 @@ export function selectChecks(paths, { manual = false } = {}) {
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
         /^(vendor\/[^/]+|dsh-acp)\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
     if (path.startsWith('scripts/')) scope.tools = true
+    if (/^(eslint\.config\.mjs|eslint-suppressions\.json)$/.test(path)) { scope.product = true; scope.tools = true }
     if (path === '.github/workflows/cnb-mirror.yml') { scope.tools = true; continue }
     if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
     if (/\.test\.(js|mjs)$/.test(path)) {

@@ -96,6 +96,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Check remote dependency lock
         run: npm ci --ignore-scripts --dry-run --no-audit --no-fund
         working-directory: vendor/chisacode-remote

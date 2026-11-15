@@ -50,6 +50,8 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
   window = win;
   nativeMotion.enableNativeWindowMotion(win);
   const contents = win.webContents;
+  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => { callback(false); });
+  contents.session.setPermissionCheckHandler(() => false);
   const isOwnedSender = event => !win.isDestroyed()
     && event.sender === contents && event.senderFrame === contents.mainFrame
     && URL.canParse(event.senderFrame.url)
