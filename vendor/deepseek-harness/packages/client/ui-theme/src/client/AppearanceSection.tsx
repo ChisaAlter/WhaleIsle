@@ -19,7 +19,7 @@ import {
   MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
 } from '../theme-family.ts'
-import type { ThemePreference, ThemeSettings } from '../theme-settings.ts'
+import { windowMaterialSupported, type ThemePreference, type ThemeSettings } from '../theme-settings.ts'
 import {
   MAX_TERMINAL_OPACITY, MIN_TERMINAL_OPACITY, TERMINAL_PANE_MIN_SOLIDITY,
   TRANSPARENT_MIN_BLUR,
@@ -74,6 +74,8 @@ export interface AppearanceSectionInjected {
   setTerminalOpacity: (value: number) => void
   /** Persist the transparent-theme flag (透明主题). */
   setTransparentTheme: (value: boolean) => void
+  /** Persist the window-acrylic flag (窗口毛玻璃). */
+  setWindowAcrylic: (value: boolean) => void
   /** Persist the sidebar-mask flag (隐藏侧栏遮罩). */
   setSidebarMask: (value: boolean) => void
   /** Persist wallpaper image, the two effect sliders, and/or the backdrop effect and its tunables. */
@@ -131,6 +133,7 @@ export function AppearanceSection({
   setGlassOpacity,
   setTerminalOpacity,
   setTransparentTheme,
+  setWindowAcrylic,
   setSidebarMask,
   setWallpaper,
   setCursorFx,
@@ -150,6 +153,7 @@ export function AppearanceSection({
   const glassOpacity = useStore(s => s.glassOpacity)
   const terminalOpacity = useStore(s => s.terminalOpacity)
   const transparentTheme = useStore(s => s.transparentTheme)
+  const windowAcrylic = useStore(s => s.windowAcrylic)
   const sidebarMaskHidden = useStore(s => s.sidebarMaskHidden)
   const wallpaperImage = useStore(s => s.wallpaperImage)
   const effectiveWallpaperImage = useStore(s => s.effectiveWallpaperImage) ?? ''
@@ -179,6 +183,13 @@ export function AppearanceSection({
   const fontFamilyComposer = useStore(s => s.fontFamilyComposer)
   const fontFamilyTerminal = useStore(s => s.fontFamilyTerminal)
   const [advanced, setAdvanced] = useState(readTypographyAdvanced)
+  // The desktop preload marks supported windows once at startup, so a single
+  // read is enough; browsers and unsupported systems simply never see it.
+  const [acrylicSupported] = useState(windowMaterialSupported)
+  // While the native material paints the frame the wallpaper pauses, so the
+  // transparent theme pauses with it: the glass slider stays live and the
+  // transparent row explains the pause instead of the usual rules.
+  const acrylicActive = windowAcrylic && acrylicSupported && !minimalMode
 
   useEffect(() => {
     writeTypographyAdvanced(advanced)
@@ -286,7 +297,7 @@ export function AppearanceSection({
           aria-valuemax={MAX_GLASS_OPACITY}
           aria-valuenow={glassOpacity}
           aria-label={t('glass.title')}
-          disabled={transparentTheme && effectiveWallpaperImage !== ''}
+          disabled={transparentTheme && effectiveWallpaperImage !== '' && !acrylicActive}
           onChange={(event) => { setGlassOpacity(Number(event.currentTarget.value)) }}
         />
         <Button type="button" variant="ghost" onClick={() => { setGlassOpacity(DEFAULT_GLASS_OPACITY) }}>
@@ -328,12 +339,27 @@ export function AppearanceSection({
           <span>{t('glass.transparent')}</span>
         </label>
         <p className={css.hint}>
-          {transparentTheme && effectiveWallpaperImage === ''
-            ? t('glass.transparentNeedsWallpaper')
-            : transparentTheme && wallpaperBlur < TRANSPARENT_MIN_BLUR
-              ? t('glass.transparentBlurHint')
-              : t('glass.transparentHint')}
+          {transparentTheme && acrylicActive
+            ? t('glass.transparentPausedByAcrylic')
+            : transparentTheme && effectiveWallpaperImage === ''
+              ? t('glass.transparentNeedsWallpaper')
+              : transparentTheme && wallpaperBlur < TRANSPARENT_MIN_BLUR
+                ? t('glass.transparentBlurHint')
+                : t('glass.transparentHint')}
         </p>
+        {acrylicSupported && (
+          <>
+            <label className={css.switchRow}>
+              <Switch
+                checked={windowAcrylic}
+                aria-label={t('glass.windowAcrylic')}
+                onChange={(event) => { setWindowAcrylic(event.currentTarget.checked) }}
+              />
+              <span>{t('glass.windowAcrylic')}</span>
+            </label>
+            <p className={css.hint}>{t('glass.windowAcrylicHint')}</p>
+          </>
+        )}
         <label className={css.switchRow}>
           <Switch
             checked={sidebarMaskHidden}

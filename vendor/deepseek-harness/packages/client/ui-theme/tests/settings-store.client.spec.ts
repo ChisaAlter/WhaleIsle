@@ -15,6 +15,7 @@ function snap(overrides: Partial<AppearanceSyncSnapshot> = {}): AppearanceSyncSn
     glassOpacity: DEFAULT_THEME_SETTINGS.glassOpacity,
     terminalOpacity: DEFAULT_THEME_SETTINGS.terminalOpacity,
     transparentTheme: false,
+    windowAcrylic: false,
     sidebarMaskHidden: DEFAULT_THEME_SETTINGS.sidebarMaskHidden,
     wallpaperImage: '',
     wallpaperBlur: 0,
@@ -60,6 +61,15 @@ describe('createAppearanceRowStore', () => {
     expect(store.getSnapshot().transparentTheme).toBe(false)
     store.actions.sync(snap({ transparentTheme: true }), 0)
     expect(store.getSnapshot().transparentTheme).toBe(true)
+  })
+
+  it('mirrors the window-acrylic flag', () => {
+    const store = createAppearanceRowStore().create()
+    expect(store.getSnapshot().windowAcrylic).toBe(false)
+    store.actions.sync(snap({ windowAcrylic: true }), 0)
+    expect(store.getSnapshot().windowAcrylic).toBe(true)
+    store.actions.sync(snap({ windowAcrylic: false }), 1)
+    expect(store.getSnapshot().windowAcrylic).toBe(false)
   })
 
   it('mirrors the sidebar-mask flag', () => {

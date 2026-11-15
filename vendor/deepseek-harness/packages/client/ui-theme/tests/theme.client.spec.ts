@@ -18,6 +18,7 @@ import {
   sanitizeWallpaperFavorites,
   sanitizeWallpaperSources,
   ThemeSettingsSchema,
+  WINDOW_MATERIAL_SUPPORTED_ATTR,
 } from '../src/theme-settings.ts'
 import { effectPreset } from '../src/client/effect-presets.ts'
 
@@ -61,7 +62,10 @@ const flushWrites = (): void => { vi.advanceTimersByTime(300) }
 
 describe('ThemeRuntime', () => {
   beforeEach(() => { vi.useFakeTimers() })
-  afterEach(() => { vi.useRealTimers() })
+  afterEach(() => {
+    vi.useRealTimers()
+    document.documentElement.removeAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR)
+  })
 
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
@@ -816,6 +820,65 @@ describe('ThemeRuntime', () => {
     // Same-value set is a no-op.
     const published = events.length
     theme.setTransparentTheme(false)
+    expect(events.length).toBe(published)
+  })
+
+  it('mixes chrome fills over the window acrylic material like a wallpaper', () => {
+    const { theme, host } = makeBare()
+    document.documentElement.setAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR, '')
+    theme.setWindowAcrylic(true)
+    expect(theme.getTheme().windowAcrylic).toBe(true)
+    // Supported acrylic is a backdrop: surfaces follow the glass slider
+    // through the wallpaper canvas curve (80 -> 45, 40 -> 15).
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('color-mix')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('45%')
+    theme.setGlassOpacity(40)
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('15%')
+    flushWrites()
+    expect(host.set).toHaveBeenCalledWith('windowAcrylic', true)
+    expect(host.set).toHaveBeenCalledWith('glassOpacity', 40)
+  })
+
+  it('pauses the transparent theme while window acrylic is effective', () => {
+    const { theme, host } = makeBare()
+    document.documentElement.setAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR, '')
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    theme.setWindowAcrylic(true)
+    theme.setWallpaper({ wallpaperImage: png })
+    // The flag flips on while acrylic pauses its wallpaper: surfaces keep
+    // the glass slider instead of dropping to the 0% transparent mix, and
+    // no blur nudge fires.
+    theme.setTransparentTheme(true)
+    expect(theme.getTheme().transparentTheme).toBe(true)
+    expect(theme.getTheme().active.tokens['--dsw-alias-glass-opacity']).toBe('80%')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('45%')
+    expect(theme.getTheme().wallpaperBlur).toBe(0)
+    // A wallpaper arriving under acrylic does not become effective either.
+    theme.setWallpaper({ wallpaperImage: '' })
+    theme.setWallpaper({ wallpaperImage: png })
+    expect(theme.getTheme().wallpaperBlur).toBe(0)
+    // Acrylic off resumes the transparent theme over the stored wallpaper.
+    theme.setWindowAcrylic(false)
+    expect(theme.getTheme().active.tokens['--dsw-alias-glass-opacity']).toBe('0%')
+    flushWrites()
+    expect(host.set).not.toHaveBeenCalledWith('wallpaperBlur', 20)
+  })
+
+  it('keeps surfaces solid while acrylic is unsupported or minimal', () => {
+    const { theme, events } = makeBare()
+    // No support mark: the persisted flag stays inert.
+    theme.setWindowAcrylic(true)
+    expect(theme.getTheme().windowAcrylic).toBe(true)
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBeUndefined()
+    // Minimal mode suspends the material even on a supported window.
+    document.documentElement.setAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR, '')
+    theme.setMinimalMode(true)
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBeUndefined()
+    theme.setMinimalMode(false)
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('color-mix')
+    // Same-value set is a no-op.
+    const published = events.length
+    theme.setWindowAcrylic(true)
     expect(events.length).toBe(published)
   })
 

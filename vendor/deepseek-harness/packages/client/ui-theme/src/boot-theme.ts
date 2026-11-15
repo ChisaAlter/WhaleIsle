@@ -49,6 +49,12 @@ export interface ThemeBootPayload {
   fontSizeInterface: number
   /** Overlay solidity percent. */
   glassOpacity: number
+  /**
+   * Window acrylic flag. The body script only honors it when the desktop
+   * preload already marked material support, so unsupported hosts never boot
+   * transparent.
+   */
+  windowAcrylic?: boolean
 }
 
 function familyFor(settings: ThemeSettings, mode: 'light' | 'dark') {
@@ -83,7 +89,10 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
   const settings = resolveThemeSettings(section)
   // Effective glass: the transparent theme (wallpaper-gated) bypasses the
   // slider, so the pre-plugin interval already paints see-through chrome.
+  // Window acrylic pauses the wallpaper the transparent theme needs, so it
+  // pauses the theme too and the slider keeps painting during acrylic.
   const transparent = settings.transparentTheme && isWallpaperDataUrl(settings.wallpaperImage)
+    && !settings.windowAcrylic
   return {
     minimalMode: settings.minimalMode,
     preference: settings.preference,
@@ -98,6 +107,7 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
     darkBackground: backgroundFor(settings, 'dark'),
     fontSizeInterface: settings.fontSizeInterface,
     glassOpacity: settings.minimalMode ? 100 : transparent ? TRANSPARENT_GLASS_SOLIDITY : settings.glassOpacity,
+    windowAcrylic: settings.windowAcrylic,
   }
 }
 
@@ -157,6 +167,15 @@ function bootThemeScript(payload: ThemeBootPayload): string {
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   document.documentElement.style.fontSize = fontSizeInterface + 'px'
   document.documentElement.toggleAttribute('data-dsh-minimal', ${JSON.stringify(payload.minimalMode === true)})
+  // The desktop preload marks supported windows with
+  // data-window-material-supported; when it landed before this script the
+  // acrylic request is honored immediately, otherwise the client applies it
+  // after activation. Without the mark the flag stays inert so unsupported
+  // hosts never boot transparent.
+  if (${JSON.stringify(payload.windowAcrylic === true && payload.minimalMode !== true)}
+    && document.documentElement.hasAttribute('data-window-material-supported'))
+    document.documentElement.setAttribute('data-dsh-window-material', 'acrylic')
+  else document.documentElement.removeAttribute('data-dsh-window-material')
   document.documentElement.dataset.dsThemeSource = preference
   if (skin === 'default') document.documentElement.removeAttribute('data-dsh-skin')
   else document.documentElement.setAttribute('data-dsh-skin', skin)

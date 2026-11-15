@@ -59,6 +59,7 @@ const harness = await vi.hoisted(async () => {
   let quitCompleted = deferred()
   let policyBlocked = deferred()
   let embeddedPolicy: unknown
+  let osRelease = '10.0.22631'
   let closeWindowsOnQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
   let platformDisposeDeferred: ReturnType<typeof deferred> | undefined
@@ -111,6 +112,7 @@ const harness = await vi.hoisted(async () => {
     readonly setTitleBarOverlay = vi.fn()
     readonly setVibrancy = vi.fn()
     readonly setBackgroundColor = vi.fn()
+    readonly setBackgroundMaterial = vi.fn()
     constructor(readonly options: { show: boolean; modal?: boolean }) {
       super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this)
     }
@@ -261,6 +263,8 @@ const harness = await vi.hoisted(async () => {
     get policyBlocked() { return policyBlocked },
     get embeddedPolicy() { return embeddedPolicy },
     set embeddedPolicy(value: unknown) { embeddedPolicy = value },
+    get osRelease() { return osRelease },
+    set osRelease(value: string) { osRelease = value },
     nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     deferPlatformDispose() { platformDisposeDeferred = deferred(); return platformDisposeDeferred },
@@ -293,6 +297,7 @@ const harness = await vi.hoisted(async () => {
       navigated = deferred(); dialogShown = deferred(); quitCompleted = deferred()
       policyBlocked = deferred()
       embeddedPolicy = undefined
+      osRelease = '10.0.22631'
       fileDrag.install.mockReset()
       fileDrag.dispose.mockReset().mockResolvedValue(undefined)
       platformDisposeDeferred = undefined
@@ -340,6 +345,10 @@ vi.mock('../src/background-notice.ts', () => ({ DesktopBackgroundNotice: class {
   readonly close = harness.backgroundNotice.close
   readonly dispose = harness.backgroundNotice.dispose
 } }))
+vi.mock('node:os', async importOriginal => ({
+  ...await importOriginal<typeof import('node:os')>(),
+  release: () => harness.osRelease,
+}))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
   return { ...original, readFile: vi.fn((path: Parameters<typeof original.readFile>[0], encoding?: 'utf8') => {
@@ -1233,6 +1242,108 @@ describe('desktop main startup', () => {
     window.webContents.mainFrame.url = 'dsh-app://unowned/'
     listener(event, 'light')
     expect(harness.nativeTheme.themeSource).toBe('dark')
+  })
+
+  it('advertises material support and swaps the acrylic frame on the owned app frame', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    expect(window.options).toMatchObject({
+      webPreferences: { additionalArguments: ['--dsh-window-material=acrylic'] },
+    })
+    const listener = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowMaterialSet)![1]
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    // Foreign frames and payloads are ignored.
+    listener({ ...event, senderFrame: { url: 'dsh-app://app/' } }, 'acrylic')
+    listener(event, 'mica')
+    expect(window.setBackgroundMaterial).not.toHaveBeenCalled()
+    harness.nativeTheme.systemDark = true
+    listener(event, 'acrylic')
+    expect(window.setBackgroundMaterial).toHaveBeenLastCalledWith('acrylic')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: '#00000000', symbolColor: '#f9fafb', height: WINDOWS_TITLEBAR_HEIGHT,
+    })
+    // A theme update keeps the transparent frame; only caption glyphs follow.
+    harness.nativeTheme.systemDark = false
+    harness.nativeTheme.emit('updated')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#00000000')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({ color: '#00000000', symbolColor: '#0f1115' })
+    listener(event, 'none')
+    expect(window.setBackgroundMaterial).toHaveBeenLastCalledWith('none')
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#f9fafb')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: '#f9fafb', symbolColor: '#0f1115', height: WINDOWS_TITLEBAR_HEIGHT,
+    })
+  })
+
+  it('keeps the reported caption palette the single overlay writer across acrylic toggles', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+    const appearance = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowsAppearance)![1]
+    const material = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowMaterialSet)![1]
+    // A custom theme reports its measured palette before acrylic turns on.
+    appearance(event, 'en', 'rgba(40, 44, 52, 1)', 'rgba(230, 230, 230, 1)')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: 'rgba(40, 44, 52, 1)', symbolColor: 'rgba(230, 230, 230, 1)',
+    })
+    material(event, 'acrylic')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: '#00000000', symbolColor: 'rgba(230, 230, 230, 1)', height: WINDOWS_TITLEBAR_HEIGHT,
+    })
+    // A palette change while acrylic is on keeps the strip transparent and
+    // follows the new glyph color.
+    appearance(event, 'en', 'rgba(16, 20, 28, 1)', 'rgba(240, 240, 240, 1)')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: '#00000000', symbolColor: 'rgba(240, 240, 240, 1)',
+    })
+    harness.nativeTheme.systemDark = true
+    harness.nativeTheme.emit('updated')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: '#00000000', symbolColor: 'rgba(240, 240, 240, 1)',
+    })
+    // Turning acrylic off restores the last reported palette, not the
+    // opaque fallback.
+    material(event, 'none')
+    expect(window.setBackgroundMaterial).toHaveBeenLastCalledWith('none')
+    expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
+      color: 'rgba(16, 20, 28, 1)', symbolColor: 'rgba(240, 240, 240, 1)', height: WINDOWS_TITLEBAR_HEIGHT,
+    })
+  })
+
+  it('stays opaque on a Windows build too old for the acrylic material', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    harness.osRelease = '10.0.22000'
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    expect(window.options).not.toMatchObject({
+      webPreferences: { additionalArguments: ['--dsh-window-material=acrylic'] },
+    })
+    const listener = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowMaterialSet)![1]
+    listener({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'acrylic')
+    expect(window.setBackgroundMaterial).not.toHaveBeenCalled()
+    expect(window.setBackgroundColor).not.toHaveBeenCalledWith('#00000000')
+  })
+
+  it('keeps the acrylic window transparent through workspace entry', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    const listener = harness.ipcOn.mock.calls.find(([channel]) => channel === DESKTOP_IPC.windowMaterialSet)![1]
+    listener({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'acrylic')
+    window.setBackgroundColor.mockClear()
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    harness.hosts[0]!.ready.resolve()
+    await Promise.resolve(invoke(DESKTOP_IPC.boot))
+    await vi.waitFor(() => { expect(window.show).toHaveBeenCalledOnce() })
+    expect(window.setBackgroundColor).not.toHaveBeenCalled()
   })
 
   it('serves packaged shell documents instead of rejecting the shell origin', async () => {

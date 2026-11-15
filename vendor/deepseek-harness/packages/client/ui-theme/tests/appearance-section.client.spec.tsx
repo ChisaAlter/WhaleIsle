@@ -23,7 +23,7 @@ import { createAppearanceRowStore } from '../src/client/settings-store.ts'
 import type { AppearanceSyncSnapshot } from '../src/client/settings-store.ts'
 import { listThemeFamilies } from '../src/builtin-families.ts'
 import { serializeThemeFamily, type ThemeFamily } from '../src/theme-family.ts'
-import { DEFAULT_THEME_SETTINGS, type ThemePreference, type WallpaperSource } from '../src/theme-settings.ts'
+import { DEFAULT_THEME_SETTINGS, WINDOW_MATERIAL_SUPPORTED_ATTR, type ThemePreference, type WallpaperSource } from '../src/theme-settings.ts'
 import { zh } from '../src/client/locales.ts'
 import type { WallpaperShell } from '../src/client/wallpaper-shell.ts'
 
@@ -31,6 +31,7 @@ afterEach(() => {
   cleanup()
   localStorage.clear()
   Reflect.deleteProperty(window, 'shell')
+  document.documentElement.removeAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR)
 })
 
 const COPY = zh
@@ -99,6 +100,7 @@ function snap(overrides: Partial<AppearanceSyncSnapshot> = {}): AppearanceSyncSn
     glassOpacity: DEFAULT_THEME_SETTINGS.glassOpacity,
     terminalOpacity: DEFAULT_THEME_SETTINGS.terminalOpacity,
     transparentTheme: false,
+    windowAcrylic: false,
     sidebarMaskHidden: DEFAULT_THEME_SETTINGS.sidebarMaskHidden,
     wallpaperImage: '',
     skinWallpaperImage: '',
@@ -146,6 +148,7 @@ function mount(
   const setGlassOpacity = vi.fn()
   const setTerminalOpacity = vi.fn()
   const setTransparentTheme = vi.fn()
+  const setWindowAcrylic = vi.fn()
   const setSidebarMask = vi.fn()
   const setWallpaper = vi.fn()
   const setCursorFx = vi.fn()
@@ -172,6 +175,7 @@ function mount(
     setGlassOpacity,
     setTerminalOpacity,
     setTransparentTheme,
+    setWindowAcrylic,
     setSidebarMask,
     setWallpaper,
     setCursorFx,
@@ -181,9 +185,9 @@ function mount(
   }
   const view = render(<AppearanceSection {...props} />)
   return {
-    store, setMinimalMode, setMinimalModeSuggestions, setTheme, setThemeHalf, setCustomThemes, previewTheme, setGlassOpacity, setTerminalOpacity,
-    setTransparentTheme, setSidebarMask, setWallpaper, setCursorFx, setMetallicPaint, setTypography,
-    setWallpaperSources, setWallpaperFavorites, ...view,
+    store, setMinimalMode, setMinimalModeSuggestions, setTheme, setThemeHalf, setCustomThemes, previewTheme,
+    setGlassOpacity, setTerminalOpacity, setTransparentTheme, setWindowAcrylic, setSidebarMask, setWallpaper,
+    setCursorFx, setMetallicPaint, setTypography, setWallpaperSources, setWallpaperFavorites, ...view,
   }
 }
 
@@ -431,6 +435,40 @@ describe('AppearanceSection', () => {
     expect(screen.getByText(COPY['glass.terminalDeepHint'])).toBeDefined()
     act(() => { b.store.actions.sync(snap({ terminalOpacity: 60, backgroundEffect: 'none' }), 2) })
     expect(screen.getByText(COPY['glass.terminalNeedsBackdrop'])).toBeDefined()
+  })
+
+  it('shows the window acrylic toggle only while the shell reports material support', () => {
+    // No support mark: the row is not rendered at all.
+    mount('system', { windowAcrylic: true })
+    expect(screen.queryByRole('switch', { name: COPY['glass.windowAcrylic'] })).toBeNull()
+    cleanup()
+    // Supported window: the row appears and drives the injected setter.
+    document.documentElement.setAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR, '')
+    const b = mount('system')
+    expect(screen.getByText(COPY['glass.windowAcrylicHint'])).toBeDefined()
+    const toggle = screen.getByRole('switch', { name: COPY['glass.windowAcrylic'] }) as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    fireEvent.click(toggle)
+    expect(b.setWindowAcrylic).toHaveBeenCalledWith(true)
+    act(() => { b.store.actions.sync(snap({ windowAcrylic: true }), 1) })
+    fireEvent.click(screen.getByRole('switch', { name: COPY['glass.windowAcrylic'] }))
+    expect(b.setWindowAcrylic).toHaveBeenCalledWith(false)
+  })
+
+  it('pauses the transparent theme while window acrylic is effective', () => {
+    document.documentElement.setAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR, '')
+    const b = mount('system', { wallpaperImage: PNG, transparentTheme: true, windowAcrylic: true })
+    // Acrylic pauses the wallpaper the transparent theme needs: the glass
+    // slider stays live and the hint explains the pause.
+    const slider = screen.getByRole('slider', { name: COPY['glass.title'] }) as HTMLInputElement
+    expect(slider.disabled).toBe(false)
+    expect(screen.getByText(COPY['glass.transparentPausedByAcrylic'])).toBeDefined()
+    // Acrylic off resumes the transparent theme and freezes the slider.
+    act(() => { b.store.actions.sync(snap({ wallpaperImage: PNG, transparentTheme: true, wallpaperBlur: 20 }), 1) })
+    const resumed = screen.getByRole('slider', { name: COPY['glass.title'] }) as HTMLInputElement
+    expect(resumed.disabled).toBe(true)
+    expect(screen.queryByText(COPY['glass.transparentPausedByAcrylic'])).toBeNull()
+    expect(screen.getByText(COPY['glass.transparentHint'])).toBeDefined()
   })
 
   it('toggles the sidebar mask independently of the wallpaper state', () => {

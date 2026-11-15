@@ -33,7 +33,10 @@ html[data-dsh-wallpaper] body,
 html[data-dsh-wallpaper] #root,
 html[data-dsh-gradient],
 html[data-dsh-gradient] body,
-html[data-dsh-gradient] #root {
+html[data-dsh-gradient] #root,
+html[data-dsh-window-material],
+html[data-dsh-window-material] body,
+html[data-dsh-window-material] #root {
   background: transparent;
 }
 

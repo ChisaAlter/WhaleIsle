@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { DESKTOP_IPC } from '../src/ipc.ts'
-import { syncNativeTheme } from '../src/preload-theme.ts'
+import { syncNativeTheme, syncWindowMaterial } from '../src/preload-theme.ts'
 
 const send = vi.hoisted(() => vi.fn())
 vi.mock('electron', () => ({ ipcRenderer: { send } }))
@@ -22,6 +22,8 @@ afterEach(() => {
   for (const observer of observers) observer.disconnect()
   observers.clear()
   document.documentElement.removeAttribute('data-ds-theme-source')
+  document.documentElement.removeAttribute('data-dsh-window-material')
+  document.documentElement.removeAttribute('data-window-material-supported')
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   send.mockClear()
@@ -47,4 +49,24 @@ it('defers observation until the document root exists', () => {
   document.documentElement.setAttribute('data-ds-theme-source', 'light')
   window.dispatchEvent(new Event('DOMContentLoaded'))
   expect(send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.nativeThemeSet, 'light')
+})
+
+it('marks support and mirrors the window material attribute over IPC', async () => {
+  vi.stubGlobal('MutationObserver', TrackedMutationObserver)
+  syncWindowMaterial(['node', 'app', '--dsh-window-material=acrylic'])
+  expect(document.documentElement.hasAttribute('data-window-material-supported')).toBe(true)
+  expect(send).toHaveBeenCalledExactlyOnceWith(DESKTOP_IPC.windowMaterialSet, 'none')
+  document.documentElement.setAttribute('data-dsh-window-material', 'acrylic')
+  await vi.waitFor(() => { expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.windowMaterialSet, 'acrylic') })
+  document.documentElement.removeAttribute('data-dsh-window-material')
+  await vi.waitFor(() => { expect(send).toHaveBeenLastCalledWith(DESKTOP_IPC.windowMaterialSet, 'none') })
+  expect(send).toHaveBeenCalledTimes(3)
+})
+
+it('stays inert without the material argument', () => {
+  vi.stubGlobal('MutationObserver', TrackedMutationObserver)
+  syncWindowMaterial(['node', 'app'])
+  expect(document.documentElement.hasAttribute('data-window-material-supported')).toBe(false)
+  expect(send).not.toHaveBeenCalled()
+  expect(observers.size).toBe(0)
 })

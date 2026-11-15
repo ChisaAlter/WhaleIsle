@@ -7,7 +7,7 @@
  * snapshot. Durable fields live in the Host `ui-theme` settings section.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { NormalizedBinding } from '@deepseek-ai/dsh-client-shortcuts/protocol'
@@ -63,12 +63,13 @@ import {
   THEME_CUSTOM_THEMES_FIELD, THEME_DARK_FAMILY_FIELD, THEME_GLASS_OPACITY_FIELD,
   THEME_LIGHT_FAMILY_FIELD, THEME_METALLIC_PAINT_FIELD,
   THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE, THEME_SIDEBAR_MASK_FIELD,
-  THEME_TERMINAL_OPACITY_FIELD, THEME_TRANSPARENT_FIELD,
+  THEME_TERMINAL_OPACITY_FIELD, THEME_TRANSPARENT_FIELD, THEME_WINDOW_ACRYLIC_FIELD,
   THEME_WALLPAPER_BLUR_FIELD, THEME_WALLPAPER_BING_FIELD, THEME_WALLPAPER_CATALOGS_FIELD,
   THEME_WALLPAPER_FAVORITES_FIELD, THEME_WALLPAPER_IMAGE_FIELD, THEME_WALLPAPER_PIXELATE_FIELD,
   THEME_SKIN_WALLPAPER_FIELD,
   THEME_WALLPAPER_SOURCES_FIELD,
   resolveThemeSettings,
+  windowMaterialSupported,
   sanitizeWallpaperCatalogUrls,
   sanitizeWallpaperFavorites,
   sanitizeWallpaperSources,
@@ -176,6 +177,8 @@ export interface ThemeSnapshot {
   terminalOpacity: number
   /** Transparent theme flag; effective only while a wallpaper is set. */
   transparentTheme: boolean
+  /** Window acrylic flag; effective only while the shell reports material support. */
+  windowAcrylic: boolean
   /** Sidebar mask flag; the rail paints the canvas fill while on. */
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
@@ -301,9 +304,12 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
  */
 export class ThemeRuntime {
   /** Startup recommendation shared with the layout-owned dialog. */
-  readonly minimalSuggestion = createSnapshotStore(false)
+  readonly minimalSuggestion: SnapshotStore<boolean> = createSnapshotStore(false)
 
-  /** Apply a recommendation decision using the normal durable preference path. */
+  /**
+   * Apply a recommendation decision using the normal durable preference path.
+   * @param choice - user answer from the startup suggestion dialog.
+   */
   decideMinimalSuggestion(choice: 'enable' | 'later' | 'never'): void {
     this.minimalSuggestion.set(false)
     if (choice === 'enable') this.setMinimalMode(true)
@@ -593,7 +599,9 @@ export class ThemeRuntime {
    * Persist the transparent-theme flag (透明主题). While on and a wallpaper
    * is set, every chrome surface drops to a 0% fill and the wallpaper dim
    * mask is removed; the glass slider is bypassed. Without a wallpaper the
-   * flag is stored but the glass slider stays effective. Becoming effective
+   * flag is stored but the glass slider stays effective. Window acrylic
+   * pauses the wallpaper it needs, so the transparent theme pauses with it
+   * and the slider keeps working until acrylic turns off. Becoming effective
    * runs the one-shot {@link nudgeTransparentBlur} readability nudge.
    * @param transparentTheme - next flag value.
    */
@@ -601,7 +609,25 @@ export class ThemeRuntime {
     if (this.settings.transparentTheme === transparentTheme) return
     this.settings = { ...this.settings, transparentTheme }
     this.queueWrite(THEME_TRANSPARENT_FIELD, transparentTheme)
-    if (transparentTheme && isWallpaperDataUrl(this.settings.wallpaperImage)) this.nudgeTransparentBlur()
+    if (transparentTheme && isWallpaperDataUrl(this.settings.wallpaperImage) && !this.acrylicEffective()) {
+      this.nudgeTransparentBlur()
+    }
+    this.publish()
+  }
+
+  /**
+   * Persist the window-acrylic flag (窗口毛玻璃). While on and the desktop
+   * shell reports material support (Windows 11 22H2+), the primary window's
+   * frame hosts the native acrylic material and chrome surfaces mix to the
+   * glass solidity so the system-blurred desktop shows through; the flag
+   * outranks the wallpaper and gradient layers, which stay stored but stop
+   * painting. Without support the flag is stored but inert.
+   * @param windowAcrylic - next flag value.
+   */
+  setWindowAcrylic(windowAcrylic: boolean): void {
+    if (this.settings.windowAcrylic === windowAcrylic) return
+    this.settings = { ...this.settings, windowAcrylic }
+    this.queueWrite(THEME_WINDOW_ACRYLIC_FIELD, windowAcrylic)
     this.publish()
   }
 
@@ -618,7 +644,10 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Persist the rendering override without editing individual effect preferences. */
+  /**
+   * Persist the rendering override without editing individual effect preferences.
+   * @param minimalMode - next override flag.
+   */
   setMinimalMode(minimalMode: boolean): void {
     if (this.settings.minimalMode === minimalMode) return
     this.settings = { ...this.settings, minimalMode }
@@ -626,7 +655,10 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Persist whether startup responsiveness suggestions are allowed. */
+  /**
+   * Persist whether startup responsiveness suggestions are allowed.
+   * @param value - next allowance flag.
+   */
   setMinimalModeSuggestions(value: boolean): void {
     this.settings = { ...this.settings, minimalModeSuggestions: value }
     this.queueWrite('minimalModeSuggestions', value)
@@ -747,6 +779,7 @@ export class ThemeRuntime {
     const nextEffective = isWallpaperDataUrl(next.wallpaperImage)
       || (next.skinWallpaperEnabled && isWallpaperDataUrl(skinWallpaper))
     const becameEffective = this.settings.transparentTheme && nextEffective && !currentEffective
+      && !this.acrylicEffective()
     this.settings = { ...this.settings, ...next }
     if (patch.wallpaperImage !== undefined) this.queueWrite(THEME_WALLPAPER_IMAGE_FIELD, next.wallpaperImage)
     if (patch.wallpaperBlur !== undefined) this.queueWrite(THEME_WALLPAPER_BLUR_FIELD, next.wallpaperBlur)
@@ -1006,6 +1039,7 @@ export class ThemeRuntime {
       glassOpacity: this.settings.glassOpacity,
       terminalOpacity: this.settings.terminalOpacity,
       transparentTheme: this.settings.transparentTheme,
+      windowAcrylic: this.settings.windowAcrylic,
       sidebarMaskHidden: this.settings.sidebarMaskHidden,
       wallpaperImage: this.settings.wallpaperImage,
       effectiveWallpaperImage,
@@ -1041,26 +1075,42 @@ export class ThemeRuntime {
   }
 
   /**
+   * Whether the native acrylic material currently paints the window frame:
+   * the flag is on, the shell reported material support, and Minimal mode is
+   * off. While effective the wallpaper pauses, so the transparent theme —
+   * which needs that wallpaper — pauses with it.
+   */
+  private acrylicEffective(): boolean {
+    return !this.settings.minimalMode && this.settings.windowAcrylic && windowMaterialSupported()
+  }
+
+  /**
    * Fold family tokens, glass/font extras, and override layers into the
    * active definition.
    */
   private composeActive(active: ThemeDefinition, mode: 'light' | 'dark', effectiveWallpaperImage: string): ThemeDefinition {
     const tokens: ThemeTokens = { ...active.tokens }
     const wallpapered = isWallpaperDataUrl(effectiveWallpaperImage)
+    // Window acrylic is a backdrop too: the native frame material blurs the
+    // desktop behind the window, so chrome surfaces mix to the glass solidity
+    // the same way they do over a live wallpaper.
+    const acrylic = this.acrylicEffective()
     // The ambient gradient is a backdrop too: while it is live (and no image
     // covers it) chrome surfaces mix to the same glass solidity so the blooms
     // show through like a wallpaper does.
-    const backdropLive = !this.settings.minimalMode && (wallpapered || this.settings.backgroundEffect === 'gradient')
+    const backdropLive = !this.settings.minimalMode && (wallpapered || this.settings.backgroundEffect === 'gradient' || acrylic)
     // 透明主题 needs the wallpaper: fully transparent chrome over an opaque
     // canvas would leave menus and dialogs invisible, so the flag is inert
-    // until an image is set.
+    // until an image is set. Acrylic pauses that wallpaper, so while it is
+    // effective the transparent theme pauses too and surfaces follow the
+    // glass slider alone.
     // A flat skin (Codex) opts out of glass and the backdrop entirely: its
     // chrome is opaque, so neither the wallpaper nor the ambient gradient may
     // wash the surfaces, and the family's own solid tokens stay authoritative.
     const flatChrome = active.skin === 'codex' || this.settings.minimalMode
     const solidity = flatChrome
       ? 100
-      : this.settings.transparentTheme && wallpapered
+      : this.settings.transparentTheme && wallpapered && !acrylic
         ? TRANSPARENT_GLASS_SOLIDITY
         : this.settings.glassOpacity
     tokens['--dsw-alias-glass-opacity'] = `${solidity}%`
@@ -1111,6 +1161,7 @@ function sameSettings(left: ThemeSettings, right: ThemeSettings): boolean {
     && left.glassOpacity === right.glassOpacity
     && left.terminalOpacity === right.terminalOpacity
     && left.transparentTheme === right.transparentTheme
+    && left.windowAcrylic === right.windowAcrylic
     && left.sidebarMaskHidden === right.sidebarMaskHidden
     && left.wallpaperImage === right.wallpaperImage
     && left.skinWallpaperEnabled === right.skinWallpaperEnabled
@@ -1343,6 +1394,7 @@ export function apply(ctx: ClientContext): void {
       cursorEffectSpeed: snapshot.cursorEffectSpeed,
       cursorEffectSize: snapshot.cursorEffectSize,
       transparentTheme: snapshot.transparentTheme,
+      windowAcrylic: snapshot.windowAcrylic,
       metallicPaintEnabled: snapshot.metallicPaintEnabled,
     })
   }
@@ -1374,6 +1426,7 @@ export function apply(ctx: ClientContext): void {
       setGlassOpacity: (value) => { theme.setGlassOpacity(value) },
       setTerminalOpacity: (value) => { theme.setTerminalOpacity(value) },
       setTransparentTheme: (value) => { theme.setTransparentTheme(value) },
+      setWindowAcrylic: (value) => { theme.setWindowAcrylic(value) },
       setSidebarMask: (value) => { theme.setSidebarMask(value) },
       setWallpaper: (patch) => { theme.setWallpaper(patch) },
       setCursorFx: (patch) => { theme.setCursorFx(patch) },

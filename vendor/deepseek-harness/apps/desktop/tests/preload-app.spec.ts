@@ -13,7 +13,7 @@ const electron = vi.hoisted(() => ({
 }))
 vi.mock('electron', () => electron)
 vi.mock('../src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn(), syncWindowFullscreen: vi.fn() }))
-vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
+vi.mock('../src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn(), syncWindowMaterial: vi.fn() }))
 vi.mock('../src/preload-windows.ts', () => ({ syncWindowsAppearance: vi.fn() }))
 vi.mock('../src/preload-mandatory-overlay.ts', () => ({ installMandatoryUpdateOverlay: vi.fn() }))
 

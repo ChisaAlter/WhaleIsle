@@ -7,6 +7,7 @@ import { DesktopUpdateSettings } from './update-settings.ts'
 import { isDesktopUpdateChannel } from './settings-file.ts'
 import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
+import { WINDOW_MATERIAL_ARGUMENT, applyWindowMaterial, windowsAcrylicSupported } from './window-material.ts'
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -247,6 +248,22 @@ function chromeFallbackFill(): string {
   return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
 }
 
+/** Caption glyph color for the hidden title bar's window-controls overlay. */
+function chromeSymbolColor(): string {
+  return nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115'
+}
+
+/** Primary windows currently painted with the native acrylic material. */
+const acrylicWindows = new WeakSet<BrowserWindow>()
+
+/**
+ * Caption palette each primary window's document last reported over
+ * `windowsAppearance`: the single writer of the title-bar overlay colors,
+ * so the material swap and theme updates restore the measured palette
+ * instead of a stale fallback.
+ */
+const captionPalettes = new WeakMap<BrowserWindow, { color: string; symbolColor: string }>()
+
 /**
  * Add the effective Desktop palette to a Platform authorization URL so the
  * login page opens in the application's theme. `system` resolves through
@@ -272,7 +289,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       backgroundColor: chromeFallbackFill(),
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
-        symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
+        symbolColor: chromeSymbolColor() },
     } : {}),
     // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
     // needs a transparent window background to show through the page.
@@ -293,6 +310,11 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
       webSecurity: true,
       webviewTag: primary,
       devTools: true,
+      // Material-capable primary windows advertise support so the app preload
+      // can mark the document and mirror the Appearance toggle back over IPC.
+      ...(process.platform === 'win32' && primary && windowsAcrylicSupported()
+        ? { additionalArguments: [WINDOW_MATERIAL_ARGUMENT] }
+        : {}),
     },
   })
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -312,7 +334,17 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
   }
   if (process.platform === 'win32' && primary) {
     const updateBackground = (): void => {
-      if (!window.isDestroyed()) window.setBackgroundColor(chromeFallbackFill())
+      if (window.isDestroyed()) return
+      // Acrylic keeps its transparent frame; only the caption glyphs follow
+      // the effective palette.
+      if (acrylicWindows.has(window)) {
+        window.setTitleBarOverlay({
+          color: '#00000000',
+          symbolColor: captionPalettes.get(window)?.symbolColor ?? chromeSymbolColor(),
+        })
+        return
+      }
+      window.setBackgroundColor(chromeFallbackFill())
     }
     nativeTheme.on('updated', updateBackground)
     window.once('closed', () => { nativeTheme.removeListener('updated', updateBackground) })
@@ -1306,7 +1338,28 @@ async function main(): Promise<void> {
       // Empty colors precede client stylesheet installation; only CSS color values cross IPC.
       const validColor = (value: unknown): value is string => typeof value === 'string'
         && /^(?:#[\da-f]{3,8}|rgba?\([\d.,%\s]+\))$/iu.test(value)
-      if (validColor(color) && validColor(symbolColor)) mainWindow.setTitleBarOverlay({ color, symbolColor })
+      if (validColor(color) && validColor(symbolColor)) {
+        captionPalettes.set(mainWindow, { color, symbolColor })
+        // The acrylic strip stays transparent; only its glyphs follow the
+        // reported palette.
+        mainWindow.setTitleBarOverlay(acrylicWindows.has(mainWindow)
+          ? { color: '#00000000', symbolColor }
+          : { color, symbolColor })
+      }
+    })
+    // Only the owned app frame may swap the window material, and only on a
+    // build whose frame honors the acrylic material.
+    ipcMain.on(DESKTOP_IPC.windowMaterialSet, (event, material: unknown) => {
+      if (mainWindow === undefined || event.sender !== mainWindow.webContents
+        || event.senderFrame !== mainWindow.webContents.mainFrame
+        || !event.senderFrame.url.startsWith(`${SCHEME}://app/`)) return
+      if (material !== 'acrylic' && material !== 'none') return
+      if (!windowsAcrylicSupported()) return
+      applyWindowMaterial(mainWindow, material,
+        captionPalettes.get(mainWindow) ?? { color: chromeFallbackFill(), symbolColor: chromeSymbolColor() },
+        WINDOWS_TITLEBAR_HEIGHT)
+      if (material === 'acrylic') acrylicWindows.add(mainWindow)
+      else acrylicWindows.delete(mainWindow)
     })
   }
 
@@ -1372,7 +1425,7 @@ async function main(): Promise<void> {
     const window = mainWindow ?? createMainWindow()
     await navigateMain(applicationUrl)
     if (isQuitting() || recovery.active || window.isDestroyed()) return
-    if (process.platform === 'win32') window.setBackgroundColor(chromeFallbackFill())
+    if (process.platform === 'win32' && !acrylicWindows.has(window)) window.setBackgroundColor(chromeFallbackFill())
     if (activate) window.show()
     else window.showInactive()
     enteredWorkspace = true
