@@ -853,7 +853,7 @@ class HarnessController extends EventEmitter {
       if (this.dsh.state !== 'ready') {
         throw operationCancelled('Harness 在打开界面前已停止');
       }
-      const { workspace } = this.loadConfig();
+      const { workspace } = startConfig;
       try {
         await this.ensureWorkspace(url, workspace);
         checkCurrent();

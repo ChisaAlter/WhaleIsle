@@ -71,7 +71,7 @@ function render(state) {
     frame.className = 'document';
     frame.title = state.name || 'File preview';
     frame.referrerPolicy = 'no-referrer';
-    if (state.kind === 'html') frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
+    if (state.kind === 'html') frame.setAttribute('sandbox', 'allow-scripts');
     frame.src = state.url;
     root.replaceChildren(frame);
     return;

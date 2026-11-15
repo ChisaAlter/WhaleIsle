@@ -92,7 +92,6 @@ function live2dDeps(overrides = {}) {
     },
     rendererFile: (name) => `C:/app/src/renderer/${name}`,
     preloadFile: () => 'C:/app/src/preload/index.js',
-    loadConfig: () => ({}),
     saveConfig: () => {},
     ...overrides,
     loadConfig: () => {

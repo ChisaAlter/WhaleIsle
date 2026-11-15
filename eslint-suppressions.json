@@ -22,11 +22,6 @@
       "count": 1
     }
   },
-  "src/main/desktop-live2d.test.js": {
-    "no-dupe-keys": {
-      "count": 1
-    }
-  },
   "src/main/harness-chrome-inject.js": {
     "whaleisle/no-raw-html": {
       "count": 2
@@ -40,11 +35,6 @@
   "src/main/ipc.js": {
     "whaleisle/open-external-http": {
       "count": 1
-    }
-  },
-  "src/main/packaged-p0.test.js": {
-    "no-dupe-keys": {
-      "count": 3
     }
   },
   "src/main/platform-view.js": {
@@ -100,11 +90,6 @@
   "src/renderer/window-controls.js": {
     "whaleisle/no-raw-html": {
       "count": 2
-    }
-  },
-  "src/shared/harness-desktop-forks.test.js": {
-    "no-dupe-keys": {
-      "count": 6
     }
   },
   "vendor/dsh-with-chatgpt/lib/state.js": {

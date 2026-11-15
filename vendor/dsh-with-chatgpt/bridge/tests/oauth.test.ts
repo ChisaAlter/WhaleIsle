@@ -385,3 +385,56 @@ describe("refresh token rotation", () => {
     expect(replayed.status).toBe(400);
   });
 });
+
+describe("scope handling", () => {
+  const authorize = async (clientId: string, scope?: string) => {
+    const { challenge } = pkceVerifierAndChallenge();
+    const url = new URL(`${base}/oauth/authorize`);
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("redirect_uri", REDIRECT_URI);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("state", "st-123");
+    url.searchParams.set("code_challenge", challenge);
+    url.searchParams.set("code_challenge_method", "S256");
+    if (scope !== undefined) url.searchParams.set("scope", scope);
+    return fetch(url, { redirect: "manual" });
+  };
+
+  it("redirects invalid_scope when every requested scope is unsupported", async () => {
+    const clientId = await registerClient();
+    const response = await authorize(clientId, "admin.write workspace.delete");
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.searchParams.get("error")).toBe("invalid_scope");
+    expect(location.searchParams.get("state")).toBe("st-123");
+  });
+
+  it("grants only the supported subset of a mixed scope request", async () => {
+    const clientId = await registerClient();
+    const response = await authorize(clientId, "workspace.read bogus.scope");
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("workspace.read");
+    expect(html).not.toContain("bogus.scope");
+  });
+
+  it("keeps the documented default set when scope is omitted", async () => {
+    const clientId = await registerClient();
+    const response = await authorize(clientId);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    for (const scope of ["workspace.read", "workspace.search", "git.read", "execution.read", "offline_access"]) {
+      expect(html).toContain(scope);
+    }
+  });
+});
+
+describe("filterScopes", () => {
+  it("returns null when every requested scope is unsupported", async () => {
+    const { filterScopes } = await import("../src/auth/store.js");
+    expect(filterScopes("admin.write workspace.delete")).toBeNull();
+    expect(filterScopes("workspace.read bogus.scope")).toEqual(["workspace.read"]);
+    expect(filterScopes("")).not.toBeNull();
+    expect(filterScopes(undefined)).not.toBeNull();
+  });
+});
