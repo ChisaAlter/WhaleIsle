@@ -1,0 +1,115 @@
+{
+  "mobile/web/app.js": {
+    "no-unsafe-finally": {
+      "count": 2
+    },
+    "whaleisle/no-raw-html": {
+      "count": 1
+    }
+  },
+  "scripts/qa-whalebridge-models.mjs": {
+    "no-unsafe-finally": {
+      "count": 1
+    }
+  },
+  "scripts/verify-remote-workspace-live.cjs": {
+    "no-unsafe-finally": {
+      "count": 2
+    }
+  },
+  "src/launcher/install-detect.js": {
+    "whaleisle/open-external-http": {
+      "count": 1
+    }
+  },
+  "src/main/desktop-live2d.test.js": {
+    "no-dupe-keys": {
+      "count": 1
+    }
+  },
+  "src/main/harness-chrome-inject.js": {
+    "whaleisle/no-raw-html": {
+      "count": 2
+    }
+  },
+  "src/main/index.js": {
+    "whaleisle/open-external-http": {
+      "count": 1
+    }
+  },
+  "src/main/ipc.js": {
+    "whaleisle/open-external-http": {
+      "count": 1
+    }
+  },
+  "src/main/packaged-p0.test.js": {
+    "no-dupe-keys": {
+      "count": 3
+    }
+  },
+  "src/main/platform-view.js": {
+    "whaleisle/open-external-http": {
+      "count": 1
+    }
+  },
+  "src/main/preview-guest-preload.js": {
+    "whaleisle/no-raw-html": {
+      "count": 3
+    }
+  },
+  "src/main/update-updater.js": {
+    "no-unsafe-finally": {
+      "count": 1
+    }
+  },
+  "src/main/updates-state.js": {
+    "whaleisle/ipc-handler-reads-event": {
+      "count": 3
+    }
+  },
+  "src/main/whalebridge-window.js": {
+    "whaleisle/open-external-http": {
+      "count": 2
+    }
+  },
+  "src/main/window.js": {
+    "whaleisle/open-external-http": {
+      "count": 1
+    }
+  },
+  "src/renderer/feedback.js": {
+    "whaleisle/no-raw-html": {
+      "count": 2
+    }
+  },
+  "src/renderer/launcher-components.js": {
+    "whaleisle/no-raw-html": {
+      "count": 5
+    }
+  },
+  "src/renderer/launcher.js": {
+    "whaleisle/no-raw-html": {
+      "count": 17
+    }
+  },
+  "src/renderer/pet-live2d.js": {
+    "whaleisle/no-raw-html": {
+      "count": 7
+    }
+  },
+  "src/renderer/window-controls.js": {
+    "whaleisle/no-raw-html": {
+      "count": 2
+    }
+  },
+  "src/shared/harness-desktop-forks.test.js": {
+    "no-dupe-keys": {
+      "count": 6
+    }
+  },
+  "vendor/dsh-with-chatgpt/lib/state.js": {
+    "no-unsafe-finally": {
+      "count": 1
+    }
+  }
+}

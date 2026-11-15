@@ -32,6 +32,12 @@ test('upstream runtime, lock and native window changes select their actual consu
   assert.equal(selectChecks(['src/main/native-window-motion.js']).motion, true)
   assert.equal(selectChecks(['src/main/update.test.js']).product, true)
 })
+test('lint config and its suppression ledger select product and tools checks', () => {
+  assert.deepEqual(selectChecks(['eslint.config.mjs']),
+    { product: true, vendor: false, tools: true, motion: false })
+  assert.deepEqual(selectChecks(['eslint-suppressions.json']),
+    { product: true, vendor: false, tools: true, motion: false })
+})
 test('tool test edits run independently and manual builds have full scope', () => {
   assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', '.github/workflows/cnb-mirror.yml']),
     { product: false, tools: true, vendor: false, motion: false })

@@ -8,6 +8,7 @@ const { downloadLatestViaUpdater, differentialAvailability } = require('./update
 const { UpdateJournal } = require('./update-journal');
 const { agentFor, systemFetch } = require('./system-proxy');
 const { checkInstallSpace } = require('./install-space');
+const { openExternalHttp } = require('./open-external');
 const { setTimeout: delay } = require('node:timers/promises');
 const installDetect = require('../launcher/install-detect');
 const { currentVersion, getInstalledAppInfo } = installDetect;
@@ -840,10 +841,8 @@ async function installFromAsset(info, onProgress, options = {}) {
     throw new Error('更新方式无效，请重新选择增量更新或完全下载。');
   }
   if (!info?.assetUrl) {
-    if (info?.htmlUrl) {
-      await shell.openExternal(info.htmlUrl);
-    }
-    return { ...info, launched: false, openedPage: Boolean(info?.htmlUrl) };
+    const openedPage = info?.htmlUrl ? await openExternalHttp(info.htmlUrl) : false;
+    return { ...info, launched: false, openedPage };
   }
   if (!info.checksumUrl && downloadMode === 'full') {
     // No SHA512SUMS.txt on this release: never install unverified silently.
