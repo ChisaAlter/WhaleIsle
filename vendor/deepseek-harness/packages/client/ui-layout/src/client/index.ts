@@ -32,6 +32,7 @@ export type { TitlebarDensity }
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout, MainPanelId, PanelInfo } from './service.ts'
+export { TITLEBAR_PENDING_ROOM_ATTR } from './titlebar-density.ts'
 
 /** Selector hook over root-scoped panel selection. */
 export type UsePanelInfo = SnapshotSelectorHook<PanelInfo>

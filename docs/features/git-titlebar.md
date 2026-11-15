@@ -15,6 +15,8 @@
 
 | **last verified (crowding opt-in + overflow)** | 2026-09-28 — Session 日志胶囊默认收进界面设置（`session-log-download.titlebarAction` 默认 `false`，`ChromeVisibility` 按初始默认收紧谓词）；被 cozy/compact 密度收起的 `conversation.session.header.actions` 由 utilities 前的 28px 箭头座席承接——悬停/聚焦临时弹出、点击 pin 住、Esc/外部点击收起，密度回到 `full` 时座席卸载。`session-log-export` 相关测试（chrome-visibility/client-apply/host/route/archive 61 项）与 `skeleton.client.spec.tsx` 45 项（含两条溢出用例）绿；`desktop-chrome.e2e.ts` 走 `sessionLogTitlebarAction` scaffold 选项验证 opt-in 集群；release QA 新增 `interface.sessionLogSwitch` 步验证开关路径并还原默认。|
 
+| **last verified (reveal reflow)** | 2026-11-15 — 胶囊悬停展开/收起期间 `AppFrame` 不再逐帧更新 trailing 宽度 state：展开开始即一次性让出 `data-titlebar-pending-room` 宣告的额外空间，收起期间保持展开宽度，全部相关过渡 end/cancel 归零后才重测终值；零时长过渡（reduced-motion/minimal）与非动画尺寸变化仍即时照常更新。`vitest run packages/client/ui-layout packages/client/ui-git packages/client/ui-conversation` 105 文件 1617/1617 通过；`tsc -b tsconfig.client.json` 通过；改动行 oxlint 零告警。|
+
 ## User paths
 
 最近验证：2026-09-28，登记 watcher 增加低频元数据核对与去重，漏原生事件/创建/改写/删除/停止反例通过；与预览、工作区、编辑器组合 200/200。完整远端候选结果以发布准备报告为准。
@@ -54,6 +56,7 @@
 - 不再提供外部重复的 Session 日志下载胶囊及其界面设置开关；旧 `titlebarAction` 配置不改变显示。会话「更多操作」菜单和 `/export` 继续共用同一个控制器与结果对话框。
 - 会话标题、Agent 项、更多菜单与目录入口保持单排；对话 / 轨迹页签保留在标题下方。目录与 Git 胶囊统一 27px 高、14px 圆角及 l2 细描边；桌面窄窗口优先压缩标题与标签，Git 分支、主操作与菜单保持可见。
 - 标题行按实际可用宽度压缩标题与 Agent 标签，保留各操作入口；右栏文件等页签位于应用顶栏下方的面板内部，不与 Git 争用空间。
+- 标题栏 Git 标签展开不逐帧改会话标题留白：展开前由 `data-titlebar-pending-room` 一次性让出终值空间、收起期间保持、全部过渡结束后一次性回收；`transitioncancel` 同样收尾，非动画尺寸变化照常即时更新。
 
 ## Allowed touch
 
