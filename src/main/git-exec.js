@@ -1,6 +1,7 @@
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnTreeOptions, killProcessTree: stopTree } = require('../shared/process-tree');
 const { loadWorkspaceAuthority, isPathInside } = require('./workspace-authority');
 
 let workspaceAuthority = null;
@@ -76,35 +77,23 @@ function gitChildEnv() {
 }
 
 /**
- * Kill a spawned git/gh child and, on Windows, its whole process tree.
- * `child.kill()` on win32 terminates only the direct process; git routinely
- * has live descendants (hooks, ssh, credential helpers) that would otherwise
- * survive a timeout or output-overflow kill and keep holding index locks.
- * `taskkill /T` walks the tree; `/F` is required because a killed git child
- * does not pump messages. POSIX stays on the default SIGTERM.
+ * Kill a spawned git/gh child's process tree via src/shared/process-tree.js.
+ * git routinely has live descendants (hooks, ssh, credential helpers) that
+ * would otherwise survive a timeout or output-overflow kill and keep holding
+ * index locks; children spawn detached so the shared stop reaches the group.
+ * Fire-and-forget: callers report the timeout/overflow immediately while the
+ * shared stop confirms or escalates in the background. A failed tree stop
+ * still SIGTERMs the direct child so the git process itself never survives.
  * @param {import('node:child_process').ChildProcess} child
- * @param {{ platform?: NodeJS.Platform, spawnKiller?: typeof spawn }} [options] test seams.
+ * @param {{ platform?: NodeJS.Platform, stopTree?: typeof stopTree }} [options] test seams.
  */
-function killProcessTree(child, { platform = process.platform, spawnKiller = spawn } = {}) {
-  if (platform === 'win32' && typeof child.pid === 'number') {
-    try {
-      const killer = spawnKiller('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-        windowsHide: true,
-        stdio: 'ignore',
-      });
-      // taskkill missing or unrunnable → at least kill the direct child.
-      killer.on('error', () => { child.kill(); });
-      // taskkill ran but failed (access denied, and 128 = tree already gone):
-      // SIGTERM the direct child so the git process itself never survives a
-      // timeout. Killing an already-dead child is a no-op.
-      killer.on('exit', (code) => {
-        if (code !== 0) child.kill();
-      });
-      killer.unref();
-      return;
-    } catch {
-      // Synchronous spawn failure (EPERM and kin); fall through to plain kill.
-    }
+function killProcessTree(child, { platform = process.platform, stopTree: stop = stopTree } = {}) {
+  if (typeof child.pid === 'number') {
+    Promise.resolve()
+      .then(() => stop(child.pid, { platform }))
+      .then((stopped) => { if (!stopped) child.kill(); })
+      .catch(() => { child.kill(); });
+    return;
   }
   child.kill();
 }
@@ -125,6 +114,8 @@ function run(command, args, cwd, limits = {}) {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...gitChildEnv(), ...(limits.env || {}) },
+      // POSIX group leader so the tree stop reaches hooks/helpers too.
+      ...spawnTreeOptions(),
     });
     const stdoutChunks = [];
     const stderrChunks = [];

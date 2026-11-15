@@ -21,6 +21,7 @@ import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { spawn as spawnChild, execFileSync } from 'node:child_process';
+import { killProcessTree, spawnTreeOptions } from '../../src/shared/process-tree.js';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,19 +107,19 @@ function daemonRunnerPids() {
   return out.split(/\s+/).map((value) => Number(value)).filter((id) => Number.isInteger(id) && id > 0);
 }
 
-function stopDaemonRunners() {
+async function stopDaemonRunners() {
   for (const pid of daemonRunnerPids()) {
     try {
-      execFileSync('taskkill', ['/F', '/PID', String(pid), '/T'], { stdio: 'ignore' });
+      await killProcessTree(pid, { signal: 'SIGKILL' });
       console.log(`[live] stopped stale daemon pid ${pid}`);
     } catch {
-      // already gone
+      // may still be running; the port wait below reports the real state
     }
   }
 }
 
 async function bounceLiveDaemon(home) {
-  stopDaemonRunners();
+  await stopDaemonRunners();
   await waitForPort(6767, { wantOpen: false, timeoutMs: 15_000 });
   bounce.gitTunnel = await startGitTunnelServer({ git });
   const electron = path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron.exe');
@@ -151,6 +152,7 @@ async function bounceLiveDaemon(home) {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    ...spawnTreeOptions(),
   });
   bounce.child = child;
   let ready = false;

@@ -22,6 +22,7 @@ const {
   DSH_VENDOR_PACKAGES,
   VENDOR_ROOT,
 } = require('./dshd-remote');
+const { killProcessTree } = require('../shared/process-tree');
 
 // dist/ 是构建产物（vendor 内嵌 .gitignore 挡住了提交），fresh clone / CI 没有。
 // 打包机通过 build:server-deps 产出后随 extraResources 发货；这里只在有产物时验证。
@@ -743,7 +744,7 @@ test('a refused daemon kill retains the real handle and stop retry observes its 
   let child;
   let originalKill;
   t.after(async () => {
-    if (child && originalKill) child.kill = originalKill;
+    if (originalKill) process.kill = originalKill;
     f.remote.execFile = execFile;
     await f.remote.stopDaemon();
     fs.rmSync(home, { recursive: true, force: true });
@@ -752,13 +753,22 @@ test('a refused daemon kill retains the real handle and stop retry observes its 
   await f.remote.startDaemon();
   const handle = f.remote.daemon;
   child = handle.child;
-  originalKill = child.kill;
-  child.kill = () => false;
+  // Refuse only real termination signals on the owned pid/group; liveness
+  // probes (signal 0) and every other process keep their real behavior.
+  originalKill = process.kill;
+  process.kill = (target, signal) => {
+    if ((target === child.pid || target === -child.pid) && signal !== 0) {
+      const error = new Error('owned tree kill refused');
+      error.code = 'EPERM';
+      throw error;
+    }
+    return originalKill.call(process, target, signal);
+  };
   await assert.rejects(f.remote.stopDaemon(), /远程守护进程未停止/);
   assert.equal(f.remote.daemon, handle);
   assert.match(f.remote.snapshot().error, /未停止/);
   assert.equal(process.kill(child.pid, 0), true);
-  child.kill = originalKill;
+  process.kill = originalKill;
   f.remote.execFile = execFile;
   await f.remote.stopDaemon();
   assert.equal(f.remote.daemon, null);
@@ -799,7 +809,7 @@ test('Windows daemon timeout keeps refused Node and Electron owned trees tracked
         if (descendantPid) {
           let live = false;
           try { live = process.kill(descendantPid, 0); } catch { /* already gone */ }
-          if (live) await new Promise((resolve) => execFile('taskkill', ['/pid', String(descendantPid), '/T', '/F'], { windowsHide: true }, resolve));
+          if (live) await killProcessTree(descendantPid);
         }
         fs.rmSync(home, { recursive: true, force: true });
         fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });

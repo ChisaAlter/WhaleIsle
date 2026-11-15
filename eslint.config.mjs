@@ -141,10 +141,24 @@ export default [
       'no-setter-return': 'error',
       'no-async-promise-executor': 'error',
       'whaleisle/open-external-http': 'error',
-      'no-restricted-syntax': ['error', {
-        selector: 'Property[key.name="sandbox"][value.value=false], Property[key.value="sandbox"][value.value=false]',
-        message: '渲染进程必须开启 Chromium 沙箱；确有必要时用 eslint-disable-next-line 并在 -- 后写明理由。',
-      }],
+      'no-restricted-syntax': ['error',
+        {
+          selector: 'Property[key.name="sandbox"][value.value=false], Property[key.value="sandbox"][value.value=false]',
+          message: '渲染进程必须开启 Chromium 沙箱；确有必要时用 eslint-disable-next-line 并在 -- 后写明理由。',
+        },
+        {
+          selector: 'CallExpression[callee.object.name="process"][callee.property.name="kill"][arguments.0.type="UnaryExpression"][arguments.0.operator="-"]',
+          message: '按进程组发信号请改用 src/shared/process-tree.js 的 killProcessTree。',
+        },
+        {
+          selector: "CallExpression[callee.name=/^(spawn|spawnSync|exec|execSync|execFile|execFileSync)$/][arguments.0.value='taskkill']:has(Literal[value=/^\\/t$/i])",
+          message: 'taskkill /T 按树终止请改用 src/shared/process-tree.js 的 killProcessTree。',
+        },
+        {
+          selector: "CallExpression[callee.object.name=/^(child_process|cp)$/][callee.property.name=/^(spawn|spawnSync|exec|execSync|execFile|execFileSync)$/][arguments.0.value='taskkill']:has(Literal[value=/^\\/t$/i])",
+          message: 'taskkill /T 按树终止请改用 src/shared/process-tree.js 的 killProcessTree。',
+        },
+      ],
     },
   },
   {
@@ -187,6 +201,12 @@ export default [
     files: ['src/main/open-external.js'],
     plugins: { whaleisle },
     rules: { 'whaleisle/open-external-http': 'off' },
+  },
+  // The shared tree-stop primitive is the one place allowed to signal -pid
+  // and run taskkill /T; every caller goes through killProcessTree.
+  {
+    files: ['src/shared/process-tree.js'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
   {
     files: [['src/main/**/*.{js,mjs,cjs}', '!src/main/**/*.test.{js,mjs,cjs}', '!src/renderer/**/*.child.cjs']],

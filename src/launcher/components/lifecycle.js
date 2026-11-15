@@ -3,11 +3,11 @@
 // Process supervision for installed components: spawn through the host
 // binary (Electron runs as plain node under ELECTRON_RUN_AS_NODE, which keeps
 // components working without a separately installed Node), a native PID
-// liveness probe, and tree kill — Windows-first: taskkill /PID <pid> /T /F,
-// never kill -9.
+// liveness probe, and tree kill through src/shared/process-tree.js.
 const fs = require('fs');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
+const { spawnTreeOptions, signalProcessTree, killProcessTree } = require('../../shared/process-tree');
 
 const LOG_MAX_BYTES = 256 * 1024;
 
@@ -31,27 +31,26 @@ function isPidAlive(pid, deps = {}) {
   }
 }
 
+// Synchronous forced kill for paths that cannot await (the before-quit
+// shutdown hook). Delivery only — exit confirmation lives in killPidTree or
+// the caller's own wait loop.
 function killPid(pid, { force = true } = {}, deps = {}) {
-  if (!Number.isInteger(pid) || pid <= 0) {
-    return false;
-  }
-  if (resolvePlatform(deps) === 'win32') {
-    const exec = deps.execFileSync || execFileSync;
-    try {
-      exec('taskkill', force
-        ? ['/PID', String(pid), '/T', '/F']
-        : ['/PID', String(pid)], { windowsHide: true, timeout: 5000 });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  try {
-    process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
-    return true;
-  } catch {
-    return false;
-  }
+  return signalProcessTree(pid, {
+    signal: force ? 'SIGKILL' : 'SIGTERM',
+    platform: resolvePlatform(deps),
+    run: deps.execFileSync || execFileSync,
+  });
+}
+
+// Graceful tree stop: `signal` to the group, SIGKILL escalation after
+// graceMs, confirmation before returning. Throws PROCESS_TREE_STOP_FAILED
+// when the tree is still alive afterwards.
+async function killPidTree(pid, { graceMs = 2000 } = {}, deps = {}) {
+  await killProcessTree(pid, {
+    graceMs,
+    platform: resolvePlatform(deps),
+    run: deps.execFile || execFile,
+  });
 }
 
 function openLogStream(file, deps = {}) {
@@ -93,6 +92,7 @@ function spawnComponent({ entryFile, dir, dataDir: dataPath, logFile: logPath, i
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+    ...spawnTreeOptions(resolvePlatform(deps)),
   });
   if (logStream) {
     if (child.stdout && typeof child.stdout.pipe === 'function') {
@@ -177,6 +177,7 @@ async function removeDir(dir, deps = {}) {
 module.exports = {
   isPidAlive,
   killPid,
+  killPidTree,
   spawnComponent,
   waitForStateFile,
   readStateFile,

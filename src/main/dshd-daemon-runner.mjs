@@ -8,9 +8,11 @@
  * `ELECTRON_RUN_AS_NODE=1` and explicit piped stdio, so a daemon-side crash
  * can never take the GUI down. Differences from upstream (documented in
  * docs/superpowers/plans/2026-08-28-remote-epipe-hardening.md): the desktop
- * product binds the daemon lifecycle to the app, so the child is attached
- * (not detached) and self-terminates when its stdin closes — a dead parent
- * never leaves an orphan daemon.
+ * product binds the daemon lifecycle to the app, so the child self-terminates
+ * when its stdin closes — a dead parent never leaves an orphan daemon. It is
+ * spawned as a POSIX process-group leader (src/shared/process-tree.js
+ * spawnTreeOptions) so the shared tree stop reaches daemon descendants; the
+ * stdin-close contract is unchanged.
  *
  * Protocol (all stdout lines are JSON records with a `msg` field; the pino
  * root logger also writes JSON to stdout, so the parent parses one uniform
