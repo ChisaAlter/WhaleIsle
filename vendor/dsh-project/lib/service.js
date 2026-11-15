@@ -42,7 +42,7 @@ const TRANSIENT_CODES = new Set(['SERVER', 'RATE_LIMIT', 'TIMEOUT', 'TRANSPORT']
 export class ProjectService {
   constructor(ctx, table, { home, desktop, teams = ctx.agentTeams }) {
     this.ctx = ctx; this.teams = teams; this.table = table; this.home = home; this.desktop = desktop; this.available = true;
-    this.tail = Promise.resolve(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
+    this.tail = Promise.resolve(); this.notesWrites = new Map(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
     this.background = new Set(); this.closing = false; this.recovering = true; this.scheduling = false; this.scheduleRevision = 0; this.held = new Set(); this.workerStops = new Map(); this.projectHolds = new Map(); this.archiving = new Set();
     this.summaryRetryDelays = [30000, 120000, 360000]; this.summaryRetryTimers = new Map();
     this.settlementCheckDelay = 45000; this.settlementCheckTimers = new Map(); this.settlementChecks = new Map();
@@ -1228,7 +1228,14 @@ export class ProjectService {
     if (bytes.length > preferencesLimit) { let end = preferencesLimit; while ((bytes[end] & 0xc0) === 0x80) end--; value = bytes.subarray(0, end).toString('utf8') + '\n[Project preferences truncated at the size limit; ask the user to shorten them.]'; }
     return `Project preferences (current user instructions take precedence):\n${value}`;
   }
-  async notes(id) {
+  /** Serialize notes.md rewrites per Project: concurrent temp+rename onto the same file fails on Windows (EPERM). */
+  notes(id) {
+    const run = (this.notesWrites.get(id) ?? Promise.resolve()).catch(() => {}).then(() => this.writeNotes(id));
+    this.notesWrites.set(id, run);
+    void run.finally(() => { if (this.notesWrites.get(id) === run) this.notesWrites.delete(id); }).catch(() => {});
+    return run;
+  }
+  async writeNotes(id) {
     const project = this.project(id), root = await this.storeRoot(project), path = join(root, 'notes.md'); let user = '';
     try { const actual = await this.storePath(project, 'notes.md'), old = await fs.readFile(actual, 'utf8'); if (old.includes(marker)) user = old.slice(old.indexOf(marker) + marker.length); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const all = this.state().workstreams.filter(item => item.projectId === id);
