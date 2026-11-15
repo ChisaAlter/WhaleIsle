@@ -41,8 +41,7 @@ export async function downloadArtifact({ artifact, directory, resolveUrl, fetchI
     try {
       let offset = await size(partial);
       if (offset === artifact.size_in_bytes && await fileDigest(partial) === expected) { await rename(partial, target); return target; }
-      if (offset === artifact.size_in_bytes) { await rename(partial, `${partial}.rejected-${Date.now()}`); offset = 0; }
-      if (offset > artifact.size_in_bytes) throw new Error('Partial artifact is larger than expected');
+      if (offset >= artifact.size_in_bytes) { await rename(partial, `${partial}.rejected-${Date.now()}`); offset = 0; }
       resetTimer();
       deadline = setTimeout(() => controller.abort(), 15 * 60 * 1000);
       const url = await resolveUrl();
