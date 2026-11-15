@@ -175,7 +175,14 @@ function createUpdateCenter(deps) {
   function discardJob() {
     if (saved.target) {
       const { final, partial } = paths(saved.target);
-      for (const file of [partial, final]) fs.rmSync(file, { force: true });
+      for (const file of [partial, final]) {
+        try {
+          fs.rmSync(file, { force: true });
+        } catch (error) {
+          // Locked files (scanner, indexer) are left for cleanup(); the job is still dropped.
+          log(`update-center discard failed for ${path.basename(file)}: ${error.message}`);
+        }
+      }
     }
     saved.job = null;
   }
@@ -232,50 +239,54 @@ function createUpdateCenter(deps) {
   async function check({ manual = false } = {}) {
     if (BUSY.has(model.phase)) return snapshot();
     set({ phase: 'checking', error: null, explicit: manual });
-    let resolved;
     try {
-      resolved = await resolveWithFallback(null);
+      let resolved;
+      try {
+        resolved = await resolveWithFallback(null);
+      } catch (error) {
+        return fail('check', error, { route: error.route });
+      }
+      model.checkedAt = now();
+      const { release, route } = resolved;
+      if (!release?.version || compareVersions(release.version, currentVersion()) <= 0) {
+        discardJob();
+        saved.target = null;
+        saved.plan = null;
+        persist();
+        set({ phase: 'current', progress: null });
+        cleanup();
+        return snapshot();
+      }
+      const target = toTarget(release, route);
+      if (!target.assetUrl || !target.checksumUrl) {
+        return fail('check', Object.assign(new Error(`v${target.version} 没有适用于本机的安装包`), { code: 'no-installer' }), { route });
+      }
+      if (!sameArtifact(saved.target, target)) {
+        discardJob();
+        saved.plan = null;
+      }
+      saved.target = target;
+      if (saved.job?.ready && fileSize(saved.job.ready.file) > 0) {
+        persist();
+        set({ phase: 'ready', progress: null });
+        cleanup();
+        return snapshot();
+      }
+      if (!saved.plan) saved.plan = await makePlan(target);
+      persist();
+      const { partial } = paths(target);
+      const resumable = saved.job?.resume?.total > 0 && fileSize(partial) > 0;
+      set({
+        phase: resumable ? 'paused' : 'available',
+        progress: resumable ? { received: fileSize(partial), total: saved.job.resume.total } : null,
+      });
+      cleanup();
+      // A download the user paused stays paused until they resume it.
+      if (getAutoDownload() && !saved.job?.userPaused) startDownload({ explicit: manual });
+      return snapshot();
     } catch (error) {
-      return fail('check', error, { route: error.route });
+      return fail('check', error);
     }
-    model.checkedAt = now();
-    const { release, route } = resolved;
-    if (!release?.version || compareVersions(release.version, currentVersion()) <= 0) {
-      discardJob();
-      saved.target = null;
-      saved.plan = null;
-      persist();
-      set({ phase: 'current', progress: null });
-      cleanup();
-      return snapshot();
-    }
-    const target = toTarget(release, route);
-    if (!target.assetUrl || !target.checksumUrl) {
-      return fail('check', Object.assign(new Error(`v${target.version} 没有适用于本机的安装包`), { code: 'no-installer' }), { route });
-    }
-    if (!sameArtifact(saved.target, target)) {
-      discardJob();
-      saved.plan = null;
-    }
-    saved.target = target;
-    if (saved.job?.ready && fileSize(saved.job.ready.file) > 0) {
-      persist();
-      set({ phase: 'ready', progress: null });
-      cleanup();
-      return snapshot();
-    }
-    if (!saved.plan) saved.plan = await makePlan(target);
-    persist();
-    const { partial } = paths(target);
-    const resumable = saved.job?.resume?.total > 0 && fileSize(partial) > 0;
-    set({
-      phase: resumable ? 'paused' : 'available',
-      progress: resumable ? { received: fileSize(partial), total: saved.job.resume.total } : null,
-    });
-    cleanup();
-    // A download the user paused stays paused until they resume it.
-    if (getAutoDownload() && !saved.job?.userPaused) startDownload({ explicit: manual });
-    return snapshot();
   }
 
   function onProgress(resumedFrom) {
@@ -432,20 +443,24 @@ function createUpdateCenter(deps) {
   async function installVersion(tag) {
     if (BUSY.has(model.phase)) return snapshot();
     set({ phase: 'checking', error: null, explicit: true });
-    let resolved;
     try {
-      resolved = await resolveWithFallback(String(tag || ''));
+      let resolved;
+      try {
+        resolved = await resolveWithFallback(String(tag || ''));
+      } catch (error) {
+        return fail('check', error, { route: error.route });
+      }
+      if (!resolved.release?.assetUrl) return fail('check', new Error(`版本 ${tag} 没有适用于本机的安装包`));
+      const target = toTarget(resolved.release, resolved.route);
+      if (!sameArtifact(saved.target, target)) discardJob();
+      saved.target = target;
+      saved.plan = { method: 'full', downloadBytes: target.assetSize, fullBytes: target.assetSize };
+      persist();
+      model.phase = 'available';
+      return startDownload({ full: true, explicit: true, installWhenReady: true });
     } catch (error) {
-      return fail('check', error, { route: error.route });
+      return fail('check', error);
     }
-    if (!resolved.release?.assetUrl) return fail('check', new Error(`版本 ${tag} 没有适用于本机的安装包`));
-    const target = toTarget(resolved.release, resolved.route);
-    if (!sameArtifact(saved.target, target)) discardJob();
-    saved.target = target;
-    saved.plan = { method: 'full', downloadBytes: target.assetSize, fullBytes: target.assetSize };
-    persist();
-    model.phase = 'available';
-    return startDownload({ full: true, explicit: true, installWhenReady: true });
   }
 
   function scheduleAuto(delay) {

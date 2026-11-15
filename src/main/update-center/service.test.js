@@ -268,6 +268,73 @@ test('installing a listed version downloads the full installer and launches it',
   assert.deepEqual(f.calls.install[0].options.installerArgs, []);
 });
 
+test('a locked download file cannot trap the center in a busy phase', async (t) => {
+  const f = fixture(t);
+  f.control.plan = { ok: false };
+  f.control.stallAt = 300;
+  const center = f.make();
+  center.start();
+  await center.command('check');
+  for (let i = 0; i < 200 && (center.snapshot().progress?.received || 0) < 300; i++) await tick();
+  assert.equal((await center.command('pause')).phase, 'paused');
+  const final = path.join(f.dir, 'updates', 'Whale-Isle-Setup-0.3.13.exe');
+  const partial = `${final}.part`;
+  assert.equal(fs.existsSync(partial), true);
+  // A scanner or indexer holding the file makes rmSync throw EBUSY/EPERM.
+  const rmSync = fs.rmSync;
+  fs.rmSync = (file, options) => {
+    if (file === final || file === partial) throw Object.assign(new Error('operation busy'), { code: 'EBUSY' });
+    return rmSync.call(fs, file, options);
+  };
+  t.after(() => { fs.rmSync = rmSync; });
+  try {
+    f.control.release = release('0.3.12');
+    const view = await center.command('check');
+    assert.equal(view.phase, 'current');
+    assert.equal(view.userPaused, false);
+    assert.ok(f.logs.some((line) => line.includes('discard failed')));
+    fs.rmSync = rmSync;
+    assert.equal((await center.command('check')).phase, 'current');
+    assert.equal(fs.existsSync(partial), false);
+  } finally {
+    fs.rmSync = rmSync;
+  }
+});
+
+test('an unexpected failure inside check leaves an error phase, not a busy one', async (t) => {
+  const f = fixture(t);
+  const compare = f.deps.compareVersions;
+  let blowUp = true;
+  f.deps.compareVersions = (a, b) => {
+    if (blowUp) throw new Error('fixture boom');
+    return compare(a, b);
+  };
+  const center = f.make();
+  center.start();
+  const failed = await center.command('check');
+  assert.equal(failed.phase, 'error');
+  assert.equal(failed.error.operation, 'check');
+  blowUp = false;
+  await center.command('check');
+  assert.equal((await settle(center, ['ready', 'error'])).phase, 'ready');
+});
+
+test('an unexpected failure inside installVersion leaves an error phase, not a busy one', async (t) => {
+  const f = fixture(t);
+  f.config.autoDownload = false;
+  const bad = release('0.3.10');
+  Object.defineProperty(bad, 'assetSize', { get() { throw new Error('fixture boom'); } });
+  f.control.release = bad;
+  const center = f.make();
+  center.start();
+  const failed = await center.command('installVersion', 'v0.3.10');
+  assert.equal(failed.phase, 'error');
+  f.control.release = release('0.3.10');
+  await center.command('installVersion', 'v0.3.10');
+  assert.equal((await settle(center, ['installing', 'error'])).phase, 'installing');
+  assert.equal(f.calls.install[0].version, '0.3.10');
+});
+
 test('a network failure during a background download keeps the bytes for a resume', async (t) => {
   const f = fixture(t);
   f.control.plan = { ok: false };
