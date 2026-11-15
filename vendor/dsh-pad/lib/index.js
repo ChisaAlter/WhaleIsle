@@ -1691,8 +1691,33 @@ function sample(value) {
   const text = JSON.stringify(value) ?? "null";
   return text.length > SAMPLE_CHARS ? `${text.slice(0, SAMPLE_CHARS)}\u2026\uFF08\u5171 ${text.length} \u5B57\u7B26\uFF0C\u5DF2\u622A\u65AD\uFF09` : text;
 }
+function sourceSecretNames(source) {
+  const text = source.kind === "command" ? String(source.command ?? "") : [
+    source.url,
+    ...Object.entries(source.headers ?? {}).flat(),
+    source.body
+  ].map((value) => String(value ?? "")).join("\n");
+  return [...new Set([...text.matchAll(SECRET_REF)].map((match) => match[1]))];
+}
 function describeSources(sources) {
-  return sources.map((source) => source.kind === "command" ? `\u2022 [${source.id}] \u6BCF ${source.intervalSec} \u79D2\u8FD0\u884C\u547D\u4EE4\uFF1A${source.command}` : `\u2022 [${source.id}] \u6BCF ${source.intervalSec} \u79D2\u8BF7\u6C42\uFF1A${source.method ?? "GET"} ${source.url}`).join("\n");
+  return sources.map((source) => {
+    const lines = [];
+    if (source.kind === "command") {
+      lines.push(`• [${source.id}] 每 ${source.intervalSec} 秒运行命令：${source.command}`);
+    } else {
+      lines.push(`• [${source.id}] 每 ${source.intervalSec} 秒请求：${source.method ?? "GET"} ${source.url}`);
+      for (const [key, value] of Object.entries(source.headers ?? {})) {
+        lines.push(`  请求头 ${key}: ${value}`);
+      }
+      if (source.body !== void 0 && source.body !== "") {
+        const text = String(source.body);
+        lines.push(`  请求体 ${text.length > 300 ? `${text.slice(0, 300)}…（共 ${text.length} 字符，已截断）` : text}`);
+      }
+    }
+    const secrets = sourceSecretNames(source);
+    if (secrets.length > 0) lines.push(`  使用密钥：${secrets.join(", ")}`);
+    return lines.join("\n");
+  }).join("\n");
 }
 function panelSummary(panel, store, refresher, hub) {
   const view = hub.views().find((v) => v.id === panel.id);
@@ -2199,6 +2224,7 @@ async function start(ctx, config) {
       } catch {
       }
     }
+    if (name2.startsWith("DSH_") || name2.startsWith("DSHD_")) return void 0;
     return process.env[name2];
   };
   let refresher;

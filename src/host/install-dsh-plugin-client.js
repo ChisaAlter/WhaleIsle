@@ -99,6 +99,7 @@ function normalizeAllowBuilds(value) {
 function emptyInstallResult(error, spec = '') {
   return {
     ok: false,
+    declined: false,
     needsAllowBuilds: false,
     allowBuilds: [],
     spec,
@@ -113,6 +114,7 @@ function normalizeInstallResult(result, spec) {
   const ok = Boolean(result?.ok);
   return {
     ok,
+    declined: Boolean(result?.declined),
     needsAllowBuilds,
     allowBuilds: Array.isArray(result?.allowBuilds) ? result.allowBuilds.map(String) : [],
     spec: String(result?.spec || spec || ''),
@@ -123,6 +125,9 @@ function normalizeInstallResult(result, spec) {
 }
 
 function renderInstall(value) {
+  if (value.declined) {
+    return '用户拒绝了这次插件变更，不要重试，除非用户再次明确要求。';
+  }
   if (value.needsAllowBuilds) {
     const keys = value.allowBuilds.length > 0 ? value.allowBuilds.join(', ') : '(unparsed)';
     return `pnpm blocked prepare scripts for ${value.spec}. Ask the user, then retry install_dsh_plugin with allowBuilds: ${keys}.`;

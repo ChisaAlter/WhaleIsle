@@ -206,7 +206,8 @@ export function registerDesktopTools(ctx) {
       'Manage desktop plugins. list = installed rows; install = curated catalog id OR a '
       + 'github:owner/repo[#ref] spec (allowBuilds passes pnpm build-script consent through); '
       + 'remove / disable / enable take a package name. Installs, removals and toggles '
-      + 'restart Harness — your own session restarts with it; tell the user before acting.',
+      + 'restart Harness — your own session restarts with it. Every change pops a '
+      + 'desktop confirmation dialog and runs only when the user approves.',
     timeoutMs: INSTALL_TIMEOUT_MS,
     parameters: {
       action: { type: 'string', required: true, description: 'list | install | remove | disable | enable' },
@@ -261,9 +262,13 @@ export function registerDesktopTools(ctx) {
       const result = await desktopCall(control, '/desktop/plugin', {
         method: 'POST',
         body,
-        timeoutMs: action === 'install' ? INSTALL_TIMEOUT_MS : CONTROL_TIMEOUT_MS,
+        // Every mutation waits on a desktop confirmation dialog.
+        timeoutMs: INSTALL_TIMEOUT_MS,
       });
       if (result.ok !== true) {
+        if (result.declined === true) {
+          return { ok: false, detail: '用户拒绝了这次插件变更，不要重试，除非用户再次明确要求。' };
+        }
         if (result.needsAllowBuilds === true) {
           return {
             ok: false,

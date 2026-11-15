@@ -66,6 +66,49 @@ function serverError(res, error) {
   });
 }
 
+let confirmChain = Promise.resolve();
+
+/**
+ * Model-initiated plugin mutations must pass a desktop confirmation before
+ * they execute. Prompts are serialized so only one dialog is up at a time,
+ * and a missing or throwing confirmer fails closed as a decline.
+ */
+function requestPluginChange(confirmPluginChange, request) {
+  const run = confirmChain.then(async () => {
+    if (typeof confirmPluginChange !== 'function') {
+      return { allowed: false, error: '用户拒绝了这次插件变更' };
+    }
+    try {
+      const allowed = await confirmPluginChange(request);
+      return allowed === true
+        ? { allowed: true, error: '' }
+        : { allowed: false, error: '用户拒绝了这次插件变更' };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || 'confirm failed');
+      return { allowed: false, error: `插件变更确认失败：${reason}` };
+    }
+  });
+  confirmChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/**
+ * Confirm for a live request: an approval that arrives after the caller timed
+ * out or disconnected is not executed, so a late click cannot act on a call the
+ * tool already reported as failed.
+ */
+async function confirmForRequest(res, confirmPluginChange, request) {
+  const confirmation = await requestPluginChange(confirmPluginChange, request);
+  if (confirmation.allowed && (res.destroyed || res.socket?.destroyed)) {
+    return { allowed: false, error: '确认前请求已断开，未执行这次插件变更' };
+  }
+  return confirmation;
+}
+
+function declinedBody(error) {
+  return { ok: false, declined: true, error: error || '用户拒绝了这次插件变更' };
+}
+
 function scheduleRestart(startHarness, delayMs) {
   // The install response is flushed before this timer fires, so the tool
   // result reaches the session log first. The delay is a fixed grace period,
@@ -98,7 +141,7 @@ function normalizeInstallResult(result, fallbackSpec) {
   };
 }
 
-async function handleInstall(req, res, { installPlugin, startHarness, restartDelayMs }) {
+async function handleInstall(req, res, { installPlugin, startHarness, restartDelayMs, confirmPluginChange }) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req) || '{}');
@@ -114,6 +157,21 @@ async function handleInstall(req, res, { installPlugin, startHarness, restartDel
   }
   if (!allowBuilds) {
     badRequest(res, 'allowBuilds 包含非法包名');
+    return;
+  }
+  const confirmation = await confirmForRequest(res, confirmPluginChange, {
+    action: 'install',
+    target: spec,
+    allowBuilds,
+  });
+  if (!confirmation.allowed) {
+    sendJson(res, 200, {
+      ...declinedBody(confirmation.error),
+      needsAllowBuilds: false,
+      allowBuilds: [],
+      spec,
+      log: '',
+    });
     return;
   }
   try {
@@ -139,7 +197,7 @@ async function handleInstall(req, res, { installPlugin, startHarness, restartDel
  * tools. Guards live in the desktop callbacks (plugin-ops / marketplace
  * validation), so this layer only normalizes the envelope.
  */
-async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarness, restartDelayMs }) {
+async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarness, restartDelayMs, confirmPluginChange }) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req) || '{}');
@@ -165,6 +223,15 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
         badRequest(res, '仅支持 github:owner/repo[#ref] 安装规格');
         return;
       }
+      const confirmation = await confirmForRequest(res, confirmPluginChange, {
+        action: 'install',
+        target: id || spec,
+        allowBuilds,
+      });
+      if (!confirmation.allowed) {
+        sendJson(res, 200, declinedBody(confirmation.error));
+        return;
+      }
       const result = id
         ? await desktop.installCatalog(id, { allowBuilds })
         : await installPlugin(spec, { allowBuilds });
@@ -182,6 +249,15 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
         badRequest(res, '缺少包名');
         return;
       }
+      const confirmation = await confirmForRequest(res, confirmPluginChange, {
+        action: 'remove',
+        target: name,
+        allowBuilds,
+      });
+      if (!confirmation.allowed) {
+        sendJson(res, 200, declinedBody(confirmation.error));
+        return;
+      }
       const result = await desktop.removePlugin(name);
       const ok = result?.ok === true;
       if (ok) {
@@ -195,6 +271,15 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
       const names = Array.isArray(payload.names)
         ? payload.names
         : [payload.name];
+      const confirmation = await confirmForRequest(res, confirmPluginChange, {
+        action,
+        target: action === 'disable' && names.length > 1 ? names : names[0],
+        allowBuilds,
+      });
+      if (!confirmation.allowed) {
+        sendJson(res, 200, declinedBody(confirmation.error));
+        return;
+      }
       const result = action === 'disable'
         ? await desktop.disablePlugins(names)
         : await desktop.enablePlugin(names[0]);
@@ -206,9 +291,9 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
   }
 }
 
-function createHandler({ installPlugin, startHarness, desktop, restartDelayMs }) {
+function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, confirmPluginChange }) {
   const delay = Number.isFinite(restartDelayMs) ? restartDelayMs : RESTART_DELAY_MS;
-  const ops = { installPlugin, startHarness, restartDelayMs: delay };
+  const ops = { installPlugin, startHarness, restartDelayMs: delay, confirmPluginChange };
   return async (req, res) => {
     const pathname = new URL(req.url ?? '/', 'http://dshd.internal').pathname;
     if (pathname !== '/install' && !pathname.startsWith('/desktop/')) {

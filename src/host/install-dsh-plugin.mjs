@@ -86,6 +86,7 @@ export async function apply(ctx) {
         additionalProperties: false,
         properties: {
           ok: { type: 'boolean', required: true },
+          declined: { type: 'boolean', required: true },
           needsAllowBuilds: { type: 'boolean', required: true },
           allowBuilds: { type: 'array', required: true, items: { type: 'string' } },
           spec: { type: 'string', required: true },

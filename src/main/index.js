@@ -604,6 +604,51 @@ async function confirmUnverifiedColdStart(info, parent = getLauncherWindow()) {
   return result.response === 0;
 }
 
+/**
+ * Plugin mutations requested over the model-facing control channel
+ * (/install and /desktop/plugin) must be approved on the desktop before the
+ * main process executes them. Anything the loopback cannot get confirmed
+ * stays undone.
+ */
+async function confirmDesktopPluginChange(request) {
+  const action = String(request?.action || '');
+  const target = Array.isArray(request?.target)
+    ? request.target.join('、')
+    : String(request?.target || '');
+  const allowBuilds = Array.isArray(request?.allowBuilds) ? request.allowBuilds : [];
+  let message;
+  if (action === 'install') {
+    message = target.startsWith('github:')
+      ? `助理想安装插件 ${target}`
+      : `助理想安装目录插件 ${target}`;
+  } else if (action === 'remove') {
+    message = `助理想卸载插件 ${target}`;
+  } else if (action === 'disable') {
+    message = `助理想停用插件 ${target}`;
+  } else if (action === 'enable') {
+    message = `助理想启用插件 ${target}`;
+  } else {
+    message = `助理想变更插件 ${target || action}`;
+  }
+  const detail = [
+    '执行后桌面会重启 Harness 以应用变更，助理当前会话也会随之重启。',
+    action === 'install' ? '插件代码会在本机运行。' : '',
+    allowBuilds.length > 0 ? `并允许以下包在沙箱外运行构建脚本：${allowBuilds.join(', ')}` : '',
+  ].filter(Boolean).join('\n');
+  const result = await confirmDialog(firstVisibleWindow(), {
+    type: 'warning',
+    buttons: ['允许', '拒绝'],
+    defaultId: 1,
+    cancelId: 1,
+    dangerIds: [0],
+    title: '助理请求变更插件',
+    message,
+    detail,
+    noLink: true,
+  });
+  return result.response === 0;
+}
+
 // Keep the full release notes in the update dialog's reading region.
 function updateAskDetail(check) {
   return plainReleaseNotes(check?.notes) || '该版本未提供更新说明。';
@@ -1218,6 +1263,7 @@ if (!gotLock) {
         token: loadConfig().githubToken,
       }),
       startHarness: restartWithCleanup,
+      confirmPluginChange: confirmDesktopPluginChange,
       // The /desktop/* half of the control channel: dsh-whale's management
       // tools reach the same profile-ops implementation as the IPC surface,
       // so config writes and plugin toggles share one serialized align
@@ -1226,7 +1272,6 @@ if (!gotLock) {
         proactive: (payload) => proactiveService.dispatch(payload),
         project: (payload) => projectEnvironment.dispatch(payload),
         htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
-        project: (payload) => projectEnvironment.dispatch(payload),
         state: () => {
           const configNow = loadConfig();
           const listed = listInstalledPlugins();
