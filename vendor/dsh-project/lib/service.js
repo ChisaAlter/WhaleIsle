@@ -42,7 +42,7 @@ const TRANSIENT_CODES = new Set(['SERVER', 'RATE_LIMIT', 'TIMEOUT', 'TRANSPORT']
 export class ProjectService {
   constructor(ctx, table, { home, desktop, teams = ctx.agentTeams }) {
     this.ctx = ctx; this.teams = teams; this.table = table; this.home = home; this.desktop = desktop; this.available = true;
-    this.tail = Promise.resolve(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
+    this.tail = Promise.resolve(); this.notesWrites = new Map(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
     this.background = new Set(); this.closing = false; this.recovering = true; this.scheduling = false; this.scheduleRevision = 0; this.held = new Set(); this.workerStops = new Map(); this.projectHolds = new Map(); this.archiving = new Set();
     this.summaryRetryDelays = [30000, 120000, 360000]; this.summaryRetryTimers = new Map();
     this.settlementCheckDelay = 45000; this.settlementCheckTimers = new Map(); this.settlementChecks = new Map();
@@ -831,7 +831,9 @@ export class ProjectService {
           const reservation = work.delegations.find(item => item.ref === member.reservationRef);
           const preparing = reservation?.phase === 'preparing' && !reservation.runId;
           member.phase = member.stopped ? 'stopping' : preparing ? 'provisioning' : 'idle';
-          member.directoryHeld = Boolean(preparing && !readOnly(reservation.scope)) || (!readOnly(member.role) && this.jobs(member.sessionId).length > 0);
+          member.directoryHeld = member.stopped || this.held.has(member.sessionId)
+            ? member.directoryHeld || !readOnly(member.role) && this.jobs(member.sessionId).length > 0
+            : Boolean(preparing && !readOnly(reservation.scope)) || !readOnly(member.role) && this.jobs(member.sessionId).length > 0;
         }
         const receipt = latest(work);
         if (refs.includes(receipt.ref)) {
@@ -1171,10 +1173,10 @@ export class ProjectService {
   async jobChanged(event) {
     if (this.closing && !this.persistOnDispose) return;
     if (event.type !== 'settled' && event.type !== 'removed') return;
-    const id = event.job.owner, member = this.state().workers.find(item => item.sessionId === id); if (!member || member.activeRunId || this.launches.has(member.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || member.phase === 'stopping') return;
+    const id = event.job.owner, member = this.state().workers.find(item => item.sessionId === id); if (!member || member.activeRunId || this.launches.has(member.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || member.phase === 'stopping' || member.stopped || this.held.has(id)) return;
     await this.serial(async () => {
       const current = this.worker(id);
-      if (current.activeRunId || this.launches.has(current.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || current.phase === 'stopping') return;
+      if (current.activeRunId || this.launches.has(current.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || current.phase === 'stopping' || current.stopped || this.held.has(id)) return;
       await this.write(state => { const worker = state.workers.find(item => item.sessionId === id); worker.directoryHeld = false; const work = state.workstreams.find(item => item.id === worker.workstreamId), receipt = latest(work);
       if (!worker.stopped && receipt.report && work.settlements.some(terminal => terminal.delegationRefs.includes(receipt.ref) && terminal.stopReason === 'completed')) { work.status = receipt.report.outcome === 'completed' ? 'done' : 'blocked'; work.blockedReason = receipt.report.outcome === 'completed' ? '' : receipt.report.summary; }
     }); await this.completeTask(this.stream(member.workstreamId)); await this.notes(member.projectId); }); this.schedule();
@@ -1226,7 +1228,14 @@ export class ProjectService {
     if (bytes.length > preferencesLimit) { let end = preferencesLimit; while ((bytes[end] & 0xc0) === 0x80) end--; value = bytes.subarray(0, end).toString('utf8') + '\n[Project preferences truncated at the size limit; ask the user to shorten them.]'; }
     return `Project preferences (current user instructions take precedence):\n${value}`;
   }
-  async notes(id) {
+  /** Serialize notes.md rewrites per Project: concurrent temp+rename onto the same file fails on Windows (EPERM). */
+  notes(id) {
+    const run = (this.notesWrites.get(id) ?? Promise.resolve()).catch(() => {}).then(() => this.writeNotes(id));
+    this.notesWrites.set(id, run);
+    void run.finally(() => { if (this.notesWrites.get(id) === run) this.notesWrites.delete(id); }).catch(() => {});
+    return run;
+  }
+  async writeNotes(id) {
     const project = this.project(id), root = await this.storeRoot(project), path = join(root, 'notes.md'); let user = '';
     try { const actual = await this.storePath(project, 'notes.md'), old = await fs.readFile(actual, 'utf8'); if (old.includes(marker)) user = old.slice(old.indexOf(marker) + marker.length); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const all = this.state().workstreams.filter(item => item.projectId === id);

@@ -851,6 +851,42 @@ test('native requirement cancellation drains its active member before the next r
   }
 });
 
+test('native cancellation keeps the draining writer directory held until its drain completes', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-drain-hold-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
+  const bridge = await desktopBridge(root), model = new QueueModel(); model.holdTitles = new Set(['A', 'B']); let ctx, releaseDrain = () => {};
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret' });
+  try {
+    ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'native-drain-hold-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    let promptNumber = 0;
+    const prompt = actions => ctx.sessionController.prompt({ sessionId: lead.id, requestId: `native-drain-hold-human-${++promptNumber}`, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
+    await prompt([{ type: 'request', title: 'A', disposition: 'queued' }, { type: 'delegate', title: 'A' }]); await lead.whenIdle();
+    await waitFor(() => model.barriersReached.has('worker:A'), 'A native worker is active before cancellation');
+    await prompt([{ type: 'request', title: 'B', disposition: 'queued' }, { type: 'delegate', title: 'B' }]); await lead.whenIdle();
+    const a = host.state().workstreams[0], b = () => host.state().workstreams.find(work => work.title === 'B work'), aId = a.workerSessionId, oldRef = a.currentDelegationRef, drain = host.drainWorker;
+    const drainGate = new Promise(done => { releaseDrain = done; }); let draining = false;
+    host.drainWorker = async function (owner, id) { if (id === aId) { draining = true; await drainGate; } return drain.call(this, owner, id); };
+    try {
+      await prompt([{ type: 'queue', title: 'A', action: 'cancel' }]);
+      await waitFor(() => draining && model.workerAborts.some(item => item.ref === oldRef), 'active cancellation aborts A but its native drain is still pending');
+      await waitFor(() => !host.worker(aId).activeRunId, 'the aborted run settles while the native drain is still gated');
+      assert.equal(host.worker(aId).phase, 'stopping'); assert.equal(host.worker(aId).directoryHeld, true, 'a settled-but-draining writer still occupies its directory');
+      await host.launch(b().id); await host.tail;
+      assert.equal(b().delegations.at(-1).phase, 'queued', 'B cannot prepare while A drains');
+      assert.equal(b().delegations.at(-1).waitingReason?.kind, 'directory');
+      assert.equal(model.workerInputs.some(item => item.context.title === 'B'), false);
+      releaseDrain();
+      await waitFor(() => { assert.deepEqual(model.streamErrors, []); assert.deepEqual(model.failures, []); return model.barriersReached.has('worker:B'); }, 'completed native drain activates B automatically');
+    } finally { releaseDrain(); host.drainWorker = drain; }
+  } finally {
+    releaseDrain(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-drain-hold-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('native requirement queue survives cold restart without model calls and explicit resume keeps its original member and goal authority', { timeout: 120000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-native-queue-restart-')), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
