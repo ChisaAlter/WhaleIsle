@@ -414,7 +414,9 @@ describe("scope handling", () => {
     const response = await authorize(clientId, "workspace.read bogus.scope");
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("workspace.read");
+    // The consent page lists human-readable labels for the granted scopes.
+    expect(html).toContain("Read files in this workspace");
+    expect(html).not.toContain("Search this workspace");
     expect(html).not.toContain("bogus.scope");
   });
 
@@ -423,8 +425,8 @@ describe("scope handling", () => {
     const response = await authorize(clientId);
     expect(response.status).toBe(200);
     const html = await response.text();
-    for (const scope of ["workspace.read", "workspace.search", "git.read", "execution.read", "offline_access"]) {
-      expect(html).toContain(scope);
+    for (const label of ["Read files in this workspace", "Search this workspace", "Read git status and diffs", "Read DSH execution summaries", "Stay connected between sessions"]) {
+      expect(html).toContain(label);
     }
   });
 });
