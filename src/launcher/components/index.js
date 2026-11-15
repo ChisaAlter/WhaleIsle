@@ -277,10 +277,11 @@ function createComponentsService(deps = {}) {
       }
     }
     if (pid) {
-      lifecycle.killPid(pid, { force: false }, deps);
-      const dead = await waitStopped(pid, 1500);
-      if (!dead) {
-        lifecycle.killPid(pid, { force: true }, deps);
+      try {
+        await lifecycle.killPidTree(pid, { graceMs: 1500 }, deps);
+      } catch {
+        // A stubborn tree that outlived the escalation still gets the
+        // recorded-stopped bookkeeping below; give it the rest of the window.
         await waitStopped(pid, STOP_GRACE_MS);
       }
     }

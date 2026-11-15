@@ -123,25 +123,41 @@ function fakeEnv(t, { samples } = {}) {
         return alive.has(pid) ? `"node.exe","${pid}","Console","1","10 K"` : 'INFO: no tasks';
       }
       if (bin === 'taskkill') {
-        const match = /\/PID\s+(\d+)/i.exec(text);
-        const pid = match ? Number(match[1]) : 0;
-        killed.push({ pid, args: args.slice(), options });
-        // Mirror real Windows: a non-forced taskkill on a windowless child is
-        // refused ("只能强制终止"), only /F actually kills.
-        if (!args.includes('/F')) {
-          throw new Error('refused: needs /F');
-        }
-        alive.delete(pid);
-        const row = spawned.find((item) => item.pid === pid);
-        if (row && row.child.exitCode === null) {
-          row.child.exitCode = 0;
-          setImmediate(() => row.child.emit('exit', 0));
-        }
-        return '';
+        return runTaskkill(args, options);
       }
       return '';
     },
+    execFile: (bin, args, options, callback) => {
+      if (bin === 'taskkill') {
+        try {
+          const out = runTaskkill(args, options);
+          callback(null, out);
+        } catch (error) {
+          callback(error);
+        }
+        return;
+      }
+      callback(null, '');
+    },
   };
+  function runTaskkill(args, options) {
+    const text = args.join(' ');
+    const match = /\/PID\s+(\d+)/i.exec(text);
+    const pid = match ? Number(match[1]) : 0;
+    killed.push({ pid, args: args.slice(), options });
+    // Mirror real Windows: a non-forced taskkill on a windowless child is
+    // refused ("只能强制终止"), only /F actually kills.
+    if (!args.includes('/F')) {
+      throw new Error('refused: needs /F');
+    }
+    alive.delete(pid);
+    const row = spawned.find((item) => item.pid === pid);
+    if (row && row.child.exitCode === null) {
+      row.child.exitCode = 0;
+      setImmediate(() => row.child.emit('exit', 0));
+    }
+    return '';
+  }
   return { deps, spawned, killed, alive, root, samplesRoot };
 }
 
@@ -223,12 +239,10 @@ test('start spawns the entry, records pid, and stop taskkills the tree', async (
   const stopped = await svc.stop('toy');
   assert.equal(stopped.ok, true);
   assert.equal(stopped.state, 'stopped');
-  assert.ok(env.killed.some((row) => row.pid === started.pid && !row.args.includes('/F')),
-    'graceful taskkill attempted first');
-  const kill = env.killed.find((row) => row.pid === started.pid && row.args.includes('/F'));
-  assert.ok(kill, 'a refused graceful kill must escalate to force');
-  assert.ok(kill.args.includes('/T') && kill.args.includes('/F'), 'tree kill must be forced');
-  assert.ok(env.killed.every((row) => row.options.timeout === 5000), 'every synchronous taskkill must have a five-second timeout');
+  const kill = env.killed.find((row) => row.pid === started.pid);
+  assert.ok(kill, 'stop must run the shared tree kill');
+  assert.ok(kill.args.includes('/T') && kill.args.includes('/F'), 'tree kill must walk the tree and be forced');
+  assert.equal(kill.options.timeout, 2500, 'the shared taskkill timeout applies');
   assert.equal(store.loadRegistry(env.root).components.toy.state, 'stopped');
 });
 

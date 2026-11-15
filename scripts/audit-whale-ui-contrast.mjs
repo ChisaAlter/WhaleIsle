@@ -9,13 +9,14 @@
  * Findings already recorded in whale-ui-contrast/known-findings.json are reported but do not fail the run;
  * --no-known ignores that list and --strict also fails on warnings (< 4.5:1) and on stale known entries.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { formatReport, verdict } from './whale-ui-contrast/report.mjs'
+import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js'
 
 const knownFindingsPath = new URL('./whale-ui-contrast/known-findings.json', import.meta.url)
 
@@ -30,8 +31,9 @@ const timeoutMs = Number(process.env.WHALE_CONTRAST_TIMEOUT_MS) || 300_000
 
 function stopTree(child) {
   if (!child || child.exitCode !== null) return
-  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
-  else child.kill('SIGKILL')
+  killProcessTree(child.pid, { signal: 'SIGKILL' }).catch((error) => {
+    console.warn(`stopTree failed for pid ${child.pid}: ${error.message}`)
+  })
 }
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'whale-contrast-run-'))
@@ -45,7 +47,7 @@ try {
   const child = spawn(electron, [
     path.join(root, 'scripts', 'whale-ui-contrast', 'electron-main.cjs'),
     `--user-data-dir=${path.join(scratch, 'profile')}`, '--no-first-run', `--out=${outPath}`, ...forwarded,
-  ], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  ], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...spawnTreeOptions() })
   let stderr = ''
   child.stderr.on('data', (chunk) => { stderr += chunk })
   const timer = setTimeout(() => stopTree(child), timeoutMs)

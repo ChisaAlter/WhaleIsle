@@ -22,6 +22,7 @@ const {
 } = require('../shared/lan');
 const { createMobileWebServer, listenMobileWebServer, MOBILE_WEB_PORT } = require('./mobile-web-server');
 const { startGitTunnelServer } = require('./dshd-git-tunnel');
+const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
 
 function resolveVendorRoot() {
   // Packaged: extraResources -> resources/vendor/dshd-remote
@@ -895,6 +896,8 @@ class DshdRemote extends EventEmitter {
       stdio: ['pipe', 'pipe', 'pipe'],
       env,
       windowsHide: true,
+      // POSIX group leader so the forced stop can reach daemon descendants.
+      ...spawnTreeOptions(),
     });
     const handle = { child, stopping: false, stderrTail: '' };
     this.pendingDaemon = handle;
@@ -1033,27 +1036,19 @@ class DshdRemote extends EventEmitter {
     if (!exited) {
       let killError;
       try {
-        if (process.platform === 'win32') {
-          // This exact handle came from our spawn and remains owned. Its
-          // executable can be Electron running as Node; never broaden the
-          // image-name guard used for PID files in DshManager.
-          if ((this.daemon !== handle && this.pendingDaemon !== handle)
-              || child.pid === process.pid || child.pid === process.ppid) {
-            throw new Error('远程守护进程不属于当前桌面，拒绝终止');
-          }
-          await new Promise((resolve, reject) => {
-            this.execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-              timeout: 2_500, windowsHide: true,
-            }, (error) => { if (error) reject(error); else resolve(); });
-          });
-        } else {
-          child.kill('SIGKILL');
+        // This exact handle came from our spawn and remains owned. Its
+        // executable can be Electron running as Node; never broaden the
+        // image-name guard used for PID files in DshManager.
+        if ((this.daemon !== handle && this.pendingDaemon !== handle)
+            || child.pid === process.pid || child.pid === process.ppid) {
+          throw new Error('远程守护进程不属于当前桌面，拒绝终止');
         }
+        await killProcessTree(child.pid, { signal: 'SIGKILL', run: this.execFile });
       } catch (error) {
         killError = error;
       }
-      // The child can exit gracefully while taskkill is starting. A failed kill
-      // command is not a live process; reconcile the owned child's exit first.
+      // The child can exit gracefully while the tree kill is starting. A
+      // failed kill is not a live process; reconcile the owned child's exit.
       if (!await waitForExit(child, 2_000)) {
         const error = new Error(`远程守护进程未停止（pid ${child.pid}）${killError ? `：${killError.message}` : ''}`);
         error.code = 'DSHD_REMOTE_STOP_FAILED';

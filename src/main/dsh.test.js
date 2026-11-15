@@ -14,6 +14,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { DshManager, missingDesktopForkPackages, harnessSpawnPlan } = require('./dsh');
+const { killProcessTree } = require('../shared/process-tree');
 const { DESKTOP_PACKAGES } = require('../shared/harness-desktop-forks');
 const { readPin } = require('../shared/harness-upstream');
 const { isUnpublishedHarnessNpm } = require('./harness-browser-auth');
@@ -691,13 +692,13 @@ test('failed Windows taskkill preserves a real owned process tree and PID until 
   t.after(async () => {
     process.kill = originalKill;
     if (child?.pid && child.exitCode === null && !child.signalCode) {
-      await new Promise((resolve) => execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, resolve));
+      await killProcessTree(child.pid);
       await waitFor(() => child.exitCode !== null || child.signalCode);
     }
     if (descendantPid) {
       try { originalKill(descendantPid, 0); }
       catch { descendantPid = null; }
-      if (descendantPid) await new Promise((resolve) => execFile('taskkill', ['/pid', String(descendantPid), '/T', '/F'], { windowsHide: true }, resolve));
+      if (descendantPid) await killProcessTree(descendantPid);
     }
     h.cleanup();
   });

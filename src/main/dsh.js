@@ -16,6 +16,7 @@ const { taskControlToken } = require('./task-protection');
 const { platformToken } = require('./platform-session');
 const { desktopCliArgs } = require('./pnpm-runtime');
 const { readPin } = require('../shared/harness-upstream');
+const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
 const { probeHarnessReady, isUnpublishedHarnessNpm } = require('./harness-browser-auth');
 
 const PORT_SCAN_RANGE = 50;
@@ -254,41 +255,14 @@ async function killTree(pid, run = execFile) {
   if (!pid || !await isSafeToKill(pid, run)) {
     return false;
   }
-  let failure;
   try {
-    if (process.platform === 'win32') {
-      await execTimed('taskkill', ['/pid', String(pid), '/T', '/F'], 2500, run);
-    } else {
-      process.kill(-pid, 'SIGTERM');
-    }
+    return await killProcessTree(pid, { run });
   } catch (error) {
-    failure = error;
-    if (process.platform === 'win32') {
-      // A parent-only signal cannot prove that taskkill /T stopped the owned
-      // descendants. Keep the live tree tracked for an explicit retry.
-      if (!processAlive(pid)) return true;
-      const stopError = new Error(`dsh 进程树未停止（pid ${pid}）：${error.message}`);
-      stopError.code = 'DSH_STOP_FAILED';
-      stopError.cause = error;
-      throw stopError;
-    }
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch (fallbackError) {
-      if (fallbackError.code !== 'ESRCH') failure = fallbackError;
-    }
+    const stopError = new Error(`dsh 进程树未停止（pid ${pid}）：${error.message}`);
+    stopError.code = 'DSH_STOP_FAILED';
+    stopError.cause = error;
+    throw stopError;
   }
-  const deadline = Date.now() + 2_000;
-  while (processAlive(pid)) {
-    if (Date.now() >= deadline) {
-      const error = new Error(`dsh 进程未停止（pid ${pid}）${failure ? `：${failure.message}` : ''}`);
-      error.code = 'DSH_STOP_FAILED';
-      if (failure) error.cause = failure;
-      throw error;
-    }
-    await sleep(50);
-  }
-  return true;
 }
 
 function pidFilePath() {
@@ -397,6 +371,8 @@ function spawnHarness(command, args, options) {
     ...options,
     windowsHide: true,
     shell: plan.shell,
+    // POSIX group leader so killProcessTree can reach harness descendants.
+    ...spawnTreeOptions(),
   });
 }
 

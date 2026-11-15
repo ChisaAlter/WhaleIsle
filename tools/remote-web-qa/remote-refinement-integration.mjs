@@ -1,12 +1,13 @@
 /** Isolated source-Electron/real-relay pairing checks. Credentials never enter the report. */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reservePort } from '../../scripts/smoke-workspace.mjs';
+import { killProcessTree, spawnTreeOptions } from '../../src/shared/process-tree.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(join(root, 'vendor/chisacode-remote/package.json'));
@@ -79,7 +80,7 @@ try {
   console.log(`Source pairing QA starting with isolated ports ${harnessPort}/${remotePort}/${debugPort}`);
   const env = { ...process.env, PATH: `${resolve(process.execPath, '..')};${process.env.PATH || ''}` };
   for (const key of Object.keys(env)) if (/^(ELECTRON_RUN_AS_NODE|DSH_HOME|DSHD_HOME|CHISACODE_|DSH_SMOKE|DSH_QA|DSH_REMOTE_PHONE_HOST)/.test(key)) delete env[key];
-  child = spawn(electron, ['.', `--user-data-dir=${userData}`, `--remote-debugging-port=${debugPort}`, '--remote-debugging-address=127.0.0.1', '--background', '--dshd-from-launcher', '--no-first-run'], { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  child = spawn(electron, ['.', `--user-data-dir=${userData}`, `--remote-debugging-port=${debugPort}`, '--remote-debugging-address=127.0.0.1', '--background', '--dshd-from-launcher', '--no-first-run'], { cwd: root, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...spawnTreeOptions() });
   for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => { logs = (logs + redact(chunk.toString())).slice(-100000); });
   await until(async () => { const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`); return response.ok; }, 'Source debugger did not start', 30000);
   desktop = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`);
@@ -189,7 +190,7 @@ try {
   await appPage?.evaluate(() => window.shell.saveRemote({ remoteEnabled: false })).catch(() => {});
   await browser?.close().catch(() => {});
   await desktop?.close().catch(() => {});
-  if (child?.pid && child.exitCode === null) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  if (child?.pid && child.exitCode === null) await killProcessTree(child.pid, { signal: 'SIGKILL' }).catch(() => {});
   if (spa) await new Promise((done) => spa.server.close(done));
   await writeFile(join(output, 'results.json'), JSON.stringify({ results, fixture: { userData, workspace, harnessPort, remotePort, debugPort } }, null, 2));
   await writeFile(join(output, 'source-log.txt'), logs);

@@ -10,6 +10,7 @@ import {
   assertDesktopHarnessHome, assertSmokeResult, createSmokeDirs, electronSpawnEnv,
   initGitWorkspace, reservePort, writeSmokeConfig,
 } from './smoke-workspace.mjs'
+import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -60,22 +61,16 @@ function assertProductNotRunning() {
 
 function stopProcessTree(child) {
   if (!child || child.exitCode !== null) return
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
-    return
-  }
-  try {
-    process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    child.kill('SIGTERM')
-  }
+  killProcessTree(child.pid).catch((error) => {
+    console.warn(`stopProcessTree failed for pid ${child.pid}: ${error.message}`)
+  })
 }
 
 function run(executable, args, env) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: root,
-      detached: process.platform !== 'win32',
+      ...spawnTreeOptions(),
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,

@@ -5,7 +5,7 @@
  * Starts a fresh Electron with remoteEnabled=true on disk, walks only the
  * composer-official cases, and fails if any required case is missing or red.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -14,6 +14,7 @@ import {
   assertDesktopHarnessHome, assertSmokeResult, createSmokeDirs, electronSpawnEnv,
   initGitWorkspace, reservePort,
 } from './smoke-workspace.mjs'
+import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js'
 
 const require = createRequire(import.meta.url)
 const { assertComposerOfficialQaResult } = require('../src/main/composer-official-qa.js')
@@ -39,22 +40,16 @@ function electronExecutable() {
 
 function stopProcessTree(child) {
   if (!child || child.exitCode !== null) return
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
-    return
-  }
-  try {
-    process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    child.kill('SIGTERM')
-  }
+  killProcessTree(child.pid).catch((error) => {
+    console.warn(`stopProcessTree failed for pid ${child.pid}: ${error.message}`)
+  })
 }
 
 function run(executable, args, env) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: root,
-      detached: process.platform !== 'win32',
+      ...spawnTreeOptions(),
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,

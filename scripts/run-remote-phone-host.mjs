@@ -3,13 +3,14 @@
  * Desktop host for real phone pairing: force-start desktop, enable LAN remote,
  * print [PAIRING_URL], stay up. Pairing URL is not opened by this script.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   createSmokeDirs, electronSpawnEnv, initGitWorkspace, reservePort,
 } from './smoke-workspace.mjs'
+import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const keepMs = Number(process.env.DSH_REMOTE_HOST_MS) || 900_000
@@ -54,6 +55,7 @@ const child = spawn(electronExecutable(), ['.', `--user-data-dir=${dirs.userData
   }),
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: false,
+  ...spawnTreeOptions(),
 })
 
 let url = ''
@@ -77,7 +79,7 @@ while (!url && Date.now() < deadline) {
 
 if (!url) {
   console.error('No pairing URL within 180s')
-  spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
+  await killProcessTree(child.pid).catch(() => {})
   process.exit(1)
 }
 
@@ -85,4 +87,4 @@ writeFileSync(path.join(dirs.userData, 'pairing-url.final.txt'), `${url}\n`)
 console.log(`Host ready. Staying up ${Math.round(keepMs / 1000)}s.`)
 console.log(`PAIR_URL=${url}`)
 await new Promise((r) => setTimeout(r, keepMs))
-spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
+await killProcessTree(child.pid).catch(() => {})
