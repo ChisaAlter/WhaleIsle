@@ -68,7 +68,9 @@ export async function generateLocalPairingOffer(args: {
   let linkUrl: string | undefined;
   if (args.includePersistentLink) {
     args.assertCurrent?.();
-    const link = new RelayPairingLinkStore(args.chisacodeHome).getOrCreate();
+    const link = new RelayPairingLinkStore(args.chisacodeHome, {
+      logger: args.logger,
+    }).getOrCreate();
     const linkOffer = await createConnectionOfferV2({
       serverId,
       daemonPublicKeyB64: daemonKeyPair.publicKeyB64,

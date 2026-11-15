@@ -20,6 +20,7 @@ let muxOrigin = '';
 let muxCookie = '';
 let muxRunning = false;
 let harnessCookie = sanitizeHarnessCookie(process.env.DSHD_HARNESS_COOKIE || '');
+let gitTunnelToken = '';
 
 function currentOrigin() {
   return String(process.env.DSHD_HARNESS_ORIGIN || '').trim();
@@ -84,7 +85,7 @@ function ensureMux() {
 
 async function gitRpc({ action, cwd, payload }) {
   const url = String(process.env.DSHD_GIT_TUNNEL_URL || '').trim();
-  const token = String(process.env.DSHD_GIT_TUNNEL_TOKEN || '').trim();
+  const token = gitTunnelToken;
   if (!url || !token) {
     throw new Error('Git 隧道未就绪');
   }
@@ -144,6 +145,10 @@ export function applyDaemonStdinLine(line) {
     harnessCookie = sanitizeHarnessCookie(line.slice('harness-cookie '.length));
     ensureMux();
     return 'cookie';
+  }
+  if (line.startsWith('git-tunnel-token ')) {
+    gitTunnelToken = line.slice('git-tunnel-token '.length).trim();
+    return 'git-tunnel-token';
   }
   return '';
 }

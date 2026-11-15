@@ -523,6 +523,34 @@ test('the port control changes the real loopback daemon endpoint and restarts it
   assert.equal(f.remote.snapshot().port, 8899);
 });
 
+test('the git tunnel token reaches the daemon over stdin, not env', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-git-'));
+  const body = [
+    "process.stdin.on('data', (chunk) => {",
+    '  fs.appendFileSync(launch.daemonConfig.chisacodeHome + "/runner-stdin.log", String(chunk));',
+    '});',
+    'fs.writeFileSync(launch.daemonConfig.chisacodeHome + "/runner-env.json", JSON.stringify({',
+    '  DSHD_GIT_TUNNEL_URL: process.env.DSHD_GIT_TUNNEL_URL || null,',
+    '  DSHD_GIT_TUNNEL_TOKEN: process.env.DSHD_GIT_TUNNEL_TOKEN || null,',
+    '}));',
+    'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+  ].join('\n');
+  const f = fakeRemote({ home, runnerBody: body, options: { git: {} } });
+  t.after(async () => {
+    await f.remote.stopDaemon();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+  });
+
+  await f.remote.startDaemon();
+  assert.ok(f.remote.gitTunnel, 'git 对象存在时必须起隧道');
+  const childEnv = JSON.parse(fs.readFileSync(path.join(home, 'runner-env.json'), 'utf8'));
+  assert.equal(childEnv.DSHD_GIT_TUNNEL_URL, f.remote.gitTunnel.url);
+  assert.equal(childEnv.DSHD_GIT_TUNNEL_TOKEN, null);
+  const stdinLog = fs.readFileSync(path.join(home, 'runner-stdin.log'), 'utf8');
+  assert.ok(stdinLog.includes(`git-tunnel-token ${f.remote.gitTunnel.token}\n`));
+});
+
 test('daemon child relay log lines drive snapshot relay state across the process boundary', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
   const relayBody = [
@@ -1027,11 +1055,11 @@ test('buildDaemonChildEnv bridges CHISACODE_* into the child only and applies th
     config: {},
     harnessOrigin: 'http://127.0.0.1:3080',
     gitTunnelUrl: 'http://127.0.0.1:9',
-    gitTunnelToken: 'tok',
   });
   assert.equal(bridged.DSHD_HARNESS_ORIGIN, 'http://127.0.0.1:3080');
   assert.equal(bridged.DSHD_GIT_TUNNEL_URL, 'http://127.0.0.1:9');
-  assert.equal(bridged.DSHD_GIT_TUNNEL_TOKEN, 'tok');
+  // The tunnel token is a credential: stdin control line, never child env.
+  assert.equal(bridged.DSHD_GIT_TUNNEL_TOKEN, undefined);
   assert.equal(bridged.DSH_HOME, undefined);
 });
 

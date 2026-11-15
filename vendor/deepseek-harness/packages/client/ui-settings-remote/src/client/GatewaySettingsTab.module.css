@@ -84,6 +84,24 @@
   min-width: 0;
 }
 
+.lanWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 0.5px solid var(--dsw-alias-state-warn-secondary);
+  border-radius: var(--dsw-radius-sm);
+  padding: 8px 12px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lanWarning > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 .scopeGroup {
   display: flex;
   flex-wrap: wrap;

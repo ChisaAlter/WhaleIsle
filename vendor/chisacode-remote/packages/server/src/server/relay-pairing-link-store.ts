@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 import path from "node:path";
+import type pino from "pino";
 import { z } from "zod/v3";
 
 import { ensurePrivateFile, writePrivateFileAtomicSync } from "./private-files.js";
@@ -31,9 +32,11 @@ function tokenHash(token: string): string {
  */
 export class RelayPairingLinkStore {
   private readonly filePath: string;
+  private readonly logger?: pino.Logger;
 
-  constructor(chisacodeHome: string) {
+  constructor(chisacodeHome: string, options: { logger?: pino.Logger } = {}) {
     this.filePath = path.join(chisacodeHome, "relay-pairing-link.json");
+    this.logger = options.logger;
   }
 
   /** Return the active link credential, creating one only when absent or revoked. */
@@ -76,8 +79,41 @@ export class RelayPairingLinkStore {
 
   private load(): PairingLink | null {
     if (!existsSync(this.filePath)) return null;
-    ensurePrivateFile(this.filePath);
-    return PairingLinkSchema.parse(JSON.parse(readFileSync(this.filePath, "utf8")));
+    try {
+      ensurePrivateFile(this.filePath);
+      return PairingLinkSchema.parse(JSON.parse(readFileSync(this.filePath, "utf8")));
+    } catch (error) {
+      this.quarantineCorrupt(error);
+      return null;
+    }
+  }
+
+  /**
+   * A truncated or schema-invalid link file must not wedge getOrCreate,
+   * accepts and revoke (all read first): warn, keep the bytes as evidence,
+   * and continue as if the link did not exist so getOrCreate can rebuild.
+   */
+  private quarantineCorrupt(error: unknown): void {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const corruptPath = `${this.filePath}.corrupt-${stamp}`;
+    let quarantined = false;
+    try {
+      renameSync(this.filePath, corruptPath);
+      quarantined = true;
+    } catch {
+      // Quarantine is best effort; the next persist still replaces the file.
+    }
+    const fields = quarantined
+      ? { err: error, filePath: this.filePath, corruptPath }
+      : { err: error, filePath: this.filePath };
+    const message = quarantined
+      ? "relay_pairing_link_corrupt_quarantined"
+      : "relay_pairing_link_corrupt";
+    if (this.logger) {
+      this.logger.warn(fields, message);
+    } else {
+      console.warn(message, fields);
+    }
   }
 
   private persist(link: PairingLink): void {

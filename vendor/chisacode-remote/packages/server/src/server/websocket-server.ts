@@ -1040,7 +1040,9 @@ export class VoiceAssistantWebSocketServer {
     }
     const accepted =
       store.consumePairingToken(auth.pairingToken) ||
-      new RelayPairingLinkStore(pending.chisacodeHome!).accepts(auth.pairingToken);
+      new RelayPairingLinkStore(pending.chisacodeHome!, {
+        logger: pending.connectionLogger,
+      }).accepts(auth.pairingToken);
     if (!accepted) {
       this.rejectRelayAuth(
         ws,
