@@ -438,7 +438,7 @@
   display: none;
 }
 
-@container model-row (max-width: 440px) {
+@container model-row (max-width: 480px) {
   .modelRow {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
   }
