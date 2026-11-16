@@ -176,6 +176,7 @@ function validateManifest(raw) {
 module.exports = {
   FORMAT,
   MANIFEST_ENTRY,
+  DeltaManifestError,
   isSafeRelPath,
   deltaAssetName,
   parseDeltaAssetName,
