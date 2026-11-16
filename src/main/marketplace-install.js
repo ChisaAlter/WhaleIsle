@@ -8,6 +8,7 @@ const { harnessRoot } = require('./paths');
 const { resolvePnpmEntry, desktopCliArgs } = require('./pnpm-runtime');
 const { childSpawnEnv } = require('../shared/child-spawn-env');
 const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { spawnTreeOptions } = require('../shared/process-tree');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { DROPPED, isDroppedPluginName, webProfileDir, PROFILE, listInstalledPlugins } = require('./plugins');
 const { resolveCommitSha, getMarketplacePlugin } = require('./marketplace-catalog');
@@ -115,8 +116,13 @@ function runPlugin(args, onProgress) {
       cwd: os.homedir(),
       env,
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // The CLI runner watches stdin as its parent lifeline; ignore would
+      // read as an immediately-dead parent. Held open, never written or
+      // ended. Group leader so the runner's own tree stop reaches pnpm.
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...spawnTreeOptions(),
     });
+    child.stdin?.on('error', () => {});
     let log = '';
     const append = (chunk) => {
       const text = chunk.toString('utf8');

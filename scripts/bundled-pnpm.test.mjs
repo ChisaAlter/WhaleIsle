@@ -92,6 +92,11 @@ export async function runCli({ packageManager }) {
   const unpackedMainDir = path.join(resources, 'app.asar.unpacked', 'src', 'main');
   fs.mkdirSync(unpackedMainDir, { recursive: true });
   fs.copyFileSync(path.join(mainDir, 'dsh-cli-runner.mjs'), path.join(unpackedMainDir, 'dsh-cli-runner.mjs'));
+  // The runner's plain-Node import chain ships via the same asarUnpack list.
+  fs.copyFileSync(path.join(mainDir, 'parent-lifeline.mjs'), path.join(unpackedMainDir, 'parent-lifeline.mjs'));
+  const unpackedSharedDir = path.join(resources, 'app.asar.unpacked', 'src', 'shared');
+  fs.mkdirSync(unpackedSharedDir, { recursive: true });
+  fs.copyFileSync(path.join(root, 'src', 'shared', 'process-tree.js'), path.join(unpackedSharedDir, 'process-tree.js'));
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).devDependencies.pnpm;
   for (const packaged of [false, true]) {
     const runtimeProcess = { platform: process.platform, env: baseEnv,
@@ -114,6 +119,7 @@ export async function runCli({ packageManager }) {
       './plugins': { PROFILE: 'web' },
       './marketplace-allowbuilds': require('../src/main/marketplace-allowbuilds'),
       '../shared/child-spawn-env': { childSpawnEnv: (config, options) => childSpawnEnv(config, { ...options, baseEnv }) },
+      '../shared/process-tree': require('../src/shared/process-tree'),
     };
     const module = { exports: {} };
     vm.runInNewContext(source, { module, process: runtimeProcess,

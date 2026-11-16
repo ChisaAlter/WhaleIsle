@@ -441,13 +441,19 @@ function harnessSpawnPlan(command, args, isWin = process.platform === 'win32') {
 
 function spawnHarness(command, args, options) {
   const plan = harnessSpawnPlan(command, args);
-  return spawn(plan.command, plan.args, {
+  const child = spawn(plan.command, plan.args, {
     ...options,
     windowsHide: true,
     shell: plan.shell,
     // POSIX group leader so killProcessTree can reach harness descendants.
     ...spawnTreeOptions(),
   });
+  // The piped stdin is the harness host's parent lifeline
+  // (src/main/parent-lifeline.mjs): held open, never written or ended, so a
+  // dead desktop closes it. A broken pipe must not surface as an unhandled
+  // 'error' event here.
+  child.stdin?.on('error', () => {});
+  return child;
 }
 
 function sleep(ms) {
@@ -1100,7 +1106,7 @@ class DshManager extends EventEmitter {
       child = this._spawnHarness(launch.command, launch.args, {
         cwd: config.workspace,
         env,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
       this.child = child;
       this.attachOutput(child);

@@ -23,9 +23,41 @@ function execute(command, args, options) {
   });
 }
 
-test('plain Node CLI runner is shipped outside the Electron archive', () => {
+/**
+ * Follow relative `import … from './x'` / `require('./x')` edges from one
+ * source file across the desktop tree.
+ * @param {string} entry - absolute path of the root module.
+ * @returns {string[]} project-relative posix paths of every reachable file.
+ */
+function localImportClosure(entry) {
+  const seen = new Set();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const file = queue.pop();
+    const rel = path.relative(ROOT, file).split(path.sep).join('/');
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    const src = fs.readFileSync(file, 'utf8');
+    const pattern = /(?:from\s+|require\()\s*['"](\.[^'"]+)['"]/g;
+    for (const match of src.matchAll(pattern)) {
+      queue.push(path.resolve(path.dirname(file), match[1]));
+    }
+  }
+  return [...seen].sort();
+}
+
+test('plain Node CLI runner import chain is shipped outside the Electron archive', () => {
+  // Same failure shape as the daemon runner once had: an unpacked host whose
+  // dependencies stay inside app.asar dies with ERR_MODULE_NOT_FOUND under
+  // plain Node, which cannot read the archive.
   const pkg = require('../../package.json');
-  assert.ok(pkg.build.asarUnpack.includes('src/main/dsh-cli-runner.mjs'));
+  const unpacked = new Set(pkg.build.asarUnpack);
+  const reachable = localImportClosure(path.join(ROOT, 'src', 'main', 'dsh-cli-runner.mjs'));
+  assert.ok(reachable.includes('src/main/parent-lifeline.mjs'));
+  assert.ok(reachable.includes('src/shared/process-tree.js'));
+  for (const rel of reachable) {
+    assert.ok(unpacked.has(rel), `${rel} is imported by the CLI runner but missing from build.asarUnpack`);
+  }
 });
 
 test('built dsh installs and removes an offline bundle from paths with Chinese and spaces', { timeout: 120000 }, async t => {

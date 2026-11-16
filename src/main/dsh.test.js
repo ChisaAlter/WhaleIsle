@@ -193,6 +193,8 @@ test('正常启动：reachable 后进入 ready、清 failure、写 PID、返回 
   assert.equal(h.manager.baseUrl, EXPECTED_URL);
   assert.equal(h.manager.failure, null);
   assert.deepEqual(h.calls.writePid, [CHILD_PID]);
+  // Piped stdin is the harness host's parent lifeline — never 'ignore'.
+  assert.deepEqual(h.calls.spawn.options.stdio, ['pipe', 'pipe', 'pipe']);
   assert.ok(states.includes('starting'));
   assert.ok(states.includes('ready'));
   // snapshot 保留现有字段并增加 failure
