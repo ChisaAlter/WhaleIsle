@@ -9,9 +9,10 @@
 // $DSH_HOME profile 的 desktop-plugins 目录，相对路径够不到
 // src/shared/secret.js，故按同一 globalThis 契约就地实现
 // （canonical：src/shared/secret.js 的 internalSecret；不回退 process.env）。
+// 存储是只读密钥视图（带 get(name) 的对象；议题 #514 起不再暴露可变 Map）。
 function internalSecret(name) {
   const store = globalThis[Symbol.for('whaleisle.internalSecrets')];
-  const value = store instanceof Map ? store.get(name) : undefined;
+  const value = store && typeof store.get === 'function' ? store.get(name) : undefined;
   return typeof value === 'string' ? value : '';
 }
 

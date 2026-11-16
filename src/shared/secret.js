@@ -2,7 +2,7 @@
 
 // 进程与密钥类基础件（议题 #433）：令牌等值比较、带上限的 HTTP 请求体读取、
 // 经 stdin 控制通道按行协议向子进程传递密钥；议题 #427 追加进程内密钥
-// 存取件：令牌只进 globalThis 上的只读 Map，绝不写回 process.env，子进程
+// 存取件：令牌只进 globalThis 上的只读密钥视图，绝不写回 process.env，子进程
 // 默认继承不到。同一件事只有这一种写法，
 // 调用方一律从这里取；vendor 侧经 ../vendor/dsh-shared/lib/secret.mjs 复用，
 // 会被打包器内联的插件源码用 ../vendor/dsh-shared/lib/internal-secret.mjs。
@@ -156,9 +156,10 @@ function passSecretToChild(child, name, value) {
  * 桌面主进程用 passSecretToChild 经 stdin 控制通道把内部控制令牌
  * （DSH_DESKTOP_INSTALL_TOKEN / DSHD_TASK_CONTROL_TOKEN / DSHD_PLATFORM_TOKEN）
  * 按行下发给 host runner；runner 在加载任何插件前用 collectInternalSecrets
- * 收齐，存成 globalThis[Symbol.for('whaleisle.internalSecrets')] 上的冻结
- * Map。令牌不落 process.env，host 派生的 shell、MCP、LSP 子进程默认都
- * 继承不到，也读不到 /proc/<pid>/environ 里的初始环境。
+ * 收齐，存成 globalThis[Symbol.for('whaleisle.internalSecrets')] 上的只读
+ * 密钥视图（仅暴露 get(name)，底层 Map 私有、不可经视图改写）。令牌不落
+ * process.env，host 派生的 shell、MCP、LSP 子进程默认都继承不到，也读不到
+ * /proc/<pid>/environ 里的初始环境。
  */
 
 /** 进程内存储的 globalThis 键；CJS/ESM 两侧经 Symbol.for 共享同一符号。 */
@@ -177,17 +178,22 @@ const INTERNAL_SECRETS_ENV = 'DSHD_INTERNAL_SECRETS_VIA_STDIN';
  */
 function internalSecret(name) {
   const store = globalThis[INTERNAL_SECRETS_KEY];
-  const value = store instanceof Map ? store.get(name) : undefined;
+  const value = store && typeof store.get === 'function' ? store.get(name) : undefined;
   return typeof value === 'string' ? value : '';
 }
 
 /**
- * 用给定 entries 整体替换进程内密钥存储（冻结 Map）。插件加载前由
- * collectInternalSecrets 调用；测试用它注入与还原（还原先快照
+ * 用给定 entries 整体替换进程内密钥存储。插件加载前由 collectInternalSecrets
+ * 调用；测试用它注入与还原（还原先快照
  * globalThis[Symbol.for('whaleisle.internalSecrets')] 旧值再写回）。
  *
+ * 装上的是真只读视图：条目留在闭包私有的 Map 里，对外只有不可枚举、不可写
+ * 的 get(name)——直接 Object.freeze 一个 Map 挡不住 Map.prototype.set/delete，
+ * 同进程代码可篡改条目（复审 F3 / 议题 #514）。读方按"对象带 get(name)"
+ * 判形，测试注入的旧式冻结 Map 仍可被 internalSecret 读取。
+ *
  * @param {Iterable<[string, string]>} entries
- * @returns {Map<string, string>} 已安装的冻结 Map
+ * @returns {{ get(name: string): string | undefined }} 已安装的只读密钥视图
  */
 function storeInternalSecrets(entries) {
   const map = new Map();
@@ -196,8 +202,11 @@ function storeInternalSecrets(entries) {
       map.set(String(name), value == null ? '' : String(value));
     }
   }
-  globalThis[INTERNAL_SECRETS_KEY] = Object.freeze(map);
-  return globalThis[INTERNAL_SECRETS_KEY];
+  const store = Object.freeze(
+    Object.defineProperty(Object.create(null), 'get', { value: (name) => map.get(name) }),
+  );
+  globalThis[INTERNAL_SECRETS_KEY] = store;
+  return store;
 }
 
 /**
@@ -209,7 +218,7 @@ function storeInternalSecrets(entries) {
  *
  * @param {import('stream').Readable} stream - 通常是 process.stdin
  * @param {{ endMarker?: string }} [options]
- * @returns {Promise<Map<string, string>>} 安装好的冻结 Map
+ * @returns {Promise<{ get(name: string): string | undefined }>} 安装好的只读密钥视图
  */
 function collectInternalSecrets(stream, options = {}) {
   const endMarker = options.endMarker || INTERNAL_SECRETS_END;
