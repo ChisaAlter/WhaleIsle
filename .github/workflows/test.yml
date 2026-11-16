@@ -110,6 +110,8 @@ jobs:
         run: npm run test:whale-ui
       - name: Build optional ChatGPT bundle for native compatibility checks
         run: npm run prepare:dsh-with-chatgpt-bundle
+      - name: Build the vendored DSHD remote
+        run: npm run prepare:dshd-remote
       - name: Desktop behavior tests
         run: npm test
       - name: Update download network recovery
@@ -172,6 +174,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run setup:harness
       - run: npm run prepare:dsh-with-chatgpt-bundle
+      - name: Build the vendored DSHD remote
+        run: npm run prepare:dshd-remote
       - run: npm test
       - id: mac_package
         run: npm run dist:mac
@@ -214,6 +218,8 @@ jobs:
         run: npm run test:whale-ui
       - name: Build optional ChatGPT bundle for native compatibility checks
         run: npm run prepare:dsh-with-chatgpt-bundle
+      - name: Build the vendored DSHD remote
+        run: npm run prepare:dshd-remote
       # Ubuntu 24.04 runners restrict unprivileged user namespaces; Electron's
       # Chromium sandbox needs them. CI runner only, tests keep the sandbox on.
       - name: Allow Chromium sandbox user namespaces
@@ -245,6 +251,8 @@ jobs:
         run: npm run test:whale-ui
       - name: Build optional ChatGPT bundle for native compatibility checks
         run: npm run prepare:dsh-with-chatgpt-bundle
+      - name: Build the vendored DSHD remote
+        run: npm run prepare:dshd-remote
       - name: Desktop behavior tests
         run: npm test
   result:

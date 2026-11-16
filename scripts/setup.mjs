@@ -109,6 +109,11 @@ if (harnessReady()) {
 // build; typecheck:whale-ui only needs the dependency half.
 run(process.execPath, [path.join('scripts', 'prepare-whale-ui.mjs')]);
 
+// The vendored daemon dist feeds the dshd-remote behavior tests (strict
+// WHALE_REQUIRE_TEST_PREREQS mode included); the script self-skips once the
+// vendored workspace deps and packages/*/dist are fresh.
+run(process.execPath, [path.join('scripts', 'prepare-dshd-remote.mjs')]);
+
 // dsh-plugin-compatibility.test.js imports vendor/dsh-with-chatgpt/lib, which
 // reaches bridge/dist and the bundle's own node_modules.
 if (chatgptBundleReady()) {
