@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { createUniqueDir } = require('../src/shared/fs-safe.js');
 
 const {
   assertInsideRoot,
@@ -57,8 +58,8 @@ function apiMethodFor(route) {
 function createRuntime(overrides = {}) {
   return {
     resolveConfig: resolveLiveConfig,
-    // eslint-disable-next-line no-restricted-syntax -- 目录由 removeHome 回调在 finally 中 rmSync 回收
-    makeHome: () => fs.mkdtempSync(path.join(os.tmpdir(), 'dshr-live-home-')),
+    // 目录由 removeHome 回调在 finally 中 rmSync 回收
+    makeHome: () => createUniqueDir(os.tmpdir(), 'dshr-live-home-'),
     removeHome: (home) => fs.rmSync(home, { recursive: true, force: true }),
     reservePort,
     spawnChild: spawn,

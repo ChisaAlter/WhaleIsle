@@ -13,12 +13,14 @@ const root = path.join(here, '..');
 const runner = path.join(here, 'verify-preview-permissions.mjs');
 const launcher = path.join(here, 'verify-preview-permissions.cjs');
 const cleanupHelper = path.join(here, 'preview-profile-cleanup.cjs');
+const supervisorModule = path.join(here, 'lib', 'owned-dir-supervisor.cjs');
 // Under plain Node `require('electron')` returns the binary path.
 const electronBinary = require('electron');
 const { shouldDisableElectronSandbox } = require('./lib/electron-sandbox.cjs');
 const runnerSource = fs.readFileSync(runner, 'utf8');
 const launcherSource = fs.readFileSync(launcher, 'utf8');
 const cleanupHelperSource = fs.readFileSync(cleanupHelper, 'utf8');
+const supervisorSource = fs.readFileSync(supervisorModule, 'utf8');
 
 const PROFILE_ROOT_ENV = 'DSHD_PREVIEW_PROFILE_ROOT';
 const TEST_SCENARIO_ENV = 'DSHD_PREVIEW_PERMISSIONS_TEST_SCENARIO';
@@ -333,8 +335,19 @@ test('launcher installs userData and sessionData synchronously before ready', ()
   assert.ok(userData >= 0, 'the launcher must set userData');
   assert.ok(sessionData > userData, 'the launcher must also set sessionData');
   assert.ok(ready > sessionData, 'both paths must be installed before app.whenReady()');
-  assert.match(launcherSource, /mkdtempSync/);
+  // The launcher delegates run-owned roots to the shared supervised-directory
+  // tool instead of creating them itself.
+  assert.doesNotMatch(launcherSource, /mkdtempSync/);
+  assert.match(launcherSource, /createSupervisedDir/);
   assert.match(launcherSource, new RegExp(PROFILE_ROOT_ENV));
+  // The shared owner-side module is what creates the directory, writes the
+  // ownership marker, and spawns the detached helper.
+  assert.match(supervisorSource, /createUniqueDir/);
+  assert.match(supervisorSource, /preview-profile-cleanup\.cjs/);
+  assert.match(supervisorSource, /detached:\s*true/);
+  assert.match(supervisorSource, /randomBytes\(24\)/);
+  assert.match(supervisorSource, /\.dshd-cleanup-owner\.json/);
+  assert.match(supervisorSource, /state:\s*'pending'/);
   // The ESM runner must reuse the launcher's root instead of creating a later
   // second profile or mutating Electron paths after ready.
   assert.doesNotMatch(runnerSource, /fs\.mkdtempSync/);
@@ -342,14 +355,9 @@ test('launcher installs userData and sessionData synchronously before ready', ()
   // Ownership must be handed to an out-of-process supervisor rather than an
   // in-Electron `exit` hook: that hook runs while Chromium still holds the
   // profile locks, which is what left directories behind.
-  assert.match(launcherSource, /preview-profile-cleanup\.cjs/);
-  assert.match(launcherSource, /detached:\s*true/);
   // The cleanup handoff must carry the marker token and a receipt outside the
   // directory that the helper eventually removes.
   assert.match(launcherSource, /DSHD_PREVIEW_CLEANUP_RECEIPT/);
-  assert.match(launcherSource, /randomBytes\(24\)/);
-  assert.match(launcherSource, /\.dshd-cleanup-owner\.json/);
-  assert.match(launcherSource, /state:\s*'pending'/);
   assert.doesNotMatch(
     launcherSource,
     /process\.once\('exit'/,
@@ -365,8 +373,8 @@ test('launcher installs userData and sessionData synchronously before ready', ()
 test('profile cleanup supervisor is detached, owner-pid bound, and fail-closed', () => {
   // A cleanup helper must not be an Electron child of the runner: an Electron
   // parent that waits on an Electron child was measured to deadlock.
-  assert.match(launcherSource, /env:\s*\{[^}]*ELECTRON_RUN_AS_NODE/s);
-  assert.match(launcherSource, /unref\(\)/);
+  assert.match(supervisorSource, /env:\s*\{[^}]*ELECTRON_RUN_AS_NODE/s);
+  assert.match(supervisorSource, /unref\(\)/);
   // The helper removes exactly one directory, keyed to the owning pid.
   assert.match(cleanupHelperSource, /process\.argv\[2\]/);
   assert.match(cleanupHelperSource, /process\.argv\[3\]/);

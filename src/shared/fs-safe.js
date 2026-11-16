@@ -7,6 +7,8 @@
  *   permission preservation, temp cleanup on failure.
  * - safeRemove/safeRemoveSync: best-effort force removal that never throws.
  * - withOwnedTempDir: mkdtemp under os.tmpdir() with guarded teardown.
+ * - createUniqueDir: mkdtemp under a caller-chosen parent for the cases that
+ *   outlive one callback scope (teardown wired by the caller).
  */
 
 const crypto = require('node:crypto');
@@ -127,8 +129,12 @@ function isInside(root, target) {
  * directory this helper created: a resolved path that lands outside the
  * resolved os.tmpdir(), a symlink/junction, or a replaced entry is left
  * untouched so teardown can never follow a link into unowned data.
+ *
+ * `options.rmOptions` extends the guarded fs.promises.rm call (e.g.
+ * `{ maxRetries, retryDelay }` for consumers that release handles a moment
+ * after their process exits).
  */
-async function withOwnedTempDir(prefix, fn) {
+async function withOwnedTempDir(prefix, fn, options = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), String(prefix)));
   const created = fs.lstatSync(dir);
   try {
@@ -154,10 +160,22 @@ async function withOwnedTempDir(prefix, fn) {
         tmpRoot = path.resolve(os.tmpdir());
       }
       if (real && isInside(tmpRoot, real)) {
-        await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+        await fs.promises.rm(dir, { recursive: true, force: true, ...options.rmOptions }).catch(() => {});
       }
     }
   }
+}
+
+/**
+ * Create a uniquely named directory under `parent` and return its path.
+ * Unlike withOwnedTempDir nothing removes it automatically — the caller owns
+ * teardown, so use this only when the directory outlives one callback scope:
+ * a fixture reclaimed by test teardown, a root handed to the detached cleanup
+ * supervisor (scripts/lib/owned-dir-supervisor.cjs), or an explicitly retained
+ * evidence directory under a non-temp parent.
+ */
+function createUniqueDir(parent, prefix) {
+  return fs.mkdtempSync(path.join(String(parent), String(prefix)));
 }
 
 module.exports = {
@@ -166,4 +184,5 @@ module.exports = {
   safeRemove,
   safeRemoveSync,
   withOwnedTempDir,
+  createUniqueDir,
 };

@@ -1,12 +1,13 @@
 // Targeted acceptance through the original native window and isolated component install.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
+import { createUniqueDir } from '../src/shared/fs-safe.js';
 import { reservePort } from './smoke-workspace.mjs';
 
 const require = createRequire(import.meta.url);
@@ -23,8 +24,8 @@ const executable = process.env.ELECTRON_PATH;
 assert.ok(executable && existsSync(executable), 'ELECTRON_PATH must name the existing Electron executable');
 mkdirSync(output, { recursive: true });
 mkdirSync(join(root, '.tmp'), { recursive: true });
-// eslint-disable-next-line no-restricted-syntax -- QA 验收证据目录按设计保留供复核
-const dir = mkdtempSync(join(root, '.tmp', 'whalebridge-community-qa-'));
+// QA 验收工作目录按设计保留供复核；位于仓库 .tmp/ 而非系统临时目录
+const dir = createUniqueDir(join(root, '.tmp'), 'whalebridge-community-qa-');
 const data = join(dir, 'component');
 const home = join(dir, 'isolated-home');
 const fixture = join(dir, 'trusted-local-opencode-provider-with-a-deliberately-long-readable-directory-name');

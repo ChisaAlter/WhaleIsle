@@ -3,11 +3,11 @@
 // Real Electron net + pinned NSIS differential downloader; no app window or installation.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { createHash } = require('node:crypto');
 const { gzipSync } = require('node:zlib');
+const { withOwnedTempDir } = require('../src/shared/fs-safe.js');
 if (process.env.NODE_PATH) require('node:module').Module._initPaths();
 const electron = require('electron');
 
@@ -36,10 +36,10 @@ async function launch() {
   }
   const executable = process.env.ELECTRON_PATH || electron;
   assert.ok(fs.existsSync(executable), 'provide ELECTRON_PATH for an installed Electron');
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync（含重试）回收
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-update-net-'));
-  env.TEMP = env.TMP = path.join(dir, 'temp'); fs.mkdirSync(env.TEMP);
-  try {
+  // Chromium can release its userData handles a moment after the child closes,
+  // so teardown retries instead of failing on the first attempt.
+  await withOwnedTempDir('whale-update-net-', async (dir) => {
+    env.TEMP = env.TMP = path.join(dir, 'temp'); fs.mkdirSync(env.TEMP);
     process.exitCode = await new Promise((resolve, reject) => {
       const child = require('node:child_process').spawn(executable, [__filename, `--qa-temp=${dir}`], { env, stdio: 'inherit', windowsHide: true });
       let expired = false;
@@ -47,12 +47,7 @@ async function launch() {
       child.once('error', error => { clearTimeout(timer); reject(error); });
       child.once('close', code => { clearTimeout(timer); resolve(expired ? 124 : (code ?? 1)); });
     });
-  } finally {
-    // Chromium holds its userData directory until Electron exits on Windows.
-    assert.equal(path.dirname(dir), path.resolve(os.tmpdir()), 'cleanup only this mkdtemp');
-    assert.ok(path.basename(dir).startsWith('whale-update-net-'));
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 });
-  }
+  }, { rmOptions: { maxRetries: 4, retryDelay: 100 } });
 }
 async function runNative() {
   const { app } = electron;

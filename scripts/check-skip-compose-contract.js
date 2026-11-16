@@ -1,9 +1,9 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { withOwnedTempDir } = require('../src/shared/fs-safe.js');
 const {
   ensureDesktopInstallPlugin,
   DESKTOP_INSTALL_BEGIN,
@@ -408,9 +408,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
   if (!fs.existsSync(binJs)) {
     throw new Error(`skip compose 契约门禁：缺少已构建的 CLI ${binJs}`);
   }
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-compose-contract-'));
-  try {
+  return withOwnedTempDir('dshd-compose-contract-', async (home) => {
     const profileDir = path.join(home, 'profiles', 'web');
     fs.mkdirSync(profileDir, { recursive: true });
     // Migration replay: the profile starts as an upgraded install would —
@@ -564,9 +562,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
       throw new Error(`skip compose 契约失败：${problems.join('；')}`);
     }
     return { ok: true, rounds: 2 };
-  } finally {
-    fs.rmSync(home, { recursive: true, force: true });
-  }
+  });
 }
 
 module.exports = {

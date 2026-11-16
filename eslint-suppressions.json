@@ -7,11 +7,6 @@
       "count": 1
     }
   },
-  "scripts/qa-whalebridge-models.mjs": {
-    "no-unsafe-finally": {
-      "count": 1
-    }
-  },
   "scripts/verify-remote-workspace-live.cjs": {
     "no-unsafe-finally": {
       "count": 2

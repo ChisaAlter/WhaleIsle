@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { createUniqueDir } from '../src/shared/fs-safe.js'
 
 export function reservePort() {
   return new Promise((resolve, reject) => {
@@ -87,8 +88,8 @@ export function createSmokeDirs(prefix, options = {}) {
   const existingWorkspace = options.existingWorkspace === undefined
     ? resolveExistingWorkspace()
     : options.existingWorkspace
-  // eslint-disable-next-line no-restricted-syntax -- smokeRoot 交还调用方，由各 run-* 入口在 finally 中 rmSync 回收
-  const smokeRoot = mkdtempSync(path.join(os.tmpdir(), prefix))
+  // smokeRoot 交还调用方，由各 run-* 入口在 finally 中 rmSync 回收
+  const smokeRoot = createUniqueDir(os.tmpdir(), prefix)
   const userData = path.join(smokeRoot, 'user-data')
   mkdirSync(userData, { recursive: true })
   if (existingWorkspace) {

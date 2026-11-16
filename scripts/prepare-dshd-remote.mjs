@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import semver from 'semver';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 import {
   materializeRuntimeCopies,
   planRuntimeClosure,
@@ -230,8 +230,7 @@ function assertTrimmedRuntime() {
 
 async function probeDshdDaemonRuntime() {
   const executable = electronExecutable();
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-remote-probe-'));
+  await withOwnedTempDir('dshd-remote-probe-', async (home) => {
   const launchFile = path.join(home, 'daemon-launch.json');
   fs.mkdirSync(path.join(home, 'agents'), { recursive: true });
   fs.writeFileSync(launchFile, JSON.stringify({
@@ -250,8 +249,7 @@ async function probeDshdDaemonRuntime() {
     },
   }));
 
-  try {
-    await new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
       const child = spawn(executable, [daemonRunner, launchFile], {
         cwd: root,
         env: {
@@ -306,9 +304,7 @@ async function probeDshdDaemonRuntime() {
         ));
       });
     });
-  } finally {
-    fs.rmSync(home, { recursive: true, force: true });
-  }
+  });
   console.log('[dshd-remote] daemon start/stop probe passed');
 }
 

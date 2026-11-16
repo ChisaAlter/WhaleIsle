@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import net from 'node:net';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
@@ -13,9 +13,7 @@ const runtime = path.resolve(arg('--runtime-root') ?? path.join(root, 'vendor/de
 const output = path.resolve(arg('--output') ?? path.join(root, 'work/whale-big-fish-qa'));
 const cli = createRequire(path.join(runtime, 'apps/cli/package.json'));
 const load = name => import(pathToFileURL(cli.resolve(name)).href);
-const parent = await fs.realpath(os.tmpdir());
-// eslint-disable-next-line no-restricted-syntax -- 目录已在下方 finally 中 fs.rm 回收
-const home = await fs.mkdtemp(path.join(parent, 'whale-big-fish-qa-'));
+await withOwnedTempDir('whale-big-fish-qa-', async (home) => {
 const priorHome = process.env.DSH_HOME, priorTelemetry = process.env.DSH_TELEMETRY_DISABLED;
 process.env.DSH_HOME = home; process.env.DSH_TELEMETRY_DISABLED = '1';
 let app, browser, page;
@@ -188,6 +186,5 @@ try {
   await app?.dispose?.();
   if (priorHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = priorHome;
   if (priorTelemetry === undefined) delete process.env.DSH_TELEMETRY_DISABLED; else process.env.DSH_TELEMETRY_DISABLED = priorTelemetry;
-  assert.equal(path.dirname(home), parent); assert.ok(path.basename(home).startsWith('whale-big-fish-qa-'));
-  await fs.rm(home, { recursive: true, force: true });
 }
+});

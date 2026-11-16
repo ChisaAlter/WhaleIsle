@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-// Detached cleanup supervisor for the preview-permission runner's profile root.
+// Detached cleanup supervisor for a run-owned directory that its creator
+// process cannot reclaim itself — primarily an Electron userData root that
+// Chromium holds until the app fully exits. Owners do not spawn this file
+// directly; `scripts/lib/owned-dir-supervisor.cjs` creates the directory,
+// installs the ownership marker, and hands off to this process.
 //
-// The runner cannot clean up its own profile root from inside Electron: an
+// The owner cannot clean up such a directory from inside Electron: an
 // in-process `exit` hook fires while Chromium is still unwinding, so the
 // directory is usually still locked, and an Electron parent that synchronously
 // waits for an Electron child was measured to deadlock. This helper is a
