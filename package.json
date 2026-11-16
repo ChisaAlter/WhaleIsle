@@ -44,6 +44,7 @@
     "qa:packaged": "node scripts/run-packaged-p0.mjs",
     "smoke:packaged": "node scripts/run-packaged-smoke.mjs",
     "check:release-version": "node scripts/check-release-version.mjs",
+    "check:vendor": "node scripts/check-vendor-provenance.mjs",
     "release:download": "node scripts/release-download.mjs",
     "test:release": "node --test scripts/check-release-assets.test.mjs scripts/check-release-version.test.mjs scripts/publish-release.test.mjs scripts/ci-scope.test.mjs",
     "qa:remote:v2": "node tools/remote-web-qa/full-web-v2/run.mjs",

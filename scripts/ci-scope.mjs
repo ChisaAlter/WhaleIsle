@@ -27,6 +27,9 @@ export function selectChecks(paths, { manual = false } = {}) {
     if (/^(src\/|mobile\/|vendor\/|dsh-acp\/|assets\/|build\/|scripts\/|\.github\/workflows\/)/.test(path) ||
         /^(package(-lock)?\.json|pnpm(-lock\.yaml|-workspace\.yaml)|\.nvmrc|\.npmrc|electron-builder.*\.yml)$/.test(path)) scope.product = true
     if (/^(vendor|dsh-acp)\//.test(path) || /^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.vendor = true
+    // Vendor content changes can tamper with checked-in artifacts; the tools
+    // job runs check-vendor-provenance so those edits still gate.
+    if (/^vendor\//.test(path)) scope.tools = true
     if (/^src\/main\/(native-window-motion|window-|index\.js|chrome-theme|shell-silhouette)/.test(path) ||
         /^(package(-lock)?\.json|vendor\/deepseek-harness\/)/.test(path)) scope.motion = true
     if (/^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.tools = true

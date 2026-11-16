@@ -47,6 +47,8 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
+      - name: Vendor provenance and artifact consistency
+        run: npm run check:vendor
       - run: npm run test:tools
   web:
     # Browser lanes for desktop forks of the web composition. They follow the
