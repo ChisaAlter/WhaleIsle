@@ -709,7 +709,6 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 .drawer-directory .session:not(.workspace-toggle) b { flex: 1; min-width: 0; font-size: 13px; line-height: 20px; }
 .drawer-directory .session-meta { display: none; }
 .drawer-directory .session-row.in-workspace { margin-left: 12px; padding-left: 8px; border-left: 0; }
-.drawer-directory .session-row.in-workspace.session-child { padding-left: 20px; }
 .drawer-directory .session-more { width: 28px; height: 28px; }
 .session-state { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; }
 .session-row[data-state="run"] .session-state, .session-row[data-state="wait"] .session-state { display: inline-block; }
@@ -810,7 +809,6 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
   padding-left: 10px;
   border-left: 1px solid var(--dsw-alias-border-l2);
 }
-.session-row.in-workspace.session-child { padding-left: 24px; }
 .session-row.in-workspace .session { padding-top: 6px; padding-bottom: 6px; }
 /* Short settings remain in one compact dialog; long workspace views use a task. */
 .settings { position: absolute; inset: 0; z-index: 18; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -1330,7 +1328,6 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 /* —— Phase 1：会话行操作 / 分页 / 时间线富渲染 / 斜杠命令 —— */
 .session-row { display: flex; align-items: center; gap: 4px; }
 .session-row .session { flex: 1; min-width: 0; }
-.session-row.session-child { padding-left: 18px; }
 .session-more {
   flex: none; display: grid; place-items: center;
   width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;

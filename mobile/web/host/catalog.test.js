@@ -20,6 +20,7 @@ const sessions = {
       blank: false,
       running: true,
       cwd: 'C:\\proj',
+      updatedAt: 1767225600000,
       projections: { values: { title: '正在做的事' } },
     },
     { sessionId: 'blank-1', blank: true, running: false },
@@ -64,6 +65,7 @@ test('liveSessionRows hides blank, dshbot, and archived sessions', () => {
   assert.equal(live.workspaceId, 'ws-1');
   assert.equal(live.cwd, 'C:\\proj');
   assert.equal(live.running, true);
+  assert.equal(live.lastActivityAt, new Date(1767225600000).toISOString());
   const titled = rows.find((row) => row.sessionId === 'titled-blank');
   assert.equal(titled.blank, false);
   assert.equal(titled.projections.values.title, '验证连接并生成验证码');

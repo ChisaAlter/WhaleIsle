@@ -4,14 +4,16 @@ import {
   agentPageInfo,
   archiveMobileAgent,
   deleteMobileAgent,
+  directSubagentRows,
   groupSessionRows,
   isReadOnlyRow,
   listArchivedAgents,
   mergeAgentRows,
   regenerateMobileTitle,
   renameMobileAgent,
-  sessionRowForest,
+  subagentSheetItems,
   unarchiveMobileAgent,
+  visibleSessionRows,
 } from './directory.js';
 
 function row(id, agent = {}) {
@@ -42,14 +44,16 @@ test('mergeAgentRows appends new rows and lets the daemon copy win on repeats', 
   assert.equal(existing[0].chisacodeAgent.title, 'old');
 });
 
-test('groupSessionRows folds subagents under a loaded parent', () => {
+test('groupSessionRows hides subagents and counts them on the loaded parent', () => {
+  // Desktop ui-workspace excludes subagent sessions from the sidebar
+  // entirely; the drawer mirrors that and only keeps a count hint.
   const parent = row('p1');
   const child = row('s1', { relation: { kind: 'subagent', parentAgentId: 'p1' } });
   const solo = row('x1');
   const groups = groupSessionRows([parent, solo, child]);
   assert.deepEqual(groups.map((group) => group.row.sessionId), ['p1', 'x1']);
-  assert.deepEqual(groups[0].children.map((item) => item.sessionId), ['s1']);
-  assert.equal(groups[0].orphanSubagent, false);
+  assert.equal(groups[0].subagentCount, 1);
+  assert.equal(groups[1].subagentCount, 0);
 });
 
 test('groupSessionRows hides orphan subagents (desktop sidebar parity)', () => {
@@ -69,7 +73,7 @@ test('groupSessionRows keeps orphan forks top-level (desktop shows them ungroupe
   const groups = groupSessionRows([fork]);
   assert.equal(groups.length, 1);
   assert.equal(groups[0].row.sessionId, 'f1');
-  assert.equal(groups[0].orphanSubagent, false);
+  assert.equal(groups[0].subagentCount, 0);
 });
 
 test('groupSessionRows keeps forks top-level when their parent is still loaded', () => {
@@ -81,7 +85,7 @@ test('groupSessionRows keeps forks top-level when their parent is still loaded',
   };
   const groups = groupSessionRows([parent, fork]);
   assert.deepEqual(groups.map((group) => group.row.sessionId), ['p1', 'f1']);
-  assert.deepEqual(groups[0].children, []);
+  assert.equal(groups[0].subagentCount, 0);
 });
 
 test('groupSessionRows leaves non-subagent relations top-level', () => {
@@ -89,29 +93,94 @@ test('groupSessionRows leaves non-subagent relations top-level', () => {
   const handoff = row('h1', { relation: { kind: 'handoff', parentAgentId: 'p1' } });
   const groups = groupSessionRows([parent, handoff]);
   assert.deepEqual(groups.map((group) => group.row.sessionId), ['p1', 'h1']);
-  assert.deepEqual(groups[0].children, []);
+  assert.equal(groups[0].subagentCount, 0);
 });
 
-test('groupSessionRows folds host parentSessionId under the parent', () => {
+test('groupSessionRows counts host parentSessionId children on the parent', () => {
   const groups = groupSessionRows([
     { sessionId: 'live-1' },
     { sessionId: 'child-1', parentSessionId: 'live-1', origin: 'subagent' },
   ]);
+  assert.equal(groups.length, 1);
   assert.equal(groups[0].row.sessionId, 'live-1');
-  assert.equal(groups[0].children[0].sessionId, 'child-1');
+  assert.equal(groups[0].subagentCount, 1);
 });
 
-test('sessionRowForest keeps grandchild subagents instead of dropping them', () => {
-  const forest = sessionRowForest([
-    { sessionId: 'root', projections: { values: { title: '糖果最少取数保证匹配' } } },
-    { sessionId: 'mid', parentSessionId: 'root', origin: 'subagent', projections: { values: { title: '不使用任何外部工具回答以下' } } },
-    { sessionId: 'leaf', parentSessionId: 'mid', origin: 'subagent', projections: { values: { title: '最少取糖保证苹果桃子' } } },
-  ]);
-  assert.equal(forest.length, 1);
-  assert.equal(forest[0].row.sessionId, 'root');
-  assert.equal(forest[0].children.length, 1);
-  assert.equal(forest[0].children[0].row.sessionId, 'mid');
-  assert.deepEqual(forest[0].children[0].children.map((node) => node.row.sessionId), ['leaf']);
+test('visibleSessionRows drops subagents but keeps forks and plain rows', () => {
+  const rows = [
+    { sessionId: 'p' },
+    { sessionId: 's', parentSessionId: 'p', origin: 'subagent' },
+    { sessionId: 'f', parentSessionId: 'p' },
+  ];
+  assert.deepEqual(visibleSessionRows(rows).map((item) => item.sessionId), ['p', 'f']);
+});
+
+test('directSubagentRows lists only direct children, never grandchildren', () => {
+  const rows = [
+    { sessionId: 'root' },
+    { sessionId: 'mid', parentSessionId: 'root', origin: 'subagent' },
+    { sessionId: 'leaf', parentSessionId: 'mid', origin: 'subagent' },
+  ];
+  assert.deepEqual(directSubagentRows(rows, 'root').map((item) => item.sessionId), ['mid']);
+  assert.deepEqual(directSubagentRows(rows, 'mid').map((item) => item.sessionId), ['leaf']);
+  assert.deepEqual(directSubagentRows(rows, 'leaf'), []);
+});
+
+test('directSubagentRows dedupes by session id and sorts by recency', () => {
+  const rows = [
+    { sessionId: 'p' },
+    { sessionId: 'old', parentSessionId: 'p', origin: 'subagent', lastActivityAt: '2026-01-01T00:00:00Z' },
+    { sessionId: 'new', parentSessionId: 'p', origin: 'subagent', lastActivityAt: '2026-02-01T00:00:00Z' },
+    { sessionId: 'old', parentSessionId: 'p', origin: 'subagent', lastActivityAt: '2026-03-01T00:00:00Z' },
+  ];
+  assert.deepEqual(directSubagentRows(rows, 'p').map((item) => item.sessionId), ['new', 'old']);
+});
+
+test('directSubagentRows keeps list order when no timestamps exist', () => {
+  const rows = [
+    { sessionId: 'p' },
+    { sessionId: 'b', parentSessionId: 'p', origin: 'subagent' },
+    { sessionId: 'a', parentSessionId: 'p', origin: 'subagent' },
+  ];
+  assert.deepEqual(directSubagentRows(rows, 'p').map((item) => item.sessionId), ['b', 'a']);
+});
+
+test('subagentSheetItems merges loaded rows with catalog entries, deduped and ordered', () => {
+  const rows = [
+    { sessionId: 'p' },
+    { sessionId: 'c1', parentSessionId: 'p', origin: 'subagent', running: true, lastActivityAt: '2026-02-01T00:00:00Z' },
+    { sessionId: 'c9', parentSessionId: 'p', origin: 'subagent', lastActivityAt: '2026-01-01T00:00:00Z' },
+  ];
+  const entries = [
+    { kind: 'child', id: 'c2', mode: 'one-shot', activity: 'inactive', hasChildren: false, label: '外部子任务' },
+    { kind: 'child', id: 'c1', mode: 'continuable', activity: 'running', hasChildren: true, label: 'c1 label' },
+    { kind: 'diagnostic', id: 'c1', reason: 'corrupt' },
+  ];
+  const items = subagentSheetItems(rows, 'p', entries);
+  // Catalog order first (c2 then c1), loaded-only children after (c9); the
+  // duplicate diagnostic id never creates a second c1 item.
+  assert.deepEqual(items.map((item) => item.sessionId), ['c2', 'c1', 'c9']);
+  const c1 = items.find((item) => item.sessionId === 'c1');
+  assert.equal(c1.row.sessionId, 'c1');
+  assert.equal(c1.mode, 'continuable');
+  assert.equal(c1.hasChildren, true);
+  assert.equal(c1.running, true);
+  assert.equal(items[0].row, null);
+  assert.equal(items[0].entry.label, '外部子任务');
+});
+
+test('subagentSheetItems appends diagnostic entries last as unreadable items', () => {
+  const items = subagentSheetItems(
+    [{ sessionId: 'p' }],
+    'p',
+    [
+      { kind: 'diagnostic', id: 'bad', reason: 'corrupt' },
+      { kind: 'child', id: 'c1', mode: 'one-shot', activity: 'inactive' },
+    ],
+  );
+  assert.deepEqual(items.map((item) => item.sessionId), ['c1', 'bad']);
+  assert.equal(items[1].diagnostic, 'corrupt');
+  assert.equal(items[0].diagnostic, '');
 });
 
 test('isReadOnlyRow marks host subagents and archived rows', () => {

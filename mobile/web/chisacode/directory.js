@@ -66,62 +66,131 @@ function isSubagentRow(row) {
 }
 
 /**
- * Group directory rows for the drawer: subagents fold under their direct
- * parent when the parent is loaded; subagents whose parent is not in the
- * loaded set are **hidden** — the desktop ui-workspace sidebar does not list
- * orphan subagents, and the drawer contract is D = P. Other relation kinds
- * (detached / handoff / team-slot) intentionally stay top-level.
+ * Rows as they appear in the visible directory. Subagent sessions never
+ * appear — matching the desktop ui-workspace sidebar, which excludes
+ * origin 'subagent' rows entirely. Other derived sessions (forks and other
+ * relation kinds: detached / handoff / team-slot) stay top-level.
  * @param {Array<object>} rows
- * @returns {Array<{ row: object, children: Array<object>, orphanSubagent: boolean }>}
+ * @returns {Array<object>}
+ */
+function visibleSessionRows(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => (
+    row?.sessionId && !isSubagentRow(row)
+  ));
+}
+
+/**
+ * Group directory rows for the drawer: subagents never get a row, but each
+ * loaded direct child still counts toward its parent's `subagentCount`
+ * hint. Returns [{ row, subagentCount }].
+ * @param {Array<object>} rows
+ * @returns {Array<{ row: object, subagentCount: number }>}
  */
 function groupSessionRows(rows) {
   const list = Array.isArray(rows) ? rows : [];
-  const byId = new Set(list.map((row) => row.sessionId));
-  const childrenByParent = new Map();
-  const top = [];
+  const groups = [];
+  const indexById = new Map();
   for (const row of list) {
-    const parentId = isSubagentRow(row) ? parentSessionIdOf(row) : '';
-    if (parentId && byId.has(parentId) && parentId !== row.sessionId) {
-      const bucket = childrenByParent.get(parentId) || [];
-      bucket.push(row);
-      childrenByParent.set(parentId, bucket);
-      continue;
-    }
-    // Orphan *subagents* are hidden (desktop parity); orphan forks are normal
-    // sessions the desktop lists ungrouped, so they stay top-level.
-    if (parentId && isSubagentRow(row)) continue;
-    top.push({ row, orphanSubagent: false });
+    if (!row?.sessionId || isSubagentRow(row)) continue;
+    indexById.set(row.sessionId, groups.length);
+    groups.push({ row, subagentCount: 0 });
   }
-  return top.map(({ row, orphanSubagent }) => ({
-    row,
-    children: childrenByParent.get(row.sessionId) || [],
-    orphanSubagent,
-  }));
+  const seen = new Set();
+  for (const row of list) {
+    if (!row?.sessionId || seen.has(row.sessionId) || !isSubagentRow(row)) continue;
+    seen.add(row.sessionId);
+    const parentId = parentSessionIdOf(row);
+    if (!parentId || parentId === row.sessionId) continue;
+    const index = indexById.get(parentId);
+    if (index !== undefined) groups[index].subagentCount += 1;
+  }
+  return groups;
 }
 
-function sessionRowForest(rows) {
-  const list = Array.isArray(rows) ? rows : [];
-  const groups = groupSessionRows(list);
-  function descendants(parentId) {
-    return list.filter((row) => (
-      isSubagentRow(row)
-      && parentSessionIdOf(row) === parentId
-      && row.sessionId !== parentId
-    ));
+/**
+ * Direct subagent children of `parentSessionId` among the loaded `rows`,
+ * deduplicated by session id and ordered by recency — the desktop header
+ * catalog lists only direct children, and the drawer mirrors that scope.
+ * @param {Array<object>} rows
+ * @param {string} parentSessionId
+ * @returns {Array<object>}
+ */
+function directSubagentRows(rows, parentSessionId) {
+  if (!parentSessionId) return [];
+  const seen = new Set();
+  const children = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row?.sessionId || seen.has(row.sessionId) || !isSubagentRow(row)) continue;
+    if (parentSessionIdOf(row) !== parentSessionId) continue;
+    seen.add(row.sessionId);
+    children.push(row);
   }
-  function expand(row, orphanSubagent, seen) {
-    if (seen.has(row.sessionId)) {
-      return { row, children: [], orphanSubagent };
+  if (children.some((row) => row.lastActivityAt)) {
+    children.sort((a, b) => String(b.lastActivityAt || '').localeCompare(String(a.lastActivityAt || '')));
+  }
+  return children;
+}
+
+/**
+ * Merge loaded direct children with `subagent.list` catalog entries into
+ * sheet items. Catalog order is authoritative for catalog children;
+ * loaded-only children follow in recency order; diagnostic entries
+ * (unreadable children) come last so the caller can disable them.
+ * Returns [{ sessionId, row, entry, diagnostic, mode, hasChildren,
+ *           running, activityAt }].
+ * @param {Array<object>} rows
+ * @param {string} parentSessionId
+ * @param {Array<object>} catalogEntries
+ */
+function subagentSheetItems(rows, parentSessionId, catalogEntries) {
+  const loaded = directSubagentRows(rows, parentSessionId);
+  const byId = new Map(loaded.map((row) => [row.sessionId, row]));
+  const used = new Set();
+  const children = [];
+  const diagnostics = [];
+  for (const entry of Array.isArray(catalogEntries) ? catalogEntries : []) {
+    const id = typeof entry?.id === 'string' ? entry.id : '';
+    if (!id || used.has(id)) continue;
+    const row = byId.get(id) || null;
+    used.add(id);
+    if (entry.kind === 'diagnostic') {
+      diagnostics.push({
+        sessionId: id,
+        row,
+        entry: null,
+        diagnostic: entry.reason || 'unavailable',
+        mode: '',
+        hasChildren: false,
+        running: row?.running === true,
+        activityAt: row?.lastActivityAt || '',
+      });
+      continue;
     }
-    const next = new Set(seen);
-    next.add(row.sessionId);
-    return {
+    children.push({
+      sessionId: id,
       row,
-      orphanSubagent,
-      children: descendants(row.sessionId).map((child) => expand(child, false, next)),
-    };
+      entry,
+      diagnostic: '',
+      mode: typeof entry.mode === 'string' ? entry.mode : '',
+      hasChildren: entry.hasChildren === true,
+      running: entry.activity === 'running' || row?.running === true,
+      activityAt: row?.lastActivityAt || '',
+    });
   }
-  return groups.map((group) => expand(group.row, group.orphanSubagent, new Set()));
+  for (const row of loaded) {
+    if (used.has(row.sessionId)) continue;
+    children.push({
+      sessionId: row.sessionId,
+      row,
+      entry: null,
+      diagnostic: '',
+      mode: '',
+      hasChildren: false,
+      running: row.running === true,
+      activityAt: row.lastActivityAt || '',
+    });
+  }
+  return [...children, ...diagnostics];
 }
 
 /** True when this row must open read-only (subagent track or archived). */
@@ -199,13 +268,16 @@ export {
   agentPageInfo,
   archiveMobileAgent,
   deleteMobileAgent,
+  directSubagentRows,
   groupSessionRows,
   isReadOnlyRow,
   isSubagentRow,
   listArchivedAgents,
   mergeAgentRows,
+  parentSessionIdOf,
   regenerateMobileTitle,
   renameMobileAgent,
-  sessionRowForest,
+  subagentSheetItems,
   unarchiveMobileAgent,
+  visibleSessionRows,
 };

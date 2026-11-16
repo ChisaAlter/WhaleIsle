@@ -305,7 +305,7 @@ test('destructive confirm dialogs win over leftover rename or mkdir dialogs', ()
 
 test('paired SPA uses host history poll and formal Host services, not ACP files', () => {
   assert.match(app, /historyQuery\(/);
-  assert.match(app, /sessionRowForest/);
+  assert.match(app, /groupSessionRows|subagentSheetItems/);
   assert.match(app, /subscribeHostMux/);
   assert.match(app, /session\.selectModel/);
   assert.match(app, /gitCreateBranch/);
