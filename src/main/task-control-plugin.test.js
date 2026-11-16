@@ -12,6 +12,8 @@ const { pathToFileURL } = require('url');
 const { execFileSync } = require('node:child_process');
 const { Readable } = require('node:stream');
 
+const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
+
 const PLUGIN = path.join(__dirname, '..', '..', 'vendor', 'dsh-task-control', 'lib');
 const load = (file) => import(pathToFileURL(path.join(PLUGIN, file)).href);
 
@@ -561,13 +563,12 @@ async function controlReply(webServer, op, body = {}) {
   return JSON.parse(response.body);
 }
 
+// The plugin reads its Bearer token from the in-process store (#427), never
+// env; seed the store and restore the previous value after each test.
 function withLifecycleToken(t) {
-  const previous = process.env.DSHD_TASK_CONTROL_TOKEN;
-  process.env.DSHD_TASK_CONTROL_TOKEN = 'lifecycle-token';
-  t.after(() => {
-    if (previous === undefined) delete process.env.DSHD_TASK_CONTROL_TOKEN;
-    else process.env.DSHD_TASK_CONTROL_TOKEN = previous;
-  });
+  const previous = globalThis[INTERNAL_SECRETS_KEY];
+  storeInternalSecrets([['DSHD_TASK_CONTROL_TOKEN', 'lifecycle-token']]);
+  t.after(() => { globalThis[INTERNAL_SECRETS_KEY] = previous; });
 }
 
 function upgradeSocket() {

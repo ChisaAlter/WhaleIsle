@@ -12,10 +12,12 @@
  * window, which `onUnlock` re-drives.
  *
  * Control surface: `POST /dshd-task-control/<inspect|acquire|renew|release|
- * cancel|status>` gated by the per-boot Bearer token from
- * `DSHD_TASK_CONTROL_TOKEN`. No token → the route stays closed.
+ * cancel|status>` gated by the per-boot Bearer token the desktop delivers
+ * over the host's stdin secret channel (#427) as `DSHD_TASK_CONTROL_TOKEN`
+ * in the in-process store. No token → the route stays closed.
  */
 
+import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
 import { admit, createControlState, lockStatus } from './state.js';
 import { CONTROL_PREFIX, createControlHandler } from './http.js';
 import { admittedBefore, disposeGuards, markAdmitted, undrained, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
@@ -26,7 +28,7 @@ export const inject = [];
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 export function apply(ctx) {
   const state = createControlState();
-  const token = String(process.env.DSHD_TASK_CONTROL_TOKEN || '');
+  const token = internalSecret('DSHD_TASK_CONTROL_TOKEN');
   const controlRoutes = [];
   ctx.provide('desktopTaskAdmission', {
     begin(label) {

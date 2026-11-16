@@ -5,6 +5,16 @@
  * Kept free of Cordis and dsh-tools so node:test can load it.
  */
 
+// 议题 #427：进程内密钥访问器。本文件与 install-dsh-plugin.mjs 一起被复制进
+// $DSH_HOME profile 的 desktop-plugins 目录，相对路径够不到
+// src/shared/secret.js，故按同一 globalThis 契约就地实现
+// （canonical：src/shared/secret.js 的 internalSecret；不回退 process.env）。
+function internalSecret(name) {
+  const store = globalThis[Symbol.for('whaleisle.internalSecrets')];
+  const value = store instanceof Map ? store.get(name) : undefined;
+  return typeof value === 'string' ? value : '';
+}
+
 const GITHUB_OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const GITHUB_REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
 const GITHUB_REF_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,254})$/;
@@ -193,6 +203,7 @@ async function executeInstallDshPlugin(control, spec, allowBuilds = [], request 
 }
 
 module.exports = {
+  internalSecret,
   emptyInstallResult,
   isValidGithubSpec,
   isValidAllowBuild,

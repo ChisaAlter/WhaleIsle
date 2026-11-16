@@ -10,6 +10,7 @@
  * account-state transition, so no push channel is needed.
  */
 
+import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
 import { PLATFORM_PREFIX, createPlatformHandler } from './http.js';
 
 export const name = 'dsh-platform-session';
@@ -17,7 +18,7 @@ export const inject = [];
 
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 export function apply(ctx) {
-  const token = String(process.env.DSHD_PLATFORM_TOKEN || '');
+  const token = internalSecret('DSHD_PLATFORM_TOKEN');
   let routeRegistered = false;
   const install = () => {
     const webServer = ctx.get('webServer');

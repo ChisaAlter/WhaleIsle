@@ -18,6 +18,7 @@ const {
   isDroppedPluginName,
 } = require('./plugins');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
+const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 
 test('webProfileDir lives under the desktop home, not ~/.dsh', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-home-'));
@@ -391,18 +392,19 @@ describe('desktop install plugin module', { concurrency: false }, () => {
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const previous = {
       DSH_DESKTOP_INSTALL_URL: process.env.DSH_DESKTOP_INSTALL_URL,
-      DSH_DESKTOP_INSTALL_TOKEN: process.env.DSH_DESKTOP_INSTALL_TOKEN,
       DSH_HARNESS_ROOT: process.env.DSH_HARNESS_ROOT,
     };
+    const prevStore = globalThis[INTERNAL_SECRETS_KEY];
     t.after(() => {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      globalThis[INTERNAL_SECRETS_KEY] = prevStore;
     });
     delete process.env.DSH_DESKTOP_INSTALL_URL;
-    delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
     delete process.env.DSH_HARNESS_ROOT;
+    storeInternalSecrets([]);
     const mod = await import(copyRealPlugin(dir));
     assert.equal(mod.name, 'dshd-desktop-plugin-install');
     let registered = false;
@@ -410,7 +412,7 @@ describe('desktop install plugin module', { concurrency: false }, () => {
     assert.equal(registered, false);
 
     process.env.DSH_DESKTOP_INSTALL_URL = 'http://127.0.0.1:1';
-    process.env.DSH_DESKTOP_INSTALL_TOKEN = 'token';
+    storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'token']]);
     const errors = [];
     const previousError = console.error;
     console.error = (...args) => { errors.push(args.map(String).join(' ')); };
@@ -428,17 +430,18 @@ describe('desktop install plugin module', { concurrency: false }, () => {
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const previous = {
       DSH_DESKTOP_INSTALL_URL: process.env.DSH_DESKTOP_INSTALL_URL,
-      DSH_DESKTOP_INSTALL_TOKEN: process.env.DSH_DESKTOP_INSTALL_TOKEN,
       DSH_HARNESS_ROOT: process.env.DSH_HARNESS_ROOT,
     };
+    const prevStore = globalThis[INTERNAL_SECRETS_KEY];
     t.after(() => {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      globalThis[INTERNAL_SECRETS_KEY] = prevStore;
     });
     process.env.DSH_DESKTOP_INSTALL_URL = 'http://127.0.0.1:1';
-    process.env.DSH_DESKTOP_INSTALL_TOKEN = 'token';
+    storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'token']]);
     const harness = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-harness-root-'));
     t.after(() => fs.rmSync(harness, { recursive: true, force: true }));
     process.env.DSH_HARNESS_ROOT = makeFakeHarnessRoot(harness);

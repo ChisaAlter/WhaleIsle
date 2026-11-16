@@ -1,7 +1,9 @@
 /**
  * Loopback session route for embedded Platform documents. The Electron shell
- * fetches the current PlatformSession with the per-boot Bearer token from
- * DSHD_PLATFORM_TOKEN; an empty token keeps the route closed.
+ * fetches the current PlatformSession with the per-boot Bearer token the
+ * desktop delivers over the host's stdin secret channel (#427) as
+ * DSHD_PLATFORM_TOKEN in the in-process store; an empty token keeps the
+ * route closed.
  */
 
 import { constantTimeEqual } from '../../dsh-shared/lib/secret.mjs';

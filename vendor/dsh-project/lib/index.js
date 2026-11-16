@@ -1,3 +1,4 @@
+import { internalSecret } from './internal-secret.mjs';
 import TeamService from '@deepseek-ai/dsh-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
@@ -41,7 +42,7 @@ async function mountProject(ctx) {
       await table.update('catalog', () => migrated);
     }
     const desktop = async (action, payload) => {
-      const base = process.env.DSH_DESKTOP_INSTALL_URL, token = process.env.DSH_DESKTOP_INSTALL_TOKEN;
+      const base = process.env.DSH_DESKTOP_INSTALL_URL, token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN');
       if (!base || !token) throw new Error('Project desktop bridge is unavailable.');
       const response = await fetch(new URL('/desktop/project', base), { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ action, ...payload }) });
       const result = await response.json(); if (!response.ok || result.ok === false) throw new Error(result.error || `Project desktop request failed (${response.status}).`); return result;

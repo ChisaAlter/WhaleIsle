@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { storeInternalSecrets, INTERNAL_SECRETS_KEY } from '../../dsh-shared/lib/internal-secret.mjs';
 // Real Loader/Sessions/continuations boot through the built Harness workspace.
 const HARNESS = harnessWorkspace();
 const test = gateTests(nodeTest, HARNESS);
@@ -474,6 +475,10 @@ class ReplacementModel extends ScriptedModel {
 }
 
 async function desktopBridge(root, handlers = {}) {
+  // The desktop token reaches plugins through the in-process store (#427);
+  // each test keeps its env pair writes, but only this store value is read.
+  const priorSecrets = globalThis[INTERNAL_SECRETS_KEY];
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'composition-secret']]);
   const bindings = new Map(), requests = [];
   const server = createServer(async (req, res) => { try {
     assert.equal(req.headers.authorization, 'Bearer composition-secret'); const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -489,7 +494,7 @@ async function desktopBridge(root, handlers = {}) {
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value));
   } catch (error) { res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: error.message })); } });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
-  return { requests, address: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(done => server.close(done)) };
+  return { requests, address: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(done => { globalThis[INTERNAL_SECRETS_KEY] = priorSecrets; server.close(done); }) };
 }
 async function bootHost(home, model, teamConfig, allowUnavailable = false, visualRepliesEnabled = false, composition = {}) {
   const config = join(home, 'cordis.yml'); await writeFile(config, '[]\n');

@@ -12,14 +12,21 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 let active = null;
 
+// Only the loopback URL rides the child env (#427): the Bearer token is a
+// credential and reaches the host over the stdin secret channel instead, so
+// tool-spawned grandchildren can never inherit it. desktopInstallToken() is
+// the producer-side getter for that write.
 function desktopInstallEnv() {
   if (!active?.url || !active?.token) {
     return {};
   }
   return {
     DSH_DESKTOP_INSTALL_URL: active.url,
-    DSH_DESKTOP_INSTALL_TOKEN: active.token,
   };
+}
+
+function desktopInstallToken() {
+  return active?.token || '';
 }
 
 function desktopInstallReady() {
@@ -541,6 +548,7 @@ function stopDesktopInstallControl() {
 module.exports = {
   RESTART_DELAY_MS,
   desktopInstallEnv,
+  desktopInstallToken,
   desktopInstallReady,
   startDesktopInstallControl,
   stopDesktopInstallControl,

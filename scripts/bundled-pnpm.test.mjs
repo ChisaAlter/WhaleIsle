@@ -10,6 +10,7 @@ import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const { copyBundledPnpm } = require('./after-pack');
+const { localImportClosure } = require('./lib/import-closure.cjs');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('installed and packaged pnpm run the locked CLI and host build scripts offline', t => {
@@ -90,13 +91,15 @@ export async function runCli({ packageManager }) {
   const source = fs.readFileSync(path.join(mainDir, 'marketplace-install.js'), 'utf8');
   const pnpmRuntimeSource = fs.readFileSync(path.join(mainDir, 'pnpm-runtime.js'), 'utf8');
   const unpackedMainDir = path.join(resources, 'app.asar.unpacked', 'src', 'main');
-  fs.mkdirSync(unpackedMainDir, { recursive: true });
-  fs.copyFileSync(path.join(mainDir, 'dsh-cli-runner.mjs'), path.join(unpackedMainDir, 'dsh-cli-runner.mjs'));
-  // The runner's plain-Node import chain ships via the same asarUnpack list.
-  fs.copyFileSync(path.join(mainDir, 'parent-lifeline.mjs'), path.join(unpackedMainDir, 'parent-lifeline.mjs'));
-  const unpackedSharedDir = path.join(resources, 'app.asar.unpacked', 'src', 'shared');
-  fs.mkdirSync(unpackedSharedDir, { recursive: true });
-  fs.copyFileSync(path.join(root, 'src', 'shared', 'process-tree.js'), path.join(unpackedSharedDir, 'process-tree.js'));
+  // Mirror what asarUnpack ships: the runner's whole plain-Node import
+  // closure, derived from its real imports so a new runner dependency
+  // cannot drift out of this fixture (pnpm-runtime.test.js pins the same
+  // closure to build.asarUnpack).
+  for (const rel of localImportClosure(root, path.join(mainDir, 'dsh-cli-runner.mjs'))) {
+    const target = path.join(resources, 'app.asar.unpacked', rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(root, rel), target);
+  }
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).devDependencies.pnpm;
   for (const packaged of [false, true]) {
     const runtimeProcess = { platform: process.platform, env: baseEnv,

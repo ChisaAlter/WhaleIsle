@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { harnessWorkspace, requirePrerequisite } from '../../../scripts/lib/test-prerequisites.cjs';
 import { apiEndpoint, requestApi, wavChunks } from '../lib/api.js';
+import { storeInternalSecrets, INTERNAL_SECRETS_KEY } from '../../dsh-shared/lib/internal-secret.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 // Optional read-only reuse of an installed Harness for cross-version acceptance.
@@ -70,7 +71,10 @@ test('real web profile: persistent settings, native tools, file permissions, str
   });
   await new Promise(done => confirmServer.listen(0, '127.0.0.1', done));
   Object.assign(process.env, { DSH_HOME: home, DSHD_DEEPSEEK_TOOLS_ENABLED: '1', DSH_TELEMETRY_DISABLED: '1',
-    DSH_DESKTOP_INSTALL_URL: `http://127.0.0.1:${confirmServer.address().port}`, DSH_DESKTOP_INSTALL_TOKEN: 'qa-confirm-token' });
+    DSH_DESKTOP_INSTALL_URL: `http://127.0.0.1:${confirmServer.address().port}` });
+  // The confirm token is delivered through the in-process store (#427), not env.
+  const priorSecrets = globalThis[INTERNAL_SECRETS_KEY];
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'qa-confirm-token']]);
   let ctx;
   let current = 'ok';
   const requests = [];
@@ -105,6 +109,7 @@ test('real web profile: persistent settings, native tools, file permissions, str
     server.closeAllConnections(); await new Promise(done => server.close(done));
     confirmServer.closeAllConnections(); await new Promise(done => confirmServer.close(done));
     for (const [key, value] of Object.entries(oldEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    globalThis[INTERNAL_SECRETS_KEY] = priorSecrets;
     await removeOwned(scratch, profileDir);
     console.log('DeepSeek integration: owned scratch removed');
   });

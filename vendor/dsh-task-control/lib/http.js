@@ -1,7 +1,8 @@
 /**
  * Loopback control route for task control. The shell calls these ops with a
- * per-boot Bearer token delivered through the Host child's environment; an
- * empty token keeps the route closed rather than open to the profile.
+ * per-boot Bearer token the desktop delivers over the host's stdin secret
+ * channel (#427) into the in-process store; an empty token keeps the route
+ * closed rather than open to the profile.
  */
 
 import { acquireLock, lockStatus, releaseLock, renewLock } from './state.js';

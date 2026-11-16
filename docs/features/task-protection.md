@@ -53,7 +53,7 @@
 - `src/main/task-protection*.js`（新，协调器 + 与入口接线）
 - `src/main/index.js` / `launcher-service.js` / `update.js` / `update-updater.js` / `runtime-install.js` / `ipc-delta.js` / `delta/install.js` / `ipc-components.js` / `main-launcher/index.js`（只加协调器调用 + 挪副作用时机）
 - `vendor/dsh-task-control/`（新，Host 侧插件）+ `src/main/task-control-overlay.js`（ensure overlay/junction）
-- `src/main/dsh.js` / `harness-controller.js`（spawn env 注入 token、overlay 挂载顺序）
+- `src/main/dsh.js` / `harness-controller.js`（内部令牌经 host stdin 密钥通道下发、overlay 挂载顺序）
 
 ## Do not touch
 
