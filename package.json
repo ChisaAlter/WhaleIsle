@@ -21,6 +21,7 @@
     "test": "node --test \"src/**/*.test.js\" \"mobile/web/**/*.test.js\" \"vendor/dsh-project/tests/*.test.mjs\" \"vendor/dsh-deepseek-tools/tests/*.test.mjs\"",
     "test:deepseek-tools": "node --test vendor/dsh-deepseek-tools/tests/*.test.mjs",
     "test:project-composition": "node --test vendor/dsh-project/tests/host-composition.test.mjs",
+    "setup": "node scripts/setup.mjs",
     "setup:harness": "node scripts/setup-harness.js",
     "sync:harness": "node scripts/sync-upstream.js",
     "prepare:dshd-remote": "node scripts/prepare-dshd-remote.mjs",
