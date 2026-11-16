@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { DshdRemote, RUNNER_PATH, VENDOR_ROOT } = require('./dshd-remote');
 const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+const { localImportClosure } = require('../../scripts/lib/import-closure.cjs');
 
 const VENDOR_RUNNABLE = fs.existsSync(path.join(VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js'))
   && fs.existsSync(path.join(VENDOR_ROOT, 'node_modules'));
@@ -189,37 +190,13 @@ test(
   },
 );
 
-/**
- * Follow relative `import … from './x'` / `require('./x')` edges from one
- * source file across the desktop tree.
- * @param {string} entry - absolute path of the root module.
- * @returns {string[]} project-relative posix paths of every reachable file.
- */
-function localImportClosure(entry) {
-  const root = path.join(__dirname, '..', '..');
-  const seen = new Set();
-  const queue = [entry];
-  while (queue.length > 0) {
-    const file = queue.pop();
-    const rel = path.relative(root, file).split(path.sep).join('/');
-    if (seen.has(rel)) continue;
-    seen.add(rel);
-    const src = fs.readFileSync(file, 'utf8');
-    const pattern = /(?:from\s+|require\()\s*['"](\.[^'"]+)['"]/g;
-    for (const match of src.matchAll(pattern)) {
-      queue.push(path.resolve(path.dirname(file), match[1]));
-    }
-  }
-  return [...seen].sort();
-}
-
 test('asarUnpack ships the whole daemon runner import chain (plain node cannot read app.asar)', () => {
   // Regression: the runner was unpacked but `./dshd-daemon-hooks.mjs` stayed
   // inside app.asar, so the packaged daemon died with ERR_MODULE_NOT_FOUND
   // and Settings → Remote only ever showed "远程暂时不可用".
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
   const unpacked = new Set(pkg.build.asarUnpack);
-  const reachable = localImportClosure(RUNNER_PATH);
+  const reachable = localImportClosure(path.join(__dirname, '..', '..'), RUNNER_PATH);
   assert.ok(reachable.includes('src/main/dshd-daemon-hooks.mjs'));
   for (const rel of reachable) {
     assert.ok(unpacked.has(rel), `${rel} is imported by the daemon runner but missing from build.asarUnpack`);

@@ -24,6 +24,7 @@ const ESM_ACCESSORS = [
   'vendor/dsh-shared/lib/internal-secret.mjs',
   'vendor/dsh-project/lib/internal-secret.mjs',
   'vendor/dsh-with-chatgpt/lib/internal-secret.mjs',
+  'dsh-acp/lib/internal-secret.mjs',
 ];
 const CJS_ACCESSORS = [
   'src/shared/secret.js',

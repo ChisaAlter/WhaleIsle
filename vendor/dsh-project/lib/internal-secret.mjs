@@ -6,7 +6,7 @@
 // src/shared/secret.js 的 internalSecret）同名同形——只读写
 // globalThis[Symbol.for('whaleisle.internalSecrets')] 上的只读 Map，
 // 不回退 process.env。
-// src/main/internal-secrets.test.js 的契约测试钉住各副本的同键同语义。
+// src/main/internal-secret-accessors.test.js 的契约测试钉住各副本的同键同语义。
 
 export const INTERNAL_SECRETS_KEY = Symbol.for('whaleisle.internalSecrets');
 

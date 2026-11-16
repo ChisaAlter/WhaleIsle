@@ -9,7 +9,7 @@
  * lives only in the in-process store — never env, so tool-spawned children
  * cannot inherit it.
  */
-import { internalSecret } from '../../vendor/dsh-shared/lib/internal-secret.mjs';
+import { internalSecret } from './internal-secret.mjs';
 
 const CONFIRM_TIMEOUT_MS = 240_000;
 
