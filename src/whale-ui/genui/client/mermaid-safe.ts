@@ -5,21 +5,131 @@
  * @module @changfenhuang/dsh-genui/client/mermaid-safe
  */
 
-/** Reject any rendered SVG that carries script, event-handler attributes, or
- * `javascript:` URIs. Under mermaid's strict security level a legitimate
- * diagram never contains these, so a hit means the sanitizer failed (a
- * mermaid regression or a bypass): throw and let the caller show the plain
- * source fallback instead of injecting the markup. Cheap linear scan over
- * the SVG string; happens once per diagram.
- */
-const SVG_INJECTION = /<script|[\s"']on[a-z]+\s*=|javascript:/i
+/** Elements mermaid 11 emits across the whitelisted diagram kinds (verified
+ * against real renders of flowchart, sequence, class, state, gantt, pie, er,
+ * journey, gitGraph, timeline and quadrantChart) plus the inert SVG
+ * vocabulary those kinds may produce under other inputs (gradients,
+ * clipPath, patterns, filters, linked `<use>`/`<a>`/`<image>`). mermaid's
+ * default `htmlLabels` renders label text inside `foreignObject` as XHTML —
+ * journey emits it even with htmlLabels off — so the HTML formatting
+ * elements mermaid can generate for labels (marked's vocabulary) are
+ * whitelisted too. Everything scriptable or embedding foreign content
+ * (`script`, `iframe`, `object`, `embed`, `audio`, `video`, `form`, `meta`,
+ * `link`, `math`, SMIL animation, …) is absent, hence rejected.
+ * Compared lowercased: XML parsing is case-sensitive while the injected
+ * markup is re-parsed by the case-folding HTML parser. */
+const SAFE_SVG_ELEMENTS = new Set([
+  // document structure
+  'svg', 'g', 'defs', 'symbol', 'use', 'switch', 'title', 'desc',
+  // geometry and text
+  'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
+  'text', 'tspan', 'textpath',
+  // paint servers, clipping, markers
+  'marker', 'clippath', 'mask', 'pattern',
+  'lineargradient', 'radialgradient', 'stop',
+  // filters (all primitives are inert; url-bearing attributes are checked below)
+  'filter', 'feblend', 'fecolormatrix', 'fecomponenttransfer', 'fecomposite',
+  'feconvolvematrix', 'fediffuselighting', 'fedisplacementmap', 'fedistantlight',
+  'fedropshadow', 'feflood', 'fefunca', 'fefuncb', 'fefuncg', 'fefuncr',
+  'fegaussianblur', 'feimage', 'femerge', 'femergenode', 'femorphology',
+  'feoffset', 'fepointlight', 'fespecularlighting', 'fespotlight', 'fetile',
+  'feturbulence',
+  // embedded diagram stylesheet (content checked separately)
+  'style',
+  // links / images — URL attributes are checked below
+  'a', 'image', 'img',
+  // htmlLabels: the XHTML label body mermaid emits inside <foreignObject>
+  'foreignobject',
+  'div', 'span', 'p', 'br', 'wbr', 'hr',
+  'em', 'strong', 'b', 'i', 'u', 's', 'del', 'ins', 'code', 'pre',
+  'kbd', 'samp', 'var', 'sub', 'sup', 'small', 'mark', 'abbr', 'cite', 'q',
+  'dfn', 'time', 'bdi', 'bdo',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'blockquote',
+  'table', 'caption', 'colgroup', 'col', 'thead', 'tbody', 'tfoot',
+  'tr', 'th', 'td',
+  // markdown task lists render a disabled checkbox
+  'input',
+])
 
-/** Throws when `svg` carries script, event-handler attributes, or
- * `javascript:` URIs. Exported for tests; `renderMermaid` is the only caller
- * in production. */
+/** Attributes whose value is navigated to or fetched: only `#` fragments and
+ * `http(s):` survive; `javascript:`, `vbscript:`, `data:` and everything else
+ * throw. Compared by local name so `xlink:href` is covered. */
+const SVG_URL_ATTRIBUTES = new Set([
+  'href', 'src', 'data', 'action', 'formaction', 'poster', 'ping',
+  'background', 'lowsrc', 'dynsrc', 'base', 'cite', 'longdesc', 'profile',
+])
+
+/** Whitespace, control and format characters a URL loader ignores — stripped
+ * before scheme matching so `java\tscript:` or `&#xAD;` splits cannot hide a
+ * scheme. */
+const URL_NOISE = /[\s\p{Cc}\p{Cf}]/gu
+
+/** CSS constructs that reach script or the network: `@import`, `expression(`,
+ * `-moz-binding`, `behavior:`, `vbscript:`/`javascript:` in any value, and
+ * `url(...)` whose target is not a same-document `#` fragment. Matched on the
+ * normalized (noise-stripped, lowercased) text. */
+const CSS_HAZARD = /@import|expression\(|behaviou?r:|-moz-binding|javascript:|vbscript:/
+const CSS_URL = /url\(['"]?/g
+
+function assertSafeCssText(compact: string, where: string): void {
+  if (CSS_HAZARD.test(compact)) {
+    throw new Error(`mermaid output failed the sanitization check: unsafe CSS in ${where}`)
+  }
+  CSS_URL.lastIndex = 0
+  let match
+  while ((match = CSS_URL.exec(compact)) !== null) {
+    if (compact[CSS_URL.lastIndex] !== '#') {
+      throw new Error(`mermaid output failed the sanitization check: external url() in ${where}`)
+    }
+  }
+}
+
+/** Throws when `svg` — parsed as XML, the same text that will be re-parsed by
+ * the HTML parser at the injection point — contains a non-whitelisted
+ * element, an `on*` event-handler attribute, a URL attribute pointing outside
+ * the document, or hostile CSS. Under mermaid's strict security level a
+ * legitimate diagram contains none of these, so a hit means the sanitizer
+ * failed (a mermaid regression or a bypass): throw and let the caller show
+ * the plain source fallback instead of injecting the markup. Exported for
+ * tests; `renderMermaid` is the only caller in production. */
 export function assertSafeSvg(svg: string): void {
-  if (SVG_INJECTION.test(svg)) {
-    throw new Error('mermaid output failed the sanitization check; refusing to render')
+  const fail = (reason: string): never => {
+    throw new Error(`mermaid output failed the sanitization check: ${reason}; refusing to render`)
+  }
+  // A processing instruction (`<?xml-stylesheet href=…?>`) can attach an
+  // external stylesheet to the document; mermaid output never carries one.
+  if (svg.includes('<?')) fail('processing instruction')
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  if (doc.doctype !== null || doc.getElementsByTagName('parsererror').length > 0) {
+    fail('unparseable or DTD-bearing markup')
+  }
+  const root = doc.documentElement
+  if (root === null || root.localName.toLowerCase() !== 'svg') fail('root is not <svg>')
+  const elements = root.getElementsByTagName('*')
+  for (let index = -1; index < elements.length; index++) {
+    const el = index === -1 ? root : elements[index]!
+    const tag = el.localName.toLowerCase()
+    if (!SAFE_SVG_ELEMENTS.has(tag)) fail(`element <${el.tagName}>`)
+    const attrs = el.attributes
+    for (let i = 0; i < attrs.length; i++) {
+      const attr = attrs[i]!
+      const name = attr.name.toLowerCase()
+      const local = (attr.localName ?? name).toLowerCase()
+      if (name.startsWith('on') || local.startsWith('on')) {
+        fail(`event handler ${attr.name}`)
+      }
+      const compact = attr.value.toLowerCase().replace(URL_NOISE, '')
+      if (SVG_URL_ATTRIBUTES.has(local) || SVG_URL_ATTRIBUTES.has(name)) {
+        if (!compact.startsWith('#') && !compact.startsWith('http:') && !compact.startsWith('https:')) {
+          fail(`URL ${attr.name}=${JSON.stringify(attr.value)}`)
+        }
+      }
+      assertSafeCssText(compact, `attribute ${attr.name}`)
+    }
+    if (tag === 'style') {
+      assertSafeCssText((el.textContent ?? '').toLowerCase().replace(URL_NOISE, ''), '<style>')
+    }
   }
 }
 
