@@ -10,11 +10,19 @@
 // files, not from binary diffs.
 const crypto = require('crypto');
 const fs = require('fs');
+const { WINDOWS_DEVICE_NAME } = require('../../main/download-path');
 
 const FORMAT = 'dshd-delta@1';
 const MANIFEST_ENTRY = 'manifest.json';
 const OPS = new Set(['add', 'patch', 'delete']);
-const ASSET_RE = /-delta-(v?[0-9][0-9A-Za-z.]*)-(v?[0-9][0-9A-Za-z.]*)\.zip$/i;
+// Version atoms inside `<slug>-delta-<from>-<to>.zip` follow the published tag
+// shape (`v?` + digit + dot/alnum, plus `-`/`+` for pre-release and build
+// suffixes, e.g. v0.3.6-rc.1+candidate). The greedy first group splits from/to
+// on the LAST `-`, so a `from` carrying a prerelease round-trips; a `to`
+// ending in `-<version-start>` is inherently ambiguous in this scheme and not
+// produced by real release tags.
+const ASSET_VERSION = 'v?[0-9][0-9A-Za-z.+-]*';
+const ASSET_RE = new RegExp(`-delta-(${ASSET_VERSION})-(${ASSET_VERSION})\\.zip$`, 'i');
 
 function sha256Hex(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
@@ -44,23 +52,31 @@ function sha512File(file, deps = {}) {
 
 // Manifest paths are forward-slash relatives. Anything that could escape or
 // alias the install dir is rejected outright — a hostile manifest must never
-// reach outside targetDir.
+// reach outside targetDir. `:` in ANY segment is refused (win32 resolves
+// `sub/a:` onto the A: drive and `a/c:d/x` aliases `a/d/x`), as are Windows
+// device names and a trailing `.`/space on any segment — all of them alias or
+// fail on the apply target.
 function isSafeRelPath(rel) {
   if (typeof rel !== 'string' || !rel || rel.length > 512) {
     return false;
   }
-  if (/[\\]/.test(rel) || rel.startsWith('/') || /^[A-Za-z]:/.test(rel)) {
+  if (/[\\:]/.test(rel) || rel.startsWith('/') || /[\0-\x1f]/.test(rel)) {
     return false;
   }
-  if (/[\0-\x1f]/.test(rel)) {
-    return false;
-  }
-  return rel.split('/').every((seg) => seg && seg !== '.' && seg !== '..');
+  return rel.split('/').every((seg) => seg && seg !== '.' && seg !== '..'
+    && !/[. ]$/.test(seg) && !WINDOWS_DEVICE_NAME.test(seg));
+}
+
+// Dedup key under Windows semantics: two manifest records that only differ in
+// case or Unicode normalization form write the same file and must collide.
+function relPathKey(rel) {
+  return rel.normalize('NFC').toLowerCase();
 }
 
 function deltaAssetName(product, fromVersion, toVersion) {
   const slug = String(product || 'app').trim().replace(/\s+/g, '-').replace(/[^\w.\-]+/g, '');
-  return `${slug}-delta-${fromVersion}-${toVersion}.zip`;
+  const version = (value) => String(value || '').replace(/[^0-9A-Za-z.+-]+/g, '');
+  return `${slug}-delta-${version(fromVersion)}-${version(toVersion)}.zip`;
 }
 
 function parseDeltaAssetName(name) {
@@ -125,15 +141,29 @@ function validateManifest(raw) {
   if (!Array.isArray(doc.files)) {
     throw new DeltaManifestError('manifest files must be an array');
   }
-  const seen = new Set();
+  const seen = new Map();
   const files = doc.files.map((entry, index) => {
     const out = validateFileEntry(entry, index);
-    if (seen.has(out.path)) {
+    const key = relPathKey(out.path);
+    if (seen.has(key)) {
       throw new DeltaManifestError(`manifest duplicate path: ${out.path}`);
     }
-    seen.add(out.path);
+    seen.set(key, out.path);
     return out;
   });
+  // No record may sit inside another record's path (`x-y` plus `x-y/a`): one
+  // disk entry cannot be both the file the first op writes and the directory
+  // the second needs — without this gate the contradiction surfaces as a raw
+  // EEXIST/ENOTDIR mid-apply.
+  for (const row of files) {
+    const segs = relPathKey(row.path).split('/');
+    for (let i = 1; i < segs.length; i += 1) {
+      const prefix = segs.slice(0, i).join('/');
+      if (seen.has(prefix)) {
+        throw new DeltaManifestError(`manifest conflicting paths: ${seen.get(prefix)} vs ${row.path}`);
+      }
+    }
+  }
   return {
     format: FORMAT,
     product: typeof doc.product === 'string' ? doc.product : '',

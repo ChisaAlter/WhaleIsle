@@ -38,6 +38,7 @@ function downloadSavePath(downloadsDir, filename) {
 module.exports = {
   DEFAULT_DOWNLOAD_NAME,
   MAX_DOWNLOAD_NAME_CHARS,
+  WINDOWS_DEVICE_NAME,
   sanitizeDownloadFilename,
   downloadSavePath,
 };

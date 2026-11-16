@@ -55,6 +55,17 @@ async function extractPayloads(zipFile, entries, files, stagingDir, deps, onProg
   return staged;
 }
 
+async function baseFileHash(target, rel, deps) {
+  try {
+    return await manifest.sha256File(target, deps);
+  } catch (error) {
+    // A slot that cannot be hashed (e.g. a directory where the manifest
+    // expects a file) never holds the expected bytes — refuse like a missing
+    // or drifted base instead of leaking the raw errno.
+    throw new DeltaApplyError('base-mismatch', `base unreadable: ${rel} (${error.code || error.message})`, rel);
+  }
+}
+
 async function preflightBase(targetDir, files, deps = {}) {
   const fsx = deps.fs || fs;
   const skip = new Set();
@@ -63,7 +74,7 @@ async function preflightBase(targetDir, files, deps = {}) {
     const exists = fsx.existsSync(target);
     if (row.op === 'add') {
       if (exists) {
-        const actual = await manifest.sha256File(target, deps);
+        const actual = await baseFileHash(target, row.path, deps);
         if (actual === row.sha256) {
           skip.add(row.path);
         } else {
@@ -79,7 +90,7 @@ async function preflightBase(targetDir, files, deps = {}) {
       }
       throw new DeltaApplyError('base-mismatch', `base file missing: ${row.path}`, row.path);
     }
-    const actual = await manifest.sha256File(target, deps);
+    const actual = await baseFileHash(target, row.path, deps);
     if (row.op === 'patch' && actual === row.sha256) {
       skip.add(row.path); // already at target content — re-apply is a no-op
       continue;
