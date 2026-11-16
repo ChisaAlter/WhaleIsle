@@ -1,4 +1,5 @@
 const { execFileSync, spawnSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const semver = require('semver');
@@ -1494,7 +1495,38 @@ function resolveResourcesDir(context) {
   return path.join(context.appOutDir, 'resources');
 }
 
-const NODE_DIST_MIRROR = process.env.DSH_NODE_DIST_MIRROR || 'https://nodejs.org/dist';
+function nodeDistMirror() {
+  return process.env.DSH_NODE_DIST_MIRROR || 'https://nodejs.org/dist';
+}
+
+function nodeDistSha256(shasumsText, archiveName) {
+  for (const line of shasumsText.split('\n')) {
+    const match = /^([0-9a-f]{64})\s+(\S+)\s*$/.exec(line.trim());
+    if (match && match[2] === archiveName) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+function verifyNodeDistArchive(archive, shasumsText, archiveName) {
+  const expected = nodeDistSha256(shasumsText, archiveName);
+  if (!expected) {
+    throw new Error(`Node 发行校验和清单缺少 ${archiveName}`);
+  }
+  const actual = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+  if (actual !== expected) {
+    throw new Error(`Node 发行包 SHA-256 不匹配：期望 ${expected}，实际 ${actual}`);
+  }
+}
+
+function probeBundledNode(bin, version) {
+  const probe = spawnSync(bin, ['--version'], { encoding: 'utf8' });
+  const actual = (probe.stdout || '').trim();
+  if (probe.status !== 0 || actual !== `v${version}`) {
+    throw new Error(`官方 Node 构建自检失败：期望 v${version}，实际 ${actual || probe.stderr || '无法运行'}`);
+  }
+}
 
 /** 官方独立 Node 只链系统库；Homebrew/源码装的瘦二进制会列出 libnode 与 homebrew、/opt/*、/usr/local/* 前缀依赖 —— 打进安装包后目标机没有这些前缀库就 SIGABRT。 */
 function nodeBinaryHasExternalDylibs(listing) {
@@ -1518,7 +1550,7 @@ function bundledNodePinnedVersion(projectDir) {
   }
 }
 
-function downloadSelfContainedNode(cacheDir, version) {
+function downloadSelfContainedNode(cacheDir, version, probe = probeBundledNode) {
   const tuple = `node-v${version}-${process.platform}-${process.arch}`;
   const bin = path.join(cacheDir, tuple, 'bin', 'node');
   if (fs.existsSync(bin)) {
@@ -1528,19 +1560,19 @@ function downloadSelfContainedNode(cacheDir, version) {
   fs.rmSync(stage, { recursive: true, force: true });
   try {
     fs.mkdirSync(path.join(stage, tuple, 'bin'), { recursive: true });
-    const archive = path.join(stage, `${tuple}.tar.gz`);
-    const url = `${NODE_DIST_MIRROR}/v${version}/${tuple}.tar.gz`;
-    console.log(`本机 node 非自包含（瘦二进制），下载官方构建 ${url}`);
-    execFileSync('curl', ['-fsSL', '--retry', '3', url, '-o', archive], { stdio: 'inherit' });
+    const archiveName = `${tuple}.tar.gz`;
+    const archive = path.join(stage, archiveName);
+    const shasums = path.join(stage, 'SHASUMS256.txt');
+    const mirror = nodeDistMirror();
+    console.log(`本机 node 非自包含（瘦二进制），下载官方构建 ${mirror}/v${version}/${archiveName}`);
+    execFileSync('curl', ['-fsSL', '--retry', '3', `${mirror}/v${version}/SHASUMS256.txt`, '-o', shasums], { stdio: 'inherit' });
+    execFileSync('curl', ['-fsSL', '--retry', '3', `${mirror}/v${version}/${archiveName}`, '-o', archive], { stdio: 'inherit' });
+    verifyNodeDistArchive(archive, fs.readFileSync(shasums, 'utf8'), archiveName);
     execFileSync('tar', ['-xzf', archive, '-C', stage, `${tuple}/bin/node`], { stdio: 'inherit' });
     fs.mkdirSync(path.dirname(bin), { recursive: true });
     fs.renameSync(path.join(stage, tuple, 'bin', 'node'), bin);
     fs.chmodSync(bin, 0o755);
-    const probe = spawnSync(bin, ['--version'], { encoding: 'utf8' });
-    const actual = (probe.stdout || '').trim();
-    if (probe.status !== 0 || actual !== `v${version}`) {
-      throw new Error(`官方 Node 构建自检失败：期望 v${version}，实际 ${actual || probe.stderr || '无法运行'}`);
-    }
+    probe(bin, version);
     return bin;
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
@@ -2035,6 +2067,9 @@ module.exports.repairFlattenedCommanderEsm = repairFlattenedCommanderEsm;
 module.exports.copyFiles = copyFiles;
 module.exports.pickCopyWinners = pickCopyWinners;
 module.exports.copyBundledNode = copyBundledNode;
+module.exports.nodeDistSha256 = nodeDistSha256;
+module.exports.verifyNodeDistArchive = verifyNodeDistArchive;
+module.exports.downloadSelfContainedNode = downloadSelfContainedNode;
 module.exports.copyBundledPnpm = copyBundledPnpm;
 module.exports.nodeBinaryHasExternalDylibs = nodeBinaryHasExternalDylibs;
 module.exports.assertNodeModulesManifests = assertNodeModulesManifests;

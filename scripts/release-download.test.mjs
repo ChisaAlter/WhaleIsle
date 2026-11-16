@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -33,4 +33,14 @@ test('a complete corrupt partial is preserved and replaced by verified bytes', a
     assert.equal(opts.headers.Range, undefined); return new Response(bytes);
   } });
   assert.deepEqual(await readFile(target), bytes);
+});
+test('an oversized partial is quarantined and the transfer restarts from zero', async t => {
+  const directory = await fixture(t); await writeFile(join(directory, '123.zip.part'), Buffer.concat([bytes, Buffer.from('trailing-garbage')]));
+  const target = await downloadArtifact({ artifact, directory, resolveUrl: async () => 'https://storage.invalid', fetchImpl: async (_, opts) => {
+    assert.equal(opts.headers.Range, undefined); return new Response(bytes);
+  } });
+  assert.deepEqual(await readFile(target), bytes);
+  const names = await readdir(directory);
+  assert.ok(names.some(n => /^123\.zip\.part\.rejected-\d+$/.test(n)));
+  assert.ok(!names.includes('123.zip.part'));
 });

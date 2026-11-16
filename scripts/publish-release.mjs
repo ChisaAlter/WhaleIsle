@@ -10,6 +10,10 @@ import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { assertReleaseVersion } from './check-release-version.mjs'
 import { validateReleaseAssets } from './check-release-assets.mjs'
 
+// Whalebridge and Android publish under their own tag schemes; only vX.Y.Z
+// tags are desktop releases for the version comparison below.
+const DESKTOP_TAG = /^v\d+\.\d+\.\d+$/
+
 export function releaseDecision({ run, repo, sha, version, latest, existing, artifacts }) {
   if (run.status !== 'completed' || run.conclusion !== 'success' ||
       run.path !== '.github/workflows/test.yml' || run.head_branch !== 'main' ||
@@ -18,26 +22,40 @@ export function releaseDecision({ run, repo, sha, version, latest, existing, art
   const tag = 'v' + version
   assertReleaseVersion(tag, version)
   if (existing && !existing.draft) return { skip: tag + ' is already published' }
-  if (latest && !semver.gt(version, latest.tag_name)) return { skip: tag + ' is not newer than ' + latest.tag_name }
+  const latestDesktop = latest && DESKTOP_TAG.test(latest.tag_name || '') ? latest : null
+  if (latestDesktop && !semver.gt(version, latestDesktop.tag_name)) return { skip: tag + ' is not newer than ' + latestDesktop.tag_name }
   const windows = artifacts.filter(a => a.name === 'Whale-Isle-windows-x64')
   if (!windows.length) return { skip: 'This CI run has no installer (documentation or tools only)' }
   if (windows.length !== 1) throw new Error('Expected one Windows installer artifact')
   if (windows[0].expired) throw new Error('Installer artifact expired; a new development build is needed')
   if (existing && existing.target_commitish !== sha) throw new Error('Existing draft belongs to another commit')
-  return { tag, macos: artifacts.some(a => a.name === 'Whale-Isle-macos-arm64' && !a.expired) }
+  const macos = artifacts.some(a => a.name === 'Whale-Isle-macos-arm64' && !a.expired)
+  if (latestDesktop && !macos) {
+    throw new Error('Refusing to publish ' + tag + ' without a macOS installer artifact (missing or expired): it supersedes ' + latestDesktop.tag_name + '; rerun Development CI on main with include_macos')
+  }
+  return { tag, macos }
 }
 async function hash(file, algorithm) {
   const digest = createHash(algorithm)
   for await (const chunk of createReadStream(file)) digest.update(chunk)
   return digest.digest('hex')
 }
-async function findRelease(request, prefix, tag) {
-  // The tag endpoint is documented for published releases. List releases also
-  // includes drafts for this workflow's write token, so interrupted uploads resume.
+// The tag endpoint is documented for published releases. List releases also
+// includes drafts for this workflow's write token, so interrupted uploads
+// resume. One paginated scan finds both the release for this tag and the
+// newest published desktop release — the repository's "latest" release can
+// belong to another component's tag scheme, so /releases/latest is not used.
+async function scanReleases(request, prefix, tag) {
+  let existing = null
+  let latest = null
   for (let page = 1; ; page += 1) {
     const releases = await request(prefix + '/releases?per_page=100&page=' + page)
-    const found = releases.find(release => release.tag_name === tag)
-    if (found || releases.length < 100) return found || null
+    for (const release of releases) {
+      if (release.tag_name === tag) existing = release
+      if (!release.draft && !release.prerelease && DESKTOP_TAG.test(release.tag_name || '') &&
+          (!latest || semver.gt(release.tag_name, latest.tag_name))) latest = release
+    }
+    if (releases.length < 100) return { existing, latest }
   }
 }
 export async function publish({ repo, runId, request, gh, sha, root = process.cwd(), output = console.log }) {
@@ -46,9 +64,8 @@ export async function publish({ repo, runId, request, gh, sha, root = process.cw
   const run = await request(prefix + '/actions/runs/' + runId)
   const { version } = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const tag = 'v' + version
-  const [latest, existing, artifactList] = await Promise.all([
-    request(prefix + '/releases/latest', { missing: true }),
-    findRelease(request, prefix, tag),
+  const [{ latest, existing }, artifactList] = await Promise.all([
+    scanReleases(request, prefix, tag),
     request(prefix + '/actions/runs/' + runId + '/artifacts?per_page=100'),
   ])
   const decision = releaseDecision({ run, repo, sha, version, latest, existing, artifacts: artifactList.artifacts })

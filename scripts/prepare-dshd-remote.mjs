@@ -3,6 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import semver from 'semver';
+import {
+  materializeRuntimeCopies,
+  planRuntimeClosure,
+  readManifest,
+} from './lib/dshd-remote-runtime.mjs';
 import {
   createScanMemo,
   REMOTE_PRUNED_DIRS,
@@ -24,6 +30,7 @@ const sourceServerExport = path.join(
 const mobileBundle = path.join(root, 'mobile', 'web', 'chisacode', 'daemon-client.bundle.js');
 const runtimeRoot = path.join(upstreamRoot, '.tmp', 'desktop-runtime');
 const runtimeNodeModules = path.join(runtimeRoot, 'node_modules');
+const runtimeDepSource = path.join(upstreamRoot, 'node_modules');
 const runtimeServerRoot = path.join(runtimeNodeModules, '@chisacode', 'server');
 const runtimeServerExport = path.join(runtimeServerRoot, 'dist', 'server', 'server', 'exports.js');
 const runtimeStaticDir = path.join(runtimeServerRoot, 'dist', 'server');
@@ -344,9 +351,37 @@ if (force || mobileSourceMtime > mobileBuildMtime) {
   run(process.execPath, ['scripts/bundle-chisacode-mobile-client.mjs'], root, { shell: false });
 }
 
+// Packs one workspace member exactly like `npm install --install-links`
+// copies a file: dependency — its files list plus npm's always-included
+// entries — without lifecycle scripts (dist/ is already built above).
+function packWorkspacePackage(pkg, runtimeNodeModulesDir) {
+  // Sequential packs share one staging dir inside runtimeRoot so the final
+  // rename stays on the same filesystem as node_modules.
+  const stage = path.join(runtimeRoot, '.pack');
+  fs.rmSync(stage, { recursive: true, force: true });
+  fs.mkdirSync(stage, { recursive: true });
+  try {
+    run(npm, ['pack', pkg.dir, '--ignore-scripts', '--pack-destination', stage], runtimeRoot);
+    const [tarball] = fs.readdirSync(stage).filter((name) => name.endsWith('.tgz'));
+    if (!tarball) {
+      throw new Error(`[dshd-remote] npm pack produced no tarball for ${pkg.name}`);
+    }
+    fs.mkdirSync(path.join(stage, 'out'));
+    run('tar', ['-xzf', tarball, '-C', 'out'], stage, { shell: false });
+    const destination = path.join(runtimeNodeModulesDir, ...pkg.name.split('/'));
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.renameSync(path.join(stage, 'out', 'package'), destination);
+  } finally {
+    fs.rmSync(stage, { recursive: true, force: true });
+  }
+}
+
 if (buildRuntime) {
+  if (!fs.existsSync(runtimeDepSource)) {
+    run(npm, ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], upstreamRoot);
+  }
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
-  fs.mkdirSync(runtimeRoot, { recursive: true });
+  fs.mkdirSync(runtimeNodeModules, { recursive: true });
   const serverManifest = JSON.parse(fs.readFileSync(
     path.join(upstreamRoot, 'packages', 'server', 'package.json'),
     'utf8',
@@ -355,33 +390,36 @@ if (buildRuntime) {
   if (!sqliteVersion) {
     throw new Error('[dshd-remote] vendored server does not declare better-sqlite3');
   }
-  const manifest = {
-    private: true,
-    dependencies: {
-      '@chisacode/highlight': 'file:../../packages/highlight',
-      '@chisacode/protocol': 'file:../../packages/protocol',
-      '@chisacode/relay': 'file:../../packages/relay',
-      '@chisacode/server': 'file:../../packages/server',
-      'better-sqlite3': sqliteVersion,
-    },
-  };
+  // The vendored workspace is installed from its own package-lock.json, so
+  // the closure below is pinned; the old synthetic project ran npm install
+  // without a lockfile and let transitive dependencies float.
+  console.log('[dshd-remote] assembling DSHD-only production daemon dependencies');
+  const plan = planRuntimeClosure({
+    workspaceRoot: upstreamRoot,
+    seeds: ['highlight', 'protocol', 'relay', 'server'],
+    forcedDependencies: ['better-sqlite3'],
+  });
+  const sqliteSource = plan.copies.find((copy) => copy.target === 'better-sqlite3');
+  const sqliteInstalled = sqliteSource && readManifest(sqliteSource.source).version;
+  if (!sqliteInstalled || !semver.satisfies(sqliteInstalled, sqliteVersion)) {
+    throw new Error(`[dshd-remote] installed better-sqlite3@${sqliteInstalled || 'missing'} does not satisfy ${sqliteVersion}`);
+  }
+  for (const pkg of plan.workspacePackages) {
+    packWorkspacePackage(pkg, runtimeNodeModules);
+  }
+  materializeRuntimeCopies(plan.copies, runtimeNodeModules);
+  const dependencies = {};
+  for (const { name, dir } of plan.workspacePackages) {
+    dependencies[name] = readManifest(dir).version;
+  }
+  for (const { target, source } of plan.copies) {
+    if (!target.includes('node_modules')) {
+      dependencies[readManifest(source).name] = readManifest(source).version;
+    }
+  }
   fs.writeFileSync(
     path.join(runtimeRoot, 'package.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
-  console.log('[dshd-remote] assembling DSHD-only production daemon dependencies');
-  run(
-    npm,
-    [
-      'install',
-      '--install-links',
-      '--omit=dev',
-      '--omit=optional',
-      '--ignore-scripts',
-      '--no-audit',
-      '--no-fund',
-    ],
-    runtimeRoot,
+    `${JSON.stringify({ name: 'whale-isle-dshd-desktop-runtime', private: true, dependencies }, null, 2)}\n`,
   );
   pruneNodePtyRuntime();
   prepareElectronSqliteRuntime();
