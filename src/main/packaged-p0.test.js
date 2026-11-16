@@ -21,7 +21,6 @@ function passingDeps(overrides = {}) {
     fs.writeFileSync(stampPath, '{"sha":"x","npm":"0.1.1-rc.1","archiveBytes":1}\n');
   }
   return {
-    siblingPath,
     gitBranchList: async (cwd) => {
       assert.equal(cwd, siblingPath);
       return {
@@ -45,10 +44,10 @@ function passingDeps(overrides = {}) {
     },
     host: '127.0.0.1',
     port: 3080,
-    userData,
-    appVersion,
     bootLogs: ['[dsh] Web UI 就绪'],
     ...overrides,
+    // Resolved values always win over overrides: the runtime stamp was already
+    // written under these paths, so an override cannot desync them.
     siblingPath,
     userData,
     appVersion,

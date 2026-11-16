@@ -115,6 +115,8 @@ function makeHarness(overrides = {}) {
     killTree: (pid) => {
       calls.killTree.push(pid);
     },
+    // Hermetic default: never shell out to ps/PowerShell from unit tests.
+    processStartTime: async () => 'test-start-time',
     ...overrides.deps,
   };
   const manager = new DshManager(deps);
@@ -1513,4 +1515,149 @@ test('ensureOwnedPort 不把无效绑定地址误归因于系统保留端口', a
       return true;
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// pid 文件 v2：记录 pid + 端口 + 进程启动时间；击杀前必须确认启动时间一致，
+// 不一致或无法确认（旧格式、读不到启动时间）一律不杀，改换端口。
+// ---------------------------------------------------------------------------
+
+function occupiedPortFixture(t) {
+  const http = require('node:http');
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { connection: 'close' });
+    res.end('ok');
+  });
+  const sockets = new Set();
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      t.after(() => {
+        for (const socket of sockets) socket.destroy();
+        server.close();
+      });
+      resolve({ server, sockets, wanted: server.address().port });
+    });
+  });
+}
+
+test('pid 文件启动时间一致：确认残留 dsh 后停止它并复用端口', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const { server, sockets, wanted } = await occupiedPortFixture(t);
+  const killed = [];
+  const cleared = [];
+  const port = await ensureOwnedPort('127.0.0.1', wanted, () => {}, {
+    readPidFile: () => ({ pid: 9999, port: wanted, startTime: 'boot-mark-1' }),
+    processAlive: () => true,
+    processStartTime: async () => 'boot-mark-1',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => {
+      killed.push(pid);
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+    clearPidFile: () => cleared.push(1),
+    sleep: async () => {},
+  });
+  assert.equal(port, wanted, '确认是本机残留后应复用原端口');
+  assert.deepEqual(killed, [9999]);
+  assert.ok(cleared.length >= 1);
+});
+
+test('pid 复用（启动时间不一致）：不击杀占用者，改换端口并记录', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const { server, wanted } = await occupiedPortFixture(t);
+  const logs = [];
+  const port = await ensureOwnedPort('127.0.0.1', wanted, (line) => logs.push(line), {
+    readPidFile: () => ({ pid: 9999, port: wanted, startTime: 'boot-mark-1' }),
+    processAlive: () => true,
+    processStartTime: async () => 'boot-mark-2',
+    isSafeToKill: async () => true,
+    killTree: async () => assert.fail('启动时间不一致时不得击杀'),
+    sleep: async () => {},
+  });
+  assert.notEqual(port, wanted, '无法确认归属时应改跳端口');
+  assert.equal(server.listening, true, 'pid 被复用时占用者绝不能被误杀');
+  assert.ok(logs.some((line) => line.includes('无法确认')), '应记录跳过击杀的原因');
+});
+
+test('旧格式 pid 文件（只有 pid）：按无法确认处理，不击杀', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const { server, wanted } = await occupiedPortFixture(t);
+  const port = await ensureOwnedPort('127.0.0.1', wanted, () => {}, {
+    readPidFile: () => ({ pid: 9999, port: null, startTime: '' }),
+    processAlive: () => true,
+    processStartTime: async () => assert.fail('旧格式不应再读启动时间'),
+    isSafeToKill: async () => true,
+    killTree: async () => assert.fail('旧格式 pid 文件不得击杀'),
+    sleep: async () => {},
+  });
+  assert.notEqual(port, wanted);
+  assert.equal(server.listening, true);
+});
+
+test('启动时间读不到：无法确认归属，不击杀', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const { server, wanted } = await occupiedPortFixture(t);
+  const port = await ensureOwnedPort('127.0.0.1', wanted, () => {}, {
+    readPidFile: () => ({ pid: 9999, port: wanted, startTime: 'boot-mark-1' }),
+    processAlive: () => true,
+    processStartTime: async () => '',
+    isSafeToKill: async () => true,
+    killTree: async () => assert.fail('启动时间读不到不得击杀'),
+    sleep: async () => {},
+  });
+  assert.notEqual(port, wanted);
+  assert.equal(server.listening, true);
+});
+
+test('parsePidFile 解析新格式 { pid, port, startTime }，兼容旧格式裸 pid', () => {
+  const { parsePidFile } = require('./dsh');
+  assert.deepEqual(
+    parsePidFile('{"pid":4242,"port":3080,"startTime":"mark"}'),
+    { pid: 4242, port: 3080, startTime: 'mark' },
+  );
+  assert.deepEqual(parsePidFile('4242'), { pid: 4242, port: null, startTime: '' });
+  assert.deepEqual(parsePidFile('  4242\n'), { pid: 4242, port: null, startTime: '' });
+  assert.equal(parsePidFile('garbage'), null);
+  assert.equal(parsePidFile(''), null);
+  assert.equal(parsePidFile('{"pid":"abc"}'), null);
+});
+
+test('processStartTime 在 Linux 读 /proc/<pid>/stat 的 starttime', { skip: process.platform !== 'linux' }, async () => {
+  const { processStartTime } = require('./dsh');
+  const startTime = await processStartTime(process.pid);
+  assert.match(startTime, /^\d+$/, 'Linux 应返回 /proc stat 的 starttime 字段');
+  assert.equal(await processStartTime(2 ** 22), '', '不存在的 pid 应返回空串而不是抛错');
+});
+
+test('spawn 后写 pid 文件记录 pid、端口与进程启动时间', async (t) => {
+  const written = [];
+  const h = makeHarness({ deps: {
+    writePidFile: (pid, port, startTime) => written.push({ pid, port, startTime }),
+    processStartTime: async (pid) => `boot-${pid}`,
+  } });
+  t.after(h.cleanup);
+  h.setReachable(true);
+  await h.manager.start();
+  assert.deepEqual(written, [{ pid: CHILD_PID, port: 3080, startTime: `boot-${CHILD_PID}` }]);
+});
+
+test('a spawn error while the start time is still being read is not lost and no pidfile is written', async (t) => {
+  let releaseStartTime;
+  const h = makeHarness({ deps: { processStartTime: () => new Promise((resolve) => { releaseStartTime = resolve; }) } });
+  t.after(h.cleanup);
+  const spawnError = Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+  const outcome = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1 && typeof releaseStartTime === 'function');
+  h.lastChild().emit('error', spawnError);
+  releaseStartTime('late-start-time');
+  const result = await outcome;
+  assert.equal(result.ok, false);
+  assert.equal(result.error, spawnError);
+  assert.equal(h.manager.failure.phase, 'startup');
+  assert.deepEqual(h.calls.writePid, [], 'a child that failed before its start time was read must not be recorded');
 });

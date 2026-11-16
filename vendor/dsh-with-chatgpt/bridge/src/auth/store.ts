@@ -293,9 +293,16 @@ export class AuthStore {
   }
 }
 
-export function filterScopes(requested: string | undefined): string[] {
+/**
+ * Resolve the requested scope string against SUPPORTED_SCOPES. An absent or
+ * empty scope grants the read-only default set (offline_access stays the only
+ * elevation it may carry). `null` means the client asked for scopes and none
+ * are supported — the caller must fail the request with `invalid_scope`
+ * rather than silently widening to the full set.
+ */
+export function filterScopes(requested: string | undefined): string[] | null {
   if (!requested || requested.trim() === "") return [...SUPPORTED_SCOPES];
   const asked = requested.split(/[\s+]+/).filter(Boolean);
   const granted = asked.filter((scope) => (SUPPORTED_SCOPES as readonly string[]).includes(scope));
-  return granted.length > 0 ? granted : [...SUPPORTED_SCOPES];
+  return granted.length > 0 ? granted : null;
 }

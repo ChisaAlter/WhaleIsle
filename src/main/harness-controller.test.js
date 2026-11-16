@@ -1378,3 +1378,27 @@ test('a config save during port resolution re-reads instead of mixing two versio
   // The start must use the post-save snapshot, never a mix of the two.
   assert.equal(f.dsh.startOptions[0].configSnapshot.whaleAssistantEnabled, true);
 });
+
+test('workspace registration uses the start config snapshot, not a mid-start save', async () => {
+  const registered = [];
+  let currentConfig = {
+    workspace: 'C:/workspace',
+    harnessAutoRestart: true,
+    harnessRestartMaxAttempts: 3,
+    harnessRestartBaseDelayMs: 1000,
+    openDevTools: false,
+  };
+  const f = fixture({
+    loadConfig: () => currentConfig,
+    ensureWorkspace: async (_url, workspace) => { registered.push(workspace); },
+    ensureTaskControlPlugin: async () => {
+      // A Settings save lands after the snapshot was taken but before the
+      // spawned harness comes up and the workspace is registered.
+      currentConfig = { ...currentConfig, workspace: 'C:/other-workspace' };
+      return { ok: true };
+    },
+  });
+  await f.controller.start();
+  assert.deepEqual(registered, ['C:/workspace']);
+  await f.controller.shutdown();
+});

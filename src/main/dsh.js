@@ -273,22 +273,64 @@ function pidFilePath() {
   }
 }
 
+/**
+ * pid 文件内容统一为 { pid, port, startTime }：port 是该进程监听的端口，
+ * startTime 是 OS 报告的进程启动时间，复用同一个 PID 的无关进程无法伪造。
+ * 旧格式（只有一个 pid 数字）没有身份证明，解析为 { pid } 后按无法确认处理。
+ */
+function parsePidFile(raw) {
+  const text = String(raw || '').trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    const entry = JSON.parse(text);
+    const pid = Number(entry?.pid);
+    if (Number.isInteger(pid) && pid > 0) {
+      return {
+        pid,
+        port: Number.isInteger(entry?.port) && entry.port > 0 ? entry.port : null,
+        startTime: typeof entry?.startTime === 'string' ? entry.startTime : '',
+      };
+    }
+  } catch {
+    // fall through to the legacy bare-pid form
+  }
+  const pid = Number(text);
+  return Number.isInteger(pid) && pid > 0 ? { pid, port: null, startTime: '' } : null;
+}
+
+/** Accepts the v2 { pid, port, startTime } record, a legacy bare pid, or null. */
+function pidFilePid(entry) {
+  if (!entry) {
+    return null;
+  }
+  if (typeof entry === 'number') {
+    return Number.isInteger(entry) && entry > 0 ? entry : null;
+  }
+  const pid = Number(entry.pid);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
 function readPidFile() {
   const file = pidFilePath();
   if (!file || !fs.existsSync(file)) {
     return null;
   }
-  const pid = Number(fs.readFileSync(file, 'utf8').trim());
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
+  try {
+    return parsePidFile(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
-function writePidFile(pid) {
+function writePidFile(pid, port, startTime) {
   const file = pidFilePath();
   if (!file || !pid) {
     return;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, String(pid), 'utf8');
+  fs.writeFileSync(file, JSON.stringify({ pid, port, startTime }), 'utf8');
 }
 
 function clearPidFile() {
@@ -323,6 +365,38 @@ async function processImageName(pid, run = execFile) {
       return match ? match[1] : '';
     }
     return (await execTimed('ps', ['-p', String(pid), '-o', 'comm='], 2000, run)).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * OS-reported start time of `pid`, rendered the same way at write and
+ * compare time so a recycled PID can never masquerade as our leftover.
+ * Unreadable or unsupported lookups return '' — callers must treat that as
+ * "cannot confirm", never as "different process".
+ */
+async function processStartTime(pid, run = execFile) {
+  try {
+    if (process.platform === 'linux') {
+      // /proc/<pid>/stat field 22 (starttime, clock ticks since boot). comm in
+      // parentheses may itself contain spaces/parens, so anchor on the last ')'.
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const close = stat.lastIndexOf(')');
+      if (close === -1) {
+        return '';
+      }
+      return stat.slice(close + 2).trim().split(/\s+/)[19] || '';
+    }
+    if (process.platform === 'win32') {
+      return (await execTimed(
+        'powershell.exe',
+        ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).StartTime.ToString('o')`],
+        3000,
+        run,
+      )).trim();
+    }
+    return (await execTimed('ps', ['-p', String(pid), '-o', 'lstart='], 2000, run)).trim();
   } catch {
     return '';
   }
@@ -526,13 +600,22 @@ async function probePort(host, port) {
 
 /**
  * Make `port` ours for this GUI process. Only a leftover confirmed by our own
- * pid file (and passing the node/dsh image-name guard) may be stopped; any
- * other listener — even one that looks like a dsh server — belongs to someone
- * else, so we hop to the next free port instead of killing by process name.
+ * pid file — matching recorded process start time AND passing the node/dsh
+ * image-name guard — may be stopped; any other listener (including a pid
+ * file whose recorded identity cannot be confirmed, e.g. a legacy bare-pid
+ * file or a recycled PID) belongs to someone else, so we hop to the next
+ * free port instead of killing it.
  */
 async function ensureOwnedPort(host, wantedPort, log = () => {}, deps = {}) {
   const bindable = deps.bindable || ((bindOn, port) => canBindPort(bindOn, port));
   const bindStatus = deps.bindableStatus || ((bindOn, port) => bindPortStatus(bindOn, port));
+  const readPid = deps.readPidFile || readPidFile;
+  const alive = deps.processAlive || processAlive;
+  const startTimeOf = deps.processStartTime || processStartTime;
+  const safeToKill = deps.isSafeToKill || isSafeToKill;
+  const stopTree = deps.killTree || killTree;
+  const clearPid = deps.clearPidFile || clearPidFile;
+  const wait = deps.sleep || sleep;
   const wanted = Number(wantedPort) || 3080;
   // No listener ≠ usable: a Windows-excluded port passes the connect probe
   // but kills the harness on bind (EACCES), so confirm bindability too.
@@ -551,22 +634,33 @@ async function ensureOwnedPort(host, wantedPort, log = () => {}, deps = {}) {
   };
   let probe = await probePort(host, wanted);
   if (!probe.inUse) {
-    clearPidFile();
+    clearPid();
     return takeIfBindable();
   }
 
-  const previous = readPidFile();
-  if (previous && processAlive(previous) && await isSafeToKill(previous)) {
-    log(`停止上次残留的 dsh（pid ${previous}）`);
-    await killTree(previous);
-    await sleep(400);
+  const previous = readPid();
+  const previousPid = pidFilePid(previous);
+  // PIDs get reused: a bare "pid alive + named node/dsh" check can point at the
+  // user's own node process. The v2 record's startTime must match what the OS
+  // reports today; a legacy pid-only file is unconfirmable by definition.
+  let confirmed = false;
+  if (previousPid && previous && previous.startTime && alive(previousPid)) {
+    const current = await startTimeOf(previousPid);
+    confirmed = Boolean(current) && current === previous.startTime;
+  }
+  if (previousPid && confirmed && await safeToKill(previousPid)) {
+    log(`停止上次残留的 dsh（pid ${previousPid}，端口 ${previous.port || wanted}）`);
+    await stopTree(previousPid);
+    await wait(400);
     probe = await probePort(host, wanted);
     if (!probe.inUse) {
-      clearPidFile();
+      clearPid();
       return takeIfBindable();
     }
+  } else if (previousPid && alive(previousPid)) {
+    log(`端口 ${wanted} 被占用：pid 文件指向 pid ${previousPid}，但无法确认它是上次残留的 dsh（进程启动时间不一致或文件为旧格式），改用其他端口`);
   }
-  clearPidFile();
+  clearPid();
 
   const next = await findFreePort(host, wanted + 1, deps);
   log(`端口 ${wanted} 被其他程序占用，改用 ${next}`);
@@ -623,7 +717,7 @@ class DshManager extends EventEmitter {
    * @param {object} [options] 窄依赖注入；不传任何选项时全部使用生产默认实现。
    *   可注入：loadConfig、ensurePackagedHarness、spawnHarness、isReachable、
    *   probeHarnessReady、
-   *   sleep、readPidFile、writePidFile、clearPidFile、killTree、
+   *   sleep、readPidFile、writePidFile、clearPidFile、killTree、processStartTime、
    *   buildLaunch（测试需要绕过 electron 依赖时按需注入）、ensureGhosttyAssetsInHarness。
    */
   constructor(options = {}) {
@@ -654,6 +748,7 @@ class DshManager extends EventEmitter {
       writePidFile: options.writePidFile || writePidFile,
       clearPidFile: options.clearPidFile || clearPidFile,
       killTree: options.killTree || killTree,
+      processStartTime: options.processStartTime || processStartTime,
       buildLaunch: options.buildLaunch || ((config) => this.buildLaunch(config)),
       sourceHarnessStatus: options.sourceHarnessStatus || sourceHarnessStatus,
       resolveDshBin: options.resolveDshBin || resolveDshBin,
@@ -1009,10 +1104,16 @@ class DshManager extends EventEmitter {
       });
       this.child = child;
       this.attachOutput(child);
-      this._writePidFile(child.pid);
-
-      child.on('error', (error) => this._onChildError(gen, child, error, readiness));
-      child.on('exit', (code, signal) => this._onChildExit(gen, child, code, signal, readiness));
+      // Listeners first: a spawn error or early exit can fire while the start
+      // time is being read (PowerShell on Windows is slow) and must not be lost.
+      let childEnded = false;
+      child.on('error', (error) => { childEnded = true; this._onChildError(gen, child, error, readiness); });
+      child.on('exit', (code, signal) => { childEnded = true; this._onChildExit(gen, child, code, signal, readiness); });
+      if (child.pid) {
+        const startTime = await this._processStartTime(child.pid);
+        // Never record a child that failed, exited or was replaced meanwhile.
+        if (!childEnded && this.child === child) this._writePidFile(child.pid, launch.port, startTime);
+      }
 
       this.waitUntilReady(expectedUrl, child, gen).then(
         (url) => readiness.resolve(url),
@@ -1144,7 +1245,7 @@ class DshManager extends EventEmitter {
   async _doStop() {
     this.attached = false;
     const child = this.child;
-    const pid = child?.pid || this._readPidFile();
+    const pid = child?.pid || pidFilePid(this._readPidFile());
     try {
       if (pid) {
         this.setState('stopping', { error: '' });
@@ -1203,8 +1304,12 @@ class DshManager extends EventEmitter {
     return this._deps.readPidFile();
   }
 
-  _writePidFile(pid) {
-    return this._deps.writePidFile(pid);
+  _writePidFile(pid, port, startTime) {
+    return this._deps.writePidFile(pid, port, startTime);
+  }
+
+  _processStartTime(pid) {
+    return this._deps.processStartTime(pid);
   }
 
   _clearPidFile() {
@@ -1232,6 +1337,8 @@ class DshManager extends EventEmitter {
 module.exports = {
   killTree,
   DshManager,
+  parsePidFile,
+  processStartTime,
   resolveNodeBin,
   resolveDshBin,
   sourceHarnessStatus,
