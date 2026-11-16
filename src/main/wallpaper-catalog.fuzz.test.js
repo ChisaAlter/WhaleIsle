@@ -70,16 +70,50 @@ test('isAllowedWallpaperUrl: accepted URLs parse as https with no credentials', 
   }), { numRuns: NUM_RUNS });
 });
 
-// FINDING (see report): the dotted IPv4-mapped check never fires because
-// WHATWG normalizes `[::ffff:127.0.0.1]` to the hex form `[::ffff:7f00:1]`,
-// which the regex does not cover — IPv4-mapped IPv6 literals for loopback,
-// RFC1918, link-local and CGNAT all pass the gate, and the DNS recheck
-// skips IP literals entirely.
-test.todo('#491: isAllowedWallpaperUrl must refuse IPv4-mapped IPv6 literals — minimal counterexample: https://[::ffff:7f00:1]/ accepted today (= 127.0.0.1; also ::ffff:0a00:1 → 10.0.0.1, ::ffff:a9fe:1 → 169.254.0.1)');
+// #491: WHATWG normalizes every IPv4-embedded IPv6 spelling to the hex form,
+// so each mapping family must reduce to its IPv4 before the verdict —
+// otherwise `https://[::ffff:7f00:1]/` (= 127.0.0.1) passes the gate.
+test('isAllowedWallpaperUrl refuses IPv4-embedded IPv6 literals', () => {
+  for (const value of [
+    'https://[::ffff:127.0.0.1]/', // mapped, dotted → ::ffff:7f00:1
+    'https://[::ffff:7f00:1]/',    // mapped hex = 127.0.0.1
+    'https://[::ffff:0a00:1]/',    // mapped hex = 10.0.0.1
+    'https://[::ffff:a9fe:1]/',    // mapped hex = 169.254.0.1
+    'https://[::ffff:c0a8:1]/',    // mapped hex = 192.168.0.1
+    'https://[::7f00:1]/',         // IPv4-compatible = 127.0.0.1
+    'https://[::c0a8:1]/',         // IPv4-compatible = 192.168.0.1
+    'https://[64:ff9b::7f00:1]/',  // NAT64 = 127.0.0.1
+    'https://[64:ff9b::a9fe:1]/',  // NAT64 = 169.254.0.1
+    'https://[::]/',               // unspecified
+    'https://[fe80::1]/',          // link-local
+    'https://[fc00::1]/',          // ULA
+    'https://[ff02::1]/',          // multicast
+  ]) {
+    assert.equal(isAllowedWallpaperUrl(value), false, value);
+  }
+  // Public IPv4/IPv6 literals — including a mapped form of a public IPv4 —
+  // reduce to public addresses and stay allowed.
+  for (const value of [
+    'https://8.8.8.8/',
+    'https://[2606:4700:4700::1111]/',
+    'https://[::ffff:808:808]/',
+    'https://[64:ff9b::808:808]/',
+  ]) {
+    assert.equal(isAllowedWallpaperUrl(value), true, value);
+  }
+});
 
-// FINDING (see report): parseHttpUrl never inspects username/password, so a
-// renderer-supplied catalog URL may embed credentials that fetch then sends.
-test.todo('#491: isAllowedWallpaperUrl must refuse embedded credentials — minimal counterexample: https://user:pass@example.com/ accepted today');
+// #491: parseHttpUrl must refuse userinfo — fetch would forward credentials
+// embedded in a renderer-supplied catalog URL.
+test('isAllowedWallpaperUrl refuses embedded credentials', () => {
+  for (const value of [
+    'https://user:pass@example.com/',
+    'https://user@example.com/',
+    'https://user:p%40ss@8.8.8.8/',
+  ]) {
+    assert.equal(isAllowedWallpaperUrl(value), false, value);
+  }
+});
 
 test('isAllowedWallpaperUrl never accepts non-http(s) schemes', () => {
   const schemeArb = fc.constantFrom('file', 'data', 'javascript', 'ftp', 'ws', 'wss', 'chrome', 'dshd', 'about', 'blob', 'ssh');

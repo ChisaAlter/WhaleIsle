@@ -279,11 +279,25 @@ test('assertResolvedWallpaperHost keeps public results and tolerates DNS failure
   await assertResolvedWallpaperHost('example.com', 'https://example.com/x.json', publicLookup);
   const failingLookup = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
   await assertResolvedWallpaperHost('gone.example.com', 'https://gone.example.com/x.json', failingLookup);
-  // IP literals were checked lexically; the resolver must not be consulted.
+  // IP literals were classified by the shared verdict; the resolver must not be consulted.
   let called = 0;
   const countingLookup = async () => { called += 1; return []; };
   await assertResolvedWallpaperHost('93.184.216.34', 'https://93.184.216.34/x.json', countingLookup);
   await assertResolvedWallpaperHost('[2606:2800::1]', 'https://[2606:2800::1]/x.json', countingLookup);
+  assert.equal(called, 0);
+});
+
+test('assertResolvedWallpaperHost refuses IPv4-embedded literals without resolving', async () => {
+  delete process.env.DSHD_WALLPAPER_ALLOW_HTTP;
+  let called = 0;
+  const countingLookup = async () => { called += 1; return []; };
+  for (const host of ['[::ffff:7f00:1]', '[::7f00:1]', '[64:ff9b::a00:1]']) {
+    await assert.rejects(
+      () => assertResolvedWallpaperHost(host, `https://${host}/x.json`, countingLookup),
+      /解析到不允许的内网地址/,
+      host,
+    );
+  }
   assert.equal(called, 0);
 });
 
