@@ -10,6 +10,7 @@
 
 const { ipcMain } = require('electron');
 const { currentTheme } = require('./chrome');
+const { createRegisterIpc, noArgs } = require('./ipc-register');
 
 const UPDATE_DIALOG_IPC = {
   status: 'dsh-update-dialog:status',
@@ -46,22 +47,35 @@ class ShellConfirmDialog {
     this.parent = undefined;
     this.closing = undefined;
     this.active = undefined;
-    ipcMain.handle(UPDATE_DIALOG_IPC.status, (event) => { this.owned(event); return this.active?.view ?? null; });
-    ipcMain.handle(UPDATE_DIALOG_IPC.respond, (event, revision, index, downloadMode) => {
-      this.owned(event);
-      const active = this.active;
-      if (active === undefined || revision !== active.view.revision) {
-        throw new Error('dshd dialog: stale response');
-      }
-      if (typeof index !== 'number' || !Number.isInteger(index)
-        || (index !== active.view.cancelId && (index < 0 || index >= active.view.buttons.length))) {
-        throw new Error('dshd dialog: invalid response');
-      }
-      if (index === 0 && active.view.downloadMethods.length > 0
-        && !active.view.downloadMethods.some((method) => method.id === downloadMode && !method.disabledReason)) {
-        throw new Error('dshd dialog: unavailable download method');
-      }
-      active.finish(index, false, index === 0 ? downloadMode : undefined);
+    const register = createRegisterIpc(ipcMain);
+    const owned = (event) => this.owned(event);
+    register({
+      channel: UPDATE_DIALOG_IPC.status,
+      authorize: owned,
+      validate: noArgs,
+      handler: () => this.active?.view ?? null,
+    });
+    register({
+      channel: UPDATE_DIALOG_IPC.respond,
+      authorize: owned,
+      // The handler owns the payload contract (revision/index/method checks
+      // produce the specific dialog errors); validation fixes the arity.
+      validate: (args) => [args[0], args[1], args[2]],
+      handler: (_event, revision, index, downloadMode) => {
+        const active = this.active;
+        if (active === undefined || revision !== active.view.revision) {
+          throw new Error('dshd dialog: stale response');
+        }
+        if (typeof index !== 'number' || !Number.isInteger(index)
+          || (index !== active.view.cancelId && (index < 0 || index >= active.view.buttons.length))) {
+          throw new Error('dshd dialog: invalid response');
+        }
+        if (index === 0 && active.view.downloadMethods.length > 0
+          && !active.view.downloadMethods.some((method) => method.id === downloadMode && !method.disabledReason)) {
+          throw new Error('dshd dialog: unavailable download method');
+        }
+        active.finish(index, false, index === 0 ? downloadMode : undefined);
+      },
     });
   }
 

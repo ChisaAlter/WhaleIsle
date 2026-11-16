@@ -6,6 +6,7 @@ const { currentTheme, officialShellBackground } = require('./chrome');
 const { rendererFile } = require('./paths');
 const { readFile } = require('./workspace-fs');
 const { normalizePreviewFileTarget } = require('./preview-file-target');
+const { createRegisterIpc, noArgs, unauthorizedError } = require('./ipc-register');
 
 const FILE_PREVIEW_STATE_CHANNEL = 'shell:file-preview-state';
 const IMAGE_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp']);
@@ -66,21 +67,23 @@ function createFilePreviewWindowController(options = {}) {
     throw new TypeError('file preview requires a workspace preview controller');
   }
 
-  ipcMain.handle(FILE_PREVIEW_STATE_CHANNEL, (event) => {
-    const sender = event?.sender;
-    const frame = event?.senderFrame;
-    if (
-      !previewWindow
-      || previewWindow.isDestroyed()
-      || sender !== previewWindow.webContents
-      || frame !== sender.mainFrame
-      || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())
-    ) {
-      const error = new Error('Unauthorized IPC sender');
-      error.code = 'ERR_DSH_IPC_SENDER';
-      throw error;
-    }
-    return previewState;
+  createRegisterIpc(ipcMain)({
+    channel: FILE_PREVIEW_STATE_CHANNEL,
+    authorize: (event) => {
+      const sender = event?.sender;
+      const frame = event?.senderFrame;
+      if (
+        !previewWindow
+        || previewWindow.isDestroyed()
+        || sender !== previewWindow.webContents
+        || frame !== sender.mainFrame
+        || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())
+      ) {
+        throw unauthorizedError();
+      }
+    },
+    validate: noArgs,
+    handler: () => previewState,
   });
 
   function configureWindow(win) {

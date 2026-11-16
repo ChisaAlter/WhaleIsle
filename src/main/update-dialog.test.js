@@ -47,9 +47,13 @@ function dialogFixture() {
   window.webContents.send = () => {};
   const context = vm.createContext({
     module: { exports: {} }, setTimeout, clearTimeout,
-    require: (name) => name === 'electron'
-      ? { ipcMain: { handle: (channel, fn) => handlers.set(channel, fn), removeHandler: (channel) => handlers.delete(channel) } }
-      : { currentTheme: () => ({ scheme: 'light' }), isEffectivelyMaximized: () => false },
+    require: (name) => {
+      if (name === 'electron') {
+        return { ipcMain: { handle: (channel, fn) => handlers.set(channel, fn), removeHandler: (channel) => handlers.delete(channel) } };
+      }
+      if (name === './ipc-register') return require('./ipc-register');
+      return { currentTheme: () => ({ scheme: 'light' }), isEffectivelyMaximized: () => false };
+    },
   });
   vm.runInContext(main, context);
   const { ShellConfirmDialog, UPDATE_DIALOG_IPC } = context.module.exports;

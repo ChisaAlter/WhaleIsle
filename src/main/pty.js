@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { loadWorkspaceAuthority } = require('./workspace-authority');
+const { createRegisterIpc, isPlainObject } = require('./ipc-register');
 
 let workspaceAuthority = null;
 
@@ -821,40 +822,75 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
     throw new Error(`unknown pty id: ${id}`);
   }
 
-  ipcMain.handle('shell:pty-can-create', (event, cwd) => {
-    authorize(event);
-    return Boolean(asCwd(cwd));
+  const register = createRegisterIpc(ipcMain);
+  // The sender context resolved by `track` is authorization state, not a
+  // renderer argument — validate threads it ahead of the real payload so the
+  // injected authorize still runs exactly once per request.
+  const ownerContext = (tail) => (args, context) => [context, ...tail(args)];
+  const idArg = (args) => [typeof args[0] === 'string' ? args[0] : undefined];
+
+  register({
+    channel: 'shell:pty-can-create',
+    authorize,
+    validate: (args) => {
+      const [cwd] = args;
+      if (cwd !== undefined && typeof cwd !== 'string') {
+        throw new TypeError('pty cwd must be a string');
+      }
+      return [cwd];
+    },
+    handler: (_event, cwd) => Boolean(asCwd(cwd)),
   });
-  ipcMain.handle('shell:pty-create', async (event, input) => {
-    const context = track(event);
-    const created = await context.live.create(input);
-    if (!created || typeof created.id !== 'string') return created;
-    if (!isCurrent(context)) {
-      void Promise.resolve(context.live.kill(created.id)).catch(() => {});
-      throw unauthorized();
-    }
-    owners.set(created.id, context.sender);
-    return created;
+  register({
+    channel: 'shell:pty-create',
+    authorize: track,
+    validate: ownerContext((args) => [isPlainObject(args[0]) ? args[0] : undefined]),
+    handler: async (_event, context, input) => {
+      const created = await context.live.create(input);
+      if (!created || typeof created.id !== 'string') return created;
+      if (!isCurrent(context)) {
+        void Promise.resolve(context.live.kill(created.id)).catch(() => {});
+        throw unauthorized();
+      }
+      owners.set(created.id, context.sender);
+      return created;
+    },
   });
-  ipcMain.handle('shell:pty-write', (event, id, data) => {
-    const context = track(event);
-    requireOwner(context, id);
-    return context.live.write(id, data);
+  register({
+    channel: 'shell:pty-write',
+    authorize: track,
+    validate: ownerContext((args) => [typeof args[0] === 'string' ? args[0] : undefined, args[1]]),
+    handler: (_event, context, id, data) => {
+      requireOwner(context, id);
+      return context.live.write(id, data);
+    },
   });
-  ipcMain.handle('shell:pty-ack', (event, id, seq) => {
-    const context = track(event);
-    requireOwner(context, id);
-    return context.live.acknowledge(id, seq);
+  register({
+    channel: 'shell:pty-ack',
+    authorize: track,
+    validate: ownerContext((args) => [typeof args[0] === 'string' ? args[0] : undefined, args[1]]),
+    handler: (_event, context, id, seq) => {
+      requireOwner(context, id);
+      return context.live.acknowledge(id, seq);
+    },
   });
-  ipcMain.handle('shell:pty-resize', (event, id, cols, rows) => {
-    const context = track(event);
-    requireOwner(context, id);
-    return context.live.resize(id, cols, rows);
+  register({
+    channel: 'shell:pty-resize',
+    authorize: track,
+    validate: ownerContext((args) => [typeof args[0] === 'string' ? args[0] : undefined, args[1], args[2]]),
+    handler: (_event, context, id, cols, rows) => {
+      requireOwner(context, id);
+      return context.live.resize(id, cols, rows);
+    },
   });
-  ipcMain.handle('shell:pty-kill', (event, id) => {
-    const context = track(event);
-    if (owners.has(id)) requireOwner(context, id);
-    return context.live.kill(id);
+  register({
+    channel: 'shell:pty-kill',
+    authorize: track,
+    validate: ownerContext(idArg),
+    handler: (_event, context, id) => {
+      if (owners.has(id)) requireOwner(context, id);
+      return context.live.kill(id);
+    },
   });
   return live;
 }

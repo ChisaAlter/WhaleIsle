@@ -7,8 +7,12 @@
 // `null` when the bridge cannot reach the renderer — callers then use their
 // native-messagebox fallback, so a dead window can never silently authorize.
 
+const { isPlainObject } = require('../main/ipc-register');
+
 const CONFIRM_EVENT = 'shell:app-confirm';
 const RESPONSE_CHANNEL = 'shell:app-confirm:response';
+
+const confirmPayload = (args) => [isPlainObject(args[0]) ? args[0] : undefined];
 
 function createLauncherConfirm({ getWindow } = {}) {
   let seq = 0;
@@ -72,7 +76,7 @@ function createLauncherConfirm({ getWindow } = {}) {
   // Lane-module seam: registerLauncherChannels mounts this through the same
   // authorized `handle` wrapper as every other launcher channel.
   function register(ctx) {
-    ctx.handle(RESPONSE_CHANNEL, ctx.LAUNCHER_ONLY, (_event, payload) => respond(payload));
+    ctx.handle(RESPONSE_CHANNEL, ctx.LAUNCHER_ONLY, confirmPayload, (_event, payload) => respond(payload));
   }
 
   return { ask, respond, register };

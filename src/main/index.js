@@ -36,6 +36,7 @@ const { removeLegacyDshbotPreset } = require('./legacy-dshbot-preset');
 const { migrateLegacyNotificationShortcut } = require('./legacy-notification-shortcut');
 const { ensureWorkspace } = require('./workspace-rpc');
 const { registerIpc } = require('./ipc');
+const { createRegisterIpc, noArgs } = require('./ipc-register');
 const { safeStorage } = require('electron');
 const { DshdRemote, resolveDesktopChisaCodeHome } = require('./dshd-remote');
 const { invokeDesktopShell } = require('./remote-shell');
@@ -1596,23 +1597,40 @@ if (!gotLock) {
       }
       return getMainWindow();
     };
-    ipcMain.on(PLATFORM_IPC.bootstrap, (event) => {
-      try { event.returnValue = platformView.bootstrap(event); }
-      catch { event.returnValue = null; }
+    const registerChannel = createRegisterIpc(ipcMain);
+    registerChannel({
+      channel: PLATFORM_IPC.bootstrap,
+      kind: 'on',
+      // bootstrap() owns the sender contract internally (it resolves
+      // event.returnValue); authorization must not run twice.
+      authorize: () => {},
+      validate: noArgs,
+      handler: (event) => {
+        try { event.returnValue = platformView.bootstrap(event); }
+        catch { event.returnValue = null; }
+      },
     });
-    ipcMain.handle(PLATFORM_IPC.open, async (event, page, bounds) => {
-      const owner = assertProductDoc(event);
-      if (page !== 'usage' && page !== 'top-up') throw new Error('dshd platform: invalid page');
-      await platformSessionRefresh?.();
-      return platformView.open(owner, page, platformBounds(bounds));
+    registerChannel({
+      channel: PLATFORM_IPC.open,
+      authorize: assertProductDoc,
+      validate: (args, owner) => [owner, args[0], args[1]],
+      handler: async (_event, owner, page, bounds) => {
+        if (page !== 'usage' && page !== 'top-up') throw new Error('dshd platform: invalid page');
+        await platformSessionRefresh?.();
+        return platformView.open(owner, page, platformBounds(bounds));
+      },
     });
-    ipcMain.handle(PLATFORM_IPC.bounds, (event, bounds) => {
-      assertProductDoc(event);
-      platformView.setBounds(platformBounds(bounds));
+    registerChannel({
+      channel: PLATFORM_IPC.bounds,
+      authorize: assertProductDoc,
+      validate: (args) => [args[0]],
+      handler: (_event, bounds) => { platformView.setBounds(platformBounds(bounds)); },
     });
-    ipcMain.handle(PLATFORM_IPC.close, (event) => {
-      assertProductDoc(event);
-      platformView.close();
+    registerChannel({
+      channel: PLATFORM_IPC.close,
+      authorize: assertProductDoc,
+      validate: noArgs,
+      handler: () => { platformView.close(); },
     });
 
     // Microphone stays scoped to the owned harness main frame, audio only
@@ -1625,12 +1643,22 @@ if (!gotLock) {
     // html[data-ds-theme-source] → nativeTheme.themeSource, so native chrome
     // (dialogs, tray icon contrast) follows the app palette (upstream
     // preload-theme semantics; sender-gated to the harness view).
-    ipcMain.on('shell:native-theme', (event, value) => {
-      const view = getHarnessView();
-      if (!view || view.webContents.isDestroyed() || event.sender !== view.webContents) return;
-      if (value === 'light' || value === 'dark' || value === 'system') {
-        nativeTheme.themeSource = value;
-      }
+    registerChannel({
+      channel: 'shell:native-theme',
+      kind: 'on',
+      // Silent-ignore contract: an unauthorized sender is dropped without a
+      // rejection or warning path.
+      authorize: (event) => {
+        const view = getHarnessView();
+        return Boolean(view && !view.webContents.isDestroyed() && event.sender === view.webContents);
+      },
+      validate: (args, owned) => [owned, args[0]],
+      handler: (_event, owned, value) => {
+        if (!owned) return;
+        if (value === 'light' || value === 'dark' || value === 'system') {
+          nativeTheme.themeSource = value;
+        }
+      },
     });
 
     void pruneCrashReports(crashLogDir()).catch((error) => console.warn('dshd: crash report prune failed', error));

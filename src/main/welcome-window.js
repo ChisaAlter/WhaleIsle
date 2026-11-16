@@ -12,6 +12,7 @@
 const path = require('node:path');
 const { BrowserWindow, ipcMain } = require('electron');
 const { rendererFile } = require('./paths');
+const { createRegisterIpc, noArgs } = require('./ipc-register');
 
 const IPC = {
   saveApiKey: 'dsh-welcome:save-api-key',
@@ -74,23 +75,37 @@ async function openWelcomeWindow(locale, operations) {
       throw new Error('dshd welcome: rejected action from an unowned frame');
     }
   };
-  ipcMain.handle(IPC.takeNotice, async (event) => { assertSender(event); return operations.takeNotice(); });
-  ipcMain.handle(IPC.saveApiKey, async (event, value) => {
-    assertSender(event);
-    if (typeof value !== 'string' || !/^[\x21-\x7e]+$/.test(value)) return { ok: false };
-    return operations.saveApiKey(value);
+  const register = createRegisterIpc(ipcMain);
+  const stringArg = (args) => [typeof args[0] === 'string' ? args[0] : undefined];
+  register({ channel: IPC.takeNotice, authorize: assertSender, validate: noArgs, handler: async () => operations.takeNotice() });
+  register({
+    channel: IPC.saveApiKey,
+    authorize: assertSender,
+    validate: stringArg,
+    handler: async (_event, value) => {
+      if (typeof value !== 'string' || !/^[\x21-\x7e]+$/.test(value)) return { ok: false };
+      return operations.saveApiKey(value);
+    },
   });
-  ipcMain.handle(IPC.skip, async (event) => { assertSender(event); await operations.skip(); });
-  ipcMain.handle(IPC.start, async (event) => { assertSender(event); return operations.startSignIn(); });
-  ipcMain.handle(IPC.cancel, async (event, id) => {
-    assertSender(event);
-    if (typeof id !== 'string') throw new Error('dshd welcome: invalid attempt');
-    return operations.cancelSignIn(id);
+  register({ channel: IPC.skip, authorize: assertSender, validate: noArgs, handler: async () => { await operations.skip(); } });
+  register({ channel: IPC.start, authorize: assertSender, validate: noArgs, handler: async () => operations.startSignIn() });
+  register({
+    channel: IPC.cancel,
+    authorize: assertSender,
+    validate: stringArg,
+    handler: async (_event, id) => {
+      if (typeof id !== 'string') throw new Error('dshd welcome: invalid attempt');
+      return operations.cancelSignIn(id);
+    },
   });
-  ipcMain.handle(IPC.copyLink, async (event, id) => {
-    assertSender(event);
-    if (typeof id !== 'string') throw new Error('dshd welcome: invalid attempt');
-    return operations.copySignInLink(id);
+  register({
+    channel: IPC.copyLink,
+    authorize: assertSender,
+    validate: stringArg,
+    handler: async (_event, id) => {
+      if (typeof id !== 'string') throw new Error('dshd welcome: invalid attempt');
+      return operations.copySignInLink(id);
+    },
   });
   window.once('closed', disposeHandlers);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

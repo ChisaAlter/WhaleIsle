@@ -7,6 +7,7 @@ const { createDshWatchWorker } = require('./pet-dsh-watch-host');
 const { createPetChat } = require('./pet-chat');
 const petStats = require('./pet-stats');
 const petSettings = require('./pet-settings');
+const { createRegisterIpc, noArgs, isPlainObject } = require('./ipc-register');
 
 // The pet renderer needs a secure, standard scheme so that WebGPU and ES
 // module workers (onnxruntime-web's JSEP backend) work — file:// blocks both.
@@ -1014,8 +1015,16 @@ function createLive2dPetManager(options = {}) {
     try {
       protocol?.handle?.('pet', createPetProtocolHandler(rendererFile));
     } catch {}
-    ipcMain.handle('shell:live2d-interactive', (event, payload) => {
-      assertAuthorized(event);
+    // Every pet channel authorizes with the ownership check; payloads are
+    // optional objects — the old `payload?.x` reads tolerate non-objects,
+    // so the validator normalizes instead of rejecting.
+    const register = createRegisterIpc(ipcMain);
+    const payloadArg = (args) => [isPlainObject(args[0]) ? args[0] : undefined];
+    register({
+      channel: 'shell:live2d-interactive',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => {
       if (Array.isArray(payload?.hitRegions)) { shapeStats.hitRegionReports += 1; }
       setSurfaceRegions(payload?.regions);
       if (Array.isArray(payload?.hitRegions)) setHitRegions(payload.hitRegions);
@@ -1024,23 +1033,34 @@ function createLive2dPetManager(options = {}) {
         applyInteractive();
       }
       return null;
+      },
     });
-    ipcMain.handle('shell:live2d-care', (event, payload) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-care',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => {
       care(payload?.kind);
       return null;
+      },
     });
-    ipcMain.handle('shell:live2d-drag-start', (event) => {
-      assertAuthorized(event);
-      return petPosition();
+    register({
+      channel: 'shell:live2d-drag-start',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: () => petPosition(),
     });
-    ipcMain.handle('shell:live2d-drag-move', (event, payload) => {
-      assertAuthorized(event);
-      return moveTo(payload?.x, payload?.y);
+    register({
+      channel: 'shell:live2d-drag-move',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => moveTo(payload?.x, payload?.y),
     });
-    ipcMain.handle('shell:live2d-drag-commit', (event, payload) => {
-      assertAuthorized(event);
-      return commitPosition(payload?.x, payload?.y);
+    register({
+      channel: 'shell:live2d-drag-commit',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => commitPosition(payload?.x, payload?.y),
     });
     // The overlay covers one display, so renderer pointer events die at its
     // edge. The renderer polls this during a drag; when the real cursor has
@@ -1051,8 +1071,11 @@ function createLive2dPetManager(options = {}) {
     // visible (phantom/headless displays count as real ones to Windows).
     let relocateStreak = 0;
     let lastRelocateAt = 0;
-    ipcMain.handle('shell:live2d-relocate', (event) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-relocate',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: () => {
       if (!win || win.isDestroyed?.()) {
         return null;
       }
@@ -1077,52 +1100,74 @@ function createLive2dPetManager(options = {}) {
         sendLayout();
       }
       return null;
+      },
     });
     // Hide comes from the status panel's「隐藏桌面宠物」row.
-    ipcMain.handle('shell:live2d-hide', (event) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-hide',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: () => {
       setEnabled(false);
       return null;
+      },
     });
     // Growth: aggregate token totals only — no message content crosses IPC.
     // The snapshot rescans so the panel's feedable count is fresh.
-    ipcMain.handle('shell:live2d-growth', (event) => {
-      assertAuthorized(event);
-      return growthSnapshot();
+    register({
+      channel: 'shell:live2d-growth',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: () => growthSnapshot(),
     });
-    ipcMain.handle('shell:live2d-feed', (event, payload) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-feed',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => {
       const amount = payload && Number.isFinite(payload.amount) ? payload.amount : undefined;
       return feedTokens(amount);
+      },
     });
     // Settings read for the pet renderer: normalized settings plus the
     // derived capability flag. Writes are owned by the main window's
     // settings page (shell:live2d-pet-settings → applySettings); the pet
     // surface itself is read-only.
-    ipcMain.handle('shell:live2d-settings-get', (event) => {
-      assertAuthorized(event);
-      return settingsPayload();
+    register({
+      channel: 'shell:live2d-settings-get',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: () => settingsPayload(),
     });
     // Roam rect: where her body is visually RIGHT NOW (screen coords, the
     // renderer's tight alpha bounds + hover pad). Transient only — never
     // folded into state.x/y.
-    ipcMain.handle('shell:live2d-roam', (event, payload) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-roam',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => {
       const { x, y, w, h } = payload || {};
       if ([x, y, w, h].every(Number.isFinite) && w > 0 && h > 0) {
         roamRect = { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
       }
       return null;
+      },
     });
-    ipcMain.handle('shell:live2d-file-eat', (event, payload) => {
-      assertAuthorized(event);
-      return fileEat(payload?.names);
+    register({
+      channel: 'shell:live2d-file-eat',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => fileEat(payload?.names),
     });
     // The 「⚙ 设置」cell: the settings page lives in the main window's
     // Settings shell (section `pet`), so this channel only navigates — the
     // pet surface stays read-only for settings.
-    ipcMain.handle('shell:live2d-open-settings', async (event) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-open-settings',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: async () => {
       if (typeof options.openPetSettings !== 'function') {
         return { ok: false, reason: 'unavailable' };
       }
@@ -1131,13 +1176,17 @@ function createLive2dPetManager(options = {}) {
       } catch (error) {
         return { ok: false, reason: String(error?.message || error) };
       }
+      },
     });
     // Quick chat (§B9): the renderer sends {text}; the reply is generated
     // with the configured DeepSeek credentials and the current persona.
     // Gated by settings.chatEnabled — a disabled toggle short-circuits to
     // the fallback line without touching the network.
-    ipcMain.handle('shell:live2d-chat', async (event, payload) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-chat',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: async (_event, payload) => {
       if (!petSettings.normalizeSettings(state.settings).chatEnabled) {
         return { ok: false, reason: 'disabled' };
       }
@@ -1145,12 +1194,16 @@ function createLive2dPetManager(options = {}) {
         text: payload?.text,
         personality: petSettings.normalizeSettings(state.settings).personality,
       });
+      },
     });
     // Shared-session surface for the quick-chat card: model catalog +
     // current session selection + the shared history tail. Assistant off
     // → enabled:false and the card hides the model/jump chrome.
-    ipcMain.handle('shell:live2d-chat-state', async (event, request) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-chat-state',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: async (_event, request) => {
       if (!whaleEnabled()) {
         return { ok: true, enabled: false, models: [], selected: null, history: [] };
       }
@@ -1173,10 +1226,14 @@ function createLive2dPetManager(options = {}) {
         selected: v.model && typeof v.model === 'object' ? v.model : null,
         history: Array.isArray(v.history) ? v.history : [],
       };
+      },
     });
     // The card's model picker writes the shared session's own selection.
-    ipcMain.handle('shell:live2d-chat-select-model', async (event, payload) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-chat-select-model',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: async (_event, payload) => {
       if (!whaleEnabled()) {
         return { ok: false, reason: 'disabled' };
       }
@@ -1195,11 +1252,15 @@ function createLive2dPetManager(options = {}) {
         return { ok: false, reason: res.value.error || 'whale-failed' };
       }
       return { ok: true, selected: res.value?.selected ?? null };
+      },
     });
     // Jump button on the card → raise the main window on the assistant
     // conversation (the same session the card is talking to).
-    ipcMain.handle('shell:live2d-open-whale', async (event) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-open-whale',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: async () => {
       if (typeof options.openWhaleAssistant !== 'function') {
         return { ok: false, reason: 'unavailable' };
       }
@@ -1208,12 +1269,16 @@ function createLive2dPetManager(options = {}) {
       } catch (error) {
         return { ok: false, reason: String(error?.message || error) };
       }
+      },
     });
     // The overlay is created focusable:false so it can never steal keyboard
     // focus; the chat dialog needs real input (IME included), so the renderer
     // flips this on while the card is open and back off on close.
-    ipcMain.handle('shell:live2d-chat-focus', (event, payload) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-chat-focus',
+      authorize: assertAuthorized,
+      validate: payloadArg,
+      handler: (_event, payload) => {
       if (!win || win.isDestroyed?.()) {
         return null;
       }
@@ -1241,6 +1306,7 @@ function createLive2dPetManager(options = {}) {
         }
       } catch { /* platform without setFocusable — input just stays read-only */ }
       return null;
+      },
     });
     // 「看看屏幕」: manual one-shot — capture the pet's display, JPEG-70 at
     // ≤768px, feed the configured vision model. Cooldown + size cap keep it
@@ -1249,8 +1315,11 @@ function createLive2dPetManager(options = {}) {
     // comment = assistant row); a text-only session route falls back to a
     // standalone vision call plus a folded plugin notice. The legacy
     // direct path stays memory-only.
-    ipcMain.handle('shell:live2d-look', async (event) => {
-      assertAuthorized(event);
+    register({
+      channel: 'shell:live2d-look',
+      authorize: assertAuthorized,
+      validate: noArgs,
+      handler: async () => {
       // No vision model → refuse before the cooldown stamp AND before
       // desktopCapturer: a look that cannot succeed must not take a
       // screenshot at all.
@@ -1290,6 +1359,7 @@ function createLive2dPetManager(options = {}) {
       } catch {
         return { ok: false, reason: 'capture-failed' };
       }
+      },
     });
     handlersRegistered = true;
   }

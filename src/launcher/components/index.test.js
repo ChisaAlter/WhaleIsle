@@ -473,8 +473,8 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   const ctx = {
     LAUNCHER_ONLY: ['launcher'],
     IPC_ROLES,
-    handle: (channel, roles, listener) => {
-      channels.set(channel, { roles, listener });
+    handle: (channel, roles, validate, listener) => {
+      channels.set(channel, { roles, listener: (event, ...args) => listener(event, ...validate(args)) });
     },
     send: (event, channel, payload) => {
       sent.push({ channel, payload });
@@ -527,7 +527,7 @@ test('launcher WhaleBridge open reuses the settings-window path without returnin
   ipcComponents.register({
     IPC_ROLES,
     LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
-    handle: (channel, roles, listener) => channels.set(channel, { roles, listener }),
+    handle: (channel, roles, validate, listener) => channels.set(channel, { roles, listener: (event, ...args) => listener(event, ...validate(args)) }),
     send: (event, channel, payload) => sent.push({ event, channel, payload }),
     onQuitCommit() {},
   });
@@ -572,7 +572,7 @@ for (const operation of ['update', 'rollback', 'uninstall']) {
     ipcComponents.register({
       IPC_ROLES,
       LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
-      handle: (channel, roles, listener) => channels.set(channel, { roles, listener }),
+      handle: (channel, roles, validate, listener) => channels.set(channel, { roles, listener: (event, ...args) => listener(event, ...validate(args)) }),
       send() {},
       onQuitCommit() {},
     });

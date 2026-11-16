@@ -9,6 +9,7 @@ const { loadWorkspaceAuthority } = require('./workspace-authority');
 const { createWorkspaceFileReader } = require('./workspace-fs');
 const { createWorkspacePreviewController } = require('./preview-workspace');
 const { createFilePreviewWindowController } = require('./preview-file-window');
+const { createRegisterIpc, noArgs, isPlainObject } = require('./ipc-register');
 const {
   previewGuestWebPreferences,
   previewPartitionForScope,
@@ -1238,181 +1239,185 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
       sendToHost('shell:preview-recording-frame', frame);
     },
   });
-  ipcMain.handle('shell:preview-open', async (event, input) => {
-    const generation = remember(event);
-    const result = await live.open(input);
-    if (generation !== hostGeneration || !host) {
-      if (result && typeof result.id === 'string') {
-        await Promise.resolve()
-          .then(() => live.close(result.id))
-          .catch((error) => reportTeardownFailure(error));
+  // Every preview channel mounts through the shared wrapper: `remember` is the
+  // custom authorize (runs exactly once per request, returns the host
+  // generation), and validators thread that generation ahead of the renderer
+  // arguments for the channels that claim singleton resources synchronously.
+  const register = createRegisterIpc(ipcMain);
+  const asObject = (value) => (isPlainObject(value) ? value : undefined);
+  const asString = (value) => (typeof value === 'string' ? value : undefined);
+  const idArg = (args) => [asString(args[0])];
+  const withGeneration = (tail) => (args, generation) => [generation, ...tail(args)];
+  register({
+    channel: 'shell:preview-open',
+    authorize: remember,
+    validate: withGeneration((args) => [asObject(args[0])]),
+    handler: async (_event, generation, input) => {
+      const result = await live.open(input);
+      if (generation !== hostGeneration || !host) {
+        if (result && typeof result.id === 'string') {
+          await Promise.resolve()
+            .then(() => live.close(result.id))
+            .catch((error) => reportTeardownFailure(error));
+        }
+        const error = new Error('Unauthorized IPC sender');
+        error.code = 'ERR_DSH_IPC_SENDER';
+        throw error;
       }
-      const error = new Error('Unauthorized IPC sender');
-      error.code = 'ERR_DSH_IPC_SENDER';
-      throw error;
-    }
-    return ownPreview(result);
+      return ownPreview(result);
+    },
   });
-  ipcMain.handle('shell:preview-navigate', (event, id, url) => {
-    remember(event);
-    return live.navigate(id, url);
+  register({
+    channel: 'shell:preview-navigate',
+    authorize: remember,
+    validate: (args) => [asString(args[0]), asString(args[1])],
+    handler: (_event, id, url) => live.navigate(id, url),
   });
-  ipcMain.handle('shell:preview-back', (event, id) => {
-    remember(event);
-    return live.back(id);
+  register({ channel: 'shell:preview-back', authorize: remember, validate: idArg, handler: (_event, id) => live.back(id) });
+  register({ channel: 'shell:preview-forward', authorize: remember, validate: idArg, handler: (_event, id) => live.forward(id) });
+  register({ channel: 'shell:preview-reload', authorize: remember, validate: idArg, handler: (_event, id) => live.reload(id) });
+  register({ channel: 'shell:preview-hard-reload', authorize: remember, validate: idArg, handler: (_event, id) => live.hardReload(id) });
+  register({ channel: 'shell:preview-stop', authorize: remember, validate: idArg, handler: (_event, id) => live.stop(id) });
+  register({ channel: 'shell:preview-zoom-in', authorize: remember, validate: idArg, handler: (_event, id) => live.zoomIn(id) });
+  register({ channel: 'shell:preview-zoom-out', authorize: remember, validate: idArg, handler: (_event, id) => live.zoomOut(id) });
+  register({ channel: 'shell:preview-zoom-reset', authorize: remember, validate: idArg, handler: (_event, id) => live.resetZoom(id) });
+  register({
+    channel: 'shell:preview-color-scheme',
+    authorize: remember,
+    validate: (args) => [asString(args[0]), args[1]],
+    handler: (_event, id, scheme) => live.setColorScheme(id, scheme),
   });
-  ipcMain.handle('shell:preview-forward', (event, id) => {
-    remember(event);
-    return live.forward(id);
+  register({ channel: 'shell:preview-clear-cookies', authorize: remember, validate: noArgs, handler: () => live.clearCookies() });
+  register({ channel: 'shell:preview-clear-cache', authorize: remember, validate: noArgs, handler: () => live.clearCache() });
+  register({
+    channel: 'shell:preview-capture-screenshot',
+    authorize: remember,
+    validate: idArg,
+    handler: (_event, id) => asResult(() => live.captureScreenshot(id)),
   });
-  ipcMain.handle('shell:preview-reload', (event, id) => {
-    remember(event);
-    return live.reload(id);
+  register({ channel: 'shell:preview-pick-element', authorize: remember, validate: idArg, handler: (_event, id) => live.pickElement(id) });
+  register({ channel: 'shell:preview-cancel-pick', authorize: remember, validate: idArg, handler: (_event, id) => live.cancelPickElement(id) });
+  register({
+    channel: 'shell:preview-annotation-theme',
+    authorize: remember,
+    validate: (args) => [asString(args[0]), args[1]],
+    handler: (_event, id, theme) => live.setAnnotationTheme(id, theme),
   });
-  ipcMain.handle('shell:preview-hard-reload', (event, id) => {
-    remember(event);
-    return live.hardReload(id);
+  register({
+    channel: 'shell:preview-open-pip',
+    authorize: remember,
+    validate: withGeneration(idArg),
+    handler: (_event, generation, id) => {
+      // Claim ownership synchronously. `remember()` may have queued a teardown
+      // for the previous generation; that microtask runs as soon as this
+      // handler awaits, so a claim registered afterwards would arrive too
+      // late and the stale teardown would close the resource this host just
+      // created.
+      ownSingleton('picture-in-picture', generation);
+      return live.openPictureInPicture(id);
+    },
   });
-  ipcMain.handle('shell:preview-stop', (event, id) => {
-    remember(event);
-    return live.stop(id);
+  register({ channel: 'shell:preview-close-pip', authorize: remember, validate: noArgs, handler: () => live.closePictureInPicture() });
+  register({
+    channel: 'shell:preview-start-recording',
+    authorize: remember,
+    validate: idArg,
+    handler: (_event, id) => asResult(() => live.startRecording(id)),
   });
-  ipcMain.handle('shell:preview-zoom-in', (event, id) => {
-    remember(event);
-    return live.zoomIn(id);
+  register({
+    channel: 'shell:preview-stop-recording',
+    authorize: remember,
+    validate: idArg,
+    handler: (_event, id) => asResult(() => live.stopRecording(id)),
   });
-  ipcMain.handle('shell:preview-zoom-out', (event, id) => {
-    remember(event);
-    return live.zoomOut(id);
+  register({
+    channel: 'shell:preview-save-recording',
+    authorize: remember,
+    validate: (args) => [asString(args[0]), args[1]],
+    handler: (_event, id, payload) => asResult(() => live.saveRecording(id, payload)),
   });
-  ipcMain.handle('shell:preview-zoom-reset', (event, id) => {
-    remember(event);
-    return live.resetZoom(id);
+  register({
+    channel: 'shell:preview-reveal-artifact',
+    authorize: remember,
+    validate: (args) => [asString(args[0])],
+    handler: (_event, artifactPath) => asResult(() => live.revealArtifact(artifactPath)),
   });
-  ipcMain.handle('shell:preview-color-scheme', (event, id, scheme) => {
-    remember(event);
-    return live.setColorScheme(id, scheme);
+  register({
+    channel: 'shell:preview-copy-artifact',
+    authorize: remember,
+    validate: (args) => [asString(args[0])],
+    handler: (_event, artifactPath) => asResult(() => live.copyArtifactToClipboard(artifactPath)),
   });
-  ipcMain.handle('shell:preview-clear-cookies', (event) => {
-    remember(event);
-    return live.clearCookies();
+  register({ channel: 'shell:preview-state', authorize: remember, validate: idArg, handler: (_event, id) => live.state(id) });
+  register({ channel: 'shell:preview-devtools', authorize: remember, validate: idArg, handler: (_event, id) => live.openDevTools(id) });
+  register({ channel: 'shell:preview-discover', authorize: remember, validate: noArgs, handler: () => discoverLocalServers() });
+  register({
+    channel: 'shell:preview-resize',
+    authorize: remember,
+    validate: (args) => [asString(args[0]), asObject(args[1])],
+    handler: (_event, id, bounds) => live.resize(id, bounds),
   });
-  ipcMain.handle('shell:preview-clear-cache', (event) => {
-    remember(event);
-    return live.clearCache();
+  register({ channel: 'shell:preview-hide', authorize: remember, validate: idArg, handler: (_event, id) => live.hide(id) });
+  register({
+    channel: 'shell:preview-show',
+    authorize: remember,
+    validate: (args) => [asString(args[0]), asObject(args[1])],
+    handler: (_event, id, bounds) => live.show(id, bounds),
   });
-  ipcMain.handle('shell:preview-capture-screenshot', (event, id) => {
-    remember(event);
-    return asResult(() => live.captureScreenshot(id));
+  register({
+    channel: 'shell:preview-close',
+    authorize: remember,
+    validate: idArg,
+    handler: (_event, id) => {
+      ownedPreviewIds.delete(id);
+      return live.close(id);
+    },
   });
-  ipcMain.handle('shell:preview-pick-element', (event, id) => {
-    remember(event);
-    return live.pickElement(id);
+  register({
+    channel: 'shell:preview-workspace-file',
+    authorize: remember,
+    validate: withGeneration((args) => [asObject(args[0])]),
+    handler: (_event, generation, input) => {
+      // Synchronous claim, as above: the successor must own the shared server
+      // before its first await lets the replaced host's teardown run.
+      ownSingleton('workspace-preview', generation);
+      return workspacePreview.fileUrl(input);
+    },
   });
-  ipcMain.handle('shell:preview-cancel-pick', (event, id) => {
-    remember(event);
-    return live.cancelPickElement(id);
-  });
-  ipcMain.handle('shell:preview-annotation-theme', (event, id, theme) => {
-    remember(event);
-    return live.setAnnotationTheme(id, theme);
-  });
-  ipcMain.handle('shell:preview-open-pip', (event, id) => {
-    // Claim ownership synchronously. `remember()` may have queued a teardown
-    // for the previous generation; that microtask runs as soon as this handler
-    // awaits, so a claim registered afterwards would arrive too late and the
-    // stale teardown would close the resource this host just created.
-    ownSingleton('picture-in-picture', remember(event));
-    return live.openPictureInPicture(id);
-  });
-  ipcMain.handle('shell:preview-close-pip', (event) => {
-    remember(event);
-    return live.closePictureInPicture();
-  });
-  ipcMain.handle('shell:preview-start-recording', (event, id) => {
-    remember(event);
-    return asResult(() => live.startRecording(id));
-  });
-  ipcMain.handle('shell:preview-stop-recording', (event, id) => {
-    remember(event);
-    return asResult(() => live.stopRecording(id));
-  });
-  ipcMain.handle('shell:preview-save-recording', (event, id, payload) => {
-    remember(event);
-    return asResult(() => live.saveRecording(id, payload));
-  });
-  ipcMain.handle('shell:preview-reveal-artifact', (event, artifactPath) => {
-    remember(event);
-    return asResult(() => live.revealArtifact(artifactPath));
-  });
-  ipcMain.handle('shell:preview-copy-artifact', (event, artifactPath) => {
-    remember(event);
-    return asResult(() => live.copyArtifactToClipboard(artifactPath));
-  });
-  ipcMain.handle('shell:preview-state', (event, id) => {
-    remember(event);
-    return live.state(id);
-  });
-  ipcMain.handle('shell:preview-devtools', (event, id) => {
-    remember(event);
-    return live.openDevTools(id);
-  });
-  ipcMain.handle('shell:preview-discover', (event) => {
-    remember(event);
-    return discoverLocalServers();
-  });
-  ipcMain.handle('shell:preview-resize', (event, id, bounds) => {
-    remember(event);
-    return live.resize(id, bounds);
-  });
-  ipcMain.handle('shell:preview-hide', (event, id) => {
-    remember(event);
-    return live.hide(id);
-  });
-  ipcMain.handle('shell:preview-show', (event, id, bounds) => {
-    remember(event);
-    return live.show(id, bounds);
-  });
-  ipcMain.handle('shell:preview-close', (event, id) => {
-    remember(event);
-    ownedPreviewIds.delete(id);
-    return live.close(id);
-  });
-  ipcMain.handle('shell:preview-workspace-file', (event, input) => {
-    // Synchronous claim, as above: the successor must own the shared server
-    // before its first await lets the replaced host's teardown run.
-    ownSingleton('workspace-preview', remember(event));
-    return workspacePreview.fileUrl(input);
-  });
-  ipcMain.handle('shell:preview-open-file-window', async (event, input) => {
-    const generation = remember(event);
-    ownSingleton('file-preview-window', generation);
-    // `open()` resolves its URL through the shared workspace-preview server, so
-    // the window depends on that server. A floating-window entry point can be a
-    // host's only contact with the server, so claim it here too; otherwise the
-    // server stays ownerless and the replaced host's teardown closes it out
-    // from under the successor's window.
-    ownSingleton('workspace-preview', generation);
-    const result = await asResult(() => filePreviewWindow.open(input));
-    // `open()` awaits the workspace preview server and a window load, so the
-    // host can be reaped mid-flight. A window installed after the reap would
-    // belong to no generation and never be torn down.
-    if (generation !== hostGeneration || !host) {
-      // Close only a window this call actually created. A failed open installed
-      // nothing, and a successor may already own the single shared window — in
-      // both cases closing here would destroy a window this host never owned.
-      const ownedBySuccessor = singletonOwner.has('file-preview-window')
-        && singletonOwner.get('file-preview-window') !== generation;
-      if (result?.ok === true && !ownedBySuccessor) {
-        // Route this through the same reporting path as host teardown: a failed
-        // close here is a real leak, not a silent success.
-        await Promise.resolve()
-          .then(() => filePreviewWindow.close())
-          .catch((error) => reportTeardownFailure(error));
+  register({
+    channel: 'shell:preview-open-file-window',
+    authorize: remember,
+    validate: withGeneration((args) => [asObject(args[0])]),
+    handler: async (_event, generation, input) => {
+      ownSingleton('file-preview-window', generation);
+      // `open()` resolves its URL through the shared workspace-preview server,
+      // so the window depends on that server. A floating-window entry point
+      // can be a host's only contact with the server, so claim it here too;
+      // otherwise the server stays ownerless and the replaced host's teardown
+      // closes it out from under the successor's window.
+      ownSingleton('workspace-preview', generation);
+      const result = await asResult(() => filePreviewWindow.open(input));
+      // `open()` awaits the workspace preview server and a window load, so the
+      // host can be reaped mid-flight. A window installed after the reap would
+      // belong to no generation and never be torn down.
+      if (generation !== hostGeneration || !host) {
+        // Close only a window this call actually created. A failed open
+        // installed nothing, and a successor may already own the single shared
+        // window — in both cases closing here would destroy a window this
+        // host never owned.
+        const ownedBySuccessor = singletonOwner.has('file-preview-window')
+          && singletonOwner.get('file-preview-window') !== generation;
+        if (result?.ok === true && !ownedBySuccessor) {
+          // Route this through the same reporting path as host teardown: a
+          // failed close here is a real leak, not a silent success.
+          await Promise.resolve()
+            .then(() => filePreviewWindow.close())
+            .catch((error) => reportTeardownFailure(error));
+        }
+        return { ok: false, message: 'Unauthorized IPC sender' };
       }
-      return { ok: false, message: 'Unauthorized IPC sender' };
-    }
-    return result;
+      return result;
+    },
   });
   const closeAll = typeof live.closeAll === 'function' ? live.closeAll.bind(live) : async () => {};
   live.closeAll = async () => {

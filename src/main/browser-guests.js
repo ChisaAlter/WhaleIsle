@@ -9,6 +9,7 @@
 
 const { randomUUID } = require('node:crypto');
 const { app, session } = require('electron');
+const { createRegisterIpc } = require('./ipc-register');
 
 const CHANNELS = {
   acquire: 'shell:browser-acquire',
@@ -197,13 +198,20 @@ function installBrowserGuestIpc(guests, { ipcMain, getView, getOrigin }) {
     }
     return target;
   };
-  ipcMain.handle(CHANNELS.acquire, (event, workspace) => {
-    const target = assertSender(event);
-    return guests.acquire(target.webContents, workspace);
+  // assertSender returns the owning view; it rides the normalized argument
+  // list so each channel authorizes exactly once.
+  const register = createRegisterIpc(ipcMain);
+  register({
+    channel: CHANNELS.acquire,
+    authorize: assertSender,
+    validate: (args, target) => [target, args[0]],
+    handler: (_event, target, workspace) => guests.acquire(target.webContents, workspace),
   });
-  ipcMain.handle(CHANNELS.release, (event, lease) => {
-    const target = assertSender(event);
-    return guests.release(target.webContents, lease);
+  register({
+    channel: CHANNELS.release,
+    authorize: assertSender,
+    validate: (args, target) => [target, args[0]],
+    handler: (_event, target, lease) => guests.release(target.webContents, lease),
   });
 }
 
