@@ -65,6 +65,7 @@
 - [插件启动恢复](modules/plugin-recovery.md)
 - [构建、钉版与发版](modules/build-release.md)
 - [设计语言与 Feature Spine](modules/design-and-spine.md)
+- [安全模型（威胁模型）](modules/security-model.md)
 
 ### 附录
 

@@ -64,3 +64,4 @@
 
 - [../design-language.md](../../design-language.md#桌面启动器)、[桌面启动页](../../design-language.md#桌面启动页)
 - [plugin-recovery.md](plugin-recovery.md)、[dsh-home.md](dsh-home.md)
+- [security-model.md](security-model.md)（安全模型/威胁模型一页，含内部令牌下发信道）
