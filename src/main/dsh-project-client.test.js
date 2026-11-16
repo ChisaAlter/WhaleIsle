@@ -1,18 +1,23 @@
 'use strict';
 
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { randomUUID } = require('node:crypto');
 const { createRequire } = require('node:module');
+const { gateTests, harnessDependencies } = require('../../scripts/lib/test-prerequisites.cjs');
+
+// Every case renders through React and jsdom from the Harness workspace deps.
+const HARNESS_DEPS = harnessDependencies();
+const test = gateTests(nodeTest, HARNESS_DEPS);
 
 const clientPath = path.join(__dirname, '../../vendor/dsh-project/client/client.js');
 const clientRequire = createRequire(path.join(__dirname, '../../vendor/deepseek-harness/packages/client/ui-conversation/package.json'));
 const vendorRequire = createRequire(path.join(__dirname, '../../vendor/deepseek-harness/package.json'));
-const React = clientRequire('react');
-const { JSDOM } = vendorRequire('jsdom');
+const React = HARNESS_DEPS.ok ? clientRequire('react') : {};
+const { JSDOM } = HARNESS_DEPS.ok ? vendorRequire('jsdom') : {};
 const { act, createElement: h, useSyncExternalStore } = React;
 
 function projection(initial) {

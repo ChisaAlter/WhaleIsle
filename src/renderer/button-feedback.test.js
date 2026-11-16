@@ -7,11 +7,18 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { createRequire } = require('node:module');
 const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
+const {
+  allPrerequisites, electronBinary, harnessDependencies, prerequisiteSkip, requirePrerequisite,
+} = require('../../scripts/lib/test-prerequisites.cjs');
 
 const root = path.resolve(__dirname, '../..');
-const electron = [process.env.ELECTRON_PATH, path.join(root, 'node_modules/electron/dist/electron.exe'), path.join(root, 'node_modules/electron/dist/electron')].find(file => file && fs.existsSync(file));
+// Real Electron plus the ui-primitives React deps the fixture bundles against.
+const ELECTRON = electronBinary();
+const PREREQ = allPrerequisites(ELECTRON, harnessDependencies());
+const electron = ELECTRON.binary;
 
-test('real Electron: shared and IM button feedback scrolls complete labels without moving controls', { skip: !electron }, async t => {
+test('real Electron: shared and IM button feedback scrolls complete labels without moving controls', { skip: prerequisiteSkip(PREREQ) }, async t => {
+  if (!requirePrerequisite(t, PREREQ)) return;
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'button-feedback-'));
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
   const primitives = path.join(root, 'vendor/deepseek-harness/packages/client/ui-primitives');

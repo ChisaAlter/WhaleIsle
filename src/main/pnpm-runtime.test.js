@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { desktopCliArgs, resolvePnpmEntry } = require('./pnpm-runtime');
+const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
 const CLI = path.join(ROOT, 'vendor', 'deepseek-harness', 'apps', 'cli', 'lib', 'bin.js');
@@ -61,6 +62,7 @@ test('plain Node CLI runner import chain is shipped outside the Electron archive
 });
 
 test('built dsh installs and removes an offline bundle from paths with Chinese and spaces', { timeout: 120000 }, async t => {
+  if (!requirePrerequisite(t, harnessWorkspace())) return;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-pnpm-中文 路径-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const runtime = path.join(dir, '软件 Whale Isle');

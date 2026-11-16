@@ -12,6 +12,8 @@
 
 `npm test` 运行桌面和移动端行为测试；`npm run test:tools` 运行构建、发布及维护工具测试。定向验证直接调用现有测试文件。新增测试应能发现实际故障，不用测试数量或覆盖率目标替代用户结果。
 
+依赖 Harness 构建产物、vendor 插件运行时、真实 Electron 或打包产物的用例经 `scripts/lib/test-prerequisites.cjs` 检测前提；缺失时按写明补齐命令的原因跳过，`WHALE_REQUIRE_TEST_PREREQS=1`（跑 `npm test` 的 CI 作业均设置）时改为失败，避免环境缺失被误读为真实回归或被跳过掩盖。
+
 在 Linux 上启动真实 Electron 的测试进程会自动处理沙箱：chrome-sandbox 不是 root 所有或缺少 4755（以及测试本身以 root 运行）时，共享辅助 `scripts/lib/electron-sandbox.cjs` 给测试子进程加 `ELECTRON_DISABLE_SANDBOX=1`；`npm start` 与打包产物不受影响。
 
 用户纠正代理的同一个 PR 里，尽量把这次纠正变成一条 lint 规则（eslint.config.mjs / scripts/eslint-rules）或一个测试；规则报错信息写清原因和替代做法，做不到时在 PR 中说明。修掉存量问题后用 `npx eslint . --prune-suppressions` 收缩豁免文件；新增豁免需要在 PR 中说明理由。

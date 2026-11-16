@@ -23,6 +23,7 @@ const {
   VENDOR_ROOT,
 } = require('./dshd-remote');
 const { killProcessTree } = require('../shared/process-tree');
+const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 // dist/ 是构建产物（vendor 内嵌 .gitignore 挡住了提交），fresh clone / CI 没有。
 // 打包机通过 build:server-deps 产出后随 extraResources 发货；这里只在有产物时验证。
@@ -37,6 +38,7 @@ const VENDOR_BUILT = fs.existsSync(path.join(
   'exports.js',
 ));
 const VENDOR_BUILD_HINT = 'vendored server dist 缺失（npm run prepare:dshd-remote 会构建）';
+const VENDOR_BUILD = { ok: VENDOR_BUILT, reason: VENDOR_BUILD_HINT };
 
 test('vendor tree includes full daemon sources and AGPL shipping docs', () => {
   assert.ok(fs.existsSync(path.join(VENDOR_ROOT, 'packages', 'server', 'src', 'server', 'exports.ts')));
@@ -83,7 +85,8 @@ test('desktop start and packaging prepare and ship the trimmed DSHD remote runti
   )));
 });
 
-test('built vendor tree includes daemon dist packages (not a hello slice)', { skip: VENDOR_BUILT ? false : VENDOR_BUILD_HINT }, () => {
+test('built vendor tree includes daemon dist packages (not a hello slice)', { skip: prerequisiteSkip(VENDOR_BUILD) }, (t) => {
+  requirePrerequisite(t, VENDOR_BUILD);
   assert.ok(fs.existsSync(path.join(VENDOR_ROOT, 'packages', 'server', 'dist', 'server', 'server', 'exports.js')));
   assert.ok(fs.existsSync(path.join(VENDOR_ROOT, 'packages', 'client', 'dist', 'index.js')));
   assert.ok(fs.existsSync(path.join(VENDOR_ROOT, 'packages', 'protocol', 'dist', 'connection-offer.js')));
@@ -919,7 +922,8 @@ test('DshdRemote never uses lan.pairingUrl for product QR', async () => {
   }
 });
 
-test('loadServerApi exposes the narrow pairing/device-store slice only', { skip: VENDOR_BUILT ? false : VENDOR_BUILD_HINT }, async () => {
+test('loadServerApi exposes the narrow pairing/device-store slice only', { skip: prerequisiteSkip(VENDOR_BUILD) }, async (t) => {
+  requirePrerequisite(t, VENDOR_BUILD);
   const api = await loadServerApi();
   assert.equal(typeof api.generateLocalPairingOffer, 'function');
   assert.equal(typeof api.RelayDeviceCredentialStore, 'function');
@@ -932,7 +936,8 @@ test('loadServerApi exposes the narrow pairing/device-store slice only', { skip:
   assert.equal(api.createRootLogger, undefined);
 });
 
-test('daemon runner export ships the full barrel the child needs', { skip: VENDOR_BUILT ? false : VENDOR_BUILD_HINT }, async () => {
+test('daemon runner export ships the full barrel the child needs', { skip: prerequisiteSkip(VENDOR_BUILD) }, async (t) => {
+  requirePrerequisite(t, VENDOR_BUILD);
   const { pathToFileURL } = require('url');
   const barrelPath = path.join(
     VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js',

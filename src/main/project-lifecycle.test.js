@@ -1,8 +1,12 @@
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { gateTests, harnessWorkspace } = require('../../scripts/lib/test-prerequisites.cjs');
+
+// The fixture boots the real ProjectService resolved through the built Harness.
+const test = gateTests(nodeTest, harnessWorkspace());
 
 async function fixture() {
   const { ProjectService, resolvePackage } = await import('../../vendor/dsh-project/tests/harness-runtime.mjs');

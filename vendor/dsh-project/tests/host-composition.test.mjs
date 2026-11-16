@@ -1,21 +1,25 @@
 /** Real Loader/Sessions/continuations/tools/storage; only external model and desktop I/O are scripted. */
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import nodeTest from 'node:test';
+import { gateTests, harnessWorkspace } from '../../../scripts/lib/test-prerequisites.cjs';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, rename, symlink } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { projectPackage, harness, cliRequire, resolvePackage, ProjectService } from './harness-runtime.mjs';
-const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
-const { LlmAdapter, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
-const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
-const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
-const { FiberState } = await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href);
-const { default: NativeTeamService } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-agent-team')).href);
-const teamUi = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-experimental-client-ui-agent-team')).href);
-const { ensureDesktopDshProject } = cliRequire(join(projectPackage, '../../src/main/dsh-project-desktop.js'));
+// Real Loader/Sessions/continuations boot through the built Harness workspace.
+const HARNESS = harnessWorkspace();
+const test = gateTests(nodeTest, HARNESS);
+const { projectPackage, harness, cliRequire, resolvePackage, ProjectService } = HARNESS.ok ? await import('./harness-runtime.mjs') : {};
+const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = HARNESS.ok ? await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href) : {};
+const { LlmAdapter = class {}, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } = HARNESS.ok ? await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href) : {};
+const { provideCmdline } = HARNESS.ok ? await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href) : {};
+const { disposeProfileApplication } = HARNESS.ok ? await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href) : {};
+const { FiberState } = HARNESS.ok ? await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href) : {};
+const { default: NativeTeamService } = HARNESS.ok ? await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-agent-team')).href) : {};
+const teamUi = HARNESS.ok ? await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-experimental-client-ui-agent-team')).href) : undefined;
+const { ensureDesktopDshProject } = HARNESS.ok ? cliRequire(join(projectPackage, '../../src/main/dsh-project-desktop.js')) : {};
 const blocks = value => [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text: value }, { type: 'block-end', index: 0, block: { type: 'text', text: value } }, { type: 'finish', reason: { kind: 'stop' } }];
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 const messageText = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');

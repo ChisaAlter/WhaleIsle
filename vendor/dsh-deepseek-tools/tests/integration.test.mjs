@@ -7,15 +7,18 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { harnessWorkspace, requirePrerequisite } from '../../../scripts/lib/test-prerequisites.cjs';
 import { apiEndpoint, requestApi, wavChunks } from '../lib/api.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 // Optional read-only reuse of an installed Harness for cross-version acceptance.
 const harness = process.env.DSH_DEEPSEEK_TEST_HARNESS_ROOT || join(root, 'vendor/deepseek-harness');
+// The web-profile case boots a real Harness CLI profile and drives its tools.
+const HARNESS = harnessWorkspace({ harnessRoot: harness });
 const require = createRequire(join(harness, 'apps/cli/package.json'));
-const { createLaunchEnvironmentSnapshot } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-launch-environment')).href);
-const { LlmAdapter, createUserMessage } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-llm')).href);
-const { runProfile, prepareProfile, disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
+const { createLaunchEnvironmentSnapshot } = HARNESS.ok ? await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-launch-environment')).href) : {};
+const { LlmAdapter, createUserMessage } = HARNESS.ok ? await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-llm')).href) : {};
+const { runProfile, prepareProfile, disposeProfileApplication } = HARNESS.ok ? await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href) : {};
 const { ensureDesktopDeepSeekTools } = require(join(root, 'src/main/deepseek-tools-desktop.js'));
 
 function wav() {
@@ -51,6 +54,7 @@ test('streaming WAV validation rejects truncated or non-audio responses', async 
 });
 
 test('real web profile: persistent settings, native tools, file permissions, streamed attachments and cancellation', { timeout: 180000 }, async t => {
+  if (!requirePrerequisite(t, HARNESS)) return;
   const scratch = await mkdtemp(join(tmpdir(), 'whale-deepseek-tools-'));
   const home = join(scratch, 'home'), profileDir = join(home, 'profiles/web');
   const oldEnv = { DSH_HOME: process.env.DSH_HOME, DSHD_DEEPSEEK_TOOLS_ENABLED: process.env.DSHD_DEEPSEEK_TOOLS_ENABLED, DSH_TELEMETRY_DISABLED: process.env.DSH_TELEMETRY_DISABLED, DSHD_PROFILE_DEFAULT_PATCH: process.env.DSHD_PROFILE_DEFAULT_PATCH,

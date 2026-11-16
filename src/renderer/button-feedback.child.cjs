@@ -66,8 +66,16 @@ app.whenReady().then(async () => {
         return { id, start, end, spinnerMoved: spinner.getBoundingClientRect().left !== spinnerBefore };
       })`);
       await js(`window.trackBefore = document.querySelector('#english [class*="feedbackLabel"]'); window.animationBefore = trackBefore.getAnimations()[0]; animationBefore.currentTime = Number(animationBefore.effect.getTiming().duration) * .3; animationBefore.play(); window.timeBefore = animationBefore.currentTime; feedbackBench.render('busy-progress')`);
-      await delay(120);
-      const continuity = await js(`({ sameNode: trackBefore === document.querySelector('#english [class*="feedbackLabel"]'), sameAnimation: animationBefore === trackBefore.getAnimations()[0], advanced: animationBefore.currentTime > timeBefore })`);
+      const continuityProbe = `({ sameNode: trackBefore === document.querySelector('#english [class*="feedbackLabel"]'), sameAnimation: animationBefore === trackBefore.getAnimations()[0], advanced: animationBefore.currentTime > timeBefore })`;
+      // The offscreen animation clock may lag the play() call (slow runners);
+      // poll instead of assuming a fixed interval, capped so a stalled clock
+      // still fails the same assertion.
+      const continuityDeadline = Date.now() + 3000;
+      let continuity = await js(continuityProbe);
+      while (!continuity.advanced && Date.now() < continuityDeadline) {
+        await delay(50);
+        continuity = await js(continuityProbe);
+      }
       await motion('reduce');
       await delay(20);
       const reduced = (await read()).english;

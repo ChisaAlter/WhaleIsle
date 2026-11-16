@@ -5,17 +5,14 @@
 // Asserts DOM and IPC effects — not pure-function behavior.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
+const { electronBinary, prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
-const ELECTRON = [
-  process.env.ELECTRON_PATH,
-  path.join(__dirname, '..', '..', 'node_modules', 'electron', 'dist', 'electron.exe'),
-  path.join(__dirname, '..', '..', 'node_modules', 'electron', 'dist', 'electron'),
-].find((p) => p && fs.existsSync(p));
+const PREREQ = electronBinary();
+const ELECTRON = PREREQ.binary;
 
 const CHILD = path.join(__dirname, 'launcher-bound.child.cjs');
 
@@ -42,9 +39,8 @@ function runBound(env = {}) {
   });
 }
 
-const hasElectron = Boolean(ELECTRON);
-
-test('home component controls track lifecycle and keep rollback separate; available update appears once', { skip: !hasElectron }, async () => {
+test('home component controls track lifecycle and keep rollback separate; available update appears once', { skip: prerequisiteSkip(PREREQ) }, async (t) => {
+  requirePrerequisite(t, PREREQ);
   const r = await runBound({ QA_COMPONENTS_HOME: '1' });
   assert.equal(r.absent.hidden, true);
   assert.equal(r.stopped.hidden, false);
@@ -77,7 +73,8 @@ test('home component controls track lifecycle and keep rollback separate; availa
   assert.equal(r.calls.filter(call => call.op === 'component-rollback').length, 0, 'cancel preserves the current version');
 });
 
-test('component feedback stays on its buttons, shows one result, and restores focus', { skip: !hasElectron }, async () => {
+test('component feedback stays on its buttons, shows one result, and restores focus', { skip: prerequisiteSkip(PREREQ) }, async (t) => {
+  requirePrerequisite(t, PREREQ);
   const r = await runBound({ QA_COMPONENT_FEEDBACK: '1' });
   for (const [before, pending] of [[r.startBefore, r.starting], [r.installBefore, r.installing],
     [r.updateBefore, r.updating], [r.refreshBefore, r.refreshing], [r.uninstallBefore, r.uninstallReading]]) {
@@ -176,7 +173,8 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.equal(r.finalState.extraFeedbackNodes, 0);
 });
 
-test('home uses one guarded start action and hides stale diagnostics throughout deferred startup', { skip: !hasElectron }, async () => {
+test('home uses one guarded start action and hides stale diagnostics throughout deferred startup', { skip: prerequisiteSkip(PREREQ) }, async (t) => {
+  requirePrerequisite(t, PREREQ);
   const r = await runBound({ QA_STARTUP_FLOW: '1' });
   assert.equal(r.initial.duplicateRetry, false);
   assert.equal(r.initial.diagnosticsOpen, false);
@@ -229,7 +227,8 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
   assert.equal(r.degradedOpen.recoveryListHidden, true, 'no user-plugin list for a built-in skip');
 });
 
-test('real Electron: delta update starts on click, waits for confirmed installation and only actual success refreshes', { skip: !hasElectron }, async () => {
+test('real Electron: delta update starts on click, waits for confirmed installation and only actual success refreshes', { skip: prerequisiteSkip(PREREQ) }, async (t) => {
+  requirePrerequisite(t, PREREQ);
   const r = await runBound({ QA_DELTA_FEEDBACK: '1' });
   assert.equal(r.calls.filter(call => call.op === 'install-delta').length, 3);
   for (const item of r.cases) {
@@ -261,7 +260,8 @@ test('real Electron: delta update starts on click, waits for confirmed installat
   assert.match(r.cases[2].terminal.body, /已完成安装：v9\.9\.9/);
 });
 
-test('bound handlers: delayed cancel A->B keeps B live and refuses the stale write', { skip: !hasElectron }, async () => {
+test('bound handlers: delayed cancel A->B keeps B live and refuses the stale write', { skip: prerequisiteSkip(PREREQ) }, async (t) => {
+  requirePrerequisite(t, PREREQ);
   const r = await runBound();
   assert.deepEqual([r.keyboard.opened, r.keyboard.down, r.keyboard.end, r.keyboard.home, r.keyboard.up],
     ['stable', 'beta', 'beta', 'stable', 'beta'], 'popup skips the unverified option and supports arrow and boundary keys');
@@ -288,7 +288,8 @@ test('bound handlers: delayed cancel A->B keeps B live and refuses the stale wri
   assert.equal(r.delayedCancel.dom.cancelOverlay, false);
 });
 
-test('bound handlers: a resolved {ok:false} route-save is refused and the same route retries', { skip: !hasElectron }, async () => {
+test('bound handlers: a resolved {ok:false} route-save is refused and the same route retries', { skip: prerequisiteSkip(PREREQ) }, async (t) => {
+  requirePrerequisite(t, PREREQ);
   const r = await runBound({ QA_ROUTE_FAIL_ONCE: '1' });
   assert.equal(r.routeRetry.firstIssued, true, 'first pick issues a save');
   // The first save resolved {ok:false}; the same route pick must issue again —
