@@ -44,7 +44,9 @@ async function loadMermaid(target?: HTMLElement): Promise<typeof import('mermaid
   }
   api.initialize({
     startOnLoad: false,
-    // Strict default: mermaid escapes/sanitizes; we never enable htmlLabels.
+    // Strict default: mermaid escapes/sanitizes label text. htmlLabels stays
+    // at mermaid's default (on): labels render as XHTML inside foreignObject
+    // — scriptable elements still fail `assertSafeSvg`'s whitelist.
     securityLevel: 'strict',
     theme: 'base',
     themeVariables: {
