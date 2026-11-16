@@ -8,6 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -53,6 +54,32 @@ function makeController(overrides = {}) {
     list: async () => ({ sessions: [] }),
     ...overrides,
   };
+}
+
+// High-risk whale tools wait on the main-process desktop confirm endpoint;
+// this stub answers the loopback channel with an explicit allow.
+async function allowDesktopConfirm(t) {
+  const token = 'whale-test-token';
+  const server = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/desktop/confirm' && req.headers.authorization === `Bearer ${token}`) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
+  const prevToken = process.env.DSH_DESKTOP_INSTALL_TOKEN;
+  process.env.DSH_DESKTOP_INSTALL_URL = `http://127.0.0.1:${server.address().port}`;
+  process.env.DSH_DESKTOP_INSTALL_TOKEN = token;
+  t.after(() => new Promise((resolve) => {
+    if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL;
+    else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
+    if (prevToken === undefined) delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
+    else process.env.DSH_DESKTOP_INSTALL_TOKEN = prevToken;
+    server.close(resolve);
+  }));
 }
 
 /** Async-iterable yielding the given frames, as follow/control return. */
@@ -410,7 +437,8 @@ test('whale_search_sessions maps controller hits', async () => {
   assert.deepEqual(result.items, [{ sessionId: 's-9', snippet: '…部署脚本…' }]);
 });
 
-test('whale_session_queue reads the control baseline and update_queue maps actions', async () => {
+test('whale_session_queue reads the control baseline and update_queue maps actions', async (t) => {
+  await allowDesktopConfirm(t);
   const seen = [];
   const controller = makeController({
     control: () => frameStream([{
@@ -446,7 +474,8 @@ test('whale_session_queue reads the control baseline and update_queue maps actio
   assert.equal((await update.execute({ sessionId: 's-1', itemId: 'q-1', action: 'edit' })).ok, false);
 });
 
-test('whale control tools call through with the right request shapes', async () => {
+test('whale control tools call through with the right request shapes', async (t) => {
+  await allowDesktopConfirm(t);
   const seen = [];
   const controller = makeController({
     cancel: async (r) => { seen.push(['cancel', r]); return { ok: true }; },

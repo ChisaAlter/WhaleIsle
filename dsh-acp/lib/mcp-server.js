@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import { executionProvider, listDirectChildren } from './host-contract.js';
 import { AGENT_TOOLS } from './delegation.js';
 import { acpErrorMessage } from './errors.js';
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 const SERVER_INFO = { name: 'whaleisle', title: 'WhaleIsle', version: '0.1.0' };
@@ -292,6 +293,14 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
     if (name === 'acp_delegate') {
       const parent = safeGetService('agents')?.get?.(session.dshSession?.id);
       if (!parent || !session.signal) return errorResult('Delegation requires an active parent conversation.');
+      const confirmation = await confirmModelAction({
+        tool: 'acp_delegate',
+        action: 'delegate',
+        effect: 'code',
+        summary: `在已配置代理 ${String(args?.agent ?? '?')} 上启动一个可以执行命令的子任务`,
+        details: String(args?.prompt ?? '').slice(0, 2000),
+      });
+      if (confirmation.ok !== true) return errorResult(DECLINED_TEXT);
       const signal = session.signal;
       const child = await delegate(args, parent, signal);
       if (args.mode === 'wait') return resultResponse(await waitTask(parent, child.taskId, args.timeout_ms ?? 15000, signal));

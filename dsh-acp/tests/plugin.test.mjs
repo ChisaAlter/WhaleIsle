@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import './client-options.test.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -15,6 +16,30 @@ function mockPreparedConnection(t) {
   t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
     this.api = { getConfigOptions: async () => [], setSessionModel: async () => {} };
   });
+}
+
+// acp_delegate passes a main-process desktop confirm before delegating; this
+// stub answers the loopback endpoint with an explicit allow.
+async function allowDesktopConfirm(t) {
+  const token = 'acp-test-token';
+  const server = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/desktop/confirm' && req.headers.authorization === `Bearer ${token}`) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+      return;
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
+  const prevToken = process.env.DSH_DESKTOP_INSTALL_TOKEN;
+  process.env.DSH_DESKTOP_INSTALL_URL = `http://127.0.0.1:${server.address().port}`;
+  process.env.DSH_DESKTOP_INSTALL_TOKEN = token;
+  t.after(() => new Promise((resolve) => {
+    if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL; else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
+    if (prevToken === undefined) delete process.env.DSH_DESKTOP_INSTALL_TOKEN; else process.env.DSH_DESKTOP_INSTALL_TOKEN = prevToken;
+    server.close(resolve);
+  }));
 }
 
 const message = (id, role, text, kind) => ({ id, role, content: [{ type: 'text', text }], ...(kind ? { source: { kind } } : {}) });
@@ -241,6 +266,7 @@ test('model settings use the newly selected live catalog and cannot override rou
 
 test('configured agents share one discovery/delegation catalog and preserve parent selection', async (t) => {
   mockPreparedConnection(t);
+  await allowDesktopConfirm(t);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-config-'));
   const storeFile = path.join(dir, 'acp-agents.json');
   saveAgentsConfig([{ id: 'reviewer', name: 'Reviewer', command: 'node', enabled: true, models: [{ id: 'review-model' }], env: { API_KEY: 'test-secret' } }], storeFile);

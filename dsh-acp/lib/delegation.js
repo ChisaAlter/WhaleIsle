@@ -1,3 +1,5 @@
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+
 /** Configured external agents share the host's managed child lifecycle. */
 export const DELEGATION_PROVIDER = 'configured-acp';
 
@@ -54,6 +56,14 @@ export function registerDelegation(ctx, manager) {
       isConcurrencySafe: () => true,
       async execute(args, exec) {
         if (tool.name === 'acp_agents') return { agents: manager.listDelegationAgents() };
+        const confirmation = await confirmModelAction({
+          tool: 'acp_delegate',
+          action: 'delegate',
+          effect: 'code',
+          summary: `在已配置代理 ${String(args.agent ?? '?')} 上启动一个可以执行命令的子任务`,
+          details: String(args.prompt ?? '').slice(0, 2000),
+        });
+        if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
         const child = await manager.delegate(args, exec.agent, exec.signal, 'parent', ctx.subagents);
         if (args.mode === 'wait') return manager.waitTask(exec.agent, child.taskId, args.timeout_ms ?? 15000, exec.signal);
         if (child.recovered || manager.tasks.get(exec.agent.id, child.taskId).endedAt) return manager.tasks.snapshot(exec.agent, child.taskId, true);

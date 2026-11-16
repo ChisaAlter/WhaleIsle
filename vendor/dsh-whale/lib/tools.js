@@ -12,6 +12,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { whaleHomeDir, appendPetOutbox } from './preset.js';
 import { createWhaleScope } from './scope.js';
 import { controllerFrom, genericOutput, rowSummary, sessionRowsFrom } from './shared.js';
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 import { registerSessionTools } from './session-tools.js';
 import { registerDesktopTools } from './desktop-tools.js';
 import { registerStickerTools } from './sticker-tools.js';
@@ -108,6 +109,14 @@ export function apply(ctx) {
       const sessionId = String(args.sessionId ?? '').trim();
       const text = String(args.text ?? '').trim().slice(0, SEND_MAX_CHARS);
       if (!sessionId || !text) return { ok: false, detail: 'sessionId and text are required.' };
+      const confirmation = await confirmModelAction({
+        tool: 'whale_send_to_session',
+        action: 'send',
+        effect: 'external',
+        summary: `以你的名义向会话 ${sessionId} 发送一条消息`,
+        details: text,
+      });
+      if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
       let agent = ctx.agents?.get?.(sessionId);
       if (!agent) {
         const controller = controllerFrom(ctx);
@@ -175,6 +184,14 @@ export function apply(ctx) {
         return { ok: false, sessionId: '', detail: 'The whale assistant has one resident conversation. Open her existing session instead.' };
       }
       if (preset) request.agentPreset = preset;
+      const confirmation = await confirmModelAction({
+        tool: 'whale_new_session',
+        action: 'create',
+        effect: 'code',
+        summary: `在 ${cwd} 打开一个新的工作会话`,
+        details: preset ? `目录：${cwd}\n预设：${preset}` : `目录：${cwd}`,
+      });
+      if (confirmation.ok !== true) return { ok: false, sessionId: '', detail: DECLINED_TEXT };
       const created = await controller.create(request);
       const sessionId = String(created?.sessionId ?? created?.id ?? created?.session?.id ?? '').trim();
       if (!sessionId) return { ok: false, sessionId: '', detail: 'Session was created without an id.' };
