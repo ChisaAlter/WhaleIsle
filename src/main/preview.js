@@ -9,7 +9,7 @@ const { loadWorkspaceAuthority } = require('./workspace-authority');
 const { createWorkspaceFileReader } = require('./workspace-fs');
 const { createWorkspacePreviewController } = require('./preview-workspace');
 const { createFilePreviewWindowController } = require('./preview-file-window');
-const { createRegisterIpc, noArgs, isPlainObject } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 const {
   previewGuestWebPreferences,
   previewPartitionForScope,
@@ -1244,14 +1244,9 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
   // generation), and validators thread that generation ahead of the renderer
   // arguments for the channels that claim singleton resources synchronously.
   const register = createRegisterIpc(ipcMain);
-  const asObject = (value) => (isPlainObject(value) ? value : undefined);
-  const asString = (value) => (typeof value === 'string' ? value : undefined);
-  const idArg = (args) => [asString(args[0])];
-  const withGeneration = (tail) => (args, generation) => [generation, ...tail(args)];
   register({
     channel: 'shell:preview-open',
     authorize: remember,
-    validate: withGeneration((args) => [asObject(args[0])]),
     handler: async (_event, generation, input) => {
       const result = await live.open(input);
       if (generation !== hostGeneration || !host) {
@@ -1270,43 +1265,38 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:preview-navigate',
     authorize: remember,
-    validate: (args) => [asString(args[0]), asString(args[1])],
     handler: (_event, id, url) => live.navigate(id, url),
   });
-  register({ channel: 'shell:preview-back', authorize: remember, validate: idArg, handler: (_event, id) => live.back(id) });
-  register({ channel: 'shell:preview-forward', authorize: remember, validate: idArg, handler: (_event, id) => live.forward(id) });
-  register({ channel: 'shell:preview-reload', authorize: remember, validate: idArg, handler: (_event, id) => live.reload(id) });
-  register({ channel: 'shell:preview-hard-reload', authorize: remember, validate: idArg, handler: (_event, id) => live.hardReload(id) });
-  register({ channel: 'shell:preview-stop', authorize: remember, validate: idArg, handler: (_event, id) => live.stop(id) });
-  register({ channel: 'shell:preview-zoom-in', authorize: remember, validate: idArg, handler: (_event, id) => live.zoomIn(id) });
-  register({ channel: 'shell:preview-zoom-out', authorize: remember, validate: idArg, handler: (_event, id) => live.zoomOut(id) });
-  register({ channel: 'shell:preview-zoom-reset', authorize: remember, validate: idArg, handler: (_event, id) => live.resetZoom(id) });
+  register({ channel: 'shell:preview-back', authorize: remember, handler: (_event, id) => live.back(id) });
+  register({ channel: 'shell:preview-forward', authorize: remember, handler: (_event, id) => live.forward(id) });
+  register({ channel: 'shell:preview-reload', authorize: remember, handler: (_event, id) => live.reload(id) });
+  register({ channel: 'shell:preview-hard-reload', authorize: remember, handler: (_event, id) => live.hardReload(id) });
+  register({ channel: 'shell:preview-stop', authorize: remember, handler: (_event, id) => live.stop(id) });
+  register({ channel: 'shell:preview-zoom-in', authorize: remember, handler: (_event, id) => live.zoomIn(id) });
+  register({ channel: 'shell:preview-zoom-out', authorize: remember, handler: (_event, id) => live.zoomOut(id) });
+  register({ channel: 'shell:preview-zoom-reset', authorize: remember, handler: (_event, id) => live.resetZoom(id) });
   register({
     channel: 'shell:preview-color-scheme',
     authorize: remember,
-    validate: (args) => [asString(args[0]), args[1]],
     handler: (_event, id, scheme) => live.setColorScheme(id, scheme),
   });
-  register({ channel: 'shell:preview-clear-cookies', authorize: remember, validate: noArgs, handler: () => live.clearCookies() });
-  register({ channel: 'shell:preview-clear-cache', authorize: remember, validate: noArgs, handler: () => live.clearCache() });
+  register({ channel: 'shell:preview-clear-cookies', authorize: remember, handler: () => live.clearCookies() });
+  register({ channel: 'shell:preview-clear-cache', authorize: remember, handler: () => live.clearCache() });
   register({
     channel: 'shell:preview-capture-screenshot',
     authorize: remember,
-    validate: idArg,
     handler: (_event, id) => asResult(() => live.captureScreenshot(id)),
   });
-  register({ channel: 'shell:preview-pick-element', authorize: remember, validate: idArg, handler: (_event, id) => live.pickElement(id) });
-  register({ channel: 'shell:preview-cancel-pick', authorize: remember, validate: idArg, handler: (_event, id) => live.cancelPickElement(id) });
+  register({ channel: 'shell:preview-pick-element', authorize: remember, handler: (_event, id) => live.pickElement(id) });
+  register({ channel: 'shell:preview-cancel-pick', authorize: remember, handler: (_event, id) => live.cancelPickElement(id) });
   register({
     channel: 'shell:preview-annotation-theme',
     authorize: remember,
-    validate: (args) => [asString(args[0]), args[1]],
     handler: (_event, id, theme) => live.setAnnotationTheme(id, theme),
   });
   register({
     channel: 'shell:preview-open-pip',
     authorize: remember,
-    validate: withGeneration(idArg),
     handler: (_event, generation, id) => {
       // Claim ownership synchronously. `remember()` may have queued a teardown
       // for the previous generation; that microtask runs as soon as this
@@ -1317,57 +1307,49 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
       return live.openPictureInPicture(id);
     },
   });
-  register({ channel: 'shell:preview-close-pip', authorize: remember, validate: noArgs, handler: () => live.closePictureInPicture() });
+  register({ channel: 'shell:preview-close-pip', authorize: remember, handler: () => live.closePictureInPicture() });
   register({
     channel: 'shell:preview-start-recording',
     authorize: remember,
-    validate: idArg,
     handler: (_event, id) => asResult(() => live.startRecording(id)),
   });
   register({
     channel: 'shell:preview-stop-recording',
     authorize: remember,
-    validate: idArg,
     handler: (_event, id) => asResult(() => live.stopRecording(id)),
   });
   register({
     channel: 'shell:preview-save-recording',
     authorize: remember,
-    validate: (args) => [asString(args[0]), args[1]],
     handler: (_event, id, payload) => asResult(() => live.saveRecording(id, payload)),
   });
   register({
     channel: 'shell:preview-reveal-artifact',
     authorize: remember,
-    validate: (args) => [asString(args[0])],
     handler: (_event, artifactPath) => asResult(() => live.revealArtifact(artifactPath)),
   });
   register({
     channel: 'shell:preview-copy-artifact',
     authorize: remember,
-    validate: (args) => [asString(args[0])],
     handler: (_event, artifactPath) => asResult(() => live.copyArtifactToClipboard(artifactPath)),
   });
-  register({ channel: 'shell:preview-state', authorize: remember, validate: idArg, handler: (_event, id) => live.state(id) });
-  register({ channel: 'shell:preview-devtools', authorize: remember, validate: idArg, handler: (_event, id) => live.openDevTools(id) });
-  register({ channel: 'shell:preview-discover', authorize: remember, validate: noArgs, handler: () => discoverLocalServers() });
+  register({ channel: 'shell:preview-state', authorize: remember, handler: (_event, id) => live.state(id) });
+  register({ channel: 'shell:preview-devtools', authorize: remember, handler: (_event, id) => live.openDevTools(id) });
+  register({ channel: 'shell:preview-discover', authorize: remember, handler: () => discoverLocalServers() });
   register({
     channel: 'shell:preview-resize',
     authorize: remember,
-    validate: (args) => [asString(args[0]), asObject(args[1])],
     handler: (_event, id, bounds) => live.resize(id, bounds),
   });
-  register({ channel: 'shell:preview-hide', authorize: remember, validate: idArg, handler: (_event, id) => live.hide(id) });
+  register({ channel: 'shell:preview-hide', authorize: remember, handler: (_event, id) => live.hide(id) });
   register({
     channel: 'shell:preview-show',
     authorize: remember,
-    validate: (args) => [asString(args[0]), asObject(args[1])],
     handler: (_event, id, bounds) => live.show(id, bounds),
   });
   register({
     channel: 'shell:preview-close',
     authorize: remember,
-    validate: idArg,
     handler: (_event, id) => {
       ownedPreviewIds.delete(id);
       return live.close(id);
@@ -1376,7 +1358,6 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:preview-workspace-file',
     authorize: remember,
-    validate: withGeneration((args) => [asObject(args[0])]),
     handler: (_event, generation, input) => {
       // Synchronous claim, as above: the successor must own the shared server
       // before its first await lets the replaced host's teardown run.
@@ -1387,7 +1368,6 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:preview-open-file-window',
     authorize: remember,
-    validate: withGeneration((args) => [asObject(args[0])]),
     handler: async (_event, generation, input) => {
       ownSingleton('file-preview-window', generation);
       // `open()` resolves its URL through the shared workspace-preview server,

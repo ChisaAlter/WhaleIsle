@@ -280,6 +280,15 @@ export default [
     plugins: { whaleisle },
     rules: { 'whaleisle/ipc-via-register': 'error' },
   },
+  // #436: every channel literal a registration call carries must be declared
+  // in src/shared/ipc-contract.js — channel tables (IPC constants passed by
+  // reference) stay test-checked, literals are lint-checked.
+  {
+    files: ['src/main/**/*.{js,mjs,cjs}', 'src/launcher/**/*.{js,mjs,cjs}'],
+    ignores: ['**/*.test.{js,mjs,cjs}', 'src/shared/ipc-contract.js'],
+    plugins: { whaleisle },
+    rules: { 'whaleisle/ipc-channel-contract': 'error' },
+  },
   {
     files: [
       'src/renderer/**/*.{js,mjs,cjs}',

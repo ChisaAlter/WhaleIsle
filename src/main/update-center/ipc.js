@@ -4,7 +4,8 @@
 // updates: the update center overlay, the launcher and the Harness page
 // (dshDesktop.updates). The overlay is opened over whichever window asked.
 
-const { createRegisterIpc, noArgs } = require('../ipc-register');
+const { createRegisterIpc, unauthorizedError } = require('../ipc-register');
+const { IPC_ROLES } = require('../ipc-authorization');
 
 const UPDATE_CENTER_IPC = Object.freeze({
   state: 'shell:update-center-state',
@@ -108,25 +109,25 @@ class UpdateCenterWindow {
  */
 function registerUpdateCenterIpc(deps) {
   const { ipcMain, center, centerWindow, releaseNotes, authorize, parentFor, surfaces, onPresentation } = deps;
+  // Callers are the overlay's own window or a desktop surface that exposes
+  // the center (harness page, launcher). The boot surface never binds the
+  // update-center API, so its ipcSenderRole verdict is refused here too.
   const role = (event) => {
     if (centerWindow.owns(event.sender)) return 'update-center';
     const found = authorize(event);
-    if (!found) {
-      const error = new Error('Unauthorized IPC sender');
-      error.code = 'ERR_DSH_IPC_SENDER';
-      throw error;
+    if (found !== IPC_ROLES.HARNESS && found !== IPC_ROLES.LAUNCHER) {
+      throw unauthorizedError();
     }
     return found;
   };
   const view = () => decorate(center.snapshot(), releaseNotes);
 
   const register = createRegisterIpc(ipcMain);
-  register({ channel: UPDATE_CENTER_IPC.state, authorize: role, validate: noArgs, handler: () => view() });
+  register({ channel: UPDATE_CENTER_IPC.state, authorize: role, handler: () => view() });
   register({
     channel: UPDATE_CENTER_IPC.command,
     authorize: role,
     // The command whitelist lives in the handler so its error text survives.
-    validate: (args) => [args[0], args[1]],
     handler: async (_event, action, arg) => {
       if (!COMMANDS.has(action)) throw new Error(`unknown update command ${action}`);
       await center.command(action, arg);
@@ -137,7 +138,6 @@ function registerUpdateCenterIpc(deps) {
     channel: UPDATE_CENTER_IPC.open,
     authorize: role,
     // `role` returns the authorized surface name, which picks the parent.
-    validate: (_args, sender) => [sender],
     handler: (_event, sender) => {
       const parent = parentFor(sender === 'update-center' ? null : sender);
       centerWindow.open(parent);
@@ -146,10 +146,11 @@ function registerUpdateCenterIpc(deps) {
   });
   register({
     channel: UPDATE_CENTER_IPC.close,
-    // The center window may close itself unconditionally; other senders need
-    // the surface-role check.
-    authorize: (event) => { if (!centerWindow.owns(event.sender)) role(event); },
-    validate: noArgs,
+    // Only the overlay may close itself; no other surface binds the channel.
+    authorize: (event) => {
+      if (!centerWindow.owns(event.sender)) throw unauthorizedError();
+      return 'update-center';
+    },
     handler: () => { centerWindow.close(); },
   });
 

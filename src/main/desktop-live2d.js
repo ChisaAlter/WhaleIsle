@@ -7,7 +7,7 @@ const { createDshWatchWorker } = require('./pet-dsh-watch-host');
 const { createPetChat } = require('./pet-chat');
 const petStats = require('./pet-stats');
 const petSettings = require('./pet-settings');
-const { createRegisterIpc, noArgs, isPlainObject } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 
 // The pet renderer needs a secure, standard scheme so that WebGPU and ES
 // module workers (onnxruntime-web's JSEP backend) work — file:// blocks both.
@@ -1019,11 +1019,9 @@ function createLive2dPetManager(options = {}) {
     // optional objects — the old `payload?.x` reads tolerate non-objects,
     // so the validator normalizes instead of rejecting.
     const register = createRegisterIpc(ipcMain);
-    const payloadArg = (args) => [isPlainObject(args[0]) ? args[0] : undefined];
     register({
       channel: 'shell:live2d-interactive',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => {
       if (Array.isArray(payload?.hitRegions)) { shapeStats.hitRegionReports += 1; }
       setSurfaceRegions(payload?.regions);
@@ -1038,7 +1036,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-care',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => {
       care(payload?.kind);
       return null;
@@ -1047,19 +1044,16 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-drag-start',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: () => petPosition(),
     });
     register({
       channel: 'shell:live2d-drag-move',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => moveTo(payload?.x, payload?.y),
     });
     register({
       channel: 'shell:live2d-drag-commit',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => commitPosition(payload?.x, payload?.y),
     });
     // The overlay covers one display, so renderer pointer events die at its
@@ -1074,7 +1068,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-relocate',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: () => {
       if (!win || win.isDestroyed?.()) {
         return null;
@@ -1106,7 +1099,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-hide',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: () => {
       setEnabled(false);
       return null;
@@ -1117,13 +1109,11 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-growth',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: () => growthSnapshot(),
     });
     register({
       channel: 'shell:live2d-feed',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => {
       const amount = payload && Number.isFinite(payload.amount) ? payload.amount : undefined;
       return feedTokens(amount);
@@ -1136,7 +1126,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-settings-get',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: () => settingsPayload(),
     });
     // Roam rect: where her body is visually RIGHT NOW (screen coords, the
@@ -1145,7 +1134,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-roam',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => {
       const { x, y, w, h } = payload || {};
       if ([x, y, w, h].every(Number.isFinite) && w > 0 && h > 0) {
@@ -1157,7 +1145,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-file-eat',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => fileEat(payload?.names),
     });
     // The 「⚙ 设置」cell: the settings page lives in the main window's
@@ -1166,7 +1153,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-open-settings',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: async () => {
       if (typeof options.openPetSettings !== 'function') {
         return { ok: false, reason: 'unavailable' };
@@ -1185,7 +1171,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-chat',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: async (_event, payload) => {
       if (!petSettings.normalizeSettings(state.settings).chatEnabled) {
         return { ok: false, reason: 'disabled' };
@@ -1202,7 +1187,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-chat-state',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: async (_event, request) => {
       if (!whaleEnabled()) {
         return { ok: true, enabled: false, models: [], selected: null, history: [] };
@@ -1232,7 +1216,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-chat-select-model',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: async (_event, payload) => {
       if (!whaleEnabled()) {
         return { ok: false, reason: 'disabled' };
@@ -1259,7 +1242,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-open-whale',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: async () => {
       if (typeof options.openWhaleAssistant !== 'function') {
         return { ok: false, reason: 'unavailable' };
@@ -1277,7 +1259,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-chat-focus',
       authorize: assertAuthorized,
-      validate: payloadArg,
       handler: (_event, payload) => {
       if (!win || win.isDestroyed?.()) {
         return null;
@@ -1318,7 +1299,6 @@ function createLive2dPetManager(options = {}) {
     register({
       channel: 'shell:live2d-look',
       authorize: assertAuthorized,
-      validate: noArgs,
       handler: async () => {
       // No vision model → refuse before the cooldown stamp AND before
       // desktopCapturer: a look that cannot succeed must not take a

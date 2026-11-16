@@ -2,6 +2,10 @@
 // reason and the replacement so a single review correction keeps protecting
 // the codebase; see docs/maintenance/README.md.
 
+import { createRequire } from 'node:module';
+
+const localRequire = createRequire(import.meta.url);
+
 const IPC_METHODS = new Set(['handle', 'handleOnce', 'on', 'once']);
 
 function isIpcMainCall(node) {
@@ -80,6 +84,69 @@ const ipcViaRegister = {
         if (isIpcMainCall(node)) {
           context.report({ node: node.callee, messageId: 'useRegisterIpc' });
         }
+      },
+    };
+  },
+};
+
+let declaredChannels;
+function ipcContractChannels() {
+  if (!declaredChannels) {
+    const { IPC_CONTRACT } = localRequire('../../src/shared/ipc-contract.js');
+    declaredChannels = new Set(IPC_CONTRACT.map((row) => row.channel));
+  }
+  return declaredChannels;
+}
+
+// 'shell:x' / 'dsh-platform:y' — a namespaced channel name, not a URL or a
+// map key.
+function isChannelLiteral(node) {
+  return node !== undefined
+    && node.type === 'Literal'
+    && typeof node.value === 'string'
+    && /^[a-z][a-z0-9-]*:[a-z0-9-]+$/u.test(node.value);
+}
+
+const ipcChannelContract = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'require main-process channel literals to be declared in src/shared/ipc-contract.js',
+    },
+    schema: [],
+    messages: {
+      undeclaredChannel:
+        'IPC 通道「{{channel}}」未登记在 src/shared/ipc-contract.js；先加契约条目（channel/kind/roles/validate）再注册。'
+        + '来源：issue #436 P3-1 契约集中登记。',
+    },
+  },
+  create(context) {
+    const check = (node, channel) => {
+      if (!ipcContractChannels().has(channel)) {
+        context.report({ node, messageId: 'undeclaredChannel', data: { channel } });
+      }
+    };
+    return {
+      // register({ channel: 'ch', handler }) / registerIpc({ channel }) —
+      // any object literal passed to a call.
+      Property(node) {
+        const key = node.key;
+        if ((key.type === 'Identifier' && key.name !== 'channel')
+          || (key.type === 'Literal' && key.value !== 'channel')
+          || (key.type !== 'Identifier' && key.type !== 'Literal')) {
+          return;
+        }
+        if (!isChannelLiteral(node.value)) return;
+        const object = node.parent;
+        if (object?.type !== 'ObjectExpression' || object.parent?.type !== 'CallExpression') return;
+        check(node.value, node.value.value);
+      },
+      // Lane modules register through a bound handle('ch', listener) seam.
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee.type !== 'Identifier' || callee.name !== 'handle') return;
+        const first = node.arguments[0];
+        if (isChannelLiteral(first)) check(first, first.value);
       },
     };
   },
@@ -293,6 +360,7 @@ export default {
   rules: {
     'ipc-handler-reads-event': ipcHandlerReadsEvent,
     'ipc-via-register': ipcViaRegister,
+    'ipc-channel-contract': ipcChannelContract,
     'open-external-http': openExternalHttp,
     'no-raw-html': noRawHtml,
     'no-secret-compare': noSecretCompare,

@@ -11,6 +11,8 @@ const { buildDelta } = require('./build');
 const { applyDeltaFile, DeltaApplyError } = require('./apply');
 const manifest = require('./manifest');
 const ipcDelta = require('../../main/ipc-delta');
+const { IPC_ROLES } = require('../../main/ipc-authorization');
+const { IPC_CONTRACT } = require('../../shared/ipc-contract');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-delta-ipc-'));
@@ -302,9 +304,11 @@ test('installDelta end-to-end: a product name with spaces validates before prote
 
 function fakeCtx(install = async () => ({ ok: true, mode: 'delta' })) {
   const calls = { handled: null, sent: [] };
+  // Lane modules register through the contract-backed ctx handle: roles and
+  // argument validation live in src/shared/ipc-contract.js (#436).
   const ctx = {
     LAUNCHER_ONLY: ['launcher'],
-    handle: (channel, roles, validate, listener) => { calls.handled = { channel, roles, listener: (event, ...args) => listener(event, ...validate(args)) }; },
+    handle: (channel, listener) => { calls.handled = { channel, listener }; },
     send: (event, channel, payload) => { calls.sent.push({ channel, payload }); },
     launcher: { installDelta: install, installRelease: async () => { assert.fail('delta IPC must not invoke full install'); } },
   };
@@ -321,7 +325,8 @@ test('register mounts shell:install-delta on LAUNCHER_ONLY and forwards progress
   try {
     ipcDelta.register(ctx);
     assert.equal(calls.handled.channel, 'shell:install-delta');
-    assert.equal(calls.handled.roles, ctx.LAUNCHER_ONLY);
+    const entry = IPC_CONTRACT.find((row) => row.channel === 'shell:install-delta' && row.kind === 'invoke');
+    assert.deepEqual(entry.roles, [IPC_ROLES.LAUNCHER]);
     const result = await calls.handled.listener({}, 'v2.0.0');
     assert.deepEqual(result, { ok: true, mode: 'delta' });
     assert.deepEqual(seen, ['v2.0.0']);

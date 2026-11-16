@@ -7,8 +7,7 @@
  * shell-owned update flow, never selects artifacts or skips confirmation.
  */
 
-const { IPC_ROLES } = require('./ipc-authorization');
-const { registerIpc, noArgs } = require('./ipc-register');
+const { registerIpc } = require('./ipc-register');
 const { presentUpdate } = require('./update-presentation');
 
 const IPC = {
@@ -31,18 +30,10 @@ function createUpdatesState({ onOpen }) {
     notify();
   };
 
-  // dshDesktop.updates is exposed on the harness surface only (preload
-  // role gate); every channel authorizes that role before serving.
-  const roles = [IPC_ROLES.HARNESS];
-  registerIpc({ channel: IPC.status, roles, validate: noArgs, handler: () => presentation });
-  registerIpc({ channel: IPC.open, roles, validate: noArgs, handler: async () => { await onOpen(); } });
-  registerIpc({
-    kind: 'on',
-    channel: IPC.changed,
-    roles,
-    validate: noArgs,
-    handler: () => { /* renderer-pull only; subscription rides preload subscribe */ },
-  });
+  // dshDesktop.updates is exposed on the harness surface only (preload role
+  // gate); the contract authorizes that role before serving.
+  registerIpc({ channel: IPC.status, handler: () => presentation });
+  registerIpc({ channel: IPC.open, handler: async () => { await onOpen(); } });
 
   return {
     presentation: () => presentation,

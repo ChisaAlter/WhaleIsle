@@ -192,13 +192,12 @@ function createShortcutService(options) {
   };
 
   // The wrapper authorizes via assertSender and hands its return value (the
-  // owning view) to validate — `recording` needs it, so it rides the
-  // normalized argument list.
+  // owning view) to the contract validate — `recording` needs it, so it
+  // rides the normalized argument list.
   const register = createRegisterIpc(ipcMain);
   register({
     channel: CHANNELS.get,
     authorize: assertSender,
-    validate: (args) => [args[0], typeof args[1] === 'string' ? args[1] : null],
     handler: async (_event, input, webRaw) => {
       const module = await protocolPromise;
       definitions = module.parseShortcutDefinitions(input);
@@ -210,7 +209,6 @@ function createShortcutService(options) {
   register({
     channel: CHANNELS.edit,
     authorize: assertSender,
-    validate: (args) => [args[0], args[1]],
     handler: async (_event, input, expectedRevision) => {
       if (typeof expectedRevision !== 'string') throw new Error('desktop shortcuts: invalid revision');
       const module = await protocolPromise;
@@ -220,7 +218,6 @@ function createShortcutService(options) {
   register({
     channel: CHANNELS.recording,
     authorize: assertSender,
-    validate: (args, target) => [target, args[0]],
     handler: (_event, target, active) => {
       if (typeof active !== 'boolean') throw new Error('desktop shortcuts: invalid recording state');
       recording = active;
@@ -230,7 +227,6 @@ function createShortcutService(options) {
   register({
     channel: CHANNELS.closeWindow,
     authorize: assertSender,
-    validate: (args) => [args[0]],
     handler: (_event, expected) => {
       const win = getWindow();
       if (expected !== revision || revision === undefined || recording || win === undefined

@@ -204,13 +204,11 @@ function installBrowserGuestIpc(guests, { ipcMain, getView, getOrigin }) {
   register({
     channel: CHANNELS.acquire,
     authorize: assertSender,
-    validate: (args, target) => [target, args[0]],
     handler: (_event, target, workspace) => guests.acquire(target.webContents, workspace),
   });
   register({
     channel: CHANNELS.release,
     authorize: assertSender,
-    validate: (args, target) => [target, args[0]],
     handler: (_event, target, lease) => guests.release(target.webContents, lease),
   });
 }

@@ -13,6 +13,13 @@ const store = require('./store');
 const lifecycle = require('./lifecycle');
 const ipcComponents = require('../../main/ipc-components');
 const { IPC_ROLES } = require('../../main/ipc-authorization');
+const { IPC_CONTRACT } = require('../../shared/ipc-contract');
+
+// Lane modules register through the contract-backed ctx handle: roles and
+// argument validation now come from src/shared/ipc-contract.js (#436).
+function contractRoles(channel) {
+  return IPC_CONTRACT.find((entry) => entry.channel === channel && entry.kind === 'invoke')?.roles;
+}
 
 const SAMPLE_FIXTURES = path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'components');
 
@@ -473,8 +480,8 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   const ctx = {
     LAUNCHER_ONLY: ['launcher'],
     IPC_ROLES,
-    handle: (channel, roles, validate, listener) => {
-      channels.set(channel, { roles, listener: (event, ...args) => listener(event, ...validate(args)) });
+    handle: (channel, listener) => {
+      channels.set(channel, { listener });
     },
     send: (event, channel, payload) => {
       sent.push({ channel, payload });
@@ -494,7 +501,7 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   ];
   for (const name of expected) {
     assert.ok(channels.has(name), `missing channel ${name}`);
-    assert.deepEqual(channels.get(name).roles, ['launcher']);
+    assert.deepEqual(contractRoles(name), [IPC_ROLES.LAUNCHER]);
   }
   for (const name of ['shell:whalebridge-status', 'shell:whalebridge-open']) {
     assert.equal(channels.has(name), false, `${name} is no longer exposed to the Harness`);
@@ -527,12 +534,12 @@ test('launcher WhaleBridge open reuses the settings-window path without returnin
   ipcComponents.register({
     IPC_ROLES,
     LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
-    handle: (channel, roles, validate, listener) => channels.set(channel, { roles, listener: (event, ...args) => listener(event, ...validate(args)) }),
+    handle: (channel, listener) => channels.set(channel, { listener }),
     send: (event, channel, payload) => sent.push({ event, channel, payload }),
     onQuitCommit() {},
   });
   const launcher = channels.get('shell:components-open');
-  assert.deepEqual(launcher.roles, [IPC_ROLES.LAUNCHER]);
+  assert.deepEqual(contractRoles('shell:components-open'), [IPC_ROLES.LAUNCHER]);
   const event = {};
   assert.deepEqual(await launcher.listener(event, 'whalebridge'), { ok: true });
   assert.equal(bridge.start.mock.callCount(), 1);
@@ -572,12 +579,12 @@ for (const operation of ['update', 'rollback', 'uninstall']) {
     ipcComponents.register({
       IPC_ROLES,
       LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
-      handle: (channel, roles, validate, listener) => channels.set(channel, { roles, listener: (event, ...args) => listener(event, ...validate(args)) }),
+      handle: (channel, listener) => channels.set(channel, { listener }),
       send() {},
       onQuitCommit() {},
     });
-    const { listener, roles } = channels.get(`shell:components-${operation}`);
-    assert.deepEqual(roles, [IPC_ROLES.LAUNCHER]);
+    const { listener } = channels.get(`shell:components-${operation}`);
+    assert.deepEqual(contractRoles(`shell:components-${operation}`), [IPC_ROLES.LAUNCHER]);
     const cases = [
       { name: 'success retains existing close behavior', result: { ok: true }, after: oldUrl, closes: true },
       { name: 'failed switch restored at a new origin', result: { ok: false, error: 'whalebridge-failed' }, after: restoredUrl, closes: true },

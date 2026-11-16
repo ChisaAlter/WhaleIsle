@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { loadWorkspaceAuthority } = require('./workspace-authority');
-const { createRegisterIpc, isPlainObject } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 
 let workspaceAuthority = null;
 
@@ -824,27 +824,16 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
 
   const register = createRegisterIpc(ipcMain);
   // The sender context resolved by `track` is authorization state, not a
-  // renderer argument — validate threads it ahead of the real payload so the
-  // injected authorize still runs exactly once per request.
-  const ownerContext = (tail) => (args, context) => [context, ...tail(args)];
-  const idArg = (args) => [typeof args[0] === 'string' ? args[0] : undefined];
-
+  // renderer argument — the contract validate threads it ahead of the real
+  // payload so the injected authorize still runs exactly once per request.
   register({
     channel: 'shell:pty-can-create',
     authorize,
-    validate: (args) => {
-      const [cwd] = args;
-      if (cwd !== undefined && typeof cwd !== 'string') {
-        throw new TypeError('pty cwd must be a string');
-      }
-      return [cwd];
-    },
     handler: (_event, cwd) => Boolean(asCwd(cwd)),
   });
   register({
     channel: 'shell:pty-create',
     authorize: track,
-    validate: ownerContext((args) => [isPlainObject(args[0]) ? args[0] : undefined]),
     handler: async (_event, context, input) => {
       const created = await context.live.create(input);
       if (!created || typeof created.id !== 'string') return created;
@@ -859,7 +848,6 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:pty-write',
     authorize: track,
-    validate: ownerContext((args) => [typeof args[0] === 'string' ? args[0] : undefined, args[1]]),
     handler: (_event, context, id, data) => {
       requireOwner(context, id);
       return context.live.write(id, data);
@@ -868,7 +856,6 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:pty-ack',
     authorize: track,
-    validate: ownerContext((args) => [typeof args[0] === 'string' ? args[0] : undefined, args[1]]),
     handler: (_event, context, id, seq) => {
       requireOwner(context, id);
       return context.live.acknowledge(id, seq);
@@ -877,7 +864,6 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:pty-resize',
     authorize: track,
-    validate: ownerContext((args) => [typeof args[0] === 'string' ? args[0] : undefined, args[1], args[2]]),
     handler: (_event, context, id, cols, rows) => {
       requireOwner(context, id);
       return context.live.resize(id, cols, rows);
@@ -886,7 +872,6 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:pty-kill',
     authorize: track,
-    validate: ownerContext(idArg),
     handler: (_event, context, id) => {
       if (owners.has(id)) requireOwner(context, id);
       return context.live.kill(id);

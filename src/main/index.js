@@ -23,7 +23,8 @@ const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
 const { ensureDesktopAcpAgents } = require('./dsh-acp-agents-desktop');
 const { fetchPlatformSession } = require('./platform-session');
-const { DesktopPlatformView, PLATFORM_IPC, platformBounds } = require('./platform-view');
+const { DesktopPlatformView } = require('./platform-view');
+const { registerPlatformIpc } = require('./platform-ipc');
 const { createTaskProtection, installTaskProtection, getTaskProtection } = require('./task-protection');
 const { createTaskControlPeer } = require('./task-control-peer');
 const { ensureDesktopDshWhale } = require('./dsh-whale-desktop');
@@ -36,7 +37,6 @@ const { removeLegacyDshbotPreset } = require('./legacy-dshbot-preset');
 const { migrateLegacyNotificationShortcut } = require('./legacy-notification-shortcut');
 const { ensureWorkspace } = require('./workspace-rpc');
 const { registerIpc } = require('./ipc');
-const { createRegisterIpc, noArgs } = require('./ipc-register');
 const { safeStorage } = require('electron');
 const { DshdRemote, resolveDesktopChisaCodeHome } = require('./dshd-remote');
 const { invokeDesktopShell } = require('./remote-shell');
@@ -1588,49 +1588,14 @@ if (!gotLock) {
         // Loopback failures leave the last session; open() refetches.
       }
     };
-    const assertProductDoc = (event) => {
-      const view = getHarnessView();
-      if (view === undefined || event.sender !== view.webContents
-        || event.senderFrame !== view.webContents.mainFrame
-        || !event.senderFrame.url.startsWith(getHarnessOrigin())) {
-        throw new Error('dshd platform: rejected sender');
-      }
-      return getMainWindow();
-    };
-    const registerChannel = createRegisterIpc(ipcMain);
-    registerChannel({
-      channel: PLATFORM_IPC.bootstrap,
-      kind: 'on',
-      // bootstrap() owns the sender contract internally (it resolves
-      // event.returnValue); authorization must not run twice.
-      authorize: () => {},
-      validate: noArgs,
-      handler: (event) => {
-        try { event.returnValue = platformView.bootstrap(event); }
-        catch { event.returnValue = null; }
-      },
-    });
-    registerChannel({
-      channel: PLATFORM_IPC.open,
-      authorize: assertProductDoc,
-      validate: (args, owner) => [owner, args[0], args[1]],
-      handler: async (_event, owner, page, bounds) => {
-        if (page !== 'usage' && page !== 'top-up') throw new Error('dshd platform: invalid page');
-        await platformSessionRefresh?.();
-        return platformView.open(owner, page, platformBounds(bounds));
-      },
-    });
-    registerChannel({
-      channel: PLATFORM_IPC.bounds,
-      authorize: assertProductDoc,
-      validate: (args) => [args[0]],
-      handler: (_event, bounds) => { platformView.setBounds(platformBounds(bounds)); },
-    });
-    registerChannel({
-      channel: PLATFORM_IPC.close,
-      authorize: assertProductDoc,
-      validate: noArgs,
-      handler: () => { platformView.close(); },
+    registerPlatformIpc({
+      ipcMain,
+      platformView,
+      refreshSession: () => platformSessionRefresh?.(),
+      getHarnessView,
+      getHarnessOrigin,
+      getMainWindow,
+      nativeTheme,
     });
 
     // Microphone stays scoped to the owned harness main frame, audio only
@@ -1639,27 +1604,6 @@ if (!gotLock) {
       const view = getHarnessView();
       return view && !view.webContents.isDestroyed() ? view.webContents : undefined;
     }, systemPreferences);
-
-    // html[data-ds-theme-source] → nativeTheme.themeSource, so native chrome
-    // (dialogs, tray icon contrast) follows the app palette (upstream
-    // preload-theme semantics; sender-gated to the harness view).
-    registerChannel({
-      channel: 'shell:native-theme',
-      kind: 'on',
-      // Silent-ignore contract: an unauthorized sender is dropped without a
-      // rejection or warning path.
-      authorize: (event) => {
-        const view = getHarnessView();
-        return Boolean(view && !view.webContents.isDestroyed() && event.sender === view.webContents);
-      },
-      validate: (args, owned) => [owned, args[0]],
-      handler: (_event, owned, value) => {
-        if (!owned) return;
-        if (value === 'light' || value === 'dark' || value === 'system') {
-          nativeTheme.themeSource = value;
-        }
-      },
-    });
 
     void pruneCrashReports(crashLogDir()).catch((error) => console.warn('dshd: crash report prune failed', error));
 

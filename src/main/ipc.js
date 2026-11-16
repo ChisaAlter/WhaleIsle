@@ -9,7 +9,7 @@ const {
   parkRemoteSnapshot,
 } = require('./config');
 const { normalizeRemotePatch } = require('./remote-patch');
-const { getMainWindow, getLauncherWindow, getHarnessWebContents, openHarnessSettings, openMarketplace, openRemote } = require('./window');
+const { getMainWindow, getLauncherWindow, getHarnessWebContents, openHarnessSettings, openMarketplace } = require('./window');
 const { applyAppTheme } = require('./chrome');
 const { currentVersion } = require('./update');
 const { registerLauncherChannels, configPayload } = require('./ipc-launcher');
@@ -44,22 +44,11 @@ const { registerPtyIpc } = require('./pty');
 const { listDir, readFile, readFileMedia, writeFile } = require('./workspace-fs');
 const { listAvailableEditors, openInEditor, revealInFolder, openWithSystemDefault } = require('./editors');
 const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
-const {
-  registerIpc: registerChannel,
-  noArgs,
-  isPlainObject,
-  requiredObject,
-  optionalObject,
-  requiredString,
-  optionalString,
-} = require('./ipc-register');
+const { registerIpc: registerChannel } = require('./ipc-register');
 const { openDesktopDshHome } = require('./open-dsh-home');
 const { openuiViewer, openuiApi, openuiBundle } = require('./openui');
 
-const BOOT_ONLY = [IPC_ROLES.BOOT];
 const HARNESS_ONLY = [IPC_ROLES.HARNESS];
-const CONFIG_SURFACES = [IPC_ROLES.HARNESS];
-const ALL_SURFACES = [IPC_ROLES.BOOT, IPC_ROLES.HARNESS, IPC_ROLES.LAUNCHER];
 // Boot page and harness may summon the launcher window; the launcher itself
 // never needs to (it IS the launcher).
 const OPEN_LAUNCHER_SURFACES = [IPC_ROLES.BOOT, IPC_ROLES.HARNESS];
@@ -113,32 +102,18 @@ function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
   getLive2dPet, proactiveService = null, updateCenter = null, openUpdateCenter = () => {},
 }) {
-  // Every channel mounts through the shared wrapper: roles authorize the
-  // sender, validate normalizes the argument list before the handler runs.
-  const handle = (channel, roles, validate, listener) => {
-    registerChannel({ channel, roles, validate, handler: listener });
+  // Every channel mounts through the shared wrapper: the IPC contract
+  // authorizes the sender roles and normalizes the argument list before the
+  // handler runs.
+  const handle = (channel, listener) => {
+    registerChannel({ channel, handler: listener });
   };
-  // Channels whose handlers own the malformed-input contract (a resolved
-  // failure payload or a null/false answer, not a rejection) normalize
-  // instead of rejecting so that contract is preserved exactly.
-  const asString = (value) => (typeof value === 'string' ? value : undefined);
-  const asObject = (value) => (isPlainObject(value) ? value : undefined);
-  const gitCwd = (args) => [asString(args[0])];
-  const gitCwdRel = (args) => [asString(args[0]), asString(args[1])];
   const renderMode = require('./render-mode');
-  handle('shell:get-render-mode', ALL_SURFACES, noArgs, () => renderMode.getMinimalMode());
-  handle('shell:set-render-mode', HARNESS_ONLY, ([minimal]) => {
-    if (typeof minimal !== 'boolean') throw new TypeError('Rendering mode must be a boolean');
-    return [minimal];
-  }, (_event, minimal) => renderMode.setMinimalMode(minimal));
-  handle('shell:claim-minimal-suggestion', HARNESS_ONLY, noArgs, () => renderMode.claimMinimalSuggestion());
+  handle('shell:get-render-mode', () => renderMode.getMinimalMode());
+  handle('shell:set-render-mode', (_event, minimal) => renderMode.setMinimalMode(minimal));
+  handle('shell:claim-minimal-suggestion', () => renderMode.claimMinimalSuggestion());
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
-  handle('shell:proactive', HARNESS_ONLY, ([action, payload]) => {
-    if (typeof action !== 'string' || (payload !== undefined && !isPlainObject(payload))) {
-      throw new Error('expected a proactive action and optional payload');
-    }
-    return [action, payload];
-  }, (_event, action, payload = {}) => {
+  handle('shell:proactive', (_event, action, payload = {}) => {
     if (!proactiveService || typeof proactiveService.dispatch !== 'function') {
       throw new Error('Proactive service unavailable');
     }
@@ -167,9 +142,9 @@ function registerIpc({
     ? withUpdateCenter(launcherService, updateCenter, () => openUpdateCenter(getLauncherWindow()))
     : launcherService;
 
-  handle('shell:get-state', BOOT_ONLY, noArgs, () => (harness ? harness.snapshot() : dsh.snapshot()));
+  handle('shell:get-state', () => (harness ? harness.snapshot() : dsh.snapshot()));
 
-  handle('shell:save-config', CONFIG_SURFACES, requiredObject, async (_event, patch) => {
+  handle('shell:save-config', async (_event, patch) => {
     // The desktop-control channel (dsh-whale tools) mutates config through
     // the same profile-ops implementation so both surfaces share the one
     // serialized align chain.
@@ -184,7 +159,7 @@ function registerIpc({
     return next.restartCancelled ? { ...configPayload(next), restartCancelled: true } : configPayload(next);
   });
 
-  handle('shell:open-external', CONFIG_SURFACES, requiredString, async (_event, url) => {
+  handle('shell:open-external', async (_event, url) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
       throw new Error('Invalid URL');
     }
@@ -192,9 +167,9 @@ function registerIpc({
     return true;
   });
 
-  handle('shell:openui-viewer', HARNESS_ONLY, noArgs, () => openuiViewer());
-  handle('shell:openui-api', HARNESS_ONLY, requiredObject, (_event, input) => openuiApi(input));
-  handle('shell:openui-bundle', HARNESS_ONLY, requiredObject, (_event, input) => openuiBundle(input));
+  handle('shell:openui-viewer', () => openuiViewer());
+  handle('shell:openui-api', (_event, input) => openuiApi(input));
+  handle('shell:openui-bundle', (_event, input) => openuiBundle(input));
 
   // Boot-page restarts are full desktop starts: record their outcome in
   // last-desktop-start.json so the next cold-start gate sees the truth.
@@ -245,7 +220,7 @@ function registerIpc({
     }
   };
 
-  handle('shell:restart', BOOT_ONLY, noArgs, async () => {
+  handle('shell:restart', async () => {
     // recordBootRestart is the shared admission boundary for every boot
     // restart channel — it refuses while maintenance is held or a blocked
     // import journal persists, and returns {ok:false} instead of a snapshot.
@@ -256,11 +231,11 @@ function registerIpc({
     return harness ? harness.snapshot() : dsh.snapshot();
   });
 
-  handle('shell:cancel-restart', BOOT_ONLY, noArgs, () => (
+  handle('shell:cancel-restart', () => (
     harness ? harness.cancelRecovery() : dsh.snapshot()
   ));
 
-  handle('shell:save-boot-log', BOOT_ONLY, noArgs, async () => {
+  handle('shell:save-boot-log', async () => {
     const snapshot = harness ? harness.snapshot() : dsh.snapshot();
     const dump = formatBootLogDump({
       version: currentVersion(),
@@ -277,7 +252,7 @@ function registerIpc({
     });
   });
 
-  handle('shell:pick-workspace-directory', HARNESS_ONLY, optionalObject, (_event, options = {}) => {
+  handle('shell:pick-workspace-directory', (_event, options = {}) => {
     if (options === null || typeof options !== 'object'
       || (Object.getPrototypeOf(options) !== Object.prototype && Object.getPrototypeOf(options) !== null)) {
       throw new Error('Workspace directory options must be a plain object');
@@ -322,14 +297,14 @@ function registerIpc({
     return pending.promise;
   });
 
-  handle('shell:open-settings', HARNESS_ONLY, optionalString, (_event, sectionId) => openHarnessSettings(sectionId));
-  handle('shell:reload-page', HARNESS_ONLY, noArgs, () => reloadPage());
+  handle('shell:open-settings', (_event, sectionId) => openHarnessSettings(sectionId));
+  handle('shell:reload-page', () => reloadPage());
 
   // 桌宠 settings writes: the settings page lives in this window (section
   // `pet`), and every change must route through the pet manager so it
   // normalizes, persists, and pushes to the live pet window at once —
   // `live2dPet` stays off the generic save-config whitelist for that reason.
-  handle('shell:live2d-pet-settings', HARNESS_ONLY, (args) => [asObject(args[0])], (_event, payload) => {
+  handle('shell:live2d-pet-settings', (_event, payload) => {
     const pet = typeof getLive2dPet === 'function' ? getLive2dPet() : null;
     if (!pet) {
       return { ok: false, reason: 'unavailable' };
@@ -344,7 +319,7 @@ function registerIpc({
     return { ok: true, enabled: pet.isEnabled(), settings };
   });
 
-  handle('shell:open-launcher', OPEN_LAUNCHER_SURFACES, noArgs, async (event) => {
+  handle('shell:open-launcher', async (event) => {
     if (typeof onOpenLauncher !== 'function') {
       return { ok: false, reason: 'unavailable' };
     }
@@ -358,37 +333,37 @@ function registerIpc({
     return { ok: true };
   });
 
-  handle('shell:open-dsh-home', HARNESS_ONLY, noArgs, () => openDesktopDshHome());
+  handle('shell:open-dsh-home', () => openDesktopDshHome());
 
-  handle('shell:list-marketplace', HARNESS_ONLY, optionalObject, async (_event, options = {}) => {
+  handle('shell:list-marketplace', async (_event, options = {}) => {
     return listMarketplace({
       refresh: Boolean(options && options.refresh),
       locale: options?.locale,
     });
   });
 
-  handle('shell:refresh-marketplace', HARNESS_ONLY, optionalObject, async (_event, options = {}) => {
+  handle('shell:refresh-marketplace', async (_event, options = {}) => {
     return listMarketplace({
       refresh: true,
       locale: options?.locale,
     });
   });
 
-  handle('shell:list-wallpaper-catalog', HARNESS_ONLY, optionalObject, async (_event, query = {}) => (
+  handle('shell:list-wallpaper-catalog', async (_event, query = {}) => (
     listWallpaperCatalog(wallpaperCatalogQuery(query))
   ));
 
-  handle('shell:download-wallpaper', HARNESS_ONLY, (args) => [asString(args[0])], async (_event, url) => {
+  handle('shell:download-wallpaper', async (_event, url) => {
     if (typeof url !== 'string') return { error: '壁纸地址无效' };
     return downloadWallpaper(url);
   });
 
-  handle('shell:list-installed-plugins', HARNESS_ONLY, noArgs, () => listInstalledPlugins());
-  handle('shell:marketplace-state', HARNESS_ONLY, noArgs, () => listMarketplaceState());
-  handle('shell:marketplace-details', HARNESS_ONLY, (args) => [asString(args[0]), asObject(args[1])], (_event, id, options = {}) => getMarketplaceDetails(id, { force: options?.force === true }));
-  handle('shell:marketplace-favorite', HARNESS_ONLY, (args) => [asString(args[0]), args[1]], (_event, id, favorite) => setMarketplaceFavorite(id, favorite));
+  handle('shell:list-installed-plugins', () => listInstalledPlugins());
+  handle('shell:marketplace-state', () => listMarketplaceState());
+  handle('shell:marketplace-details', (_event, id, options = {}) => getMarketplaceDetails(id, { force: options?.force === true }));
+  handle('shell:marketplace-favorite', (_event, id, favorite) => setMarketplaceFavorite(id, favorite));
 
-  handle('shell:check-marketplace-updates', HARNESS_ONLY, optionalObject, (_event, options = {}) => {
+  handle('shell:check-marketplace-updates', (_event, options = {}) => {
     const config = loadConfig();
     return checkMarketplaceUpdates({
       force: Boolean(options?.force),
@@ -397,10 +372,7 @@ function registerIpc({
     });
   });
 
-  handle('shell:install-plugin', HARNESS_ONLY, (args) => [
-    typeof args[0] === 'string' || isPlainObject(args[0]) ? args[0] : undefined,
-    asObject(args[1]),
-  ], async (event, spec, options = {}) => {
+  handle('shell:install-plugin', async (event, spec, options = {}) => {
     const config = loadConfig();
     const result = await installPlugin(spec, {
       token: config.githubToken,
@@ -410,7 +382,7 @@ function registerIpc({
     return restartAfterProfileWrite(event, result, startHarness, HARNESS_DOWN_AFTER_ADD);
   });
 
-  handle('shell:install-marketplace-plugin', HARNESS_ONLY, (args) => [asString(args[0]), asObject(args[1])], async (event, id, options = {}) => {
+  handle('shell:install-marketplace-plugin', async (event, id, options = {}) => {
     const config = loadConfig();
     return recordMarketplaceOperation('install', id, async record => {
       const result = await installMarketplacePlugin(id, {
@@ -422,7 +394,7 @@ function registerIpc({
     });
   });
 
-  handle('shell:update-marketplace-plugin', HARNESS_ONLY, (args) => [asString(args[0]), asObject(args[1])], async (event, id, options = {}) => {
+  handle('shell:update-marketplace-plugin', async (event, id, options = {}) => {
     const config = loadConfig();
     return recordMarketplaceOperation('update', id, async record => {
       const result = await updateMarketplacePlugin(id, {
@@ -434,9 +406,7 @@ function registerIpc({
     });
   });
 
-  handle('shell:update-marketplace-plugins', HARNESS_ONLY, (args) => [
-    Array.isArray(args[0]) ? args[0] : undefined,
-  ], async (event, ids) => {
+  handle('shell:update-marketplace-plugins', async (event, ids) => {
     const config = loadConfig();
     return recordMarketplaceOperation('batch', Array.isArray(ids) ? ids.join(', ') : '', async record => {
       const result = await updateMarketplacePlugins(ids, {
@@ -449,7 +419,7 @@ function registerIpc({
     });
   });
 
-  handle('shell:uninstall-plugin', HARNESS_ONLY, (args) => [asString(args[0])], async (event, name) => {
+  handle('shell:uninstall-plugin', async (event, name) => {
     return recordMarketplaceOperation('uninstall', name, async record => {
       const result = await uninstallPlugin(name, {
         onProgress: payload => { record(payload); sendPluginProgress(event, payload); },
@@ -458,58 +428,56 @@ function registerIpc({
     });
   });
 
-  handle('shell:open-marketplace', HARNESS_ONLY, noArgs, () => openMarketplace());
+  handle('shell:open-marketplace', () => openMarketplace());
 
   // Every shell:git-* listener is guarded: a thrown handler error resolves to
   // the channel's failure payload instead of rejecting the renderer invoke,
   // which would strand the titlebar progress toast in the loading state.
   // The webContents id owns the refresh read context: the three sibling reads
   // of one titlebar refresh share it, and no other window can pick it up.
-  handle('shell:git-status', HARNESS_ONLY, gitCwd, guardGitIpc((event, cwd) => gitStatus(cwd, event.sender.id), gitIpcNull));
-  handle('shell:git-fetch-status', HARNESS_ONLY, gitCwd, guardGitIpc((event, cwd) => gitFetchForStatus(cwd, event.sender.id), gitIpcNull));
-  handle('shell:git-pull-request', HARNESS_ONLY, gitCwd, guardGitIpc((event, cwd) => gitReadPullRequest(cwd, event.sender.id)));
-  handle('shell:git-init', HARNESS_ONLY, gitCwd, guardGitIpc((_event, cwd) => gitInit(cwd)));
-  handle('shell:git-diff', HARNESS_ONLY, (args) => [asString(args[0]), asObject(args[1])], guardGitIpc((_event, cwd, options) => gitDiff(cwd, options), gitIpcNull));
+  handle('shell:git-status', guardGitIpc((event, cwd) => gitStatus(cwd, event.sender.id), gitIpcNull));
+  handle('shell:git-fetch-status', guardGitIpc((event, cwd) => gitFetchForStatus(cwd, event.sender.id), gitIpcNull));
+  handle('shell:git-pull-request', guardGitIpc((event, cwd) => gitReadPullRequest(cwd, event.sender.id)));
+  handle('shell:git-init', guardGitIpc((_event, cwd) => gitInit(cwd)));
+  handle('shell:git-diff', guardGitIpc((_event, cwd, options) => gitDiff(cwd, options), gitIpcNull));
   // Read-only pre-commit size probe for the commit dialog. Same guard as the
   // other Git reads so a cwd outside the authorized roots cannot be scanned.
-  handle('shell:git-check-large-files', HARNESS_ONLY, gitCwd, guardGitIpc((_event, cwd) => gitCheckLargeFiles(cwd), gitIpcNull));
+  handle('shell:git-check-large-files', guardGitIpc((_event, cwd) => gitCheckLargeFiles(cwd), gitIpcNull));
   const sendGitProgress = (event, actionId) => (progress) => {
     if (actionId == null || event.sender.isDestroyed()) return;
     event.sender.send('shell:git-progress', { actionId, ...progress });
   };
-  handle('shell:git-commit', HARNESS_ONLY, (args) => [
-    asString(args[0]), asString(args[1]), Array.isArray(args[2]) ? args[2] : undefined, args[3], asObject(args[4]),
-  ], guardGitIpc((event, cwd, message, filePaths, actionId, options) => (
+  handle('shell:git-commit', guardGitIpc((event, cwd, message, filePaths, actionId, options) => (
     gitCommit(cwd, message, filePaths, sendGitProgress(event, actionId), options)
   )));
-  handle('shell:git-push', HARNESS_ONLY, (args) => [asString(args[0]), args[1]], guardGitIpc((event, cwd, actionId) => gitPush(cwd, sendGitProgress(event, actionId))));
-  handle('shell:git-pull', HARNESS_ONLY, (args) => [asString(args[0]), args[1]], guardGitIpc((event, cwd, actionId) => gitPull(cwd, sendGitProgress(event, actionId))));
-  handle('shell:git-create-change-request', HARNESS_ONLY, (args) => [asString(args[0]), asObject(args[1]), args[2]], guardGitIpc((event, cwd, input, actionId) => (
+  handle('shell:git-push', guardGitIpc((event, cwd, actionId) => gitPush(cwd, sendGitProgress(event, actionId))));
+  handle('shell:git-pull', guardGitIpc((event, cwd, actionId) => gitPull(cwd, sendGitProgress(event, actionId))));
+  handle('shell:git-create-change-request', guardGitIpc((event, cwd, input, actionId) => (
     gitCreateChangeRequest(cwd, input, sendGitProgress(event, actionId))
   )));
-  handle('shell:git-publish', HARNESS_ONLY, (args) => [asString(args[0]), asObject(args[1]), args[2]], guardGitIpc((event, cwd, input, actionId) => (
+  handle('shell:git-publish', guardGitIpc((event, cwd, input, actionId) => (
     gitPublishRepository(cwd, input, sendGitProgress(event, actionId))
   )));
   // Not a git channel, but ui-git consumes it as the same `{ ok, message }`
   // failure payload from the commit dialog's file rows.
-  handle('shell:open-workspace-path', HARNESS_ONLY, gitCwdRel, guardGitIpc((_event, cwd, relativePath) => openWorkspacePath(cwd, relativePath)));
-  handle('shell:list-dir', HARNESS_ONLY, gitCwdRel, (_event, cwd, relativePath) => listDir(cwd, relativePath));
-  handle('shell:read-file', HARNESS_ONLY, gitCwdRel, (_event, cwd, relativePath) => readFile(cwd, relativePath));
-  handle('shell:read-file-media', HARNESS_ONLY, gitCwdRel, (_event, cwd, relativePath) => readFileMedia(cwd, relativePath));
-  handle('shell:write-file', HARNESS_ONLY, (args) => [asString(args[0]), asString(args[1]), asString(args[2])], (_event, cwd, relativePath, text) => writeFile(cwd, relativePath, text));
-  handle('shell:list-editors', HARNESS_ONLY, noArgs, () => listAvailableEditors());
-  handle('shell:open-in-editor', HARNESS_ONLY, requiredObject, (_event, input) => openInEditor(input));
-  handle('shell:show-item-in-folder', HARNESS_ONLY, gitCwdRel, (_event, cwd, relativePath) => revealInFolder(cwd, relativePath));
-  handle('shell:open-with-default', HARNESS_ONLY, gitCwdRel, (_event, cwd, relativePath) => (
+  handle('shell:open-workspace-path', guardGitIpc((_event, cwd, relativePath) => openWorkspacePath(cwd, relativePath)));
+  handle('shell:list-dir', (_event, cwd, relativePath) => listDir(cwd, relativePath));
+  handle('shell:read-file', (_event, cwd, relativePath) => readFile(cwd, relativePath));
+  handle('shell:read-file-media', (_event, cwd, relativePath) => readFileMedia(cwd, relativePath));
+  handle('shell:write-file', (_event, cwd, relativePath, text) => writeFile(cwd, relativePath, text));
+  handle('shell:list-editors', () => listAvailableEditors());
+  handle('shell:open-in-editor', (_event, input) => openInEditor(input));
+  handle('shell:show-item-in-folder', (_event, cwd, relativePath) => revealInFolder(cwd, relativePath));
+  handle('shell:open-with-default', (_event, cwd, relativePath) => (
     openWithSystemDefault({ cwd, relativePath })
   ));
-  handle('shell:git-stage', HARNESS_ONLY, gitCwdRel, guardGitIpc((_event, cwd, relativePath) => gitStage(cwd, relativePath)));
-  handle('shell:git-unstage', HARNESS_ONLY, gitCwdRel, guardGitIpc((_event, cwd, relativePath) => gitUnstage(cwd, relativePath)));
-  handle('shell:git-discard', HARNESS_ONLY, gitCwdRel, guardGitIpc((_event, cwd, relativePath) => gitDiscard(cwd, relativePath)));
-  handle('shell:git-status-entries', HARNESS_ONLY, gitCwd, guardGitIpc((_event, cwd) => gitStatusEntries(cwd)));
-  handle('shell:git-branch-list', HARNESS_ONLY, gitCwd, guardGitIpc((_event, cwd) => gitBranchList(cwd)));
-  handle('shell:git-switch-branch', HARNESS_ONLY, gitCwdRel, guardGitIpc((_event, cwd, ref) => gitSwitchBranch(cwd, ref)));
-  handle('shell:git-create-branch', HARNESS_ONLY, gitCwdRel, guardGitIpc((_event, cwd, name) => gitCreateBranch(cwd, name)));
+  handle('shell:git-stage', guardGitIpc((_event, cwd, relativePath) => gitStage(cwd, relativePath)));
+  handle('shell:git-unstage', guardGitIpc((_event, cwd, relativePath) => gitUnstage(cwd, relativePath)));
+  handle('shell:git-discard', guardGitIpc((_event, cwd, relativePath) => gitDiscard(cwd, relativePath)));
+  handle('shell:git-status-entries', guardGitIpc((_event, cwd) => gitStatusEntries(cwd)));
+  handle('shell:git-branch-list', guardGitIpc((_event, cwd) => gitBranchList(cwd)));
+  handle('shell:git-switch-branch', guardGitIpc((_event, cwd, ref) => gitSwitchBranch(cwd, ref)));
+  handle('shell:git-create-branch', guardGitIpc((_event, cwd, name) => gitCreateBranch(cwd, name)));
   // The harness registers a newly opened workspace asynchronously, so the
   // titlebar's first git status read can race that write and come back
   // unauthorized. Push a signal when the registry changes so ui-git refreshes
@@ -523,14 +491,7 @@ function registerIpc({
   const pty = registerPtyIpc(ipcMain, undefined, { authorize: authorizeHarness });
   const preview = registerPreviewIpc(ipcMain, undefined, { authorize: authorizeHarness });
 
-  handle('shell:open-remote', HARNESS_ONLY, noArgs, () => {
-    if (!REMOTE_FEATURE_ENABLED) {
-      throw new Error('Remote is disabled in this build');
-    }
-    return openRemote();
-  });
-
-  handle('shell:get-remote', HARNESS_ONLY, noArgs, async () => {
+  handle('shell:get-remote', async () => {
     if (!REMOTE_FEATURE_ENABLED) {
       const parked = remote && typeof remote.snapshot === 'function'
         ? remote.snapshot()
@@ -553,7 +514,7 @@ function registerIpc({
     };
   });
 
-  handle('shell:save-remote', HARNESS_ONLY, (args) => [asObject(args[0])], async (_event, patch) => {
+  handle('shell:save-remote', async (_event, patch) => {
     if (!REMOTE_FEATURE_ENABLED) {
       saveConfig({ remoteEnabled: false, remoteMode: 'lan', remoteRelayUrl: '' });
       if (remote && typeof remote.sync === 'function') {
@@ -568,7 +529,7 @@ function registerIpc({
     return remote ? remote.snapshot() : null;
   });
 
-  handle('shell:rotate-remote-token', HARNESS_ONLY, noArgs, async () => {
+  handle('shell:rotate-remote-token', async () => {
     if (!REMOTE_FEATURE_ENABLED) {
       return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});
     }
@@ -578,7 +539,7 @@ function registerIpc({
     return null;
   });
 
-  handle('shell:revoke-remote-pairing-link', HARNESS_ONLY, noArgs, async () => {
+  handle('shell:revoke-remote-pairing-link', async () => {
     if (!REMOTE_FEATURE_ENABLED) {
       return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});
     }
@@ -588,7 +549,7 @@ function registerIpc({
     return null;
   });
 
-  handle('shell:unbind-remote-device', HARNESS_ONLY, (args) => [asString(args[0])], async (_event, id) => {
+  handle('shell:unbind-remote-device', async (_event, id) => {
     if (!REMOTE_FEATURE_ENABLED) {
       return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});
     }
@@ -598,7 +559,7 @@ function registerIpc({
     return remote ? remote.snapshot() : null;
   });
 
-  handle('shell:rename-remote-device', HARNESS_ONLY, (args) => [asString(args[0]), asString(args[1])], async (_event, id, name) => {
+  handle('shell:rename-remote-device', async (_event, id, name) => {
     if (!REMOTE_FEATURE_ENABLED) {
       return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});
     }
