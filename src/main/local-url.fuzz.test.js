@@ -3,7 +3,8 @@
 // Property-based fuzz for the loopback/local-app URL policies in local-url.js.
 // The core invariant: the verdict must agree with WHATWG parsing — no string
 // the browser resolves as loopback may be refused, none it resolves
-// elsewhere may be accepted, and vice versa.
+// elsewhere may be accepted, and vice versa — except that embedded
+// credentials (userinfo) are always refused.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -44,13 +45,14 @@ const anyStringArb = fc.oneof(urlArb, fc.string({ maxLength: 40 }), fc.constantF
   'HTTP://127.0.0.1.evil', 'http://127.0.0.1@evil', 'http://evil@127.0.0.1', '',
 ));
 
-test('isLoopbackHttpUrl agrees with WHATWG parsing both directions', () => {
+test('isLoopbackHttpUrl agrees with WHATWG parsing both directions, minus credentials', () => {
   fc.assert(fc.property(anyStringArb, (raw) => {
     const expected = (() => {
       if (typeof raw !== 'string' || raw.trim() === '') return false;
       let parsed;
       try { parsed = new URL(raw); } catch { return false; }
       return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        && parsed.username === '' && parsed.password === ''
         && LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase());
     })();
     assert.equal(isLoopbackHttpUrl(raw), expected, raw);
@@ -67,11 +69,21 @@ test('isLoopbackHttpUrl: accepted values have a canonical loopback host', () => 
   }), { numRuns: NUM_RUNS });
 });
 
-// FINDING (see report): the docstring promises rejecting "userinfo tricks",
-// but `http://evil@127.0.0.1` is accepted — userinfo pointing at loopback
-// slips through while sibling policies (browser-guests allowedNavigation,
-// wallpaper parseHttpUrl is supposed to) reject embedded credentials.
-test.todo('#495: isLoopbackHttpUrl must refuse embedded credentials — minimal counterexample: http://evil@127.0.0.1 accepted today (username "evil" reaches the loopback endpoint)');
+// #495: userinfo pointing at loopback must be refused — `http://evil@127.0.0.1`
+// carries username "evil" to the loopback endpoint, like sibling policies
+// (browser-guests allowedNavigation) that reject embedded credentials.
+test('isLoopbackHttpUrl refuses embedded credentials', () => {
+  assert.equal(isLoopbackHttpUrl('http://evil@127.0.0.1'), false);
+  assert.equal(isLoopbackHttpUrl('http://user:pass@127.0.0.1:8080/x'), false);
+  assert.equal(isSameOriginLoopbackUrl('http://evil@127.0.0.1:3080/', 'http://127.0.0.1:3080/'), false);
+  fc.assert(fc.property(anyStringArb, (raw) => {
+    if (!isLoopbackHttpUrl(raw)) return true;
+    const parsed = new URL(raw);
+    assert.equal(parsed.username, '', raw);
+    assert.equal(parsed.password, '', raw);
+    return true;
+  }), { numRuns: NUM_RUNS });
+});
 
 test('isHttpOrHttpsUrl is exactly the WHATWG http(s) set', () => {
   fc.assert(fc.property(anyStringArb, (raw) => {
