@@ -36,6 +36,7 @@ function stopTree(child) {
   })
 }
 
+// eslint-disable-next-line no-restricted-syntax -- 目录已在下方 finally 中 rmSync 回收
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'whale-contrast-run-'))
 const outPath = path.join(scratch, 'result.json')
 let exitCode = 1

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { atomicWriteFile } = require('../shared/fs-safe');
 const { logicalRealpathSync } = require('./logical-realpath');
 const { spawn } = require('node:child_process');
 const {
@@ -341,7 +342,7 @@ async function writeFile(cwd, relativePath, text) {
     // path so a dangling or outside-resolving link cannot receive the bytes.
     const realTarget = await canonicalInside(cwd, target);
     if (!realTarget) return fail('Path is outside the workspace.');
-    await fs.promises.writeFile(realTarget, text, 'utf8');
+    await atomicWriteFile(realTarget, text, { encoding: 'utf8' });
   } catch (error) {
     return fail(error.message || 'Could not write file.');
   }

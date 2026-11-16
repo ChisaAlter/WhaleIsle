@@ -6,6 +6,7 @@ const { pathToFileURL } = require('node:url');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const DSH_PAD_PACKAGE = 'dsh-pad';
 const DSH_PAD_RUNTIME_ALIAS = 'whaleisle-desktop-pad';
@@ -60,8 +61,7 @@ function ensureDesktopDshPad(options = {}) {
   const added = !fs.existsSync(overlayFile);
   if (added || fs.readFileSync(overlayFile, 'utf8') !== contents) {
     fs.mkdirSync(path.dirname(overlayFile), { recursive: true });
-    fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');
-    fs.renameSync(`${overlayFile}.tmp`, overlayFile);
+    atomicWriteFileSync(overlayFile, contents, { encoding: 'utf8' });
   }
   return { ok: true, added, sourceDir, overlayFile };
 }

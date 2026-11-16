@@ -3,6 +3,7 @@ const { createRequire } = require('module');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { getDesktopDshHome } = require('../shared/dsh-home');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const PROFILE = 'web';
 const DROPPED = [
@@ -175,9 +176,7 @@ function patchPath() {
 
 function writeAtomic(file, contents) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, contents, 'utf8');
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, contents, { encoding: 'utf8' });
 }
 
 function replaceManagedBlock(text, begin, end, block) {

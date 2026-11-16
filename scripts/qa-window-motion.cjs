@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, execFile } = require('node:child_process');
 const exec = require('node:util').promisify(execFile);
+// eslint-disable-next-line no-restricted-syntax -- Electron userData 被 Chromium 持有至 app.exit，无法在本进程 finally 中回收
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-window-motion-'));
 app.setPath('userData', userData);
 app.on('window-all-closed', () => {});

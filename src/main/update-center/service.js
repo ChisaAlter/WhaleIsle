@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { atomicWriteFileSync, safeRemoveSync } = require('../../shared/fs-safe');
 
 const STATE_FILE = 'update-center.json';
 const AUTO_FIRST_CHECK_MS = 60_000;
@@ -39,9 +40,7 @@ function readJson(file) {
 
 function writeJsonAtomic(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(value, null, 2));
-  fs.renameSync(temp, file);
+  atomicWriteFileSync(file, JSON.stringify(value, null, 2), { encoding: 'utf8' });
 }
 
 function fileSize(file) {
@@ -168,7 +167,9 @@ function createUpdateCenter(deps) {
     for (const name of names) {
       const file = path.join(updatesDir, name);
       if (keep.has(file) || !/\.(exe|dmg|part)$/i.test(name)) continue;
-      try { fs.rmSync(file, { force: true }); log(`update-center removed ${name}`); } catch { /* in use */ }
+      // In-use files (scanner, indexer) stay for a later sweep — a removal
+      // failure must never throw through the state machine.
+      if (safeRemoveSync(file).ok) log(`update-center removed ${name}`);
     }
   }
 
@@ -176,12 +177,10 @@ function createUpdateCenter(deps) {
     if (saved.target) {
       const { final, partial } = paths(saved.target);
       for (const file of [partial, final]) {
-        try {
-          fs.rmSync(file, { force: true });
-        } catch (error) {
-          // Locked files (scanner, indexer) are left for cleanup(); the job is still dropped.
-          log(`update-center discard failed for ${path.basename(file)}: ${error.message}`);
-        }
+        // Locked files (scanner, indexer) are left for cleanup(); the job is still dropped.
+        safeRemoveSync(file, {
+          log: (target, error) => log(`update-center discard failed for ${path.basename(target)}: ${error.message}`),
+        });
       }
     }
     saved.job = null;
@@ -318,7 +317,7 @@ function createUpdateCenter(deps) {
         return { file: final, expected, installerArgs: [] };
       } catch (error) {
         if (signal.aborted) throw error;
-        fs.rmSync(final, { force: true });
+        safeRemoveSync(final);
       }
     }
     let resume = saved.job?.method === 'full' && saved.job.expected === expected ? saved.job.resume : null;
@@ -329,7 +328,7 @@ function createUpdateCenter(deps) {
       // final SHA512 decides, so resume without If-Range across routes.
       if (resume.route !== target.route) resume.validator = null;
     } else {
-      fs.rmSync(partial, { force: true });
+      safeRemoveSync(partial);
       resume = { offset: 0, total: 0, validator: null };
     }
     resume.route = target.route;

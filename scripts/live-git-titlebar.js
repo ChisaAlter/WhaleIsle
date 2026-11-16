@@ -29,6 +29,7 @@ function git(cwd, args) {
 }
 
 function tempDir(prefix) {
+  // eslint-disable-next-line no-restricted-syntax -- 返回的目录由调用方 finally rmSync 回收
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   setWorkspaceAuthority(createWorkspaceAuthority({ workspace: dir }));
   return dir;
@@ -50,6 +51,7 @@ async function caseCleanInit() {
 
 async function caseCommitPushSkip() {
   const cwd = tempDir('dsh-live-push-');
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
   try {
     git(bare, ['init', '--bare']);
@@ -75,6 +77,7 @@ async function caseCommitPushSkip() {
 
 async function caseDirtyCreatePr() {
   const cwd = tempDir('dsh-live-pr-');
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
   try {
     git(bare, ['init', '--bare']);
@@ -133,6 +136,7 @@ async function caseCeilingEnv() {
 
 async function caseCreatePrCopy() {
   const cwd = tempDir('dsh-live-copy-');
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
   let seen = null;
   setTextGenerator(async (input) => {
@@ -177,6 +181,7 @@ async function caseReservedNameCommitPush() {
     return;
   }
   const cwd = tempDir('dsh-live-nul-');
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
   const reserved = `\\\\?\\${path.resolve(cwd, 'nul')}`;
   try {

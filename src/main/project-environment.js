@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { getDesktopDshHome } = require('../shared/dsh-home');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside, workspaceRootRefusal } = require('./workspace-authority');
 const { run, runGit, safeRefName, gitFailureMessage, GH_TIMEOUT_MS } = require('./git-exec');
 
@@ -39,10 +40,7 @@ function readRecord(file) {
 }
 function writeRecord(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(value, null, 2), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-  try { fs.renameSync(temporary, file); }
-  finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+  atomicWriteFileSync(file, JSON.stringify(value, null, 2), { encoding: 'utf8', mode: 0o600 });
 }
 
 /** Directory capabilities only. Worker commands and processes belong to Harness Jobs. */

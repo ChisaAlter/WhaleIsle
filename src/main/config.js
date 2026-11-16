@@ -11,6 +11,7 @@ const { normalizeGrowthState } = require('./pet-growth');
 const { normalizeStats } = require('./pet-stats');
 const petSettings = require('./pet-settings');
 const { PRODUCT_NAME, LEGACY_PRODUCT_NAME } = require('../shared/product-identity');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const REMOTE_FEATURE_ENABLED = true;
 
@@ -384,12 +385,10 @@ function readSettingsFile(file) {
   }
 }
 
-function writeJson(file, data) {
+function writeJson(file, data, options = {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   // The launcher and the desktop are separate processes writing the same files.
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, JSON.stringify(data, null, 2), { encoding: 'utf8', ...options });
 }
 
 /** Envelope marker for OS-keychain-encrypted credentials.json. */
@@ -481,12 +480,13 @@ function credentialStorageMode() {
 /** Persist credentials, encrypted via safeStorage whenever the OS allows. */
 function writeCredentials(data) {
   const file = credentialsPath();
+  // Owner-only: the plaintext fallback must not be readable by other local users.
   if (!canEncryptCredentials()) {
-    writeJson(file, data);
+    writeJson(file, data, { mode: 0o600 });
     return;
   }
   const payload = safeStorageImpl.encryptString(JSON.stringify(data)).toString('base64');
-  writeJson(file, { version: CREDENTIALS_ENVELOPE_VERSION, payload });
+  writeJson(file, { version: CREDENTIALS_ENVELOPE_VERSION, payload }, { mode: 0o600 });
 }
 
 function isUnsafeWorkspace(dir) {

@@ -17,6 +17,7 @@ const source=process.env.WHALEBRIDGE_SOURCE_DIR;
 assert.ok(source && isAbsolute(source),'更新/回滚生命周期 QA 需要 WHALEBRIDGE_SOURCE_DIR 明确指向独立鲸桥源码的绝对目录');
 const builder=join(source,'scripts/build.mjs');
 assert.ok(existsSync(builder),`生命周期 QA 找不到独立鲸桥构建入口: ${builder}`);
+// eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
 const dir=mkdtempSync(join(tmpdir(),'whalebridge-native-'));
 const data=join(dir,'component'), home=join(dir,'dsh'), pkg=join(dir,'package');
 const gatewayPort=await reservePort();

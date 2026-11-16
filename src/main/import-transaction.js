@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 /**
  * Journaled directory replacement: stages the new tree under a unique
@@ -193,9 +194,7 @@ function isLinkLike(p) {
 
 function writeJsonAtomic(file, payload) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(payload));
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, JSON.stringify(payload), { encoding: 'utf8' });
 }
 
 function readJson(file) {

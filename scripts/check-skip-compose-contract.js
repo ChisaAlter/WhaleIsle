@@ -408,6 +408,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
   if (!fs.existsSync(binJs)) {
     throw new Error(`skip compose 契约门禁：缺少已构建的 CLI ${binJs}`);
   }
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-compose-contract-'));
   try {
     const profileDir = path.join(home, 'profiles', 'web');

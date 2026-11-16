@@ -223,6 +223,7 @@ function assertTrimmedRuntime() {
 
 async function probeDshdDaemonRuntime() {
   const executable = electronExecutable();
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-remote-probe-'));
   const launchFile = path.join(home, 'daemon-launch.json');
   fs.mkdirSync(path.join(home, 'agents'), { recursive: true });

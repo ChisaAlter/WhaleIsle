@@ -14,6 +14,7 @@ import { reservePort } from './smoke-workspace.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const componentPackage=resolve(process.env.WHALEBRIDGE_QA_PACKAGE || join(root,'.tmp/whalebridge-package'));
 assert.ok(existsSync(join(componentPackage,'WhaleBridge-component.json')),`鲸桥 QA 组件包不存在，请通过 WHALEBRIDGE_QA_PACKAGE 指定已构建包目录: ${componentPackage}`);
+// eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
 const dir=mkdtempSync(join(tmpdir(),'whalebridge-providers-'));
 const data=join(dir,'component'),home=join(dir,'dsh');
 mkdirSync(home,{recursive:true});

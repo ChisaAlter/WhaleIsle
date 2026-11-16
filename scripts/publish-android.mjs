@@ -2,10 +2,10 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { lstat, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { lstat, open, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { cnbClient, uploadMirrorAsset, verifyDownload } from './sync-cnb.mjs'
 import { readAndroidVersion } from './android-version.mjs'
 
@@ -176,8 +176,7 @@ function preserveAssets(before, after) {
 
 async function verifyGithubAssets({ release, files, tag, repo, gh }) {
   if (!release.assets.length) return
-  const directory = await mkdtemp(join(tmpdir(), 'whale-android-download-'))
-  try {
+  return withOwnedTempDir('whale-android-download-', async (directory) => {
     await gh(['release', 'download', tag, '--repo', repo,
       ...release.assets.flatMap(asset => ['--pattern', asset.name]), '--dir', directory])
     const names = await readdir(directory)
@@ -191,7 +190,7 @@ async function verifyGithubAssets({ release, files, tag, repo, gh }) {
         throw new Error('GitHub Android download checksum mismatch: ' + file.name)
       }
     }
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  })
 }
 
 // Push only this Android tag. In particular this never updates desktop tags or
@@ -200,14 +199,14 @@ export async function syncAndroidTag({ repo, tag, sha, token, git = (args, optio
   if (!safeRepo.test(repo) || !tag?.startsWith('android-v') || !validVersion(tag.slice(9)) || !sourceSha.test(sha) || !token) {
     throw new Error('CNB repository, Android tag, source SHA and push credentials are required')
   }
-  const directory = await mkdtemp(join(tmpdir(), 'whale-android-auth-'))
-  try {
+  return withOwnedTempDir('whale-android-auth-', async (directory) => {
     const askpass = join(directory, 'askpass.sh')
-    await writeFile(askpass, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "cnb" ;;\n  *) printf "%s\\n" "$CNB_TOKEN" ;;\nesac\n', { mode: 0o700 })
-    await git(['-c', 'credential.helper=', '-c', 'core.askPass=' + askpass, 'push', 'https://cnb.cool/' + repo + '.git',
-      sha + ':refs/tags/' + tag], { env: { ...process.env, CNB_TOKEN: token, GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] })
-  } catch { throw new Error('CNB Android tag push failed; check permissions or tag divergence (no force push)') }
-  finally { await rm(directory, { recursive: true, force: true }) }
+    try {
+      await writeFile(askpass, '#!/bin/sh\ncase "$1" in\n  *Username*) printf "%s\\n" "cnb" ;;\n  *) printf "%s\\n" "$CNB_TOKEN" ;;\nesac\n', { mode: 0o700 })
+      await git(['-c', 'credential.helper=', '-c', 'core.askPass=' + askpass, 'push', 'https://cnb.cool/' + repo + '.git',
+        sha + ':refs/tags/' + tag], { env: { ...process.env, CNB_TOKEN: token, GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch { throw new Error('CNB Android tag push failed; check permissions or tag divergence (no force push)') }
+  })
 }
 
 // Build and publication share a workflow_dispatch job. Build metadata is the

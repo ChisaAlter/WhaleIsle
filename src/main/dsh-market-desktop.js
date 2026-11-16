@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 /** npm package name (the desktop fork package under the vendored harness). */
 const DSH_MARKET_PACKAGE = '@deepseek-ai/dsh-client-ui-settings-market';
@@ -69,9 +70,7 @@ function ensureDesktopMarket(options = {}) {
   const existed = fs.existsSync(overlayFile);
   const existing = existed ? fs.readFileSync(overlayFile, 'utf8') : '';
   if (existing !== overlayContents) {
-    const tmp = `${overlayFile}.tmp`;
-    fs.writeFileSync(tmp, overlayContents, 'utf8');
-    fs.renameSync(tmp, overlayFile);
+    atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
   }
   return {
     ok: true,

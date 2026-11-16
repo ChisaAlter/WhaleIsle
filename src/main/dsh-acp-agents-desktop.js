@@ -11,6 +11,7 @@ const path = require('path');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 const DSH_ACP_AGENTS_PACKAGE = 'dsh-acp-agents';
 const DSH_ACP_AGENTS_DIR = 'dsh-acp';
@@ -74,9 +75,7 @@ function ensureDesktopAcpAgents(options = {}) {
     `      name: ${JSON.stringify(DSH_ACP_AGENTS_PACKAGE)}`,
     '',
   ].join('\n');
-  const tmp = `${overlayFile}.tmp`;
-  fs.writeFileSync(tmp, overlayContents, 'utf8');
-  fs.renameSync(tmp, overlayFile);
+  atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
   return {
     ok: true,
     added: !existed,

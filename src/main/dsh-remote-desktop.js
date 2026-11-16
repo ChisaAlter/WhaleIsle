@@ -6,6 +6,7 @@ const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { pathToFileURL } = require('url');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir, stripBlockFromFile } = require('./plugins');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 
 /** npm package name (also the profile node_modules junction name). */
 const DSH_REMOTE_PACKAGE = 'dsh-remote';
@@ -177,9 +178,7 @@ function ensureDesktopDshRemote(options = {}) {
     `      name: ${JSON.stringify(DSH_REMOTE_PACKAGE)}`,
     '',
   ].join('\n');
-  const tmp = `${overlayFile}.tmp`;
-  fs.writeFileSync(tmp, overlayContents, 'utf8');
-  fs.renameSync(tmp, overlayFile);
+  atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
   return {
     ok: true,
     added: !existed,

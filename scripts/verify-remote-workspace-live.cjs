@@ -57,6 +57,7 @@ function apiMethodFor(route) {
 function createRuntime(overrides = {}) {
   return {
     resolveConfig: resolveLiveConfig,
+    // eslint-disable-next-line no-restricted-syntax -- 目录由 removeHome 回调在 finally 中 rmSync 回收
     makeHome: () => fs.mkdtempSync(path.join(os.tmpdir(), 'dshr-live-home-')),
     removeHome: (home) => fs.rmSync(home, { recursive: true, force: true }),
     reservePort,

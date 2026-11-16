@@ -7,6 +7,7 @@ const { resolveNodeBin, sourceHarnessStatus } = require('./dsh');
 const { harnessRoot } = require('./paths');
 const { resolvePnpmEntry, desktopCliArgs } = require('./pnpm-runtime');
 const { childSpawnEnv } = require('../shared/child-spawn-env');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { DROPPED, isDroppedPluginName, webProfileDir, PROFILE, listInstalledPlugins } = require('./plugins');
 const { resolveCommitSha, getMarketplacePlugin } = require('./marketplace-catalog');
@@ -78,9 +79,7 @@ function allowBuildsInWorkspace(keys) {
     text = text.replace(/allowBuilds\s*:\s*\n?/, `allowBuilds:\n  ${quoted}: true\n`);
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, text.endsWith('\n') ? text : `${text}\n`, 'utf8');
-  fs.renameSync(tmp, file);
+  atomicWriteFileSync(file, text.endsWith('\n') ? text : `${text}\n`, { encoding: 'utf8' });
   return file;
 }
 
@@ -807,9 +806,7 @@ function restoreUpdateSnapshot(snapshot) {
       continue;
     }
     fs.mkdirSync(path.dirname(entry.file), { recursive: true });
-    const tmp = `${entry.file}.update-rollback.tmp`;
-    fs.writeFileSync(tmp, entry.contents);
-    fs.renameSync(tmp, entry.file);
+    atomicWriteFileSync(entry.file, entry.contents);
   }
 }
 

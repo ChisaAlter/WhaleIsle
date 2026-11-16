@@ -111,6 +111,7 @@ async function auditPage(win, hostFile, theme, page) {
 }
 
 async function run() {
+  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-contrast-'))
   const win = new BrowserWindow({
     width: 900, height: 1200, show: false,

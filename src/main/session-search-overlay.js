@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getDesktopDshHome } = require('../shared/dsh-home');
+const { atomicWriteFileSync } = require('../shared/fs-safe');
 const { webProfileDir } = require('./plugins');
 
 const SESSION_SEARCH_OVERLAY_FILENAME = 'desktop-session-search.patch.yml';
@@ -51,9 +52,7 @@ function ensureSessionSearchOverlay(options = {}) {
   fs.mkdirSync(destDir, { recursive: true });
   const existing = fs.existsSync(overlayFile) ? fs.readFileSync(overlayFile, 'utf8') : '';
   if (existing !== contents) {
-    const tmp = `${overlayFile}.tmp`;
-    fs.writeFileSync(tmp, contents, 'utf8');
-    fs.renameSync(tmp, overlayFile);
+    atomicWriteFileSync(overlayFile, contents, { encoding: 'utf8' });
   }
   return { ok: true, overlayFile };
 }
