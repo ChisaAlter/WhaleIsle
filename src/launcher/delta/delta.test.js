@@ -99,7 +99,13 @@ test('validateManifest accepts a well-formed document', () => {
 });
 
 test('validateManifest rejects traversal and absolute paths', () => {
-  const bad = ['../x', 'a/../b', 'C:/win/x', 'C:\\win\\x', '/abs', 'a//b', '', '.', 'a\\b'];
+  const bad = [
+    '../x', 'a/../b', 'C:/win/x', 'C:\\win\\x', '/abs', 'a//b', '', '.', 'a\\b',
+    // `:` inside any segment is a win32 drive/ADS anchor or an alias.
+    'sub/a:', 'a/c:d/a', 'a/z:d/x',
+    // Windows device names and trailing `.`/space alias or fail on apply.
+    'con', 'nul.txt/x', 'a/com1/b', 'sub/lpt³/x', 'a./b', 'a /b', 'x.txt ',
+  ];
   for (const p of bad) {
     assert.throws(
       () => manifest.validateManifest({
@@ -127,12 +133,53 @@ test('validateManifest rejects bad ops, missing hashes, and duplicate paths', ()
   }), /duplicate/);
 });
 
+test('validateManifest dedups paths under Windows case/normalization semantics', () => {
+  const base = { format: manifest.FORMAT, fromVersion: '1', toVersion: '2' };
+  const pairs = [
+    ['a.txt', 'A.TXT'],
+    ['Sub/F.js', 'sub/f.js'],
+    ['café/x', 'café/x'], // NFC vs NFD spellings of the same name
+  ];
+  for (const [first, second] of pairs) {
+    assert.throws(() => manifest.validateManifest({
+      ...base,
+      files: [
+        { path: first, op: 'delete', baseSha256: 'd'.repeat(64) },
+        { path: second, op: 'delete', baseSha256: 'd'.repeat(64) },
+      ],
+    }), /duplicate/, `${first} / ${second}`);
+  }
+  // Distinct names that merely share a prefix are not duplicates.
+  const doc = manifest.validateManifest({
+    ...base,
+    files: [
+      { path: 'a.txt', op: 'delete', baseSha256: 'd'.repeat(64) },
+      { path: 'a.txt.bak', op: 'delete', baseSha256: 'd'.repeat(64) },
+      { path: 'dir/a.txt', op: 'delete', baseSha256: 'd'.repeat(64) },
+    ],
+  });
+  assert.equal(doc.files.length, 3);
+});
+
 test('deltaAssetName + parseDeltaAssetName round-trip', () => {
   const name = manifest.deltaAssetName('Whale Isle', '0.3.2', '0.3.3');
   assert.equal(name, 'Whale-Isle-delta-0.3.2-0.3.3.zip');
   assert.deepEqual(manifest.parseDeltaAssetName(name), { from: '0.3.2', to: '0.3.3' });
   assert.equal(manifest.parseDeltaAssetName('Whale-Isle-Setup-0.3.3.exe'), null);
   assert.deepEqual(manifest.parseDeltaAssetName('x-delta-v1.0-v2.0.zip'), { from: 'v1.0', to: 'v2.0' });
+});
+
+test('deltaAssetName round-trips prerelease and build versions', () => {
+  assert.equal(manifest.deltaAssetName('app', '0-0', '0'), 'app-delta-0-0-0.zip');
+  assert.deepEqual(manifest.parseDeltaAssetName('app-delta-0-0-0.zip'), { from: '0-0', to: '0' });
+  for (const [from, to] of [
+    ['1.0.0-rc.1', '2.0.0'],
+    ['v0.3.5', '0.3.6-rc.1+candidate'],
+    ['0.3.15-beta', '0.3.16'],
+  ]) {
+    const name = manifest.deltaAssetName('Whale-Isle', from, to);
+    assert.deepEqual(manifest.parseDeltaAssetName(name), { from, to }, name);
+  }
 });
 
 // --- build + apply round-trip -------------------------------------------------

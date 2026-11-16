@@ -8,22 +8,23 @@ const path = require('node:path');
 const fc = require('fast-check');
 
 const manifest = require('./manifest');
+const { WINDOWS_DEVICE_NAME } = require('../../main/download-path');
 
 const NUM_RUNS = 200;
 
 const relPathArb = fc.oneof(
-  // ':' stays out of this pool — colon segments are the tracked FINDING below.
   fc.string({
     unit: fc.constantFrom(
-      'a', 'B', '1', '.', '/', '\\', '_', '-', ' ', '..', 'sub/',
-      '中', '\x00', '\x1f', '/',
+      'a', 'B', '1', '.', '/', '\\', '_', '-', ' ', ':', '..', 'sub/',
+      'con', 'a.', 'b ', '中', '\x00', '\x1f', '/',
     ),
     minLength: 0, maxLength: 40,
   }),
   fc.constantFrom(
     'a.txt', 'sub/dir/f.js', '../x', 'a/../b', '/abs', 'a\\b', 'C:\\x',
     'd:/x', '.', '..', 'a//b', 'a/./c', 'x/', '/x', 'x'.repeat(512), 'x'.repeat(513),
-    'a..b/c', '.../x', 'a/b/c', ' a', 'a ',
+    'a..b/c', '.../x', 'a/b/c', ' a', 'a ', 'sub/a:', 'a/c:d/a', 'a/z:d/x',
+    'con', 'nul.txt', 'a/com1/b', 'lpt9/x', 'com¹', 'a./b',
   ),
 );
 
@@ -39,10 +40,13 @@ test('isSafeRelPath: accepted paths resolve inside the target on posix and win32
     if (!manifest.isSafeRelPath(rel)) return true;
     assert.ok(resolvesInside(path.sep === '/' ? '/install' : 'C:\\install', rel), rel);
     assert.equal(rel.includes('\\'), false, rel);
+    assert.equal(rel.includes(':'), false, rel);
     assert.equal(/[\0-\x1f]/.test(rel), false, rel);
     assert.equal(rel.length <= 512, true, rel);
     for (const seg of rel.split('/')) {
       assert.ok(seg !== '' && seg !== '.' && seg !== '..', rel);
+      assert.equal(/[. ]$/.test(seg), false, rel);
+      assert.equal(WINDOWS_DEVICE_NAME.test(seg), false, rel);
     }
     return true;
   }), { numRuns: NUM_RUNS });
@@ -52,7 +56,9 @@ test('isSafeRelPath: explicit hazards are always refused', () => {
   const withTraversal = fc.array(
     fc.string({ unit: fc.constantFrom('a', 'b', 'x-y'), minLength: 1, maxLength: 5 }),
     { minLength: 0, maxLength: 3 },
-  ).chain((segs) => fc.constantFrom('..', '.', '', 'a\\b').map((bad) => {
+  ).chain((segs) => fc.constantFrom(
+    '..', '.', '', 'a\\b', 'a:b', 'x:', 'con', 'nul.txt', 'a.', 'a ',
+  ).map((bad) => {
     const all = segs.slice();
     all.splice(Math.floor(segs.length / 2), 0, bad);
     return all.join('/');
@@ -62,13 +68,23 @@ test('isSafeRelPath: explicit hazards are always refused', () => {
   }), { numRuns: NUM_RUNS });
 });
 
-// FINDING (see report): `:` inside a path segment is accepted although the
-// win32 resolver treats it as a drive-relative anchor — `sub/a:` resolves
-// to `a:\…\sub` (another drive, escaping the target), `a/z:d/x` to
-// `z:\…\a\d\x`, `a/c:d/x` aliases to `a/d/x`. resolveTarget refuses the
-// escape at apply time, but the manifest gate itself lets through paths
-// that alias or fail later; ':' should join the rejected set.
-test.todo('#493: isSafeRelPath must reject `:` inside path segments — minimal counterexamples: sub/a: (escapes to the A: drive on win32), a/c:d/a (accepted; aliases to a/d/a)');
+// `:` inside a path segment is a win32 drive-relative anchor: `sub/a:`
+// resolves to `a:\…\sub` (another drive, escaping the target), `a/z:d/x` to
+// `z:\…\a\d\x`, `a/c:d/x` aliases `a/d/x`. The gate refuses every such path.
+test('isSafeRelPath refuses `:` segments, device names and trailing dot/space', () => {
+  const refused = [
+    'sub/a:', 'a/c:d/a', 'a/z:d/x', 'x:y', 'a:b/c',
+    'con', 'CON', 'nul.txt', 'a/com1/b', 'sub/lpt³/x', 'conin$/x', 'com¹/x',
+    'a./b', 'a /b', 'x.', 'x ', 'a.../b',
+  ];
+  for (const rel of refused) {
+    assert.equal(manifest.isSafeRelPath(rel), false, rel);
+  }
+  const accepted = ['a/b/c', 'a..b/c', 'a.txt', 'sub/dir/f.js', ' a', 'a-b_c.txt', 'content.js'];
+  for (const rel of accepted) {
+    assert.equal(manifest.isSafeRelPath(rel), true, rel);
+  }
+});
 
 test('validateManifest: accepted docs only carry safe paths and valid ops', () => {
   const hexArb = fc.oneof(
@@ -110,22 +126,37 @@ test('validateManifest: accepted docs only carry safe paths and valid ops', () =
   }), { numRuns: NUM_RUNS });
 });
 
-// FINDING (see report): deltaAssetName interpolates the raw versions, but
-// ASSET_RE cannot re-parse versions containing '-' — a prerelease such as
-// `0.3.15-beta` produces an asset name that parseDeltaAssetName rejects, so
-// pickDeltaAsset would never select it.
-test.todo('#493: delta asset name round-trips for `-` versions — minimal counterexample: from="0-0" → parseDeltaAssetName(deltaAssetName("app","0-0","0")) === null');
+// deltaAssetName sanitizes versions into the ASSET_RE alphabet, so a
+// prerelease like `0.3.15-beta` produces a name parseDeltaAssetName accepts
+// and pickDeltaAsset can select.
+test('delta asset name round-trips for `-` versions', () => {
+  assert.equal(manifest.deltaAssetName('app', '0-0', '0'), 'app-delta-0-0-0.zip');
+  assert.deepEqual(manifest.parseDeltaAssetName('app-delta-0-0-0.zip'), { from: '0-0', to: '0' });
+  for (const [from, to] of [
+    ['1.0.0-rc.1', '2.0.0'],
+    ['v0.3.5', '0.3.6-rc.1+candidate'],
+    ['0.3.15-beta', '0.3.16'],
+  ]) {
+    assert.deepEqual(manifest.parseDeltaAssetName(manifest.deltaAssetName('app', from, to)),
+      { from, to }, `${from} -> ${to}`);
+  }
+});
 
 test('delta asset name round-trips through parseDeltaAssetName', () => {
   const versionArb = fc.string({
-    unit: fc.constantFrom('0', '1', '2', '9', '.', 'v', 'a', 'B', 'x'),
+    unit: fc.constantFrom('0', '1', '2', '9', '.', 'v', 'a', 'B', 'x', '-', '+'),
     minLength: 1, maxLength: 12,
-  }).filter((v) => /^v?[0-9][0-9A-Za-z.]*$/.test(v));
+  }).filter((v) => /^v?[0-9][0-9A-Za-z.+-]*$/.test(v));
+  // The from/to split lands on the last `-`: a `to` ending in a
+  // `-<version-start>` suffix is inherently ambiguous in this naming scheme,
+  // so the property keeps `to` free of that shape (real targets are
+  // normalized cores like 0.3.6 anyway).
+  const toArb = versionArb.filter((v) => !/-v?[0-9]/i.test(v));
   const productArb = fc.string({
     unit: fc.constantFrom('a', 'B', '0', ' ', '-', '_', '.', '/', '\\', '中'),
     maxLength: 10,
   });
-  fc.assert(fc.property(productArb, versionArb, versionArb, (product, from, to) => {
+  fc.assert(fc.property(productArb, versionArb, toArb, (product, from, to) => {
     const name = manifest.deltaAssetName(product, from, to);
     const parsed = manifest.parseDeltaAssetName(name);
     assert.deepEqual(parsed, { from, to }, name);
