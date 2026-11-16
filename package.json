@@ -103,6 +103,8 @@
     ],
     "asarUnpack": [
       "src/main/dsh-cli-runner.mjs",
+      "src/main/parent-lifeline.mjs",
+      "src/shared/process-tree.js",
       "src/renderer/whale-ui/host.cjs",
       "src/main/dshd-daemon-runner.mjs",
       "src/main/dshd-daemon-hooks.mjs",
