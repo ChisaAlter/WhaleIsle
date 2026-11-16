@@ -1,6 +1,7 @@
 /** Fetch and parse wallpaper catalogs (Bing today/year, Wallhaven SFW, custom JSON). */
 
 const dns = require('node:dns');
+const net = require('node:net');
 
 const USER_AGENT = 'Deepseek-Harness-Desktop';
 const MAX_CATALOG_BYTES = 4_000_000;
@@ -80,20 +81,105 @@ function wallhavenSearchUrl(query) {
   }
 }
 
+// Non-public IPv4 space refused for catalog and image fetches. Verdicts run on
+// the parsed address (`net.isIP` + `net.BlockList`), so every spelling a URL
+// parser or resolver can produce lands on the same check.
+const BLOCKED_IPV4 = new net.BlockList();
+BLOCKED_IPV4.addSubnet('0.0.0.0', 8, 'ipv4');       // this-network / unspecified
+BLOCKED_IPV4.addSubnet('10.0.0.0', 8, 'ipv4');
+BLOCKED_IPV4.addSubnet('100.64.0.0', 10, 'ipv4');   // CGNAT
+BLOCKED_IPV4.addSubnet('169.254.0.0', 16, 'ipv4');  // link-local
+BLOCKED_IPV4.addSubnet('172.16.0.0', 12, 'ipv4');
+BLOCKED_IPV4.addSubnet('192.0.0.0', 24, 'ipv4');    // IETF protocol assignments
+BLOCKED_IPV4.addSubnet('192.0.2.0', 24, 'ipv4');    // TEST-NET-1
+BLOCKED_IPV4.addSubnet('192.88.99.0', 24, 'ipv4');  // 6to4 relay anycast
+BLOCKED_IPV4.addSubnet('192.168.0.0', 16, 'ipv4');
+BLOCKED_IPV4.addSubnet('198.18.0.0', 15, 'ipv4');   // benchmark
+BLOCKED_IPV4.addSubnet('198.51.100.0', 24, 'ipv4'); // TEST-NET-2
+BLOCKED_IPV4.addSubnet('203.0.113.0', 24, 'ipv4');  // TEST-NET-3
+BLOCKED_IPV4.addSubnet('224.0.0.0', 4, 'ipv4');     // multicast
+BLOCKED_IPV4.addSubnet('240.0.0.0', 4, 'ipv4');     // reserved + broadcast
+
+const BLOCKED_IPV6 = new net.BlockList();
+BLOCKED_IPV6.addAddress('::', 'ipv6');              // unspecified
+BLOCKED_IPV6.addSubnet('64:ff9b:1::', 48, 'ipv6');  // local-use NAT64
+BLOCKED_IPV6.addSubnet('100::', 64, 'ipv6');        // discard-only
+BLOCKED_IPV6.addSubnet('2001::', 23, 'ipv6');       // IETF special block
+BLOCKED_IPV6.addSubnet('2001:db8::', 32, 'ipv6');   // documentation
+BLOCKED_IPV6.addSubnet('2002::', 16, 'ipv6');       // 6to4
+BLOCKED_IPV6.addSubnet('3fff::', 20, 'ipv6');       // documentation
+BLOCKED_IPV6.addSubnet('fc00::', 7, 'ipv6');        // ULA
+BLOCKED_IPV6.addSubnet('fe80::', 10, 'ipv6');       // link-local
+BLOCKED_IPV6.addSubnet('fec0::', 10, 'ipv6');       // site-local (deprecated)
+BLOCKED_IPV6.addSubnet('ff00::', 8, 'ipv6');        // multicast
+
+// Loopback and exactly 0.0.0.0 stay reachable only for the catalog unit-test
+// flag `DSHD_WALLPAPER_ALLOW_HTTP=1`.
+const LOOPBACK_IPV4 = new net.BlockList();
+LOOPBACK_IPV4.addAddress('0.0.0.0', 'ipv4');
+LOOPBACK_IPV4.addSubnet('127.0.0.0', 8, 'ipv4');
+const LOOPBACK_IPV6 = new net.BlockList();
+LOOPBACK_IPV6.addAddress('::1', 'ipv6');
+
+function isBlockedIpv4(address) {
+  if (LOOPBACK_IPV4.check(address, 'ipv4')) return !allowHttp();
+  return BLOCKED_IPV4.check(address, 'ipv4');
+}
+
 /**
- * @param {string} value
- * @returns {URL | null}
+ * Reduce `::/96` (IPv4-compatible), `::ffff:0/96` (IPv4-mapped) and
+ * `64:ff9b::/96` (NAT64 well-known prefix) literals to the embedded IPv4.
+ * Returns null for other IPv6 addresses.
+ * @param {string} address - bracket-free, `net.isIPv6`-valid.
+ * @returns {string | null}
  */
+function ipv6EmbeddedIpv4(address) {
+  let expanded = address;
+  if (expanded.includes('.')) {
+    const sep = expanded.lastIndexOf(':');
+    const quad = sep === -1 ? expanded : expanded.slice(sep + 1);
+    if (!net.isIPv4(quad)) return null;
+    const [a, b, c, d] = quad.split('.').map(Number);
+    const prefix = sep === -1 ? '' : expanded.slice(0, sep);
+    expanded = `${prefix}:${(a << 8 | b).toString(16)}:${(c << 8 | d).toString(16)}`;
+  }
+  const halves = expanded.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (halves.length === 1 && head.length !== 8) return null;
+  const groups = [...head, ...Array(Math.max(0, 8 - head.length - tail.length)).fill('0'), ...tail];
+  if (groups.length !== 8) return null;
+  const h = groups.map((group) => parseInt(group, 16));
+  if (h.some((group) => !Number.isInteger(group) || group < 0 || group > 0xffff)) return null;
+  const compatible = h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0 && h[5] === 0;
+  const mapped = h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0 && h[4] === 0 && h[5] === 0xffff;
+  const nat64 = h[0] === 0x64 && h[1] === 0xff9b && h[2] === 0 && h[3] === 0 && h[4] === 0 && h[5] === 0;
+  if (!compatible && !mapped && !nat64) return null;
+  return `${h[6] >> 8}.${h[6] & 0xff}.${h[7] >> 8}.${h[7] & 0xff}`;
+}
+
 /**
- * Block loopback / RFC1918 / link-local wallpaper fetches so catalog IPC
- * cannot be used as an intranet proxy. Loopback is allowed only when
- * `DSHD_WALLPAPER_ALLOW_HTTP=1` (catalog unit tests).
+ * Block loopback / private / reserved wallpaper fetches so catalog IPC
+ * cannot be used as an intranet proxy. Verdicts run on the parsed IP:
+ * IPv4-embedded IPv6 literals are reduced first; `::1`, `fc00::/7`,
+ * `fe80::/10`, `::` and `ff00::/8` are refused natively. Loopback is allowed
+ * only when `DSHD_WALLPAPER_ALLOW_HTTP=1` (catalog unit tests).
  * @param {string} hostname
  * @returns {boolean}
  */
 function isBlockedWallpaperHost(hostname) {
-  const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  const host = String(hostname || '').replace(/^\[|\]$/g, '').replace(/\.+$/, '').toLowerCase();
   if (!host) return true;
+  if (net.isIPv4(host)) return isBlockedIpv4(host);
+  if (net.isIPv6(host)) {
+    if (LOOPBACK_IPV6.check(host, 'ipv6')) return !allowHttp();
+    if (BLOCKED_IPV6.check(host, 'ipv6')) return true;
+    const embedded = ipv6EmbeddedIpv4(host);
+    return embedded !== null && isBlockedIpv4(embedded);
+  }
+  // A colon without a valid IPv6 parse (zone id, truncation) is no DNS name.
+  if (host.includes(':')) return true;
   if (
     host === 'localhost'
     || host.endsWith('.localhost')
@@ -102,32 +188,13 @@ function isBlockedWallpaperHost(hostname) {
   ) {
     return !allowHttp();
   }
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
-    const parts = host.split('.').map(Number);
-    if (parts.some((n) => n > 255)) return true;
-    const [a, b] = parts;
-    if (a === 127 || parts.join('.') === '0.0.0.0') return !allowHttp();
-    return a === 10
-      || a === 0
-      || (a === 172 && b >= 16 && b <= 31)
-      || (a === 192 && b === 168)
-      || (a === 169 && b === 254)
-      // Carrier-grade NAT 100.64.0.0/10 and benchmark 198.18.0.0/15: both are
-      // non-public and reachable only inside an operator / lab network.
-      || (a === 100 && b >= 64 && b <= 127)
-      || (a === 198 && (b === 18 || b === 19));
-  }
-  if (host.includes(':')) {
-    if (host === '::1' || host === '0:0:0:0:0:0:0:1') return !allowHttp();
-    const mapped = host.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
-    if (mapped) return isBlockedWallpaperHost(mapped[1]);
-    if (host === '::' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) {
-      return true;
-    }
-  }
   return false;
 }
 
+/**
+ * @param {string} value
+ * @returns {URL | null}
+ */
 function parseHttpUrl(value) {
   if (typeof value !== 'string' || value.length === 0 || value.length > 2000) return null;
   let parsed;
@@ -138,6 +205,8 @@ function parseHttpUrl(value) {
   }
   const httpOk = parsed.protocol === 'https:' || (parsed.protocol === 'http:' && allowHttp());
   if (!httpOk) return null;
+  // fetch would forward embedded userinfo; catalog and image URLs never need it.
+  if (parsed.username || parsed.password) return null;
   if (isBlockedWallpaperHost(parsed.hostname)) return null;
   return parsed;
 }
@@ -195,24 +264,24 @@ function resolveAgainst(url, base) {
   }
 }
 
-function isIpLiteralHost(host) {
-  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.includes(':');
-}
-
 /**
- * Post-DNS recheck: resolve the hostname and reject when any returned
- * address falls in a blocked range, so a public-looking name cannot point
- * catalog IPC at loopback / RFC1918 / CGNAT targets. IP literals were
- * already checked lexically; legitimate public image hosts resolve to
- * public addresses and pass through unchanged. (A rebind between this
- * lookup and the fetch connect is out of scope for this layer.)
+ * Post-DNS recheck: re-run the shared verdict on the literal host, then
+ * resolve names and reject when any returned address falls in a blocked
+ * range, so a public-looking name cannot point catalog IPC at loopback /
+ * RFC1918 / CGNAT targets. IP literals are fully classified by
+ * `isBlockedWallpaperHost` and skip the resolver; legitimate public image
+ * hosts resolve to public addresses and pass through unchanged. (A rebind
+ * between this lookup and the fetch connect is out of scope for this layer.)
  * @param {string} hostname
  * @param {string} url - for the error message.
  * @param {(host: string, options: object) => Promise<Array<{ address: string }>>} [lookup]
  */
 async function assertResolvedWallpaperHost(hostname, url, lookup = dns.promises.lookup) {
   const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
-  if (!host || isIpLiteralHost(host)) {
+  if (isBlockedWallpaperHost(host)) {
+    throw new Error(catalogError(url, '解析到不允许的内网地址'));
+  }
+  if (!host || net.isIP(host)) {
     return;
   }
   let records;
