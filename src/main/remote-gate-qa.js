@@ -399,9 +399,7 @@ module.exports = {
   REMOTE_GATE_PARKED_CASES,
   runRemoteGateQa,
   assertRemoteGateQaResult,
-  remoteHasError,
   pairingOffer,
   pairingChromeMatchesRelay,
   pairingControlsMatchRelay,
-  portOpen,
 };

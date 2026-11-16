@@ -322,7 +322,6 @@ function syncHarness(options) {
 }
 
 module.exports = {
-  PREFIX,
   STATE_RELATIVE,
   BACKUP_REF,
   parseSyncArgs,

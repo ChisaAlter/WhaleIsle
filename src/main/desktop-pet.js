@@ -362,10 +362,6 @@ function getDesktopPet() {
 
 module.exports = {
   DESKTOP_PET_FEATURE,
-  PET_SIZE,
-  EDGE_GAP,
-  DEFAULT_POSITION,
-  clamp,
   normalizePetState,
   boundsForPosition,
   positionFromBounds,

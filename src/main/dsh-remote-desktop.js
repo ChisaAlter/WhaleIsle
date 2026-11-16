@@ -190,11 +190,6 @@ function ensureDesktopDshRemote(options = {}) {
   };
 }
 
-/** @deprecated Use ensureDesktopDshRemote — kept as alias for harness wiring. */
-function ensureDshRemotePlugin(options) {
-  return ensureDesktopDshRemote(options);
-}
-
 function withoutDshRemoteAliases(list) {
   const blocked = new Set(DSH_REMOTE_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));
@@ -209,5 +204,4 @@ module.exports = {
   DSH_REMOTE_END,
   withoutDshRemoteAliases,
   ensureDesktopDshRemote,
-  ensureDshRemotePlugin,
 };

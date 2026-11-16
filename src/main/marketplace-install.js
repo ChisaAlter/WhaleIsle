@@ -951,8 +951,6 @@ async function updateMarketplacePlugins(ids, options = {}) {
 
 module.exports = {
   listInstalledPlugins,
-  parseAllowBuilds,
-  allowBuildsInWorkspace,
   installPlugin,
   installImportPlugin,
   parseImportRegistrySpec,
@@ -961,7 +959,6 @@ module.exports = {
   installMarketplacePlugin,
   updateMarketplacePlugin,
   updateMarketplacePlugins,
-  resolveCli,
   runPlugin,
   isBuildApprovalFailure,
 };

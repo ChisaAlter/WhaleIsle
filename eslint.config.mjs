@@ -21,14 +21,13 @@ const CHECKED_FILES = [
 ];
 
 // Node CommonJS sources: src/main, src/launcher, src/preload, src/host,
-// src/shared, src/relay, src/main-launcher and script-side .js/.cjs.
+// src/shared, src/main-launcher and script-side .js/.cjs.
 const NODE_CJS_FILES = [
   'src/main/**/*.{js,cjs}',
   'src/preload/**/*.{js,cjs}',
   'src/shared/**/*.{js,cjs}',
   'src/launcher/**/*.{js,cjs}',
   'src/host/**/*.{js,cjs}',
-  'src/relay/**/*.{js,cjs}',
   'src/main-launcher/**/*.{js,cjs}',
   'src/renderer/**/*.cjs',
   'scripts/**/*.{js,cjs}',

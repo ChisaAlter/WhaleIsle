@@ -38,4 +38,4 @@ function parseAllowBuilds(log) {
   return [...names].filter(isValidAllowBuild);
 }
 
-module.exports = { parseAllowBuilds, normalizeAllowBuilds };
+module.exports = { parseAllowBuilds };

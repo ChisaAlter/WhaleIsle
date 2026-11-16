@@ -166,4 +166,4 @@ function registerUpdateCenterIpc(deps) {
   return { broadcast: () => broadcast(center.snapshot()), dispose: unsubscribe };
 }
 
-module.exports = { UPDATE_CENTER_IPC, UpdateCenterWindow, registerUpdateCenterIpc, presentation, decorate };
+module.exports = { UpdateCenterWindow, registerUpdateCenterIpc };

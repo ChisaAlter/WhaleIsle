@@ -39,9 +39,7 @@ const { ensureWorkspace } = require('./workspace-rpc');
 const { registerIpc } = require('./ipc');
 const { safeStorage } = require('electron');
 const { DshdRemote, resolveDesktopChisaCodeHome } = require('./dshd-remote');
-const { invokeDesktopShell } = require('./remote-shell');
 const git = require('./git');
-const { listDir } = require('./workspace-fs');
 const { buildMenu } = require('./menu');
 const { createTray, invokeTrayAction, refreshTrayMenu } = require('./tray');
 const { DESKTOP_PET_FEATURE, configureDesktopPet, getDesktopPet } = require('./desktop-pet');
@@ -180,25 +178,6 @@ const remote = new DshdRemote({
   getHarnessOrigin,
   getSessionCookie: () => dsh.sessionCookie || '',
   git,
-  // Kept for any residual shell helpers that still expect a loopback target.
-  getTarget: () => {
-    if (dsh.state !== 'ready') {
-      return null;
-    }
-    const port = Number(dsh.port);
-    return port ? { host: '127.0.0.1', port } : null;
-  },
-  invokeShell: (name, payload) => invokeDesktopShell({
-    name,
-    payload,
-    git,
-    fs: { listDir },
-    host: {
-      openSettings: (sectionId) => openHarnessSettings(sectionId),
-      getConfig: () => publicConfig(loadConfig()),
-      saveConfig: (patch) => publicConfig(saveConfig(normalizeRendererConfigPatch(patch || {}))),
-    },
-  }),
 });
 
 onHarnessOriginChange((origin) => {

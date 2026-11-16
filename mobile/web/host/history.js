@@ -145,8 +145,6 @@ function mergeApprovalPending(existing, fromHistory) {
 }
 
 export {
-  entrySeq,
-  historyEvents,
   historyQuery,
   HISTORY_PAGE_MESSAGES,
   hostHistoryPage,

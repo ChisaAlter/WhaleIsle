@@ -257,10 +257,7 @@ function attachRendererConsoleTail(contents, tail, now = () => new Date()) {
 }
 
 module.exports = {
-  CRASH_REPORTS_RETAINED,
-  ERROR_SECTION_MAX_CHARS,
   RENDERER_CONSOLE_MAX_BYTES,
-  SOURCES,
   RendererConsoleTail,
   RendererMemorySamples,
   attachRendererConsoleTail,

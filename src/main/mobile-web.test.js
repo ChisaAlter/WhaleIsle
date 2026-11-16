@@ -5,17 +5,8 @@ const os = require('os');
 const path = require('path');
 const {
   resolveMobileWebRoot,
-  shouldProxyToHost,
   resolveSpaAsset,
 } = require('./mobile-web');
-
-test('shouldProxyToHost only forwards /api', () => {
-  assert.equal(shouldProxyToHost('/api/session.list'), true);
-  assert.equal(shouldProxyToHost('/api/events.mux'), true);
-  assert.equal(shouldProxyToHost('/'), false);
-  assert.equal(shouldProxyToHost('/app.js'), false);
-  assert.equal(shouldProxyToHost('/plugins/ui-layout/client.js'), false);
-});
 
 test('resolveSpaAsset blocks traversal and missing test files', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-spa-'));

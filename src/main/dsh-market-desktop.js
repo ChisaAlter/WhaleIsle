@@ -80,11 +80,6 @@ function ensureDesktopMarket(options = {}) {
   };
 }
 
-/** @deprecated Use ensureDesktopMarket — kept as alias for harness wiring. */
-function ensureMarketPlugin(options) {
-  return ensureDesktopMarket(options);
-}
-
 function withoutMarketAliases(list) {
   const blocked = new Set(DSH_MARKET_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));
@@ -92,12 +87,10 @@ function withoutMarketAliases(list) {
 
 module.exports = {
   DSH_MARKET_PACKAGE,
-  DSH_MARKET_DIR,
   DSH_MARKET_ALIASES,
   DSH_MARKET_INSERT_ID,
   DSH_MARKET_OVERLAY_FILENAME,
   resolveMarketSourceDir,
   withoutMarketAliases,
   ensureDesktopMarket,
-  ensureMarketPlugin,
 };

@@ -81,4 +81,4 @@ async function callPeer(peer, op, body = {}, deps = {}) {
   }
 }
 
-module.exports = { readPeerFile, pidAlive, resolvePeer, callPeer };
+module.exports = { resolvePeer, callPeer };

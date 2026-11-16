@@ -537,10 +537,7 @@ function createDshWatch({
 }
 
 module.exports = {
-  REPORT_GATES,
   MILESTONES,
   decodeAppended,
-  decodeAppendedPlain,
-  listSessionFiles,
   createDshWatch,
 };

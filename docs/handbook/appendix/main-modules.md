@@ -56,7 +56,7 @@
 | 文件 | 职责 |
 | --- | --- |
 | `wallpaper-catalog.js` | 壁纸目录与下载 |
-| `remote.js` / `mobile-web.js` / `relay-client.js` | 远程与手机（侧栏入口；默认关、开才监听） |
+| `dshd-remote.js` / `dshd-daemon-runner.mjs` / `mobile-web-server.js` / `mobile-web.js` | 远程与手机（侧栏入口；默认关、开才监听） |
 | `tray.js` / `tray-menu.js` / `menu.js` / `close-behavior.js` / `update.js` | 托盘菜单关闭更新 |
 | `boot-log-dump.js` | 导出启动日志 |
 

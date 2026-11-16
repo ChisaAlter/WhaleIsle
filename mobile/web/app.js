@@ -1,6 +1,4 @@
 import { callUnary, respond } from './host/rpc.js';
-import { handshake } from './host/handshake.js';
-import { openEventSockets } from './host/events.js';
 import { applyHostFrame, hostFrameNeedsCatalogRefresh, hostLabel } from './host/frames.js';
 import { textBlock, imageBlock, promptPayload, ALLOWED_IMAGE_TYPES } from './host/prompt.js';
 // Keep ESM child modules on the same cache-busting contract as index.html.

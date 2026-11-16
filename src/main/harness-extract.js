@@ -405,7 +405,6 @@ async function preparePackagedHarness(log = () => {}, { signal } = {}) {
 
 module.exports = {
   harnessArchivePath,
-  extractedHarnessRoot,
   packagedHarnessRoot,
   ensurePackagedHarness,
   hasBuiltHarness,

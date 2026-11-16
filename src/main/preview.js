@@ -1475,5 +1475,4 @@ module.exports = {
   discoverLocalServers,
   createPreviewController,
   registerPreviewIpc,
-  resolvePreviewLoadUrl,
 };

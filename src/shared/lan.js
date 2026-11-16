@@ -1,5 +1,4 @@
 const os = require('os');
-const { encodeOffer } = require('./offer');
 
 /**
  * Desktop built-in public Away relay — hardcoded for packaged Setup.exe.
@@ -10,10 +9,6 @@ const DEFAULT_RELAY_PORT = 443;
 const DEFAULT_RELAY_ENDPOINT = `${DEFAULT_RELAY_HOST}:${DEFAULT_RELAY_PORT}`;
 const LEGACY_DEFAULT_RELAY_ENDPOINT = '125.124.85.212:8411';
 const LEGACY_DEFAULT_PUBLIC_APP_BASE_URL = 'http://125.124.85.212:3389/dshd';
-/** Product default public relay origin. */
-const DEFAULT_RELAY_ORIGIN = `https://${DEFAULT_RELAY_HOST}`;
-/** Transport default origin only — not a product SPA landing host (QR uses LAN :3180). */
-const DEFAULT_APP_BASE_URL = DEFAULT_RELAY_ORIGIN;
 /** Public nginx SPA for Away-mode QR. Relay transport uses the same origin's exact /ws route. */
 const DEFAULT_PUBLIC_APP_BASE_URL = `https://${DEFAULT_RELAY_HOST}/dshd`;
 const DEFAULT_RELAY_USE_TLS = true;
@@ -195,27 +190,6 @@ function preferredLanIp(addresses = listLanCandidates()) {
 }
 
 /**
- * Normalize a legacy relay origin. Product defaults use HTTPS.
- * @param {string} value - user-entered relay URL.
- * @returns {string} origin or empty string.
- */
-function normalizeRelayOrigin(value) {
-  const raw = String(value || '').trim();
-  if (!raw) {
-    return '';
-  }
-  try {
-    const url = new URL(raw);
-    if (url.protocol === 'https:') {
-      return url.origin;
-    }
-    return '';
-  } catch {
-    return '';
-  }
-}
-
-/**
  * ChisaCode Away relay host (`hostname:port`). Rejects chisacode.sh.
  * Built-in desktop default is always allowed.
  * @param {string} value
@@ -236,74 +210,20 @@ function normalizeRelayEndpoint(value) {
   return withoutScheme.includes(':') ? withoutScheme : `${withoutScheme}:443`;
 }
 
-/**
- * v1 RemoteGateway offer URL builder (dsh-v1 in hash). NOT used for product ChisaCode v2 QR.
- * Relay mode lands on relay origin — legacy tests only. Product: generateLocalPairingOffer + LAN :3180.
- */
-function pairingUrl(address, port, token, options = {}) {
-  const mode = options.mode === 'relay' ? 'relay' : 'lan';
-  const relay = normalizeRelayOrigin(options.relay);
-  const payload = {
-    v: 1,
-    token: token || '',
-    mode,
-  };
-  if (mode === 'relay' && relay) {
-    payload.relay = relay;
-  }
-  const tls = mode === 'lan' && options.tls === true;
-  if (tls && typeof options.fp === 'string' && options.fp) {
-    // Certificate SHA-256 so native clients can pin the self-signed LAN cert.
-    payload.fp = options.fp;
-  }
-  const encoded = encodeOffer(payload);
-  if (mode === 'relay' && relay) {
-    return `${relay}/#offer=${encoded}`;
-  }
-  return `${tls ? 'https' : 'http'}://${address}:${Number(port) || 3180}/#offer=${encoded}`;
-}
-
 function publicUrl(address, port, options = {}) {
   return `${options.tls === true ? 'https' : 'http'}://${address}:${Number(port) || 3180}/`;
 }
 
-/**
- * Addresses the pairing UI may advertise for one bind address:
- * the wildcard exposes every LAN address, loopback only itself, and a
- * specific NIC only that NIC (when it is still present).
- * @param {string} bindAddress - normalized bind address from config.
- * @param {string[]} [addresses] - detected LAN addresses (defaults to a live scan).
- * @returns {string[]} addresses reachable through the current listener.
- */
-function reachableAddresses(bindAddress, addresses = listLanAddresses()) {
-  const bind = String(bindAddress || '0.0.0.0');
-  if (bind === '0.0.0.0') {
-    return addresses;
-  }
-  if (bind === '127.0.0.1') {
-    return ['127.0.0.1'];
-  }
-  return addresses.includes(bind) ? [bind] : [bind];
-}
-
 module.exports = {
-  DEFAULT_RELAY_HOST,
-  DEFAULT_RELAY_PORT,
-  DEFAULT_RELAY_ORIGIN,
   DEFAULT_RELAY_ENDPOINT,
   LEGACY_DEFAULT_RELAY_ENDPOINT,
   LEGACY_DEFAULT_PUBLIC_APP_BASE_URL,
-  DEFAULT_APP_BASE_URL,
   DEFAULT_PUBLIC_APP_BASE_URL,
   DEFAULT_RELAY_USE_TLS,
   listLanAddresses,
-  listLanCandidates,
   preferredLanIp,
   isVirtualOrLinkLocalIpv4,
-  normalizeRelayOrigin,
   normalizeRelayEndpoint,
   normalizePublicAppBaseUrl,
-  pairingUrl,
   publicUrl,
-  reachableAddresses,
 };

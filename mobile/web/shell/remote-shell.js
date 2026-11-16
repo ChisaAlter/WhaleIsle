@@ -62,4 +62,4 @@ async function callShell({ fetchImpl, origin, name, payload = {} }) {
   return parsed.result ?? { ok: true };
 }
 
-export { REMOTE_SHELL_NAMES, UnauthorizedError, callShell };
+export { UnauthorizedError, callShell };

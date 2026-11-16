@@ -37,4 +37,4 @@ function assertAllowed(input) {
   return decision;
 }
 
-module.exports = { ALWAYS_APPROVAL, LOCAL_REVERSIBLE, PolicyViolation, READ_ONLY, assertAllowed, evaluate };
+module.exports = { PolicyViolation, assertAllowed, evaluate };

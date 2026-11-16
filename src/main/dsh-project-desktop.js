@@ -129,4 +129,4 @@ async function ensureDesktopDshProject(options = {}) {
   return { ok: true, sourceDir, runtimeDir, overlayFile, added };
 }
 
-module.exports = { DSH_PROJECT_PACKAGE, DSH_PROJECT_ALIASES, DSH_PROJECT_OVERLAY_FILENAME, ensureDesktopDshProject, projectAvailable, projectPeerDirectories };
+module.exports = { DSH_PROJECT_ALIASES, ensureDesktopDshProject, projectAvailable, projectPeerDirectories };

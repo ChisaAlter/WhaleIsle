@@ -696,8 +696,6 @@ async function downloadWallpaper(url) {
 }
 
 module.exports = {
-  MAX_CUSTOM_CATALOGS,
-  MAX_ITEMS_PER_SOURCE,
   bingCatalogUrls,
   parseCatalogJson,
   listWallpaperCatalog,

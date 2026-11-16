@@ -91,7 +91,6 @@ function withoutAcpAgentsAliases(list) {
 
 module.exports = {
   DSH_ACP_AGENTS_PACKAGE,
-  DSH_ACP_AGENTS_INSERT_ID,
   DSH_ACP_AGENTS_ALIASES,
   DSH_ACP_AGENTS_OVERLAY_FILENAME,
   withoutAcpAgentsAliases,

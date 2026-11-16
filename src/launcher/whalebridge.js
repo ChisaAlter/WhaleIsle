@@ -567,4 +567,4 @@ async function ensureWhaleBridgeRuntime() {
   const result = await svc.start();
   if (!result.ok) throw new Error(result.message || '鲸桥启动失败');
 }
-module.exports = { ID, createWhaleBridgeService, whaleBridgeService, ensureWhaleBridgeRuntime, validateManifest, detachDshChannel };
+module.exports = { createWhaleBridgeService, whaleBridgeService, ensureWhaleBridgeRuntime, validateManifest, detachDshChannel };

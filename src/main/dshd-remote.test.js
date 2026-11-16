@@ -896,30 +896,19 @@ test('stop invalidates pending API preparation without waiting or allowing a lat
   assert.equal(fs.existsSync(path.join(home, 'runner-spawns.log')), false);
 });
 
-test('DshdRemote never uses lan.pairingUrl for product QR', async () => {
-  const lan = require('../shared/lan');
-  const original = lan.pairingUrl;
-  let called = false;
-  lan.pairingUrl = (...args) => {
-    called = true;
-    return original(...args);
+test('DshdRemote exposes the product pairing URL it generated, not a synthesized one', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const remote = new DshdRemote({
+    getConfig: () => ({ remoteEnabled: true, remoteRelayEndpoint: 'ayase.cn:443', remoteRelayUseTls: true }),
+    getHomeDir: () => home,
+  });
+  remote.serverApi = {
+    async generateLocalPairingOffer() {
+      return { relayEnabled: true, url: 'http://192.168.1.1:3180/#offer=x', qr: null };
+    },
   };
-  try {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
-    const remote = new DshdRemote({
-      getConfig: () => ({ remoteEnabled: true, remoteRelayEndpoint: 'ayase.cn:443', remoteRelayUseTls: true }),
-      getHomeDir: () => home,
-    });
-    remote.serverApi = {
-      async generateLocalPairingOffer() {
-        return { relayEnabled: true, url: 'http://192.168.1.1:3180/#offer=x', qr: null };
-      },
-    };
-    await remote.refreshPairing();
-    assert.equal(called, false);
-  } finally {
-    lan.pairingUrl = original;
-  }
+  await remote.refreshPairing();
+  assert.equal(remote.snapshot().urls[0].url, 'http://192.168.1.1:3180/#offer=x');
 });
 
 test('loadServerApi exposes the narrow pairing/device-store slice only', { skip: prerequisiteSkip(VENDOR_BUILD) }, async (t) => {

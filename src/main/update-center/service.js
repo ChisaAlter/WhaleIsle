@@ -558,4 +558,4 @@ function createUpdateCenter(deps) {
   };
 }
 
-module.exports = { createUpdateCenter, isNetworkError, STATE_FILE, AUTO_INTERVAL_MS, AUTO_FIRST_CHECK_MS };
+module.exports = { createUpdateCenter };

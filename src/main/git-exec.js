@@ -336,10 +336,8 @@ module.exports = {
   GIT_MAX_OUTPUT_BYTES,
   PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES,
   RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES,
-  OUTPUT_TRUNCATED_MARKER,
   withTruncationMarker,
   gitChildEnv,
-  probeGitExecutable,
   resetGitExecutableProbe,
   run,
   runGit,
@@ -350,6 +348,5 @@ module.exports = {
   inferHookName,
   fail,
   ok,
-  REF_NAME_PATTERN,
   safeRefName,
 };

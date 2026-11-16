@@ -171,6 +171,5 @@ module.exports = {
   createReloadBudget,
   reasonDetail,
   failurePageHtml,
-  failurePageUrl,
   attachRecovery,
 };

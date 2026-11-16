@@ -20,12 +20,12 @@ Product pairing is **dshd offer (vendored ChisaCode offer v2) + createChisaCodeD
 
 | Item | Notes |
 | --- | --- |
-| `RemoteGateway` HTTP listener / `#offer=` v1 | Class may remain for legacy unit tests; **not** constructed in `index.js` |
-| `src/shared/offer.js` v1 encode | Desktop QR now from `generateLocalPairingOffer` |
+| `RemoteGateway` HTTP listener / `#offer=` v1 | **Deleted** (`src/main/remote.js`, `src/main/remote.test.js`); product QR comes from `generateLocalPairingOffer` |
+| `src/shared/offer.js` v1 encode | **Deleted** with `src/shared/relay-frames.js` |
 | Legacy HTTP relay `http://125.124.85.212:8411` | Retired default; exact saved built-in values migrate to `ayase.cn:443` TLS. Never restore as QR / `appBaseUrl` |
 | Public nginx SPA `https://ayase.cn/dshd/` | Away-mode QR landing on the same TLS origin; relay traffic uses exact `/ws`, never the SPA path |
 | Host token / `remoteRelayToken` wall in gateway UI | Removed; field may linger for migration clear |
-| `mobile/web` HTTP Host SPA login + mux over `:3180` | Replaced by `chisacode/daemon-client.bundle.js` + `session.js` |
+| `mobile/web` HTTP Host SPA login + mux over `:3180` | **Deleted** (`host/login.js`, `host/offer.js`, `host/handshake.js`, `host/events.js`); replaced by `chisacode/daemon-client.bundle.js` + `session.js` |
 | Android Offer v1 JSON login | Must move to same protocol client (tracked; web done first) |
 | QA TC-REM / `remote-gate-qa` hash-offer assumptions | Update to chisacode-v2 / `#offer=` serverId |
 | Feature cards `remote-settings` / `mobile-remote` HTTP LAN:3180 story | Rewritten for ChisaCode |

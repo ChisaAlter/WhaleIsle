@@ -122,4 +122,4 @@ function desktopAccountBackend(origin, invoke, cookies) {
   };
 }
 
-module.exports = { accountView, desktopAccountBackend, validateBrowserDestination, REMOTE_STREAM_MUX_PATH };
+module.exports = { accountView, desktopAccountBackend, validateBrowserDestination };

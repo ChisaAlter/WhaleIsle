@@ -1437,7 +1437,6 @@ module.exports = {
   LIVE2D_PET_FEATURE,
   PET_WIDTH,
   PET_HEIGHT,
-  EDGE_GAP,
   PET_PAGE_URL,
   normalizeLive2dPetState,
   defaultPosition,

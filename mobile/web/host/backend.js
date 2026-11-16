@@ -35,4 +35,4 @@ async function gitCall(client, action, cwd, payload = {}) {
   return unwrapGitValue(result?.value !== undefined ? result.value : result);
 }
 
-export { gitCall, hostCall, hostErrorText, unwrapHost };
+export { gitCall, hostCall, unwrapHost };

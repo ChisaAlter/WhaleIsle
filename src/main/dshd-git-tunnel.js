@@ -87,6 +87,5 @@ function startGitTunnelServer(options) {
 
 module.exports = {
   MAX_BODY_BYTES,
-  mintGitTunnelToken,
   startGitTunnelServer,
 };

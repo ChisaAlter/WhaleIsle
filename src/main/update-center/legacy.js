@@ -44,4 +44,4 @@ function withUpdateCenter(service, center, openCenter) {
   };
 }
 
-module.exports = { withUpdateCenter, legacyCheck };
+module.exports = { withUpdateCenter };

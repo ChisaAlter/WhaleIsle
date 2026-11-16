@@ -179,12 +179,10 @@ async function applyHarnessCookieToSession(ses, origin, cookie) {
 }
 
 module.exports = {
-  cookieFromResponse,
   launchTokenFromUrl,
   loadUrlAfterRedeem,
   redeemBrowserSession,
   probeHarnessReady,
   isUnpublishedHarnessNpm,
   applyHarnessCookieToSession,
-  parseCookieNameValue,
 };

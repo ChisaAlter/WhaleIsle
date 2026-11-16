@@ -192,7 +192,6 @@ function discoverCodexPets(options = {}) {
 }
 
 module.exports = {
-  ATLASES,
   codexPetsRoot,
   webpSize,
   atlasForSize,

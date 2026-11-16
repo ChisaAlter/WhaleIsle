@@ -164,11 +164,8 @@ function missingGhosttyAssetPaths(harnessRoot) {
 
 module.exports = {
   GHOSTTY_ASSET_FILES,
-  terminalPackageRoots,
-  hasTerminalClientJs,
   ghosttyAssetsComplete,
   copyGhosttyAssetsInto,
-  terminalRootsWithClient,
   ensureGhosttyAssetsInHarness,
   harnessHasGhosttyAssets,
   missingGhosttyAssetPaths,

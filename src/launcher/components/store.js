@@ -43,10 +43,6 @@ function registryFile(root) {
   return path.join(root, 'registry.json');
 }
 
-function componentDir(root, id) {
-  return path.join(root, id);
-}
-
 function versionsDir(root, id) {
   return path.join(root, id, 'versions');
 }
@@ -156,7 +152,6 @@ module.exports = {
   validComponentId,
   componentsRoot,
   registryFile,
-  componentDir,
   versionsDir,
   versionDir,
   stagingDir,

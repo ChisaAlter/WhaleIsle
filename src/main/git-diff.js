@@ -192,7 +192,6 @@ async function gitDiff(cwd, options) {
 }
 
 module.exports = {
-  MAX_UNTRACKED_BYTES,
   parseUnifiedDiff,
   gitDiff,
 };

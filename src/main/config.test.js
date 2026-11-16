@@ -314,9 +314,6 @@ test('remote relay endpoint normalizes to host:port for ChisaCode transport', ()
 
 test('remoteAppBaseUrl never backfills relay origin as SPA landing', () => {
   const { normalizeRemoteConfig } = require('./config');
-  const { DEFAULT_APP_BASE_URL } = require('../shared/lan');
-
-  assert.equal(DEFAULT_APP_BASE_URL, 'https://ayase.cn');
 
   assert.equal(normalizeRemoteConfig({ remoteAppBaseUrl: '' }).remoteAppBaseUrl, '');
   assert.equal(normalizeRemoteConfig({ remoteAppBaseUrl: '  ' }).remoteAppBaseUrl, '');
@@ -324,7 +321,7 @@ test('remoteAppBaseUrl never backfills relay origin as SPA landing', () => {
 
   const saved = saveConfig({ remoteAppBaseUrl: '', remoteEnabled: true });
   assert.equal(saved.remoteAppBaseUrl, '');
-  assert.notEqual(saved.remoteAppBaseUrl, DEFAULT_APP_BASE_URL);
+  assert.notEqual(saved.remoteAppBaseUrl, 'https://ayase.cn');
 });
 
 test('remoteAppBaseUrl override rejects relay port', () => {

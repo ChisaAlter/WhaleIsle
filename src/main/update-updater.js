@@ -585,7 +585,6 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
 
 module.exports = {
   downloadLatestViaUpdater,
-  feedFor,
   differentialAvailability,
   strictNsisUpdaterClass,
   cachedInstallerPath,

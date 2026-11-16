@@ -88,7 +88,6 @@ async function saveBootLog({
 }
 
 module.exports = {
-  bootLogFilename,
   formatBootLogDump,
   saveBootLog,
 };

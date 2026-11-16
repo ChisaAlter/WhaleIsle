@@ -503,8 +503,6 @@ function setBundleEnabled(name, enabled, options = {}) {
 module.exports = {
   PROFILE,
   DROPPED,
-  DROPPED_BASENAMES,
-  unscopedName,
   isDroppedPluginName,
   OFFICIAL_TEMPLATE_BUNDLES,
   webProfileDir,
@@ -514,7 +512,6 @@ module.exports = {
   applyDisabledBundles,
   setBundleEnabled,
   ensureDesktopInstallPlugin,
-  upsertManagedBlock,
   stripBlockFromFile,
   DESKTOP_INSTALL_BEGIN,
   DESKTOP_INSTALL_END,

@@ -92,5 +92,4 @@ export {
   permissionFromEvents,
   permissionFromProjections,
   permissionLabel,
-  planOnFromView,
 };

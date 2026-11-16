@@ -742,6 +742,4 @@ function groupTurns(rows, { running = null } = {}) {
   return out;
 }
 
-const foldHistoryToItems = foldEvents;
-
-export { classifyChunk, extractWhaleUi, foldEvents, foldHistoryToItems, groupTurns, toolDetailView, toolResultOf };
+export { foldEvents, groupTurns, toolDetailView };

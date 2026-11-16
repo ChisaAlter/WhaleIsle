@@ -331,7 +331,6 @@ module.exports = {
   installTaskProtection,
   getTaskProtection,
   taskControlToken,
-  resetTaskControlToken,
   inspectionClean,
   CONTROL_PREFIX,
 };

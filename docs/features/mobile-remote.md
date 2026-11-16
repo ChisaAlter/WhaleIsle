@@ -123,7 +123,7 @@
 - `workspaceFiles.readImage` 是有限图片预览：沿正式 `readBytes` 的会话作用域读取最多 2 MiB，验证 multipart 关联、长度、EOF 和 PNG/JPEG/GIF/WebP/BMP 魔数后转 base64；拒绝 SVG、超限、截断或返回长度与元数据不符的文件，不向客户端开放任意二进制读取。
 - 原生账户 `account.startSignIn` 复用正式 OAuth/PKCE。Android 浏览器回调到手机本地回环监听器后，以 E2EE `account.completeSignIn({code,state})` 转发到当前 Host 固定 `/oauth/callback`；state 与授权码校验、交换和凭据保存仍由账户服务承担。桥只返回授权成功地址或安全错误，不转发令牌与回调响应正文。
 - 转发剥 Origin / Referer / 手机 Cookie / sec-fetch-*；Host = `127.0.0.1:<port>`；JSON 不 gzip；URL 必须仍是该 harness loopback。0.1.2 Host API：daemon 带桌面兑到的 `dsh.sessionCookie`（stdin `harness-cookie`），不得把手机 Cookie 转给 loopback；SPA 点名 `session.list` 落到 `/api/session/list`，payload 为 `{ args: { _request } }`。`workspace.list` 在 unary 404 时从 `/api/remote.mux` 的 `workspace/follow` 首帧 baseline 合成 `{ items, archivedSessionIds }`，禁止空目录冒充「没有工作区」。未配对拒绝。`getHarnessOrigin()` 随端口热更新。
-- SPA 不得从 `host/offer.js` / `host/login.js` 进入 v1 Cookie 登录；扫描结果保留完整 `#offer=` URL。
+- SPA 不得进入 v1 Cookie 登录：`host/offer.js` / `host/login.js` 已随 HTTP 网关于 #445 删除；扫描结果保留完整 `#offer=` URL。
 - QR **落地页**：局域网 = `preferredLanIp():3180`；外出 = `DEFAULT_PUBLIC_APP_BASE_URL`（`https://ayase.cn/dshd/`），**不是**中继 `/ws`。
 - **sticky 三 origin 不互通**。外出配对页使用 HTTPS，fragment 不发送到服务器；LAN `http://<LAN>:3180` 仍是明文，同网段 MITM 可读完整导航链接中的 `#offer=`。
 - **一码两入口**：同一张 QR——Android App 内扫＝链接设备；相机 / 浏览器扫＝打开落地页自动连入 web 端。

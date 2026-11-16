@@ -1,29 +1,15 @@
 'use strict';
 
 /**
- * Self-signed TLS material for the LAN remote gateway.
+ * Self-signed TLS material generation (test fixtures and local dev services).
  *
  * Zero-dependency X.509 v3 generation on Node crypto (ECDSA P-256,
  * ecdsa-with-SHA256): the desktop app carries no runtime npm dependency and
- * Electron's Node cannot mint certificates natively. Key and certificate
- * persist under one directory so the certificate SHA-256 fingerprint stays
- * stable across restarts — phones pin that fingerprint (offer `fp`) and
- * browsers keep their accepted-certificate exception.
- *
- * The certificate is deliberately reused even when LAN addresses change:
- * clients trust the fingerprint, not the SAN list, and regenerating on every
- * DHCP move would invalidate existing pairings. Regeneration happens only
- * when the material is missing, unreadable, mismatched, or near expiry.
+ * Electron's Node cannot mint certificates natively.
  */
 
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 
-const KEY_FILE = 'remote-lan-key.pem';
-const CERT_FILE = 'remote-lan-cert.pem';
-/** Renew ahead of expiry so a long-lived install never serves a dead cert. */
-const RENEW_BEFORE_MS = 30 * 24 * 60 * 60 * 1000;
 const VALID_DAYS = 3650;
 const SUBJECT_CN = 'Whale Isle Remote';
 
@@ -217,64 +203,6 @@ function pemCertificate(der) {
   return `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
 }
 
-/** Certificate SHA-256 (lower-case hex) of one PEM certificate. */
-function certificateFingerprint256(certPem) {
-  const x509 = new crypto.X509Certificate(certPem);
-  return crypto.createHash('sha256').update(x509.raw).digest('hex');
-}
-
-function readValidMaterial(dir, now) {
-  let key;
-  let cert;
-  try {
-    key = fs.readFileSync(path.join(dir, KEY_FILE), 'utf8');
-    cert = fs.readFileSync(path.join(dir, CERT_FILE), 'utf8');
-  } catch {
-    return null;
-  }
-  try {
-    const x509 = new crypto.X509Certificate(cert);
-    if (Date.parse(x509.validTo) - now.getTime() < RENEW_BEFORE_MS) {
-      return null;
-    }
-    if (!x509.checkPrivateKey(crypto.createPrivateKey(key))) {
-      return null;
-    }
-    return {
-      key,
-      cert,
-      fingerprint256: crypto.createHash('sha256').update(x509.raw).digest('hex'),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read the persisted LAN TLS material, generating (and persisting) a fresh
- * pair when missing, corrupt, key-mismatched, or within 30 days of expiry.
- * @param {string} dir - storage directory (e.g. `<userData>/remote-tls`).
- * @param {object} [options] - forwarded to {@link generateTlsMaterial}.
- * @returns {{ key: string, cert: string, fingerprint256: string }}
- */
-function ensureTlsMaterial(dir, options = {}) {
-  const now = options.now instanceof Date ? options.now : new Date();
-  const existing = readValidMaterial(dir, now);
-  if (existing) {
-    return existing;
-  }
-  const fresh = generateTlsMaterial(options);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, KEY_FILE), fresh.key, { encoding: 'utf8', mode: 0o600 });
-  fs.writeFileSync(path.join(dir, CERT_FILE), fresh.cert, 'utf8');
-  return fresh;
-}
-
 module.exports = {
   generateTlsMaterial,
-  ensureTlsMaterial,
-  certificateFingerprint256,
-  SUBJECT_CN,
-  VALID_DAYS,
-  RENEW_BEFORE_MS,
 };

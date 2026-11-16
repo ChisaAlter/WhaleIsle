@@ -416,4 +416,4 @@ function createProjectEnvironment(options = {}) {
   return { dispatch, canonicalize, repository, prepareWorkspace, checkWorkspace, snapshot, cleanupWorkspace, openPath, baseline, changes, revert };
 }
 
-module.exports = { createProjectEnvironment, redact };
+module.exports = { createProjectEnvironment };
