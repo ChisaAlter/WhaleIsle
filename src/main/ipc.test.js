@@ -175,7 +175,6 @@ function loadIpc(options = {}) {
     dismissMainWindow: options.dismissMainWindow || (() => false),
     openHarnessSettings() {},
     openMarketplace() {},
-    openRemote() {},
   });
   stub('./dsh', {
     resolveNodeBin: () => 'node',
@@ -1527,7 +1526,7 @@ test('launcher retry-full-plugins delegates sticky clearing to the protected rec
   }
 });
 
-test('boot retry-full-plugins still uses harness retryFullPlugins and records the start outcome', async () => {
+test('boot senders are refused by retry-full-plugins — the boot page restarts through shell:restart', async () => {
   let retried = 0;
   const ipc = loadIpc({
     harness: {
@@ -1539,7 +1538,33 @@ test('boot retry-full-plugins still uses harness retryFullPlugins and records th
     },
   });
   try {
-    await ipc.invoke('shell:retry-full-plugins', bootEvent());
+    // The contract narrows this channel to harness/launcher: a boot sender
+    // is rejected before the handler and records nothing.
+    await assert.rejects(
+      () => ipc.invoke('shell:retry-full-plugins', bootEvent()),
+      (error) => error.code === 'ERR_DSH_IPC_SENDER',
+    );
+    assert.equal(retried, 0);
+    assert.equal(ipc.startDesktop(), 0);
+    assert.deepEqual(ipc.lastStartWrites, []);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('harness retry-full-plugins uses harness retryFullPlugins and records the start outcome', async () => {
+  let retried = 0;
+  const ipc = loadIpc({
+    harness: {
+      retryFullPlugins: async () => {
+        retried += 1;
+        return { state: 'ready' };
+      },
+      snapshot: () => ({ state: 'ready' }),
+    },
+  });
+  try {
+    await ipc.invoke('shell:retry-full-plugins', harnessEvent());
     assert.equal(retried, 1);
     assert.equal(ipc.startDesktop(), 0);
     assert.deepEqual(ipc.lastStartWrites, [{ ok: true }]);

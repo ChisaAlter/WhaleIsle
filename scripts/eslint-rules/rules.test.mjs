@@ -145,3 +145,25 @@ bodyTester.run('whaleisle/no-request-body-accumulate', plugin.rules['no-request-
     { code: 'req.on("data", handler);', errors: [{ messageId: 'useReadBodyLimited' }] },
   ],
 });
+
+const contractTester = new RuleTester({ languageOptions: cjs });
+contractTester.run('whaleisle/ipc-channel-contract', plugin.rules['ipc-channel-contract'], {
+  valid: [
+    "register({ channel: 'shell:get-config', handler });",
+    "registerIpc({ channel: 'shell:theme', authorize, handler });",
+    "handle('shell:get-config', () => payload());",
+    "register({ channel: IPC.changed, handler });",
+    'register({ channel: channel, handler });',
+    "const spec = { channel: 'shell:not-declared', handler };",
+    "emit('ready', { channel: 'shell:get-config', nested: true });",
+    "handle('not a channel', listener);",
+    "obj.handle('shell:not-declared', listener);",
+    "win.webContents.send('shell:not-declared', payload);",
+  ],
+  invalid: [
+    { code: "register({ channel: 'shell:not-declared', handler });", errors: [{ messageId: 'undeclaredChannel' }] },
+    { code: "registerIpc({ channel: 'shell:not-declared', authorize, handler });", errors: [{ messageId: 'undeclaredChannel' }] },
+    { code: "handle('shell:not-declared', (event) => work(event));", errors: [{ messageId: 'undeclaredChannel' }] },
+    { code: "mount({ channel: 'dsh-platform:not-declared', handler });", errors: [{ messageId: 'undeclaredChannel' }] },
+  ],
+});

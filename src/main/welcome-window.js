@@ -12,7 +12,7 @@
 const path = require('node:path');
 const { BrowserWindow, ipcMain } = require('electron');
 const { rendererFile } = require('./paths');
-const { createRegisterIpc, noArgs } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 
 const IPC = {
   saveApiKey: 'dsh-welcome:save-api-key',
@@ -76,23 +76,20 @@ async function openWelcomeWindow(locale, operations) {
     }
   };
   const register = createRegisterIpc(ipcMain);
-  const stringArg = (args) => [typeof args[0] === 'string' ? args[0] : undefined];
-  register({ channel: IPC.takeNotice, authorize: assertSender, validate: noArgs, handler: async () => operations.takeNotice() });
+  register({ channel: IPC.takeNotice, authorize: assertSender, handler: async () => operations.takeNotice() });
   register({
     channel: IPC.saveApiKey,
     authorize: assertSender,
-    validate: stringArg,
     handler: async (_event, value) => {
       if (typeof value !== 'string' || !/^[\x21-\x7e]+$/.test(value)) return { ok: false };
       return operations.saveApiKey(value);
     },
   });
-  register({ channel: IPC.skip, authorize: assertSender, validate: noArgs, handler: async () => { await operations.skip(); } });
-  register({ channel: IPC.start, authorize: assertSender, validate: noArgs, handler: async () => operations.startSignIn() });
+  register({ channel: IPC.skip, authorize: assertSender, handler: async () => { await operations.skip(); } });
+  register({ channel: IPC.start, authorize: assertSender, handler: async () => operations.startSignIn() });
   register({
     channel: IPC.cancel,
     authorize: assertSender,
-    validate: stringArg,
     handler: async (_event, id) => {
       if (typeof id !== 'string') throw new Error('dshd welcome: invalid attempt');
       return operations.cancelSignIn(id);
@@ -101,7 +98,6 @@ async function openWelcomeWindow(locale, operations) {
   register({
     channel: IPC.copyLink,
     authorize: assertSender,
-    validate: stringArg,
     handler: async (_event, id) => {
       if (typeof id !== 'string') throw new Error('dshd welcome: invalid attempt');
       return operations.copySignInLink(id);

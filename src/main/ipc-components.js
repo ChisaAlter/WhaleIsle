@@ -5,11 +5,6 @@
 // contributes the `components` status key; all orchestration lives in
 // src/launcher/components/.
 const { createComponentsService } = require('../launcher/components');
-const { isPlainObject, optionalObject } = require('./ipc-register');
-
-const componentArg = (args) => [
-  typeof args[0] === 'string' || isPlainObject(args[0]) ? args[0] : undefined,
-];
 
 let service = null;
 let serviceDeps = null;
@@ -33,13 +28,13 @@ function _configureForTest(deps) {
   bridgeService = null;
 }
 
-function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
+function register({ handle, send, onQuitCommit }) {
   const svc = ensureService();
   const bridge = serviceDeps ? serviceDeps.whaleBridge : require('../launcher/whalebridge').whaleBridgeService();
   bridgeService = bridge || null;
   const progress = (event, id) => (payload) => send(event, 'shell:components-progress', { id, ...payload });
 
-  handle('shell:components-list', LAUNCHER_ONLY, optionalObject, async (_event, options) => {
+  handle('shell:components-list', async (_event, options) => {
     const list = svc.list();
     if (!bridge) return list;
     if (!bridgeListed || options?.refresh === true) { await bridge.refreshCatalog(); bridgeListed = true; }
@@ -47,21 +42,21 @@ function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
     return { ...list, components: [bridge.row(), ...list.components] };
   });
 
-  handle('shell:components-install', LAUNCHER_ONLY, componentArg, (event, arg) => {
+  handle('shell:components-install', (event, arg) => {
     const id = typeof arg === 'string' ? arg : arg?.id;
     return id === 'whalebridge' && bridge ? bridge.install(progress(event, id)) : svc.install(arg, progress(event, id));
   });
 
-  handle('shell:components-start', LAUNCHER_ONLY, componentArg, (event, id) => id === 'whalebridge' && bridge ? bridge.start(progress(event, id)) : svc.start(id, progress(event, id)));
+  handle('shell:components-start', (event, id) => id === 'whalebridge' && bridge ? bridge.start(progress(event, id)) : svc.start(id, progress(event, id)));
 
-  handle('shell:components-stop', LAUNCHER_ONLY, componentArg, async (event, id) => {
+  handle('shell:components-stop', async (event, id) => {
     if (id !== 'whalebridge' || !bridge) return svc.stop(id, progress(event, id));
     const result = await bridge.stop(progress(event, id));
     if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
     return result;
   });
 
-  handle('shell:components-update', LAUNCHER_ONLY, componentArg, async (event, id) => {
+  handle('shell:components-update', async (event, id) => {
     if (id !== 'whalebridge' || !bridge) return svc.update(id, progress(event, id));
     const previousUrl = bridge.state()?.url;
     const result = await bridge.update(progress(event, id));
@@ -70,7 +65,7 @@ function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
     return result;
   });
 
-  handle('shell:components-rollback', LAUNCHER_ONLY, componentArg, async (event, id) => {
+  handle('shell:components-rollback', async (event, id) => {
     if (id !== 'whalebridge' || !bridge) return svc.rollback(id, progress(event, id));
     const previousUrl = bridge.state()?.url;
     const result = await bridge.rollback(progress(event, id));
@@ -78,7 +73,7 @@ function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
     return result;
   });
 
-  handle('shell:components-uninstall', LAUNCHER_ONLY, componentArg, async (event, arg) => {
+  handle('shell:components-uninstall', async (event, arg) => {
     const id = typeof arg === 'string' ? arg : arg?.id;
     if (id !== 'whalebridge' || !bridge) return svc.uninstall(id, progress(event, id));
     const previousUrl = bridge.state()?.url;
@@ -86,8 +81,8 @@ function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
     if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
     return result;
   });
-  handle('shell:components-uninstall-info', LAUNCHER_ONLY, componentArg, (_event, id) => id === 'whalebridge' && bridge ? bridge.uninstallInfo() : {});
-  handle('shell:components-open', LAUNCHER_ONLY, componentArg, async (event, id) => {
+  handle('shell:components-uninstall-info', (_event, id) => id === 'whalebridge' && bridge ? bridge.uninstallInfo() : {});
+  handle('shell:components-open', async (event, id) => {
     if (id !== 'whalebridge' || !bridge) return { ok: false, error: 'unknown-component' };
     const result = await bridge.start(progress(event, id));
     if (!result.ok) return result;

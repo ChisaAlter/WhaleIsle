@@ -4,7 +4,7 @@ const path = require('path');
 const { loadConfig } = require('./config');
 const { resolveTheme, officialShellBackground, windowBackgroundForShell } = require('../shared/themes');
 const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
-const { createRegisterIpc, isPlainObject } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 const { enableNativeWindowMotion, hasNativeWindowMotion, isNativeWindowMaximized, toggleNativeMaximize } = require('./native-window-motion');
 
 const TITLEBAR_HEIGHT = 48;
@@ -201,9 +201,7 @@ function bindChromeIpc() {
   // authorize result and the handler no-ops on it.
   register({
     channel: 'shell:window',
-    kind: 'on',
     authorize: (event) => authorizedRole(event, WINDOW_ROLES),
-    validate: (args, role) => [role, typeof args[0] === 'string' ? args[0] : undefined],
     handler: (event, role, action) => {
     if (!role) return;
     const win = windowFromEvent(event, role);
@@ -245,7 +243,6 @@ function bindChromeIpc() {
   register({
     channel: 'shell:window-state',
     authorize: (event) => assertIpcSender(event, WINDOW_ROLES),
-    validate: (_args, role) => [role],
     handler: (event, role) => {
     const win = windowFromEvent(event, role);
     if (!win || win.isDestroyed()) {
@@ -262,9 +259,7 @@ function bindChromeIpc() {
 
   register({
     channel: 'shell:chrome-metrics',
-    kind: 'on',
     authorize: (event) => authorizedRole(event, [IPC_ROLES.HARNESS]),
-    validate: (args, role) => [role, isPlainObject(args[0]) ? args[0] : undefined],
     handler: (event, role, metrics) => {
     if (!role) return;
     const win = windowFromEvent(event, role);
@@ -413,6 +408,7 @@ function attachIntegratedChrome(win, options = {}) {
 
 module.exports = {
   TITLEBAR_HEIGHT,
+  bindChromeIpc,
   windowChrome,
   shellWindowChrome,
   hideNativeMenu,

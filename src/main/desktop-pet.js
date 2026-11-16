@@ -4,7 +4,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const { discoverCodexPets } = require('./desktop-pets');
-const { createRegisterIpc, noArgs } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 
 const PET_SIZE = 88;
 const EDGE_GAP = 16;
@@ -304,14 +304,13 @@ function createDesktopPetManager(options = {}) {
       return;
     }
     const register = createRegisterIpc(ipcMain);
-    register({ channel: 'shell:pet-state', authorize: assertAuthorized, validate: noArgs, handler: () => petPayload() });
+    register({ channel: 'shell:pet-state', authorize: assertAuthorized, handler: () => petPayload() });
     register({
       channel: 'shell:pet-drag-commit',
       authorize: assertAuthorized,
-      validate: (args) => [args[0]],
       handler: (_event, payload) => commitDrag(payload),
     });
-    register({ channel: 'shell:pet-menu', authorize: assertAuthorized, validate: noArgs, handler: () => { openMenu(); return null; } });
+    register({ channel: 'shell:pet-menu', authorize: assertAuthorized, handler: () => { openMenu(); return null; } });
     handlersRegistered = true;
   }
 

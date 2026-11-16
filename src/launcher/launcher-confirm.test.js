@@ -5,6 +5,8 @@ const test = require('node:test');
 const { EventEmitter } = require('node:events');
 
 const { createLauncherConfirm, CONFIRM_EVENT, RESPONSE_CHANNEL } = require('./launcher-confirm');
+const { IPC_ROLES } = require('../main/ipc-authorization');
+const { IPC_CONTRACT } = require('../shared/ipc-contract');
 
 function tick() {
   return new Promise((resolve) => setImmediate(resolve));
@@ -87,12 +89,15 @@ test('register mounts the response channel through the lane ctx handle', () => {
   const bridge = createLauncherConfirm({ getWindow: () => null });
   const mounted = [];
   bridge.register({
-    handle: (channel, roles, validate, listener) => mounted.push({ channel, roles, validate, listener }),
+    handle: (channel, listener) => mounted.push({ channel, listener }),
     LAUNCHER_ONLY: ['launcher'],
   });
   assert.equal(mounted.length, 1);
   assert.equal(mounted[0].channel, RESPONSE_CHANNEL);
-  assert.deepEqual(mounted[0].roles, ['launcher']);
-  const args = mounted[0].validate([{ id: 'lc1', ok: true }]);
+  // Roles and argument validation are contract-owned (#436): the lane only
+  // mounts channel + listener, so assert both against the contract row.
+  const entry = IPC_CONTRACT.find((row) => row.channel === RESPONSE_CHANNEL && row.kind === 'invoke');
+  assert.deepEqual(entry.roles, [IPC_ROLES.LAUNCHER]);
+  const args = entry.validate([{ id: 'lc1', ok: true }]);
   assert.equal(mounted[0].listener(null, ...args), false, 'unmatched response must not throw');
 });

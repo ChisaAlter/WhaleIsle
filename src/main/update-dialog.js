@@ -10,7 +10,7 @@
 
 const { ipcMain } = require('electron');
 const { currentTheme } = require('./chrome');
-const { createRegisterIpc, noArgs } = require('./ipc-register');
+const { createRegisterIpc } = require('./ipc-register');
 
 const UPDATE_DIALOG_IPC = {
   status: 'dsh-update-dialog:status',
@@ -52,7 +52,6 @@ class ShellConfirmDialog {
     register({
       channel: UPDATE_DIALOG_IPC.status,
       authorize: owned,
-      validate: noArgs,
       handler: () => this.active?.view ?? null,
     });
     register({
@@ -60,7 +59,6 @@ class ShellConfirmDialog {
       authorize: owned,
       // The handler owns the payload contract (revision/index/method checks
       // produce the specific dialog errors); validation fixes the arity.
-      validate: (args) => [args[0], args[1], args[2]],
       handler: (_event, revision, index, downloadMode) => {
         const active = this.active;
         if (active === undefined || revision !== active.view.revision) {

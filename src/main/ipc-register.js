@@ -13,10 +13,10 @@
  * owning window/view) fold it into the normalized handler arguments instead
  * of re-running the check inside the handler.
  *
- * `kind: 'handle'` mounts `ipcMain.handle`: authorization and validation
- * throws become `invoke` rejections, same as before. `kind: 'on'` mounts
- * `ipcMain.on`: any failure is dropped and logged — a bad `send` must not
- * turn into an uncaught main-process exception.
+ * `kind: 'invoke'` in the contract mounts `ipcMain.handle`: authorization
+ * and validation throws become `invoke` rejections, same as before.
+ * `kind: 'send'` mounts `ipcMain.on`: any failure is dropped and logged —
+ * a bad `send` must not turn into an uncaught main-process exception.
  */
 
 /** Coded rejection shared by channel-owned sender checks. */
@@ -71,27 +71,54 @@ function optionalString(args) {
   return [value];
 }
 
-function mount(ipc, spec) {
-  const {
-    channel,
-    kind = 'handle',
-    roles,
-    authorize,
-    senderOptions,
-    validate,
-    handler,
-  } = spec;
+// #436: kind/roles/validate live in src/shared/ipc-contract.js, not at the
+// call site. `contractEntries` is injected only by tests; production code
+// resolves the contract lazily so this module never cycles with it.
+function contractEntry(channel, contractEntries) {
+  const entries = contractEntries || require('../shared/ipc-contract').IPC_CONTRACT;
+  return entries.find((candidate) => (
+    candidate.channel === channel && candidate.kind !== 'event' && candidate.pending !== true
+  ));
+}
+
+function mount(ipc, spec, contractEntries) {
+  const { channel, authorize, senderOptions, handler } = spec;
   if (typeof channel !== 'string' || channel === '') {
     throw new TypeError('registerIpc requires a channel name');
   }
-  if (typeof validate !== 'function' || typeof handler !== 'function') {
+  if (spec.kind !== undefined || spec.roles !== undefined || spec.validate !== undefined) {
+    throw new TypeError(
+      `registerIpc(${channel}): kind/roles/validate are declared in src/shared/ipc-contract.js`,
+    );
+  }
+  if (typeof handler !== 'function') {
+    throw new TypeError(`registerIpc(${channel}) requires a handler function`);
+  }
+  const entry = contractEntry(channel, contractEntries);
+  if (!entry) {
+    throw new TypeError(
+      `registerIpc(${channel}): channel is not declared in src/shared/ipc-contract.js`,
+    );
+  }
+  const validate = entry.validate;
+  if (typeof validate !== 'function') {
     throw new TypeError(`registerIpc(${channel}) requires validate and handler functions`);
   }
+  if (entry.authorize === 'channel-owned') {
+    if (typeof authorize !== 'function') {
+      throw new TypeError(`registerIpc(${channel}) requires the module-owned authorize`);
+    }
+  } else if (authorize !== undefined) {
+    throw new TypeError(
+      `registerIpc(${channel}) uses role authorization; a call-site authorize is not allowed`,
+    );
+  }
+  const kind = entry.kind === 'send' ? 'on' : 'handle';
   // Resolved at call time: tests swap './ipc-authorization' in require.cache
   // before loading a module that registers channels through here.
   const check = typeof authorize === 'function'
     ? authorize
-    : (event) => require('./ipc-authorization').assertIpcSender(event, roles, senderOptions);
+    : (event) => require('./ipc-authorization').assertIpcSender(event, entry.roles, senderOptions);
   // The listener mirrors the handler's declared syncness: tests (and any
   // caller invoking the captured listener directly) see a synchronous throw
   // for sync handlers and a rejection for async ones — identical to the
@@ -132,8 +159,8 @@ function registerIpc(spec) {
 }
 
 /** Bind registration to an injected ipcMain-compatible object. */
-function createRegisterIpc(ipc) {
-  return (spec) => mount(ipc, spec);
+function createRegisterIpc(ipc, contractEntries) {
+  return (spec) => mount(ipc, spec, contractEntries);
 }
 
 module.exports = {

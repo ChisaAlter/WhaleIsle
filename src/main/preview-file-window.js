@@ -6,7 +6,7 @@ const { currentTheme, officialShellBackground } = require('./chrome');
 const { rendererFile } = require('./paths');
 const { readFile } = require('./workspace-fs');
 const { normalizePreviewFileTarget } = require('./preview-file-target');
-const { createRegisterIpc, noArgs, unauthorizedError } = require('./ipc-register');
+const { createRegisterIpc, unauthorizedError } = require('./ipc-register');
 
 const FILE_PREVIEW_STATE_CHANNEL = 'shell:file-preview-state';
 const IMAGE_EXTENSIONS = new Set(['.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp']);
@@ -82,7 +82,6 @@ function createFilePreviewWindowController(options = {}) {
         throw unauthorizedError();
       }
     },
-    validate: noArgs,
     handler: () => previewState,
   });
 
