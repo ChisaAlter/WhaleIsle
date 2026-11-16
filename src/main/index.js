@@ -72,6 +72,7 @@ const {
   stopDesktopInstallControl,
   desktopInstallReady,
 } = require('./desktop-install-control');
+const { NEVER_ALWAYS_LEVELS } = require('../shared/model-tool-effects');
 const { installPlugin, installMarketplacePlugin, uninstallPlugin } = require('./marketplace-install');
 const { listMarketplace } = require('./marketplace-catalog');
 const { recordMarketplaceOperation } = require('./marketplace-state');
@@ -647,6 +648,80 @@ async function confirmDesktopPluginChange(request) {
     noLink: true,
   });
   return result.response === 0;
+}
+
+/**
+ * Titles for model-tool confirmation dialogs, keyed by the registry effect
+ * level the confirm endpoint resolved. Refusal is always the default button.
+ */
+const MODEL_ACTION_TITLES = {
+  destructive: '助理请求执行破坏性操作',
+  external: '助理请求对外公开',
+  code: '助理请求运行代码',
+  local: '助理请求执行本地操作',
+};
+
+/**
+ * Confirmation for high-risk model-tool actions posted to /desktop/confirm.
+ * Requests carrying an `effect` field take the model-action dialog; anything
+ * else is a plugin mutation and keeps the existing plugin wording (and the
+ * boolean answer). Model actions answer 'always' | 'once' | 'deny';
+ * destructive/code levels never offer a run-scoped allow, and any unexpected
+ * response fails closed as 'deny'.
+ */
+async function confirmModelAction(request) {
+  if (!request || typeof request.effect !== 'string' || !request.effect) {
+    return confirmDesktopPluginChange(request);
+  }
+  const tool = String(request.tool || '工具');
+  const action = String(request.action || '');
+  const summary = String(request.summary || '').slice(0, 500);
+  const offerAlways = !NEVER_ALWAYS_LEVELS.has(request.effect);
+  const buttons = offerAlways
+    ? ['拒绝', '允许一次', '本次运行内始终允许']
+    : ['拒绝', '允许一次'];
+  const result = await confirmDialog(firstVisibleWindow(), {
+    type: 'warning',
+    buttons,
+    defaultId: 0,
+    cancelId: 0,
+    dangerIds: offerAlways ? [1, 2] : [1],
+    title: MODEL_ACTION_TITLES[request.effect] || '助理请求执行操作',
+    message: summary || `助理想用 ${tool} 执行 ${action || '操作'}`,
+    detail: [
+      `工具：${tool}${action ? ` / ${action}` : ''}`,
+      String(request.details || '').slice(0, 6000),
+    ].filter(Boolean).join('\n'),
+    noLink: true,
+  });
+  if (result.response === 1) return 'once';
+  if (result.response === 2 && offerAlways) return 'always';
+  return 'deny';
+}
+
+/**
+ * Show a generated secret (pairing code, public tunnel address) to the user in
+ * a desktop dialog with a copy button, so the value never has to travel
+ * through model-visible tool output.
+ */
+async function showDesktopSecret(request) {
+  const secret = String(request?.secret || '');
+  if (!secret) return { ok: false };
+  const hint = String(request?.hint || '').slice(0, 500);
+  for (;;) {
+    const result = await confirmDialog(firstVisibleWindow(), {
+      type: 'info',
+      buttons: ['复制', '关闭'],
+      defaultId: 1,
+      cancelId: 1,
+      title: String(request?.title || '敏感信息').slice(0, 80) || '敏感信息',
+      message: String(request?.label || '').slice(0, 200) || '以下敏感信息只显示在这里，不会发给助理。',
+      detail: hint ? `${secret}\n\n${hint}` : secret,
+      noLink: true,
+    });
+    if (result.response !== 0) return { ok: true };
+    clipboard.writeText(secret);
+  }
 }
 
 // Keep the full release notes in the update dialog's reading region.
@@ -1263,7 +1338,8 @@ if (!gotLock) {
         token: loadConfig().githubToken,
       }),
       startHarness: restartWithCleanup,
-      confirmPluginChange: confirmDesktopPluginChange,
+      confirmModelAction,
+      showSecret: showDesktopSecret,
       // The /desktop/* half of the control channel: dsh-whale's management
       // tools reach the same profile-ops implementation as the IPC surface,
       // so config writes and plugin toggles share one serialized align

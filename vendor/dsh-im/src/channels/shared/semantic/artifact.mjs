@@ -3,6 +3,7 @@ import { constants as fsConstants } from 'node:fs';
 import { copyFile, lstat, mkdtemp, open, realpath, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, isAbsolute, join, resolve } from 'node:path';
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.mjs';
 
 export const OUTBOUND_ARTIFACT_TOOL = 'dsh_im_return_file';
 
@@ -575,7 +576,9 @@ export function createOutboundArtifactTool({ registry = outboundArtifactRegistry
     pending.artifacts.push(artifact);
   };
   const definition = Object.freeze({
-    name: OUTBOUND_ARTIFACT_TOOL,
+    // Literal name kept in sync with OUTBOUND_ARTIFACT_TOOL so the tool-effect
+    // registry's static scan can see the registration.
+    name: 'dsh_im_return_file',
     description: 'Send a readable file or generated image to the user through the current conversation. Existing and newly created files are both valid.',
     parameters: {
       type: 'object',
@@ -605,6 +608,14 @@ export function createOutboundArtifactTool({ registry = outboundArtifactRegistry
       }],
     },
     async execute(args, exec) {
+      const confirmation = await confirmModelAction({
+        tool: 'dsh_im_return_file',
+        action: 'send',
+        effect: 'external',
+        summary: `把文件 ${String(args?.path ?? '')} 通过当前 IM 会话发送给用户`,
+        details: String(args?.path ?? ''),
+      });
+      if (confirmation.ok !== true) throw artifactError('user-declined', DECLINED_TEXT);
       const artifact = await registry.stage(args, exec);
       staged.set(exec, artifact);
       return publicArtifact(artifact);

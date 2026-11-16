@@ -7,6 +7,7 @@ import { BridgeClient } from './bridge-client.js';
 import { ChatGPTBrowser } from './browser.js';
 import { CheckpointStore, stateDirectory, workspaceOf, PROTOCOL_STATES, WAITING_FOR } from './state.js';
 import { Workspace } from '../bridge/dist/workspace/manager.js';
+import { confirmModelAction, showDesktopSecret, DECLINED_TEXT } from './desktop-confirm.js';
 
 export const name = 'dsh-with-chatgpt';
 export const inject = ['tools', 'skills', 'agents'];
@@ -45,11 +46,38 @@ function nominatedOutput(root, value) {
   return file;
 }
 
-export function apply(ctx, config = {}) {
+// chatgpt_connection actions that create or change the ChatGPT-facing
+// connection; doctor also joins them unless it only diagnoses.
+const CONNECTION_CONFIRM_ACTIONS = new Set(['setup', 'pair', 'unpair', 'prefs_set', 'tunnel_choose']);
+// Browser actions that act inside ChatGPT's page on the user's behalf.
+const BROWSER_CONFIRM_ACTIONS = new Set(['navigate', 'click', 'fill', 'press']);
+
+const declined = () => ({ ok: false, data: { detail: DECLINED_TEXT } });
+
+/**
+ * Pairing codes are proof of authorization for ChatGPT access, so they are
+ * displayed in a desktop dialog and replaced by a marker in tool output.
+ */
+async function presentPairingSecrets(data) {
+  for (const holder of [data, data?.chatgptRepair]) {
+    if (typeof holder?.pairingCode !== 'string' || !holder.pairingCode) continue;
+    const shown = await showDesktopSecret({
+      title: 'ChatGPT 配对码',
+      label: '配对码已生成，复制后在 ChatGPT 的 DSH 连接设置中输入。',
+      secret: holder.pairingCode,
+      hint: '配对码只显示在桌面窗口，不会发给助理。',
+    });
+    holder.pairingCode = shown.ok === true
+      ? '配对码已显示在桌面窗口'
+      : '配对码已生成但桌面通道不可用，请重试该操作';
+  }
+}
+
+export function apply(ctx, config = {}, deps = {}) {
   const stateDir = stateDirectory(config.stateDir);
-  const bridge = new BridgeClient({ stateDir, node: config.node });
+  const bridge = deps.bridge ?? new BridgeClient({ stateDir, node: config.node });
   const store = new CheckpointStore(stateDir);
-  const browser = new ChatGPTBrowser({ profileDir: path.join(stateDir, 'browser-profile'), executablePath: config.browserExecutable, headless: config.headless ?? false });
+  const browser = deps.browser ?? new ChatGPTBrowser({ profileDir: path.join(stateDir, 'browser-profile'), executablePath: config.browserExecutable, headless: config.headless ?? false });
   const connectionOrigins = new Map();
 
   const caller = (exec) => {
@@ -112,8 +140,21 @@ export function apply(ctx, config = {}) {
           break;
         default: throw new Error('Unknown connection action.');
       }
+      const needsConfirm = CONNECTION_CONFIRM_ACTIONS.has(args.action)
+        || (args.action === 'doctor' && args.diagnoseOnly !== true);
+      if (needsConfirm) {
+        const confirmation = await confirmModelAction({
+          tool: 'chatgpt_connection',
+          action: args.action,
+          effect: 'external',
+          summary: `对当前工作区执行 ChatGPT 连接的 ${args.action} 操作`,
+          details: `d2c ${command.join(' ')}`,
+        });
+        if (confirmation.ok !== true) return declined();
+      }
       const data = await bridge.run(command, root, exec.signal);
       rememberEndpoint(root, data);
+      await presentPairingSecrets(data);
       return { ok: data.ok !== false, data };
     },
   });
@@ -131,6 +172,16 @@ export function apply(ctx, config = {}) {
       const origin = connectionOrigins.get(root);
       // The bridge origin comes from trusted local discovery, never a model argument.
       if (origin) browser.setBridgeOrigin(origin, agent);
+      if (BROWSER_CONFIRM_ACTIONS.has(args.action)) {
+        const confirmation = await confirmModelAction({
+          tool: 'chatgpt_browser',
+          action: args.action,
+          effect: 'external',
+          summary: `在 ChatGPT 专用浏览器中执行 ${args.action}`,
+          details: [args.url, args.target, args.text, args.key].filter(Boolean).join('\n'),
+        });
+        if (confirmation.ok !== true) return declined();
+      }
       const data = await browser.run(agent, args, exec.signal);
       return { ok: true, data };
     },
@@ -175,6 +226,14 @@ export function apply(ctx, config = {}) {
       if (args.command) command.push('--command', args.command, '--output-file', nominatedOutput(root, args.outputFile));
       if (args.exitCode !== undefined) command.push('--exit-code', String(args.exitCode));
       if (args.notes) command.push('--notes', args.notes);
+      const confirmation = await confirmModelAction({
+        tool: 'chatgpt_record',
+        action: 'record',
+        effect: 'external',
+        summary: `把第 ${args.iteration} 次迭代的变更与输出登记为 ChatGPT 可读`,
+        details: `变更文件：${args.changedFiles.join(', ')}\n测试：${args.tests}\n退出状态：${args.exitStatus}`,
+      });
+      if (confirmation.ok !== true) return declined();
       const data = await bridge.run(command, root, exec.signal);
       return { ok: data.ok !== false, data };
     },

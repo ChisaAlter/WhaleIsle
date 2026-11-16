@@ -4,6 +4,7 @@ const http = require('http');
 const crypto = require('crypto');
 
 const { isValidGithubSpec, normalizeAllowBuilds } = require('../host/install-dsh-plugin-client.js');
+const { effectOf, NEVER_ALWAYS_LEVELS } = require('../shared/model-tool-effects.js');
 
 const RESTART_DELAY_MS = 500;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -68,24 +69,38 @@ function serverError(res, error) {
 
 let confirmChain = Promise.resolve();
 
+const PLUGIN_WORDING = {
+  decline: '用户拒绝了这次插件变更',
+  failure: '插件变更确认失败',
+  disconnected: '确认前请求已断开，未执行这次插件变更',
+};
+
+const ACTION_WORDING = {
+  decline: '用户拒绝了这次操作',
+  failure: '操作确认失败',
+  disconnected: '确认前请求已断开，未执行这次操作',
+};
+
 /**
- * Model-initiated plugin mutations must pass a desktop confirmation before
- * they execute. Prompts are serialized so only one dialog is up at a time,
- * and a missing or throwing confirmer fails closed as a decline.
+ * Model-initiated side effects must pass a desktop confirmation before they
+ * execute. Prompts are serialized so only one dialog is up at a time, and a
+ * missing, throwing or misbehaving confirmer fails closed as a decline. The
+ * confirmer answers `true` (legacy plugin allows), 'once' or 'always';
+ * anything else is a refusal.
  */
-function requestPluginChange(confirmPluginChange, request) {
+function requestModelAction(confirmModelAction, request, wording) {
   const run = confirmChain.then(async () => {
-    if (typeof confirmPluginChange !== 'function') {
-      return { allowed: false, error: '用户拒绝了这次插件变更' };
+    if (typeof confirmModelAction !== 'function') {
+      return { allowed: false, always: false, error: wording.decline };
     }
     try {
-      const allowed = await confirmPluginChange(request);
-      return allowed === true
-        ? { allowed: true, error: '' }
-        : { allowed: false, error: '用户拒绝了这次插件变更' };
+      const decision = await confirmModelAction(request);
+      return decision === true || decision === 'once' || decision === 'always'
+        ? { allowed: true, always: decision === 'always', error: '' }
+        : { allowed: false, always: false, error: wording.decline };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'confirm failed');
-      return { allowed: false, error: `插件变更确认失败：${reason}` };
+      return { allowed: false, always: false, error: `${wording.failure}：${reason}` };
     }
   });
   confirmChain = run.then(() => undefined, () => undefined);
@@ -97,10 +112,10 @@ function requestPluginChange(confirmPluginChange, request) {
  * out or disconnected is not executed, so a late click cannot act on a call the
  * tool already reported as failed.
  */
-async function confirmForRequest(res, confirmPluginChange, request) {
-  const confirmation = await requestPluginChange(confirmPluginChange, request);
+async function confirmForRequest(res, confirmModelAction, request, wording = PLUGIN_WORDING) {
+  const confirmation = await requestModelAction(confirmModelAction, request, wording);
   if (confirmation.allowed && (res.destroyed || res.socket?.destroyed)) {
-    return { allowed: false, error: '确认前请求已断开，未执行这次插件变更' };
+    return { allowed: false, always: false, error: wording.disconnected };
   }
   return confirmation;
 }
@@ -141,7 +156,7 @@ function normalizeInstallResult(result, fallbackSpec) {
   };
 }
 
-async function handleInstall(req, res, { installPlugin, startHarness, restartDelayMs, confirmPluginChange }) {
+async function handleInstall(req, res, { installPlugin, startHarness, restartDelayMs, confirmModelAction }) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req) || '{}');
@@ -159,7 +174,7 @@ async function handleInstall(req, res, { installPlugin, startHarness, restartDel
     badRequest(res, 'allowBuilds 包含非法包名');
     return;
   }
-  const confirmation = await confirmForRequest(res, confirmPluginChange, {
+  const confirmation = await confirmForRequest(res, confirmModelAction, {
     action: 'install',
     target: spec,
     allowBuilds,
@@ -197,7 +212,7 @@ async function handleInstall(req, res, { installPlugin, startHarness, restartDel
  * tools. Guards live in the desktop callbacks (plugin-ops / marketplace
  * validation), so this layer only normalizes the envelope.
  */
-async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarness, restartDelayMs, confirmPluginChange }) {
+async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarness, restartDelayMs, confirmModelAction }) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req) || '{}');
@@ -223,7 +238,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
         badRequest(res, '仅支持 github:owner/repo[#ref] 安装规格');
         return;
       }
-      const confirmation = await confirmForRequest(res, confirmPluginChange, {
+      const confirmation = await confirmForRequest(res, confirmModelAction, {
         action: 'install',
         target: id || spec,
         allowBuilds,
@@ -249,7 +264,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
         badRequest(res, '缺少包名');
         return;
       }
-      const confirmation = await confirmForRequest(res, confirmPluginChange, {
+      const confirmation = await confirmForRequest(res, confirmModelAction, {
         action: 'remove',
         target: name,
         allowBuilds,
@@ -271,7 +286,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
       const names = Array.isArray(payload.names)
         ? payload.names
         : [payload.name];
-      const confirmation = await confirmForRequest(res, confirmPluginChange, {
+      const confirmation = await confirmForRequest(res, confirmModelAction, {
         action,
         target: action === 'disable' && names.length > 1 ? names : names[0],
         allowBuilds,
@@ -291,9 +306,104 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
   }
 }
 
-function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, confirmPluginChange }) {
+/**
+ * `POST /desktop/confirm` is the shared confirmation endpoint for
+ * model-callable tools: a tool sends what it is about to do, the main process
+ * shows a dialog, and only an explicit allow lets the caller proceed. The
+ * effective level comes from the model-tool-effects registry — the request's
+ * self-reported effect is advisory — and tools the registry does not know are
+ * treated as `code`. Run-scoped "always" grants are keyed by tool+action and
+ * never apply to destructive/code effects.
+ */
+async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed }) {
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req) || '{}');
+  } catch {
+    badRequest(res, 'invalid json');
+    return;
+  }
+  const tool = String(payload?.tool || '').slice(0, 200);
+  const effect = String(payload?.effect || '').slice(0, 40);
+  if (!tool || !effect) {
+    badRequest(res, 'missing tool or effect');
+    return;
+  }
+  const action = String(payload?.action || '').slice(0, 200);
+  const level = effectOf(tool, action) || 'code';
+  const rememberable = !NEVER_ALWAYS_LEVELS.has(level);
+  const memoryKey = `${tool} ${action}`;
+  if (rememberable && sessionAllowed.has(memoryKey)) {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+  const request = {
+    tool,
+    action,
+    effect: level,
+    summary: String(payload?.summary || '').slice(0, 500),
+    details: String(payload?.details || '').slice(0, 6000),
+  };
+  const confirmation = await confirmForRequest(res, confirmModelAction, request, ACTION_WORDING);
+  if (confirmation.allowed && confirmation.always && rememberable) {
+    sessionAllowed.add(memoryKey);
+  }
+  sendJson(res, 200, confirmation.allowed ? { ok: true } : declinedBody(confirmation.error));
+}
+
+/**
+ * `POST /desktop/show-secret` displays a generated secret (pairing code,
+ * public tunnel address) in a desktop dialog instead of returning it to the
+ * model. It is serialized behind pending confirmations so dialogs never stack.
+ */
+async function handleShowSecret(req, res, { showSecret }) {
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req) || '{}');
+  } catch {
+    badRequest(res, 'invalid json');
+    return;
+  }
+  const secret = String(payload?.secret || '');
+  if (!secret) {
+    badRequest(res, 'missing secret');
+    return;
+  }
+  if (typeof showSecret !== 'function') {
+    sendJson(res, 200, { ok: false, error: 'secret display is unavailable' });
+    return;
+  }
+  const request = {
+    title: String(payload?.title || '').slice(0, 80),
+    label: String(payload?.label || '').slice(0, 200),
+    secret: secret.slice(0, 4000),
+    hint: String(payload?.hint || '').slice(0, 500),
+  };
+  const run = confirmChain.then(async () => {
+    try {
+      const result = await showSecret(request);
+      return result === false || result?.ok === false ? { ok: false } : { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error || 'show failed') };
+    }
+  });
+  confirmChain = run.then(() => undefined, () => undefined);
+  sendJson(res, 200, await run);
+}
+
+function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, confirmModelAction, showSecret }) {
   const delay = Number.isFinite(restartDelayMs) ? restartDelayMs : RESTART_DELAY_MS;
-  const ops = { installPlugin, startHarness, restartDelayMs: delay, confirmPluginChange };
+  const ops = {
+    installPlugin,
+    startHarness,
+    restartDelayMs: delay,
+    confirmModelAction,
+    showSecret,
+    // Run-scoped "always allow" grants, keyed "tool action". Created with the
+    // control server instance so an app restart re-asks; never populated for
+    // destructive/code effects.
+    sessionAllowed: new Set(),
+  };
   return async (req, res) => {
     const pathname = new URL(req.url ?? '/', 'http://dshd.internal').pathname;
     if (pathname !== '/install' && !pathname.startsWith('/desktop/')) {
@@ -307,6 +417,14 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
     }
     if (req.method === 'POST' && pathname === '/install') {
       await handleInstall(req, res, ops);
+      return;
+    }
+    if (req.method === 'POST' && pathname === '/desktop/confirm') {
+      await handleDesktopConfirm(req, res, ops);
+      return;
+    }
+    if (req.method === 'POST' && pathname === '/desktop/show-secret') {
+      await handleShowSecret(req, res, ops);
       return;
     }
     if (!desktop) {

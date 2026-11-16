@@ -53,8 +53,20 @@ test('streaming WAV validation rejects truncated or non-audio responses', async 
 test('real web profile: persistent settings, native tools, file permissions, streamed attachments and cancellation', { timeout: 180000 }, async t => {
   const scratch = await mkdtemp(join(tmpdir(), 'whale-deepseek-tools-'));
   const home = join(scratch, 'home'), profileDir = join(home, 'profiles/web');
-  const oldEnv = { DSH_HOME: process.env.DSH_HOME, DSHD_DEEPSEEK_TOOLS_ENABLED: process.env.DSHD_DEEPSEEK_TOOLS_ENABLED, DSH_TELEMETRY_DISABLED: process.env.DSH_TELEMETRY_DISABLED, DSHD_PROFILE_DEFAULT_PATCH: process.env.DSHD_PROFILE_DEFAULT_PATCH };
-  Object.assign(process.env, { DSH_HOME: home, DSHD_DEEPSEEK_TOOLS_ENABLED: '1', DSH_TELEMETRY_DISABLED: '1' });
+  const oldEnv = { DSH_HOME: process.env.DSH_HOME, DSHD_DEEPSEEK_TOOLS_ENABLED: process.env.DSHD_DEEPSEEK_TOOLS_ENABLED, DSH_TELEMETRY_DISABLED: process.env.DSH_TELEMETRY_DISABLED, DSHD_PROFILE_DEFAULT_PATCH: process.env.DSHD_PROFILE_DEFAULT_PATCH,
+    DSH_DESKTOP_INSTALL_URL: process.env.DSH_DESKTOP_INSTALL_URL, DSH_DESKTOP_INSTALL_TOKEN: process.env.DSH_DESKTOP_INSTALL_TOKEN };
+  // Stand-in for the desktop confirm endpoint: uploads to the API are external
+  // effects, so every call must ask first and a refusal must stop the request.
+  const confirms = [];
+  let confirmAnswer = { ok: true };
+  const confirmServer = createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    confirms.push({ url: req.url, auth: req.headers.authorization, body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') });
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(confirmAnswer));
+  });
+  await new Promise(done => confirmServer.listen(0, '127.0.0.1', done));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_DEEPSEEK_TOOLS_ENABLED: '1', DSH_TELEMETRY_DISABLED: '1',
+    DSH_DESKTOP_INSTALL_URL: `http://127.0.0.1:${confirmServer.address().port}`, DSH_DESKTOP_INSTALL_TOKEN: 'qa-confirm-token' });
   let ctx;
   let current = 'ok';
   const requests = [];
@@ -87,6 +99,7 @@ test('real web profile: persistent settings, native tools, file permissions, str
     await disposeProfileApplication(ctx);
     console.log('DeepSeek integration: closing protocol server');
     server.closeAllConnections(); await new Promise(done => server.close(done));
+    confirmServer.closeAllConnections(); await new Promise(done => confirmServer.close(done));
     for (const [key, value] of Object.entries(oldEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     await removeOwned(scratch, profileDir);
     console.log('DeepSeek integration: owned scratch removed');
@@ -130,6 +143,13 @@ test('real web profile: persistent settings, native tools, file permissions, str
   assert.equal(spoken.content[0].type, 'file');
   assert.equal(JSON.parse(requests.at(-1).body).voice_id, 'tide');
   assert.equal(requests.at(-1).headers.authorization, 'Bearer qa-credential');
+  assert.deepEqual(confirms.map(row => [row.url, row.auth, row.body.tool]), [['/desktop/confirm', 'Bearer qa-confirm-token', 'deepseek_tts']]);
+  confirmAnswer = { ok: false, declined: true, error: 'declined' };
+  const beforeRefusal = requests.length;
+  const refused = await execute('deepseek_tts', { text: 'refused' });
+  assert.equal(refused.isError, true); assert.match(refused.error.message, /用户拒绝/);
+  assert.equal(requests.length, beforeRefusal, 'a refused confirmation never reaches the API');
+  confirmAnswer = { ok: true };
   // Exercise the model-facing contract through the real Agent loop; only external model decisions are scripted.
   let sawSchema = false, sawAudio = false;
   class SpeechModel extends LlmAdapter {

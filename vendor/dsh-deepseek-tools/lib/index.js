@@ -1,6 +1,7 @@
 import Schema from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { DEFAULT_BASE_URL, requestApi, jsonResponse, readUpload, wavChunks } from './api.js';
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 
 export const name = 'dsh-deepseek-tools';
 export const inject = ['tools', 'settings', 'credentials', 'fs', 'workingDirectory', 'attachments'];
@@ -26,6 +27,12 @@ export function apply(ctx, config) {
     if (!read(operation)) throw new Error(`DeepSeek ${operation} is disabled in Settings → DeepSeek application APIs.`);
     return requestApi({ baseURL: read('baseURL'), apiKeyEnv: read('apiKeyEnv'), credentials: ctx.credentials, operation, body, signal });
   };
+  // Uploading content to the paid API is an external side effect the desktop
+  // confirms first; a declined or missing channel aborts before any request.
+  const confirmUpload = async (tool, summary, details) => {
+    const confirmation = await confirmModelAction({ tool, action: 'request', effect: 'external', summary, details });
+    if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
+  };
   const definitions = {
     tts: defineTool({
       name: 'deepseek_tts',
@@ -45,6 +52,7 @@ export function apply(ctx, config) {
         const billed = [...text].reduce((sum, char) => sum + (/\p{Script=Han}/u.test(char) ? 2 : 1), 0);
         const body = { text, voice_id: args.voice ?? read('voice'), format: 'wav', filter_markdown: read('filterMarkdown') };
         if (billed > 10_000 || Buffer.byteLength(JSON.stringify(body)) > 65_536) throw new Error('TTS text exceeds 10,000 billed characters or the 64 KiB request limit.');
+        await confirmUpload('deepseek_tts', '把文本上传到付费 DeepSeek TTS 接口合成语音', `计费字符数 ${billed}\n\n${text}`);
         const response = await request('tts', body, exec.signal);
         if (!response.headers.get('content-type')?.split(';')[0].trim().match(/^audio\/(wav|x-wav)$/i)) {
           await response.body?.cancel();
@@ -67,6 +75,7 @@ export function apply(ctx, config) {
         const file = await readUpload(ctx, exec, args.file_path, 8 * 1024 * 1024);
         const body = new FormData();
         body.append('file', new Blob([file.data]), file.name);
+        await confirmUpload('deepseek_asr', '把本地音频文件上传到付费 DeepSeek ASR 接口转写', args.file_path);
         const value = await jsonResponse(await request('asr', body, exec.signal), 'asr');
         if (typeof value.text !== 'string' || !Number.isFinite(value.duration_ms)) throw new Error('DeepSeek ASR returned an invalid transcript.');
         return value;
@@ -87,6 +96,7 @@ export function apply(ctx, config) {
         const body = new FormData();
         body.append('purpose', args.purpose ?? 'text_recognition');
         body.append('file', new Blob([file.data]), file.name);
+        await confirmUpload('deepseek_ocr', '把本地文档/图片上传到付费 DeepSeek OCR 接口识别', args.file_path);
         const value = await jsonResponse(await request('ocr', body, exec.signal), 'ocr');
         if (!Array.isArray(value.pages) || value.page_count !== value.pages.length
           || value.pages.some(page => typeof page.text !== 'string' || !['stop', 'length'].includes(page.finish_reason))) {

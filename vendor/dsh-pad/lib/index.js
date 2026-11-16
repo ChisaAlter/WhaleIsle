@@ -1719,6 +1719,49 @@ function describeSources(sources) {
     return lines.join("\n");
   }).join("\n");
 }
+// Desktop confirmation for risky data sources: running a local command or
+// sending a request that interpolates {{env:}} secrets must pass a
+// main-process dialog — the Harness approval chain alone is auto-allowed
+// under 'never' policy and autoApprove skips it entirely. A declined or
+// unreachable channel fails closed.
+var DESKTOP_CONFIRM_TIMEOUT_MS = 240e3;
+var DESKTOP_DECLINED_TEXT = "用户拒绝了这次操作，不要重试，除非用户再次明确要求。";
+async function confirmModelAction(request) {
+  const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? "").trim();
+  const token = String(process.env.DSH_DESKTOP_INSTALL_TOKEN ?? "").trim();
+  if (!url || !token) return { ok: false };
+  let response;
+  try {
+    response = await fetch(`${url}/desktop/confirm`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(DESKTOP_CONFIRM_TIMEOUT_MS)
+    });
+  } catch {
+    return { ok: false };
+  }
+  try {
+    return await response.json();
+  } catch {
+    return { ok: false };
+  }
+}
+function sourceNeedsDesktopConfirm(source) {
+  return source.kind === "command" || sourceSecretNames(source).length > 0;
+}
+async function confirmRiskySources(toolName, title, sources) {
+  const risky = sources.filter(sourceNeedsDesktopConfirm);
+  if (risky.length === 0) return;
+  const confirmation = await confirmModelAction({
+    tool: toolName,
+    action: "run-sources",
+    effect: "code",
+    summary: `面板「${title}」的数据源要在本机运行命令或携带密钥发出请求`,
+    details: describeSources(risky)
+  });
+  if (confirmation.ok !== true) throw new Error(DESKTOP_DECLINED_TEXT);
+}
 function panelSummary(panel, store, refresher, hub) {
   const view = hub.views().find((v) => v.id === panel.id);
   return {
@@ -1819,6 +1862,7 @@ ${describeSources(sources)}`, zh: reason },
     async execute(args, exec) {
       const probe = validate({ title: "test", html: "", css: "", script: "", height: "auto", sources: [{ intervalSec: limits.minIntervalSec, ...args.source }] });
       const source = probe.sources[0];
+      await confirmRiskySources("pad_test_source", "\u8BD5\u8DD1\u6570\u636E\u6E90", [source]);
       if (!await askToRun(exec, "pad_test_source", "\u8BD5\u8DD1\u6570\u636E\u6E90", [source])) throw new Error("\u7528\u6237\u6CA1\u6709\u5141\u8BB8\u8FD0\u884C\u8FD9\u4E2A\u6570\u636E\u6E90");
       const reading = await runSource(source, resolveSecret, exec.signal);
       return reading.ok ? `\u2713 \u7528\u65F6 ${reading.durationMs}ms\uFF0C\u8F93\u51FA\uFF1A
@@ -1856,6 +1900,7 @@ ${PANEL_GUIDE}`,
     async execute(args, exec) {
       const definition = validate({ css: "", script: "", height: "auto", sources: [], ...args });
       if (definition.model) await assertModel(ctx, definition.model);
+      await confirmRiskySources("pad_create", definition.title, definition.sources);
       const duplicate = store.list().find((p) => p.definition.title === definition.title);
       let panel = await store.create(definition, args.data);
       if (!store.approved(panel) && await askToRun(exec, "pad_create", definition.title, definition.sources)) {
@@ -1898,12 +1943,13 @@ ${PANEL_GUIDE}`,
       }
       const definition = validate({ ...current.definition, ...fields });
       if (definition.model) await assertModel(ctx, definition.model);
+      const sourcesChanged = sourcesFingerprint(current.definition.sources) !== sourcesFingerprint(definition.sources);
+      if (sourcesChanged || !store.approved(current)) await confirmRiskySources("pad_update", definition.title, definition.sources);
       let panel = await store.update(id, definition, data);
       if (!store.approved(panel) && await askToRun(exec, "pad_update", definition.title, definition.sources)) {
         await store.approve(panel.id, sourcesFingerprint(definition.sources));
         panel = store.get(panel.id);
       }
-      const sourcesChanged = sourcesFingerprint(current.definition.sources) !== sourcesFingerprint(definition.sources);
       return [
         `\u5DF2\u66F4\u65B0\u9762\u677F ${panel.id}\u300C${definition.title}\u300D\uFF08\u7248\u672C ${panel.version}\uFF09\u3002`,
         ...sourcesChanged ? await firstReadings(panel) : []
@@ -1933,6 +1979,14 @@ ${PANEL_GUIDE}`,
     output: textOutput,
     async execute(args) {
       const panel = store.get(args.id);
+      const confirmation = await confirmModelAction({
+        tool: "pad_delete",
+        action: "delete",
+        effect: "destructive",
+        summary: `删除面板「${panel.definition.title}」(${args.id}) 及其配置`,
+        details: args.id
+      });
+      if (confirmation.ok !== true) throw new Error(DESKTOP_DECLINED_TEXT);
       await store.remove(args.id);
       return `\u5DF2\u5220\u9664\u9762\u677F\u300C${panel.definition.title}\u300D\u3002`;
     }
@@ -2288,6 +2342,7 @@ export {
   Config,
   apply,
   inject,
-  name
+  name,
+  registerTools
 };
 //# sourceMappingURL=index.js.map

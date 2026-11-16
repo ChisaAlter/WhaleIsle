@@ -22,6 +22,7 @@ import {
   removeSchedule,
   removeWatch,
 } from './observe.js';
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 
 const READ_LINE_MAX = 400;
 const READ_TOTAL_MAX = 8000;
@@ -605,6 +606,14 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       if (typeof controller?.delete !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
       if (!sessionId) return { ok: false, detail: 'sessionId is required.' };
+      const confirmation = await confirmModelAction({
+        tool: 'whale_delete_session',
+        action: 'delete',
+        effect: 'destructive',
+        summary: `永久删除已归档会话 ${sessionId} 及其子代理，不可恢复`,
+        details: sessionId,
+      });
+      if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
       try {
         const result = await controller.delete({ sessionId });
         const count = result?.deletedSessionIds?.length ?? 0;
@@ -697,6 +706,18 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
         queueAction = { kind: 'edit', content: [{ type: 'text', text }] };
       } else {
         return { ok: false, detail: 'action must be edit | remove | steer.' };
+      }
+      if (action !== 'remove') {
+        const confirmation = await confirmModelAction({
+          tool: 'whale_update_queue',
+          action,
+          effect: 'external',
+          summary: action === 'steer'
+            ? `把会话 ${sessionId} 的排队消息 ${itemId} 以你的名义并入当前回合`
+            : `改写会话 ${sessionId} 的排队消息 ${itemId} 文本，它将作为你的原话送达`,
+          details: String(args.text ?? ''),
+        });
+        if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
       }
       try {
         await controller.updateQueue({ sessionId, itemId, action: queueAction });

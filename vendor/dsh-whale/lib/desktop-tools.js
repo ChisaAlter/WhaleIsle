@@ -9,9 +9,18 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { genericOutput, trimTo } from './shared.js';
+import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 
 const CONTROL_TIMEOUT_MS = 15_000;
 const INSTALL_TIMEOUT_MS = 240_000;
+
+// Renderer-writable keys that change credentials, external exposure, startup
+// behavior or built-in capability — a patch touching any of them confirms on
+// the desktop first. Ordinary appearance/policy keys stay local.
+const SENSITIVE_CONFIG_KEYS = new Set([
+  'githubToken', 'remoteWorkspaceEnabled', 'openAtLogin', 'autoStartDesktop',
+  'openDevTools', 'downloadRoute', 'projectEnabled', 'whaleAssistantEnabled',
+]);
 
 function controlConfig() {
   const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? '').trim();
@@ -193,6 +202,17 @@ export function registerDesktopTools(ctx) {
       const patch = args.patch;
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
         return { ok: false, detail: 'patch must be an object of config keys.' };
+      }
+      const sensitive = Object.keys(patch).filter((key) => SENSITIVE_CONFIG_KEYS.has(key));
+      if (sensitive.length) {
+        const confirmation = await confirmModelAction({
+          tool: 'whale_desktop_config',
+          action: 'patch',
+          effect: 'external',
+          summary: `修改影响安全或对外暴露的桌面配置：${sensitive.join(', ')}`,
+          details: JSON.stringify(patch, null, 2),
+        });
+        if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
       }
       const result = await desktopCall(control, '/desktop/config', { method: 'POST', body: { patch } });
       if (result.ok !== true) return { ok: false, detail: result.detail ?? String(result.error ?? 'config write failed') };
