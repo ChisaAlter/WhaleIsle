@@ -43,3 +43,4 @@ flowchart LR
 ## 延伸阅读
 
 - [workspace-fs.md](workspace-fs.md)、[blueprint.md](../blueprint.md)
+- [security-model.md](security-model.md)（安全模型/威胁模型一页，资产与信任边界强制点索引）

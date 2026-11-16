@@ -62,3 +62,4 @@ LAN 配对静态页使用 HTTP 3180，只分发 `mobile/web` 应用文件；offe
 - [../superpowers/specs/2026-08-20-mobile-web-client-design.md](../../superpowers/specs/2026-08-20-mobile-web-client-design.md)
 - [../superpowers/specs/2026-08-23-mobile-android-client-design.md](../../superpowers/specs/2026-08-23-mobile-android-client-design.md)
 - [../superpowers/plans/2026-08-25-mobile-web-scan-android-parity.md](../../superpowers/plans/2026-08-25-mobile-web-scan-android-parity.md)（Web 扫码 + 与 Android 对齐）
+- [security-model.md](security-model.md)（安全模型/威胁模型一页，含 LAN 模式风险与 E2EE 边界）
