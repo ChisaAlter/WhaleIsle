@@ -355,7 +355,11 @@ if (force || mobileSourceMtime > mobileBuildMtime) {
 // copies a file: dependency — its files list plus npm's always-included
 // entries — without lifecycle scripts (dist/ is already built above).
 function packWorkspacePackage(pkg, runtimeNodeModulesDir) {
-  const stage = fs.mkdtempSync(path.join(runtimeRoot, '.pack-'));
+  // Sequential packs share one staging dir inside runtimeRoot so the final
+  // rename stays on the same filesystem as node_modules.
+  const stage = path.join(runtimeRoot, '.pack');
+  fs.rmSync(stage, { recursive: true, force: true });
+  fs.mkdirSync(stage, { recursive: true });
   try {
     run(npm, ['pack', pkg.dir, '--ignore-scripts', '--pack-destination', stage], runtimeRoot);
     const [tarball] = fs.readdirSync(stage).filter((name) => name.endsWith('.tgz'));
@@ -364,10 +368,9 @@ function packWorkspacePackage(pkg, runtimeNodeModulesDir) {
     }
     fs.mkdirSync(path.join(stage, 'out'));
     run('tar', ['-xzf', tarball, '-C', 'out'], stage, { shell: false });
-    fs.renameSync(
-      path.join(stage, 'out', 'package'),
-      path.join(runtimeNodeModulesDir, ...pkg.name.split('/')),
-    );
+    const destination = path.join(runtimeNodeModulesDir, ...pkg.name.split('/'));
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.renameSync(path.join(stage, 'out', 'package'), destination);
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
   }

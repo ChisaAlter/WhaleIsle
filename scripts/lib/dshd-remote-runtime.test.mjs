@@ -6,19 +6,29 @@ import path from 'node:path';
 import {
   materializeRuntimeCopies,
   planRuntimeClosure,
+  readManifest,
   resolveInstalledPackage,
-} from './lib/dshd-remote-runtime.mjs';
+} from './dshd-remote-runtime.mjs';
 
 function writePackage(dir, manifest) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest));
 }
 
+// A fake lockfile-installed workspace: packages/ holds the workspace members,
+// node_modules/ holds what `npm ci` laid down from package-lock.json, including
+// one nested version conflict and scope symlinks back into packages/.
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-runtime-plan-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const packagesDir = path.join(root, 'packages');
   const nodeModules = path.join(root, 'node_modules');
+  fs.mkdirSync(nodeModules, { recursive: true });
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({
+    name: 'dshd-runtime-fixture',
+    lockfileVersion: 3,
+    packages: {},
+  }));
   writePackage(path.join(packagesDir, 'server'), {
     name: '@acme/server',
     version: '1.0.0',
@@ -29,6 +39,7 @@ function workspace(t) {
       shared: '^1.0.0',
     },
     optionalDependencies: { 'opt-extra': '^1.0.0' },
+    devDependencies: { 'dev-only': '^1.0.0' },
   });
   writePackage(path.join(packagesDir, 'protocol'), {
     name: '@acme/protocol',
@@ -51,7 +62,13 @@ function workspace(t) {
   writePackage(path.join(nodeModules, 'peer-opt'), { name: 'peer-opt', version: '1.0.0' });
   writePackage(path.join(nodeModules, 'opt-only'), { name: 'opt-only', version: '1.0.0' });
   writePackage(path.join(nodeModules, 'opt-extra'), { name: 'opt-extra', version: '1.0.0' });
-  writePackage(path.join(nodeModules, 'better-sqlite3'), { name: 'better-sqlite3', version: '1.0.0' });
+  writePackage(path.join(nodeModules, 'dev-only'), { name: 'dev-only', version: '1.0.0' });
+  writePackage(path.join(nodeModules, 'better-sqlite3'), {
+    name: 'better-sqlite3',
+    version: '1.0.0',
+    dependencies: { 'sqlite-trans': '^1.0.0' },
+  });
+  writePackage(path.join(nodeModules, 'sqlite-trans'), { name: 'sqlite-trans', version: '1.0.0' });
   for (const name of ['protocol', 'helper']) {
     fs.mkdirSync(path.join(nodeModules, '@acme'), { recursive: true });
     fs.symlinkSync(path.join(packagesDir, name), path.join(nodeModules, '@acme', name), 'junction');
@@ -67,34 +84,77 @@ test('resolveInstalledPackage walks node_modules upward and stops at the workspa
   assert.equal(resolveInstalledPackage(root, 'not-installed', root), null);
 });
 
-test('the runtime closure pins workspace members, nested versions and forced deps, and skips optionals', t => {
-  const { root, packagesDir, nodeModules } = workspace(t);
+test('the closure covers dependencies, transitives and non-optional peers but not dev or optional deps', t => {
+  const { root } = workspace(t);
   const plan = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'], forcedDependencies: ['better-sqlite3'] });
+  assert.deepEqual(
+    plan.copies.map(({ target }) => target),
+    [
+      '@scope/dep',
+      'better-sqlite3',
+      'dep-a',
+      'dep-a/node_modules/shared',
+      'peer-pkg',
+      'shared',
+      'sqlite-trans',
+    ],
+  );
+  for (const excluded of ['dev-only', 'opt-only', 'opt-extra', 'peer-opt']) {
+    assert.ok(
+      !plan.copies.some(({ target }) => target === excluded),
+      `${excluded} must stay out of the production closure`,
+    );
+  }
+});
+
+test('forcedDependencies pull in optional roots together with their transitives', t => {
+  const { root } = workspace(t);
+  const unforced = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'] });
+  assert.ok(!unforced.copies.some(({ target }) => target === 'better-sqlite3'));
+  const forced = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'], forcedDependencies: ['better-sqlite3'] });
+  const targets = forced.copies.map(({ target }) => target);
+  assert.ok(targets.includes('better-sqlite3'));
+  assert.ok(targets.includes('sqlite-trans'));
+});
+
+test('workspace members land in workspacePackages and are never plain copies', t => {
+  const { root, packagesDir } = workspace(t);
+  const plan = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'] });
   assert.deepEqual(
     plan.workspacePackages.map(({ name }) => name).sort(),
     ['@acme/helper', '@acme/protocol', '@acme/server'],
   );
   assert.ok(plan.workspacePackages.every(({ dir }) => dir.startsWith(packagesDir)));
-  const targets = plan.copies.map(({ target }) => target);
-  assert.deepEqual(targets, ['@scope/dep', 'better-sqlite3', 'dep-a', 'dep-a/node_modules/shared', 'peer-pkg', 'shared']);
-  assert.ok(!targets.some(target => /^(opt-only|peer-opt|opt-extra)$/.test(target)));
-  const nested = plan.copies.find(({ target }) => target === 'dep-a/node_modules/shared');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(nested.source, 'package.json'), 'utf8')).version, '2.0.0');
+  assert.ok(!plan.copies.some(({ target }) => target.split('/')[0] === '@acme'));
 });
 
-test('materialized copies land at the same positions npm resolved them', t => {
+test('nested version conflicts keep the node_modules nesting npm chose', t => {
+  const { root } = workspace(t);
+  const plan = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'] });
+  const top = plan.copies.find(({ target }) => target === 'shared');
+  const nested = plan.copies.find(({ target }) => target === 'dep-a/node_modules/shared');
+  assert.equal(readManifest(top.source).version, '1.0.0');
+  assert.equal(readManifest(nested.source).version, '2.0.0');
+});
+
+test('scoped packages produce scoped runtime targets', t => {
+  const { root, nodeModules } = workspace(t);
+  const plan = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'] });
+  const scoped = plan.copies.find(({ target }) => target === '@scope/dep');
+  assert.equal(scoped.source, path.join(nodeModules, '@scope', 'dep'));
+});
+
+test('materializeRuntimeCopies lands scoped and nested targets in the runtime tree', t => {
   const { root, nodeModules } = workspace(t);
   const plan = planRuntimeClosure({ workspaceRoot: root, seeds: ['server'], forcedDependencies: ['better-sqlite3'] });
   const out = path.join(root, 'runtime', 'node_modules');
   materializeRuntimeCopies(plan.copies, out);
-  assert.equal(
-    JSON.parse(fs.readFileSync(path.join(out, 'dep-a', 'node_modules', 'shared', 'package.json'), 'utf8')).version,
-    '2.0.0',
-  );
-  assert.equal(JSON.parse(fs.readFileSync(path.join(out, 'shared', 'package.json'), 'utf8')).version, '1.0.0');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(out, '@scope', 'dep', 'package.json'), 'utf8')).version, '1.0.0');
+  assert.equal(readManifest(path.join(out, 'dep-a', 'node_modules', 'shared')).version, '2.0.0');
+  assert.equal(readManifest(path.join(out, 'shared')).version, '1.0.0');
+  assert.equal(readManifest(path.join(out, '@scope', 'dep')).version, '1.0.0');
   assert.equal(fs.existsSync(path.join(out, 'opt-only')), false);
   assert.equal(fs.existsSync(path.join(out, 'peer-opt')), false);
+  assert.equal(fs.existsSync(path.join(out, 'dev-only')), false);
   assert.equal(fs.existsSync(path.join(nodeModules, 'peer-opt', 'package.json')), true);
 });
 
@@ -104,4 +164,12 @@ test('a declared dependency missing from the lockfile-installed tree fails the p
   manifest.dependencies['ghost-dep'] = '^9.9.9';
   fs.writeFileSync(path.join(packagesDir, 'server', 'package.json'), JSON.stringify(manifest));
   assert.throws(() => planRuntimeClosure({ workspaceRoot: root, seeds: ['server'] }), /ghost-dep.*not installed/);
+});
+
+test('a forced dependency missing from the installed tree fails the plan', t => {
+  const { root } = workspace(t);
+  assert.throws(
+    () => planRuntimeClosure({ workspaceRoot: root, seeds: ['server'], forcedDependencies: ['ghost-forced'] }),
+    /forced runtime dependency ghost-forced is not installed/,
+  );
 });

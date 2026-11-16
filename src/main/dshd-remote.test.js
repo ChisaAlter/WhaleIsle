@@ -58,9 +58,10 @@ test('desktop start and packaging prepare and ship the trimmed DSHD remote runti
   );
   assert.match(manifest.scripts.start, /prestart-ensure/);
   assert.match(manifest.scripts.pack, /prepare-dshd-remote\.mjs --force --runtime/);
-  assert.match(prepareScript, /--install-links/);
-  assert.match(prepareScript, /--omit=optional/);
-  assert.match(prepareScript, /'better-sqlite3': sqliteVersion/);
+  assert.match(prepareScript, /planRuntimeClosure\(\{/);
+  assert.match(prepareScript, /seeds: \['highlight', 'protocol', 'relay', 'server'\]/);
+  assert.match(prepareScript, /forcedDependencies: \['better-sqlite3'\]/);
+  assert.match(prepareScript, /packWorkspacePackage\(pkg, runtimeNodeModules\)/);
   assert.match(prepareScript, /runtimeBudgetBytes = 96 \* 1024 \* 1024/);
   assert.match(prepareScript, /function pruneNodePtyRuntime/);
   assert.match(prepareScript, /daemon start\/stop probe passed/);
