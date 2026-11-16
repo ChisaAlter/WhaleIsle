@@ -555,7 +555,14 @@ app.whenReady().then(async () => {
         animation.currentTime = duration * .2;
         animation.play();
         const movingStart = text.getBoundingClientRect().x;
-        await new Promise(resolve => setTimeout(resolve, 120));
+        // The offscreen animation clock may lag the play() call (slow
+        // runners); poll until it advances, capped so a stalled clock still
+        // fails the same assertion.
+        const playedAt = animation.currentTime;
+        const clockDeadline = Date.now() + 3000;
+        while (animation.currentTime <= playedAt && Date.now() < clockDeadline) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
         const movingEnd = text.getBoundingClientRect().x;
         animation.pause();
         const box = label.getBoundingClientRect();
