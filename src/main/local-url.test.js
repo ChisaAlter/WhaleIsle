@@ -28,6 +28,11 @@ test('isLoopbackHttpUrl rejects prefix and userinfo spoofs', () => {
   assert.equal(isLoopbackHttpUrl('http://localhost.attacker.example/'), false);
   assert.equal(isLoopbackHttpUrl('http://127.0.0.1@evil.example/'), false);
   assert.equal(isLoopbackHttpUrl('http://localhost@evil.example/'), false);
+  assert.equal(isLoopbackHttpUrl('http://evil@127.0.0.1/'), false);
+  assert.equal(isLoopbackHttpUrl('http://user:pass@127.0.0.1:8080/'), false);
+  assert.equal(isLoopbackHttpUrl('http://user:pass@localhost:5173/'), false);
+  assert.equal(isLoopbackHttpUrl('https://:secret@[::1]:3000/'), false);
+  assert.equal(isLoopbackHttpUrl('http://@127.0.0.1/'), true);
   assert.equal(isLoopbackHttpUrl('https://example.com'), false);
   assert.equal(isLoopbackHttpUrl('file:///tmp/x'), false);
   assert.equal(isLoopbackHttpUrl('javascript:alert(1)'), false);
@@ -38,6 +43,8 @@ test('isSameOriginLoopbackUrl pins scheme, host, and port', () => {
   assert.equal(isSameOriginLoopbackUrl('http://127.0.0.1:5173/', 'http://127.0.0.1:3080/'), false);
   assert.equal(isSameOriginLoopbackUrl('https://127.0.0.1:3080/', 'http://127.0.0.1:3080/'), false);
   assert.equal(isSameOriginLoopbackUrl('https://example.com/', 'https://127.0.0.1:3080/'), false);
+  assert.equal(isSameOriginLoopbackUrl('http://evil@127.0.0.1:3080/', 'http://127.0.0.1:3080/'), false);
+  assert.equal(isSameOriginLoopbackUrl('http://127.0.0.1:3080/', 'http://evil@127.0.0.1:3080/'), false);
 });
 
 test('isLocalAppNavigationUrl allows only the packaged boot.html path', () => {
@@ -76,6 +83,7 @@ test('rewriteLoopbackLoadUrl maps 0.0.0.0 to 127.0.0.1', () => {
   assert.equal(rewriteLoopbackLoadUrl('http://0.0.0.0:5173/app'), 'http://127.0.0.1:5173/app');
   assert.equal(rewriteLoopbackLoadUrl('http://127.0.0.1:5173/'), 'http://127.0.0.1:5173/');
   assert.equal(rewriteLoopbackLoadUrl('http://evil.example/'), null);
+  assert.equal(rewriteLoopbackLoadUrl('http://user:pass@0.0.0.0:5173/'), null);
 });
 
 test('isHttpOrHttpsUrl rejects file and custom schemes', () => {
