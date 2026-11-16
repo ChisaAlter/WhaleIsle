@@ -11,14 +11,10 @@
  */
 
 // This plugin ships as a relocatable tarball: unlike the junction-linked
-// vendor plugins it cannot reach vendor/dsh-shared by relative path, so it
-// carries the same global-store contract locally (canonical:
+// vendor plugins it cannot reach vendor/dsh-shared by relative path, so the
+// accessor is an in-place copy shipped inside lib/ (canonical:
 // src/shared/secret.js internalSecret — no process.env fallback).
-function internalSecret(name) {
-  const store = globalThis[Symbol.for('whaleisle.internalSecrets')];
-  const value = store instanceof Map ? store.get(name) : undefined;
-  return typeof value === 'string' ? value : '';
-}
+import { internalSecret } from './internal-secret.mjs';
 
 const CONFIRM_TIMEOUT_MS = 240_000;
 

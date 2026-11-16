@@ -6,8 +6,9 @@ control route for quit/update protection in Whale Isle.
 ## Control route
 
 `POST|GET /dshd-task-control/<op>` with `Authorization: Bearer
-$DSHD_TASK_CONTROL_TOKEN` (injected by the shell into the Host child env; an
-empty token keeps the route closed).
+$DSHD_TASK_CONTROL_TOKEN` (delivered by the desktop over the host's stdin
+secret channel into the in-process store, never the child env; an empty token
+keeps the route closed).
 
 | op | body | effect |
 | --- | --- | --- |

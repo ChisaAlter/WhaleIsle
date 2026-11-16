@@ -1,4 +1,4 @@
-import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
+import { internalSecret } from './internal-secret.mjs';
 import TeamService from '@deepseek-ai/dsh-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
