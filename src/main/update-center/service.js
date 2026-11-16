@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { atomicWriteFileSync, safeRemoveSync } = require('../../shared/fs-safe');
+const { sanitizeDownloadFilename } = require('../download-path');
 
 const STATE_FILE = 'update-center.json';
 const AUTO_FIRST_CHECK_MS = 60_000;
@@ -28,10 +29,6 @@ function isNetworkError(error) {
   const code = error?.code || error?.cause?.code;
   if (NETWORK_CODES.has(code) || /^HTTP_ERROR_5\d\d$/.test(String(code || ''))) return true;
   return /超时|中断|timed? ?out|ECONN|ENOTFOUND|net::ERR_|fetch failed|socket/i.test(String(error?.message || ''));
-}
-
-function safeName(name) {
-  return path.basename(String(name || 'Whale-Isle-Setup.exe')).replace(/[^\w.\-]+/g, '_');
 }
 
 function readJson(file) {
@@ -148,7 +145,7 @@ function createUpdateCenter(deps) {
   }
 
   function paths(target) {
-    const final = path.join(updatesDir, safeName(target.assetName));
+    const final = path.join(updatesDir, sanitizeDownloadFilename(target.assetName || 'Whale-Isle-Setup.exe'));
     return { final, partial: `${final}.part` };
   }
 

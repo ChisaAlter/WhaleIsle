@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const update = require('../../main/update');
+const { sanitizeDownloadFilename } = require('../../main/download-path');
 const releaseSource = require('../release-source');
 const runtimeInstall = require('../runtime-install');
 const { isLauncherPackage } = require('../product');
@@ -117,7 +118,7 @@ async function installDelta(tag, onProgress, deps = {}) {
       return failed('no-delta-dir');
     }
     fs.mkdirSync(deltaDir, { recursive: true });
-    const safeName = path.basename(asset.name).replace(/[^\w.\-]+/g, '_');
+    const safeName = sanitizeDownloadFilename(asset.name);
     const dest = path.join(deltaDir, safeName);
 
     const updateMod = deps.update || update;
