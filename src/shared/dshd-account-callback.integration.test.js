@@ -17,12 +17,12 @@ const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/tes
 // A prepared checkout may be supplied for a local probe; CI uses its own built vendor artifacts.
 const harnessRoot = path.resolve(process.env.DSH_ACCOUNT_INTEGRATION_ROOT || path.join(__dirname, '../../vendor/deepseek-harness'));
 const VENDOR_RUNNABLE = [
-  'packages/credentials/deepseek-account-platform/lib/index.js',
+  'packages/credentials/deepseek-account/lib/index.js',
   'packages/credentials/credentials-local/lib/index.js',
   'packages/credentials/authorization/lib/index.js',
   'packages/credentials/credentials/lib/index.js',
   'packages/host/webserver/lib/index.js',
-  'packages/credentials/deepseek-account-platform/node_modules',
+  'packages/credentials/deepseek-account/node_modules',
 ].every(relative => existsSync(path.join(harnessRoot, relative)));
 const VENDOR_HINT = 'Harness account dist/dependencies missing (prepare vendor artifacts before this integration check)';
 const VENDOR = { ok: VENDOR_RUNNABLE, reason: VENDOR_HINT };
@@ -31,21 +31,27 @@ const options = { skip: prerequisiteSkip(VENDOR), timeout: 30_000, concurrency: 
 
 async function fixture(t, attemptTimeoutMs = 5_000) {
   const load = (relative) => import(pathToFileURL(path.join(harnessRoot, relative)).href);
-  const resolver = createRequire(path.join(harnessRoot, 'packages/credentials/deepseek-account-platform/package.json'));
+  const resolver = createRequire(path.join(harnessRoot, 'packages/credentials/deepseek-account/package.json'));
   const [cordis, accountModule, credentialsModule, authorizationModule, webModule, keys] = await Promise.all([
     import(pathToFileURL(resolver.resolve('@deepseek-ai/cordis')).href),
-    load('packages/credentials/deepseek-account-platform/lib/index.js'),
+    load('packages/credentials/deepseek-account/lib/index.js'),
     load('packages/credentials/credentials-local/lib/index.js'),
     load('packages/credentials/authorization/lib/index.js'),
     load('packages/host/webserver/lib/index.js'),
     load('packages/credentials/credentials/lib/index.js'),
   ]);
-  const { Agent, getGlobalDispatcher, setGlobalDispatcher } = resolver('undici');
   const home = await mkdtemp(path.join(tmpdir(), 'dsh-native-callback-integration-'));
   const material = generateTlsMaterial();
-  const previousDispatcher = getGlobalDispatcher();
-  const dispatcher = new Agent({ connect: { ca: material.cert } });
-  setGlobalDispatcher(dispatcher);
+  // The provider requests Platform through global fetch. undici is no longer an
+  // importable Harness dependency, so the CA-trusting dispatcher is installed
+  // through bundled undici's global-dispatcher symbol (its setGlobalDispatcher).
+  const dispatcherSymbol = Symbol.for('undici.globalDispatcher.1');
+  await fetch('http://127.0.0.1:1/', { signal: AbortSignal.timeout(1_000) }).catch(() => undefined);
+  const previousDispatcher = globalThis[dispatcherSymbol];
+  const GlobalAgent = previousDispatcher?.constructor;
+  assert.ok(GlobalAgent, 'bundled undici dispatcher unavailable');
+  const dispatcher = new GlobalAgent({ connect: { ca: material.cert } });
+  globalThis[dispatcherSymbol] = dispatcher;
   const requests = [];
   const serverErrors = [];
   let initialization;
@@ -94,7 +100,7 @@ async function fixture(t, attemptTimeoutMs = 5_000) {
   t.after(async () => {
     for (const fiber of fibers.reverse()) await fiber.dispose();
     await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
-    setGlobalDispatcher(previousDispatcher);
+    globalThis[dispatcherSymbol] = previousDispatcher;
     await dispatcher.close();
     assert.equal(home.startsWith(path.join(tmpdir(), 'dsh-native-callback-integration-')), true);
     await rm(home, { recursive: true, force: true });
@@ -104,13 +110,13 @@ async function fixture(t, attemptTimeoutMs = 5_000) {
   await plugin(webModule.default, { host: '127.0.0.1', port: 0 });
   await plugin(credentialsModule.LocalCredentialProvider, { path: path.join(home, 'credentials.yaml'), watch: false });
   await plugin(authorizationModule.default);
-  await plugin(accountModule.PlatformAccount, { platformOrigin: origin, attemptTimeoutMs, requestTimeoutMs: 3_000, logoutRetryDelayMs: 1 });
+  await plugin(accountModule.DeepSeekAccount, { platformOrigin: origin, attemptTimeoutMs, requestTimeoutMs: 3_000, logoutRetryDelayMs: 1 });
   const account = ctx.deepseekAccount;
   const key = keys.credentialKey('deepseek-account-platform', 'default');
   const callbackOrigin = ctx.webServer.getOrigin();
   async function wait(phase) {
     const limit = AbortSignal.timeout(4_000);
-    for await (const view of account.watch(limit)) if (view.attempt?.phase === phase) return view;
+    for await (const update of account.watch(limit)) if (update.state.attempt?.phase === phase) return update.state;
     throw new Error(`Missing account phase ${phase}`);
   }
   return {
