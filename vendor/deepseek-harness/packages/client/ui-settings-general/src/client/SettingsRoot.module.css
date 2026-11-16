@@ -337,8 +337,16 @@
   outline-offset: -2px;
 }
 
+/* Fixed 16px seat: an inline svg would ride the cell's 22px line box and sit
+   above the label's visible center; contributed 20px-native glyphs stay
+   centered without stretching. */
 .navIcon {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 
 .navLabel {
