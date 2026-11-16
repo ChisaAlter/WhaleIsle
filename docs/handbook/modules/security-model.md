@@ -12,7 +12,7 @@
 | API Key / GitHub token / 远程配对凭据 / 设备凭据 | 集中在 `credentials.json`（`app.getPath('userData')` 下）：`src/main/config.js` 的 `credentialsPath()` / `readCredentials()` / `writeCredentials()`。OS 钥匙串可用时整树经 `safeStorage` 加密信封（`safeStorage-v1:` 前缀）落盘，否则明文 JSON；写入统一走 `writeJson` → `src/shared/fs-safe.js:atomicWriteFileSync`，模式 `0o600`。渲染侧只拿 `publicConfig()` 遮蔽投影（`apiKey` / `githubToken` 显示 `********`，远程令牌与 `remoteDevices` 清空）。测试：`src/main/config-credentials.test.js`、`src/main/config.test.js`、`src/main/config-cache.test.js`。 |
 | 工作区文件 | 只允许落在授权根内：`src/main/workspace-authority.js:createWorkspaceAuthority`（`resolveAuthorizedCwd` / `resolveInside` / `containedIn` 拒绝越界、`.git` 元数据与高风险锚点），`src/main/workspace-fs.js` 的 `canonicalInside` / `readFile` / `writeFile` / `listDir` 执行真实路径校验。测试：`src/main/workspace-authority.test.js`、`src/main/workspace-fs.test.js`。 |
 | 会话与历史 | 存于桌面 Harness 家目录 `userData/dsh-home`：`src/shared/dsh-home.js` 的 `desktopDshHomeFromUserData` / `applyDesktopDshHome`；打包构建屏蔽继承的 `DSHD_HOME`（`sanitizePackagedDshHomeEnv`，仅 `DSHD_ALLOW_ENV_HOME=1` 放行）。测试：`src/shared/dsh-home.test.js`。 |
-| 已配对设备 | 设备令牌由 vendored `RelayDeviceCredentialStore` 落盘在 ChisaCode 家目录；渲染侧只见 `DshdRemote.snapshot` / `publicDevicesFromStore` 投影（不含 secret）；旧 config 的 `remoteDevices` 经 `publicConfig()` 清空。测试：`src/main/dshd-remote.test.js`（快照投影）、`src/shared/remote-devices.test.js`；store 本身由 vendored `vendor/chisacode-remote/packages/server/src/server/relay-device-auth.test.ts` 覆盖（不在本仓 `npm test` 范围）。 |
+| 已配对设备 | 设备令牌由 vendored `RelayDeviceCredentialStore` 落盘在 ChisaCode 家目录；渲染侧只见 `DshdRemote.snapshot` / `publicDevicesFromStore` 投影（不含 secret）；旧 config 的 `remoteDevices` 经 `publicConfig()` 清空。测试：`src/main/dshd-remote.test.js`（快照投影）；store 本身由 vendored `vendor/chisacode-remote/packages/server/src/server/relay-device-auth.test.ts` 覆盖（不在本仓 `npm test` 范围）。 |
 | 内部控制令牌 | `DSH_DESKTOP_INSTALL_TOKEN`（`src/main/desktop-install-control.js:startDesktopInstallControl`，每启动 `crypto.randomBytes(32)`）、`DSHD_TASK_CONTROL_TOKEN`（`src/main/task-protection.js:taskControlToken`）、`DSHD_PLATFORM_TOKEN`（`src/main/platform-session.js:platformToken`）均为进程级随机、只在内存；git tunnel 令牌（`src/main/dshd-git-tunnel.js:startGitTunnelServer`）与 harness cookie（`dsh.sessionCookie`，probe 自 `dsh web`）同信道下发。外部桌面握手用 `task-control-peer.json`（`src/main/task-control-peer.js:createTaskControlPeer`，原子落盘 userData）。测试：`src/main/internal-secrets.test.js`、`src/main/task-control-plugin.test.js`。 |
 
 ## 渲染进程 ↔ 主进程
@@ -53,7 +53,7 @@
 - **设备撤销**：`DshdRemote.unbindDevice` → `RelayDeviceCredentialStore.revokeDevice`（文件存储，重开生效）；`renameDevice` 同落盘、拒已吊销设备。测试：`dshd-remote.test.js` 覆盖 `renameDevice`；`unbindDevice` 桌面侧路径无测试（议题 #510；vendored `relay-device-auth.test.ts` 覆盖 store 本身）。
 - **静态页 / LAN 风险**：`src/main/mobile-web-server.js` 在 `remoteBindAddress`（默认仅本机）+ 3180 供 SPA；`src/main/mobile-web.js:resolveSpaAsset` / `safeJoin` 防目录穿越、NUL 与 `.test.js` 泄露。静态页本身是明文 HTTP——LAN 模式只适合可信网络，见 [mobile-remote.md](mobile-remote.md)。测试：`src/main/mobile-web-server.test.js`、`src/main/mobile-web.test.js`。
 - **git tunnel**：`src/main/dshd-git-tunnel.js:startGitTunnelServer`——仅 loopback（显式拒非 loopback 客户端 socket）、`x-dshd-git-token` 经 `constantTimeEqual`、请求体 1 MiB；操作白名单 `src/main/dshd-git-dispatch.js`（`GIT_TUNNEL_ACTIONS` / `dispatchGitTunnel`）。测试：`src/main/dshd-git-tunnel.test.js`、`src/main/dshd-git-dispatch.test.js`。
-- **遗留 v1 HTTP 中继**：`src/relay/server.js`、`src/main/remote.js`、`src/main/relay-client.js`、`src/shared/offer.js` / `relay-auth.js` / `relay-frames.js` / `remote-auth.js` / `remote-tls.js` / `remote-shell.js` / `remote-patch.js`——遗留、产品不再使用（`index.js` 只 wire `DshdRemote`），#445 删除中；`src/main/remote.test.js` 等只覆盖其遗留行为。
+- **v1 HTTP 中继已删除（#445）**：`RemoteGateway`、`RelayClient`、`RelayServer` 及其手机端 host 模块、v1 offer/帧/鉴权/设备辅助与桌面 remote-shell 网关已从仓库移除；产品远程只有上面的 ChisaCode daemon 路径。
 
 ## 外部内容
 
@@ -76,9 +76,9 @@
 
 ## 实现入口
 
-- `src/shared/{secret,ipc-contract,dsh-home,remote-devices,relay-auth,relay-frames,remote-auth,remote-tls,offer,fs-safe,dshd-host-tunnel,cleartext-base-url,official-deepseek-env,model-tool-effects}.js`
-- `src/main/{config,ipc.js,ipc-register,ipc-authorization,local-url,workspace-authority,workspace-fs,dsh,dsh-cli-runner.mjs,desktop-install-control,task-protection,task-control-peer,platform-session,dshd-remote,dshd-daemon-runner.mjs,dshd-daemon-hooks.mjs,dshd-git-tunnel,dshd-git-dispatch,mobile-web,mobile-web-server,wallpaper-catalog,update,update-updater,download-path,open-external,marketplace-install,marketplace-spec,marketplace-allowbuilds,remote,relay-client}.js`
-- `src/preload/index.js`、`src/relay/server.js`、`src/whale-ui/genui/client/{mermaid-safe,mermaid-core}.ts`、`src/host/install-dsh-plugin-client.js`
+- `src/shared/{secret,ipc-contract,dsh-home,relay-auth,fs-safe,dshd-host-tunnel,cleartext-base-url,official-deepseek-env,model-tool-effects}.js`
+- `src/main/{config,ipc.js,ipc-register,ipc-authorization,local-url,workspace-authority,workspace-fs,dsh,dsh-cli-runner.mjs,desktop-install-control,task-protection,task-control-peer,platform-session,dshd-remote,dshd-daemon-runner.mjs,dshd-daemon-hooks.mjs,dshd-git-tunnel,dshd-git-dispatch,mobile-web,mobile-web-server,wallpaper-catalog,update,update-updater,download-path,open-external,remote-tls,marketplace-install,marketplace-spec,marketplace-allowbuilds}.js`
+- `src/preload/index.js`、`src/whale-ui/genui/client/{mermaid-safe,mermaid-core}.ts`、`src/host/install-dsh-plugin-client.js`
 - `src/launcher/launcher-service.js`、`src/launcher/delta/{install,manifest,apply,zip}.js`
 - `scripts/{check-vendor-provenance.mjs,after-pack.js}`、`vendor/provenance.json`
 
