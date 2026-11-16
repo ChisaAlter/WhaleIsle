@@ -1546,7 +1546,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     await waitFor(() => ctx.agents.get(pathWorker)?.status === 'running', 'document worker remains active in its original scope');
     assert.deepEqual(host.worker(pathWorker).writePaths, ['docs/first.md']);
     assert.ok(model.failures.some(item => item.name === 'project_delegate' && /exceeds the original requirement authorization/.test(item.error.message)), JSON.stringify(model.failures));
-    const oldDocRequest = model.requests.findLast(request => request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_PATH_CHANGE')) && request.tools?.some(tool => tool.name === 'project_report'));
+    const oldDocRequest = await waitFor(() => model.requests.findLast(request => request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_PATH_CHANGE')) && request.tools?.some(tool => tool.name === 'project_report')), 'the held document worker request reaches the real model');
     await prompt('EXTEND_DOC_PATHS'); await waitFor(() => host.stream(pathWork.id).status === 'done', 'new human scope drains the busy document worker and resumes its original Session');
     assert.equal(host.stream(pathWork.id).workerSessionId, pathWorker); assert.equal(oldDocRequest.signal.aborted, true);
     assert.deepEqual(host.worker(pathWorker).writePaths, ['docs/first.md', 'docs/second.md']); assert.match(await readFile(join(directory, 'docs/second.md'), 'utf8'), /Explicit new document scope/);
