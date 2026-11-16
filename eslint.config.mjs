@@ -261,6 +261,15 @@ export default [
     plugins: { whaleisle },
     rules: { 'whaleisle/ipc-handler-reads-event': 'error' },
   },
+  // All main-process channels mount through ipc-register (#434): direct
+  // ipcMain registration is allowed only inside the wrapper itself. Test
+  // files keep their fake ipcMain objects outside the gate.
+  {
+    files: CHECKED_FILES,
+    ignores: ['src/main/ipc-register.js', '**/*.test.{js,mjs,cjs}', 'src/renderer/**/*.child.cjs'],
+    plugins: { whaleisle },
+    rules: { 'whaleisle/ipc-via-register': 'error' },
+  },
   {
     files: [
       'src/renderer/**/*.{js,mjs,cjs}',

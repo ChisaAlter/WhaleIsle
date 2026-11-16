@@ -47,11 +47,6 @@
       "count": 3
     }
   },
-  "src/main/updates-state.js": {
-    "whaleisle/ipc-handler-reads-event": {
-      "count": 3
-    }
-  },
   "src/main/whalebridge-window.js": {
     "whaleisle/open-external-http": {
       "count": 2

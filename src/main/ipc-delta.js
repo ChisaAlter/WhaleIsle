@@ -8,6 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const deltaManifest = require('../launcher/delta/manifest');
 
+const tagArg = (args) => [typeof args[0] === 'string' ? args[0] : undefined];
+
 let lastDeltaError = '';
 // Test seam: register()/contributeStatus() signatures are frozen, so hermetic
 // The cached-artifact directory can be isolated without changing the IPC edge.
@@ -34,7 +36,7 @@ function deltaDir() {
 }
 
 function register(ctx) {
-  ctx.handle('shell:install-delta', ctx.LAUNCHER_ONLY, async (event, tag) => {
+  ctx.handle('shell:install-delta', ctx.LAUNCHER_ONLY, tagArg, async (event, tag) => {
     const progress = (payload) => ctx.send(event, 'shell:update-progress', { delta: true, ...payload });
     try {
       const result = await ctx.launcher.installDelta(tag, progress);

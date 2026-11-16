@@ -25,6 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { createRegisterIpc } = require('./ipc-register');
 
 // The vendored harness ships inside resources/vendor/deepseek-harness.tar in
 // packaged builds, so the bridge binds a snapshot under src/main instead of
@@ -190,32 +191,52 @@ function createShortcutService(options) {
     }
   };
 
-  ipcMain.handle(CHANNELS.get, async (event, input, webRaw) => {
-    assertSender(event);
-    const module = await protocolPromise;
-    definitions = module.parseShortcutDefinitions(input);
-    migrateFromWeb(webRaw);
-    persistence.setDefinitions(definitions);
-    return persistence.readCurrent();
+  // The wrapper authorizes via assertSender and hands its return value (the
+  // owning view) to validate — `recording` needs it, so it rides the
+  // normalized argument list.
+  const register = createRegisterIpc(ipcMain);
+  register({
+    channel: CHANNELS.get,
+    authorize: assertSender,
+    validate: (args) => [args[0], typeof args[1] === 'string' ? args[1] : null],
+    handler: async (_event, input, webRaw) => {
+      const module = await protocolPromise;
+      definitions = module.parseShortcutDefinitions(input);
+      migrateFromWeb(webRaw);
+      persistence.setDefinitions(definitions);
+      return persistence.readCurrent();
+    },
   });
-  ipcMain.handle(CHANNELS.edit, async (event, input, expectedRevision) => {
-    assertSender(event);
-    if (typeof expectedRevision !== 'string') throw new Error('desktop shortcuts: invalid revision');
-    const module = await protocolPromise;
-    return persistence.edit(module.parseShortcutEdit(input), expectedRevision);
+  register({
+    channel: CHANNELS.edit,
+    authorize: assertSender,
+    validate: (args) => [args[0], args[1]],
+    handler: async (_event, input, expectedRevision) => {
+      if (typeof expectedRevision !== 'string') throw new Error('desktop shortcuts: invalid revision');
+      const module = await protocolPromise;
+      return persistence.edit(module.parseShortcutEdit(input), expectedRevision);
+    },
   });
-  ipcMain.handle(CHANNELS.recording, (event, active) => {
-    const target = assertSender(event);
-    if (typeof active !== 'boolean') throw new Error('desktop shortcuts: invalid recording state');
-    recording = active;
-    target.webContents.setIgnoreMenuShortcuts(active);
+  register({
+    channel: CHANNELS.recording,
+    authorize: assertSender,
+    validate: (args, target) => [target, args[0]],
+    handler: (_event, target, active) => {
+      if (typeof active !== 'boolean') throw new Error('desktop shortcuts: invalid recording state');
+      recording = active;
+      target.webContents.setIgnoreMenuShortcuts(active);
+    },
   });
-  ipcMain.handle(CHANNELS.closeWindow, (event, expected) => {
-    assertSender(event);
-    const win = getWindow();
-    if (expected !== revision || revision === undefined || recording || win === undefined
-      || win.isDestroyed() || !win.isFocused() || !win.isEnabled() || overlayInput(win).blocked) return;
-    win.close();
+  register({
+    channel: CHANNELS.closeWindow,
+    authorize: assertSender,
+    validate: (args) => [args[0]],
+    handler: (_event, expected) => {
+      const win = getWindow();
+      if (expected !== revision || revision === undefined || recording || win === undefined
+        || win.isDestroyed() || !win.isFocused() || !win.isEnabled() || overlayInput(win).blocked) return;
+      win.close();
+    },
   });
 
   // Explicit menu click → registry dispatch carrying the accepted revision.

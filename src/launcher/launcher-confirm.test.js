@@ -87,11 +87,12 @@ test('register mounts the response channel through the lane ctx handle', () => {
   const bridge = createLauncherConfirm({ getWindow: () => null });
   const mounted = [];
   bridge.register({
-    handle: (channel, roles, listener) => mounted.push({ channel, roles, listener }),
+    handle: (channel, roles, validate, listener) => mounted.push({ channel, roles, validate, listener }),
     LAUNCHER_ONLY: ['launcher'],
   });
   assert.equal(mounted.length, 1);
   assert.equal(mounted[0].channel, RESPONSE_CHANNEL);
   assert.deepEqual(mounted[0].roles, ['launcher']);
-  assert.equal(mounted[0].listener(null, { id: 'lc1', ok: true }), false, 'unmatched response must not throw');
+  const args = mounted[0].validate([{ id: 'lc1', ok: true }]);
+  assert.equal(mounted[0].listener(null, ...args), false, 'unmatched response must not throw');
 });

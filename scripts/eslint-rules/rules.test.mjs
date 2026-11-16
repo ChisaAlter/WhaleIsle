@@ -28,6 +28,25 @@ ipcTester.run('whaleisle/ipc-handler-reads-event', plugin.rules['ipc-handler-rea
   ],
 });
 
+const viaRegisterTester = new RuleTester({ languageOptions: cjs });
+viaRegisterTester.run('whaleisle/ipc-via-register', plugin.rules['ipc-via-register'], {
+  valid: [
+    "register({ channel: 'ch', roles, validate: noArgs, handler });",
+    "createRegisterIpc(ipcMain)({ channel: 'ch', authorize, validate, handler });",
+    "ipcMain.removeHandler('ch');",
+    "ipcRenderer.invoke('ch', payload);",
+    "sender.on('did-navigate', reap);",
+    "protocol.handle('pet', petHandler);",
+  ],
+  invalid: [
+    { code: "ipcMain.handle('ch', (event) => work(event));", errors: [{ messageId: 'useRegisterIpc' }] },
+    { code: "ipcMain.on('ch', (event) => work(event));", errors: [{ messageId: 'useRegisterIpc' }] },
+    { code: "ipcMain.once('ch', (event) => work(event));", errors: [{ messageId: 'useRegisterIpc' }] },
+    { code: "ipcMain.handleOnce('ch', (event) => work(event));", errors: [{ messageId: 'useRegisterIpc' }] },
+    { code: "const ipcMain = require('electron').ipcMain; ipcMain.handle('ch', () => {});", errors: [{ messageId: 'useRegisterIpc' }] },
+  ],
+});
+
 const externalTester = new RuleTester({ languageOptions: cjs });
 externalTester.run('whaleisle/open-external-http', plugin.rules['open-external-http'], {
   valid: [

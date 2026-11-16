@@ -60,6 +60,31 @@ const ipcHandlerReadsEvent = {
   },
 };
 
+const ipcViaRegister = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'require main-process IPC channels to register through src/main/ipc-register.js',
+    },
+    schema: [],
+    messages: {
+      useRegisterIpc:
+        'IPC 注册必须走 src/main/ipc-register.js 的 registerIpc/createRegisterIpc'
+        + '（统一强制调用方授权与参数校验）；不要直接调用 ipcMain.handle/on/once/handleOnce。'
+        + '来源：issue #434 P2-3 registerIpc。',
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (isIpcMainCall(node)) {
+          context.report({ node: node.callee, messageId: 'useRegisterIpc' });
+        }
+      },
+    };
+  },
+};
+
 const openExternalHttp = {
   meta: {
     type: 'problem',
@@ -127,6 +152,7 @@ const noRawHtml = {
 export default {
   rules: {
     'ipc-handler-reads-event': ipcHandlerReadsEvent,
+    'ipc-via-register': ipcViaRegister,
     'open-external-http': openExternalHttp,
     'no-raw-html': noRawHtml,
   },

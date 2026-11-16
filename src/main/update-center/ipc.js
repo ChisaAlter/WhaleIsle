@@ -4,6 +4,8 @@
 // updates: the update center overlay, the launcher and the Harness page
 // (dshDesktop.updates). The overlay is opened over whichever window asked.
 
+const { createRegisterIpc, noArgs } = require('../ipc-register');
+
 const UPDATE_CENTER_IPC = Object.freeze({
   state: 'shell:update-center-state',
   command: 'shell:update-center-command',
@@ -118,22 +120,37 @@ function registerUpdateCenterIpc(deps) {
   };
   const view = () => decorate(center.snapshot(), releaseNotes);
 
-  ipcMain.handle(UPDATE_CENTER_IPC.state, (event) => { role(event); return view(); });
-  ipcMain.handle(UPDATE_CENTER_IPC.command, async (event, action, arg) => {
-    role(event);
-    if (!COMMANDS.has(action)) throw new Error(`unknown update command ${action}`);
-    await center.command(action, arg);
-    return view();
+  const register = createRegisterIpc(ipcMain);
+  register({ channel: UPDATE_CENTER_IPC.state, authorize: role, validate: noArgs, handler: () => view() });
+  register({
+    channel: UPDATE_CENTER_IPC.command,
+    authorize: role,
+    // The command whitelist lives in the handler so its error text survives.
+    validate: (args) => [args[0], args[1]],
+    handler: async (_event, action, arg) => {
+      if (!COMMANDS.has(action)) throw new Error(`unknown update command ${action}`);
+      await center.command(action, arg);
+      return view();
+    },
   });
-  ipcMain.handle(UPDATE_CENTER_IPC.open, (event) => {
-    const sender = role(event);
-    const parent = parentFor(sender === 'update-center' ? null : sender);
-    centerWindow.open(parent);
-    return view();
+  register({
+    channel: UPDATE_CENTER_IPC.open,
+    authorize: role,
+    // `role` returns the authorized surface name, which picks the parent.
+    validate: (_args, sender) => [sender],
+    handler: (_event, sender) => {
+      const parent = parentFor(sender === 'update-center' ? null : sender);
+      centerWindow.open(parent);
+      return view();
+    },
   });
-  ipcMain.handle(UPDATE_CENTER_IPC.close, (event) => {
-    if (!centerWindow.owns(event.sender)) role(event);
-    centerWindow.close();
+  register({
+    channel: UPDATE_CENTER_IPC.close,
+    // The center window may close itself unconditionally; other senders need
+    // the surface-role check.
+    authorize: (event) => { if (!centerWindow.owns(event.sender)) role(event); },
+    validate: noArgs,
+    handler: () => { centerWindow.close(); },
   });
 
   const broadcast = (snapshot) => {

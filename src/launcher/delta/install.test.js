@@ -304,7 +304,7 @@ function fakeCtx(install = async () => ({ ok: true, mode: 'delta' })) {
   const calls = { handled: null, sent: [] };
   const ctx = {
     LAUNCHER_ONLY: ['launcher'],
-    handle: (channel, roles, listener) => { calls.handled = { channel, roles, listener }; },
+    handle: (channel, roles, validate, listener) => { calls.handled = { channel, roles, listener: (event, ...args) => listener(event, ...validate(args)) }; },
     send: (event, channel, payload) => { calls.sent.push({ channel, payload }); },
     launcher: { installDelta: install, installRelease: async () => { assert.fail('delta IPC must not invoke full install'); } },
   };
