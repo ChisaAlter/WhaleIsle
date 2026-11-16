@@ -161,6 +161,33 @@ test('validateManifest dedups paths under Windows case/normalization semantics',
   assert.equal(doc.files.length, 3);
 });
 
+test('validateManifest rejects a path that is an ancestor of another entry', () => {
+  const base = { format: manifest.FORMAT, fromVersion: '1', toVersion: '2' };
+  const patch = (p) => ({ path: p, op: 'patch', baseSha256: 'b'.repeat(64), sha256: 'c'.repeat(64), size: 1, payload: 'p/0' });
+  const del = (p) => ({ path: p, op: 'delete', baseSha256: 'd'.repeat(64) });
+  for (const [file, child] of [
+    ['x-y', 'x-y/a'],   // the file is also used as a directory
+    ['X-Y', 'x-y/a'],   // same collision under Windows case-insensitive names
+    ['dir', 'dir/sub/f.js'],
+  ]) {
+    for (const files of [[patch(file), del(child)], [del(child), patch(file)]]) {
+      assert.throws(() => manifest.validateManifest({ ...base, files }),
+        /conflicting paths/, `${file} vs ${child}`);
+    }
+  }
+  // Prefix lookalikes that are not path ancestors stay accepted.
+  const doc = manifest.validateManifest({
+    ...base,
+    files: [
+      { path: 'a.txt', op: 'delete', baseSha256: 'd'.repeat(64) },
+      { path: 'a.txt.bak', op: 'delete', baseSha256: 'd'.repeat(64) },
+      { path: 'dir/a', op: 'delete', baseSha256: 'd'.repeat(64) },
+      { path: 'dir2/b', op: 'delete', baseSha256: 'd'.repeat(64) },
+    ],
+  });
+  assert.equal(doc.files.length, 4);
+});
+
 test('deltaAssetName + parseDeltaAssetName round-trip', () => {
   const name = manifest.deltaAssetName('Whale Isle', '0.3.2', '0.3.3');
   assert.equal(name, 'Whale-Isle-delta-0.3.2-0.3.3.zip');
@@ -396,5 +423,81 @@ test('applyDeltaFile rejects a manifest with a hostile path', async () => {
     (error) => error.code === 'manifest-invalid',
   );
   assert.equal(fs.existsSync(path.join(dir, 'escape.txt')), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('applyDeltaFile rejects a manifest using one path as both file and directory', async () => {
+  const dir = tmpdir();
+  const doc = {
+    format: manifest.FORMAT,
+    fromVersion: '1',
+    toVersion: '2',
+    files: [
+      { path: 'X-Y', op: 'patch', baseSha256: 'b'.repeat(64), sha256: 'c'.repeat(64), size: 1, payload: 'payload/0' },
+      { path: 'x-y/a', op: 'delete', baseSha256: 'd'.repeat(64) },
+    ],
+  };
+  zip.writeZip(path.join(dir, 'conflict.zip'), [
+    { name: 'payload/0', data: Buffer.from('x') },
+    { name: 'manifest.json', data: Buffer.from(JSON.stringify(doc)) },
+  ]);
+  const target = path.join(dir, 'target');
+  fs.mkdirSync(target, { recursive: true });
+  await assert.rejects(
+    () => applyDeltaFile(path.join(dir, 'conflict.zip'), target, {}),
+    (error) => error instanceof DeltaApplyError && error.code === 'manifest-invalid',
+  );
+  assert.deepEqual(fs.readdirSync(target), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('applyDeltaFile reports a directory at a file base as base-mismatch, not raw EISDIR', async () => {
+  const dir = tmpdir();
+  const target = path.join(dir, 'target');
+  fs.mkdirSync(path.join(target, 'x-y'), { recursive: true });
+  const doc = {
+    format: manifest.FORMAT,
+    fromVersion: '1',
+    toVersion: '2',
+    files: [
+      { path: 'x-y', op: 'patch', baseSha256: 'b'.repeat(64), sha256: 'c'.repeat(64), size: 1, payload: 'payload/0' },
+    ],
+  };
+  zip.writeZip(path.join(dir, 'd.zip'), [
+    { name: 'payload/0', data: Buffer.from('x') },
+    { name: 'manifest.json', data: Buffer.from(JSON.stringify(doc)) },
+  ]);
+  await assert.rejects(
+    () => applyDeltaFile(path.join(dir, 'd.zip'), target, {}),
+    (error) => error instanceof DeltaApplyError && error.code === 'base-mismatch',
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('applyDeltaFile wraps a file/dir collision mid-apply as apply-failed and rolls back', async () => {
+  const dir = tmpdir();
+  const target = path.join(dir, 'target');
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, 'd'), 'installed-file');
+  const data = Buffer.from('new-bytes');
+  const doc = {
+    format: manifest.FORMAT,
+    fromVersion: '1',
+    toVersion: '2',
+    files: [
+      { path: 'd/e', op: 'add', sha256: manifest.sha256Hex(data), size: data.length, payload: 'payload/0' },
+    ],
+  };
+  zip.writeZip(path.join(dir, 'd.zip'), [
+    { name: 'payload/0', data },
+    { name: 'manifest.json', data: Buffer.from(JSON.stringify(doc)) },
+  ]);
+  await assert.rejects(
+    () => applyDeltaFile(path.join(dir, 'd.zip'), target, {}),
+    (error) => error instanceof DeltaApplyError && error.code === 'apply-failed',
+  );
+  // Rollback leaves the pre-apply tree and reclaims staging.
+  assert.equal(fs.readFileSync(path.join(target, 'd'), 'utf8'), 'installed-file');
+  assert.equal(fs.readdirSync(target).filter((n) => n.startsWith('.dshd-delta-')).length, 0);
   fs.rmSync(dir, { recursive: true, force: true });
 });

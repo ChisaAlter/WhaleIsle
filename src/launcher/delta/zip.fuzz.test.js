@@ -241,17 +241,31 @@ async function applyScenario(entries, files, run) {
         entries.push({ name: row.payload, data: file.data });
       }
       if (file.op === 'patch' || file.op === 'delete') {
-        const base = Buffer.from(`base-${index}`);
-        if (manifest.isSafeRelPath(file.path)) {
-          const full = path.join(target, ...file.path.split('/'));
-          fs.mkdirSync(path.dirname(full), { recursive: true });
-          fs.writeFileSync(full, base);
-        }
-        row.baseSha256 = manifest.sha256Hex(base);
+        row.baseSha256 = manifest.sha256Hex(Buffer.from(`base-${index}`));
       }
       return row;
     });
     const doc = { format: manifest.FORMAT, product: 'app', fromVersion: '1', toVersion: '2', files: rows };
+    // Base files only serve a manifest that can reach the apply stage, and
+    // creating one can itself hit a file/dir collision (`x-y` plus `x-y/a`)
+    // — so the doc is validated the same way applyDeltaFile will, and bases
+    // are written only for manifests that pass.
+    let docValid = true;
+    try {
+      manifest.validateManifest(JSON.stringify(doc));
+    } catch (error) {
+      assert.ok(error instanceof manifest.DeltaManifestError);
+      docValid = false;
+    }
+    if (docValid) {
+      files.forEach((file, index) => {
+        if (file.op === 'patch' || file.op === 'delete') {
+          const full = path.join(target, ...file.path.split('/'));
+          fs.mkdirSync(path.dirname(full), { recursive: true });
+          fs.writeFileSync(full, Buffer.from(`base-${index}`));
+        }
+      });
+    }
     entries.unshift({ name: manifest.MANIFEST_ENTRY, data: Buffer.from(JSON.stringify(doc)) });
     const zipFile = path.join(parent, 'delta.zip');
     zip.writeZip(zipFile, entries);

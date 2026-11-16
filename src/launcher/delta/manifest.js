@@ -141,16 +141,29 @@ function validateManifest(raw) {
   if (!Array.isArray(doc.files)) {
     throw new DeltaManifestError('manifest files must be an array');
   }
-  const seen = new Set();
+  const seen = new Map();
   const files = doc.files.map((entry, index) => {
     const out = validateFileEntry(entry, index);
     const key = relPathKey(out.path);
     if (seen.has(key)) {
       throw new DeltaManifestError(`manifest duplicate path: ${out.path}`);
     }
-    seen.add(key);
+    seen.set(key, out.path);
     return out;
   });
+  // No record may sit inside another record's path (`x-y` plus `x-y/a`): one
+  // disk entry cannot be both the file the first op writes and the directory
+  // the second needs — without this gate the contradiction surfaces as a raw
+  // EEXIST/ENOTDIR mid-apply.
+  for (const row of files) {
+    const segs = relPathKey(row.path).split('/');
+    for (let i = 1; i < segs.length; i += 1) {
+      const prefix = segs.slice(0, i).join('/');
+      if (seen.has(prefix)) {
+        throw new DeltaManifestError(`manifest conflicting paths: ${seen.get(prefix)} vs ${row.path}`);
+      }
+    }
+  }
   return {
     format: FORMAT,
     product: typeof doc.product === 'string' ? doc.product : '',
