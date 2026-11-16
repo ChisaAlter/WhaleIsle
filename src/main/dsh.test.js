@@ -115,6 +115,8 @@ function makeHarness(overrides = {}) {
     killTree: (pid) => {
       calls.killTree.push(pid);
     },
+    // Hermetic default: never shell out to ps/PowerShell from unit tests.
+    processStartTime: async () => 'test-start-time',
     ...overrides.deps,
   };
   const manager = new DshManager(deps);
@@ -1642,4 +1644,20 @@ test('spawn 后写 pid 文件记录 pid、端口与进程启动时间', async (t
   h.setReachable(true);
   await h.manager.start();
   assert.deepEqual(written, [{ pid: CHILD_PID, port: 3080, startTime: `boot-${CHILD_PID}` }]);
+});
+
+test('a spawn error while the start time is still being read is not lost and no pidfile is written', async (t) => {
+  let releaseStartTime;
+  const h = makeHarness({ deps: { processStartTime: () => new Promise((resolve) => { releaseStartTime = resolve; }) } });
+  t.after(h.cleanup);
+  const spawnError = Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+  const outcome = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1 && typeof releaseStartTime === 'function');
+  h.lastChild().emit('error', spawnError);
+  releaseStartTime('late-start-time');
+  const result = await outcome;
+  assert.equal(result.ok, false);
+  assert.equal(result.error, spawnError);
+  assert.equal(h.manager.failure.phase, 'startup');
+  assert.deepEqual(h.calls.writePid, [], 'a child that failed before its start time was read must not be recorded');
 });

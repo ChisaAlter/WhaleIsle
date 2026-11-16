@@ -1104,10 +1104,16 @@ class DshManager extends EventEmitter {
       });
       this.child = child;
       this.attachOutput(child);
-      this._writePidFile(child.pid, launch.port, await this._processStartTime(child.pid));
-
-      child.on('error', (error) => this._onChildError(gen, child, error, readiness));
-      child.on('exit', (code, signal) => this._onChildExit(gen, child, code, signal, readiness));
+      // Listeners first: a spawn error or early exit can fire while the start
+      // time is being read (PowerShell on Windows is slow) and must not be lost.
+      let childEnded = false;
+      child.on('error', (error) => { childEnded = true; this._onChildError(gen, child, error, readiness); });
+      child.on('exit', (code, signal) => { childEnded = true; this._onChildExit(gen, child, code, signal, readiness); });
+      if (child.pid) {
+        const startTime = await this._processStartTime(child.pid);
+        // Never record a child that failed, exited or was replaced meanwhile.
+        if (!childEnded && this.child === child) this._writePidFile(child.pid, launch.port, startTime);
+      }
 
       this.waitUntilReady(expectedUrl, child, gen).then(
         (url) => readiness.resolve(url),
