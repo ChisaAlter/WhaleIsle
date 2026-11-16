@@ -196,3 +196,73 @@ test('rebuild kind: byte-compare catches tampering and --record rebuilds in plac
     assert.deepEqual(await checkVendorProvenance(vendorDir), []);
   });
 });
+
+// A build.mjs that reaches out of its own tree the way dsh-im reaches into
+// dsh-shared: ../sib resolves next to the staged copy only when the sibling
+// is staged too.
+const CROSS_TREE_BUILD = `import fs from 'node:fs';
+import { marker } from '../sib/lib/value.mjs';
+fs.mkdirSync('lib', { recursive: true });
+fs.writeFileSync('lib/out.js', '// built\\n' + marker + '\\n' + fs.readFileSync('src/in.js', 'utf8'));
+`;
+
+const CROSS_TREE_FILES = {
+  'src/in.js': 'export const v = 1;\n',
+  'lib/out.js': '// built\nexport const sib = 1;\nexport const v = 1;\n',
+  'build.mjs': CROSS_TREE_BUILD,
+};
+
+const SIB_TREES = {
+  sib: {
+    files: { 'lib/value.mjs': 'export const marker = \'export const sib = 1;\';\n' },
+    entry: { kind: 'source', origin: 'fixture-owned' },
+  },
+};
+
+test('rebuild kind: staged siblings let cross-tree imports resolve', async () => {
+  await withVendor({
+    ...SIB_TREES,
+    bund: {
+      files: CROSS_TREE_FILES,
+      entry: {
+        kind: 'rebuild',
+        origin: 'fixture',
+        esbuildHook: false,
+        rebuild: {
+          inputs: ['src', 'build.mjs'],
+          siblings: ['sib'],
+          commands: [['build.mjs']],
+          outputs: ['lib/out.js'],
+          esbuildHook: false,
+        },
+      },
+    },
+  }, async (vendorDir) => {
+    assert.deepEqual(await checkVendorProvenance(vendorDir), []);
+  });
+});
+
+test('rebuild kind: an undeclared cross-tree import fails naming the missing path', async () => {
+  await withVendor({
+    ...SIB_TREES,
+    bund: {
+      files: CROSS_TREE_FILES,
+      entry: {
+        kind: 'rebuild',
+        origin: 'fixture',
+        esbuildHook: false,
+        rebuild: {
+          inputs: ['src', 'build.mjs'],
+          commands: [['build.mjs']],
+          outputs: ['lib/out.js'],
+          esbuildHook: false,
+        },
+      },
+    },
+  }, async (vendorDir) => {
+    const problems = await checkVendorProvenance(vendorDir);
+    assert.ok(problems.some((p) => p.includes('bund') && p.includes('build command failed')));
+    const detail = problems.find((p) => p.includes('build command failed'));
+    assert.ok(detail.includes('sib') && detail.includes('value.mjs'));
+  });
+});

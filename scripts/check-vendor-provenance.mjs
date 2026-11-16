@@ -14,10 +14,13 @@
  *                 declared inputs into a temp directory, runs the declared
  *                 build commands and compares every declared output
  *                 byte-for-byte (CRLF-normalized). A mismatch means the
- *                 artifact was hand-edited or sources were not rebuilt. A tree
- *                 may additionally carry a `hashed` spec for outputs that the
- *                 deterministic toolchain does not reproduce (e.g. artifacts
- *                 last built by a vendored esbuild).
+ *                 artifact was hand-edited or sources were not rebuilt. When
+ *                 sources import across tree boundaries (e.g. dsh-im reaching
+ *                 into dsh-shared), `siblings` names the other vendor trees to
+ *                 stage next to the temp copy so those relative imports still
+ *                 resolve. A tree may additionally carry a `hashed` spec for
+ *                 outputs that the deterministic toolchain does not reproduce
+ *                 (e.g. artifacts last built by a vendored esbuild).
  * - `hashed`    — source + artifacts whose build is expensive or not
  *                 deterministic. provenance.json records the hash of the
  *                 source file set and of the artifact file set. An artifact
@@ -163,9 +166,24 @@ function runCommands(commands, cwd, { esbuildHook = true } = {}) {
 
 async function checkRebuildTree(name, spec, pkgDir) {
   const problems = [];
+  const vendorDir = path.dirname(pkgDir);
   await withOwnedTempDir('vendor-provenance-', async (tmp) => {
     const staging = path.join(tmp, name);
     fs.mkdirSync(staging, { recursive: true });
+    // Sibling trees are staged next to `staging` (not inside it) so imports
+    // that climb out of the tree, like ../../dsh-shared/lib/x.mjs, land on the
+    // same relative layout the real vendor/ has.
+    for (const sibling of spec.siblings ?? []) {
+      const source = path.join(vendorDir, sibling);
+      if (!fs.existsSync(source)) {
+        problems.push(`declared build sibling "${sibling}" is missing`);
+        continue;
+      }
+      fs.cpSync(source, path.join(tmp, sibling), {
+        recursive: true,
+        filter: (src) => !IGNORED_DIRS.has(path.basename(src)),
+      });
+    }
     for (const input of spec.inputs ?? []) {
       const source = path.join(pkgDir, input);
       if (!fs.existsSync(source)) {
@@ -276,6 +294,11 @@ function checkSchema(name, entry) {
     if (!spec || !Array.isArray(spec.commands) || spec.commands.length === 0 ||
         !Array.isArray(spec.outputs) || spec.outputs.length === 0) {
       problems.push('kind "rebuild" requires rebuild.commands and rebuild.outputs');
+    }
+    if (spec?.siblings !== undefined && (!Array.isArray(spec.siblings) ||
+        spec.siblings.some((s) => typeof s !== 'string' ||
+          !/^[^/\\]+$/.test(s) || s === '.' || s === '..' || s === name))) {
+      problems.push('rebuild.siblings must be an array of other vendor directory names');
     }
     if (entry.hashed) problems.push(...hashedSpecProblems(entry.hashed));
   }

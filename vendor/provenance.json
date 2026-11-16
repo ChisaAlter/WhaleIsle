@@ -28,6 +28,9 @@
         "links": [
           "node_modules"
         ],
+        "siblings": [
+          "dsh-shared"
+        ],
         "commands": [
           [
             "plugin-src/client/build.mjs"
@@ -58,7 +61,7 @@
           "README.md",
           "LICENSE"
         ],
-        "artifactHash": "b5f2f9f836d0f8f2c2615c9b8aafb5532585ef233d38b667463d58a9128431b0"
+        "artifactHash": "93f7908221cf495d11d6e3024ac754ae6410220442f5ca9765f7007cd84275d1"
       }
     },
     "dsh-platform-session": {
