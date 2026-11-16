@@ -32,6 +32,12 @@ test('upstream runtime, lock and native window changes select their actual consu
   assert.equal(selectChecks(['src/main/native-window-motion.js']).motion, true)
   assert.equal(selectChecks(['src/main/update.test.js']).product, true)
 })
+test('vendor content changes gate the tools job that runs the provenance check', () => {
+  assert.equal(selectChecks(['vendor/dsh-pad/lib/index.js']).tools, true)
+  assert.equal(selectChecks(['vendor/provenance.json']).tools, true)
+  const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
+  assert.ok(ci.jobs.tools.steps.some(s => s.run === 'npm run check:vendor'))
+})
 test('lint config and its suppression ledger select product and tools checks', () => {
   assert.deepEqual(selectChecks(['eslint.config.mjs']),
     { product: true, vendor: false, tools: true, motion: false })

@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "trees": {
+    "chisacode-remote": {
+      "kind": "source",
+      "origin": "https://github.com/ChisaAlter/ChisaCode (AGPL-3.0-or-later; desktop fork deltas in DESKTOP-FORK.md)",
+      "rebuildCommand": "npm run prepare:dshd-remote (packages/*/dist and .tmp/desktop-runtime are generated, untracked)"
+    },
+    "deepseek-harness": {
+      "kind": "pinned",
+      "origin": "https://github.com/deepseek-ai/deepseek-harness.git",
+      "pin": "harness-upstream.json",
+      "rebuildCommand": "npm run sync:harness -- --ref <ref> --sha <sha>; npm run setup:harness"
+    },
+    "dsh-deepseek-tools": {
+      "kind": "source",
+      "origin": "desktop-owned"
+    },
+    "dsh-im": {
+      "kind": "rebuild",
+      "origin": "npm @xmanrui/dsh-im@3.0.1 (MIT) + desktop patches (DESKTOP-FORK.md)",
+      "rebuild": {
+        "inputs": [
+          "plugin-src",
+          "src",
+          "package.json"
+        ],
+        "links": [
+          "node_modules"
+        ],
+        "commands": [
+          [
+            "plugin-src/client/build.mjs"
+          ],
+          [
+            "plugin-src/host/build.mjs"
+          ]
+        ],
+        "outputs": [
+          "lib/client.js",
+          "lib/index.js"
+        ]
+      }
+    },
+    "dsh-pad": {
+      "kind": "artifacts",
+      "origin": "https://github.com/ChisaAlter/dsh-pad v0.3.1 @ b4a9b05a4e4ace822a629f4f0ba9c364b9422a95 + desktop client extensions (README.md)",
+      "source": {
+        "repo": "https://github.com/ChisaAlter/dsh-pad",
+        "ref": "v0.3.1",
+        "commit": "b4a9b05a4e4ace822a629f4f0ba9c364b9422a95"
+      },
+      "artifacts": {
+        "paths": [
+          "lib",
+          "cordis.patch.yml",
+          "package.json",
+          "README.md",
+          "LICENSE"
+        ],
+        "artifactHash": "b5f2f9f836d0f8f2c2615c9b8aafb5532585ef233d38b667463d58a9128431b0"
+      }
+    },
+    "dsh-platform-session": {
+      "kind": "source",
+      "origin": "desktop-owned"
+    },
+    "dsh-project": {
+      "kind": "source",
+      "origin": "desktop-owned"
+    },
+    "dsh-remote": {
+      "kind": "hashed",
+      "origin": "https://github.com/flymysql/dsh-remote v0.8.21 (MIT) + desktop fork (DESKTOP-FORK.md); host lib/ ships as vendored source, lib/client.js is the esbuild client bundle",
+      "hashed": {
+        "sources": [
+          "plugin-src"
+        ],
+        "artifacts": [
+          "lib/client.js"
+        ],
+        "sourceHash": "28f7487acfc38092392dd07a30d0184e23e9763d7c5e0146aac2f67300f7dd66",
+        "artifactHash": "9555624022596096d00147a2697d50d5be55a546d0c90fa09cc45e89b81b8d09"
+      },
+      "recordCommands": [
+        [
+          "plugin-src/client/build.mjs"
+        ]
+      ]
+    },
+    "dsh-shared": {
+      "kind": "source",
+      "origin": "desktop-owned"
+    },
+    "dsh-task-control": {
+      "kind": "source",
+      "origin": "desktop-owned"
+    },
+    "dsh-usage-panel": {
+      "kind": "rebuild",
+      "origin": "https://github.com/AlfredChaos/dsh-usage-panel (MIT; desktop restyle, VENDOR.md)",
+      "rebuild": {
+        "inputs": [
+          "src",
+          "scripts",
+          "tsconfig.base.json",
+          "tsconfig.client.json",
+          "tsconfig.host.json",
+          "package.json"
+        ],
+        "links": [
+          "node_modules"
+        ],
+        "commands": [
+          [
+            "scripts/build.mjs"
+          ]
+        ],
+        "outputs": [
+          "lib/client.js"
+        ]
+      },
+      "hashed": {
+        "sources": [
+          "src",
+          "scripts/build.mjs",
+          "scripts/wrap-client.mjs",
+          "tsconfig.base.json",
+          "tsconfig.client.json",
+          "tsconfig.host.json"
+        ],
+        "artifacts": [
+          "lib/index.js",
+          "lib/host",
+          "lib/shared"
+        ],
+        "sourceHash": "9378b9ddcc6a5b588ee2b9de153a6438fa8e027fefb211dd50cd93604e23b422",
+        "artifactHash": "765ce234c1ca08471698d10c3873084d10db0f23f83135c77cf0e1173018acf8"
+      }
+    },
+    "dsh-whale": {
+      "kind": "source",
+      "origin": "desktop-owned"
+    },
+    "dsh-with-chatgpt": {
+      "kind": "source",
+      "origin": "desktop-owned bundle; bridge is a pinned MIT fork of https://github.com/XiaoDuoYa/codex-with-chatgpt (bridge/NOTICE.md)",
+      "rebuildCommand": "npm run prepare:dsh-with-chatgpt-bundle (bridge/dist is generated at pack time, untracked)"
+    },
+    "dshmarket": {
+      "kind": "source",
+      "origin": "attribution stub; npm dshmarket@1.14.0 source snapshot removed (DESKTOP-FORK.md)"
+    },
+    "open-intelligent-ui": {
+      "kind": "source",
+      "origin": "https://github.com/thesysdev/open-intelligent-ui @ 6a4a0ba192ea285b3a5ed39dcc1295d7d4080d6f (UPSTREAM.md)",
+      "rebuildCommand": "npm run prepare:whale-ui (viewer emitted under src/renderer/openui, outside vendor, untracked)"
+    }
+  }
+}
