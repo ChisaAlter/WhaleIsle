@@ -1,13 +1,14 @@
 /**
  * Desktop management tools — the whale assistant's reach into the desktop
  * shell itself. They ride the same loopback control channel the in-chat
- * installer uses (DSH_DESKTOP_INSTALL_URL + Bearer token injected into the
+ * installer uses (DSH_DESKTOP_INSTALL_URL + Bearer token delivered to the
  * Harness process), so every action lands in the main process with its own
  * validation: plugin guards, renderer-config whitelist, catalog pinning.
- * When the env pair is absent (non-desktop host), each tool reports
- * 'desktop-unavailable' instead of pretending.
+ * When the URL env or the in-store token is absent (non-desktop host), each
+ * tool reports 'desktop-unavailable' instead of pretending.
  */
 import { defineTool } from '@deepseek-ai/dsh-tools';
+import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
 import { genericOutput, trimTo } from './shared.js';
 import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
 
@@ -24,12 +25,12 @@ const SENSITIVE_CONFIG_KEYS = new Set([
 
 function controlConfig() {
   const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? '').trim();
-  const token = String(process.env.DSH_DESKTOP_INSTALL_TOKEN ?? '').trim();
+  const token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN').trim();
   return url && token ? { url, token } : null;
 }
 
 function unavailable() {
-  return { ok: false, detail: 'desktop-unavailable — no control channel env in this host.' };
+  return { ok: false, detail: 'desktop-unavailable — no control channel in this host.' };
 }
 
 async function desktopCall(control, pathname, { method = 'GET', body, timeoutMs = CONTROL_TIMEOUT_MS } = {}) {

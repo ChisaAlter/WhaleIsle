@@ -12,7 +12,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { constantTimeEqual } = require('../shared/secret');
+const { constantTimeEqual, storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 // Real prompt assembly runs the built SystemPrompt plugin over vendored cordis.
@@ -75,14 +75,14 @@ async function allowDesktopConfirm(t) {
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
-  const prevToken = process.env.DSH_DESKTOP_INSTALL_TOKEN;
+  const prevStore = globalThis[INTERNAL_SECRETS_KEY];
   process.env.DSH_DESKTOP_INSTALL_URL = `http://127.0.0.1:${server.address().port}`;
-  process.env.DSH_DESKTOP_INSTALL_TOKEN = token;
+  // The token rides the in-process store (#427), never env.
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', token]]);
   t.after(() => new Promise((resolve) => {
     if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL;
     else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
-    if (prevToken === undefined) delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
-    else process.env.DSH_DESKTOP_INSTALL_TOKEN = prevToken;
+    globalThis[INTERNAL_SECRETS_KEY] = prevStore;
     server.close(resolve);
   }));
 }
@@ -635,10 +635,10 @@ test('whale_sticker picks up images dropped into the whale home stickers dir', a
 
 // ── desktop-tools: loopback control channel ────────────────────
 
-test('desktop tools report unavailable without the control env pair', async () => {
-  const saved = { url: process.env.DSH_DESKTOP_INSTALL_URL, token: process.env.DSH_DESKTOP_INSTALL_TOKEN };
+test('desktop tools report unavailable without the control channel', async () => {
+  const saved = { url: process.env.DSH_DESKTOP_INSTALL_URL, store: globalThis[INTERNAL_SECRETS_KEY] };
   delete process.env.DSH_DESKTOP_INSTALL_URL;
-  delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
+  storeInternalSecrets([]);
   try {
     const { ctx, tools } = stubCtx(makeController());
     desktopTools.registerDesktopTools(ctx);
@@ -649,15 +649,16 @@ test('desktop tools report unavailable without the control env pair', async () =
     assert.equal(plugin.ok, false);
   } finally {
     if (saved.url !== undefined) process.env.DSH_DESKTOP_INSTALL_URL = saved.url;
-    if (saved.token !== undefined) process.env.DSH_DESKTOP_INSTALL_TOKEN = saved.token;
+    globalThis[INTERNAL_SECRETS_KEY] = saved.store;
   }
 });
 
 test('desktop tools send the bearer token and map response bodies', async () => {
   const calls = [];
   const realFetch = globalThis.fetch;
+  const prevStore = globalThis[INTERNAL_SECRETS_KEY];
   process.env.DSH_DESKTOP_INSTALL_URL = 'http://127.0.0.1:9';
-  process.env.DSH_DESKTOP_INSTALL_TOKEN = 'tok-1';
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'tok-1']]);
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), auth: init.headers?.authorization, body: init.body ? JSON.parse(init.body) : null });
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -700,14 +701,15 @@ test('desktop tools send the bearer token and map response bodies', async () => 
   } finally {
     globalThis.fetch = realFetch;
     delete process.env.DSH_DESKTOP_INSTALL_URL;
-    delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
+    globalThis[INTERNAL_SECRETS_KEY] = prevStore;
   }
 });
 
 test('whale_desktop_plugin surfaces needsAllowBuilds guidance', async () => {
   const realFetch = globalThis.fetch;
+  const prevStore = globalThis[INTERNAL_SECRETS_KEY];
   process.env.DSH_DESKTOP_INSTALL_URL = 'http://127.0.0.1:9';
-  process.env.DSH_DESKTOP_INSTALL_TOKEN = 'tok-1';
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', 'tok-1']]);
   globalThis.fetch = async () => new Response(JSON.stringify({
     ok: false, needsAllowBuilds: true, allowBuilds: ['pkg-a'],
   }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -720,6 +722,6 @@ test('whale_desktop_plugin surfaces needsAllowBuilds guidance', async () => {
   } finally {
     globalThis.fetch = realFetch;
     delete process.env.DSH_DESKTOP_INSTALL_URL;
-    delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
+    globalThis[INTERNAL_SECRETS_KEY] = prevStore;
   }
 });

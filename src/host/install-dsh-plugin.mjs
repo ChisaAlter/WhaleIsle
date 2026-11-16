@@ -3,16 +3,19 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const { executeInstallDshPlugin, renderInstall } = createRequire(import.meta.url)('./install-dsh-plugin-client.js')
+const { executeInstallDshPlugin, renderInstall, internalSecret } = createRequire(import.meta.url)('./install-dsh-plugin-client.js')
 
 export const name = 'dshd-desktop-plugin-install'
 export const inject = ['tools']
 
 const DESCRIPTION = 'Install a DeepSeek Harness plugin into the desktop web profile from a github:owner/repo[#sha] spec. Prepare scripts run on this machine, outside the sandbox. Call only for the spec the user named. If needsAllowBuilds is true, ask the user, then retry with those allowBuilds keys. A successful install restarts the desktop app to load the plugin.'
 
+// The URL still rides env; the Bearer token is a credential and arrives over
+// the host's stdin secret channel into the in-process store (#427) — never
+// process.env, so tool-spawned children cannot inherit it.
 function controlConfig() {
   const url = process.env.DSH_DESKTOP_INSTALL_URL
-  const token = process.env.DSH_DESKTOP_INSTALL_TOKEN
+  const token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN')
   if (!url || !token) return null
   return { url, token }
 }

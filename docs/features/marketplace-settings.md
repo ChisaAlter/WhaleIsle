@@ -90,8 +90,9 @@
 （`src/host/install-dsh-plugin.mjs`）注册；`@deepseek-ai/dsh-tools` 从运行中的
 Harness 解析，解析失败只跳过注册、不拖垮 Host。
 
-- **注册条件**：仅当主进程 `desktop-install-control.js` 把回环控制端点注入环境
-  （`DSH_DESKTOP_INSTALL_URL` / `DSH_DESKTOP_INSTALL_TOKEN`）时注册。端点只听
+- **注册条件**：仅当主进程 `desktop-install-control.js` 注入回环控制端点
+  （`DSH_DESKTOP_INSTALL_URL` 走环境变量，`DSH_DESKTOP_INSTALL_TOKEN` 经
+  host stdin 密钥通道进进程内存储，不落 `process.env`）时注册。端点只听
   `127.0.0.1` 随机端口，鉴权是每次启动新生成的 64-hex Bearer token，body 上限 64 KiB。
 - **通道范围 github-only**：工具客户端与端点两侧共用同一份 `isValidGithubSpec`
   （`src/host/install-dsh-plugin-client.js`）校验 `github:owner/repo[#ref]`

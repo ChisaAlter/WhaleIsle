@@ -9,6 +9,7 @@ const { pathToFileURL } = require('node:url');
 const { register: registerLoaderHooks } = require('node:module');
 
 const { TOOLS, ENDPOINTS, LEVELS, effectOf } = require('../shared/model-tool-effects');
+const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 const {
   startDesktopInstallControl,
   stopDesktopInstallControl,
@@ -255,21 +256,20 @@ let savedEnv;
 function stashEnv() {
   savedEnv ??= {
     url: process.env.DSH_DESKTOP_INSTALL_URL,
-    token: process.env.DSH_DESKTOP_INSTALL_TOKEN,
+    store: globalThis[INTERNAL_SECRETS_KEY],
   };
 }
 function clearControlEnv() {
   stashEnv();
   delete process.env.DSH_DESKTOP_INSTALL_URL;
-  delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
+  storeInternalSecrets([]);
 }
 
 afterEach(() => {
   if (savedEnv) {
     if (savedEnv.url === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL;
     else process.env.DSH_DESKTOP_INSTALL_URL = savedEnv.url;
-    if (savedEnv.token === undefined) delete process.env.DSH_DESKTOP_INSTALL_TOKEN;
-    else process.env.DSH_DESKTOP_INSTALL_TOKEN = savedEnv.token;
+    globalThis[INTERNAL_SECRETS_KEY] = savedEnv.store;
     savedEnv = undefined;
   }
   stopDesktopInstallControl();
@@ -287,7 +287,9 @@ async function decliningControl(desktop = {}) {
   const { url, token } = await control.ready;
   stashEnv();
   process.env.DSH_DESKTOP_INSTALL_URL = url;
-  process.env.DSH_DESKTOP_INSTALL_TOKEN = token;
+  // The token is a credential: plugins read it from the in-process store
+  // (#427), not env.
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', token]]);
   return { url, token };
 }
 

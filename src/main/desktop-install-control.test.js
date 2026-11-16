@@ -9,6 +9,7 @@ const {
   stopDesktopInstallControl,
   desktopInstallReady,
   desktopInstallEnv,
+  desktopInstallToken,
 } = require('./desktop-install-control');
 const { DshManager } = require('./dsh');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
@@ -360,7 +361,7 @@ describe('desktop install control', { concurrency: false }, () => {
     assert.equal(response.status, 404);
   });
 
-  test('spawnEnv receives the loopback URL and token', async () => {
+  test('spawnEnv receives the loopback URL while the token leaves env entirely', async () => {
     startDesktopInstallControl({
       installPlugin: async () => ({ ok: true }),
       startHarness: async () => {},
@@ -369,11 +370,14 @@ describe('desktop install control', { concurrency: false }, () => {
     await desktopInstallReady();
     const injected = desktopInstallEnv();
     assert.match(injected.DSH_DESKTOP_INSTALL_URL, /^http:\/\/127\.0\.0\.1:\d+$/);
-    assert.equal(injected.DSH_DESKTOP_INSTALL_TOKEN.length, 64);
+    // The Bearer token is a credential: it reaches the host over the stdin
+    // secret channel (#427), so spawnEnv must never carry it.
+    assert.equal(injected.DSH_DESKTOP_INSTALL_TOKEN, undefined);
+    assert.equal(desktopInstallToken().length, 64);
     setDesktopDshHome(os.tmpdir());
     const env = new DshManager({ loadConfig: () => ({}) }).spawnEnv({}, null);
     assert.equal(env.DSH_DESKTOP_INSTALL_URL, injected.DSH_DESKTOP_INSTALL_URL);
-    assert.equal(env.DSH_DESKTOP_INSTALL_TOKEN, injected.DSH_DESKTOP_INSTALL_TOKEN);
+    assert.equal(env.DSH_DESKTOP_INSTALL_TOKEN, undefined);
     assert.equal(env.DSH_HOME, path.resolve(os.tmpdir()));
   });
 

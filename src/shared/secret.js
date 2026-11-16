@@ -1,8 +1,11 @@
 'use strict';
 
 // 进程与密钥类基础件（议题 #433）：令牌等值比较、带上限的 HTTP 请求体读取、
-// 经 stdin 控制通道按行协议向子进程传递密钥。同一件事只有这一种写法，
-// 调用方一律从这里取；vendor 侧经 ../vendor/dsh-shared/lib/secret.mjs 复用。
+// 经 stdin 控制通道按行协议向子进程传递密钥；议题 #427 追加进程内密钥
+// 存取件：令牌只进 globalThis 上的只读 Map，绝不写回 process.env，子进程
+// 默认继承不到。同一件事只有这一种写法，
+// 调用方一律从这里取；vendor 侧经 ../vendor/dsh-shared/lib/secret.mjs 复用，
+// 会被打包器内联的插件源码用 ../vendor/dsh-shared/lib/internal-secret.mjs。
 // readBodyLimited 超限后的连接处置分两种模式：服务端处理器传 options.res
 // （标 Connection: close 后回 4xx，Node 发完响应再关连接）；客户端侧读取
 // 或不回响应的不传，请求与底层 socket 立即销毁。
@@ -147,8 +150,112 @@ function passSecretToChild(child, name, value) {
   return child.stdin.write(`${key} ${text}\n`);
 }
 
+/**
+ * 进程内密钥存储（议题 #427）。
+ *
+ * 桌面主进程用 passSecretToChild 经 stdin 控制通道把内部控制令牌
+ * （DSH_DESKTOP_INSTALL_TOKEN / DSHD_TASK_CONTROL_TOKEN / DSHD_PLATFORM_TOKEN）
+ * 按行下发给 host runner；runner 在加载任何插件前用 collectInternalSecrets
+ * 收齐，存成 globalThis[Symbol.for('whaleisle.internalSecrets')] 上的冻结
+ * Map。令牌不落 process.env，host 派生的 shell、MCP、LSP 子进程默认都
+ * 继承不到，也读不到 /proc/<pid>/environ 里的初始环境。
+ */
+
+/** 进程内存储的 globalThis 键；CJS/ESM 两侧经 Symbol.for 共享同一符号。 */
+const INTERNAL_SECRETS_KEY = Symbol.for('whaleisle.internalSecrets');
+/** stdin 控制通道的密钥段结束标记行。 */
+const INTERNAL_SECRETS_END = 'internal-secrets-end';
+/** 父进程声明"本会经 stdin 下发密钥"的非密钥标志变量（runner 门控）。 */
+const INTERNAL_SECRETS_ENV = 'DSHD_INTERNAL_SECRETS_VIA_STDIN';
+
+/**
+ * 读取一枚进程内密钥。没有存储或没有该名时返回空串——读方按"无凭据"
+ * fail closed，不回退 process.env（回退会把泄露面原样请回来）。
+ *
+ * @param {string} name - 密钥名（沿用原环境变量名，便于按名核对）
+ * @returns {string}
+ */
+function internalSecret(name) {
+  const store = globalThis[INTERNAL_SECRETS_KEY];
+  const value = store instanceof Map ? store.get(name) : undefined;
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * 用给定 entries 整体替换进程内密钥存储（冻结 Map）。插件加载前由
+ * collectInternalSecrets 调用；测试用它注入与还原（还原先快照
+ * globalThis[Symbol.for('whaleisle.internalSecrets')] 旧值再写回）。
+ *
+ * @param {Iterable<[string, string]>} entries
+ * @returns {Map<string, string>} 已安装的冻结 Map
+ */
+function storeInternalSecrets(entries) {
+  const map = new Map();
+  if (entries) {
+    for (const [name, value] of entries) {
+      map.set(String(name), value == null ? '' : String(value));
+    }
+  }
+  globalThis[INTERNAL_SECRETS_KEY] = Object.freeze(map);
+  return globalThis[INTERNAL_SECRETS_KEY];
+}
+
+/**
+ * 从 stdin 控制通道收齐密钥行并安装进程内存储：每行 `<name> <value>`，
+ * 空行跳过，`internal-secrets-end` 行结束；对端先关流（end/close/error）
+ * 也结束，已收到的行照常入库。只卸本函数的监听器，不碰流上既有消费者
+ * （parent-lifeline 的 end/close 语义不受影响），读完后不再 resume/pause
+ * 改变流的挂起状态。
+ *
+ * @param {import('stream').Readable} stream - 通常是 process.stdin
+ * @param {{ endMarker?: string }} [options]
+ * @returns {Promise<Map<string, string>>} 安装好的冻结 Map
+ */
+function collectInternalSecrets(stream, options = {}) {
+  const endMarker = options.endMarker || INTERNAL_SECRETS_END;
+  return new Promise((resolve) => {
+    const entries = [];
+    let buffer = '';
+    const finish = () => {
+      stream.off('data', onData);
+      stream.off('end', finish);
+      stream.off('close', finish);
+      stream.off('error', finish);
+      resolve(storeInternalSecrets(entries));
+    };
+    const onData = (chunk) => {
+      buffer += String(chunk);
+      for (;;) {
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        const text = line.trim();
+        if (!text) continue;
+        if (text === endMarker) {
+          finish();
+          return;
+        }
+        const space = text.indexOf(' ');
+        entries.push(space < 0 ? [text, ''] : [text.slice(0, space), text.slice(space + 1)]);
+      }
+    };
+    stream.on('data', onData);
+    stream.once('end', finish);
+    stream.once('close', finish);
+    stream.once('error', finish);
+    stream.resume();
+  });
+}
+
 module.exports = {
   constantTimeEqual,
   readBodyLimited,
   passSecretToChild,
+  INTERNAL_SECRETS_KEY,
+  INTERNAL_SECRETS_END,
+  INTERNAL_SECRETS_ENV,
+  internalSecret,
+  storeInternalSecrets,
+  collectInternalSecrets,
 };

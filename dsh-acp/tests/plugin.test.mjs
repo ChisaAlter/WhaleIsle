@@ -12,6 +12,7 @@ import { runtimeBundle } from '../lib/agent-runtime.js';
 import { registerDelegation, DELEGATION_PROVIDER } from '../lib/delegation.js';
 import { AcpTurnExecution, AcpSessionConnection } from '../lib/acp-session.js';
 import { constantTimeEqual } from '../../vendor/dsh-shared/lib/secret.mjs';
+import { storeInternalSecrets, INTERNAL_SECRETS_KEY } from '../../vendor/dsh-shared/lib/internal-secret.mjs';
 
 function mockPreparedConnection(t) {
   t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
@@ -33,12 +34,13 @@ async function allowDesktopConfirm(t) {
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
-  const prevToken = process.env.DSH_DESKTOP_INSTALL_TOKEN;
+  const prevStore = globalThis[INTERNAL_SECRETS_KEY];
   process.env.DSH_DESKTOP_INSTALL_URL = `http://127.0.0.1:${server.address().port}`;
-  process.env.DSH_DESKTOP_INSTALL_TOKEN = token;
+  // The confirm token reaches the plugin through the in-process store (#427).
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', token]]);
   t.after(() => new Promise((resolve) => {
     if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL; else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
-    if (prevToken === undefined) delete process.env.DSH_DESKTOP_INSTALL_TOKEN; else process.env.DSH_DESKTOP_INSTALL_TOKEN = prevToken;
+    globalThis[INTERNAL_SECRETS_KEY] = prevStore;
     server.close(resolve);
   }));
 }

@@ -6,6 +6,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { platformBounds, mergePlatformCookies, platformClientHeaders } = require('./platform-view');
 const { fetchPlatformSession, platformToken } = require('./platform-session');
+const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 
 test('platformBounds validates finite nonnegative coordinates', () => {
   assert.deepEqual(platformBounds({ x: 1.6, y: 2.2, width: 100, height: 50 }), { x: 2, y: 2, width: 100, height: 50 });
@@ -59,12 +60,11 @@ test('fetchPlatformSession returns session or null', async () => {
 test('publisher resolves the live account after late startup and service replacement', async (t) => {
   const { apply } = await import(pathToFileURL(path.join(
     __dirname, '..', '..', 'vendor', 'dsh-platform-session', 'lib', 'index.js')).href);
-  const previousToken = process.env.DSHD_PLATFORM_TOKEN;
-  process.env.DSHD_PLATFORM_TOKEN = 'publisher-test';
-  t.after(() => {
-    if (previousToken === undefined) delete process.env.DSHD_PLATFORM_TOKEN;
-    else process.env.DSHD_PLATFORM_TOKEN = previousToken;
-  });
+  // The plugin reads its Bearer token from the in-process store (#427), so
+  // the test seeds it instead of env and restores the previous store after.
+  const previousStore = globalThis[INTERNAL_SECRETS_KEY];
+  storeInternalSecrets([['DSHD_PLATFORM_TOKEN', 'publisher-test']]);
+  t.after(() => { globalThis[INTERNAL_SECRETS_KEY] = previousStore; });
   let handler;
   const services = new Map([['webServer', { register(route) { handler = route.handler; } }]]);
   apply({ get: name => services.get(name), on() {} });

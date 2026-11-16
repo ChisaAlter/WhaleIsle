@@ -4,7 +4,21 @@
  * management tools use (DSH_DESKTOP_INSTALL_URL + Bearer token). A declined,
  * unreachable or broken confirmation channel fails closed: callers return
  * DECLINED_TEXT and do not execute the side effect.
+ *
+ * The Bearer token arrives over the host's stdin secret channel (#427) and
+ * lives only in the in-process store — never env, so tool-spawned children
+ * cannot inherit it.
  */
+
+// This plugin ships as a relocatable tarball: unlike the junction-linked
+// vendor plugins it cannot reach vendor/dsh-shared by relative path, so it
+// carries the same global-store contract locally (canonical:
+// src/shared/secret.js internalSecret — no process.env fallback).
+function internalSecret(name) {
+  const store = globalThis[Symbol.for('whaleisle.internalSecrets')];
+  const value = store instanceof Map ? store.get(name) : undefined;
+  return typeof value === 'string' ? value : '';
+}
 
 const CONFIRM_TIMEOUT_MS = 240_000;
 
@@ -12,7 +26,7 @@ export const DECLINED_TEXT = '用户拒绝了这次操作，不要重试，除�
 
 export function controlConfig() {
   const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? '').trim();
-  const token = String(process.env.DSH_DESKTOP_INSTALL_TOKEN ?? '').trim();
+  const token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN').trim();
   return url && token ? { url, token } : null;
 }
 

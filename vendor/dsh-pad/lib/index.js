@@ -1,4 +1,5 @@
 // src/index.ts
+import { internalSecret } from "../../dsh-shared/lib/internal-secret.mjs";
 import { homedir } from "node:os";
 import { dirname as dirname4, join as join2 } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1728,7 +1729,7 @@ var DESKTOP_CONFIRM_TIMEOUT_MS = 240e3;
 var DESKTOP_DECLINED_TEXT = "用户拒绝了这次操作，不要重试，除非用户再次明确要求。";
 async function confirmModelAction(request) {
   const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? "").trim();
-  const token = String(process.env.DSH_DESKTOP_INSTALL_TOKEN ?? "").trim();
+  const token = internalSecret("DSH_DESKTOP_INSTALL_TOKEN").trim();
   if (!url || !token) return { ok: false };
   let response;
   try {

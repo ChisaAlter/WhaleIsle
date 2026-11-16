@@ -10,13 +10,14 @@ const { missingDeclaredEntries } = require('./plugin-runtime-files');
 const { harnessRoot } = require('./paths');
 const { ensurePackagedHarness, harnessArchivePath } = require('./harness-extract');
 const { childSpawnEnv } = require('../shared/child-spawn-env');
-const { desktopInstallEnv } = require('./desktop-install-control');
+const { desktopInstallEnv, desktopInstallToken } = require('./desktop-install-control');
 const { officeRuntimeEnv } = require('./office-runtime');
 const { taskControlToken } = require('./task-protection');
 const { platformToken } = require('./platform-session');
 const { desktopCliArgs } = require('./pnpm-runtime');
 const { readPin } = require('../shared/harness-upstream');
 const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
+const { passSecretToChild, INTERNAL_SECRETS_END, INTERNAL_SECRETS_ENV } = require('../shared/secret');
 const { probeHarnessReady, isUnpublishedHarnessNpm } = require('./harness-browser-auth');
 
 const PORT_SCAN_RANGE = 50;
@@ -449,8 +450,10 @@ function spawnHarness(command, args, options) {
     ...spawnTreeOptions(),
   });
   // The piped stdin is the harness host's parent lifeline
-  // (src/main/parent-lifeline.mjs): held open, never written or ended, so a
-  // dead desktop closes it. A broken pipe must not surface as an unhandled
+  // (src/main/parent-lifeline.mjs) plus the internal secret channel (#427):
+  // source-launch hosts get the control tokens as `<name> <value>` lines and
+  // an end marker, then the pipe stays held open, never ended, so a dead
+  // desktop still closes it. A broken pipe must not surface as an unhandled
   // 'error' event here.
   child.stdin?.on('error', () => {});
   return child;
@@ -952,8 +955,6 @@ class DshManager extends EventEmitter {
     // the desktop overlay already carries absolute paths, so a missing
     // payload simply leaves this unset.
     Object.assign(env, officeRuntimeEnv());
-    env.DSHD_TASK_CONTROL_TOKEN = taskControlToken();
-    env.DSHD_PLATFORM_TOKEN = platformToken();
     env.DSHD_WHALE_UI_ENABLED = '1';
     env.DSHD_WHALE_UI_HOST = require('./whale-ui-host').whaleUiHostFile();
     // Producer-coverage declarations: the control plugin reports these as
@@ -1102,6 +1103,15 @@ class DshManager extends EventEmitter {
     try {
       const env = this.spawnEnv({ ...config, defaultPatchFile: options.defaultPatchFile }, launch.nodeBin);
       this.log(`子进程 DSH_HOME ${env.DSH_HOME}`);
+      // Internal control tokens never ride env (#427): the runner reads them
+      // from the stdin secret channel into process-local memory. The flag
+      // declares the contract only to the source-launch runner — external
+      // `dsh`/`npx` binaries cannot consume the channel, so their plugin-side
+      // internal routes stay closed (fail closed, never an env fallback).
+      const stdinSecrets = launch.kind === 'source';
+      if (stdinSecrets) {
+        env[INTERNAL_SECRETS_ENV] = '1';
+      }
       if (!isCurrent()) throw cancelledError();
       child = this._spawnHarness(launch.command, launch.args, {
         cwd: config.workspace,
@@ -1109,6 +1119,18 @@ class DshManager extends EventEmitter {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       this.child = child;
+      if (stdinSecrets) {
+        try {
+          passSecretToChild(child, 'DSH_DESKTOP_INSTALL_TOKEN', desktopInstallToken());
+          passSecretToChild(child, 'DSHD_TASK_CONTROL_TOKEN', taskControlToken());
+          passSecretToChild(child, 'DSHD_PLATFORM_TOKEN', platformToken());
+          child.stdin.write(`${INTERNAL_SECRETS_END}\n`);
+        } catch (error) {
+          // A child that died before reading reports the real failure through
+          // the readiness path; the token lines are then simply unconsumed.
+          this.log(`内部令牌下发失败：${error && error.message ? error.message : error}`, 'error');
+        }
+      }
       this.attachOutput(child);
       // Listeners first: a spawn error or early exit can fire while the start
       // time is being read (PowerShell on Windows is slow) and must not be lost.
