@@ -187,10 +187,65 @@ jobs:
           path: dist/Whale-Isle-*.dmg
           if-no-files-found: error
           retention-days: 30
+  linux-tests:
+    # Behavior-test lane mirroring the windows job's product section; catches
+    # POSIX-only defects the Windows lane cannot see.
+    needs: scope
+    if: needs.scope.outputs.product == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LEFTHOOK: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Build the shipped Harness profile
+        run: npm run setup:harness
+      - name: Whale UI behavior tests
+        run: npm run test:whale-ui
+      - name: Build optional ChatGPT bundle for native compatibility checks
+        run: npm run prepare:dsh-with-chatgpt-bundle
+      # Ubuntu 24.04 runners restrict unprivileged user namespaces; Electron's
+      # Chromium sandbox needs them. CI runner only, tests keep the sandbox on.
+      - name: Allow Chromium sandbox user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Desktop behavior tests
+        run: xvfb-run --auto-servernum npm test
+  macos-tests:
+    needs: scope
+    if: needs.scope.outputs.product == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      LEFTHOOK: '0'
+      # Same reason as the packaging job: the hosted macOS runner's smaller
+      # memory gives Node a ~2 GB default heap, below the client build limit.
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Build the shipped Harness profile
+        run: npm run setup:harness
+      - name: Whale UI behavior tests
+        run: npm run test:whale-ui
+      - name: Build optional ChatGPT bundle for native compatibility checks
+        run: npm run prepare:dsh-with-chatgpt-bundle
+      - name: Desktop behavior tests
+        run: npm test
   result:
     name: CI
     if: always()
-    needs: [scope, tools, web, windows, macos]
+    needs: [scope, tools, web, windows, macos, linux-tests, macos-tests]
     runs-on: ubuntu-latest
     steps:
       - env:

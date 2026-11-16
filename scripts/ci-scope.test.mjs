@@ -53,6 +53,17 @@ test('the main push that bumps the version also builds the macOS installer', () 
   assert.match(ci.jobs.macos.if, /github\.event_name == 'workflow_dispatch' && inputs\.include_macos/)
   assert.ok(ci.jobs.result.needs.includes('macos'))
 })
+test('Linux and macOS lanes run the product behavior tests and gate CI', () => {
+  const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
+  for (const [name, runner] of [['linux-tests', 'ubuntu-latest'], ['macos-tests', 'macos-latest']]) {
+    const job = ci.jobs[name]
+    assert.equal(job['runs-on'], runner)
+    assert.equal(job.needs, 'scope')
+    assert.equal(job.if, "needs.scope.outputs.product == 'true'")
+    assert.ok(job.steps.some(s => /npm test$/.test(s.run || '')))
+    assert.ok(ci.jobs.result.needs.includes(name))
+  }
+})
 test('development CI produces assets; release has no rebuild and no PR trigger', () => {
   const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
   const release = load(readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'))
