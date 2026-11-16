@@ -10,6 +10,7 @@
 
 const { createHash, randomUUID } = require('node:crypto');
 const { WebContentsView, session, shell } = require('electron');
+const { constantTimeEqual } = require('../shared/secret');
 
 const PLATFORM_IPC = {
   bootstrap: 'dsh-platform:bootstrap',
@@ -83,7 +84,7 @@ class DesktopPlatformView {
 
   /** Private Host credentials; identity enrichment preserves an open temporary document. */
   setSession(next) {
-    if (next?.token === this.account?.token && next?.origin === this.account?.origin
+    if (constantTimeEqual(next?.token ?? '', this.account?.token ?? '') && next?.origin === this.account?.origin
       && next?.embeddedPageDist === this.account?.embeddedPageDist
       && JSON.stringify(next?.requestHeaders) === JSON.stringify(this.account?.requestHeaders)) {
       if (next?.userId === this.account?.userId || this.account?.userId === null) {

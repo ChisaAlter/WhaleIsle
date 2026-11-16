@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { forwardHostRpc, forwardHostRespond, sanitizeHarnessCookie } = require('../shared/dshd-host-tunnel.js');
 const { openMuxSse, shouldForwardMuxEnvelope } = require('../shared/dshd-mux-sse.js');
+const { constantTimeEqual } = require('../shared/secret.js');
 
 const muxListeners = new Set();
 const pendingApprovals = new Map();
@@ -57,7 +58,7 @@ function ensureMux() {
     closeMux();
     return;
   }
-  if (muxRunning && muxOrigin === origin && muxCookie === cookie) return;
+  if (muxRunning && muxOrigin === origin && constantTimeEqual(muxCookie, cookie)) return;
   closeMux();
   muxOrigin = origin;
   muxCookie = cookie;

@@ -3,48 +3,27 @@
 const http = require('node:http');
 const crypto = require('node:crypto');
 const { dispatchGitTunnel } = require('./dshd-git-dispatch');
+const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
-function readJson(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    let failed = false;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        if (!failed) {
-          failed = true;
-          const error = new Error('payload too large');
-          error.statusCode = 413;
-          reject(error);
-        }
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (failed) return;
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-      } catch (error) {
-        reject(error);
-      }
-    });
-    req.on('error', reject);
-  });
+async function readJson(req, res) {
+  let raw;
+  try {
+    raw = await readBodyLimited(req, MAX_BODY_BYTES, { res });
+  } catch (error) {
+    if (error && error.code === 'BODY_TOO_LARGE') {
+      const tooLarge = new Error('payload too large');
+      tooLarge.statusCode = 413;
+      throw tooLarge;
+    }
+    throw error;
+  }
+  return JSON.parse(raw || '{}');
 }
 
 function mintGitTunnelToken() {
   return crypto.randomBytes(24).toString('hex');
-}
-
-function tokenMatches(header, token) {
-  if (typeof header !== 'string') return false;
-  const given = Buffer.from(header, 'utf8');
-  const expected = Buffer.from(token, 'utf8');
-  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
 /**
@@ -64,7 +43,7 @@ function startGitTunnelServer(options) {
       fail(403, 'loopback only');
       return;
     }
-    if (!tokenMatches(req.headers['x-dshd-git-token'], token)) {
+    if (!constantTimeEqual(req.headers['x-dshd-git-token'], token)) {
       fail(403, 'unauthorized');
       return;
     }
@@ -73,7 +52,7 @@ function startGitTunnelServer(options) {
       return;
     }
     try {
-      const body = await readJson(req);
+      const body = await readJson(req, res);
       const value = await dispatchGitTunnel({
         action: body.action,
         cwd: body.cwd,

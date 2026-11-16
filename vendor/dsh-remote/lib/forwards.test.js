@@ -8,6 +8,7 @@ import path from 'node:path'
 import test from 'node:test'
 import ssh2 from 'ssh2'
 import { ForwardManager } from './forwards.js'
+import { constantTimeEqual } from '../../dsh-shared/lib/secret.mjs'
 
 const { Client, Server, utils } = ssh2
 
@@ -91,7 +92,7 @@ async function reverseFixture(t) {
     peer.on('error', () => {})
     peer.once('close', () => peers.delete(peer))
     peer.on('authentication', (ctx) => {
-      if (ctx.method === authMethod && ctx.username === 'reverse-test' && ctx[authMethod] === secret) ctx.accept()
+      if (ctx.method === authMethod && ctx.username === 'reverse-test' && constantTimeEqual(ctx[authMethod], secret)) ctx.accept()
       else ctx.reject([authMethod])
     })
     peer.on('ready', () => peer.on('request', (accept, reject, name, info) => {

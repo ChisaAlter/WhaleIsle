@@ -3,31 +3,15 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const { encodeFrame, attachFrameReader } = require('../shared/relay-frames');
+const { readBodyLimited } = require('../shared/secret');
 const { normalizeRelayHostToken, relayHostAuthorized } = require('../shared/relay-auth');
 
 const DEFAULT_PORT = 8787;
+const MAX_BODY_BYTES = 1024 * 1024;
 
 function isLoopbackBindHost(host) {
   const value = String(host || '').toLowerCase();
   return value === '127.0.0.1' || value === 'localhost' || value === '::1';
-}
-
-function readBody(req, limit = 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > limit) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
 }
 
 class RelayServer {
@@ -179,7 +163,7 @@ class RelayServer {
     }
     let body = Buffer.alloc(0);
     try {
-      body = await readBody(req);
+      body = await readBodyLimited(req, MAX_BODY_BYTES, { buffer: true, res });
     } catch {
       res.writeHead(413);
       res.end('request too large');

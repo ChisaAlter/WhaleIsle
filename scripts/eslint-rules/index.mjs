@@ -149,11 +149,153 @@ const noRawHtml = {
   },
 };
 
+// 凭据名只认"以单数 token/secret/password/cookie 结尾"的标识符或成员属性名
+// （token、heldGuardToken、this.token、sessionSecret、muxCookie）。
+// 复数或更长的词不算凭据：tokens、tokensSeen、dayTokens、outputTokens 是
+// LLM 用量计数，ENV_SECRET_MASK 是掩码常量，比较它们用 === 没有问题。
+const SECRET_OPERAND = /(?:token|secret|password|cookie)$/i;
+
+function isSecretNamedLeaf(node) {
+  if (node.type === 'Identifier' && SECRET_OPERAND.test(node.name)) {
+    return true;
+  }
+  if (node.type === 'MemberExpression') {
+    const name = memberPropertyName(node);
+    return typeof name === 'string' && SECRET_OPERAND.test(name);
+  }
+  return false;
+}
+
+// The compared value of `typeof x` / `void x` is the operator result, never
+// `x` itself — a secret-looking name inside them is not being compared.
+function operandHasSecretName(node) {
+  if (!node || typeof node.type !== 'string') {
+    return false;
+  }
+  if (isSecretNamedLeaf(node)) {
+    return true;
+  }
+  if (node.type === 'UnaryExpression' && (node.operator === 'typeof' || node.operator === 'void')) {
+    return false;
+  }
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (operandHasSecretName(child)) {
+          return true;
+        }
+      }
+    } else if (operandHasSecretName(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 与凭据名操作数做 ===/!== 比较时另一侧允许的"字面量"形态：
+// 任意字面量、undefined、typeof/void 结果、无插值模板串。
+function isLiteralOperand(node) {
+  if (node.type === 'Literal') {
+    return true;
+  }
+  if (node.type === 'Identifier' && node.name === 'undefined') {
+    return true;
+  }
+  if (node.type === 'UnaryExpression') {
+    return node.operator === 'typeof' || node.operator === 'void';
+  }
+  if (node.type === 'TemplateLiteral') {
+    return node.expressions.length === 0;
+  }
+  return false;
+}
+
+const noSecretCompare = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'require constantTimeEqual for credential equality checks',
+    },
+    schema: [],
+    messages: {
+      useConstantTimeEqual:
+        '令牌/密钥/口令/Cookie 的等值比较改用 constantTimeEqual（src/shared/secret.js；'
+        + 'vendor 侧 import \'../../dsh-shared/lib/secret.mjs\'）：===/!== 会按匹配前缀短路，'
+        + '把差异位置泄露给计时观测。与字面量（\'\'、null、undefined、typeof 结果）比较不受影响。',
+    },
+  },
+  create(context) {
+    return {
+      BinaryExpression(node) {
+        if (node.operator !== '===' && node.operator !== '!==') {
+          return;
+        }
+        const leftNamed = operandHasSecretName(node.left);
+        const rightNamed = operandHasSecretName(node.right);
+        if (!leftNamed && !rightNamed) {
+          return;
+        }
+        if (!rightNamed && isLiteralOperand(node.right)) {
+          return;
+        }
+        if (!leftNamed && isLiteralOperand(node.left)) {
+          return;
+        }
+        context.report({ node, messageId: 'useConstantTimeEqual' });
+      },
+    };
+  },
+};
+
+const noRequestBodyAccumulate = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'require readBodyLimited instead of manual req data listeners',
+    },
+    schema: [],
+    messages: {
+      useReadBodyLimited:
+        'HTTP 请求体读取改用 readBodyLimited(req, maxBytes)（src/shared/secret.js；'
+        + 'vendor 侧 import \'../../dsh-shared/lib/secret.mjs\'）：统一超限 BODY_TOO_LARGE'
+        + '与连接中断的拒绝语义；要回 4xx 的服务端处理器传 { res }，让 Node 发完'
+        + '响应再关连接。禁止再手写 req.on(\'data\') 累积。',
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee.type !== 'MemberExpression') {
+          return;
+        }
+        const method = memberPropertyName(callee);
+        if (method !== 'on' && method !== 'once') {
+          return;
+        }
+        if (callee.object.type !== 'Identifier' || callee.object.name !== 'req') {
+          return;
+        }
+        const first = node.arguments[0];
+        if (first && first.type === 'Literal' && first.value === 'data') {
+          context.report({ node, messageId: 'useReadBodyLimited' });
+        }
+      },
+    };
+  },
+};
+
 export default {
   rules: {
     'ipc-handler-reads-event': ipcHandlerReadsEvent,
     'ipc-via-register': ipcViaRegister,
     'open-external-http': openExternalHttp,
     'no-raw-html': noRawHtml,
+    'no-secret-compare': noSecretCompare,
+    'no-request-body-accumulate': noRequestBodyAccumulate,
   },
 };

@@ -16,6 +16,7 @@ const CHECKED_FILES = [
   'vendor/dsh-platform-session/lib/**/*.{js,mjs,cjs}',
   'vendor/dsh-with-chatgpt/lib/**/*.{js,mjs,cjs}',
   'vendor/dsh-remote/**/*.{js,mjs,cjs}',
+  'vendor/dsh-shared/**/*.{js,mjs,cjs}',
   'dsh-acp/**/*.{js,mjs,cjs}',
 ];
 
@@ -49,6 +50,7 @@ const NODE_ESM_FILES = [
   'vendor/dsh-with-chatgpt/lib/**/*.{js,mjs}',
   'vendor/dsh-remote/lib/**/*.{js,mjs}',
   'vendor/dsh-remote/plugin-src/**/*.mjs',
+  'vendor/dsh-shared/lib/**/*.{js,mjs}',
   'dsh-acp/lib/**/*.{js,mjs}',
   'dsh-acp/tests/**/*.{js,mjs}',
   'dsh-acp/tools/**/*.{js,mjs}',
@@ -206,6 +208,8 @@ export default [
       'no-setter-return': 'error',
       'no-async-promise-executor': 'error',
       'whaleisle/open-external-http': 'error',
+      'whaleisle/no-secret-compare': 'error',
+      'whaleisle/no-request-body-accumulate': 'error',
       'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE],
     },
   },
@@ -255,6 +259,12 @@ export default [
   {
     files: ['src/shared/process-tree.js'],
     rules: { 'no-restricted-syntax': 'off' },
+  },
+  // The shared request-body primitive is the one place allowed to accumulate
+  // req 'data' chunks; every caller goes through readBodyLimited.
+  {
+    files: ['src/shared/secret.js'],
+    rules: { 'whaleisle/no-request-body-accumulate': 'off' },
   },
   {
     files: [['src/main/**/*.{js,mjs,cjs}', '!src/main/**/*.test.{js,mjs,cjs}', '!src/renderer/**/*.child.cjs']],

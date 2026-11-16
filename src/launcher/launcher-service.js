@@ -182,7 +182,7 @@ function createLauncherService(deps) {
   // service acquired one. start/install/retry/import all reserve the same
   // shared slot (importGuard) so no two mutating operations overlap in
   // either arrival order — not merely an import-vs-import check.
-  let heldGuardToken = null;
+  let heldGuardOwner = null;
 
   /**
    * Reserve the shared maintenance slot for `kind`. Returns the token, or
@@ -192,16 +192,16 @@ function createLauncherService(deps) {
   function acquireMaintenanceSlot(kind, meta = {}) {
     const token = importGuard.acquireMaintenance(kind, meta);
     if (token) {
-      heldGuardToken = token;
+      heldGuardOwner = token;
     }
     return token;
   }
 
   /** Release the slot only if this service still owns the token. */
-  function releaseMaintenanceSlot(token) {
-    importGuard.releaseMaintenance(token);
-    if (heldGuardToken === token) {
-      heldGuardToken = null;
+  function releaseMaintenanceSlot(owner) {
+    importGuard.releaseMaintenance(owner);
+    if (heldGuardOwner === owner) {
+      heldGuardOwner = null;
     }
   }
 

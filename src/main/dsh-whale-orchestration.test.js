@@ -12,6 +12,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { constantTimeEqual } = require('../shared/secret');
 const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 // Real prompt assembly runs the built SystemPrompt plugin over vendored cordis.
@@ -65,7 +66,7 @@ function makeController(overrides = {}) {
 async function allowDesktopConfirm(t) {
   const token = 'whale-test-token';
   const server = http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/desktop/confirm' && req.headers.authorization === `Bearer ${token}`) {
+    if (req.method === 'POST' && req.url === '/desktop/confirm' && constantTimeEqual(req.headers.authorization || '', `Bearer ${token}`)) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{"ok":true}');
       return;

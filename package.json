@@ -113,6 +113,7 @@
       "src/shared/dshd-account-callback.js",
       "src/shared/dshd-workspace-image.js",
       "src/shared/dshd-mux-sse.js",
+      "src/shared/secret.js",
       "src/main/pet-growth.js",
       "src/main/pet-growth-scan-worker.js",
       "src/main/pet-dsh-watch-worker.js",
@@ -133,6 +134,7 @@
           "dsh-platform-session/**",
           "dsh-whale/**",
           "dsh-remote/**",
+          "dsh-shared/**",
           "dsh-pad/**",
           "dsh-deepseek-tools/**",
           "!dsh-deepseek-tools/tests/**"

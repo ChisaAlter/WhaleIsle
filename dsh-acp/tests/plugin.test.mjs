@@ -11,6 +11,7 @@ import { saveAgentsConfig } from '../lib/presets.js';
 import { runtimeBundle } from '../lib/agent-runtime.js';
 import { registerDelegation, DELEGATION_PROVIDER } from '../lib/delegation.js';
 import { AcpTurnExecution, AcpSessionConnection } from '../lib/acp-session.js';
+import { constantTimeEqual } from '../../vendor/dsh-shared/lib/secret.mjs';
 
 function mockPreparedConnection(t) {
   t.mock.method(AcpSessionConnection.prototype, 'ensureReady', async function () {
@@ -23,7 +24,7 @@ function mockPreparedConnection(t) {
 async function allowDesktopConfirm(t) {
   const token = 'acp-test-token';
   const server = http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/desktop/confirm' && req.headers.authorization === `Bearer ${token}`) {
+    if (req.method === 'POST' && req.url === '/desktop/confirm' && constantTimeEqual(req.headers.authorization || '', `Bearer ${token}`)) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{"ok":true}');
       return;

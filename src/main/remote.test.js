@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { generateToken } = require('../shared/remote-auth');
+const { readBodyLimited } = require('../shared/secret');
 const { pairingUrl, normalizeRelayOrigin, reachableAddresses } = require('../shared/lan');
 const { encodeOffer, decodeOffer, offerFromHash } = require('../shared/offer');
 const {
@@ -785,9 +786,7 @@ function decodeLikeLoginPageScript(encoded) {
 
 test('legacy RemoteGateway offer fixture remains contained while the production SPA stays v2', async (t) => {
   const upstream = http.createServer((req, res) => {
-    let raw = '';
-    req.on('data', (chunk) => { raw += chunk; });
-    req.on('end', () => {
+    void readBodyLimited(req, 65536, { res }).then((raw) => {
       let rpcId = '';
       try { rpcId = JSON.parse(raw || '{}').rpcId || ''; } catch { /* keep empty */ }
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -796,6 +795,8 @@ test('legacy RemoteGateway offer fixture remains contained while the production 
         rpcId,
         result: { ok: true, value: { name: 'DESKTOP-E2E', cwd: '/repo' } },
       }));
+    }, () => {
+      res.writeHead(413).end();
     });
   });
   const upstreamPort = await listen(upstream);

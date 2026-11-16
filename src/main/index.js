@@ -244,7 +244,7 @@ let backgroundStartup = process.argv.includes('--background');
  * closed/recreated, app quitting, install already started) must never keep
  * going on a window the user can no longer see.
  */
-let launcherWindowToken = null;
+let launcherWindowHandle = null;
 
 /**
  * Resolve the port from the start's config snapshot. The revision is handed
@@ -401,11 +401,11 @@ function bindLauncherClose(win) {
   launcherCloseBound.add(win);
   // A late check can also settle while the launcher is already on screen.
   win.on('show', () => {
-    launcherWindowToken = win;
+    launcherWindowHandle = win;
     void drainParkedUpdateCheck.drain({ generation: win });
   });
   win.on('closed', () => {
-    if (launcherWindowToken === win) launcherWindowToken = null;
+    if (launcherWindowHandle === win) launcherWindowHandle = null;
   });
   win.on('close', (event) => {
     if (quitting) {
@@ -424,7 +424,7 @@ function bindLauncherClose(win) {
 async function openLauncher(options = {}) {
   const win = await showLauncher(options);
   bindLauncherClose(win);
-  launcherWindowToken = win;
+  launcherWindowHandle = win;
   // Visible launcher: this is the moment a parked late update check may be
   // presented, pinned to the window the user is actually looking at.
   void drainParkedUpdateCheck.drain({ generation: win });
