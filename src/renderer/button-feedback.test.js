@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { createRequire } = require('node:module');
+const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const electron = [process.env.ELECTRON_PATH, path.join(root, 'node_modules/electron/dist/electron.exe'), path.join(root, 'node_modules/electron/dist/electron')].find(file => file && fs.existsSync(file));
@@ -29,7 +30,7 @@ test('real Electron: shared and IM button feedback scrolls complete labels witho
   fs.writeFileSync(path.join(temporary, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="fixture.css"></head><body style="margin:0;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)"><div id="root"></div><script src="fixture.js"></script></body></html>');
   const result = await new Promise((resolve, reject) => {
     const child = spawn(electron, [path.join(__dirname, 'button-feedback.child.cjs'), temporary], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+      env: electronTestEnv(electron, { ...process.env, ELECTRON_RUN_AS_NODE: undefined }), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '', errors = '';
     child.stdout.on('data', chunk => { output += chunk; });

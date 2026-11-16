@@ -9,6 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
 
 const ELECTRON = [
   process.env.ELECTRON_PATH,
@@ -21,7 +22,7 @@ const CHILD = path.join(__dirname, 'launcher-bound.child.cjs');
 function runBound(env = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(ELECTRON, [CHILD], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, ...env },
+      env: electronTestEnv(ELECTRON, { ...process.env, ELECTRON_RUN_AS_NODE: undefined, ...env }),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });

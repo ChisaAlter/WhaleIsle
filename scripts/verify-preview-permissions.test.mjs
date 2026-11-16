@@ -15,6 +15,7 @@ const launcher = path.join(here, 'verify-preview-permissions.cjs');
 const cleanupHelper = path.join(here, 'preview-profile-cleanup.cjs');
 // Under plain Node `require('electron')` returns the binary path.
 const electronBinary = require('electron');
+const { shouldDisableElectronSandbox } = require('./lib/electron-sandbox.cjs');
 const runnerSource = fs.readFileSync(runner, 'utf8');
 const launcherSource = fs.readFileSync(launcher, 'utf8');
 const cleanupHelperSource = fs.readFileSync(cleanupHelper, 'utf8');
@@ -128,10 +129,10 @@ function runElectron(t, options = {}) {
     delete env[ALLOW_TEST_SCENARIOS_ENV];
   }
 
-  const electronArgs = [launcher, '--json', ...args];
-  if (typeof process.getuid === 'function' && process.getuid() === 0) {
-    electronArgs.unshift('--no-sandbox');
+  if (shouldDisableElectronSandbox(electronBinary)) {
+    env.ELECTRON_DISABLE_SANDBOX = '1';
   }
+  const electronArgs = [launcher, '--json', ...args];
   const result = spawnSync(electronBinary, electronArgs, {
     cwd: root,
     encoding: 'utf8',
@@ -609,6 +610,9 @@ test('a failed supervisor start writes a retained receipt through the launcher',
     os.tmpdir(),
     `dshd-missing-cleanup-executable-${process.pid}-${Date.now()}`,
   );
+  if (shouldDisableElectronSandbox(electronBinary)) {
+    env.ELECTRON_DISABLE_SANDBOX = '1';
+  }
 
   const result = spawnSync(electronBinary, [launcher, '--json'], {
     cwd: root,
@@ -644,6 +648,9 @@ test('standalone run cleans up only the root it created, after the owner exited'
   delete env[PROFILE_ROOT_ENV];
   delete env[TEST_SCENARIO_ENV];
   delete env[ALLOW_TEST_SCENARIOS_ENV];
+  if (shouldDisableElectronSandbox(electronBinary)) {
+    env.ELECTRON_DISABLE_SANDBOX = '1';
+  }
 
   const result = spawnSync(electronBinary, [launcher, '--json'], {
     cwd: root,

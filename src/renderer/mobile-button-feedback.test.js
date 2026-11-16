@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
 const electron = [process.env.ELECTRON_PATH, path.join(__dirname, '../../node_modules/electron/dist/electron.exe'), path.join(__dirname, '../../node_modules/electron/dist/electron')].find(file => file && fs.existsSync(file));
 
 test('real Electron: mobile busy buttons preserve geometry, complete captions and motion preference', { skip: !electron }, async t => {
@@ -12,7 +13,7 @@ test('real Electron: mobile busy buttons preserve geometry, complete captions an
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
   const results = await new Promise((resolve, reject) => {
     const child = spawn(electron, [path.join(__dirname, 'mobile-button-feedback.child.cjs'), temporary], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+      env: electronTestEnv(electron, { ...process.env, ELECTRON_RUN_AS_NODE: undefined }), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '', errors = '';
     child.stdout.on('data', chunk => { output += chunk; });

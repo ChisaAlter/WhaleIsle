@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
 const electron = [process.env.ELECTRON_PATH,
   path.resolve(__dirname, '../../node_modules/electron/dist/electron.exe'),
   path.resolve(__dirname, '../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'),
@@ -15,7 +16,7 @@ test('real welcome page renders and rejects missing layout/images before enterin
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
     const child = spawn(electron, [path.join(__dirname, 'welcome-renderer.child.cjs')], {
-      env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+      env: electronTestEnv(electron, env), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '', stderr = '';
     child.stdout.on('data', data => { stdout += data; });

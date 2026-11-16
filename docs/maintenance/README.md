@@ -8,7 +8,11 @@
 
 本地用能回答当前问题的检查；开发 CI 提供共享环境、回归与装配反馈，不要求先在本机复制完整 CI。失败先查具体原因，修正后只重跑相关检查。已经通过的验证不因提交、推送或“不放心”重复执行。
 
+新环境执行一次 `npm run setup` 即可搭好本地开发环境：它校验 engines 的 Node 版本、按锁文件装根依赖、跑 `setup:harness` 并准备 whale-ui 与 ChatGPT 插件构建；已就绪的步骤会快速跳过，可重复执行。
+
 `npm test` 运行桌面和移动端行为测试；`npm run test:tools` 运行构建、发布及维护工具测试。定向验证直接调用现有测试文件。新增测试应能发现实际故障，不用测试数量或覆盖率目标替代用户结果。
+
+在 Linux 上启动真实 Electron 的测试进程会自动处理沙箱：chrome-sandbox 不是 root 所有或缺少 4755（以及测试本身以 root 运行）时，共享辅助 `scripts/lib/electron-sandbox.cjs` 给测试子进程加 `ELECTRON_DISABLE_SANDBOX=1`；`npm start` 与打包产物不受影响。
 
 用户纠正代理的同一个 PR 里，尽量把这次纠正变成一条 lint 规则（eslint.config.mjs / scripts/eslint-rules）或一个测试；规则报错信息写清原因和替代做法，做不到时在 PR 中说明。修掉存量问题后用 `npx eslint . --prune-suppressions` 收缩豁免文件；新增豁免需要在 PR 中说明理由。
 
