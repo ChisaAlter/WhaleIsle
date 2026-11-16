@@ -9,6 +9,7 @@ const { UpdateJournal } = require('./update-journal');
 const { agentFor, systemFetch } = require('./system-proxy');
 const { checkInstallSpace } = require('./install-space');
 const { openExternalHttp } = require('./open-external');
+const { sanitizeDownloadFilename } = require('./download-path');
 const { setTimeout: delay } = require('node:timers/promises');
 const installDetect = require('../launcher/install-detect');
 const { currentVersion, getInstalledAppInfo } = installDetect;
@@ -327,7 +328,7 @@ async function downloadReleaseAsset(info, dest, onProgress, options = {}) {
 
 function fullInstallerPath(info, { userDataDir } = {}) {
   const dir = path.join(userDataDir || app.getPath('userData'), 'updates');
-  const safeName = path.basename(info.assetName || 'Whale-Isle-Setup.exe').replace(/[^\w.\-]+/g, '_');
+  const safeName = sanitizeDownloadFilename(info.assetName || 'Whale-Isle-Setup.exe');
   return path.join(dir, safeName);
 }
 
