@@ -40,10 +40,18 @@ test('plainReleaseNotes emits only plain text: no links, images or fold tags', (
   }), { numRuns: NUM_RUNS });
 });
 
-// FINDING (see report, cosmetic): the stripper is single-pass and does not
-// reach a fixpoint — nested quote markers and overlapping emphasis leave
-// markup residue in the plain text.
-test.todo('#496: plainReleaseNotes is not idempotent — minimal counterexample: ">>" → ">" (expected ""); also "*### **" → "### *" leaves heading residue');
+// #496: the stripper iterates to a fixpoint, so re-running it on its own
+// output must not find more markup to remove.
+test('plainReleaseNotes is idempotent (#496 minimal counterexamples)', () => {
+  assert.equal(plainReleaseNotes('>>'), '');
+  assert.equal(plainReleaseNotes('*### **'), '*');
+  assert.equal(plainReleaseNotes('# Title\n\n**bold** and [link](url)'), 'Title\n\nbold and link');
+  fc.assert(fc.property(mdArb, (input) => {
+    const once = plainReleaseNotes(input);
+    assert.equal(plainReleaseNotes(once), once, `${input} -> ${once}`);
+    return true;
+  }), { numRuns: NUM_RUNS });
+});
 
 test('releaseNotesTabs returns both translations or nothing', () => {
   fc.assert(fc.property(mdArb, (input) => {
