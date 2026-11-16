@@ -1,6 +1,11 @@
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
-import { ProjectService } from './harness-runtime.mjs';
+import { gateTests, harnessWorkspace } from '../../../scripts/lib/test-prerequisites.cjs';
+
+// ProjectService resolves @deepseek-ai peers through the built Harness.
+const HARNESS = harnessWorkspace();
+const test = gateTests(nodeTest, HARNESS);
+const { ProjectService } = HARNESS.ok ? await import('./harness-runtime.mjs') : {};
 
 // notes.md is rewritten by temp file + rename; two rewrites racing onto the same
 // file fail with EPERM on Windows, so rewrites of one Project must not overlap.

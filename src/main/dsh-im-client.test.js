@@ -1,17 +1,22 @@
 'use strict';
 
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
+const { gateTests, harnessDependencies } = require('../../scripts/lib/test-prerequisites.cjs');
+
+// Every case renders through jsdom, a Harness devDependency.
+const HARNESS_DEPS = harnessDependencies();
+const test = gateTests(nodeTest, HARNESS_DEPS);
 
 const clientPath = path.join(__dirname, '../../vendor/dsh-im/lib/client.js');
 const clientRequire = createRequire(path.join(__dirname, '../../vendor/dsh-im/package.json'));
 const vendorRequire = createRequire(path.join(__dirname, '../../vendor/deepseek-harness/package.json'));
 const React = clientRequire('react');
-const { JSDOM } = vendorRequire('jsdom');
+const { JSDOM } = HARNESS_DEPS.ok ? vendorRequire('jsdom') : {};
 const { act, createElement: h } = React;
 
 const snapshot = (bots = []) => ({ schemaVersion: 2, revision: 1, state: 'disconnected', bots });

@@ -1,10 +1,17 @@
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
-import './harness-runtime.mjs';
+import { gateTests, harnessWorkspace } from '../../../scripts/lib/test-prerequisites.cjs';
 import { requestIdForCall } from '../lib/catalog-recovery.js';
 
-const { projectDomain } = await import('../lib/domain.js');
-const schema = projectDomain.tables.state.valueSchema;
+// The domain schema resolves zod/@deepseek-ai peers through the built Harness.
+const HARNESS = harnessWorkspace();
+const test = gateTests(nodeTest, HARNESS);
+let schema;
+if (HARNESS.ok) {
+  await import('./harness-runtime.mjs');
+  const { projectDomain } = await import('../lib/domain.js');
+  schema = projectDomain.tables.state.valueSchema;
+}
 function catalog() {
   const project = { id: 'project', title: 'Saved project', canonicalWorkingDirectory: '/repository', directoryIdentity: 'directory',
     coordinatorSessionId: 'lead', storageRoot: '/materials', lifecycle: 'ready', paused: true, holdSourceMessageId: '', diagnostics: [], creationRequestId: 'create', createdAt: 1, updatedAt: 2 };

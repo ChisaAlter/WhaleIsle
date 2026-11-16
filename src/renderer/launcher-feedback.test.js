@@ -1,11 +1,12 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
-const electron = [process.env.ELECTRON_PATH, path.join(__dirname, '../../node_modules/electron/dist/electron.exe'), path.join(__dirname, '../../node_modules/electron/dist/electron')].find(file => file && fs.existsSync(file));
+const { electronBinary, prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+const ELECTRON = electronBinary();
+const electron = ELECTRON.binary;
 
 async function runFixture(bootOnly = false) {
   return new Promise((resolve, reject) => {
@@ -26,7 +27,8 @@ async function runFixture(bootOnly = false) {
   });
 }
 
-test('real Electron: floating results preserve layout, safe confirmation and task cancellation', { skip: !electron }, async () => {
+test('real Electron: floating results preserve layout, safe confirmation and task cancellation', { skip: prerequisiteSkip(ELECTRON) }, async (t) => {
+  requirePrerequisite(t, ELECTRON);
   const result = await runFixture();
   assert.equal(result.checkCalls, result.cases.length, 'both entry points share one pending request');
   for (const item of result.cases) {
@@ -150,7 +152,8 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.equal(result.stopFailure.verdict, '桌面端正在处理任务，请稍后重试。', 'diagnostics show the translated reason, not the code');
 });
 
-test('real Electron: boot controls keep async feedback in place and preserve cancellation', { skip: !electron }, async () => {
+test('real Electron: boot controls keep async feedback in place and preserve cancellation', { skip: prerequisiteSkip(ELECTRON) }, async (t) => {
+  requirePrerequisite(t, ELECTRON);
   const { boot } = await runFixture(true);
   for (const action of [boot.saveCancelled, boot.saveFailed, boot.cancelFailed, boot.cancelSucceeded, boot.openFailed, boot.openSucceeded]) {
     assert.equal(action.calls, 1, 'two gestures only dispatch one IPC call');

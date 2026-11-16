@@ -1,13 +1,15 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
-const electron = [process.env.ELECTRON_PATH, path.join(__dirname, '../../node_modules/electron/dist/electron.exe'), path.join(__dirname, '../../node_modules/electron/dist/electron')].find((file) => file && fs.existsSync(file));
+const { electronBinary, prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+const ELECTRON = electronBinary();
+const electron = ELECTRON.binary;
 
-test('real Electron: error diagnostics and launcher controls survive zoom and long text', { skip: !electron }, async () => {
+test('real Electron: error diagnostics and launcher controls survive zoom and long text', { skip: prerequisiteSkip(ELECTRON) }, async (t) => {
+  requirePrerequisite(t, ELECTRON);
   const result = await new Promise((resolve, reject) => {
     const child = spawn(electron, [path.join(__dirname, 'launcher-layout.child.cjs')], { env: electronTestEnv(electron, { ...process.env, ELECTRON_RUN_AS_NODE: undefined }), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';

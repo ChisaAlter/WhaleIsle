@@ -7,10 +7,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { DshdRemote, RUNNER_PATH, VENDOR_ROOT } = require('./dshd-remote');
+const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 const VENDOR_RUNNABLE = fs.existsSync(path.join(VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js'))
   && fs.existsSync(path.join(VENDOR_ROOT, 'node_modules'));
 const VENDOR_HINT = 'dshd remote dist/依赖缺失（scripts/prepare-dshd-remote.mjs 会构建）';
+const VENDOR = { ok: VENDOR_RUNNABLE, reason: VENDOR_HINT };
 
 /**
  * Stub server export implementing the two faces the runner consumes
@@ -144,8 +146,9 @@ test(
 
 test(
   'DshdRemote runs the real vendored daemon in a child process end to end',
-  { skip: VENDOR_RUNNABLE ? false : VENDOR_HINT, timeout: 120_000 },
-  async () => {
+  { skip: prerequisiteSkip(VENDOR), timeout: 120_000 },
+  async (t) => {
+    requirePrerequisite(t, VENDOR);
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-real-'));
     const port = 17000 + Math.floor(Math.random() * 20000);
     const config = {

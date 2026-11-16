@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 const {
   DSH_WHALE_PACKAGE,
   DSH_WHALE_ALIASES,
@@ -260,11 +261,12 @@ test('assistant presentation title is the configured name without an emoji prefi
   assert.equal(module.whaleDisplayName({ name: '' }), '鲸鱼娘');
 });
 
-test('vendored dsh-whale peers satisfy the vendored runtime compatibility gate', async () => {
+test('vendored dsh-whale peers satisfy the vendored runtime compatibility gate', async t => {
   // The Loader disables a row whose @deepseek-ai/dsh-* peers reject the
   // running runtime — exact pins stale after an upstream merge silently
   // unmount the plugin (no route, no client bundle). Evaluate the shipped
   // manifest through app-boot's real gate so the check travels with the pin.
+  if (!requirePrerequisite(t, harnessWorkspace({ entries: ['packages/boot/app-boot/lib/index.js'] }))) return;
   const appBoot = pathToFileURL(path.join(
     __dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'boot', 'app-boot', 'lib', 'index.js',
   )).href;

@@ -1,17 +1,15 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
-const electron = [process.env.ELECTRON_PATH,
-  path.resolve(__dirname, '../../node_modules/electron/dist/electron.exe'),
-  path.resolve(__dirname, '../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'),
-  path.resolve(__dirname, '../../node_modules/electron/dist/electron'),
-].find(file => file && fs.existsSync(file));
+const { electronBinary, prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+const ELECTRON = electronBinary();
+const electron = ELECTRON.binary;
 
-test('real welcome page renders and rejects missing layout/images before entering workspace', { skip: !electron }, async () => {
+test('real welcome page renders and rejects missing layout/images before entering workspace', { skip: prerequisiteSkip(ELECTRON) }, async (t) => {
+  requirePrerequisite(t, ELECTRON);
   const cases = await new Promise((resolve, reject) => {
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;

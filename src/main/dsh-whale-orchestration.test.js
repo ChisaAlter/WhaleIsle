@@ -12,6 +12,10 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+
+// Real prompt assembly runs the built SystemPrompt plugin over vendored cordis.
+const SYSTEM_PROMPT = harnessWorkspace({ entries: ['packages/core/system-prompt/lib/index.js'] });
 
 const whaleLib = (name) => pathToFileURL(
   path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'lib', name),
@@ -111,7 +115,8 @@ test.before(async () => {
   whaleScope = await import(whaleLib('scope.js'));
 });
 
-test('configured whale name survives prompt assembly instead of a blank complete prefix', async () => {
+test('configured whale name survives prompt assembly instead of a blank complete prefix', async t => {
+  if (!requirePrerequisite(t, SYSTEM_PROMPT)) return;
   const text = whalePersona.buildPersonaText({ name: '吃白饭的' });
   assert.match(text, /^你当前的名字是「吃白饭的」。用户问你叫什么时，直接回答「吃白饭的」/);
   assert.match(text, /「鲸鱼娘」是角色类型，不自动代替用户设置的名字/);
@@ -184,6 +189,7 @@ test('persona gate keys on the whale-girl preset identity, not just the stored s
 // — this is the path that produced zero-persona sessions when the gate was
 // sessionId-only. A whale session must carry her settings; a foreign one none.
 test('apply() registers the persona section so real assembly carries her settings', async (t) => {
+  if (!requirePrerequisite(t, SYSTEM_PROMPT)) return;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-apply-'));
   const saved = process.env.DSH_HOME;
   process.env.DSH_HOME = home;

@@ -12,6 +12,7 @@ const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
 const { generateTlsMaterial } = require('../main/remote-tls.js');
 const { forwardHostRpc } = require('./dshd-host-tunnel.js');
+const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 // A prepared checkout may be supplied for a local probe; CI uses its own built vendor artifacts.
 const harnessRoot = path.resolve(process.env.DSH_ACCOUNT_INTEGRATION_ROOT || path.join(__dirname, '../../vendor/deepseek-harness'));
@@ -24,8 +25,9 @@ const VENDOR_RUNNABLE = [
   'packages/credentials/deepseek-account-platform/node_modules',
 ].every(relative => existsSync(path.join(harnessRoot, relative)));
 const VENDOR_HINT = 'Harness account dist/dependencies missing (prepare vendor artifacts before this integration check)';
+const VENDOR = { ok: VENDOR_RUNNABLE, reason: VENDOR_HINT };
 // node --test isolates files in child processes; keep this file serial while its fixture owns the trusted dispatcher.
-const options = { skip: VENDOR_RUNNABLE ? false : VENDOR_HINT, timeout: 30_000, concurrency: false };
+const options = { skip: prerequisiteSkip(VENDOR), timeout: 30_000, concurrency: false };
 
 async function fixture(t, attemptTimeoutMs = 5_000) {
   const load = (relative) => import(pathToFileURL(path.join(harnessRoot, relative)).href);
@@ -127,6 +129,7 @@ async function fixture(t, attemptTimeoutMs = 5_000) {
 }
 
 test('native virtual callback rejects wrong state then commits the real provider grant before reporting its 302', options, async t => {
+  requirePrerequisite(t, VENDOR);
   const f = await fixture(t);
   await f.start();
   const wrong = await f.complete('wrong-state');
@@ -155,6 +158,7 @@ test('native virtual callback rejects wrong state then commits the real provider
 });
 
 test('native virtual callback cannot authorize after the actual provider attempt is cancelled', options, async t => {
+  requirePrerequisite(t, VENDOR);
   const f = await fixture(t);
   const waiting = await f.start();
   const cancelled = await f.account.cancelSignIn(waiting.attempt.id);
@@ -165,6 +169,7 @@ test('native virtual callback cannot authorize after the actual provider attempt
 });
 
 test('native virtual callback cannot authorize after the actual provider deadline expires', options, async t => {
+  requirePrerequisite(t, VENDOR);
   const f = await fixture(t, 400);
   await f.start();
   await f.wait('expired');
@@ -174,6 +179,7 @@ test('native virtual callback cannot authorize after the actual provider deadlin
 });
 
 test('platform exchange refusal travels through the real callback and cannot persist a grant', options, async t => {
+  requirePrerequisite(t, VENDOR);
   const f = await fixture(t);
   await f.start();
   f.refuseExchange();

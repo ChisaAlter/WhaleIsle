@@ -21,6 +21,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { VENDOR_ROOT } = require('./dshd-remote');
+const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 const DSH_AGENT_SRC = path.join(
   VENDOR_ROOT, 'packages', 'server', 'src', 'server', 'agent', 'providers', 'dsh-agent.ts',
@@ -31,6 +32,7 @@ const DSH_AGENT_DIST = path.join(
 const DIST_RUNNABLE = fs.existsSync(DSH_AGENT_DIST)
   && fs.existsSync(path.join(VENDOR_ROOT, 'packages', 'server', 'node_modules'));
 const DIST_HINT = 'vendored server dist/依赖缺失（prepare-dshd-remote.mjs 会构建）';
+const DIST = { ok: DIST_RUNNABLE, reason: DIST_HINT };
 
 test('vendored resolveDshVendorDir keeps explicit stdio on execSync (EPIPE tripwire)', () => {
   const src = fs.readFileSync(DSH_AGENT_SRC, 'utf8');
@@ -43,8 +45,9 @@ test('vendored resolveDshVendorDir keeps explicit stdio on execSync (EPIPE tripw
 
 test(
   'resolveDshVendorDir survives a broken stderr pipe (real child process)',
-  { skip: DIST_RUNNABLE ? false : DIST_HINT, timeout: 30_000 },
-  async () => {
+  { skip: prerequisiteSkip(DIST), timeout: 30_000 },
+  async (t) => {
+    requirePrerequisite(t, DIST);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-epipe-'));
     const binDir = path.join(dir, 'bin');
     fs.mkdirSync(binDir, { recursive: true });

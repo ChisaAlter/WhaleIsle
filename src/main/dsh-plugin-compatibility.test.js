@@ -1,16 +1,28 @@
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { readFileSync } = require('node:fs');
 const { createRequire } = require('node:module');
 const { dirname, join, resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
+const {
+  gateTests, harnessWorkspace, requirePrerequisite, vendorPluginArtifacts,
+} = require('../../scripts/lib/test-prerequisites.cjs');
 
 const root = resolve(__dirname, '../..');
 const harness = join(root, 'vendor/deepseek-harness');
+// Anchors resolve workspace package entries, so every case needs the built Harness.
+const HARNESS = harnessWorkspace();
+const test = gateTests(nodeTest, HARNESS);
+// The second case boots a real profile over the shipped plugins; the ChatGPT
+// bridge reaches bridge/dist and its own node_modules.
+const CHATGPT = vendorPluginArtifacts('dsh-with-chatgpt', ['node_modules', 'bridge/dist/workspace/manager.js']);
 const cli = createRequire(join(harness, 'apps/cli/package.json'));
-const anchors = [cli, ...['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'].map(name => createRequire(cli.resolve(`${name}/package.json`)))];
-anchors.push(createRequire(anchors[1].resolve('@deepseek-ai/dsh-storage-domain/package.json')));
+const anchors = [];
+if (HARNESS.ok) {
+  anchors.push(cli, ...['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'].map(name => createRequire(cli.resolve(`${name}/package.json`))));
+  anchors.push(createRequire(anchors[1].resolve('@deepseek-ai/dsh-storage-domain/package.json')));
+}
 function resolveHarness(name) {
   for (const anchor of anchors) {
     try { return anchor.resolve(name); }
@@ -42,7 +54,8 @@ test('SSH and ChatGPT declare rc.2 support while retaining verified earlier runt
   }
 });
 
-test('real rc.2 profile preflight and Loader expose SSH tools and the optional ChatGPT skill to native Sessions', { timeout: 60000 }, async () => {
+test('real rc.2 profile preflight and Loader expose SSH tools and the optional ChatGPT skill to native Sessions', { timeout: 60000 }, async t => {
+  if (!requirePrerequisite(t, CHATGPT)) return;
   const { boot, loadOverlayPatches, bundlePatchPaths, prepareProfileEntries, PluginPackages, createRuntimeResolution } = await moduleOf('@deepseek-ai/dsh-app-boot');
   const { provideCmdline } = await moduleOf('@deepseek-ai/dsh-cmdline');
   const { ToolCallId } = await moduleOf('@deepseek-ai/dsh-llm');

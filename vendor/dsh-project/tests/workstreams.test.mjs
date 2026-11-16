@@ -1,10 +1,15 @@
-import test from 'node:test';
+import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ProjectService } from './harness-runtime.mjs';
+import { gateTests, harnessWorkspace } from '../../../scripts/lib/test-prerequisites.cjs';
 import { projectDirectory, safeProjectSubdirectory } from '../lib/files.js';
+
+// ProjectService resolves @deepseek-ai peers through the built Harness.
+const HARNESS = harnessWorkspace();
+const test = gateTests(nodeTest, HARNESS);
+const { ProjectService } = HARNESS.ok ? await import('./harness-runtime.mjs') : {};
 
 function setup() {
   const project = { id: 'project', coordinatorSessionId: 'lead', storageRoot: '/project-materials', lifecycle: 'ready', paused: false, diagnostics: [], updatedAt: 0 };
