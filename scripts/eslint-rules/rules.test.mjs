@@ -81,3 +81,67 @@ htmlTester.run('whaleisle/no-raw-html', plugin.rules['no-raw-html'], {
     { code: "node.insertAdjacentHTML('beforeend', html);", errors: [{ messageId: 'noRawHtml' }] },
   ],
 });
+
+const secretTester = new RuleTester({ languageOptions: cjs });
+secretTester.run('whaleisle/no-secret-compare', plugin.rules['no-secret-compare'], {
+  valid: [
+    // 字面量 / null / undefined / typeof 结果的比较不受限。
+    "if (token === '') close();",
+    "if (marker.token !== null) keep();",
+    'if (prevToken === undefined) forget();',
+    "if (typeof value.token === 'string') accept();",
+    'if (token === void 0) forget();',
+    "if (merged.githubToken === '********') mask();",
+    "if (element.type === 'password') mark();",
+    "if (url.password !== '') sanitize();",
+    "if (key === 'remoteRelayToken') apply();",
+    "if (item === '--host-token') parse();",
+    'if (exec?.token !== undefined) resume();',
+    "if (token === typeof probe) check();",
+    // 复数或只是包含凭据词的名字不是凭据：LLM 用量计数、掩码常量照常比较。
+    'if (next.tokensSeen !== before) mark();',
+    'if (dayTokens.day !== today) roll();',
+    'if (outputTokens !== prevSeen) flush();',
+    'if (stats.tokens !== saved.tokens) diff();',
+    'if (value === ENV_SECRET_MASK) keep();',
+    'if (kept !== MASKED_ENV_VALUE) drop();',
+    // 没有凭据名操作数的比较不在规则范围。
+    'if (kind === feed) dispatch();',
+    'if (authHeader === expectedHeader) allow();',
+    // 统一的等值比较写法本身。
+    'if (constantTimeEqual(a, b)) allow();',
+  ],
+  invalid: [
+    { code: 'if (this.token === token) same();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: 'if (muxCookie === cookie) reuse();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: "if (auth !== `Bearer ${token}`) deny();", errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: 'if (marker.token === ownershipToken) own();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: 'if (ctx[authMethod] === secret) accept();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: 'if (heldGuardToken === token) release();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: 'if (next?.token === this.account?.token) reuse();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: "if (req.headers.authorization === `Bearer ${token}`) allow();", errors: [{ messageId: 'useConstantTimeEqual' }] },
+    // 以单数凭据词结尾的成员属性名同样命中。
+    { code: 'if (sessionSecret === secret) accept();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: 'if (form.password === password) deny();', errors: [{ messageId: 'useConstantTimeEqual' }] },
+    { code: "if (req.headers['x-dshd-git-token'] === token) deny();", errors: [{ messageId: 'useConstantTimeEqual' }] },
+  ],
+});
+
+const bodyTester = new RuleTester({ languageOptions: cjs });
+bodyTester.run('whaleisle/no-request-body-accumulate', plugin.rules['no-request-body-accumulate'], {
+  valid: [
+    "socket.on('data', (chunk) => forward(chunk));",
+    "process.stdin.on('data', (chunk) => feed(chunk));",
+    "response.on('data', (chunk) => count(chunk));",
+    "res.on('data', (chunk) => chunks.push(chunk));",
+    "req.on('end', () => done());",
+    "req.on('error', (error) => fail(error));",
+    "req.off('data', onData);",
+    'readBodyLimited(req, 4096).then((raw) => parse(raw));',
+  ],
+  invalid: [
+    { code: "req.on('data', (chunk) => chunks.push(chunk));", errors: [{ messageId: 'useReadBodyLimited' }] },
+    { code: "req.once('data', (chunk) => first(chunk));", errors: [{ messageId: 'useReadBodyLimited' }] },
+    { code: 'req.on("data", handler);', errors: [{ messageId: 'useReadBodyLimited' }] },
+  ],
+});

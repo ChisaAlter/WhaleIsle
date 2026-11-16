@@ -45,6 +45,7 @@ import { registerHttpTransports } from './http-transport.js'
 import { SshPool } from './pool.js'
 import { createFsRoutes } from './routes-fs.js'
 import { removeRemoteTree } from './remote-fs.js'
+import { readBodyLimited } from '../../dsh-shared/lib/secret.mjs'
 
 export const name = 'dsh-remote'
 
@@ -1669,21 +1670,15 @@ export async function apply(ctx, config) {
     res.end(JSON.stringify(body))
   }
   const MAX_BODY_BYTES = 1024 * 1024
-  const readBody = (req) =>
-    new Promise((resolve) => {
-      const chunks = []
-      let total = 0
-      req.on('data', (c) => {
-        total += c.length
-        if (total > MAX_BODY_BYTES) {
-          req.removeAllListeners('data')
-          resolve('{}')
-          return
-        }
-        chunks.push(c)
-      })
-      req.on('end', () => resolve(chunks.join('')))
-    })
+  const readBody = async (req, res) => {
+    try {
+      return await readBodyLimited(req, MAX_BODY_BYTES, { res })
+    } catch {
+      // Oversized or truncated bodies keep the old behavior: routes see '{}' and
+      // answer their own 400/JSON errors instead of a rejected handler.
+      return '{}'
+    }
+  }
 
   /** Parse a JSON *object* request body.
    *
@@ -1922,7 +1917,7 @@ export async function apply(ctx, config) {
         // this handler now always answers with JSON.
         let payload = {}
         try {
-          payload = parseJsonObject(await readBody(req))
+          payload = parseJsonObject(await readBody(req, res))
           pool.setTarget({
             host: payload.host,
             port: payload.port,
@@ -1948,7 +1943,7 @@ export async function apply(ctx, config) {
       handler: async (req, res) => {
         if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' })
         try {
-          const payload = JSON.parse((await readBody(req)) || '{}')
+          const payload = JSON.parse((await readBody(req, res)) || '{}')
           const p = normalizeRemotePath(String(payload.path || ''))
           if (!p || p === '/') return sendJson(res, 400, { error: 'path must be an absolute directory' })
           const okDir = await isRemoteDir(p)
@@ -1968,7 +1963,7 @@ export async function apply(ctx, config) {
       handler: async (req, res) => {
         if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' })
         try {
-          const payload = JSON.parse((await readBody(req)) || '{}')
+          const payload = JSON.parse((await readBody(req, res)) || '{}')
           const p = normalizeRemotePath(String(payload.path || ''))
           if (!p || p === '/') return sendJson(res, 400, { ok: false, error: 'path must be an absolute directory' })
           if (!config.host) return sendJson(res, 400, { ok: false, error: 'no remote host configured/connected — connect first' })
@@ -2060,7 +2055,7 @@ export async function apply(ctx, config) {
         try {
           const cap = await localPickCapability()
           if (!cap || cap.kind !== 'browse' || typeof cap.createDirectory !== 'function') return sendJson(res, 400, { ok: false, error: '当前目录选择器不是浏览后端，无法新建文件夹' })
-          const payload = JSON.parse((await readBody(req)) || '{}')
+          const payload = JSON.parse((await readBody(req, res)) || '{}')
           const p = String(payload.path || '')
           const name = String(payload.name || '')
           if (!p.trim() || !name.trim()) return sendJson(res, 400, { ok: false, error: 'path and name required' })
@@ -2084,7 +2079,7 @@ export async function apply(ctx, config) {
         }
         if (req.method === 'POST') {
           try {
-            const body = JSON.parse((await readBody(req)) || '{}')
+            const body = JSON.parse((await readBody(req, res)) || '{}')
             const action = body.action || 'add'
             let warning = ''
             let warningDetail = ''
@@ -2206,7 +2201,7 @@ export async function apply(ctx, config) {
         // probe: every outcome is a 200 carrying {ok:false, error}.
         let body = {}
         try {
-          body = parseJsonObject(await readBody(req))
+          body = parseJsonObject(await readBody(req, res))
           // `machineId` pins the probe to a saved machine: secrets never leave
           // the host, so a test of a password-auth machine must read its stored
           // credential here instead of demanding the client resend it.
@@ -2258,7 +2253,7 @@ export async function apply(ctx, config) {
       handler: async (req, res) => {
         if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
         try {
-          const body = JSON.parse((await readBody(req)) || '{}')
+          const body = JSON.parse((await readBody(req, res)) || '{}')
           const id = String(body.id || '').trim()
           // Issue #13: an empty id is an explicit "active remote = none" —
           // saved machines stay in the registry but nothing is current.
@@ -2290,7 +2285,7 @@ export async function apply(ctx, config) {
         if (req.method === 'GET') return sendJson(res, 200, { forwards: forwards.list() })
         if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
         try {
-          const body = JSON.parse((await readBody(req)) || '{}')
+          const body = JSON.parse((await readBody(req, res)) || '{}')
           const action = String(body.action || '')
           if (action === 'define') {
             const d = forwards.define({
@@ -2337,7 +2332,7 @@ export async function apply(ctx, config) {
         }
         if (req.method === 'POST') {
           try {
-            const body = JSON.parse((await readBody(req)) || '{}')
+            const body = JSON.parse((await readBody(req, res)) || '{}')
             const id = String(body.id || '')
             if (body.action === 'cancel') {
               const ok = tasks.cancel(id)

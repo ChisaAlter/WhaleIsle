@@ -15,6 +15,7 @@ const {
   tokensEqual,
   matchingToken,
 } = require('../shared/remote-auth');
+const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 const { listLanAddresses, pairingUrl, publicUrl, reachableAddresses, DEFAULT_RELAY_ORIGIN } = require('../shared/lan');
 const { createDevice, normalizeDevices, publicDevices } = require('../shared/remote-devices');
 const { generateTlsMaterial } = require('./remote-tls');
@@ -229,24 +230,6 @@ function loginPage() {
   </script>
 </body>
 </html>`;
-}
-
-function readBody(req, limit = 4096) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > limit) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
 }
 
 function parseFormToken(body) {
@@ -529,7 +512,7 @@ class RemoteGateway extends EventEmitter {
     const tls = config.remoteLanTls === true && config.remoteMode !== 'relay';
     const same = this.server
       && this.port === port
-      && this.token === token
+      && constantTimeEqual(this.token, token)
       && this.bindAddress === bindAddress
       && this.tlsActive === tls
       && this.target
@@ -679,7 +662,7 @@ class RemoteGateway extends EventEmitter {
     if (req.method === 'POST' && url.startsWith('/__remote__/login')) {
       let body = '';
       try {
-        body = await readBody(req);
+        body = await readBodyLimited(req, 4096, { res });
       } catch {
         this.send(res, 413, { 'content-type': 'text/plain; charset=utf-8' }, '请求过大');
         return;
@@ -799,7 +782,7 @@ class RemoteGateway extends EventEmitter {
     }
     let raw = '';
     try {
-      raw = await readBody(req, 262144);
+      raw = await readBodyLimited(req, 262144, { res });
     } catch {
       this.send(res, 413, jsonHeaders, JSON.stringify({ ok: false, error: '请求过大' }));
       return;

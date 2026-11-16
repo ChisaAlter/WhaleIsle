@@ -4,6 +4,8 @@
  * DSHD_PLATFORM_TOKEN; an empty token keeps the route closed.
  */
 
+import { constantTimeEqual } from '../../dsh-shared/lib/secret.mjs';
+
 export const PLATFORM_PREFIX = '/dshd-platform';
 
 function sendJson(res, status, body) {
@@ -17,7 +19,7 @@ function sendJson(res, status, body) {
 
 function authorized(req, token) {
   if (!token) return false;
-  return (req.headers.authorization || '') === `Bearer ${token}`;
+  return constantTimeEqual(req.headers.authorization || '', `Bearer ${token}`);
 }
 
 /**

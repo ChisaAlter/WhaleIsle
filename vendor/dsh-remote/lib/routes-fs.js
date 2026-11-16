@@ -82,7 +82,7 @@ export function createFsRoutes({
           let maxBytes = 256 * 1024
           let body = {}
           if (req.method === 'POST') {
-            body = JSON.parse((await readBody(req)) || '{}')
+            body = JSON.parse((await readBody(req, res)) || '{}')
             if (!p) p = String(body.path || '')
             if (body.encoding) encoding = String(body.encoding)
             if (body.maxBytes) maxBytes = Number(body.maxBytes)
@@ -119,7 +119,7 @@ export function createFsRoutes({
       handler: async (req, res) => {
         if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
         try {
-          const body = JSON.parse((await readBody(req)) || '{}')
+          const body = JSON.parse((await readBody(req, res)) || '{}')
           const p = normalizeRemotePath(String(body.path || ''))
           if (!p || p === '/') return sendJson(res, 400, { ok: false, error: 'path is required' })
           const b = await bindOrReply(req, res, body)
@@ -147,7 +147,7 @@ export function createFsRoutes({
       handler: async (req, res) => {
         if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
         try {
-          const body = JSON.parse((await readBody(req)) || '{}')
+          const body = JSON.parse((await readBody(req, res)) || '{}')
           const op = String(body.op || '')
           const b = await bindOrReply(req, res, body)
           if (!b) return

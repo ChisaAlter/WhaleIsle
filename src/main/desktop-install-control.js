@@ -5,6 +5,7 @@ const crypto = require('crypto');
 
 const { isValidGithubSpec, normalizeAllowBuilds } = require('../host/install-dsh-plugin-client.js');
 const { effectOf, NEVER_ALWAYS_LEVELS } = require('../shared/model-tool-effects.js');
+const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 
 const RESTART_DELAY_MS = 500;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -23,24 +24,6 @@ function desktopInstallEnv() {
 
 function desktopInstallReady() {
   return active?.ready || Promise.resolve();
-}
-
-function readBody(req, maxBytes = MAX_BODY_BYTES) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > maxBytes) {
-        reject(new Error('request too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
 }
 
 function sendJson(res, status, body) {
@@ -159,7 +142,7 @@ function normalizeInstallResult(result, fallbackSpec) {
 async function handleInstall(req, res, { installPlugin, startHarness, restartDelayMs, confirmModelAction }) {
   let payload;
   try {
-    payload = JSON.parse(await readBody(req) || '{}');
+    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
   } catch {
     badRequest(res, 'invalid json');
     return;
@@ -215,7 +198,7 @@ async function handleInstall(req, res, { installPlugin, startHarness, restartDel
 async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarness, restartDelayMs, confirmModelAction }) {
   let payload;
   try {
-    payload = JSON.parse(await readBody(req) || '{}');
+    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
   } catch {
     badRequest(res, 'invalid json');
     return;
@@ -318,7 +301,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
 async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed }) {
   let payload;
   try {
-    payload = JSON.parse(await readBody(req) || '{}');
+    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
   } catch {
     badRequest(res, 'invalid json');
     return;
@@ -359,7 +342,7 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
 async function handleShowSecret(req, res, { showSecret }) {
   let payload;
   try {
-    payload = JSON.parse(await readBody(req) || '{}');
+    payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
   } catch {
     badRequest(res, 'invalid json');
     return;
@@ -410,8 +393,7 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
       sendJson(res, 404, { ok: false, error: 'not found' });
       return;
     }
-    const expected = `Bearer ${active?.token || ''}`;
-    if (!active?.token || req.headers.authorization !== expected) {
+    if (!active?.token || !constantTimeEqual(req.headers.authorization || '', `Bearer ${active.token}`)) {
       unauthorized(res);
       return;
     }
@@ -440,7 +422,7 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
         // Base64 local images are already part of the prepared page; reserve
         // room for JSON escaping while keeping this route independently bounded.
         let payload;
-        try { payload = JSON.parse(await readBody(req, 52 * 1024 * 1024)); }
+        try { payload = JSON.parse(await readBodyLimited(req, 52 * 1024 * 1024, { res })); }
         catch { badRequest(res, 'invalid or oversized HTML preview request'); return; }
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort(new Error('HTML preview request closed.'));
@@ -461,7 +443,7 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
       }
       if (req.method === 'POST' && pathname === '/desktop/project') {
         let payload;
-        try { payload = JSON.parse(await readBody(req) || '{}'); }
+        try { payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}'); }
         catch { badRequest(res, 'invalid json'); return; }
         if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof desktop.project !== 'function') {
           badRequest(res, 'Project capability is unavailable or invalid');
@@ -481,7 +463,7 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
       if (req.method === 'POST' && pathname === '/desktop/config') {
         let payload;
         try {
-          payload = JSON.parse(await readBody(req) || '{}');
+          payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
         } catch {
           badRequest(res, 'invalid json');
           return;
@@ -496,7 +478,7 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
       if (req.method === 'POST' && pathname === '/desktop/pet-settings') {
         let payload;
         try {
-          payload = JSON.parse(await readBody(req) || '{}');
+          payload = JSON.parse(await readBodyLimited(req, MAX_BODY_BYTES, { res }) || '{}');
         } catch {
           badRequest(res, 'invalid json');
           return;

@@ -6,6 +6,7 @@
 
 import { acquireLock, lockStatus, releaseLock, renewLock } from './state.js';
 import { collectInspection } from './inspection.js';
+import { constantTimeEqual, readBodyLimited } from '../../dsh-shared/lib/secret.mjs';
 
 export const CONTROL_PREFIX = '/dshd-task-control';
 const MAX_BODY_BYTES = 64 * 1024;
@@ -22,35 +23,25 @@ function sendJson(res, status, body) {
 function authorized(req, token) {
   if (!token) return false;
   const header = req.headers.authorization || '';
-  return header === `Bearer ${token}`;
+  return constantTimeEqual(header, `Bearer ${token}`);
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (chunks.length === 0) {
-        resolve({});
-        return;
-      }
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        reject(new Error('invalid JSON body'));
-      }
-    });
-    req.on('error', reject);
-  });
+async function readJson(req, res) {
+  let raw;
+  try {
+    raw = await readBodyLimited(req, MAX_BODY_BYTES, { res });
+  } catch (error) {
+    if (error && error.code === 'BODY_TOO_LARGE') {
+      throw new Error('body too large');
+    }
+    throw error;
+  }
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error('invalid JSON body');
+  }
 }
 
 /**
@@ -72,7 +63,7 @@ export function createControlHandler(ctx, state, options) {
     let body = {};
     if (req.method === 'POST') {
       try {
-        body = await readBody(req);
+        body = await readJson(req, res);
       } catch (error) {
         sendJson(res, 400, { ok: false, code: 'dshd/bad-request', detail: error.message });
         return;

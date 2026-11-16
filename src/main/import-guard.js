@@ -24,15 +24,15 @@ function maintenanceOwner() {
 }
 
 /**
- * Owner-aware delegation: is `token` the operation that currently owns the
+ * Owner-aware delegation: is `owner` the operation that currently owns the
  * slot? A nested internal call that carries the live owner token may proceed
  * (it is the same authorized operation reaching a deeper boundary), while an
  * unrelated caller — or no token at all — must acquire or refuse. Callers
  * must pass the actual token object they received from `acquireMaintenance`,
  * never a kind string or a guessed reference.
  */
-function holdsMaintenance(token) {
-  return token !== null && token !== undefined && maintenanceHeld === token;
+function holdsMaintenance(owner) {
+  return owner !== null && owner !== undefined && maintenanceHeld === owner;
 }
 
 /**
@@ -50,11 +50,11 @@ function acquireMaintenance(kind, meta = {}) {
 }
 
 /**
- * Release only if `token` is the current owner — a stale handle can never
+ * Release only if `owner` is the current owner — a stale handle can never
  * drop a newer operation's ownership.
  */
-function releaseMaintenance(token) {
-  if (token && maintenanceHeld === token) {
+function releaseMaintenance(owner) {
+  if (owner && maintenanceHeld === owner) {
     maintenanceHeld = null;
     return true;
   }

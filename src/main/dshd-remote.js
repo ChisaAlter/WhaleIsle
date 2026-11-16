@@ -23,6 +23,7 @@ const {
 const { createMobileWebServer, listenMobileWebServer, MOBILE_WEB_PORT } = require('./mobile-web-server');
 const { startGitTunnelServer } = require('./dshd-git-tunnel');
 const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
+const { passSecretToChild } = require('../shared/secret');
 
 function resolveVendorRoot() {
   // Packaged: extraResources -> resources/vendor/dshd-remote
@@ -901,7 +902,7 @@ class DshdRemote extends EventEmitter {
     // (same law as `harness-cookie`), never the child env or launch file.
     if (this.gitTunnel?.token) {
       try {
-        child.stdin.write(`git-tunnel-token ${this.gitTunnel.token}\n`);
+        passSecretToChild(child, 'git-tunnel-token', this.gitTunnel.token);
       } catch {
         // Child already gone; the ready wait reports the real failure.
       }
@@ -1128,7 +1129,7 @@ class DshdRemote extends EventEmitter {
     try {
       child.stdin.write(`harness-origin ${String(next || '').trim()}\n`);
       const cookie = String(this.getSessionCookie() || '').split(/\r|\n/)[0].trim();
-      child.stdin.write(`harness-cookie ${cookie}\n`);
+      passSecretToChild(child, 'harness-cookie', cookie);
     } catch {
       // Child already draining.
     }

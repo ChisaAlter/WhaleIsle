@@ -3,6 +3,7 @@ const net = require('net');
 const tls = require('tls');
 const { EventEmitter } = require('events');
 const { encodeFrame, attachFrameReader } = require('../shared/relay-frames');
+const { constantTimeEqual } = require('../shared/secret');
 const { normalizeRelayOrigin } = require('../shared/lan');
 const { normalizeRelayHostToken } = require('../shared/relay-auth');
 
@@ -110,7 +111,7 @@ class RelayClient extends EventEmitter {
       this.error = 'relay host token is required';
       return this.snapshot();
     }
-    if (this.url === origin && this.hostToken === token && this.shouldRun && this.socket && !this.socket.destroyed) {
+    if (this.url === origin && constantTimeEqual(this.hostToken, token) && this.shouldRun && this.socket && !this.socket.destroyed) {
       return this.snapshot();
     }
     this.shouldRun = true;

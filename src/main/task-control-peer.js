@@ -13,6 +13,7 @@ const http = require('http');
 const path = require('path');
 const { randomBytes, randomUUID } = require('crypto');
 const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 
 const PEER_FILENAME = 'task-control-peer.json';
 const MAX_BODY_BYTES = 16 * 1024;
@@ -26,28 +27,21 @@ function sendJson(res, status, body) {
   res.end(payload);
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      try {
-        resolve(chunks.length === 0 ? {} : JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        reject(new Error('invalid JSON body'));
-      }
-    });
-    req.on('error', reject);
-  });
+async function readBody(req, res) {
+  let raw;
+  try {
+    raw = await readBodyLimited(req, MAX_BODY_BYTES, { res });
+  } catch (error) {
+    throw error && error.code === 'BODY_TOO_LARGE' ? new Error('body too large') : error;
+  }
+  if (!raw) {
+    return {};
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error('invalid JSON body');
+  }
 }
 
 function writePeerFile(stateDir, peer) {
@@ -88,7 +82,7 @@ function createTaskControlPeer(options = {}) {
 
   const handler = async (req, res) => {
     const auth = req.headers.authorization || '';
-    if (auth !== `Bearer ${token}`) {
+    if (!constantTimeEqual(auth, `Bearer ${token}`)) {
       sendJson(res, 401, { ok: false, code: 'unauthorized' });
       return;
     }
@@ -108,7 +102,7 @@ function createTaskControlPeer(options = {}) {
       return;
     }
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
       if (pathname === '/peer/stop-desktop') {
         sendJson(res, 200, await options.onPeerStop(body));
         return;

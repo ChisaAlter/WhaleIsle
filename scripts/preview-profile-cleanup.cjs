@@ -27,6 +27,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { writeReceiptAtomic } = require('./lib/receipt-file.cjs');
+const { constantTimeEqual } = require('../src/shared/secret.js');
 
 const OWNER_MARKER_BASENAME = '.dshd-cleanup-owner.json';
 const PROBE_ERROR_ENV = 'DSHD_PREVIEW_CLEANUP_PROBE_ERROR';
@@ -208,7 +209,7 @@ function isSaneOwnershipMarker(marker, expectedOwnerPid) {
     && !Array.isArray(marker)
     && marker.version === 1
     && isNonEmptyString(marker.token)
-    && marker.token === ownershipToken
+    && constantTimeEqual(marker.token, ownershipToken)
     && Number.isInteger(marker.ownerPid)
     && marker.ownerPid === expectedOwnerPid
     && isNonEmptyString(marker.createdAt)
