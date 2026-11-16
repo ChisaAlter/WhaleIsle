@@ -10,3 +10,10 @@ it('keeps the indicator carrier full-width without inspecting account state', ()
   expect(css).not.toContain('data-signed-out')
   expect(css).toMatch(/\.triggerRow\.railRow\s*\{[^}]*width: 36px;/)
 })
+
+it('centers the nav glyph in a fixed 16px seat so it shares the label center', () => {
+  // A bare inline svg in .navCell rides the 22px line box and lands ~3px high.
+  expect(css).toMatch(
+    /\.navIcon\s*\{[^}]*display: flex;[^}]*align-items: center;[^}]*justify-content: center;[^}]*width: 16px;[^}]*height: 16px;/,
+  )
+})

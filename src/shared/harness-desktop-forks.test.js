@@ -135,7 +135,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-settings-general/src/client/AutoStartDesktopRow.tsx': 'export const autoStart = () => <SettingsSelect aria-label="auto-start" />\n',
       'packages/client/ui-settings-general/src/client/HarnessRestartRow.tsx': 'export const restart = () => <SettingsSelect aria-label="restart" />\n',
       'packages/client/ui-settings-general/src/client/AboutSection.tsx': 'export function AboutSection() { return shell.openDshHome(), config.downloadRoute }\n',
-      'packages/client/ui-settings-general/src/client/SettingsRoot.module.css': '.navCell.active { background: var(--dsw-specific-sidebar-nav-item-active-accent); }\n',
+      'packages/client/ui-settings-general/src/client/SettingsRoot.module.css': '.navCell.active { background: var(--dsw-specific-sidebar-nav-item-active-accent); }\n.navIcon {\n  flex: none;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 16px;\n  height: 16px;\n}\n',
       'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.tsx': 'export const remote = () => shell.saveConfig({ remoteWorkspaceEnabled: next })\n',
       'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.module.css': '.row { display: flex; }\n',
       'packages/client/ui-settings-general/src/client/ProjectRow.tsx': "export const project = () => shell.saveConfig({ projectEnabled: next }) && t('project.help')\n",
