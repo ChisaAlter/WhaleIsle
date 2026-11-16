@@ -527,14 +527,21 @@ test('the port control changes the real loopback daemon endpoint and restarts it
 test('the git tunnel token reaches the daemon over stdin, not env', async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-git-'));
   const body = [
-    "process.stdin.on('data', (chunk) => {",
-    '  fs.appendFileSync(launch.daemonConfig.chisacodeHome + "/runner-stdin.log", String(chunk));',
-    '});',
     'fs.writeFileSync(launch.daemonConfig.chisacodeHome + "/runner-env.json", JSON.stringify({',
     '  DSHD_GIT_TUNNEL_URL: process.env.DSHD_GIT_TUNNEL_URL || null,',
     '  DSHD_GIT_TUNNEL_TOKEN: process.env.DSHD_GIT_TUNNEL_TOKEN || null,',
     '}));',
-    'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+    // Report ready only once the token line has been read, so the assertion
+    // below never races the child's stdin handler under load.
+    "let ready = false, seen = '';",
+    "process.stdin.on('data', (chunk) => {",
+    '  fs.appendFileSync(launch.daemonConfig.chisacodeHome + "/runner-stdin.log", String(chunk));',
+    '  seen += String(chunk);',
+    "  if (!ready && /git-tunnel-token [^\\n]*\\n/.test(seen)) {",
+    '    ready = true;',
+    '    emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+    '  }',
+    '});',
   ].join('\n');
   const f = fakeRemote({ home, runnerBody: body, options: { git: {} } });
   t.after(async () => {
