@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 
 const { isAllowedWallpaperUrl, isBlockedWallpaperHost } = require('./wallpaper-catalog');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -51,14 +52,14 @@ test('isBlockedWallpaperHost refuses every non-public spelling', () => {
     '100.64.5.5', '100.127.5.5', '198.18.1.1', '198.19.1.1', '0.0.0.0', '0.9.9.9',
     '[::1]', '[0:0:0:0:0:0:0:1]', '[::]', '[fe80::1]', '[fc00::9]', '[fdff::2]',
   );
-  fc.assert(fc.property(privateArb, (host) => {
+  fuzzAssert(fc.property(privateArb, (host) => {
     const canonical = new URL(`https://${host}/`).hostname;
     assert.equal(isBlockedWallpaperHost(canonical), true, `${host} -> ${canonical}`);
-  }), { numRuns: NUM_RUNS });
+  }), 'isBlockedWallpaperHost refuses every non-public spelling', { numRuns: NUM_RUNS });
 });
 
 test('isAllowedWallpaperUrl: accepted URLs parse as https with no credentials', () => {
-  fc.assert(fc.property(urlArb, fc.string({ maxLength: 30 }), (built, loose) => {
+  fuzzAssert(fc.property(urlArb, fc.string({ maxLength: 30 }), (built, loose) => {
     for (const value of [built, loose]) {
       if (!isAllowedWallpaperUrl(value)) continue;
       const parsed = new URL(value);
@@ -67,7 +68,7 @@ test('isAllowedWallpaperUrl: accepted URLs parse as https with no credentials', 
       assert.equal(isBlockedWallpaperHost(parsed.hostname), false, value);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isAllowedWallpaperUrl: accepted URLs parse as https with no credentials', { numRuns: NUM_RUNS });
 });
 
 // #491: WHATWG normalizes every IPv4-embedded IPv6 spelling to the hex form,
@@ -117,8 +118,8 @@ test('isAllowedWallpaperUrl refuses embedded credentials', () => {
 
 test('isAllowedWallpaperUrl never accepts non-http(s) schemes', () => {
   const schemeArb = fc.constantFrom('file', 'data', 'javascript', 'ftp', 'ws', 'wss', 'chrome', 'dshd', 'about', 'blob', 'ssh');
-  fc.assert(fc.property(schemeArb, hostArb, (scheme, host) => {
+  fuzzAssert(fc.property(schemeArb, hostArb, (scheme, host) => {
     const value = `${scheme}://${host}/x`;
     assert.equal(isAllowedWallpaperUrl(value), false, value);
-  }), { numRuns: NUM_RUNS });
+  }), 'isAllowedWallpaperUrl never accepts non-http(s) schemes', { numRuns: NUM_RUNS });
 });

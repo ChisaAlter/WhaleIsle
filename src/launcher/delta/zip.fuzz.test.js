@@ -14,6 +14,7 @@ const zip = require('./zip');
 const manifest = require('./manifest');
 const { applyDeltaFile, DeltaApplyError } = require('./apply');
 const { withOwnedTempDir } = require('../../shared/fs-safe');
+const { fuzzAssert } = require('../../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 60;
 
@@ -57,7 +58,7 @@ function listFiles(root) {
 // byte-identical payloads (crc + size gates are the integrity contract).
 // ---------------------------------------------------------------------------
 test('zip round-trip: every written entry parses back byte-identical', async () => {
-  await fc.assert(fc.asyncProperty(zipEntriesArb, async (entries) => {
+  await fuzzAssert(fc.asyncProperty(zipEntriesArb, async (entries) => {
     await withOwnedTempDir('dshd-fuzz-zip-', async (dir) => {
       const file = path.join(dir, 'a.zip');
       zip.writeZip(file, entries);
@@ -68,7 +69,7 @@ test('zip round-trip: every written entry parses back byte-identical', async () 
         assert.deepEqual(zip.readEntry(file, parsed[i]), entries[i].data);
       }
     });
-  }), { numRuns: NUM_RUNS });
+  }), 'zip round-trip: every written entry parses back byte-identical', { numRuns: NUM_RUNS });
 });
 
 // ---------------------------------------------------------------------------
@@ -103,7 +104,7 @@ function mutateZipBytes(orig, mutation) {
 }
 
 test('zip corruption never yields silent wrong payload data', async () => {
-  await fc.assert(fc.asyncProperty(zipEntriesArb, mutationArb, async (entries, mutation) => {
+  await fuzzAssert(fc.asyncProperty(zipEntriesArb, mutationArb, async (entries, mutation) => {
     await withOwnedTempDir('dshd-fuzz-zip-', async (dir) => {
       const file = path.join(dir, 'a.zip');
       zip.writeZip(file, entries);
@@ -128,7 +129,7 @@ test('zip corruption never yields silent wrong payload data', async () => {
         }
       }
     });
-  }), { numRuns: NUM_RUNS });
+  }), 'zip corruption never yields silent wrong payload data', { numRuns: NUM_RUNS });
 });
 
 // ---------------------------------------------------------------------------
@@ -142,7 +143,7 @@ const forgeryArb = fc.record({
 });
 
 test('extractEntryTo rejects forged entry descriptors without partial writes', async () => {
-  await fc.assert(fc.asyncProperty(
+  await fuzzAssert(fc.asyncProperty(
     fc.array(fc.record({ name: entryNameArb, data: entryDataArb }), { minLength: 1, maxLength: 4 }),
     forgeryArb,
     async (entries, forge) => {
@@ -163,11 +164,11 @@ test('extractEntryTo rejects forged entry descriptors without partial writes', a
         assert.equal(fs.existsSync(dest), false, 'partial output left behind');
       });
     },
-  ), { numRuns: NUM_RUNS });
+  ), 'extractEntryTo rejects forged entry descriptors without partial writes', { numRuns: NUM_RUNS });
 });
 
 test('extractEntryTo rejects deflate payloads outgrowing the declared size', async () => {
-  await fc.assert(fc.asyncProperty(
+  await fuzzAssert(fc.asyncProperty(
     fc.integer({ min: 4, max: 40 }),
     fc.integer({ min: 0, max: 3 }),
     async (rawLen, shrink) => {
@@ -205,7 +206,7 @@ test('extractEntryTo rejects deflate payloads outgrowing the declared size', asy
         assert.equal(fs.existsSync(dest), false);
       });
     },
-  ), { numRuns: NUM_RUNS });
+  ), 'extractEntryTo rejects deflate payloads outgrowing the declared size', { numRuns: NUM_RUNS });
 });
 
 // ---------------------------------------------------------------------------
@@ -301,7 +302,7 @@ test('applyDeltaFile never writes outside targetDir on generated manifests', asy
     op: fc.constantFrom('add', 'patch', 'delete'),
     data: entryDataArb,
   });
-  await fc.assert(fc.asyncProperty(
+  await fuzzAssert(fc.asyncProperty(
     fc.array(fileArb, { minLength: 0, maxLength: 4 }),
     async (files) => {
       const entries = [];
@@ -314,12 +315,12 @@ test('applyDeltaFile never writes outside targetDir on generated manifests', asy
         }
       });
     },
-  ), { numRuns: NUM_RUNS });
+  ), 'applyDeltaFile never writes outside targetDir on generated manifests', { numRuns: NUM_RUNS });
 });
 
 test('applyDeltaFile with unsafe manifest paths is refused as manifest-invalid', async () => {
   const unsafe = fc.constantFrom('../x', '../../etc', '/abs', 'a\\b', 'C:\\y', 'a//b', '.', '..', 'bad\x02p');
-  await fc.assert(fc.asyncProperty(
+  await fuzzAssert(fc.asyncProperty(
     fc.array(fc.record({ path: unsafe, op: fc.constantFrom('add', 'patch', 'delete'), data: entryDataArb }),
       { minLength: 1, maxLength: 3 }),
     async (files) => {
@@ -329,5 +330,5 @@ test('applyDeltaFile with unsafe manifest paths is refused as manifest-invalid',
         assert.equal(result.code, 'manifest-invalid');
       });
     },
-  ), { numRuns: NUM_RUNS });
+  ), 'applyDeltaFile with unsafe manifest paths is refused as manifest-invalid', { numRuns: NUM_RUNS });
 });

@@ -1,0 +1,42 @@
+name: Fuzz hunt
+# Daily counterexample hunt: every *.fuzz.test.js property replays a fixed
+# seed in normal CI; here a fresh random seed each run roams the input space.
+# A red run prints the seed — reproduce locally with FUZZ_SEED=<n>.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      FUZZ_RANDOM: '1'
+      # A missing prerequisite must fail here, not silently skip — this job
+      # exists to cover every property on every OS.
+      WHALE_REQUIRE_TEST_PREREQS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # The fuzz suite only needs fast-check from the root devDependencies;
+      # ignore-scripts skips the Electron download and native rebuilds.
+      - run: npm ci --ignore-scripts
+      # mermaid-safe's DOM cases resolve jsdom and mermaid through the
+      # whale-ui package. Same install line prepare-whale-ui runs, driven by
+      # the root pnpm — installing the whole Harness workspace first would
+      # add a full monorepo install for no extra coverage.
+      - run: node node_modules/pnpm/bin/pnpm.mjs install --dir src/whale-ui --ignore-workspace --frozen-lockfile --ignore-scripts
+      - name: Property fuzz with a fresh random seed
+        run: node --test "src/**/*.fuzz.test.js"

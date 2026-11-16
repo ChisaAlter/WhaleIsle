@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 
 const { BrowserGuests } = require('./browser-guests');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 const HOST = 'http://127.0.0.1:8137';
@@ -40,7 +41,7 @@ function guests() {
 
 test('allowedNavigation: accepted URLs are http(s), credential-free and off the Host origin', () => {
   const g = guests();
-  fc.assert(fc.property(urlArb, fc.string({ maxLength: 40 }), (built, loose) => {
+  fuzzAssert(fc.property(urlArb, fc.string({ maxLength: 40 }), (built, loose) => {
     for (const value of [built, loose]) {
       if (!g.allowedNavigation(value)) continue;
       const parsed = new URL(value);
@@ -50,7 +51,7 @@ test('allowedNavigation: accepted URLs are http(s), credential-free and off the 
       assert.equal(g.isApplicationHost(parsed), false, value);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'allowedNavigation: accepted URLs are http(s), credential-free and off the Host origin', { numRuns: NUM_RUNS });
 });
 
 test('allowedNavigation: the Host origin itself is always refused', () => {
@@ -59,7 +60,7 @@ test('allowedNavigation: the Host origin itself is always refused', () => {
     fc.constantFrom('127.0.0.1', 'localhost', '[::1]', '127.0.0.1.', 'localhost.'),
     fc.constantFrom(8137, 8138, 80),
   ).map(([host, port]) => `http://${host}:${port}/x`);
-  fc.assert(fc.property(nearHost, (value) => {
+  fuzzAssert(fc.property(nearHost, (value) => {
     if (!g.allowedNavigation(value)) return true;
     const parsed = new URL(value);
     assert.ok(
@@ -68,7 +69,7 @@ test('allowedNavigation: the Host origin itself is always refused', () => {
       `${value} reached the Host origin`,
     );
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'allowedNavigation: the Host origin itself is always refused', { numRuns: NUM_RUNS });
 });
 
 test('allowedNavigation: dangerous and opaque schemes are always refused', () => {
@@ -77,8 +78,8 @@ test('allowedNavigation: dangerous and opaque schemes are always refused', () =>
     'javascript', 'file', 'data', 'vbscript', 'chrome', 'devtools', 'about',
     'blob', 'ssh', 'dshd', 'filesystem',
   );
-  fc.assert(fc.property(schemeArb2, fc.string({ maxLength: 30 }), (scheme, tail) => {
+  fuzzAssert(fc.property(schemeArb2, fc.string({ maxLength: 30 }), (scheme, tail) => {
     assert.equal(g.allowedNavigation(`${scheme}:${tail}`), false);
     assert.equal(g.allowedNavigation(`${scheme}://${tail}`), false);
-  }), { numRuns: NUM_RUNS });
+  }), 'allowedNavigation: dangerous and opaque schemes are always refused', { numRuns: NUM_RUNS });
 });

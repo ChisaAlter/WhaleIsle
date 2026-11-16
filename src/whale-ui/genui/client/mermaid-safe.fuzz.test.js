@@ -12,6 +12,7 @@ import { assertSafeSvg, mermaidKind, repairMermaidSource, ensureFlowchartKind } 
 
 const require_ = createRequire(import.meta.url);
 const { requirePrerequisite } = require_('../../../../scripts/lib/test-prerequisites.cjs');
+const { fuzzAssert } = require_('../../../../scripts/lib/fuzz.cjs');
 // assertSafeSvg needs a real DOMParser; under Node it comes from jsdom, a
 // whale-ui devDependency — the same source the genui test bench uses
 // (src/whale-ui/tests/genui-helpers.mjs). mermaid itself is a whale-ui
@@ -110,7 +111,7 @@ function* hazards(svg) {
 // The contract: whatever the gate accepts, the oracle must find clean.
 test('assertSafeSvg: accepted markup contains no scriptable construct', (t) => {
   if (!requirePrerequisite(t, DOM_CHECK)) return;
-  fc.assert(fc.property(svgArb, (svg) => {
+  fuzzAssert(fc.property(svgArb, (svg) => {
     try {
       assertSafeSvg(svg);
     } catch {
@@ -118,7 +119,7 @@ test('assertSafeSvg: accepted markup contains no scriptable construct', (t) => {
     }
     assert.deepEqual([...hazards(svg)], [], svg);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'assertSafeSvg: accepted markup contains no scriptable construct', { numRuns: NUM_RUNS });
 });
 
 // #492 regression dictionary: every payload a browser would execute or
@@ -276,7 +277,7 @@ const codeArb = fc.oneof(
 );
 
 test('repairMermaidSource: graph/flowchart output keeps no backticks or <br>', () => {
-  fc.assert(fc.property(codeArb, (code) => {
+  fuzzAssert(fc.property(codeArb, (code) => {
     const out = repairMermaidSource(code);
     const kind = mermaidKind(code);
     if (kind !== 'graph' && kind !== 'flowchart') {
@@ -286,21 +287,21 @@ test('repairMermaidSource: graph/flowchart output keeps no backticks or <br>', (
     assert.equal(out.includes('`'), false, `${code} -> ${out}`);
     assert.equal(/<br\s*\/?>/i.test(out), false, `${code} -> ${out}`);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'repairMermaidSource: graph/flowchart output keeps no backticks or <br>', { numRuns: NUM_RUNS });
 });
 
 test('mermaidKind returns the first alphabetic word or empty', () => {
-  fc.assert(fc.property(codeArb, (code) => {
+  fuzzAssert(fc.property(codeArb, (code) => {
     const kind = mermaidKind(code);
     assert.equal(kind === '' || /^[A-Za-z]+$/.test(kind), true, `${code} -> ${kind}`);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'mermaidKind returns the first alphabetic word or empty', { numRuns: NUM_RUNS });
 });
 
 test('ensureFlowchartKind is a pure prepend-or-identity transform', () => {
-  fc.assert(fc.property(codeArb, (code) => {
+  fuzzAssert(fc.property(codeArb, (code) => {
     const out = ensureFlowchartKind(code);
     assert.ok(out === code || out === `graph TD\n${code.trim()}`, `${code} -> ${out}`);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'ensureFlowchartKind is a pure prepend-or-identity transform', { numRuns: NUM_RUNS });
 });
