@@ -74,10 +74,10 @@ async function checkForegroundConnection(client) {
  * Errors propagate to the caller — a failed resync must be visible, never a
  * silently stale page.
  * @param {object} client DaemonClient
- * @param {{ sessionId?: string }} options
+ * @param {{ sessionId?: string, address?: object | null }} options
  * @returns {Promise<{ sessions: object, workspaces: object, history: object | null }>}
  */
-async function resyncAfterReconnect(client, { sessionId = '' } = {}) {
+async function resyncAfterReconnect(client, { sessionId = '', address = null } = {}) {
   if (typeof client?.hostRpc !== 'function') {
     throw new Error('桌面端未启动');
   }
@@ -96,7 +96,7 @@ async function resyncAfterReconnect(client, { sessionId = '' } = {}) {
   ]);
   let history = null;
   if (sessionId) {
-    history = await unwrap('session.history', historyQuery(sessionId));
+    history = await unwrap('session.history', historyQuery(sessionId, address ? { address } : {}));
   }
   return { sessions, workspaces, history };
 }

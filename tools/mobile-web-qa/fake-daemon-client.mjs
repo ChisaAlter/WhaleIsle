@@ -849,7 +849,15 @@ function handleHostRpc(method, payload = {}) {
   if (method === 'agentPreset.list' || method === 'skill.list' || method === 'llm.models' || method === 'llm.providers') {
     return ok({ items: [] });
   }
-  if (method === 'subagent.list') return ok({ items: [] });
+  if (method === 'subagent.list') {
+    const entries = String(payload.parentSessionId || '') === 's-1'
+      ? [
+        { kind: 'child', id: 's-sub', mode: 'continuable', activity: 'inactive', hasChildren: false, label: '子任务：跑测试' },
+        { kind: 'child', id: 's-sub2', mode: 'one-shot', activity: 'inactive', hasChildren: false, label: '补录子任务' },
+      ]
+      : [];
+    return ok({ entries, parentAvailable: true });
+  }
   throw new Error(`unsupported host method ${method}`);
 }
 

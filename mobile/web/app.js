@@ -13,7 +13,7 @@ import { switchDraft } from './conversation/draft-switch.js';
 import { muxPatch, titleFromProjection } from './conversation/live.js';
 import { visibleScreen } from './ui/chrome.js';
 import { buttonBusy, clearButtonBusy } from './ui/button-busy.js?v=20261021-button-feedback';
-import { backTarget, createNavigation } from './ui/navigation.js?v=20261028-mobile';
+import { backTarget, createNavigation } from './ui/navigation.js?v=20261115-subagents';
 import { createSurface, createFocusScope, createMenuPositioner } from './ui/surfaces.js?v=20261025-anchored-menus';
 import { sessionOwner } from './ui/session-owner.js?v=20260906-interaction';
 import { blankGreeting } from './ui/greeting.js';
@@ -117,9 +117,14 @@ import {
   watchConnection,
 } from './chisacode/controller.js';
 import {
+  directSubagentRows,
+  groupSessionRows,
   isReadOnlyRow,
-  sessionRowForest,
-} from './chisacode/directory.js?v=20260907-session-fork';
+  isSubagentRow,
+  parentSessionIdOf,
+  subagentSheetItems,
+  visibleSessionRows,
+} from './chisacode/directory.js?v=20261115-subagents';
 import {
   resolveLogAnchor,
 } from './chisacode/timeline.js';
@@ -187,6 +192,7 @@ const hostLine = el('host-line');
 const gitPill = el('git-pill');
 const gitPillLabel = el('git-pill-label');
 const gitPillCount = el('git-pill-count');
+const subagentsBtn = el('subagents-btn');
 const sessionsPage = el('sessions-page');
 const drawerStatus = el('drawer-status');
 const drawerDirectory = el('drawer-directory');
@@ -326,6 +332,7 @@ const state = {
   sessions: [],
   catalogSessions: null,
   heldSession: null,
+  subagentRow: null,
   sessionsError: '',
   workspaces: { items: [], archivedSessionIds: [] },
   archivedRows: [],
@@ -347,6 +354,8 @@ const state = {
   folderCreate: null,
   workspaceMenu: '',
   history: null,
+  subagentSheet: false,
+  subagentCatalog: null,
   modelPane: null,
   modelBusy: false,
   modelCatalog: { current: null, rows: [], failures: [] },
@@ -470,6 +479,7 @@ function backOneSurface() {
   else if (target === 'drawer') setDrawerOpen(false);
   else if (target === 'scan') { closeScan(); return; }
   else if (target === 'sessionMenu' || target === 'workspaceMenu') state[target] = '';
+  else if (target === 'subagents') state.subagentSheet = false;
   else if (target === 'sessions') state.sessionsOpen = false;
   renderSheet(); renderDialog(); renderLightbox(); renderScreen();
   if (pickerPage && state.pickerSheet === 'model' && !state.pickerPage) {
@@ -802,6 +812,7 @@ function openSessionsPage() {
   state.history = null;
   state.sessionMenu = '';
   state.workspaceMenu = '';
+  state.subagentSheet = false;
   state.gitDialog = '';
   clearExclusiveDialogs();
   renderSheet(); renderDialog();
@@ -815,6 +826,7 @@ function currentRow() {
   const live = state.sessions.find((row) => row.sessionId === state.sessionId);
   if (live) return live;
   if (state.heldSession?.sessionId === state.sessionId) return state.heldSession;
+  if (state.subagentRow?.sessionId === state.sessionId) return state.subagentRow;
   return undefined;
 }
 
@@ -946,13 +958,85 @@ function renderHeader() {
     gitPillLabel.textContent = hasRef ? state.gitStatus.refName : 'Initialize Git';
     gitPillCount.textContent = hasRef && state.gitStatus.aheadCount > 0 ? `↑${state.gitStatus.aheadCount}` : '';
   }
+  syncSubagentButton(row);
   syncRunning();
   scheduleNativeSnapshot();
 }
 
-function sessionRowNode(row, { child = false, subagentTag = false } = {}) {
+/**
+ * The header「子智能体」entry mirrors the desktop title-bar lineage menu:
+ * visible only while the open conversation owns direct subagents, or is
+ * itself a subagent (where the same sheet offers「返回父会话」).
+ */
+function syncSubagentButton(row = currentRow()) {
+  if (!subagentsBtn) return;
+  const catalog = state.subagentCatalog?.sessionId === state.sessionId ? state.subagentCatalog : null;
+  const visible = Boolean(row && state.sessionId)
+    && (isSubagentRow(row)
+      || directSubagentRows(state.sessions, state.sessionId).length > 0
+      || (catalog?.entries.length ?? 0) > 0);
+  subagentsBtn.classList.toggle('hidden', !visible);
+  if (!visible && state.subagentSheet && catalog?.loading !== true) {
+    state.subagentSheet = false;
+    renderSheet();
+  }
+}
+
+function openSubagentSheet() {
+  if (!state.sessionId || navigationBusy()) return;
+  state.sessionMenu = '';
+  state.workspaceMenu = '';
+  state.pickerSheet = '';
+  state.pickerPage = '';
+  state.attachOpen = false;
+  state.history = null;
+  state.newSession = null;
+  state.gitDialog = '';
+  setDrawerOpen(false);
+  state.subagentSheet = true;
+  void loadSubagentCatalog(state.sessionId);
+  renderSheet();
+}
+
+/**
+ * `subagent.list` supplements loaded rows and decides whether the header
+ * entry exists at all: children archived or missing from `session.list`
+ * only appear here. Stale replies never land on a different session.
+ */
+async function loadSubagentCatalog(parentSessionId) {
+  if (!parentSessionId) return;
+  const owner = sessionOwner(state);
+  state.subagentCatalog = { sessionId: parentSessionId, loading: true, error: '', entries: [] };
+  renderSheet();
+  const keep = () => owner.owns()
+    && state.sessionId === parentSessionId
+    && state.subagentCatalog?.sessionId === parentSessionId;
+  try {
+    const result = await call('subagent.list', { parentSessionId });
+    const value = result?.value !== undefined ? result.value : result;
+    if (!keep()) return;
+    state.subagentCatalog = {
+      sessionId: parentSessionId,
+      loading: false,
+      error: '',
+      entries: Array.isArray(value?.entries) ? value.entries : [],
+    };
+  } catch (error) {
+    if (!keep()) return;
+    state.subagentCatalog = {
+      sessionId: parentSessionId,
+      loading: false,
+      error: error?.message || '电脑没有响应',
+      entries: [],
+    };
+  }
+  renderSheet();
+  syncSubagentButton();
+}
+
+function sessionRowNode(row, { subagentCount = 0 } = {}) {
   const wrap = document.createElement('div');
-  wrap.className = `session-row${child ? ' session-child' : ''}`;
+  wrap.className = 'session-row';
   if (row.sessionId) wrap.dataset.sessionId = row.sessionId;
   const button = document.createElement('button');
   button.type = 'button';
@@ -962,7 +1046,7 @@ function sessionRowNode(row, { child = false, subagentTag = false } = {}) {
   const meta = document.createElement('span');
   meta.className = 'session-meta';
   meta.textContent = [
-    child || subagentTag ? '子智能体' : '',
+    subagentCount > 0 ? `${subagentCount} 个 subagent` : '',
     row.running ? '运行中' : '',
     row.searchSnippet || '',
   ].filter(Boolean).join(' · ');
@@ -1082,13 +1166,11 @@ function drawerFootButton(label, { disabled = false, onClick }) {
 }
 
 function appendGroupedRows(nodes, rows, { inWorkspace = false } = {}) {
-  const walk = (node, { child = false } = {}) => {
-    const rowNode = sessionRowNode(node.row, { child, subagentTag: node.orphanSubagent });
+  for (const group of groupSessionRows(rows)) {
+    const rowNode = sessionRowNode(group.row, { subagentCount: group.subagentCount });
     if (inWorkspace) rowNode.classList.add('in-workspace');
     nodes.push(rowNode);
-    for (const kid of node.children || []) walk(kid, { child: true });
-  };
-  for (const node of sessionRowForest(rows)) walk(node);
+  }
 }
 
 function renderSessions() {
@@ -1118,7 +1200,7 @@ function renderSessions() {
     if (!state.searchLoading && !hits.length) {
       nodes.push(descNode('没有匹配的会话'));
     } else if (!state.searchLoading) {
-      nodes.push(cardOfRows(hits.map((hit) => sessionRowNode(hit, { subagentTag: isReadOnlyRow(hit) }))));
+      nodes.push(cardOfRows(hits.map((hit) => sessionRowNode(hit))));
       if (state.searchHasMore) {
         nodes.push(descNode('还有更多结果，请改用更精确的词'));
       }
@@ -1128,7 +1210,7 @@ function renderSessions() {
     for (const section of sections) {
       const group = document.createElement('div');
       group.className = 'ws-group';
-      group.append(workspaceHeadNode(section.workspace, { count: section.rows.length }));
+      group.append(workspaceHeadNode(section.workspace, { count: visibleSessionRows(section.rows).length }));
       if (state.expandedWorkspaces[section.workspace.workspaceId] !== false) {
         group.append(cardOfRows(collectRows(section.rows, { inWorkspace: true })));
       }
@@ -1158,6 +1240,7 @@ function renderSessions() {
   }
   sessionList.replaceChildren(...nodes);
   renderDrawer(rows);
+  syncSubagentButton();
   scheduleNativeSnapshot();
 }
 
@@ -1166,7 +1249,7 @@ function renderDrawer(visibleRows) {
   const rows = Array.isArray(visibleRows)
     ? visibleRows
     : state.sessions.filter((row) => !row.archived && !isUntitledBlank(row));
-  navSessionsCount.textContent = String(rows.length);
+  navSessionsCount.textContent = String(visibleSessionRows(rows).length);
   const host = (state.hostName || '我的电脑').trim() || '我的电脑';
   drawerAvatar.textContent = host.charAt(0);
   drawerAccountName.textContent = host;
@@ -1180,7 +1263,7 @@ function renderDrawer(visibleRows) {
   for (const section of sections) {
     const group = document.createElement('div');
     group.className = 'drawer-workspace';
-    group.append(workspaceHeadNode(section.workspace, { count: section.rows.length }));
+    group.append(workspaceHeadNode(section.workspace, { count: visibleSessionRows(section.rows).length }));
     if (state.expandedWorkspaces[section.workspace.workspaceId] !== false) {
       const children = [];
       appendGroupedRows(children, section.rows, { inWorkspace: true });
@@ -1230,10 +1313,12 @@ async function runSessionSearch(query) {
     if (state.chisacode !== paired || state.query.trim() !== query) return;
     const byId = new Map(state.sessions.map((row) => [row.sessionId, row]));
     const items = Array.isArray(result.items) ? result.items : [];
-    state.searchHits = items.slice(0, 20).map((item) => ({
-      ...(byId.get(item.sessionId) || { sessionId: item.sessionId, projections: { values: {} } }),
-      searchSnippet: item.snippet || '',
-    }));
+    state.searchHits = items.slice(0, 20)
+      .map((item) => ({
+        ...(byId.get(item.sessionId) || { sessionId: item.sessionId, projections: { values: {} } }),
+        searchSnippet: item.snippet || '',
+      }))
+      .filter((hit) => !isSubagentRow(hit));
     state.searchHasMore = result.hasMore === true || items.length > 20;
     state.searchLoading = false;
     renderSessions();
@@ -2677,7 +2762,7 @@ async function loadOlderMessages() {
   state.timelineLoadingOlder = true;
   renderLog({ anchor: 'preserve' });
   try {
-    const payload = await hostCall(paired.client, 'session.history', historyQuery(sessionId, {
+    const payload = await hostCall(paired.client, 'session.history', historyRequest(sessionId, {
       beforeSeq: page.beforeSeq,
     }));
     if (state.chisacode !== paired || state.sessionId !== sessionId) return;
@@ -3131,7 +3216,7 @@ function pullCurrentHistory() {
   const client = state.chisacode?.client;
   if (!sessionId || !client) return Promise.resolve();
   if (historyPullInflight) return historyPullInflight;
-  const fetchPage = (extra) => hostCall(client, 'session.history', historyQuery(sessionId, extra));
+  const fetchPage = (extra) => hostCall(client, 'session.history', historyRequest(sessionId, extra));
   historyPullInflight = fetchPage(state.events.length ? { maxMessages: POLL_PAGE_MESSAGES } : {})
     .then(async (payload) => {
       if (state.sessionId !== sessionId) return;
@@ -3208,6 +3293,9 @@ function forceLogout(message, { forget = true } = {}) {
   state.sessionConfirm = null;
   state.sessionRename = null;
   state.workspaceMenu = '';
+  state.subagentSheet = false;
+  state.subagentCatalog = null;
+  state.subagentRow = null;
   state.history = null;
   state.modelPane = null;
   state.modelBusy = false;
@@ -3340,6 +3428,7 @@ async function runReconnectResync() {
   try {
     const { sessions, workspaces, history } = await resyncAfterReconnect(paired.client, {
       sessionId,
+      address: subagentHistoryAddress(sessionId),
     });
     if (state.chisacode !== paired) return;
     applyHostCatalog({ sessions, workspaces });
@@ -3357,6 +3446,7 @@ async function runReconnectResync() {
     showBanner('');
     startLiveFollow();
     void refreshProjections();
+    void loadSubagentCatalog(state.sessionId);
     setToast('已重新连接并同步', { tone: 'success' });
   } catch (error) {
     if (state.chisacode !== paired) return;
@@ -3472,7 +3562,7 @@ async function connect(offerUrl) {
   }, { replace: true });
 }
 
-async function openSession(sessionId) {
+async function openSession(sessionId, options = {}) {
   state.sessionEpoch++;
   state.sendBusy = false;
   state.modelBusy = false;
@@ -3486,6 +3576,7 @@ async function openSession(sessionId) {
   state.pickerSheet = '';
   state.pickerPage = '';
   state.attachOpen = false;
+  state.subagentSheet = false;
   clearExclusiveDialogs();
   renderSheet(); renderDialog();
   const previousSessionId = state.sessionId;
@@ -3503,6 +3594,22 @@ async function openSession(sessionId) {
   if (state.catalogSessions) {
     applyHostCatalog({ sessions: state.catalogSessions, workspaces: state.workspaces });
   }
+  // `subagentRow` remembers the open address (parent + mode) for paging, and
+  // doubles as the row for a catalog child absent from session.list so the
+  // view stays read-only and titled like any other subagent.
+  state.subagentRow = options.subagent
+    ? {
+      sessionId,
+      origin: 'subagent',
+      parentSessionId: options.subagent.parentSessionId || '',
+      subagentMode: options.subagent.mode || 'unknown',
+      running: false,
+      archived: false,
+      blank: false,
+      cwd: '',
+      projections: { values: { title: options.subagent.label || '' } },
+    }
+    : null;
   state.sessionsOpen = false;
   setDrawerOpen(false);
   renderScreen();
@@ -3529,12 +3636,12 @@ async function openSession(sessionId) {
   renderHeader();
   let history;
   try {
-    history = await call('session.history', historyQuery(sessionId));
+    history = await call('session.history', historyRequest(sessionId));
   } catch (error) {
     if (state.sessionId !== sessionId) return;
     state.timelineLoading = false;
     state.timelineError = error?.message || '电脑没有响应';
-    operationError(`载入会话失败：${state.timelineError}`, () => openSession(sessionId));
+    operationError(`载入会话失败：${state.timelineError}`, () => openSession(sessionId, options));
     renderLog({ anchor: 'bottom' });
     throw error;
   }
@@ -3548,6 +3655,7 @@ async function openSession(sessionId) {
   startLiveFollow();
   void refreshProjections();
   void loadSessionModels();
+  void loadSubagentCatalog(sessionId);
   void refreshGit();
   renderHeader();
   renderSessions();
@@ -3637,6 +3745,7 @@ function startNewSessionChooser() {
   state.history = null;
   state.sessionMenu = '';
   state.workspaceMenu = '';
+  state.subagentSheet = false;
   state.attachOpen = false;
   state.gitDialog = '';
   setDrawerOpen(false);
@@ -3841,9 +3950,33 @@ function sessionRowById(sessionId) {
   return state.sessions.find((row) => row.sessionId === sessionId);
 }
 
+/** `session.history` needs the parent address to read a subagent timeline. */
+function subagentHistoryAddress(sessionId) {
+  const held = state.subagentRow?.sessionId === sessionId ? state.subagentRow : null;
+  const row = sessionRowById(sessionId) || held;
+  if (!row || !isSubagentRow(row)) return null;
+  const parentSessionId = parentSessionIdOf(row) || held?.parentSessionId || '';
+  if (!parentSessionId || parentSessionId === sessionId) return null;
+  const catalog = state.subagentCatalog?.sessionId === parentSessionId ? state.subagentCatalog : null;
+  const catalogEntry = catalog?.entries?.find?.((entry) => entry?.id === sessionId);
+  return {
+    kind: 'subagent',
+    parentSessionId,
+    childSessionId: sessionId,
+    mode: held?.subagentMode || row.subagentMode || catalogEntry?.mode || 'unknown',
+  };
+}
+
+function historyRequest(sessionId, extra = {}) {
+  const address = subagentHistoryAddress(sessionId);
+  return historyQuery(sessionId, address ? { address, ...extra } : extra);
+}
+
 function clearSessionView(sessionId) {
   if (state.sessionId !== sessionId) return;
   state.sessionId = '';
+  state.subagentRow = null;
+  state.subagentCatalog = null;
   state.events = [];
   state.pendingApprovals = [];
   state.sessionValues = {};
@@ -4124,7 +4257,7 @@ async function runHostCommand(line, images = []) {
   );
   admitCommandResult(value, line);
   if (!owner.owns()) return;
-  const history = await hostCall(owner.client, 'session.history', historyQuery(owner.sessionId));
+  const history = await hostCall(owner.client, 'session.history', historyRequest(owner.sessionId));
   if (!owner.owns()) return;
   applyHistoryPayload(history, { merge: true });
   renderLog();
@@ -4271,7 +4404,7 @@ async function respondToPendingApproval(pending, response) {
       sessionId: pending.sessionId || owner.sessionId,
     },
     outcome,
-    loadHistory: (sessionId) => hostCall(client, 'session.history', historyQuery(sessionId)),
+    loadHistory: (sessionId) => hostCall(client, 'session.history', historyRequest(sessionId)),
     });
     if (!owner.owns()) return;
     if (result.ok) {
@@ -5211,6 +5344,7 @@ function openSettings(pane = '') {
   state.history = null;
   state.sessionMenu = '';
   state.workspaceMenu = '';
+  state.subagentSheet = false;
   state.gitDialog = '';
   clearExclusiveDialogs();
   renderSheet(); renderDialog();
@@ -6677,6 +6811,7 @@ function sheetTrigger() {
   if (state.pickerSheet === 'model') return modelChip;
   if (state.pickerSheet === 'mode') return accessChip;
   if (state.gitDialog === 'menu') return gitPill;
+  if (state.subagentSheet) return subagentsBtn;
   const directory = state.sessionsOpen ? sessionList : drawerDirectory;
   if (state.sessionMenu) return [...directory.querySelectorAll('.session-row')]
     .find((node) => node.dataset.sessionId === state.sessionMenu)?.querySelector('.session-more');
@@ -6688,7 +6823,7 @@ function sheetTrigger() {
 function sheetLayer(title, closeSheet) {
   const task = Boolean(state.newSession?.step === 'browse' || state.history || state.gitDialog === 'branch');
   const modal = !task && Boolean(state.newSession);
-  const anchor = state.pickerSheet || state.attachOpen ? 'composer' : state.gitDialog === 'menu' ? 'header' : 'viewport';
+  const anchor = state.pickerSheet || state.attachOpen ? 'composer' : (state.gitDialog === 'menu' || state.subagentSheet) ? 'header' : 'viewport';
   const result = createSurface(document, {
     title, task, variant: task ? 'task' : modal ? 'modal' : 'menu', anchor,
     onClose: () => { if (!navigationBusy()) closeSheet(); },
@@ -6815,6 +6950,90 @@ function renderSessionMenuSheet() {
     onClick: () => startSessionConfirm('archive', row),
   }));
   sheet.append(...items);
+  sheetRoot.append(layer);
+}
+
+function subagentTimeText(value) {
+  const time = Date.parse(value || '');
+  if (!time) return '';
+  return new Date(time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function subagentSheetItem(item) {
+  const label = item.row ? sessionTitle(item.row) : (item.entry?.label || item.sessionId);
+  const parts = [];
+  if (item.diagnostic) {
+    parts.push('无法打开');
+  } else {
+    if (item.running) parts.push('运行中');
+    if (item.mode === 'one-shot') parts.push('一次性');
+    else if (item.mode === 'continuable') parts.push('可继续');
+    const time = subagentTimeText(item.activityAt);
+    if (time) parts.push(time);
+  }
+  return {
+    label,
+    hint: parts.filter(Boolean).join(' · '),
+    enabled: !item.diagnostic,
+    onClick: () => {
+      state.subagentSheet = false;
+      renderSheet();
+      openSession(item.sessionId, {
+        subagent: {
+          parentSessionId: state.sessionId,
+          mode: item.mode || 'unknown',
+          label,
+        },
+      }).catch((error) => showBanner(error.message));
+    },
+  };
+}
+
+/** Direct children of the open conversation — the desktop lineage catalog's scope. */
+function renderSubagentSheet() {
+  const row = currentRow();
+  if (!row) {
+    state.subagentSheet = false;
+    return;
+  }
+  const { layer, sheet } = sheetLayer('子智能体', () => {
+    state.subagentSheet = false;
+    renderSheet();
+  });
+  const parentId = isSubagentRow(row) ? parentSessionIdOf(row) : '';
+  if (parentId) {
+    const parentRow = sessionRowById(parentId);
+    sheet.append(sheetItem({
+      label: '返回父会话',
+      hint: parentRow ? sessionTitle(parentRow) : '',
+      onClick: () => {
+        state.subagentSheet = false;
+        renderSheet();
+        openSession(parentId).catch((error) => showBanner(error.message));
+      },
+    }));
+  }
+  const catalog = state.subagentCatalog?.sessionId === state.sessionId ? state.subagentCatalog : null;
+  const items = subagentSheetItems(state.sessions, state.sessionId, catalog?.entries);
+  for (const item of items) {
+    sheet.append(sheetItem(subagentSheetItem(item)));
+  }
+  if (catalog?.error) {
+    const note = document.createElement('p');
+    note.className = 'sheet-note';
+    note.textContent = catalog.error;
+    sheet.append(note);
+    sheet.append(sheetItem({
+      label: '重试',
+      onClick: () => void loadSubagentCatalog(state.sessionId),
+    }));
+  } else if (!items.length && catalog?.loading !== true) {
+    const note = document.createElement('p');
+    note.className = 'sheet-note';
+    note.textContent = '这个会话没有子智能体。';
+    sheet.append(note);
+  }
+  surfaceBusy(sheet, catalog?.loading === true);
   sheetRoot.append(layer);
 }
 
@@ -7100,6 +7319,7 @@ function openPicker(kind) {
   state.history = null;
   state.sessionMenu = '';
   state.workspaceMenu = '';
+  state.subagentSheet = false;
   state.pickerError = '';
   state.modelQuery = '';
   state.pickerPage = '';
@@ -7157,6 +7377,10 @@ function renderSheet() {
       sheetRoot.append(layer);
       return;
     }
+  }
+  if (state.subagentSheet) {
+    renderSubagentSheet();
+    if (state.subagentSheet) return;
   }
   if (state.attachOpen) {
     const { layer, sheet } = sheetLayer('添加附件', () => {
@@ -7843,6 +8067,7 @@ el('new-session').addEventListener('click', () => {
 el('new-chat-top').addEventListener('click', () => {
   createSession().catch((error) => showBanner(error.message));
 });
+subagentsBtn.addEventListener('click', () => openSubagentSheet());
 el('nav-sessions').addEventListener('click', () => openSessionsPage());
 el('nav-workspace').addEventListener('click', () => openWorkspacePane());
 el('nav-settings').addEventListener('click', () => openSettings(''));

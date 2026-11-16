@@ -158,13 +158,15 @@ async function main() {
     const agents = await qaCalls(page, 'fetchAgents');
     assert(agents.length === 0, `fetchAgents was called: ${JSON.stringify(agents)}`);
   });
-  await check('子智能体：折叠在父会话下并标注', async () => {
-    const child = await page.evaluate(() => {
-      const row = document.querySelector('#session-list .session-row.session-child');
-      return row ? row.textContent : '';
-    });
-    assert(child.includes('子任务'), 'child row missing');
-    assert(child.includes('子智能体'), 'child row missing 子智能体 tag');
+  await check('子智能体：列表不显示（与桌面一致），父会话行带数量提示', async () => {
+    const view = await page.evaluate(() => ({
+      childRows: document.querySelectorAll('#session-list .session-child').length,
+      titles: [...document.querySelectorAll('#session-list .session b')].map((node) => node.textContent),
+      metas: [...document.querySelectorAll('#session-list .session-meta')].map((node) => node.textContent),
+    }));
+    assert(view.childRows === 0, `subagent rows rendered: ${view.childRows}`);
+    assert(!view.titles.includes('子任务：跑测试'), `subagent title leaked: ${view.titles}`);
+    assert(view.metas.some((text) => text.includes('1 个 subagent')), `count hint missing: ${view.metas}`);
   });
   await check('活会话菜单没有删除', async () => {
     await page.evaluate(() => {
@@ -197,6 +199,17 @@ async function main() {
     );
     const searches = await qaCalls(page, 'session.search');
     assert(searches.length >= 1, 'session.search was not called');
+    await page.evaluate(() => {
+      const input = document.querySelector('#search');
+      input.value = '子任务';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await waitFor(
+      page,
+      () => (document.querySelector('#session-list')?.textContent || '').includes('没有匹配的会话'),
+      'subagent search hit filtered',
+      3000,
+    );
     await page.evaluate(() => {
       const input = document.querySelector('#search');
       input.value = '';
@@ -434,16 +447,81 @@ async function main() {
     await waitFor(page, () => document.querySelector('#draft').value === '会话1的草稿', 's-1 draft restored');
   });
 
-  await check('子智能体打开为只读', async () => {
-    await page.click('#menu');
-    await clickByText(page, '#session-list .session-child .session', '子任务');
+  await check('子智能体：父会话入口打开只读并可返回', async () => {
+    await waitFor(
+      page,
+      () => {
+        const btn = document.querySelector('#subagents-btn');
+        return btn && !btn.classList.contains('hidden');
+      },
+      'subagent entry visible',
+    );
+    await page.click('#subagents-btn');
+    await waitFor(
+      page,
+      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
+        .some((node) => node.textContent.includes('子任务')),
+      'subagent sheet item',
+    );
+    const calls = await qaCalls(page, 'subagent.list');
+    assert(calls.length >= 1, 'subagent.list was not called');
+    await clickByText(page, '#sheet-root .sheet-item', '子任务');
     await waitFor(page, () => !document.querySelector('#readonly-note').classList.contains('hidden'), 'readonly note');
     const view = await page.evaluate(() => ({
       note: document.querySelector('#readonly-note').textContent,
       composerHidden: document.querySelector('#composer').classList.contains('hidden'),
+      title: document.querySelector('#chat-title')?.textContent || '',
     }));
     assert(view.note.includes('子智能体会话（只读）'), `note: ${view.note}`);
     assert(view.composerHidden, 'composer must hide for read-only');
+    assert(view.title.includes('子任务'), `child title: ${view.title}`);
+    await page.click('#subagents-btn');
+    await waitFor(
+      page,
+      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
+        .some((node) => node.textContent.includes('返回父会话')),
+      'parent entry',
+    );
+    await clickByText(page, '#sheet-root .sheet-item', '返回父会话');
+    await waitFor(
+      page,
+      () => (document.querySelector('#chat-title')?.textContent || '').includes('会话 1'),
+      'back to parent',
+    );
+    // A child absent from session.list must still open through its durable catalog address.
+    await page.click('#subagents-btn');
+    await waitFor(
+      page,
+      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
+        .some((node) => node.textContent.includes('补录子任务')),
+      'catalog-only child',
+    );
+    await clickByText(page, '#sheet-root .sheet-item', '补录子任务');
+    await waitFor(
+      page,
+      () => !document.querySelector('#readonly-note').classList.contains('hidden'),
+      'catalog-only readonly',
+    );
+    const historyCalls = await qaCalls(page, 'session.history');
+    assert(
+      historyCalls.some(([payload]) => payload?.address?.kind === 'subagent'
+        && payload.address.childSessionId === 's-sub2'
+        && payload.address.parentSessionId === 's-1'),
+      'subagent history address missing',
+    );
+    await page.click('#subagents-btn');
+    await waitFor(
+      page,
+      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
+        .some((node) => node.textContent.includes('返回父会话')),
+      'parent entry for catalog child',
+    );
+    await clickByText(page, '#sheet-root .sheet-item', '返回父会话');
+    await waitFor(
+      page,
+      () => (document.querySelector('#chat-title')?.textContent || '').includes('会话 1'),
+      'back to parent again',
+    );
   });
   await shot('mobile-web-phase1-readonly');
 

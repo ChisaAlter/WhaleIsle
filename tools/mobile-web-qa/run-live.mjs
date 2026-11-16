@@ -385,7 +385,9 @@ async function main() {
   const hostSessions = await harnessRpc('session.list');
   const hostWorkspaces = await harnessRpc('workspace.list');
   const hostLive = liveHostRows(hostSessions, hostWorkspaces);
-  const hostTitles = new Set(hostLive.map(titleOf));
+  // Subagent sessions are no longer listed in the SPA drawer (desktop parity),
+  // so the drawer/host title comparison only covers listed rows.
+  const hostTitles = new Set(hostLive.filter((row) => row.origin !== 'subagent').map(titleOf));
   const hostWorkspaceTitles = (hostWorkspaces?.items || []).map((item) => item.title || item.path);
   console.log(`[live] host live sessions=${hostLive.length} workspaces=${hostWorkspaceTitles.length}`);
 
@@ -549,16 +551,18 @@ async function main() {
       assert(hostLive.every((row) => row.origin !== 'dshbot' || !drawer.titles.includes(titleOf(row))), 'dshbot leaked');
     });
 
-    await check('子智能体：折叠在父下并标注', async () => {
+    await check('子智能体：列表不显示（与桌面一致），父会话行带数量提示', async () => {
       const drawer = await dumpDrawer(page);
-      const childHost = hostLive.filter((row) => row.parentSessionId);
-      assert(childHost.length >= 1, 'host has no parentSessionId rows to compare');
-      assert(drawer.childTitles.length >= 1, `no session-child rows; titles=${drawer.titles.slice(0, 6)}`);
-      const expected = titleOf(childHost[0]);
-      assert(
-        drawer.childTitles.includes(expected) || drawer.titles.includes(expected),
-        `child title missing: ${expected}`,
+      const childHost = hostLive.filter((row) => row.parentSessionId && row.origin === 'subagent');
+      assert(childHost.length >= 1, 'host has no subagent rows to compare');
+      assert.equal(drawer.childTitles.length, 0, `session-child rows: ${drawer.childTitles}`);
+      for (const child of childHost) {
+        assert(!drawer.titles.includes(titleOf(child)), `subagent title leaked: ${titleOf(child)}`);
+      }
+      const metas = await page.evaluate(
+        () => [...document.querySelectorAll('#session-list .session-meta')].map((node) => node.textContent),
       );
+      assert(metas.some((text) => text.includes('个 subagent')), `count hint missing: ${metas.slice(0, 8)}`);
     });
 
     await check('活会话菜单没有删除', async () => {
@@ -638,15 +642,43 @@ async function main() {
     });
     await shot('live-timeline');
 
-    await check('子智能体打开为只读', async () => {
+    await check('子智能体：父会话入口打开只读并可返回', async () => {
+      const childHost = hostLive.filter((row) => row.parentSessionId && row.origin === 'subagent');
+      const parentTitle = titleOf(hostLive.find((row) => row.sessionId === childHost[0].parentSessionId));
+      const childTitle = titleOf(childHost[0]);
       await openDrawer(page);
-      const opened = await page.evaluate(() => {
-        const hit = document.querySelector('#session-list .session-child .session');
-        if (!hit) return '';
+      const opened = await page.evaluate((title) => {
+        const hit = [...document.querySelectorAll('#session-list .session')]
+          .find((node) => node.querySelector('b')?.textContent === title);
+        if (!hit) return false;
         hit.click();
-        return hit.querySelector('b')?.textContent || 'child';
-      });
-      assert(opened, 'no child row to open');
+        return true;
+      }, parentTitle);
+      assert(opened, `missing parent session ${parentTitle}`);
+      await waitFor(
+        page,
+        () => {
+          const btn = document.querySelector('#subagents-btn');
+          return btn && !btn.classList.contains('hidden');
+        },
+        'subagent entry',
+        15_000,
+      );
+      await page.click('#subagents-btn');
+      await waitFor(
+        page,
+        () => document.querySelectorAll('#sheet-root .sheet-item').length >= 1,
+        'subagent sheet',
+        8000,
+      );
+      const clicked = await page.evaluate((title) => {
+        const item = [...document.querySelectorAll('#sheet-root .sheet-item')]
+          .find((node) => node.textContent.includes(title) && !node.disabled);
+        if (!item) return false;
+        item.click();
+        return true;
+      }, childTitle);
+      assert(clicked, `child item missing: ${childTitle}`);
       await waitFor(
         page,
         () => !document.querySelector('#readonly-note')?.classList.contains('hidden')
@@ -659,6 +691,24 @@ async function main() {
         composerHidden: document.querySelector('#composer')?.classList.contains('hidden'),
       }));
       assert(view.note.includes('只读') || view.composerHidden, `not readonly: ${JSON.stringify(view)}`);
+      await page.click('#subagents-btn');
+      await waitFor(
+        page,
+        () => [...document.querySelectorAll('#sheet-root .sheet-item')]
+          .some((node) => node.textContent.includes('返回父会话')),
+        'parent entry',
+        8000,
+      );
+      await page.evaluate(() => {
+        [...document.querySelectorAll('#sheet-root .sheet-item')]
+          .find((node) => node.textContent.includes('返回父会话'))?.click();
+      });
+      await waitFor(
+        page,
+        () => (document.querySelector('#chat-title')?.textContent || '') === parentTitle,
+        'back to parent',
+        15_000,
+      );
     });
     await shot('live-readonly');
 

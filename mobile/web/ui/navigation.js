@@ -9,6 +9,7 @@ export function backTarget(state) {
   if (state.history) return 'history';
   if (state.sessionMenu) return 'sessionMenu';
   if (state.workspaceMenu) return 'workspaceMenu';
+  if (state.subagentSheet) return 'subagents';
   if (state.pickerSheet) return 'picker';
   if (state.attachOpen) return 'attachment';
   if (state.sessionsOpen) return 'sessions';

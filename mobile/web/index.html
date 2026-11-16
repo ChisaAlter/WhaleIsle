@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Whale Isle · 手机远程</title>
     <link rel="stylesheet" href="./tokens.css?v=20261025-remote-refinement" />
-    <link rel="stylesheet" href="./app.css?v=20261028-mobile" />
+    <link rel="stylesheet" href="./app.css?v=20261115-subagents" />
 </head>
 <body>
   <div class="phone" id="phone">
@@ -119,6 +119,9 @@
           <h2 class="title" id="chat-title">新会话</h2>
         </div>
         <span class="meta-host sr-only" id="host-line">Whale Isle</span>
+        <button class="icon-btn topbar-btn hidden" type="button" id="subagents-btn" aria-label="子智能体">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 16.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 3.6a3 3 0 0 1 0 4.8M15.5 12.7c1.3.6 2 1.8 2 3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
         <button class="icon-btn topbar-btn" type="button" id="new-chat-top" aria-label="新会话">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3.5H5.5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="m9 11 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         </button>
@@ -255,6 +258,6 @@
     <input type="file" accept="image/*" capture="environment" id="file-camera" hidden />
     <input type="file" accept="image/*" multiple id="file-gallery" hidden />
   </div>
-    <script type="module" src="./app.js?v=20261028-mobile"></script>
+    <script type="module" src="./app.js?v=20261115-subagents"></script>
 </body>
 </html>

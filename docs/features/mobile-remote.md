@@ -45,7 +45,7 @@
 - 搜索：`session.search`（最多 20，有 snippet）。不得把「仅过滤已加载标题」写成与桌面同等。全文索引由桌面全量启动 overlay 打开（`openAt: first-search`），skip 恢复不传该 overlay。
 - 行 ⋯：重命名 `session.rename`；Fork `session.fork`；归档 `workspace.archiveSession`。活会话 **没有删除**。
 - 已归档：默认折叠、点行不打开；⋯ 取消归档 `workspace.unarchiveSession` 或删除 `session.delete`（仅已归档）。
-- 子智能体：`parentSessionId` 折到父下；打开只读 composer。
+- 子智能体：不出现在列表与搜索结果（与桌面侧栏一致）；父会话行保留「N 个 subagent」计数提示，顶栏「子智能体」入口列出直接子代理（已加载行 + `subagent.list` 补齐），打开只读 composer，sheet 内可返回父会话。
 - 状态点：至少 `running`。审批/计划等待用 mux 或 history 轮询补。
 - 手动排序：`workspace.insertSessionBefore`（手机行菜单上移/下移）。
 - **禁止：** `fetchAgents` / `createAgent` 当目录或新会话。Host `session.list` v1 一次返回全部：SPA 无假分页。

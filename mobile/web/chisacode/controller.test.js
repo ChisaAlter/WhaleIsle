@@ -132,6 +132,24 @@ test('resyncAfterReconnect refetches host session.list and current history', asy
   ]);
 });
 
+test('resyncAfterReconnect forwards the subagent history address', async () => {
+  const calls = [];
+  const client = {
+    async hostRpc(method, payload) {
+      calls.push([method, payload]);
+      if (method === 'session.history') return { ok: true, value: { events: [], hasMore: false } };
+      return { ok: true, value: { items: [] } };
+    },
+  };
+  const address = { kind: 'subagent', parentSessionId: 's-1', childSessionId: 's-sub', mode: 'continuable' };
+  await resyncAfterReconnect(client, { sessionId: 's-sub', address });
+  assert.deepEqual(calls.find(([method]) => method === 'session.history')[1], {
+    sessionId: 's-sub',
+    maxMessages: 50,
+    address,
+  });
+});
+
 test('resyncAfterReconnect skips history without an open session and propagates errors', async () => {
   const result = await resyncAfterReconnect({
     async hostRpc(method) {
