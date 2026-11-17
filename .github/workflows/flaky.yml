@@ -46,7 +46,7 @@ jobs:
         run: node scripts/flaky-report.mjs --repeat 3 flaky-results
       - name: Observe three complete test rounds under Xvfb
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum node scripts/flaky-report.mjs --repeat 3 flaky-results
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -noreset" node scripts/flaky-report.mjs --repeat 3 flaky-results
       - name: Preserve per-round test results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
