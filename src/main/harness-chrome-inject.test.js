@@ -5,6 +5,9 @@ const path = require('path');
 const vm = require('node:vm');
 
 const injectSource = fs.readFileSync(path.join(__dirname, 'harness-chrome-inject.js'), 'utf8');
+// chrome.js concatenates src/shared/dom.js ahead of the inject source; the
+// sandbox evaluations below mirror that (it publishes window.whaleDom).
+const domSource = fs.readFileSync(path.join(__dirname, '../shared/dom.js'), 'utf8');
 
 test('injected chrome script is a re-runnable IIFE with no Node exports', () => {
   assert.match(injectSource.trimStart(), /^\(\(\)\s*=>/);
@@ -82,6 +85,7 @@ test('injected chrome regrows dropped nodes through a scoped self-heal observer'
 
 test('injected chrome script can be evaluated twice in one realm', () => {
   const context = vm.createContext(createInjectSandbox());
+  assert.doesNotThrow(() => vm.runInContext(domSource, context));
   assert.doesNotThrow(() => vm.runInContext(injectSource, context));
   assert.doesNotThrow(() => vm.runInContext(injectSource, context));
   const hosts = context.document.querySelectorAll('#dshd-shell-controls');
@@ -91,6 +95,7 @@ test('injected chrome script can be evaluated twice in one realm', () => {
 test('injected measure publishes window-control insets with an 8px plate margin', () => {
   const cssVars = {};
   const context = vm.createContext(createInjectSandbox({ cssVars }));
+  vm.runInContext(domSource, context);
   vm.runInContext(injectSource, context);
   assert.equal(cssVars['--dshd-wco-controls'], '112px');
   assert.equal(cssVars['--dshd-wco-caption'], '48px');
@@ -110,6 +115,7 @@ test('injected measure publishes window-control insets with an 8px plate margin'
 test('Mac chrome leaves system controls native and returns the right inset to the client', () => {
   const cssVars = {};
   const context = vm.createContext(createInjectSandbox({ cssVars, platform: 'darwin' }));
+  vm.runInContext(domSource, context);
   vm.runInContext(injectSource, context);
   vm.runInContext(injectSource, context);
   const host = context.document.getElementById('dshd-shell-controls');
@@ -128,6 +134,7 @@ test('injected window controls dispatch windowAction on pointerdown', () => {
       },
     },
   }));
+  vm.runInContext(domSource, context);
   vm.runInContext(injectSource, context);
   const host = context.document.getElementById('dshd-shell-controls');
   assert.ok(host);
@@ -212,6 +219,12 @@ function createInjectSandbox(options = {}) {
         node.children.push(child);
         return child;
       },
+      replaceChildren(...kids) {
+        node.children = [];
+        for (const child of kids) {
+          node.appendChild(child);
+        }
+      },
       addEventListener(type, handler) {
         const list = listeners.get(type) || [];
         list.push(handler);
@@ -227,6 +240,9 @@ function createInjectSandbox(options = {}) {
         attrs.set(name, next);
         if (name === 'id') {
           node.id = next;
+        }
+        if (name.startsWith('data-')) {
+          node.dataset[name.slice(5).replace(/-([a-z])/g, (_m, c) => c.toUpperCase())] = next;
         }
       },
       removeAttribute(name) {
@@ -313,6 +329,19 @@ function createInjectSandbox(options = {}) {
     },
     createElement(tag) {
       return makeElement(tag);
+    },
+    createElementNS(_ns, tag) {
+      return makeElement(tag);
+    },
+    createTextNode(text) {
+      return {
+        tagName: '#text',
+        textContent: String(text),
+        children: [],
+        parentElement: null,
+        getAttribute: () => null,
+        hasAttribute: () => false,
+      };
     },
     querySelector(selector) {
       return nodes.find((node) => matches(node, selector)) || null;

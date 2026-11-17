@@ -6,6 +6,9 @@
 // the container and mounts via window.__launcherComponents.mount(el, shell).
 // Mounting twice is harmless — the second call just re-renders the list.
 (function () {
+  const { h, mount: mountNodes } = (typeof module !== 'undefined' && module.exports)
+    ? require('../shared/dom')
+    : window.whaleDom;
   const state = {
     el: null,
     shell: null,
@@ -20,16 +23,8 @@
     failures: new Map(),
   };
 
-  function escapeHtml(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
   function badge(text, variant) {
-    return `<span class="badge${variant ? ` ${variant}` : ''}">${escapeHtml(text)}</span>`;
+    return h('span', { class: `badge${variant ? ` ${variant}` : ''}` }, text);
   }
 
   const STATE_LABELS = {
@@ -68,19 +63,25 @@
   function stateBadge(row) {
     const label = STATE_LABELS[row.state] || row.state || '未知';
     if (row.message) {
-      return `<button type="button" class="badge comp-state-details${STATE_VARIANTS[row.state] ? ` ${STATE_VARIANTS[row.state]}` : ''}" data-comp-info="${escapeHtml(row.id)}" aria-label="${escapeHtml(row.name || row.id)}${escapeHtml(label)}，查看状态详情" title="查看状态详情">${escapeHtml(label)}</button>`;
+      return h('button', {
+        type: 'button',
+        class: `badge comp-state-details${STATE_VARIANTS[row.state] ? ` ${STATE_VARIANTS[row.state]}` : ''}`,
+        dataset: { compInfo: row.id },
+        'aria-label': `${row.name || row.id}${label}，查看状态详情`,
+        title: '查看状态详情',
+      }, label);
     }
     return badge(label, STATE_VARIANTS[row.state] || '');
   }
 
   function kindBadge(row) {
     const kind = KIND_LABELS[row.kind] || (row.kind ? [row.kind, ''] : null);
-    return kind ? badge(kind[0], kind[1]) : '';
+    return kind ? badge(kind[0], kind[1]) : null;
   }
 
   function iconGlyph(row) {
     const name = String(row.name || row.id || '?').trim();
-    return escapeHtml((name[0] || '?').toUpperCase());
+    return (name[0] || '?').toUpperCase();
   }
 
   function rowMeta(row) {
@@ -92,7 +93,7 @@
     if (row.installedVersion && row.installedVersion !== row.version) {
       bits.push(`已装 v${row.installedVersion}`);
     }
-    return escapeHtml(bits.join(' · '));
+    return bits.join(' · ');
   }
 
   function rowDetail(row) {
@@ -100,20 +101,24 @@
     if (row.updateAvailable) {
       bits.push(`有更新 v${row.version}`);
     }
-    return bits.length ? escapeHtml(bits.join(' · ')) : '';
+    return bits.length ? bits.join(' · ') : '';
   }
 
   function failureLine(row) {
     const failure = state.failures.get(row.id);
     return failure
-      ? `<p class="comp-failure" data-comp-failure role="status">操作未完成：${escapeHtml(failure)}</p>`
-      : '';
+      ? h('p', { class: 'comp-failure', dataset: { compFailure: '' }, role: 'status' }, `操作未完成：${failure}`)
+      : null;
   }
 
   function rowActions(row) {
     const buttons = [];
-    const btn = (action, label, cls) => `<button type="button" class="${cls} small" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}">${label}</button>`;
-    if (row.state === 'unsupported') return '';
+    const btn = (action, label, cls) => h('button', {
+      type: 'button',
+      class: `${cls} small`,
+      dataset: { compAction: action, compId: row.id },
+    }, label);
+    if (row.state === 'unsupported') return buttons;
     if (row.state === 'available') {
       buttons.push(btn('install', '安装', 'primary'));
     } else {
@@ -124,12 +129,19 @@
         buttons.push(btn('start', row.state === 'error' ? '重试启动' : '启动', 'primary'));
       }
       const management = [];
-      if (row.updateAvailable) management.push(btn('update', `更新至 v${escapeHtml(row.version)}`, 'ghost'));
-      if (row.previousVersion) management.push(btn('rollback', `回滚至 v${escapeHtml(row.previousVersion)}`, 'ghost'));
+      if (row.updateAvailable) management.push(btn('update', `更新至 v${row.version}`, 'ghost'));
+      if (row.previousVersion) management.push(btn('rollback', `回滚至 v${row.previousVersion}`, 'ghost'));
       management.push(btn('uninstall', '卸载', 'danger'));
-      buttons.push(`<details class="comp-manage"><summary aria-label="管理${escapeHtml(row.name || row.id)}">管理<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></summary><div class="comp-manage-menu"><span class="row-meta">当前 v${escapeHtml(row.installedVersion || row.version)}</span>${management.join('')}</div></details>`);
+      buttons.push(h('details', { class: 'comp-manage' },
+        h('summary', { 'aria-label': `管理${row.name || row.id}` },
+          '管理',
+          h('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
+            h('path', { d: 'm4 6 4 4 4-4', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3' }))),
+        h('div', { class: 'comp-manage-menu' },
+          h('span', { class: 'row-meta' }, `当前 v${row.installedVersion || row.version}`),
+          ...management)));
     }
-    return buttons.join('');
+    return buttons;
   }
 
   function renderRows(payload) {
@@ -152,41 +164,37 @@
       return;
     }
     if (!rows.length) {
-      host.innerHTML = '<li><span class="row-meta">暂无可安装的组件。</span></li>';
+      mountNodes(host, h('li', {}, h('span', { class: 'row-meta' }, '暂无可安装的组件。')));
       return;
     }
-    host.innerHTML = rows.map((row) => {
+    mountNodes(host, ...rows.map((row) => {
       const marks = [
         kindBadge(row),
-        row.source === 'official' ? badge('官方组件', 'blue') : (row.source === 'bundled' ? badge('内置', 'blue') : ''),
-        row.updateAvailable ? badge('可更新') : '',
-        row.orphan ? badge('目录外组件', 'warn') : '',
-      ].join('');
+        row.source === 'official' ? badge('官方组件', 'blue') : (row.source === 'bundled' ? badge('内置', 'blue') : null),
+        row.updateAvailable ? badge('可更新') : null,
+        row.orphan ? badge('目录外组件', 'warn') : null,
+      ];
       const detail = rowDetail(row);
-      return `<li class="comp-row" data-comp-row="${escapeHtml(row.id)}">
-        <div class="row-main">
-          ${componentIcon(row)}
-          <div class="comp-copy">
-            <div class="row-title">${escapeHtml(row.name || row.id)} ${marks}</div>
-            <div class="row-meta">${rowMeta(row)}</div>
-            ${detail ? `<div class="row-meta">${detail}</div>` : ''}
-            ${failureLine(row)}
-          </div>
-        </div>
-        <div class="comp-status">
-          ${stateBadge(row)}
-          <div class="row-actions">${rowActions(row)}</div>
-        </div>
-      </li>`;
-    }).join('');
+      return h('li', { class: 'comp-row', dataset: { compRow: row.id } },
+        h('div', { class: 'row-main' },
+          componentIcon(row),
+          h('div', { class: 'comp-copy' },
+            h('div', { class: 'row-title' }, `${row.name || row.id} `, ...marks),
+            h('div', { class: 'row-meta' }, rowMeta(row)),
+            detail ? h('div', { class: 'row-meta' }, detail) : null,
+            failureLine(row))),
+        h('div', { class: 'comp-status' },
+          stateBadge(row),
+          h('div', { class: 'row-actions' }, ...rowActions(row))));
+    }));
     bindActions(host);
     syncPendingButtons();
   }
 
   function componentIcon(row) {
     return row.id === 'whalebridge'
-      ? '<img class="comp-icon comp-brand" src="../../assets/whale-head.png" alt="鲸屿" width="36" height="36">'
-      : `<span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span>`;
+      ? h('img', { class: 'comp-icon comp-brand', src: '../../assets/whale-head.png', alt: '鲸屿', width: '36', height: '36' })
+      : h('span', { class: 'comp-icon', 'aria-hidden': 'true' }, iconGlyph(row));
   }
 
   function bindActions(host) {
@@ -209,13 +217,28 @@
     if (!state.homeEl || !state.homeList) return;
     const installed = rows.filter(row => row.installedVersion);
     state.homeEl.hidden = installed.length === 0;
-    state.homeList.innerHTML = installed.map(row => {
+    mountNodes(state.homeList, ...installed.map(row => {
       const running = row.state === 'running';
       const name = row.name || row.id;
-      const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}">${running ? '关闭' : '开启'}${escapeHtml(name)}</button>`;
-      const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">打开设置</button>` : '';
-      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${row.id === 'whalebridge' ? '' : componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p>${failureLine(row)}<div class="home-component-controls">${control}${settings}</div></article>`;
-    }).join('');
+      const control = h('button', {
+        type: 'button',
+        class: `${running ? 'ghost' : 'primary'} small`,
+        dataset: { compAction: running ? 'stop' : 'start', compId: row.id },
+      }, `${running ? '关闭' : '开启'}${name}`);
+      const settings = row.configurable && running
+        ? h('button', { type: 'button', class: 'ghost small', dataset: { compAction: 'open', compId: row.id } }, '打开设置')
+        : null;
+      return h('article', { class: 'home-component', dataset: { compRow: row.id } },
+        h('div', { class: 'home-component-head' },
+          row.id === 'whalebridge' ? null : componentIcon(row),
+          h('div', { class: 'comp-copy' },
+            h('h4', {}, name),
+            h('span', { class: 'row-meta' }, `v${row.installedVersion}`)),
+          stateBadge(row)),
+        h('p', { class: 'home-component-description' }, row.description || '鲸屿扩展组件'),
+        failureLine(row),
+        h('div', { class: 'home-component-controls' }, control, settings));
+    }));
     bindActions(state.homeList);
     syncPendingButtons();
   }
@@ -274,7 +297,8 @@
     const status = document.getElementById('component-status');
     if (status) status.textContent = text;
     if (state.list && !state.rows.size) {
-      state.list.innerHTML = `<li><span class="comp-failure" data-comp-failure role="status">${escapeHtml(text)}</span></li>`;
+      mountNodes(state.list, h('li', {},
+        h('span', { class: 'comp-failure', dataset: { compFailure: '' }, role: 'status' }, text)));
     }
   }
 
@@ -455,16 +479,15 @@
     }
     state.el = el;
     connect(shell);
-    el.innerHTML = `
-      <header class="page-head">
-        <h2>组件</h2>
-        <span class="head-line row-meta" data-comp-route hidden>当前线路 <b class="cur-line"></b></span>
-      </header>
-      <p class="lede lede-block">按需安装独立工具与服务。鲸桥可统一管理模型，安装后自动连接桌面端的模型渠道。</p>
-      <div class="actions">
-        <button type="button" class="ghost" data-comp-refresh>刷新</button>
-      </div>
-      <ul class="list" data-comp-list></ul>`;
+    mountNodes(el,
+      h('header', { class: 'page-head' },
+        h('h2', {}, '组件'),
+        h('span', { class: 'head-line row-meta', dataset: { compRoute: '' }, hidden: true },
+          '当前线路 ', h('b', { class: 'cur-line' }))),
+      h('p', { class: 'lede lede-block' }, '按需安装独立工具与服务。鲸桥可统一管理模型，安装后自动连接桌面端的模型渠道。'),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'ghost', dataset: { compRefresh: '' } }, '刷新')),
+      h('ul', { class: 'list', dataset: { compList: '' } }));
     state.list = el.querySelector('[data-comp-list]');
     el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh(true));
     void refresh();

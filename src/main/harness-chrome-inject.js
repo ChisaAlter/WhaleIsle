@@ -1,4 +1,7 @@
 (() => {
+  // window.whaleDom is injected ahead of this script by src/main/chrome.js.
+  const { h, mount } = /** @type {import('../shared/dom.js')} */ (
+    (/** @type {Window & { whaleDom?: import('../shared/dom.js') }} */ (window)).whaleDom);
   const STYLE_ID = 'dshd-shell-integrated-chrome';
   const CONTROLS_ID = 'dshd-shell-controls';
   const CONTROL_SIZE = 32;
@@ -14,10 +17,15 @@
   const FRAME_RADIUS = 20;
   const NATIVE_MAC_CONTROLS = document.documentElement.dataset.platform === 'darwin';
 
-  const ICON_MIN = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg>';
-  const ICON_MAX = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2.4" y="2.4" width="7.2" height="7.2" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
-  const ICON_RESTORE = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="3.4" y="2.2" width="6.2" height="6.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.15"/><rect x="2.2" y="3.6" width="6.2" height="6.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.15"/></svg>';
-  const ICON_CLOSE = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>';
+  const iconMin = () => h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' },
+    h('rect', { x: '2', y: '5.4', width: '8', height: '1.2', rx: '0.6', fill: 'currentColor' }));
+  const iconMax = () => h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' },
+    h('rect', { x: '2.4', y: '2.4', width: '7.2', height: '7.2', rx: '1.4', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2' }));
+  const iconRestore = () => h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' },
+    h('rect', { x: '3.4', y: '2.2', width: '6.2', height: '6.2', rx: '1.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.15' }),
+    h('rect', { x: '2.2', y: '3.6', width: '6.2', height: '6.2', rx: '1.2', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.15' }));
+  const iconClose = () => h('svg', { viewBox: '0 0 12 12', 'aria-hidden': 'true' },
+    h('path', { d: 'M3 3l6 6M9 3L3 9', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.25', 'stroke-linecap': 'round' }));
 
   function toHex(input) {
     if (!input || input === 'transparent') {
@@ -233,11 +241,11 @@
     }
     host = document.createElement('div');
     host.id = CONTROLS_ID;
-    host.innerHTML = NATIVE_MAC_CONTROLS ? '' : [
-      `<button type="button" data-act="minimize" aria-label="最小化">${ICON_MIN}</button>`,
-      `<button type="button" data-act="maximize" aria-label="最大化">${ICON_MAX}</button>`,
-      `<button type="button" data-act="close" aria-label="关闭">${ICON_CLOSE}</button>`,
-    ].join('');
+    mount(host, ...(NATIVE_MAC_CONTROLS ? [] : [
+      h('button', { type: 'button', 'data-act': 'minimize', 'aria-label': '最小化' }, iconMin()),
+      h('button', { type: 'button', 'data-act': 'maximize', 'aria-label': '最大化' }, iconMax()),
+      h('button', { type: 'button', 'data-act': 'close', 'aria-label': '关闭' }, iconClose()),
+    ]));
     const dispatch = (event) => {
       if (event.type === 'pointerdown' && event.button !== 0) {
         return;
@@ -286,7 +294,7 @@
       return;
     }
     maxBtn.dataset.mode = mode;
-    maxBtn.innerHTML = maximized ? ICON_RESTORE : ICON_MAX;
+    mount(maxBtn, maximized ? iconRestore() : iconMax());
     maxBtn.setAttribute('aria-label', maximized ? '还原' : '最大化');
   }
 

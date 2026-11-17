@@ -5,12 +5,16 @@ const test = require('node:test');
 
 // Minimal DOM the module needs at load time (bind() is not invoked under
 // node --test because it only runs on DOMContentLoaded in the real page).
+// The shared DOM builder needs element factories for paintProgress.
 global.window = {};
 global.document = {
   getElementById: () => null,
   querySelector: () => null,
   querySelectorAll: () => [],
   addEventListener() {},
+  createElement: (tag) => ({ tagName: tag.toUpperCase(), children: [], attrs: {}, style: { setProperty() {} }, setAttribute() {}, appendChild(c) { this.children.push(c); return c; } }),
+  createElementNS: (ns, tag) => global.document.createElement(tag),
+  createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
   activeElement: null,
 };
 
@@ -90,7 +94,7 @@ test('delta fallback reports actual installer stages and only certifies applied 
 test('unconfirmed installation clears activity and a retry restores the progress surface', () => {
   const elements = new Map();
   for (const id of ['card', 'title', 'pct', 'bar', 'phases', 'kind']) {
-    elements.set(`test-${id}`, { hidden: false, textContent: '', style: {}, parentElement: { hidden: false } });
+    elements.set(`test-${id}`, { hidden: false, textContent: '', style: {}, parentElement: { hidden: false }, replaceChildren(...nodes) { this.children = nodes; }, children: [] });
   }
   const old = document.getElementById;
   document.getElementById = (id) => elements.get(id);
@@ -255,7 +259,7 @@ test('route picker renders roving tabindex radios bound once via navBound', () =
   const path = require('path');
   const src = fs.readFileSync(path.join(__dirname, 'launcher.js'), 'utf8');
   // The picker buttons carry a roving tabindex (current = 0, rest = -1).
-  assert.match(src, /tabindex="\$\{route\.id === current \? '0' : '-1'\}"/, 'picker radio must rove tabindex');
+  assert.match(src, /tabindex: route\.id === current \? '0' : '-1'/, 'picker radio must rove tabindex');
   // Focus handlers bind exactly once (navBound) for both picker and seg.
   const navBinds = (src.match(/dataset\.navBound = '1'/g) || []).length;
   assert.ok(navBinds >= 2, 'both picker and seg must once-bind navBound');

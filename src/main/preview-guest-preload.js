@@ -12,6 +12,7 @@ const {
 const { resolveAnnotationSubmission } = require('./preview-annotation-keyboard');
 const { computeLabelPosition } = require('./preview-pick-label');
 const { applyAnnotationTheme, captureElement } = require('./preview-pick-helpers');
+const { h, mount } = require('../shared/dom');
 
 const OVERLAY_ATTRIBUTE = 'data-dshd-annotation-ui';
 const TOOL_ATTRIBUTE = 'data-dshd-annotation-tool';
@@ -378,7 +379,8 @@ function startAnnotation() {
   adjust.setAttribute('aria-label', 'Expand annotation editor');
   adjust.setAttribute('aria-expanded', 'false');
   adjust.className = 'ann-btn ann-icon';
-  adjust.innerHTML = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  mount(adjust, h('svg', { viewBox: '0 0 20 20', width: '15', height: '15', 'aria-hidden': 'true' },
+    h('path', { d: 'M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round' })));
   composerRow.appendChild(adjust);
 
   const comment = document.createElement('textarea');
@@ -630,7 +632,7 @@ function startAnnotation() {
   dimensions.style.cssText = 'display:grid;grid-template-columns:82px minmax(0,1fr);gap:8px;align-items:center';
   const dimensionLabel = document.createElement('div');
   dimensionLabel.style.cssText = 'display:grid;gap:8px;font:500 12px var(--dshd-preview-font-sans,system-ui);color:var(--dshd-preview-muted-foreground)';
-  dimensionLabel.innerHTML = '<span>Width</span><span>Height</span>';
+  mount(dimensionLabel, h('span', {}, 'Width'), h('span', {}, 'Height'));
   const dimensionControls = document.createElement('div');
   dimensionControls.style.cssText = 'position:relative;display:grid;gap:3px;padding-left:22px';
   const widthInput = createUnitInput('px', 'auto');
@@ -647,9 +649,11 @@ function startAnnotation() {
   let aspectLocked = true;
   let aspectRatio = 1;
   const refreshAspectButton = () => {
-    aspectLock.innerHTML = aspectLocked
-      ? '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M8 6.5 9.5 5A3.5 3.5 0 0 1 14.5 10l-1.5 1.5M12 13.5 10.5 15A3.5 3.5 0 0 1 5.5 10L7 8.5M7.5 12.5l5-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>'
-      : '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="m6 6 8 8M8 6.5 9.5 5A3.5 3.5 0 0 1 14 9M12 13.5 10.5 15A3.5 3.5 0 0 1 6 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+    const aspectPath = aspectLocked
+      ? 'M8 6.5 9.5 5A3.5 3.5 0 0 1 14.5 10l-1.5 1.5M12 13.5 10.5 15A3.5 3.5 0 0 1 5.5 10L7 8.5M7.5 12.5l5-5'
+      : 'm6 6 8 8M8 6.5 9.5 5A3.5 3.5 0 0 1 14 9M12 13.5 10.5 15A3.5 3.5 0 0 1 6 11';
+    mount(aspectLock, h('svg', { viewBox: '0 0 20 20', width: '14', height: '14', 'aria-hidden': 'true' },
+      h('path', { d: aspectPath, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round' })));
     aspectLock.setAttribute('aria-pressed', String(aspectLocked));
     aspectLock.setAttribute('data-active', aspectLocked ? 'true' : 'false');
   };

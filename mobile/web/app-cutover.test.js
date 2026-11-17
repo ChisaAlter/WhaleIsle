@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { clearButtonBusy } from './ui/button-busy.js';
+import { h } from './ui/dom.js';
 import { gitTunnelAction, gitCommitPayload } from './git/bridge.js';
 
 const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.js'), 'utf8');
@@ -180,6 +181,7 @@ test('Git progress stays on operation controls and failure feedback has no close
   const element = tag => ({
     tag, children: [], dataset: {}, listeners: {}, textContent: '',
     append(...children) { this.children.push(...children); },
+    appendChild(child) { this.children.push(child); return child; },
     replaceChildren(...children) { this.children = children; },
     setAttribute() {},
     querySelectorAll() { return []; },
@@ -190,17 +192,31 @@ test('Git progress stays on operation controls and failure feedback has no close
     gitBusy: true, gitProgressDismissed: false, gitProgress: 'push',
     gitToast: '', toastActions: [], toastTone: 'info', gitDialog: 'commit',
   };
-  const context = { state, toastRoot, clearButtonBusy, document: { createElement: element }, svgNode: () => element('svg'), clearTimeout, toastTimer: null };
+  const context = { state, toastRoot, clearButtonBusy, h,
+    document: {
+      createElement: element,
+      createElementNS: (_ns, tag) => element(tag),
+      createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
+    },
+    clearTimeout, toastTimer: null };
   runInNewContext(app.slice(app.indexOf('function renderToast()'), app.indexOf('function renderLightbox()')), context);
   const toast = () => toastRoot.children[0].children[0];
-  context.renderToast();
-  assert.equal(toastRoot.children.length, 0, 'running operation must not create a second progress surface');
-  assert.equal(state.gitBusy, true);
-  assert.equal(state.gitDialog, 'commit');
-  state.gitBusy = false;
-  state.gitToast = '推送失败';
-  state.toastTone = 'error';
-  context.renderToast();
+  // The real h() builds nodes through the global document, so the fake
+  // factories are installed for the duration of the two render passes.
+  const previousDocument = globalThis.document;
+  globalThis.document = context.document;
+  try {
+    context.renderToast();
+    assert.equal(toastRoot.children.length, 0, 'running operation must not create a second progress surface');
+    assert.equal(state.gitBusy, true);
+    assert.equal(state.gitDialog, 'commit');
+    state.gitBusy = false;
+    state.gitToast = '推送失败';
+    state.toastTone = 'error';
+    context.renderToast();
+  } finally {
+    globalThis.document = previousDocument;
+  }
   assert.equal(toast().tag, 'div');
   assert.equal(toast().children[1].children[0].textContent, '推送失败');
   assert.equal(toast().children.length, 2, 'only status icon and message; no close X');
