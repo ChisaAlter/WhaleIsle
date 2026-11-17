@@ -6,12 +6,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const PET_JS = path.join(__dirname, 'pet-live2d.js');
 const PHYSICS_JS = path.join(__dirname, 'pet-physics.js');
 const DIALOGUE_JS = path.join(__dirname, 'pet-dialogue.js');
 const WANDER_JS = path.join(__dirname, 'pet-wander.js');
 const DIALOGUE_JSON = path.join(__dirname, 'dialogue', 'whale.json');
-const SOURCE = fs.readFileSync(PET_JS, 'utf8');
+const PET_HTML = fs.readFileSync(path.join(__dirname, 'pet-live2d.html'), 'utf8');
+const PET_SOURCES = [...PET_HTML.matchAll(/<script src="(pet-live2d(?:-[\w-]+)?\.js)"><\/script>/g)]
+  .map((match) => ({ name: match[1], source: fs.readFileSync(path.join(__dirname, match[1]), 'utf8') }));
+const SOURCE = PET_SOURCES.map(({ source }) => source).join('\n');
 const PHYSICS_SOURCE = fs.readFileSync(PHYSICS_JS, 'utf8');
 const DIALOGUE_SOURCE = fs.readFileSync(DIALOGUE_JS, 'utf8');
 const WANDER_SOURCE = fs.readFileSync(WANDER_JS, 'utf8');
@@ -219,6 +221,10 @@ function makeNode(id = '') {
       if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type).push(listener);
     },
+    removeEventListener(type, listener) {
+      listeners.set(type, (listeners.get(type) || []).filter(item => item !== listener));
+    },
+    listenerCount() { return [...listeners.values()].reduce((sum, list) => sum + list.length, 0); },
     click() { for (const listener of listeners.get('click') || []) listener({ target: this }); },
     setAttribute(name, value) { attributes.set(name, value); },
     getAttribute(name) { return attributes.get(name) ?? null; },
@@ -230,7 +236,6 @@ function makeNode(id = '') {
 }
 
 function loadPet() {
-  const source = SOURCE.replace(/mount\(\)\.catch[\s\S]*$/, '');
   let now = 100000;
   let rand = () => 0.5;
   const rafQueue = [];
@@ -257,7 +262,7 @@ function loadPet() {
     window: {
       innerWidth: 800,
       innerHeight: 600,
-      addEventListener: () => {},
+      ...makeNode('window'),
       matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
       shell: {},
       whaleDom: require('../shared/dom'),
@@ -270,6 +275,7 @@ function loadPet() {
     // Presentations are coalesced onto the next animation frame, so the
     // harness must be able to drive that frame explicitly. `flushFrames()`
     // runs the queued callbacks with the harness clock as the timestamp.
+    cancelAnimationFrame: () => {},
     requestAnimationFrame: (cb) => { rafQueue.push(cb); return rafQueue.length; },
     setTimeout, clearTimeout, setInterval, clearInterval,
     console,
@@ -279,7 +285,9 @@ function loadPet() {
   vm.runInContext(PHYSICS_SOURCE, context, { filename: 'pet-physics.js' });
   vm.runInContext(DIALOGUE_SOURCE, context, { filename: 'pet-dialogue.js' });
   vm.runInContext(WANDER_SOURCE, context, { filename: 'pet-wander.js' });
-  vm.runInContext(source, context, { filename: 'pet-live2d.js' });
+  for (const { name, source } of PET_SOURCES) {
+    vm.runInContext(source.replace(/mount\(\)\.catch[\s\S]*$/, ''), context, { filename: name });
+  }
   // mount() is stripped from the test source, so the dialogue store never
   // fetches — inject the real JSON and wire the sayer exactly like mount.
   vm.runInContext('dialogueStore = __dialogueStore; LINES = dialogueStore.global; wireDialogue();',
@@ -2426,4 +2434,76 @@ test('status-card hover preserves separate body gestures and default display ref
   pet.run(`onCursorMove(${bodyX}, ${bodyY}, 0)`);
   assert.equal(pet.run(`presentCeilingMs(${t})`), 0,
     'body interaction follows display refresh');
+});
+
+test('mounted IPC inputs preserve layout, settings, growth and assistant bubble behavior', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`
+    globalThis.__inputs = {};
+    for (const name of ['Layout', 'Cursor', 'Growth', 'Settings', 'Dsh', 'Alert']) {
+      petShell['on' + name] = callback => { __inputs[name] = callback; };
+    }
+  `);
+  await pet.run('mount()');
+  pet.run(`
+    __inputs.Layout({ origin: { x: 100, y: 50 },
+      displays: [{ x: 0, y: 0, width: 800, height: 600 }], home: 0 });
+    __inputs.Settings({ scale: 1.25, wander: false });
+    __move({ x: 300, y: 200 });
+    __inputs.Growth({ level: 3, available: 500, stats: { mood: 70 } });
+    __inputs.Dsh({ category: 'dshWhale', summary: '任务完成', kind: 'notify' });
+  `);
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(drawPos)')), { x: 200, y: 150 });
+  assert.equal(pet.run('petW()'), 300);
+  assert.equal(pet.run('settings.wander'), false);
+  assert.equal(pet.run('growth.level'), 3);
+  assert.equal(pet.run('stats.mood'), 70);
+  assert.equal(pet.run('bubble.text'), '任务完成');
+  assert.equal(pet.run('bubble.pinned'), true);
+});
+
+test('unload releases DOM, IPC, polling, timeouts and display callbacks exactly once', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`
+    globalThis.__released = [];
+    globalThis.__scheduled = new Map(); globalThis.__nextId = 0;
+    globalThis.__cancelled = [];
+    setTimeout = callback => { const id = ++__nextId; __scheduled.set(id, callback); return id; };
+    setInterval = setTimeout;
+    requestAnimationFrame = setTimeout;
+    clearTimeout = id => { __cancelled.push(id); __scheduled.delete(id); };
+    clearInterval = clearTimeout; cancelAnimationFrame = clearTimeout;
+    for (const name of ['Layout', 'Cursor', 'Move', 'Growth', 'Settings', 'Dsh', 'Alert']) {
+      petShell['on' + name] = () => () => __released.push(name);
+    }
+  `);
+  await pet.run('mount()');
+  pet.run(`chatStartPoll(); startLookAnim(); startRelocatePoll();
+    globalThis.__staleCallbacks = [...__scheduled.values()];`);
+  assert.ok(pet.run('__scheduled.size') >= 5, 'real mount and feature loops own pending work');
+  assert.ok(pet.run('window.listenerCount()') > 0);
+  assert.ok(pet.nodes['pc-feedback-close'].listenerCount() > 0);
+  pet.run('petLifetime.dispose(); petLifetime.dispose()');
+  assert.equal(pet.run('__released.length'), 7);
+  assert.equal(pet.run('window.listenerCount()'), 0);
+  assert.equal(pet.nodes['pc-feedback-close'].listenerCount(), 0);
+  assert.equal(pet.nodes['pc-send'].listenerCount(), 0);
+  assert.equal(pet.run('__scheduled.size'), 0);
+  pet.run(`for (const callback of __staleCallbacks) callback(performance.now());
+    petLifetime.keep(() => __released.push('late'));
+    requestFrame(); chatStartPoll(); startLookAnim();`);
+  assert.equal(pet.run('__scheduled.size'), 0, 'late callbacks cannot restart page producers');
+  assert.equal(pet.run('__released.at(-1)'), 'late');
+});
+
+test('closing during asynchronous engine creation does not restart the display loop', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`createSession = () => new Promise(resolve => { globalThis.__finishMount = resolve; });`);
+  const pending = pet.run('mount()');
+  pet.run('petLifetime.dispose(); __finishMount(__session)');
+  await pending;
+  assert.equal(pet.run('__raf.length'), 0);
 });

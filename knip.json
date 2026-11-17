@@ -35,6 +35,7 @@
     // update-center/welcome/pet-live2d HTML）、vm 测试夹具（*.child.cjs）、
     // readFileSync 注入与 wasm 载荷——knip 不解析 HTML
     "src/renderer/{boot,feedback,file-preview,launcher-components,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher}.js",
+    "src/renderer/pet-live2d-*.js",
     "src/renderer/**/*.child.cjs",
     // 测试按路径打包/装载的渲染夹具
     "src/renderer/**/*.fixture.*",
