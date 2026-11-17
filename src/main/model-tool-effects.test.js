@@ -82,7 +82,7 @@ function scanToolNames() {
     for (const name of names) {
       if (NON_TOOL_NAMES.has(name)) continue;
       if (!found.has(name)) found.set(name, new Set());
-      found.get(name).add(path.relative(ROOT, file));
+      found.get(name).add(path.relative(ROOT, file).split(path.sep).join("/"));
     }
   }
   return found;
@@ -204,7 +204,7 @@ function confirmCalls() {
       const open = match.index + match[0].length - 1;
       const block = objectLiteralAt(source, open);
       calls.push({
-        file: path.relative(ROOT, file),
+        file: path.relative(ROOT, file).split(path.sep).join("/"),
         block,
         tool: block && fieldExpr(block, 'tool'),
         action: block && fieldExpr(block, 'action'),
