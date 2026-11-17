@@ -175,7 +175,6 @@ function withoutDshImAliases(list) {
 
 module.exports = {
   DSH_IM_PACKAGE,
-  DSH_IM_DIR,
   DSH_IM_BEGIN,
   DSH_IM_END,
   DSH_IM_ALIASES,

@@ -2345,26 +2345,16 @@ async function runImport(options = {}) {
 }
 
 module.exports = {
-  officialDshHome,
   scanImport,
   scanImportAsync,
   shouldHoldForImport,
   probeImportHold,
   importSessions,
   importPlugins,
-  importSettings,
-  importCredentialRefs,
-  importPresets,
   pluginReinstallSpec,
-  splitTopLevelSections,
-  credentialRefsOfSection,
-  readCredentialRefs,
   recoverInterruptedImport,
   readImportJournal,
   journalIsBlocked,
   runImport,
   journalPath,
-  SESSION_LOG,
-  SETTINGS_SECTION_WHITELIST,
-  AGENTS_DOC_SETTING_ID,
 };

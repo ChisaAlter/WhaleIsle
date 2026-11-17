@@ -170,8 +170,6 @@ function resolveCatalogVersion(entry, version) {
 }
 
 module.exports = {
-  SOURCE_BUNDLED,
-  defaultSamplesRoot,
   compareVersions,
   safeEntryPath,
   readManifest,

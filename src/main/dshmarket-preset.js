@@ -70,7 +70,6 @@ function removeDshMarketPreset(options = {}) {
 }
 
 module.exports = {
-  DSHMARKET_PACKAGE,
   DSHMARKET_BEGIN,
   DSHMARKET_END,
   removeDshMarketPreset,

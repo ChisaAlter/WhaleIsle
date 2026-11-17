@@ -240,7 +240,6 @@ function createPetChat({ getCreds, fetchImpl, model, lookModel, whale, getWhaleS
 module.exports = {
   PERSONA_PROMPTS,
   HISTORY_TURNS,
-  CHAT_TIMEOUT_MS,
   createPetChat,
   personaPrompt,
 };

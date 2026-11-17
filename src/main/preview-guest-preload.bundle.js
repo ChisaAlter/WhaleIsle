@@ -74,8 +74,6 @@
         return { x, y };
       }
       module.exports = {
-        LABEL_GAP,
-        VIEWPORT_MARGIN,
         computeLabelPosition: computeLabelPosition2
       };
     }
@@ -283,7 +281,6 @@
         };
       }
       module.exports = {
-        THEME_VARS,
         DEFAULT_ANNOTATION_THEME,
         cssSelector,
         htmlPreview,

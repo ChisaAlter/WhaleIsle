@@ -1197,5 +1197,4 @@ module.exports = {
   buildDaemonChildEnv,
   publicDevicesFromStore,
   relayUseTls,
-  preferredLanIp,
 };

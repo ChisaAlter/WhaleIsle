@@ -645,7 +645,6 @@ async function ensureExternalDesktopExited(deps = {}) {
 
 module.exports = {
   installedInfo,
-  invalidateInstalledCache,
   configuredRoute,
   checkDesktopUpdate,
   installRuntime,
@@ -653,7 +652,6 @@ module.exports = {
   startExternalDesktop,
   stopExternalDesktop,
   ensureExternalDesktopExited,
-  requestPeerStop,
   probeDesktopRunning,
   waitForInstall,
 };

@@ -266,9 +266,7 @@ function auditRuntimeClosure(packageDir, options = {}) {
 }
 
 module.exports = {
-  declaredEntryRelatives,
   missingDeclaredEntries,
   missingRuntimeFiles,
   auditRuntimeClosure,
-  CLOSURE_MAX_PACKAGES,
 };

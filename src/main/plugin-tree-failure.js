@@ -35,7 +35,5 @@ function isPluginTreeFailure(text) {
 }
 
 module.exports = {
-  PLUGIN_BOOT_FAILED,
-  PLUGIN_TREE_MARKERS,
   isPluginTreeFailure,
 };

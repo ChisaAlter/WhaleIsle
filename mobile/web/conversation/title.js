@@ -15,4 +15,4 @@ function sessionTitle(row) {
   return id.slice(0, 7) || '会话';
 }
 
-export { isUntitledBlank, projectionTitle, sessionTitle };
+export { isUntitledBlank, sessionTitle };

@@ -205,9 +205,6 @@ async function runPackagedP0(deps = {}) {
 
 module.exports = {
   PACKAGED_P0_STEPS,
-  GHOSTTY_WASM_PATH,
-  NO_OPEN_ERROR,
-  runtimeStampPath,
   verifyPackagedRuntime,
   runPackagedP0,
 };

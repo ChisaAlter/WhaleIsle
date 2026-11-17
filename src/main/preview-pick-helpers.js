@@ -263,7 +263,6 @@ function normalizeCaptureRect(value) {
 }
 
 module.exports = {
-  THEME_VARS,
   DEFAULT_ANNOTATION_THEME,
   cssSelector,
   htmlPreview,

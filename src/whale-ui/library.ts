@@ -28,4 +28,3 @@ export const promptOptions = {
 };
 export function generateWhaleGuide(extraDefinitions: DefinedComponent<any>[] = []) { return createWhaleLibrary(extraDefinitions).prompt(promptOptions); }
 export { componentDefinitions, componentGroups, functionDefinitions };
-export default library;

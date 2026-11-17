@@ -183,5 +183,4 @@ module.exports = {
   readStateFile,
   copyDir,
   removeDir,
-  LOG_MAX_BYTES,
 };

@@ -166,10 +166,9 @@ function statsSnapshot(state, now = Date.now()) {
 }
 
 module.exports = {
-  STAT_MAX,
+  normalizeStats,
   AFFECTION_LEVELS,
   CARE,
-  normalizeStats,
   decayStats,
   applyCare,
   affectionLevel,

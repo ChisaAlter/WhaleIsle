@@ -70,4 +70,4 @@ class UpdateOverlays {
   }
 }
 
-module.exports = { UpdateOverlays, UNBLOCKED_INPUT };
+module.exports = { UpdateOverlays };

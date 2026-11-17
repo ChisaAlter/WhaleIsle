@@ -46,7 +46,6 @@ export {
   admitCommandResult,
   commandExecutePayload,
   commandListPayload,
-  encodedCommandImages,
   isSlashSubmitLine,
   mapHostSlashList,
 };

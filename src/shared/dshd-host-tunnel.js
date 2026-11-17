@@ -592,13 +592,11 @@ async function forwardRemoteEventResult({ origin, cookie, clientId, eventId, out
 module.exports = {
   HARNESS_DOWN_MESSAGE,
   HOST_RPC_METHODS,
-  REMOTE_STREAM_MUX_PATH,
   isAllowedHostMethod,
   assertLoopbackHarnessOrigin,
   hostRpcTarget,
   hostRpcPayload,
   sanitizeHarnessCookie,
-  workspaceListFromFollowFrame,
   forwardHostRpc,
   forwardHostRespond,
   forwardRemoteEventResult,

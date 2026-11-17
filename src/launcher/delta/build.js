@@ -112,4 +112,4 @@ async function buildDelta(options, deps = {}) {
   };
 }
 
-module.exports = { scanTree, diffTrees, buildDelta };
+module.exports = { scanTree, buildDelta };

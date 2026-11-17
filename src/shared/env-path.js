@@ -44,5 +44,4 @@ function prependPath(env, extras, options = {}) {
 module.exports = {
   pathKeys,
   prependPath,
-  windowsFallbackPath,
 };

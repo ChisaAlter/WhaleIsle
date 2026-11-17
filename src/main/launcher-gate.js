@@ -492,7 +492,6 @@ async function runColdStartGate({
 }
 
 module.exports = {
-  lastDesktopStartPath,
   readLastDesktopStart,
   writeLastDesktopStart,
   kernelLogTail,

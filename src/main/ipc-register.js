@@ -169,7 +169,6 @@ module.exports = {
   noArgs,
   unauthorizedError,
   isPlainObject,
-  MAX_IPC_STRING,
   requiredObject,
   optionalObject,
   requiredString,

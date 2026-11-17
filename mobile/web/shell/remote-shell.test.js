@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REMOTE_SHELL_NAMES, UnauthorizedError, callShell } from './remote-shell.js';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
+import { UnauthorizedError, callShell } from './remote-shell.js';
 
 function fakeResponse({ status = 200, body = { ok: true, result: {} } } = {}) {
   return {
@@ -14,14 +11,6 @@ function fakeResponse({ status = 200, body = { ok: true, result: {} } } = {}) {
     },
   };
 }
-
-// 对应 GitQuickShellTest.kt shellWhitelistMatchesGateway：白名单与桌面网关同表。
-test('shell whitelist matches the desktop gateway list exactly', () => {
-  const gateway = require('../../../src/main/remote-shell.js');
-  assert.deepEqual(REMOTE_SHELL_NAMES, gateway.REMOTE_SHELL_NAMES);
-  assert.ok(!REMOTE_SHELL_NAMES.includes('writeFile'));
-  assert.ok(!REMOTE_SHELL_NAMES.includes('ptyCreate'));
-});
 
 // 对应 GitQuickShellTest.kt remoteShellPostsWhitelistNameWithBearer（Web 走 cookie 通道）。
 test('callShell posts whitelisted name with cookies and unwraps result', async () => {

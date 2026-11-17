@@ -32,4 +32,4 @@ function checkInstallSpace(directory, bytes, { statfs = fs.statfsSync, reserve =
   return { checked: true, available, required };
 }
 
-module.exports = { checkInstallSpace, SPACE_RESERVE };
+module.exports = { checkInstallSpace };

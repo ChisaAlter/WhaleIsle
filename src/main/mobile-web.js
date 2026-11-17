@@ -18,11 +18,6 @@ function resolveMobileWebRoot() {
   return path.join(__dirname, '..', '..', 'mobile', 'web');
 }
 
-function shouldProxyToHost(urlPath) {
-  const pathname = String(urlPath || '/').split('?')[0];
-  return pathname === '/api' || pathname.startsWith('/api/');
-}
-
 function safeJoin(root, urlPath) {
   // resolveSpaAsset already decoded the URL once; filenames may contain `%`.
   const decoded = String(urlPath || '/');
@@ -66,6 +61,5 @@ function resolveSpaAsset(root, urlPath) {
 
 module.exports = {
   resolveMobileWebRoot,
-  shouldProxyToHost,
   resolveSpaAsset,
 };

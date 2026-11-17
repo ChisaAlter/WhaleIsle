@@ -248,8 +248,6 @@ function isPresetPlugin(name) {
 }
 
 module.exports = {
-  PRESET_PLUGINS,
-  EVIDENCE_LINE_MAX,
   classifyGenericFailure,
   extractSuspectNames,
   extractEvidence,

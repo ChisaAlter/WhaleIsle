@@ -324,7 +324,6 @@ function readContextSize() {
 
 module.exports = {
   READ_CONTEXT_TTL_MS,
-  READ_CONTEXT_IDLE_MS,
   READ_CONTEXT_MAX_LIFETIME_MS,
   createGitReadContext,
   armReadContext,

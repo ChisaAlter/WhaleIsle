@@ -152,7 +152,6 @@ async function flushBootLogs() {
 
 module.exports = {
   MAX_BYTES,
-  TAIL_LINES,
   bootLogPath,
   attachBootLog,
   readBootLogTail,

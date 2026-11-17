@@ -58,6 +58,5 @@ function ensureSessionSearchOverlay(options = {}) {
 }
 
 module.exports = {
-  SESSION_SEARCH_OVERLAY_FILENAME,
   ensureSessionSearchOverlay,
 };

@@ -197,8 +197,6 @@ function normalizeFileEaten(raw) {
 
 module.exports = {
   ACTIVITIES,
-  PERSONALITIES,
-  ACTIVITY_TABLE,
   LOOK_MODEL_MAX,
   SCALE_MIN,
   SCALE_MAX,

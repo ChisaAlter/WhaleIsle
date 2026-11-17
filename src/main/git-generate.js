@@ -230,11 +230,9 @@ async function generatePrContent(input) {
 }
 
 module.exports = {
-  DEFAULT_SUBJECT,
   fallbackFromStaged,
   generateCommitMessage,
   generatePrContent,
-  limitContext,
   parseGeneratedJson,
   sanitizeCommitMessage,
   sanitizeGeneratedLine,

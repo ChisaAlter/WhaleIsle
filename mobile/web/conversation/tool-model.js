@@ -286,13 +286,7 @@ function toolRowModel(call, { cwd = '', home = '' } = {}) {
 }
 
 export {
-  abbreviateHome,
-  classifyTool,
   intendedDiff,
-  isSubagentTool,
   lineDiff,
-  relativizeToCwd,
-  resultText,
   toolRowModel,
-  toolTitle,
 };

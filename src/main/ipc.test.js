@@ -1171,17 +1171,17 @@ test('shell:save-boot-log is boot-only and writes dsh.logs not a renderer path',
 });
 
 test('shell:get-remote reports unavailable for the disabled remote stub even when the feature flag is on', async () => {
-  const { createDisabledRemote } = require('./remote');
   let syncCalls = 0;
-  const remote = createDisabledRemote();
-  const wrapped = {
-    ...remote,
-    sync() {
+  const remote = {
+    snapshot() {
+      return { available: false, enabled: false, listening: false };
+    },
+    async sync() {
       syncCalls += 1;
-      return remote.sync();
+      return this.snapshot();
     },
   };
-  const ipc = loadIpc({ remote: wrapped, remoteFeatureEnabled: true });
+  const ipc = loadIpc({ remote, remoteFeatureEnabled: true });
   try {
     const snap = await ipc.invoke('shell:get-remote', harnessEvent());
     assert.deepEqual(snap, {

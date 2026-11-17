@@ -313,25 +313,6 @@ function resolveDesktopStartupLocale(preference, languages) {
   return resolveDesktopLocale('en')
 }
 
-/** Replace named placeholders in one locale-owned message. */
-function formatDesktopMessage(message, values) {
-  return message.replaceAll(/\{([^{}]+)\}/gu, (placeholder, key) => values[key] ?? placeholder)
-}
-
-/**
- * Select localized copy for an ordinary downloaded-update confirmation.
- * @param messages - Selected Desktop dictionary.
- * @param version - Prepared update version without a leading v.
- * @param platform - Operating system presenting the confirmation.
- * @returns The versioned title and installation guidance.
- */
-function desktopUpdateReadyConfirmation(messages, version, platform) {
-  return {
-    message: formatDesktopMessage(platform === 'win32' ? messages.updateDownloadedTitleWindows : messages.updateDownloadedTitle, { version }),
-    detail: platform === 'win32' ? messages.updateDownloadedDetailWindows : messages.updateDownloadedDetail,
-  }
-}
-
 module.exports = {
-  en, zh, resolveDesktopLocale, resolveDesktopStartupLocale, formatDesktopMessage, desktopUpdateReadyConfirmation,
+  resolveDesktopLocale, resolveDesktopStartupLocale,
 };

@@ -68,10 +68,6 @@ function clearSecret(serverId) {
   localStorage.setItem(SECRET_KEY, JSON.stringify(all));
 }
 
-function clearAllSecrets() {
-  localStorage.removeItem(SECRET_KEY);
-}
-
 function listStickyServerIds() {
   const all = loadSecrets();
   return Object.keys(all).filter((id) => (
@@ -438,7 +434,6 @@ async function connectInitial(client, signal, getAuthError = () => null) {
 export {
   loadSecrets,
   clearSecret,
-  clearAllSecrets,
   currentClientId,
   rotateClientId,
   saveSecret,

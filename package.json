@@ -44,6 +44,7 @@
     "qa:packaged": "node scripts/run-packaged-p0.mjs",
     "smoke:packaged": "node scripts/run-packaged-smoke.mjs",
     "check:release-version": "node scripts/check-release-version.mjs",
+    "check:unused": "knip --no-progress",
     "check:vendor": "node scripts/check-vendor-provenance.mjs",
     "release:download": "node scripts/release-download.mjs",
     "test:release": "node --test scripts/check-release-assets.test.mjs scripts/check-release-version.test.mjs scripts/publish-release.test.mjs scripts/ci-scope.test.mjs",
@@ -70,6 +71,7 @@
     "eslint": "^10.15.0",
     "fast-check": "4.9.0",
     "globals": "^17.14.0",
+    "knip": "5.88.1",
     "pnpm": "12.12.1",
     "semver": "^7.8.5"
   },

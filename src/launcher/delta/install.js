@@ -164,4 +164,4 @@ async function installDelta(tag, onProgress, deps = {}) {
   }
 }
 
-module.exports = { installDelta, pickDeltaAsset, pickChecksumUrl, fetchRelease };
+module.exports = { installDelta, pickDeltaAsset };

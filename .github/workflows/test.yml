@@ -49,6 +49,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - name: Vendor provenance and artifact consistency
         run: npm run check:vendor
+      - name: Unused files, exports and dependencies
+        run: npm run check:unused
       - run: npm run test:tools
   web:
     # Browser lanes for desktop forks of the web composition. They follow the

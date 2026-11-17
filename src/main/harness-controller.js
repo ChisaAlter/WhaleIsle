@@ -1079,6 +1079,4 @@ class HarnessController extends EventEmitter {
 
 module.exports = {
   HarnessController,
-  DEFAULT_STABLE_MS,
-  MAX_RESTART_DELAY_MS,
 };

@@ -615,4 +615,4 @@ function createComponentsService(deps = {}) {
   };
 }
 
-module.exports = { createComponentsService, MAX_RESTARTS };
+module.exports = { createComponentsService };

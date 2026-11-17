@@ -1,0 +1,154 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  // 范围：只扫自有代码，单 workspace 模型（不配 workspaces——一旦声明，
+  // knip 会把 vendor 嵌套 package.json 自动检测成 workspace 并全量扫描）。
+  // project 只含：src/、scripts/、mobile/web/、tools/、dsh-acp/，以及
+  // vendor/provenance.json 中 kind=source 且未被任务排除的自有插件目录。
+  // 排除：vendor/deepseek-harness（pinned）、vendor/chisacode-remote 与
+  // vendor/open-intelligent-ui（任务显式排除）、kind 为 rebuild/hashed/
+  // artifacts 的 vendor（dsh-im、dsh-pad、dsh-remote、dsh-usage-panel，
+  // lib/ 为生成 bundle）、vendor/dshmarket（无代码署名桩）、
+  // vendor/dsh-with-chatgpt/bridge（pinned MIT fork）、mobile/android、
+  // docs/、构建产物。
+  "entry": [
+    // package.json main：Electron 主进程
+    "src/main/index.js",
+    // 按路径 spawn/fork 的子进程入口（index.js / dshd-remote.js / smoke 等）
+    "src/main/{dsh-cli-runner,dshd-daemon-runner,parent-lifeline,shortcuts-protocol}.mjs",
+    // new Worker 按路径启动
+    "src/main/pet-*-worker.js",
+    // 按路径挂接的 preload（preview.js、preview guest）
+    "src/main/{preview-pip-preload,preview-guest-preload}.js",
+    // import-crash.test.js 按路径 spawn 的夹具子进程
+    "src/main/test-fixtures/**",
+    // welcome-renderer.child.cjs 用拼装路径 require
+    "src/main/welcome-window.js",
+    // smoke 子进程入口
+    "src/main/smoke/**",
+    // 独立启动的 launcher 主进程（spawn 的第二个 Electron）
+    "src/main-launcher/**",
+    // 独立运行的插件安装进程
+    "src/host/**",
+    // 全部 preload 均按路径注入 webPreferences
+    "src/preload/**",
+    // renderer：<script src>（boot/launcher/pet/file-preview/update-dialog/
+    // update-center/welcome/pet-live2d HTML）、vm 测试夹具（*.child.cjs）、
+    // readFileSync 注入与 wasm 载荷——knip 不解析 HTML
+    "src/renderer/{boot,feedback,file-preview,launcher-components,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher}.js",
+    "src/renderer/**/*.child.cjs",
+    // 测试按路径打包/装载的渲染夹具
+    "src/renderer/**/*.fixture.*",
+    "src/renderer/{welcome,pet-live2d}/**",
+    // mobile/web：app.js 由 index.html 引用；entry.mjs 是
+    // daemon-client.bundle.js 的 esbuild 输入
+    "mobile/web/app.js",
+    "mobile/web/chisacode/entry.mjs",
+    // whale-ui 独立子包（自带 package.json/pnpm-lock）：esbuild 入口来自
+    // scripts/prepare-whale-ui.mjs
+    "src/whale-ui/runtime/{guide,host}.ts",
+    "src/whale-ui/viewer/{index.tsx,document.cjs}",
+    "src/whale-ui/resources/route.mjs",
+    "src/whale-ui/genui/client/{asset-mermaid,asset-three,asset-echarts-core,asset-echarts,asset-maplibre,embed,file-address,svg-fence}.{ts,tsx}",
+    "src/whale-ui/genui/client/icons/asset-icons.ts",
+    "src/whale-ui/genui/client/standalone/{runtime,asset-loader}.{ts,tsx}",
+    "src/whale-ui/genui/shared/panel-merge.ts",
+    "src/whale-ui/language/parser/validate-library.ts",
+    "src/whale-ui/tests/*.mjs",
+    // 自有 vendor 插件：package.json main/exports 即宿主加载入口；
+    // client/client.js 是 ModuleLoader 客户端工厂，按 exports["./client"] 加载
+    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale,dsh-with-chatgpt}/lib/**",
+    "vendor/{dsh-deepseek-tools,dsh-project,dsh-whale}/client/client.js",
+    "vendor/dsh-with-chatgpt/tests/**",
+    "vendor/dsh-whale/{presets,stickers}/**",
+    "vendor/dsh-shared/lib/**",
+    // 手动 UI QA 入口（不挂 npm script）
+    "vendor/dsh-deepseek-tools/tests/**",
+    "vendor/dsh-project/tests/**",
+    // ACP 插件包入口与手动 runner
+    "dsh-acp/{lib,client,tests,tools}/**",
+    // 所有脚本都是 npm script 或手动运行的入口点
+    "scripts/**/*.{js,cjs,mjs}",
+    // QA/调试工具同样是手动入口
+    "tools/**/*.{js,cjs,mjs}",
+    // 全部测试文件（node --test 按路径运行）
+    "**/*.test.{js,cjs,mjs}"
+  ],
+  "project": [
+    "*.{js,cjs,mjs}",
+    "src/**/*.{js,cjs,mjs,ts,tsx}",
+    "scripts/**/*.{js,cjs,mjs}",
+    "mobile/web/**/*.{js,cjs,mjs}",
+    "tools/**/*.{js,cjs,mjs}",
+    "dsh-acp/**/*.{js,cjs,mjs,ts,tsx}",
+    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-shared,dsh-task-control,dsh-whale}/**/*.{js,cjs,mjs,ts}",
+    "vendor/dsh-with-chatgpt/{lib,tests}/**/*.{js,cjs,mjs,ts}"
+  ],
+  "ignore": [
+    // 生成产物
+    "mobile/web/chisacode/daemon-client.bundle.js",
+    // knip 会把嵌套 package.json 自动检测成 workspace；这些树在任务范围外，
+    // 必须按文件级 ignore 兜底，否则其测试/源码依赖会混入报告
+    "vendor/{deepseek-harness,chisacode-remote,open-intelligent-ui,dsh-im,dsh-pad,dsh-remote,dsh-usage-panel,dshmarket}/**",
+    "vendor/dsh-with-chatgpt/bridge/**",
+    "dsh-acp/tools/runtime-build/upstream/**",
+    "mobile/android/**"
+  ],
+  "ignoreFiles": [
+    // chrome.js 用 fs.readFileSync 读取后以文本注入 harness 页面，非模块引用
+    "src/main/harness-chrome-inject.js"
+  ],
+  "ignoreDependencies": [
+    // eslint flat config 的插件依赖链仍在使用；删除会破坏 lint，故保留
+    "@eslint/js"
+  ],
+  "ignoreBinaries": [
+    // check:unused 的 knip binary 由 devDependency knip 自身提供；部分环境
+    // （node_modules 为外部链接、knip 经 npx 缓存运行）下被误报 unlisted
+    "knip"
+  ],
+  "ignoreIssues": {
+    // CJS 命名空间成员访问（const m = require('./m'); m.name()）不在 knip 的
+    // 使用跟踪内。下列文件的导出均由这类消费方（components/index.js 聚合、
+    // main-launcher、主进程 ipc.js、测试）使用；已抽查确认，按文件保留。
+    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client}.js": ["exports"],
+    "src/main/{git-exec,import-guard,ipc-components,ipc-delta,pet-settings,pet-stats,marketplace-install,update-dialog}.js": ["exports"],
+    // module.exports 本体在 knip 中记为 default 导出，CJS 单导出模块属误报
+    "src/{main/{browser-guests,preview-session,updates-state},shared/{ipc-contract,launcher-recovery}}.js": ["exports"],
+    // @chisacode/* 由 vendored vendor/chisacode-remote 在 bundle 构建时提供
+    "mobile/web/chisacode/**": ["unlisted"],
+    // install-harness.cjs 被 electron-builder 拷进 $INSTDIR/resources/runtime/，
+    // 与打包后同目录的 src/shared 模块按打包布局解析；仓库内路径并非真实 import 结构
+    "scripts/install-harness.cjs": ["unresolved"],
+    // 子包/插件的依赖在各自 package.json 声明或由宿主运行时注入；
+    // 根 manifest 看不到它们，unlisted 一律按“已声明/运行时提供”处理：
+    // - src/whale-ui：自带 manifest + pnpm-lock（react/jsdom/zod 已声明）
+    // - dsh-acp/tools/runtime-build：自带 manifest + package-lock
+    // - dsh-acp/client、vendor plugin client/**：ModuleLoader 工厂注入
+    // - vendor plugin lib/tests：依赖在各插件 manifest 声明，宿主 cordis
+    //   运行时提供 @deepseek-ai/* 命名空间
+    // whale-ui 由 esbuild 别名（@whale-ui/*、@openuidev/*）装载，knip 无法
+    // 还原别名消费方；exports/types 报告不属于真实死代码
+    "src/whale-ui/**": ["unlisted", "exports", "types"],
+    "dsh-acp/tools/runtime-build/**": ["unlisted"],
+    "{dsh-acp,vendor/dsh-deepseek-tools,vendor/dsh-project,vendor/dsh-whale}/client/**": ["unlisted"],
+    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale,dsh-with-chatgpt}/**": ["unlisted"],
+    // 测试渲染夹具的 react 由 whale-ui/宿主运行时解析
+    "src/renderer/**/*.fixture.*": ["unlisted"],
+    // 本地 CDP 调试脚本，import 指向开发机绝对路径的 playwright
+    "scripts/c-acceptance/*.mjs": ["unlisted"],
+    // 测试夹具里的假包名（a/b/q/package.json 等），只存在于临时目录
+    "scripts/install-harness.test.mjs": ["unlisted"],
+    "src/main/{after-pack-workspace,runtime-instance-graph}.test.js": ["unlisted"],
+    // electron-builder 传递依赖（builder-util / app-builder-lib / @electron/get /
+    // builder-util-runtime）：经 require.resolve 在 builder 上下文解析，未直接声明
+    "src/main/{ci-isolation,package-contract}.test.js": ["unlisted"],
+    "src/main/update-updater{,.test}.js": ["unlisted"],
+    "scripts/{after-pack,bundled-acp.test,production-runtime.test}.{js,mjs}": ["unlisted"],
+    "scripts/windows-directory-installer{,.test}.{cjs,mjs}": ["unlisted"],
+    // js-yaml：CI/release 脚本实际使用但未声明（待用户补声明）
+    "scripts/{check-release-assets,check-release-assets.test,ci-scope.test,sync-cnb.test}.mjs": ["unlisted"],
+    // QA 驱动使用的 playwright*/puppeteer-core 由 harness vendor 运行时提供
+    "scripts/qa-whalebridge-community.mjs": ["unlisted"],
+    "tools/**/*.mjs": ["unlisted"]
+  }
+}

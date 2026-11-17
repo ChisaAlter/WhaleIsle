@@ -61,24 +61,10 @@ function releaseMaintenance(owner) {
   return false;
 }
 
-/**
- * Assert the slot is free for a mutating op. Throws an Error tagged
- * `code = 'maintenance-in-progress'` when held.
- */
-function assertMaintenanceFree(kind) {
-  if (maintenanceHeld !== null) {
-    const error = new Error(`maintenance-in-progress:${maintenanceHeld.kind || 'other'}`);
-    error.code = 'maintenance-in-progress';
-    error.owner = maintenanceHeld.kind;
-    throw error;
-  }
-}
-
 module.exports = {
   isMaintenanceHeld,
   maintenanceOwner,
   holdsMaintenance,
   acquireMaintenance,
   releaseMaintenance,
-  assertMaintenanceFree,
 };

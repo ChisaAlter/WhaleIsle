@@ -99,10 +99,5 @@ function withoutPlatformAliases(list) {
 }
 
 module.exports = {
-  PLATFORM_PACKAGE,
-  PLATFORM_ALIASES,
-  PLATFORM_INSERT_ID,
-  PLATFORM_OVERLAY_FILENAME,
-  withoutPlatformAliases,
   ensureDesktopPlatformSession,
 };

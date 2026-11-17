@@ -5,7 +5,6 @@ const { app, safeStorage } = require('electron');
 const { projectRoot } = require('./paths');
 const { DEFAULT_CLOSE_TO_TRAY } = require('./close-behavior');
 const { normalizeRelayHostToken } = require('../shared/relay-auth');
-const { normalizeRelayOrigin } = require('../shared/lan');
 const { normalizeRemotePatch } = require('./remote-patch');
 const { normalizeGrowthState } = require('./pet-growth');
 const { normalizeStats } = require('./pet-stats');
@@ -709,7 +708,6 @@ module.exports = {
   normalizeLauncherConfigPatch,
   normalizePetState,
   normalizeRemotePatch,
-  normalizeRelayOrigin,
   normalizeRemoteBindAddress,
   normalizeRemoteConfig,
 };

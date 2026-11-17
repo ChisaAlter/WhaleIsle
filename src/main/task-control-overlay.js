@@ -98,9 +98,7 @@ function withoutTaskControlAliases(list) {
 
 module.exports = {
   TASK_CONTROL_PACKAGE,
-  TASK_CONTROL_ALIASES,
   TASK_CONTROL_INSERT_ID,
-  TASK_CONTROL_OVERLAY_FILENAME,
   withoutTaskControlAliases,
   ensureDesktopTaskControl,
 };

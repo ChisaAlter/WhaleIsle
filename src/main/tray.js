@@ -69,7 +69,5 @@ function invokeTrayAction(name) {
 module.exports = {
   createTray,
   refreshTrayMenu,
-  showMain,
-  trayMenuTemplate,
   invokeTrayAction,
 };

@@ -66,4 +66,4 @@ function ensureDesktopDshPad(options = {}) {
   return { ok: true, added, sourceDir, overlayFile };
 }
 
-module.exports = { DSH_PAD_PACKAGE, DSH_PAD_RUNTIME_ALIAS, DSH_PAD_OVERLAY_FILENAME, ensureDesktopDshPad };
+module.exports = { DSH_PAD_RUNTIME_ALIAS, ensureDesktopDshPad };

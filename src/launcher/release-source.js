@@ -269,5 +269,4 @@ module.exports = {
   listFor,
   releaseFor,
   releaseRaw,
-  summarizeForRoute,
 };

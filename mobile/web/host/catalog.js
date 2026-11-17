@@ -248,7 +248,6 @@ export {
   heldSessionRow,
   insertSessionMove,
   liveSessionRows,
-  parentDir,
   presetChoices,
   withHeldLiveRow,
   workspaceChoices,

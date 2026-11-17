@@ -132,7 +132,6 @@ function assertRc5Witness(git, pin) {
 }
 
 module.exports = {
-  PIN_RELATIVE,
   DEFAULT_REPO,
   RC5_SHA,
   SQUASH_WITNESS,

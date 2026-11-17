@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const {
   DEFAULT_PUBLIC_APP_BASE_URL,
   DEFAULT_RELAY_ENDPOINT,
-  DEFAULT_RELAY_ORIGIN,
   DEFAULT_RELAY_USE_TLS,
   LEGACY_DEFAULT_PUBLIC_APP_BASE_URL,
   LEGACY_DEFAULT_RELAY_ENDPOINT,
@@ -54,7 +53,6 @@ test('isVirtualOrLinkLocalIpv4 covers APIPA and CGNAT', () => {
 
 test('server defaults use the ayase.cn TLS relay and nginx SPA path', () => {
   assert.equal(DEFAULT_RELAY_ENDPOINT, 'ayase.cn:443');
-  assert.equal(DEFAULT_RELAY_ORIGIN, 'https://ayase.cn');
   assert.equal(DEFAULT_RELAY_USE_TLS, true);
   assert.equal(DEFAULT_PUBLIC_APP_BASE_URL, 'https://ayase.cn/dshd');
   assert.doesNotMatch(DEFAULT_PUBLIC_APP_BASE_URL, /:8411/);

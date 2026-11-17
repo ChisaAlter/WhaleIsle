@@ -1,24 +1,16 @@
-const { tokenFromHeaders, tokensEqual } = require('./remote-auth');
-
-const RELAY_HOST_TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,512}$/;
-
+/**
+ * Normalize a user-entered relay host token from remote settings.
+ * `null` preserves the stored credential; any other value replaces it.
+ * @param {*} value - value from the settings patch.
+ * @returns {string|null}
+ */
 function normalizeRelayHostToken(value) {
-  if (typeof value !== 'string') {
-    return '';
+  if (value == null) {
+    return null;
   }
-  const token = value.trim();
-  return RELAY_HOST_TOKEN_PATTERN.test(token) ? token : '';
-}
-
-function relayHostAuthorized(headers, expectedToken) {
-  const expected = normalizeRelayHostToken(expectedToken);
-  if (!expected) {
-    return false;
-  }
-  return tokensEqual(tokenFromHeaders(headers || {}, '/'), expected);
+  return String(value || '').trim();
 }
 
 module.exports = {
   normalizeRelayHostToken,
-  relayHostAuthorized,
 };

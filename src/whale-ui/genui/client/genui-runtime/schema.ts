@@ -281,9 +281,6 @@ export const GENUI_SPEC_SCHEMA = schema(['items'], {
   items: 'nodes',
 }, {}, { nested: { computed: computedFieldSchema } })
 
-/** Backwards-friendly short alias for the root specification schema. */
-export const SPEC_SCHEMA = GENUI_SPEC_SCHEMA
-
 /**
  * Native component field metadata.
  *

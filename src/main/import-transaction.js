@@ -675,10 +675,5 @@ module.exports = {
   reconcileImportTransactionsSync,
   overlayDir,
   nextOpId,
-  decideTxnResolution,
-  txnJournalOwnsPath,
   parentChainIsLinkFree,
-  TMP_SUFFIX,
-  BAK_SUFFIX,
-  TXN_SUFFIX,
 };

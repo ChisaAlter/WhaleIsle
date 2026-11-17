@@ -248,16 +248,12 @@ function readMarketplaceCurrent(plugin, status) {
 }
 
 module.exports = {
-  UPDATES_TTL_MS,
   compareVersions,
   isUpgrade,
-  readInstalledVersion,
-  readLockCommits,
   checkMarketplacePluginUpdate,
   checkMarketplaceUpdates,
   resolveMarketplaceUpdate,
   marketplaceUpdateTarget,
   readMarketplaceCurrent,
   invalidateMarketplaceUpdates,
-  isRegistryDependency,
 };

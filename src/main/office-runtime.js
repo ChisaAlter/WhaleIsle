@@ -382,20 +382,12 @@ function ensureDesktopOfficeRuntime(options = {}) {
 }
 
 module.exports = {
-  OFFICE_DIR_NAME,
   OFFICE_OVERLAY_FILENAME,
-  PRIMARY_RUNTIME_DIRNAME,
   OFFICE_SKILLS_DIRNAME,
   OFFICE_SKILL_FOLDERS,
-  KIT_PACKAGE,
-  KIT_CLI_ENTRY,
-  WORKSPACE_DEPENDENCIES_PACKAGE,
-  SKILL_OFFICE_PACKAGE,
   requiredEnginePackage,
   officeRuntimeCandidates,
   readRuntimeManifest,
-  resolveOfficeKit,
-  expectedPackagedKitCli,
   officeRuntimeEnv,
   ensureDesktopOfficeRuntime,
 };

@@ -151,7 +151,5 @@ function watchWorkspaceRegistrations(onChange, options = {}) {
 
 module.exports = {
   WORKSPACE_REGISTRY_FILE,
-  WATCH_RETRY_MS,
-  WATCH_DEBOUNCE_MS,
   watchWorkspaceRegistrations,
 };

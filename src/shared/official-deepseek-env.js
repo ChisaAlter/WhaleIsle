@@ -72,9 +72,6 @@ function applyOfficialDeepSeekSpawnEnv(env, config = {}) {
 }
 
 module.exports = {
-  OFFICIAL_DEEPSEEK_HOST,
-  OFFICIAL_DEEPSEEK_MESSAGES_URL,
   isOfficialDeepSeekBaseUrl,
-  normalizeOfficialDeepSeekBaseUrl,
   applyOfficialDeepSeekSpawnEnv,
 };

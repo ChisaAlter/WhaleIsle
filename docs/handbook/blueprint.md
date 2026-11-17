@@ -48,8 +48,8 @@ flowchart TB
 | 设置各 section | Harness `settings.section` 插件 / 桌面内置模块 | 市场安装、用量统计、SSH 远程工作区、壁纸 catalog、跳转 IPC |
 | 托盘 / 应用菜单 | main `tray.js` / `menu.js` | 打开设置、显示窗口、宠物开关、退出 |
 | 桌面宠物 | `src/renderer/pet-live2d.*`（Live2D 整屏透明 `BrowserWindow`，`pet://` scheme）/ `pet.*`（Codex BrowserView，feature 关闭） | main `desktop-live2d.js` / `desktop-pet*.js`：窄 IPC、位置与养成持久化 |
-| 手机 SPA | `mobile/web` | main `remote.js` / `mobile-web.js` 代理到 loopback harness |
-| Android | `mobile/android` | 同一网关；JSON 登录 + `/__remote__/shell` |
+| 手机 SPA | `mobile/web` | main `dshd-remote.js` + `mobile-web-server.js`（ChisaCode daemon + offer v2） |
+| Android | `mobile/android` | 同协议客户端（Host/Git 白名单经 daemon） |
 
 视觉语言：除启动页仪器例外外，一律官方 `dsh web`（[design-language.md](../design-language.md)）。
 

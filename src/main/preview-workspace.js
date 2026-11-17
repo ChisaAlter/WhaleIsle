@@ -272,4 +272,4 @@ function createWorkspacePreviewController(options = {}) {
   return { fileUrl, close };
 }
 
-module.exports = { createWorkspacePreviewController, parseByteRange };
+module.exports = { createWorkspacePreviewController };

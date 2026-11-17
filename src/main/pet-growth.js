@@ -863,6 +863,5 @@ module.exports = {
   createGrowthTracker,
   createScanWorker,
   dayKey,
-  zstdDecompressAll,
   zstdFrameSize,
 };
