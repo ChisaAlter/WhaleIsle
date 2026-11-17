@@ -62,7 +62,10 @@ Feature card：[../../features/desktop-live2d-pet.md](../../features/desktop-liv
 | 主进程 | `src/main/pet-stats.js` | 纯逻辑：饱食/心情/亲密衰减、增量、冷却、称号 |
 | 主进程 | `src/main/pet-settings.js` | 纯逻辑：设置默认值/规范化/部分合并（非法 patch 保现值不回默认）、活跃三档表、dsh 水位线与 fileEaten 归一化 |
 | preload | `src/preload/index.js` | `pet-live2d` 角色的窄 API（见 IPC 一节） |
-| 渲染器 | `src/renderer/pet-live2d.js` | 部件木偶渲染（主路径）、姿态控制、粒子、气泡仲裁、状态卡、乱逛 FSM、拖拽/命中；THA4 推理与立绘层为 fallback |
+| 渲染器入口 | `src/renderer/pet-live2d.js` | mount、成长/动作入口、DSH 推送接线 |
+| 渲染与动作 | `src/renderer/pet-live2d-{state,pose,runtime,rig,live-states,animation,presentation}.js` | 共享状态、姿态、THA4/超分、部件木偶、状态程序、物理/乱逛/粒子、单一显示节拍 |
+| 交互与卡片 | `src/renderer/pet-live2d-{interaction,bubbles,panel,settings,chat,chat-session}.js` | 命中/拖拽、气泡仲裁、状态卡、设置与看看、对话 UI 和会话同步 |
+| 渲染器资源 | `src/renderer/pet-live2d-lifetime.js` | 页面关闭时统一卸载 DOM/IPC 监听、timeout/interval 和 rAF；HTML 按显式顺序加载经典脚本，保留同一词法状态 |
 | 渲染器 | `src/renderer/pet-physics.js` | 纯函数物理：弹簧、出手速度估计、弹道积分与反弹（`PetPhysics` 全局） |
 | 渲染器 | `src/renderer/pet-wander.js` | 纯函数乱逛：限界随机目标、面朝偏向、ease 插值滑步（`PetWander` 全局） |
 | 渲染器 | `src/renderer/pet-dialogue.js` + `dialogue/whale.json` | 台词库存取、洗牌袋、人格层解析、模板渲染、时段类目 |
