@@ -16,6 +16,9 @@ const STOP_GRACE_MS = 4000;
 const STATE_WAIT_MS = 4000;
 const MAX_RESTARTS = 3;
 
+/** @typedef {{ componentsRoot?: string, userDataDir?: string, samplesRoot?: string, fs?: typeof import('fs'), readFileSync?: typeof import('fs').readFileSync, renameSync?: typeof import('fs').renameSync, platform?: NodeJS.Platform, processKill?: (pid: number, signal?: any) => boolean, execFileSync?: typeof import('child_process').execFileSync, execFile?: typeof import('child_process').execFile, spawn?: typeof import('child_process').spawn, execPath?: string, log?: (message: string) => void, maxRestarts?: number, restartBaseMs?: number, startGraceMs?: number, stateWaitMs?: number }} ComponentsDeps */
+
+/** @param {ComponentsDeps} [deps] */
 function createComponentsService(deps = {}) {
   const root = store.componentsRoot(deps);
   const procs = new Map();
@@ -24,7 +27,7 @@ function createComponentsService(deps = {}) {
 
   // Registry cache: loaded once, rewritten by ops; snapshot() must stay a
   // cheap sync read for the shared status contributor.
-  const cache = { loaded: false, data: { components: {} } };
+  const cache = { loaded: false, data: /** @type {{ components: Record<string, any> }} */ ({ components: {} }) };
 
   function readRegistry() {
     if (!cache.loaded) {
@@ -38,15 +41,21 @@ function createComponentsService(deps = {}) {
     store.saveRegistry(root, cache.data, deps);
   }
 
+  /** @param {string} id */
   function recordFor(id) {
     return readRegistry().components[id] || null;
   }
 
+  /** @param {string} id */
   function catalogEntry(id) {
     return registry.scanCatalog({ samplesRoot: deps.samplesRoot }, deps)
-      .find((row) => row.id === id) || null;
+      .find((/** @type {any} */ row) => row.id === id) || null;
   }
 
+  /**
+   * @param {any} onProgress
+   * @param {any} payload
+   */
   function emit(onProgress, payload) {
     if (typeof onProgress === 'function') {
       try {
@@ -57,6 +66,10 @@ function createComponentsService(deps = {}) {
     }
   }
 
+  /**
+   * @param {string} id
+   * @param {() => Promise<any>} fn
+   */
   function withLock(id, fn) {
     if (busy.has(id)) {
       return Promise.resolve({ ok: false, error: 'busy', id });
@@ -94,6 +107,10 @@ function createComponentsService(deps = {}) {
     }
   }
 
+  /**
+   * @param {any} cat
+   * @param {any} rec
+   */
   function listRow(cat, rec) {
     const updateAvailable = Boolean(rec && cat && cat.latest
       && registry.compareVersions(cat.latest, rec.version) > 0);
@@ -134,12 +151,19 @@ function createComponentsService(deps = {}) {
     return { components };
   }
 
+  /** @param {string} id */
   function row(id) {
-    return list().components.find((row) => row.id === id) || null;
+    return list().components.find((/** @type {any} */ row) => row.id === id) || null;
   }
 
   // Stage payload → verify staged manifest → swap into versions/<v>. A broken
   // stage never touches the active dir.
+  /**
+   * @param {string} id
+   * @param {any} manifest
+   * @param {any} onProgress
+   * @param {string} op
+   */
   async function stagePayload(id, manifest, onProgress, op) {
     const staging = store.stagingDir(root, id);
     const target = store.versionDir(root, id, manifest.version);
@@ -166,25 +190,36 @@ function createComponentsService(deps = {}) {
       await fsp.rename(staging, target);
     } catch (error) {
       await lifecycle.removeDir(staging, deps);
-      throw Object.assign(error, { code: 'switch-failed' });
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: 'switch-failed' });
     }
     return { dir: target, manifest: staged };
   }
 
+  /**
+   * @param {string} id
+   * @param {any} rec
+   */
   function activePayload(id, rec) {
     const dir = store.versionDir(root, id, rec.version);
     const manifest = registry.readManifest(dir, deps);
     return manifest ? { dir, manifest } : null;
   }
 
+  /**
+   * @param {string} id
+   * @param {any} child
+   * @param {number} gen
+   * @param {any} onProgress
+   */
   function attachSupervision(id, child, gen, onProgress) {
+    /** @type {{ child: any, pid: any, gen: number, expectedExit: boolean, attempts: number, timer: any, spawnError?: any }} */
     const proc = { child, pid: child.pid, gen, expectedExit: false, attempts: 0, timer: null };
     procs.set(id, proc);
     if (typeof child.once === 'function') {
-      child.once('error', (error) => {
+      child.once('error', (/** @type {any} */ error) => {
         proc.spawnError = error;
       });
-      child.once('exit', (code) => {
+      child.once('exit', (/** @type {any} */ code) => {
         onChildExit(id, gen, code, onProgress);
       });
     }
@@ -194,6 +229,12 @@ function createComponentsService(deps = {}) {
   // Unexpected exit while marked running → bounded backoff restart; give up
   // into 'error' after MAX_RESTARTS so a crash-looping component is visible
   // instead of silently respawning forever.
+  /**
+   * @param {string} id
+   * @param {number} gen
+   * @param {any} code
+   * @param {any} onProgress
+   */
   function onChildExit(id, gen, code, onProgress) {
     const proc = procs.get(id);
     if (!proc || proc.gen !== gen || proc.expectedExit) {
@@ -248,6 +289,10 @@ function createComponentsService(deps = {}) {
     }
   }
 
+  /**
+   * @param {number} pid
+   * @param {number} [graceMs]
+   */
   async function waitStopped(pid, graceMs = STOP_GRACE_MS) {
     const deadline = Date.now() + graceMs;
     while (Date.now() < deadline) {
@@ -259,6 +304,11 @@ function createComponentsService(deps = {}) {
     return !lifecycle.isPidAlive(pid, deps);
   }
 
+  /**
+   * @param {string} id
+   * @param {any} onProgress
+   * @param {string} op
+   */
   async function stopComponent(id, onProgress, op) {
     const rec = recordFor(id);
     if (!rec) {
@@ -294,6 +344,11 @@ function createComponentsService(deps = {}) {
     return { ok: true, state: 'stopped', id };
   }
 
+  /**
+   * @param {string} id
+   * @param {any} onProgress
+   * @param {string} [op]
+   */
   async function startComponent(id, onProgress, op = 'start') {
     const rec = recordFor(id);
     if (!rec) {
@@ -322,7 +377,7 @@ function createComponentsService(deps = {}) {
       }, deps);
     } catch (error) {
       rec.state = 'error';
-      rec.lastError = `启动失败：${error.message || error}`;
+      rec.lastError = `启动失败：${error instanceof Error ? error.message : String(error)}`;
       writeRegistry();
       emit(onProgress, { id, op, phase: 'error', percent: 100, message: rec.lastError });
       return { ok: false, error: 'spawn-failed', id, state: 'error', message: rec.lastError };
@@ -368,6 +423,7 @@ function createComponentsService(deps = {}) {
     return { ok: true, state: 'running', id, pid: rec.pid, url: rec.url };
   }
 
+  /** @param {any} arg */
   function normalizeTarget(arg) {
     if (typeof arg === 'string') {
       return { id: arg.trim(), version: '' };
@@ -381,6 +437,10 @@ function createComponentsService(deps = {}) {
     return { id: '', version: '' };
   }
 
+  /**
+   * @param {any} arg
+   * @param {any} onProgress
+   */
   function install(arg, onProgress) {
     const target = normalizeTarget(arg);
     if (!store.validComponentId(target.id)) {
@@ -421,17 +481,26 @@ function createComponentsService(deps = {}) {
         emit(onProgress, { id, op: 'install', phase: 'done', percent: 100 });
         return { ok: true, component: row(id) };
       } catch (error) {
-        emit(onProgress, { id, op: 'install', phase: 'error', percent: 100, message: error.message });
-        return { ok: false, error: error.code || 'install-failed', id, message: error.message };
+        const err = /** @type {any} */ (error);
+        emit(onProgress, { id, op: 'install', phase: 'error', percent: 100, message: err.message });
+        return { ok: false, error: err.code || 'install-failed', id, message: err.message };
       }
     });
   }
 
+  /**
+   * @param {any} id
+   * @param {any} onProgress
+   */
   function start(id, onProgress) {
     id = typeof id === 'string' ? id.trim() : '';
     return withLock(id, () => startComponent(id, onProgress));
   }
 
+  /**
+   * @param {any} id
+   * @param {any} onProgress
+   */
   function stop(id, onProgress) {
     id = typeof id === 'string' ? id.trim() : '';
     return withLock(id, () => stopComponent(id, onProgress, 'stop')
@@ -447,6 +516,10 @@ function createComponentsService(deps = {}) {
       }));
   }
 
+  /**
+   * @param {any} id
+   * @param {any} onProgress
+   */
   function update(id, onProgress) {
     id = typeof id === 'string' ? id.trim() : '';
     return withLock(id, async () => {
@@ -471,8 +544,9 @@ function createComponentsService(deps = {}) {
       try {
         await stagePayload(id, latest, onProgress, 'update');
       } catch (error) {
-        emit(onProgress, { id, op: 'update', phase: 'error', percent: 100, message: error.message });
-        return { ok: false, error: error.code || 'update-failed', id, from, to: from, message: error.message };
+        const err = /** @type {any} */ (error);
+        emit(onProgress, { id, op: 'update', phase: 'error', percent: 100, message: err.message });
+        return { ok: false, error: err.code || 'update-failed', id, from, to: from, message: err.message };
       }
       // Keep exactly one rollback payload: the superseded previous dir goes.
       const oldPrevious = rec.previous;
@@ -499,6 +573,10 @@ function createComponentsService(deps = {}) {
     });
   }
 
+  /**
+   * @param {any} id
+   * @param {any} onProgress
+   */
   function rollback(id, onProgress) {
     id = typeof id === 'string' ? id.trim() : '';
     return withLock(id, async () => {
@@ -545,6 +623,10 @@ function createComponentsService(deps = {}) {
     });
   }
 
+  /**
+   * @param {any} id
+   * @param {any} onProgress
+   */
   function uninstall(id, onProgress) {
     id = typeof id === 'string' ? id.trim() : '';
     return withLock(id, async () => {

@@ -23,14 +23,17 @@ import { CONTROL_PREFIX, createControlHandler } from './http.js';
 import { admittedBefore, disposeGuards, markAdmitted, undrained, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
 
 export const name = 'dsh-task-control';
+/** @type {string[]} */
 export const inject = [];
 
 /** @param {import('@deepseek-ai/cordis').Context} ctx */
 export function apply(ctx) {
   const state = createControlState();
   const token = internalSecret('DSHD_TASK_CONTROL_TOKEN');
+  /** @type {Array<{ webServer: any, route: any, dispose: () => void }>} */
   const controlRoutes = [];
   ctx.provide('desktopTaskAdmission', {
+    /** @param {string} label */
     begin(label) {
       const permit = admit(state, label);
       if (!permit.accepted) throw new Error(permit.code);
@@ -82,7 +85,7 @@ export function apply(ctx) {
   };
 
   installGuards();
-  ctx.on('internal/service', (serviceName) => {
+  ctx.on('internal/service', (/** @type {string} */ serviceName) => {
     if (serviceName === 'webServer' || serviceName === 'sessionController' || serviceName === 'jobs') {
       installGuards();
     }
@@ -91,7 +94,9 @@ export function apply(ctx) {
   // Second gate on the /api waterfall: the connection route was registered
   // before this plugin loaded, so it cannot be gated solely by the wrapped
   // registration path in compositions where the route table is rebuilt.
-  ctx.on('connection/request', async (request, response, next) => {
+  // 'connection/request' is a desktop-emitted event absent from cordis's
+  // built-in Events map, so the name is cast for the overload check.
+  ctx.on(/** @type {any} */ ('connection/request'), async (/** @type {any} */ request, /** @type {any} */ response, /** @type {() => Promise<any>} */ next) => {
     if (admittedBefore(request)) return next();
     const admission = admit(state, `conn ${request.method} ${request.url}`);
     if (!admission.accepted) {

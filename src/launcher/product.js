@@ -8,13 +8,14 @@
 const { DESKTOP_TARGET } = require('./install-detect');
 const { LEGACY_DESKTOP_USER_DATA } = require('../shared/product-identity');
 
+/** @type {boolean | undefined} */
 let cachedFlavor;
 
 function readPackageFlag() {
   try {
     // Resolves to the packaged app's package.json inside asar, where
     // electron-builder has already applied extraMetadata.
-    const pkg = require('../../package.json');
+    const pkg = /** @type {any} */ (require('../../package.json'));
     return pkg && pkg.dshdPackage === 'launcher';
   } catch {
     return false;
@@ -37,6 +38,7 @@ function runtimeTarget() {
 // The slim launcher keeps its OWN userData and instance lock; both entry
 // points pin their original paths after the public product rename. Shared
 // desktop state is addressed explicitly rather than moving either directory.
+/** @param {import('electron').App} app */
 function desktopUserDataDir(app) {
   const path = require('path');
   return path.join(app.getPath('appData'), LEGACY_DESKTOP_USER_DATA);
@@ -45,6 +47,7 @@ function desktopUserDataDir(app) {
 // Where launcher-visible desktop state lives: last-desktop-start.json and
 // the import journal are written/read against the runtime's home so both
 // processes see one truth; the full package resolves to its own userData.
+/** @param {import('electron').App} app */
 function desktopStateDir(app) {
   return isLauncherPackage() ? desktopUserDataDir(app) : app.getPath('userData');
 }

@@ -19,12 +19,17 @@ const writers = new Map();
 
 function noop() {}
 
+/** @param {string} stateDir */
 function bootLogPath(stateDir) {
   return path.join(stateDir, 'logs', 'last-external-boot.log');
 }
 
 // Drop the oldest half once over cap, restarting on a line boundary so the
 // kept tail stays parseable evidence instead of a mid-token fragment.
+/**
+ * @param {string} file
+ * @param {typeof fs.promises} fsp
+ */
 async function rotateTail(file, fsp) {
   const buf = await fsp.readFile(file);
   let tail = buf.subarray(Math.max(0, buf.length - ROTATE_KEEP_BYTES));
@@ -36,6 +41,11 @@ async function rotateTail(file, fsp) {
   return tail.length;
 }
 
+/**
+ * @param {any} child
+ * @param {string | undefined | null} file
+ * @param {{ fs?: typeof fs }} [deps]
+ */
 function attachBootLog(child, file, deps = {}) {
   const fsp = (deps.fs || fs).promises;
   if (!file) {
@@ -43,13 +53,15 @@ function attachBootLog(child, file, deps = {}) {
   }
   let size = 0;
   let queuedBytes = 0;
+  /** @type {any} */
   let lastError = null;
   let paused = false;
   let closed = false;
-  let resolveClosed;
+  /** @type {(value?: unknown) => void} */
+  let resolveClosed = () => {};
   const whenClosed = new Promise((resolve) => { resolveClosed = resolve; });
   const streams = [child && child.stdout, child && child.stderr].filter(Boolean);
-  const failed = (error) => { lastError = error; };
+  const failed = (/** @type {any} */ error) => { lastError = error; };
   let pending = Promise.resolve().then(async () => {
     await fsp.mkdir(path.dirname(file), { recursive: true });
     await fsp.writeFile(file, '');
@@ -63,7 +75,7 @@ function attachBootLog(child, file, deps = {}) {
       for (const stream of streams) stream.resume?.();
     }
   };
-  const write = (chunk) => {
+  const write = (/** @type {any} */ chunk) => {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     queuedBytes += buf.length;
     flowControl();
@@ -79,7 +91,7 @@ function attachBootLog(child, file, deps = {}) {
     });
     return pending;
   };
-  const line = (text) => {
+  const line = (/** @type {any} */ text) => {
     write(`\n[${new Date().toISOString()}] ${String(text)}\n`);
   };
   const flush = async () => {
@@ -118,6 +130,9 @@ function attachBootLog(child, file, deps = {}) {
 /**
  * Last `options.maxLines` non-empty lines for the forensics corpus, or []
  * when the file is missing/unreadable (no external boot has happened yet).
+ * @param {string} file
+ * @param {{ maxLines?: number }} [options]
+ * @param {{ fs?: typeof fs }} [deps]
  */
 function readBootLogTail(file, options = {}, deps = {}) {
   const fsm = deps.fs || fs;
@@ -134,6 +149,11 @@ function readBootLogTail(file, options = {}, deps = {}) {
   }
 }
 
+/**
+ * @param {string} file
+ * @param {{ maxLines?: number }} [options]
+ * @param {{ fs?: typeof fs }} [deps]
+ */
 async function readBootLogTailAsync(file, options = {}, deps = {}) {
   const fsp = (deps.fs || fs).promises;
   try {

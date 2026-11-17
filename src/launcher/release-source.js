@@ -8,6 +8,7 @@ const update = require('../main/update');
 const { systemFetch } = require('../main/system-proxy');
 const deltaManifest = require('./delta/manifest');
 
+/** @type {Record<string, { id: string, label: string, detail: string, verified: boolean, apiBase: string, page: string }>} */
 const ROUTES = {
   github: {
     id: 'github',
@@ -29,6 +30,7 @@ const ROUTES = {
   },
 };
 
+/** @param {any} value */
 function normalizeRoute(value) {
   const saved = String(value || '').trim().toLowerCase();
   const key = saved === 'gitee' ? 'cnb' : saved;
@@ -57,9 +59,10 @@ function systemRegion() {
  * (Simplified Chinese locale or a China time zone), GitHub elsewhere and
  * outside a ready Electron app.
  */
+/** @param {{ locale?: string, timeZone?: string } | null} [region] */
 function defaultRoute(region = systemRegion()) {
   if (!region) return 'github';
-  return /^zh-(cn|hans)\b/i.test(region.locale || '') || CHINA_TIME_ZONES.has(region.timeZone) ? 'cnb' : 'github';
+  return /^zh-(cn|hans)\b/i.test(region.locale || '') || CHINA_TIME_ZONES.has(region.timeZone || '') ? 'cnb' : 'github';
 }
 
 function listRoutes() {
@@ -72,6 +75,11 @@ function listRoutes() {
   }));
 }
 
+/**
+ * @param {string} url
+ * @param {number} [timeoutMs]
+ * @param {{ signal?: AbortSignal }} [options]
+ */
 async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS, { signal } = {}) {
   let response;
   try {
@@ -97,18 +105,25 @@ async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS, { signal } = {}
   return response.json();
 }
 
+/**
+ * @param {string} route
+ * @param {string} url
+ * @param {number | undefined} timeoutMs
+ * @param {any} [options]
+ */
 function fetchJson(route, url, timeoutMs, options) {
   return route === 'cnb' ? cnbJson(url, timeoutMs, options) : update.githubJson(url, timeoutMs, options);
 }
 
 // Both providers expose GitHub-shaped release fields.
+/** @param {any} release */
 function normalizeAssets(release) {
   if (!release || !Array.isArray(release.assets)) {
     return release;
   }
   return {
     ...release,
-    assets: release.assets.map((asset) => ({
+    assets: release.assets.map((/** @type {any} */ asset) => ({
       ...asset,
       browser_download_url: asset?.browser_download_url || asset?.download_url || '',
     })),
@@ -118,6 +133,11 @@ function normalizeAssets(release) {
 // A release row is delta-eligible when it ships
 // `<product>-delta-<installedVersion>-<toVersion>.zip`; install.js re-picks
 // the same asset at apply time, so the row only carries display fields.
+/**
+ * @param {any} release
+ * @param {string | undefined} installedVersion
+ * @param {string | undefined} toVersion
+ */
 function deltaInfoForRow(release, installedVersion, toVersion) {
   const from = update.normalizeVersion(installedVersion || '');
   const to = update.normalizeVersion(toVersion || '');
@@ -140,6 +160,11 @@ function deltaInfoForRow(release, installedVersion, toVersion) {
   return null;
 }
 
+/**
+ * @param {string} route
+ * @param {any} release
+ * @param {string | undefined} installedVersion
+ */
 function summarizeForRoute(route, release, installedVersion) {
   const normalized = normalizeAssets(release);
   const summary = update.summarizeRelease(normalized, installedVersion || '');
@@ -150,7 +175,7 @@ function summarizeForRoute(route, release, installedVersion) {
   // Prototype row meta needs the publish date + installer size; summarizeRelease
   // drops the assets, so re-locate the picked installer by its name.
   const installer = (Array.isArray(normalized?.assets) ? normalized.assets : []).find(
-    (asset) => asset && asset.name === summary.assetName,
+    (/** @type {any} */ asset) => asset && asset.name === summary.assetName,
   );
   return {
     ...summary,
@@ -162,6 +187,10 @@ function summarizeForRoute(route, release, installedVersion) {
   };
 }
 
+/**
+ * @param {string} route
+ * @param {object} [extra]
+ */
 function routeSnapshot(route, extra = {}) {
   const desc = ROUTES[route];
   return {
@@ -175,6 +204,11 @@ function routeSnapshot(route, extra = {}) {
 // Raw release payload with assets intact (releaseFor's summary drops them).
 // Mirror uploads are staged as prereleases. Select stable versions by version
 // number so a later backfill of an older release does not become the update.
+/**
+ * @param {string} route
+ * @param {string | null | undefined} tag
+ * @param {{ timeoutMs?: number, signal?: AbortSignal }} [options]
+ */
 async function releaseRaw(route, tag, { timeoutMs, signal } = {}) {
   const desc = ROUTES[route];
   if (!desc) {
@@ -192,12 +226,16 @@ async function releaseRaw(route, tag, { timeoutMs, signal } = {}) {
   if (route === 'cnb') {
     const list = await fetchJson(route, `${desc.apiBase}/releases?page_size=30`, timeoutMs, { signal });
     return (Array.isArray(list) ? list : [])
-      .filter((row) => row && !row.draft && !row.prerelease)
-      .sort((a, b) => update.compareVersions(b.tag_name, a.tag_name))[0] || null;
+      .filter((/** @type {any} */ row) => row && !row.draft && !row.prerelease)
+      .sort((/** @type {any} */ a, /** @type {any} */ b) => update.compareVersions(b.tag_name, a.tag_name))[0] || null;
   }
   return fetchJson(route, `${desc.apiBase}/releases/latest`, timeoutMs, { signal });
 }
 
+/**
+ * @param {string} route
+ * @param {{ installedVersion?: string, timeoutMs?: number, signal?: AbortSignal }} [options]
+ */
 async function latestFor(route, { installedVersion = '', timeoutMs, signal } = {}) {
   const desc = ROUTES[route];
   if (!desc) {
@@ -228,11 +266,15 @@ async function latestFor(route, { installedVersion = '', timeoutMs, signal } = {
       assetName: '',
       assetUrl: '',
       htmlUrl: desc.page,
-      message: error.message || String(error),
+      message: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
+/**
+ * @param {string} route
+ * @param {{ installedVersion?: string, timeoutMs?: number }} [options]
+ */
 async function listFor(route, { installedVersion = '', timeoutMs } = {}) {
   const desc = ROUTES[route];
   if (!desc) {
@@ -241,19 +283,24 @@ async function listFor(route, { installedVersion = '', timeoutMs } = {}) {
   try {
     const list = await fetchJson(route, `${desc.apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=30`, timeoutMs);
     const releases = (Array.isArray(list) ? list : [])
-      .filter((row) => route !== 'cnb' || (!row?.draft && !row?.prerelease))
-      .map((row) => summarizeForRoute(route, row, installedVersion))
+      .filter((/** @type {any} */ row) => route !== 'cnb' || (!row?.draft && !row?.prerelease))
+      .map((/** @type {any} */ row) => summarizeForRoute(route, row, installedVersion))
       .filter(Boolean);
     return routeSnapshot(route, { status: 'ok', releases });
   } catch (error) {
     return routeSnapshot(route, {
       status: 'error',
       releases: [],
-      message: error.message || String(error),
+      message: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
+/**
+ * @param {string} route
+ * @param {any} tag
+ * @param {{ installedVersion?: string, timeoutMs?: number, signal?: AbortSignal }} [options]
+ */
 async function releaseFor(route, tag, { installedVersion = '', timeoutMs, signal } = {}) {
   const release = await releaseRaw(route, tag, { timeoutMs, signal });
   return release ? summarizeForRoute(route, release, installedVersion) : null;

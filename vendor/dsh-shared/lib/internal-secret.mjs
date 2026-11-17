@@ -17,7 +17,7 @@ export const INTERNAL_SECRETS_KEY = Symbol.for('whaleisle.internalSecrets');
  * @returns {string}
  */
 export function internalSecret(name) {
-  const store = globalThis[INTERNAL_SECRETS_KEY];
+  const store = Reflect.get(globalThis, INTERNAL_SECRETS_KEY);
   const value = store && typeof store.get === 'function' ? store.get(name) : undefined;
   return typeof value === 'string' ? value : '';
 }
@@ -38,8 +38,8 @@ export function storeInternalSecrets(entries) {
     }
   }
   const store = Object.freeze(
-    Object.defineProperty(Object.create(null), 'get', { value: (name) => map.get(name) }),
+    Object.defineProperty(Object.create(null), 'get', { value: (/** @type {string} */ name) => map.get(name) }),
   );
-  globalThis[INTERNAL_SECRETS_KEY] = store;
+  Reflect.set(globalThis, INTERNAL_SECRETS_KEY, store);
   return store;
 }

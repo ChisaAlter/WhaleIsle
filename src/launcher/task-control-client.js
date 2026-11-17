@@ -12,6 +12,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { PEER_FILENAME } = require('../main/task-control-peer');
 
+/** @param {string} stateDir */
 function readPeerFile(stateDir) {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(stateDir, PEER_FILENAME), 'utf8'));
@@ -25,6 +26,10 @@ function readPeerFile(stateDir) {
   }
 }
 
+/**
+ * @param {number} pid
+ * @param {{ execFileSync?: typeof execFileSync }} [deps]
+ */
 function pidAlive(pid, deps = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   const exec = deps.execFileSync || execFileSync;
@@ -40,6 +45,8 @@ function pidAlive(pid, deps = {}) {
 }
 
 /**
+ * @param {string} stateDir
+ * @param {{ execFileSync?: typeof execFileSync }} [deps]
  * @returns {{ peer: object|null, code: 'ok'|'no-peer'|'stale-peer' }}
  */
 function resolvePeer(stateDir, deps = {}) {
@@ -49,6 +56,12 @@ function resolvePeer(stateDir, deps = {}) {
   return { peer, code: 'ok' };
 }
 
+/**
+ * @param {any} peer
+ * @param {string} op
+ * @param {object} [body]
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [deps]
+ */
 async function callPeer(peer, op, body = {}, deps = {}) {
   const fetchImpl = deps.fetchImpl || globalThis.fetch;
   const controller = new AbortController();
@@ -74,7 +87,7 @@ async function callPeer(peer, op, body = {}, deps = {}) {
     return {
       ok: false,
       code: 'peer-unreachable',
-      detail: error && error.message ? error.message : String(error),
+      detail: error instanceof Error ? error.message : String(error),
     };
   } finally {
     clearTimeout(timer);

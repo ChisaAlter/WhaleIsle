@@ -14,6 +14,7 @@ import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
 import { PLATFORM_PREFIX, createPlatformHandler } from './http.js';
 
 export const name = 'dsh-platform-session';
+/** @type {string[]} */
 export const inject = [];
 
 /** @param {import('@deepseek-ai/cordis').Context} ctx */

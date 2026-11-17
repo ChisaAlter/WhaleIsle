@@ -13,12 +13,16 @@ const WINDOWS_UNINSTALL_REL = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uni
 const WINDOWS_UNINSTALL_WOW = 'Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall';
 const SETTINGS_APPS_URL = 'ms-settings:appsfeatures';
 
+/** @typedef {{ target?: { appId?: string, productName?: string }, execFileSync?: typeof execFileSync, statSync?: typeof fs.statSync, existsSync?: typeof fs.existsSync, platform?: string, isPackaged?: boolean, spawn?: typeof spawn }} InstallDeps */
+
+/** @param {string} productName */
 function productNames(productName) {
   return productName === PRODUCT_NAME ? [PRODUCT_NAME, LEGACY_PRODUCT_NAME] : [productName];
 }
 
 // `deps.target` selects which product's install registration to inspect.
 // Absent → self (today's full package installs the desktop identity).
+/** @param {InstallDeps} [deps] */
 function resolveTarget(deps = {}) {
   const target = deps.target;
   return {
@@ -44,15 +48,24 @@ function readPackagedFlag() {
   }
 }
 
+/**
+ * @param {any} output
+ * @param {string} name
+ */
 function parseRegValue(output, name) {
   const match = String(output || '').match(new RegExp(`^\\s*${name}\\s+REG_(?:EXPAND_)?SZ\\s+(.+)$`, 'im'));
   return match ? match[1].trim() : '';
 }
 
+/** @param {any} output */
 function parseRegUninstallString(output) {
   return parseRegValue(output, 'UninstallString');
 }
 
+/**
+ * @param {string | undefined | null} installDir
+ * @param {string} [productName]
+ */
 function uninstallExeCandidates(installDir, productName = PRODUCT_NAME) {
   if (!installDir) {
     return [];
@@ -64,6 +77,10 @@ function uninstallExeCandidates(installDir, productName = PRODUCT_NAME) {
 }
 
 // exe name of an installed product — electron-builder emits `<productName>.exe`.
+/**
+ * @param {string | undefined | null} installPath
+ * @param {string} [productName]
+ */
 function desktopExeCandidates(installPath, productName = PRODUCT_NAME) {
   if (!installPath) {
     return [];
@@ -74,6 +91,10 @@ function desktopExeCandidates(installPath, productName = PRODUCT_NAME) {
   ]);
 }
 
+/**
+ * @param {Array<string | undefined | null>} candidates
+ * @param {(candidate: string) => boolean} [existsSync]
+ */
 function firstExistingPath(candidates, existsSync = fs.existsSync.bind(fs)) {
   for (const candidate of candidates) {
     if (candidate && existsSync(candidate)) {
@@ -89,6 +110,10 @@ function firstExistingPath(candidates, existsSync = fs.existsSync.bind(fs)) {
 // poll would be noticeable).
 const exeVersionCache = new Map();
 
+/**
+ * @param {string | undefined | null} exePath
+ * @param {InstallDeps} [deps]
+ */
 function exeProductVersion(exePath, deps = {}) {
   if (!exePath) {
     return '';
@@ -122,6 +147,11 @@ function exeProductVersion(exePath, deps = {}) {
   return version;
 }
 
+/**
+ * @param {string} installPath
+ * @param {{ productName: string }} target
+ * @param {InstallDeps} [deps]
+ */
 function installedExeVersion(installPath, target, deps = {}) {
   const exe = firstExistingPath(
     desktopExeCandidates(installPath, target.productName),
@@ -130,6 +160,7 @@ function installedExeVersion(installPath, target, deps = {}) {
   return exeProductVersion(exe, deps);
 }
 
+/** @param {any} uninstallCommand */
 function extractUninstallExe(uninstallCommand) {
   const quoted = String(uninstallCommand || '').match(/^"([^"]+\.exe)"/i);
   if (quoted) {
@@ -139,6 +170,10 @@ function extractUninstallExe(uninstallCommand) {
   return bare ? bare[1] : '';
 }
 
+/**
+ * @param {any} block
+ * @param {string} [keyPath]
+ */
 function parseRegBlock(block, keyPath = '') {
   const displayName = parseRegValue(block, 'DisplayName');
   const uninstallCommand = parseRegUninstallString(block);
@@ -157,6 +192,7 @@ function parseRegBlock(block, keyPath = '') {
   };
 }
 
+/** @param {{ appId?: string }} target */
 function uninstallRegistryKeyPaths(target) {
   const appId = (target && target.appId) || APP_ID;
   const keys = [];
@@ -178,8 +214,10 @@ function uninstallSearchRoots() {
   return roots;
 }
 
+/** @type {any} */
 let registryGetValue;
 
+/** @param {string} key */
 function unicodeRegistryBlock(key) {
   const match = String(key).match(/^(HKCU|HKLM|HKEY_CURRENT_USER|HKEY_LOCAL_MACHINE)\\(.+)$/i);
   if (!match) return '';
@@ -202,6 +240,10 @@ function unicodeRegistryBlock(key) {
   return lines.join('\n');
 }
 
+/**
+ * @param {string} key
+ * @param {InstallDeps} [deps]
+ */
 function queryRegKey(key, deps = {}) {
   const execReg = deps.execFileSync || execFileSync;
   try {
@@ -214,10 +256,12 @@ function queryRegKey(key, deps = {}) {
   }
 }
 
+/** @param {InstallDeps} [deps] */
 function resolvePlatform(deps = {}) {
   return typeof deps.platform === 'string' ? deps.platform : process.platform;
 }
 
+/** @param {InstallDeps} [deps] */
 function findRegisteredWindowsInstall(deps = {}) {
   if (resolvePlatform(deps) !== 'win32') {
     return null;
@@ -265,10 +309,12 @@ function findRegisteredWindowsInstall(deps = {}) {
   return null;
 }
 
+/** @param {InstallDeps} [deps] */
 function discoverWindowsInstall(deps = {}) {
   const existsSync = deps.existsSync || fs.existsSync.bind(fs);
   const packaged = deps.isPackaged !== undefined ? deps.isPackaged : readPackagedFlag();
   const target = resolveTarget(deps);
+  /** @type {string[]} */
   const searchedPaths = [];
 
   if (resolvePlatform(deps) !== 'win32') {
@@ -372,6 +418,7 @@ function discoverWindowsInstall(deps = {}) {
   };
 }
 
+/** @param {InstallDeps} [deps] */
 async function openWindowsAppsSettings(deps = {}) {
   const doSpawn = deps.spawn || spawn;
   try {
@@ -392,6 +439,7 @@ async function openWindowsAppsSettings(deps = {}) {
   }
 }
 
+/** @param {InstallDeps} [deps] */
 function getInstalledAppInfo(deps = {}) {
   const packaged = deps.isPackaged !== undefined ? deps.isPackaged : readPackagedFlag();
   const target = resolveTarget(deps);
@@ -456,6 +504,7 @@ function getInstalledAppInfo(deps = {}) {
   };
 }
 
+/** @param {InstallDeps} [deps] */
 async function launchUninstaller(deps = {}) {
   const packaged = deps.isPackaged !== undefined ? deps.isPackaged : readPackagedFlag();
   const existsSync = deps.existsSync || fs.existsSync.bind(fs);
@@ -543,6 +592,7 @@ async function launchUninstaller(deps = {}) {
 
 // Whether a process with the product's exe image name is alive — the slim
 // launcher's "desktop running" signal before a real control channel exists.
+/** @param {InstallDeps} [deps] */
 function probeDesktopProcess(deps = {}) {
   if (resolvePlatform(deps) !== 'win32') {
     return false;
