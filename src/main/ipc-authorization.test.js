@@ -103,3 +103,12 @@ test('ipcSenderRole rejects a stale frame and a changed origin after navigation'
   harness.mainFrame.url = 'http://127.0.0.1:5173/chat';
   assert.equal(ipcSenderRole(eventFor(harness), policy), null);
 });
+
+test('boot and launcher require both their registered contents and their packaged URL', () => {
+  for (const [surface, url] of [['boot', 'file:///boot.html'], ['launcher', 'file:///launcher.html']]) {
+    const policy = options();
+    assert.equal(ipcSenderRole(eventFor(contents(url)), policy), null, `${surface} URL does not grant another contents its role`);
+    policy.surfaces[surface].mainFrame.url = 'https://attacker.example/';
+    assert.equal(ipcSenderRole(eventFor(policy.surfaces[surface]), policy), null, `${surface} contents loses its role after remote navigation`);
+  }
+});

@@ -123,3 +123,9 @@ test('privileged redirect never uses the current-URL escape hatch', () => {
     allowUrl,
   }), false);
 });
+
+test('loopback hostnames do not authorize non-HTTP protocols', () => {
+  for (const url of ['ftp://127.0.0.1/file', 'ws://localhost:3080/', 'file://localhost/tmp/boot.html']) {
+    assert.equal(isLoopbackHttpUrl(url), false, url);
+  }
+});
