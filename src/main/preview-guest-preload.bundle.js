@@ -381,14 +381,18 @@
           }
         }
         function applyStyle(el, style) {
+          const css = (
+            /** @type {*} */
+            el.style
+          );
           for (const [prop, value] of Object.entries(style)) {
             if (value === null || value === void 0 || value === false) {
               continue;
             }
-            if (el.style && typeof el.style.setProperty === "function") {
-              el.style.setProperty(prop.startsWith("--") ? prop : kebab(prop), String(value));
+            if (css && typeof css.setProperty === "function") {
+              css.setProperty(prop.startsWith("--") ? prop : kebab(prop), String(value));
             } else {
-              el.style[camel(prop)] = String(value);
+              css[camel(prop)] = String(value);
             }
           }
         }
@@ -437,12 +441,19 @@
         }
         function h2(tag, attrs, ...children) {
           if (!isAttrs(attrs)) {
-            children.unshift(attrs);
+            children.unshift(
+              /** @type {WhaleDomChild} */
+              attrs
+            );
             attrs = null;
           }
           const el = SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
           if (attrs) {
-            applyAttrs(el, attrs);
+            applyAttrs(
+              el,
+              /** @type {WhaleDomAttrs} */
+              attrs
+            );
           }
           const flat = [];
           for (const child of children) {
@@ -467,9 +478,11 @@
         module.exports = whaleDom;
       }
       if (typeof window !== "undefined") {
+        /** @type {Window & { whaleDom?: WhaleDom }} */
         window.whaleDom = whaleDom;
       }
       if (typeof globalThis !== "undefined") {
+        /** @type {typeof globalThis & { whaleDom?: WhaleDom }} */
         globalThis.whaleDom = whaleDom;
       }
     }
