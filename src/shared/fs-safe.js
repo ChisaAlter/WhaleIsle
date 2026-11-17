@@ -65,16 +65,36 @@ const RENAME_RETRYABLE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
 const RENAME_RETRY_BUDGET_MS = 2000;
 const RENAME_RETRY_DELAY_MS = 25;
 
+/** @type {(ms: number) => Promise<void>} */
 const renameRetryWait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const renameRetryWaitSync = (() => {
   const cell = new Int32Array(new SharedArrayBuffer(4));
-  return ms => Atomics.wait(cell, 0, 0, ms);
+  return /** @param {number} ms */ ms => Atomics.wait(cell, 0, 0, ms);
 })();
 
+/**
+ * Retry-seam overrides for renameWithRetry/renameWithRetrySync.
+ * @typedef {object} RenameRetryOptions
+ * @property {(from: string, to: string) => void} [rename]
+ * @property {NodeJS.Platform | string} [platform]
+ * @property {(ms: number) => unknown} [sleep]
+ * @property {number} [budgetMs]
+ */
+
+/**
+ * @param {unknown} error
+ * @param {string} platform
+ * @returns {boolean}
+ */
 function renameRetryable(error, platform) {
-  return platform === 'win32' && RENAME_RETRYABLE_CODES.has(error && error.code);
+  const code = /** @type {{ code?: unknown } | null | undefined} */ (error)?.code;
+  return platform === 'win32' && typeof code === 'string' && RENAME_RETRYABLE_CODES.has(code);
 }
 
+/**
+ * @param {RenameRetryOptions} options
+ * @returns {{ platform: string, deadline: number, delayMs: number }}
+ */
 function renameRetryOptions(options) {
   return {
     platform: options.platform ?? process.platform,
@@ -91,6 +111,10 @@ function renameRetryOptions(options) {
  * vendor/dsh-project/lib/files.js implements the same contract because the
  * plugin runtime is copied into profiles and cannot import this file; its
  * behavior is pinned by the cases in fs-safe.test.js.
+ * @param {string} from
+ * @param {string} to
+ * @param {RenameRetryOptions} [options]
+ * @returns {Promise<void>}
  */
 async function renameWithRetry(from, to, options = {}) {
   const rename = options.rename ?? fs.promises.rename.bind(fs.promises);
@@ -107,6 +131,12 @@ async function renameWithRetry(from, to, options = {}) {
   }
 }
 
+/**
+ * @param {string} from
+ * @param {string} to
+ * @param {RenameRetryOptions} [options]
+ * @returns {void}
+ */
 function renameWithRetrySync(from, to, options = {}) {
   const rename = options.rename ?? fs.renameSync.bind(fs);
   const wait = options.sleep ?? renameRetryWaitSync;

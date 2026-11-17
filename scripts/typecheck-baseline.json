@@ -62,7 +62,7 @@
         "Property 'execFile' does not exist on type '{}'.": 1,
         "Property 'execFileSync' does not exist on type '{}'.": 1,
         "Property 'execPath' does not exist on type '{}'.": 1,
-        "Property 'fs' does not exist on type '{}'.": 6,
+        "Property 'fs' does not exist on type '{}'.": 5,
         "Property 'isDead' does not exist on type '{ timeoutMs?: number | undefined; pollMs?: number | undefined; }'.": 1,
         "Property 'platform' does not exist on type '{}'.": 2,
         "Property 'processKill' does not exist on type '{}'.": 1,
@@ -71,7 +71,7 @@
       "TS7006": {
         "Parameter 'dest' implicitly has an 'any' type.": 1,
         "Parameter 'dir' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 3,
+        "Parameter 'file' implicitly has an 'any' type.": 2,
         "Parameter 'pid' implicitly has an 'any' type.": 3,
         "Parameter 'src' implicitly has an 'any' type.": 1
       },

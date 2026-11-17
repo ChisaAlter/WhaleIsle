@@ -270,19 +270,39 @@ function resolveAgainst(url, base) {
 // socket reuse the re-checked addresses; undici is not an importable
 // dependency, so the class is taken from the dispatcher instance.
 const UNDICI_GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
+
+/**
+ * Bundled undici Agent constructor, taken from the global dispatcher's
+ * `constructor` at runtime (see undiciAgentClass).
+ * @typedef {new (options?: object) => import('undici-types').Agent} UndiciAgentCtor
+ */
+
+/**
+ * The bundled undici global dispatcher lives under a symbol key that
+ * `typeof globalThis` cannot index, so it is read through Reflect and the
+ * caller validates the shape before use.
+ * @returns {{ dispatch?: unknown, constructor?: UndiciAgentCtor } | undefined}
+ */
+function undiciGlobalDispatcher() {
+  return /** @type {{ dispatch?: unknown, constructor?: UndiciAgentCtor } | undefined} */ (
+    Reflect.get(globalThis, UNDICI_GLOBAL_DISPATCHER)
+  );
+}
+
+/** @type {Promise<UndiciAgentCtor> | undefined} */
 let undiciAgentPromise;
 
 /**
- * @returns {Promise<Function>} bundled undici Agent class.
+ * @returns {Promise<UndiciAgentCtor>} bundled undici Agent class.
  */
 async function undiciAgentClass() {
   if (!undiciAgentPromise) {
     undiciAgentPromise = (async () => {
-      if (!globalThis[UNDICI_GLOBAL_DISPATCHER]) {
+      if (!undiciGlobalDispatcher()) {
         // Warm the lazy global dispatcher; the request outcome is irrelevant.
         await fetch('http://127.0.0.1:1/', { signal: AbortSignal.timeout(500) }).catch(() => {});
       }
-      const dispatcher = globalThis[UNDICI_GLOBAL_DISPATCHER];
+      const dispatcher = undiciGlobalDispatcher();
       const Agent = dispatcher && dispatcher.constructor;
       if (!dispatcher || typeof dispatcher.dispatch !== 'function' || typeof Agent !== 'function') {
         throw new Error('bundled undici dispatcher unavailable');
@@ -299,7 +319,7 @@ async function undiciAgentClass() {
  * cannot move the socket to a private target. The URL hostname still supplies
  * TLS SNI and the Host header; only address resolution is pinned.
  * @param {Array<{ address: string, family?: number }>} records
- * @returns {Promise<object>} dispatcher for undici `fetch`.
+ * @returns {Promise<import('undici-types').Dispatcher>} dispatcher for undici `fetch`.
  */
 async function pinnedWallpaperDispatcher(records) {
   const Agent = await undiciAgentClass();
@@ -311,8 +331,17 @@ async function pinnedWallpaperDispatcher(records) {
   }));
   return new Agent({
     connect: {
+      /**
+       * undici may invoke the connect lookup as (hostname, options, callback)
+       * or (hostname, callback); either form resolves the connect against the
+       * `all: true`-shaped record list pinned to `addresses`.
+       * @param {string} _hostname
+       * @param {unknown} options
+       * @param {(error: Error | null, addresses: Array<{ address: string, family: number }>) => void} callback
+       */
       lookup: (_hostname, options, callback) => {
-        (typeof options === 'function' ? options : callback)(null, addresses);
+        const done = typeof options === 'function' ? /** @type {typeof callback} */ (options) : callback;
+        done(null, addresses);
       },
     },
   });
