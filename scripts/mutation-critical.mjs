@@ -8,8 +8,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 import { modules } from './mutation/critical-boundaries.mjs';
 
+/** @typedef {[string, string, string, number?]} Mutation */
+/** @typedef {{file: string, test: string, mutations: Mutation[]}} MutationModule */
+/** @typedef {{root?: string, output?: string, timeoutMs?: number}} CampaignOptions */
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+/** @param {string} source @param {Mutation} mutation */
 export function mutate(source, [id, before, after, occurrence]) {
   const parts = source.split(before);
   if (occurrence === undefined && parts.length !== 2) {
@@ -22,9 +27,11 @@ export function mutate(source, [id, before, after, occurrence]) {
   return parts[0] + after + parts[1];
 }
 
+/** @param {MutationModule[]} plan @param {CampaignOptions} [options] */
 export async function runCampaign(plan, { root = ROOT, output, timeoutMs = 20000 } = {}) {
   return withOwnedTempDir('whale-mutation-', (owned) => {
     const results = [];
+    /** @param {string} test @param {string} [preload] */
     const run = (test, preload) => spawnSync(process.execPath,
       [...(preload ? ['--require', preload] : []), '--test', '--test-isolation=none', '--test-reporter=tap', test], {
         cwd: root, encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024,
