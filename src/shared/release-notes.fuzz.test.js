@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 
 const { plainReleaseNotes, releaseNotesTabs } = require('./release-notes');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -30,14 +31,14 @@ const mdArb = fc.oneof(
 );
 
 test('plainReleaseNotes emits only plain text: no links, images or fold tags', () => {
-  fc.assert(fc.property(mdArb, (input) => {
+  fuzzAssert(fc.property(mdArb, (input) => {
     const out = plainReleaseNotes(input);
     assert.equal(typeof out, 'string');
     assert.equal(/!?\[[^\]]*\]\([^)]*\)/.test(out), false, `${input} -> ${out}`);
     assert.equal(/<\/?(?:details|summary)>/i.test(out), false, `${input} -> ${out}`);
     assert.equal(out.length <= String(input || '').length, true, `${input} -> ${out}`);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'plainReleaseNotes emits only plain text: no links, images or fold tags', { numRuns: NUM_RUNS });
 });
 
 // #496: the stripper iterates to a fixpoint, so re-running it on its own
@@ -46,15 +47,15 @@ test('plainReleaseNotes is idempotent (#496 minimal counterexamples)', () => {
   assert.equal(plainReleaseNotes('>>'), '');
   assert.equal(plainReleaseNotes('*### **'), '*');
   assert.equal(plainReleaseNotes('# Title\n\n**bold** and [link](url)'), 'Title\n\nbold and link');
-  fc.assert(fc.property(mdArb, (input) => {
+  fuzzAssert(fc.property(mdArb, (input) => {
     const once = plainReleaseNotes(input);
     assert.equal(plainReleaseNotes(once), once, `${input} -> ${once}`);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'plainReleaseNotes is idempotent (#496 minimal counterexamples)', { numRuns: NUM_RUNS });
 });
 
 test('releaseNotesTabs returns both translations or nothing', () => {
-  fc.assert(fc.property(mdArb, (input) => {
+  fuzzAssert(fc.property(mdArb, (input) => {
     const tabs = releaseNotesTabs(input);
     assert.equal(Array.isArray(tabs), true);
     if (tabs.length === 0) return true;
@@ -66,5 +67,5 @@ test('releaseNotesTabs returns both translations or nothing', () => {
       assert.equal(/<\/?(?:details|summary)>/i.test(tab.text), false, `${input} -> ${tab.text}`);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'releaseNotesTabs returns both translations or nothing', { numRuns: NUM_RUNS });
 });

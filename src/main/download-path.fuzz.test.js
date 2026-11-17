@@ -16,6 +16,7 @@ const { fullInstallerPath } = require('./update');
 const { createUpdateCenter } = require('./update-center/service');
 const { installDelta } = require('../launcher/delta/install');
 const { withOwnedTempDir } = require('../shared/fs-safe');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -52,27 +53,27 @@ function assertCleanName(out, input) {
 }
 
 test('sanitizeDownloadFilename: output is a safe leaf on every input', () => {
-  fc.assert(fc.property(nameArb, (input) => {
+  fuzzAssert(fc.property(nameArb, (input) => {
     assertCleanName(sanitizeDownloadFilename(input), input);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'sanitizeDownloadFilename: output is a safe leaf on every input', { numRuns: NUM_RUNS });
 });
 
 test('sanitizeDownloadFilename is idempotent', () => {
-  fc.assert(fc.property(nameArb, (input) => {
+  fuzzAssert(fc.property(nameArb, (input) => {
     const once = sanitizeDownloadFilename(input);
     assert.equal(sanitizeDownloadFilename(once), once, input);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'sanitizeDownloadFilename is idempotent', { numRuns: NUM_RUNS });
 });
 
 test('downloadSavePath always resolves inside the downloads directory', async () => {
-  await fc.assert(fc.asyncProperty(nameArb, async (input) => {
+  await fuzzAssert(fc.asyncProperty(nameArb, async (input) => {
     await withOwnedTempDir('dshd-fuzz-dl-', async (dir) => {
       const target = downloadSavePath(dir, input);
       assert.equal(path.dirname(target), path.resolve(dir), `${input} -> ${target}`);
     });
-  }), { numRuns: 100 });
+  }), 'downloadSavePath always resolves inside the downloads directory', { numRuns: 100 });
 });
 
 // Regression for #494: the old basename+allow-list kept '.', '..' and '' —
@@ -142,7 +143,7 @@ test('fullInstallerPath stays inside the updates directory', () => {
   const assetArb = fc.oneof(nameArb, fc.constantFrom(
     'Whale-Isle-Setup-1.2.3.exe', 'Whale-Isle-delta-1.0-2.0.zip', 'SHA512SUMS.txt',
   ));
-  fc.assert(fc.property(assetArb, fc.string({ unit: fc.constantFrom('u', '/', 'x', '.', '-'), minLength: 1, maxLength: 12 }),
+  fuzzAssert(fc.property(assetArb, fc.string({ unit: fc.constantFrom('u', '/', 'x', '.', '-'), minLength: 1, maxLength: 12 }),
     (assetName, ud) => {
       const userDataDir = path.resolve('/tmp', ud.replace(/\//g, 'u'));
       const result = fullInstallerPath({ assetName }, { userDataDir });
@@ -150,5 +151,5 @@ test('fullInstallerPath stays inside the updates directory', () => {
       assert.equal(path.dirname(result), updatesDir, `${assetName} -> ${result}`);
       assertCleanName(path.basename(result), assetName);
       return true;
-    }), { numRuns: NUM_RUNS });
+    }), 'fullInstallerPath stays inside the updates directory', { numRuns: NUM_RUNS });
 });

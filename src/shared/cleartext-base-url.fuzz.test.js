@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 
 const { isCleartextBaseUrl } = require('./cleartext-base-url');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -31,7 +32,7 @@ const urlArb = fc.tuple(
 ));
 
 test('never misses a cleartext http URL to a non-loopback host', () => {
-  fc.assert(fc.property(urlArb, fc.string({ maxLength: 40 }), (built, loose) => {
+  fuzzAssert(fc.property(urlArb, fc.string({ maxLength: 40 }), (built, loose) => {
     for (const value of [built, loose]) {
       let parsed;
       try { parsed = new URL(typeof value === 'string' ? value.trim() : ''); } catch { continue; }
@@ -43,11 +44,11 @@ test('never misses a cleartext http URL to a non-loopback host', () => {
       }
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'never misses a cleartext http URL to a non-loopback host', { numRuns: NUM_RUNS });
 });
 
 test('cleartext flag implies parseable http to a non-loopback hostname', () => {
-  fc.assert(fc.property(urlArb, fc.string({ maxLength: 40 }), (built, loose) => {
+  fuzzAssert(fc.property(urlArb, fc.string({ maxLength: 40 }), (built, loose) => {
     for (const value of [built, loose]) {
       if (!isCleartextBaseUrl(value)) continue;
       const parsed = new URL(value.trim());
@@ -56,5 +57,5 @@ test('cleartext flag implies parseable http to a non-loopback hostname', () => {
       assert.ok(host !== 'localhost' && host !== '127.0.0.1' && host !== '::1', value);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'cleartext flag implies parseable http to a non-loopback hostname', { numRuns: NUM_RUNS });
 });

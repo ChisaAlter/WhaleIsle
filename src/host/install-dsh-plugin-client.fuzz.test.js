@@ -13,6 +13,7 @@ const {
   isValidAllowBuild,
   normalizeAllowBuilds,
 } = require('./install-dsh-plugin-client');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -43,7 +44,7 @@ const specArb = fc.oneof(
 const SAFE_SPEC_RE = /^[A-Za-z0-9@/_.:+#-]+$/;
 
 test('isValidGithubSpec: accepted specs stay inside the github: grammar', () => {
-  fc.assert(fc.property(specArb, (spec) => {
+  fuzzAssert(fc.property(specArb, (spec) => {
     if (!isValidGithubSpec(spec)) return true;
     const value = String(spec).trim();
     assert.match(value, SAFE_SPEC_RE, spec);
@@ -56,24 +57,24 @@ test('isValidGithubSpec: accepted specs stay inside the github: grammar', () => 
       assert.equal(/[./]$/.test(ref), false, spec);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isValidGithubSpec: accepted specs stay inside the github: grammar', { numRuns: NUM_RUNS });
 });
 
 test('isValidGithubSpec: trimming never changes the verdict', () => {
-  fc.assert(fc.property(specArb, (spec) => {
+  fuzzAssert(fc.property(specArb, (spec) => {
     assert.equal(isValidGithubSpec(spec), isValidGithubSpec(String(spec).trim()));
-  }), { numRuns: NUM_RUNS });
+  }), 'isValidGithubSpec: trimming never changes the verdict', { numRuns: NUM_RUNS });
 });
 
 test('isValidPackageName: accepted names carry no metacharacters or traversal', () => {
-  fc.assert(fc.property(specArb, (name) => {
+  fuzzAssert(fc.property(specArb, (name) => {
     if (!isValidPackageName(name)) return true;
     const value = String(name).trim();
     assert.match(value, /^(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, name);
     assert.equal(value.includes('..'), false, name);
     assert.equal(value.length <= 214, true, name);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isValidPackageName: accepted names carry no metacharacters or traversal', { numRuns: NUM_RUNS });
 });
 
 const KEY_CHARS = /^[A-Za-z0-9@/_.:+-]+$/;
@@ -84,7 +85,7 @@ test('normalizeAllowBuilds: output is unique, trimmed and individually valid', (
     fc.array(fc.constantFrom('pkg', '@s/p', 'github.com/o/r', 'a@git+https://github.com/o/r.git'), { maxLength: 35 }),
     fc.constantFrom(null, undefined, {}, 'x', 3, [[]], [['x', 'x']]),
   );
-  fc.assert(fc.property(listArb, (value) => {
+  fuzzAssert(fc.property(listArb, (value) => {
     const out = normalizeAllowBuilds(value);
     if (out === null) {
       // Rejected: a non-array payload, an oversized list, or a bad member.
@@ -103,14 +104,14 @@ test('normalizeAllowBuilds: output is unique, trimmed and individually valid', (
       assert.equal(out.length, new Set(value.map((v) => v.trim())).size);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'normalizeAllowBuilds: output is unique, trimmed and individually valid', { numRuns: NUM_RUNS });
 });
 
 test('isValidAllowBuild: accepted keys never contain whitespace or control chars', () => {
-  fc.assert(fc.property(specArb, (value) => {
+  fuzzAssert(fc.property(specArb, (value) => {
     if (!isValidAllowBuild(value)) return true;
     assert.match(value.trim(), KEY_CHARS, value);
     assert.equal(/\s/.test(value.trim()), false, value);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isValidAllowBuild: accepted keys never contain whitespace or control chars', { numRuns: NUM_RUNS });
 });

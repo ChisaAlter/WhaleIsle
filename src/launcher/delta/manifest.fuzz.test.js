@@ -9,6 +9,7 @@ const fc = require('fast-check');
 
 const manifest = require('./manifest');
 const { WINDOWS_DEVICE_NAME } = require('../../main/download-path');
+const { fuzzAssert } = require('../../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 200;
 
@@ -36,7 +37,7 @@ function resolvesInside(root, rel) {
 }
 
 test('isSafeRelPath: accepted paths resolve inside the target on posix and win32', () => {
-  fc.assert(fc.property(relPathArb, (rel) => {
+  fuzzAssert(fc.property(relPathArb, (rel) => {
     if (!manifest.isSafeRelPath(rel)) return true;
     assert.ok(resolvesInside(path.sep === '/' ? '/install' : 'C:\\install', rel), rel);
     assert.equal(rel.includes('\\'), false, rel);
@@ -49,7 +50,7 @@ test('isSafeRelPath: accepted paths resolve inside the target on posix and win32
       assert.equal(WINDOWS_DEVICE_NAME.test(seg), false, rel);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isSafeRelPath: accepted paths resolve inside the target on posix and win32', { numRuns: NUM_RUNS });
 });
 
 test('isSafeRelPath: explicit hazards are always refused', () => {
@@ -63,9 +64,9 @@ test('isSafeRelPath: explicit hazards are always refused', () => {
     all.splice(Math.floor(segs.length / 2), 0, bad);
     return all.join('/');
   }));
-  fc.assert(fc.property(withTraversal, (rel) => {
+  fuzzAssert(fc.property(withTraversal, (rel) => {
     assert.equal(manifest.isSafeRelPath(rel), false, rel);
-  }), { numRuns: NUM_RUNS });
+  }), 'isSafeRelPath: explicit hazards are always refused', { numRuns: NUM_RUNS });
 });
 
 // `:` inside a path segment is a win32 drive-relative anchor: `sub/a:`
@@ -106,7 +107,7 @@ test('validateManifest: accepted docs only carry safe paths and valid ops', () =
     toVersion: fc.string({ maxLength: 10 }),
     files: fc.array(fileArb, { minLength: 0, maxLength: 6 }),
   });
-  fc.assert(fc.property(docArb, (doc) => {
+  fuzzAssert(fc.property(docArb, (doc) => {
     let out;
     try {
       out = manifest.validateManifest(JSON.stringify(doc));
@@ -123,7 +124,7 @@ test('validateManifest: accepted docs only carry safe paths and valid ops', () =
       }
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'validateManifest: accepted docs only carry safe paths and valid ops', { numRuns: NUM_RUNS });
 });
 
 // deltaAssetName sanitizes versions into the ASSET_RE alphabet, so a
@@ -156,10 +157,10 @@ test('delta asset name round-trips through parseDeltaAssetName', () => {
     unit: fc.constantFrom('a', 'B', '0', ' ', '-', '_', '.', '/', '\\', '中'),
     maxLength: 10,
   });
-  fc.assert(fc.property(productArb, versionArb, toArb, (product, from, to) => {
+  fuzzAssert(fc.property(productArb, versionArb, toArb, (product, from, to) => {
     const name = manifest.deltaAssetName(product, from, to);
     const parsed = manifest.parseDeltaAssetName(name);
     assert.deepEqual(parsed, { from, to }, name);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'delta asset name round-trips through parseDeltaAssetName', { numRuns: NUM_RUNS });
 });

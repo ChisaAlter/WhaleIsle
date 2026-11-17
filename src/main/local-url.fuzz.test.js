@@ -21,6 +21,7 @@ const {
   rewriteLoopbackLoadUrl,
 } = require('./local-url');
 const { withOwnedTempDir } = require('../shared/fs-safe');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -46,7 +47,7 @@ const anyStringArb = fc.oneof(urlArb, fc.string({ maxLength: 40 }), fc.constantF
 ));
 
 test('isLoopbackHttpUrl agrees with WHATWG parsing both directions, minus credentials', () => {
-  fc.assert(fc.property(anyStringArb, (raw) => {
+  fuzzAssert(fc.property(anyStringArb, (raw) => {
     const expected = (() => {
       if (typeof raw !== 'string' || raw.trim() === '') return false;
       let parsed;
@@ -57,16 +58,16 @@ test('isLoopbackHttpUrl agrees with WHATWG parsing both directions, minus creden
     })();
     assert.equal(isLoopbackHttpUrl(raw), expected, raw);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isLoopbackHttpUrl agrees with WHATWG parsing both directions, minus credentials', { numRuns: NUM_RUNS });
 });
 
 test('isLoopbackHttpUrl: accepted values have a canonical loopback host', () => {
-  fc.assert(fc.property(anyStringArb, (raw) => {
+  fuzzAssert(fc.property(anyStringArb, (raw) => {
     if (!isLoopbackHttpUrl(raw)) return true;
     const parsed = new URL(raw);
     assert.ok(['127.0.0.1', 'localhost', '[::1]', '0.0.0.0'].includes(parsed.hostname.toLowerCase()), raw);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isLoopbackHttpUrl: accepted values have a canonical loopback host', { numRuns: NUM_RUNS });
 });
 
 // #495: userinfo pointing at loopback must be refused — `http://evil@127.0.0.1`
@@ -76,38 +77,38 @@ test('isLoopbackHttpUrl refuses embedded credentials', () => {
   assert.equal(isLoopbackHttpUrl('http://evil@127.0.0.1'), false);
   assert.equal(isLoopbackHttpUrl('http://user:pass@127.0.0.1:8080/x'), false);
   assert.equal(isSameOriginLoopbackUrl('http://evil@127.0.0.1:3080/', 'http://127.0.0.1:3080/'), false);
-  fc.assert(fc.property(anyStringArb, (raw) => {
+  fuzzAssert(fc.property(anyStringArb, (raw) => {
     if (!isLoopbackHttpUrl(raw)) return true;
     const parsed = new URL(raw);
     assert.equal(parsed.username, '', raw);
     assert.equal(parsed.password, '', raw);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isLoopbackHttpUrl refuses embedded credentials', { numRuns: NUM_RUNS });
 });
 
 test('isHttpOrHttpsUrl is exactly the WHATWG http(s) set', () => {
-  fc.assert(fc.property(anyStringArb, (raw) => {
+  fuzzAssert(fc.property(anyStringArb, (raw) => {
     const accepted = isHttpOrHttpsUrl(raw);
     if (accepted) {
       const parsed = new URL(raw);
       assert.ok(parsed.protocol === 'http:' || parsed.protocol === 'https:', raw);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isHttpOrHttpsUrl is exactly the WHATWG http(s) set', { numRuns: NUM_RUNS });
 });
 
 test('isSameOriginLoopbackUrl: accepted pairs share a loopback origin', () => {
-  fc.assert(fc.property(anyStringArb, anyStringArb, (a, b) => {
+  fuzzAssert(fc.property(anyStringArb, anyStringArb, (a, b) => {
     if (!isSameOriginLoopbackUrl(a, b)) return true;
     assert.equal(isLoopbackHttpUrl(a), true, a);
     assert.equal(isLoopbackHttpUrl(b), true, b);
     assert.equal(new URL(String(a)).origin, new URL(String(b)).origin);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isSameOriginLoopbackUrl: accepted pairs share a loopback origin', { numRuns: NUM_RUNS });
 });
 
 test('rewriteLoopbackLoadUrl stays loopback, drops 0.0.0.0, preserves port/path', () => {
-  fc.assert(fc.property(anyStringArb, (raw) => {
+  fuzzAssert(fc.property(anyStringArb, (raw) => {
     const out = rewriteLoopbackLoadUrl(raw);
     if (out === null) {
       assert.equal(isLoopbackHttpUrl(raw), false, raw);
@@ -121,7 +122,7 @@ test('rewriteLoopbackLoadUrl stays loopback, drops 0.0.0.0, preserves port/path'
     assert.equal(after.pathname, before.pathname, `${raw} -> ${out}`);
     assert.equal(after.search, before.search, `${raw} -> ${out}`);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'rewriteLoopbackLoadUrl stays loopback, drops 0.0.0.0, preserves port/path', { numRuns: NUM_RUNS });
 });
 
 // file: URLs that resolve to the packaged renderer file — the navigation
@@ -132,7 +133,7 @@ const fileUrlArb = fc.oneof(
 ).map((prefix) => `${prefix}`);
 
 test('isPackagedRendererFileUrl accepts only realpaths of the packaged file', async () => {
-  await fc.assert(fc.asyncProperty(
+  await fuzzAssert(fc.asyncProperty(
     fc.record({
       name: fc.constantFrom('boot.html', 'BOOT.HTML', 'boot.htm', ' boot.html', 'boot.html ', 'x/../boot.html', 'sub/boot.html'),
       usePath: fc.boolean(),
@@ -157,5 +158,5 @@ test('isPackagedRendererFileUrl accepts only realpaths of the packaged file', as
         return true;
       });
     },
-  ), { numRuns: 100 });
+  ), 'isPackagedRendererFileUrl accepts only realpaths of the packaged file', { numRuns: 100 });
 });

@@ -15,6 +15,7 @@ const {
   isAllowedMarketplaceSpec,
 } = require('./marketplace-spec');
 const { isValidGithubSpec, isValidPackageName } = require('../host/install-dsh-plugin-client');
+const { fuzzAssert } = require('../../scripts/lib/fuzz.cjs');
 
 const NUM_RUNS = 400;
 
@@ -49,7 +50,7 @@ const pluginArb = fc.record({
 }).map((p) => ({ homepage: p.homepage === null ? undefined : p.homepage, npm: p.npm === null ? undefined : p.npm }));
 
 test('parseGithubSpec agrees with isValidGithubSpec on every input', () => {
-  fc.assert(fc.property(specArb, (spec) => {
+  fuzzAssert(fc.property(specArb, (spec) => {
     assert.equal(parseGithubSpec(spec) !== null, isValidGithubSpec(spec), spec);
     const parsed = parseGithubSpec(spec);
     if (parsed) {
@@ -57,11 +58,11 @@ test('parseGithubSpec agrees with isValidGithubSpec on every input', () => {
       assert.match(parsed.repo, /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/);
       assert.equal(parsed.ref.includes('..'), false, spec);
     }
-  }), { numRuns: NUM_RUNS });
+  }), 'parseGithubSpec agrees with isValidGithubSpec on every input', { numRuns: NUM_RUNS });
 });
 
 test('isValidMarketplacePathSpec: accepted paths have no traversal and match homepage', () => {
-  fc.assert(fc.property(specArb, pluginArb, (spec, plugin) => {
+  fuzzAssert(fc.property(specArb, pluginArb, (spec, plugin) => {
     if (!isValidMarketplacePathSpec(spec, plugin)) return true;
     assert.match(spec, /^github:[^/#]+\/[^/#]+#path:\/.+$/, spec);
     const posix = spec.slice(spec.indexOf('#path:/') + '#path:/'.length);
@@ -71,11 +72,11 @@ test('isValidMarketplacePathSpec: accepted paths have no traversal and match hom
     const match = /^github:([^/#]+)\/([^/#]+)/.exec(spec);
     assert.equal(ownerRepoMatches(match[1], match[2], plugin.homepage), true, spec);
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isValidMarketplacePathSpec: accepted paths have no traversal and match homepage', { numRuns: NUM_RUNS });
 });
 
 test('isAllowedMarketplaceSpec: accepted specs fall into the three sanctioned forms', () => {
-  fc.assert(fc.property(specArb, pluginArb, (spec, plugin) => {
+  fuzzAssert(fc.property(specArb, pluginArb, (spec, plugin) => {
     if (!isAllowedMarketplaceSpec(spec, plugin)) return true;
     assert.equal(/[\0-\x1f]/.test(spec), false, spec);
     assert.equal(/^(?:file:|link:|https?:|git\+|git:)/i.test(spec), false, spec);
@@ -91,16 +92,16 @@ test('isAllowedMarketplaceSpec: accepted specs fall into the three sanctioned fo
       assert.equal(Boolean(plugin.npm) && spec === plugin.npm, true, spec);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'isAllowedMarketplaceSpec: accepted specs fall into the three sanctioned forms', { numRuns: NUM_RUNS });
 });
 
 test('githubIdentity: output is empty or a canonical owner/repo[#path] identity', () => {
-  fc.assert(fc.property(specArb, (spec) => {
+  fuzzAssert(fc.property(specArb, (spec) => {
     const id = githubIdentity(spec);
     assert.equal(id, id.toLowerCase(), `${spec} -> ${id}`);
     if (id !== '') {
       assert.match(id, /^[^/#\s]+\/[^/#\s]+(#path:\/.+)?$/, `${spec} -> ${id}`);
     }
     return true;
-  }), { numRuns: NUM_RUNS });
+  }), 'githubIdentity: output is empty or a canonical owner/repo[#path] identity', { numRuns: NUM_RUNS });
 });
