@@ -336,6 +336,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-sidebar-terminal/src/client/index.ts': 'terminal.drawer.toggle\n',
       'packages/client/ui-user-terminal/src/client/TerminalPane.tsx': 'xterm\n',
       'packages/client/ui-user-terminal/src/client/ghostty/surface.ts': 'isTerminalAppShortcut\n',
+      'packages/client/ui-user-terminal/src/client/links.ts': 'parsed.username\nparsed.password\n',
+      'packages/client/ui-user-terminal/tests/links.client.spec.ts': 'user:pass@127.0.0.1\n',
       'packages/client/ui-files/src/client/FilePreview.tsx': "document.execCommand('redo')\n",
       'packages/client/ui-files/src/client/FileClosePrompt.tsx': "<p role=\"alert\">{t('error.write')}</p>\n",
       'packages/client/ui-files/src/client/desktop-file-state.ts': 'editor?.pause()\neditor?.resume()\n',

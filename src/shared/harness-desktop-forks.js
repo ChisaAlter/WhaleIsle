@@ -398,6 +398,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar-terminal/src/client/index.ts', includes: ['terminal.drawer.toggle'] },
   { file: 'packages/client/ui-user-terminal/src/client/TerminalPane.tsx', includes: ['xterm'] },
   { file: 'packages/client/ui-user-terminal/src/client/ghostty/surface.ts', includes: ['isTerminalAppShortcut'] },
+  // Loopback terminal links refuse embedded credentials (#506), matching the
+  // desktop's own local-url.js policy; upstream checked the hostname only.
+  { file: 'packages/client/ui-user-terminal/src/client/links.ts', includes: ['parsed.username', 'parsed.password'] },
+  { file: 'packages/client/ui-user-terminal/tests/links.client.spec.ts', includes: ['user:pass@127.0.0.1'] },
   { file: 'packages/client/ui-files/src/client/FilePreview.tsx', includes: ["document.execCommand('redo')"] },
   { file: 'packages/client/ui-files/src/client/FileClosePrompt.tsx', includes: ["<p role=\"alert\">{t('error.write')}</p>"] },
   { file: 'packages/client/ui-files/src/client/desktop-file-state.ts', includes: ['editor?.pause()', 'editor?.resume()'] },
