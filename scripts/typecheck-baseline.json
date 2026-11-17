@@ -5594,11 +5594,6 @@
         "Variable 'pendingWorkspaceDirectoryDialog' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
-    "src/main/launcher-gate.js": {
-      "TS2322": {
-        "Type '{ recovered?: boolean | undefined; removedTmp?: any[] | undefined; blocked?: boolean | undefined; }' is not assignable to type '{ recovered: boolean; removedTmp: any[]; blocked?: boolean | undefined; }'.": 1
-      }
-    },
     "src/main/legacy-notification-shortcut.js": {
       "TS18046": {
         "'error' is of type 'unknown'.": 2
@@ -7648,9 +7643,7 @@
         "Property 'downloadPercent' does not exist on type '{ ok: true; installer: string; differential: boolean; version: string; }'.": 1,
         "Property 'expectedCheck' does not exist on type '{}'.": 1,
         "Property 'keepPartial' does not exist on type '{}'.": 1,
-        "Property 'latest' does not exist on type '{ current: string; repo: string; repoUrl: string; releasesUrl: string; route: string; }'.": 1,
         "Property 'maxAttempts' does not exist on type '{}'.": 1,
-        "Property 'message' does not exist on type '{ current: string; repo: string; repoUrl: string; releasesUrl: string; route: string; }'.": 1,
         "Property 'message' does not exist on type '{ ok: false; reason: string; }'.": 1,
         "Property 'onInstallerLaunch' does not exist on type '{}'.": 2,
         "Property 'onRetry' does not exist on type '{ maxAttempts?: number | undefined; retryDelayMs?: number | undefined; attemptTimeoutMs?: number | undefined; }'.": 1,
@@ -7664,7 +7657,6 @@
         "Property 'signal' does not exist on type '{ maxAttempts?: number | undefined; retryDelayMs?: number | undefined; attemptTimeoutMs?: number | undefined; }'.": 1,
         "Property 'signal' does not exist on type '{ timeoutMs?: number | undefined; idleTimeoutMs?: number | undefined; connectionTimeoutMs?: number | undefined; keepPartial?: boolean | undefined; }'.": 1,
         "Property 'signal' does not exist on type '{}'.": 8,
-        "Property 'status' does not exist on type '{ current: string; repo: string; repoUrl: string; releasesUrl: string; route: string; }'.": 2,
         "Property 'taskProtection' does not exist on type '{}'.": 1,
         "Property 'timeoutMs' does not exist on type '{}'.": 1,
         "Property 'updaterDeps' does not exist on type '{}'.": 1,

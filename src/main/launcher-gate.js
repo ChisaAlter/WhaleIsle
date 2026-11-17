@@ -430,7 +430,7 @@ async function runColdStartGate({
     }
   })();
 
-  /** @type {{ recovered: boolean, removedTmp: any[], blocked?: boolean }} */
+  /** @type {{ recovered?: boolean, removedTmp?: any[], blocked?: boolean }} */
   let importRecovery = { recovered: false, removedTmp: [] };
   try {
     importRecovery = recoverInterruptedImport() || importRecovery;

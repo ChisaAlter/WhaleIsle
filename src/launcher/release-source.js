@@ -188,10 +188,11 @@ function summarizeForRoute(route, release, installedVersion) {
 }
 
 /**
+ * @template {object} T
  * @param {string} route
- * @param {object} [extra]
+ * @param {T} [extra]
  */
-function routeSnapshot(route, extra = {}) {
+function routeSnapshot(route, extra = /** @type {T} */ ({})) {
   const desc = ROUTES[route];
   return {
     route,
