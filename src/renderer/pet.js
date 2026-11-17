@@ -262,7 +262,7 @@ pet.addEventListener('click', () => {
 pet.addEventListener('contextmenu', (event) => {
   event.preventDefault();
   wake();
-  window.shell.openMenu().catch((error) => { console.warn('[src/renderer/pet.js] background operation failed', error); });
+  window.shell.openMenu().catch((/** @type {unknown} */ error) => { console.warn('[src/renderer/pet.js] background operation failed', error); });
 });
 
 pet.addEventListener('pointerdown', (event) => {
@@ -335,4 +335,4 @@ window.shell.onState((payload) => loadSprite(payload?.pet));
 window.shell.getState().then((payload) => {
   applyTheme(payload?.theme);
   loadSprite(payload?.pet);
-}).catch((error) => { console.warn('[src/renderer/pet.js] background operation failed', error); });
+}).catch((/** @type {unknown} */ error) => { console.warn('[src/renderer/pet.js] background operation failed', error); });

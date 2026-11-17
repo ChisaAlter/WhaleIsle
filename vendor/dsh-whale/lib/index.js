@@ -186,7 +186,7 @@ async function createOrReuseAssistantSession(ctx, scope, controller) {
       ?? existing?.presentation;
     if (current?.owner === PRESENTATION_OWNER
       && (current?.title !== presentation.title || current?.composer !== presentation.composer)) {
-      await controller.setPresentation({ sessionId, presentation }).catch((error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
+      await controller.setPresentation({ sessionId, presentation }).catch((/** @type {unknown} */ error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
     }
   }
   if (snap.sessionId !== sessionId) {
@@ -201,7 +201,7 @@ async function createOrReuseAssistantSession(ctx, scope, controller) {
       model: snap.modelModel,
       ...(snap.modelReasoningEffort ? { reasoningEffort: snap.modelReasoningEffort } : {}),
       saveAsDefault: false,
-    }).catch((error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
+    }).catch((/** @type {unknown} */ error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
   }
   return { ok: true, sessionId, created };
 }
