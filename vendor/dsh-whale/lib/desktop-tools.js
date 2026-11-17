@@ -23,6 +23,11 @@ const SENSITIVE_CONFIG_KEYS = new Set([
   'openDevTools', 'downloadRoute', 'projectEnabled', 'whaleAssistantEnabled',
 ]);
 
+// Credential keys: a patch writing one replaces the stored secret, so it
+// confirms as 'patch-credentials' (registry: destructive) — the dialog never
+// offers a run-scoped "always" for credential writes, every write asks again.
+const CREDENTIAL_CONFIG_KEYS = new Set(['githubToken']);
+
 function controlConfig() {
   const url = String(process.env.DSH_DESKTOP_INSTALL_URL ?? '').trim();
   const token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN').trim();
@@ -204,12 +209,17 @@ export function registerDesktopTools(ctx) {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
         return { ok: false, detail: 'patch must be an object of config keys.' };
       }
-      const sensitive = Object.keys(patch).filter((key) => SENSITIVE_CONFIG_KEYS.has(key));
+      const sensitive = Object.keys(patch).filter((key) => SENSITIVE_CONFIG_KEYS.has(key)).sort();
       if (sensitive.length) {
+        const touchesCredential = sensitive.some((key) => CREDENTIAL_CONFIG_KEYS.has(key));
         const confirmation = await confirmModelAction({
           tool: 'whale_desktop_config',
-          action: 'patch',
-          effect: 'external',
+          action: touchesCredential ? 'patch-credentials' : 'patch',
+          effect: touchesCredential ? 'destructive' : 'external',
+          // The endpoint keys a run-scoped "always" grant by this exact key
+          // set: approving {projectEnabled} never covers {githubToken} or any
+          // other combination.
+          scope: sensitive.join(','),
           summary: `修改影响安全或对外暴露的桌面配置：${sensitive.join(', ')}`,
           details: JSON.stringify(patch, null, 2),
         });

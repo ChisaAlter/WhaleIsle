@@ -830,6 +830,79 @@ describe('desktop install control', { concurrency: false }, () => {
     assert.equal(body.declined, true);
   });
 
+  test('/desktop/confirm never remembers always for code-level actions like pad run-sources', async () => {
+    // F1: pad_create/pad_update self-report a code-level 'run-sources' effect.
+    // The registry must resolve it as code, so a run-scoped "always" is never
+    // stored and every command-bearing data source asks again.
+    const seen = [];
+    startDesktopInstallControl({
+      installPlugin: async () => ({ ok: true }),
+      startHarness: async () => {},
+      confirmModelAction: async (request) => {
+        seen.push(request);
+        return 'always';
+      },
+    });
+    const { url, token } = await desktopInstallReady();
+    const post = (payload) => fetch(new URL('/desktop/confirm', url), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }).then((r) => r.json());
+    for (const tool of ['pad_create', 'pad_update']) {
+      for (let i = 0; i < 2; i += 1) {
+        const body = await post({ tool, action: 'run-sources', effect: 'code', summary: '数据源要在本机运行命令' });
+        assert.equal(body.ok, true);
+      }
+    }
+    assert.equal(seen.length, 4);
+    assert.ok(seen.every((request) => request.effect === 'code'));
+  });
+
+  test('/desktop/confirm scopes a remembered always to the exact sensitive key set', async () => {
+    // F2: whale_desktop_config sends the sorted sensitive keys it writes as
+    // `scope`; an "always" grant for one key set must not cover another, and
+    // credential writes (patch-credentials → destructive) never remember.
+    const seen = [];
+    startDesktopInstallControl({
+      installPlugin: async () => ({ ok: true }),
+      startHarness: async () => {},
+      confirmModelAction: async (request) => {
+        seen.push(request);
+        return 'always';
+      },
+    });
+    const { url, token } = await desktopInstallReady();
+    const post = (payload) => fetch(new URL('/desktop/confirm', url), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }).then((r) => r.json());
+    const patch = (scope, action = 'patch', effect = 'external') => ({
+      tool: 'whale_desktop_config', action, effect, scope, summary: '写敏感配置',
+    });
+    assert.equal((await post(patch('projectEnabled'))).ok, true);
+    // The identical key set is remembered.
+    assert.equal((await post(patch('projectEnabled'))).ok, true);
+    assert.equal(seen.length, 1);
+    // A different key set asks again — and scope order cannot mint grants.
+    assert.equal((await post(patch('openAtLogin,projectEnabled'))).ok, true);
+    assert.equal(seen.length, 2);
+    assert.equal((await post(patch('projectEnabled, openAtLogin'))).ok, true);
+    assert.equal(seen.length, 2);
+    // Credential writes resolve destructive: 'always' is never stored.
+    assert.equal((await post(patch('githubToken', 'patch-credentials', 'destructive'))).ok, true);
+    assert.equal((await post(patch('githubToken', 'patch-credentials', 'destructive'))).ok, true);
+    assert.equal(seen.length, 4);
+    assert.equal(seen[2].effect, 'destructive');
+  });
+
   test('a restarted control server does not inherit remembered approvals', async () => {
     let calls = 0;
     const confirmer = async () => {
