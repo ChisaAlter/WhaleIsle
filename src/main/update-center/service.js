@@ -31,17 +31,17 @@ function isNetworkError(error) {
   return /超时|中断|timed? ?out|ECONN|ENOTFOUND|net::ERR_|fetch failed|socket/i.test(String(error?.message || ''));
 }
 
-function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+function readJson(file, fsx = fs) {
+  try { return JSON.parse(fsx.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-function writeJsonAtomic(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+function writeJsonAtomic(file, value, fsx = fs) {
+  fsx.mkdirSync(path.dirname(file), { recursive: true });
   atomicWriteFileSync(file, JSON.stringify(value, null, 2), { encoding: 'utf8' });
 }
 
-function fileSize(file) {
-  try { return fs.statSync(file).size; } catch { return -1; }
+function fileSize(file, fsx = fs) {
+  try { return fsx.statSync(file).size; } catch { return -1; }
 }
 
 /** Release summary (release-source) → the fields a job needs. */
@@ -85,6 +85,7 @@ function createUpdateCenter(deps) {
     install,
     compareVersions,
     platform = process.platform,
+    fs: fsx = fs,
     now = () => Date.now(),
     timers = { setTimeout, clearTimeout },
     log = () => {},
@@ -141,7 +142,7 @@ function createUpdateCenter(deps) {
   function persist(force = true) {
     if (!force && now() - lastPersist < PERSIST_INTERVAL_MS) return;
     lastPersist = now();
-    try { writeJsonAtomic(stateFile, saved); } catch (error) { log(`update-center persist failed: ${error.message}`); }
+    try { writeJsonAtomic(stateFile, saved, fsx); } catch (error) { log(`update-center persist failed: ${error.message}`); }
   }
 
   function paths(target) {
@@ -160,7 +161,7 @@ function createUpdateCenter(deps) {
     }
     if (saved.job?.ready?.file) keep.add(saved.job.ready.file);
     let names = [];
-    try { names = fs.readdirSync(updatesDir); } catch { return; }
+    try { names = fsx.readdirSync(updatesDir); } catch { return; }
     for (const name of names) {
       const file = path.join(updatesDir, name);
       if (keep.has(file) || !/\.(exe|dmg|part)$/i.test(name)) continue;
@@ -262,7 +263,7 @@ function createUpdateCenter(deps) {
         saved.plan = null;
       }
       saved.target = target;
-      if (saved.job?.ready && fileSize(saved.job.ready.file) > 0) {
+      if (saved.job?.ready && fileSize(saved.job.ready.file, fsx) > 0) {
         persist();
         set({ phase: 'ready', progress: null });
         cleanup();
@@ -271,10 +272,10 @@ function createUpdateCenter(deps) {
       if (!saved.plan) saved.plan = await makePlan(target);
       persist();
       const { partial } = paths(target);
-      const resumable = saved.job?.resume?.total > 0 && fileSize(partial) > 0;
+      const resumable = saved.job?.resume?.total > 0 && fileSize(partial, fsx) > 0;
       set({
         phase: resumable ? 'paused' : 'available',
-        progress: resumable ? { received: fileSize(partial), total: saved.job.resume.total } : null,
+        progress: resumable ? { received: fileSize(partial, fsx), total: saved.job.resume.total } : null,
       });
       cleanup();
       // A download the user paused stays paused until they resume it.
@@ -307,8 +308,8 @@ function createUpdateCenter(deps) {
   async function runFull(target, signal) {
     const expected = await readChecksum(target.assetName, target.checksumUrl, { signal });
     const { final, partial } = paths(target);
-    fs.mkdirSync(updatesDir, { recursive: true });
-    if (fileSize(final) > 0) {
+    fsx.mkdirSync(updatesDir, { recursive: true });
+    if (fileSize(final, fsx) > 0) {
       try {
         await verifyFile(final, expected, { signal });
         return { file: final, expected, installerArgs: [] };
@@ -318,7 +319,7 @@ function createUpdateCenter(deps) {
       }
     }
     let resume = saved.job?.method === 'full' && saved.job.expected === expected ? saved.job.resume : null;
-    const onDisk = fileSize(partial);
+    const onDisk = fileSize(partial, fsx);
     if (resume && resume.total > 0 && onDisk > 0 && onDisk < resume.total) {
       resume.offset = onDisk;
       // Another host serves the same bytes under different validators; the
@@ -336,7 +337,7 @@ function createUpdateCenter(deps) {
     });
     set({ phase: 'verifying' });
     await verifyFile(partial, expected, { signal });
-    fs.renameSync(partial, final);
+    fsx.renameSync(partial, final);
     return { file: final, expected, installerArgs: [] };
   }
 
@@ -470,15 +471,15 @@ function createUpdateCenter(deps) {
   }
 
   function restore() {
-    const loaded = readJson(stateFile);
+    const loaded = readJson(stateFile, fsx);
     if (loaded?.version === 1 && loaded.target?.version
         && compareVersions(loaded.target.version, currentVersion()) > 0) {
       saved = { version: 1, target: loaded.target, plan: loaded.plan || null, job: loaded.job || null };
       const { partial } = paths(saved.target);
-      if (saved.job?.ready && fileSize(saved.job.ready.file) > 0) model.phase = 'ready';
-      else if (saved.job?.resume?.total > 0 && fileSize(partial) > 0) {
+      if (saved.job?.ready && fileSize(saved.job.ready.file, fsx) > 0) model.phase = 'ready';
+      else if (saved.job?.resume?.total > 0 && fileSize(partial, fsx) > 0) {
         model.phase = 'paused';
-        model.progress = { received: fileSize(partial), total: saved.job.resume.total };
+        model.progress = { received: fileSize(partial, fsx), total: saved.job.resume.total };
       } else {
         saved.job = null;
         model.phase = 'available';
