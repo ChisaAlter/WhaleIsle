@@ -16,9 +16,14 @@ import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** @typedef {'pass' | 'fail' | 'skip'} TestStatus */
+/** @typedef {{file: string, classname: string, name: string, status: TestStatus, message: string}} TestResult */
+/** @typedef {{file: string, classname: string, name: string, statuses: (TestStatus | 'absent')[], messages: string[]}} RoundEntry */
+
 // junit reporter 对属性值做 escapeContent（&→&amp;、<→&lt;）加 escapeAttribute
 // （换行→&#10;、"→&quot;），诊断注释里 - 还会变成 &#45;。统一还原所有实体，
 // &amp; 必须最后解码，&amp;lt; 才会停留在 &lt;。
+/** @param {string} text */
 export function decodeXmlEntities(text) {
   return text
     .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
@@ -32,7 +37,9 @@ export function decodeXmlEntities(text) {
 
 const ATTR_RE = /([\w-]+)="([^"]*)"/g;
 
+/** @param {string} tagText */
 function parseAttrs(tagText) {
+  /** @type {Record<string, string>} */
   const attrs = {};
   for (const match of tagText.matchAll(ATTR_RE)) {
     attrs[match[1]] = decodeXmlEntities(match[2]);
@@ -41,6 +48,7 @@ function parseAttrs(tagText) {
 }
 
 // 属性值里可以出现原始 >（escapeContent 不转义它），定位标签结尾必须跳过引号内文本。
+/** @param {string} xml @param {number} from */
 function tagEnd(xml, from) {
   let quote = null;
   for (let i = from; i < xml.length; i += 1) {
@@ -59,7 +67,9 @@ function tagEnd(xml, from) {
 // 一轮 junit 输出 → Map。键是 file/classname/name 以 NUL 连接；值记录状态与
 // 失败消息首行。status 为 pass/fail/skip 之一。同一文件里出现同名同 suite 的
 // 用例时按失败 > 通过 > 跳过合并。
+/** @param {string} text */
 export function parseJunitResults(text) {
+  /** @type {Map<string, TestResult>} */
   const results = new Map();
   // 诊断输出原样进 <!-- --> 注释，先剥掉，注释里的文本不会被误当标签
   const xml = text.replace(/<!--[\s\S]*?-->/g, '');
@@ -75,6 +85,7 @@ export function parseJunitResults(text) {
     if (end === -1) break;
     const tagText = xml.slice(start, end + 1);
     const attrs = parseAttrs(tagText);
+    /** @type {TestStatus} */
     let status = 'pass';
     let message = '';
     if (!tagText.endsWith('/>')) {
@@ -107,8 +118,10 @@ export function parseJunitResults(text) {
 
 // 跨轮汇总。flaky：出现过通过也出现过失败；failed：从未通过但至少一轮失败。
 // absent（该轮没有这个用例）与 skip 不计入通过/失败。
+/** @param {Map<string, TestResult>[]} rounds */
 export function analyzeRounds(rounds) {
   const totalRounds = rounds.length;
+  /** @type {Map<string, RoundEntry>} */
   const byKey = new Map();
   rounds.forEach((results, index) => {
     for (const [key, row] of results) {
@@ -140,21 +153,25 @@ export function analyzeRounds(rounds) {
   return { totalRounds, flaky, failed };
 }
 
+/** @param {string} file @param {string} cwd */
 function displayFile(file, cwd) {
   const norm = file.replace(/\\/g, '/');
   const base = (cwd || '').replace(/\\/g, '/');
   return base && norm.startsWith(base + '/') ? norm.slice(base.length + 1) : norm;
 }
 
+/** @param {{classname: string, name: string}} entry */
 function displayName(entry) {
   const suite = entry.classname && entry.classname !== 'test' ? entry.classname + ' › ' : '';
   return suite + entry.name;
 }
 
+/** @param {string} text */
 function cell(text) {
   return '`' + String(text).replace(/\|/g, '\\|') + '`';
 }
 
+/** @param {(RoundEntry & {failedRounds: number[]})[]} entries @param {string} cwd */
 function resultTable(entries, cwd) {
   const lines = ['| 文件 | 用例 | 失败轮次 |', '| --- | --- | --- |'];
   for (const entry of entries) {
@@ -167,6 +184,7 @@ function resultTable(entries, cwd) {
   return lines;
 }
 
+/** @param {ReturnType<typeof analyzeRounds>} analysis @param {{notes?: string[], cwd?: string}} [options] */
 export function renderMarkdown(analysis, { notes = [], cwd = '' } = {}) {
   const lines = ['## 不稳定测试报告（' + analysis.totalRounds + ' 轮）', ''];
   if (analysis.flaky.length === 0 && analysis.failed.length === 0 && notes.length === 0) {
@@ -199,17 +217,20 @@ export function renderMarkdown(analysis, { notes = [], cwd = '' } = {}) {
   return lines.join('\n');
 }
 
+/** @param {string} path */
 function roundNumber(path) {
   const digits = /(\d+)(?!.*\d)/.exec(basename(path));
   return digits ? Number(digits[1]) : Number.MAX_SAFE_INTEGER;
 }
 
+/** @param {string[]} paths */
 export function sortRoundLogs(paths) {
   return [...paths].sort((a, b) => roundNumber(a) - roundNumber(b) || a.localeCompare(b));
 }
 
 // scripts.test 形如 `node --test "glob" "glob" ...`；--collect 复用同一组
 // glob，避免工作流复制一份随脚本漂移。脚本的其余形态变化直接报错让人改这里。
+/** @param {{scripts?: {test?: string}}} [packageJson] */
 export function testGlobs(packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))) {
   const script = packageJson.scripts?.test ?? '';
   if (!/^node\s+--test\b/.test(script)) {
@@ -222,6 +243,7 @@ export function testGlobs(packageJson = JSON.parse(readFileSync(new URL('../pack
 
 // 跑一轮 npm test 等价的 node --test：spec → stdout 供人读，junit → outPath
 // 供 analyzeRounds 跨轮比较。stdio 继承，日志直接进作业输出。
+/** @param {string} outPath @param {string[]} [globs] */
 export function collectRound(outPath, globs = testGlobs()) {
   mkdirSync(dirname(resolve(outPath)), { recursive: true });
   const result = spawnSync(process.execPath, [
@@ -234,10 +256,12 @@ export function collectRound(outPath, globs = testGlobs()) {
   return result.status ?? 1;
 }
 
+/** @param {string[]} argv */
 function main(argv) {
   const args = argv.slice(2);
   const repeatAt = args.indexOf('--repeat');
   let files = args;
+  /** @type {string[]} */
   const notes = [];
   if (repeatAt !== -1) {
     const count = Number(args[repeatAt + 1]);
@@ -276,7 +300,7 @@ function main(argv) {
     try {
       text = readFileSync(file, 'utf8');
     } catch (err) {
-      notes.push('无法读取 ' + file + '：' + err.message);
+      notes.push('无法读取 ' + file + '：' + (err instanceof Error ? err.message : String(err)));
       rounds.push(new Map());
       continue;
     }
