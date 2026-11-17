@@ -139,6 +139,7 @@ function postWhaleUiRender(entry) {
     state: entry.state || {},
     theme: buildWhaleUiTheme(),
     locale: whaleUiLocale(),
+    density: 'coarse',
   });
 }
 

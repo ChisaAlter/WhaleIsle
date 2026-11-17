@@ -169,3 +169,17 @@ textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding
 @container whale-page (max-width: 480px) { .whale-grid[data-fixed-columns] { grid-template-columns: minmax(0,1fr) !important; } }
 @keyframes whale-confetti { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(35px,100vh) rotate(540deg); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .whale-celebration i { animation-duration: .01ms; } }
+
+/* Coarse-pointer hosts (phone/tablet) lift primary control targets to the shared 44px contract; fine-pointer geometry is unchanged. */
+:root[data-density-coarse] .whale-button { min-height: 44px; padding-inline: 18px; }
+:root[data-density-coarse] .whale-button[data-size=sm] { min-height: 40px; }
+:root[data-density-coarse] .whale-icon-button { width: 44px; height: 44px; min-height: 44px; }
+:root[data-density-coarse] .whale-input { height: auto; min-height: 44px; padding-block: 10px; }
+:root[data-density-coarse] textarea.whale-input { min-height: 96px; }
+:root[data-density-coarse] .whale-range { min-height: 32px; }
+:root[data-density-coarse] .whale-segment { min-height: 44px; }
+:root[data-density-coarse] .whale-radio-group[data-variant=pills] > .whale-radio-option { min-height: 44px; padding-block: 8px; }
+:root[data-density-coarse] .whale-check input, :root[data-density-coarse] .whale-radio-option input { width: 20px; height: 20px; }
+:root[data-density-coarse] .whale-details-summary { min-height: 44px; }
+:root[data-density-coarse] .whale-chart-key { min-height: 32px; }
+:root[data-density-coarse] .whale-map-location { padding-block: 10px; }
