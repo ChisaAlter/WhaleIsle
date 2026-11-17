@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { RendererConsoleTail, attachRendererConsoleTail, writeCrashReport } = require('../main/crash-report');
+const { waitForDom, waitForMain } = require('./fixture-wait.cjs');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-layout-'));
 const evidence = process.env.DSHD_LAYOUT_EVIDENCE_DIR;
 if (evidence) fs.mkdirSync(evidence, { recursive: true });
@@ -23,7 +24,6 @@ const handlers = {
   'shell:check-update': () => ({ status: 'none' }),
 };
 for (const [channel, fn] of Object.entries(handlers)) ipcMain.handle(channel, fn);
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1060, height: 660, useContentSize: true, frame: false, show: false,
@@ -34,10 +34,12 @@ app.whenReady().then(async () => {
   const js = (source) => win.webContents.executeJavaScript(source);
   const feedbackSurfaces = await js("['install-progress-card','update-progress-card','import-progress-card','home-update'].map(id=>({id,floating:!!document.getElementById(id).closest('.shell-feedback-stack'),position:getComputedStyle(document.getElementById(id).closest('.shell-feedback-stack')).position}))");
   await js("console.info('LAYOUT_INFO_CONTROL'); console.error('LAYOUT_ERROR_SENTINEL')");
-  await delay(50);
-  const report = await writeCrashReport(path.join(root, 'logs'), { time: new Date(), source: 'renderer', phase: 'test', app: { name: 'fixture', electron: process.versions.electron }, error: new Error('fixture'), rendererConsole: tail.snapshot() });
   // Tail lines carry a timestamp prefix, so match the message inside each line.
   const logged = (text) => tail.snapshot().some((line) => line.includes(text));
+  // console-message events reach the main process asynchronously; poll the
+  // tail until both sentinels arrive instead of a fixed wait.
+  await waitForMain(() => logged('LAYOUT_ERROR_SENTINEL') && logged('LAYOUT_INFO_CONTROL'), 'renderer console tail');
+  const report = await writeCrashReport(path.join(root, 'logs'), { time: new Date(), source: 'renderer', phase: 'test', app: { name: 'fixture', electron: process.versions.electron }, error: new Error('fixture'), rendererConsole: tail.snapshot() });
   const diagnostics = { errorCaptured: logged('LAYOUT_ERROR_SENTINEL'), infoCaptured: logged('LAYOUT_INFO_CONTROL'), reportHasError: fs.readFileSync(report, 'utf8').includes('LAYOUT_ERROR_SENTINEL') };
   const cases = [];
   for (scheme of ['light', 'dark']) {
@@ -46,7 +48,11 @@ app.whenReady().then(async () => {
       win.setContentSize(width, height);
       win.webContents.setZoomFactor(zoom);
       await js("document.querySelector('[data-tab=import]').click()");
-      await delay(100);
+      // The import scan IPC, its render, the resize event and the zoom factor
+      // all land asynchronously; the six session rows plus the CSS viewport
+      // matching the new content size prove every piece settled.
+      await waitForDom(js, `document.querySelectorAll('.import-board-body input[name="session-rel"]').length === 6
+        && Math.abs(innerWidth * ${zoom} - ${width}) < 2 && Math.abs(innerHeight * ${zoom} - ${height}) < 2`);
       for (const expanded of [false, true]) {
         await js(`document.querySelector('.import-scope-detail').open = ${expanded}`);
         const measured = await js(`(() => {
@@ -72,11 +78,16 @@ app.whenReady().then(async () => {
   await js("document.querySelector('[data-tab=home]').click(); document.querySelector('#home-recovery').hidden = false");
   const heading = await js("(() => { const s = getComputedStyle(document.querySelector('.recovery-head h3')); return [s.fontSize, s.lineHeight]; })()");
   const dialogs = [];
+  const [dialogWidth, dialogHeight] = win.getContentSize();
   for (const zoom of [1, 1.5, 2]) {
     win.webContents.setZoomFactor(zoom);
     for (const text of ['更新说明\n'.repeat(120).slice(0, 600), '诊断内容 connection interrupted\n'.repeat(100)]) {
       win.webContents.send('shell:app-confirm', { id: 'layout-test', title: '确认更新', body: text, confirmText: '继续', cancelText: '取消' });
-      await delay(50);
+      // The modal renders on the IPC event and the zoom factor applies
+      // asynchronously; the new body text plus the matching CSS viewport
+      // prove both landed before measuring.
+      await waitForDom(js, `document.getElementById('app-confirm-body').textContent === ${JSON.stringify(text)}
+        && Math.abs(innerWidth * ${zoom} - ${dialogWidth}) < 2 && Math.abs(innerHeight * ${zoom} - ${dialogHeight}) < 2`);
       dialogs.push(await js(`(() => {
         const body = document.querySelector('.modal-body');
         return { zoom: ${zoom}, length: ${text.length}, bodyHeight: body.clientHeight, buttons: ['app-confirm-ok', 'app-confirm-cancel'].map(id => {

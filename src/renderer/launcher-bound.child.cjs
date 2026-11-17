@@ -9,6 +9,7 @@ app.disableHardwareAcceleration();
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { delay, waitForDom, waitForMain } = require('./fixture-wait.cjs');
 
 // All launcher state belongs to the fixture, never the installed application.
 const fixtureUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-launcher-bound-'));
@@ -177,6 +178,7 @@ app.whenReady().then(async () => {
       additionalArguments: ['--dshd-shell-role=launcher'],
     },
   });
+  const js = source => win.webContents.executeJavaScript(source);
   try {
     await win.loadFile(LAUNCHER_HTML);
     // Media emulation belongs to the debugger session; detaching restores the
@@ -202,22 +204,16 @@ app.whenReady().then(async () => {
       fs.mkdirSync(process.env.QA_HOME_ARTIFACTS, { recursive: true });
       await win.webContents.executeJavaScript("document.getAnimations().filter(a => a instanceof CSSTransition || a.animationName === 'shell-feedback-in').forEach(a => a.finish()); void 0");
       win.webContents.invalidate();
-      await new Promise(resolve => setTimeout(resolve, 80));
+      // capturePage reads the composited frame; give the just-finished paint a
+      // fixed window to reach the compositor — no observable predicate exists
+      // for a delivered frame.
+      await delay(80);
       fs.writeFileSync(path.join(process.env.QA_HOME_ARTIFACTS, name),
         (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
       if (win.isVisible() || win.isFocused()) throw new Error('bound fixture must remain hidden and unfocused');
     };
 
     if (deltaFeedback) {
-      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-      const js = source => win.webContents.executeJavaScript(source);
-      const waitFor = async expression => {
-        for (let i = 0; i < 100; i++) {
-          if (await js(expression)) return;
-          await delay(20);
-        }
-        throw new Error('delta DOM did not settle: ' + expression);
-      };
       const read = () => js(`(() => {
         const card = document.getElementById('update-progress-card');
         const button = document.querySelector('#ver-cta [data-delta-tag]');
@@ -231,7 +227,7 @@ app.whenReady().then(async () => {
           focus: document.activeElement === button, toasts: document.querySelectorAll('.shell-feedback-toast').length };
       })()`);
       await js('document.querySelector("[data-tab=versions]").click()');
-      await waitFor('!!document.querySelector("#ver-cta [data-delta-tag]")');
+      await waitForDom(js, '!!document.querySelector("#ver-cta [data-delta-tag]")');
       const cases = [];
       for (const [name, reply] of [
         ['waiting', { mode: 'full', status: 'waiting', ok: true }],
@@ -240,13 +236,22 @@ app.whenReady().then(async () => {
       ]) {
         deltaResolve = undefined;
         await js('document.querySelector("#ver-cta [data-delta-tag]").focus(); document.querySelector("#ver-cta [data-delta-tag]").click()');
-        await waitFor('document.getElementById("update-progress-card").getAttribute("aria-busy") === "true"');
+        await waitForDom(js, 'document.getElementById("update-progress-card").getAttribute("aria-busy") === "true"');
         const confirmHidden = await js('document.getElementById("app-confirm").hidden');
         const pending = await read();
         const readsBefore = { status: statusReads, releases: releaseReads };
         deltaResolve(reply);
-        await waitFor('document.getElementById("update-progress-card").getAttribute("aria-busy") === "false"');
-        await delay(30);
+        await waitForDom(js, 'document.getElementById("update-progress-card").getAttribute("aria-busy") === "false"');
+        if ((reply.mode === 'delta' && reply.ok === true) || reply.status === 'installed') {
+          // A completed install fires-and-forgets refreshStatus/refreshReleases:
+          // wait for those reads to reach main before sampling the counters.
+          await waitForMain(() => statusReads > readsBefore.status && releaseReads > readsBefore.releases,
+            'post-install status/release refresh');
+        } else {
+          // The 'waiting' reply triggers no refresh; the fixed window is the
+          // negative proof that no read arrives before we sample.
+          await delay(30);
+        }
         const terminal = await read();
         const readsAfter = { status: statusReads, releases: releaseReads };
         await captureBound(`bound-delta-${name}.png`);
@@ -269,15 +274,6 @@ app.whenReady().then(async () => {
           animation.effect.getComputedTiming().iterations !== Infinity).map(animation => animation.finished));
         return new Promise(resolve => requestAnimationFrame(() => resolve(true)));
       })()`);
-      const waitForDom = expression => win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
-        const deadline = Date.now() + 5000;
-        const poll = () => {
-          if (${expression}) return resolve(true);
-          if (Date.now() >= deadline) return reject(new Error('visual DOM did not settle: ' + ${JSON.stringify(expression)}));
-          setTimeout(poll, 20);
-        };
-        poll();
-      })`);
       const captures = [];
       const capture = async (name, selectors) => {
         // A hidden native window can retain a partly repainted composited frame
@@ -291,7 +287,7 @@ app.whenReady().then(async () => {
         win.webContents.invalidate();
         // capturePage reads the composited frame; allow the existing 100ms
         // color transition to reach that frame after its DOM animation ends.
-        await new Promise(resolve => setTimeout(resolve, 180));
+        await delay(180);
         if (captionOnly) {
           const center = await win.webContents.executeJavaScript(`(() => {
             const close = document.querySelector('.window-controls button[data-act="close"]');
@@ -300,7 +296,7 @@ app.whenReady().then(async () => {
             return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
           })()`);
           win.webContents.sendInputEvent({ type: 'mouseMove', ...center });
-          await waitForDom(`(() => {
+          await waitForDom(js, `(() => {
             const close = document.querySelector('.window-controls button[data-act="close"]');
             const hit = document.elementFromPoint(${center.x}, ${center.y});
             return close?.matches(':hover') && (hit === close || close.contains(hit));
@@ -338,14 +334,14 @@ app.whenReady().then(async () => {
         captures.push({ file, nativeBounds: win.getBounds(), nativeContentBounds: win.getContentBounds(),
           pixels: screenshot.getSize(), layout });
       };
-      await waitForDom('document.querySelector("#home-version").textContent === "v0.3.6" && !!document.querySelector("#home-components [data-comp-action=open]")');
+      await waitForDom(js, 'document.querySelector("#home-version").textContent === "v0.3.6" && !!document.querySelector("#home-components [data-comp-action=open]")');
       let darwinCssGeometry;
       if (captionOnly) {
         const selectors = ['.window-controls', '.window-controls button[data-act="close"]',
           '[data-goto="versions"]', '.caption', '.rail-head', '.home-heading', '.stage'];
         for (const theme of ['dark', 'light']) {
           win.webContents.send('shell:theme', { scheme: theme });
-          await waitForDom(`document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
+          await waitForDom(js, `document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
           for (const [label, width, height] of [['normal', 1060, 660], ['narrow', 860, 560]]) {
             win.setContentSize(width, height);
             await capture(`caption-${theme}-${label}-close-hover`, selectors);
@@ -385,7 +381,7 @@ app.whenReady().then(async () => {
         const homeSelectors = ['.caption', '.rail-head', '.rail nav', '.rail-foot', '#btn-start', '#btn-check-update', '#home-components [data-comp-action="open"]'];
         for (const theme of ['dark', 'light']) {
           win.webContents.send('shell:theme', { scheme: theme });
-          await waitForDom(`document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
+          await waitForDom(js, `document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
           win.setContentSize(1280, 800);
           await capture(`home-${theme}-normal`, homeSelectors);
           win.setContentSize(860, 560);
@@ -397,9 +393,9 @@ app.whenReady().then(async () => {
         await capture('versions-light-long-path-narrow', ['#ver-lead', '#installed-uninstall-note', '#btn-refresh-releases']);
       }
       win.webContents.send('shell:theme', { scheme: 'light' });
-      await waitForDom("!document.documentElement.hasAttribute('data-ds-dark-theme')");
+      await waitForDom(js, "!document.documentElement.hasAttribute('data-ds-dark-theme')");
       await win.webContents.executeJavaScript('document.querySelector("[data-tab=import]").click()');
-      await waitForDom('document.querySelector("#import-source").textContent.includes("来源目录")');
+      await waitForDom(js, 'document.querySelector("#import-source").textContent.includes("来源目录")');
       await win.webContents.executeJavaScript('document.querySelector("#import-overwrite").click(); document.querySelector("#import-attachments").checked || document.querySelector("#import-attachments").click()');
       win.setContentSize(1280, 800);
       const importSelectors = ['#import-source', '.import-board-body', '.import-cluster-head', '.import-cluster .row-title', '#import-scope', '#btn-import'];
@@ -434,23 +430,6 @@ app.whenReady().then(async () => {
     }
 
     if (componentFeedback) {
-      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-      const waitFor = async predicate => {
-        const deadline = Date.now() + 5000;
-        while (!predicate()) {
-          if (Date.now() >= deadline) throw new Error('component fixture IPC did not arrive');
-          await delay(10);
-        }
-      };
-      const waitForDom = expression => win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
-        const deadline = Date.now() + 5000;
-        const poll = () => {
-          if (${expression}) return resolve(true);
-          if (Date.now() >= deadline) return reject(new Error('component DOM did not settle: ' + ${JSON.stringify(expression)}));
-          setTimeout(poll, 20);
-        };
-        poll();
-      })`);
       const rememberButton = selector => win.webContents.executeJavaScript(`(() => {
         window.qaComponentButton = document.querySelector(${JSON.stringify(selector)});
         const box = window.qaComponentButton.getBoundingClientRect();
@@ -505,10 +484,10 @@ app.whenReady().then(async () => {
       })()`);
       const closeNotice = async () => {
         await win.webContents.executeJavaScript('document.querySelectorAll(".shell-feedback-toast").forEach(node => node.remove())');
-        await waitForDom('!document.querySelector(".shell-feedback-toast")');
+        await waitForDom(js, '!document.querySelector(".shell-feedback-toast")');
       };
       const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'whalebridge', ...payload });
-      await waitForDom('!!document.querySelector("#home-components [data-comp-action=start]")');
+      await waitForDom(js, '!!document.querySelector("#home-components [data-comp-action=start]")');
       await win.webContents.executeJavaScript(`window.qaComponentNotices = [];
         const originalNotice = window.appNotice;
         window.appNotice = options => { window.qaComponentNotices.push(options); return originalNotice(options); };
@@ -517,23 +496,23 @@ app.whenReady().then(async () => {
       const startBefore = await rememberButton('#home-components [data-comp-action="start"]');
       await click('#home-components [data-comp-action="start"]');
       await click('#home-components [data-comp-action="start"]');
-      await waitFor(() => results.calls.some(call => call.op === 'component-start'));
+      await waitForMain(() => results.calls.some(call => call.op === 'component-start'), 'component-start IPC');
       const starting = await readFeedback();
       componentProgress({ phase: 'error', percent: 100, message: 'fixture component startup failed' });
-      await waitForDom('window.qaComponentButton.title.includes("fixture component startup failed")');
+      await waitForDom(js, 'window.qaComponentButton.title.includes("fixture component startup failed")');
       const failedPhase = await readFeedback();
       componentStartResolve({ ok: false, error: 'spawn-failed' });
-      await waitForDom('!!document.querySelector("[data-comp-failure]")');
+      await waitForDom(js, '!!document.querySelector("[data-comp-failure]")');
       const failed = await readFeedback();
       await captureBound('bound-component-start-failed.png');
       await closeNotice();
       const failureDismissed = await readFeedback();
 
       await click('#home-components [data-comp-action="start"]');
-      await waitFor(() => results.calls.filter(call => call.op === 'component-start').length === 2);
+      await waitForMain(() => results.calls.filter(call => call.op === 'component-start').length === 2, 'second component-start IPC');
       await click('[data-tab="components"]');
       componentStartResolve();
-      await waitForDom('!!document.querySelector("#tab-components [data-comp-action=open]")');
+      await waitForDom(js, '!!document.querySelector("#tab-components [data-comp-action=open]")');
       const switchedTab = await readFeedback();
 
       componentInstalled = false;
@@ -541,8 +520,8 @@ app.whenReady().then(async () => {
       await click('[data-tab="components"]');
       const installBefore = await rememberButton('#tab-components [data-comp-action="install"]');
       await click('#tab-components [data-comp-action="install"]');
-      await waitFor(() => typeof componentInstallResolve === 'function');
-      await waitForDom('(window.qaComponentButton.querySelector(".shell-button-label")?.textContent ?? window.qaComponentButton.textContent).startsWith("安装")');
+      await waitForMain(() => typeof componentInstallResolve === 'function', 'component-install IPC');
+      await waitForDom(js, '(window.qaComponentButton.querySelector(".shell-button-label")?.textContent ?? window.qaComponentButton.textContent).startsWith("安装")');
       const installing = await readFeedback();
       const installScroll = await win.webContents.executeJavaScript(`(async () => {
         const button = window.qaComponentButton;
@@ -576,7 +555,7 @@ app.whenReady().then(async () => {
       })()`);
       await captureBound('bound-component-install-scrolling.png');
       componentProgress({ phase: 'download', percent: 42 });
-      await waitForDom('window.qaComponentButton.title.includes("下载组件 42%")');
+      await waitForDom(js, 'window.qaComponentButton.title.includes("下载组件 42%")');
       const downloading = await readFeedback();
       const continuousScroll = await win.webContents.executeJavaScript(`(() => {
         const text = window.qaComponentButton.querySelector('.shell-button-label-text');
@@ -593,10 +572,10 @@ app.whenReady().then(async () => {
         await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
       }
       componentProgress({ phase: 'verify', percent: 60 });
-      await waitForDom('window.qaComponentButton.title.includes("校验组件 60%")');
+      await waitForDom(js, 'window.qaComponentButton.title.includes("校验组件 60%")');
       const verifying = await readFeedback();
       componentInstallResolve();
-      await waitForDom('!!document.querySelector("#tab-components [data-comp-action=open]") && !document.querySelector("[data-comp-id=whalebridge][aria-busy=true]")');
+      await waitForDom(js, '!!document.querySelector("#tab-components [data-comp-action=open]") && !document.querySelector("[data-comp-id=whalebridge][aria-busy=true]")');
       const installed = await readFeedback();
       await captureBound('bound-component-installed.png');
       const installDismissed = installed;
@@ -606,13 +585,13 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript('document.querySelector(".comp-manage").open = true');
       const updateBefore = await rememberButton('#tab-components [data-comp-action="update"]');
       await click('#tab-components [data-comp-action="update"]');
-      await waitFor(() => typeof componentUpdateResolve === 'function');
+      await waitForMain(() => typeof componentUpdateResolve === 'function', 'component-update IPC');
       componentProgress({ phase: 'download', percent: 51 });
-      await waitForDom('window.qaComponentButton.title.includes("下载组件 51%")');
+      await waitForDom(js, 'window.qaComponentButton.title.includes("下载组件 51%")');
       const updating = await readFeedback();
       componentProgress({ phase: 'error', percent: 100, message: 'fixture package refused' });
       componentUpdateResolve({ ok: false, message: 'fixture package refused' });
-      await waitForDom('[...document.querySelectorAll("[data-comp-failure]")].some(node => node.textContent === "操作未完成：fixture package refused")');
+      await waitForDom(js, '[...document.querySelectorAll("[data-comp-failure]")].some(node => node.textContent === "操作未完成：fixture package refused")');
       const updateFailed = await readFeedback();
       win.setSize(860, 560);
       await captureBound('bound-component-update-failed-narrow.png');
@@ -624,45 +603,45 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
       const persistentErrorInline = await win.webContents.executeJavaScript('document.querySelector("[data-comp-list]").innerText.includes("fixture catalog")');
       await click('#tab-components [data-comp-info="whalebridge"]');
-      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥状态：")');
+      await waitForDom(js, 'document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥状态：")');
       const statusDetails = await readFeedback();
       await closeNotice();
 
       const refreshBefore = await rememberButton('[data-comp-refresh]');
       await click('[data-comp-refresh]');
       await click('[data-comp-refresh]');
-      await waitFor(() => typeof componentListResolve === 'function');
+      await waitForMain(() => typeof componentListResolve === 'function', 'component-list refresh IPC');
       const refreshing = await readFeedback();
       componentListResolve();
-      await waitForDom('!document.querySelector("[data-comp-refresh]").disabled');
+      await waitForDom(js, '!document.querySelector("[data-comp-refresh]").disabled');
       const refreshed = await readFeedback();
 
       await win.webContents.executeJavaScript('document.querySelector(".comp-manage").open = true');
       const uninstallBefore = await rememberButton('#tab-components [data-comp-action="uninstall"]');
       await click('#tab-components [data-comp-action="uninstall"]');
       await click('#tab-components [data-comp-action="uninstall"]');
-      await waitFor(() => results.calls.filter(call => call.op === 'component-uninstall-info').length === 1);
+      await waitForMain(() => results.calls.filter(call => call.op === 'component-uninstall-info').length === 1, 'first uninstall-info IPC');
       const uninstallReading = await readFeedback();
       componentUninstallInfoResolve({ defaultModel: true });
-      await waitForDom('document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
+      await waitForDom(js, 'document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
       const uninstallConfirm = await readFeedback();
       await captureBound('bound-component-uninstall-confirm.png');
       await click('#app-confirm-cancel');
-      await waitForDom('!document.querySelector("[data-comp-action=uninstall]").disabled');
+      await waitForDom(js, '!document.querySelector("[data-comp-action=uninstall]").disabled');
       const uninstallCancelled = await readFeedback();
       const uninstallsAfterCancel = results.calls.filter(call => call.op === 'component-uninstall').length;
 
       await win.webContents.executeJavaScript('document.querySelector(".comp-manage").open = true');
       await click('#tab-components [data-comp-action="uninstall"]');
-      await waitFor(() => results.calls.filter(call => call.op === 'component-uninstall-info').length === 2);
+      await waitForMain(() => results.calls.filter(call => call.op === 'component-uninstall-info').length === 2, 'second uninstall-info IPC');
       componentUninstallInfoResolve({ defaultModel: true });
-      await waitForDom('document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
+      await waitForDom(js, 'document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
       await click('#app-confirm-ok');
-      await waitForDom('document.querySelector("#app-confirm-title").textContent === "是否同时删除鲸桥配置？"');
+      await waitForDom(js, 'document.querySelector("#app-confirm-title").textContent === "是否同时删除鲸桥配置？"');
       const keepDataConfirm = await readFeedback();
       await click('#app-confirm-cancel');
-      await waitFor(() => results.calls.some(call => call.op === 'component-uninstall'));
-      await waitForDom('!!document.querySelector("#tab-components [data-comp-action=install]")');
+      await waitForMain(() => results.calls.some(call => call.op === 'component-uninstall'), 'component-uninstall IPC');
+      await waitForDom(js, '!!document.querySelector("#tab-components [data-comp-action=install]")');
       const finalState = await readFeedback();
       process.stdout.write('BOUND_RESULT:' + JSON.stringify({ startBefore, starting, failedPhase, failed, failureDismissed, switchedTab,
         installBefore, installing, installScroll, downloading, continuousScroll, reducedMotion, verifying, installed, installDismissed, updateBefore, updating, updateFailed, updateDismissed,
@@ -673,8 +652,7 @@ app.whenReady().then(async () => {
     }
 
     if (process.env.QA_COMPONENTS_HOME === '1') {
-      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-      const read = () => win.webContents.executeJavaScript(`(() => {
+      const read = () => js(`(() => {
         const home = document.querySelector('#home-components');
         const row = document.querySelector('#tab-components [data-comp-row="whalebridge"]');
         const visible = button => !!button && button.checkVisibility();
@@ -700,40 +678,57 @@ app.whenReady().then(async () => {
           catalogBrand: row.querySelector('.comp-brand')?.naturalWidth,
         };
       })()`);
-      await delay(150);
+      // Initial render waits on the components-list IPC and its paint; the
+      // catalog row appearing proves that pass settled.
+      await waitForDom(js, `!!document.querySelector('#tab-components [data-comp-row="whalebridge"]')`);
       const absent = await read();
       componentInstalled = true;
-      await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
+      await js('window.__launcherComponents.refresh()');
       const stopped = await read();
-      await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="start"]').click(); document.querySelector('#home-components [data-comp-action="start"]').click()`);
-      await delay(80);
+      await js(`document.querySelector('#home-components [data-comp-action="start"]').click(); document.querySelector('#home-components [data-comp-action="start"]').click()`);
+      await waitForMain(() => typeof componentStartResolve === 'function', 'component-start IPC');
+      await waitForDom(js, `document.querySelector('#home-components button[data-comp-action]')?.disabled === true`);
       const starting = await read();
-      componentStartResolve(); await delay(100);
+      componentStartResolve();
+      await waitForDom(js, `document.querySelector('#home-components [data-comp-action="open"]')?.checkVisibility() === true`);
       const running = await read();
       if (process.env.QA_HOME_ARTIFACTS) {
         fs.mkdirSync(process.env.QA_HOME_ARTIFACTS, { recursive: true });
         fs.writeFileSync(path.join(process.env.QA_HOME_ARTIFACTS, 'home-no-card-avatars.png'),
           (await win.webContents.capturePage()).toPNG());
       }
-      await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="open"]').click()`);await delay(100);
-      await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="stop"]').click(); document.querySelector('#home-components [data-comp-action="stop"]').click()`);await delay(80);
+      await js(`document.querySelector('#home-components [data-comp-action="open"]').click()`);
+      await waitForMain(() => results.calls.some(call => call.op === 'component-open'), 'component-open IPC');
+      await js(`document.querySelector('#home-components [data-comp-action="stop"]').click(); document.querySelector('#home-components [data-comp-action="stop"]').click()`);
+      await waitForMain(() => typeof componentStopResolve === 'function', 'component-stop IPC');
+      await waitForDom(js, `document.querySelector('#home-components button[data-comp-action]')?.disabled === true`);
       const stopping = await read();
-      componentStopResolve();await delay(100);
+      componentStopResolve();
+      await waitForDom(js, `document.querySelector('#home-components [data-comp-action="start"]')?.checkVisibility() === true
+        && document.querySelector('#home-components button[data-comp-action]')?.disabled === false`);
       const stoppedAgain = await read();
-      await win.webContents.executeJavaScript(`document.querySelector('[data-tab="components"]').click()`);
+      await js(`document.querySelector('[data-tab="components"]').click()`);
+      // The components tab mounts its list on activation; the refreshed row
+      // proves the async render finished.
+      await waitForDom(js, `document.querySelector('#tab-components [data-comp-row="whalebridge"] [data-comp-action="start"]')?.checkVisibility() === true`);
       const catalogStopped = await read();
-      await win.webContents.executeJavaScript(`document.querySelector('.comp-manage').open = true; document.querySelector('[data-comp-action="rollback"]').click()`);await delay(80);
-      await win.webContents.executeJavaScript(`document.querySelector('#app-confirm-cancel').click(); document.querySelector('[data-tab="home"]').click(); document.querySelector('#btn-check-update').click()`);await delay(150);
+      await js(`document.querySelector('.comp-manage').open = true; document.querySelector('[data-comp-action="rollback"]').click()`);
+      await waitForDom(js, `document.getElementById('app-confirm').hidden === false`);
+      await js(`document.querySelector('#app-confirm-cancel').click(); document.querySelector('[data-tab="home"]').click(); document.querySelector('#btn-check-update').click()`);
+      await waitForDom(js, `document.getElementById('home-update').hidden === false
+        && document.getElementById('home-update-text').textContent.includes('可更新至')`);
       const update = await read();
       await captureBound('bound-home-update.png');
-      componentInstalled = false;await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');const removed = await read();
+      componentInstalled = false;await js('window.__launcherComponents.refresh()');const removed = await read();
       console.log('BOUND_RESULT:' + JSON.stringify({ absent, stopped, starting, running, stopping, stoppedAgain, catalogStopped, update, removed, calls: results.calls }));app.quit();return;
     }
 
     if (process.env.QA_STARTUP_FLOW === '1') {
       const captureHome = async name => {
         if (!process.env.QA_HOME_ARTIFACTS) return;
-        await new Promise(r => setTimeout(r, 180));
+        // capturePage reads the composited frame; give the last DOM paint a
+        // fixed window to reach the compositor — no predicate observes that.
+        await delay(180);
         const fs = require('fs');
         fs.mkdirSync(process.env.QA_HOME_ARTIFACTS, { recursive: true });
         const screenshot = await win.webContents.capturePage();
@@ -776,24 +771,32 @@ app.whenReady().then(async () => {
           detail: get('home-recovery-verdict').textContent,
         };
       })()`);
-      await new Promise(r => setTimeout(r, 100));
+      // The initial home render rides the launcher-status IPC; the status
+      // line carrying text proves refreshStatus settled.
+      await waitForDom(js, `document.getElementById('home-status').textContent.includes('桌面端')`);
       const initial = await readHome();
       await captureHome('home-collapsed.png');
-      await win.webContents.executeJavaScript(`document.getElementById('btn-start').click(); document.getElementById('btn-start').click();`);
-      await new Promise(r => setTimeout(r, 1100));
+      await js(`document.getElementById('btn-start').click(); document.getElementById('btn-start').click();`);
+      await waitForMain(() => results.calls.some(c => c.op === 'start-desktop'), 'start-desktop IPC');
+      // The status line counts whole seconds on a per-second interval; poll
+      // until it ticks to ≥1 instead of guessing a fixed wait.
+      await waitForDom(js, `/[1-9]\\d* 秒/.test(document.getElementById('home-status').textContent)`);
       const pending = await readHome();
       await captureHome('home-starting.png');
       const startsWhilePending = results.calls.filter(c => c.op === 'start-desktop').length;
       startupState = 'error';
       startResolve({ ok: false, error: startupError });
-      await new Promise(r => setTimeout(r, 120));
+      await waitForDom(js, `document.getElementById('home-status').textContent.includes('启动或关闭未完成')`);
       const failed = await readHome();
       const layouts = [];
       for (const zoom of [1, 2]) {
         win.setSize(860, 560);
         win.webContents.setZoomFactor(zoom);
-        await new Promise(r => setTimeout(r, 180));
-        await win.webContents.executeJavaScript(`document.getElementById('home-recovery').open = true`);
+        // Resize and zoom reach the renderer asynchronously; the CSS viewport
+        // matching the new content size proves both applied.
+        const [contentWidth] = win.getContentSize();
+        await waitForDom(js, `Math.abs(innerWidth * ${zoom} - ${contentWidth}) < 2`);
+        await js(`document.getElementById('home-recovery').open = true`);
         const layout = await win.webContents.executeJavaScript(`(() => {
           const button = document.getElementById('btn-start');
           button.scrollIntoView();
@@ -805,37 +808,40 @@ app.whenReady().then(async () => {
         await captureHome(`home-failed-${zoom}x.png`);
       }
       win.webContents.setZoomFactor(1);
-      await new Promise(r => setTimeout(r, 180));
-      await win.webContents.executeJavaScript(`document.getElementById('btn-start').click()`);
-      await new Promise(r => setTimeout(r, 80));
+      {
+        const [contentWidth] = win.getContentSize();
+        await waitForDom(js, `Math.abs(innerWidth - ${contentWidth}) < 2`);
+      }
+      await js(`document.getElementById('btn-start').click()`);
+      await waitForMain(() => results.calls.filter(c => c.op === 'start-desktop').length === 2, 'second start-desktop IPC');
       startReject(new Error('fixture transport failure'));
-      await new Promise(r => setTimeout(r, 120));
+      await waitForDom(js, `document.getElementById('home-recovery-verdict').textContent.includes('fixture transport failure')`);
       const rejected = await readHome();
-      await win.webContents.executeJavaScript(`document.getElementById('btn-start').click()`);
-      await new Promise(r => setTimeout(r, 80));
+      await js(`document.getElementById('btn-start').click()`);
+      await waitForMain(() => results.calls.filter(c => c.op === 'start-desktop').length === 3, 'third start-desktop IPC');
       startupState = 'ready';
       startResolve({ ok: true });
-      await new Promise(r => setTimeout(r, 120));
+      await waitForDom(js, `document.getElementById('btn-start').hidden === true`);
       const readyHome = await readHome();
-      await win.webContents.executeJavaScript(`document.getElementById('btn-stop').click(); document.getElementById('btn-stop').click()`);
-      await new Promise(r => setTimeout(r, 80));
+      await js(`document.getElementById('btn-stop').click(); document.getElementById('btn-stop').click()`);
+      await waitForMain(() => typeof stopResolve === 'function', 'stop-desktop IPC');
+      await waitForDom(js, `document.getElementById('btn-stop').getAttribute('aria-busy') === 'true'`);
       const stopping = await readHome();
       startupState = 'stopped';
       stopResolve({ ok: true });
-      await new Promise(r => setTimeout(r, 120));
+      await waitForDom(js, `document.getElementById('btn-start').hidden === false && document.getElementById('btn-start').disabled === false`);
       const stopped = await readHome();
       // A start that went without an optional built-in: no popup; the status
       // line points at the folded diagnostics, which name it and the reason.
-      await win.webContents.executeJavaScript(`document.getElementById('btn-start').click()`);
-      await new Promise(r => setTimeout(r, 80));
+      await js(`document.getElementById('btn-start').click()`);
+      await waitForMain(() => results.calls.filter(c => c.op === 'start-desktop').length === 4, 'fourth start-desktop IPC');
       startupState = 'ready';
       startupSkipped = [{ label: '用量统计', error: 'missing-source:node_modules:zod' }];
       startResolve({ ok: true });
-      await new Promise(r => setTimeout(r, 120));
+      await waitForDom(js, `document.getElementById('home-status').textContent.includes('部分内置功能未加载')`);
       const degraded = await readHome();
       await captureHome('home-degraded.png');
-      await win.webContents.executeJavaScript(`document.getElementById('home-recovery').open = true`);
-      await new Promise(r => setTimeout(r, 120));
+      await js(`document.getElementById('home-recovery').open = true`);
       const degradedOpen = await readHome();
       await captureHome('home-degraded-open.png');
       process.stdout.write('BOUND_RESULT:' + JSON.stringify({ initial, pending, failed, rejected, readyHome,
@@ -868,28 +874,33 @@ app.whenReady().then(async () => {
     const importBtnExists = scan.importBtn;
     let delayedCancel = { skipped: !importBtnExists };
     if (importBtnExists) {
-      await win.webContents.executeJavaScript(`document.getElementById('btn-import').click()`);
-      await new Promise((r) => setTimeout(r, 60));
+      await js(`document.getElementById('btn-import').click()`);
+      await waitForMain(() => results.calls.some((c) => c.op === 'run-import'), 'run-import A IPC');
       const opA = results.calls.find((c) => c.op === 'run-import')?.opts?.opId;
-      const cancelBefore = await win.webContents.executeJavaScript(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height }; })()`);
+      const cancelBefore = await js(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height }; })()`);
       // Click cancel for A (handler captures opA and awaits cancel reply).
-      await win.webContents.executeJavaScript(`document.getElementById('btn-import-cancel').click()`);
-      const cancelPending = await win.webContents.executeJavaScript(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height, label: b.querySelector('.shell-button-label-text')?.textContent, busy: b.getAttribute('aria-busy'), disabled: b.disabled, spinner: Boolean(b.querySelector('.shell-button-spinner')) }; })()`);
+      await js(`document.getElementById('btn-import-cancel').click()`);
+      const cancelPending = await js(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height, label: b.querySelector('.shell-button-label-text')?.textContent, busy: b.getAttribute('aria-busy'), disabled: b.disabled, spinner: Boolean(b.querySelector('.shell-button-spinner')) }; })()`);
       // Start B: mark a new active op by clicking import again after A's
       // handler finishes? A is still pending — instead simulate B by forcing
       // the shared state: dispatch progress for opB and a stale progress for opA.
       // Resolve A's run-import so its finally clears activeImportOpId, then
       // start B fresh.
       if (importResolve) importResolve({ ok: true, sessions: [], skills: [] });
-      await new Promise((r) => setTimeout(r, 30));
-      await win.webContents.executeJavaScript(`document.getElementById('btn-import').click()`);
-      await new Promise((r) => setTimeout(r, 60));
+      // A's run handler re-enables the import button in its finally; that is
+      // the observable proof activeImportOpId was cleared before B starts.
+      await waitForDom(js, `document.getElementById('btn-import').disabled === false`);
+      await js(`document.getElementById('btn-import').click()`);
+      await waitForMain(() => results.calls.filter((c) => c.op === 'run-import').length === 2, 'run-import B IPC');
       const runs = results.calls.filter((c) => c.op === 'run-import');
       const opB = runs.length > 1 ? runs[runs.length - 1].opts.opId : null;
       // Deliver the DELAYED cancel reply for A now (after B started).
       if (pendingCancels.has(opA)) pendingCancels.get(opA)({ ok: false, error: 'not-current-operation' });
-      await new Promise((r) => setTimeout(r, 60));
-      const dom = await win.webContents.executeJavaScript(`({
+      // The refused stale write changes nothing — the fixed window gives the
+      // reply a chance to land so the read below can prove it produced no
+      // write. There is no observable event for "nothing happened".
+      await delay(60);
+      const dom = await js(`({
         importResult: document.getElementById('import-result').textContent,
         cancelHidden: document.getElementById('btn-import-cancel').hidden,
         cancelBusy: document.getElementById('btn-import-cancel').getAttribute('aria-busy'),
@@ -914,19 +925,29 @@ app.whenReady().then(async () => {
       `);
       const beta = radios.find((r) => r.route === 'beta' && !r.disabled);
       if (beta) {
-        const savesBefore = results.calls.filter((c) => c.op === 'save-launcher-config').length;
+        const countSaves = () => results.calls.filter((c) => c.op === 'save-launcher-config').length;
+        const savesBefore = countSaves();
         // First pick — will resolve {ok:false} under QA_ROUTE_FAIL_ONCE.
-        await win.webContents.executeJavaScript(`
+        await js(`
           document.querySelector('#route-picker [data-route-pick="beta"]').click()
         `);
-        await new Promise((r) => setTimeout(r, 60));
-        const savesAfterFirst = results.calls.filter((c) => c.op === 'save-launcher-config').length;
+        await waitForMain(() => countSaves() > savesBefore, 'first route save IPC');
+        const savesAfterFirst = countSaves();
+        if (process.env.QA_ROUTE_FAIL_ONCE === '1') {
+          // The dedupe marker is re-seeded only after the renderer processes
+          // the resolved refusal; its error toast is the observable proof, so
+          // the retry below is not deduped away.
+          await waitForDom(js, `[...document.querySelectorAll('.shell-feedback-toast .shell-feedback-text')]
+            .some(node => node.textContent.includes('maintenance-in-progress'))`);
+        }
         // Retry the SAME route — the refusal must not have deduped it away.
-        await win.webContents.executeJavaScript(`
+        await js(`
           document.querySelector('#route-picker [data-route-pick="beta"]').click()
         `);
-        await new Promise((r) => setTimeout(r, 60));
-        const savesAfterRetry = results.calls.filter((c) => c.op === 'save-launcher-config').length;
+        if (process.env.QA_ROUTE_FAIL_ONCE === '1') {
+          await waitForMain(() => countSaves() > savesAfterFirst, 'route save retry IPC');
+        }
+        const savesAfterRetry = countSaves();
         routeRetry = {
           radios,
           picked: 'beta',

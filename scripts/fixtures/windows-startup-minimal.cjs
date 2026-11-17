@@ -25,6 +25,9 @@ app.whenReady().then(async () => {
   await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<!doctype html><html><head><title>Electron startup probe</title></head><body style="font:20px system-ui;padding:28px"><h1>Minimal GUI ready</h1><p>No product resources or user configuration loaded.</p></body></html>')}`);
   win.showInactive();
   record('did-finish-load', { visible: win.isVisible() });
+  // capturePage reads the composited frame of the just-shown window; give the
+  // first paint a fixed window to reach the compositor — no predicate observes
+  // a delivered frame.
   await new Promise(resolve => setTimeout(resolve, 1000));
   const image = await win.webContents.capturePage();
   fs.writeFileSync(path.join(output, 'window.png'), image.toPNG());

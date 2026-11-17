@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { assertWelcomePresentation } = require('../main/smoke/welcome-presentation');
+const { delay, waitForMain } = require('./fixture-wait.cjs');
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-welcome-render-'));
 app.setPath('userData', fixture);
 const root = process.env.DSH_WELCOME_TEST_ROOT || path.resolve(__dirname, '../..');
@@ -41,10 +42,23 @@ app.whenReady().then(async () => {
       assert.equal(entry.margin, '0px');
       assert.match(entry.font, /Montserrat/);
       await win.webContents.executeJavaScript(`document.getElementById('api-key').click()`);
-      await new Promise(resolve => setTimeout(resolve, 50));
-      assert.equal(await inspect(), true);
+      // The sign-in view re-renders asynchronously (React); poll the same
+      // presentation guard until it settles. A real regression still fails
+      // with the same error after the deadline.
+      {
+        const deadline = Date.now() + 5000;
+        for (;;) {
+          let outcome;
+          try { outcome = await inspect(); } catch (error) { outcome = error; }
+          if (outcome === true) break;
+          if (Date.now() >= deadline) throw outcome instanceof Error ? outcome : new Error('welcome presentation did not settle');
+          await delay(50);
+        }
+      }
       await win.webContents.executeJavaScript(`document.getElementById('skip-key').click()`);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // The skip action reaches the fixture callback over IPC; poll for it
+      // instead of a fixed wait.
+      await waitForMain(() => skipped === 1, 'welcome skip IPC');
       assert.equal(skipped, 1);
       // Mutations must fail the same guard used by packaged smoke.
       const css = await win.webContents.insertCSS('#root { display: block !important; }');
