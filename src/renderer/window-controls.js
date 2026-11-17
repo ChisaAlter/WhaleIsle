@@ -1,5 +1,5 @@
 // Aliased names: classic scripts share one global lexical scope, and
-// launcher.js also destructures `h`/`mount` at top level on the same page.
+// launcher-core.js also destructures `h`/`mount` at top level on the same page.
 const { h: wcH, mount: wcMount } = (typeof module !== 'undefined' && module.exports)
   ? require('../shared/dom')
   : window.whaleDom;

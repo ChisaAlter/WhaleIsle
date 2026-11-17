@@ -1,91 +1,18 @@
 'use strict';
 
+// renderReleases is exercised on the real page scripts over the fake DOM the
+// kit parses from launcher.html: mount() stamps real nodes on the release
+// list, the installed card takes text, and row listeners bind through the
+// shipped markup. innerHTML is serialized back from the node tree so the
+// assertions keep comparing the same markup contract.
+
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const kit = require('./launcher-test-kit.cjs');
 
-// Minimal DOM for renderReleases: the function mounts real nodes on the
-// list element (replaceChildren), stamps text on the installed card, then
-// binds listeners through querySelectorAll (empty here — wiring is
-// exercised by the real page). innerHTML is serialized back from the node
-// tree so assertions keep comparing the same markup contract.
-function fakeText(text) {
-  return { nodeType: 3, textContent: String(text), children: [] };
-}
-
-function serialize(node) {
-  if (node.nodeType === 3) {
-    return node.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-  const open = Object.entries(node.attrs).map(([name, value]) => ` ${name}="${value}"`).join('');
-  return `<${node.tagName.toLowerCase()}${open}>${node.children.map(serialize).join('')}</${node.tagName.toLowerCase()}>`;
-}
-
-function textOf(node) {
-  return node.children.map((child) => (child.nodeType === 3 ? child.textContent : textOf(child))).join('');
-}
-
-function fakeElement(tag, namespaceURI = null) {
-  const el = {
-    nodeType: 1,
-    tagName: String(tag).toUpperCase(),
-    namespaceURI,
-    children: [],
-    attrs: {},
-    dataset: {},
-    hidden: false,
-    title: '',
-    className: '',
-    disabled: false,
-    style: {
-      props: {},
-      setProperty(name, value) { this.props[name] = String(value); },
-    },
-    classList: {
-      set: new Set(),
-      contains(name) { return this.set.has(name); },
-      add(name) { this.set.add(name); },
-      remove(name) { this.set.delete(name); },
-      toggle(name, force) {
-        const on = force === undefined ? !this.set.has(name) : Boolean(force);
-        if (on) this.set.add(name); else this.set.delete(name);
-        return on;
-      },
-    },
-    appendChild(child) { this.children.push(child); return child; },
-    replaceChildren(...nodes) { this.children = []; nodes.forEach((node) => this.appendChild(node)); },
-    setAttribute(name, value) { this.attrs[name] = String(value); },
-    getAttribute(name) { return this.attrs[name] ?? null; },
-    querySelectorAll() { return []; },
-    querySelector() { return null; },
-    closest() { return null; },
-    addEventListener() {},
-    get innerHTML() { return this.children.map(serialize).join(''); },
-    get textContent() { return textOf(this); },
-    set textContent(value) { this.children = String(value) === '' ? [] : [fakeText(value)]; },
-  };
-  return el;
-}
-
-function fakeDocument() {
-  const els = new Map();
-  return {
-    els,
-    getElementById(id) {
-      if (!els.has(id)) els.set(id, fakeElement('div'));
-      return els.get(id);
-    },
-    createElement: (tag) => fakeElement(tag),
-    createElementNS: (ns, tag) => fakeElement(tag, ns),
-    createTextNode: fakeText,
-    querySelectorAll: () => [],
-    addEventListener() {},
-  };
-}
-
-global.window = {};
-global.document = fakeDocument();
-
-const { renderReleases } = require('./launcher');
+const { context, document: doc } = kit.loadLauncherPage({ api: {} });
+const renderReleases = context.renderReleases;
+const el = (id) => doc.getElementById(id);
 
 test('renderReleases renders the delta button when the row carries row.delta', () => {
   renderReleases({
@@ -100,7 +27,7 @@ test('renderReleases renders the delta button when the row carries row.delta', (
       delta: { name: 'Whale-Isle-delta-0.3.2-0.3.3.zip', from: '0.3.2', to: '0.3.3', size: 1200 },
     }],
   });
-  const html = global.document.getElementById('release-list').innerHTML;
+  const html = el('release-list').innerHTML;
   assert.match(html, /data-delta-tag="v0\.3\.3"/);
   assert.match(html, /增量更新/);
   assert.match(html, /增量包/);
@@ -119,7 +46,7 @@ test('renderReleases falls back to payload.deltas entries shaped as an array', (
       assetName: 'setup.exe',
     }],
   });
-  const html = global.document.getElementById('release-list').innerHTML;
+  const html = el('release-list').innerHTML;
   assert.match(html, /data-delta-tag="v0\.3\.3"/);
 });
 
@@ -136,12 +63,12 @@ test('renderReleases surfaces a newer version badge and CTA on the top card', ()
       delta: { name: 'd.zip', size: 5 },
     }],
   });
-  assert.match(global.document.getElementById('ver-badge').textContent, /发现新版本 v0\.3\.3/);
-  const cta = global.document.getElementById('ver-cta').innerHTML;
+  assert.match(el('ver-badge').textContent, /发现新版本 v0\.3\.3/);
+  const cta = el('ver-cta').innerHTML;
   assert.match(cta, /增量更新/);
   assert.match(cta, /完全下载/);
   // The newest row stays collapsed by default; its detail expands in place.
-  const html = global.document.getElementById('release-list').innerHTML;
+  const html = el('release-list').innerHTML;
   assert.match(html, /data-rel-toggle/);
   assert.match(html, /rel-detail/);
 });
@@ -158,13 +85,13 @@ test('renderReleases shows 已是最新 and an empty CTA when nothing is newer',
       assetName: 'setup.exe',
     }],
   });
-  const badgeEl = global.document.getElementById('ver-badge');
+  const badgeEl = el('ver-badge');
   assert.equal(badgeEl.textContent, '已是最新');
   assert.equal(badgeEl.hidden, false);
-  assert.equal(global.document.getElementById('ver-label').textContent, '本机版本');
-  assert.equal(global.document.getElementById('ver-num').textContent, 'v0.3.3');
-  assert.match(global.document.getElementById('release-list').innerHTML, /已安装/);
-  assert.equal(global.document.getElementById('ver-cta').innerHTML, '');
+  assert.equal(el('ver-label').textContent, '本机版本');
+  assert.equal(el('ver-num').textContent, 'v0.3.3');
+  assert.match(el('release-list').innerHTML, /已安装/);
+  assert.equal(el('ver-cta').innerHTML, '');
 });
 
 test('a running directory build keeps the registered installation version distinct', () => {
@@ -173,10 +100,10 @@ test('a running directory build keeps the registered installation version distin
     installed: { version: '0.3.4', registeredInstall: true, installPath: 'C:\\软件\\Whale Isle' },
     releases: [{ tag: 'v0.3.5', version: '0.3.5', current: true, installable: true }],
   });
-  assert.equal(global.document.getElementById('ver-label').textContent, '当前运行');
-  assert.equal(global.document.getElementById('ver-num').textContent, 'v0.3.5');
-  assert.equal(global.document.getElementById('ver-now-sub').textContent, '本机安装 v0.3.4 · 安装位置 C:\\软件\\Whale Isle');
-  const html = global.document.getElementById('release-list').innerHTML;
+  assert.equal(el('ver-label').textContent, '当前运行');
+  assert.equal(el('ver-num').textContent, 'v0.3.5');
+  assert.equal(el('ver-now-sub').textContent, '本机安装 v0.3.4 · 安装位置 C:\\软件\\Whale Isle');
+  const html = el('release-list').innerHTML;
   assert.match(html, /运行中/);
   assert.match(html, /当前正在运行此版本/);
   assert.doesNotMatch(html, /已安装/);
@@ -188,8 +115,8 @@ test('an unregistered directory build identifies its path as the running locatio
     installed: { version: '0.3.5', registeredInstall: false, installPath: 'C:\\QA\\win-unpacked' },
     releases: [{ tag: 'v0.3.5', version: '0.3.5', current: true, installable: true }],
   });
-  assert.equal(global.document.getElementById('ver-now-sub').textContent, '运行位置 C:\\QA\\win-unpacked');
-  assert.doesNotMatch(global.document.getElementById('release-list').innerHTML, /已安装/);
+  assert.equal(el('ver-now-sub').textContent, '运行位置 C:\\QA\\win-unpacked');
+  assert.doesNotMatch(el('release-list').innerHTML, /已安装/);
 });
 
 test('renderReleases renders no delta button without delta evidence', () => {
@@ -204,7 +131,7 @@ test('renderReleases renders no delta button without delta evidence', () => {
       assetName: 'setup.exe',
     }],
   });
-  const html = global.document.getElementById('release-list').innerHTML;
+  const html = el('release-list').innerHTML;
   assert.doesNotMatch(html, /data-delta-tag/);
   assert.doesNotMatch(html, /增量更新/);
 });
@@ -215,7 +142,7 @@ test('renderReleases preserves the full release notes as readable text', () => {
     releases: [{ tag: 'v0.3.5', version: '0.3.5', newer: true, installable: true,
       notes: '# Whale Isle 0.3.5\n\n- **完整说明**：' + '较长的更新内容。'.repeat(180) + '\n\n最后一项：[阅读详情](release-notes.en.md)' }],
   });
-  const html = global.document.getElementById('release-list').innerHTML;
+  const html = el('release-list').innerHTML;
   assert.match(html, /最后一项：阅读详情/);
   assert.match(html, /完整说明/);
   assert.doesNotMatch(html, /# Whale|\*\*|release-notes\.en\.md/);

@@ -79,4 +79,4 @@
 - Decision: [启动器更新确认与导入任务归属](../decisions/implemented/bug-fix/2026-09-24-launcher-update-import-ownership.md)
 - Decision: [v3 会话日志参与桌面导入闸门](../decisions/implemented/bug-fix/2026-09-23-v3-session-import-gate.md)
 
-- Implementation：`src/main/data-import.js`、`src/renderer/launcher.js`
+- Implementation：`src/main/data-import.js`、`src/renderer/launcher-import.js`

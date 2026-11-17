@@ -41,4 +41,4 @@ flowchart TD
 ## 入口
 
 - `plugin-forensics.js`、`plugins.js`（`applyDisabledBundles`）、`harness-controller.js`、`plugin-tree-failure.js`、`plugin-recovery-actions.js`
-- `src/renderer/launcher.js`、`src/renderer/boot-recovery.js`
+- `src/renderer/launcher-plugins.js`、`src/renderer/boot-recovery.js`
