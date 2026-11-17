@@ -6355,11 +6355,12 @@ async function changeAgentMode(modeId) {
     showBanner(`切换权限模式失败：${error?.message || '电脑没有响应'}`);
     operationError(`切换权限模式失败：${error?.message || '电脑没有响应'}`, () => changeAgentMode(modeId));
   } finally {
-    if (!owner.owns()) return;
-    state.modeBusy = false;
-    renderComposer();
-    renderSettings();
-    if (state.pickerSheet === 'mode') renderSheet();
+    if (owner.owns()) {
+      state.modeBusy = false;
+      renderComposer();
+      renderSettings();
+      if (state.pickerSheet === 'mode') renderSheet();
+    }
   }
 }
 
@@ -6428,11 +6429,12 @@ async function changeAgentModel(provider, model, reasoningEffort) {
     showBanner(`切换模型失败：${error?.message || '电脑没有响应'}`);
     operationError(`切换模型失败：${error?.message || '电脑没有响应'}`, () => changeAgentModel(provider, model, reasoningEffort));
   } finally {
-    if (!owner.owns()) return;
-    state.modelBusy = false;
-    renderComposer();
-    renderSettings();
-    if (state.pickerSheet === 'model') renderSheet();
+    if (owner.owns()) {
+      state.modelBusy = false;
+      renderComposer();
+      renderSettings();
+      if (state.pickerSheet === 'model') renderSheet();
+    }
   }
 }
 

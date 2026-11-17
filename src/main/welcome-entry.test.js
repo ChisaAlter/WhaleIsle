@@ -38,7 +38,7 @@ function accountFixture(connect) {
     connectWelcome: connect,
     dsh: { sessionCookie: 'session=test' },
     nativeTheme: { shouldUseDarkColors: false },
-    shell: { openExternal: async url => calls.opened.push(url) },
+    openExternalHttp: async url => { calls.opened.push(url); return true; },
     app: { getLocale: () => 'zh-CN' },
     resolveDesktopStartupLocale: preference => ({ id: preference || 'zh-CN' }),
     refresh: () => { calls.refreshed++; },

@@ -98,6 +98,18 @@ function requireCleanupSuccess(result, label) {
   return result;
 }
 
+function requireRemoteDeselected(afterDeselect, remoteAfterDeselect) {
+  if (afterDeselect.status !== 200 || !afterDeselect.json
+      || afterDeselect.json.host || afterDeselect.json.connected === true) {
+    throw new Error('remote stayed active after deselect: '
+      + `HTTP ${afterDeselect.status} ${afterDeselect.text || ''}`.trim());
+  }
+  if (remoteAfterDeselect.status === 200) {
+    throw new Error('a remote operation was still accepted after deselect — '
+      + `HTTP ${remoteAfterDeselect.status}`);
+  }
+}
+
 function writeProfile(profileDir) {
   fs.mkdirSync(profileDir, { recursive: true });
   fs.writeFileSync(path.join(profileDir, 'package.json'), JSON.stringify({
@@ -327,15 +339,7 @@ async function runLive(options = {}) {
           const remoteAfterDeselect = await cleanupRequest(
             '/dsh-remote/ls?path=' + encodeURIComponent(fixture ? fixture.root : '/'),
           );
-          if (afterDeselect.status !== 200 || !afterDeselect.json
-              || afterDeselect.json.host || afterDeselect.json.connected === true) {
-            throw new Error('remote stayed active after deselect: '
-              + `HTTP ${afterDeselect.status} ${afterDeselect.text || ''}`.trim());
-          }
-          if (remoteAfterDeselect.status === 200) {
-            throw new Error('a remote operation was still accepted after deselect — '
-              + `HTTP ${remoteAfterDeselect.status}`);
-          }
+          requireRemoteDeselected(afterDeselect, remoteAfterDeselect);
           teardownOrder.push('post-deselect-remote-op');
           const deleted = await cleanupRequest('/dsh-remote/machines', { action: 'delete', id: machineId });
           requireCleanupSuccess(deleted, 'machine delete');

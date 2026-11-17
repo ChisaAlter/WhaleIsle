@@ -52,6 +52,7 @@ const { UpdateCenterWindow, registerUpdateCenterIpc } = require('./update-center
 const { ipcSenderRole } = require('./ipc-authorization');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { connectWelcome } = require('./welcome-backend');
+const { openExternalHttp } = require('./open-external');
 const { resolveDesktopStartupLocale } = require('./desktop-locale');
 const { recoverInterruptedImport, readImportJournal, journalIsBlocked } = require('./data-import');
 const { isLauncherPackage } = require('../launcher/product');
@@ -449,7 +450,7 @@ function startAccountWatch() {
     const attempt = state.attempt;
     if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
       openedAttempt = attempt.id;
-      void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined);
+      void openExternalHttp(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined);
     }
     previousAccountStatus = state.status;
   }, () => {

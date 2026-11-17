@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { ipcMain, dialog, app, shell } = require('electron');
+const { ipcMain, dialog, app } = require('electron');
 const { formatBootLogDump, saveBootLog } = require('./boot-log-dump');
 const {
   REMOTE_FEATURE_ENABLED,
@@ -45,6 +45,7 @@ const { listDir, readFile, readFileMedia, writeFile } = require('./workspace-fs'
 const { listAvailableEditors, openInEditor, revealInFolder, openWithSystemDefault } = require('./editors');
 const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
 const { registerIpc: registerChannel } = require('./ipc-register');
+const { openExternalHttp } = require('./open-external');
 const { openDesktopDshHome } = require('./open-dsh-home');
 const { openuiViewer, openuiApi, openuiBundle } = require('./openui');
 
@@ -160,10 +161,9 @@ function registerIpc({
   });
 
   handle('shell:open-external', async (_event, url) => {
-    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+    if (!await openExternalHttp(url)) {
       throw new Error('Invalid URL');
     }
-    await shell.openExternal(url);
     return true;
   });
 

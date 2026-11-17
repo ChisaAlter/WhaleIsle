@@ -1,4 +1,4 @@
-const { app, BrowserView, BrowserWindow, shell, nativeImage, screen } = require('electron');
+const { app, BrowserView, BrowserWindow, nativeImage, screen } = require('electron');
 const {
   attachRendererConsoleTail, RendererConsoleTail, RendererMemorySamples, collectHangStack, rendererMemorySample,
   writeCrashReport, desktopErrorState,
@@ -15,11 +15,11 @@ const {
   isSameOriginLoopbackUrl,
   isLocalAppNavigationUrl,
   isLauncherNavigationUrl,
-  isHttpOrHttpsUrl,
   rewriteLoopbackLoadUrl,
   shouldAllowPrivilegedNavigate,
   shouldAllowPrivilegedRedirect,
 } = require('./local-url');
+const { openExternalHttp } = require('./open-external');
 
 const { applyHarnessCookieToSession, launchTokenFromUrl, loadUrlAfterRedeem } = require('./harness-browser-auth');
 const { createForegroundPolicy } = require('./foreground');
@@ -286,8 +286,8 @@ function attachPrivilegedNavigationGuards(contents, options) {
       }
       return;
     }
-    if (openDeniedExternal && isHttpOrHttpsUrl(url)) {
-      shell.openExternal(url);
+    if (openDeniedExternal) {
+      void openExternalHttp(url);
     }
   }
 

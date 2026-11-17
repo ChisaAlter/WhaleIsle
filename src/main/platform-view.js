@@ -9,8 +9,9 @@
  */
 
 const { createHash, randomUUID } = require('node:crypto');
-const { WebContentsView, session, shell } = require('electron');
+const { WebContentsView, session } = require('electron');
 const { constantTimeEqual } = require('../shared/secret');
+const { openExternalHttp } = require('./open-external');
 
 const PLATFORM_IPC = {
   bootstrap: 'dsh-platform:bootstrap',
@@ -161,7 +162,7 @@ class DesktopPlatformView {
     view.webContents.setWindowOpenHandler(({ url }) => {
       const destination = new URL(url);
       if (destination.protocol === 'https:' && !destination.username && !destination.password) {
-        void shell.openExternal(url).catch(() => {});
+        void openExternalHttp(url).catch(() => {});
       }
       return { action: 'deny' };
     });
