@@ -4,7 +4,10 @@
  * Shared filesystem-safety primitives. One canonical implementation for each
  * operation so call sites cannot grow divergent ad-hoc copies:
  * - atomicWriteFile/atomicWriteFileSync: same-directory temp + fsync + rename,
- *   permission preservation, temp cleanup on failure.
+ *   permission preservation, temp cleanup on failure. On Windows the rename
+ *   step retries the transient sharing-violation codes for a bounded window.
+ * - renameWithRetry/renameWithRetrySync: that bounded retry on its own, for
+ *   callers that already staged their own temp file.
  * - safeRemove/safeRemoveSync: best-effort force removal that never throws.
  * - withOwnedTempDir: mkdtemp under os.tmpdir() with guarded teardown.
  * - createUniqueDir: mkdtemp under a caller-chosen parent for the cases that
@@ -39,6 +42,72 @@ async function modeFor(file, options) {
   }
 }
 
+// Windows refuses rename over a destination still held by another handle —
+// a concurrent reader, indexer or antivirus scan — and reports the transient
+// failure as EPERM/EACCES/EBUSY. Retry only those codes, only on win32, with
+// a bounded exponential backoff; every other error and platform fails through
+// immediately, and the last error is rethrown once the budget is spent.
+const RENAME_RETRYABLE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_RETRY_BUDGET_MS = 2000;
+const RENAME_RETRY_DELAY_MS = 25;
+
+const renameRetryWait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const renameRetryWaitSync = (() => {
+  const cell = new Int32Array(new SharedArrayBuffer(4));
+  return ms => Atomics.wait(cell, 0, 0, ms);
+})();
+
+function renameRetryable(error, platform) {
+  return platform === 'win32' && RENAME_RETRYABLE_CODES.has(error && error.code);
+}
+
+function renameRetryOptions(options) {
+  return {
+    platform: options.platform ?? process.platform,
+    deadline: Date.now() + (options.budgetMs ?? RENAME_RETRY_BUDGET_MS),
+    delayMs: RENAME_RETRY_DELAY_MS,
+  };
+}
+
+/**
+ * Rename `from` over `to`, tolerating transient Windows sharing violations
+ * (see above). Test seams: `options.rename` supplies the rename call,
+ * `options.platform` the platform gate, `options.sleep` the backoff wait and
+ * `options.budgetMs` the total retry window. The vendored copy in
+ * vendor/dsh-project/lib/files.js implements the same contract because the
+ * plugin runtime is copied into profiles and cannot import this file; its
+ * behavior is pinned by the cases in fs-safe.test.js.
+ */
+async function renameWithRetry(from, to, options = {}) {
+  const rename = options.rename ?? fs.promises.rename.bind(fs.promises);
+  const wait = options.sleep ?? renameRetryWait;
+  const retry = renameRetryOptions(options);
+  for (;;) {
+    try {
+      return await rename(from, to);
+    } catch (error) {
+      if (!renameRetryable(error, retry.platform) || Date.now() >= retry.deadline) throw error;
+      await wait(retry.delayMs);
+      retry.delayMs = Math.min(retry.delayMs * 2, 250);
+    }
+  }
+}
+
+function renameWithRetrySync(from, to, options = {}) {
+  const rename = options.rename ?? fs.renameSync.bind(fs);
+  const wait = options.sleep ?? renameRetryWaitSync;
+  const retry = renameRetryOptions(options);
+  for (;;) {
+    try {
+      return rename(from, to);
+    } catch (error) {
+      if (!renameRetryable(error, retry.platform) || Date.now() >= retry.deadline) throw error;
+      wait(retry.delayMs);
+      retry.delayMs = Math.min(retry.delayMs * 2, 250);
+    }
+  }
+}
+
 /**
  * Write `data` to `file` atomically: a uniquely named sibling temp file is
  * written and fsynced, then renamed over the target. An existing target keeps
@@ -55,7 +124,7 @@ async function atomicWriteFile(file, data, options = {}) {
     if (options.fsync !== false) await handle.sync();
     await handle.close();
     handle = undefined;
-    await fs.promises.rename(tmp, file);
+    await renameWithRetry(tmp, file);
     renamed = true;
   } finally {
     if (handle) await handle.close().catch(() => {});
@@ -73,7 +142,7 @@ function atomicWriteFileSync(file, data, options = {}) {
     if (options.fsync !== false) fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = undefined;
-    fs.renameSync(tmp, file);
+    renameWithRetrySync(tmp, file);
     renamed = true;
   } finally {
     if (fd !== undefined) {
@@ -181,6 +250,8 @@ function createUniqueDir(parent, prefix) {
 module.exports = {
   atomicWriteFile,
   atomicWriteFileSync,
+  renameWithRetry,
+  renameWithRetrySync,
   safeRemove,
   safeRemoveSync,
   withOwnedTempDir,

@@ -110,6 +110,13 @@ app.whenReady().then(async () => {
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode });
     await delay(20);
   };
+  // Input events reach the renderer asynchronously; poll until the focused
+  // node actually changed instead of assuming the keypress was processed.
+  const keyMovesFocus = async keyCode => {
+    await js('window.__feedbackFocusSentinel = document.activeElement');
+    await key(keyCode);
+    await waitFor('document.activeElement !== window.__feedbackFocusSentinel');
+  };
   try {
     const result = { cases: [], errors: [] };
     if (!bootOnly) {
@@ -172,16 +179,20 @@ app.whenReady().then(async () => {
     }
     // Parallel results remain interactive without replacing a destructive confirmation.
     await js("document.getElementById('home-update').querySelector('.shell-feedback-close').click(); window.confirmAnswer = null; void window.appConfirm({title:'确认删除',body:'fixture',danger:true}).then(value => {window.confirmAnswer=value}); void window.shellFeedback.notice({title:'后台结果',body:'fixture',tone:'error',actions:[{label:'重试',onClick:()=>{window.retryCalls=(window.retryCalls||0)+1}}]})");
+    // Wait for the confirmation and its initial focus before pressing keys.
+    await waitFor("!document.getElementById('app-confirm').hidden && document.activeElement === document.getElementById('app-confirm-cancel') && !!document.querySelector('.shell-feedback-action')");
     result.confirmSafe = await js("({ title: document.getElementById('app-confirm-title').textContent, focus: document.activeElement.id })");
-    await key('Tab');
-    await key('Tab');
+    await keyMovesFocus('Tab');
+    await keyMovesFocus('Tab');
     result.confirmRetry = await js('document.activeElement.className');
     await js('document.activeElement.click()');
     result.retryCalls = await js('window.retryCalls');
     await key('Escape');
+    await waitFor("document.querySelectorAll('.shell-feedback-toast').length === 0");
     result.confirmAfterToastEscape = await js("({ title: document.getElementById('app-confirm-title').textContent, hidden: document.getElementById('app-confirm').hidden, answer: window.confirmAnswer, toasts:document.querySelectorAll('.shell-feedback-toast').length })");
-    await key('Tab');
+    await keyMovesFocus('Tab');
     await key('Escape');
+    await waitFor('window.confirmAnswer === false');
     result.confirmAnswer = await js('window.confirmAnswer');
     await js("document.querySelector('[data-tab=plugins]').click()");
     await waitFor("document.getElementById('btn-refresh-plugins').getAttribute('aria-busy') === 'true'");
@@ -275,9 +286,10 @@ app.whenReady().then(async () => {
     await js("document.querySelector('[data-tab=home]').click(); void installRuntime()");
     await waitFor("document.getElementById('btn-install-cancel').checkVisibility()");
     await js("void window.appConfirm({title:'确认卸载其他组件',body:'fixture',danger:true}); document.getElementById('app-confirm-cancel').focus()");
+    await waitFor("document.activeElement === document.getElementById('app-confirm-cancel')");
     result.installTabTargets = [];
     for (let i = 0; i < 4; i++) {
-      await key('Tab');
+      await keyMovesFocus('Tab');
       result.installTabTargets.push(await js("document.activeElement.id || document.activeElement.className"));
     }
     await js("document.getElementById('btn-install-cancel').click(); document.getElementById('app-confirm-cancel').click(); document.getElementById('install-progress-card').querySelector('.shell-feedback-close').click()");

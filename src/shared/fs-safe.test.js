@@ -3,9 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const {
   atomicWriteFile,
   atomicWriteFileSync,
+  renameWithRetry,
+  renameWithRetrySync,
   safeRemove,
   safeRemoveSync,
   withOwnedTempDir,
@@ -71,6 +74,116 @@ test('atomicWriteFileSync removes the temp file when the write itself fails', (t
   assert.throws(() => atomicWriteFileSync(file, 'data'), /ENOSPC/);
   assert.deepEqual(strayTemps(dir), []);
   assert.equal(fs.existsSync(file), false);
+});
+
+const retryError = code => Object.assign(new Error(`${code} rename`), { code });
+
+// The bounded Windows sharing-violation retry contract. vendor/dsh-project
+// ships an in-place copy of renameWithRetry (its runtime is copied into
+// profiles and cannot import this file); these cases pin both copies.
+async function checkRenameRetryContract(renameWithRetryImpl) {
+  for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+    let calls = 0;
+    await renameWithRetryImpl('a', 'b', {
+      platform: 'win32', sleep: () => {},
+      rename: async () => { calls += 1; if (calls === 1) throw retryError(code); },
+    });
+    assert.equal(calls, 2, `${code} is retried`);
+  }
+  const denied = retryError('EPERM');
+  let calls = 0;
+  await assert.rejects(
+    renameWithRetryImpl('a', 'b', {
+      platform: 'win32', sleep: () => {}, budgetMs: 40,
+      rename: async () => { calls += 1; throw denied; },
+    }),
+    error => error === denied,
+  );
+  assert.ok(calls > 1, 'the bounded window retries before rethrowing');
+  for (const [platform, code] of [['linux', 'EPERM'], ['darwin', 'EBUSY'], ['win32', 'EEXIST'], ['win32', 'ENOENT']]) {
+    calls = 0;
+    await assert.rejects(
+      renameWithRetryImpl('a', 'b', {
+        platform, sleep: () => {},
+        rename: async () => { calls += 1; throw retryError(code); },
+      }),
+      { code },
+    );
+    assert.equal(calls, 1, `${platform} ${code} fails through immediately`);
+  }
+}
+
+test('renameWithRetry retries transient Windows codes then rethrows', async () => {
+  await checkRenameRetryContract(renameWithRetry);
+});
+
+test('vendored dsh-project renameWithRetry follows the same contract', async () => {
+  const vendored = await import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-project', 'lib', 'files.js')).href);
+  await checkRenameRetryContract(vendored.renameWithRetry);
+});
+
+test('renameWithRetrySync retries transient Windows codes then rethrows', () => {
+  for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+    let calls = 0;
+    renameWithRetrySync('a', 'b', {
+      platform: 'win32', sleep: () => {},
+      rename: () => { calls += 1; if (calls === 1) throw retryError(code); },
+    });
+    assert.equal(calls, 2, `${code} is retried`);
+  }
+  const denied = retryError('EPERM');
+  let calls = 0;
+  assert.throws(
+    () => renameWithRetrySync('a', 'b', {
+      platform: 'win32', sleep: () => {}, budgetMs: 40,
+      rename: () => { calls += 1; throw denied; },
+    }),
+    error => error === denied,
+  );
+  assert.ok(calls > 1, 'the bounded window retries before rethrowing');
+  calls = 0;
+  assert.throws(
+    () => renameWithRetrySync('a', 'b', {
+      platform: 'linux', sleep: () => {},
+      rename: () => { calls += 1; throw retryError('EPERM'); },
+    }),
+    { code: 'EPERM' },
+  );
+  assert.equal(calls, 1, 'other platforms fail through immediately');
+});
+
+test('atomicWriteFile tolerates a transient rename EPERM on win32', async (t) => {
+  const dir = workspace(t);
+  const file = path.join(dir, 'value.txt');
+  t.mock.property(process, 'platform', 'win32');
+  const real = fs.promises.rename;
+  let calls = 0;
+  t.mock.method(fs.promises, 'rename', async (from, to) => {
+    calls += 1;
+    if (calls <= 2) throw retryError('EPERM');
+    return real(from, to);
+  });
+  await atomicWriteFile(file, 'recovered');
+  assert.equal(calls, 3);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'recovered');
+  assert.deepEqual(strayTemps(dir), []);
+});
+
+test('atomicWriteFileSync tolerates a transient rename EPERM on win32', (t) => {
+  const dir = workspace(t);
+  const file = path.join(dir, 'value.txt');
+  t.mock.property(process, 'platform', 'win32');
+  const real = fs.renameSync;
+  let calls = 0;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    calls += 1;
+    if (calls === 1) throw retryError('EPERM');
+    return real(from, to);
+  });
+  atomicWriteFileSync(file, 'recovered');
+  assert.equal(calls, 2);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'recovered');
+  assert.deepEqual(strayTemps(dir), []);
 });
 
 test('atomicWriteFileSync preserves existing permission bits', { skip: process.platform === 'win32' }, (t) => {
