@@ -2,20 +2,19 @@
 // --ui opens the repository's original WhaleBridge window for manual acceptance.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 import { reservePort } from './smoke-workspace.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const componentPackage=resolve(process.env.WHALEBRIDGE_QA_PACKAGE || join(root,'.tmp/whalebridge-package'));
 assert.ok(existsSync(join(componentPackage,'WhaleBridge-component.json')),`鲸桥 QA 组件包不存在，请通过 WHALEBRIDGE_QA_PACKAGE 指定已构建包目录: ${componentPackage}`);
-// eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-const dir=mkdtempSync(join(tmpdir(),'whalebridge-providers-'));
+await withOwnedTempDir('whalebridge-providers-',async(dir)=>{
 const data=join(dir,'component'),home=join(dir,'dsh');
 mkdirSync(home,{recursive:true});
 const port=await reservePort(),model='deepseek/deepseek-v4.1-flash';
@@ -90,6 +89,5 @@ try{
  if(electron&&!electron.killed)electron.kill();
  if(service.state())await service.stop();
  upstream.closeAllConnections();await new Promise(r=>upstream.close(r));
- // dir was created here and contains only this acceptance run's data.
- assert.ok(resolve(dir).startsWith(resolve(tmpdir())+'\\'));rmSync(dir,{recursive:true,force:true});
 }
+});

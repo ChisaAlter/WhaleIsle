@@ -13,22 +13,24 @@
 // Profile-root ownership:
 //   - `DSHD_PREVIEW_PROFILE_ROOT` set: the caller owns that directory and this
 //     process never removes it.
-//   - otherwise this process creates its own root and hands it to a detached
-//     plain-Node cleanup supervisor (`preview-profile-cleanup.cjs`) that waits
-//     for *this* process to fully exit before removing exactly that directory.
+//   - otherwise this process creates its own root through the shared
+//     supervised-directory tool (`lib/owned-dir-supervisor.cjs`) and hands it
+//     to a detached plain-Node cleanup supervisor
+//     (`preview-profile-cleanup.cjs`) that waits for *this* process to fully
+//     exit before removing exactly that directory.
 //     An in-process `exit` hook cannot do this safely (Chromium is still
 //     unwinding and holds locks), and an Electron parent that synchronously
 //     waits for an Electron child deadlocks, so the cleanup runs out of process.
 'use strict';
 
-const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { app } = require('electron');
-const { writeReceiptAtomic } = require('./lib/receipt-file.cjs');
+const {
+  createSupervisedDir,
+  startDirCleanupSupervisor,
+} = require('./lib/owned-dir-supervisor.cjs');
 
 const PROFILE_ROOT_ENV = 'DSHD_PREVIEW_PROFILE_ROOT';
 const PROFILE_RECEIPT_ENV = 'DSHD_PREVIEW_CLEANUP_RECEIPT';
@@ -37,26 +39,7 @@ const SUPERVISOR_START_FAILED_ENV = 'DSHD_PREVIEW_CLEANUP_START_FAILED';
 const TEST_SCENARIO_ENV = 'DSHD_PREVIEW_PERMISSIONS_TEST_SCENARIO';
 const ALLOW_TEST_SCENARIOS_ENV = 'DSHD_PREVIEW_PERMISSIONS_ALLOW_TEST_SCENARIOS';
 const CLEANUP_EXECUTABLE_ENV = 'DSHD_PREVIEW_PERMISSIONS_CLEANUP_EXECUTABLE';
-const OWNER_MARKER_BASENAME = '.dshd-cleanup-owner.json';
-const OWNER_WAIT_DEADLINE_MS = 60_000;
-const REMOVAL_ATTEMPTS = 40;
 const runner = path.join(__dirname, 'verify-preview-permissions.mjs');
-const cleanupHelper = path.join(__dirname, 'preview-profile-cleanup.cjs');
-
-// Receipt publication goes through the shared writer so the launcher and the
-// detached helper cannot drift; a failed replacement leaves the previous
-// readable receipt intact instead of unlinking it first.
-function writePendingReceipt(receiptPath, profileRoot, ownerPid) {
-  writeReceiptAtomic(receiptPath, {
-    version: 1,
-    state: 'pending',
-    reason: 'pending',
-    profileRoot,
-    ownerPid,
-    updatedAt: new Date().toISOString(),
-    detail: null,
-  });
-}
 
 /**
  * Resolve the profile root for this Electron process.
@@ -86,140 +69,15 @@ function establishProfileRoot() {
     };
   }
 
-  // eslint-disable-next-line no-restricted-syntax -- Electron userData 由 detached cleanup supervisor 在宿主退出后回收（含归属标记与 receipt）
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-preview-permissions-'));
-  const ownerPid = process.pid;
-  const token = crypto.randomBytes(24).toString('hex');
-  const receiptPath = path.join(
-    os.tmpdir(),
-    `dshd-preview-cleanup-${path.basename(root)}.json`,
-  );
-  const markerPath = path.join(root, OWNER_MARKER_BASENAME);
-
-  // Install the ownership marker before the supervisor can be started, and
-  // keep the pending receipt outside the directory that is eventually removed.
-  fs.writeFileSync(markerPath, `${JSON.stringify({
-    version: 1,
-    token,
-    ownerPid,
-    createdAt: new Date().toISOString(),
-    profileRoot: root,
-  }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  writePendingReceipt(receiptPath, root, ownerPid);
-
-  process.env[PROFILE_ROOT_ENV] = root;
-  process.env[PROFILE_RECEIPT_ENV] = receiptPath;
+  const profile = createSupervisedDir({
+    prefix: 'dshd-preview-permissions-',
+    receiptPrefix: 'dshd-preview-cleanup-',
+  });
+  process.env[PROFILE_ROOT_ENV] = profile.root;
+  process.env[PROFILE_RECEIPT_ENV] = profile.receiptPath;
   process.env[PROFILE_ROOT_OWNED_ENV] = '1';
   process.env[SUPERVISOR_START_FAILED_ENV] = '0';
-  return {
-    root,
-    createdHere: true,
-    receiptPath,
-    ownerPid,
-    token,
-    startFailure: null,
-  };
-}
-
-/**
- * Start the detached cleanup supervisor for a root this process created.
- *
- * `detached` + `unref` let the helper outlive Electron, and passing `this`
- * process id is what makes the handoff exact: the helper removes the directory
- * only after the process that owns it is gone, and reports the path when it
- * cannot prove removal.
- */
-function startProfileCleanupSupervisor(profile) {
-  let startFailureRecorded = false;
-  let stderrText = '';
-
-  const recordStartFailure = (detail) => {
-    if (startFailureRecorded) return;
-    startFailureRecorded = true;
-    process.env[SUPERVISOR_START_FAILED_ENV] = '1';
-    profile.startFailure = detail;
-
-    // This write is intentionally synchronous: the Electron owner may exit
-    // immediately after startup, and the failure must remain inspectable.
-    try {
-      writeReceiptAtomic(profile.receiptPath, {
-        version: 1,
-        state: 'retained',
-        reason: 'supervisor-start-failed',
-        profileRoot: profile.root,
-        ownerPid: profile.ownerPid,
-        updatedAt: new Date().toISOString(),
-        detail,
-      });
-    } catch (receiptError) {
-      process.stderr.write(
-        `profile cleanup receipt could not be written to ${profile.receiptPath}: `
-        + `${receiptError instanceof Error ? receiptError.message : String(receiptError)}\n`,
-      );
-    }
-    process.stderr.write(
-      `profile root cleanup supervisor could not start (${detail}); `
-      + `retained for inspection: ${profile.root}\n`,
-    );
-  };
-
-  const executable = process.env[CLEANUP_EXECUTABLE_ENV] || process.execPath;
-  const child = spawn(
-    executable,
-    [
-      cleanupHelper,
-      profile.root,
-      String(profile.ownerPid),
-      String(OWNER_WAIT_DEADLINE_MS),
-      String(REMOVAL_ATTEMPTS),
-      profile.receiptPath,
-      profile.token,
-    ],
-    {
-      detached: true,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      windowsHide: true,
-      // Cleanup must never inherit the Electron-only mode of this process.
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    },
-  );
-
-  if (child.stderr) {
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk) => {
-      stderrText = `${stderrText}${chunk}`.slice(-16_384);
-    });
-  }
-  child.once('error', (error) => {
-    recordStartFailure(
-      `spawn error: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  });
-  child.once('close', (code, signal) => {
-    if (startFailureRecorded) return;
-
-    let receipt = null;
-    try {
-      receipt = JSON.parse(fs.readFileSync(profile.receiptPath, 'utf8'));
-    } catch {
-      // A missing or unreadable terminal receipt is itself a start/cleanup
-      // failure; the helper never exits without attempting one.
-    }
-    const terminal = receipt
-      && (receipt.state === 'removed' || receipt.state === 'retained');
-    if (terminal) return;
-
-    recordStartFailure(
-      `supervisor exited without a terminal receipt (code=${code}, signal=${signal}): `
-      + (stderrText.trim() || 'no stderr'),
-    );
-  });
-
-  if (!Number.isInteger(child.pid) || child.pid <= 0) {
-    recordStartFailure('spawn did not return a child pid');
-  }
-  child.unref();
-  return child;
+  return profile;
 }
 
 let profile;
@@ -236,33 +94,10 @@ try {
 }
 
 if (profile?.createdHere) {
-  try {
-    startProfileCleanupSupervisor(profile);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    process.env[SUPERVISOR_START_FAILED_ENV] = '1';
-    profile.startFailure = detail;
-    try {
-      writeReceiptAtomic(profile.receiptPath, {
-        version: 1,
-        state: 'retained',
-        reason: 'supervisor-start-failed',
-        profileRoot: profile.root,
-        ownerPid: profile.ownerPid,
-        updatedAt: new Date().toISOString(),
-        detail: `synchronous spawn failure: ${detail}`,
-      });
-    } catch (receiptError) {
-      process.stderr.write(
-        `profile cleanup receipt could not be written to ${profile.receiptPath}: `
-        + `${receiptError instanceof Error ? receiptError.message : String(receiptError)}\n`,
-      );
-    }
-    process.stderr.write(
-      `profile root cleanup supervisor could not start (${detail}); `
-      + `retained for inspection: ${profile.root}\n`,
-    );
-  }
+  startDirCleanupSupervisor(profile, {
+    executable: process.env[CLEANUP_EXECUTABLE_ENV],
+    onStartFailure: () => { process.env[SUPERVISOR_START_FAILED_ENV] = '1'; },
+  });
 }
 
 const testScenario = process.env[ALLOW_TEST_SCENARIOS_ENV] === '1'

@@ -3,12 +3,15 @@ const { app, BrowserWindow, screen } = require('electron');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
-const os = require('node:os');
 const { execFileSync, execFile } = require('node:child_process');
 const exec = require('node:util').promisify(execFile);
-// eslint-disable-next-line no-restricted-syntax -- Electron userData 被 Chromium 持有至 app.exit，无法在本进程 finally 中回收
-const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-window-motion-'));
+const { createSupervisedDir, startDirCleanupSupervisor } = require('./lib/owned-dir-supervisor.cjs');
+// Electron userData 被 Chromium 持有至 app.exit，本进程 finally 无法回收；
+// 交给共享的 detached cleanup supervisor 在宿主退出后按归属标记回收。
+const profile = createSupervisedDir({ prefix: 'dsh-window-motion-', receiptPrefix: 'dsh-window-motion-cleanup-' });
+const userData = profile.root;
 app.setPath('userData', userData);
+startDirCleanupSupervisor(profile);
 app.on('window-all-closed', () => {});
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(predicate, label) {
@@ -20,7 +23,10 @@ app.whenReady().then(async () => {
   const windows = require('../src/main/window');
   const { rendererFile } = require('../src/main/paths');
   const composed = process.argv.includes('--composed');
-  const evidence = path.resolve(process.argv.find(arg => arg.startsWith('--evidence-dir='))?.slice('--evidence-dir='.length) || path.join(userData, 'composed-corners'));
+  // Composed-mode evidence must outlive the run: the supervised userData is
+  // removed after exit, so the default lands in the repo's explicit .tmp
+  // output area instead of the system temp directory.
+  const evidence = path.resolve(process.argv.find(arg => arg.startsWith('--evidence-dir='))?.slice('--evidence-dir='.length) || path.join(__dirname, '..', '.tmp', 'qa-window-motion', 'composed-corners'));
   let stage;
   let focusSink;
   if (composed) {

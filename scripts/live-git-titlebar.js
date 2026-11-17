@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { withOwnedTempDir } = require('../src/shared/fs-safe.js');
 const { createWorkspaceAuthority } = require('../src/main/workspace-authority');
 const {
   gitChildEnv,
@@ -28,32 +29,29 @@ function git(cwd, args) {
   return result.stdout;
 }
 
-function tempDir(prefix) {
-  // eslint-disable-next-line no-restricted-syntax -- 返回的目录由调用方 finally rmSync 回收
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  setWorkspaceAuthority(createWorkspaceAuthority({ workspace: dir }));
-  return dir;
+function withWorkspace(prefix, fn) {
+  return withOwnedTempDir(prefix, async (cwd) => {
+    setWorkspaceAuthority(createWorkspaceAuthority({ workspace: cwd }));
+    try {
+      return await fn(cwd);
+    } finally {
+      setWorkspaceAuthority(null);
+    }
+  });
 }
 
 async function caseCleanInit() {
-  const cwd = tempDir('dsh-live-init-');
-  try {
+  await withWorkspace('dsh-live-init-', async (cwd) => {
     const inited = await gitInit(cwd);
     assert.equal(inited.ok, true);
     const status = await gitStatus(cwd);
     assert.equal(status.isRepo, true);
     console.log('PASS  gitInit + gitStatus on a real empty repo');
-  } finally {
-    setWorkspaceAuthority(null);
-    fs.rmSync(cwd, { recursive: true, force: true });
-  }
+  });
 }
 
 async function caseCommitPushSkip() {
-  const cwd = tempDir('dsh-live-push-');
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
-  try {
+  await withWorkspace('dsh-live-push-', async (cwd) => withOwnedTempDir('dsh-live-bare-', async (bare) => {
     git(bare, ['init', '--bare']);
     git(cwd, ['init', '-b', 'main']);
     git(cwd, ['config', 'user.email', 't@local']);
@@ -68,18 +66,11 @@ async function caseCommitPushSkip() {
     assert.equal(again.ok, true, again.message);
     assert.equal(again.status, 'skipped');
     console.log('PASS  commit → push → no-delta skip');
-  } finally {
-    setWorkspaceAuthority(null);
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(bare, { recursive: true, force: true });
-  }
+  }));
 }
 
 async function caseDirtyCreatePr() {
-  const cwd = tempDir('dsh-live-pr-');
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
-  try {
+  await withWorkspace('dsh-live-pr-', async (cwd) => withOwnedTempDir('dsh-live-bare-', async (bare) => {
     git(bare, ['init', '--bare']);
     git(cwd, ['init', '-b', 'main']);
     git(cwd, ['config', 'user.email', 't@local']);
@@ -96,16 +87,11 @@ async function caseDirtyCreatePr() {
     assert.equal(created.ok, false);
     assert.equal(created.message, 'Commit local changes before creating a PR.');
     console.log('PASS  create_pr refuses a dirty work tree');
-  } finally {
-    setWorkspaceAuthority(null);
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(bare, { recursive: true, force: true });
-  }
+  }));
 }
 
 async function casePrBaseGhWins() {
-  const cwd = tempDir('dsh-live-base-');
-  try {
+  await withWorkspace('dsh-live-base-', async (cwd) => {
     git(cwd, ['init', '-b', 'main']);
     git(cwd, ['config', 'user.email', 't@local']);
     git(cwd, ['config', 'user.name', 'T']);
@@ -116,11 +102,7 @@ async function casePrBaseGhWins() {
     setGhDefaultBranchResolver(async () => 'develop');
     assert.equal(await resolvePrBaseBranch(cwd, 'feature/live', false), 'develop');
     console.log('PASS  resolvePrBaseBranch prefers gh default over local main');
-  } finally {
-    setGhDefaultBranchResolver(null);
-    setWorkspaceAuthority(null);
-    fs.rmSync(cwd, { recursive: true, force: true });
-  }
+  }).finally(() => setGhDefaultBranchResolver(null));
 }
 
 async function caseCeilingEnv() {
@@ -135,17 +117,15 @@ async function caseCeilingEnv() {
 }
 
 async function caseCreatePrCopy() {
-  const cwd = tempDir('dsh-live-copy-');
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
-  let seen = null;
-  setTextGenerator(async (input) => {
-    seen = input;
-    return { title: 'Generated from range', body: 'range body' };
-  });
-  setGhDefaultBranchResolver(async () => 'main');
-  setLookupOpenPullRequest(async () => ({ pr: null, failed: false }));
-  try {
+  await withWorkspace('dsh-live-copy-', async (cwd) => withOwnedTempDir('dsh-live-bare-', async (bare) => {
+    let seen = null;
+    setTextGenerator(async (input) => {
+      seen = input;
+      return { title: 'Generated from range', body: 'range body' };
+    });
+    setGhDefaultBranchResolver(async () => 'main');
+    setLookupOpenPullRequest(async () => ({ pr: null, failed: false }));
+    try {
     git(bare, ['init', '--bare']);
     git(cwd, ['init', '-b', 'main']);
     git(cwd, ['config', 'user.email', 't@local']);
@@ -165,14 +145,12 @@ async function caseCreatePrCopy() {
     assert.equal(seen.fallbackTitle, 'feature/live');
     assert.equal(result.ok, false);
     console.log('PASS  create_pr generates range copy then fails closed without live gh');
-  } finally {
-    setTextGenerator(null);
-    setGhDefaultBranchResolver(null);
-    setLookupOpenPullRequest(null);
-    setWorkspaceAuthority(null);
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(bare, { recursive: true, force: true });
-  }
+    } finally {
+      setTextGenerator(null);
+      setGhDefaultBranchResolver(null);
+      setLookupOpenPullRequest(null);
+    }
+  }));
 }
 
 async function caseReservedNameCommitPush() {
@@ -180,11 +158,9 @@ async function caseReservedNameCommitPush() {
     console.log('SKIP  reserved-name commit_push (not win32)');
     return;
   }
-  const cwd = tempDir('dsh-live-nul-');
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-live-bare-'));
-  const reserved = `\\\\?\\${path.resolve(cwd, 'nul')}`;
-  try {
+  await withWorkspace('dsh-live-nul-', async (cwd) => withOwnedTempDir('dsh-live-bare-', async (bare) => {
+    const reserved = `\\\\?\\${path.resolve(cwd, 'nul')}`;
+    try {
     git(bare, ['init', '--bare']);
     git(cwd, ['init', '-b', 'main']);
     git(cwd, ['config', 'user.email', 't@local']);
@@ -215,12 +191,10 @@ async function caseReservedNameCommitPush() {
     const afterSkip = await gitStatus(cwd);
     assert.equal(afterSkip.hasWorkingTreeChanges, false);
     console.log('PASS  commit_push skips leftover Windows reserved name');
-  } finally {
-    setWorkspaceAuthority(null);
-    fs.rmSync(reserved, { force: true });
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(bare, { recursive: true, force: true });
-  }
+    } finally {
+      fs.rmSync(reserved, { force: true });
+    }
+  }));
 }
 
 async function main() {

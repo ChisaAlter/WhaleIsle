@@ -1,23 +1,21 @@
 // Real native settings API and DSH profile writes with isolated, unpaid models.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 import { reservePort } from './smoke-workspace.mjs';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const componentPackage = resolve(process.env.WHALEBRIDGE_QA_PACKAGE || join(root, '.tmp/whalebridge-package'));
 assert.ok(existsSync(join(componentPackage, 'WhaleBridge-component.json')), `鲸桥 QA 组件包不存在，请通过 WHALEBRIDGE_QA_PACKAGE 指定已构建包目录: ${componentPackage}`);
-// eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-const dir = mkdtempSync(join(tmpdir(), 'whalebridge-model-api-'));
+await withOwnedTempDir('whalebridge-model-api-', async (dir) => {
 const home = join(dir, 'dsh'); mkdirSync(home);
 const port = await reservePort();
 const service = createWhaleBridgeService({ root: join(dir, 'component'), dshHome: home, devPackage: componentPackage,
   spawn: (file, args, options) => spawn(file, args, { ...options, env: { ...options.env, MAGPIE_ADDR: `127.0.0.1:${port}`, USERPROFILE: dir, HOME: dir, XDG_CONFIG_HOME: join(dir, 'config'), CODEX_HOME: join(dir, 'codex'), CLAUDE_CONFIG_DIR: join(dir, 'claude') } }),
 });
-let failure;
 try {
   const result = await service.install(); assert.ok(result.ok, result.message);
   const url = new URL(service.state().url);
@@ -53,10 +51,8 @@ try {
   const saved = await service.api('status'); assert.equal(saved.models, initial.models.length - 1);
   console.log('PASS native source grouping, single/bulk updates, preservation of unrelated visibility, DSH sync and persistence after restart');
 } catch (error) {
-  failure = error; console.error(error); throw error;
+  console.error(error); throw error;
 } finally {
   if (service.state()) { const stopped = await service.stop(); assert.ok(stopped.ok, stopped.message); }
-  const rel = relative(tmpdir(), dir); assert.ok(rel && !rel.startsWith('..') && !isAbsolute(rel));
-  try { rmSync(dir, { recursive: true, force: true }); }
-  catch (error) { if (failure) console.error('Cleanup also failed:', error.message); else throw error; }
 }
+});

@@ -8,9 +8,9 @@
  */
 const { app, BrowserWindow } = require('electron')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
+const { withOwnedTempDir } = require('../../src/shared/fs-safe.js')
 const programs = require('./programs.cjs')
 
 const root = path.resolve(__dirname, '..', '..')
@@ -111,24 +111,23 @@ async function auditPage(win, hostFile, theme, page) {
 }
 
 async function run() {
-  // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-contrast-'))
-  const win = new BrowserWindow({
-    width: 900, height: 1200, show: false,
-    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true },
-  })
-  try {
-    if (!fs.existsSync(viewerPath)) throw new Error(`${viewerPath} is missing; run npm run prepare:whale-ui first`)
-    const hostFile = writeHostPage(directory)
-    const results = []
-    for (const theme of THEMES) {
-      for (const page of programs) results.push(await auditPage(win, hostFile, theme, page))
+  return withOwnedTempDir('whale-contrast-', async (directory) => {
+    const win = new BrowserWindow({
+      width: 900, height: 1200, show: false,
+      webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true },
+    })
+    try {
+      if (!fs.existsSync(viewerPath)) throw new Error(`${viewerPath} is missing; run npm run prepare:whale-ui first`)
+      const hostFile = writeHostPage(directory)
+      const results = []
+      for (const theme of THEMES) {
+        for (const page of programs) results.push(await auditPage(win, hostFile, theme, page))
+      }
+      return { viewer: viewerPath, results }
+    } finally {
+      win.destroy()
     }
-    return { viewer: viewerPath, results }
-  } finally {
-    win.destroy()
-    fs.rmSync(directory, { recursive: true, force: true })
-  }
+  })
 }
 
 app.disableHardwareAcceleration()

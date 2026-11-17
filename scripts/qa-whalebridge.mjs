@@ -2,12 +2,12 @@
 // No real subscription credentials or paid API calls are used.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
+import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 import { reservePort } from './smoke-workspace.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,8 +17,7 @@ const source=process.env.WHALEBRIDGE_SOURCE_DIR;
 assert.ok(source && isAbsolute(source),'更新/回滚生命周期 QA 需要 WHALEBRIDGE_SOURCE_DIR 明确指向独立鲸桥源码的绝对目录');
 const builder=join(source,'scripts/build.mjs');
 assert.ok(existsSync(builder),`生命周期 QA 找不到独立鲸桥构建入口: ${builder}`);
-// eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
-const dir=mkdtempSync(join(tmpdir(),'whalebridge-native-'));
+await withOwnedTempDir('whalebridge-native-',async(dir)=>{
 const data=join(dir,'component'), home=join(dir,'dsh'), pkg=join(dir,'package');
 const gatewayPort=await reservePort();
 mkdirSync(home,{recursive:true});mkdirSync(pkg);
@@ -103,5 +102,6 @@ try{
 }finally{
  releaseStream();await pendingStream?.catch(()=>{});
  if(service?.state())await service.stop();
- await new Promise(r=>upstream.close(r));rmSync(dir,{recursive:true,force:true});
+ await new Promise(r=>upstream.close(r));
 }
+});

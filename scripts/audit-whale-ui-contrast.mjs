@@ -11,12 +11,12 @@
  */
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import os from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { formatReport, verdict } from './whale-ui-contrast/report.mjs'
 import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js'
+import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 
 const knownFindingsPath = new URL('./whale-ui-contrast/known-findings.json', import.meta.url)
 
@@ -36,31 +36,31 @@ function stopTree(child) {
   })
 }
 
-// eslint-disable-next-line no-restricted-syntax -- 目录已在下方 finally 中 rmSync 回收
-const scratch = mkdtempSync(path.join(os.tmpdir(), 'whale-contrast-run-'))
-const outPath = path.join(scratch, 'result.json')
-let exitCode = 1
-try {
-  const electron = require('electron')
-  if (typeof electron !== 'string' || !existsSync(electron)) throw new Error('The audit needs a local Electron binary (npm ci).')
-  const env = { ...process.env }
-  delete env.ELECTRON_RUN_AS_NODE
-  const child = spawn(electron, [
-    path.join(root, 'scripts', 'whale-ui-contrast', 'electron-main.cjs'),
-    `--user-data-dir=${path.join(scratch, 'profile')}`, '--no-first-run', `--out=${outPath}`, ...forwarded,
-  ], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...spawnTreeOptions() })
-  let stderr = ''
-  child.stderr.on('data', (chunk) => { stderr += chunk })
-  const timer = setTimeout(() => stopTree(child), timeoutMs)
-  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
-  clearTimeout(timer)
-  if (!existsSync(outPath)) throw new Error(`The audit wrote no result (exit ${code}).\n${stderr.trim().split('\n').slice(-8).join('\n')}`)
-  const result = JSON.parse(readFileSync(outPath, 'utf8'))
-  console.log(raw ? JSON.stringify(result, null, 2) : formatReport(result, { strict, known }))
-  exitCode = verdict(result, { strict, known }).ok ? 0 : 1
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
-} finally {
-  rmSync(scratch, { recursive: true, force: true, maxRetries: 3 })
-}
+// The Electron child can release its profile handles a moment after exit;
+// teardown retries instead of failing on the first attempt.
+const exitCode = await withOwnedTempDir('whale-contrast-run-', async (scratch) => {
+  const outPath = path.join(scratch, 'result.json')
+  try {
+    const electron = require('electron')
+    if (typeof electron !== 'string' || !existsSync(electron)) throw new Error('The audit needs a local Electron binary (npm ci).')
+    const env = { ...process.env }
+    delete env.ELECTRON_RUN_AS_NODE
+    const child = spawn(electron, [
+      path.join(root, 'scripts', 'whale-ui-contrast', 'electron-main.cjs'),
+      `--user-data-dir=${path.join(scratch, 'profile')}`, '--no-first-run', `--out=${outPath}`, ...forwarded,
+    ], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...spawnTreeOptions() })
+    let stderr = ''
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    const timer = setTimeout(() => stopTree(child), timeoutMs)
+    const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
+    clearTimeout(timer)
+    if (!existsSync(outPath)) throw new Error(`The audit wrote no result (exit ${code}).\n${stderr.trim().split('\n').slice(-8).join('\n')}`)
+    const result = JSON.parse(readFileSync(outPath, 'utf8'))
+    console.log(raw ? JSON.stringify(result, null, 2) : formatReport(result, { strict, known }))
+    return verdict(result, { strict, known }).ok ? 0 : 1
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    return 1
+  }
+}, { rmOptions: { maxRetries: 3 } })
 process.exitCode = exitCode

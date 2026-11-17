@@ -9,6 +9,7 @@ const {
   safeRemove,
   safeRemoveSync,
   withOwnedTempDir,
+  createUniqueDir,
 } = require('./fs-safe');
 
 function workspace(t) {
@@ -147,6 +148,20 @@ test('withOwnedTempDir removes the directory when fn throws', async (t) => {
     /boom/,
   );
   assert.equal(fs.existsSync(leaked), false);
+});
+
+test('withOwnedTempDir accepts removal options for late-releasing consumers', async (t) => {
+  let leaked;
+  await withOwnedTempDir('fs-safe-', (dir) => { leaked = dir; }, { rmOptions: { maxRetries: 2, retryDelay: 1 } });
+  assert.equal(fs.existsSync(leaked), false);
+});
+
+test('createUniqueDir makes a prefixed directory under the chosen parent', (t) => {
+  const parent = workspace(t);
+  const dir = createUniqueDir(parent, 'fs-safe-unique-');
+  assert.equal(path.dirname(dir), parent);
+  assert.ok(path.basename(dir).startsWith('fs-safe-unique-'));
+  assert.ok(fs.statSync(dir).isDirectory());
 });
 
 test('withOwnedTempDir refuses to delete a path replaced by an outside link', async (t) => {

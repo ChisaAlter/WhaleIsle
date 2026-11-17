@@ -4,12 +4,12 @@
 // Every agent/config home and every write belongs to one temporary profile.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const net = require('node:net');
 const { createHash } = require('node:crypto');
 const { spawn } = require('node:child_process');
+const { withOwnedTempDir } = require('../src/shared/fs-safe.js');
 const repo = path.resolve(__dirname, '..');
 const marker = 'WHALEBRIDGE_AGENTS_QA:';
 // QA owns this isolation boundary; the host does not need the component's
@@ -30,8 +30,7 @@ const agentEnvironment = [
 async function launch() {
  const electron = process.env.ELECTRON_PATH || path.join(repo, 'node_modules/electron/dist/electron.exe');
  assert.ok(fs.existsSync(electron), 'provide ELECTRON_PATH for the production Electron runtime');
- // eslint-disable-next-line no-restricted-syntax -- 目录已在 finally 中 rmSync 回收
- const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'whalebridge-agents-'));
+ await withOwnedTempDir('whalebridge-agents-', async (profile) => {
  const output = path.resolve(process.env.WHALEBRIDGE_QA_SCREENSHOTS || path.join(repo, '.tmp/whalebridge-agents-qa'));
  const payload = path.resolve(process.env.WHALEBRIDGE_QA_PACKAGE || path.join(repo, '.tmp/whalebridge-package'));
  fs.mkdirSync(output, { recursive: true });
@@ -44,7 +43,7 @@ async function launch() {
   CLAUDE_CONFIG_DIR: path.join(home, '.claude'), TEMP: path.join(profile, 'temp'), TMP: path.join(profile, 'temp') });
  for(const directory of [home, env.APPDATA, env.LOCALAPPDATA, env.CODEX_HOME, env.CLAUDE_CONFIG_DIR, env.TEMP])fs.mkdirSync(directory, { recursive: true });
  let stdout='', stderr='', timedOut=false;
- try {
+ {
   const code=await new Promise((resolve,reject)=>{
    const child=spawn(electron,[__filename,'--child',profile,output,payload,...process.argv.filter(arg=>['--visual-only','--error-only','--split-smoke'].includes(arg))],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
    child.stdout.on('data',data=>{stdout+=data;});
@@ -57,11 +56,8 @@ async function launch() {
   if(line){const result=JSON.parse(line.slice(marker.length));fs.writeFileSync(path.join(output,result.splitSmoke?'split-native-result.json':result.errorOnly?'inline-error-result.json':result.visualOnly?'visual-fields-result.json':'result.json'),JSON.stringify(result,null,2));}
   if(code!==0 || !line || timedOut)throw new Error(`Agent native QA ${timedOut?'timed out':`exit ${code}`}\n${stderr}\n${stdout}`);
   process.stdout.write(line+'\n');
- } finally {
-  const relative=path.relative(path.resolve(os.tmpdir()),path.resolve(profile));
-  assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative),'temporary cleanup stays inside os.tmpdir');
-  fs.rmSync(profile,{recursive:true,force:true});
  }
+ });
 }
 
 async function runNative() {
