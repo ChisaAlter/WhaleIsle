@@ -130,8 +130,8 @@ function listen(server) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 }
 
-/** 持续按 chunked 写超量数据的裸 socket；resolves 收到的响应与关连耗时。 */
-function overflowRaw(port, requestHead, pumpBody) {
+/** 裸 socket 超限请求；repeat=false 保持请求未结束但不继续洪泛写入。 */
+function overflowRaw(port, requestHead, pumpBody, repeat = true) {
   const socket = net.connect(port, '127.0.0.1');
   const started = Date.now();
   let received = '';
@@ -140,14 +140,16 @@ function overflowRaw(port, requestHead, pumpBody) {
     socket.once('close', () => resolve({ received, elapsedMs: Date.now() - started }));
     socket.on('error', () => {});
   });
-  socket.write(requestHead);
+  // Start only after connect: a busy runner must not queue an arbitrary flood
+  // before the server has even accepted the test connection.
+  socket.once('connect', () => socket.write(requestHead + pumpBody()));
   const pump = setInterval(() => {
-    socket.write(pumpBody());
+    if (repeat && !socket.connecting && !socket.destroyed) socket.write(pumpBody());
   }, 5);
   return { socket, pump, closed };
 }
 
-test('readBodyLimited with options.res answers 413 and closes the connection promptly', async (t) => {
+test('readBodyLimited with options.res answers 413 before the request ends and closes promptly', { timeout: 5000 }, async (t) => {
   const server = http.createServer(async (req, res) => {
     try {
       await readBodyLimited(req, 4096, { res });
@@ -163,13 +165,46 @@ test('readBodyLimited with options.res answers 413 and closes the connection pro
   const { socket, pump, closed } = overflowRaw(
     port,
     'POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n',
-    () => `4000\r\n${'a'.repeat(0x4000)}\r\n`,
+    // One complete chunk exceeds the limit, with no terminal chunk. A client
+    // that continues flooding after rejection can receive a TCP reset on
+    // Windows; response delivery and flood termination are separate checks.
+    () => `1001\r\n${'a'.repeat(0x1001)}\r\n`,
+    false,
   );
   t.after(() => { clearInterval(pump); socket.destroy(); });
   const { received, elapsedMs } = await closed;
   clearInterval(pump);
   assert.match(received, /^HTTP\/1\.1 413 /);
   assert.match(received, /connection: close/i);
+  assert.ok(elapsedMs < 1000, `connection took ${elapsedMs}ms to close`);
+});
+
+test('readBodyLimited with options.res terminates a continuously overflowing upload', { timeout: 5000 }, async (t) => {
+  let rejected = false;
+  let responseFinished = false;
+  const server = http.createServer(async (req, res) => {
+    res.once('finish', () => { responseFinished = true; });
+    try {
+      await readBodyLimited(req, 4096, { res });
+      res.end('unexpected');
+    } catch (error) {
+      rejected = error.code === 'BODY_TOO_LARGE';
+      res.writeHead(413);
+      res.end('too large');
+    }
+  });
+  t.after(() => server.close());
+  await listen(server);
+  const { socket, pump, closed } = overflowRaw(
+    server.address().port,
+    'POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n',
+    () => `4000\r\n${'a'.repeat(0x4000)}\r\n`,
+  );
+  t.after(() => { clearInterval(pump); socket.destroy(); });
+  const { elapsedMs } = await closed;
+  clearInterval(pump);
+  assert.equal(rejected, true);
+  assert.equal(responseFinished, true, 'server must finish its rejection response');
   assert.ok(elapsedMs < 1000, `connection took ${elapsedMs}ms to close`);
 });
 
