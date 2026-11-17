@@ -233,7 +233,7 @@ jobs:
       - name: Allow Chromium sandbox user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Desktop behavior tests
-        run: xvfb-run --auto-servernum npm test
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -noreset" npm test
   macos-tests:
     needs: scope
     if: needs.scope.outputs.product == 'true'
