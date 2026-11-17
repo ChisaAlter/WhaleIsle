@@ -66,6 +66,12 @@ describe('isLoopbackHttpUrl', () => {
     expect(isLoopbackHttpUrl('http://127.0.0.1.evil')).toBe(false)
     expect(isLoopbackHttpUrl('not a url')).toBe(false)
   })
+
+  it('rejects embedded credentials even on a loopback host', () => {
+    expect(isLoopbackHttpUrl('http://user:pass@127.0.0.1:57110')).toBe(false)
+    expect(isLoopbackHttpUrl('http://user@localhost/')).toBe(false)
+    expect(isLoopbackHttpUrl('https://evil@127.0.0.1/')).toBe(false)
+  })
 })
 describe('activateTerminalTarget', () => {
   it('opens a loopback URL in the Browser surface', () => {
@@ -87,6 +93,17 @@ describe('activateTerminalTarget', () => {
       openLocalUrl, openExternal, openWorkspacePath,
     })).toBe('url')
     expect(openExternal).toHaveBeenCalledWith('https://example.com/docs')
+    expect(openLocalUrl).not.toHaveBeenCalled()
+  })
+
+  it('hands a credential-bearing loopback URL to the system browser', () => {
+    const openLocalUrl = vi.fn()
+    const openExternal = vi.fn()
+    const openWorkspacePath = vi.fn()
+    expect(activateTerminalTarget('http://user:pass@127.0.0.1:57110/app', '/tmp', {
+      openLocalUrl, openExternal, openWorkspacePath,
+    })).toBe('url')
+    expect(openExternal).toHaveBeenCalledWith('http://user:pass@127.0.0.1:57110/app')
     expect(openLocalUrl).not.toHaveBeenCalled()
   })
 

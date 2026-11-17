@@ -161,7 +161,8 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '0.0.0.0'])
 
 /**
  * True when `raw` is http(s) to an exact loopback hostname (any port/path).
- * Rejects prefix spoofs such as `http://127.0.0.1.evil`.
+ * Rejects prefix spoofs such as `http://127.0.0.1.evil` and userinfo
+ * tricks such as `http://127.0.0.1@evil` or `http://evil@127.0.0.1`.
  * @param raw - candidate URL text.
  * @returns true when the URL is loopback http(s).
  */
@@ -169,6 +170,7 @@ export function isLoopbackHttpUrl(raw: string): boolean {
   try {
     const parsed = new URL(raw)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    if (parsed.username !== '' || parsed.password !== '') return false
     return LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())
   } catch {
     return false
