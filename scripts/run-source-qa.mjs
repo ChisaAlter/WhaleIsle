@@ -119,7 +119,7 @@ try {
     writeSourceQaEvidence(dirs, process.env.DSH_QA_EVIDENCE_DIR, { error: qaError })
   } catch (error) {
     keepArtifacts = true
-    console.error(`Could not export QA evidence: ${error.message}`)
+    console.error(`Could not export QA evidence: ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1
   }
   if (keepArtifacts) {
