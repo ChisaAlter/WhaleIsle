@@ -249,6 +249,64 @@ test('renameDevice writes through the re-opened device store and stays a no-op w
   assert.doesNotThrow(() => remote.renameDevice('dev_phone_1234', 'Pixel 9'));
 });
 
+test('unbindDevice revokes the credential so a reopened store rejects its reconnect auth', { skip: prerequisiteSkip(VENDOR_BUILD) }, async (t) => {
+  requirePrerequisite(t, VENDOR_BUILD);
+  const api = await loadServerApi();
+  const { pathToFileURL } = require('url');
+  // websocket-server 的 relay 重连入口用的是同目录的 relay-device-auth。
+  const auth = await import(pathToFileURL(path.join(
+    VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'relay-device-auth.js',
+  )).href);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-unbind-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const remote = new DshdRemote({
+    getConfig: () => ({ remoteEnabled: true }),
+    getHomeDir: () => home,
+  });
+  remote.serverApi = api;
+
+  // daemon 侧实例写入设备凭据；桌面侧 unbindDevice 与每次重连校验都各开一份 store。
+  const { deviceId, deviceSecret } = new api.RelayDeviceCredentialStore(home).issueDevice('phone');
+  const attemptAuth = () => {
+    const challenge = auth.createRelayAuthChallenge();
+    return new api.RelayDeviceCredentialStore(home).verifyDeviceProof({
+      deviceId,
+      proof: auth.computeRelayDeviceAuthProof(deviceSecret, {
+        serverId: 'srv_test',
+        daemonPublicKeyB64: 'daemon-pub',
+        clientPublicKeyB64: 'client-pub',
+        deviceId,
+        challenge,
+      }),
+      challenge,
+      serverId: 'srv_test',
+      daemonPublicKeyB64: 'daemon-pub',
+      clientPublicKeyB64: 'client-pub',
+    });
+  };
+  assert.equal(attemptAuth(), true, '吊销前同一凭据应通过重连认证');
+
+  const snap = remote.unbindDevice(deviceId);
+  assert.equal(snap.devices.some((device) => device.id === deviceId), false);
+
+  // 吊销后：新开的 store（即 daemon 校验实例）拒绝同一凭据的 proof 与 secret。
+  assert.equal(attemptAuth(), false, '吊销后同一凭据不得通过重连认证');
+  assert.equal(
+    new api.RelayDeviceCredentialStore(home).verifyDeviceSecret(deviceId, deviceSecret),
+    false,
+  );
+  // 撤销落盘且重开生效：公开投影不再出现该设备。
+  const reread = new api.RelayDeviceCredentialStore(home);
+  assert.ok(reread.getDevice(deviceId).revokedAt);
+  assert.deepEqual(publicDevicesFromStore(reread), []);
+
+  // 空 id 或无 store 时不抛错（与 renameDevice 的 fail-safe 一致）。
+  assert.doesNotThrow(() => remote.unbindDevice(''));
+  remote.serverApi = {};
+  assert.doesNotThrow(() => remote.unbindDevice(deviceId));
+});
+
 test('relay TLS follows the persisted endpoint transport setting', () => {
   assert.equal(relayUseTls({ remoteRelayUseTls: false }, '125.124.85.212:8411'), false);
   assert.equal(relayUseTls({ remoteRelayUseTls: true }, 'relay.example.com:443'), true);
