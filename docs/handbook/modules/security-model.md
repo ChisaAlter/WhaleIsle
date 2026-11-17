@@ -57,7 +57,7 @@
 
 ## 外部内容
 
-- **壁纸下载 SSRF**：`src/main/wallpaper-catalog.js`——`parseHttpUrl` 拒非 `http(s)` 与内嵌凭据；`isBlockedWallpaperHost` / `isBlockedIpv4` / `ipv6EmbeddedIpv4` 按解析后 IP 拒私网 / 回环 / 保留段；`assertResolvedWallpaperHost` 在 DNS 解析后复查；`fetchBuffer` 手动重定向逐跳重检（上限 4）、`credentials: 'omit'`、`readLimitedBody` 字节上限与超时。测试：`src/main/wallpaper-catalog.test.js`、`src/main/wallpaper-catalog.fuzz.test.js`。
+- **壁纸下载 SSRF**：`src/main/wallpaper-catalog.js`——`parseHttpUrl` 拒非 `http(s)` 与内嵌凭据；`isBlockedWallpaperHost` / `isBlockedIpv4` / `ipv6EmbeddedIpv4` 按解析后 IP 拒私网 / 回环 / 保留段；`assertResolvedWallpaperHost` 在 DNS 解析后复查并返回已校验记录，`fetchBuffer` 用每请求 dispatcher（bundled undici Agent 自定义 `connect.lookup`）把连接固定到这些地址——无二次解析，DNS rebind 窗口关闭，SNI/Host 仍取 URL 主机名；手动重定向逐跳重检（上限 4）、`credentials: 'omit'`、`readLimitedBody` 字节上限与超时。测试：`src/main/wallpaper-catalog.test.js`、`src/main/wallpaper-catalog.fuzz.test.js`。
 - **Mermaid SVG**：`src/whale-ui/genui/client/mermaid-safe.ts:assertSafeSvg`（#492，由 `mermaid-core.ts:renderMermaid` 在注入前调用）——元素白名单按 mermaid 11 实际输出核对；默认 `htmlLabels` 把标签文本渲染在 `foreignObject` 内（journey 即使关闭 htmlLabels 也会产出），故 `foreignObject` 及其内 XHTML 标签词汇（`div` / `span` / `table` / `input` 等）在白名单内，但子元素同样过表——`script` / `iframe` / `object` / `embed` / `audio` / `video` / `form` / `meta` / `link` / `math` / SMIL 均不在表、一律拒；另禁 `on*` 事件属性、URL 属性只放行 `#` 片段或 `http(s)`、CSS 危险构造与外链 `url()` 检查、拒处理指令与 DTD。测试：`src/whale-ui/genui/client/mermaid-safe.fuzz.test.js`。
 - **Loopback / 导航判定**：`src/main/local-url.js`——`isLoopbackHttpUrl`（精确回环集、拒 userinfo）、`isSameOriginLoopbackUrl`、`isLocalAppNavigationUrl` / `isLauncherNavigationUrl`、`shouldAllowPrivilegedNavigate` / `shouldAllowPrivilegedRedirect`，用于窗口导航守卫与 IPC sender 角色判定。测试：`src/main/local-url.test.js`、`src/main/local-url.fuzz.test.js`、`src/main/window-nav.test.js`。
 - **更新包校验**：`src/main/update.js`——`SHA512SUMS.txt`（`CHECKSUM_ASSET_NAME`）先于传输解析、`verifyAssetChecksum` / `verifyFileChecksum` 全文件 SHA-512 通过才可安装；`.part` 部分文件同样要求校验通过；`isGithubHost` 限定 `Authorization` 只发 GitHub 主机（token 不随签名 CDN 重定向）；`src/main/download-path.js:sanitizeDownloadFilename` / `downloadSavePath` 文件名净化与逃逸检查。测试：`src/main/update.test.js`、`src/main/update-updater.test.js`、`src/main/update-resume.test.js`、`src/main/update-recovery.test.js`、`src/main/download-path.test.js`。
@@ -71,7 +71,6 @@
 - **vendored `ui-user-terminal` 的 `isLoopbackHttpUrl`**（`vendor/deepseek-harness/packages/client/ui-user-terminal/src/client/links.ts`）不拒内嵌凭据——`http://user:pass@127.0.0.1:57110` 会按回环放行在 Browser surface 打开；桌面自有 `local-url.js` 已拒 userinfo。议题 #506。
 - **Mermaid 白名单放行远程 `http(s)` URL 属性**：渲染出的 SVG 可引用远程图片（出网、可被跟踪）。议题 #507。
 - **LAN 静态页是明文 HTTP**：产品取舍，LAN 模式只适合可信网络；见 [mobile-remote.md](mobile-remote.md)。
-- **壁纸 SSRF 防护存在 DNS rebind 窗口**：解析后复查的 IP 与最终连接之间可变动，源码注释声明 out of scope。议题 #508。
 
 ## 实现入口
 

@@ -5,6 +5,7 @@ const {
   assertResolvedWallpaperHost,
   bingCatalogUrls,
   downloadWallpaper,
+  fetchBuffer,
   fetchFailureDetail,
   isBlockedWallpaperHost,
   listWallpaperCatalog,
@@ -299,6 +300,57 @@ test('assertResolvedWallpaperHost refuses IPv4-embedded literals without resolvi
     );
   }
   assert.equal(called, 0);
+});
+
+// #508: a rebinding resolver answers the post-parse recheck with a public
+// (here: the loopback fixture, allowed under the test flag) address, then a
+// private one for any second lookup. The connect must reuse the re-checked
+// records — no second resolution — so the private answer is never used.
+test('fetchBuffer pins the connect to the re-checked records, closing the rebind window', async () => {
+  let hostHeader = '';
+  await withHttp((req, res) => {
+    hostHeader = req.headers.host;
+    res.setHeader('Content-Type', 'application/json');
+    res.end('{"items":[]}');
+  }, async (origin) => {
+    const port = new URL(origin).port;
+    let calls = 0;
+    const rebindLookup = async () => {
+      calls += 1;
+      return calls === 1
+        ? [{ address: '127.0.0.1', family: 4 }]
+        : [{ address: '10.203.0.9', family: 4 }];
+    };
+    const { buffer, finalUrl } = await fetchBuffer(`http://rebind.invalid:${port}/pack.json`, {
+      maxBytes: 1024,
+      timeoutMs: 5000,
+      lookup: rebindLookup,
+    });
+    assert.equal(calls, 1, 'the connect must not resolve the name a second time');
+    assert.equal(buffer.toString('utf8'), '{"items":[]}');
+    assert.equal(finalUrl, `http://rebind.invalid:${port}/pack.json`);
+    assert.equal(hostHeader, `rebind.invalid:${port}`, 'Host must stay the URL hostname');
+  });
+});
+
+test('assertResolvedWallpaperHost returns the validated records for the connect pin', async () => {
+  delete process.env.DSHD_WALLPAPER_ALLOW_HTTP;
+  const records = [{ address: '93.184.216.34', family: 4 }];
+  const returned = await assertResolvedWallpaperHost(
+    'example.com',
+    'https://example.com/x.json',
+    async () => records,
+  );
+  assert.deepEqual(returned, records);
+  const failing = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
+  assert.equal(
+    await assertResolvedWallpaperHost('gone.example.com', 'https://gone.example.com/x', failing),
+    null,
+  );
+  assert.equal(
+    await assertResolvedWallpaperHost('93.184.216.34', 'https://93.184.216.34/x', async () => records),
+    null,
+  );
 });
 
 test('listWallpaperCatalog accepts a catalog under 4MB and drops one above it', async () => {

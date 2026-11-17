@@ -4,7 +4,7 @@
 | --- | --- |
 | **id** | `wallpaper-gallery` |
 | **status** | `active` |
-| **last verified** | 2026-09-01 — pin 提交误截 UTF-8 后已从 `6e91ea69` 恢复 `appearance-section.client.spec.tsx`（保留 0.1.2 store/session 导入）；定向 vitest 31/31。此前 2026-08-25 — `qa:source` 首次云端全绿（出网 Linux + xvfb，英文局点）：`appearance.localCrop`/`gallery.confirmSet`/`appearance.frost` 三步 PASS（crop confirmed / Bing confirmed and cropped / frost+pixelate）。此前「3 项环境失败」根因 = walk 裁剪匹配器缺英文标题「Adjust wallpaper」（QA 基础设施缺口，已补；产品零改动）+ 旧无网环境缩略图不加载。此前 2026-08-24：SSRF 加固（封 CGNAT/benchmark 网段并在 DNS 解析后复检 IP） |
+| **last verified** | 2026-09-01 — pin 提交误截 UTF-8 后已从 `6e91ea69` 恢复 `appearance-section.client.spec.tsx`（保留 0.1.2 store/session 导入）；定向 vitest 31/31。此前 2026-08-25 — `qa:source` 首次云端全绿（出网 Linux + xvfb，英文局点）：`appearance.localCrop`/`gallery.confirmSet`/`appearance.frost` 三步 PASS（crop confirmed / Bing confirmed and cropped / frost+pixelate）。此前「3 项环境失败」根因 = walk 裁剪匹配器缺英文标题「Adjust wallpaper」（QA 基础设施缺口，已补；产品零改动）+ 旧无网环境缩略图不加载。此前 2026-08-24：SSRF 加固（封 CGNAT/benchmark 网段并在 DNS 解析后复检 IP）。2026-11-17 — #508：连接固定到 DNS 复检后的地址（每请求 dispatcher 自定义 `connect.lookup`，无二次解析），消除 rebind 窗口；`wallpaper-catalog.test.js` 新增 rebind 用例 |
 
 ## User paths
 
@@ -19,7 +19,7 @@
 - Appearance 壁纸行**只**做：挑选、浏览、裁剪、frost、pixelate。无源列表、无 JSON URL、无 Bing 开关堆在 Appearance。
 - 浏览打开**同一产品窗**（非独立 Electron 市场窗）：分类 + 搜索在上，网格在下。
 - 全部图源 CRUD 只在图库窗内；禁止把配置倾倒到 Appearance。
-- 用户源为具名 HTTPS JSON 目录。主进程拒绝 loopback / RFC1918 / link-local / CGNAT（100.64.0.0/10）/ benchmark（198.18.0.0/15）/ 组播与保留段目录与下载——判定基于解析后的 IP（`net.BlockList`），IPv6 字面量的 `::/96`、`::ffff:0/96`、`64:ff9b::/96` 先还原成内嵌 IPv4；URL 不得携带 userinfo，且主机名在 DNS 解析后复检 IP（`DSHD_WALLPAPER_ALLOW_HTTP=1` 仅测试机）。
+- 用户源为具名 HTTPS JSON 目录。主进程拒绝 loopback / RFC1918 / link-local / CGNAT（100.64.0.0/10）/ benchmark（198.18.0.0/15）/ 组播与保留段目录与下载——判定基于解析后的 IP（`net.BlockList`），IPv6 字面量的 `::/96`、`::ffff:0/96`、`64:ff9b::/96` 先还原成内嵌 IPv4；URL 不得携带 userinfo，且主机名在 DNS 解析后复检 IP、连接固定到已复检地址（自定义 `connect.lookup`，无二次解析；`DSHD_WALLPAPER_ALLOW_HTTP=1` 仅测试机）。
 - 分类页签 = 当前源列表 + 收藏。
 - Desktop 图源 catalog 拉取超时 30 s、单图下载 20 s（`src/main/wallpaper-catalog.js`，2026-08-22 由 8 s 调宽以容纳慢源）；改值须同步本卡。
 - 禁源：Unsplash / Pexels / Pixabay Key、Timeline 登录、R18 开关不进产品。
