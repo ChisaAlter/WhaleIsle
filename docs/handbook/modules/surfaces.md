@@ -26,7 +26,7 @@
 
 ## 实现入口
 
-- Main：`preview.js`、`preview-file-window.js`、`preview-session.js`、`preview-workspace.js`、`preview-url.js` 等
+- Main：`preview.js`（对外入口）、`preview-controller.js`（视图/录制/PiP）、`preview-common.js`（URL/权限/共享纯逻辑）、`preview-ipc.js`（宿主代际与 IPC）、`preview-file-window.js`、`preview-session.js`、`preview-workspace.js`、`preview-url.js` 等
 - Renderer：`src/renderer/file-preview.*`；窄 preload：`src/preload/file-preview.js`
 - Note：`vendor/deepseek-harness/.agents/notes/implemented/feature/2026-08-16-surfaces-terminal-work-loops.md`
 

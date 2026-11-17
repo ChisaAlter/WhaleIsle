@@ -321,4 +321,14 @@ export default [
     ignores: ['**/*.test.{js,mjs,cjs}'],
     rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE, ...RESTRICTED_MKDTEMP] },
   },
+  // #443: production ownership only. Existing over-budget files/functions
+  // retain explicit ceilings in structure-baseline.json; new ones get 800/20.
+  {
+    files: CHECKED_FILES,
+    ignores: ['**/*.test.{js,mjs,cjs}', '**/*.child.cjs', '**/*.fixture.*'],
+    rules: {
+      'whaleisle/max-lines': 'error',
+      'whaleisle/complexity': 'error',
+    },
+  },
 ];

@@ -461,7 +461,7 @@ test('release walk source clicks Mention and asserts the composer markdown link'
   const walk = require('node:fs').readFileSync(
     require('node:path').join(__dirname, 'release-ui-walk.js'),
     'utf8',
-  );
+  ) + require('node:fs').readFileSync(require('node:path').join(__dirname, 'release-ui-page-helpers.js'), 'utf8');
   assert.match(walk, /files\.mentionAppended/);
   assert.match(walk, /mention in composer\|引用到输入框/);
   assert.match(walk, /typeIntoComposer\(wc, ''\)/);
@@ -518,7 +518,7 @@ test('release walk types into Lexical composer and matches 0.1.2 chrome copy', (
   const walk = require('node:fs').readFileSync(
     require('node:path').join(__dirname, 'release-ui-walk.js'),
     'utf8',
-  );
+  ) + require('node:fs').readFileSync(require('node:path').join(__dirname, 'release-ui-page-helpers.js'), 'utf8');
   assert.match(PAGE_HELPERS, /function dshComposerInput/);
   assert.match(PAGE_HELPERS, /function dshComposerReady/);
   assert.match(PAGE_HELPERS, /function dshComposerText/);

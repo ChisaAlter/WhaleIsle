@@ -13,6 +13,8 @@
 
 历史验证与变更记录见 [docs/history/data-import.md](../history/data-import.md)。
 
+会话 JSONL/zstd 的只读展示元数据解析位于 `src/main/data-import-session-meta.js`；扫描、导入与事务编排保留在 `data-import.js`。
+
 ## User paths
 
 1. 启动器「导入」自动只读扫描官方 `~/.dsh`（会话、附件、`profiles/web/package.json` 插件名单、`skills/`、`mcp-servers.yaml`）以及 `~/.agents/skills`。
