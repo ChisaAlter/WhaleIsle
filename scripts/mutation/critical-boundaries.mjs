@@ -1,4 +1,5 @@
 // Deliberate policy faults for #450. Each edit must match exactly once.
+/** @type {import('../mutation-critical.mjs').MutationModule[]} */
 export const modules = [
   {
     file: 'src/main/ipc-authorization.js',
