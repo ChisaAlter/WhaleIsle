@@ -89,3 +89,11 @@ test('tsconfig 缺失等配置级错误直接失败', (t) => {
   assert.notEqual(result.status, 0);
   assert.match(result.stdout + result.stderr, /配置级错误|未产生诊断/);
 });
+
+test('absolute repo paths in messages are replaced so the baseline is portable', () => {
+  const root = '/abs/repo';
+  const text = `src/main/a.js(1,1): error TS2322: Type 'typeof import("/abs/repo/src/main/b")' is not assignable to type 'never'.`;
+  const { counts } = parseDiagnostics(text, root);
+  const messages = [...counts.get('src/main/a.js').get('TS2322').keys()];
+  assert.deepEqual(messages, [`Type 'typeof import("<root>/src/main/b")' is not assignable to type 'never'.`]);
+});

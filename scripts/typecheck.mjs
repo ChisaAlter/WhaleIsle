@@ -57,13 +57,21 @@ function addDiagnostic(counts, file, code, message) {
   byMessage.set(message, (byMessage.get(message) || 0) + 1);
 }
 
-export function parseDiagnostics(text) {
+// 消息里可能带绝对路径（如 `typeof import("/abs/repo/src/x")`），换成
+// `<root>` 才能让基线在不同机器、CI 上一致。
+function normalizeMessage(message, root) {
+  if (!root) return message;
+  const posix = root.replace(/\\/g, '/');
+  return message.split(root).join('<root>').split(posix).join('<root>');
+}
+
+export function parseDiagnostics(text, root) {
   const counts = new Map();
   const globals = [];
   for (const line of text.split(/\r?\n/)) {
     const hit = DIAGNOSTIC.exec(line);
     if (hit) {
-      addDiagnostic(counts, normalizeFile(hit[1]), hit[4], hit[5]);
+      addDiagnostic(counts, normalizeFile(hit[1]), hit[4], normalizeMessage(hit[5], root));
       continue;
     }
     const globalHit = GLOBAL_ERROR.exec(line);
@@ -168,7 +176,7 @@ function runTsc(project) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const { text, status } = runTsc(opts.project);
-  const { counts, globals } = parseDiagnostics(text);
+  const { counts, globals } = parseDiagnostics(text, ROOT);
   const { total, byDir } = countEntries(counts);
 
   console.log('checkJs 诊断共 ' + total + ' 条：');

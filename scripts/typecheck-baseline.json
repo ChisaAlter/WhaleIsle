@@ -2125,8 +2125,8 @@
     "src/main/ipc.js": {
       "TS2322": {
         "Type 'Promise<string | null>' is not assignable to type 'null'.": 1,
-        "Type 'typeof import(\"/tmp/whaleisle-wt/437/src/main/ipc-components\")' is not assignable to type 'never'.": 1,
-        "Type 'typeof import(\"/tmp/whaleisle-wt/437/src/main/ipc-delta\")' is not assignable to type 'never'.": 1,
+        "Type 'typeof import(\"<root>/src/main/ipc-components\")' is not assignable to type 'never'.": 1,
+        "Type 'typeof import(\"<root>/src/main/ipc-delta\")' is not assignable to type 'never'.": 1,
         "Type '{ ask: (options?: {}) => Promise<any>; respond: (payload: any) => boolean; register: (ctx: any) => void; }' is not assignable to type 'never'.": 1
       },
       "TS2339": {
