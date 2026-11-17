@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
@@ -8,9 +8,26 @@ import { clearButtonBusy } from './ui/button-busy.js';
 import { h } from './ui/dom.js';
 import { gitTunnelAction, gitCommitPayload } from './git/bridge.js';
 
-const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.js'), 'utf8');
-const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.css'), 'utf8');
-const surfaces = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ui', 'surfaces.js'), 'utf8');
+const webDir = dirname(fileURLToPath(import.meta.url));
+// #442: app.js was split into mobile/web/app/*.js. Assertions below run against
+// the concatenated split sources; slices strip import/export so runInNewContext
+// can evaluate the moved functions just like they behaved inside app.js.
+const appDir = join(webDir, 'app');
+const appFiles = ['app.js', ...(existsSync(appDir) ? readdirSync(appDir).filter((f) => f.endsWith('.js')).sort().map((f) => join('app', f)) : [])];
+const sources = new Map(appFiles.map((f) => [f, readFileSync(join(webDir, f), 'utf8')]));
+const appSource = [...sources.values()].join('\n');
+const app = appSource.replace(/^import\b[^;]*;/gm, '').replace(/^export /gm, '');
+const css = readFileSync(join(webDir, 'app.css'), 'utf8');
+const surfaces = readFileSync(join(webDir, 'ui', 'surfaces.js'), 'utf8');
+
+// Slice one moved function cluster from whichever split file contains startMarker.
+const sliceInFile = (startMarker, endMarker) => {
+  const text = [...sources.values()].find((t) => t.includes(startMarker));
+  assert.ok(text, `no app module contains ${startMarker}`);
+  const start = text.indexOf(startMarker);
+  const end = endMarker ? text.indexOf(endMarker, start) : -1;
+  return text.slice(start, end >= 0 ? end : undefined).replace(/^export /gm, '');
+};
 
 test('paired SPA path does not call ACP fetchAgents or createAgent', () => {
   assert.equal(app.includes('fetchAgents'), false, 'app.js still mentions fetchAgents');
@@ -32,7 +49,7 @@ test('composer and drawer gaps follow the 4px spacing grid', () => {
 
 test('unsaved appearance keeps the default glass value while an explicit zero remains valid', () => {
   const context = { localStorage: { getItem: () => null } };
-  runInNewContext(app.slice(app.indexOf('const PHONE_KEYS = '), app.indexOf('function persistPhoneStore(')), context);
+  runInNewContext(sliceInFile('const PHONE_KEYS = ', 'function persistPhoneStore('), context);
   assert.equal(context.readPhoneStore().glass, 80);
   context.localStorage.getItem = (key) => key === 'dsh-phone-glass' ? '0' : null;
   assert.equal(context.readPhoneStore().glass, 0);
@@ -67,7 +84,7 @@ test('short choices stay compact while directory, archive and branch lists keep 
       return { layer: { dataset: {}, style: { setProperty() {} } }, panel: { setAttribute() {} }, content: {} };
     },
   };
-  runInNewContext(app.slice(app.indexOf('function sheetLayer('), app.indexOf('function closeGitLayer(')), context);
+  runInNewContext(sliceInFile('function sheetLayer(', 'function closeGitLayer('), context);
   for (const [patch, variant, anchor] of [
     [{ pickerSheet: 'model' }, 'menu', 'composer'],
     [{ pickerSheet: 'mode' }, 'menu', 'composer'],
@@ -132,24 +149,24 @@ test('approval respond confirms host history after an E2EE ack timeout', () => {
 test('history poll hydrates unanswered approval/asked into the strip', () => {
   assert.match(app, /pendingFromHistoryEvents\(state\.events/);
   assert.match(app, /mergeApprovalPending\(/);
-  const poll = app.slice(app.indexOf('historyPollTimer = setInterval'));
+  const poll = sliceInFile('historyPollTimer = setInterval');
   assert.match(poll, /applyHistoryPayload\(payload, \{ merge: true \}\)/);
   assert.match(poll, /renderApproval\(\)/);
 });
 
 test('live history ticks fetch a small window and keep older pages the user loaded', () => {
-  const pull = app.slice(app.indexOf('function pullCurrentHistory()'), app.indexOf('function forceLogout('));
+  const pull = sliceInFile('function pullCurrentHistory()', 'function forceLogout(');
   assert.match(pull, /maxMessages: POLL_PAGE_MESSAGES/);
   assert.match(pull, /mergeLatestHistory\(state\.events, hostHistoryPage\(payload\)\)\.contiguous/);
   assert.match(pull, /payload = await fetchPage\(\{\}\)/);
-  const apply = app.slice(app.indexOf('function applyHistoryPayload('), app.indexOf('let projectionsInflight'));
+  const apply = sliceInFile('function applyHistoryPayload(', 'let projectionsInflight');
   assert.match(apply, /if \(!merged\.keptOlder\) state\.timelinePage =/);
-  const poll = app.slice(app.indexOf('historyPollTimer = setInterval'), app.indexOf('let historyPullInflight'));
+  const poll = sliceInFile('historyPollTimer = setInterval', 'let historyPullInflight');
   assert.match(poll, /document\.visibilityState === 'hidden'/);
 });
 
 test('sends carry a stable request id and show a pending bubble until the host echoes them', () => {
-  const send = app.slice(app.indexOf('async function sendPrompt()'), app.indexOf('function finishSubmittedDraft('));
+  const send = sliceInFile('async function sendPrompt()', 'function finishSubmittedDraft(');
   assert.match(send, /promptIdentity\(state\.promptIdentity/);
   assert.match(send, /requestId: identity\.requestId, mode/);
   assert.match(send, /receipt\?\.value\?\.accepted === false/);
@@ -158,7 +175,7 @@ test('sends carry a stable request id and show a pending bubble until the host e
 });
 
 test('the conversation log reuses unchanged row nodes instead of replacing the whole list', () => {
-  const render = app.slice(app.indexOf('function renderLog('), app.indexOf('async function loadOlderMessages()'));
+  const render = sliceInFile('function renderLog(', 'async function loadOlderMessages()');
   assert.match(render, /logList\.nodes\(rows/);
   assert.match(render, /reconcileChildren\(logEl, nodes\)/);
   assert.equal(render.includes('logEl.replaceChildren('), false);
@@ -199,7 +216,7 @@ test('Git progress stays on operation controls and failure feedback has no close
       createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
     },
     clearTimeout, toastTimer: null };
-  runInNewContext(app.slice(app.indexOf('function renderToast()'), app.indexOf('function renderLightbox()')), context);
+  runInNewContext(sliceInFile('function renderToast()', 'function renderLightbox()'), context);
   const toast = () => toastRoot.children[0].children[0];
   // The real h() builds nodes through the global document, so the fake
   // factories are installed for the duration of the two render passes.
@@ -246,7 +263,7 @@ test('Git starts with locked visible controls, advances feedback, and sends each
       await run('git-push');
     },
   };
-  runInNewContext(app.slice(app.indexOf('async function gitAction('), app.indexOf('function maybeConfirm(')), context);
+  runInNewContext(sliceInFile('async function gitAction(', 'function maybeConfirm('), context);
   const pending = context.gitAction('gitCommit');
   assert.equal(state.gitBusy, true);
   assert.deepEqual(renders.slice(0, 4), ['toast', 'settings', 'sheet', 'dialog']);
@@ -259,19 +276,20 @@ test('Git starts with locked visible controls, advances feedback, and sends each
 });
 
 test('drawer hides untitled blank rows that arrive live via host/session-added', () => {
-  const render = app.slice(app.indexOf('function renderSessions()'), app.indexOf('function renderSessions()') + 600);
+  const render = sliceInFile('function renderSessions()').slice(0, 600);
   assert.match(render, /!isUntitledBlank\(row\)/);
-  assert.match(app, /import \{ isUntitledBlank, sessionTitle \} from '\.\/conversation\/title\.js'/);
+  assert.match(appSource, /import \{[^}]*isUntitledBlank[^}]*\} from '\.\.?\/conversation\/title\.js/);
+  assert.match(appSource, /import \{[^}]*sessionTitle[^}]*\} from '\.\.?\/conversation\/title\.js/);
 });
 
 test('paired SPA subscribes the catalog mux right after connect, not only on openSession', () => {
-  const connectTail = app.slice(app.indexOf('async function finishChisaCodeConnect'), app.indexOf('async function connect('));
+  const connectTail = sliceInFile('async function finishChisaCodeConnect', 'async function connect(');
   assert.match(connectTail, /startLiveFollow\(\)/);
   assert.match(app, /catalogRefreshReason\(payload\)/);
 });
 
 test('running→idle status frame triggers one final history pull for the open session', () => {
-  const mux = app.slice(app.indexOf('function handleMuxFrame'), app.indexOf('function startLiveFollow'));
+  const mux = sliceInFile('function handleMuxFrame', 'function startLiveFollow');
   // host/session-status is consumed by the applyHostFrame branch; the idle
   // pull sits outside that if/else so both frame shapes reach it, and a
   // delayed second pull covers the assistant message committing after idle.
@@ -281,24 +299,24 @@ test('running→idle status frame triggers one final history pull for the open s
 });
 
 test('sendPrompt refuses images on a model that declares no image input before session.prompt', () => {
-  const send = app.slice(app.indexOf('async function sendPrompt()'), app.indexOf("await call('session.prompt'"));
+  const send = sliceInFile('async function sendPrompt()', "await call('session.prompt'");
   assert.match(send, /attachmentGuard\(\{ current: currentModelState\(\)\.current, attachments: images \}\)/);
   assert.match(send, /showBanner\(guard\.message\)/);
 });
 
 test('search input enters search mode before the debounce so live frames cannot repaint the full list', () => {
-  const handler = app.slice(app.indexOf("search.addEventListener('input'"), app.indexOf("draft.addEventListener('input'"));
+  const handler = sliceInFile("search.addEventListener('input'");
   assert.match(handler, /state\.searchLoading = Boolean\(state\.query\.trim\(\)\)/);
   assert.match(handler, /renderSessions\(\);\s*clearTimeout\(searchTimer\)/);
 });
 
 test('logout rotates the mobile clientId so an in-tab re-pair does not stall', () => {
-  const logout = app.slice(app.indexOf('function forceLogout'), app.indexOf('async function shell('));
+  const logout = sliceInFile('function forceLogout', 'async function shell(');
   assert.match(logout, /clearSecret\(serverId\);[\s\S]*rotateClientId\(\);/);
 });
 
 test('sending the first prompt promotes the blank session into the live drawer', () => {
-  const send = app.slice(app.indexOf('async function sendPrompt()'), app.indexOf('async function cancelRun()'));
+  const send = sliceInFile('async function sendPrompt()', 'async function cancelRun()');
   assert.match(send, /row\.blank = false/);
   assert.match(send, /promoteHeldLive\(\)/);
 });
@@ -311,9 +329,9 @@ test('drawer search is host session.search with a 20-hit hasMore hint', () => {
 
 test('destructive confirm dialogs win over leftover rename or mkdir dialogs', () => {
   assert.match(app, /function clearExclusiveDialogs\(/);
-  const confirm = app.slice(app.indexOf('function startSessionConfirm'));
+  const confirm = sliceInFile('function startSessionConfirm');
   assert.match(confirm, /clearExclusiveDialogs\(/);
-  const dialog = app.slice(app.indexOf('function renderDialog()'));
+  const dialog = sliceInFile('function renderDialog()');
   const confirmIdx = dialog.indexOf('if (state.sessionConfirm)');
   const renameIdx = dialog.indexOf('if (state.workspaceRename)');
   assert.equal(confirmIdx >= 0 && renameIdx >= 0 && confirmIdx < renameIdx, true, 'sessionConfirm must render before workspaceRename');

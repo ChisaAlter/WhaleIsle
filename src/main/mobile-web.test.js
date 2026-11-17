@@ -44,8 +44,10 @@ test('SPA paths decode exactly once, including literal percent filenames', () =>
 test('mobile app boots offer v2 through DaemonClient instead of retired HTTP login', () => {
   const root = resolveMobileWebRoot();
   const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-  assert.match(app, /pairFromOfferUrl\(api, offerUrl, \{ signal \}\)/);
+  const connect = fs.readFileSync(path.join(root, 'app/connect.js'), 'utf8');
+  assert.match(app, /import \{ connect, connectSaved \} from '\.\/app\/connect\.js\?[^']+'/);
+  assert.match(connect, /pairFromOfferUrl\(api, offerUrl, \{ signal \}\)/);
   assert.match(app, /connect\(window\.location\.href\)/);
-  assert.doesNotMatch(app, /loginWithOffer/);
-  assert.doesNotMatch(app, /offerFromHash/);
+  assert.doesNotMatch(app + connect, /loginWithOffer/);
+  assert.doesNotMatch(app + connect, /offerFromHash/);
 });
