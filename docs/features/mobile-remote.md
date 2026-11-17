@@ -187,7 +187,7 @@
 - 本机修复启用后双路径复测：[目录瘦身启用记录](../../tools/mobile-web-qa/results/2026-09-05-catalog-activation.md)。
 
 - Vendored ChisaCode client/app pairing runtime
-- Host RPC map：`vendor/deepseek-harness/packages/host/apiproxy/src/api/rpc-map.ts`；斜杠命令：Typert `POST /api/commands/list` · `POST /api/commands/execute`
+- Host RPC：旧 `packages/host/apiproxy` 已移除，一元调用经 Typert gateway（`vendor/deepseek-harness/packages/api/gateway/`；迁移记录 `vendor/deepseek-harness/.agents/notes/archived/architecture/2026-08-10-unary-apiproxy-remote-migration.md`），桌面侧方法白名单为 `src/shared/dshd-host-tunnel.js` 的 `HOST_RPC_METHODS`；斜杠命令：Typert `POST /api/commands/list` · `POST /api/commands/execute`
 - Git 标题栏：[git-titlebar.md](git-titlebar.md)
 - 归档：[session-archive.md](session-archive.md)
 - Kill list：[_kill-http-remote](_kill-http-remote.md)

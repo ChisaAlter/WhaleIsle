@@ -18,6 +18,14 @@
 
 用户纠正代理的同一个 PR 里，尽量把这次纠正变成一条 lint 规则（eslint.config.mjs / scripts/eslint-rules）或一个测试；规则报错信息写清原因和替代做法，做不到时在 PR 中说明。修掉存量问题后用 `npx eslint . --prune-suppressions` 收缩豁免文件；新增豁免需要在 PR 中说明理由。
 
+### 运行应用
+
+`npm start` 先重建过期的 client 产物再启动 Electron；宿主环境若设有 `ELECTRON_RUN_AS_NODE`，需从启动环境中移除。产品运行时改动后重启仓库应用；文档和工具改动不需要启动。
+
+源码 Electron 接受 `--background`：显示首个 main/launcher 窗口但不抢激活，随后用户进入仍保持正常焦点行为；恢复、更新确认和正常退出仍可要求注意。旧版已在运行的 owner 不支持该旗标，先正常退出该实例再启动新源码。
+
+vendor web 构建对 `apps/web` 之外的包报 TS6059/TS6307 时，先在 vendor 目录执行 `node node_modules/typescript/bin/tsc -b apps/web --clean` 清除过期增量状态再重建；不要改 web 项目的文件列表掩盖错误。
+
 ## CI 与发布
 
 `test.yml` 在 PR、main 推送及手动运行时提供开发反馈。文档修改不触发产品构建。产品改动在 Windows 上构建实际分发 profile、运行行为测试、生成安装包并启动打包后的应用；上游行为与原生窗口检查按影响选择。版本号变化的 main 推送会同时构建 macOS 安装包，其他时候按需手动启用。
@@ -35,7 +43,7 @@ main 的开发 CI 成功后，`release.yml` 使用该次构建的原始资产。
 
 同一个事实只在负责位置维护。AGENTS、rules 和技能只负责导航，不能再各自增加一套流程。普通修复写在 PR 中；产品契约改变时更新对应资料，不要求先建卡才能开发。内部资料可用一种语言；已有译文与历史保留，取消结构配对、摘要确认与格式校验。公开文档按读者需要翻译。
 
-文档链接检查可用 `npm run docs:check`，按需执行，不作为产品发布条件。功能卡中的 Gates 和历史用例库用于寻找现成检查，不是必须全部执行的列表。
+文档链接检查可用 `npm run docs:check`，按需执行，不作为产品发布条件。功能卡中的 Gates 和历史用例库用于寻找现成检查，不是必须全部执行的列表（语义见[功能资料](../features/README.md)）。
 
 ## 上游合并与差异保护
 
