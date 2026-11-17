@@ -3,7 +3,7 @@
 // Composer family width linkage. The composer seat publishes
 // --dsh-composer-resized-width while the Interface Settings composerResize
 // drag is live; the rows that share the input card's width axis — the session
-// stats line, the queue/todo/goal dock cards, and the blank-session Hero's
+// stats line, the queue/todos/goal dock cards, and the blank-session Hero's
 // workspace/preset row — must read that variable so they follow the drag
 // instead of keeping the resting card cap. (The dsh-usage-panel cost strip
 // that used to sit under the card was
