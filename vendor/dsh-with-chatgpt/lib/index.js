@@ -62,6 +62,7 @@ async function presentPairingSecrets(data) {
   for (const holder of [data, data?.chatgptRepair]) {
     if (typeof holder?.pairingCode !== 'string' || !holder.pairingCode) continue;
     const shown = await showDesktopSecret({
+      tool: 'chatgpt_connection',
       title: 'ChatGPT 配对码',
       label: '配对码已生成，复制后在 ChatGPT 的 DSH 连接设置中输入。',
       secret: holder.pairingCode,

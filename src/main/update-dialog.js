@@ -102,7 +102,9 @@ class ShellConfirmDialog {
     this.parent = parent;
     const { isEffectivelyMaximized } = require('./chrome');
     const view = {
-      revision: ++this.revision, locale: 'zh-CN', title: options.title ?? '',
+      revision: ++this.revision,
+      locale: /** @type {{ locale?: unknown }} */ (options).locale === 'en' ? 'en' : 'zh-CN',
+      title: options.title ?? '',
       message: options.message ?? '', detail: options.detail ?? '',
       kind: options.kind === 'update' ? 'update' : 'confirmation',
       context: options.context ?? '',

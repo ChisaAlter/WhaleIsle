@@ -53,7 +53,8 @@ const { ipcSenderRole } = require('./ipc-authorization');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { connectWelcome } = require('./welcome-backend');
 const { openExternalHttp } = require('./open-external');
-const { resolveDesktopStartupLocale } = require('./desktop-locale');
+const { resolveDesktopLocale, resolveDesktopStartupLocale } = require('./desktop-locale');
+const { modelActionConfirmOptions, secretDialogOptions, detailWithContext } = require('./model-action-dialog');
 const { recoverInterruptedImport, readImportJournal, journalIsBlocked } = require('./data-import');
 const { isLauncherPackage } = require('../launcher/product');
 const runtimeInstall = require('../launcher/runtime-install');
@@ -316,6 +317,9 @@ async function confirmDialog(parent, options) {
       console.warn('dshd dialog: shell confirm failed, native fallback', error);
     }
   }
+  // The native messagebox has no context slot: the fixed attribution line
+  // folds ahead of the detail text so the fallback never drops it.
+  const nativeDetail = detailWithContext(options);
   if (options.downloadMethods?.length > 0) {
     const methods = options.downloadMethods.filter((method) => !method.disabledReason);
     const result = await dialog.showMessageBox(parent || undefined, {
@@ -323,13 +327,13 @@ async function confirmDialog(parent, options) {
       buttons: [...methods.map((method) => method.label), '稍后'],
       defaultId: 0, cancelId: methods.length,
       detail: options.downloadMethods.map((method) => `${method.label}：${method.disabledReason || method.description}`).join('\n')
-        + '\n\n' + options.detail,
+        + '\n\n' + nativeDetail,
     });
     return result.response < methods.length
       ? { response: 0, downloadMode: methods[result.response].id }
       : { response: options.cancelId };
   }
-  return dialog.showMessageBox(parent || undefined, options);
+  return dialog.showMessageBox(parent || undefined, { ...options, detail: nativeDetail });
 }
 
 const trayHideNotice = new TrayHideNotice({
@@ -632,15 +636,12 @@ async function confirmDesktopPluginChange(request) {
 }
 
 /**
- * Titles for model-tool confirmation dialogs, keyed by the registry effect
- * level the confirm endpoint resolved. Refusal is always the default button.
+ * Dialog copy dictionary for model-tool prompts, resolved from the app's
+ * configured locale (zh default, en for English).
  */
-const MODEL_ACTION_TITLES = {
-  destructive: '助理请求执行破坏性操作',
-  external: '助理请求对外公开',
-  code: '助理请求运行代码',
-  local: '助理请求执行本地操作',
-};
+function desktopDialogMessages() {
+  return resolveDesktopLocale(loadConfig().locale === 'en' ? 'en' : 'zh');
+}
 
 /**
  * Confirmation for high-risk model-tool actions posted to /desktop/confirm.
@@ -648,58 +649,36 @@ const MODEL_ACTION_TITLES = {
  * else is a plugin mutation and keeps the existing plugin wording (and the
  * boolean answer). Model actions answer 'always' | 'once' | 'deny';
  * destructive/code levels never offer a run-scoped allow, and any unexpected
- * response fails closed as 'deny'.
+ * response fails closed as 'deny'. The dialog paints the endpoint-resolved
+ * source and level in fixed slots (see model-action-dialog.js) — the
+ * caller's summary/details only fill the request-content region.
  */
 async function confirmModelAction(request) {
   if (!request || typeof request.effect !== 'string' || !request.effect) {
     return confirmDesktopPluginChange(request);
   }
-  const tool = String(request.tool || '工具');
-  const action = String(request.action || '');
-  const summary = String(request.summary || '').slice(0, 500);
-  const offerAlways = !NEVER_ALWAYS_LEVELS.has(request.effect);
-  const buttons = offerAlways
-    ? ['拒绝', '允许一次', '本次运行内始终允许']
-    : ['拒绝', '允许一次'];
-  const result = await confirmDialog(firstVisibleWindow(), {
-    type: 'warning',
-    buttons,
-    defaultId: 0,
-    cancelId: 0,
-    dangerIds: offerAlways ? [1, 2] : [1],
-    title: MODEL_ACTION_TITLES[request.effect] || '助理请求执行操作',
-    message: summary || `助理想用 ${tool} 执行 ${action || '操作'}`,
-    detail: [
-      `工具：${tool}${action ? ` / ${action}` : ''}`,
-      String(request.details || '').slice(0, 6000),
-    ].filter(Boolean).join('\n'),
-    noLink: true,
-  });
+  const locale = desktopDialogMessages();
+  const result = await confirmDialog(firstVisibleWindow(),
+    modelActionConfirmOptions(request, locale.messages, locale.id));
   if (result.response === 1) return 'once';
-  if (result.response === 2 && offerAlways) return 'always';
+  if (result.response === 2 && !NEVER_ALWAYS_LEVELS.has(request.effect)) return 'always';
   return 'deny';
 }
 
 /**
  * Show a generated secret (pairing code, public tunnel address) to the user in
  * a desktop dialog with a copy button, so the value never has to travel
- * through model-visible tool output.
+ * through model-visible tool output. The fixed attribution line names the
+ * requesting tool (or the generic assistant source) so caller-supplied
+ * title/label/hint cannot masquerade as the request's origin.
  */
 async function showDesktopSecret(request) {
   const secret = String(request?.secret || '');
   if (!secret) return { ok: false };
-  const hint = String(request?.hint || '').slice(0, 500);
+  const locale = desktopDialogMessages();
+  const options = secretDialogOptions(request, locale.messages, locale.id);
   for (;;) {
-    const result = await confirmDialog(firstVisibleWindow(), {
-      type: 'info',
-      buttons: ['复制', '关闭'],
-      defaultId: 1,
-      cancelId: 1,
-      title: String(request?.title || '敏感信息').slice(0, 80) || '敏感信息',
-      message: String(request?.label || '').slice(0, 200) || '以下敏感信息只显示在这里，不会发给助理。',
-      detail: hint ? `${secret}\n\n${hint}` : secret,
-      noLink: true,
-    });
+    const result = await confirmDialog(firstVisibleWindow(), options);
     if (result.response !== 0) return { ok: true };
     clipboard.writeText(secret);
   }

@@ -2063,7 +2063,6 @@
         "Variable 'welcomeLocale' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ destructive: string; external: string; code: string; local: string; }'.": 1,
         "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ quit: string; restart: string; reload: string; stop: string; update: string; install: string; delta: string; }'.": 1
       }
     },

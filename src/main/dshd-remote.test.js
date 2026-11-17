@@ -455,6 +455,39 @@ test('ensurePairing unblocks after sync succeeds', async () => {
   assert.ok(remote.snapshot().urls[0].pairingUrl.includes('#offer=sync'));
 });
 
+test('pushHarnessOrigin writes control lines and refuses a newline origin', () => {
+  const writes = [];
+  const logs = [];
+  const remote = new DshdRemote({
+    getConfig: () => ({}),
+    getHomeDir: () => os.tmpdir(),
+    log: (line) => logs.push(line),
+    getHarnessOrigin: () => 'https://workspace.example',
+    getSessionCookie: () => 'cookie-value',
+  });
+  remote.daemon = {
+    child: {
+      killed: false,
+      stdin: { write(data) { writes.push(data); return true; } },
+    },
+  };
+
+  remote.pushHarnessOrigin();
+  assert.deepEqual(writes, [
+    'harness-origin https://workspace.example\n',
+    'harness-cookie cookie-value\n',
+  ]);
+
+  // A newline inside the origin would mint a second control line on the
+  // daemon's stdin protocol; the write is refused and the refusal logged.
+  writes.length = 0;
+  logs.length = 0;
+  remote.pushHarnessOrigin('https://evil.example\nstop');
+  assert.deepEqual(writes, []);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /harness-origin|控制行|拒绝/);
+});
+
 // ---------------------------------------------------------------------------
 // Daemon child-process management (fake runner scripts, real spawns)
 // ---------------------------------------------------------------------------

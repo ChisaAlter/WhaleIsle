@@ -983,11 +983,11 @@ describe('desktop install control', { concurrency: false }, () => {
     const result = await (await fetch(endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ title: 'ChatGPT 配对码', label: '配对码', secret: 'ABCD-EFGH', hint: '在 ChatGPT 中输入' }),
+      body: JSON.stringify({ tool: 'chatgpt_connection', title: 'ChatGPT 配对码', label: '配对码', secret: 'ABCD-EFGH', hint: '在 ChatGPT 中输入' }),
     })).json();
     assert.equal(result.ok, true);
     assert.deepEqual(shown, [
-      { title: 'ChatGPT 配对码', label: '配对码', secret: 'ABCD-EFGH', hint: '在 ChatGPT 中输入' },
+      { tool: 'chatgpt_connection', title: 'ChatGPT 配对码', label: '配对码', secret: 'ABCD-EFGH', hint: '在 ChatGPT 中输入' },
     ]);
   });
 

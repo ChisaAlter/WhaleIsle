@@ -1127,11 +1127,13 @@ class DshdRemote extends EventEmitter {
     const child = this.daemon?.child;
     if (!child?.stdin || child.killed) return;
     try {
-      child.stdin.write(`harness-origin ${String(next || '').trim()}\n`);
+      // Same line-write validation as the secret channel: a newline inside
+      // the origin would mint another control line, so the write is refused.
+      passSecretToChild(child, 'harness-origin', String(next || '').trim());
       const cookie = String(this.getSessionCookie() || '').split(/\r|\n/)[0].trim();
       passSecretToChild(child, 'harness-cookie', cookie);
-    } catch {
-      // Child already draining.
+    } catch (error) {
+      this.log?.(`[dshd-remote] daemon 控制行写入被拒绝：${error instanceof Error ? error.message : error}`);
     }
   }
 
