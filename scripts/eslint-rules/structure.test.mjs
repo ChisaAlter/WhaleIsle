@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import { RuleTester } from 'eslint';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { maxLines, complexity } from './structure.mjs';
 import baseline from '../structure-baseline.json' with { type: 'json' };
 
@@ -24,8 +25,12 @@ tester.run('bounded max-lines', maxLines, {
 const [functionFile, entries] = Object.entries(baseline.complexity).find(([, functions]) => Object.keys(functions).some(name => /^\w+$/.test(name)));
 const [name, budget] = Object.entries(entries).find(([key]) => /^\w+$/.test(key));
 const fn = (name, size) => `function ${name}(x) { ${'if (x) x++;'.repeat(size - 1)} }`;
+const [anonymousFile] = Object.entries(baseline.complexity).find(([, functions]) => Object.keys(functions).some(name => /[a-f0-9]{16}/.test(name)));
+const anonymousSource = readFileSync(anonymousFile, 'utf8').replaceAll('\r\n', '\n');
 tester.run('bounded complexity', complexity, {
   valid: [
+    { filename: resolve(anonymousFile), languageOptions: { sourceType: 'module' }, code: anonymousSource },
+    { filename: resolve(anonymousFile), languageOptions: { sourceType: 'module' }, code: anonymousSource.replaceAll('\n', '\r\n') },
     { filename: resolve('src/shared/new-module.js'), code: fn('fresh', 20) },
     { filename: resolve(functionFile), code: fn(name, budget) },
   ],

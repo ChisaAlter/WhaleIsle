@@ -566,7 +566,7 @@
       "syncTree/walk/0b8fa2fd4477634b": 28
     },
     "vendor/dsh-task-control/lib/http.js": {
-      "createControlHandler/controlRoute": 21
+      "createControlHandler/controlRoute": 22
     },
     "vendor/dsh-whale/lib/desktop-tools.js": {
       "registerDesktopTools/execute": 32
@@ -637,7 +637,7 @@
     "src/main/pty.js": 897,
     "src/main/release-ui-walk.js": 1817,
     "src/main/smoke/index.js": 1012,
-    "src/main/update.js": 1122,
+    "src/main/update.js": 1128,
     "src/main/wallpaper-catalog.js": 816,
     "src/main/window.js": 1044,
     "src/renderer/launcher.js": 2840,

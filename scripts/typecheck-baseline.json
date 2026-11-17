@@ -1313,15 +1313,34 @@
         "Variable 'origin' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
+    "scripts/after-pack-node.js": {
+      "TS2339": {
+        "Property 'arch' does not exist on type '{}'.": 1,
+        "Property 'header' does not exist on type 'object'.": 1,
+        "Property 'platform' does not exist on type '{}'.": 1
+      },
+      "TS7006": {
+        "Parameter 'archive' implicitly has an 'any' type.": 1,
+        "Parameter 'archiveName' implicitly has an 'any' type.": 2,
+        "Parameter 'bin' implicitly has an 'any' type.": 1,
+        "Parameter 'binPath' implicitly has an 'any' type.": 1,
+        "Parameter 'cacheDir' implicitly has an 'any' type.": 1,
+        "Parameter 'deployEnv' implicitly has an 'any' type.": 1,
+        "Parameter 'destDir' implicitly has an 'any' type.": 2,
+        "Parameter 'listing' implicitly has an 'any' type.": 1,
+        "Parameter 'projectDir' implicitly has an 'any' type.": 3,
+        "Parameter 'shasumsText' implicitly has an 'any' type.": 2,
+        "Parameter 'version' implicitly has an 'any' type.": 2
+      }
+    },
     "scripts/after-pack.js": {
       "TS18046": {
         "'error' is of type 'unknown'.": 1
       },
       "TS2339": {
-        "Property 'arch' does not exist on type '{}'.": 5,
+        "Property 'arch' does not exist on type '{}'.": 4,
         "Property 'has' does not exist on type 'never'.": 1,
-        "Property 'header' does not exist on type 'object'.": 1,
-        "Property 'platform' does not exist on type '{}'.": 5
+        "Property 'platform' does not exist on type '{}'.": 4
       },
       "TS2345": {
         "Argument of type 'Set<string>' is not assignable to parameter of type 'null | undefined'.": 5,
@@ -1339,19 +1358,13 @@
       },
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 1,
-        "Parameter 'archive' implicitly has an 'any' type.": 1,
-        "Parameter 'archiveName' implicitly has an 'any' type.": 2,
         "Parameter 'b' implicitly has an 'any' type.": 1,
         "Parameter 'base' implicitly has an 'any' type.": 2,
-        "Parameter 'bin' implicitly has an 'any' type.": 1,
-        "Parameter 'binPath' implicitly has an 'any' type.": 1,
-        "Parameter 'cacheDir' implicitly has an 'any' type.": 1,
         "Parameter 'changed' implicitly has an 'any' type.": 2,
         "Parameter 'context' implicitly has an 'any' type.": 2,
         "Parameter 'deployDir' implicitly has an 'any' type.": 2,
-        "Parameter 'deployEnv' implicitly has an 'any' type.": 1,
         "Parameter 'dest' implicitly has an 'any' type.": 2,
-        "Parameter 'destDir' implicitly has an 'any' type.": 3,
+        "Parameter 'destDir' implicitly has an 'any' type.": 1,
         "Parameter 'destRoot' implicitly has an 'any' type.": 1,
         "Parameter 'dir' implicitly has an 'any' type.": 2,
         "Parameter 'dirs' implicitly has an 'any' type.": 1,
@@ -1362,7 +1375,6 @@
         "Parameter 'harnessDest' implicitly has an 'any' type.": 14,
         "Parameter 'harnessSrc' implicitly has an 'any' type.": 7,
         "Parameter 'key' implicitly has an 'any' type.": 1,
-        "Parameter 'listing' implicitly has an 'any' type.": 1,
         "Parameter 'manifest' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 4,
         "Parameter 'nmDest' implicitly has an 'any' type.": 1,
@@ -1371,11 +1383,10 @@
         "Parameter 'packageName' implicitly has an 'any' type.": 3,
         "Parameter 'pin' implicitly has an 'any' type.": 2,
         "Parameter 'pkgDir' implicitly has an 'any' type.": 3,
-        "Parameter 'projectDir' implicitly has an 'any' type.": 5,
+        "Parameter 'projectDir' implicitly has an 'any' type.": 2,
         "Parameter 'resources' implicitly has an 'any' type.": 3,
         "Parameter 'root' implicitly has an 'any' type.": 4,
         "Parameter 'segs' implicitly has an 'any' type.": 1,
-        "Parameter 'shasumsText' implicitly has an 'any' type.": 2,
         "Parameter 'source' implicitly has an 'any' type.": 7,
         "Parameter 'sources' implicitly has an 'any' type.": 1,
         "Parameter 'src' implicitly has an 'any' type.": 3,
@@ -1383,7 +1394,6 @@
         "Parameter 'storeDir' implicitly has an 'any' type.": 1,
         "Parameter 'target' implicitly has an 'any' type.": 8,
         "Parameter 'targetDir' implicitly has an 'any' type.": 2,
-        "Parameter 'version' implicitly has an 'any' type.": 2,
         "Parameter 'workspaceSources' implicitly has an 'any[]' type.": 1
       },
       "TS7016": {
