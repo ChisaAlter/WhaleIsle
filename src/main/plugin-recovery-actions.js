@@ -1,5 +1,12 @@
 'use strict';
 
+/**
+ * @param {{ harness?: { retryFullPlugins: () => unknown } | null,
+ *           startHarness: () => unknown,
+ *           saveConfig: (patch: { pluginRecovery: unknown }) => void,
+ *           emptyPluginRecovery: () => unknown,
+ *           cleanup?: () => void }} deps
+ */
 async function retryFullPluginsFromIpc({
   harness,
   startHarness,
@@ -16,6 +23,11 @@ async function retryFullPluginsFromIpc({
   return undefined;
 }
 
+/**
+ * @param {{ ok: boolean, stopped: boolean,
+ *           retryFull: () => unknown,
+ *           startHarness: () => unknown }} deps
+ */
 async function restartAfterPluginUninstall({
   ok,
   stopped,

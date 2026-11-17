@@ -18,6 +18,11 @@ function resolveMobileWebRoot() {
   return path.join(__dirname, '..', '..', 'mobile', 'web');
 }
 
+/**
+ * @param {string} root
+ * @param {string} urlPath
+ * @returns {string | null}
+ */
 function safeJoin(root, urlPath) {
   // resolveSpaAsset already decoded the URL once; filenames may contain `%`.
   const decoded = String(urlPath || '/');
@@ -35,10 +40,15 @@ function safeJoin(root, urlPath) {
   return resolved;
 }
 
+/** @param {string} file */
 function contentTypeFor(file) {
-  return MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+  return MIME[/** @type {keyof typeof MIME} */ (path.extname(file).toLowerCase())] || 'application/octet-stream';
 }
 
+/**
+ * @param {string | null | undefined} file
+ * @returns {string | null}
+ */
 function existingFile(file) {
   try {
     return file && fs.statSync(file).isFile() ? file : null;
@@ -47,6 +57,11 @@ function existingFile(file) {
   }
 }
 
+/**
+ * @param {string} root
+ * @param {string} urlPath
+ * @returns {{ file: string, type: string } | null}
+ */
 function resolveSpaAsset(root, urlPath) {
   const pathname = decodeURIComponent(String(urlPath || '/').split('?')[0] || '/');
   const last = pathname.split('/').filter(Boolean).pop() || '';

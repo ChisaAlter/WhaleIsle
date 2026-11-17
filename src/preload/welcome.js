@@ -30,14 +30,14 @@ const api = {
   ...locale,
   takeNotice: () => ipcRenderer.invoke(IPC.takeNotice),
   startSignIn: () => ipcRenderer.invoke(IPC.start),
-  cancelSignIn: (id) => ipcRenderer.invoke(IPC.cancel, id),
-  copySignInLink: (id) => ipcRenderer.invoke(IPC.copyLink, id),
-  onAccountState: (listener) => {
-    const receive = (_event, state) => { listener(state); };
+  cancelSignIn: (/** @type {unknown} */ id) => ipcRenderer.invoke(IPC.cancel, id),
+  copySignInLink: (/** @type {unknown} */ id) => ipcRenderer.invoke(IPC.copyLink, id),
+  onAccountState: (/** @type {(state: unknown) => void} */ listener) => {
+    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ state) => { listener(state); };
     ipcRenderer.on(IPC.state, receive);
     return () => { ipcRenderer.removeListener(IPC.state, receive); };
   },
-  saveApiKey: (value) => ipcRenderer.invoke(IPC.saveApiKey, value),
+  saveApiKey: (/** @type {unknown} */ value) => ipcRenderer.invoke(IPC.saveApiKey, value),
   skip: () => ipcRenderer.invoke(IPC.skip),
 };
 contextBridge.exposeInMainWorld('dshWelcome', api);

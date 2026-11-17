@@ -13,20 +13,20 @@ const CHANNELS = {
 
 const api = {
   state: () => ipcRenderer.invoke(CHANNELS.state),
-  command: (action, arg) => ipcRenderer.invoke(CHANNELS.command, action, arg),
+  command: (/** @type {unknown} */ action, /** @type {unknown} */ arg) => ipcRenderer.invoke(CHANNELS.command, action, arg),
   close: () => ipcRenderer.invoke(CHANNELS.close),
-  subscribe: (listener) => {
-    const receive = (_event, view) => { listener(view); };
+  subscribe: (/** @type {(view: unknown) => void} */ listener) => {
+    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ view) => { listener(view); };
     ipcRenderer.on(CHANNELS.changed, receive);
     return () => { ipcRenderer.removeListener(CHANNELS.changed, receive); };
   },
-  onTheme: (listener) => {
-    const receive = (_event, theme) => { listener(theme); };
+  onTheme: (/** @type {(theme: unknown) => void} */ listener) => {
+    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ theme) => { listener(theme); };
     ipcRenderer.on('shell:theme', receive);
     return () => { ipcRenderer.removeListener('shell:theme', receive); };
   },
-  onWindowState: (listener) => {
-    const receive = (_event, state) => { listener(state); };
+  onWindowState: (/** @type {(state: unknown) => void} */ listener) => {
+    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ state) => { listener(state); };
     ipcRenderer.on('shell:window-state', receive);
     return () => { ipcRenderer.removeListener('shell:window-state', receive); };
   },

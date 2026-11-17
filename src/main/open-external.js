@@ -13,7 +13,7 @@ const { isHttpOrHttpsUrl } = require('./local-url');
 async function openExternalHttp(url) {
   if (!isHttpOrHttpsUrl(url)) return false;
   const { shell } = require('electron');
-  await shell.openExternal(url);
+  await shell.openExternal(/** @type {string} */ (url));
   return true;
 }
 

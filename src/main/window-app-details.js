@@ -7,7 +7,11 @@ const { PRODUCT_NAME, LAUNCHER_NAME } = require('../shared/product-identity');
 const DESKTOP_APP_ID = 'ai.deepseek.harness.gui';
 const LAUNCHER_APP_ID = 'ai.deepseek.harness.launcher';
 
-/** Quote one Windows CreateProcess argument, including trailing backslashes. */
+/**
+ * Quote one Windows CreateProcess argument, including trailing backslashes.
+ * @param {unknown} value
+ * @returns {string}
+ */
 function quoteWindowsArgument(value) {
   return `"${String(value).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
 }
@@ -33,6 +37,10 @@ function windowsAppDetails({ launcher = false, isPackaged, execPath, appPath, ic
   };
 }
 
+/**
+ * @param {Electron.BrowserWindow} win
+ * @param {Parameters<typeof windowsAppDetails>[0]} options
+ */
 function applyWindowsAppDetails(win, options) {
   const { appId, ...relaunch } = windowsAppDetails(options);
   // Setting the ID refreshes the taskbar. Electron writes it first within a

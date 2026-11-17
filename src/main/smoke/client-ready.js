@@ -1,6 +1,15 @@
 'use strict';
 
-/** The boot document is never a substitute for the asynchronously created Harness view. */
+/**
+ * The boot document is never a substitute for the asynchronously created Harness view.
+ * @template {{ isDestroyed: () => boolean }} T
+ * @param {(owner: unknown) => T | null | undefined} getContents
+ * @param {unknown} owner
+ * @param {number} [timeoutMs]
+ * @param {() => { isDestroyed: () => boolean } | null} [getWelcomeContents]
+ * @param {() => string | null | undefined} [getStartupFailure]
+ * @returns {Promise<T>}
+ */
 async function waitForHarnessContents(getContents, owner, timeoutMs = 300_000, getWelcomeContents = () => null, getStartupFailure = () => null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

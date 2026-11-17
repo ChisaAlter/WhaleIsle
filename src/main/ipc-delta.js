@@ -11,8 +11,10 @@ const deltaManifest = require('../launcher/delta/manifest');
 let lastDeltaError = '';
 // Test seam: register()/contributeStatus() signatures are frozen, so hermetic
 // The cached-artifact directory can be isolated without changing the IPC edge.
+/** @type {{ deltaDir?: string } | null} */
 let depsOverride = null;
 
+/** @param {{ deltaDir?: string } | null | undefined} deps */
 function setDeltaDeps(deps) {
   depsOverride = deps || null;
   lastDeltaError = '';
@@ -33,17 +35,23 @@ function deltaDir() {
   }
 }
 
+/**
+ * @param {{ handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void,
+ *           send: (event: unknown, channel: string, payload: unknown) => void,
+ *           launcher: { installDelta: (tag: string, onProgress: (payload: unknown) => void) =>
+ *             Promise<{ ok?: boolean, error?: string, message?: string }> } }} ctx
+ */
 function register(ctx) {
   ctx.handle('shell:install-delta', async (event, tag) => {
-    const progress = (payload) => ctx.send(event, 'shell:update-progress', { delta: true, ...payload });
+    const progress = (/** @type {unknown} */ payload) => ctx.send(event, 'shell:update-progress', { delta: true, .../** @type {Record<string, unknown>} */ (payload) });
     try {
-      const result = await ctx.launcher.installDelta(tag, progress);
+      const result = await ctx.launcher.installDelta(/** @type {string} */ (tag), progress);
       lastDeltaError = result && result.ok === false
         ? (result.error || result.message || 'delta-failed')
         : '';
       return result;
     } catch (error) {
-      lastDeltaError = error?.message || String(error);
+      lastDeltaError = String(/** @type {{ message?: unknown } | null | undefined} */ (error)?.message || error);
       return { ok: false, mode: 'delta', error: lastDeltaError };
     }
   });

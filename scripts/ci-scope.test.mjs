@@ -14,9 +14,11 @@ test('documentation and retired governance records do not build the product', ()
   assert.deepEqual(selectChecks(['docs/features/remote.md', 'AGENTS.md', 'README.i18n.yaml', 'vendor/deepseek-harness/docs/testing.md', '.github/pull_request_template.md']),
     { product: false, tools: false, vendor: false, motion: false })
 })
-test('desktop code gets product checks without the upstream matrix', () => {
+test('desktop code gets product and typecheck checks without the upstream matrix', () => {
   assert.deepEqual(selectChecks(['src/main/update.js']),
-    { product: true, tools: false, vendor: false, motion: false })
+    { product: true, tools: true, vendor: false, motion: false })
+  assert.deepEqual(selectChecks(['src/launcher/components/index.js', 'src/main/update.test.js']),
+    { product: true, tools: true, vendor: false, motion: false })
 })
 test('relocated ACP source and tests retain plugin checks while its docs stay lightweight', () => {
   for (const file of ['dsh-acp/lib/index.js', 'dsh-acp/client/client.js', 'dsh-acp/tests/plugin.test.mjs']) {

@@ -31,6 +31,7 @@ function defaultSourceDir() {
   }
 }
 
+/** @param {string} target */
 function pathExists(target) {
   try {
     fs.lstatSync(target);
@@ -40,6 +41,7 @@ function pathExists(target) {
   }
 }
 
+/** @param {string} target */
 function removeLinkOrDir(target) {
   if (!pathExists(target)) {
     return;
@@ -176,6 +178,7 @@ function ensureDesktopDshWhale(options = {}) {
   };
 }
 
+/** @param {unknown} list */
 function withoutDshWhaleAliases(list) {
   const blocked = new Set(DSH_WHALE_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

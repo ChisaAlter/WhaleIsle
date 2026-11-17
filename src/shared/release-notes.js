@@ -7,6 +7,10 @@
   // earlier one ('>>' leaves '>', '*### **' leaves '### *'). Re-run until
   // stable so the result is a fixpoint: plainReleaseNotes is idempotent.
   // Every replacement only removes characters, so the loop terminates.
+  /**
+   * @param {unknown} body
+   * @returns {string}
+   */
   function plainReleaseNotes(body) {
     let text = String(body || '');
     for (;;) {
@@ -32,6 +36,10 @@
 
   // Published releases put the English translation in one folded section.
   // Split before stripping markup so the two complete translations stay apart.
+  /**
+   * @param {unknown} body
+   * @returns {{ id: string, label: string, text: string }[]}
+   */
   function releaseNotesTabs(body) {
     const source = String(body || '');
     const english = /<details>\s*<summary>\s*English\s*<\/summary>([\s\S]*?)<\/details>/i.exec(source);
@@ -49,6 +57,6 @@
     module.exports = { plainReleaseNotes, releaseNotesTabs };
   }
   if (typeof window !== 'undefined') {
-    window.releaseNotes = { plainReleaseNotes, releaseNotesTabs };
+    (/** @type {Window & { releaseNotes?: unknown }} */ (window)).releaseNotes = { plainReleaseNotes, releaseNotesTabs };
   }
 })();

@@ -4,22 +4,27 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const SPACE_RESERVE = 256 * 1024 * 1024;
-const formatBytes = (bytes) => `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GiB`;
+const formatBytes = (/** @type {number} */ bytes) => `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GiB`;
 
 /** Check the actual destination volume, including a not-yet-created directory.
  * Unsupported filesystems are reported to the caller, never confused with zero.
- * This is an estimate/preflight; writes must still handle ENOSPC themselves. */
+ * This is an estimate/preflight; writes must still handle ENOSPC themselves.
+ * @param {string} directory
+ * @param {number} bytes
+ * @param {{ statfs?: typeof fs.statfsSync, reserve?: number }} [options]
+ */
 function checkInstallSpace(directory, bytes, { statfs = fs.statfsSync, reserve = SPACE_RESERVE } = {}) {
   if (!Number.isFinite(bytes) || bytes < 0) throw new TypeError('invalid installation size');
   let probe = path.resolve(directory);
   let stats;
   while (!stats) {
     try { stats = statfs(probe); } catch (error) {
-      if (error.code === 'ENOENT' && path.dirname(probe) !== probe) {
+      const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+      if (code === 'ENOENT' && path.dirname(probe) !== probe) {
         probe = path.dirname(probe);
         continue;
       }
-      if (['ENOSYS', 'ENOTSUP', 'EINVAL'].includes(error.code)) return { checked: false };
+      if (['ENOSYS', 'ENOTSUP', 'EINVAL'].includes(code ?? '')) return { checked: false };
       throw error;
     }
   }

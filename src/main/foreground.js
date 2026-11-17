@@ -6,6 +6,12 @@
 // in the taskbar instead. Explicit requests (tray, second launch, menus) still
 // activate through their own show/focus calls.
 
+/**
+ * @param {{ app?: { on?: Function } | null,
+ *            BrowserWindow?: { getFocusedWindow?: () => Electron.BrowserWindow | null,
+ *                              getAllWindows?: () => Electron.BrowserWindow[] } | null,
+ *            defer?: (callback: () => void) => void }} options
+ */
 function createForegroundPolicy({ app, BrowserWindow, defer = setImmediate }) {
   const focused = () => (typeof BrowserWindow?.getFocusedWindow === 'function' ? BrowserWindow.getFocusedWindow() : null);
   const windows = () => (typeof BrowserWindow?.getAllWindows === 'function' ? BrowserWindow.getAllWindows() : []);
@@ -16,7 +22,11 @@ function createForegroundPolicy({ app, BrowserWindow, defer = setImmediate }) {
   app?.on?.('browser-window-blur', () => defer(() => { away = !focused(); }));
   return {
     isAway: () => away,
-    /** Show `win`, activating it only while the user is still with us. */
+    /**
+     * Show `win`, activating it only while the user is still with us.
+     * @param {Electron.BrowserWindow} win
+     * @param {boolean} [activate]
+     */
     present(win, activate = true) {
       if (activate && !away) {
         win.show();

@@ -88,6 +88,10 @@ const HOST_RPC_METHODS = new Set([
   'commands/execute',
 ]);
 
+/**
+ * @param {unknown} method
+ * @returns {boolean}
+ */
 function isAllowedHostMethod(method) {
   return typeof method === 'string' && HOST_RPC_METHODS.has(method);
 }
@@ -96,18 +100,31 @@ function isAllowedHostMethod(method) {
 const HISTORY_DROP_TYPES = new Set(['assistant/chunk']);
 const CATALOG_PROJECTIONS = new Set(['title', 'sessionListMetadata']);
 
+/**
+ * @param {unknown} entry
+ * @returns {string}
+ */
 function historyEventType(entry) {
   if (!entry || typeof entry !== 'object') return '';
-  if (entry.event && typeof entry.event.type === 'string') return entry.event.type;
-  if (typeof entry.type === 'string') return entry.type;
+  const record = /** @type {{ event?: unknown, type?: unknown }} */ (entry);
+  const event = record.event && typeof record.event === 'object'
+    ? /** @type {{ type?: unknown }} */ (record.event) : null;
+  if (typeof event?.type === 'string') return event.type;
+  if (typeof record.type === 'string') return record.type;
   return '';
 }
 
+/**
+ * @param {unknown} method
+ * @param {unknown} value
+ * @returns {unknown}
+ */
 function slimHostRpcValue(method, value) {
-  if (method === 'session.list' && value && Array.isArray(value.items)) {
+  const record = value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : null;
+  if (method === 'session.list' && record && Array.isArray(record.items)) {
     return {
-      ...value,
-      items: value.items.map((item) => {
+      ...record,
+      items: record.items.map((item) => {
         const projections = item?.projections;
         if (!projections?.values || typeof projections.values !== 'object') return item;
         return {
@@ -124,27 +141,27 @@ function slimHostRpcValue(method, value) {
     };
   }
   if (method !== 'session.history' && method !== 'subagent.history') return value;
-  if (!value || typeof value !== 'object' || !Array.isArray(value.events)) return value;
+  if (!record || !Array.isArray(record.events)) return value;
   return {
-    ...value,
-    events: value.events.filter((entry) => !HISTORY_DROP_TYPES.has(historyEventType(entry))),
+    ...record,
+    events: record.events.filter((entry) => !HISTORY_DROP_TYPES.has(historyEventType(entry))),
   };
 }
 
+/**
+ * @param {unknown} origin
+ * @returns {string}
+ */
 function assertLoopbackHarnessOrigin(origin) {
   const raw = typeof origin === 'string' ? origin.trim() : '';
   if (!raw) {
-    const error = new Error(HARNESS_DOWN_MESSAGE);
-    error.code = 'harness-down';
-    throw error;
+    throw Object.assign(new Error(HARNESS_DOWN_MESSAGE), { code: 'harness-down' });
   }
   let parsed;
   try {
     parsed = new URL(raw);
   } catch {
-    const error = new Error(HARNESS_DOWN_MESSAGE);
-    error.code = 'harness-down';
-    throw error;
+    throw Object.assign(new Error(HARNESS_DOWN_MESSAGE), { code: 'harness-down' });
   }
   if (parsed.protocol !== 'http:') {
     throw new Error('Harness origin must be loopback http');
@@ -164,6 +181,7 @@ function mintRpcId() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** @type {Record<string, string>} */
 const HOST_RPC_ALIAS = {
   'session.history': 'session/page',
   'session.models': 'session/modelCatalog',
@@ -173,8 +191,12 @@ const HOST_RPC_ALIAS = {
 };
 
 /** SPA names use dots (`session.list`); 0.1.2 Host Connection is `/api/session/list`. */
+/**
+ * @param {unknown} method
+ * @returns {{ path: string, wireMethod: string }}
+ */
 function hostRpcTarget(method) {
-  const aliased = HOST_RPC_ALIAS[method];
+  const aliased = typeof method === 'string' ? HOST_RPC_ALIAS[method] : undefined;
   if (aliased) return { path: `/api/${aliased}`, wireMethod: aliased };
   const raw = String(method || '');
   const wireMethod = raw.includes('/') ? raw : raw.replaceAll('.', '/');
@@ -182,6 +204,7 @@ function hostRpcTarget(method) {
 }
 
 /** 0.1.2 Typert wire names. `session.list` is `_request` because the Host method is `list(_request, signal)`. */
+/** @type {Record<string, string>} */
 const HOST_RPC_ARG_WIRE = {
   'session.list': '_request',
   'session.search': 'request',
@@ -224,69 +247,94 @@ const HOST_RPC_ARG_WIRE = {
 const REMOTE_STREAM_MUX_PATH = '/api/remote.mux';
 const WORKSPACE_FOLLOW_TIMEOUT_MS = 8_000;
 
+/**
+ * @param {unknown} payload
+ * @returns {Record<string, unknown>}
+ */
 function spaHistoryRequest(payload) {
-  let address = { kind: 'session', sessionId: payload?.sessionId };
-  if (payload?.address != null) {
-    const supplied = payload.address;
+  const record = payload && typeof payload === 'object'
+    ? /** @type {Record<string, unknown>} */ (payload) : {};
+  /** @type {Record<string, unknown>} */
+  let address = { kind: 'session', sessionId: record.sessionId };
+  if (record.address != null) {
+    const supplied = /** @type {Record<string, unknown>} */ (record.address);
     if (supplied.kind === 'session' && typeof supplied.sessionId === 'string' && supplied.sessionId) {
       address = { kind: 'session', sessionId: supplied.sessionId };
     } else if (supplied.kind === 'subagent' && typeof supplied.parentSessionId === 'string' && supplied.parentSessionId
         && typeof supplied.childSessionId === 'string' && supplied.childSessionId
-        && ['one-shot', 'continuable', 'unknown'].includes(supplied.mode)) {
+        && typeof supplied.mode === 'string' && ['one-shot', 'continuable', 'unknown'].includes(supplied.mode)) {
       address = { kind: 'subagent', parentSessionId: supplied.parentSessionId, childSessionId: supplied.childSessionId, mode: supplied.mode };
     } else {
       throw new Error('无效的会话历史地址');
     }
   }
+  /** @type {Record<string, unknown>} */
   const request = { address };
-  if (Number.isInteger(payload?.throughSeq)) request.throughSeq = payload.throughSeq;
-  if (Number.isInteger(payload?.beforeSeq)) request.beforeSeq = payload.beforeSeq;
-  if (Number.isInteger(payload?.maxMessages)) request.maxMessages = payload.maxMessages;
+  if (Number.isInteger(record.throughSeq)) request.throughSeq = record.throughSeq;
+  if (Number.isInteger(record.beforeSeq)) request.beforeSeq = record.beforeSeq;
+  if (Number.isInteger(record.maxMessages)) request.maxMessages = record.maxMessages;
   return request;
 }
 
+/**
+ * @param {unknown} payload
+ * @returns {Record<string, unknown>}
+ */
 function spaPromptRequest(payload) {
+  const record = payload && typeof payload === 'object'
+    ? /** @type {Record<string, unknown>} */ (payload) : {};
   return {
-    requestId: payload?.requestId || mintRpcId(),
-    sessionId: payload?.sessionId,
-    mode: payload?.mode || 'queue',
-    content: Array.isArray(payload?.content) ? payload.content : [],
+    requestId: record.requestId || mintRpcId(),
+    sessionId: record.sessionId,
+    mode: record.mode || 'queue',
+    content: Array.isArray(record.content) ? record.content : [],
   };
 }
 
+/**
+ * @param {unknown} method
+ * @param {unknown} payload
+ * @returns {Record<string, unknown>}
+ */
 function hostRpcPayload(method, payload) {
+  const record = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? /** @type {Record<string, unknown>} */ (payload) : null;
   if (
-    payload
-    && typeof payload === 'object'
-    && !Array.isArray(payload)
-    && Object.keys(payload).length === 1
-    && payload.args
-    && typeof payload.args === 'object'
-    && !Array.isArray(payload.args)
+    record
+    && Object.keys(record).length === 1
+    && record.args
+    && typeof record.args === 'object'
+    && !Array.isArray(record.args)
   ) {
-    return payload;
+    return record;
   }
   if (method === 'session.models') return { args: {} };
   if (method === 'session.history') return { args: { request: spaHistoryRequest(payload) } };
   if (method === 'session.prompt') return { args: { request: spaPromptRequest(payload) } };
-  const args = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
-  const wire = HOST_RPC_ARG_WIRE[method];
+  const args = record || {};
+  const wire = typeof method === 'string' ? HOST_RPC_ARG_WIRE[method] : undefined;
   if (!wire || Object.prototype.hasOwnProperty.call(args, wire)) {
     return { args };
   }
   return { args: { [wire]: args } };
 }
 
+/**
+ * @param {unknown} method
+ * @param {unknown} value
+ * @returns {unknown}
+ */
 function adaptHostValue(method, value) {
-  if (method === 'session.history' && value && Array.isArray(value.records)) {
+  const record = value && typeof value === 'object' ? /** @type {Record<string, unknown>} */ (value) : null;
+  if (method === 'session.history' && record && Array.isArray(record.records)) {
     return {
-      events: value.records,
-      hasMore: value.hasMore === true,
-      projections: value.projections,
+      events: record.records,
+      hasMore: record.hasMore === true,
+      projections: record.projections,
     };
   }
-  if (method === 'session.models' && value && typeof value === 'object') {
-    return { ...value, current: value.current || value.default || null };
+  if (method === 'session.models' && record) {
+    return { ...record, current: record.current || record.default || null };
   }
   if (method === 'host.createDirectory' && typeof value === 'string' && value) {
     return { path: value };
@@ -294,6 +342,10 @@ function adaptHostValue(method, value) {
   return value;
 }
 
+/**
+ * @param {unknown} raw
+ * @returns {string}
+ */
 function sanitizeHarnessCookie(raw) {
   const first = String(raw || '').split(/\r|\n/)[0].trim();
   if (!first) return '';
@@ -303,6 +355,10 @@ function sanitizeHarnessCookie(raw) {
   return pair;
 }
 
+/**
+ * @param {unknown} origin
+ * @returns {string}
+ */
 function remoteMuxUrl(origin) {
   const originUrl = new URL(assertLoopbackHarnessOrigin(origin));
   const target = new URL(REMOTE_STREAM_MUX_PATH, `${originUrl.origin}/`);
@@ -313,6 +369,10 @@ function remoteMuxUrl(origin) {
   return target.href;
 }
 
+/**
+ * @param {unknown} data
+ * @returns {string}
+ */
 function textFromWsData(data) {
   if (typeof data === 'string') return data;
   if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) return data.toString('utf8');
@@ -323,11 +383,16 @@ function textFromWsData(data) {
   return String(data ?? '');
 }
 
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown> | null}
+ */
 function workspaceListFromFollowFrame(value) {
   if (!value || typeof value !== 'object') return null;
-  const baseline = value.type === 'baseline' && value.value && typeof value.value === 'object'
-    ? value.value
-    : (Array.isArray(value.items) ? value : null);
+  const record = /** @type {Record<string, unknown>} */ (value);
+  const baseline = record.type === 'baseline' && record.value && typeof record.value === 'object'
+    ? /** @type {Record<string, unknown>} */ (record.value)
+    : (Array.isArray(record.items) ? record : null);
   if (!baseline || !Array.isArray(baseline.items)) return null;
   return {
     items: baseline.items,
@@ -338,18 +403,47 @@ function workspaceListFromFollowFrame(value) {
   };
 }
 
+/**
+ * Minimal WebSocket surface used below (browser WebSocket and the `ws`
+ * package both satisfy it).
+ * @typedef {Object} MuxSocket
+ * @property {number} readyState
+ * @property {(data: string) => void} send
+ * @property {() => void} close
+ * @property {(type: string, listener: (event: unknown) => void) => void} addEventListener
+ */
+
+/**
+ * @param {unknown} WebSocketImpl
+ * @param {string} href
+ * @param {unknown} cookie
+ * @returns {MuxSocket}
+ */
 function openRemoteMuxSocket(WebSocketImpl, href, cookie) {
   const WS = WebSocketImpl || globalThis.WebSocket;
   if (typeof WS !== 'function') {
     throw new Error('workspace follow: WebSocket unavailable');
   }
+  const SocketCtor = /** @type {new (url: string, options?: { headers?: Record<string, string> }) => MuxSocket} */ (WS);
   const pair = sanitizeHarnessCookie(cookie);
+  /** @type {{ headers: Record<string, string> }} */
   const options = { headers: {} };
   if (pair) options.headers.Cookie = pair;
   // Node / undici: a non-array 2nd argument is options (Cookie on upgrade).
-  return new WS(href, options);
+  return new SocketCtor(href, options);
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {string | null | undefined} [options.cookie]
+ * @param {string} options.endpoint
+ * @param {unknown} [options.payload]
+ * @param {unknown} [options.WebSocketImpl]
+ * @param {AbortSignal} [options.signal]
+ * @param {number} [options.timeoutMs]
+ * @returns {Promise<unknown>}
+ */
 function takeFirstRemoteMuxItem({
   origin,
   cookie,
@@ -368,6 +462,10 @@ function takeFirstRemoteMuxItem({
       finish(new Error('workspace follow timeout'));
     }, timeoutMs);
 
+    /**
+     * @param {Error | null} [error]
+     * @param {unknown} [value]
+     */
     function finish(error, value) {
       if (settled) return;
       settled = true;
@@ -414,7 +512,8 @@ function takeFirstRemoteMuxItem({
     socket.addEventListener('message', (event) => {
       let frame;
       try {
-        frame = JSON.parse(textFromWsData(event && event.data));
+        const data = event && /** @type {{ data?: unknown }} */ (event).data;
+        frame = JSON.parse(textFromWsData(data));
       } catch {
         return;
       }
@@ -433,19 +532,27 @@ function takeFirstRemoteMuxItem({
     });
 
     socket.addEventListener('error', (event) => {
-      const detail = event && event.message ? event.message : '';
-      finish(new Error(detail ? `workspace follow socket error: ${detail}` : 'workspace follow socket error'));
+      const detail = event ? /** @type {{ message?: unknown }} */ (event).message : '';
+      const text = detail ? String(detail) : '';
+      finish(new Error(text ? `workspace follow socket error: ${text}` : 'workspace follow socket error'));
     });
     socket.addEventListener('close', (event) => {
       if (settled) return;
-      const code = event && event.code != null ? event.code : '';
-      const reason = event && event.reason ? event.reason : '';
+      const info = event ? /** @type {{ code?: unknown, reason?: unknown }} */ (event) : null;
+      const code = info && info.code != null ? String(info.code) : '';
+      const reason = info && info.reason ? String(info.reason) : '';
       finish(new Error(`workspace follow closed${code !== '' ? ` ${code}` : ''}${reason ? ` ${reason}` : ''}`));
     });
   });
 }
 
+/**
+ * @param {URL} originUrl
+ * @param {unknown} cookie
+ * @returns {Record<string, string>}
+ */
 function loopbackHeaders(originUrl, cookie) {
+  /** @type {Record<string, string>} */
   const headers = {
     'content-type': 'application/json',
     accept: 'application/json',
@@ -457,26 +564,36 @@ function loopbackHeaders(originUrl, cookie) {
   return headers;
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {string} options.path
+ * @param {unknown} options.body
+ * @param {string | null | undefined} [options.cookie]
+ * @param {unknown} [options.fetchImpl]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<unknown>}
+ */
 async function postHarnessJson({ origin, path, body, cookie, fetchImpl, signal }) {
   const originUrl = new URL(assertLoopbackHarnessOrigin(origin));
   const target = new URL(path, `${originUrl.origin}/`);
   if (target.origin !== originUrl.origin) {
     throw new Error('Harness origin must be loopback http');
   }
-  const fetchFn = fetchImpl || globalThis.fetch;
+  const fetchFn = /** @type {typeof fetch} */ (fetchImpl || globalThis.fetch);
   const response = await fetchFn(target.href, {
     method: 'POST',
     headers: loopbackHeaders(originUrl, cookie),
     body: JSON.stringify(body),
-    signal,
+    signal: signal ?? null,
     redirect: 'manual',
   });
   const text = await response.text();
   if (!response.ok) {
-    const error = new Error(`host HTTP ${response.status}`);
-    error.status = response.status;
-    error.body = text;
-    throw error;
+    throw Object.assign(new Error(`host HTTP ${response.status}`), {
+      status: response.status,
+      body: text,
+    });
   }
   try {
     return JSON.parse(text);
@@ -485,23 +602,41 @@ async function postHarnessJson({ origin, path, body, cookie, fetchImpl, signal }
   }
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {unknown} options.method
+ * @param {unknown} [options.payload]
+ * @param {string | null | undefined} [options.cookie]
+ * @param {unknown} [options.fetchImpl]
+ * @param {AbortSignal} [options.signal]
+ * @param {unknown} [options.WebSocketImpl]
+ * @returns {Promise<unknown>}
+ */
 async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, signal, WebSocketImpl }) {
   if (!isAllowedHostMethod(method)) {
     throw new Error(`host 方法不允许转发：${method}`);
   }
   if (method === 'workspaceFiles.readImage') {
     const { forwardWorkspaceImage } = require('./dshd-workspace-image.js');
-    return forwardWorkspaceImage({ origin, payload: hostRpcPayload(method, payload ?? {}).args, cookie, fetchImpl, signal });
+    const wrapped = hostRpcPayload(method, payload ?? {});
+    return forwardWorkspaceImage({ origin,
+      payload: /** @type {{ workspaceFileScopeId?: unknown, path?: unknown }} */ (wrapped.args),
+      cookie, fetchImpl: /** @type {typeof fetch | undefined} */ (fetchImpl), signal });
   }
   if (method === 'account.completeSignIn') {
     const { completeAccountSignIn } = require('./dshd-account-callback.js');
-    return completeAccountSignIn({ origin, payload: hostRpcPayload(method, payload ?? {}).args, fetchImpl, signal });
+    const wrapped = hostRpcPayload(method, payload ?? {});
+    return completeAccountSignIn({ origin,
+      payload: /** @type {{ code?: unknown, state?: unknown }} */ (wrapped.args),
+      fetchImpl: /** @type {typeof fetch | undefined} */ (fetchImpl), signal });
   }
   const rpcId = mintRpcId();
   const target = hostRpcTarget(method);
+  /** @type {{ type?: unknown, rpcId?: unknown, result?: unknown } | undefined} */
   let full;
   try {
-    full = await postHarnessJson({
+    full = /** @type {{ type?: unknown, rpcId?: unknown, result?: unknown }} */ (await postHarnessJson({
       origin,
       path: target.path,
       cookie,
@@ -513,9 +648,11 @@ async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, sign
       },
       fetchImpl,
       signal,
-    });
+    }));
   } catch (error) {
-    if (method === 'workspace.list' && error && error.status === 404) {
+    const status = error && typeof error === 'object'
+      ? /** @type {{ status?: unknown }} */ (error).status : undefined;
+    if (method === 'workspace.list' && status === 404) {
       const frame = await takeFirstRemoteMuxItem({
         origin,
         cookie,
@@ -538,29 +675,45 @@ async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, sign
   if (full.rpcId && full.rpcId !== rpcId) {
     throw new Error(`rpcId mismatch for ${method}`);
   }
-  if (!full.result || full.result.ok !== true) {
+  const result = full.result && typeof full.result === 'object'
+    ? /** @type {{ ok?: unknown, error?: unknown, value?: unknown }} */ (full.result) : null;
+  if (result?.ok !== true) {
     return {
       ok: false,
       rpcId,
-      error: full.result?.error || { code: 'internal', message: 'request failed' },
+      error: result?.error || { code: 'internal', message: 'request failed' },
     };
   }
   return {
     ok: true,
     rpcId,
-    value: slimHostRpcValue(method, adaptHostValue(method, full.result.value)),
+    value: slimHostRpcValue(method, adaptHostValue(method, result.value)),
   };
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {unknown} options.rpcId
+ * @param {unknown} [options.value]
+ * @param {string | null | undefined} [options.cookie]
+ * @param {unknown} [options.fetchImpl]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<unknown>}
+ */
 async function forwardHostRespond({ origin, rpcId, value, cookie, fetchImpl, signal }) {
   if (typeof rpcId !== 'string' || !rpcId) {
     throw new Error('respond 缺少 rpcId');
   }
   if (rpcId.startsWith('remote-event:')) {
     const identity = JSON.parse(rpcId.slice('remote-event:'.length));
-    if (!['allowed-once', 'rejected'].includes(value?.outcome)) throw new Error('approval outcome 无效');
+    const outcome = value && typeof value === 'object'
+      ? /** @type {{ outcome?: unknown }} */ (value).outcome : undefined;
+    if (!(typeof outcome === 'string' && ['allowed-once', 'rejected'].includes(outcome))) {
+      throw new Error('approval outcome 无效');
+    }
     return forwardRemoteEventResult({ origin, cookie, fetchImpl, signal, clientId: identity.clientId, eventId: identity.eventId,
-      outcome: { kind: 'result', value: value.outcome } });
+      outcome: { kind: 'result', value: outcome } });
   }
   return postHarnessJson({
     origin,
@@ -576,15 +729,31 @@ async function forwardHostRespond({ origin, rpcId, value, cookie, fetchImpl, sig
   });
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {string | null | undefined} [options.cookie]
+ * @param {unknown} options.clientId
+ * @param {unknown} options.eventId
+ * @param {unknown} options.outcome
+ * @param {unknown} [options.fetchImpl]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<unknown>}
+ */
 async function forwardRemoteEventResult({ origin, cookie, clientId, eventId, outcome, fetchImpl, signal }) {
   if (typeof clientId !== 'string' || !clientId || typeof eventId !== 'string' || !eventId) {
     throw new Error('Remote event 缺少关联 id');
   }
   const rpcId = mintRpcId();
-  const full = await postHarnessJson({ origin, cookie, fetchImpl, signal, path: '/api/$events/result',
-    body: { type: 'client-request', rpcId, method: '$events/result', payload: { args: { clientId, eventId, outcome } } } });
-  if (full?.type !== 'server-response' || full.rpcId !== rpcId || full.result?.ok !== true) {
-    throw new Error(full?.result?.error?.message || 'Remote event 回复失败');
+  const full = /** @type {{ type?: unknown, rpcId?: unknown, result?: unknown } | undefined} */ (
+    await postHarnessJson({ origin, cookie, fetchImpl, signal, path: '/api/$events/result',
+      body: { type: 'client-request', rpcId, method: '$events/result', payload: { args: { clientId, eventId, outcome } } } }));
+  const result = full?.result && typeof full.result === 'object'
+    ? /** @type {{ ok?: unknown, error?: unknown }} */ (full.result) : null;
+  const resultError = result?.error && typeof result.error === 'object'
+    ? /** @type {{ message?: unknown }} */ (result.error) : null;
+  if (full?.type !== 'server-response' || full.rpcId !== rpcId || result?.ok !== true) {
+    throw new Error(/** @type {string | undefined} */ (resultError?.message) || 'Remote event 回复失败');
   }
   return full;
 }

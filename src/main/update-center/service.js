@@ -176,7 +176,7 @@ function createUpdateCenter(deps) {
       for (const file of [partial, final]) {
         // Locked files (scanner, indexer) are left for cleanup(); the job is still dropped.
         safeRemoveSync(file, {
-          log: (target, error) => log(`update-center discard failed for ${path.basename(target)}: ${error.message}`),
+          log: (target, error) => log(`update-center discard failed for ${path.basename(String(target))}: ${error instanceof Error ? error.message : String(error)}`),
         });
       }
     }

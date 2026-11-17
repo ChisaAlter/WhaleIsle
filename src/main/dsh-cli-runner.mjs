@@ -35,7 +35,7 @@ const { collectInternalSecrets, INTERNAL_SECRETS_ENV } = require('../shared/secr
 // loop alive despite unref, so one-shot commands (`dsh plugin …`) never exit.
 if (process.platform !== 'win32') {
   watchParentLifeline({
-    onParentGone: () => {
+    onParentGone: /** @param {string} reason */ (reason) => {
       process.on('SIGTERM', () => {})
       signalProcessTree(process.pid, { signal: 'SIGTERM' })
       setTimeout(() => {

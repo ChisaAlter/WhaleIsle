@@ -105,7 +105,8 @@ class UpdateCenterWindow {
 /**
  * @param {{ ipcMain: any, center: any, centerWindow: UpdateCenterWindow, releaseNotes: any,
  *   authorize: (event: any) => string|null, parentFor: (role: string) => any,
- *   surfaces: () => any[], onPresentation?: (presentation: object) => void }} deps
+ *   surfaces: () => any[], onPresentation?: (presentation: { phase: string, version?: string,
+ *     percent?: number, failure?: string }) => void }} deps
  */
 function registerUpdateCenterIpc(deps) {
   const { ipcMain, center, centerWindow, releaseNotes, authorize, parentFor, surfaces, onPresentation } = deps;

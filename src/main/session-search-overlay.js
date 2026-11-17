@@ -8,6 +8,7 @@ const { webProfileDir } = require('./plugins');
 
 const SESSION_SEARCH_OVERLAY_FILENAME = 'desktop-session-search.patch.yml';
 
+/** @param {{ dshHome?: string }} [options] */
 function resolveDshHome(options = {}) {
   if (typeof options.dshHome === 'string' && options.dshHome.trim()) {
     return path.resolve(options.dshHome.trim());
@@ -19,6 +20,7 @@ function resolveDshHome(options = {}) {
   }
 }
 
+/** @param {string} indexPath */
 function overlayContents(indexPath) {
   const posix = indexPath.replace(/\\/g, '/');
   return [

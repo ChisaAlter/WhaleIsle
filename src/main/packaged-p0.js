@@ -47,8 +47,8 @@ async function verifyPackagedRuntime({ resourcesPath, runtimeRoot, userData, app
   if (mode === 'extracted') {
     if (fs.statSync(archive).size !== identity.archiveBytes) throw new Error('Packaged runtime archive size mismatch');
     const stamp = JSON.parse(fs.readFileSync(path.join(runtimeRoot, '.dshd-runtime.json'), 'utf8'));
-    for (const key of Object.keys(identity)) {
-      if (stamp[key] !== identity[key]) throw new Error(`Runtime stamp mismatch: ${key}`);
+    for (const [key, expected] of Object.entries(identity)) {
+      if (stamp[key] !== expected) throw new Error(`Runtime stamp mismatch: ${key}`);
     }
   }
   const pkg = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'package.json'), 'utf8'));

@@ -13,6 +13,11 @@ const LEGACY_DEFAULT_PUBLIC_APP_BASE_URL = 'http://125.124.85.212:3389/dshd';
 const DEFAULT_PUBLIC_APP_BASE_URL = `https://${DEFAULT_RELAY_HOST}/dshd`;
 const DEFAULT_RELAY_USE_TLS = true;
 
+/**
+ * @param {string} address
+ * @param {string | number} family
+ * @returns {boolean}
+ */
 function isIpv4(address, family) {
   return family === 'IPv4' || family === 4 || /^\d{1,3}(\.\d{1,3}){3}$/.test(address);
 }
@@ -72,6 +77,10 @@ function isVirtualOrLinkLocalIpv4(address) {
   return false;
 }
 
+/**
+ * @param {string} address
+ * @returns {boolean}
+ */
 function isPrivateLanIpv4(address) {
   const parts = String(address || '').split('.').map((part) => Number(part));
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
@@ -89,11 +98,19 @@ function isPrivateLanIpv4(address) {
   return false;
 }
 
+/**
+ * @param {string} hostname
+ * @returns {boolean}
+ */
 function isLoopbackHostname(hostname) {
   const host = String(hostname || '').toLowerCase();
   return host === 'localhost' || host === '127.0.0.1' || host === '::1';
 }
 
+/**
+ * @param {string} hostname
+ * @returns {boolean}
+ */
 function isIpv4Hostname(hostname) {
   const parts = String(hostname || '').split('.');
   if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) {
@@ -210,6 +227,12 @@ function normalizeRelayEndpoint(value) {
   return withoutScheme.includes(':') ? withoutScheme : `${withoutScheme}:443`;
 }
 
+/**
+ * @param {string} address
+ * @param {number | string} port
+ * @param {{ tls?: boolean }} [options]
+ * @returns {string}
+ */
 function publicUrl(address, port, options = {}) {
   return `${options.tls === true ? 'https' : 'http'}://${address}:${Number(port) || 3180}/`;
 }

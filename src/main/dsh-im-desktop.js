@@ -32,6 +32,7 @@ function defaultSourceDir() {
   }
 }
 
+/** @param {string} target */
 function pathExists(target) {
   try {
     fs.lstatSync(target);
@@ -41,6 +42,7 @@ function pathExists(target) {
   }
 }
 
+/** @param {string} target */
 function removeLinkOrDir(target) {
   if (!pathExists(target)) {
     return;
@@ -163,11 +165,15 @@ function ensureDesktopDshIm(options = {}) {
   };
 }
 
-/** @deprecated Use ensureDesktopDshIm — kept as alias for harness wiring. */
+/**
+ * @deprecated Use ensureDesktopDshIm — kept as alias for harness wiring.
+ * @param {Parameters<typeof ensureDesktopDshIm>[0]} options
+ */
 function ensureDshImPlugin(options) {
   return ensureDesktopDshIm(options);
 }
 
+/** @param {unknown} list */
 function withoutDshImAliases(list) {
   const blocked = new Set(DSH_IM_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

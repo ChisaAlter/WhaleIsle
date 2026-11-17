@@ -73,7 +73,7 @@ function writeFileAtomic(file, raw) {
 /**
  * Install the desktop shortcut bridge.
  * @param {object} options
- * @param {object} options.ipcMain - Electron ipcMain (or a compatible mock).
+ * @param {Parameters<typeof createRegisterIpc>[0] & { removeHandler?: (channel: string) => void }} options.ipcMain - Electron ipcMain (or a compatible mock).
  * @param {string} options.userData - device preference directory (keybindings.json lives here).
  * @param {string} options.platform - 'windows' | 'macos' | 'linux'.
  * @param {() => object|undefined} options.getView - Harness BrowserView whose webContents owns the bridge.
@@ -490,7 +490,7 @@ function createShortcutService(options) {
       for (const dispose of [...disposers]) dispose();
       persistence?.dispose();
       for (const channel of [CHANNELS.get, CHANNELS.edit, CHANNELS.recording, CHANNELS.closeWindow]) {
-        ipcMain.removeHandler(channel);
+        ipcMain.removeHandler?.(channel);
       }
     },
     // Test seams.

@@ -112,7 +112,7 @@ function runPlugin(args, onProgress) {
   }
   const env = pluginEnv(resolved.nodeBin);
   return new Promise((resolve) => {
-    const child = spawn(resolved.nodeBin, desktopCliArgs(resolved.cli, ['plugin', '--profile', PROFILE, ...args]), {
+    const child = spawn(resolved.nodeBin, desktopCliArgs(/** @type {string} */ (resolved.cli), ['plugin', '--profile', PROFILE, ...args]), {
       cwd: os.homedir(),
       env,
       windowsHide: true,

@@ -13,7 +13,12 @@ function resolvePnpmEntry() {
   ].find(file => fs.existsSync(file)) || null;
 }
 
-/** Supply the installed CLI with Node and pnpm without a Windows batch script. */
+/**
+ * Supply the installed CLI with Node and pnpm without a Windows batch script.
+ * @param {string} cli
+ * @param {string[]} args
+ * @returns {string[]}
+ */
 function desktopCliArgs(cli, args) {
   const pnpm = resolvePnpmEntry();
   if (!pnpm) throw new Error('未找到桌面内置 pnpm。源码运行请安装项目依赖；安装包请重新安装当前版本。');

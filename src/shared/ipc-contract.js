@@ -58,26 +58,52 @@ const THEME_SURFACES = [
   SURFACES.FILE_PREVIEW, SURFACES.UPDATE_DIALOG, SURFACES.UPDATE_CENTER,
 ];
 
+/**
+ * @typedef {Object} IpcContractRow
+ * @property {string} channel
+ * @property {'invoke' | 'send' | 'event'} kind
+ * @property {string[]} roles
+ * @property {string} [authorize]
+ * @property {string} [transport]
+ * @property {(args: unknown[], auth?: unknown) => unknown[]} [validate]
+ * @property {boolean} [pending]
+ */
+
 const OWNED = 'channel-owned';
 
+/** @type {(value: unknown) => string | undefined} */
 const asString = (value) => (typeof value === 'string' ? value : undefined);
+/** @type {(value: unknown) => Record<string, unknown> | undefined} */
 const asObject = (value) => (isPlainObject(value) ? value : undefined);
+/** @type {(args: unknown[]) => unknown[]} */
 const stringArg = (args) => [asString(args[0])];
+/** @type {(args: unknown[]) => unknown[]} */
 const stringPair = (args) => [asString(args[0]), asString(args[1])];
+/** @type {(args: unknown[]) => unknown[]} */
 const stringTriple = (args) => [asString(args[0]), asString(args[1]), asString(args[2])];
+/** @type {(args: unknown[]) => unknown[]} */
 const objectArg = (args) => [asObject(args[0])];
+/** @type {(args: unknown[]) => unknown[]} */
 const stringObjectPair = (args) => [asString(args[0]), asObject(args[1])];
+/** @type {(args: unknown[]) => unknown[]} */
 const firstArg = (args) => [args[0]];
+/** @type {(args: unknown[]) => unknown[]} */
 const firstTwoArgs = (args) => [args[0], args[1]];
+/** @type {(args: unknown[]) => unknown[]} */
 const firstThreeArgs = (args) => [args[0], args[1], args[2]];
+/** @type {(args: unknown[]) => unknown[]} */
 const nameList = (args) => [Array.isArray(args[0]) ? args[0] : undefined];
+/** @type {(args: unknown[]) => unknown[]} */
 const stringOrObjectArg = (args) => [
   typeof args[0] === 'string' || isPlainObject(args[0]) ? args[0] : undefined,
 ];
+/** @type {(args: unknown[], auth: unknown) => unknown[]} */
 const authOnly = (_args, auth) => [auth];
 // Channel-owned authorize results ride into the handler as the first argument.
+/** @type {(tail: (args: unknown[]) => unknown[]) => (args: unknown[], auth: unknown) => unknown[]} */
 const prependAuth = (tail) => (args, auth) => [auth, ...tail(args)];
 
+/** @type {Readonly<IpcContractRow[]>} */
 const IPC_CONTRACT = Object.freeze([
   // --- Shared chrome surface: window controls, theme, rendering profile ----
   { channel: 'shell:window', kind: 'send', roles: ALL_SURFACES, authorize: OWNED,
@@ -226,11 +252,11 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:marketplace-details', kind: 'invoke', roles: HARNESS_ONLY,
     validate: stringObjectPair },
   { channel: 'shell:marketplace-favorite', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [asString(args[0]), args[1]] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), args[1]] },
   { channel: 'shell:check-marketplace-updates', kind: 'invoke', roles: HARNESS_ONLY,
     validate: optionalObject },
   { channel: 'shell:install-plugin', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [
       typeof args[0] === 'string' || isPlainObject(args[0]) ? args[0] : undefined,
       asObject(args[1]),
     ] },
@@ -252,7 +278,7 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:git-diff', kind: 'invoke', roles: HARNESS_ONLY, validate: stringObjectPair },
   { channel: 'shell:git-check-large-files', kind: 'invoke', roles: HARNESS_ONLY, validate: stringArg },
   { channel: 'shell:git-commit', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [
       asString(args[0]),
       asString(args[1]),
       Array.isArray(args[2]) ? args[2] : undefined,
@@ -260,13 +286,13 @@ const IPC_CONTRACT = Object.freeze([
       asObject(args[4]),
     ] },
   { channel: 'shell:git-push', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [asString(args[0]), args[1]] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), args[1]] },
   { channel: 'shell:git-pull', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [asString(args[0]), args[1]] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), args[1]] },
   { channel: 'shell:git-create-change-request', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [asString(args[0]), asObject(args[1]), args[2]] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), asObject(args[1]), args[2]] },
   { channel: 'shell:git-publish', kind: 'invoke', roles: HARNESS_ONLY,
-    validate: (args) => [asString(args[0]), asObject(args[1]), args[2]] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), asObject(args[1]), args[2]] },
   { channel: 'shell:open-workspace-path', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
   { channel: 'shell:git-stage', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
   { channel: 'shell:git-unstage', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
@@ -299,6 +325,7 @@ const IPC_CONTRACT = Object.freeze([
 
   // --- PTY (harness-owned per sender) ----------------------------------------------
   { channel: 'shell:pty-can-create', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
+    /** @param {unknown[]} args */
     validate(args) {
       const [cwd] = args;
       if (cwd !== undefined && typeof cwd !== 'string') {
@@ -341,7 +368,7 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:preview-zoom-reset', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
     validate: stringArg },
   { channel: 'shell:preview-color-scheme', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
-    validate: (args) => [asString(args[0]), args[1]] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), args[1]] },
   { channel: 'shell:preview-clear-cookies', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
     validate: noArgs },
   { channel: 'shell:preview-clear-cache', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
@@ -353,7 +380,7 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:preview-cancel-pick', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
     validate: stringArg },
   { channel: 'shell:preview-annotation-theme', kind: 'invoke', roles: HARNESS_ONLY,
-    authorize: OWNED, validate: (args) => [asString(args[0]), args[1]] },
+    authorize: OWNED, validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), args[1]] },
   { channel: 'shell:preview-open-pip', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
     validate: prependAuth(stringArg) },
   { channel: 'shell:preview-close-pip', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
@@ -363,7 +390,7 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:preview-stop-recording', kind: 'invoke', roles: HARNESS_ONLY,
     authorize: OWNED, validate: stringArg },
   { channel: 'shell:preview-save-recording', kind: 'invoke', roles: HARNESS_ONLY,
-    authorize: OWNED, validate: (args) => [asString(args[0]), args[1]] },
+    authorize: OWNED, validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), args[1]] },
   { channel: 'shell:preview-reveal-artifact', kind: 'invoke', roles: HARNESS_ONLY,
     authorize: OWNED, validate: stringArg },
   { channel: 'shell:preview-copy-artifact', kind: 'invoke', roles: HARNESS_ONLY,
@@ -392,7 +419,7 @@ const IPC_CONTRACT = Object.freeze([
 
   // --- Keyboard shortcuts (harness-owned per sender) ----------------------------------
   { channel: 'shell:shortcuts-get', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
-    validate: (args) => [args[0], typeof args[1] === 'string' ? args[1] : null] },
+    validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [args[0], typeof args[1] === 'string' ? args[1] : null] },
   { channel: 'shell:shortcuts-edit', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,
     validate: firstTwoArgs },
   { channel: 'shell:shortcuts-recording', kind: 'invoke', roles: HARNESS_ONLY, authorize: OWNED,

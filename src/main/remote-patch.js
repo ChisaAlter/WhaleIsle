@@ -1,10 +1,14 @@
 'use strict';
 
+/** @param {unknown} value */
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Dotted-quad IPv4 with every octet in range, or the all-interfaces wildcard. */
+/**
+ * Dotted-quad IPv4 with every octet in range, or the all-interfaces wildcard.
+ * @param {string} value
+ */
 function isBindableIpv4(value) {
   if (value === '0.0.0.0') {
     return true;
@@ -34,8 +38,11 @@ function normalizeRemotePatch(patch) {
   if (!isPlainObject(patch)) {
     throw new TypeError('Remote patch must be an object');
   }
+  /** @type {{ remoteEnabled?: boolean, remotePort?: number, remoteMode?: 'lan' | 'relay',
+   *           remoteBindAddress?: string, remoteLanTls?: boolean, remoteRelayUrl?: string,
+   *           remoteRelayUseTls?: boolean, remoteRelayToken?: string }} */
   const next = {};
-  for (const [key, value] of Object.entries(patch)) {
+  for (const [key, value] of Object.entries(/** @type {Record<string, unknown>} */ (patch))) {
     if (key === 'remoteEnabled') {
       if (typeof value !== 'boolean') {
         throw new TypeError('remoteEnabled must be a boolean');
@@ -65,7 +72,7 @@ function normalizeRemotePatch(patch) {
       continue;
     }
     if (key === 'remotePort') {
-      if (!Number.isInteger(value) || value < 1024 || value > 65535) {
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1024 || value > 65535) {
         throw new TypeError('remotePort must be an integer from 1024 to 65535');
       }
       next.remotePort = value;

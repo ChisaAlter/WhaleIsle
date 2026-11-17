@@ -52,6 +52,10 @@ const WORKSPACE_DEPENDENCIES_PACKAGE = '@deepseek-ai/dsh-tool-workspace-dependen
 const OFFICE_KIT_PACKAGE = '@deepseek-ai/dsh-office-kit';
 const SKILL_OFFICE_PACKAGE = '@deepseek-ai/dsh-skill-office';
 
+/**
+ * @param {string} file
+ * @param {string} contents
+ */
 function writeAtomic(file, contents) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   atomicWriteFileSync(file, contents, { encoding: 'utf8' });
@@ -87,6 +91,7 @@ function defaultHarnessRoot() {
   }
 }
 
+/** @param {string} profileDir */
 function officeOverlayDir(profileDir) {
   return path.join(profileDir, 'desktop-plugins', OFFICE_DIR_NAME);
 }
@@ -96,7 +101,7 @@ function officeOverlayDir(profileDir) {
  * `DSH_PRIMARY_RUNTIME` (even a wrong one) wins — the carrier semantics treat
  * it as the user's chosen payload, so its failure must surface as-is.
  * @param {{ env?: NodeJS.ProcessEnv, isPackaged?: boolean, resourcesPath?: string,
- *   projectRoot?: string }} options
+ *   projectRoot?: string, bundledRuntimeDir?: string }} options
  * @returns {{ candidates: string[], disabled: boolean }}
  */
 function officeRuntimeCandidates(options = {}) {
@@ -118,7 +123,7 @@ function officeRuntimeCandidates(options = {}) {
  * platform/architecture mismatch — the error text names the expectation so
  * the caller surfaces it verbatim.
  * @param {string} source - Payload directory containing runtime.json.
- * @returns {object} parsed manifest
+ * @returns {{ platform?: unknown, arch?: unknown, payloadDigest?: unknown }} parsed manifest
  */
 function readRuntimeManifest(source) {
   const file = path.join(source, 'runtime.json');
@@ -129,7 +134,7 @@ function readRuntimeManifest(source) {
   try {
     manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (error) {
-    throw new Error(`Office 运行时 runtime.json 无法解析：${error.message}`);
+    throw new Error(`Office 运行时 runtime.json 无法解析：${error instanceof Error ? error.message : String(error)}`);
   }
   if (!manifest || typeof manifest !== 'object'
     || manifest.platform !== process.platform || manifest.arch !== process.arch) {
@@ -309,7 +314,7 @@ function ensureDesktopOfficeRuntime(options = {}) {
   try {
     manifest = readRuntimeManifest(source);
   } catch (error) {
-    return { ok: false, error: error.message };
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   const node = path.join(
     source, 'dependencies', 'node', 'bin',
@@ -330,7 +335,7 @@ function ensureDesktopOfficeRuntime(options = {}) {
     try {
       ({ cli } = resolveOfficeKit(harnessRoot));
     } catch (error) {
-      return { ok: false, error: error.message };
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   } else if (harnessRoot) {
     // Packaged first boot: extraction has not run yet; afterPack already
@@ -377,7 +382,7 @@ function ensureDesktopOfficeRuntime(options = {}) {
     assetRoot,
     node,
     cli,
-    payloadDigest: manifest.payloadDigest,
+    payloadDigest: /** @type {string} */ (manifest.payloadDigest),
   };
 }
 

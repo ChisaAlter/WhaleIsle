@@ -53,6 +53,10 @@ async function killPidTree(pid, { graceMs = 2000 } = {}, deps = {}) {
   });
 }
 
+/**
+ * @param {string} file
+ * @param {{ fs?: typeof fs, log?: (message: string) => void }} [deps]
+ */
 function openLogStream(file, deps = {}) {
   const fsp = deps.fs || fs;
   try {

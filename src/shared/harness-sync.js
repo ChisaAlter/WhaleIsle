@@ -22,17 +22,39 @@ const WORKTREE_NAME = 'dsh-harness-sync-worktree';
 const UPSTREAM_REMOTE = 'upstream-harness';
 
 /**
+ * @typedef {{ status: number, stdout: string, stderr: string }} GitResult
+ * @typedef {(args: string[], options?: object) => GitResult} GitRunner
+ * @typedef {import('./harness-upstream.js').HarnessPin} HarnessPin
+ */
+
+/**
+ * In-progress merge state persisted under the repo git dir.
+ * @typedef {Object} SyncState
+ * @property {string} [worktree]
+ * @property {string} [backupRef]
+ * @property {string} [targetRef]
+ * @property {string} [targetSha]
+ * @property {string} [syntheticOurs]
+ * @property {HarnessPin} [pinBefore]
+ */
+
+/**
  * @param {string[]} args
- * @param {{ cwd?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @param {object} [options]
+ * @returns {GitResult}
  */
 function realGit(args, options = {}) {
-  return spawnSync('git', args, {
+  const opts = /** @type {{ cwd?: string, env?: NodeJS.ProcessEnv }} */ (options);
+  const result = spawnSync('git', args, {
     encoding: 'utf8',
     shell: false,
-    cwd: options.cwd,
-    env: options.env || process.env,
+    cwd: opts.cwd,
+    env: opts.env || process.env,
     maxBuffer: 64 * 1024 * 1024,
   });
+  // spawn failure / signal kill reports status null; downstream treats any
+  // non-zero as failure, so normalize null to -1 rather than leaking null.
+  return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
 }
 
 /**
@@ -47,7 +69,7 @@ function parseSyncArgs(argv) {
       if (parsed.mode !== 'sync' || parsed.dryRun || parsed.ref || parsed.sha) {
         throw new Error('--continue and --abort are exclusive and take no --ref/--sha/--dry-run');
       }
-      parsed.mode = token.slice(2);
+      parsed.mode = token === '--continue' ? 'continue' : 'abort';
       continue;
     }
     if (token === '--dry-run') {
@@ -85,9 +107,11 @@ function parseSyncArgs(argv) {
 }
 
 /**
- * @param {(args: string[], options?: object) => { status: number, stdout: string, stderr: string }} git
+ * @param {GitRunner} git
  * @param {string[]} args
  * @param {object} [options]
+ * @param {string} [message]
+ * @returns {GitResult}
  */
 function gitOk(git, args, options, message) {
   const result = git(args, options);
@@ -97,11 +121,21 @@ function gitOk(git, args, options, message) {
   return result;
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @returns {string}
+ */
 function resolveGitDir(git, root) {
   const gitDir = gitOk(git, ['rev-parse', '--git-dir'], { cwd: root }).stdout.trim();
   return path.resolve(root, gitDir);
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @returns {void}
+ */
 function assertClean(git, root) {
   const status = gitOk(git, ['status', '--porcelain'], { cwd: root }).stdout;
   if (status.trim() !== '') {
@@ -109,22 +143,47 @@ function assertClean(git, root) {
   }
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @returns {GitRunner}
+ */
 function bindGit(git, root) {
-  return (args, options = {}) => git(args, { cwd: options.cwd || root, env: options.env, ...options });
+  return (args, options = {}) => {
+    const opts = /** @type {{ cwd?: string, env?: NodeJS.ProcessEnv }} */ (options);
+    return git(args, { cwd: opts.cwd || root, env: opts.env, ...opts });
+  };
 }
 
+/**
+ * @param {string} gitDir
+ * @param {typeof fs} io
+ * @returns {{ statePath: string, state: SyncState }}
+ */
 function readState(gitDir, io) {
   const statePath = path.join(gitDir, STATE_RELATIVE);
   if (!io.existsSync(statePath)) {
     throw new Error(`no sync state at ${statePath}; nothing to continue or abort`);
   }
-  return { statePath, state: JSON.parse(io.readFileSync(statePath, 'utf8')) };
+  return { statePath, state: /** @type {SyncState} */ (JSON.parse(io.readFileSync(statePath, 'utf8'))) };
 }
 
+/**
+ * @param {string} gitDir
+ * @param {SyncState} state
+ * @param {typeof import('node:fs')} io
+ * @returns {void}
+ */
 function writeState(gitDir, state, io) {
   io.writeFileSync(path.join(gitDir, STATE_RELATIVE), `${JSON.stringify(state, null, 2)}\n`);
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {string} worktree
+ * @returns {void}
+ */
 function removeWorktree(git, root, worktree) {
   const removed = git(['worktree', 'remove', '--force', worktree], { cwd: root });
   if (removed.status !== 0 && fs.existsSync(worktree)) {
@@ -133,11 +192,24 @@ function removeWorktree(git, root, worktree) {
   }
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} worktree
+ * @returns {string[]}
+ */
 function unmergedPaths(git, worktree) {
   const listed = git(['diff', '--name-only', '--diff-filter=U'], { cwd: worktree });
   return listed.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {HarnessPin} pin
+ * @param {string} ref
+ * @param {string} sha
+ * @returns {string}
+ */
 function fetchTarget(git, root, pin, ref, sha) {
   const remotes = gitOk(git, ['remote'], { cwd: root }).stdout.split(/\r?\n/).map((line) => line.trim());
   const source = remotes.includes(UPSTREAM_REMOTE) ? UPSTREAM_REMOTE : (pin.repo || DEFAULT_REPO);
@@ -158,6 +230,12 @@ function fetchTarget(git, root, pin, ref, sha) {
   return peeled;
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {string} mergedTree
+ * @returns {string}
+ */
 function buildCandidate(git, root, mergedTree) {
   const indexFile = path.join(os.tmpdir(), `dsh-harness-index-${process.pid}-${Date.now()}`);
   const env = { ...process.env, GIT_INDEX_FILE: indexFile };
@@ -171,6 +249,12 @@ function buildCandidate(git, root, mergedTree) {
   }
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {string} candidate
+ * @returns {string[]}
+ */
 function assertPrefixOnly(git, root, candidate) {
   // -z emits raw NUL-separated paths: core.quotepath C-quotes non-ASCII names
   // (upstream ships e.g. snapshots/说明.txt) and the quoted form fails the
@@ -185,6 +269,12 @@ function assertPrefixOnly(git, root, candidate) {
   return names;
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {string} pinSha
+ * @returns {void}
+ */
 function printBaseNameStatus(git, root, pinSha) {
   const diff = git(['diff-tree', '--name-status', '-r', `${pinSha}^{tree}`, `HEAD:${PREFIX}`], { cwd: root });
   if (diff.stdout.trim()) {
@@ -192,6 +282,16 @@ function printBaseNameStatus(git, root, pinSha) {
   }
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {HarnessPin} pin
+ * @param {string} ref
+ * @param {string} sha
+ * @param {string} mergedTree
+ * @param {typeof fs} io
+ * @returns {HarnessPin}
+ */
 function applyMergedTree(git, root, pin, ref, sha, mergedTree, io) {
   const candidate = buildCandidate(git, root, mergedTree);
   assertPrefixOnly(git, root, candidate);
@@ -207,6 +307,11 @@ function applyMergedTree(git, root, pin, ref, sha, mergedTree, io) {
   return next;
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} worktree
+ * @returns {string}
+ */
 function writeTree(git, worktree) {
   const leftover = unmergedPaths(git, worktree);
   if (leftover.length > 0) {
@@ -215,8 +320,15 @@ function writeTree(git, worktree) {
   return gitOk(git, ['write-tree'], { cwd: worktree }).stdout.trim();
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {typeof fs} io
+ * @returns {{ status: string, worktree: string | undefined }}
+ */
 function abortSync(git, root, io) {
   const gitDir = resolveGitDir(git, root);
+  /** @type {string | undefined} */
   let worktree;
   try {
     const { state, statePath } = readState(gitDir, io);
@@ -231,7 +343,8 @@ function abortSync(git, root, io) {
       removeWorktree(git, root, leftover);
     }
     io.rmSync(path.join(gitDir, STATE_RELATIVE), { force: true });
-    if (!String(error.message || error).includes('no sync state')) {
+    const message = error instanceof Error && error.message ? error.message : String(error);
+    if (!message.includes('no sync state')) {
       throw error;
     }
   }
@@ -239,20 +352,34 @@ function abortSync(git, root, io) {
   return { status: 'aborted', worktree };
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {typeof fs} io
+ * @returns {{ status: string, pin: HarnessPin, worktree: string | undefined }}
+ */
 function continueSync(git, root, io) {
   const gitDir = resolveGitDir(git, root);
   const { state } = readState(gitDir, io);
-  const mergedTree = writeTree(git, state.worktree);
-  const next = applyMergedTree(git, root, state.pinBefore, state.targetRef, state.targetSha, mergedTree, io);
+  const mergedTree = writeTree(git, /** @type {string} */ (state.worktree));
+  const next = applyMergedTree(git, root, /** @type {HarnessPin} */ (state.pinBefore),
+    /** @type {string} */ (state.targetRef), /** @type {string} */ (state.targetSha), mergedTree, io);
   return { status: 'applied', pin: next, worktree: state.worktree };
 }
 
+/**
+ * @param {GitRunner} git
+ * @param {string} root
+ * @param {{ ref?: string, sha?: string, dryRun?: boolean }} args
+ * @param {typeof fs} io
+ * @returns {{ status: string, pin?: HarnessPin, worktree?: string, conflicts?: string[] }}
+ */
 function startSync(git, root, args, io) {
   assertClean(git, root);
   const pin = readPin(root, io);
   const gitDir = resolveGitDir(git, root);
   gitOk(git, ['update-ref', BACKUP_REF, 'HEAD'], { cwd: root });
-  const targetSha = fetchTarget(git, root, pin, args.ref, args.sha);
+  const targetSha = fetchTarget(git, root, pin, /** @type {string} */ (args.ref), /** @type {string} */ (args.sha));
   assertRc5Witness(bindGit(git, root), pin);
   const oursTree = gitOk(git, ['rev-parse', `HEAD:${PREFIX}`], { cwd: root }).stdout.trim();
   const synthetic = gitOk(
@@ -295,12 +422,12 @@ function startSync(git, root, args, io) {
     git(['update-ref', '-d', BACKUP_REF], { cwd: root });
     return { status: 'dry-run', worktree };
   }
-  const next = applyMergedTree(git, root, pin, args.ref, targetSha, mergedTree, io);
+  const next = applyMergedTree(git, root, pin, /** @type {string} */ (args.ref), targetSha, mergedTree, io);
   return { status: 'applied', pin: next, worktree };
 }
 
 /**
- * @param {{ root: string, args: { mode: string, ref?: string, sha?: string, dryRun?: boolean }, git?: Function, io?: typeof fs }} options
+ * @param {{ root: string, args: { mode: string, ref?: string, sha?: string, dryRun?: boolean }, git?: GitRunner, io?: typeof fs }} options
  */
 function syncHarness(options) {
   const git = options.git || realGit;

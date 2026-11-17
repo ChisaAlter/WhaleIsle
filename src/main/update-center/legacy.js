@@ -3,7 +3,11 @@
 // The launcher service's update operations, answered by the update center in
 // the desktop package so older surfaces cannot start a second, invisible job.
 
-/** Center snapshot → the legacy check payload ({ status, latest, ... }). */
+/**
+ * Center snapshot → the legacy check payload ({ status, latest, ... }).
+ * @param {{ phase?: string, target?: { version?: string, tag?: string, notes?: string } | null,
+ *           current?: string, route?: string, error?: { message?: string } | null }} view
+ */
 function legacyCheck(view) {
   const status = view.phase === 'error' ? 'error' : view.target ? 'available' : 'current';
   return {
@@ -36,7 +40,7 @@ function withUpdateCenter(service, center, openCenter) {
       else if (phase === 'paused' || phase === 'error') await center.command('resume');
       return { status: 'opened', launched: false, updateCenter: true };
     },
-    installRelease: async (tag) => {
+    installRelease: async (/** @type {string} */ tag) => {
       openCenter();
       await center.command('installVersion', tag);
       return { status: 'opened', launched: false, updateCenter: true };

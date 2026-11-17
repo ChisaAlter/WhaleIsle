@@ -81,7 +81,7 @@ function createMobileWebServer(options = {}) {
  */
 function listenMobileWebServer(server, bindAddress, port) {
   return new Promise((resolve, reject) => {
-    const onError = (err) => {
+    const onError = (/** @type {Error} */ err) => {
       cleanup();
       reject(err);
     };

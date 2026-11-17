@@ -38,7 +38,7 @@ function gitIpcNull() {
  * @param {(error: unknown) => unknown} [fallback]
  */
 function guardGitIpc(listener, fallback = gitIpcFailure) {
-  return async (...args) => {
+  return async (/** @type {unknown[]} */ ...args) => {
     try {
       return await listener(...args);
     } catch (error) {

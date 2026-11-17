@@ -21,6 +21,16 @@
 
 const LEVELS = Object.freeze(['read', 'local', 'destructive', 'external', 'code', 'harness-governed']);
 
+/**
+ * @typedef {Object} ToolEffect
+ * @property {string} level
+ * @property {boolean | 'endpoint' | 'keys'} confirm
+ * @property {string} reason
+ * @property {string[]} [keys]
+ * @property {Record<string, { level: string, reason: string }>} [actions]
+ */
+
+/** @type {Readonly<Record<string, ToolEffect>>} */
 const TOOLS = Object.freeze({
   // ---------- dsh-whale (resident whale assistant, preset-scoped) ----------
   whale_list_sessions: { level: 'read', confirm: false, reason: '只读会话列表。' },
@@ -234,6 +244,7 @@ const TOOLS = Object.freeze({
   },
 });
 
+/** @type {Readonly<Record<string, ToolEffect>>} */
 const ENDPOINTS = Object.freeze({
   'POST /install': { level: 'code', confirm: 'endpoint', reason: '安装插件代码并重启；端点内串行桌面确认。' },
   'POST /desktop/plugin': { level: 'code', confirm: 'endpoint', reason: '插件 install/remove/disable/enable；端点内串行桌面确认。' },
@@ -250,6 +261,7 @@ const ENDPOINTS = Object.freeze({
 
 // Ordering used when an action the registry does not know has to fall back
 // to the strictest level the tool can reach.
+/** @type {Readonly<Record<string, number>>} */
 const LEVEL_RANK = Object.freeze({
   read: 0,
   'harness-governed': 0,
@@ -263,6 +275,11 @@ const LEVEL_RANK = Object.freeze({
 // every invocation asks the user again.
 const NEVER_ALWAYS_LEVELS = new Set(['destructive', 'code']);
 
+/**
+ * @param {string} toolName
+ * @param {string} [action]
+ * @returns {string | undefined}
+ */
 function effectOf(toolName, action) {
   const entry = TOOLS[toolName];
   if (!entry) return undefined;

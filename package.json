@@ -17,6 +17,7 @@
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
     "lint": "eslint .",
+    "typecheck": "node scripts/typecheck.mjs",
     "health": "node scripts/health.mjs",
     "test": "node --test \"src/**/*.test.js\" \"mobile/web/**/*.test.js\" \"vendor/dsh-project/tests/*.test.mjs\" \"vendor/dsh-deepseek-tools/tests/*.test.mjs\"",
     "test:deepseek-tools": "node --test vendor/dsh-deepseek-tools/tests/*.test.mjs",
@@ -73,7 +74,9 @@
     "globals": "^17.14.0",
     "knip": "5.88.1",
     "pnpm": "12.12.1",
-    "semver": "^7.8.5"
+    "semver": "^7.8.5",
+    "typescript": "5.9.3",
+    "undici-types": "7.18.2"
   },
   "overrides": {
     "app-builder-lib": {

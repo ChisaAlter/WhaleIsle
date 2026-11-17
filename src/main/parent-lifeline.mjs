@@ -10,9 +10,13 @@
  * must report a dead parent but never keep a finished one-shot invocation
  * (e.g. `dsh plugin …`) alive on its own.
  */
-export function watchParentLifeline({ stdin = process.stdin, onParentGone } = {}) {
+/**
+ * @param {{ stdin?: NodeJS.ReadStream & { unref?: () => void },
+ *           onParentGone: (reason: string) => void }} options
+ */
+export function watchParentLifeline({ stdin = process.stdin, onParentGone }) {
   let fired = false
-  const fire = (reason) => {
+  const fire = (/** @type {string} */ reason) => {
     if (fired) return
     fired = true
     onParentGone(reason)

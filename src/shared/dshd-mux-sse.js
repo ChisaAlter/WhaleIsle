@@ -5,8 +5,13 @@
  * Daemon must parse `data:` frames the same way dsh web `readSse` does.
  */
 
+/**
+ * @param {unknown} buffer
+ * @returns {{ envelopes: object[], rest: string }}
+ */
 function consumeSse(buffer) {
   let rest = typeof buffer === 'string' ? buffer : '';
+  /** @type {object[]} */
   const envelopes = [];
   let boundary = rest.indexOf('\n\n');
   while (boundary !== -1) {
@@ -36,11 +41,20 @@ function consumeSse(buffer) {
  *  `consumeSse` above is kept for the legacy SSE parser tests only. */
 const MUX_DROP_EVENT_TYPES = new Set(['assistant/chunk']);
 
+/**
+ * @param {unknown} envelope
+ * @returns {boolean}
+ */
 function shouldForwardMuxEnvelope(envelope) {
-  const payload = envelope && typeof envelope === 'object' ? envelope.payload : null;
-  if (!payload || typeof payload !== 'object') return true;
+  const record = envelope && typeof envelope === 'object'
+    ? /** @type {Record<string, unknown>} */ (envelope) : null;
+  const payload = record && typeof record.payload === 'object' && record.payload !== null
+    ? /** @type {Record<string, unknown>} */ (record.payload) : null;
+  if (!payload) return true;
   if (payload.type !== 'session/event') return true;
-  const eventType = payload.event && typeof payload.event === 'object' ? payload.event.type : '';
+  const event = payload.event && typeof payload.event === 'object'
+    ? /** @type {Record<string, unknown>} */ (payload.event) : null;
+  const eventType = typeof event?.type === 'string' ? event.type : '';
   return !MUX_DROP_EVENT_TYPES.has(eventType);
 }
 
@@ -68,75 +82,113 @@ const WORKSPACE_INCREMENT_TYPES = Object.freeze({
   archived: 'host/archived-sessions-changed',
 });
 
+/**
+ * @param {unknown} summary
+ * @returns {boolean | undefined}
+ */
 function summaryBlank(summary) {
   if (!summary || typeof summary !== 'object') return undefined;
-  if (typeof summary.blank === 'boolean') return summary.blank;
-  const meta = summary.projections && summary.projections.values
-    ? summary.projections.values.sessionListMetadata
-    : null;
-  return meta && typeof meta.blank === 'boolean' ? meta.blank : undefined;
+  const record = /** @type {{ blank?: unknown, projections?: unknown }} */ (summary);
+  if (typeof record.blank === 'boolean') return record.blank;
+  const projections = record.projections && typeof record.projections === 'object'
+    ? /** @type {{ values?: unknown }} */ (record.projections) : null;
+  const values = projections && typeof projections.values === 'object' && projections.values !== null
+    ? /** @type {{ sessionListMetadata?: unknown }} */ (projections.values) : null;
+  const meta = values && typeof values.sessionListMetadata === 'object' && values.sessionListMetadata !== null
+    ? /** @type {{ blank?: unknown }} */ (values.sessionListMetadata) : null;
+  return typeof meta?.blank === 'boolean' ? meta.blank : undefined;
 }
 
 /**
  * Translate one logical-stream item into the mux payload the SPA consumes.
- * @returns {object|null} payload, or null for ready/baseline/unknown items.
+ * @param {string} endpoint
+ * @param {unknown} value
+ * @returns {Record<string, unknown> | null} payload, or null for ready/baseline/unknown items.
  */
 function mapRemoteStreamItem(endpoint, value) {
   if (!value || typeof value !== 'object') return null;
+  const item = /** @type {Record<string, unknown>} */ (value);
   if (endpoint === '$events') {
-    if (value.type !== 'emit' || typeof value.event !== 'string') return null;
-    const type = SESSION_EMIT_TYPES[value.event];
-    if (!type) return null;
-    const args = Array.isArray(value.args) ? value.args : [];
-    if (value.event === 'api-session/added') {
-      const summary = args[0] && typeof args[0] === 'object' ? args[0] : {};
+    if (item.type !== 'emit' || typeof item.event !== 'string') return null;
+    if (!Object.hasOwn(SESSION_EMIT_TYPES, item.event)) return null;
+    const type = SESSION_EMIT_TYPES[/** @type {keyof typeof SESSION_EMIT_TYPES} */ (item.event)];
+    const args = Array.isArray(item.args) ? item.args : [];
+    if (item.event === 'api-session/added') {
+      const summary = args[0] && typeof args[0] === 'object'
+        ? /** @type {Record<string, unknown>} */ (args[0]) : {};
       const blank = summaryBlank(summary);
       return { ...summary, type, sessionId: summary.sessionId, ...(blank === undefined ? {} : { blank }) };
     }
-    if (value.event === 'api-session/status') {
+    if (item.event === 'api-session/status') {
       return { type, sessionId: args[0], running: args[1] === true };
     }
-    if (value.event === 'api-session/error') {
+    if (item.event === 'api-session/error') {
       return { type, sessionId: args[0], message: typeof args[1] === 'string' ? args[1] : '' };
     }
     return { type, sessionId: args[0] };
   }
   if (endpoint === 'session/control') {
-    if (value.type === 'projection') {
-      return { type: 'session/projection', sessionId: value.sessionId, key: value.key, value: value.value, seq: value.seq };
+    if (item.type === 'projection') {
+      return { type: 'session/projection', sessionId: item.sessionId, key: item.key, value: item.value, seq: item.seq };
     }
-    if (value.type === 'queue') return { type: 'session/queue', sessionId: value.sessionId, items: value.items };
-    if (value.type === 'jobs') return { type: 'session/jobs', sessionId: value.sessionId, jobs: value.jobs };
+    if (item.type === 'queue') return { type: 'session/queue', sessionId: item.sessionId, items: item.items };
+    if (item.type === 'jobs') return { type: 'session/jobs', sessionId: item.sessionId, jobs: item.jobs };
     return null;
   }
   if (endpoint === 'workspace/follow') {
-    const type = WORKSPACE_INCREMENT_TYPES[value.type];
-    if (!type) return null;
-    const { type: _drop, ...rest } = value;
+    if (typeof item.type !== 'string' || !Object.hasOwn(WORKSPACE_INCREMENT_TYPES, item.type)) return null;
+    const type = WORKSPACE_INCREMENT_TYPES[/** @type {keyof typeof WORKSPACE_INCREMENT_TYPES} */ (item.type)];
+    const { type: _drop, ...rest } = item;
     return { type, ...rest };
   }
   return null;
 }
 
+/**
+ * @param {number} ms
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<void>}
+ */
 function sleep(ms, signal) {
   return new Promise((resolve) => {
-    if (signal && signal.aborted) { resolve(); return; }
+    if (signal && signal.aborted) { resolve(undefined); return; }
+    /** @type {ReturnType<typeof setTimeout> & { unref?: () => void }} */
     const timer = setTimeout(done, ms);
     // A pending reconnect must never pin a daemon/test process alive on its own.
     if (typeof timer.unref === 'function') timer.unref();
     function done() {
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', done);
-      resolve();
+      resolve(undefined);
     }
     if (signal) signal.addEventListener('abort', done, { once: true });
   });
 }
 
 /**
+ * Minimal WebSocket surface this loop needs (browser WebSocket and the `ws`
+ * package both satisfy it).
+ * @typedef {Object} MuxSocket
+ * @property {number} readyState
+ * @property {(data: string) => void} send
+ * @property {() => void} close
+ * @property {(type: string, listener: (event: unknown) => void) => void} addEventListener
+ */
+
+/**
  * Keep the catalog streams open until `signal` aborts; reconnect with backoff
  * when the socket closes. Resolves only on abort; rejects only on a bad origin.
  * Approval waterfalls retain the Gateway event generation for their unary reply.
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {string | null | undefined} [options.cookie]
+ * @param {(envelope: object) => void} options.onEnvelope
+ * @param {() => void} [options.onDisconnect]
+ * @param {AbortSignal} [options.signal]
+ * @param {unknown} [options.WebSocketImpl]
+ * @param {unknown} [options.fetchImpl]
+ * @param {number} [options.reconnectDelayMs]
+ * @returns {Promise<void>}
  */
 async function openMuxSse({ origin, cookie, onEnvelope, onDisconnect, signal, WebSocketImpl, fetchImpl, reconnectDelayMs = 1_000 }) {
   const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie, forwardRemoteEventResult } = require('./dshd-host-tunnel.js');
@@ -145,16 +197,19 @@ async function openMuxSse({ origin, cookie, onEnvelope, onDisconnect, signal, We
   target.protocol = 'ws:';
   const WS = WebSocketImpl || globalThis.WebSocket;
   if (typeof WS !== 'function') throw new Error('mux: WebSocket unavailable');
+  const SocketCtor = /** @type {new (url: string, options?: { headers?: Record<string, string> }) => MuxSocket} */ (WS);
   const pair = sanitizeHarnessCookie(cookie);
   let seq = 0;
   let attempt = 0;
 
   while (!(signal && signal.aborted)) {
-    const streamIds = new Map(MUX_STREAMS.map((endpoint) => [`mux-${endpoint}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, endpoint]));
+    const streamIds = new Map(MUX_STREAMS.map((endpoint) => /** @type {[string, string]} */ ([`mux-${endpoint}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, endpoint])));
+    /** @type {{ headers: Record<string, string> }} */
     const options = { headers: {} };
     if (pair) options.headers.Cookie = pair;
-    const socket = new WS(target.href, options);
+    const socket = new SocketCtor(target.href, options);
     let eventClientId = '';
+    /** @type {Map<unknown, Record<string, unknown>>} */
     const approvals = new Map();
     let sawItem = false;
 
@@ -165,7 +220,7 @@ async function openMuxSse({ origin, cookie, onEnvelope, onDisconnect, signal, We
         closed = true;
         if (signal) signal.removeEventListener('abort', onAbort);
         onDisconnect?.();
-        resolve();
+        resolve(undefined);
       };
       function onAbort() {
         try {
@@ -187,8 +242,9 @@ async function openMuxSse({ origin, cookie, onEnvelope, onDisconnect, signal, We
       socket.addEventListener('message', (event) => {
         let frame;
         try {
-          const data = event && event.data;
-          frame = JSON.parse(typeof data === 'string' ? data : Buffer.from(data).toString('utf8'));
+          const data = /** @type {{ data?: unknown }} */ (event).data;
+          frame = JSON.parse(typeof data === 'string' ? data
+            : Buffer.from(/** @type {Uint8Array} */ (data)).toString('utf8'));
         } catch { return; }
         if (!frame || frame.type !== 'item') return;
         const endpoint = streamIds.get(frame.streamId);

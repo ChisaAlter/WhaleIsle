@@ -134,6 +134,11 @@ function isLocalAppNavigationUrl(raw, options = {}) {
   });
 }
 
+/**
+ * @param {unknown} raw
+ * @param {{ resolveLauncherPath?: () => string }} [options]
+ * @returns {boolean}
+ */
 function isLauncherNavigationUrl(raw, options = {}) {
   if (typeof raw !== 'string' || raw.trim() === '') return false;
   return raw.startsWith('file:') && isPackagedRendererFileUrl(raw, 'launcher.html', {
@@ -171,10 +176,10 @@ module.exports = {
   rewriteLoopbackLoadUrl,
   isHttpOrHttpsUrl,
   packagedRendererPath,
-  packagedBootPath: (resolveBootPath) => packagedRendererPath('boot.html', resolveBootPath),
-  packagedBootFileUrl: (resolveBootPath) => pathToFileURL(packagedRendererPath('boot.html', resolveBootPath)).href,
-  packagedLauncherPath: (resolveLauncherPath) => packagedRendererPath('launcher.html', resolveLauncherPath),
-  packagedLauncherFileUrl: (resolveLauncherPath) => pathToFileURL(packagedRendererPath('launcher.html', resolveLauncherPath)).href,
+  packagedBootPath: /** @param {() => string} [resolveBootPath] */ (resolveBootPath) => packagedRendererPath('boot.html', resolveBootPath),
+  packagedBootFileUrl: /** @param {() => string} [resolveBootPath] */ (resolveBootPath) => pathToFileURL(packagedRendererPath('boot.html', resolveBootPath)).href,
+  packagedLauncherPath: /** @param {() => string} [resolveLauncherPath] */ (resolveLauncherPath) => packagedRendererPath('launcher.html', resolveLauncherPath),
+  packagedLauncherFileUrl: /** @param {() => string} [resolveLauncherPath] */ (resolveLauncherPath) => pathToFileURL(packagedRendererPath('launcher.html', resolveLauncherPath)).href,
   shouldAllowPrivilegedNavigate,
   shouldAllowPrivilegedRedirect,
 };

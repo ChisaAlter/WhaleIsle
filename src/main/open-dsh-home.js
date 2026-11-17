@@ -2,6 +2,10 @@
 
 const { tryGetDesktopDshHome } = require('../shared/dsh-home');
 
+/**
+ * @param {string} target
+ * @returns {Promise<string>}
+ */
 function defaultOpenPath(target) {
   return require('electron').shell.openPath(target);
 }

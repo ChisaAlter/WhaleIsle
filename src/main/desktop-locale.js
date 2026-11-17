@@ -290,7 +290,10 @@ const zh = {
 
 /** Locale payload exposed to the Desktop-owned renderer. */
 
-/** Resolve Electron's locale to one shipped Desktop dictionary. */
+/**
+ * Resolve Electron's locale to one shipped Desktop dictionary.
+ * @param {string} locale
+ */
 function resolveDesktopLocale(locale) {
   return locale.toLowerCase().startsWith('zh')
     ? { id: 'zh-CN', messages: zh }
@@ -299,9 +302,9 @@ function resolveDesktopLocale(locale) {
 
 /**
  * Choose a built-in dictionary from the shared preference, then ordered OS languages.
- * @param preference - explicit locale.preference, or null when no language was selected.
- * @param languages - operating-system languages in preference order.
- * @returns the supported dictionary, falling back to English.
+ * @param {string | null | undefined} preference - explicit locale.preference, or null when no language was selected.
+ * @param {string[]} languages - operating-system languages in preference order.
+ * @returns {ReturnType<typeof resolveDesktopLocale>} the supported dictionary, falling back to English.
  */
 function resolveDesktopStartupLocale(preference, languages) {
   const selected = preference && preference.toLowerCase()

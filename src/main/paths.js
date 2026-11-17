@@ -16,10 +16,18 @@ function harnessRoot() {
   return path.join(projectRoot(), 'vendor', 'deepseek-harness');
 }
 
+/**
+ * @param {string} name
+ * @returns {string}
+ */
 function rendererFile(name) {
   return path.join(__dirname, '..', 'renderer', name);
 }
 
+/**
+ * @param {string} name
+ * @returns {string}
+ */
 function assetFile(name) {
   return path.join(__dirname, '..', '..', 'assets', name);
 }

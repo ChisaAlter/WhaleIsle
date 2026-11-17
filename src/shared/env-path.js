@@ -1,9 +1,17 @@
 const path = require('path');
 
+/**
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
 function pathKeys(env) {
   return Object.keys(env).filter((key) => key.toUpperCase() === 'PATH');
 }
 
+/**
+ * @param {{ systemRoot?: string }} [options]
+ * @returns {string}
+ */
 function windowsFallbackPath(options = {}) {
   const root = options.systemRoot || process.env.SystemRoot || process.env.windir || 'C:\\Windows';
   return [

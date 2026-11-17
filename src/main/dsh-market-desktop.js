@@ -16,6 +16,7 @@ const DSH_MARKET_ALIASES = ['dshmarket'];
 const DSH_MARKET_INSERT_ID = 'ui-settings-market';
 const DSH_MARKET_OVERLAY_FILENAME = 'desktop-dsh-market.patch.yml';
 
+/** @param {string} root */
 function resolveMarketSourceDir(root) {
   const candidates = [
     path.join(root, 'packages', 'client', 'ui-settings-market'),
@@ -80,6 +81,7 @@ function ensureDesktopMarket(options = {}) {
   };
 }
 
+/** @param {unknown} list */
 function withoutMarketAliases(list) {
   const blocked = new Set(DSH_MARKET_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

@@ -15,25 +15,39 @@ const POLL_MS = 50;
  * killProcessTree can signal the whole tree. Windows tree kills go through
  * taskkill and need no option. Callers merge this into their own options.
  * @param {NodeJS.Platform} [platform]
+ * @returns {{ detached?: boolean }}
  */
 function spawnTreeOptions(platform = process.platform) {
   return platform === 'win32' ? {} : { detached: true };
 }
 
+/**
+ * @param {number} target
+ * @param {number | string} signal
+ * @returns {NodeJS.ErrnoException | null}
+ */
 function trySignal(target, signal) {
   try {
     process.kill(target, signal);
     return null;
   } catch (error) {
-    return error;
+    return /** @type {NodeJS.ErrnoException} */ (error);
   }
 }
 
+/**
+ * @param {number} pid
+ * @returns {boolean}
+ */
 function pidAlive(pid) {
   const error = trySignal(pid, 0);
   return error === null || error.code !== 'ESRCH';
 }
 
+/**
+ * @param {number} pid
+ * @returns {boolean}
+ */
 function groupAlive(pid) {
   const error = trySignal(-pid, 0);
   return error === null || error.code !== 'ESRCH';
@@ -41,28 +55,52 @@ function groupAlive(pid) {
 
 // "Tree alive" = the leader or any group member. Without detached spawn the
 // group check is ESRCH and the leader pid alone decides.
+/**
+ * @param {number} pid
+ * @param {NodeJS.Platform} platform
+ * @returns {boolean}
+ */
 function treeAlive(pid, platform) {
   return platform === 'win32' ? pidAlive(pid) : pidAlive(pid) || groupAlive(pid);
 }
 
+/**
+ * @param {string} command
+ * @param {string[]} args
+ * @param {number} timeoutMs
+ * @param {typeof execFile} run
+ * @returns {Promise<string>}
+ */
 function execTimed(command, args, timeoutMs, run) {
   return new Promise((resolve, reject) => {
-    run(command, args, {
+    /** @type {import('node:child_process').ExecFileOptions & { stdio?: string[] }} */
+    const options = {
       timeout: timeoutMs,
       windowsHide: true,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }, (error, stdout) => {
+    };
+    run(command, args, options, (error, stdout) => {
       if (error) reject(error);
       else resolve(stdout ? String(stdout) : '');
     });
   });
 }
 
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * @param {number} pid
+ * @param {NodeJS.Platform} platform
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>}
+ */
 async function waitTreeDeath(pid, platform, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (treeAlive(pid, platform)) {
@@ -74,9 +112,16 @@ async function waitTreeDeath(pid, platform, timeoutMs) {
   return true;
 }
 
+/**
+ * @param {number} pid
+ * @param {Error | null | undefined} [cause]
+ * @returns {Error & { code: string }}
+ */
 function treeStopError(pid, cause) {
-  const error = new Error(`进程树未停止（pid ${pid}）${cause ? `：${cause.message}` : ''}`);
-  error.code = 'PROCESS_TREE_STOP_FAILED';
+  const error = Object.assign(
+    new Error(`进程树未停止（pid ${pid}）${cause ? `：${cause.message}` : ''}`),
+    { code: 'PROCESS_TREE_STOP_FAILED' },
+  );
   if (cause) {
     error.cause = cause;
   }
@@ -134,7 +179,7 @@ async function killProcessTree(pid, { graceMs = 2000, signal = 'SIGTERM', run = 
       if (!pidAlive(pid)) {
         return true;
       }
-      throw treeStopError(pid, error);
+      throw treeStopError(pid, /** @type {Error} */ (error));
     }
     if (await waitTreeDeath(pid, platform, graceMs)) {
       return true;

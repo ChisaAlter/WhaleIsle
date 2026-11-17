@@ -1,5 +1,8 @@
 'use strict';
 
+/** @type {Electron.MenuItemConstructorOptions} */
+const SEPARATOR = { type: 'separator' };
+
 /**
  * Tray context-menu rows. Labels are the product copy for TC-DESK-002.
  * @param {{
@@ -14,17 +17,18 @@
  *   updateLabel?: () => string,
  *   onUpdate?: () => void,
  * }} actions
- * @returns {Array<{ label?: string, type?: string, click?: () => void }>}
+ * @returns {Electron.MenuItemConstructorOptions[]}
  */
 function trayMenuTemplate({
   onShow, onOpenLauncher, onSettings, onMarketplace, onRestart, onQuit, onPetToggle, petEnabled, updateLabel, onUpdate,
 }) {
+  /** @type {Electron.MenuItemConstructorOptions[]} */
   const petItem = typeof onPetToggle === 'function' && typeof petEnabled === 'function'
     ? [{
         label: '桌面宠物',
         type: 'checkbox',
         checked: petEnabled(),
-        click: (item) => onPetToggle(typeof item?.checked === 'boolean' ? item.checked : !petEnabled()),
+        click: (/** @type {Electron.MenuItem} */ item) => onPetToggle(typeof item?.checked === 'boolean' ? item.checked : !petEnabled()),
       }]
     : [];
   return [
@@ -35,9 +39,9 @@ function trayMenuTemplate({
     { label: '重启 Harness', click: () => onRestart() },
     ...petItem,
     ...(typeof updateLabel === 'function' && typeof onUpdate === 'function'
-      ? [{ type: 'separator' }, { label: updateLabel(), click: () => onUpdate() }]
+      ? [SEPARATOR, { label: updateLabel(), click: () => onUpdate() }]
       : []),
-    { type: 'separator' },
+    SEPARATOR,
     { label: '退出', click: () => onQuit() },
   ];
 }

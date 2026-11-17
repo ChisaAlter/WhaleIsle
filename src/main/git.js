@@ -965,7 +965,7 @@ async function gitCreateChangeRequest(cwd, input, onProgress) {
   let title = '';
   let body = '';
   // Resolve once and reuse for range copy + `gh pr create --base`.
-  const baseBranch = await resolvePrBaseBranch(root, status.refName, Boolean(status.hasPrimaryRemote), targetRepository);
+  const baseBranch = await resolvePrBaseBranch(root, status.refName, Boolean(status.hasPrimaryRemote), /** @type {{ url: string, defaultBranch: string } | undefined} */ (targetRepository));
   if (preserveProvided && providedTitle) {
     title = providedTitle;
     body = providedBody;
