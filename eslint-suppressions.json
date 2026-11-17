@@ -1,19 +1,6 @@
 {
   "mobile/web/app.js": {
-    "no-unsafe-finally": {
-      "count": 2
-    },
     "whaleisle/no-raw-html": {
-      "count": 1
-    }
-  },
-  "scripts/verify-remote-workspace-live.cjs": {
-    "no-unsafe-finally": {
-      "count": 2
-    }
-  },
-  "src/launcher/install-detect.js": {
-    "whaleisle/open-external-http": {
       "count": 1
     }
   },
@@ -22,34 +9,9 @@
       "count": 2
     }
   },
-  "src/main/index.js": {
-    "whaleisle/open-external-http": {
-      "count": 1
-    }
-  },
-  "src/main/ipc.js": {
-    "whaleisle/open-external-http": {
-      "count": 1
-    }
-  },
-  "src/main/platform-view.js": {
-    "whaleisle/open-external-http": {
-      "count": 1
-    }
-  },
   "src/main/preview-guest-preload.js": {
     "whaleisle/no-raw-html": {
       "count": 3
-    }
-  },
-  "src/main/whalebridge-window.js": {
-    "whaleisle/open-external-http": {
-      "count": 2
-    }
-  },
-  "src/main/window.js": {
-    "whaleisle/open-external-http": {
-      "count": 1
     }
   },
   "src/renderer/feedback.js": {
@@ -75,11 +37,6 @@
   "src/renderer/window-controls.js": {
     "whaleisle/no-raw-html": {
       "count": 2
-    }
-  },
-  "vendor/dsh-with-chatgpt/lib/state.js": {
-    "no-unsafe-finally": {
-      "count": 1
     }
   }
 }

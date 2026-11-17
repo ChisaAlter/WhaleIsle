@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
-const { app, shell } = require('electron');
+const { app } = require('electron');
+const { openExternalFixedTarget } = require('../main/open-external');
 
 const APP_ID = 'ai.deepseek.harness.gui';
 const { PRODUCT_NAME, LEGACY_PRODUCT_NAME } = require('../shared/product-identity');
@@ -374,20 +375,20 @@ function discoverWindowsInstall(deps = {}) {
 async function openWindowsAppsSettings(deps = {}) {
   const doSpawn = deps.spawn || spawn;
   try {
-    await shell.openExternal(SETTINGS_APPS_URL);
+    if (await openExternalFixedTarget(SETTINGS_APPS_URL)) return true;
+  } catch {
+    // fall through to control.exe below
+  }
+  try {
+    const child = doSpawn('control.exe', ['appwiz.cpl'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.unref();
     return true;
   } catch {
-    try {
-      const child = doSpawn('control.exe', ['appwiz.cpl'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: false,
-      });
-      child.unref();
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 

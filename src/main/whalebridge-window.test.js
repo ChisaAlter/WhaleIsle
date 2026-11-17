@@ -55,6 +55,13 @@ function fixture() {
     module, URL, __dirname, console, setImmediate,
     require(name) {
       if (name === 'electron') return { BrowserWindow, nativeTheme, shell: { openExternal: url => openedExternal.push(url) } };
+      if (name === './open-external') return {
+        openExternalHttp: async target => {
+          if (!/^https?:\/\//i.test(target)) return false;
+          openedExternal.push(target);
+          return true;
+        },
+      };
       if (name === './paths') return {
         assetFile: name => path.join('assets', name),
         rendererFile: name => path.join(__dirname, '..', 'renderer', name),

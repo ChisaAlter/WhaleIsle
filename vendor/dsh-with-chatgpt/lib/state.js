@@ -33,6 +33,10 @@ function readJson(file) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
+function removeTemporary(file) {
+  try { fs.unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+
 export function chatUrl(value) {
   if (typeof value !== 'string') throw new Error('Chat URL must be a string.');
   const parsed = new URL(value);
@@ -95,7 +99,7 @@ export class CheckpointStore {
       fs.writeFileSync(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
       fs.renameSync(temporary, file);
     } finally {
-      try { fs.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      removeTemporary(temporary);
     }
     return next;
   }

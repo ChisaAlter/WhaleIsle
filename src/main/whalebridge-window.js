@@ -5,7 +5,8 @@ const path = require('node:path');
 
 let window = null;
 function openWhaleBridgeWindow(url, { activate = true } = {}) {
-  const { BrowserWindow, shell } = require('electron');
+  const { BrowserWindow } = require('electron');
+  const { openExternalHttp } = require('./open-external');
   const parsed = new URL(url);
   const origin = parsed.origin;
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.hostname !== '127.0.0.1') {
@@ -94,13 +95,13 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
     }).catch(error => console.error('[whalebridge] Failed to mount window controls:', error.message));
   });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (/^https?:\/\//i.test(target)) void shell.openExternal(target);
+    void openExternalHttp(target);
     return { action: 'deny' };
   });
   const guardNavigation = (event, target) => {
     if (new URL(target).origin !== origin) {
       event.preventDefault();
-      if (/^https?:\/\//i.test(target)) void shell.openExternal(target);
+      void openExternalHttp(target);
     }
   };
   contents.on('will-navigate', guardNavigation);
