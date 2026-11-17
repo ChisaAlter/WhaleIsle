@@ -51,10 +51,18 @@ app.whenReady().then(async () => {
       win.webContents.setZoomFactor(zoom);
       await js("document.querySelector('[data-tab=import]').click()");
       // The import scan IPC, its render, the resize event and the zoom factor
-      // all land asynchronously; the six session rows plus the CSS viewport
-      // matching the new content size prove every piece settled.
-      await waitForDom(js, `document.querySelectorAll('.import-board-body input[name="session-rel"]').length === 6
-        && Math.abs(innerWidth * ${zoom} - ${width}) < 2 && Math.abs(innerHeight * ${zoom} - ${height}) < 2`);
+      // all land asynchronously. Wait for the six session rows, then for the
+      // CSS viewport to stop changing. Do not require it to equal the
+      // requested size: a CI display smaller than the window (xvfb-run's
+      // default screen) clamps the content size, and the measurements below
+      // are relative to whatever viewport the window actually has.
+      await waitForDom(js, `document.querySelectorAll('.import-board-body input[name="session-rel"]').length === 6`);
+      await waitForDom(js, `(() => {
+        const now = innerWidth + 'x' + innerHeight + '@' + devicePixelRatio;
+        const prev = window.__layoutViewport;
+        window.__layoutViewport = { now, same: prev && prev.now === now ? prev.same + 1 : 0 };
+        return window.__layoutViewport.same >= 5;
+      })()`);
       for (const expanded of [false, true]) {
         await js(`document.querySelector('.import-scope-detail').open = ${expanded}`);
         const measured = await js(`(() => {
