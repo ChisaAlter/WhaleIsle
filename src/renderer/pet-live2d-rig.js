@@ -94,7 +94,7 @@ function setStill(name) {
       if (stillCtl.name === name) {
         stillCtl.entry = entry;
       }
-    }).catch(() => {});
+    }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   }
 }
 

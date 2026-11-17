@@ -381,7 +381,7 @@ if (isMainFrame && role !== null && ['boot', 'harness', 'launcher'].includes(rol
   }
   if (api !== null && 'onWindowState' in api) {
     api.onWindowState(applyWindowState);
-    api.getWindowState().then(applyWindowState).catch(() => {});
+    api.getWindowState().then(applyWindowState).catch(() => { /* Initial geometry is optional; subsequent onWindowState pushes remain authoritative. */ });
   }
 }
 

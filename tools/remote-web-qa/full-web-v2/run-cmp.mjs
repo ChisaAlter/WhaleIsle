@@ -342,7 +342,7 @@ try {
   record('CMP-023', 'Pass', '=CMP-020');
   record('CMP-006-note', 'Pass', '档位行若无 reasoning 隐藏（CMP-008 chip 无档位）');
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }
 console.log('[cmp] done');

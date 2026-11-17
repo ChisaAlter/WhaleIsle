@@ -57,7 +57,7 @@ export class ProjectService {
   // Event-driven accounting runs outside the caller; disposal waits for it so no
   // Project file is written after the writer lock is released.
   track(work, label) { const settled = work.catch(error => this.ctx.logger.warn(`${label}: %s`, error.message)).finally(() => this.background.delete(settled)); this.background.add(settled); }
-  serial(work) { const result = this.tail.then(work); this.tail = result.catch(() => {}); return result; }
+  serial(work) { const result = this.tail.then(work); this.tail = result.catch(() => { /* The original serial operation is returned; a failure must not poison the queue. */ }); return result; }
   async write(change) { if (this.closing && !this.persistOnDispose) fail('unavailable', 'Project is unloading; only runtime cleanup remains.'); await this.table.update('catalog', before => { const next = structuredClone(before); change(next); next.revision++; return next; }); this.catalog = this.table.get('catalog'); }
   project(id) { const row = this.state().projects.find(item => item.id === id); if (!row) fail('missing', 'Project does not exist.'); return row; }
   projectView(project) {
@@ -1148,7 +1148,7 @@ export class ProjectService {
     await this.serial(() => this.notes(project.id)).catch(error => this.ctx.logger.warn('Project drained; notes could not be refreshed: %s', error.message)); this.schedule();
   }
   async drainWorker(project, id) {
-    const member = this.worker(id), launch = this.launches.get(member.workstreamId); if (launch) await launch.catch(() => {});
+    const member = this.worker(id), launch = this.launches.get(member.workstreamId); if (launch) await launch.catch(() => { /* The launch owner reports its failure; teardown still drains the worker. */ });
     const agent = this.ctx.agents.get(id), jobs = this.ctx.get('jobs'), owned = this.jobs(id);
     for (const job of owned) jobs.kill(job.id, id, 'Project work stopped');
     // Waiters precede native disposal, which removes owner records.
@@ -1230,9 +1230,9 @@ export class ProjectService {
   }
   /** Serialize notes.md rewrites per Project: concurrent temp+rename onto the same file fails on Windows (EPERM). */
   notes(id) {
-    const run = (this.notesWrites.get(id) ?? Promise.resolve()).catch(() => {}).then(() => this.writeNotes(id));
+    const run = (this.notesWrites.get(id) ?? Promise.resolve()).catch(() => { /* A previous notes write reports to its caller; the next write must still run. */ }).then(() => this.writeNotes(id));
     this.notesWrites.set(id, run);
-    void run.finally(() => { if (this.notesWrites.get(id) === run) this.notesWrites.delete(id); }).catch(() => {});
+    void run.finally(() => { if (this.notesWrites.get(id) === run) this.notesWrites.delete(id); }).catch(() => { /* The original notes promise is returned; this only removes the completed tracking entry. */ });
     return run;
   }
   async writeNotes(id) {
@@ -1468,5 +1468,5 @@ export class ProjectService {
     for (const agent of coordinators) agent.cancel({ kind: 'user' });
     await Promise.all(coordinators.map(agent => agent.whenIdle()));
     if (!persist) await Promise.all(this.state().workers.map(worker => this.drainWorker(this.project(worker.projectId), worker.sessionId)));
-    await Promise.all([...this.launches.values()].map(promise => promise.catch(() => {}))); await Promise.all([...this.stops.values()]); while (this.background.size) await Promise.all([...this.background]); await this.tail; this.unpolicy(); this.available = false; }
+    await Promise.all([...this.launches.values()].map(promise => promise.catch(() => { /* Launch failures have their own owners; disposal waits for all outstanding launches. */ }))); await Promise.all([...this.stops.values()]); while (this.background.size) await Promise.all([...this.background]); await this.tail; this.unpolicy(); this.available = false; }
 }

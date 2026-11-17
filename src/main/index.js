@@ -189,7 +189,7 @@ if (!gotLock) {
   console.error(`${PRODUCT_NAME} is already running. Quit the installed app before npm start (same appId single-instance lock).`);
   app.quit();
 } else {
-  registerAppEvents({ state, showForeground: windows.showForeground });
+  registerAppEvents({ state, showForeground: windows.showForeground, log: message => dsh.log(message, 'app') });
 
   app.setName(PRODUCT_NAME);
   app.setAppUserModelId('ai.deepseek.harness.gui');

@@ -286,7 +286,7 @@ async function responseText(response, signal) {
   const chunks = [];
   let total = 0;
   const onAbort = () => {
-    reader.cancel(signal.reason).catch(() => {});
+    reader.cancel(signal.reason).catch(() => { /* The abort signal already defines the request failure; the reader may already be cancelled. */ });
   };
   if (signal.aborted) onAbort();
   else signal.addEventListener('abort', onAbort, { once: true });

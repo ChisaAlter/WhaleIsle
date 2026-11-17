@@ -421,7 +421,7 @@ async function replaceDirJournaled(from, dest, { opId } = {}) {
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
     await fs.promises.cp(from, tmp, { recursive: true, verbatimSymlinks: false });
   } catch (error) {
-    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => {});
+    await fs.promises.rm(tmp, { recursive: true, force: true }).catch(() => { /* Return the original import failure even if removal of the task temporary copy fails. */ });
     return { ok: false, opId: id, error: error.message || String(error) };
   }
   return commitStagedDir(tmp, dest, { opId: id });

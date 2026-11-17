@@ -59,7 +59,7 @@ test('killProcessTree stops a detached parent and its SIGTERM-ignoring grandchil
   });
   let leafPid = 0;
   t.after(async () => {
-    await killProcessTree(parent.pid).catch(() => {});
+    await killProcessTree(parent.pid).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     if (leafPid) {
       try { process.kill(leafPid, 'SIGKILL'); } catch { /* already gone */ }
     }
@@ -76,7 +76,7 @@ test('killProcessTree stops a detached parent and its SIGTERM-ignoring grandchil
 
 test('killProcessTree falls back to the single pid when the caller did not start a group', posixOnly, async (t) => {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
-  t.after(async () => killProcessTree(child.pid).catch(() => {}));
+  t.after(async () => killProcessTree(child.pid).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ }));
   assert.equal(alive(child.pid), true);
   // No detached spawn: -child.pid is not a group → ESRCH → single-pid signal.
   const stopped = await killProcessTree(child.pid, { graceMs: 200 });
@@ -89,7 +89,7 @@ test('killProcessTree escalates to SIGKILL for a detached child that ignores SIG
     stdio: 'ignore',
     ...spawnTreeOptions(),
   });
-  t.after(async () => killProcessTree(child.pid).catch(() => {}));
+  t.after(async () => killProcessTree(child.pid).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ }));
   await new Promise((resolve) => setTimeout(resolve, 50));
   const stopped = await killProcessTree(child.pid, { graceMs: 150 });
   assert.equal(stopped, true);
@@ -98,7 +98,7 @@ test('killProcessTree escalates to SIGKILL for a detached child that ignores SIG
 
 test('killProcessTree SIGKILLs the single pid when a non-group child ignores SIGTERM', posixOnly, async (t) => {
   const child = spawn(process.execPath, ['-e', LEAF_SOURCE], { stdio: 'ignore' });
-  t.after(async () => killProcessTree(child.pid).catch(() => {}));
+  t.after(async () => killProcessTree(child.pid).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ }));
   await new Promise((resolve) => setTimeout(resolve, 50));
   // No group leader: the escalation's group SIGKILL is ESRCH, so the
   // single-pid fallback must be what removes the child.

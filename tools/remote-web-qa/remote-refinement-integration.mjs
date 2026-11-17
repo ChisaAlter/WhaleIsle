@@ -182,15 +182,15 @@ try {
   const message = redact(error.stack || error);
   results.push({ name: 'integration failure', ok: false, error: message });
   console.error(message);
-  if (appPage) await appPage.screenshot({ path: join(output, 'desktop-failure.png') }).catch(() => {});
+  if (appPage) await appPage.screenshot({ path: join(output, 'desktop-failure.png') }).catch((error) => { console.warn('[tools/remote-web-qa/remote-refinement-integration.mjs] background operation failed', error); });
   const statusFile = join(userData, 'last-desktop-start.json');
   if (existsSync(statusFile)) await writeFile(join(output, 'desktop-start.json'), redact(readFileSync(statusFile, 'utf8')));
   process.exitCode = 1;
 } finally {
-  await appPage?.evaluate(() => window.shell.saveRemote({ remoteEnabled: false })).catch(() => {});
-  await browser?.close().catch(() => {});
-  await desktop?.close().catch(() => {});
-  if (child?.pid && child.exitCode === null) await killProcessTree(child.pid, { signal: 'SIGKILL' }).catch(() => {});
+  await appPage?.evaluate(() => window.shell.saveRemote({ remoteEnabled: false })).catch((error) => { console.warn('[tools/remote-web-qa/remote-refinement-integration.mjs] background operation failed', error); });
+  await browser?.close().catch(() => { /* Continue releasing the test server after the desktop has already closed. */ });
+  await desktop?.close().catch(() => { /* Continue releasing the test server after the desktop has already closed. */ });
+  if (child?.pid && child.exitCode === null) await killProcessTree(child.pid, { signal: 'SIGKILL' }).catch(() => { /* Continue releasing the test server after the desktop has already closed. */ });
   if (spa) await new Promise((done) => spa.server.close(done));
   await writeFile(join(output, 'results.json'), JSON.stringify({ results, fixture: { userData, workspace, harnessPort, remotePort, debugPort } }, null, 2));
   await writeFile(join(output, 'source-log.txt'), logs);

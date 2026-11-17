@@ -350,7 +350,7 @@ try {
     return { status: 'Pass', note: 'unlist 两端消失；磁盘仍在' };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }
 console.log('[retest-menu3] done');

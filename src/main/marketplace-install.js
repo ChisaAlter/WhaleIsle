@@ -536,7 +536,7 @@ async function captureInstallSnapshot() {
     }
     return { dir, entries };
   } catch (error) {
-    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => { /* Preserve the original installation failure if temporary cleanup also fails. */ });
     throw error;
   }
 }

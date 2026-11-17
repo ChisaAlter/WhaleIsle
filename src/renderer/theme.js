@@ -66,7 +66,7 @@ function watchTheme() {
   if (api && typeof api.getConfig === 'function') {
     Promise.resolve(api.getConfig())
       .then((config) => applyTheme(config.themeTokens))
-      .catch(() => {});
+      .catch((error) => { console.warn('[src/renderer/theme.js] background operation failed', error); });
   }
 }
 

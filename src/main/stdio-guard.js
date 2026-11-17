@@ -101,7 +101,7 @@ function handleUncaughtException(err, deps = {}) {
   log(`主进程未捕获异常：${(err && err.stack) || err}`);
   // The report is a diagnostic aid: it may fail, but never into a second uncaught error.
   try {
-    void Promise.resolve(deps.report?.(err)).catch(() => {});
+    void Promise.resolve(deps.report?.(err)).catch(() => { /* Crash-report failure must not recursively trigger another uncaught exception. */ });
   } catch {
     // Reporting failed synchronously; the error is already in the log.
   }

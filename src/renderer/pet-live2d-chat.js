@@ -166,7 +166,7 @@ function chatSetBusy(next) {
 }
 
 function chatFocusWindow(on) {
-  void Promise.resolve(petShell.chatFocus?.({ focus: on })).catch(() => {});
+  void Promise.resolve(petShell.chatFocus?.({ focus: on })).catch(() => { /* Focus telemetry may race overlay closure; the next focus event reconciles it. */ });
 }
 
 // Rebuild the thread from the shared session tail (poll/backfill path).

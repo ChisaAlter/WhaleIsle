@@ -30,7 +30,7 @@ export function loadMachines(file) {
       const explicitNone = Object.prototype.hasOwnProperty.call(j, 'currentId') && j.currentId == null
       return { list, currentId, explicitNone }
     }
-  } catch {}
+  } catch (error) { if (error?.code !== 'ENOENT') console.warn('[dsh-remote/registry] 读取 SSH 主机配置失败；请检查文件权限与 JSON 格式。', error); }
   return { list: [], currentId: null, explicitNone: false }
 }
 
@@ -41,7 +41,7 @@ export function loadMachines(file) {
  *  none", nor clears an explicit choice. When no previous file exists the
  *  `currentId` key is omitted entirely (fresh registry = "no choice yet"). */
 export function saveMachines(file, list, currentId, keepCurrentKey = true) {
-  try { mkdirSync(path.dirname(file), { recursive: true }) } catch {}
+  try { mkdirSync(path.dirname(file), { recursive: true }) } catch { /* The following write reports a directory or permission failure to the caller. */ }
   let stored = currentId
   let hasStored = keepCurrentKey
   if (!keepCurrentKey) {

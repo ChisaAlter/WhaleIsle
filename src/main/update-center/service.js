@@ -409,7 +409,7 @@ function createUpdateCenter(deps) {
     if (!controller) return;
     abortReason = reason;
     controller.abort();
-    await running?.catch(() => {});
+    await running?.catch(() => { /* The cancelled update operation reports its own failure; wait before starting another. */ });
   }
 
   async function installNow() {
@@ -464,7 +464,7 @@ function createUpdateCenter(deps) {
     if (autoTimer) timers.clearTimeout(autoTimer);
     autoTimer = timers.setTimeout(async () => {
       autoTimer = null;
-      if (!BUSY.has(model.phase)) await check({ manual: false }).catch(() => {});
+      if (!BUSY.has(model.phase)) await check({ manual: false }).catch(() => { /* check publishes the update failure in model state; automatic polling must remain scheduled. */ });
       if (!autoTimer) scheduleAuto(AUTO_INTERVAL_MS);
     }, delay);
     autoTimer?.unref?.();

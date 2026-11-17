@@ -342,7 +342,7 @@ export class AgentAuthManager {
       }
       if (entry) {
         this.entries.set(agent.id, entry);
-        entry.api.refreshMethods().catch(() => {});
+        entry.api.refreshMethods().catch((error) => { console.warn('[dsh-acp/lib/agent-auth.js] background operation failed', error); });
       }
       return entry;
     });
@@ -488,7 +488,7 @@ export class AgentAuthManager {
   // spawns for method discovery).
   async markAuthenticated(agent) {
     const entry = this.entries.get(agent.id) || (await this._authStateEntry(agent));
-    await entry?.authState?.set(true).catch(() => {});
+    await entry?.authState?.set(true);
     this.clearAccountStatus(agent.id);
   }
 
@@ -704,7 +704,7 @@ export class AgentAuthManager {
     const entry = this.entries.get(agentId);
     const flowId = entry?.lastState?.flowId;
     if (entry?.api && flowId) {
-      await entry.api.cancel(flowId).catch(() => {});
+      await entry.api.cancel(flowId).catch(() => { /* The login flow may already have ended; local cancellation state is cleared below. */ });
     }
   }
 
@@ -724,7 +724,7 @@ export class AgentAuthManager {
     this.statusCache.clear();
     const disposal = (async () => { if (entry?.api) { try { await entry.api.invalidate(); } finally { await entry.api.dispose(); } } })();
     this.pendingDisposals.add(disposal);
-    disposal.finally(() => this.pendingDisposals.delete(disposal)).catch(() => {});
+    disposal.finally(() => this.pendingDisposals.delete(disposal)).catch(() => { /* The returned disposal promise reports failures; this only removes its tracking entry. */ });
     return disposal;
   }
 

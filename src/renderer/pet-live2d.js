@@ -33,7 +33,7 @@ function celebrateLevelUp() {
 // Care events ride to main where they persist; the pushed snapshot comes
 // back with fresh stats. feedToken is applied main-side inside feedTokens.
 function care(kind) {
-  void Promise.resolve(petShell.care?.({ kind })).catch(() => {});
+  void Promise.resolve(petShell.care?.({ kind })).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
 }
 
 function onGrowthPush(snap) {
@@ -114,9 +114,9 @@ async function mount() {
     dialogueStore = store;
     LINES = store.global || {};
     wireDialogue();
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   // The panel avatar needs greet; fallback poses load on demand in setStill.
-  void loadStill('greet').catch(() => {});
+  void loadStill('greet').catch(() => { /* The optional greeting still leaves the model pose visible. */ });
   // Main process relays the persisted screen position; convert it to
   // canvas coordinates by subtracting the overlay's own origin.
   petLifetime.keep(petShell.onLayout?.((layout) => {
@@ -174,13 +174,13 @@ async function mount() {
   void Promise.resolve(petShell.getGrowth?.()).then((snap) => {
     if (snap && !growth) { growth = snap; }
     if (snap && snap.stats) { stats = snap.stats; }
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   // Pet settings: pull once, then ride the change push. applySettings is
   // the single fan-out point for side effects (scale rect, timers, roam
   // rect) — writes are owned by the main window's settings page.
   void Promise.resolve(petShell.getSettings?.()).then((s) => {
     if (s && typeof s === 'object') { applySettings(s); }
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   petLifetime.keep(petShell.onSettings?.((s) => {
     if (s && typeof s === 'object') { applySettings(s); }
   }));
@@ -224,7 +224,7 @@ async function mount() {
       // The rig is the visible renderer now — pull the state stills it draws.
       for (const name of ['pick-up', 'running', 'eat', 'sleep', 'react-head',
         'angry', 'celebrate', 'star', 'tail-swing']) {
-        void loadStill(name).catch(() => {});
+        void loadStill(name).catch(() => { /* An unavailable optional still leaves the existing model pose visible. */ });
       }
     }
   }

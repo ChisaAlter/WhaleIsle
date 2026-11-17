@@ -384,7 +384,7 @@ function startRelocatePoll() {
   petLifetime.clearInterval(relocatePoll);
   relocatePoll = petLifetime.interval(() => {
     if (dragging) {
-      void Promise.resolve(petShell.relocate?.({})).catch(() => {});
+      void Promise.resolve(petShell.relocate?.({})).catch(() => { /* Transient drag telemetry may race overlay closure; final position uses dragCommit. */ });
     }
   }, 150);
 }
@@ -436,7 +436,7 @@ function onCanvasPointerDown(event) {
       console.log('pet: feed button hit');
       if (growth && growth.nextFeed > 0) {
         closePanel('feed-action');
-        void Promise.resolve(petShell.feedTokens?.({})).catch(() => {});
+        void Promise.resolve(petShell.feedTokens?.({})).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
       }
       return;
     }
@@ -537,7 +537,7 @@ function landFromPhys(now, fromThrow = false) {
     x: Math.round(drawPos.x + overlayOrigin.x),
     y: Math.round(drawPos.y + overlayOrigin.y),
   };
-  void Promise.resolve(petShell.dragCommit?.(petScreen)).catch(() => {});
+  void Promise.resolve(petShell.dragCommit?.(petScreen)).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
 }
 
 function endDrag(event) {

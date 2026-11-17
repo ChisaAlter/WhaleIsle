@@ -98,7 +98,7 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
     if (reapedPreviewIds.size === 0 && reapedSingletons.size === 0) return;
     void Promise.resolve()
       .then(() => teardownOwnedResources(reapedPreviewIds, reapedSingletons, reapedGeneration))
-      .catch(() => {});
+      .catch((error) => { console.warn('[src/main/preview.js] background operation failed', error); });
   }
 
   function bindHost(sender) {

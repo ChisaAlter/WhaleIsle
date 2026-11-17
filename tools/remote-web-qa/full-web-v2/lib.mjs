@@ -306,7 +306,7 @@ export async function desktopType(page, text) {
   try {
     await cdp.send('Input.insertText', { text });
   } finally {
-    await cdp.detach().catch(() => {});
+    await cdp.detach().catch(() => { /* The temporary CDP target may have already detached; preserve the original QA outcome. */ });
   }
   const got = await page.evaluate(() => (document.querySelector('[data-composer-input]')?.innerText || '').trim());
   return got.includes(text.slice(0, 8)) ? 'ok' : `mismatch:${got.slice(0, 30)}`;

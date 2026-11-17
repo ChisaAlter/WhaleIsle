@@ -37,5 +37,5 @@ try {
     return { status: 'Pass', note: `\u8f93\u5165\u5373\u5207\u641c\u7d22\u6001\uff08\u201c${immediate.text}\u201d\uff09\uff1b3s \u540e ${settled.rows} \u884c\uff08\u226420${settled.more ? '\uff0c\u6709\u66f4\u591a\u63d0\u793a' : ''}\uff09\uff1b\u6e05\u7a7a\u540e\u56de\u5230 ${back} \u884c\u5168\u91cf` };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

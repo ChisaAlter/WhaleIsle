@@ -185,7 +185,7 @@ async function submitChat(text) {
       // catches up. Only append when the tail hasn't published it yet.
       let shown = false;
       if (chatShared) {
-        await Promise.resolve(chatRefreshState()).catch(() => {});
+        await Promise.resolve(chatRefreshState()).catch(() => { /* The original chat result owns its outcome; state pushes can reconcile the transcript. */ });
         const last = chatLog[chatLog.length - 1];
         shown = last?.role === 'her' && last.text.slice(0, 60) === res.reply.slice(0, 60);
       }
@@ -195,13 +195,13 @@ async function submitChat(text) {
     }
     if (res?.ok === true && res.via === 'whale') {
       // A completed tool-only turn can legitimately have no closing prose.
-      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => {});
+      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => { /* The completed tool-only turn has no prose; state pushes can reconcile the transcript. */ });
       return;
     }
     // Whale-path failures already get a precise error row — a random quip
     // on top would only muddy it.
     if (res?.via === 'whale') {
-      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => {});
+      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => { /* The precise Whale failure row below owns the outcome; state pushes can reconcile the transcript. */ });
       const replyShown = res.reply && chatLog.slice(-2).some((row) => row.role === 'her'
         && row.text.slice(0, 60) === res.reply.slice(0, 60));
       if (res.reply && !replyShown) chatAppend('her', res.reply);
@@ -288,7 +288,7 @@ function bindChatDom() {
     if (chatPickerOpen && !chatDom.contains(event.target) && !chatPickerEl?.contains(event.target)) { chatClosePicker(); }
   });
   petLifetime.listen(chatPart('#pc-open'), 'click', () => {
-    void Promise.resolve(petShell.openWhale?.()).catch(() => {});
+    void Promise.resolve(petShell.openWhale?.()).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   });
   // The card never folds itself: only ✕ / Esc / the 聊聊 chip close it.
   // Clicking another window just blurs this one — the card stays put, and

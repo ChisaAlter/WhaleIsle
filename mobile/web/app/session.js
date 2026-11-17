@@ -405,7 +405,7 @@ export function pullCurrentHistory() {
       renderComposer();
       renderApproval();
     })
-    .catch(() => {})
+    .catch((error) => { console.warn('[mobile/web/app.js] background operation failed', error); })
     .finally(() => { historyPullInflight = null; });
   return historyPullInflight;
 }

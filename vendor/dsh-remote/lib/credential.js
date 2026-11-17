@@ -184,7 +184,7 @@ export async function deleteSecret(machineId, secretsDir) {
   const acc = account(machineId)
   try {
     if (process.platform === 'darwin') {
-      await run('security', ['delete-generic-password', '-s', SERVICE, '-a', acc]).catch(() => {})
+      await run('security', ['delete-generic-password', '-s', SERVICE, '-a', acc])
       return
     }
     if (process.platform === 'win32') {
@@ -192,7 +192,7 @@ export async function deleteSecret(machineId, secretsDir) {
       return
     }
     if (process.platform === 'linux') {
-      await run('secret-tool', ['clear', 'service', SERVICE, 'account', acc]).catch(() => {})
+      await run('secret-tool', ['clear', 'service', SERVICE, 'account', acc])
     }
   } catch { /* best effort */ }
 }

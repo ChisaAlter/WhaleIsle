@@ -189,6 +189,8 @@ export default [
     languageOptions: { ecmaVersion: 'latest' },
     rules: {
       'no-dupe-keys': 'error',
+      'no-empty': 'error',
+      'whaleisle/no-empty-promise-catch': 'error',
       'no-dupe-class-members': 'error',
       'no-dupe-else-if': 'error',
       'no-duplicate-case': 'error',

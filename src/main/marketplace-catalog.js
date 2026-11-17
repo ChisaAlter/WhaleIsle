@@ -298,7 +298,7 @@ async function readBodyCapped(response, maxBytes) {
     }
     size += value.byteLength;
     if (size > maxBytes) {
-      await reader.cancel().catch(() => {});
+      await reader.cancel().catch(() => { /* The size limit error below owns the failed request; the reader may already be cancelled. */ });
       throw new Error('插件目录响应过大');
     }
     chunks.push(Buffer.from(value));

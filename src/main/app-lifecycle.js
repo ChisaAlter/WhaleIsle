@@ -405,7 +405,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
         let finalTimer;
         try {
           await Promise.race([
-            shutdownForQuit().catch(() => {}),
+            shutdownForQuit().catch(() => { /* Final quit must continue after the shutdown path has reported its failure. */ }),
             /** @type {Promise<void>} */ (new Promise((resolve) => {
               finalTimer = setTimeout(() => {
                 dsh.log('退出：资源清理等待超时，结束桌面进程', 'error');

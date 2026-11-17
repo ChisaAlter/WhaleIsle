@@ -379,7 +379,7 @@ function bind() {
   }
   if (api?.updateCenter) {
     api.updateCenter.onState((view) => adoptUpdateCenter(view));
-    void api.updateCenter.state().then(adoptUpdateCenter).catch(() => {});
+    void api.updateCenter.state().then(adoptUpdateCenter).catch((error) => { console.warn('[src/renderer/launcher.js] background operation failed', error); });
   }
   if (api?.onUpdateProgress) {
     api.onUpdateProgress((payload) => {

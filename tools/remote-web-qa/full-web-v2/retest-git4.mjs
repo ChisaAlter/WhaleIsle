@@ -144,6 +144,6 @@ try {
   });
 } finally {
   try { git(TMP, 'remote', 'set-url', 'origin', BARE); } catch { /* */ }
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }
 console.log('[retest-git4] done');

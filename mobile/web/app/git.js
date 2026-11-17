@@ -331,5 +331,5 @@ gitPill.addEventListener('click', () => {
   renderSheet();
   refreshGit().then(() => {
     if (state.gitDialog === 'menu') renderSheet();
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[mobile/web/app.js] background operation failed', error); });
 });

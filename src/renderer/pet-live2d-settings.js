@@ -80,7 +80,7 @@ function reportRoam() {
     y: Math.round(b.y + overlayOrigin.y),
     w: Math.round(b.right - b.x),
     h: Math.round(b.bottom - b.y),
-  })).catch(() => {});
+  })).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
 }
 
 // Chip index under a point, or -1 (outside card / header / stats / gaps).
@@ -131,7 +131,7 @@ function dispatchPanelCell(cell) {
   } else if (cell.id === 'look') {
     void submitLook();
   } else if (cell.id === 'hide') {
-    void Promise.resolve(petShell.hidePet?.()).catch(() => {});
+    void Promise.resolve(petShell.hidePet?.()).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   } else {
     runAction(cell.id);
   }

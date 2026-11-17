@@ -145,7 +145,7 @@ let profileAlignChain = Promise.resolve();
 
 function enqueueProfileAlign(work) {
   const run = profileAlignChain.then(work, work);
-  profileAlignChain = run.catch(() => {});
+  profileAlignChain = run.catch(() => { /* The original alignment is returned; a failed operation must not poison the serial queue. */ });
   return run;
 }
 
@@ -343,7 +343,7 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
     // confirmation. Other callers (the desktop-control channel, whose own
     // request is in flight) get the saved config first and restart off-thread.
     if (waitForRestart) return restart();
-    setImmediate(() => { void restart().catch(() => {}); });
+    setImmediate(() => { void restart().catch((error) => { if (typeof log === 'function') log(`切换内置插件后重启失败；请从启动器重试启动：${error instanceof Error ? error.message : String(error)}`); }); });
     return next;
   }
   releaseMaintenance(token);

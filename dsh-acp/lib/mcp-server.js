@@ -231,7 +231,7 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       off?.();
       signal.removeEventListener('abort', onAbort);
       // A failed initial read must not leave a rejected abort waiter behind.
-      changed.catch(() => {});
+      changed.catch(() => { /* The initial read owns its failure; this observes the abandoned abort waiter. */ });
     }
   }
 

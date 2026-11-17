@@ -132,7 +132,7 @@ async function captureHtmlPreview(input, signal) {
     signal?.removeEventListener('abort', onAbort);
     if (!window.isDestroyed()) window.destroy();
     // A cancelled capture owns no live renderer when the tool settles.
-    await work.catch(() => {});
+    await work.catch(() => { /* The cancelled capture already owns its error; wait for renderer cleanup. */ });
     partition.webRequest.onBeforeRequest(null);
   }
 }

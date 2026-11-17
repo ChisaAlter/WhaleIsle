@@ -403,7 +403,7 @@ class HarnessController extends EventEmitter {
       if (this.shuttingDown || recoveryGeneration !== this.recoveryGeneration) {
         throw error;
       }
-      await this.ensureBootVisible().catch(() => {});
+      await this.ensureBootVisible().catch(() => { /* The recovery state below reports the original failure even if the boot renderer is unavailable. */ });
       this.recovery = {
         ...this.recovery,
         status: 'failed',
@@ -462,11 +462,11 @@ class HarnessController extends EventEmitter {
       assertCurrent();
     };
     checkCurrent();
-    await this.ensureBootVisible(checkCurrent).catch(() => {});
+    await this.ensureBootVisible(checkCurrent).catch(() => { /* A missing boot renderer must not prevent the old Harness from stopping. */ });
     checkCurrent();
     await this.dsh.stop();
     checkCurrent();
-    await previousOperation?.catch(() => {});
+    await previousOperation?.catch(() => { /* The replaced operation already owns its failure; wait for its resource acquisition. */ });
     checkCurrent();
     if (fullPluginRetry) this.clearPluginRecovery();
     return this.runOperation((generation) => this.performStart({ showBoot, generation, assertCurrent }));
@@ -479,7 +479,7 @@ class HarnessController extends EventEmitter {
     const shutdownGeneration = this.shutdownGeneration;
     const task = (async () => {
       if (previous) {
-        await previous.catch(() => {});
+        await previous.catch(() => { /* The previous restart reports to its caller; a later restart must still run. */ });
       }
       if (this.shuttingDown || shutdownGeneration !== this.shutdownGeneration) {
         throw operationCancelled();
@@ -888,7 +888,7 @@ class HarnessController extends EventEmitter {
     } catch (error) {
       checkCurrent();
       if (isCancellation(error) || this.dsh.failure?.phase === 'runtime') {
-        await this.ensureBootVisible(checkCurrent).catch(() => {});
+        await this.ensureBootVisible(checkCurrent).catch(() => { /* Preserve the original cancellation or runtime failure if boot navigation also fails. */ });
         throw isCancellation(error)
           ? error
           : operationCancelled('Harness 在界面加载期间已停止');
@@ -921,7 +921,7 @@ class HarnessController extends EventEmitter {
       checkCurrent();
       if (!skipUserPlugins && !this.shuttingDown && !isCancellation(error)
           && (error?.code === 'DSH_OPTIONAL_PROVIDER_NOT_INSTALLED' || this.looksLikePluginTreeFailure(error))) {
-        await this.dsh.stop().catch(() => {});
+        await this.dsh.stop().catch(() => { /* The stop path records failures; continue into the explicitly selected plugin recovery. */ });
         checkCurrent();
         this.writePluginSkip(error);
         try {
@@ -930,7 +930,7 @@ class HarnessController extends EventEmitter {
           checkCurrent();
           if (!this.shuttingDown && !isCancellation(recoveryError)) {
             this.setStartupFailure(recoveryError);
-            await this.ensureBootVisible(checkCurrent).catch(() => {});
+            await this.ensureBootVisible(checkCurrent).catch(() => { /* Startup failure is already recorded; do not replace it with a boot renderer failure. */ });
             checkCurrent();
             this.sendState();
           }
@@ -939,7 +939,7 @@ class HarnessController extends EventEmitter {
       }
       if (!this.shuttingDown && !isCancellation(error)) {
         this.setStartupFailure(error);
-        await this.ensureBootVisible(checkCurrent).catch(() => {});
+        await this.ensureBootVisible(checkCurrent).catch(() => { /* Startup failure is already recorded; do not replace it with a boot renderer failure. */ });
         checkCurrent();
         this.sendState();
       }
@@ -993,8 +993,8 @@ class HarnessController extends EventEmitter {
     const pendingRestart = this.restartOperation;
     const pendingOperation = this.operation;
     await Promise.allSettled([
-      pendingRestart?.catch(() => {}),
-      pendingOperation?.catch(() => {}),
+      pendingRestart?.catch(() => { /* The cancelled restart owns its failure; wait for its pending work before stopping. */ }),
+      pendingOperation?.catch(() => { /* The cancelled start owns its failure; wait for its pending work before stopping. */ }),
     ]);
     if (this.dsh.state !== 'idle') {
       await this.dsh.stop();
@@ -1073,8 +1073,8 @@ class HarnessController extends EventEmitter {
     this.restartOperation = null;
     // Cancelled preparation or renderer loading can remain pending without
     // owning a process. Observe its rejection, but start process cleanup now.
-    currentOperation?.catch(() => {});
-    currentRestart?.catch(() => {});
+    currentOperation?.catch(() => { /* The original operation owns its failure; process cleanup must start immediately. */ });
+    currentRestart?.catch(() => { /* The original restart owns its failure; process cleanup must start immediately. */ });
     const results = await Promise.allSettled([
       Promise.resolve().then(() => this.dsh.stop()),
       // DshdRemote's teardown face is stopDaemon() — a bare stop() call

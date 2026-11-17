@@ -82,7 +82,7 @@ export async function atomicText(path, text, options = {}) {
     await renameWithRetry(temporary, path, options);
     renamed = true;
   } finally {
-    if (!renamed) await fs.unlink(temporary).catch(() => {});
+    if (!renamed) await fs.unlink(temporary).catch(() => { /* Preserve the original write failure when the temporary file is already absent. */ });
   }
 }
 export async function checkedFile(path, roots) {
@@ -134,7 +134,7 @@ export async function acquireWriter(home, generation) {
     catch (error) { if (error.code === 'ENOENT') return false; throw error; }
   };
   const heartbeat = setInterval(() => {
-    void owned().then(mine => { if (mine) { const now = new Date(); return fs.utimes(path, now, now); } clearInterval(heartbeat); }).catch(() => {});
+    void owned().then(mine => { if (mine) { const now = new Date(); return fs.utimes(path, now, now); } clearInterval(heartbeat); }).catch((error) => { console.warn('[vendor/dsh-project/lib/files.js] background operation failed', error); });
   }, WRITER_HEARTBEAT_MS);
   heartbeat.unref?.();
   return async () => {

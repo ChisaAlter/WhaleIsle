@@ -189,15 +189,15 @@ export class ChatGPTBrowser {
     if (page.url() === '') {
       owner.page = page;
       const loaded = page.waitForURL(url => url.href !== 'about:blank' && this.allowedUrl(url.href, owner), { waitUntil: 'domcontentloaded' });
-      void loaded.catch(() => {});
+      void loaded.catch(() => { /* The stored page-load promise is awaited by its owner; this prevents an early unhandled rejection. */ });
       owner.pageLoads.set(page, loaded);
     } else if (this.allowedUrl(page.url(), owner, true)) owner.page = page;
-    else { owner.blocked = page.url(); void page.close().catch(() => {}); }
+    else { owner.blocked = page.url(); void page.close().catch(() => { /* An out-of-policy page is blocked above and may have already closed. */ }); }
     page.on('framenavigated', frame => {
       if (frame !== page.mainFrame()) return;
       owner.targets.clear();
       if (this.allowedUrl(frame.url(), owner, true)) owner.page = page;
-      else { owner.blocked = frame.url(); void page.close().catch(() => {}); }
+      else { owner.blocked = frame.url(); void page.close().catch(() => { /* An out-of-policy navigation is blocked above and its page may have already closed. */ }); }
     });
     page.on('close', () => {
       owner.targets.clear();
@@ -207,7 +207,7 @@ export class ChatGPTBrowser {
 
   async closeOwner(owner) {
     if (!owner.closing) owner.closing = (async () => {
-      await owner.ready?.catch(() => {});
+      await owner.ready?.catch(() => { /* Failed initialization still needs context disposal. */ });
       if (owner.context) await owner.context.close();
       owner.targets.clear();
       if (this.owner === owner) this.owner = undefined;
@@ -231,7 +231,7 @@ export class ChatGPTBrowser {
       if (!this.allowedUrl(request.url, owner)) throw new Error('Navigation is restricted to ChatGPT, official OpenAI login, and this workspace bridge authorization page.');
     }
     const owner = await this.acquire(agent);
-    const abort = () => { void this.closeOwner(owner).catch(() => {}); };
+    const abort = () => { void this.closeOwner(owner).catch(() => { /* Abort already rejects the browser operation; the owner may have already closed. */ }); };
     signal?.addEventListener('abort', abort, { once: true });
     try {
       canceled(signal);

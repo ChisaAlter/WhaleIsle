@@ -21,7 +21,7 @@ export function configureRuntimeHost(ctx) {
     if (released) return;
     released = true;
     if (--owners !== 0) return;
-    await initPromise?.catch(() => {});
+    await initPromise?.catch(() => { /* A failed initialization still needs final runtime disposal. */ });
     await bundle?.disposeAgentRuntime();
     initPromise = null; initError = null; hostContext = null;
   };

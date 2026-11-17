@@ -81,7 +81,7 @@ function mountWindowControls(host) {
   };
 
   if (window.shell && typeof window.shell.getWindowState === 'function') {
-    Promise.resolve(window.shell.getWindowState()).then(applyState).catch(() => {});
+    Promise.resolve(window.shell.getWindowState()).then(applyState).catch(() => { /* The window-state push listener remains authoritative when the initial read races closure. */ });
   }
   if (window.shell && typeof window.shell.onWindowState === 'function') {
     window.shell.onWindowState(applyState);

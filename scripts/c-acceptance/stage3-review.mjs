@@ -5,7 +5,7 @@ import fs from 'node:fs'
 
 const OUT = 'docs/superpowers/evidence/2026-09-25-upstream-adoption/c-phase'
 fs.mkdirSync(OUT, { recursive: true })
-const shot = async (page, name) => { await page.screenshot({ path: `${OUT}/${name}.png` }).catch(() => {}) }
+const shot = async (page, name) => { await page.screenshot({ path: `${OUT}/${name}.png` }).catch((error) => { console.warn('[scripts/c-acceptance/stage3-review.mjs] background operation failed', error); }) }
 
 const browser = await chromium.connectOverCDP('http://localhost:9333')
 const page = browser.contexts().flatMap(c => c.pages()).find(p => p.url().includes('127.0.0.1:3080'))

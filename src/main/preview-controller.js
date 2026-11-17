@@ -128,7 +128,7 @@ function createPreviewController(options = {}) {
     current = { timer: null, consumers: new Set([consumer]) };
     frameCaptureSessions.set(previewId, current);
     const prior = frameCapturesInFlight.get(previewId);
-    if (prior) await prior.catch(() => {});
+    if (prior) await prior.catch(() => { /* The previous frame consumer owns its failure; serialize the next capture after it settles. */ });
     if (frameCaptureSessions.get(previewId) !== current) return;
     await capturePreviewFrame(previewId);
     if (frameCaptureSessions.get(previewId) !== current) return;

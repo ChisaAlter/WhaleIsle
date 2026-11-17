@@ -692,7 +692,7 @@ test('workspace directory picker returns null when its owner is destroyed before
     assert.equal(ipc.startHarness(), 0);
   } finally {
     if (rejectDialog) rejectDialog(new Error('Test cleanup'));
-    if (pending) await pending.catch(() => {});
+    if (pending) await pending.catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     ipc.restore();
   }
 });
@@ -1874,7 +1874,7 @@ test('disable-suspects-and-start retains the maintenance owner through a deferre
     assert.equal(importGuard.isMaintenanceHeld(), false);
   } finally {
     release();
-    if (pending) await pending.catch(() => {});
+    if (pending) await pending.catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     ipc.restore();
   }
 });
@@ -1954,7 +1954,7 @@ test('slim disable-suspects-and-start preserves runtime settings and spawns once
     assert.equal(importGuard.isMaintenanceHeld(), false);
   } finally {
     release();
-    if (pending) await pending.catch(() => {});
+    if (pending) await pending.catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     ipc.restore();
     if (previousFlavor === undefined) delete process.env.DSHD_LAUNCHER_PACKAGE;
     else process.env.DSHD_LAUNCHER_PACKAGE = previousFlavor;
@@ -2759,7 +2759,7 @@ test('slim main-confirmed update preserves route and snapshot through the shared
     assert.equal(ipc.runImportCalls.length, 1, 'a later operation must be admitted once the install settles');
   } finally {
     finishInstall();
-    if (pending) await pending.catch(() => {});
+    if (pending) await pending.catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     importGuard.releaseMaintenance(foreign);
     ipc.restore();
   }

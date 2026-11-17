@@ -371,7 +371,7 @@ export class WhaleTasks {
   async deliverAll() { for (const task of this.list()) await this.deliver(task.id); }
   deliver(id) {
     const pending = this.deliverTask(id); this.deliveryRuns.add(pending);
-    pending.finally(() => this.deliveryRuns.delete(pending)).catch(() => {});
+    pending.finally(() => this.deliveryRuns.delete(pending)).catch(() => { /* The original delivery promise is returned; this only releases its tracking entry. */ });
     return pending;
   }
   async deliverTask(id) {

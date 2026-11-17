@@ -154,7 +154,7 @@ function openPanel() {
       panel.cells = panelCells();
       requestFrame();
     }
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   requestFrame();
 }
 

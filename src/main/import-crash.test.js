@@ -24,7 +24,7 @@ function runChild(script, args) {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { child.kill('SIGKILL'); } catch {}
+      try { child.kill('SIGKILL'); } catch { /* The timed-out test child may have exited before the kill. */ }
       resolve({ code: -1, out, errOut, timedOut: true });
     }, 30000);
     child.stdout.on('data', (d) => { out += d; });

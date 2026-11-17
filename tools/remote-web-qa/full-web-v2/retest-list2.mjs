@@ -130,7 +130,7 @@ try {
     s.dispatchEvent(new Event('input', { bubbles: true }));
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }
 console.log('[retest-list2] done');

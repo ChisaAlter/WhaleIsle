@@ -38,7 +38,7 @@ export const digest = value => crypto.createHash('sha256').update(value).digest(
 /** Single owner serializes admission as well as record-level CAS. */
 export class TaskStore {
   constructor(domain) { this.domain = domain; this.tasks = domain.table('tasks'); this.origins = domain.table('origins'); this.owners = domain.table('owners'); this.chain = Promise.resolve(); }
-  serial(fn) { const next = this.chain.then(fn); this.chain = next.catch(() => {}); return next; }
+  serial(fn) { const next = this.chain.then(fn); this.chain = next.catch(() => { /* The original operation is returned; a failed write must not poison the next queued write. */ }); return next; }
   get(id) { const value = this.tasks.get(id); if (!value) throw new Error('找不到任务。'); return copy(value); }
   list() { return [...this.tasks.entries()].map(([, value]) => copy(value)); }
   async put(value) { const parsed = taskSchema.parse(value); await this.tasks.put(parsed.id, parsed); return copy(parsed); }

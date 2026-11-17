@@ -39,7 +39,7 @@ async function limitedResponse(response) {
       chunks.push(Buffer.from(value));
     }
   } catch (error) {
-    await reader.cancel().catch(() => {});
+    await reader.cancel().catch(() => { /* Preserve the image request error even if cancelling its reader fails. */ });
     throw error;
   } finally {
     reader.releaseLock();

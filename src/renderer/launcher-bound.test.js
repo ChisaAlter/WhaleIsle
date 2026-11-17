@@ -26,7 +26,7 @@ function runBound(env = {}) {
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', () => {});
-    const timer = setTimeout(() => { try { child.kill(); } catch {} reject(new Error('bound harness timed out')); }, 45000);
+    const timer = setTimeout(() => { try { child.kill(); } catch { /* The timeout still rejects if the test child already exited. */ } reject(new Error('bound harness timed out')); }, 45000);
     child.on('exit', (code) => {
       clearTimeout(timer);
       const marker = out.indexOf('BOUND_RESULT:');

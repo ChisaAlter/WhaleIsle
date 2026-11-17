@@ -83,7 +83,7 @@ test('installed host admits the exact parent, dispatches once and returns a dura
       timer = setTimeout(() => reject(new Error('Installed-host configured task did not settle')), nativeAgentId ? 210000 : 15000);
     });
     // Keep an early admission rejection from becoming an unrelated unhandled timeout.
-    settled.catch(() => {});
+    settled.catch(() => { /* The assertion below awaits the original admission result; prevent an early unhandled rejection. */ });
     const args = nativeAgentId
       ? { agent: nativeAgentId, model: process.env.DSH_TEST_NATIVE_MODEL, prompt: '只读连通验收。不要调用工具，不要读取或修改文件，只回复 ACP_NATIVE_OK。', client_request_id: 'native-installed-contract' }
       : { agent: 'unknown-installed-host', prompt: 'ASYNC_CHILD_WORK', client_request_id: 'installed-contract' };
