@@ -5,6 +5,8 @@
 // so the delta lane ships its own ~150-line reader/writer. Only what the
 // delta format needs: UTF-8 names, no zip64 (<4 GiB payloads), no comments.
 const fs = require('fs');
+const path = require('path');
+const { pipeline } = require('stream/promises');
 const zlib = require('zlib');
 
 const SIG_LOCAL = 0x04034b50;
@@ -211,26 +213,43 @@ function readEntry(zipFile, entry, deps = {}) {
 async function extractEntryTo(zipFile, entry, dest, deps = {}) {
   const fsx = deps.fs || fs;
   const range = entryDataRange(zipFile, entry, deps);
-  fsx.mkdirSync(require('path').dirname(dest), { recursive: true });
+  fsx.mkdirSync(path.dirname(dest), { recursive: true });
+  if (entry.method !== METHOD_DEFLATE && entry.method !== METHOD_STORE) {
+    throw new Error(`unsupported zip method ${entry.method} for ${entry.name}`);
+  }
+  // pipeline owns 'error' wiring for the whole chain and destroys every
+  // stream on any failure; the only uncovered window is a synchronous throw
+  // between createReadStream and the pipeline call (e.g. createWriteStream
+  // failing on a read-only target), which must close the source itself —
+  // destroy() alone still lets the pending open/read emit 'error', so a
+  // listener is needed to keep it out of uncaughtException.
   const source = fsx.createReadStream(zipFile, { start: range.start, end: range.end });
-  const decoded = entry.method === METHOD_DEFLATE
-    ? source.pipe(zlib.createInflateRaw())
-    : entry.method === METHOD_STORE
-      ? source
-      : (() => { source.destroy(); throw new Error(`unsupported zip method ${entry.method} for ${entry.name}`); })();
-  const out = fsx.createWriteStream(dest);
+  const decoded = entry.method === METHOD_DEFLATE ? zlib.createInflateRaw() : source;
+  let out;
+  try {
+    out = fsx.createWriteStream(dest);
+  } catch (error) {
+    source.on('error', () => {});
+    source.destroy();
+    if (decoded !== source) decoded.destroy();
+    throw error;
+  }
   let size = 0;
   let crc = 0xffffffff;
   decoded.on('data', (chunk) => {
     size += chunk.length;
     crc = crc32Chunk(crc, chunk);
   });
-  decoded.pipe(out);
-  await new Promise((resolve, reject) => {
-    decoded.on('error', reject);
-    out.on('error', reject);
-    out.on('finish', resolve);
-  });
+  try {
+    if (entry.method === METHOD_DEFLATE) {
+      await pipeline(source, decoded, out);
+    } else {
+      await pipeline(source, out);
+    }
+  } catch (error) {
+    try { fsx.unlinkSync(dest); } catch { /* partial already gone */ }
+    throw error;
+  }
   const actual = (crc ^ 0xffffffff) >>> 0;
   if (size !== entry.size || actual !== entry.crc32) {
     try { fsx.unlinkSync(dest); } catch { /* partial already gone */ }

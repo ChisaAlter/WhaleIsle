@@ -320,33 +320,68 @@ test('delta apply is all-or-nothing under injected filesystem faults', async () 
         await fc.asyncModelRun(() => ({ model, real: model.targetDir }), commands);
         return true;
       } finally {
-        // Give any stream orphaned by an injected createWriteStream fault a
-        // real window to finish opening before the tree is removed (see the
-        // BUG: test.todo below — extractEntryTo leaks the zip read stream).
-        await new Promise((resolve) => setTimeout(resolve, 25));
         fs.rmSync(dir, { recursive: true, force: true });
       }
     },
   ), 'delta apply is all-or-nothing under injected filesystem faults', { numRuns: NUM_RUNS });
 });
 
-// BUG: extractEntryTo in src/launcher/delta/zip.js orphans the zip read stream.
-// File:function: src/launcher/delta/zip.js:extractEntryTo — `source =
-// fsx.createReadStream(zipFile)` is created before `decoded`/`out` error
-// handlers are wired; `.pipe()` never forwards 'error'. A synchronous throw
-// between the createReadStream call and the listener wiring (e.g. an injected
-// createWriteStream EPERM/EIO/ENOSPC inside the same extract) leaves the
-// source ReadStream with no 'error' listener and no close — an fd leak whose
-// async open/read failure escapes as an uncaught exception instead of a
-// DeltaApplyError. For METHOD_DEFLATE entries even a mid-stream source error
-// is never delivered (only `decoded` and `out` get handlers).
-// Minimal sequence: one `add` row with a deflatable payload; deps.fs whose
-// createWriteStream throws EPERM on its first call; applyDeltaFile rejects
-// 'apply-failed' — then deleting the zip (or any later read error) crashes the
-// process with unhandled 'error'. Observed in this suite under FUZZ_RANDOM as
-// `Error: ENOENT: ... open '<tmp>/delta.zip'` escaping the property.
-// Expected: source stream errors are captured (pipeline/await pipeline or an
-// explicit 'error' listener + destroy) and surfaced as DeltaApplyError.
-// Severity: medium-high — an injected/real write-side fs fault during apply
-// can crash the launcher process via an unhandled stream error.
-test.todo('#536 BUG: extractEntryTo leaves the zip read stream orphaned — a sync throw after createReadStream (e.g. injected createWriteStream fault) leaks an unhandled-error stream whose failure escapes as an uncaught exception instead of DeltaApplyError');
+// Regression for #536: a synchronous createWriteStream throw inside
+// extractEntryTo used to orphan the zip read stream — no 'error' listener, no
+// close — so a later open/read failure escaped as an uncaughtException
+// instead of surfacing as DeltaApplyError.
+test('extractEntryTo closes the zip read stream when createWriteStream throws', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-delta-orphan-'));
+  try {
+    const targetDir = path.join(dir, 'target');
+    fs.mkdirSync(targetDir, { recursive: true });
+    const payload = Buffer.from('deflatable-payload-'.repeat(32));
+    const doc = {
+      format: manifest.FORMAT, product: 'Test', fromVersion: '1.0.0', toVersion: '2.0.0',
+      files: [{
+        path: 'a.txt', op: 'add',
+        sha256: manifest.sha256Hex(payload), size: payload.length,
+        payload: 'payload/0',
+      }],
+    };
+    const zipFile = path.join(dir, 'delta.zip');
+    zip.writeZip(zipFile, [
+      { name: 'payload/0', data: payload },
+      { name: manifest.MANIFEST_ENTRY, data: Buffer.from(JSON.stringify(doc)) },
+    ]);
+    const readStreams = [];
+    const impl = Object.create(fs);
+    impl.createReadStream = (...args) => {
+      const stream = fs.createReadStream(...args);
+      readStreams.push(stream);
+      return stream;
+    };
+    impl.createWriteStream = () => {
+      const error = new Error('EPERM: injected fault on createWriteStream');
+      error.code = 'EPERM';
+      throw error;
+    };
+    const escaped = [];
+    const onUncaught = (error) => escaped.push(error);
+    process.on('uncaughtException', onUncaught);
+    try {
+      await assert.rejects(
+        () => applyDeltaFile(zipFile, targetDir, {}, { fs: impl }),
+        (error) => error instanceof DeltaApplyError && error.code === 'apply-failed',
+      );
+      assert.ok(readStreams.length > 0, 'expected the payload extract to open the zip');
+      for (const stream of readStreams) {
+        assert.equal(stream.destroyed, true, 'zip read stream leaked past the failed apply');
+      }
+      // Give the orphaned stream's async open/read a window to fire 'error':
+      // pre-fix it escaped as an uncaughtException instead of DeltaApplyError.
+      fs.rmSync(zipFile);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert.deepEqual(escaped, []);
+    } finally {
+      process.off('uncaughtException', onUncaught);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

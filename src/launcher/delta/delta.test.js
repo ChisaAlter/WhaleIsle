@@ -2,9 +2,12 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { Readable } = require('node:stream');
+const zlib = require('node:zlib');
 
 const zip = require('./zip');
 const manifest = require('./manifest');
@@ -500,4 +503,96 @@ test('applyDeltaFile wraps a file/dir collision mid-apply as apply-failed and ro
   assert.equal(fs.readFileSync(path.join(target, 'd'), 'utf8'), 'installed-file');
   assert.equal(fs.readdirSync(target).filter((n) => n.startsWith('.dshd-delta-')).length, 0);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// --- extractEntryTo stream lifecycle (issue #536) ------------------------------
+
+/** Collect uncaughtExceptions while `run` executes; returns what escaped. */
+async function captureUncaught(run) {
+  const escaped = [];
+  const onUncaught = (error) => escaped.push(error);
+  process.on('uncaughtException', onUncaught);
+  try {
+    await run();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } finally {
+    process.off('uncaughtException', onUncaught);
+  }
+  return escaped;
+}
+
+test('extractEntryTo closes the zip stream when createWriteStream throws synchronously', async () => {
+  const dir = tmpdir();
+  try {
+    const zipFile = path.join(dir, 'd.zip');
+    zip.writeZip(zipFile, [{ name: 'payload/0', data: Buffer.from('payload-bytes') }]);
+    const entry = zip.readZip(zipFile)[0];
+    const sources = [];
+    const impl = Object.create(fs);
+    // A source whose deferred read fails — like a zip deleted under the
+    // stream — must not escape as an uncaughtException when the synchronous
+    // createWriteStream throw leaves it mid-open.
+    impl.createReadStream = () => {
+      const stream = new Readable({
+        read() {
+          this.destroy(Object.assign(new Error('EIO: injected read fault'), { code: 'EIO' }));
+        },
+      });
+      sources.push(stream);
+      return stream;
+    };
+    impl.createWriteStream = () => {
+      const error = new Error('EPERM: injected fault on createWriteStream');
+      error.code = 'EPERM';
+      throw error;
+    };
+    const dest = path.join(dir, 'out');
+    const escaped = await captureUncaught(async () => {
+      await assert.rejects(() => zip.extractEntryTo(zipFile, entry, dest, { fs: impl }), /EPERM/);
+    });
+    assert.equal(sources.length, 1);
+    assert.equal(sources[0].destroyed, true, 'zip read stream leaked past the failed extract');
+    assert.deepEqual(escaped, []);
+    assert.equal(fs.existsSync(dest), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractEntryTo surfaces a mid-read zip stream error and destroys the chain', async () => {
+  const dir = tmpdir();
+  try {
+    for (const raw of [crypto.randomBytes(512), Buffer.alloc(2048, 0x61)]) {
+      const zipFile = path.join(dir, `d-${raw[0] === 0x61 ? 'deflate' : 'store'}.zip`);
+      zip.writeZip(zipFile, [{ name: 'payload/0', data: raw }]);
+      const entry = zip.readZip(zipFile)[0];
+      const sources = [];
+      const impl = Object.create(fs);
+      impl.createReadStream = () => {
+        // Feed a valid prefix of the entry bytes, then fail — for deflate the
+        // source 'error' must reach the pipeline instead of escaping.
+        const prefix = entry.method === zip.METHOD_DEFLATE
+          ? zlib.deflateRawSync(raw).subarray(0, 6)
+          : raw.subarray(0, 16);
+        const stream = new Readable({
+          read() {
+            this.push(prefix);
+            this.destroy(Object.assign(new Error('EIO: injected mid-read fault'), { code: 'EIO' }));
+          },
+        });
+        sources.push(stream);
+        return stream;
+      };
+      const dest = path.join(dir, `out-${entry.method}`);
+      const escaped = await captureUncaught(async () => {
+        await assert.rejects(() => zip.extractEntryTo(zipFile, entry, dest, { fs: impl }), /EIO/);
+      });
+      assert.equal(sources.length, 1, `method=${entry.method}`);
+      assert.equal(sources[0].destroyed, true, `method=${entry.method}`);
+      assert.deepEqual(escaped, [], `method=${entry.method}`);
+      assert.equal(fs.existsSync(dest), false, `method=${entry.method}: partial output left behind`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
