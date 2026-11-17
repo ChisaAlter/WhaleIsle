@@ -288,10 +288,11 @@ test('an asynchronous rename failure preserves the shortcut and returns no priva
 });
 
 test('desktop startup awaits migration before continuing preparation and logs only status', async () => {
-  const sourceText = (await fs.readFile(path.join(__dirname, 'index.js'), 'utf8')).replace(/\r\n/g, '\n');
-  const marker = '  app.whenReady().then(async () => {';
-  const start = sourceText.indexOf(marker) + marker.length;
-  const snippet = sourceText.slice(start, sourceText.indexOf('    const homeEnv =', start));
+  // Post-#439 the whenReady sequence is the body of runAppReady in app-ready.js.
+  const sourceText = (await fs.readFile(path.join(__dirname, 'app-ready.js'), 'utf8')).replace(/\r\n/g, '\n');
+  const marker = 'const shortcutMigration =';
+  const start = sourceText.indexOf(marker);
+  const snippet = sourceText.slice(start, sourceText.indexOf('const homeEnv =', start));
   let release; const pending = new Promise(resolve => { release = resolve; });
   const events = [];
   const boot = vm.runInNewContext(`async function boot() { ${snippet}\nevents.push('continue'); }\nboot`, {

@@ -57,11 +57,14 @@ for (const argument of ['check', 'pending']) {
       module: updateModule, process: environment, console,
       require: name => name === 'electron' ? { app: {}, Notification: fixture.Notification } : fixture.policy,
     });
-    const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
-    const setup = source.slice(source.indexOf('const updateAttention ='), source.indexOf('\n/**\n * Productized confirmation:'));
-    const askOptions = source.slice(source.indexOf('async function updateAskOptions('), source.indexOf('\n// Slim-package cold start'));
+    // Post-#439 the update flow lives in app-updates.js; strip inline @type
+    // casts so source markers keep matching the annotated arrow params.
+    const source = fs.readFileSync(path.join(__dirname, 'app-updates.js'), 'utf8')
+      .replace(/\r\n/g, '\n').replace(/\/\*\*\s*@type\s*\{[^}]*\}\s*\*\/\s*/g, '');
+    const setup = source.slice(source.indexOf('const updateAttention ='), source.indexOf('const updateReadyAttention'));
+    const askOptions = source.slice(source.indexOf('async function updateAskOptions('), source.indexOf('// Slim-package cold start'));
     const start = source.indexOf(`confirmUpdate: async (${argument})`);
-    const end = source.indexOf('\n    },', start) + '\n    },'.length;
+    const end = source.indexOf('\n      },', start) + '\n      },'.length;
     const confirmation = source.slice(start, end);
     const ui = [];
     const parent = new EventEmitter();
@@ -118,8 +121,8 @@ for (const environment of [
   const expected = environment.platform === 'win32' && environment.defaultApp ? 0 : 1;
   test(`${label}: desktop tray hint guards support and constructor together`, () => {
     const { Notification, counts, policy } = notificationFixture(environment);
-    const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
-    const snippet = source.slice(source.indexOf('const trayHideNotice ='), source.indexOf('\nfunction bindMainClose'));
+    const source = fs.readFileSync(path.join(__dirname, 'app-windows.js'), 'utf8').replace(/\r\n/g, '\n');
+    const snippet = source.slice(source.indexOf('const trayHideNotice ='), source.indexOf('function bindMainClose'));
     const notice = vm.runInNewContext(`${snippet}\ntrayHideNotice`, {
       app: { getPath: () => '/isolated-profile' },
       TrayHideNotice: class { constructor(options) { this.notify = options.notify; } },
