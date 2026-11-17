@@ -49,10 +49,41 @@ export async function safeProjectSubdirectory(home, projectId, ...components) {
   for (const component of components) current = await ownedDirectory(current, component);
   return current;
 }
-export async function atomicText(path, text) {
+// Windows refuses rename over a destination still held by another handle —
+// a concurrent reader, indexer or antivirus scan — and reports the transient
+// failure as EPERM/EACCES/EBUSY. This retry contract mirrors
+// src/shared/fs-safe.js#renameWithRetry: the plugin runtime is copied into
+// profiles by src/main/dsh-project-desktop.js (copyRuntime), so this file
+// cannot import that one. src/shared/fs-safe.test.js pins both copies.
+const RENAME_RETRYABLE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_RETRY_BUDGET_MS = 2000;
+const RENAME_RETRY_DELAY_MS = 25;
+
+export async function renameWithRetry(from, to, options = {}) {
+  const rename = options.rename ?? fs.rename;
+  const wait = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
+  const platform = options.platform ?? process.platform;
+  const deadline = Date.now() + (options.budgetMs ?? RENAME_RETRY_BUDGET_MS);
+  let delayMs = RENAME_RETRY_DELAY_MS;
+  for (;;) {
+    try { return await rename(from, to); }
+    catch (error) {
+      if (platform !== 'win32' || !RENAME_RETRYABLE_CODES.has(error?.code) || Date.now() >= deadline) throw error;
+      await wait(delayMs);
+      delayMs = Math.min(delayMs * 2, 250);
+    }
+  }
+}
+export async function atomicText(path, text, options = {}) {
   const temporary = `${path}.${randomUUID()}.tmp`;
-  await fs.writeFile(temporary, text, { flag: 'wx', mode: 0o600 });
-  await fs.rename(temporary, path);
+  let renamed = false;
+  try {
+    await fs.writeFile(temporary, text, { flag: 'wx', mode: 0o600 });
+    await renameWithRetry(temporary, path, options);
+    renamed = true;
+  } finally {
+    if (!renamed) await fs.unlink(temporary).catch(() => {});
+  }
 }
 export async function checkedFile(path, roots) {
   const actual = await fs.realpath(resolve(path));
@@ -91,7 +122,7 @@ export async function acquireWriter(home, generation) {
       let alive = true;
       try { process.kill(previous.pid, 0); } catch (probe) { if (probe.code === 'ESRCH') alive = false; else throw probe; }
       if (alive && Date.now() - (await fs.stat(path)).mtimeMs <= WRITER_STALE_MS) throw new Error('Another Host owns this profile’s Project writer.');
-      await fs.rename(path, `${path}.interrupted-${previous.generation}`);
+      await renameWithRetry(path, `${path}.interrupted-${previous.generation}`);
       await fs.writeFile(path, JSON.stringify(value), { flag: 'wx', mode: 0o600 });
     } finally {
       const owner = JSON.parse(await fs.readFile(recoveryPath, 'utf8'));
