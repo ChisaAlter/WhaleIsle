@@ -40,6 +40,7 @@ const XSS_ATOMS = [
   "'onmouseover=", '<use href="data:image/svg+xml;base64,x"/>', '<animate onbegin=x>',
   '<set attributeName=x to=y>', 'data:text/html,<script>', '<link rel=import>',
   '<form action=x>', '<meta http-equiv=refresh>', 'expression(', '&#x6a;avascript:',
+  '<image href="https://x">', '<a href="http://x">',
 ];
 const BENIGN_ATOMS = [
   '<svg viewBox="0 0 10 10">', '</svg>', '<g>', '</g>', '<rect x="1" y="2"/>',
@@ -69,7 +70,8 @@ const CSS_HAZARD = /@import|expression\(|behaviou?r:|-moz-binding|javascript:|vb
 // Independent oracle for "would a browser find something scriptable in the
 // parsed tree": every element name must be outside NEVER_ELEMENTS, no `on*`
 // attribute may exist, every URL-bearing attribute must normalize to a
-// `#` fragment or http(s), and CSS must carry no import/external url().
+// same-document `#` fragment (no remote fetch — #507), and CSS must carry no
+// import/external url().
 function* hazards(svg) {
   const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
   if (doc.doctype !== null || doc.getElementsByTagName('parsererror').length > 0) {
@@ -89,9 +91,7 @@ function* hazards(svg) {
       if (name.startsWith('on') || local.startsWith('on')) yield `handler ${attr.name}`;
       const compact = attr.value.toLowerCase().replace(URL_NOISE, '');
       if (URL_ATTRIBUTES.has(local) || URL_ATTRIBUTES.has(name)) {
-        if (!compact.startsWith('#') && !compact.startsWith('http:') && !compact.startsWith('https:')) {
-          yield `url ${attr.name}=${attr.value}`;
-        }
+        if (!compact.startsWith('#')) yield `url ${attr.name}=${attr.value}`;
       }
       if (CSS_HAZARD.test(compact)) yield `css hazard in ${attr.name}`;
       for (const m of compact.matchAll(/url\(['"]?/g)) {
@@ -164,6 +164,16 @@ test('assertSafeSvg: known XSS payloads all throw', (t) => {
     `<svg ${NS}><image src="data:image/png;base64,eA=="/></svg>`,
     `<svg ${NS} xml:base="javascript:alert(1)/"><a href="#x"><rect/></a></svg>`,
     `<svg ${NS}><img src="file:///etc/passwd"/></svg>`,
+    // Remote http(s) fetches — model output must never reach the network
+    // (#507): a remote image tracks the reader and the URL itself can carry
+    // encoded context out.
+    `<svg ${NS}><image href="https://evil.example/x.png"/></svg>`,
+    `<svg ${NS}><a href="https://evil.example/"><rect/></a></svg>`,
+    `<svg ${NS}><a href="HTTPS://evil.example/"><rect/></a></svg>`,
+    `<svg ${NS}><a href="h ttps://evil.example/"><rect/></a></svg>`,
+    `<svg ${NS}><a href="//evil.example/"><rect/></a></svg>`,
+    `<svg ${NS} ${XLINK}><use xlink:href="http://evil.example/x.svg#p"/></svg>`,
+    `<svg ${NS}><foreignObject><div xmlns="http://www.w3.org/1999/xhtml"><p><a href="https://evil.example">y</a></p></div></foreignObject></svg>`,
     // CSS: external url(), @import, expression(, behavior
     `<svg ${NS}><style>@import "https://evil/x.css";</style></svg>`,
     `<svg ${NS}><style>rect{fill:url(https://evil/x)}</style></svg>`,
@@ -235,9 +245,9 @@ test('assertSafeSvg: real mermaid output of every shipped diagram kind passes', 
 
 // Hand-shaped acceptance fixtures covering the whitelist corners mermaid
 // may emit: fragment xlink:href on <use>, gradient/filter url(#…), a
-// foreignObject label body, an outbound <a>/<image> http(s) target, and an
-// svg root without a namespace (HTML-parser output is namespaced, but a
-// well-formed un-namespaced tree is still not scriptable).
+// foreignObject label body, same-document # fragment <a>/<image> targets,
+// and an svg root without a namespace (HTML-parser output is namespaced, but
+// a well-formed un-namespaced tree is still not scriptable).
 test('assertSafeSvg: whitelisted constructs pass', (t) => {
   if (!requirePrerequisite(t, DOM_CHECK)) return;
   const NS = 'xmlns="http://www.w3.org/2000/svg"';
@@ -248,8 +258,8 @@ test('assertSafeSvg: whitelisted constructs pass', (t) => {
     `<svg ${NS}><style>.a{fill:#fff}@keyframes k{from{stroke-dashoffset:0}}</style><rect class="a"/></svg>`,
     `<svg ${NS}><defs><linearGradient id="g"><stop offset="0" stop-color="#fff"/></linearGradient><filter id="f"><feDropShadow stdDeviation="2"/></filter></defs><rect fill="url(#g)" filter="url(#f)"/></svg>`,
     `<svg ${NS} ${XLINK}><defs><path id="p" d="M0 0"/></defs><use xlink:href="#p" href="#p"/></svg>`,
-    `<svg ${NS}><a href="#fragment"><text>x</text></a><image href="https://example.test/i.png"/><a href="https://example.test/"><text>link</text></a></svg>`,
-    `<svg ${NS}><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap;"><span class="nodeLabel">label</span><br/><p>text <em>x</em> <a href="https://example.test">y</a></p></div></foreignObject></svg>`,
+    `<svg ${NS}><a href="#fragment"><text>x</text></a><image href="#sprite-part"/><a href="#other"><text>link</text></a></svg>`,
+    `<svg ${NS}><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap;"><span class="nodeLabel">label</span><br/><p>text <em>x</em> <a href="#in-doc">y</a></p></div></foreignObject></svg>`,
     `<svg ${NS}><switch><foreignObject requiredExtensions="x"><div xmlns="http://www.w3.org/1999/xhtml">section</div></foreignObject><text>fallback</text></switch></svg>`,
     '<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>',
     `<svg ${NS}><title>t</title><desc>d</desc><clipPath id="c"><rect/></clipPath><rect clip-path="url(#c)"/></svg>`,
