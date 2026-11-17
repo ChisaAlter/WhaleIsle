@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "artifacts": {
+    "src/main/preview-guest-preload.bundle.js": {
+      "kind": "rebuild",
+      "origin": "Electron sandbox guest preload: esbuild IIFE bundle of src/main/preview-guest-preload.js and its require() closure (scripts/prepare-preview-guest-preload.cjs)",
+      "rebuildCommand": "npm run prepare:preview-guest",
+      "rebuild": {
+        "inputs": [
+          "scripts/prepare-preview-guest-preload.cjs",
+          "src/main",
+          "src/shared"
+        ],
+        "links": [
+          "node_modules"
+        ],
+        "commands": [
+          [
+            "scripts/prepare-preview-guest-preload.cjs"
+          ]
+        ],
+        "outputs": [
+          "src/main/preview-guest-preload.bundle.js"
+        ]
+      }
+    },
+    "mobile/web/chisacode/daemon-client.bundle.js": {
+      "kind": "hashed",
+      "origin": "esbuild bundle of mobile/web/chisacode/entry.mjs over the vendored @chisacode workspace sources (scripts/bundle-chisacode-mobile-client.mjs). The build needs vendor/chisacode-remote's installed node_modules and its sourcemap records the building machine's layout, so it is hash-recorded rather than rebuilt here",
+      "rebuildCommand": "npm run prepare:dshd-remote",
+      "hashed": {
+        "sources": [
+          "mobile/web/chisacode/entry.mjs",
+          "scripts/bundle-chisacode-mobile-client.mjs",
+          "vendor/chisacode-remote/package.json",
+          "vendor/chisacode-remote/package-lock.json",
+          "vendor/chisacode-remote/tsconfig.base.json",
+          "vendor/chisacode-remote/packages/protocol/package.json",
+          "vendor/chisacode-remote/packages/protocol/tsconfig.json",
+          "vendor/chisacode-remote/packages/protocol/src",
+          "vendor/chisacode-remote/packages/client/package.json",
+          "vendor/chisacode-remote/packages/client/tsconfig.json",
+          "vendor/chisacode-remote/packages/client/src",
+          "vendor/chisacode-remote/packages/relay/package.json",
+          "vendor/chisacode-remote/packages/relay/tsconfig.json",
+          "vendor/chisacode-remote/packages/relay/src"
+        ],
+        "artifacts": [
+          "mobile/web/chisacode/daemon-client.bundle.js",
+          "mobile/web/chisacode/daemon-client.bundle.js.map"
+        ],
+        "sourceHash": "afbcb6ffe801d96824a5803f6bbd7fe0d7a8753bd50ccd16fe41442593529375",
+        "artifactHash": "6c5895a71223ac494f11fa61294a58c401e03a8a0ebc3dfb1e17ee34a91ead8d",
+        "recordCommands": [
+          [
+            "scripts/prepare-dshd-remote.mjs",
+            "--force"
+          ]
+        ]
+      }
+    },
+    "src/renderer/welcome": {
+      "kind": "hashed",
+      "origin": "Mirror of the vendored apps/desktop welcome page: renderer statics plus the tsdown lib/welcome build (docs/decisions/implemented/bug-fix/2026-09-29-welcome-resource-closure.md). Must stay in sync on upstream sync",
+      "rebuildCommand": "build vendor/deepseek-harness apps/desktop (tsdown emits lib/welcome) and mirror lib/welcome plus renderer/{welcome.css,assets} into src/renderer",
+      "hashed": {
+        "sources": [
+          "vendor/deepseek-harness/apps/desktop/renderer",
+          "vendor/deepseek-harness/apps/desktop/src",
+          "vendor/deepseek-harness/apps/desktop/package.json",
+          "vendor/deepseek-harness/apps/desktop/tsdown.config.ts",
+          "vendor/deepseek-harness/packages/client/ui-theme/src",
+          "vendor/deepseek-harness/pnpm-lock.yaml"
+        ],
+        "artifacts": [
+          "src/renderer/welcome",
+          "src/renderer/welcome-layout.css",
+          "src/renderer/assets/welcome-brand.svg",
+          "src/renderer/assets/window-material.css"
+        ],
+        "sourceHash": "578ed1b9b38d849d454f066dc5c76a2da5a83f19eeab63f6e4342723d8ca0544",
+        "artifactHash": "aeab15c8154e0198f62718c864dbfd09893291c50d88d4316671a6dd7afee469"
+      }
+    },
+    "dsh-acp/lib/vendor": {
+      "kind": "hashed",
+      "origin": "esbuild bundles of the pinned t3tools ACP server snapshot plus a desktop tar-selection patch (dsh-acp/tools/runtime-build). Rebuild needs that directory's installed node_modules",
+      "rebuildCommand": "npm --prefix dsh-acp/tools/runtime-build ci && node dsh-acp/tools/runtime-build/build.mjs",
+      "hashed": {
+        "sources": [
+          "dsh-acp/tools/runtime-build/entry.ts",
+          "dsh-acp/tools/runtime-build/bridge-entry.ts",
+          "dsh-acp/tools/runtime-build/build.mjs",
+          "dsh-acp/tools/runtime-build/package.json",
+          "dsh-acp/tools/runtime-build/package-lock.json",
+          "dsh-acp/tools/runtime-build/upstream"
+        ],
+        "artifacts": [
+          "dsh-acp/lib/vendor"
+        ],
+        "sourceHash": "9dd4d21926996ba7036da9893afc77bbecb15e5e1181aacc86908dcff30accc0",
+        "artifactHash": "26438dc8e6c751f87fe9eea81c247e75d5fd7a15558320e000946fc499271bde",
+        "recordCommands": [
+          [
+            "dsh-acp/tools/runtime-build/build.mjs"
+          ]
+        ]
+      }
+    },
+    "src/renderer/pet-live2d/ort": {
+      "kind": "artifacts",
+      "origin": "onnxruntime-web@1.22.0 vendored dist: ort.all.min.js loader plus the WASM/JSEP backend pair",
+      "rebuildCommand": "copy the dist files out of the onnxruntime-web 1.22.0 npm package",
+      "artifacts": {
+        "paths": [
+          "src/renderer/pet-live2d/ort"
+        ],
+        "artifactHash": "7834dc2085c9b1b030d2ee10a3a990871b585e9eaec0400f02fb67794f283170"
+      }
+    },
+    "assets/icon.png": {
+      "kind": "artifacts",
+      "origin": "Rendered from assets/icon.svg by scripts/render-icon.js inside Electron; Chromium raster output is environment-dependent",
+      "rebuildCommand": "npm run icon",
+      "artifacts": {
+        "sources": [
+          "assets/icon.svg",
+          "scripts/render-icon.js",
+          "scripts/run-render-icon.js"
+        ],
+        "paths": [
+          "assets/icon.png",
+          "assets/icon.ico"
+        ],
+        "artifactHash": "5d9fc1789d33f6df4fd081a04ba8854299941b8af98399e0391d3cd89fe864b1"
+      }
+    },
+    "assets/pet-head.png": {
+      "kind": "artifacts",
+      "origin": "Desktop-pet head icon rendered by scripts/render-pet-head.js inside Electron",
+      "rebuildCommand": "npm run icon:pet",
+      "artifacts": {
+        "sources": [
+          "assets/whale-girl.jpg",
+          "scripts/render-pet-head.js",
+          "scripts/run-render-pet-head.js"
+        ],
+        "paths": [
+          "assets/pet-head.png"
+        ],
+        "artifactHash": "3845278ee2849427ad18302f341b3d1b3537beb9b03b6cc2f407c8639bd9a091"
+      }
+    },
+    "build/installerHeader.bmp": {
+      "kind": "artifacts",
+      "origin": "NSIS bitmaps rendered by scripts/render-installer-assets.js inside Electron from assets/icon.png and the light token table",
+      "rebuildCommand": "npm run installer:assets",
+      "artifacts": {
+        "sources": [
+          "assets/icon.png",
+          "scripts/render-installer-assets.js",
+          "src/shared/dsh-webui-tokens.css"
+        ],
+        "paths": [
+          "build/installerHeader.bmp",
+          "build/installerSidebar.bmp",
+          "build/uninstallerSidebar.bmp"
+        ],
+        "artifactHash": "d8874552521d31549e87858b99a9aae7304da7cacba2ca30721751ed40486f38"
+      }
+    }
+  }
+}

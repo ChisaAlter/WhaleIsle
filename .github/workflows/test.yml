@@ -49,6 +49,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - name: Vendor provenance and artifact consistency
         run: npm run check:vendor
+      - name: Checked-in generated artifacts
+        run: npm run check:generated
       - name: Unused files, exports and dependencies
         run: npm run check:unused
       - run: npm run test:tools

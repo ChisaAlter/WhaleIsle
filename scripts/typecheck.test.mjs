@@ -97,3 +97,9 @@ test('absolute repo paths in messages are replaced so the baseline is portable',
   const messages = [...counts.get('src/main/a.js').get('TS2322').keys()];
   assert.deepEqual(messages, [`Type 'typeof import("<root>/src/main/b")' is not assignable to type 'never'.`]);
 });
+
+test('truncated type counts are normalized so unrelated additions do not look new', () => {
+  const text = `src/main/a.js(1,1): error TS2339: Property 'x' does not exist on type '{ a: string; ... 45 more ...; z: string; }'.`;
+  const { counts } = parseDiagnostics(text, '/abs/repo');
+  assert.deepEqual([...counts.get('src/main/a.js').get('TS2339').keys()], [`Property 'x' does not exist on type '{ a: string; ... <n> more ...; z: string; }'.`]);
+});

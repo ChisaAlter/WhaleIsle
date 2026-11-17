@@ -1,8 +1,32 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
+
+// Generated artifacts registered in scripts/generated-artifacts.json and their
+// declared inputs (rebuild.inputs/outputs, hashed.sources/artifacts,
+// artifacts.paths) gate the tools job that runs check:generated — e.g. mobile
+// web, src/renderer/welcome and icon sources do not otherwise reach it.
+const generatedWatch = (() => {
+  try {
+    const registry = JSON.parse(readFileSync(new URL('./generated-artifacts.json', import.meta.url), 'utf8'))
+    const paths = []
+    for (const entry of Object.values(registry.artifacts ?? {})) {
+      paths.push(
+        ...entry.rebuild?.inputs ?? [],
+        ...entry.rebuild?.outputs ?? [],
+        ...entry.hashed?.sources ?? [],
+        ...entry.hashed?.artifacts ?? [],
+        ...entry.artifacts?.sources ?? [],
+        ...entry.artifacts?.paths ?? [],
+      )
+    }
+    return paths
+  } catch {
+    return []
+  }
+})()
 
 // Fixed groups, not a dependency graph or a generated acceptance plan.
 export function selectChecks(paths, { manual = false } = {}) {
@@ -35,6 +59,7 @@ export function selectChecks(paths, { manual = false } = {}) {
     // Vendor content changes can tamper with checked-in artifacts; the tools
     // job runs check-vendor-provenance so those edits still gate.
     if (/^vendor\//.test(path)) scope.tools = true
+    if (generatedWatch.some((watch) => path === watch || path.startsWith(watch + '/'))) scope.tools = true
     if (/^src\/main\/(native-window-motion|window-|index\.js|chrome-theme|shell-silhouette)/.test(path) ||
         /^(package(-lock)?\.json|vendor\/deepseek-harness\/)/.test(path)) scope.motion = true
     if (/^(package(-lock)?\.json|\.nvmrc|\.github\/workflows\/)/.test(path)) scope.tools = true

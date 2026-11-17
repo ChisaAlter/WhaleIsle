@@ -60,6 +60,9 @@ function addDiagnostic(counts, file, code, message) {
 // 消息里可能带绝对路径（如 `typeof import("/abs/repo/src/x")`），换成
 // `<root>` 才能让基线在不同机器、CI 上一致。
 function normalizeMessage(message, root) {
+  // tsc 截断长类型时写 `... 45 more ...`；数目随无关改动（如 package.json
+  // 增一条 script）变化，归一成 `<n>` 才不会把同一诊断当成新诊断。
+  message = message.replace(/\.\.\. \d+ more \.\.\./g, '... <n> more ...');
   if (!root) return message;
   const posix = root.replace(/\\/g, '/');
   return message.split(root).join('<root>').split(posix).join('<root>');

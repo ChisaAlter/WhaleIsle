@@ -76,7 +76,7 @@ export function collectFiles(base, rel) {
  * Hash file content so checkout-platform line endings cannot flip the result:
  * files without NUL bytes are treated as text and hashed with LF endings.
  */
-function contentDigest(abs) {
+export function contentDigest(abs) {
   const buf = fs.readFileSync(abs);
   const data = buf.includes(0)
     ? buf
@@ -108,7 +108,7 @@ export function hashFileSet(pkgDir, relPaths) {
 }
 
 /** Differences between the expected (vendored) and rebuilt file sets. */
-function diffFileSets(expected, actual) {
+export function diffFileSets(expected, actual) {
   const diffs = [];
   for (const [rel, digest] of expected) {
     if (!actual.has(rel)) diffs.push(`${rel} missing after rebuild`);
