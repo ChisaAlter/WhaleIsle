@@ -52,9 +52,12 @@ const SAFE_SVG_ELEMENTS = new Set([
   'input',
 ])
 
-/** Attributes whose value is navigated to or fetched: only `#` fragments and
- * `http(s):` survive; `javascript:`, `vbscript:`, `data:` and everything else
- * throw. Compared by local name so `xlink:href` is covered. */
+/** Attributes whose value is navigated to or fetched: only same-document `#`
+ * fragments survive; `javascript:`, `vbscript:`, `data:`, remote `http(s):`
+ * and everything else throw — the whitelisted diagram kinds never reference
+ * resources outside their own document, so a remote URL here is only good for
+ * tracking or smuggling context out (#507). Compared by local name so
+ * `xlink:href` is covered. */
 const SVG_URL_ATTRIBUTES = new Set([
   'href', 'src', 'data', 'action', 'formaction', 'poster', 'ping',
   'background', 'lowsrc', 'dynsrc', 'base', 'cite', 'longdesc', 'profile',
@@ -121,7 +124,7 @@ export function assertSafeSvg(svg: string): void {
       }
       const compact = attr.value.toLowerCase().replace(URL_NOISE, '')
       if (SVG_URL_ATTRIBUTES.has(local) || SVG_URL_ATTRIBUTES.has(name)) {
-        if (!compact.startsWith('#') && !compact.startsWith('http:') && !compact.startsWith('https:')) {
+        if (!compact.startsWith('#')) {
           fail(`URL ${attr.name}=${JSON.stringify(attr.value)}`)
         }
       }
