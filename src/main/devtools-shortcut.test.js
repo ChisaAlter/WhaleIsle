@@ -82,7 +82,10 @@ test('attachDevToolsShortcut survives a missing target', () => {
 // H-1 回归护栏：DevTools 快捷键必须保持窗口作用域 + packaged 门禁，
 // 不得回退为 OS 级 globalShortcut（会在后台劫持其他应用的 Ctrl+Shift+I）。
 test('H-1: index.js 不引用 globalShortcut，经 web-contents-created 挂窗口级快捷键', () => {
-  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  // Post-#439 the event wiring lives in app-events.js; both entry files are
+  // covered so globalShortcut must not return anywhere in the composition.
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.join(__dirname, 'app-events.js'), 'utf8');
   assert.doesNotMatch(source, /globalShortcut/, 'index.js 禁止再出现 OS 级全局快捷键');
   assert.match(source, /app\.on\('web-contents-created'/, '快捷键必须挂在 web-contents-created 上');
   assert.match(source, /attachDevToolsShortcut\(contents/, '必须走 devtools-shortcut 模块的窗口级实现');

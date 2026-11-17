@@ -1013,18 +1013,19 @@ test('M-3: 两条安装通道都接 confirmUnverified，确认框默认与 Esc �
 });
 
 test('M-3: index.js 冷启动闸门的 installUpdate 同样接确认，且对话框 fail-safe', () => {
-  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  // Post-#439 the cold-start gate lives in app-updates.js.
+  const source = fs.readFileSync(path.join(__dirname, 'app-updates.js'), 'utf8');
   // gateInstallUpdate wraps update.installUpdate (full package) and
   // runtime-install (slim package); the confirmed snapshot binding lives there.
-  const gate = source.match(/function gateInstallUpdate[\s\S]*?\n\}/);
-  assert.ok(gate, 'index.js 必须保留 gateInstallUpdate 包装函数');
+  const gate = source.match(/function gateInstallUpdate[\s\S]*?\n {2}\}/);
+  assert.ok(gate, 'app-updates.js 必须保留 gateInstallUpdate 包装函数');
   assert.match(
     gate[0],
     /installUpdate\(onProgress,\s*\{\s*\n?\s*confirmUnverified:\s*confirmUnverifiedColdStart,\s*expectedCheck:\s*check/,
     '冷启动闸门必须把 confirmUnverifiedColdStart 传给 installUpdate',
   );
-  const fn = source.match(/async function confirmUnverifiedColdStart[\s\S]*?\n\}/);
-  assert.ok(fn, 'index.js 必须保留 confirmUnverifiedColdStart 确认函数');
+  const fn = source.match(/async function confirmUnverifiedColdStart[\s\S]*?\n {2}\}/);
+  assert.ok(fn, 'app-updates.js 必须保留 confirmUnverifiedColdStart 确认函数');
   assert.match(fn[0], /type:\s*'warning'/);
   assert.match(fn[0], /defaultId:\s*1/, '回车默认必须是「取消」（fail-safe）');
   assert.match(fn[0], /cancelId:\s*1/, 'Esc/关闭必须等同「取消」');
