@@ -277,6 +277,48 @@ test('a component that exits during the start grace lands in error state', async
   assert.match(row.message, /退出|失败/);
 });
 
+test('log stream open/write failures are reported once and never escape as uncaughtException', async (t) => {
+  const env = fakeEnv(t);
+  const warnings = [];
+  const uncaught = [];
+  const onUncaught = (error) => uncaught.push(error);
+  process.once('uncaughtException', onUncaught);
+  t.after(() => process.removeListener('uncaughtException', onUncaught));
+  let logStream = null;
+  // Deterministic async open failure: mkdir/stat succeed, the stream itself
+  // reports ENOENT on a later tick — the same race CI hit when teardown
+  // removed the data dir between createWriteStream and open.
+  const brokenFs = {
+    mkdirSync() {},
+    statSync() { return { size: 0 }; },
+    createWriteStream() {
+      logStream = new EventEmitter();
+      logStream.destroyed = false;
+      logStream.end = () => {};
+      logStream.destroy = () => { logStream.destroyed = true; };
+      setImmediate(() => logStream.emit('error', Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' })));
+      return logStream;
+    },
+  };
+  const child = lifecycle.spawnComponent({
+    entryFile: 'entry.js',
+    dir: env.root,
+    dataDir: path.join(env.root, 'gone', 'data'),
+    logFile: path.join(env.root, 'gone', 'data', 'component.log'),
+    id: 'toy',
+    version: '1.0.0',
+  }, { ...env.deps, fs: brokenFs, log: (line) => warnings.push(line) });
+  assert.ok(child, 'spawn still proceeds — log failure must not break supervision');
+  assert.equal(await waitFor(() => logStream && logStream.destroyed), true, 'failed stream is dropped');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /ENOENT/);
+  // A follow-up error (e.g. end() after destroy) stays contained too.
+  logStream.emit('error', Object.assign(new Error('write after destroy'), { code: 'ERR_STREAM_DESTROYED' }));
+  await sleep(50);
+  assert.equal(warnings.length, 1, 'subsequent stream errors are not re-reported');
+  assert.deepEqual(uncaught, [], 'stream errors must not reach uncaughtException');
+});
+
 test('unexpected exits restart with bounded backoff then give up to error', async (t) => {
   const env = fakeEnv(t);
   makeSample(env.samplesRoot, 'toy', '1.0.0');
@@ -304,6 +346,7 @@ test('unexpected exits restart with bounded backoff then give up to error', asyn
   assert.equal(rec.pid, null);
   assert.match(rec.lastError, /code/);
   assert.equal(env.spawned.length, 3, 'no spawn past the restart cap');
+  assert.equal(svc._internals.procs.has('toy'), false, 'give-up leaves no proc, child or restart timer behind');
 });
 
 test('reconcile adopts live pids and marks dead ones stopped', async (t) => {
