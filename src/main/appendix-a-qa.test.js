@@ -65,7 +65,7 @@ test('appendix send looks up the official 发送消息 control', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const src = fs.readFileSync(path.join(__dirname, 'appendix-a-qa.js'), 'utf8');
-  const walkSrc = fs.readFileSync(path.join(__dirname, 'release-ui-walk.js'), 'utf8');
+  const walkSrc = fs.readFileSync(path.join(__dirname, 'release-ui-page-helpers.js'), 'utf8');
   assert.match(src, /dshComposerSend/);
   assert.match(src, /waitForIdle/);
   assert.match(src, /Deep diving/);
