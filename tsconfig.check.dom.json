@@ -21,10 +21,14 @@
   ],
   "exclude": [
     "**/*.test.*",
+    // Classic scripts share globals within their own HTML page, checked separately.
+    "src/renderer/launcher*.js",
+    "src/renderer/pet-live2d*.js",
     "**/*.bundle.js",
     "**/node_modules/**",
     // 生成物：npm run setup 才产出，未构建环境不存在（#438 环境一致性）
     "src/renderer/openui/**",
+    "src/renderer/welcome/welcome.js",
     "src/renderer/whale-ui/**",
     "mobile/web/whale-ui/**",
     "src/renderer/pet-live2d/ort/**",

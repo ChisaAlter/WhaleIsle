@@ -3,9 +3,7 @@
 // 启动器共享层：DOM 助手、提示、确认弹窗、反馈面板与标签页基础。
 // 启动器按功能拆分的经典脚本：与页面其余脚本共享同一全局作用域，跨文件函数与状态在调用时解析。
 
-const { h, mount } = (typeof module !== 'undefined' && module.exports)
-  ? require('../shared/dom')
-  : window.whaleDom;
+const { h, mount } = window.whaleDom;
 
 function $(id) {
   return document.getElementById(id);

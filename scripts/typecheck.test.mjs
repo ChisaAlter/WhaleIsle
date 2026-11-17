@@ -135,3 +135,20 @@ test('diagnostics on files pulled in via import but outside tsconfig scope are n
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /诊断共 0 条/);
 });
+
+test('classic page programs resolve their own shared globals and keep the two pages separate', async () => {
+  const { default: ts } = await import('typescript');
+  for (const [page, file, symbol, other] of [
+    ['pet', 'pet-live2d-animation.js', 'ctx2d', 'launcher-home.js'],
+    ['launcher', 'launcher-home.js', '$', 'pet-live2d-animation.js'],
+  ]) {
+    const project = fileURLToPath(new URL(`../tsconfig.check.${page}.json`, import.meta.url));
+    const parsed = ts.parseJsonConfigFileContent(ts.readConfigFile(project, ts.sys.readFile).config, ts.sys, fileURLToPath(new URL('../', import.meta.url)));
+    const program = ts.createProgram(parsed.fileNames, parsed.options);
+    const source = program.getSourceFiles().find(s => s.fileName.endsWith('/' + file));
+    assert.ok(source);
+    assert.ok(!program.getSourceFiles().some(s => s.fileName.endsWith('/' + other)));
+    const missing = program.getSemanticDiagnostics(source).filter(d => [2304, 2592].includes(d.code) && ts.flattenDiagnosticMessageText(d.messageText, '\n').includes(`'${symbol}'`));
+    assert.deepEqual(missing, [], `${page} must see its own page's shared ${symbol}`);
+  }
+});

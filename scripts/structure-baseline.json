@@ -24,7 +24,7 @@
       "createAcpAgentsManager/_streamImpl": 75,
       "createAcpAgentsManager/autoDeliver": 22,
       "createAcpAgentsManager/delegate": 36,
-      "createAcpAgentsManager/delegate/ba94c5543d10a786": 35,
+      "createAcpAgentsManager/delegate/9eb9482540fe5b88": 35,
       "createAcpAgentsManager/executeTrackedToolCall": 25,
       "createAcpAgentsManager/getAllModelsForAgent": 29,
       "createAcpAgentsManager/handleRpc": 198,
@@ -50,31 +50,59 @@
     "dsh-acp/tests/agent-fixture.cjs": {
       "18206621b25e14e9": 69
     },
-    "mobile/web/app.js": {
-      "1ae13a31e85de5a6": 32,
-      "answerLegacyApproval": 22,
-      "backOneSurface": 27,
-      "d276f47bcf45eb5d/execute": 25,
+    "mobile/web/app/connect.js": {
+      "finishChisaCodeConnect": 21
+    },
+    "mobile/web/app/dialogs.js": {
+      "renderDialog": 37
+    },
+    "mobile/web/app/drawer.js": {
+      "subagentHistoryAddress": 21
+    },
+    "mobile/web/app/files.js": {
       "filePreviewNodes": 23,
-      "finishChisaCodeConnect": 21,
-      "gitAction": 34,
-      "handleMuxFrame": 68,
-      "handleWhaleUiAction": 34,
-      "loadExtensions": 24,
+      "openFilePreview": 21
+    },
+    "mobile/web/app/git.js": {
+      "gitAction": 34
+    },
+    "mobile/web/app/log-rows.js": {
       "logRowNode": 38,
-      "openFilePreview": 21,
-      "renderDialog": 37,
-      "renderLog": 23,
-      "renderModelPane": 27,
-      "renderSheet": 35,
-      "resolveWhaleUiResource": 55,
+      "toolRowNode": 22
+    },
+    "mobile/web/app/log.js": {
+      "renderLog": 23
+    },
+    "mobile/web/app/native.js": {
+      "d276f47bcf45eb5d/execute": 25
+    },
+    "mobile/web/app/navigation.js": {
+      "backOneSurface": 27,
+      "scheduleNavigation/2d323293e704a8fa": 23
+    },
+    "mobile/web/app/pickers.js": {
+      "renderSheet": 35
+    },
+    "mobile/web/app/session-actions.js": {
+      "answerLegacyApproval": 22,
       "respondToPendingApproval": 28,
-      "runExtAction": 21,
-      "scheduleNavigation/2d323293e704a8fa": 23,
-      "sendPrompt": 28,
-      "subagentHistoryAddress": 21,
-      "toolRowNode": 22,
+      "sendPrompt": 28
+    },
+    "mobile/web/app/session.js": {
+      "handleMuxFrame": 68
+    },
+    "mobile/web/app/settings.js": {
+      "renderModelPane": 27
+    },
+    "mobile/web/app/whale-ui.js": {
+      "1ae13a31e85de5a6": 32,
+      "handleWhaleUiAction": 34,
+      "resolveWhaleUiResource": 55,
       "whaleUiCardNode": 23
+    },
+    "mobile/web/app/work-panes.js": {
+      "loadExtensions": 24,
+      "runExtAction": 21
     },
     "mobile/web/chisacode/directory.js": {
       "subagentSheetItems": 21
@@ -437,43 +465,73 @@
     "src/renderer/launcher-components.js": {
       "14e99dd4dcf75312/runAction": 37
     },
-    "src/renderer/launcher.js": {
-      "actPlugin": 21,
+    "src/renderer/launcher-home.js": {
       "askPluginRecovery": 26,
-      "bind": 28,
       "installDelta": 40,
       "installPhaseText": 22,
       "installRuntime": 34,
       "installTag": 38,
       "launcherState": 22,
       "paintProgress": 24,
-      "refreshImport": 30,
-      "renderHomeRecovery": 39,
       "renderHomeStatus": 43,
-      "renderReleases": 27,
-      "renderRouteControls": 30,
-      "renderVersionLead": 27,
-      "summarizeImport": 22,
       "syncDesktopControls": 26,
       "updateCheckNotice": 26
+    },
+    "src/renderer/launcher-import.js": {
+      "refreshImport": 30,
+      "summarizeImport": 22
+    },
+    "src/renderer/launcher-plugins.js": {
+      "actPlugin": 21,
+      "renderHomeRecovery": 39
+    },
+    "src/renderer/launcher-routes.js": {
+      "renderRouteControls": 30
+    },
+    "src/renderer/launcher-versions.js": {
+      "renderReleases": 27,
+      "renderVersionLead": 27
+    },
+    "src/renderer/launcher.js": {
+      "bind": 28
     },
     "src/renderer/pet-dialogue.js": {
       "5ca753592a9c68ba/formatWithSpec": 53,
       "5ca753592a9c68ba/safeGetField": 21
     },
-    "src/renderer/pet-live2d.js": {
-      "chatShowPicker": 22,
-      "drawBubble": 32,
-      "drawPanel": 40,
-      "drawRig": 36,
-      "onCursorMove": 29,
-      "paintFrame": 56,
-      "pushBubble": 35,
-      "renderFrame": 25,
-      "runAction": 25,
-      "submitChat": 31,
-      "submitLook": 22,
+    "src/renderer/pet-live2d-animation.js": {
       "tickStill": 147
+    },
+    "src/renderer/pet-live2d-bubbles.js": {
+      "drawBubble": 32,
+      "pushBubble": 35
+    },
+    "src/renderer/pet-live2d-chat-session.js": {
+      "submitChat": 31
+    },
+    "src/renderer/pet-live2d-chat.js": {
+      "chatShowPicker": 22
+    },
+    "src/renderer/pet-live2d-interaction.js": {
+      "onCursorMove": 29
+    },
+    "src/renderer/pet-live2d-panel.js": {
+      "drawPanel": 40
+    },
+    "src/renderer/pet-live2d-presentation.js": {
+      "paintFrame": 56
+    },
+    "src/renderer/pet-live2d-rig.js": {
+      "drawRig": 36
+    },
+    "src/renderer/pet-live2d-runtime.js": {
+      "renderFrame": 25
+    },
+    "src/renderer/pet-live2d-settings.js": {
+      "submitLook": 22
+    },
+    "src/renderer/pet-live2d.js": {
+      "runAction": 25
     },
     "src/renderer/update-center.js": {
       "50aa44aad1ad2b8e/describe": 42
@@ -562,8 +620,8 @@
     },
     "vendor/dsh-remote/lib/sync.js": {
       "pushOneFile": 33,
-      "pushTree/walk/4620e583f5007a48": 35,
-      "syncTree/walk/0b8fa2fd4477634b": 28
+      "pushTree/walk/d085ab78fead9c80": 35,
+      "syncTree/walk/d4971959a507c992": 28
     },
     "vendor/dsh-task-control/lib/http.js": {
       "createControlHandler/controlRoute": 22
@@ -618,7 +676,6 @@
     "dsh-acp/client/client.js": 3258,
     "dsh-acp/lib/acp-session.js": 1826,
     "dsh-acp/lib/index.js": 2105,
-    "mobile/web/app.js": 8351,
     "scripts/after-pack.js": 1924,
     "scripts/lib/desktop-perf-worker.cjs": 856,
     "scripts/measure-desktop-lifecycle.mjs": 2019,
@@ -640,8 +697,6 @@
     "src/main/update.js": 1128,
     "src/main/wallpaper-catalog.js": 816,
     "src/main/window.js": 1044,
-    "src/renderer/launcher.js": 2840,
-    "src/renderer/pet-live2d.js": 5109,
     "tools/mobile-web-qa/fake-daemon-client.mjs": 1365,
     "tools/mobile-web-qa/run-live.mjs": 1069,
     "tools/mobile-web-qa/run-qa.mjs": 821,

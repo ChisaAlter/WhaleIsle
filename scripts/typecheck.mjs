@@ -3,7 +3,8 @@
 // src/shared、src/preload、src/main、src/main-launcher、src/host、
 // src/launcher、scripts、自有 vendor 插件 lib/tests）与
 // tsconfig.check.dom.json（浏览器侧：src/renderer、mobile/web、插件
-// client/）运行 tsc（allowJs + checkJs + strict，无构建产物），把诊断折叠成
+// client/）及 launcher/pet 两个经典脚本页面项目运行 tsc（allowJs +
+// checkJs + strict，无构建产物），把诊断折叠成
 // 「文件 + 错误码 + 首行消息」的计数合并后与 scripts/typecheck-baseline.json
 // 比较。同一诊断被两个程序重复命中（共享文件经 import 拉入）时按
 // 文件+行列+错误码+消息 去重，只计一次。
@@ -35,10 +36,12 @@ import { atomicWriteFileSync } from '../src/shared/fs-safe.js';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(SCRIPT_DIR, '..');
 const TSC = resolve(ROOT, 'node_modules/typescript/bin/tsc');
-// 默认依次运行 Node 侧与 DOM 侧两个项目，诊断合并进同一基线。
+// Node、独立 DOM 模块、启动器页面和桌宠页面分别检查，合并进同一基线。
 const DEFAULT_PROJECTS = [
   resolve(ROOT, 'tsconfig.check.json'),
   resolve(ROOT, 'tsconfig.check.dom.json'),
+  resolve(ROOT, 'tsconfig.check.launcher.json'),
+  resolve(ROOT, 'tsconfig.check.pet.json'),
 ];
 const DEFAULT_BASELINE = resolve(SCRIPT_DIR, 'typecheck-baseline.json');
 const DIFF_PREVIEW = 30;

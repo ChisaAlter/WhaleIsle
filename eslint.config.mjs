@@ -327,7 +327,7 @@ export default [
   // retain explicit ceilings in structure-baseline.json; new ones get 800/20.
   {
     files: CHECKED_FILES,
-    ignores: ['**/*.test.{js,mjs,cjs}', '**/*.child.cjs', '**/*.fixture.*'],
+    ignores: ['**/*.test.{js,mjs,cjs}', '**/*.child.cjs', '**/*.fixture.*', '**/*-test-kit.cjs'],
     rules: {
       'whaleisle/max-lines': 'error',
       'whaleisle/complexity': 'error',
