@@ -10,6 +10,8 @@ Harness 来源由 `vendor/harness-upstream.json` 记录；同步用 `npm run syn
 
 ## 实际装配
 
+`after-pack.js` 继续编排与校验装配；独立 Node 下载/校验及 Node/pnpm 拷贝在 `after-pack-node.js`。发布走查的注入页面 helper 字符串在 `src/main/release-ui-page-helpers.js`，由 `release-ui-walk.js` 使用。
+
 - `scripts/setup-harness.js` 使用锁文件中的 pnpm 和官方 `build:official`。客户端修改后构建该 profile，随后重启桌面。
 - `package.json` 保存 Electron、NSIS、DMG、资源和 afterPack 配置。根 `build.files` 是应用 ASAR 的唯一白名单；node-pty 平台排除放在该白名单中，`${platform}` 使用构建主机的平台。Windows 和 macOS 发布分别在对应平台原生构建。Windows 经 `scripts/run-electron-builder.cjs` 接入锁定上游的目录事务安装实现；安装器品牌与静默安装行为见[安装器资料](../../features/windows-installer.md)。
 - `vendor/dsh-pad` 固定携带 MIT 许可的 dsh-pad 0.3.1 运行文件，经 `extraResources` 分发；profile 链接让 Harness 使用同一套 peer 实例，插件不携带独立依赖树。普通与恢复启动均挂载桌面 overlay，构建装配检查两份运行入口，实际启动验证宿主与悬浮入口。

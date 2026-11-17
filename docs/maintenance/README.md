@@ -12,6 +12,8 @@
 
 `npm test` 运行桌面和移动端行为测试；`npm run test:tools` 运行构建、发布及维护工具测试。定向验证直接调用现有测试文件。新增测试应能发现实际故障，不用测试数量或覆盖率目标替代用户结果。
 
+自有生产 JavaScript 的行数/复杂度规则为 `whaleisle/max-lines`（800 行，含注释与空行）和 `whaleisle/complexity`（函数圈复杂度 20，沿用 ESLint 计法）。`scripts/structure-baseline.json` 逐文件、逐函数记录存量上限：本轮有 33 个超长文件、331 个复杂函数；这不代表已清零。新文件和同文件中的新函数使用默认值，既有预算也不允许继续增长。匿名回调用源内容哈希标识，修改后需按当前函数复核。拆分后应删除消失条目、下调对应上限，不能用通配文件豁免或抬高全局限制。
+
 依赖 Harness 构建产物、vendor 插件运行时、真实 Electron 或打包产物的用例经 `scripts/lib/test-prerequisites.cjs` 检测前提；缺失时按写明补齐命令的原因跳过，`WHALE_REQUIRE_TEST_PREREQS=1`（跑 `npm test` 的 CI 作业均设置）时改为失败，避免环境缺失被误读为真实回归或被跳过掩盖。
 
 在 Linux 上启动真实 Electron 的测试进程会自动处理沙箱：chrome-sandbox 不是 root 所有或缺少 4755（以及测试本身以 root 运行）时，共享辅助 `scripts/lib/electron-sandbox.cjs` 给测试子进程加 `ELECTRON_DISABLE_SANDBOX=1`；`npm start` 与打包产物不受影响。

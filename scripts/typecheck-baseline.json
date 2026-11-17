@@ -4389,6 +4389,17 @@
         "Function implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.": 1
       }
     },
+    "src/main/data-import-session-meta.js": {
+      "TS7006": {
+        "Parameter 'buffer' implicitly has an 'any' type.": 1,
+        "Parameter 'file' implicitly has an 'any' type.": 2,
+        "Parameter 'meta' implicitly has an 'any' type.": 2,
+        "Parameter 'name' implicitly has an 'any' type.": 2,
+        "Parameter 'rel' implicitly has an 'any' type.": 1,
+        "Parameter 'row' implicitly has an 'any' type.": 1,
+        "Parameter 'text' implicitly has an 'any' type.": 1
+      }
+    },
     "src/main/data-import.js": {
       "TS18046": {
         "'cleanupError' is of type 'unknown'.": 1,
@@ -4468,7 +4479,6 @@
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 1,
         "Parameter 'b' implicitly has an 'any' type.": 1,
-        "Parameter 'buffer' implicitly has an 'any' type.": 1,
         "Parameter 'dest' implicitly has an 'any' type.": 1,
         "Parameter 'destDir' implicitly has an 'any' type.": 1,
         "Parameter 'destEmpty' implicitly has an 'any' type.": 1,
@@ -4480,25 +4490,24 @@
         "Parameter 'entry' implicitly has an 'any' type.": 5,
         "Parameter 'event' implicitly has an 'any' type.": 3,
         "Parameter 'explicit' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 7,
+        "Parameter 'file' implicitly has an 'any' type.": 5,
         "Parameter 'from' implicitly has an 'any' type.": 1,
         "Parameter 'home' implicitly has an 'any' type.": 2,
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'journal' implicitly has an 'any' type.": 1,
         "Parameter 'journalFile' implicitly has an 'any' type.": 1,
         "Parameter 'left' implicitly has an 'any' type.": 1,
-        "Parameter 'meta' implicitly has an 'any' type.": 2,
-        "Parameter 'name' implicitly has an 'any' type.": 3,
+        "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'onProgress' implicitly has an 'any' type.": 1,
         "Parameter 'opId' implicitly has an 'any' type.": 2,
         "Parameter 'parsed' implicitly has an 'any' type.": 1,
         "Parameter 'payload' implicitly has an 'any' type.": 1,
         "Parameter 'peer' implicitly has an 'any' type.": 1,
         "Parameter 'prefix' implicitly has an 'any' type.": 1,
-        "Parameter 'rel' implicitly has an 'any' type.": 4,
+        "Parameter 'rel' implicitly has an 'any' type.": 3,
         "Parameter 'right' implicitly has an 'any' type.": 1,
         "Parameter 'root' implicitly has an 'any' type.": 5,
-        "Parameter 'row' implicitly has an 'any' type.": 8,
+        "Parameter 'row' implicitly has an 'any' type.": 7,
         "Parameter 'scan' implicitly has an 'any' type.": 1,
         "Parameter 'server' implicitly has an 'any' type.": 1,
         "Parameter 'servers' implicitly has an 'any' type.": 1,
@@ -4508,7 +4517,7 @@
         "Parameter 'sourceDir' implicitly has an 'any' type.": 1,
         "Parameter 'sourceHome' implicitly has an 'any' type.": 4,
         "Parameter 'target' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 4,
+        "Parameter 'text' implicitly has an 'any' type.": 3,
         "Parameter 'to' implicitly has an 'any' type.": 1,
         "Parameter 'userDataDir' implicitly has an 'any' type.": 2,
         "Parameter 'value' implicitly has an 'any' type.": 2
@@ -6218,6 +6227,89 @@
         "Parameter 'text' implicitly has an 'any' type.": 4
       }
     },
+    "src/main/preview-common.js": {
+      "TS2322": {
+        "Type '{ sandbox: true; contextIsolation: true; nodeIntegration: false; session: unknown; preload: string; }' is not assignable to type 'WebPreferences'.": 1
+      },
+      "TS7005": {
+        "Variable 'found' implicitly has an 'any[]' type.": 2
+      },
+      "TS7006": {
+        "Parameter 'bounds' implicitly has an 'any' type.": 1,
+        "Parameter 'callback' implicitly has an 'any' type.": 1,
+        "Parameter 'contents' implicitly has an 'any' type.": 1,
+        "Parameter 'data' implicitly has an 'any' type.": 1,
+        "Parameter 'details' implicitly has an 'any' type.": 1,
+        "Parameter 'error' implicitly has an 'any' type.": 1,
+        "Parameter 'event' implicitly has an 'any' type.": 1,
+        "Parameter 'input' implicitly has an 'any' type.": 1,
+        "Parameter 'next' implicitly has an 'any' type.": 4,
+        "Parameter 'ok' implicitly has an 'any' type.": 1,
+        "Parameter 'session' implicitly has an 'any' type.": 4,
+        "Parameter 'view' implicitly has an 'any' type.": 2
+      },
+      "TS7031": {
+        "Binding element 'bounds' implicitly has an 'any' type.": 1,
+        "Binding element 'partition' implicitly has an 'any' type.": 1
+      },
+      "TS7034": {
+        "Variable 'found' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
+      }
+    },
+    "src/main/preview-controller.js": {
+      "TS18048": {
+        "'imageApi.createFromPath' is possibly 'undefined'.": 1
+      },
+      "TS2339": {
+        "Property 'bounds' does not exist on type '{}'.": 1,
+        "Property 'close' does not exist on type 'object'.": 1,
+        "Property 'data' does not exist on type '{}'.": 1,
+        "Property 'getContentSize' does not exist on type 'object'.": 2,
+        "Property 'isDestroyed' does not exist on type 'object'.": 6,
+        "Property 'mimeType' does not exist on type '{}'.": 3,
+        "Property 'scope' does not exist on type '{}'.": 1,
+        "Property 'setAspectRatio' does not exist on type 'object'.": 2,
+        "Property 'setContentSize' does not exist on type 'object'.": 1,
+        "Property 'showInactive' does not exist on type 'object'.": 1,
+        "Property 'url' does not exist on type '{}'.": 1,
+        "Property 'webContents' does not exist on type 'object'.": 1,
+        "Property 'writeImage' does not exist on type 'Clipboard | { writeImage?: Function | undefined; }'.": 1
+      },
+      "TS2722": {
+        "Cannot invoke an object which is possibly 'undefined'.": 1
+      },
+      "TS7006": {
+        "Parameter '_description' implicitly has an 'any' type.": 1,
+        "Parameter '_event' implicitly has an 'any' type.": 4,
+        "Parameter '_failedUrl' implicitly has an 'any' type.": 1,
+        "Parameter '_isInPlace' implicitly has an 'any' type.": 1,
+        "Parameter '_url' implicitly has an 'any' type.": 1,
+        "Parameter 'artifactPath' implicitly has an 'any' type.": 2,
+        "Parameter 'bounds' implicitly has an 'any' type.": 2,
+        "Parameter 'capture' implicitly has an 'any' type.": 1,
+        "Parameter 'closeWindow' implicitly has an 'any' type.": 1,
+        "Parameter 'code' implicitly has an 'any' type.": 1,
+        "Parameter 'consumer' implicitly has an 'any' type.": 2,
+        "Parameter 'crop' implicitly has an 'any' type.": 1,
+        "Parameter 'cropRect' implicitly has an 'any' type.": 1,
+        "Parameter 'event' implicitly has an 'any' type.": 1,
+        "Parameter 'id' implicitly has an 'any' type.": 25,
+        "Parameter 'input' implicitly has an 'any' type.": 1,
+        "Parameter 'isMainFrame' implicitly has an 'any' type.": 2,
+        "Parameter 'next' implicitly has an 'any' type.": 1,
+        "Parameter 'payload' implicitly has an 'any' type.": 1,
+        "Parameter 'previewId' implicitly has an 'any' type.": 5,
+        "Parameter 'result' implicitly has an 'any' type.": 1,
+        "Parameter 'scheme' implicitly has an 'any' type.": 1,
+        "Parameter 'ses' implicitly has an 'any' type.": 2,
+        "Parameter 'session' implicitly has an 'any' type.": 3,
+        "Parameter 'theme' implicitly has an 'any' type.": 1,
+        "Parameter 'title' implicitly has an 'any' type.": 1,
+        "Parameter 'url' implicitly has an 'any' type.": 1,
+        "Parameter 'wc' implicitly has an 'any' type.": 2,
+        "Parameter 'windowOptions' implicitly has an 'any' type.": 1
+      }
+    },
     "src/main/preview-file-target.js": {
       "TS2322": {
         "Type '{ ok: boolean; message: any; } | { ok: boolean; cwd: any; relativePath: string; }' is not assignable to type '{ ok: true; cwd: string; relativePath: string; } | { ok: false; message: string; }'.": 1,
@@ -6333,6 +6425,64 @@
         "Variable 'strokes' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       }
     },
+    "src/main/preview-ipc.js": {
+      "TS2322": {
+        "Type '(previewIds: Set<string>, singletons: Set<string>, generation: number) => Promise<void>' is not assignable to type '() => Promise<void>'.": 1
+      },
+      "TS2339": {
+        "Property 'attach' does not exist on type '{}'.": 1,
+        "Property 'authorize' does not exist on type '{}'.": 2,
+        "Property 'clipboard' does not exist on type '{}'.": 1,
+        "Property 'code' does not exist on type 'Error'.": 2,
+        "Property 'createFilePreviewWindow' does not exist on type '{}'.": 1,
+        "Property 'createPipWindow' does not exist on type '{}'.": 1,
+        "Property 'filePreviewHtmlPath' does not exist on type '{}'.": 1,
+        "Property 'filePreviewPreloadPath' does not exist on type '{}'.": 1,
+        "Property 'filePreviewWindow' does not exist on type '{}'.": 1,
+        "Property 'getLocale' does not exist on type '{}'.": 1,
+        "Property 'getTheme' does not exist on type '{}'.": 1,
+        "Property 'id' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; id: `${string}-${string}-${string}-${string}-${string}`; url: string; }'.": 2,
+        "Property 'nativeImage' does not exist on type '{}'.": 1,
+        "Property 'onTeardownError' does not exist on type '{}'.": 2,
+        "Property 'platform' does not exist on type '{}'.": 1,
+        "Property 'readFile' does not exist on type '{}'.": 2,
+        "Property 'showItemInFolder' does not exist on type '{}'.": 1,
+        "Property 'userDataPath' does not exist on type '{}'.": 1,
+        "Property 'workspaceAuthority' does not exist on type '{}'.": 1,
+        "Property 'workspacePreview' does not exist on type '{}'.": 1
+      },
+      "TS2554": {
+        "Expected 0 arguments, but got 3.": 1
+      },
+      "TS7005": {
+        "Variable 'boundHost' implicitly has an 'any' type.": 2,
+        "Variable 'host' implicitly has an 'any' type.": 7
+      },
+      "TS7006": {
+        "Parameter '_event' implicitly has an 'any' type.": 29,
+        "Parameter 'artifactPath' implicitly has an 'any' type.": 2,
+        "Parameter 'bounds' implicitly has an 'any' type.": 2,
+        "Parameter 'channel' implicitly has an 'any' type.": 1,
+        "Parameter 'close' implicitly has an 'any' type.": 1,
+        "Parameter 'error' implicitly has an 'any' type.": 1,
+        "Parameter 'event' implicitly has an 'any' type.": 1,
+        "Parameter 'generation' implicitly has an 'any' type.": 5,
+        "Parameter 'id' implicitly has an 'any' type.": 24,
+        "Parameter 'input' implicitly has an 'any' type.": 3,
+        "Parameter 'name' implicitly has an 'any' type.": 1,
+        "Parameter 'payload' implicitly has an 'any' type.": 2,
+        "Parameter 'result' implicitly has an 'any' type.": 1,
+        "Parameter 'scheme' implicitly has an 'any' type.": 1,
+        "Parameter 'sender' implicitly has an 'any' type.": 2,
+        "Parameter 'theme' implicitly has an 'any' type.": 1,
+        "Parameter 'url' implicitly has an 'any' type.": 1,
+        "Parameter 'work' implicitly has an 'any' type.": 2
+      },
+      "TS7034": {
+        "Variable 'boundHost' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
+        "Variable 'host' implicitly has type 'any' in some locations where its type cannot be determined.": 1
+      }
+    },
     "src/main/preview-pick-helpers.js": {
       "TS2339": {
         "Property 'children' does not exist on type 'object'.": 2,
@@ -6376,114 +6526,6 @@
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ html: string; htm: string; xhtml: string; css: string; js: string; mjs: string; json: string; map: string; svg: string; png: string; jpg: string; jpeg: string; gif: string; webp: string; bmp: string; ico: string; ... <n> more ...; flac: string; }'.": 1
-      }
-    },
-    "src/main/preview.js": {
-      "TS18048": {
-        "'imageApi.createFromPath' is possibly 'undefined'.": 1
-      },
-      "TS2322": {
-        "Type '(previewIds: Set<string>, singletons: Set<string>, generation: number) => Promise<void>' is not assignable to type '() => Promise<void>'.": 1,
-        "Type '{ sandbox: true; contextIsolation: true; nodeIntegration: false; session: unknown; preload: string; }' is not assignable to type 'WebPreferences'.": 1
-      },
-      "TS2339": {
-        "Property 'attach' does not exist on type '{}'.": 1,
-        "Property 'authorize' does not exist on type '{}'.": 2,
-        "Property 'bounds' does not exist on type '{}'.": 1,
-        "Property 'clipboard' does not exist on type '{}'.": 1,
-        "Property 'close' does not exist on type 'object'.": 1,
-        "Property 'code' does not exist on type 'Error'.": 2,
-        "Property 'createFilePreviewWindow' does not exist on type '{}'.": 1,
-        "Property 'createPipWindow' does not exist on type '{}'.": 1,
-        "Property 'data' does not exist on type '{}'.": 1,
-        "Property 'filePreviewHtmlPath' does not exist on type '{}'.": 1,
-        "Property 'filePreviewPreloadPath' does not exist on type '{}'.": 1,
-        "Property 'filePreviewWindow' does not exist on type '{}'.": 1,
-        "Property 'getContentSize' does not exist on type 'object'.": 2,
-        "Property 'getLocale' does not exist on type '{}'.": 1,
-        "Property 'getTheme' does not exist on type '{}'.": 1,
-        "Property 'id' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; id: `${string}-${string}-${string}-${string}-${string}`; url: string; }'.": 2,
-        "Property 'isDestroyed' does not exist on type 'object'.": 6,
-        "Property 'mimeType' does not exist on type '{}'.": 3,
-        "Property 'nativeImage' does not exist on type '{}'.": 1,
-        "Property 'onTeardownError' does not exist on type '{}'.": 2,
-        "Property 'platform' does not exist on type '{}'.": 1,
-        "Property 'readFile' does not exist on type '{}'.": 2,
-        "Property 'scope' does not exist on type '{}'.": 1,
-        "Property 'setAspectRatio' does not exist on type 'object'.": 2,
-        "Property 'setContentSize' does not exist on type 'object'.": 1,
-        "Property 'showInactive' does not exist on type 'object'.": 1,
-        "Property 'showItemInFolder' does not exist on type '{}'.": 1,
-        "Property 'url' does not exist on type '{}'.": 1,
-        "Property 'userDataPath' does not exist on type '{}'.": 1,
-        "Property 'webContents' does not exist on type 'object'.": 1,
-        "Property 'workspaceAuthority' does not exist on type '{}'.": 1,
-        "Property 'workspacePreview' does not exist on type '{}'.": 1,
-        "Property 'writeImage' does not exist on type 'Clipboard | { writeImage?: Function | undefined; }'.": 1
-      },
-      "TS2554": {
-        "Expected 0 arguments, but got 3.": 1
-      },
-      "TS2722": {
-        "Cannot invoke an object which is possibly 'undefined'.": 1
-      },
-      "TS7005": {
-        "Variable 'boundHost' implicitly has an 'any' type.": 2,
-        "Variable 'found' implicitly has an 'any[]' type.": 2,
-        "Variable 'host' implicitly has an 'any' type.": 7
-      },
-      "TS7006": {
-        "Parameter '_description' implicitly has an 'any' type.": 1,
-        "Parameter '_event' implicitly has an 'any' type.": 33,
-        "Parameter '_failedUrl' implicitly has an 'any' type.": 1,
-        "Parameter '_isInPlace' implicitly has an 'any' type.": 1,
-        "Parameter '_url' implicitly has an 'any' type.": 1,
-        "Parameter 'artifactPath' implicitly has an 'any' type.": 4,
-        "Parameter 'bounds' implicitly has an 'any' type.": 5,
-        "Parameter 'callback' implicitly has an 'any' type.": 1,
-        "Parameter 'capture' implicitly has an 'any' type.": 1,
-        "Parameter 'channel' implicitly has an 'any' type.": 1,
-        "Parameter 'close' implicitly has an 'any' type.": 1,
-        "Parameter 'closeWindow' implicitly has an 'any' type.": 1,
-        "Parameter 'code' implicitly has an 'any' type.": 1,
-        "Parameter 'consumer' implicitly has an 'any' type.": 2,
-        "Parameter 'contents' implicitly has an 'any' type.": 1,
-        "Parameter 'crop' implicitly has an 'any' type.": 1,
-        "Parameter 'cropRect' implicitly has an 'any' type.": 1,
-        "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'details' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 2,
-        "Parameter 'event' implicitly has an 'any' type.": 3,
-        "Parameter 'generation' implicitly has an 'any' type.": 5,
-        "Parameter 'id' implicitly has an 'any' type.": 49,
-        "Parameter 'input' implicitly has an 'any' type.": 5,
-        "Parameter 'isMainFrame' implicitly has an 'any' type.": 2,
-        "Parameter 'name' implicitly has an 'any' type.": 1,
-        "Parameter 'next' implicitly has an 'any' type.": 5,
-        "Parameter 'ok' implicitly has an 'any' type.": 1,
-        "Parameter 'payload' implicitly has an 'any' type.": 3,
-        "Parameter 'previewId' implicitly has an 'any' type.": 5,
-        "Parameter 'result' implicitly has an 'any' type.": 2,
-        "Parameter 'scheme' implicitly has an 'any' type.": 2,
-        "Parameter 'sender' implicitly has an 'any' type.": 2,
-        "Parameter 'ses' implicitly has an 'any' type.": 2,
-        "Parameter 'session' implicitly has an 'any' type.": 7,
-        "Parameter 'theme' implicitly has an 'any' type.": 2,
-        "Parameter 'title' implicitly has an 'any' type.": 1,
-        "Parameter 'url' implicitly has an 'any' type.": 2,
-        "Parameter 'view' implicitly has an 'any' type.": 2,
-        "Parameter 'wc' implicitly has an 'any' type.": 2,
-        "Parameter 'windowOptions' implicitly has an 'any' type.": 1,
-        "Parameter 'work' implicitly has an 'any' type.": 2
-      },
-      "TS7031": {
-        "Binding element 'bounds' implicitly has an 'any' type.": 1,
-        "Binding element 'partition' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'boundHost' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'found' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1,
-        "Variable 'host' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
     "src/main/proactive/github-source.js": {

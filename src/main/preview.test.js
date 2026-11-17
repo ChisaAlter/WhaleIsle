@@ -1986,22 +1986,32 @@ test('native preview attachment preserves capture through menu hide, PiP, and si
   }
   // Exercise the production default attachment, which injected fakeAttach tests
   // previously bypassed. Model the observed loss of capture when it detaches.
-  const source = await fs.readFile(path.join(__dirname, 'preview.js'), 'utf8');
-  const loaded = { exports: {} };
-  vm.runInNewContext(source, {
+  const modules = new Map();
+  async function loadPreviewModule(name) {
+    const source = await fs.readFile(path.join(__dirname, name + '.js'), 'utf8');
+    const loaded = { exports: {} };
+    vm.runInNewContext(source, {
     module: loaded, __dirname, Buffer, process, setInterval, clearInterval,
     require(id) {
       if (id === 'electron') return { WebContentsView: NativeView, BrowserView: NativeView };
       if (id === './window') return { getMainWindow: () => win };
       if (id === './preview-session') return { ...require(id),
         previewSessionForPartition: () => ({ webRequest: { onBeforeRequest() {} } }) };
+      if (modules.has(id)) return modules.get(id);
       return require(id);
     },
-  });
+    });
+    modules.set('./' + name, loaded.exports);
+    return loaded.exports;
+  }
+  await loadPreviewModule('preview-common');
+  await loadPreviewModule('preview-controller');
+  await loadPreviewModule('preview-ipc');
+  const previewModule = await loadPreviewModule('preview');
   const pip = createPipFactory();
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-native-attachment-'));
   t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
-  const preview = loaded.exports.createPreviewController({ createPipWindow: pip.createPipWindow, userDataPath });
+  const preview = previewModule.createPreviewController({ createPipWindow: pip.createPipWindow, userDataPath });
   const bounds = { x: 10, y: 20, width: 539, height: 750 };
   const opened = await preview.open({ url: 'http://127.0.0.1:3000', bounds });
   try {

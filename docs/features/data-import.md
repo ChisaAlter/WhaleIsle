@@ -11,6 +11,8 @@
 | **last verified (v3 gate)** | 2026-09-23 — `session.v3.jsonl(.zstd)` 与旧名共同参与浅探针、导入扫描和冲突识别；真实桌面 home 的 `probeImportHold` 为 `hold:false`，`data-import` + `launcher-gate` 51/51 通过。 |
 | **last verified** | 2026-09-20 — C1 性能基线（仅测量，无产品行为变更）：`probeImportHold` / `scanImport` / `listDir` 的函数级测量与判定见 `docs/decisions/proposed/testing/2026-09-20-desktop-performance-measurement.md` 与审计计划 Phase 6。此前 2026-09-20 — B3 持久化负路径：取消发生在最后一个会话拷贝之后或后续 skills/plugins/settings 阶段时，journal 必须保持 `copying` 供冷启动恢复，不能提前写 `done`；未完成会话只留完整已拷贝项与可清理的 `.import-tmp` 暂存目录。`node --test src/main/data-import.test.js` 26/26 通过。此前 2026-09-15 — 导入改异步可取消（`966bd84`）：拷贝阶段让出事件循环、逐项间响应 `shell:cancel-import`；启动器按阶段显示进度并给可续跑提示。`node --test data-import.test.js ipc.test.js` 81/81 通过。此前 2026-09-05 — 历史会话恢复与插件归因定向检查：Harness 工作区/API/旧缓存 121 项、桌面导入/恢复/打包单测 171 项通过；重新登记已有目录接纳导入历史，缓存格式错误不归咎用户插件。未执行候选安装包升级实测。此前：2026-08-25 — 新增设置白名单节 / 引用凭据 / `.agent-presets` / home `AGENTS.md` 导入；冷启动闸门改 shallow probe；导入页展示「将迁移/不迁移」说明 |
 
+会话 JSONL/zstd 的只读展示元数据解析位于 `src/main/data-import-session-meta.js`；扫描、导入与事务编排保留在 `data-import.js`。
+
 ## User paths
 
 1. 启动器「导入」自动只读扫描官方 `~/.dsh`（会话、附件、`profiles/web/package.json` 插件名单、`skills/`、`mcp-servers.yaml`）以及 `~/.agents/skills`。
