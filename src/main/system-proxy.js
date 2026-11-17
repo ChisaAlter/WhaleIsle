@@ -11,6 +11,11 @@ const tls = require('tls');
 // same proxy decision as Chromium. Outside a ready Electron app (unit tests,
 // source tools) everything stays direct. A proxy that cannot be reached or
 // refuses the tunnel (left enabled after its app quit) falls back to direct.
+//
+// A user-entered update proxy (setUpdateProxy) overrides that decision for the
+// update traffic only: Node downloads tunnel through it, fetch and
+// electron-updater's own net session use it, and it never falls back to direct
+// because the user asked for that route.
 
 // Below the download's 20 s connection budget, so a stalled proxy is blamed on the proxy.
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -59,7 +64,78 @@ function parseProxyRule(rule) {
   }
 }
 
+// { host, port, url } while the user has set an update proxy, else null.
+let updateProxy = null;
+
+/**
+ * '' clears. Otherwise a plain HTTP proxy as "host:port" or "http://host:port".
+ * Credentials are refused so no secret lands in the plain-text settings file.
+ */
+function parseUpdateProxy(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  let url;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`);
+  } catch {
+    throw new Error('更新代理地址无效，请填写 http://主机:端口，例如 http://127.0.0.1:7890');
+  }
+  if (url.protocol !== 'http:') throw new Error('更新代理只支持普通 HTTP 代理（SOCKS、HTTPS 代理暂不支持）');
+  if (url.username || url.password) throw new Error('更新代理暂不支持用户名和密码');
+  if (url.pathname !== '/' || url.search || url.hash) throw new Error('更新代理只需要主机和端口，例如 http://127.0.0.1:7890');
+  // URL drops the scheme's default port, so ":80" must be recognised from the text.
+  const port = url.port || (/:0*80\/?$/.test(text) ? '80' : '');
+  if (!url.hostname || !port || Number(port) < 1) throw new Error('更新代理需要写明主机和端口，例如 http://127.0.0.1:7890');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  return { host, port: Number(port), url: `http://${host.includes(':') ? `[${host}]` : host}:${port}` };
+}
+
+/** Canonical form of a valid update proxy ('' when cleared); throws on an invalid one. */
+function normalizeUpdateProxy(value) {
+  return parseUpdateProxy(value)?.url || '';
+}
+
+/**
+ * Set (or clear) the update proxy. Validation happens before any state
+ * changes. Inside a ready Electron app it is also applied to electron-updater's
+ * private net session, so differential downloads follow it and the rest of the
+ * app's networking is untouched.
+ */
+let applying = Promise.resolve();
+
+function setUpdateProxy(value) {
+  // Serialized, and the in-memory choice changes only after the session accepted it,
+  // so concurrent or failed changes never leave the two disagreeing.
+  const run = applying.then(async () => {
+    const next = parseUpdateProxy(value);
+    if (readyElectron()) {
+      const { getNetSession } = require('electron-updater/out/electronHttpExecutor');
+      await getNetSession().setProxy(next ? { mode: 'fixed_servers', proxyRules: next.url } : { mode: 'system' });
+    }
+    updateProxy = next;
+  });
+  applying = run.catch(() => {});
+  return run;
+}
+
+/**
+ * A failure of the user's own update proxy, said plainly: switching route would
+ * not help, so it must not read as an unstable network. Other errors pass through.
+ */
+function explainUpdateProxyFailure(error) {
+  if (!updateProxy || !error || error.code === 'ERR_UPDATE_PROXY') return error;
+  if (!error.proxyFailure && !PROXY_NET_ERROR.test(String(error.message || ''))) return error;
+  return Object.assign(new Error(`无法通过更新代理 ${updateProxy.url} 连接，请确认代理正在运行且无需登录，或清空「更新代理」以跟随系统代理`),
+    { code: 'ERR_UPDATE_PROXY', cause: error });
+}
+
+/** True while the user's update proxy is in force; its failures must surface instead of dropping to direct. */
+function hasUpdateProxy() {
+  return Boolean(updateProxy);
+}
+
 async function resolveProxy(url) {
+  if (updateProxy) return updateProxy;
   const session = readyElectron()?.session?.defaultSession;
   if (!session?.resolveProxy) return null;
   try {
@@ -140,14 +216,16 @@ function withNetworkCode(error) {
 
 /** fetch() that follows the system proxy inside a ready Electron app. */
 async function systemFetch(url, init = {}) {
-  const net = readyElectron()?.net;
+  const electron = readyElectron();
+  const explicit = Boolean(updateProxy && electron);
+  const net = explicit ? require('electron-updater/out/electronHttpExecutor').getNetSession() : electron?.net;
   if (typeof net?.fetch !== 'function') return fetch(url, init);
   try {
     return await net.fetch(url, { cache: 'no-store', ...init });
   } catch (error) {
-    if (PROXY_NET_ERROR.test(String(error?.message || '')) && !init.signal?.aborted) return fetch(url, init);
-    throw withNetworkCode(error);
+    if (!explicit && PROXY_NET_ERROR.test(String(error?.message || '')) && !init.signal?.aborted) return fetch(url, init);
+    throw explicit ? explainUpdateProxyFailure(withNetworkCode(error)) : withNetworkCode(error);
   }
 }
 
-module.exports = { agentFor, systemFetch, parseProxyRule, withNetworkCode, TunnelAgent };
+module.exports = { agentFor, systemFetch, parseProxyRule, withNetworkCode, TunnelAgent, parseUpdateProxy, normalizeUpdateProxy, setUpdateProxy, hasUpdateProxy, explainUpdateProxyFailure };

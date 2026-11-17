@@ -5,6 +5,7 @@
 
 const { gunzipSync } = require('zlib');
 const { createUpdateCenter } = require('./service');
+const { normalizeUpdateProxy, setUpdateProxy } = require('../system-proxy');
 
 const BLOCKMAP_TIMEOUT_MS = 30_000;
 
@@ -43,6 +44,8 @@ function createDesktopUpdateCenter({ app, loadConfig, saveConfig, taskProtection
   const releaseSource = require('../../launcher/release-source');
   const configuredRoute = () => releaseSource.normalizeRoute(loadConfig().downloadRoute);
   const info = (target) => ({ ...target, latest: target.version });
+  // The saved proxy is in force from startup; an unusable stored value just leaves the system proxy.
+  void setUpdateProxy(loadConfig().updateProxy).catch((error) => log(`更新代理未生效：${error.message}`));
   return createUpdateCenter({
     userDataDir: app.getPath('userData'),
     currentVersion: () => update.currentVersion(),
@@ -52,6 +55,18 @@ function createDesktopUpdateCenter({ app, loadConfig, saveConfig, taskProtection
     saveRoute: (route) => saveConfig({ downloadRoute: route }),
     getAutoDownload: () => loadConfig().autoDownloadUpdates !== false,
     saveAutoDownload: (enabled) => saveConfig({ autoDownloadUpdates: enabled }),
+    getProxy: () => loadConfig().updateProxy || '',
+    saveProxy: async (value) => {
+      const proxy = normalizeUpdateProxy(value);
+      const previous = loadConfig().updateProxy || '';
+      await setUpdateProxy(proxy);
+      try {
+        saveConfig({ updateProxy: proxy });
+      } catch (error) {
+        await setUpdateProxy(previous).catch(() => {});
+        throw error;
+      }
+    },
     resolveRelease: (route, tag) => releaseSource.releaseFor(route, tag || null, { installedVersion: update.currentVersion() }),
     planDelta: (target) => planDelta(target, { updater }),
     readChecksum: (name, url, options) => update.readAssetChecksum(name, url, options),
