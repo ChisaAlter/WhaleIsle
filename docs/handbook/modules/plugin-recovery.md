@@ -23,7 +23,7 @@
 ## 实现入口
 
 - `plugin-forensics.js`、`plugins.js`、`harness-controller.js`、`plugin-tree-failure.js`、`plugin-recovery-actions.js`
-- `src/renderer/launcher.js`、`src/renderer/boot-recovery.js`
+- `src/renderer/launcher-plugins.js`、`src/renderer/boot-recovery.js`
 - Preload launcher：`pluginForensics`、`disablePlugin`、`disableSuspectsAndStart`、`enablePlugin`、`removePlugin`、`skipUserPlugins`、`retryFullPlugins`
 
 ## 不变量

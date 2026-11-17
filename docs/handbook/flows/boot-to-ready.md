@@ -46,4 +46,4 @@ sequenceDiagram
 ## 入口
 
 - `src/main/index.js`、`launcher-gate.js`、`window.js`、`harness-controller.js`、`dsh.js`、`src/shared/dsh-home.js`
-- `src/renderer/launcher.js`、`boot.js`、`boot-recovery.js`
+- `src/renderer/launcher*.js`、`boot.js`、`boot-recovery.js`
