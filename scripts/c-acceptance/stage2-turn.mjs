@@ -6,7 +6,7 @@ import fs from 'node:fs'
 
 const OUT = 'docs/superpowers/evidence/2026-09-25-upstream-adoption/c-phase'
 fs.mkdirSync(OUT, { recursive: true })
-const shot = async (page, name) => { await page.screenshot({ path: `${OUT}/${name}.png` }).catch((error) => { console.warn('[scripts/c-acceptance/stage2-turn.mjs] background operation failed', error); }) }
+const shot = async (page, name) => { await page.screenshot({ path: `${OUT}/${name}.png` }).catch((/** @type {unknown} */ error) => { console.warn('[scripts/c-acceptance/stage2-turn.mjs] background operation failed', error); }) }
 
 const PROMPT = 'Create a file c1-probe.ts in this workspace containing exactly this one line: export const c1 = "acceptance". Then stop. Do not run anything else.'
 const DEADLINE = Date.now() + 150_000
@@ -40,7 +40,7 @@ while (Date.now() < DEADLINE) {
   // approval affordances: buttons labelled 允许/批准/Approve/Allow/Always
   const approve = page.locator('button').filter({ hasText: /^(允许|批准|Approve|Allow|Always allow|始终允许)/ }).first()
   if (await approve.count() > 0 && await approve.isVisible().catch(() => false)) {
-    await approve.click().catch((error) => { console.warn('[scripts/c-acceptance/stage2-turn.mjs] background operation failed', error); })
+    await approve.click().catch((/** @type {unknown} */ error) => { console.warn('[scripts/c-acceptance/stage2-turn.mjs] background operation failed', error); })
     approved++
     continue
   }
