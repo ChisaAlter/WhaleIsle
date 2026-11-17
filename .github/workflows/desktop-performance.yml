@@ -1,0 +1,67 @@
+name: Desktop performance trend
+on:
+  schedule:
+    - cron: '43 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: desktop-performance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      LEFTHOOK: '0'
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run setup
+      - name: Find the previous successful report on this branch
+        id: previous
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow desktop-performance.yml --branch "$GITHUB_REF_NAME" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$previous" ]; then
+            gh run download "$previous" --repo "$GITHUB_REPOSITORY" --name "desktop-performance-${{ matrix.os }}" --dir work/desktop-runtime-previous
+            echo 'argument=--previous work/desktop-runtime-previous/report.json' >> "$GITHUB_OUTPUT"
+          else
+            echo 'First successful measurement for this branch: no previous report.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Allow Chromium sandbox user namespaces
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Measure the real desktop (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -noreset" node scripts/measure-desktop-runtime.mjs --out work/desktop-runtime ${{ steps.previous.outputs.argument }}
+      - name: Measure the real desktop (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: node scripts/measure-desktop-runtime.mjs --out work/desktop-runtime ${{ steps.previous.outputs.argument }}
+      - name: Publish investigation budget summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f work/desktop-runtime/summary.md ]; then
+            cat work/desktop-runtime/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: desktop-performance-${{ matrix.os }}
+          path: work/desktop-runtime
+          if-no-files-found: warn
+          retention-days: 90
