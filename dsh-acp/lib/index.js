@@ -1330,7 +1330,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
     // Persist the runtime's confirmed-auth marker too — account status reads authState,
     // not acpAuthedAt, so without this the UI reports "未登录" forever and
     // re-prompts sign-in after every successful session authenticate.
-    authManager?.markAuthenticated?.(agent);
+    void authManager?.markAuthenticated?.(agent).catch(error => appendAcpErrorLog('authentication/persist', error, { agentId }));
     if (agent.acpAuthedAt) return;
     const updated = normalizeAgentRecord(
       { ...agent, acpAuthedAt: Date.now() },
