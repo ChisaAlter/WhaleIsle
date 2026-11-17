@@ -64,6 +64,11 @@ const DEFAULTS = {
   // the dsh-remote overlay composes or drops on the next start. Distinct
   // from `remoteEnabled`, which gates the phone/LAN remote pairing daemon.
   remoteWorkspaceEnabled: true,
+  // Message channels (dsh-im, Settings → Remote → 消息渠道) — on by default;
+  // toggling restarts Harness so the dsh-im overlay composes or drops on the
+  // next start. A skip-user-plugins recovery start drops it too when the
+  // recorded failure evidence names dsh-im.
+  dshImEnabled: true,
   pet: {
     enabled: true,
     xRatio: 0.82,
@@ -139,7 +144,7 @@ function normalizeRendererConfigPatch(patch) {
   }
   const next = {};
   for (const [key, value] of Object.entries(patch)) {
-    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'].includes(key)) {
+    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled', 'dshImEnabled'].includes(key)) {
       if (typeof value !== 'boolean') {
         throw new TypeError(`${key} must be a boolean`);
       }

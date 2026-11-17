@@ -281,7 +281,7 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
 }
 
 /** Config fields that choose which built-in plugin overlays the next Harness start composes. */
-const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'];
+const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled', 'dshImEnabled'];
 
 /**
  * Apply a renderer-writable config patch with the same normalization and
@@ -324,7 +324,7 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
     harness.refreshPolicy();
   }
   if (harness && typeof startHarness === 'function' && toggles.length) {
-    // The Project / whale-assistant / remote-workspace toggles change
+    // Built-in feature toggles change
     // which overlays the next start composes, so Harness restarts. The revert
     // stays inside the maintenance slot the write acquired.
     const restart = () => holdThrough(token, enqueueProfileAlign(async () => {

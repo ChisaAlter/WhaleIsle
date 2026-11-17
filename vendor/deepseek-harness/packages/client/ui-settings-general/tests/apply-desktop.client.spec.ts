@@ -10,6 +10,7 @@ import { CloseBehaviorRow } from '../src/client/CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from '../src/client/AutoStartDesktopRow.tsx'
 import { ProjectRow } from '../src/client/ProjectRow.tsx'
 import { RemoteWorkspaceRow } from '../src/client/RemoteWorkspaceRow.tsx'
+import { DshImRow } from '../src/client/DshImRow.tsx'
 import { WhaleAssistantRow } from '../src/client/WhaleAssistantRow.tsx'
 import { PetSection } from '../src/client/PetSection.tsx'
 import type { PetSectionInjected } from '../src/client/PetSection.tsx'
@@ -81,6 +82,10 @@ describe('ui-settings-general desktop close-behavior row', () => {
     expect(projectRow.component).toBe(ProjectRow)
     expect(projectRow.options).toMatchObject({ id: 'project', order: 79 })
     expect(projectRow.locale).toBe('settings')
+    const dshImRow = featureRows.find(row => row.options.id === 'dsh-im')!
+    expect(dshImRow.component).toBe(DshImRow)
+    expect(dshImRow.options).toMatchObject({ id: 'dsh-im', order: 80 })
+    expect(dshImRow.locale).toBe('settings')
     const remoteWorkspaceRow = featureRows.find(row => row.options.id === 'remote-workspace')!
     expect(remoteWorkspaceRow.component).toBe(RemoteWorkspaceRow)
     expect(remoteWorkspaceRow.options).toMatchObject({ id: 'remote-workspace', order: 81 })
@@ -89,7 +94,7 @@ describe('ui-settings-general desktop close-behavior row', () => {
       .find(row => row.options.id === 'whale-assistant')!
     expect(whaleRow.component).toBe(WhaleAssistantRow)
     expect(b.slots.entries('settings.features.item').map(row => row.options.id))
-      .toEqual(['whale-assistant', 'project', 'remote-workspace'])
+      .toEqual(['whale-assistant', 'project', 'dsh-im', 'remote-workspace'])
     await fiber.dispose()
     expect(b.slots.entries('settings.general.item')).toEqual([])
     expect(b.slots.entries('settings.interface.item')).toEqual([])

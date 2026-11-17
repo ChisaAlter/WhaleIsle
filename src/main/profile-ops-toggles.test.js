@@ -66,3 +66,23 @@ test('patches without a built-in plugin toggle neither restart nor wait', () => 
   assert.equal(saved.closeToTray, false);
   assert.equal(importGuard.isMaintenanceHeld(), false);
 });
+
+for (const refused of [false, true]) {
+  test(`the IM toggle restarts Harness and ${refused ? 'restores its value on refusal' : 'keeps the new value on success'}`, async () => {
+    const config = store({ dshImEnabled: true });
+    let restarts = 0;
+    const saved = await applyRendererConfigPatch({ dshImEnabled: false }, {
+      harness: {}, configIO: config.io, waitForRestart: true,
+      startHarness: async () => {
+        restarts++;
+        assert.equal(config.read().dshImEnabled, false);
+        return refused ? { proceeded: false, code: 'cancelled' } : undefined;
+      },
+    });
+    assert.equal(restarts, 1);
+    assert.equal(saved.dshImEnabled, refused);
+    assert.equal(config.read().dshImEnabled, refused);
+    assert.equal(saved.restartCancelled, refused ? true : undefined);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  });
+}
