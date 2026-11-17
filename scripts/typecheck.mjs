@@ -8,6 +8,17 @@
 // 比较。同一诊断被两个程序重复命中（共享文件经 import 拉入）时按
 // 文件+行列+错误码+消息 去重，只计一次。
 //
+// 结果与环境无关：
+// - 只统计 tsconfig include/files 命中的"范围内"文件（见 projectFiles）；
+//   被 import 拉进程序的 node_modules、构建产物 dist 等范围外文件不计入，
+//   它们是否存在于磁盘不影响结果；
+// - 消息里的 …/node_modules/ 路径前缀统一归一为 <node_modules>/（worktree
+//   的 node_modules 常是指向共享目录的符号链接，绝对路径随环境不同）；
+// - 可选构建产物/可选依赖的解析由入库 .d.ts 固定：lib/index.js 导入的
+//   ../bridge/dist/workspace/manager.js 由同路径的入库 manager.d.ts 抢先
+//   解析（.d.ts 先于 .js），playwright-core 由 tsconfig.check.json 的
+//   paths 指到 vendor/dsh-with-chatgpt/types/playwright-core.d.ts。
+//
 // 基线只减不增：
 // - 出现基线外的新诊断或同一诊断计数增加 → 失败；
 // - 某项计数比基线少或从基线消失 → 也失败，提示运行
@@ -16,8 +27,9 @@
 // 仅完全一致时通过。
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { atomicWriteFileSync } from '../src/shared/fs-safe.js';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -86,28 +98,44 @@ function normalizeMessage(message, root) {
   // tsc 截断长类型时写 `... 45 more ...`；数目随无关改动（如 package.json
   // 增一条 script）变化，归一成 `<n>` 才不会把同一诊断当成新诊断。
   message = message.replace(/\.\.\. \d+ more \.\.\./g, '... <n> more ...');
-  if (!root) return message;
-  const posix = root.replace(/\\/g, '/');
-  return message.split(root).join('<root>').split(posix).join('<root>');
+  if (root) {
+    const posix = root.replace(/\\/g, '/');
+    message = message.split(root).join('<root>').split(posix).join('<root>');
+  }
+  // node_modules 的解析路径随检出位置和符号链接不同（如 worktree 的
+  // node_modules 是指向共享目录的链接，诊断里出现的是真实路径），
+  // 任意 …/node_modules/ 前缀统一归一为 <node_modules>/。
+  return message.replace(
+    /[^\s'"`]*[/\\]node_modules[/\\]([^\s'"`]*)/g,
+    (_m, rest) => '<node_modules>/' + rest.replace(/\\/g, '/')
+  );
 }
 
 // seen：可选的跨项目去重集合，键为「文件(行,列) 错误码 消息」。同一文件被
 // 多个 tsconfig 的 include/import 同时拉入时，两个程序会报出同一条诊断；
-// 提供 seen 后只计第一次。
+// 提供 seen 后只计第一次。inScope：可选的"范围内"文件集（见
+// projectFiles）；提供时不属于 tsconfig include/files 的文件（经 import
+// 拉入的 dist、node_modules 等）其诊断直接丢弃，且不占 seen 名额。
 /**
  * @param {string} text
  * @param {string} root
  * @param {Set<string>} [seen]
+ * @param {Set<string>} [inScope]
  */
-export function parseDiagnostics(text, root, seen) {
+export function parseDiagnostics(text, root, seen, inScope) {
   /** @type {DiagCounts} */
   const counts = new Map();
   /** @type {string[]} */
   const globals = [];
+  // raw：tsc 实际输出的诊断行数（去重与范围过滤前），用于区分
+  // "tsc 静默失败"与"诊断全部落在范围外"。
+  let raw = 0;
   for (const line of text.split(/\r?\n/)) {
     const hit = DIAGNOSTIC.exec(line);
     if (hit) {
+      raw += 1;
       const file = normalizeFile(hit[1]);
+      if (inScope && !inScope.has(file)) continue;
       const message = normalizeMessage(hit[5], root);
       if (seen) {
         const key = `${file}(${hit[2]},${hit[3]}) ${hit[4]} ${message}`;
@@ -120,7 +148,24 @@ export function parseDiagnostics(text, root, seen) {
     const globalHit = GLOBAL_ERROR.exec(line);
     if (globalHit) globals.push(globalHit[1] + ': ' + globalHit[2]);
   }
-  return { counts, globals };
+  return { counts, globals, raw };
+}
+
+// 返回 tsconfig 的 files/include 命中文件集（相对项目目录、posix 分隔）。
+// 与 tsc 同一套展开逻辑：只含根文件，不含经 import 拉入程序的文件——
+// 这正是"范围内"的判定依据。
+/**
+ * @param {string} project tsconfig 的绝对路径
+ * @returns {Set<string>}
+ */
+export function projectFiles(project) {
+  const dir = dirname(project);
+  const config = ts.readConfigFile(project, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(config.config ?? {}, ts.sys, dir);
+  /** @type {Set<string>} */
+  const files = new Set();
+  for (const file of parsed.fileNames) files.add(normalizeFile(relative(dir, file)));
+  return files;
 }
 
 // 与基线同构的纯对象，键排序保证基线文件 diff 稳定。
@@ -262,10 +307,10 @@ function main() {
   const seen = new Set();
   for (const project of projects) {
     const { text, status } = runTsc(project);
-    const parsed = parseDiagnostics(text, ROOT, seen);
+    const parsed = parseDiagnostics(text, ROOT, seen, projectFiles(project));
     mergeCounts(counts, parsed.counts);
     globals.push(...parsed.globals);
-    if (status !== 0 && parsed.counts.size === 0 && parsed.globals.length === 0) {
+    if (status !== 0 && parsed.raw === 0 && parsed.globals.length === 0) {
       console.error('tsc -p ' + project + ' 退出码 ' + status + ' 但未产生诊断输出。');
       process.exit(1);
     }

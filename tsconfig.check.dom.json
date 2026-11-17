@@ -23,7 +23,10 @@
     "**/*.test.*",
     "**/*.bundle.js",
     "**/node_modules/**",
+    // 生成物：npm run setup 才产出，未构建环境不存在（#438 环境一致性）
     "src/renderer/openui/**",
+    "src/renderer/whale-ui/**",
+    "mobile/web/whale-ui/**",
     "src/renderer/pet-live2d/ort/**",
     "src/renderer/pet-live2d/anime4k.js"
   ]

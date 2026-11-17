@@ -28,7 +28,11 @@
       "@deepseek-ai/dsh-util-values": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-util-values/lib/types/index.d.ts"],
       "@deepseek-ai/cosmokit": ["vendor/dsh-whale/node_modules/@deepseek-ai/cosmokit/lib/types/index.d.ts"],
       "@deepseek-ai/schemastery": ["vendor/dsh-whale/node_modules/@deepseek-ai/schemastery/lib/types/index.d.ts"],
-      "zod": ["vendor/dsh-whale/node_modules/zod/index.d.ts"]
+      "zod": ["vendor/dsh-whale/node_modules/zod/index.d.ts"],
+      // playwright-core 是 dsh-with-chatgpt 的可选依赖，装在插件自己的
+      // node_modules（npm run setup 生成），未安装则解析失败。paths 优先于
+      // node_modules，始终指到入库的最小声明，解析结果不随环境漂移（#438）。
+      "playwright-core": ["vendor/dsh-with-chatgpt/types/playwright-core.d.ts"]
     }
   },
   "include": [
