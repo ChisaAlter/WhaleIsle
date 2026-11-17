@@ -24,8 +24,18 @@ const LEVELS = Object.freeze(['read', 'local', 'destructive', 'external', 'code'
 const TOOLS = Object.freeze({
   // ---------- dsh-whale (resident whale assistant, preset-scoped) ----------
   whale_list_sessions: { level: 'read', confirm: false, reason: '只读会话列表。' },
-  whale_send_to_session: { level: 'external', confirm: true, reason: '以用户名义向其他会话注入消息。' },
-  whale_new_session: { level: 'code', confirm: true, reason: '在指定 cwd 打开新会话，其中代理获得该目录的执行能力。' },
+  whale_send_to_session: {
+    level: 'external', confirm: true, reason: '以用户名义向其他会话注入消息。',
+    actions: {
+      send: { level: 'external', reason: '以用户名义向目标会话投递一条消息。' },
+    },
+  },
+  whale_new_session: {
+    level: 'code', confirm: true, reason: '在指定 cwd 打开新会话，其中代理获得该目录的执行能力。',
+    actions: {
+      create: { level: 'code', reason: '创建会话即授予代理该目录的执行能力。' },
+    },
+  },
   whale_usage_today: { level: 'read', confirm: false, reason: '只读用量快照。' },
   whale_notify: { level: 'local', confirm: false, reason: '桌宠气泡通知，可随时关闭。' },
   whale_pet_say: { level: 'local', confirm: false, reason: '桌宠气泡台词。' },
@@ -39,7 +49,12 @@ const TOOLS = Object.freeze({
   whale_cancel_session: { level: 'local', confirm: false, reason: '取消进行中的回合，不删数据。' },
   whale_rename_session: { level: 'local', confirm: false, reason: '改标题，可逆。' },
   whale_fork_session: { level: 'local', confirm: false, reason: '复制出新会话，不动原会话。' },
-  whale_delete_session: { level: 'destructive', confirm: true, reason: '永久删除已归档会话及其子代理，不可恢复。' },
+  whale_delete_session: {
+    level: 'destructive', confirm: true, reason: '永久删除已归档会话及其子代理，不可恢复。',
+    actions: {
+      delete: { level: 'destructive', reason: '永久删除已归档会话及其子代理。' },
+    },
+  },
   whale_select_model: { level: 'local', confirm: false, reason: '改会话内模型选择。' },
   whale_update_queue: {
     level: 'local', confirm: true, reason: 'remove 丢弃一条排队消息；steer/edit 以用户名义改写待注入内容。',
@@ -67,7 +82,11 @@ const TOOLS = Object.freeze({
   whale_desktop_config: {
     level: 'local', confirm: 'keys',
     keys: ['githubToken', 'remoteWorkspaceEnabled', 'openAtLogin', 'autoStartDesktop', 'openDevTools', 'downloadRoute', 'projectEnabled', 'whaleAssistantEnabled'],
-    reason: '普通外观/策略键本地可逆；列出的键写凭据、改变对外暴露边界或切换内置能力。' ,
+    reason: '普通外观/策略键本地可逆；列出的键写凭据、改变对外暴露边界或切换内置能力。',
+    actions: {
+      patch: { level: 'external', reason: '写敏感键（对外暴露边界、内置能力或启动项）；"始终允许"按实际写入的键集合记忆。' },
+      'patch-credentials': { level: 'destructive', reason: '写入或替换凭据键（githubToken）会覆盖既有凭据，每次单独确认。' },
+    },
   },
   whale_desktop_plugin: {
     level: 'read', confirm: 'endpoint', reason: 'list 只读；install/remove/disable/enable 由 /desktop/plugin 端点弹桌面确认。',
@@ -115,17 +134,42 @@ const TOOLS = Object.freeze({
       start: { level: 'local', reason: '开启本地协作检查点。' },
     },
   },
-  chatgpt_record: { level: 'external', confirm: true, reason: '把本地迭代记录与输出文件登记为 ChatGPT 可读。' },
+  chatgpt_record: {
+    level: 'external', confirm: true, reason: '把本地迭代记录与输出文件登记为 ChatGPT 可读。',
+    actions: {
+      record: { level: 'external', reason: '登记一次迭代的变更与输出为 ChatGPT 可读。' },
+    },
+  },
 
   // ---------- dsh-pad ----------
   pad_list: { level: 'read', confirm: false, reason: '列面板。' },
   pad_get: { level: 'read', confirm: false, reason: '读面板定义与最新数据。' },
-  pad_test_source: { level: 'code', confirm: true, reason: '试跑数据源：本机命令或带 {{env:}} 密钥的请求。' },
+  pad_test_source: {
+    level: 'code', confirm: true, reason: '试跑数据源：本机命令或带 {{env:}} 密钥的请求。',
+    actions: {
+      'run-sources': { level: 'code', reason: '试跑即在本机执行命令数据源或携带密钥的请求。' },
+    },
+  },
   pad_models: { level: 'read', confirm: false, reason: '列可用模型。' },
-  pad_create: { level: 'local', confirm: true, reason: '建面板本身可逆；附带数据源会运行时先经桌面确认。' },
-  pad_update: { level: 'local', confirm: true, reason: '改面板可撤销；数据源变更会运行时先经桌面确认。' },
+  pad_create: {
+    level: 'local', confirm: true, reason: '建面板本身可逆；附带数据源会运行时先经桌面确认。',
+    actions: {
+      'run-sources': { level: 'code', reason: '新面板的数据源在本机运行命令或携带密钥发出请求。' },
+    },
+  },
+  pad_update: {
+    level: 'local', confirm: true, reason: '改面板可撤销；数据源变更会运行时先经桌面确认。',
+    actions: {
+      'run-sources': { level: 'code', reason: '变更后的数据源在本机运行命令或携带密钥发出请求。' },
+    },
+  },
   pad_refresh: { level: 'local', confirm: false, reason: '只重跑已获批准的数据源。' },
-  pad_delete: { level: 'destructive', confirm: true, reason: '删除面板及其配置。' },
+  pad_delete: {
+    level: 'destructive', confirm: true, reason: '删除面板及其配置。',
+    actions: {
+      delete: { level: 'destructive', reason: '删除面板及其配置。' },
+    },
+  },
   pad_submit_data: { level: 'local', confirm: false, reason: '面板刷新代理提交数据。' },
   pad_report_failure: { level: 'local', confirm: false, reason: '面板刷新代理上报失败原因。' },
 
@@ -146,13 +190,27 @@ const TOOLS = Object.freeze({
   project_stop: { level: 'local', confirm: false, reason: '停止 workstream，记录保留。' },
 
   // ---------- dsh-deepseek-tools ----------
-  deepseek_tts: { level: 'external', confirm: true, reason: '把文本上传到付费 DeepSeek API。' },
-  deepseek_asr: { level: 'external', confirm: true, reason: '把本地音频文件上传到 DeepSeek API。' },
-  deepseek_ocr: { level: 'external', confirm: true, reason: '把本地文档/图片上传到 DeepSeek API。' },
+  deepseek_tts: {
+    level: 'external', confirm: true, reason: '把文本上传到付费 DeepSeek API。',
+    actions: { request: { level: 'external', reason: '上传文本到付费 DeepSeek TTS 接口。' } },
+  },
+  deepseek_asr: {
+    level: 'external', confirm: true, reason: '把本地音频文件上传到 DeepSeek API。',
+    actions: { request: { level: 'external', reason: '上传本地音频文件到 DeepSeek ASR 接口。' } },
+  },
+  deepseek_ocr: {
+    level: 'external', confirm: true, reason: '把本地文档/图片上传到 DeepSeek API。',
+    actions: { request: { level: 'external', reason: '上传本地文档/图片到 DeepSeek OCR 接口。' } },
+  },
 
   // ---------- dsh-acp ----------
   acp_agents: { level: 'read', confirm: false, reason: '列已配置编码代理。' },
-  acp_delegate: { level: 'code', confirm: true, reason: '在已配置代理上启动子任务，该代理可执行命令；dsh 工具与 whaleisle MCP 端点两条入口都确认。' },
+  acp_delegate: {
+    level: 'code', confirm: true, reason: '在已配置代理上启动子任务，该代理可执行命令；dsh 工具与 whaleisle MCP 端点两条入口都确认。',
+    actions: {
+      delegate: { level: 'code', reason: '启动一个可执行命令的代理子任务。' },
+    },
+  },
   acp_cancel: { level: 'local', confirm: false, reason: '取消子任务及其排队工作。' },
   acp_result: { level: 'read', confirm: false, reason: '读已完成子任务结果。' },
 
@@ -168,7 +226,12 @@ const TOOLS = Object.freeze({
   install_dsh_plugin: { level: 'code', confirm: 'endpoint', reason: '安装在本机运行的插件代码；/install 端点弹桌面确认。' },
 
   // ---------- dsh-im ----------
-  dsh_im_return_file: { level: 'external', confirm: true, reason: '把本地文件经当前 IM 渠道发出。' },
+  dsh_im_return_file: {
+    level: 'external', confirm: true, reason: '把本地文件经当前 IM 渠道发出。',
+    actions: {
+      send: { level: 'external', reason: '把本地文件经当前 IM 渠道发出。' },
+    },
+  },
 });
 
 const ENDPOINTS = Object.freeze({
@@ -203,9 +266,15 @@ const NEVER_ALWAYS_LEVELS = new Set(['destructive', 'code']);
 function effectOf(toolName, action) {
   const entry = TOOLS[toolName];
   if (!entry) return undefined;
-  if (!entry.actions || action === undefined) return entry.level;
-  const actionEntry = entry.actions[action];
+  if (action === undefined) return entry.level;
+  const actionEntry = entry.actions?.[action];
   if (actionEntry) return actionEntry.level;
+  // An action the registry does not know never falls back to the entry level:
+  // that underclassifies e.g. a code-level 'run-sources' confirm as the tool's
+  // 'local' headline. With no actions table the action is unverifiable, so the
+  // caller fails closed to 'code' like an unregistered tool. With a table the
+  // unknown action gets the strictest level the tool can still reach.
+  if (!entry.actions) return undefined;
   return Object.values(entry.actions).reduce(
     (strictest, sub) => (LEVEL_RANK[sub.level] > LEVEL_RANK[strictest] ? sub.level : strictest),
     entry.level,

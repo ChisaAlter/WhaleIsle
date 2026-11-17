@@ -56,6 +56,9 @@ export async function confirmModelAction(request) {
     tool: String(request?.tool ?? ''),
     action: String(request?.action ?? ''),
     effect: String(request?.effect ?? ''),
+    // Optional scope narrows a run-scoped "always" grant to the exact same
+    // target set (e.g. the sorted sensitive keys a config patch writes).
+    scope: String(request?.scope ?? ''),
     summary: String(request?.summary ?? ''),
     details: String(request?.details ?? ''),
   });

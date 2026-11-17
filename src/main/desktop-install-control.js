@@ -301,9 +301,12 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
  * model-callable tools: a tool sends what it is about to do, the main process
  * shows a dialog, and only an explicit allow lets the caller proceed. The
  * effective level comes from the model-tool-effects registry — the request's
- * self-reported effect is advisory — and tools the registry does not know are
- * treated as `code`. Run-scoped "always" grants are keyed by tool+action and
- * never apply to destructive/code effects.
+ * self-reported effect is advisory — and tools the registry does not know, or
+ * registered tools reporting an unregistered action, are treated as `code`.
+ * Run-scoped "always" grants are keyed by tool+action plus the caller's
+ * optional scope (e.g. the exact set of sensitive config keys a patch writes,
+ * so one grant never covers a different key set), and never apply to
+ * destructive/code effects.
  */
 async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed }) {
   let payload;
@@ -320,9 +323,17 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
     return;
   }
   const action = String(payload?.action || '').slice(0, 200);
+  // Optional caller-declared scope narrows a remembered grant to the exact
+  // same set of targets (sorted, so order cannot mint a second grant).
+  const scope = String(payload?.scope || '').slice(0, 200)
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .sort()
+    .join(',');
   const level = effectOf(tool, action) || 'code';
   const rememberable = !NEVER_ALWAYS_LEVELS.has(level);
-  const memoryKey = `${tool} ${action}`;
+  const memoryKey = `${tool} ${action} ${scope}`;
   if (rememberable && sessionAllowed.has(memoryKey)) {
     sendJson(res, 200, { ok: true });
     return;
@@ -389,9 +400,9 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
     restartDelayMs: delay,
     confirmModelAction,
     showSecret,
-    // Run-scoped "always allow" grants, keyed "tool action". Created with the
-    // control server instance so an app restart re-asks; never populated for
-    // destructive/code effects.
+    // Run-scoped "always allow" grants, keyed "tool action scope". Created
+    // with the control server instance so an app restart re-asks; never
+    // populated for destructive/code effects.
     sessionAllowed: new Set(),
   };
   return async (req, res) => {
