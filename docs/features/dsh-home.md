@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `dsh-home` |
 | **status** | `active` |
-| **last verified** | 2026-08-25 — `dsh web` / `dsh plugin` 子进程环境的公共部分（DSH_HOME 覆盖、Electron 变量清理、DEEPSEEK_* 门禁、PATH extras）合并为单实现 `src/shared/child-spawn-env.js`；行为不变，`spawnEnv` / `pluginEnv` 只保留各自的 PATH 顺序与附加项 |
+| **last verified** | 2026-08-25 |
+
+历史验证与变更记录见 [docs/history/dsh-home.md](../history/dsh-home.md)。
 
 ## User paths
 

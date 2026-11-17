@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `close-behavior` |
 | **status** | `active` |
-| **last verified** | 2026-09-27 — 首次隐藏改一次性系统 toast（指明设置入口），关窗路径零弹窗；`background-notice` + `close-behavior` 定向测试 4/4 + 3/3 通过 |
+| **last verified** | 2026-09-27 |
+
+历史验证与变更记录见 [docs/history/close-behavior.md](../history/close-behavior.md)。
 
 ## User paths
 

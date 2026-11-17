@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `directory-picker-drives` |
 | **status** | `active` |
-| **last verified** | 2026-09-15 — host 侧 `volumeListing`/`probeDrive` 落地并重建 `lib/`；vendor focused spec 103 项通过（browse service 15、seam 2、client browser 83、flow 10、workspace-controller 8 中相关项），`node --test src/shared/harness-desktop-forks.test.js` 10/10 通过。未执行实机目录对话框手测 |
+| **last verified** | 2026-09-15 |
+
+历史验证与变更记录见 [docs/history/directory-picker-drives.md](../history/directory-picker-drives.md)。
 
 ## User paths
 

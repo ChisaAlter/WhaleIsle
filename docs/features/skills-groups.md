@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `skills-groups` |
 | **status** | `active` |
-| **last verified** | 2026-08-29 — vendor 51/51（含乐观回显/不折叠用例）+ fork 门禁 10/10，运行时已部署 |
+| **last verified** | 2026-08-29 |
+
+历史验证与变更记录见 [docs/history/skills-groups.md](../history/skills-groups.md)。
 
 ## User paths
 

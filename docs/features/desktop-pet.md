@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `desktop-pet` |
 | **status** | `active` |
-| **last verified** | 2026-09-18 — fallback 图换鲸鱼娘徽标：`pet.html` 的 `pet__image` 由 `assets/whale.svg` 改 `assets/pet-head.png`（白底圆角方块 + 全身立绘，`pet.css` 加 `object-fit:cover`+`border-radius:50%` 贴进圆形按钮）；`whale.svg` 无引用已删。旧记录：2026-09-13 — `DESKTOP_PET_FEATURE=false`；Codex 皮肤发现、动画渲染与右键换肤已实现但默认隐藏 |
+| **last verified** | 2026-09-18 |
+
+历史验证与变更记录见 [docs/history/desktop-pet.md](../history/desktop-pet.md)。
 
 ## User paths
 

@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `composer-typing-fx` |
 | **status** | `active` |
-| **last verified** | 2026-09-13 — IME 提交也播 echo + 回显/光标颜色设置（主题/6 内置配色/自定义双色）；typing-fx 相关 4 个 spec 55 全绿 |
+| **last verified** | 2026-09-13 |
+
+历史验证与变更记录见 [docs/history/composer-typing-fx.md](../history/composer-typing-fx.md)。
 
 ## User paths
 

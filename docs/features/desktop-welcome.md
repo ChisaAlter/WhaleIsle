@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `desktop-welcome` |
 | **status** | `active` |
-| **last verified** | 2026-09-29 — first-run opt-out: 27 account client tests + 27 preload/smoke tests passed; official client rebuild and fresh-profile source smoke passed without automatic dismissal (workspace, PTY, titlebar hits). Packaging paused. |
+| **last verified** | 2026-09-29 |
+
+历史验证与变更记录见 [docs/history/desktop-welcome.md](../history/desktop-welcome.md)。
 
 ## User paths
 

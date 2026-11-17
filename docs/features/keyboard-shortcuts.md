@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `keyboard-shortcuts` |
 | **status** | `active` |
-| **last verified** | 2026-09-26 — 上游优先拦截落地；`src/main/shortcuts.test.js` 13/13；真机 Ctrl+B 右栏切换验证通过。 |
+| **last verified** | 2026-09-26 |
+
+历史验证与变更记录见 [docs/history/keyboard-shortcuts.md](../history/keyboard-shortcuts.md)。
 
 ## User paths
 

@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `cursor-effects` |
 | **status** | `active` |
-| **last verified** | 2026-09-15 — ui-theme 相关 specs 159 pass（含 legacy slug `pixel-trail`/`splash-cursor` 迁移断言）+ `tsc -p packages/client/ui-theme` 无错；slug 改名 `trail`/`splash` 后实机未复验 |
+| **last verified** | 2026-09-15 |
+
+历史验证与变更记录见 [docs/history/cursor-effects.md](../history/cursor-effects.md)。
 
 ## User paths
 
