@@ -936,9 +936,10 @@ app.whenReady().then(async () => {
         if (process.env.QA_ROUTE_FAIL_ONCE === '1') {
           // The dedupe marker is re-seeded only after the renderer processes
           // the resolved refusal; its error toast is the observable proof, so
-          // the retry below is not deduped away.
+          // the retry below is not deduped away. errText maps the bare
+          // machine code to the fallback, so the toast reads 设置保存失败.
           await waitForDom(js, `[...document.querySelectorAll('.shell-feedback-toast .shell-feedback-text')]
-            .some(node => node.textContent.includes('maintenance-in-progress'))`);
+            .some(node => node.textContent.includes('设置保存失败'))`);
         }
         // Retry the SAME route — the refusal must not have deduped it away.
         await js(`

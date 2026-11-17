@@ -37,8 +37,10 @@ app.whenReady().then(async () => {
   // Tail lines carry a timestamp prefix, so match the message inside each line.
   const logged = (text) => tail.snapshot().some((line) => line.includes(text));
   // console-message events reach the main process asynchronously; poll the
-  // tail until both sentinels arrive instead of a fixed wait.
-  await waitForMain(() => logged('LAYOUT_ERROR_SENTINEL') && logged('LAYOUT_INFO_CONTROL'), 'renderer console tail');
+  // tail until the error sentinel arrives instead of a fixed wait. The tail
+  // keeps error-level lines only — the info sentinel must NEVER appear (the
+  // test asserts infoCaptured stays false), so it cannot be waited on.
+  await waitForMain(() => logged('LAYOUT_ERROR_SENTINEL'), 'renderer console tail');
   const report = await writeCrashReport(path.join(root, 'logs'), { time: new Date(), source: 'renderer', phase: 'test', app: { name: 'fixture', electron: process.versions.electron }, error: new Error('fixture'), rendererConsole: tail.snapshot() });
   const diagnostics = { errorCaptured: logged('LAYOUT_ERROR_SENTINEL'), infoCaptured: logged('LAYOUT_INFO_CONTROL'), reportHasError: fs.readFileSync(report, 'utf8').includes('LAYOUT_ERROR_SENTINEL') };
   const cases = [];
