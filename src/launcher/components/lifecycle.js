@@ -64,7 +64,25 @@ function openLogStream(file, deps = {}) {
         return 0;
       }
     })();
-    return fsp.createWriteStream(file, { flags: size > LOG_MAX_BYTES ? 'w' : 'a' });
+    const stream = fsp.createWriteStream(file, { flags: size > LOG_MAX_BYTES ? 'w' : 'a' });
+    // open() is asynchronous — a data dir removed, filled or re-permissioned
+    // after spawn arrives as an 'error' event, which without a listener
+    // becomes an uncaughtException in the main process. Report once and
+    // drop the stream; the next spawnComponent call rebuilds it.
+    let reported = false;
+    stream.on('error', (error) => {
+      if (!reported) {
+        reported = true;
+        const log = typeof deps.log === 'function' ? deps.log : console.warn;
+        log(`组件日志流不可用（${file}）：${error && error.message ? error.message : error}`);
+      }
+      try {
+        stream.destroy();
+      } catch {
+        // already closed
+      }
+    });
+    return stream;
   } catch {
     return null;
   }
