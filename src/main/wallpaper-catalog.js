@@ -264,17 +264,74 @@ function resolveAgainst(url, base) {
   }
 }
 
+// Bundled undici (the implementation behind globalThis.fetch in Node and the
+// Electron main process) installs its global Agent under this symbol on first
+// use. A per-request Agent with a custom `connect.lookup` is what lets the
+// socket reuse the re-checked addresses; undici is not an importable
+// dependency, so the class is taken from the dispatcher instance.
+const UNDICI_GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
+let undiciAgentPromise;
+
+/**
+ * @returns {Promise<Function>} bundled undici Agent class.
+ */
+async function undiciAgentClass() {
+  if (!undiciAgentPromise) {
+    undiciAgentPromise = (async () => {
+      if (!globalThis[UNDICI_GLOBAL_DISPATCHER]) {
+        // Warm the lazy global dispatcher; the request outcome is irrelevant.
+        await fetch('http://127.0.0.1:1/', { signal: AbortSignal.timeout(500) }).catch(() => {});
+      }
+      const dispatcher = globalThis[UNDICI_GLOBAL_DISPATCHER];
+      const Agent = dispatcher && dispatcher.constructor;
+      if (!dispatcher || typeof dispatcher.dispatch !== 'function' || typeof Agent !== 'function') {
+        throw new Error('bundled undici dispatcher unavailable');
+      }
+      return Agent;
+    })();
+  }
+  return undiciAgentPromise;
+}
+
+/**
+ * Per-request dispatcher whose connect-time lookup replays only the
+ * re-checked addresses, so a DNS rebind between the recheck and the connect
+ * cannot move the socket to a private target. The URL hostname still supplies
+ * TLS SNI and the Host header; only address resolution is pinned.
+ * @param {Array<{ address: string, family?: number }>} records
+ * @returns {Promise<object>} dispatcher for undici `fetch`.
+ */
+async function pinnedWallpaperDispatcher(records) {
+  const Agent = await undiciAgentClass();
+  const addresses = records.map((record) => ({
+    address: record.address,
+    family: record.family === 4 || record.family === 6
+      ? record.family
+      : (net.isIPv6(record.address) ? 6 : 4),
+  }));
+  return new Agent({
+    connect: {
+      lookup: (_hostname, options, callback) => {
+        (typeof options === 'function' ? options : callback)(null, addresses);
+      },
+    },
+  });
+}
+
 /**
  * Post-DNS recheck: re-run the shared verdict on the literal host, then
  * resolve names and reject when any returned address falls in a blocked
  * range, so a public-looking name cannot point catalog IPC at loopback /
  * RFC1918 / CGNAT targets. IP literals are fully classified by
  * `isBlockedWallpaperHost` and skip the resolver; legitimate public image
- * hosts resolve to public addresses and pass through unchanged. (A rebind
- * between this lookup and the fetch connect is out of scope for this layer.)
+ * hosts resolve to public addresses and pass through unchanged.
  * @param {string} hostname
  * @param {string} url - for the error message.
  * @param {(host: string, options: object) => Promise<Array<{ address: string }>>} [lookup]
+ * @returns {Promise<Array<{ address: string, family?: number }> | null>} the
+ *   validated records the connect must pin to, or null when nothing was
+ *   resolved here (IP literal, or a lookup failure the connect reports on its
+ *   own) and no pin applies.
  */
 async function assertResolvedWallpaperHost(hostname, url, lookup = dns.promises.lookup) {
   const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
@@ -282,20 +339,24 @@ async function assertResolvedWallpaperHost(hostname, url, lookup = dns.promises.
     throw new Error(catalogError(url, '解析到不允许的内网地址'));
   }
   if (!host || net.isIP(host)) {
-    return;
+    return null;
   }
   let records;
   try {
     records = await lookup(host, { all: true, verbatim: true });
   } catch {
     // Let fetch produce its own DNS failure message.
-    return;
+    return null;
   }
-  for (const record of Array.isArray(records) ? records : []) {
-    if (record && typeof record.address === 'string' && isBlockedWallpaperHost(record.address)) {
+  const list = Array.isArray(records)
+    ? records.filter((record) => record && typeof record.address === 'string')
+    : [];
+  for (const record of list) {
+    if (isBlockedWallpaperHost(record.address)) {
       throw new Error(catalogError(url, '解析到不允许的内网地址'));
     }
   }
+  return list;
 }
 
 function bingItem(image, sourceUrl) {
@@ -517,7 +578,17 @@ async function fetchBuffer(url, { maxBytes, timeoutMs, lookup }, hops = 0) {
   if (hops > MAX_REDIRECTS) {
     throw new Error(catalogError(url, '重定向过多'));
   }
-  await assertResolvedWallpaperHost(parsed.hostname, url, lookup);
+  const records = await assertResolvedWallpaperHost(parsed.hostname, url, lookup);
+  let dispatcher;
+  if (records) {
+    // Pin the connect to the re-checked records; without a dispatcher there
+    // is no safe connect, so an unavailable bundled undici fails closed.
+    try {
+      dispatcher = await pinnedWallpaperDispatcher(records);
+    } catch {
+      throw new Error(catalogError(url, '无法校验连接地址'));
+    }
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
   try {
@@ -526,6 +597,7 @@ async function fetchBuffer(url, { maxBytes, timeoutMs, lookup }, hops = 0) {
       redirect: 'manual',
       credentials: 'omit',
       signal: controller.signal,
+      ...(dispatcher ? { dispatcher } : {}),
     });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -560,6 +632,13 @@ async function fetchBuffer(url, { maxBytes, timeoutMs, lookup }, hops = 0) {
     throw new Error(catalogError(url, fetchFailureDetail(error)));
   } finally {
     clearTimeout(timer);
+    if (dispatcher) {
+      try {
+        await dispatcher.destroy();
+      } catch {
+        // Pooled sockets already released after a failed or cancelled request.
+      }
+    }
   }
 }
 
@@ -703,5 +782,6 @@ module.exports = {
   isAllowedWallpaperUrl,
   isBlockedWallpaperHost,
   assertResolvedWallpaperHost,
+  fetchBuffer,
   fetchFailureDetail,
 };
