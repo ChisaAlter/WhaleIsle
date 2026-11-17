@@ -566,4 +566,3 @@ test('hero conversation root nests in the AppFrame center subgrid', () => {
   assert.match(css, /\.header \{[\s\S]*?grid-row:\s*1/);
   assert.match(css, /\.body \{[\s\S]*?grid-row:\s*2/);
 });
-

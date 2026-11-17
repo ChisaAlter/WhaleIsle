@@ -1,4 +1,5 @@
 // The walkthrough must inspect the controls supplied by each desktop platform.
+/** @param {Electron.WebContents} wc */
 async function probeWindowControls(wc) {
   const web = await wc.executeJavaScript(`(() => {
     const host = document.getElementById('dshd-shell-controls');
