@@ -12,8 +12,10 @@ const TITLEBAR_HEIGHT = 48;
 // shared builder's source is concatenated ahead of it because an
 // executeJavaScript payload cannot require files itself.
 const injectScript = [
+  '(() => {',
   fs.readFileSync(path.join(__dirname, '..', 'shared', 'dom.js'), 'utf8'),
-  fs.readFileSync(path.join(__dirname, 'harness-chrome-inject.js'), 'utf8'),
+  'return ' + fs.readFileSync(path.join(__dirname, 'harness-chrome-inject.js'), 'utf8'),
+  '})()',
 ].join('\n');
 let ipcBound = false;
 const chromeRoles = new WeakMap();
