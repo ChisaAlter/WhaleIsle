@@ -699,6 +699,9 @@ app.whenReady().then(async () => {
       }
       await js(`document.querySelector('#home-components [data-comp-action="open"]').click()`);
       await waitForMain(() => results.calls.some(call => call.op === 'component-open'), 'component-open IPC');
+      // The open action keeps the row busy until it settles; a stop click
+      // before then is ignored, so wait for an enabled, visible stop button.
+      await waitForDom(js, `(() => { const stop = document.querySelector('#home-components [data-comp-action="stop"]'); return !!stop && stop.checkVisibility() && !stop.disabled; })()`);
       await js(`document.querySelector('#home-components [data-comp-action="stop"]').click(); document.querySelector('#home-components [data-comp-action="stop"]').click()`);
       await waitForMain(() => typeof componentStopResolve === 'function', 'component-stop IPC');
       await waitForDom(js, `document.querySelector('#home-components button[data-comp-action]')?.disabled === true`);
