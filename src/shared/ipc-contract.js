@@ -427,6 +427,10 @@ const IPC_CONTRACT = Object.freeze([
     authorize: OWNED, validate: noArgs },
 
   // --- Welcome window ------------------------------------------------------------------
+  // `dsh-welcome:locale` rides ipcRenderer.sendSync, which hits ipcMain.on;
+  // the sandboxed preload pulls its window-owned copy table at bootstrap.
+  { channel: 'dsh-welcome:locale', kind: 'send', roles: [SURFACES.WELCOME],
+    authorize: OWNED, validate: noArgs },
   { channel: 'dsh-welcome:take-notice', kind: 'invoke', roles: [SURFACES.WELCOME],
     authorize: OWNED, validate: noArgs },
   { channel: 'dsh-welcome:save-api-key', kind: 'invoke', roles: [SURFACES.WELCOME],

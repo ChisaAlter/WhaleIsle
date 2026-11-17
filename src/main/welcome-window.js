@@ -2,11 +2,10 @@
 
 /**
  * Native welcome window and its presentation-only renderer. Ported from
- * upstream welcome-window.ts; the sandbox boundary differs by design:
- * upstream ships a bundled single-file preload, our preload is unbundled
- * and resolves the locale table via require — so this window runs
- * sandbox:false with an untrusted-content surface already denied (static
- * file:// document, CSP 'none' default, no navigation, no window.open).
+ * upstream welcome-window.ts. The unbundled preload stays self-contained —
+ * it fetches the window-owned locale table over a sync bootstrap channel —
+ * so this window runs sandboxed like every other surface (static file://
+ * document, CSP 'none' default, no navigation, no window.open).
  */
 
 const path = require('node:path');
@@ -15,6 +14,7 @@ const { rendererFile } = require('./paths');
 const { createRegisterIpc } = require('./ipc-register');
 
 const IPC = {
+  locale: 'dsh-welcome:locale',
   saveApiKey: 'dsh-welcome:save-api-key',
   skip: 'dsh-welcome:skip',
   start: 'dsh-welcome:start',
@@ -24,7 +24,7 @@ const IPC = {
   takeNotice: 'dsh-welcome:take-notice',
 };
 
-function welcomeWindowOptions(locale) {
+function welcomeWindowOptions() {
   return {
     width: 600,
     height: 700,
@@ -40,11 +40,9 @@ function welcomeWindowOptions(locale) {
     transparent: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'welcome.js'),
-      additionalArguments: [`--dsh-welcome-locale=${locale.id}`],
       nodeIntegration: false,
       contextIsolation: true,
-      // eslint-disable-next-line no-restricted-syntax -- 未打包 preload 需要 require 本地语言表；页面是静态 file:// 文档，导航与 window.open 均已禁用
-      sandbox: false,
+      sandbox: true,
       webSecurity: true,
     },
   };
@@ -58,7 +56,7 @@ let disposeActiveHandlers;
  * @param {object} operations - { takeNotice, startSignIn, cancelSignIn, copySignInLink, saveApiKey, skip }.
  */
 async function openWelcomeWindow(locale, operations) {
-  const window = new BrowserWindow(welcomeWindowOptions(locale));
+  const window = new BrowserWindow(welcomeWindowOptions());
   disposeActiveHandlers?.();
   let active = true;
   const disposeHandlers = () => {
@@ -67,6 +65,7 @@ async function openWelcomeWindow(locale, operations) {
     for (const channel of [IPC.takeNotice, IPC.saveApiKey, IPC.skip, IPC.start, IPC.cancel, IPC.copyLink]) {
       ipcMain.removeHandler(channel);
     }
+    ipcMain.removeAllListeners(IPC.locale);
     disposeActiveHandlers = undefined;
   };
   disposeActiveHandlers = disposeHandlers;
@@ -76,6 +75,13 @@ async function openWelcomeWindow(locale, operations) {
     }
   };
   const register = createRegisterIpc(ipcMain);
+  register({
+    channel: IPC.locale,
+    authorize: assertSender,
+    handler: (event) => {
+      event.returnValue = { id: locale.id, messages: locale.messages };
+    },
+  });
   register({ channel: IPC.takeNotice, authorize: assertSender, handler: async () => operations.takeNotice() });
   register({
     channel: IPC.saveApiKey,
