@@ -397,4 +397,4 @@ async function runMacosChromeQa(win, wc, helpers) {
   return result;
 }
 
-module.exports = { runMacosChromeQa };
+module.exports = { runMacosChromeQa, cocoaButtons };

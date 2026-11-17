@@ -1099,11 +1099,16 @@ async function runReleaseUiWalk(wc, helpers) {
       close: Boolean(host.querySelector('[data-act="close"]')),
     };
   });
-  rec(
-    'titlebar.windowControls',
-    Boolean(windowControls?.min && windowControls?.max && windowControls?.close),
-    windowControls ? '' : 'injected window-control plate missing',
-  );
+  let controlsOk = Boolean(windowControls?.min && windowControls?.max && windowControls?.close);
+  let controlsDetail = windowControls ? '' : 'injected window-control plate missing';
+  if (process.platform === 'darwin') {
+    const win = require('./window').getMainWindow();
+    const native = require('./smoke/macos-chrome').cocoaButtons().snapshot(win);
+    controlsOk = !windowControls && native.buttons.length === 3
+      && native.buttons.every((button) => button.present && !button.hidden && button.enabled);
+    controlsDetail = `native AppKit buttons: ${JSON.stringify(native.buttons)}`;
+  }
+  rec('titlebar.windowControls', controlsOk, controlsDetail);
 
   await helpers.clickTitlebarButton(wc, 'switch branch|切换分支');
   const branchMenu = await waitUntil(() => pageEval(wc, () => {
