@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `sidebar-mask` |
 | **status** | `active` |
-| **last verified** | 2026-09-14 — 安装默认改为开（`sidebarMaskHidden` 默认 true）；vendor ui-theme 定向 specs（theme / settings-store / appearance-section / boot-theme）+ ui-layout theme-presenter spec |
+| **last verified** | 2026-09-14 |
+
+历史验证与变更记录见 [docs/history/sidebar-mask.md](../history/sidebar-mask.md)。
 
 ## User paths
 

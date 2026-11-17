@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `metallic-paint` |
 | **status** | `active` |
-| **last verified** | 2026-09-18 — 默认翻转为关：`metallicPaintEnabled` schema/DEFAULT 默认 `false`，缺席即关；ui-theme 5 个客户端 spec 138 项全绿。此前：2026-09-17 — ui-theme 客户端 specs + tsc client face + 源码审查 |
+| **last verified** | 2026-09-18 |
+
+历史验证与变更记录见 [docs/history/metallic-paint.md](../history/metallic-paint.md)。
 
 ## User paths
 

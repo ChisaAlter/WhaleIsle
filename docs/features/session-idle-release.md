@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `session-idle-release` |
 | **status** | `active` |
-| **last verified** | 2026-10-30 — 隔离测试实例 + 用户会话副本（910 个会话、1.56 GB）实测，见下方 Gates |
+| **last verified** | 2026-10-30 |
+
+历史验证与变更记录见 [docs/history/session-idle-release.md](../history/session-idle-release.md)。
 
 ## User paths
 

@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `message-edit` |
 | **status** | `active` |
-| **last verified** | 2026-09-19 — 同步 `dsh-v0.1.5-rc.1` 后保留同会话编辑语义并修复一处合并引入的静默失败：surface replace op 随上游改 `startSeq/endSeq`、busy guard 改 `inbox.nextTurn/nextStep`；rc.1 把系统提示词移上表面节点 0 且受保护（仅 system/message 单节点事件可改写），编辑走影回溯曾把节点 0 卷入替换范围导致 turn 静默中止 → 回溯遇 `system/message` 即停。message-edit.host.spec 6/6（含身份行容忍断言）、official build、Desktop tests 全过。此前 2026-09-07 — 同步 `dsh-v0.1.3-alpha.1` 并迁移 Session v2 嵌入式 assistant stream 后，当前会话重发语义保留；Host / Client build、含 ui-message-edit、ui-chat 与 ui-conversation 的重点 Client 101 文件 / 1279 项、Desktop tests 1425 passed / 2 skipped。此前 2026-09-06 的 keyless edit e2e 证据仍有效，本次未重跑。 |
+| **last verified** | 2026-09-19 |
+
+历史验证与变更记录见 [docs/history/message-edit.md](../history/message-edit.md)。
 
 ## User paths
 
@@ -57,8 +59,6 @@
 | --- | --- |
 | Automated | `pnpm vitest run packages/client/ui-message-edit`；Host `message-edit.host.spec.ts`、Chat `conversation-node-definitions.client.spec.ts`、composer `input-edit-session.client.spec.ts` / `service-orchestration.client.spec.ts` / `input-bar.client.spec.tsx`；`pnpm run test:gui`；`pnpm run build:official` 后 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/message-edit.e2e.ts`（首条及后续消息同会话重发、连续编辑、两侧取消、草稿恢复、刷新、原日志保留）；CI 保持 `test:coverage` per-file 100% 门槛 |
 | Manual / QA | 首条及后续消息→等空闲→点铅笔→composer 回填→改字→发送：同一会话继续、侧栏数量不变、旧轮问答隐藏、刷新仍显示新结果；Escape/横幅取消恢复原气泡且草稿复原；运行中铅笔禁用 |
-
-本次附加检查未全绿：Oxlint 类型感知检查对 `ui-message-edit` 的 `ctx.sessions` 报 `error typed`，独立 TypeScript 检查通过；`verify-type-equiv` 的阻断为未改动的 `docs/subsystems/llm-streaming.md` 中 `GenerateOptions.purpose` 与源码不一致。本次未运行全量覆盖率和 CI 安装包实机验收，未生成新安装包。
 
 ## Sources
 

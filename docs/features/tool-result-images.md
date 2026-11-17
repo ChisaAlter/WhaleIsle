@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `tool-result-images` |
 | **status** | `active` |
-| **last verified** | 2026-10-17 — focused `ui-tool` specs; source-app `read_image` metadata, gallery/lightbox and history at normal and minimum window sizes |
+| **last verified** | 2026-10-17 |
+
+历史验证与变更记录见 [docs/history/tool-result-images.md](../history/tool-result-images.md)。
 
 ## User paths
 

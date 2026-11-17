@@ -4,14 +4,16 @@
 | --- | --- |
 | **id** | `task-protection` |
 | **status** | `active` |
-| **last verified (job registration)** | 2026-10-02 — 固定安装候选 36912364842 的真实模型命令轮出现 `unknown job [object Promise]`。任务准入包装器错误改变 `JobRegistry.start` 的同步合同；旧实现三条行为回归均失败，修复后插件定向 16/16 通过。当前源码隔离 CLI Host 挂载同一任务保护 overlay，真实 pwsh 执行 `Write-Output` 返回字符串 `pwsh-1`，输出匹配，观察 running → completed / exit code 0，无 Promise JobId 错误；未使用桌面输入。llm-replay 导入有警告，该 CLI 结果只认证 registry/pwsh 路径；随后源码隔离桌面在 Node24.21.0 下完成四轮真实 MiniMax 会话，模型经桌面调用 pwsh，工具输出和最终回答均为 `workspace`，持久会话记录 4/4 正常结束，见 `.tmp/release/source-model-ui-result.json`。仍不认证新安装候选，不继承旧包验收；原失败见 [候选证据](../qa/releases/v0.3.3/36912364842-evidence.json#realModel)。 |
-| **last verified (paint deadline)** | 2026-10-01 — 原 CI 36804159162 实际退出长时间卡在隐藏 boot 页双帧等待，记 Fail；修复定向 43/43，其中遮罩 9/9。隔离真实 Electron 隐藏页中旧 helper 超过 700ms 未完成，新 helper 511ms 返回并正常退出、无强杀或未处理拒绝。新 CI 安装版未验收，见 [执行记录](../qa/results/2026-10-01-release-candidate/README.md)。 |
-| **last verified (audit update)** | 2026-09-30 — 差量与整包共享 spawn commit；失败后二次准入、附属清理保留、显式下载取消令牌、macOS 手动安装回归通过，未做真实 NSIS/DMG 安装。 |
-| **last verified (installer failure)** | 2026-09-29 — 实际 update 整包调用链 + 真实协调器 + 消失安装器回归验证：spawn ENOENT 拒绝、Host release 执行、committed 保持 false；取消在安装前异步准入后仍阻止 spawn。见 [QA](../qa/results/2026-09-29-installation-recovery/README.md)，未做 CI Setup 实机安装。 |
-| **last verified (plugin links)** | 2026-09-29 — 内置插件复用有效链接、保留读取错误，EEXIST 只接受复查为正确目标的链接；未知目录不删除。定向 95/95、真实 Electron 200 次准备（199 次复用）、隔离源码启动/PTY/标题栏通过。安装版未更新，原现场触发条件未完整复现。 |
-| **last verified (quit)** | 2026-09-29 — 本地连接误报修复，统一 quit 预确认；32 项定向回归及隔离源码冒烟通过，含真实 TCP socket、生产退出接线与 drain 失败无副作用。旧进程确认框待用户取消后正常重启；未打包。 |
-| **last verified** | 2026-09-27(续2) — `preConfirmed` 扩到全部 install/update 链（`update.js` 整包、`update-updater.js` electron-updater、peer `prepare-install` 的 `install`）：安装/更新入口本身即显式同意，链内任务保护不再二次确认；quit/restart/reload 三入口保留确认门。新增 `launcher-confirm` 桥把主进程确认渲染进启动器 app-confirm 卡。launcher-confirm/update/task-protection/ipc/runtime-install/launcher-gate/window-marketplace 定向 175 例绿。决策见 [update-install-preconfirmed](../decisions/implemented/product/2026-09-27-update-install-preconfirmed.md)。前次：2026-09-27(续) — launcher 发起停止（peer `stop-desktop` + 自带启动器 `stopOp`）改 `preConfirmed`：用户点击即同意，两道确认门跳过，消除桌面窗口全隐藏时的原生 messagebox 回退；`confirmTaskStop` 锚点改首个可见窗。task-protection/ipc/runtime-install 定向 102 例绿。决策见 [launcher-stop-preconfirmed](../decisions/implemented/product/2026-09-27-launcher-stop-preconfirmed.md)。前次：2026-09-27 — 修复停止链三层缺陷（token 查询吞控制路径 405 / 升级 socket 终身占 pending 致 drain 超时 / schedule 未按 flag 报 unavailable）+ 启动器控件互斥；实机停止全链路通过（acquire 即刻、commit 执行、Host 子进程退出、启动器回落仅「启动桌面端」），drain-timeout 响应新增 `pendingLabels` 观测面。`src/main/task-protection*` + `task-control-plugin` 23 例、全量 2537 绿。决策见 [launcher-stop-controls](../decisions/implemented/bug-fix/2026-09-27-launcher-stop-controls.md)。前次：2026-09-25 — `node --test` 协调器/插件/契约相关 352 例全过；打包态与实机验收待 C 阶段复跑。 |
-| **last verified** | 2026-09-28 — drain timer 保持到等待结束并在 finally 清理，独立 Node 进程回归通过；2026-09-28 — 二次确认窗按设计语言重写：`src/renderer/update-dialog.{html,css,js}` 由固定深色 + `#4d6bfe` 电光蓝改成基线 token（`--dsw-alias-*` / `--dsw-radius-panel` / `--dsw-elevation-prominent` / `--dsw-mask-blur`），`view.scheme` 随 payload 走 main → preload `onTheme` → renderer `data-ds-dark-theme`，`applyAppTheme` 的 `shell:theme` 广播把打开中的卡同步到最新主题。`confirmTaskStop` 按钮序改成 `[仍要X, 取消]`（同 `confirmUnverifiedColdStart` / `openDesktopUpdate`），defaultId/cancelId=1：主操作 index 0 = primary，取消 index 1 = secondary，Enter/Esc 都落取消，"仍要 X"必须显式点击。新增 `view.dangerIds` 通道：main 把"明知有风险的行动"按钮标 danger（`confirmTaskStop`/`confirmUnverifiedColdStart`/`finalizeQuit force`/`attachRendererRecovery` 中的"仍要X"/"强制退出"/"退出应用"），renderer 给非取消按钮 paint `.danger` 描边（`--dsw-alias-state-error-primary`），与 launcher app-confirm 卡 `danger` 字段同源。`launcher.css` 内嵌 `modal-mask`/`modal-card` 同批对齐——mask 改 `--dsw-alias-bg-mask-1` + `--dsw-mask-blur`，卡片去边框换 `radius-panel` + `elevation-prominent`，title 16/24、body 14/22、`padding 22/24`，actions 走 `gap: 8px` 行向。共享 token 表补 `--dsw-radius-xs..panel`、`border-l3/l4` 与 `elevation-stroke/panel/prominent/soft` 派生四件套。`update-dialog.test.js` + `shell-silhouette-radius.test.js` + `chrome-theme.test.js` + `themes.test.js` + `task-protection.test.js` + `close-behavior.test.js` + `launcher-theme.test.js` + `background-notice.test.js` 57/57 通过。 |
+| **last verified (job registration)** | 2026-10-02 |
+| **last verified (paint deadline)** | 2026-10-01 |
+| **last verified (audit update)** | 2026-09-30 |
+| **last verified (installer failure)** | 2026-09-29 |
+| **last verified (plugin links)** | 2026-09-29 |
+| **last verified (quit)** | 2026-09-29 |
+| **last verified** | 2026-09-27(续2) |
+| **last verified** | 2026-09-28 |
+
+历史验证与变更记录见 [docs/history/task-protection.md](../history/task-protection.md)。
 
 后台长连接卡住更新、关闭和开关重启的事故见 [Postmortem 0002](../postmortem/0002-background-connections-block-drain.md)。
 

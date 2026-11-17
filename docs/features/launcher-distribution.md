@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `launcher-distribution` |
 | **status** | `proposed` |
-| **last verified** | 2026-09-24 — 计划与拟议契约已立；功能尚未交付，未运行产品测试。 |
+| **last verified** | 2026-09-24 |
+
+历史验证与变更记录见 [docs/history/launcher-distribution.md](../history/launcher-distribution.md)。
 
 ## User paths
 
