@@ -37,4 +37,10 @@ function resolveGitQuick(status, busy) {
   return quick('Commit', true, 'show_hint', null, '分支已是最新，无需操作。');
 }
 
-export { resolveGitQuick };
+function gitPillLabel(status, authError) {
+  if (authError) return 'Git';
+  if (typeof status.refName === 'string') return status.refName;
+  return 'Initialize Git';
+}
+
+export { resolveGitQuick, gitPillLabel };
