@@ -146,6 +146,11 @@ export type DesktopConfig = {
    * changes. Distinct from `remoteEnabled`, the phone/LAN pairing flag.
    */
   remoteWorkspaceEnabled?: boolean
+  /**
+   * Whether the desktop mounts the built-in dsh-im message-channels plugin
+   * (default on); the shell restarts Harness after this field changes.
+   */
+  dshImEnabled?: boolean
   /** Desktop pet state — `settings` is written via saveLive2dPetSettings. */
   live2dPet?: Live2dPetConfig
   /**

@@ -160,10 +160,10 @@ test('in-box fork package suspects are flagged as desktop runtime damage', () =>
   assert.equal(row.orphan, true);
 });
 
-test('desktop built-in dsh-im suspects are flagged as desktop runtime damage', () => {
-  assert.equal(isInBoxPackageName('@xmanrui/dsh-im'), true);
-  assert.equal(isInBoxPackageName('@xmanrui/dsh-im/client'), true);
-  assert.equal(isInBoxPackageName('dsh-im'), true);
+test('dsh-im damage remains recoverable through the built-in toggle or skip start', () => {
+  assert.equal(isInBoxPackageName('@xmanrui/dsh-im'), false);
+  assert.equal(isInBoxPackageName('@xmanrui/dsh-im/client'), false);
+  assert.equal(isInBoxPackageName('dsh-im'), false);
 
   const inspected = inspectPlugins({
     logs: "Cannot find package '@xmanrui/dsh-im' imported from /profiles/web/",
@@ -171,9 +171,9 @@ test('desktop built-in dsh-im suspects are flagged as desktop runtime damage', (
     plugins: [{ name: 'good', spec: '1.0.0' }],
     bundles: ['good'],
   });
-  assert.equal(inspected.desktopRuntimeDamage, true);
+  assert.equal(inspected.desktopRuntimeDamage, false);
   const row = inspected.orphanSuspects.find((item) => item.name === '@xmanrui/dsh-im');
-  assert.equal(row.inBox, true);
+  assert.equal(row.inBox, false);
 });
 
 test('desktop built-in usage-panel suspects are flagged as desktop runtime damage', () => {

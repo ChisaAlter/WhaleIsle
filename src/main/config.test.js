@@ -133,6 +133,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     githubToken: ' token ',
     projectEnabled: true,
     remoteWorkspaceEnabled: false,
+    dshImEnabled: false,
   }), {
     closeToTray: false,
     autoStartDesktop: true,
@@ -141,6 +142,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     githubToken: 'token',
     projectEnabled: true,
     remoteWorkspaceEnabled: false,
+    dshImEnabled: false,
   });
   for (const patch of [
     { dshBin: 'C:\\malware.cmd' },
@@ -151,6 +153,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     { dshbotEnabled: true },
     { projectEnabled: 'yes' },
     { remoteWorkspaceEnabled: 'yes' },
+    { dshImEnabled: 'yes' },
     { harnessRestartMaxAttempts: 99 },
   ]) {
     assert.throws(() => normalizeRendererConfigPatch(patch));
@@ -467,6 +470,23 @@ test('remote workspace is enabled by default and its boolean setting persists to
     });
   } finally {
     saveConfig({ remoteWorkspaceEnabled: before.remoteWorkspaceEnabled });
+  }
+});
+
+test('dsh-im is enabled by default and its boolean setting persists to public config', () => {
+  const before = loadConfig();
+  try {
+    assert.equal(DEFAULTS.dshImEnabled, true);
+    assert.equal(before.dshImEnabled, true);
+    const saved = saveConfig({ dshImEnabled: false });
+    assert.equal(saved.dshImEnabled, false);
+    assert.equal(loadConfig().dshImEnabled, false);
+    assert.equal(publicConfig(saved).dshImEnabled, false);
+    assert.deepEqual(normalizeRendererConfigPatch({ dshImEnabled: true }), {
+      dshImEnabled: true,
+    });
+  } finally {
+    saveConfig({ dshImEnabled: before.dshImEnabled });
   }
 });
 

@@ -49,6 +49,7 @@ import { CloseBehaviorRow } from './CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from './AutoStartDesktopRow.tsx'
 import { ProjectRow, type ProjectRowInjected } from './ProjectRow.tsx'
 import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'
+import { DshImRow } from './DshImRow.tsx'
 import { PetSection, type PetSectionInjected } from './PetSection.tsx'
 import { AboutSection, type AboutSectionInjected } from './AboutSection.tsx'
 import { HarnessRestartRow } from './HarnessRestartRow.tsx'
@@ -425,6 +426,12 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: (): ProjectRowInjected => ({ leaveProjectLead: () => leaveProjectLead?.() ?? Promise.resolve() }),
     }, ProjectRow))
+    ctx.slots.inject('settings.features.item', () => ctx.slots.register({
+      name: 'settings.features.item',
+      id: 'dsh-im',
+      order: 80,
+      locale: NS,
+    }, DshImRow))
     ctx.slots.inject('settings.features.item', () => ctx.slots.register({
       name: 'settings.features.item',
       id: 'remote-workspace',

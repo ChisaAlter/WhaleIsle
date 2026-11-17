@@ -87,7 +87,7 @@ function linkIntoProfileModules(sourceDir, profileDir) {
  * a desktop-owned `--patch` overlay (`desktop-plugins/dsh-im/
  * desktop-dsh-im.patch.yml`) carries the package-name insert, and a profile
  * node_modules junction to vendor makes the name resolvable. The overlay
- * rides EVERY start (full and skip) — dsh-im is desktop built-in Remote
+ * rides starts while enabled, except recovery implicating dsh-im — this is built-in Remote
  * channels, not a user plugin, so the disable list never applies (config
  * normalization strips the aliases). The profile's `cordis.patch.yml` is
  * user-owned: this function only strips the managed block earlier desktop
@@ -95,10 +95,18 @@ function linkIntoProfileModules(sourceDir, profileDir) {
  * write happen in the same call before every spawn so no start can compose
  * both copies (the CLI's `insert` does not dedupe by id).
  *
- * @param {{ sourceDir?: string, profileDir?: string }} [options]
+ * `options.enabled === false` skips the mount entirely (the built-in
+ * 内置功能 toggle or a recovery start whose recorded failure names dsh-im):
+ * the overlay file is removed so a stale copy cannot compose, no junction
+ * is created, and vendor source checks do not run. Previously created
+ * profile state — the node_modules junction and dsh-im's own data — is
+ * left untouched; disabling never deletes user data.
+ *
+ * @param {{ sourceDir?: string, profileDir?: string, enabled?: boolean }} [options]
  * @returns {{
  *   ok: boolean,
  *   added?: boolean,
+ *   disabled?: boolean,
  *   sourceDir?: string|null,
  *   href?: string,
  *   patchFile?: string,
@@ -109,9 +117,6 @@ function linkIntoProfileModules(sourceDir, profileDir) {
  */
 function ensureDesktopDshIm(options = {}) {
   const sourceDir = options.sourceDir || defaultSourceDir();
-  if (!fs.existsSync(path.join(sourceDir, 'package.json'))) {
-    return { ok: false, added: false, sourceDir: null, error: 'missing-source:package.json' };
-  }
   const profileDir = options.profileDir || webProfileDir();
   const patchFile = path.join(profileDir, 'cordis.patch.yml');
   // Migration: earlier desktop versions upserted a managed block into the
@@ -119,10 +124,19 @@ function ensureDesktopDshIm(options = {}) {
   // outcome below — a stale copy composed next to the overlay double-mounts.
   const patchChanged = stripBlockFromFile(patchFile, DSH_IM_BEGIN, DSH_IM_END);
 
+  if (options.enabled === false) {
+    fs.rmSync(path.join(profileDir, 'desktop-plugins', 'dsh-im', DSH_IM_OVERLAY_FILENAME), { force: true });
+    return { ok: true, added: false, disabled: true, sourceDir, patchChanged };
+  }
+
+  if (!fs.existsSync(path.join(sourceDir, 'package.json'))) {
+    return { ok: false, added: false, sourceDir: null, error: 'missing-source:package.json' };
+  }
   const missing = missingRuntimeFiles(sourceDir);
   if (missing.length) {
-    // Broken vendor runtime is desktop damage — caller must fail the start
-    // (skip cannot fix it); never pretend success with a stale mount.
+    // Broken vendor runtime is desktop damage — never pretend success with a
+    // stale mount; the caller skips this built-in or drops it via
+    // enabled:false when the recorded failure evidence names dsh-im.
     return {
       ok: false,
       added: false,
@@ -179,6 +193,23 @@ function withoutDshImAliases(list) {
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));
 }
 
+/**
+ * Whether recorded failure evidence — a recovery start's reason plus kernel
+ * log tail — names dsh-im. This is the signal that lets a skip-user-plugins
+ * start drop the built-in mount; without it the recovery path can never
+ * exclude a broken dsh-im. A suspect matches by alias (`@xmanrui/dsh-im`,
+ * `dsh-im`, `xmanrui-dsh-im`) or by carrying a `dsh-im` path segment
+ * (overlay and vendor paths do).
+ * @param {unknown} text
+ * @returns {boolean}
+ */
+function dshImImplicated(text) {
+  // Share the structured failure parser used by the launcher diagnostics.
+  const { extractSuspectNames } = require('./plugin-forensics');
+  return extractSuspectNames(String(text || ''))
+    .some((name) => DSH_IM_ALIASES.includes(name) || name.split(/[\\/]+/).includes('dsh-im'));
+}
+
 module.exports = {
   DSH_IM_PACKAGE,
   DSH_IM_BEGIN,
@@ -187,6 +218,7 @@ module.exports = {
   DSH_IM_INSERT_ID,
   DSH_IM_OVERLAY_FILENAME,
   withoutDshImAliases,
+  dshImImplicated,
   ensureDesktopDshIm,
   ensureDshImPlugin,
 };
