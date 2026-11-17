@@ -2,7 +2,8 @@
 // 相对路径够不到 vendor/dsh-shared，故随 lib/ 一起打包本文件；契约与
 // vendor/dsh-shared/lib/internal-secret.mjs（canonical：
 // src/shared/secret.js 的 internalSecret）同名同形——只读写
-// globalThis[Symbol.for('whaleisle.internalSecrets')] 上的只读 Map，
+// globalThis[Symbol.for('whaleisle.internalSecrets')] 上的只读密钥视图
+// （带 get(name) 的对象；议题 #514 起不再暴露可变 Map），
 // 不回退 process.env。
 // src/main/internal-secret-accessors.test.js 的契约测试钉住各副本的同键同语义。
 
@@ -15,6 +16,6 @@ export const INTERNAL_SECRETS_KEY = Symbol.for('whaleisle.internalSecrets');
  */
 export function internalSecret(name) {
   const store = globalThis[INTERNAL_SECRETS_KEY];
-  const value = store instanceof Map ? store.get(name) : undefined;
+  const value = store && typeof store.get === 'function' ? store.get(name) : undefined;
   return typeof value === 'string' ? value : '';
 }

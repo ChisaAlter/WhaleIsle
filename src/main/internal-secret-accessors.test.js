@@ -3,8 +3,8 @@
 // 议题 #427：就地访问器副本的契约测试。
 // 以复制、tarball、bundle 等方式重定位的插件无法引用 vendor/dsh-shared，
 // 因此各自带一份同契约的就地访问器。本测试验证所有副本读取同一个
-// globalThis[Symbol.for('whaleisle.internalSecrets')] Map，且失败语义一致
-// （fail closed，不回退到 process.env）。
+// globalThis[Symbol.for('whaleisle.internalSecrets')] 只读存储（带 get(name)
+// 的对象），且失败语义一致（fail closed，不回退到 process.env）。
 
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -73,12 +73,13 @@ describe('internal secret accessor copies', () => {
         assert.equal(internalSecret(SENTINEL_NAME), '', `${name} must not fall back to process.env`);
         assert.equal(internalSecret('definitely-missing'), '', `${name} must return '' for missing names`);
       }
-      // store 不是 Map 时同样返回空串。
+      // store 不是可读形状时同样返回空串。
       globalThis[STORE_KEY] = 'not-a-map';
       for (const { name, internalSecret } of accessors) {
-        assert.equal(internalSecret(SENTINEL_NAME), '', `${name} must return '' when the store is not a Map`);
+        assert.equal(internalSecret(SENTINEL_NAME), '', `${name} must return '' when the store is not readable`);
       }
-      // 放入同一个 store 后，所有副本返回相同的值。
+      // 放入同一个 store 后，所有副本返回相同的值。旧形状（冻结的 Map）
+      // 也能读取——Map 带 get(name)，满足判形条件。
       globalThis[STORE_KEY] = Object.freeze(new Map([[SENTINEL_NAME, SENTINEL_STORE_VALUE]]));
       for (const { name, internalSecret } of accessors) {
         assert.equal(internalSecret(SENTINEL_NAME), SENTINEL_STORE_VALUE, `${name} must read the shared store`);
@@ -89,6 +90,39 @@ describe('internal secret accessor copies', () => {
       else globalThis[STORE_KEY] = priorStore;
       if (priorEnv === undefined) delete process.env[SENTINEL_NAME];
       else process.env[SENTINEL_NAME] = priorEnv;
+    }
+  });
+
+  // 议题 #514（复审 F3）回归：Object.freeze(Map) 挡不住 Map.prototype.set/delete。
+  // 正式安装的 store 不得暴露可变 Map，set/delete/clear 不得改变读到的值。
+  test('installed store is read-only: set/delete cannot change read values', async () => {
+    const accessors = await loadAccessors();
+    const req = createRequire(path.join(ROOT, 'src', 'shared', 'secret.js'));
+    const { storeInternalSecrets } = req(path.join(ROOT, 'src', 'shared', 'secret.js'));
+    const priorStore = globalThis[STORE_KEY];
+    try {
+      const store = storeInternalSecrets([[SENTINEL_NAME, SENTINEL_STORE_VALUE]]);
+      assert.ok(!(store instanceof Map), 'installed store must not expose the mutable Map');
+      for (const key of ['set', 'delete', 'clear']) {
+        assert.equal(typeof store[key], 'undefined', `store must not expose ${key}`);
+      }
+      assert.deepEqual(Object.keys(store), [], 'store entries must not be enumerable');
+      // 即使存在写入类方法，调用后读到的值也不得改变。
+      for (const attempt of [
+        () => store.set?.(SENTINEL_NAME, 'forged'),
+        () => store.delete?.(SENTINEL_NAME),
+        () => store.set?.('INJECTED_TOKEN', 'injected'),
+        () => store.clear?.(),
+      ]) {
+        try { attempt(); } catch { /* mutation API may throw; it must not succeed */ }
+      }
+      for (const { name, internalSecret } of accessors) {
+        assert.equal(internalSecret(SENTINEL_NAME), SENTINEL_STORE_VALUE, `${name} read changed after a mutation attempt`);
+        assert.equal(internalSecret('INJECTED_TOKEN'), '', `${name} must not read injected keys`);
+      }
+    } finally {
+      if (priorStore === undefined) delete globalThis[STORE_KEY];
+      else globalThis[STORE_KEY] = priorStore;
     }
   });
 });
