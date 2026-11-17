@@ -58,7 +58,7 @@
 | Automated | `pnpm vitest run packages/client/ui-message-edit`；Host `message-edit.host.spec.ts`、Chat `conversation-node-definitions.client.spec.ts`、composer `input-edit-session.client.spec.ts` / `service-orchestration.client.spec.ts` / `input-bar.client.spec.tsx`；`pnpm run test:gui`；`pnpm run build:official` 后 `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/message-edit.e2e.ts`（首条及后续消息同会话重发、连续编辑、两侧取消、草稿恢复、刷新、原日志保留）；CI 保持 `test:coverage` per-file 100% 门槛 |
 | Manual / QA | 首条及后续消息→等空闲→点铅笔→composer 回填→改字→发送：同一会话继续、侧栏数量不变、旧轮问答隐藏、刷新仍显示新结果；Escape/横幅取消恢复原气泡且草稿复原；运行中铅笔禁用 |
 
-本次附加检查未全绿：Oxlint 类型感知检查对 `ui-message-edit` 的 `ctx.sessions` 报 `error typed`，独立 TypeScript 检查通过；`verify-type-equiv` 的阻断为未改动的 `docs/subsystems/llm-streaming.md` 中 `GenerateOptions.purpose` 与源码不一致。本次未运行全量覆盖率和 CI 安装包实机验收，未生成新安装包。
+本次附加检查未全绿：Oxlint 类型感知检查对 `ui-message-edit` 的 `ctx.sessions` 报 `error typed`，独立 TypeScript 检查通过；`verify-type-equiv` 的阻断为未改动的 `vendor/deepseek-harness/docs/subsystems/llm-streaming.md` 中 `GenerateOptions.purpose` 与源码不一致。本次未运行全量覆盖率和 CI 安装包实机验收，未生成新安装包。
 
 ## Sources
 
