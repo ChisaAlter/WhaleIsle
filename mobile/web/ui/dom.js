@@ -25,6 +25,23 @@
 // would build inert HTMLUnknownElements. Ambiguous names that also exist in
 // HTML (a, title, style, script, image) stay HTML on purpose.
 
+/**
+ * Attribute map accepted by h(): keys are setAttribute names; values are
+ * strings/numbers, booleans (true = empty attribute; false, null and
+ * undefined omit the attribute), or the structured forms for 'class'
+ * (string or truthy-filtered array), 'dataset' (object of camelCase keys
+ * written as data-*) and 'style' (object of properties or css text).
+ * on* names and javascript: URL values throw instead of applying.
+ * @typedef {Object.<string, *>} WhaleDomAttrs
+ */
+
+/**
+ * Anything h()/mount() accepts as a child: nodes append as-is, strings and
+ * numbers become text nodes, arrays flatten recursively, and null,
+ * undefined and booleans drop out (conditional slots).
+ * @typedef {Node | string | number | boolean | null | undefined | *[]} WhaleDomChild
+ */
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const SVG_TAGS = new Set([
   'svg', 'g', 'defs', 'symbol', 'use', 'marker', 'mask', 'pattern', 'clipPath',
@@ -40,14 +57,29 @@ const SVG_TAGS = new Set([
   'feTurbulence', 'desc', 'metadata', 'view',
 ]);
 
+/**
+ * @param {string} name
+ * @returns {string} camelCase input lowercased to kebab-case.
+ */
 function kebab(name) {
   return String(name).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 }
 
+/**
+ * @param {string} name
+ * @returns {string} kebab-case input raised to camelCase.
+ */
 function camel(name) {
   return String(name).replace(/-([a-z])/g, (_m, c) => c.toUpperCase());
 }
 
+/**
+ * The second argument of h() is the attrs map only when it is a plain
+ * object; nodes, arrays and primitives shift into the children list so
+ * h('li', row) and h('ul', rows) work. null/undefined count as "no attrs".
+ * @param {*} value
+ * @returns {boolean}
+ */
 function isAttrs(value) {
   if (value === null || value === undefined) {
     return true;
@@ -58,6 +90,11 @@ function isAttrs(value) {
   return value.nodeType === undefined;
 }
 
+/**
+ * @param {Element} el
+ * @param {Object.<string, *>} dataset camelCase keys written as data-*
+ *   attributes; null/undefined/false entries are skipped.
+ */
 function applyDataset(el, dataset) {
   for (const [key, value] of Object.entries(dataset)) {
     if (value === null || value === undefined || value === false) {
@@ -67,19 +104,33 @@ function applyDataset(el, dataset) {
   }
 }
 
+/**
+ * @param {Element} el
+ * @param {Object.<string, *>} style property map; camelCase names are
+ *   kebab-cased for setProperty, '--' custom properties pass through, and
+ *   null/undefined/false entries are skipped.
+ */
 function applyStyle(el, style) {
+  // .style only exists on HTMLElement/SVGElement typing; h() always passes
+  // elements carrying it, while test fakes may expose a plain object
+  // without setProperty, so the value is read loosely either way.
+  const css = /** @type {*} */ (el).style;
   for (const [prop, value] of Object.entries(style)) {
     if (value === null || value === undefined || value === false) {
       continue;
     }
-    if (el.style && typeof el.style.setProperty === 'function') {
-      el.style.setProperty(prop.startsWith('--') ? prop : kebab(prop), String(value));
+    if (css && typeof css.setProperty === 'function') {
+      css.setProperty(prop.startsWith('--') ? prop : kebab(prop), String(value));
     } else {
-      el.style[camel(prop)] = String(value);
+      css[camel(prop)] = String(value);
     }
   }
 }
 
+/**
+ * @param {Element} el
+ * @param {WhaleDomAttrs} attrs
+ */
 function applyAttrs(el, attrs) {
   for (const [rawName, value] of Object.entries(attrs)) {
     if (value === null || value === undefined || value === false) {
@@ -108,6 +159,10 @@ function applyAttrs(el, attrs) {
   }
 }
 
+/**
+ * @param {Node[]} out accumulator for the flattened child list.
+ * @param {WhaleDomChild} child
+ */
 function collectChild(out, child) {
   if (child === null || child === undefined || child === false || child === true) {
     return;
@@ -125,17 +180,28 @@ function collectChild(out, child) {
   out.push(child);
 }
 
+/**
+ * Build one element. Strings/numbers become text nodes — interpolated
+ * values can never smuggle markup.
+ * @param {string} tag tag name; names in SVG_TAGS are created in the SVG
+ *   namespace.
+ * @param {WhaleDomAttrs | WhaleDomChild} [attrs] attribute map; a non
+ *   plain-object value is treated as the first child instead.
+ * @param {...WhaleDomChild} children
+ * @returns {Element}
+ */
 function h(tag, attrs, ...children) {
   if (!isAttrs(attrs)) {
-    children.unshift(attrs);
+    children.unshift(/** @type {WhaleDomChild} */ (attrs));
     attrs = null;
   }
   const el = SVG_TAGS.has(tag)
     ? document.createElementNS(SVG_NS, tag)
     : document.createElement(tag);
   if (attrs) {
-    applyAttrs(el, attrs);
+    applyAttrs(el, /** @type {WhaleDomAttrs} */ (attrs));
   }
+  /** @type {Node[]} */
   const flat = [];
   for (const child of children) {
     collectChild(flat, child);
@@ -146,7 +212,14 @@ function h(tag, attrs, ...children) {
   return el;
 }
 
+/**
+ * replaceChildren with the same child rules as h().
+ * @param {Element} el host element whose children are replaced.
+ * @param {...WhaleDomChild} children
+ * @returns {Element} the host element.
+ */
 function mount(el, ...children) {
+  /** @type {Node[]} */
   const flat = [];
   for (const child of children) {
     collectChild(flat, child);

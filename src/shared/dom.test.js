@@ -8,8 +8,6 @@
 
 const { describe, test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 
 function fakeText(text) {
   return { nodeType: 3, textContent: String(text), children: [] };
@@ -51,12 +49,14 @@ global.document = {
 // and an in-place ESM copy at mobile/web/ui/dom.js — the public SPA deploy
 // only uploads files under mobile/web/, so the page cannot import across
 // the tree. The same assertions run against both copies so they cannot
-// drift; keep the implementations identical.
+// drift; keep the implementations identical. Both copies are statically
+// required here (require() loads ESM too) so knip can see that every
+// export has a consumer — the mobile copy otherwise looks unused.
+const { h: sharedH, mount: sharedMount } = require('./dom');
+const { h: mobileH, mount: mobileMount } = require('../../mobile/web/ui/dom.js');
 const IMPLEMENTATIONS = [
-  ['src/shared/dom.js', async () => require('./dom')],
-  ['mobile/web/ui/dom.js', async () => import(pathToFileURL(
-    path.join(__dirname, '..', '..', 'mobile', 'web', 'ui', 'dom.js'),
-  ).href)],
+  ['src/shared/dom.js', async () => ({ h: sharedH, mount: sharedMount })],
+  ['mobile/web/ui/dom.js', async () => ({ h: mobileH, mount: mobileMount })],
 ];
 
 for (const [name, load] of IMPLEMENTATIONS) {

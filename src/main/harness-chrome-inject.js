@@ -1,6 +1,7 @@
 (() => {
   // window.whaleDom is injected ahead of this script by src/main/chrome.js.
-  const { h, mount } = window.whaleDom;
+  const { h, mount } = /** @type {import('../shared/dom.js')} */ (
+    (/** @type {Window & { whaleDom?: import('../shared/dom.js') }} */ (window)).whaleDom);
   const STYLE_ID = 'dshd-shell-integrated-chrome';
   const CONTROLS_ID = 'dshd-shell-controls';
   const CONTROL_SIZE = 32;
