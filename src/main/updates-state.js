@@ -16,7 +16,9 @@ const IPC = {
   changed: 'shell:updates-changed',
 };
 
+/** @param {{ onOpen: () => unknown }} options */
 function createUpdatesState({ onOpen }) {
+  /** @type {ReturnType<typeof presentUpdate>} */
   let presentation = { phase: 'idle' };
   const listeners = new Set();
 
@@ -25,7 +27,7 @@ function createUpdatesState({ onOpen }) {
       try { listener(presentation); } catch (error) { console.warn('dshd updates: listener failed', error); }
     }
   };
-  const publish = (state) => {
+  const publish = (/** @type {Parameters<typeof presentUpdate>[0]} */ state) => {
     presentation = presentUpdate(state);
     notify();
   };
@@ -38,12 +40,18 @@ function createUpdatesState({ onOpen }) {
   return {
     presentation: () => presentation,
     publish,
-    /** Adopt an already semantic presentation (update center). */
+    /**
+     * Adopt an already semantic presentation (update center).
+     * @param {ReturnType<typeof presentUpdate>} next
+     */
     present(next) {
       presentation = next;
       notify();
     },
-    /** Push the same state to every harness renderer subscriber. */
+    /**
+     * Push the same state to every harness renderer subscriber.
+     * @param {Iterable<{ isDestroyed: () => boolean, send: (channel: string, payload: unknown) => void }>} webContentsList
+     */
     broadcast(webContentsList) {
       for (const wc of webContentsList) {
         try { if (!wc.isDestroyed()) wc.send(IPC.changed, presentation); } catch { /* destroyed */ }

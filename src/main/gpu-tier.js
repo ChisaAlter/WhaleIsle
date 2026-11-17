@@ -20,15 +20,15 @@ const AMD_DISCRETE = /\bRX\b|Radeon\s+Pro|FirePro|Instinct|\bW\d{4}\b/i;
 /**
  * Classify the GPU Chromium actually renders with (hybrid laptops usually
  * keep the integrated one active for Electron).
- * @param {{ gpuDevice?: Array<object> }} info - `app.getGPUInfo('complete')`.
- * @param {Record<string, string>} [featureStatus] - `app.getGPUFeatureStatus()`.
+ * @param {{ gpuDevice?: Array<{ active?: boolean, deviceString?: string, vendorId?: number }> }} info - `app.getGPUInfo('complete')`.
+ * @param {{ gpu_compositing?: string }} [featureStatus] - `app.getGPUFeatureStatus()`.
  * @returns {{ lowPower: boolean, reason: string, device: string }}
  */
 function classifyGpu(info, featureStatus = {}) {
   const devices = Array.isArray(info?.gpuDevice) ? info.gpuDevice : [];
   const device = devices.find((entry) => entry?.active) || devices[0];
   const name = String(device?.deviceString || '');
-  const result = (lowPower, reason) => ({ lowPower, reason, device: name });
+  const result = (/** @type {boolean} */ lowPower, /** @type {string} */ reason) => ({ lowPower, reason, device: name });
   if (/^(disabled|unavailable)/.test(String(featureStatus.gpu_compositing || ''))) {
     return result(true, 'software-compositing');
   }
@@ -48,13 +48,17 @@ function classifyGpu(info, featureStatus = {}) {
   }
 }
 
-/** Resolve after `ready`; never rejects (unknown hardware keeps full effects). */
+/**
+ * Resolve after `ready`; never rejects (unknown hardware keeps full effects).
+ * @param {{ getGPUInfo: (kind: 'basic' | 'complete') => Promise<unknown>,
+ *           getGPUFeatureStatus?: () => { gpu_compositing?: string } }} app
+ */
 async function detectGpuTier(app) {
   try {
-    const info = await app.getGPUInfo('complete');
+    const info = /** @type {Parameters<typeof classifyGpu>[0]} */ (await app.getGPUInfo('complete'));
     return classifyGpu(info, app.getGPUFeatureStatus?.() || {});
   } catch (error) {
-    return { lowPower: false, reason: `error: ${error?.message || error}`, device: '' };
+    return { lowPower: false, reason: `error: ${/** @type {{ message?: unknown } | null | undefined} */ (error)?.message || error}`, device: '' };
   }
 }
 

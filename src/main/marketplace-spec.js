@@ -56,6 +56,10 @@ function githubIdentity(spec) {
     : `${owner}/${repo}`.toLowerCase();
 }
 
+/**
+ * @param {unknown} url
+ * @returns {{ owner: string, repo: string } | null}
+ */
 function githubOwnerRepoFromHomepage(url) {
   const match = String(url || '').match(GITHUB_URL_OWNER_REPO);
   if (!match) {
@@ -68,7 +72,7 @@ function githubOwnerRepoFromHomepage(url) {
  * Whether owner/repo equals the GitHub repository in a homepage URL.
  * @param {string} owner
  * @param {string} repo
- * @param {string} homepage
+ * @param {string | undefined} homepage
  * @returns {boolean}
  */
 function ownerRepoMatches(owner, repo, homepage) {

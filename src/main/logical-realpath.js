@@ -7,6 +7,8 @@ const path = require('node:path');
  * Resolve links on the application's logical filesystem plane. On Windows,
  * legacy realpath retains DOS short names; expand those names component by
  * component without adopting native realpath's package-virtualized location.
+ * @param {string} target
+ * @returns {string}
  */
 function logicalRealpathSync(target) {
   const real = fs.realpathSync(target);

@@ -5,6 +5,11 @@ const path = require('node:path');
 
 const RUNTIME_LINKS = '.dsh-runtime-links.json';
 
+/**
+ * @param {string} root
+ * @param {unknown} relative
+ * @returns {string}
+ */
 function inside(root, relative) {
   if (typeof relative !== 'string' || !relative || relative.includes('\\')
       || relative.split('/').some(part => !part || part === '.' || part === '..')
@@ -16,6 +21,10 @@ function inside(root, relative) {
   return full;
 }
 
+/**
+ * @param {string} root
+ * @returns {Array<{ from: string, target: string }>}
+ */
 function readRuntimeLinks(root) {
   const file = path.join(root, RUNTIME_LINKS);
   if (!fs.existsSync(file)) return [];
@@ -23,10 +32,17 @@ function readRuntimeLinks(root) {
   return validateRuntimeLinks(root, manifest);
 }
 
+/**
+ * @param {string} root
+ * @param {unknown} manifest
+ * @returns {Array<{ from: string, target: string }>}
+ */
 function validateRuntimeLinks(root, manifest) {
-  if (manifest.version !== 1 || !Array.isArray(manifest.links)) throw new Error('Invalid runtime link manifest');
+  const parsed = /** @type {{ version?: unknown, links?: unknown }} */ (manifest);
+  if (parsed.version !== 1 || !Array.isArray(parsed.links)) throw new Error('Invalid runtime link manifest');
+  /** @type {Set<string>} */
   const seen = new Set();
-  return manifest.links.map(link => {
+  return parsed.links.map(link => {
     const from = inside(root, link.path);
     const target = inside(root, link.target);
     if (seen.has(from) || from === target) throw new Error(`Conflicting runtime link: ${link.path}`);
@@ -35,6 +51,12 @@ function validateRuntimeLinks(root, manifest) {
   });
 }
 
+/**
+ * @param {string} root
+ * @param {object} [options]
+ * @param {string} [options.targetRoot]
+ * @returns {number}
+ */
 function materializeRuntimeLinks(root, { targetRoot = root } = {}) {
   const links = readRuntimeLinks(root);
   const rootReal = fs.realpathSync(root);
@@ -51,11 +73,11 @@ function materializeRuntimeLinks(root, { targetRoot = root } = {}) {
       throw new Error(`Runtime link parent escapes root: ${from}`);
     }
     let info;
-    try { info = fs.lstatSync(from); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { info = fs.lstatSync(from); } catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; }
     if (info) {
       if (!info.isSymbolicLink()) throw new Error(`Runtime link would replace a directory: ${from}`);
       let current;
-      try { current = fs.realpathSync(from); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try { current = fs.realpathSync(from); } catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; }
       if (current === targetReal) continue;
       fs.unlinkSync(from);
     }
@@ -69,37 +91,61 @@ function materializeRuntimeLinks(root, { targetRoot = root } = {}) {
   return links.length;
 }
 
+/**
+ * @param {string} root
+ * @returns {void}
+ */
 function removeRuntimeLinks(root) {
   const links = readRuntimeLinks(root);
   for (const { from } of links.reverse()) {
     let info;
-    try { info = fs.lstatSync(from); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { info = fs.lstatSync(from); } catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; }
     if (!info) continue;
     if (!info.isSymbolicLink()) throw new Error(`Runtime archive link is not a link: ${from}`);
     fs.unlinkSync(from);
   }
 }
 
+/**
+ * @param {AbortSignal | undefined} signal
+ * @returns {void}
+ */
 function checkCancelled(signal) {
   if (signal?.aborted) throw Object.assign(new Error('已取消运行时准备'), { code: 'DSH_CANCELLED' });
 }
 
+/**
+ * @param {string} root
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<Array<{ from: string, target: string }>>}
+ */
 async function readRuntimeLinksAsync(root, signal) {
   checkCancelled(signal);
   let contents;
   try { contents = await fs.promises.readFile(path.join(root, RUNTIME_LINKS), 'utf8'); }
-  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return []; throw error; }
   checkCancelled(signal);
   return validateRuntimeLinks(root, JSON.parse(contents));
 }
 
+/**
+ * @param {string} file
+ * @returns {Promise<import('node:fs').Stats | undefined>}
+ */
 async function lstatIfPresent(file) {
   try { return await fs.promises.lstat(file); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; }
 }
 
 // Startup must not run the build-time synchronous filesystem loop on Electron's
 // UI thread. Await actual I/O (not just a Promise around the synchronous API).
+/**
+ * @param {string} root
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal]
+ * @param {(completed: number, total: number) => void} [options.onProgress]
+ * @returns {Promise<number>}
+ */
 async function materializeRuntimeLinksAsync(root, { signal, onProgress = () => {} } = {}) {
   const links = await readRuntimeLinksAsync(root, signal);
   onProgress(0, links.length);
@@ -128,7 +174,7 @@ async function materializeRuntimeLinksAsync(root, { signal, onProgress = () => {
     if (info) {
       if (!info.isSymbolicLink()) throw new Error(`Runtime link would replace a directory: ${from}`);
       try { current = await fs.promises.realpath(from); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; }
     }
     checkCancelled(signal);
     if (current !== targetReal) {
@@ -146,6 +192,13 @@ async function materializeRuntimeLinksAsync(root, { signal, onProgress = () => {
   return links.length;
 }
 
+/**
+ * @param {string} root
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal]
+ * @param {(completed: number, total: number) => void} [options.onProgress]
+ * @returns {Promise<void>}
+ */
 async function removeRuntimeLinksAsync(root, { signal, onProgress = () => {} } = {}) {
   const links = await readRuntimeLinksAsync(root, signal);
   onProgress(0, links.length);

@@ -3,6 +3,7 @@ const { readHarnessThemeSettingsLive } = require('../shared/themes');
 
 // Profile storage remains authoritative. This process-local projection also
 // reaches shell pages that exist before the Harness client has started.
+/** @type {boolean | undefined} */
 let minimal;
 let suggestionClaimed = false;
 
@@ -11,6 +12,7 @@ function getMinimalMode() {
   return minimal;
 }
 
+/** @param {unknown} value */
 function setMinimalMode(value) {
   if (typeof value !== 'boolean') throw new TypeError('Rendering mode must be a boolean');
   if (getMinimalMode() === value) return true;

@@ -29,6 +29,10 @@ function defaultSourceDir() {
   }
 }
 
+/**
+ * @param {string} sourceDir
+ * @param {string} profileDir
+ */
 function linkIntoProfileModules(sourceDir, profileDir) {
   const linked = path.join(profileDir, 'node_modules', PLATFORM_PACKAGE);
   ensureDirectoryLink(sourceDir, linked);
@@ -93,6 +97,7 @@ function ensureDesktopPlatformSession(options = {}) {
   };
 }
 
+/** @param {unknown} list */
 function withoutPlatformAliases(list) {
   const blocked = new Set(PLATFORM_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

@@ -1,5 +1,36 @@
 'use strict';
 
+/**
+ * @typedef {Object} LauncherPluginRow
+ * @property {string} name
+ * @property {boolean} [suspect]
+ * @property {boolean} [preset]
+ * @property {boolean} [officialTemplate]
+ * @property {boolean} [disabled]
+ * @property {boolean} [orphan]
+ * @property {boolean} [inBox]
+ */
+
+/**
+ * @typedef {Object} LauncherForensics
+ * @property {string | null} [genericCause]
+ * @property {boolean} [desktopRuntimeDamage]
+ * @property {boolean} [pluginTreeFailure]
+ * @property {{ skipUserPlugins?: boolean }} [recovery]
+ * @property {Array<{ name: string }>} [suspects]
+ * @property {Array<{ name: string, inBox?: boolean }>} [orphanSuspects]
+ * @property {LauncherPluginRow[]} [plugins]
+ */
+
+/**
+ * @typedef {Object} LauncherStatus
+ * @property {LauncherForensics | null} [forensics]
+ * @property {{ skipUserPlugins?: boolean } | null} [recovery]
+ * @property {{ ok?: boolean | null, error?: string, skipped?: Array<{ label: string, error?: string }> } | null} [lastStart]
+ * @property {{ state?: string, pluginRecovery?: { skipUserPlugins?: boolean } } | null} [desktop]
+ */
+
+/** @type {Record<string, string>} */
 const GENERIC_LABELS = {
   'session-cache': '历史会话缓存格式不兼容，导致内核启动失败。跳过用户插件无法修复；请更新到包含缓存兼容修复的桌面版本，并保留日志。不要删除原始会话或清空历史数据。',
   oom: '检测到内存不足（OOM），与单个插件无关。',
@@ -8,6 +39,7 @@ const GENERIC_LABELS = {
   'missing-node': '未找到 Node 运行时，与单个插件无关。',
 };
 
+/** @type {Record<string, string>} */
 const PLUGIN_ERROR_LABELS = {
   preset: '桌面预置插件不可移除。',
   'official-template': '官方模板插件不可禁用。',
@@ -81,7 +113,11 @@ function skippedBuiltinsVerdict(lastStart) {
   return `鲸屿已启动，但以下内置功能本次未加载，其余功能照常：${rows.join('、')}。重新安装桌面端安装包通常可以修复（源码运行则执行 npm run setup:harness）。`;
 }
 
-/** Only installed user plugins named by the failure can be disabled for recovery. */
+/**
+ * Only installed user plugins named by the failure can be disabled for recovery.
+ * @param {LauncherForensics | null | undefined} forensics
+ * @returns {string[]}
+ */
 function disableableSuspectNames(forensics) {
   if (forensics?.genericCause || forensics?.desktopRuntimeDamage) return [];
   return [...new Set((forensics?.plugins || [])
@@ -90,13 +126,17 @@ function disableableSuspectNames(forensics) {
     .map((row) => row.name))];
 }
 
-/** A suggested action is not consent; the launcher asks before changing plugins. */
+/**
+ * A suggested action is not consent; the launcher asks before changing plugins.
+ * @param {LauncherStatus | null | undefined} status
+ * @returns {{ kind: string, names: string[], title: string, body: string, confirmText: string } | null}
+ */
 function startupRecoveryGuidance(status) {
   const forensics = status?.forensics;
   if (!forensics || forensics.genericCause || forensics.desktopRuntimeDamage) return null;
   const recovery = status.recovery || status.desktop?.pluginRecovery || forensics.recovery;
   if (!recovery?.skipUserPlugins && status.lastStart?.ok !== false && status.desktop?.state !== 'error') return null;
-  if (!recovery?.skipUserPlugins && ['ready', 'running-external'].includes(status.desktop?.state)) return null;
+  if (!recovery?.skipUserPlugins && (status.desktop?.state === 'ready' || status.desktop?.state === 'running-external')) return null;
   const names = disableableSuspectNames(forensics);
   if (names.length) {
     return {
@@ -122,7 +162,7 @@ function startupRecoveryGuidance(status) {
 /**
  * @param {{ ok?: boolean|null, error?: string }|null|undefined} lastStart
  * @param {{ skipUserPlugins?: boolean, reason?: string }|null|undefined} recovery
- * @param {{ genericCause?: string|null, desktopRuntimeDamage?: boolean, suspects?: Array<{name:string}>, orphanSuspects?: Array<{name:string, inBox?:boolean}>, pluginTreeFailure?: boolean }|null|undefined} forensics
+ * @param {LauncherForensics | null | undefined} forensics
  * @returns {string}
  */
 function recoveryVerdict(lastStart, recovery, forensics) {
@@ -164,11 +204,12 @@ function recoveryVerdict(lastStart, recovery, forensics) {
 }
 
 /**
- * @param {Array<{ name: string, suspect?: boolean, preset?: boolean, officialTemplate?: boolean, disabled?: boolean, orphan?: boolean, inBox?: boolean }>} rows
- * @returns {typeof rows}
+ * @param {LauncherPluginRow[]} rows
+ * @returns {LauncherPluginRow[]}
  */
 function sortPluginRows(rows) {
   const list = Array.isArray(rows) ? [...rows] : [];
+  /** @type {(row: LauncherPluginRow) => number} */
   const rank = (row) => {
     if (row.inBox) return 0;
     if (row.orphan) return 1;
@@ -203,5 +244,5 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = launcherRecovery;
 }
 if (typeof window !== 'undefined') {
-  window.launcherRecovery = launcherRecovery;
+  (/** @type {Window & { launcherRecovery?: unknown }} */ (window)).launcherRecovery = launcherRecovery;
 }

@@ -35,6 +35,7 @@ function defaultSourceDir() {
   }
 }
 
+/** @param {string} target */
 function pathExists(target) {
   try {
     fs.lstatSync(target);
@@ -44,6 +45,7 @@ function pathExists(target) {
   }
 }
 
+/** @param {string} target */
 function removeLinkOrDir(target) {
   if (!pathExists(target)) {
     return;
@@ -190,6 +192,7 @@ function ensureDesktopDshRemote(options = {}) {
   };
 }
 
+/** @param {unknown} list */
 function withoutDshRemoteAliases(list) {
   const blocked = new Set(DSH_REMOTE_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

@@ -19,11 +19,20 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+/**
+ * @param {string} file
+ * @returns {string}
+ */
 function tempPathFor(file) {
   const random = crypto.randomBytes(8).toString('hex');
   return path.join(path.dirname(file), `${path.basename(file)}.${process.pid}.${random}.tmp`);
 }
 
+/**
+ * @param {string} file
+ * @param {{ mode?: number }} options
+ * @returns {number}
+ */
 function modeForSync(file, options) {
   if (options.mode !== undefined) return options.mode;
   try {
@@ -33,6 +42,11 @@ function modeForSync(file, options) {
   }
 }
 
+/**
+ * @param {string} file
+ * @param {{ mode?: number }} options
+ * @returns {Promise<number>}
+ */
 async function modeFor(file, options) {
   if (options.mode !== undefined) return options.mode;
   try {
@@ -113,6 +127,9 @@ function renameWithRetrySync(from, to, options = {}) {
  * written and fsynced, then renamed over the target. An existing target keeps
  * its permission bits unless `options.mode` overrides them. On any failure the
  * temp file is removed and the original error is rethrown.
+ * @param {string} file
+ * @param {string | NodeJS.ArrayBufferView} data
+ * @param {{ encoding?: BufferEncoding | null, mode?: number, fsync?: boolean }} [options]
  */
 async function atomicWriteFile(file, data, options = {}) {
   const tmp = tempPathFor(file);
@@ -132,6 +149,11 @@ async function atomicWriteFile(file, data, options = {}) {
   }
 }
 
+/**
+ * @param {string} file
+ * @param {string | NodeJS.ArrayBufferView} data
+ * @param {{ encoding?: BufferEncoding | null, mode?: number, fsync?: boolean }} [options]
+ */
 function atomicWriteFileSync(file, data, options = {}) {
   const tmp = tempPathFor(file);
   let fd;
@@ -158,6 +180,9 @@ function atomicWriteFileSync(file, data, options = {}) {
  * Remove a file or directory tree without throwing. Intended for cleanup
  * paths where a removal failure must not overwrite an otherwise good result
  * or corrupt long-lived service state.
+ * @param {import('node:fs').PathLike} target
+ * @param {{ log?: (target: import('node:fs').PathLike, error: unknown) => void }} [options]
+ * @returns {Promise<{ ok: boolean, error: unknown }>}
  */
 async function safeRemove(target, options = {}) {
   try {
@@ -169,6 +194,11 @@ async function safeRemove(target, options = {}) {
   }
 }
 
+/**
+ * @param {import('node:fs').PathLike} target
+ * @param {{ log?: (target: import('node:fs').PathLike, error: unknown) => void }} [options]
+ * @returns {{ ok: boolean, error: unknown }}
+ */
 function safeRemoveSync(target, options = {}) {
   try {
     fs.rmSync(target, { recursive: true, force: true });
@@ -179,6 +209,10 @@ function safeRemoveSync(target, options = {}) {
   }
 }
 
+/**
+ * @param {string} target
+ * @returns {import('node:fs').Stats | null}
+ */
 function lstatOrNull(target) {
   try {
     return fs.lstatSync(target);
@@ -187,6 +221,11 @@ function lstatOrNull(target) {
   }
 }
 
+/**
+ * @param {string} root
+ * @param {string} target
+ * @returns {boolean}
+ */
 function isInside(root, target) {
   const relative = path.relative(root, target);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
@@ -202,6 +241,11 @@ function isInside(root, target) {
  * `options.rmOptions` extends the guarded fs.promises.rm call (e.g.
  * `{ maxRetries, retryDelay }` for consumers that release handles a moment
  * after their process exits).
+ * @template T
+ * @param {string} prefix
+ * @param {(dir: string) => T | Promise<T>} fn
+ * @param {{ rmOptions?: import('node:fs').RmOptions }} [options]
+ * @returns {Promise<T>}
  */
 async function withOwnedTempDir(prefix, fn, options = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), String(prefix)));
@@ -210,7 +254,7 @@ async function withOwnedTempDir(prefix, fn, options = {}) {
     return await fn(dir);
   } finally {
     const current = lstatOrNull(dir);
-    const owned = Boolean(current)
+    const owned = current !== null
       && !current.isSymbolicLink()
       && current.isDirectory()
       && current.dev === created.dev
@@ -242,6 +286,9 @@ async function withOwnedTempDir(prefix, fn, options = {}) {
  * a fixture reclaimed by test teardown, a root handed to the detached cleanup
  * supervisor (scripts/lib/owned-dir-supervisor.cjs), or an explicitly retained
  * evidence directory under a non-temp parent.
+ * @param {string} parent
+ * @param {string} prefix
+ * @returns {string}
  */
 function createUniqueDir(parent, prefix) {
   return fs.mkdtempSync(path.join(String(parent), String(prefix)));

@@ -6,6 +6,10 @@ const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie } = require('./dshd-h
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const RESPONSE_MAX_BYTES = IMAGE_MAX_BYTES + 64 * 1024;
 
+/**
+ * @param {Buffer} data
+ * @returns {string}
+ */
 function imageMediaType(data) {
   if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png';
   if (data.length >= 3 && data[0] === 255 && data[1] === 216 && data[2] === 255) return 'image/jpeg';
@@ -15,6 +19,10 @@ function imageMediaType(data) {
   throw new Error('此文件不是支持的 PNG、JPEG、GIF、WebP 或 BMP 图片');
 }
 
+/**
+ * @param {Response} response
+ * @returns {Promise<Response>}
+ */
 async function limitedResponse(response) {
   const declared = Number(response.headers.get('content-length'));
   if (declared > RESPONSE_MAX_BYTES) throw new Error('图片响应超过 2 MiB 上限');
@@ -39,7 +47,10 @@ async function limitedResponse(response) {
   return new Response(Buffer.concat(chunks, length), { headers: response.headers });
 }
 
-/** Transfer one bounded raster preview through the ordinary Session-scoped file service. */
+/**
+ * Transfer one bounded raster preview through the ordinary Session-scoped file service.
+ * @param {{ origin: string, payload: { workspaceFileScopeId?: unknown, path?: unknown }, cookie: unknown, fetchImpl?: typeof fetch, signal?: AbortSignal }} args
+ */
 async function forwardWorkspaceImage({ origin, payload, cookie, fetchImpl = globalThis.fetch, signal }) {
   if (!payload || typeof payload.workspaceFileScopeId !== 'string' || !payload.workspaceFileScopeId
       || typeof payload.path !== 'string' || !payload.path.trim()) {
@@ -47,6 +58,7 @@ async function forwardWorkspaceImage({ origin, payload, cookie, fetchImpl = glob
   }
   const originUrl = new URL(assertLoopbackHarnessOrigin(origin));
   const rpcId = randomUUID();
+  /** @type {Record<string, string>} */
   const headers = { 'content-type': 'application/json', accept: 'multipart/form-data, application/json',
     'accept-encoding': 'identity', host: originUrl.host };
   const pair = sanitizeHarnessCookie(cookie);

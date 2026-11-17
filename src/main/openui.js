@@ -11,6 +11,7 @@ function openuiViewer() {
   return fs.promises.readFile(rendererFile('whale-ui/viewer.html'), 'utf8');
 }
 
+/** @param {unknown} value */
 function isStringQuery(value) {
   if (!value || typeof value !== 'object') return false;
   const prototype = Object.getPrototypeOf(value);
@@ -18,8 +19,10 @@ function isStringQuery(value) {
     && Object.values(value).every((entry) => typeof entry === 'string');
 }
 
+/** @param {{ path?: unknown, query?: unknown }} input */
 async function openuiApi(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)
+    || typeof input.path !== 'string'
     || !API_ROUTES.has(input.path)
     || !isStringQuery(input.query)) {
     throw new Error('Invalid OpenUI API request');
@@ -27,7 +30,7 @@ async function openuiApi(input) {
 
   // Fixed routes own validation and caching; the renderer supplies query values.
   const url = new URL(input.path, 'https://openui.local');
-  url.search = new URLSearchParams(input.query).toString();
+  url.search = new URLSearchParams(/** @type {Record<string, string>} */ (input.query)).toString();
   const { GET } = require(rendererFile(`whale-ui/api/${API_ROUTES.get(input.path)}`));
   const response = await GET(new Request(url, { method: 'GET' }));
   return { status: response.status, body: await response.json() };
@@ -35,9 +38,12 @@ async function openuiApi(input) {
 
 const WHALE_BUNDLES = new Set(['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'maplibre.js', 'standalone-runtime.js']);
 
-/** The trusted parent can request only packaged rendering engines, never a filesystem path. */
+/**
+ * The trusted parent can request only packaged rendering engines, never a filesystem path.
+ * @param {{ name?: unknown }} input
+ */
 async function openuiBundle(input) {
-  if (!input || typeof input !== 'object' || !WHALE_BUNDLES.has(input.name)) {
+  if (!input || typeof input !== 'object' || typeof input.name !== 'string' || !WHALE_BUNDLES.has(input.name)) {
     throw new Error('Invalid Whale UI bundle request');
   }
   const bytes = await fs.promises.readFile(rendererFile(`whale-ui/assets/${input.name}`));

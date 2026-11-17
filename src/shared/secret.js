@@ -11,6 +11,10 @@
 // 或不回响应的不传，请求与底层 socket 立即销毁。
 const crypto = require('crypto');
 
+/**
+ * @param {unknown} value
+ * @returns {Buffer | null}
+ */
 function secretBytes(value) {
   if (typeof value === 'string') return Buffer.from(value, 'utf8');
   if (Buffer.isBuffer(value)) return value;
@@ -54,7 +58,7 @@ function constantTimeEqual(a, b) {
  * - 请求中途断开（'close' 先于 'end'）或流报错时 reject。
  * - 默认 resolve 为 utf8 字符串；`options.buffer` 时 resolve 为 Buffer。
  *
- * @param {import('stream').Readable} req - IncomingMessage 或同类可读流
+ * @param {import('stream').Readable & { complete?: boolean }} req - IncomingMessage 或同类可读流
  * @param {number} maxBytes - 字节上限（不含）
  * @param {{ buffer?: boolean, res?: import('http').ServerResponse }} [options]
  * @returns {Promise<string|Buffer>}
@@ -67,28 +71,43 @@ function readBodyLimited(req, maxBytes, options = {}) {
   const asBuffer = options && options.buffer === true;
   const res = options && options.res;
   return new Promise((resolve, reject) => {
+    /** @type {Buffer[]} */
     const chunks = [];
     let total = 0;
     let settled = false;
-    const settle = (fn, value) => {
-      if (settled) return;
-      settled = true;
+    const detach = () => {
       req.off('data', onData);
       req.off('end', onEnd);
       req.off('error', onError);
       req.off('close', onClose);
-      fn(value);
+    };
+    /** @param {string | Buffer} value */
+    const settleResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      detach();
+      resolve(value);
+    };
+    /** @param {unknown} error */
+    const settleReject = (error) => {
+      if (settled) return;
+      settled = true;
+      detach();
+      reject(error);
     };
     const finish = () => {
       const body = Buffer.concat(chunks);
-      settle(resolve, asBuffer ? body : body.toString('utf8'));
+      settleResolve(asBuffer ? body : body.toString('utf8'));
     };
+    /** @param {string | Buffer | Uint8Array} chunk */
     const onData = (chunk) => {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       total += buf.length;
       if (total > limit) {
-        const error = new Error(`请求体超过 ${limit} 字节上限`);
-        error.code = 'BODY_TOO_LARGE';
+        const error = Object.assign(
+          new Error(`请求体超过 ${limit} 字节上限`),
+          { code: 'BODY_TOO_LARGE' },
+        );
         if (res) {
           // 服务端模式：停读但保留连接，Node 把调用方的 4xx 发完后
           // 按 Connection: close 关掉这条连接。
@@ -96,9 +115,9 @@ function readBodyLimited(req, maxBytes, options = {}) {
             res.setHeader('Connection', 'close');
           }
           req.pause?.();
-          settle(reject, error);
+          settleReject(error);
         } else {
-          settle(reject, error);
+          settleReject(error);
           // 无响应通道：立即销毁请求与底层 socket，不再收对端的数据。
           req.destroy?.();
         }
@@ -107,16 +126,19 @@ function readBodyLimited(req, maxBytes, options = {}) {
       chunks.push(buf);
     };
     const onEnd = () => finish();
-    const onError = (error) => settle(reject, error);
+    /** @param {unknown} error */
+    const onError = (error) => settleReject(error);
     const onClose = () => {
       // 'close' 正常跟在 'end' 之后（此时已 settled）；先到则是连接中断。
       if (req.readableEnded === true || req.complete === true) {
         finish();
         return;
       }
-      const error = new Error('请求体读取中断');
-      error.code = 'BODY_READ_FAILED';
-      settle(reject, error);
+      const error = Object.assign(
+        new Error('请求体读取中断'),
+        { code: 'BODY_READ_FAILED' },
+      );
+      settleReject(error);
     };
     req.on('data', onData);
     req.once('end', onEnd);
@@ -177,7 +199,7 @@ const INTERNAL_SECRETS_ENV = 'DSHD_INTERNAL_SECRETS_VIA_STDIN';
  * @returns {string}
  */
 function internalSecret(name) {
-  const store = globalThis[INTERNAL_SECRETS_KEY];
+  const store = Reflect.get(globalThis, INTERNAL_SECRETS_KEY);
   const value = store && typeof store.get === 'function' ? store.get(name) : undefined;
   return typeof value === 'string' ? value : '';
 }
@@ -192,7 +214,7 @@ function internalSecret(name) {
  * 同进程代码可篡改条目（复审 F3 / 议题 #514）。读方按"对象带 get(name)"
  * 判形，测试注入的旧式冻结 Map 仍可被 internalSecret 读取。
  *
- * @param {Iterable<[string, string]>} entries
+ * @param {Iterable<[string, string]>} [entries]
  * @returns {{ get(name: string): string | undefined }} 已安装的只读密钥视图
  */
 function storeInternalSecrets(entries) {
@@ -202,10 +224,11 @@ function storeInternalSecrets(entries) {
       map.set(String(name), value == null ? '' : String(value));
     }
   }
+  /** @type {{ get(name: string): string | undefined }} */
   const store = Object.freeze(
-    Object.defineProperty(Object.create(null), 'get', { value: (name) => map.get(name) }),
+    Object.defineProperty(Object.create(null), 'get', { value: (/** @type {string} */ name) => map.get(name) }),
   );
-  globalThis[INTERNAL_SECRETS_KEY] = store;
+  Reflect.set(globalThis, INTERNAL_SECRETS_KEY, store);
   return store;
 }
 
@@ -223,6 +246,7 @@ function storeInternalSecrets(entries) {
 function collectInternalSecrets(stream, options = {}) {
   const endMarker = options.endMarker || INTERNAL_SECRETS_END;
   return new Promise((resolve) => {
+    /** @type {Array<[string, string]>} */
     const entries = [];
     let buffer = '';
     const finish = () => {
@@ -232,6 +256,7 @@ function collectInternalSecrets(stream, options = {}) {
       stream.off('error', finish);
       resolve(storeInternalSecrets(entries));
     };
+    /** @param {unknown} chunk */
     const onData = (chunk) => {
       buffer += String(chunk);
       for (;;) {

@@ -129,14 +129,18 @@ function stripPreviewUserAgent(userAgent) {
 function configurePreviewSession(ses) {
   ses.setUserAgent(stripPreviewUserAgent(ses.getUserAgent()));
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const origin = details && (details.requestingUrl || details.requestingOrigin);
-    callback(isPreviewPermissionAllowed(ses, webContents, permission, origin, details));
+    // Electron details expose requestingUrl; the pre-38 name requestingOrigin is
+    // still tolerated for harness-side callers invoking this checker directly.
+    const detail = /** @type {{ requestingUrl?: string, requestingOrigin?: string } | undefined} */ (details);
+    const origin = detail && (detail.requestingUrl || detail.requestingOrigin);
+    callback(isPreviewPermissionAllowed(ses, webContents, permission, origin, detail));
   });
   ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => (
     isPreviewPermissionAllowed(ses, webContents, permission, requestingOrigin, details)
   ));
 }
 
+/** @param {string} partition */
 function defaultFromPartition(partition) {
   const { session } = require('electron');
   return session.fromPartition(partition);
@@ -155,6 +159,7 @@ function defaultFromPartition(partition) {
  */
 function createPreviewSessionCache(fromPartition = defaultFromPartition) {
   const sessions = new Map();
+  /** @param {string} partition */
   function getByPartition(partition) {
     const existing = sessions.get(partition);
     if (existing) return existing;
@@ -225,7 +230,7 @@ module.exports = {
   previewGuestPreloadPath,
   previewGuestWebPreferences,
   getPreviewSession: (scope = 'shared') => sharedPreviewSessions.getSession(scope),
-  previewSessionForPartition: (partition) => sharedPreviewSessions.getByPartition(partition),
+  previewSessionForPartition: (/** @type {string} */ partition) => sharedPreviewSessions.getByPartition(partition),
   listPreviewSessions: () => sharedPreviewSessions.listSessions(),
   clearPreviewCookies: () => sharedPreviewSessions.clearCookies(),
   clearPreviewCache: () => sharedPreviewSessions.clearCache(),

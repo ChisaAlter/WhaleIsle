@@ -13,6 +13,7 @@
  *     or write may proceed until recovery reconciles them.
  */
 
+/** @type {{ kind: string, meta: Record<string, unknown>, acquiredAt: number } | null} */
 let maintenanceHeld = null;
 
 function isMaintenanceHeld() {
@@ -30,6 +31,7 @@ function maintenanceOwner() {
  * unrelated caller — or no token at all — must acquire or refuse. Callers
  * must pass the actual token object they received from `acquireMaintenance`,
  * never a kind string or a guessed reference.
+ * @param {unknown} owner
  */
 function holdsMaintenance(owner) {
   return owner !== null && owner !== undefined && maintenanceHeld === owner;
@@ -39,6 +41,8 @@ function holdsMaintenance(owner) {
  * Take the maintenance slot for `kind` ('import' | 'retry' | 'install' |
  * 'start' | 'config'). Returns the owner token on success, or null when the
  * slot is already held. The token must be passed to `releaseMaintenance`.
+ * @param {string} kind
+ * @param {Record<string, unknown>} [meta]
  */
 function acquireMaintenance(kind, meta = {}) {
   if (maintenanceHeld !== null) {
@@ -52,6 +56,7 @@ function acquireMaintenance(kind, meta = {}) {
 /**
  * Release only if `owner` is the current owner — a stale handle can never
  * drop a newer operation's ownership.
+ * @param {unknown} owner
  */
 function releaseMaintenance(owner) {
   if (owner && maintenanceHeld === owner) {

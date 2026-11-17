@@ -19,6 +19,10 @@ const PR_TEMPLATE_TREE_PATHS = [...PR_TEMPLATE_FILES, ...PR_TEMPLATE_DIRECTORIES
 const PR_TEMPLATE_MAX_BYTES = 8_000;
 const PR_TEMPLATE_TREE_LIST_MAX_BYTES = 100_000;
 
+/**
+ * @param {unknown} output
+ * @returns {{ objectId: string, path: string }[]}
+ */
 function parseTemplateTreeEntries(output) {
   const entries = [];
   for (const record of String(output || '').split('\0')) {
@@ -33,6 +37,11 @@ function parseTemplateTreeEntries(output) {
   return entries;
 }
 
+/**
+ * @param {string} cwd
+ * @param {string} objectId
+ * @returns {Promise<string>}
+ */
 async function readTemplateBlob(cwd, objectId) {
   const blob = await runGit(cwd, ['cat-file', 'blob', objectId], { maxBytes: PR_TEMPLATE_MAX_BYTES });
   if (blob.code !== 0) return '';
@@ -83,6 +92,13 @@ async function readPrTemplate(cwd, treeish) {
   return '';
 }
 
+/**
+ * @param {string} cwd
+ * @param {string} refName
+ * @param {boolean} hasPrimaryRemote
+ * @param {{ url: string, defaultBranch: string } | null | undefined} targetRepository
+ * @returns {Promise<string>}
+ */
 async function resolvePrBaseBranch(cwd, refName, hasPrimaryRemote, targetRepository) {
   const configured = await runGit(cwd, ['config', '--get', `branch.${refName}.gh-merge-base`]);
   if (configured.code === 0) {
@@ -122,7 +138,10 @@ async function resolvePrBaseBranch(cwd, refName, hasPrimaryRemote, targetReposit
 /** @type {null | ((cwd: string) => Promise<string | null>)} */
 let ghDefaultBranchResolver = null;
 
-/** Test seam: replace `gh repo view` default-branch resolution. */
+/**
+ * Test seam: replace `gh repo view` default-branch resolution.
+ * @param {((cwd: string) => Promise<string | null>) | null | undefined} resolver
+ */
 function setGhDefaultBranchResolver(resolver) {
   ghDefaultBranchResolver = typeof resolver === 'function' ? resolver : null;
 }

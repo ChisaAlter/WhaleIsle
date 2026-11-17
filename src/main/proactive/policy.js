@@ -5,6 +5,10 @@ const READ_ONLY = new Set(['read', 'summarize', 'inspect']);
 const LOCAL_REVERSIBLE = new Set(['draft', 'local_write', 'test']);
 
 class PolicyViolation extends Error {
+  /**
+   * @param {string} [message]
+   * @param {string} [code]
+   */
   constructor(message, code = 'policy_denied') {
     super(message);
     this.name = 'PolicyViolation';
@@ -12,6 +16,12 @@ class PolicyViolation extends Error {
   }
 }
 
+/**
+ * @param {{ autonomy?: unknown, action?: string, approved?: boolean,
+ *           explicitAuthorization?: boolean }} [input]
+ * @returns {{ allowed: boolean, requiresApproval: boolean, level: number,
+ *   action: string, reason?: string, explicitAuthorization?: boolean }}
+ */
 function evaluate({ autonomy, action, approved = false, explicitAuthorization = false } = {}) {
   const level = Number(autonomy);
   if (!Number.isInteger(level) || level < 1 || level > 5) {
@@ -31,6 +41,7 @@ function evaluate({ autonomy, action, approved = false, explicitAuthorization = 
   return { allowed: true, requiresApproval: false, level, action, explicitAuthorization };
 }
 
+/** @param {Parameters<typeof evaluate>[0]} input */
 function assertAllowed(input) {
   const decision = evaluate(input);
   if (!decision.allowed) throw new PolicyViolation(decision.reason, decision.requiresApproval ? 'approval_required' : 'autonomy_denied');

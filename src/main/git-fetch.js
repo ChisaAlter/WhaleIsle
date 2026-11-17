@@ -17,9 +17,11 @@ function resetFetchCooldowns() {
 }
 
 /**
- * Background `git fetch --quiet --no-tags`. A failure must not hide local status.
+ * Cooldown key for one (common git dir, remote) pair.
  * @param {string} cwd
- * @returns {Promise<{ fetched: boolean, ok: boolean }>} whether a real fetch ran.
+ * @param {string} remote
+ * @param {(cwd: string, args: string[], limits?: object) => Promise<{ code: number, stdout: string }>} [readRun]
+ * @returns {Promise<string>}
  */
 async function fetchCooldownKey(cwd, remote, readRun = runGit) {
   const common = await readRun(cwd, ['rev-parse', '--git-common-dir']);
@@ -33,7 +35,7 @@ async function fetchCooldownKey(cwd, remote, readRun = runGit) {
 
 /**
  * @param {string} cwd
- * @param {(cwd: string, args: string[], limits?: object) => Promise<object>} [readRun]
+ * @param {(cwd: string, args: string[], limits?: object) => Promise<{ code: number, stdout: string }>} [readRun]
  *   read seam of the enclosing refresh; concurrent refreshes share only the
  *   fetch for the same common git directory and remote.
  */

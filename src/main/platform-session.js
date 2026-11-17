@@ -8,6 +8,7 @@
 
 const { randomBytes } = require('node:crypto');
 
+/** @type {string | null} */
 let processToken = null;
 
 /** Per-shell-process Platform route credential handed to the Host child via env. */
@@ -22,7 +23,7 @@ function platformToken() {
  * Fetch the current PlatformSession from the Host publisher route.
  * @param {string} origin - Host loopback origin.
  * @param {typeof fetch} [fetchImpl]
- * @returns the session snapshot or null when absent/account missing.
+ * @returns {Promise<unknown>} the session snapshot or null when absent/account missing.
  */
 async function fetchPlatformSession(origin, fetchImpl = fetch) {
   const response = await fetchImpl(`${String(origin).replace(/\/$/, '')}/dshd-platform/session`, {

@@ -4,6 +4,10 @@ const DEFAULT_DOWNLOAD_NAME = 'download';
 const MAX_DOWNLOAD_NAME_CHARS = 180;
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\.|$)/i;
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function sanitizeDownloadFilename(value) {
   const leaf = path.posix.basename(String(value || '').replace(/\\/g, '/'));
   let name = leaf
@@ -23,6 +27,11 @@ function sanitizeDownloadFilename(value) {
   return name;
 }
 
+/**
+ * @param {string} downloadsDir
+ * @param {string} filename
+ * @returns {string}
+ */
 function downloadSavePath(downloadsDir, filename) {
   if (typeof downloadsDir !== 'string' || !downloadsDir.trim()) {
     throw new TypeError('Downloads directory is required');

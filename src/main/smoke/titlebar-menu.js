@@ -5,6 +5,7 @@
  * React 18 serializes aria-expanded={true} as "" ; React 19 uses "true".
  * Portaled Git lists also expose role="menu" while they are open.
  */
+/** @param {unknown} value */
 function isAriaExpanded(value) {
   if (value == null) {
     return false;
@@ -16,6 +17,7 @@ function isAriaExpanded(value) {
   return text === 'true' || text === '';
 }
 
+/** @param {{ expanded?: unknown, menuCount?: unknown, hasOpenPopover?: unknown } | null | undefined} snapshot */
 function titlebarMenuLooksOpen(snapshot) {
   if (!snapshot) {
     return false;

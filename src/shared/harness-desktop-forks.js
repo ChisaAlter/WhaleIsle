@@ -555,10 +555,20 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/experimental/liveshare/src/endpoint-classification.ts', includes: ["'skillInventory/create': 'owner-only'", "'session/setPresentation': 'owner-only'"] },
 ];
 
+/**
+ * @param {string} vendorRoot
+ * @param {string} rel
+ * @returns {string}
+ */
 function readRel(vendorRoot, rel) {
   return fs.readFileSync(path.join(vendorRoot, ...rel.split('/')), 'utf8');
 }
 
+/**
+ * @param {string} text
+ * @param {string} id
+ * @returns {string | null}
+ */
 function rowBlock(text, id) {
   const pattern = new RegExp(`^\\s*- id: ${id}\\s*$`, 'm');
   const match = pattern.exec(text);

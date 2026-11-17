@@ -10,6 +10,23 @@ const IPC_ROLES = Object.freeze({
   LAUNCHER: 'launcher',
 });
 
+/**
+ * ipcMain 事件的结构化最低形态：sender 为 WebContents，senderFrame 为顶层
+ * Frame（带 url 属性）。Electron 事件对象满足该形状；测试注入的同形替身
+ * 也满足。
+ * @typedef {Object} IpcEventLike
+ * @property {{ isDestroyed?(): boolean, mainFrame?: { url?: unknown } }} [sender]
+ * @property {{ url?: unknown }} [senderFrame]
+ */
+
+/**
+ * @typedef {Object} IpcSenderOptions
+ * @property {{ boot?: unknown, harness?: unknown, harnessOrigin?: unknown, launcher?: unknown }} [surfaces]
+ * @property {(url: unknown) => boolean} [isBootUrl]
+ * @property {(url: unknown, expected: unknown) => boolean} [isHarnessUrl]
+ * @property {(url: unknown) => boolean} [isLauncherUrl]
+ */
+
 function defaultSurfaces() {
   const {
     getMainWindow,
@@ -27,6 +44,11 @@ function defaultSurfaces() {
   };
 }
 
+/**
+ * @param {IpcEventLike | null | undefined} event
+ * @param {IpcSenderOptions} [options]
+ * @returns {string | null}
+ */
 function ipcSenderRole(event, options = {}) {
   const sender = event?.sender;
   const frame = event?.senderFrame;
@@ -57,13 +79,17 @@ function ipcSenderRole(event, options = {}) {
   return null;
 }
 
+/**
+ * @param {IpcEventLike | null | undefined} event
+ * @param {Iterable<string> | Set<string> | null | undefined} allowedRoles
+ * @param {IpcSenderOptions} [options]
+ * @returns {string}
+ */
 function assertIpcSender(event, allowedRoles, options) {
   const allowed = allowedRoles instanceof Set ? allowedRoles : new Set(allowedRoles || []);
   const role = ipcSenderRole(event, options);
   if (!role || !allowed.has(role)) {
-    const error = new Error('Unauthorized IPC sender');
-    error.code = 'ERR_DSH_IPC_SENDER';
-    throw error;
+    throw Object.assign(new Error('Unauthorized IPC sender'), { code: 'ERR_DSH_IPC_SENDER' });
   }
   return role;
 }

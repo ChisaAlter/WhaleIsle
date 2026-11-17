@@ -11,7 +11,11 @@ function systemNotificationsAllowed({ platform = process.platform, defaultApp = 
   return platform !== 'win32' || defaultApp !== true;
 }
 
-/** Check support only when it cannot register the raw Electron shortcut. */
+/**
+ * Check support only when it cannot register the raw Electron shortcut.
+ * @param {{ isSupported: () => boolean }} Notification
+ * @param {{ platform?: string, defaultApp?: boolean }} [environment]
+ */
 function systemNotificationsSupported(Notification, environment) {
   return systemNotificationsAllowed(environment) && Notification.isSupported();
 }

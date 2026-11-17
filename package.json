@@ -17,6 +17,7 @@
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
     "lint": "eslint .",
+    "typecheck": "node scripts/typecheck.mjs",
     "health": "node scripts/health.mjs",
     "test": "node --test \"src/**/*.test.js\" \"mobile/web/**/*.test.js\" \"vendor/dsh-project/tests/*.test.mjs\" \"vendor/dsh-deepseek-tools/tests/*.test.mjs\"",
     "test:deepseek-tools": "node --test vendor/dsh-deepseek-tools/tests/*.test.mjs",

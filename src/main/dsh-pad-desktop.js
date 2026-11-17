@@ -37,7 +37,7 @@ function ensureDesktopDshPad(options = {}) {
   try {
     manifest = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
   } catch (error) {
-    return { ok: false, sourceDir, error: `missing-source:package.json (${error.message})` };
+    return { ok: false, sourceDir, error: `missing-source:package.json (${error instanceof Error ? error.message : String(error)})` };
   }
   const missing = [...missingDeclaredEntries(sourceDir, manifest), ...missingRuntimeFiles(sourceDir)];
   if (!fs.existsSync(path.join(sourceDir, 'cordis.patch.yml'))) missing.push('cordis.patch.yml');

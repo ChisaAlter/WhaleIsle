@@ -3,7 +3,10 @@
 const { randomUUID } = require('node:crypto');
 const { assertLoopbackHarnessOrigin } = require('./dshd-host-tunnel.js');
 
-/** Forward only the local OAuth callback; the account provider owns state and PKCE validation. */
+/**
+ * Forward only the local OAuth callback; the account provider owns state and PKCE validation.
+ * @param {{ origin: string, payload: { code?: unknown, state?: unknown }, fetchImpl?: typeof fetch, signal?: AbortSignal }} args
+ */
 async function completeAccountSignIn({ origin, payload, fetchImpl = globalThis.fetch, signal }) {
   if (!payload || typeof payload.code !== 'string' || !payload.code || payload.code.length > 4096
       || typeof payload.state !== 'string' || !payload.state || payload.state.length > 1024
@@ -19,8 +22,8 @@ async function completeAccountSignIn({ origin, payload, fetchImpl = globalThis.f
   if (response.status !== 302) return { ok: false, rpcId,
     error: { code: 'account/sign-in-failed', message: '登录未完成或回调已失效，请刷新账户状态后重试' } };
   let destination;
-  try { destination = new URL(response.headers.get('location')); } catch { throw new Error('登录完成地址无效'); }
-  if (destination.protocol !== 'https:' || destination.username || destination['pass' + 'word']
+  try { destination = new URL(response.headers.get('location') || ''); } catch { throw new Error('登录完成地址无效'); }
+  if (destination.protocol !== 'https:' || destination.username || destination.password
       || destination.pathname !== '/dsh/authorized') throw new Error('登录完成地址无效');
   signal?.throwIfAborted();
   return { ok: true, rpcId, value: { completed: true, completionUrl: destination.href } };

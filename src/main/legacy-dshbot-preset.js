@@ -31,7 +31,7 @@ function removeLegacyDshbotPreset(options = {}) {
       removedLink = true;
     }
   } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error;
   }
   const overlay = path.join(ownedCopy, 'desktop-dshbot.patch.yml');
   let removedOverlay = false;
@@ -39,7 +39,7 @@ function removeLegacyDshbotPreset(options = {}) {
     fs.unlinkSync(overlay);
     removedOverlay = true;
   } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error;
   }
   return { ok: true, changed: stripped || removedLink || removedOverlay, stripped, removedLink, removedOverlay };
 }

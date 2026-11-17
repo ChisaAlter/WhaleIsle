@@ -7,19 +7,24 @@ const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @returns {Promise<{ action?: unknown, cwd?: unknown, payload?: unknown }>}
+ */
 async function readJson(req, res) {
   let raw;
   try {
     raw = await readBodyLimited(req, MAX_BODY_BYTES, { res });
   } catch (error) {
-    if (error && error.code === 'BODY_TOO_LARGE') {
-      const tooLarge = new Error('payload too large');
+    if (error && /** @type {{ code?: unknown }} */ (error).code === 'BODY_TOO_LARGE') {
+      const tooLarge = /** @type {Error & { statusCode?: number }} */ (new Error('payload too large'));
       tooLarge.statusCode = 413;
       throw tooLarge;
     }
     throw error;
   }
-  return JSON.parse(raw || '{}');
+  return JSON.parse(String(raw || '{}'));
 }
 
 function mintGitTunnelToken() {
@@ -29,13 +34,13 @@ function mintGitTunnelToken() {
 /**
  * Loopback-only git facade for the daemon child. Same allowlist as
  * `dispatchGitTunnel`; stage/unstage/discard stay off this wire.
- * @param {{ git: object, token?: string }} options
+ * @param {{ git: { [key: string]: (...args: unknown[]) => unknown }, token?: string }} options
  */
 function startGitTunnelServer(options) {
   const git = options.git;
   const token = options.token || mintGitTunnelToken();
   const server = http.createServer(async (req, res) => {
-    const fail = (status, message) => {
+    const fail = (/** @type {number} */ status, /** @type {string} */ message) => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: message }));
     };
@@ -43,7 +48,7 @@ function startGitTunnelServer(options) {
       fail(403, 'loopback only');
       return;
     }
-    if (!constantTimeEqual(req.headers['x-dshd-git-token'], token)) {
+    if (!constantTimeEqual(/** @type {string} */ (req.headers['x-dshd-git-token']), token)) {
       fail(403, 'unauthorized');
       return;
     }
@@ -62,7 +67,7 @@ function startGitTunnelServer(options) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, value }));
     } catch (error) {
-      if (error && error.statusCode === 413) {
+      if (error && /** @type {{ statusCode?: unknown }} */ (error).statusCode === 413) {
         fail(413, 'payload too large');
         return;
       }
@@ -79,7 +84,7 @@ function startGitTunnelServer(options) {
       resolve({
         url: `http://127.0.0.1:${port}`,
         token,
-        close: () => new Promise((done) => server.close(() => done())),
+        close: () => new Promise((done) => server.close(() => done(undefined))),
       });
     });
   });

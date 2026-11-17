@@ -34,7 +34,7 @@ const UNCAUGHT_SWALLOWED_CODES = new Set(['EPIPE', 'EIO']);
  * @returns {boolean}
  */
 function isBrokenPipeStreamError(err) {
-  const code = err && typeof err === 'object' ? String(err.code || '') : '';
+  const code = err && typeof err === 'object' ? String(/** @type {{ code?: unknown }} */ (err).code || '') : '';
   return STREAM_SWALLOWED_CODES.has(code);
 }
 
@@ -49,18 +49,18 @@ function shouldSwallowUncaught(err) {
   if (!err || typeof err !== 'object') {
     return false;
   }
-  const code = String(err.code || '');
+  const code = String(/** @type {{ code?: unknown }} */ (err).code || '');
   if (code === 'ERR_STREAM_DESTROYED') {
     return true;
   }
   if (!UNCAUGHT_SWALLOWED_CODES.has(code)) {
     return false;
   }
-  return String(err.syscall || '').startsWith('write');
+  return String(/** @type {{ syscall?: unknown }} */ (err).syscall || '').startsWith('write');
 }
 
 /**
- * @param {NodeJS.WriteStream | null | undefined} stream
+ * @param {(NodeJS.WriteStream & { __dshStdioGuard?: boolean }) | null | undefined} stream
  * @param {(message: string) => void} [log]
  */
 function guardStream(stream, log) {
@@ -112,10 +112,11 @@ function handleUncaughtException(err, deps = {}) {
  * @param {{ log?: (message: string) => void, report?: (err: Error) => unknown }} [options]
  */
 function installUncaughtBrokenPipeGuard(options = {}) {
-  if (process.__dshUncaughtBrokenPipeGuard) {
+  const proc = /** @type {NodeJS.Process & { __dshUncaughtBrokenPipeGuard?: boolean }} */ (process);
+  if (proc.__dshUncaughtBrokenPipeGuard) {
     return;
   }
-  process.__dshUncaughtBrokenPipeGuard = true;
+  proc.__dshUncaughtBrokenPipeGuard = true;
   process.on('uncaughtException', (err) => {
     handleUncaughtException(err, options);
   });

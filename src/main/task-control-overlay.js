@@ -25,6 +25,10 @@ function defaultSourceDir() {
   }
 }
 
+/**
+ * @param {string} sourceDir
+ * @param {string} profileDir
+ */
 function linkIntoProfileModules(sourceDir, profileDir) {
   const linked = path.join(profileDir, 'node_modules', TASK_CONTROL_PACKAGE);
   ensureDirectoryLink(sourceDir, linked);
@@ -91,6 +95,7 @@ function ensureDesktopTaskControl(options = {}) {
   };
 }
 
+/** @param {unknown} list */
 function withoutTaskControlAliases(list) {
   const blocked = new Set(TASK_CONTROL_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

@@ -26,22 +26,38 @@ function lowPowerGpu(argv = process.argv) {
   return argv.includes('--dshd-low-power-gpu=1');
 }
 
+/**
+ * @param {Electron.IpcRenderer} renderer
+ * @param {string} channel
+ * @returns {(...args: unknown[]) => Promise<unknown>}
+ */
 function invoke(renderer, channel) {
   return (...args) => renderer.invoke(channel, ...args);
 }
 
+/**
+ * @param {Electron.IpcRenderer} renderer
+ * @param {string} channel
+ * @returns {(...args: unknown[]) => void}
+ */
 function send(renderer, channel) {
   return (...args) => renderer.send(channel, ...args);
 }
 
+/**
+ * @param {Electron.IpcRenderer} renderer
+ * @param {string} channel
+ * @returns {(handler: (payload: unknown) => void) => () => void}
+ */
 function subscribe(renderer, channel) {
   return (handler) => {
-    const listener = (_event, payload) => handler(payload);
+    const listener = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ payload) => handler(payload);
     renderer.on(channel, listener);
     return () => renderer.removeListener(channel, listener);
   };
 }
 
+/** @param {Electron.IpcRenderer} renderer */
 function windowApi(renderer) {
   return {
     platform: process.platform,
@@ -52,6 +68,7 @@ function windowApi(renderer) {
   };
 }
 
+/** @param {Electron.IpcRenderer} renderer */
 function configApi(renderer) {
   return {
     getConfig: invoke(renderer, 'shell:get-config'),
@@ -59,6 +76,7 @@ function configApi(renderer) {
   };
 }
 
+/** @param {Electron.IpcRenderer} renderer */
 function bootApi(renderer) {
   return {
     ...windowApi(renderer),
@@ -74,6 +92,10 @@ function bootApi(renderer) {
   };
 }
 
+/**
+ * @param {Electron.IpcRenderer} renderer
+ * @param {boolean} remoteFeature
+ */
 function harnessApi(renderer, remoteFeature) {
   return {
     proactive: {
@@ -207,6 +229,7 @@ function harnessApi(renderer, remoteFeature) {
   };
 }
 
+/** @param {Electron.IpcRenderer} renderer */
 function launcherApi(renderer) {
   return {
     ...windowApi(renderer),
@@ -265,6 +288,7 @@ function launcherApi(renderer) {
   };
 }
 
+/** @param {Electron.IpcRenderer} renderer */
 function petApi(renderer) {
   return {
     getState: invoke(renderer, 'shell:pet-state'),
@@ -275,6 +299,7 @@ function petApi(renderer) {
   };
 }
 
+/** @param {Electron.IpcRenderer} renderer */
 function live2dPetApi(renderer) {
   return {
     setInteractive: invoke(renderer, 'shell:live2d-interactive'),
@@ -311,6 +336,11 @@ function live2dPetApi(renderer) {
   };
 }
 
+/**
+ * @param {string | null} role
+ * @param {Electron.IpcRenderer} renderer
+ * @param {boolean} [remoteFeature]
+ */
 function buildShellApi(role, renderer, remoteFeature = remoteFeatureEnabled()) {
   if (role === 'boot') return bootApi(renderer);
   if (role === 'harness') return harnessApi(renderer, remoteFeature);
@@ -326,7 +356,7 @@ const api = isMainFrame ? buildShellApi(role, ipcRenderer) : null;
 
 // The shell owns native fullscreen state; the client uses this mark to clear
 // the macOS traffic-light inset when the system hides its window buttons.
-if (isMainFrame && ['boot', 'harness', 'launcher'].includes(role)
+if (isMainFrame && role !== null && ['boot', 'harness', 'launcher'].includes(role)
     && typeof window !== 'undefined' && typeof document !== 'undefined') {
   let fullscreen = false;
   // Ambient effects pause while the window is minimized or in the tray.
@@ -337,9 +367,11 @@ if (isMainFrame && ['boot', 'harness', 'launcher'].includes(role)
     document.documentElement.toggleAttribute('data-fullscreen', fullscreen);
     document.documentElement.toggleAttribute('data-dshd-window-hidden', hidden);
   };
+  /** @param {unknown} state */
   const applyWindowState = (state) => {
-    fullscreen = Boolean(state?.fullscreen);
-    if (typeof state?.visible === 'boolean') hidden = !state.visible;
+    const view = /** @type {{ fullscreen?: unknown, visible?: unknown } | null | undefined} */ (state);
+    fullscreen = Boolean(view?.fullscreen);
+    if (typeof view?.visible === 'boolean') hidden = !view.visible;
     markWindow();
   };
   if (document.documentElement === null) {
@@ -347,8 +379,10 @@ if (isMainFrame && ['boot', 'harness', 'launcher'].includes(role)
   } else {
     markWindow();
   }
-  api.onWindowState(applyWindowState);
-  api.getWindowState().then(applyWindowState).catch(() => {});
+  if (api !== null && 'onWindowState' in api) {
+    api.onWindowState(applyWindowState);
+    api.getWindowState().then(applyWindowState).catch(() => {});
+  }
 }
 
 // Desktop shortcut bridge (upstream ctx.shortcuts contract): the trusted
@@ -380,7 +414,7 @@ if (role === 'harness' && isMainFrame) {
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-input'),
     },
     shortcuts: {
-      get: (definitions) => ipcRenderer.invoke(
+      get: (/** @type {unknown} */ definitions) => ipcRenderer.invoke(
         'shell:shortcuts-get', definitions,
         (() => { try { return window.localStorage.getItem('dsh.keybindings.v1'); } catch { return null; } })(),
       ),
@@ -399,6 +433,7 @@ if (role === 'harness' && isMainFrame) {
     // Upstream DesktopBrowserBridge: lease-scoped webview guests, one open-
     // requested subscription per lease. Partitions are main-owned.
     browser: (() => {
+      /** @type {Map<string, Set<(url: string) => void>>} */
       const openListeners = new Map();
       ipcRenderer.on('shell:browser-open-requested', (_event, request) => {
         if (typeof request !== 'object' || request === null
@@ -412,7 +447,7 @@ if (role === 'harness' && isMainFrame) {
       return {
         acquire: invoke(ipcRenderer, 'shell:browser-acquire'),
         release: invoke(ipcRenderer, 'shell:browser-release'),
-        onOpenRequested: (lease, listener) => {
+        onOpenRequested: (/** @type {string} */ lease, /** @type {(url: string) => void} */ listener) => {
           let callbacks = openListeners.get(lease);
           if (callbacks === undefined) {
             callbacks = new Set();
@@ -431,15 +466,15 @@ if (role === 'harness' && isMainFrame) {
   // Upstream PlatformBridge (globalThis.dshPlatform): non-secret commands to
   // the main-owned embedded document; credentials never cross this bridge.
   contextBridge.exposeInMainWorld('dshPlatform', {
-    open: (page, bounds) => ipcRenderer.invoke('dsh-platform:open', page, bounds),
-    setBounds: (bounds) => ipcRenderer.invoke('dsh-platform:bounds', bounds),
+    open: (/** @type {unknown} */ page, /** @type {unknown} */ bounds) => ipcRenderer.invoke('dsh-platform:open', page, bounds),
+    setBounds: (/** @type {unknown} */ bounds) => ipcRenderer.invoke('dsh-platform:bounds', bounds),
     close: () => ipcRenderer.invoke('dsh-platform:close'),
   });
   // Host-path bridge (upstream __DSH_HOST_PATHS__ contract): lets dropped files
   // in the composer resolve to real filesystem paths so ui-conversation emits
   // @path references instead of uploading bytes. Images stay uploads upstream.
   contextBridge.exposeInMainWorld('__DSH_HOST_PATHS__', {
-    pathFor: (file) => {
+    pathFor: (/** @type {File} */ file) => {
       try { return webUtils.getPathForFile(file); } catch { return ''; }
     },
   });
@@ -448,6 +483,7 @@ if (role === 'harness' && isMainFrame) {
   // (dialogs, tray icon contrast) follow the app palette. The main process
   // only accepts this channel from the harness view.
   try {
+    /** @type {string | undefined} */
     let sentTheme;
     const sendTheme = () => {
       const value = document.documentElement.getAttribute('data-ds-theme-source');
@@ -478,8 +514,8 @@ if (typeof module !== 'undefined') {
 }
 
 
-if (isMainFrame && typeof document !== 'undefined' && ['boot', 'harness', 'launcher'].includes(role)) {
-  const applyRendering = (minimal) => {
+if (isMainFrame && typeof document !== 'undefined' && role !== null && ['boot', 'harness', 'launcher'].includes(role)) {
+  const applyRendering = (/** @type {boolean} */ minimal) => {
     if (!document.documentElement) return;
     if (document.documentElement.hasAttribute('data-dsh-minimal') !== minimal) {
       document.documentElement.toggleAttribute('data-dsh-minimal', minimal);

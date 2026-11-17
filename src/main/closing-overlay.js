@@ -1,6 +1,7 @@
 const OVERLAY_ID = 'dshd-shell-closing';
 let closingGeneration = 0;
 
+/** @param {{ bg: string, fg: string, scheme?: string, line: string, field: string, accent: string, muted: string }} theme */
 function overlayCss(theme) {
   return `
 #${OVERLAY_ID} {
@@ -63,6 +64,7 @@ html[data-window-maximized] #${OVERLAY_ID} {
 `;
 }
 
+/** @param {string} locale */
 function closingCopy(locale) {
   if (locale === 'en') {
     return {
@@ -76,6 +78,10 @@ function closingCopy(locale) {
   };
 }
 
+/**
+ * @param {{ title: string, detail: string }} copy
+ * @param {number} generation
+ */
 function overlayScript(copy, generation) {
   return `(() => {
     const id = ${JSON.stringify(OVERLAY_ID)};
@@ -134,6 +140,11 @@ function overlayScript(copy, generation) {
   })()`;
 }
 
+/**
+ * @param {Electron.BrowserWindow | null | undefined} win
+ * @param {string} locale
+ * @param {Electron.WebContents | null | undefined} [contents]
+ */
 async function showClosingOverlay(win, locale, contents = win?.webContents) {
   // Quit must not surface a window the user left hidden or minimized.
   if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) {
@@ -141,7 +152,9 @@ async function showClosingOverlay(win, locale, contents = win?.webContents) {
   }
   const { currentTheme } = require('./chrome');
   const theme = currentTheme();
+  /** @type {NodeJS.Timeout | undefined} */
   let paintTimeout;
+  /** @type {string | undefined} */
   let cssKey;
   let dismissed = false;
   const generation = ++closingGeneration;
@@ -156,6 +169,7 @@ async function showClosingOverlay(win, locale, contents = win?.webContents) {
       cssKey ? contents.removeInsertedCSS(cssKey) : Promise.resolve(),
     ]);
   };
+  if (!contents) return dismiss;
   try {
     // Covered/hidden boot pages can suspend animation frames indefinitely.
     // Painting is best effort; its host deadline must never hold shutdown.

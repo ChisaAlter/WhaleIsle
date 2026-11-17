@@ -52,6 +52,8 @@ jobs:
       - name: Unused files, exports and dependencies
         run: npm run check:unused
       - run: npm run test:tools
+      - name: checkJs diagnostics baseline
+        run: npm run typecheck
   web:
     # Browser lanes for desktop forks of the web composition. They follow the
     # upstream web e2e platform (Linux shell, sandbox and approval semantics).

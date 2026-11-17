@@ -8,6 +8,19 @@ const FRAME_CHANGED = 0x0037; // NOSIZE | NOMOVE | NOZORDER | NOACTIVATE | FRAME
 const DWMWA_NCRENDERING_POLICY = 2;
 const DWMNCRP_DISABLED = 1;
 const WM_DWMNCRENDERINGCHANGED = 0x031f;
+
+/**
+ * Minimal user32/dwmapi surface used by this module (koffi-bound).
+ * @typedef {object} NativeMotionBridge
+ * @property {(hwnd: bigint, index: number) => number} getStyle
+ * @property {(hwnd: bigint, index: number, value: number) => number} setStyle
+ * @property {(hwnd: bigint, after: bigint | number, x: number, y: number, cx: number, cy: number, flags: number) => boolean} frameChanged
+ * @property {(hwnd: bigint) => boolean} isZoomed
+ * @property {(hwnd: bigint, command: number) => boolean} showWindow
+ * @property {(hwnd: bigint, attribute: number, value: number[], size: number) => number} setDwmAttribute
+ */
+
+/** @type {NativeMotionBridge | undefined} */
 let api;
 
 function windowsApi() {
@@ -26,6 +39,10 @@ function windowsApi() {
   return api;
 }
 
+/**
+ * @param {bigint} hwnd
+ * @param {NativeMotionBridge} bridge
+ */
 function suppressNonClientRendering(hwnd, bridge) {
   const result = bridge.setDwmAttribute(hwnd, DWMWA_NCRENDERING_POLICY, [DWMNCRP_DISABLED], 4);
   if (result !== 0) {
@@ -33,6 +50,10 @@ function suppressNonClientRendering(hwnd, bridge) {
   }
 }
 
+/**
+ * @param {Electron.BrowserWindow} win
+ * @param {{ platform?: string, loadApi?: () => NativeMotionBridge }} [options]
+ */
 function enableNativeWindowMotion(win, { platform = process.platform, loadApi = windowsApi } = {}) {
   if (platform !== 'win32' || win.isDestroyed()) return false;
   const handle = win.getNativeWindowHandle();
@@ -73,16 +94,19 @@ function enableNativeWindowMotion(win, { platform = process.platform, loadApi = 
   return true;
 }
 
+/** @param {Electron.BrowserWindow} win */
 function hasNativeWindowMotion(win) {
   return nativeMotionWindows.has(win);
 }
 
+/** @param {Electron.BrowserWindow} win */
 function isNativeWindowMaximized(win) {
   const native = nativeMotionWindows.get(win);
   if (!native || win.isDestroyed()) return undefined;
   return native.bridge.isZoomed(native.hwnd);
 }
 
+/** @param {Electron.BrowserWindow} win */
 function toggleNativeMaximize(win) {
   const native = nativeMotionWindows.get(win);
   if (!native || win.isDestroyed()) return false;

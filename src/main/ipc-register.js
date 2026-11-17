@@ -21,9 +21,7 @@
 
 /** Coded rejection shared by channel-owned sender checks. */
 function unauthorizedError() {
-  const error = new Error('Unauthorized IPC sender');
-  error.code = 'ERR_DSH_IPC_SENDER';
-  return error;
+  return Object.assign(new Error('Unauthorized IPC sender'), { code: 'ERR_DSH_IPC_SENDER' });
 }
 
 /**
@@ -33,38 +31,58 @@ function unauthorizedError() {
  * so an "evil" extra arg can never reach them).
  */
 function noArgs() {
-  return [];
+  return /** @type {unknown[]} */ ([]);
 }
 
 /** Generous ceiling for renderer-supplied strings; real payloads are small. */
 const MAX_IPC_STRING = 128 * 1024;
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Single required plain-object argument. */
+/**
+ * Single required plain-object argument.
+ * @param {unknown[]} args
+ * @returns {Record<string, unknown>[]}
+ */
 function requiredObject(args) {
   const [value] = args;
   if (!isPlainObject(value)) throw new Error('expected a plain object argument');
   return [value];
 }
 
-/** Optional plain-object argument (undefined stays undefined). */
+/**
+ * Optional plain-object argument (undefined stays undefined).
+ * @param {unknown[]} args
+ * @returns {Array<Record<string, unknown> | undefined>}
+ */
 function optionalObject(args) {
   const [value] = args;
   if (value !== undefined && !isPlainObject(value)) throw new Error('expected a plain object argument');
   return [value];
 }
 
-/** Single required string argument. */
+/**
+ * Single required string argument.
+ * @param {unknown[]} args
+ * @returns {string[]}
+ */
 function requiredString(args) {
   const [value] = args;
   if (typeof value !== 'string' || value.length > MAX_IPC_STRING) throw new Error('expected a string argument');
   return [value];
 }
 
-/** Optional string argument (undefined stays undefined). */
+/**
+ * Optional string argument (undefined stays undefined).
+ * @param {unknown[]} args
+ * @returns {Array<string | undefined>}
+ */
 function optionalString(args) {
   const [value] = args;
   if (value !== undefined && (typeof value !== 'string' || value.length > MAX_IPC_STRING)) throw new Error('expected a string argument');
@@ -74,6 +92,11 @@ function optionalString(args) {
 // #436: kind/roles/validate live in src/shared/ipc-contract.js, not at the
 // call site. `contractEntries` is injected only by tests; production code
 // resolves the contract lazily so this module never cycles with it.
+/**
+ * @param {string} channel
+ * @param {readonly import('../shared/ipc-contract').IpcContractRow[]} [contractEntries]
+ * @returns {import('../shared/ipc-contract').IpcContractRow | undefined}
+ */
 function contractEntry(channel, contractEntries) {
   const entries = contractEntries || require('../shared/ipc-contract').IPC_CONTRACT;
   return entries.find((candidate) => (
@@ -81,6 +104,11 @@ function contractEntry(channel, contractEntries) {
   ));
 }
 
+/**
+ * @param {{ on(channel: string, listener: (event: unknown, ...args: unknown[]) => void): unknown, handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): unknown }} ipc
+ * @param {{ channel?: unknown, kind?: unknown, roles?: unknown, validate?: unknown, authorize?: unknown, senderOptions?: unknown, handler?: unknown }} spec
+ * @param {readonly import('../shared/ipc-contract').IpcContractRow[]} [contractEntries]
+ */
 function mount(ipc, spec, contractEntries) {
   const { channel, authorize, senderOptions, handler } = spec;
   if (typeof channel !== 'string' || channel === '') {
@@ -118,11 +146,14 @@ function mount(ipc, spec, contractEntries) {
   // before loading a module that registers channels through here.
   const check = typeof authorize === 'function'
     ? authorize
-    : (event) => require('./ipc-authorization').assertIpcSender(event, entry.roles, senderOptions);
+    : /** @param {import('./ipc-authorization').IpcEventLike} event */
+      (event) => require('./ipc-authorization').assertIpcSender(event, entry.roles,
+        /** @type {import('./ipc-authorization').IpcSenderOptions | undefined} */ (senderOptions));
   // The listener mirrors the handler's declared syncness: tests (and any
   // caller invoking the captured listener directly) see a synchronous throw
   // for sync handlers and a rejection for async ones — identical to the
   // direct ipcMain.handle registration this wrapper replaces.
+  /** @type {(event: unknown, args: unknown[]) => unknown} */
   const dispatch = (event, args) => {
     const auth = check(event);
     const normalized = validate(args, auth);
@@ -132,14 +163,14 @@ function mount(ipc, spec, contractEntries) {
     return handler(event, ...normalized);
   };
   const listener = handler.constructor.name === 'AsyncFunction'
-    ? async (event, ...args) => dispatch(event, args)
-    : (event, ...args) => dispatch(event, args);
+    ? /** @type {(event: unknown, ...args: unknown[]) => Promise<unknown>} */ (async (event, ...args) => dispatch(event, args))
+    : /** @type {(event: unknown, ...args: unknown[]) => unknown} */ ((event, ...args) => dispatch(event, args));
   if (kind === 'on') {
-    ipc.on(channel, (event, ...args) => {
+    ipc.on(channel, (/** @type {unknown} */ event, /** @type {unknown[]} */ ...args) => {
       try {
         const result = listener(event, ...args);
-        if (result && typeof result.catch === 'function') {
-          result.catch((error) => console.warn(`dshd ipc: ${channel} handler failed`, error));
+        if (result && typeof result === 'object' && 'catch' in result && typeof result.catch === 'function') {
+          result.catch((/** @type {unknown} */ error) => console.warn(`dshd ipc: ${channel} handler failed`, error));
         }
       } catch (error) {
         console.warn(`dshd ipc: dropped ${channel} message`, error);
@@ -153,14 +184,21 @@ function mount(ipc, spec, contractEntries) {
   ipc.handle(channel, listener);
 }
 
-/** Register on Electron's ipcMain (resolved at call time for test seams). */
+/**
+ * Register on Electron's ipcMain (resolved at call time for test seams).
+ * @param {Parameters<typeof mount>[1]} spec
+ */
 function registerIpc(spec) {
   mount(require('electron').ipcMain, spec);
 }
 
-/** Bind registration to an injected ipcMain-compatible object. */
+/**
+ * Bind registration to an injected ipcMain-compatible object.
+ * @param {Parameters<typeof mount>[0]} ipc
+ * @param {Parameters<typeof mount>[2]} [contractEntries]
+ */
 function createRegisterIpc(ipc, contractEntries) {
-  return (spec) => mount(ipc, spec, contractEntries);
+  return (/** @type {Parameters<typeof mount>[1]} */ spec) => mount(ipc, spec, contractEntries);
 }
 
 module.exports = {

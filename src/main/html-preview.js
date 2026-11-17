@@ -12,6 +12,8 @@ const MAX_CONSOLE_MESSAGES = 20;
 /**
  * Render only the supplied page in a fresh in-memory Chromium partition.
  * This window is never shown and carries neither preload nor user cookies.
+ * @param {{ html?: unknown, width?: unknown, appearance?: unknown }} input
+ * @param {AbortSignal} [signal]
  */
 async function captureHtmlPreview(input, signal) {
   if (!input || typeof input.html !== 'string' || !input.html.trim()
@@ -20,7 +22,7 @@ async function captureHtmlPreview(input, signal) {
   }
   const width = input.width;
   const appearance = input.appearance;
-  if (!Number.isInteger(width) || width < 240 || width > 1600) {
+  if (typeof width !== 'number' || !Number.isInteger(width) || width < 240 || width > 1600) {
     throw new Error('Preview width must be an integer from 240 to 1600.');
   }
   if (appearance !== 'light' && appearance !== 'dark') {
@@ -58,7 +60,7 @@ async function captureHtmlPreview(input, signal) {
   const contents = window.webContents;
   const consoleMessages = [];
   let omittedMessages = 0;
-  const recordMessage = (level, message) => {
+  const recordMessage = (/** @type {string} */ level, /** @type {string} */ message) => {
     if (consoleMessages.length >= MAX_CONSOLE_MESSAGES) { omittedMessages++; return; }
     const text = message.length > 500 ? message.slice(0, 480) + '… [truncated]' : message;
     consoleMessages.push({ level, text });
@@ -75,6 +77,7 @@ async function captureHtmlPreview(input, signal) {
     recordMessage(level, location + event.message);
   });
 
+  /** @type {(reason?: unknown) => void} */
   let rejectAbort;
   const aborted = new Promise((_resolve, reject) => { rejectAbort = reject; });
   const onAbort = () => {

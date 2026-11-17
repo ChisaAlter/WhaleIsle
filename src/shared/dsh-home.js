@@ -7,6 +7,10 @@ const UNSET_ERROR = 'desktop DSH home is not configured';
 
 let configuredHome = '';
 
+/**
+ * @param {unknown} userData
+ * @returns {string}
+ */
 function desktopDshHomeFromUserData(userData) {
   if (typeof userData !== 'string' || !userData.trim()) {
     throw new Error(UNSET_ERROR);
@@ -14,6 +18,10 @@ function desktopDshHomeFromUserData(userData) {
   return path.join(path.resolve(userData.trim()), DESKTOP_DSH_HOME_DIRNAME);
 }
 
+/**
+ * @param {unknown} dir
+ * @returns {string}
+ */
 function setDesktopDshHome(dir) {
   if (typeof dir !== 'string' || !dir.trim()) {
     throw new Error(UNSET_ERROR);
@@ -63,6 +71,10 @@ function sanitizePackagedDshHomeEnv({ isPackaged = false, env = process.env } = 
   return { dropped: true, value };
 }
 
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {NodeJS.ProcessEnv}
+ */
 function applyDesktopDshHome(env = {}) {
   const next = { ...env };
   for (const key of Object.keys(next)) {

@@ -27,7 +27,7 @@ function codexPetsRoot(env = process.env, homedir = os.homedir()) {
 /**
  * Image size from a WebP RIFF header (VP8X / VP8L / VP8 lossy layouts).
  * Only the first 30 bytes are needed; anything else returns null.
- * @param {Buffer} buf
+ * @param {Buffer | null | undefined} buf
  * @returns {{ width: number, height: number } | null}
  */
 function webpSize(buf) {
@@ -72,7 +72,7 @@ function atlasForSize(size) {
  * Resolve a manifest `spritesheetPath` inside its pet directory. Only safe
  * relative paths resolve; absolute paths and `..` escapes return null.
  * @param {string} petDir
- * @param {string} rel
+ * @param {unknown} rel
  * @returns {string | null}
  */
 function resolveSpritesheetPath(petDir, rel) {
@@ -91,6 +91,10 @@ function resolveSpritesheetPath(petDir, rel) {
   }
 }
 
+/**
+ * @param {string} file
+ * @returns {{ [key: string]: unknown } | null}
+ */
 function readPetManifest(file) {
   let parsed;
   try {
@@ -104,6 +108,10 @@ function readPetManifest(file) {
   return parsed;
 }
 
+/**
+ * @param {string} file
+ * @returns {Buffer | null}
+ */
 function readSheetHeader(file) {
   let fd;
   try {
@@ -129,7 +137,9 @@ function readSheetHeader(file) {
  * spritesheet paths, and atlases whose header size matches no supported
  * layout are ignored.
  * @param {string} petDir
- * @returns {object | null}
+ * @returns {{ id: string, displayName: string, description: string, kind: string,
+ *   version: number, cols: number, rows: number, cellWidth: number, cellHeight: number,
+ *   sheetPath: string } | null}
  */
 function loadCodexPet(petDir) {
   const manifest = readPetManifest(path.join(petDir, 'pet.json'));
@@ -167,7 +177,7 @@ function loadCodexPet(petDir) {
  * Scan the Codex pets root. A missing or unreadable root yields an empty
  * list; entries sort by id for a stable picker order.
  * @param {{ root?: string }} [options]
- * @returns {object[]}
+ * @returns {NonNullable<ReturnType<typeof loadCodexPet>>[]}
  */
 function discoverCodexPets(options = {}) {
   const root = options.root || codexPetsRoot();

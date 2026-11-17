@@ -17,15 +17,18 @@ class UpdateAttention {
   constructor(text, platform = process.platform) {
     this.text = text;
     this.platform = platform;
+    /** @type {string | undefined} */
     this.version = undefined;
+    /** @type {Electron.Notification | undefined} */
     this.notification = undefined;
+    /** @type {(() => void) | undefined} */
     this.stop = undefined;
   }
 
   /**
    * @param {string} version - available target whose update confirmation is waiting.
-   * @param {any} parent - taskbar window; never restored or focused by the reminder.
-   * @param {any} [modal] - existing update confirmation.
+   * @param {Electron.BrowserWindow} parent - taskbar window; never restored or focused by the reminder.
+   * @param {Electron.BrowserWindow | null | undefined} modal - existing update confirmation.
    * @param {() => void} returnToConfirmation - returns to UI without installing.
    */
   ready(version, parent, modal, returnToConfirmation) {
@@ -33,6 +36,7 @@ class UpdateAttention {
     this.version = version;
     if (parent.isFocused() || (modal && modal.isFocused())) return;
     const clear = () => { this.clear(); };
+    /** @type {number | undefined} */
     let bounce;
     parent.on('focus', clear);
     if (modal) modal.on('focus', clear);

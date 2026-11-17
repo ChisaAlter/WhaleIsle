@@ -14,7 +14,10 @@ class UpdateOverlays {
     this.inputStates = new WeakMap();
   }
 
-  /** Current blocking state; revision changes whenever an overlay opens or closes. */
+  /**
+   * Current blocking state; revision changes whenever an overlay opens or closes.
+   * @param {Electron.BrowserWindow} parent
+   */
   input(parent) {
     return this.inputStates.get(parent) ?? UNBLOCKED_INPUT;
   }
@@ -22,7 +25,7 @@ class UpdateOverlays {
   /**
    * A transparent child that follows its parent's bounds and visibility after
    * loading and releases its listeners on close.
-   * @param {any} parent - product window whose content is blocked while open.
+   * @param {Electron.BrowserWindow} parent - product window whose content is blocked while open.
    * @param {string} preload - isolated shell-only preload.
    * @param {string} title - window title.
    * @param {boolean} [nativeModal]
@@ -43,7 +46,7 @@ class UpdateOverlays {
     inputState.revision += 1;
     window.once('closed', () => { inputState.active -= 1; inputState.revision += 1; });
     const focus = () => { if (!window.isDestroyed()) window.focus(); };
-    const blockInput = (event) => { event.preventDefault(); focus(); };
+    const blockInput = (/** @type {Electron.Event} */ event) => { event.preventDefault(); focus(); };
     if (!nativeModal && process.platform === 'darwin') {
       parent.on('focus', focus);
       // Shell dialogs block input before product shortcut listeners dispatch it.

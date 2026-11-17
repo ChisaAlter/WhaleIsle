@@ -23,6 +23,7 @@ function devToolsShortcutAllowed({ isPackaged = false, openDevTools = false } = 
 /**
  * Match the DevTools toggle chord on a `before-input-event` input record:
  * Ctrl+Shift+I (Windows/Linux) or Cmd+Alt+I (macOS), keyDown only.
+ * @param {Electron.Input} input
  */
 function isDevToolsToggleInput(input) {
   if (!input || input.type !== 'keyDown') {

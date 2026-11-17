@@ -12,17 +12,17 @@ const CHANNELS = {
 
 const api = {
   status: () => ipcRenderer.invoke(CHANNELS.status),
-  respond: (revision, index, downloadMode) => ipcRenderer.invoke(CHANNELS.respond, revision, index, downloadMode),
-  subscribe: (listener) => {
-    const receive = (_event, view) => { listener(view); };
+  respond: (/** @type {unknown} */ revision, /** @type {unknown} */ index, /** @type {unknown} */ downloadMode) => ipcRenderer.invoke(CHANNELS.respond, revision, index, downloadMode),
+  subscribe: (/** @type {(view: unknown) => void} */ listener) => {
+    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ view) => { listener(view); };
     ipcRenderer.on(CHANNELS.changed, receive);
     return () => { ipcRenderer.removeListener(CHANNELS.changed, receive); };
   },
   // `applyAppTheme` fans `shell:theme` out to every non-harness BrowserWindow
   // (this dialog is one of them); forwarding keeps the scrim/card palette in
   // step with the host theme instead of pinning a hard-coded dark look.
-  onTheme: (listener) => {
-    const receive = (_event, theme) => { listener(theme); };
+  onTheme: (/** @type {(theme: unknown) => void} */ listener) => {
+    const receive = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ theme) => { listener(theme); };
     ipcRenderer.on('shell:theme', receive);
     return () => { ipcRenderer.removeListener('shell:theme', receive); };
   },

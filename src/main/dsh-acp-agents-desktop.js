@@ -28,6 +28,10 @@ function defaultSourceDir() {
   }
 }
 
+/**
+ * @param {string} sourceDir
+ * @param {string} profileDir
+ */
 function linkIntoProfileModules(sourceDir, profileDir) {
   const linked = path.join(profileDir, 'node_modules', DSH_ACP_AGENTS_PACKAGE);
   ensureDirectoryLink(sourceDir, linked);
@@ -84,6 +88,7 @@ function ensureDesktopAcpAgents(options = {}) {
   };
 }
 
+/** @param {unknown} list */
 function withoutAcpAgentsAliases(list) {
   const blocked = new Set(DSH_ACP_AGENTS_ALIASES);
   return (Array.isArray(list) ? list : []).filter((name) => !blocked.has(String(name || '').trim()));

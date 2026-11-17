@@ -4,6 +4,36 @@ const { tryGetDesktopDshHome } = require('./dsh-home');
 
 const DEFAULT_FAMILY_ID = 'deepseek';
 
+/**
+ * @typedef {Object} ThemeSeeds
+ * @property {string} accent
+ * @property {string} background
+ * @property {string} foreground
+ */
+
+/**
+ * @typedef {Object} ThemeFamily
+ * @property {string} name
+ * @property {string} [skin]
+ * @property {ThemeSeeds} light
+ * @property {ThemeSeeds} dark
+ */
+
+/**
+ * @typedef {Object} ThemeTokens
+ * @property {string} id
+ * @property {string} name
+ * @property {string} scheme
+ * @property {string} bg
+ * @property {string} fg
+ * @property {string} muted
+ * @property {string} accent
+ * @property {string} field
+ * @property {string} line
+ * @property {string} buttonFg
+ */
+
+/** @type {Record<string, ThemeFamily>} */
 const FAMILY_SEEDS = {
   deepseek: {
     name: 'DeepSeek',
@@ -63,6 +93,10 @@ function dshHome() {
   return tryGetDesktopDshHome();
 }
 
+/**
+ * @param {unknown} raw
+ * @returns {string | number | boolean | null}
+ */
 function parseScalar(raw) {
   const value = String(raw ?? '').trim();
   if (value === '' || value === '~' || value === 'null') return null;
@@ -75,9 +109,15 @@ function parseScalar(raw) {
   return value;
 }
 
+/**
+ * @param {unknown} text
+ * @returns {Record<string, unknown>}
+ */
 function parseSimpleYaml(text) {
   const lines = String(text || '').replace(/\t/g, '  ').split(/\r?\n/);
+  /** @type {Record<string, unknown>} */
   const root = {};
+  /** @type {Array<{ indent: number, container: Record<string, unknown> | unknown[], key: string | null }>} */
   const stack = [{ indent: -1, container: root, key: null }];
 
   const frame = () => stack[stack.length - 1];
@@ -86,15 +126,18 @@ function parseSimpleYaml(text) {
     const current = frame();
     if (Array.isArray(current.container)) return current.container;
     const parent = stack[stack.length - 2];
+    /** @type {unknown[]} */
     const next = [];
-    if (parent && current.key != null) parent.container[current.key] = next;
+    if (parent && current.key != null && !Array.isArray(parent.container)) {
+      parent.container[current.key] = next;
+    }
     current.container = next;
     return next;
   };
 
   for (const raw of lines) {
     if (!raw.trim() || raw.trim().startsWith('#')) continue;
-    const indent = raw.match(/^ */)[0].length;
+    const indent = raw.match(/^ */)?.[0].length ?? 0;
     const trimmed = raw.trim();
     while (stack.length > 1 && indent <= frame().indent) stack.pop();
 
@@ -106,12 +149,12 @@ function parseSimpleYaml(text) {
         list.push(parseScalar(rest));
         continue;
       }
-      const item = {};
+      const item = /** @type {Record<string, unknown>} */ ({});
       list.push(item);
       const key = rest.slice(0, colon).trim();
       const value = rest.slice(colon + 1).trim();
       if (value === '') {
-        const nested = {};
+        const nested = /** @type {Record<string, unknown>} */ ({});
         item[key] = nested;
         stack.push({ indent, container: nested, key });
       } else {
@@ -125,9 +168,9 @@ function parseSimpleYaml(text) {
     if (colon === -1) continue;
     const key = trimmed.slice(0, colon).trim();
     const value = trimmed.slice(colon + 1).trim();
-    const current = frame().container;
+    const current = /** @type {Record<string, unknown>} */ (frame().container);
     if (value === '' || value === '|' || value === '>') {
-      const nested = {};
+      const nested = /** @type {Record<string, unknown>} */ ({});
       current[key] = nested;
       stack.push({ indent, container: nested, key });
     } else {
@@ -137,13 +180,17 @@ function parseSimpleYaml(text) {
   return root;
 }
 
+/**
+ * @returns {Record<string, unknown>}
+ */
 function readHarnessThemeSettings() {
   const home = dshHome();
   if (!home) return {};
   const file = path.join(home, 'settings.yaml');
   try {
     const doc = parseSimpleYaml(fs.readFileSync(file, 'utf8'));
-    return doc['ui-theme'] && typeof doc['ui-theme'] === 'object' ? doc['ui-theme'] : {};
+    const section = doc['ui-theme'];
+    return section && typeof section === 'object' ? /** @type {Record<string, unknown>} */ (section) : {};
   } catch {
     return {};
   }
@@ -161,8 +208,14 @@ function readHarnessThemeSettings() {
  * the boot/launcher chrome palette because every write goes through the
  * settings service into this file. Missing file/missing row → {}.
  */
+/**
+ * @param {unknown} text
+ * @returns {Array<Record<string, unknown>>}
+ */
 function parseCordisPatchSections(text) {
+  /** @type {string[][]} */
   const entries = [];
+  /** @type {string[] | null} */
   let current = null;
   for (const raw of String(text || '').split(/\r?\n/)) {
     // A top-level `- ` row starts a new patch entry; deeper-indented `- `
@@ -181,6 +234,10 @@ function parseCordisPatchSections(text) {
   return entries.map((chunk) => parseSimpleYaml(chunk.join('\n')));
 }
 
+/**
+ * @param {string} profileDir
+ * @returns {Record<string, unknown> | null}
+ */
 function readCordisPatchThemeSettings(profileDir) {
   const file = path.join(profileDir, 'cordis.patch.yml');
   let text;
@@ -192,7 +249,7 @@ function readCordisPatchThemeSettings(profileDir) {
   try {
     for (const entry of parseCordisPatchSections(text)) {
       if (entry && entry.id === 'ui-theme' && entry.config && typeof entry.config === 'object') {
-        return entry.config;
+        return /** @type {Record<string, unknown>} */ (entry.config);
       }
     }
   } catch {
@@ -206,6 +263,9 @@ function readCordisPatchThemeSettings(profileDir) {
  * harness: preference, active light/dark family ids, custom families. Falls
  * back to the removed `settings.yaml` for pre-migration homes.
  */
+/**
+ * @returns {Record<string, unknown>}
+ */
 function readHarnessThemeSettingsLive() {
   const home = dshHome();
   if (!home) return {};
@@ -217,8 +277,14 @@ function readHarnessThemeSettingsLive() {
   return readHarnessThemeSettings();
 }
 
+/**
+ * @param {unknown} left
+ * @param {unknown} right
+ * @param {number} amount
+ * @returns {string}
+ */
 function mixHex(left, right, amount) {
-  const parse = (hex) => {
+  const parse = (/** @type {unknown} */ hex) => {
     const value = String(hex || '').replace('#', '').slice(0, 6);
     return [
       Number.parseInt(value.slice(0, 2), 16) || 0,
@@ -229,10 +295,17 @@ function mixHex(left, right, amount) {
   const [lr, lg, lb] = parse(left);
   const [rr, rg, rb] = parse(right);
   const t = Math.min(1, Math.max(0, amount));
-  const channel = (a, b) => Math.round(a + (b - a) * t).toString(16).padStart(2, '0');
+  const channel = (/** @type {number} */ a, /** @type {number} */ b) => Math.round(a + (b - a) * t).toString(16).padStart(2, '0');
   return `#${channel(lr, rr)}${channel(lg, rg)}${channel(lb, rb)}`;
 }
 
+/**
+ * @param {string} id
+ * @param {string} name
+ * @param {string} scheme
+ * @param {ThemeSeeds} seeds
+ * @returns {ThemeTokens}
+ */
 function tokensFromSeeds(id, name, scheme, seeds) {
   const bg = seeds.background;
   const fg = seeds.foreground;
@@ -251,15 +324,25 @@ function tokensFromSeeds(id, name, scheme, seeds) {
   };
 }
 
+/**
+ * @param {unknown} preference
+ * @param {boolean} systemDark
+ * @returns {'dark' | 'light'}
+ */
 function resolveMode(preference, systemDark) {
   if (preference === 'dark' || preference === 'light') return preference;
   return systemDark ? 'dark' : 'light';
 }
 
+/**
+ * @param {unknown} id
+ * @param {unknown} customThemes
+ * @returns {ThemeFamily & { id?: unknown }}
+ */
 function findFamily(id, customThemes) {
-  if (FAMILY_SEEDS[id]) return { id, ...FAMILY_SEEDS[id] };
+  if (typeof id === 'string' && Object.hasOwn(FAMILY_SEEDS, id)) return { id, ...FAMILY_SEEDS[id] };
   const custom = Array.isArray(customThemes) ? customThemes.find((item) => item && item.id === id) : null;
-  if (custom && custom.light && custom.dark) return custom;
+  if (custom && custom.light && custom.dark) return /** @type {ThemeFamily & { id?: unknown }} */ (custom);
   return { id: DEFAULT_FAMILY_ID, ...FAMILY_SEEDS[DEFAULT_FAMILY_ID] };
 }
 
@@ -273,35 +356,64 @@ function listThemes() {
   }));
 }
 
+/**
+ * @param {object} [config]
+ * @param {unknown} [config.theme]
+ * @param {object} [options]
+ * @param {Record<string, unknown>} [options.harness]
+ * @param {unknown} [options.systemDark]
+ * @returns {ThemeTokens & { skin: string }}
+ */
 function resolveTheme(config = {}, options = {}) {
   const harness = options.harness || readHarnessThemeSettingsLive();
   const systemDark = Boolean(options.systemDark);
   const preference = harness.preference || 'system';
   const mode = resolveMode(preference, systemDark);
-  const fallbackId = config.theme && FAMILY_SEEDS[config.theme] ? config.theme : DEFAULT_FAMILY_ID;
-  const familyId = mode === 'dark'
+  const fallbackId = typeof config.theme === 'string' && FAMILY_SEEDS[config.theme]
+    ? config.theme : DEFAULT_FAMILY_ID;
+  const familyId = /** @type {string} */ (mode === 'dark'
     ? (harness.activeDarkThemeId || fallbackId)
-    : (harness.activeLightThemeId || fallbackId);
+    : (harness.activeLightThemeId || fallbackId));
   const family = findFamily(familyId, harness.customThemes);
   const seeds = family[mode] || FAMILY_SEEDS[DEFAULT_FAMILY_ID][mode];
   return {
-    ...tokensFromSeeds(family.id || familyId, family.name || familyId, mode, seeds),
+    ...tokensFromSeeds(/** @type {string} */ (family.id || familyId), family.name || familyId, mode, seeds),
     skin: family.skin || 'default',
   };
 }
 
+/**
+ * @param {{ scheme?: unknown }} [theme]
+ * @returns {string}
+ */
 function officialShellBackground(theme = {}) {
   return theme.scheme === 'dark' ? '#151517' : '#FFFFFF';
 }
 
+/**
+ * @param {unknown} role
+ * @param {unknown} url
+ * @returns {boolean}
+ */
 function usesOfficialShellChrome(role, url) {
   return role === 'launcher' || /(?:launcher|file-preview)\.html(?:[?#]|$)/i.test(String(url || ''));
 }
 
+/**
+ * @param {{ bg?: string, scheme?: unknown }} [theme]
+ * @param {object} [options]
+ * @param {unknown} [options.role]
+ * @param {unknown} [options.url]
+ * @returns {string | undefined}
+ */
 function windowBackgroundForShell(theme = {}, { role, url } = {}) {
   return usesOfficialShellChrome(role, url) ? officialShellBackground(theme) : theme.bg;
 }
 
+/**
+ * @param {Partial<ThemeTokens>} theme
+ * @returns {Record<string, string | undefined>}
+ */
 function themeCssVars(theme) {
   return {
     '--bg': theme.bg,
@@ -314,6 +426,10 @@ function themeCssVars(theme) {
   };
 }
 
+/**
+ * @param {{ accent?: string, buttonFg?: string }} theme
+ * @returns {string}
+ */
 function harnessThemeCss(theme) {
   return `::selection { background: ${theme.accent}; color: ${theme.buttonFg}; }`;
 }

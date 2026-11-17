@@ -17,10 +17,13 @@ const IPC = {
 const originArgument = '--dsh-platform-origin=';
 const allowedOrigin = process.argv.find((argument) => argument.startsWith(originArgument))?.slice(originArgument.length);
 if (process.isMainFrame && location.origin === allowedOrigin) {
+  /** @type {string | undefined} */
   let token;
+  /** @type {string | undefined} */
   let locale;
+  /** @type {Set<(value: string) => void>} */
   const localeListeners = new Set();
-  ipcRenderer.on(IPC.localeChanged, (_event, value) => {
+  ipcRenderer.on(IPC.localeChanged, (_event, /** @type {unknown} */ value) => {
     if (value !== 'en_US' && value !== 'zh_CN') return;
     locale = value;
     for (const listener of localeListeners) {
@@ -45,7 +48,7 @@ if (process.isMainFrame && location.origin === allowedOrigin) {
       if (locale === undefined) throw new Error('Platform locale initialization failed');
       return locale;
     },
-    onLocaleChange: (listener) => {
+    onLocaleChange: (/** @type {(value: string) => void} */ listener) => {
       localeListeners.add(listener);
       return () => { localeListeners.delete(listener); };
     },

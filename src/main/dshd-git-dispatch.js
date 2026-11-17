@@ -17,12 +17,17 @@ const GIT_TUNNEL_ACTIONS = new Set([
   'git-create-branch',
 ]);
 
+/** @param {unknown} action */
 function isAllowedGitAction(action) {
   return typeof action === 'string' && GIT_TUNNEL_ACTIONS.has(action);
 }
 
 function noopProgress() {}
 
+/**
+ * @param {{ action?: unknown, cwd?: unknown, payload?: unknown,
+ *           git?: { [key: string]: (...args: unknown[]) => unknown } | null }} options
+ */
 async function dispatchGitTunnel({ action, cwd, payload, git }) {
   if (!isAllowedGitAction(action)) {
     throw new Error(`git 操作不允许转发：${action}`);
@@ -30,7 +35,7 @@ async function dispatchGitTunnel({ action, cwd, payload, git }) {
   if (!git || typeof git !== 'object') {
     throw new Error('git 后端未安装');
   }
-  const body = payload && typeof payload === 'object' ? payload : {};
+  const body = /** @type {{ [key: string]: unknown }} */ (payload && typeof payload === 'object' ? payload : {});
   switch (action) {
     case 'git-status':
       return git.gitStatus(cwd);

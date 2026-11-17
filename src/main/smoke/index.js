@@ -526,10 +526,10 @@ function createSmokeRunner(deps) {
     };
     let wc;
     try {
-      wc = await waitForHarnessContents(getHarnessWebContents, win, undefined, getWelcomeWebContents, () => {
+      wc = /** @type {Electron.WebContents} */ (await waitForHarnessContents(getHarnessWebContents, win, undefined, getWelcomeWebContents, () => {
         const start = readLastDesktopStart(app.getPath('userData'));
         return start.ok === false ? start.error || 'desktop start rejected' : null;
-      });
+      }));
     } catch (error) {
       fs.writeFileSync(path.join(app.getPath('userData'), 'dshd-smoke.json'), JSON.stringify({
         ok: false, error: error.message, startup: readLastDesktopStart(app.getPath('userData')),

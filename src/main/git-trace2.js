@@ -7,6 +7,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+/**
+ * @param {{ child_id?: unknown, hook_name?: unknown }} record
+ * @returns {string | null}
+ */
 function trace2ChildKey(record) {
   const childId = record.child_id;
   if (typeof childId === 'number' || typeof childId === 'string') return String(childId);
@@ -14,6 +18,10 @@ function trace2ChildKey(record) {
   return typeof hookName === 'string' && hookName.trim() ? hookName.trim() : null;
 }
 
+/**
+ * @param {unknown} line
+ * @returns {{ [key: string]: unknown } | null}
+ */
 function parseTrace2Line(line) {
   const trimmed = String(line || '').trim();
   if (!trimmed) return null;
@@ -40,7 +48,7 @@ function createTrace2Monitor(onHook) {
   let remainder = '';
   const hookStartByChildKey = new Map();
 
-  const handleLine = (line) => {
+  const handleLine = (/** @type {string} */ line) => {
     const record = parseTrace2Line(line);
     if (!record || record.child_class !== 'hook') return;
     const childKey = trace2ChildKey(record);

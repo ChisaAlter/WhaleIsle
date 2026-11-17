@@ -6,8 +6,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 const PREVIEW_PIP_FRAME_CHANNEL = 'dshd-preview-pip-frame';
 
 contextBridge.exposeInMainWorld('previewPictureInPicture', {
+  /**
+   * @param {(frame: unknown) => void} listener
+   * @returns {() => void}
+   */
   onFrame(listener) {
-    const wrappedListener = (_event, frame) => {
+    const wrappedListener = (/** @type {Electron.IpcRendererEvent} */ _event, /** @type {unknown} */ frame) => {
       if (typeof frame !== 'object' || frame === null) return;
       listener(frame);
     };
