@@ -209,6 +209,7 @@ export default [
       'whaleisle/open-external-http': 'error',
       'whaleisle/no-secret-compare': 'error',
       'whaleisle/no-request-body-accumulate': 'error',
+      'whaleisle/temp-marker-issue': 'error',
       'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE],
     },
   },

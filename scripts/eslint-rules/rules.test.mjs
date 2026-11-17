@@ -146,6 +146,34 @@ bodyTester.run('whaleisle/no-request-body-accumulate', plugin.rules['no-request-
   ],
 });
 
+const markerTester = new RuleTester({ languageOptions: cjs });
+markerTester.run('whaleisle/temp-marker-issue', plugin.rules['temp-marker-issue'], {
+  valid: [
+    '// plain description, no marker at all',
+    "const todo = 'task name';",
+    'hint("暂时无法连接");',
+    '// 临时回退路径，随 #123 一起移除',
+    '// HACK: keep the shim until #42 lands',
+    '// workaround for the upstream crash: https://github.com/example/repo/issues/87',
+    '/* TODO #7: replace once upstream exports the hook */',
+    '/* TODO #7: multi-line block\n   details continue on the next line */',
+    '// row roles: `todo`, `changes`, `meta`',
+    '// 回归：设置页当时只显示 "远程暂时不可用"',
+  ],
+  invalid: [
+    { code: '// TODO: remove this shim', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// hack to keep ordering', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// FIXME reopen the dialog', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// XXX: why is this here', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// workaround until the next upstream sync', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// 临时绕过签名校验', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// 暂时跳过远端探测', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '// TODO #TBD: placeholder waiting for the tracking issue', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '/* fixme on one line\n   #12 lives on the next */', errors: [{ messageId: 'missingIssueRef' }] },
+    { code: '/* #12 lives up here\n   TODO: marker line carries no ref */', errors: [{ messageId: 'missingIssueRef' }] },
+  ],
+});
+
 const contractTester = new RuleTester({ languageOptions: cjs });
 contractTester.run('whaleisle/ipc-channel-contract', plugin.rules['ipc-channel-contract'], {
   valid: [
