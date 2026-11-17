@@ -44,5 +44,5 @@ try {
   const ws = await page.evaluate(() => window.__dshdDebug ? 'dbg' : 'no-dbg');
   console.log(ws);
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

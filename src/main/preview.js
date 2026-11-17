@@ -436,7 +436,7 @@ function createPreviewController(options = {}) {
     current = { timer: null, consumers: new Set([consumer]) };
     frameCaptureSessions.set(previewId, current);
     const prior = frameCapturesInFlight.get(previewId);
-    if (prior) await prior.catch(() => {});
+    if (prior) await prior.catch(() => { /* The previous frame consumer owns its failure; serialize the next capture after it settles. */ });
     if (frameCaptureSessions.get(previewId) !== current) return;
     await capturePreviewFrame(previewId);
     if (frameCaptureSessions.get(previewId) !== current) return;
@@ -1172,7 +1172,7 @@ function registerPreviewIpc(ipcMain, controller, options = {}) {
     if (reapedPreviewIds.size === 0 && reapedSingletons.size === 0) return;
     void Promise.resolve()
       .then(() => teardownOwnedResources(reapedPreviewIds, reapedSingletons, reapedGeneration))
-      .catch(() => {});
+      .catch((error) => { console.warn('[src/main/preview.js] background operation failed', error); });
   }
 
   function bindHost(sender) {

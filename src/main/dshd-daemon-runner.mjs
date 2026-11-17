@@ -148,7 +148,7 @@ async function start() {
 }
 
 const startAttempt = start();
-startSettled = startAttempt.catch(() => {});
+startSettled = startAttempt.catch(() => { /* The original startAttempt is awaited below; this is only its teardown barrier. */ });
 try {
   await startAttempt;
 } catch (err) {

@@ -26,7 +26,7 @@ try {
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, 'main.log');
   const write = (line) => {
-    try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`); } catch {}
+    try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`); } catch { /* The emergency logger cannot report its own disk failure recursively. */ }
   };
   trace = write;
   const { createMainFailureReporter } = require('../main/crash-report');
@@ -64,7 +64,7 @@ try {
   process.on('unhandledRejection', (reason) => {
     write(`unhandledRejection: ${reason && reason.stack ? reason.stack : reason}`);
   });
-} catch {}
+} catch { /* Logging initialization must not prevent the launcher from showing its diagnostics UI. */ }
 const { getLauncherWindow, prepareLauncher, showLauncher, sendToLauncher } = require('../main/window');
 const { watchSystemTheme } = require('../main/chrome');
 const { loadConfig, saveConfig } = require('../main/config');

@@ -28,6 +28,6 @@ try {
     return { status: 'Pass', note: `SPA 三档=${labels.filter((l) => want.some((w) => l.startsWith(w))).join('/')}；chip=${chip}；桌面 aria 当前=${desktopCurrent}（同词表）` };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }

@@ -21,7 +21,7 @@ export class WhaleTodos {
     this.home = home; this.scope = scope; this.chain = Promise.resolve(); this.closed = false;
     this.available = true; this.stops = new Map();
   }
-  serial(fn) { const next = this.chain.then(fn); this.chain = next.catch(() => {}); return next; }
+  serial(fn) { const next = this.chain.then(fn); this.chain = next.catch(() => { /* The original operation is returned; a failed write must not poison the next queued write. */ }); return next; }
   list() { return [...this.cards.entries()].map(([, card]) => structuredClone(card)); }
   get(id) { const card = this.cards.get(id); if (!card) throw new Error('找不到任务卡。'); return structuredClone(card); }
   async put(card) { const next = todoSchema.parse({ ...card, updatedAt: Date.now() }); await this.cards.put(next.id, next); return next; }

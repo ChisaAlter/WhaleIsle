@@ -565,9 +565,9 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     // retry can reuse its pending directory. Late metadata stays on this
     // operation's discarded updater instance.
     if (requestSignal.aborted) {
-      await pendingPreparation?.catch(() => {});
-      if (autoUpdater?.httpExecutor?.createRequest) await pendingCheck?.catch(() => {});
-      await pendingTransfer?.catch(() => {});
+      await pendingPreparation?.catch(() => { /* The aborted request owns its error; await preparation cleanup before retry. */ });
+      if (autoUpdater?.httpExecutor?.createRequest) await pendingCheck?.catch(() => { /* The aborted request owns its error; await metadata cleanup before retry. */ });
+      await pendingTransfer?.catch(() => { /* The aborted request owns its error; await transfer cleanup before retry. */ });
     }
     releaseRequests?.(Boolean(pendingTransfer || autoUpdater?.httpExecutor?.createRequest));
     restoreBlockmapFiles?.();

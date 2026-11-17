@@ -670,7 +670,7 @@ function setStill(name) {
       if (stillCtl.name === name) {
         stillCtl.entry = entry;
       }
-    }).catch(() => {});
+    }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   }
 }
 
@@ -1829,7 +1829,7 @@ function openPanel() {
       panel.cells = panelCells();
       requestFrame();
     }
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   requestFrame();
 }
 
@@ -2000,7 +2000,7 @@ function reportRoam() {
     y: Math.round(b.y + overlayOrigin.y),
     w: Math.round(b.right - b.x),
     h: Math.round(b.bottom - b.y),
-  })).catch(() => {});
+  })).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
 }
 
 // Chip index under a point, or -1 (outside card / header / stats / gaps).
@@ -2051,7 +2051,7 @@ function dispatchPanelCell(cell) {
   } else if (cell.id === 'look') {
     void submitLook();
   } else if (cell.id === 'hide') {
-    void Promise.resolve(petShell.hidePet?.()).catch(() => {});
+    void Promise.resolve(petShell.hidePet?.()).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   } else {
     runAction(cell.id);
   }
@@ -2227,7 +2227,7 @@ function chatSetBusy(next) {
 }
 
 function chatFocusWindow(on) {
-  void Promise.resolve(petShell.chatFocus?.({ focus: on })).catch(() => {});
+  void Promise.resolve(petShell.chatFocus?.({ focus: on })).catch(() => { /* Focus telemetry may race overlay closure; the next focus event reconciles it. */ });
 }
 
 // Rebuild the thread from the shared session tail (poll/backfill path).
@@ -2621,7 +2621,7 @@ async function submitChat(text) {
       // catches up. Only append when the tail hasn't published it yet.
       let shown = false;
       if (chatShared) {
-        await Promise.resolve(chatRefreshState()).catch(() => {});
+        await Promise.resolve(chatRefreshState()).catch(() => { /* The original chat result owns its outcome; state pushes can reconcile the transcript. */ });
         const last = chatLog[chatLog.length - 1];
         shown = last?.role === 'her' && last.text.slice(0, 60) === res.reply.slice(0, 60);
       }
@@ -2631,13 +2631,13 @@ async function submitChat(text) {
     }
     if (res?.ok === true && res.via === 'whale') {
       // A completed tool-only turn can legitimately have no closing prose.
-      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => {});
+      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => { /* The completed tool-only turn has no prose; state pushes can reconcile the transcript. */ });
       return;
     }
     // Whale-path failures already get a precise error row — a random quip
     // on top would only muddy it.
     if (res?.via === 'whale') {
-      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => {});
+      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => { /* The precise Whale failure row below owns the outcome; state pushes can reconcile the transcript. */ });
       const replyShown = res.reply && chatLog.slice(-2).some((row) => row.role === 'her'
         && row.text.slice(0, 60) === res.reply.slice(0, 60));
       if (res.reply && !replyShown) chatAppend('her', res.reply);
@@ -2724,7 +2724,7 @@ function bindChatDom() {
     if (chatPickerOpen && !chatDom.contains(event.target) && !chatPickerEl?.contains(event.target)) { chatClosePicker(); }
   });
   chatPart('#pc-open')?.addEventListener('click', () => {
-    void Promise.resolve(petShell.openWhale?.()).catch(() => {});
+    void Promise.resolve(petShell.openWhale?.()).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   });
   // The card never folds itself: only ✕ / Esc / the 聊聊 chip close it.
   // Clicking another window just blurs this one — the card stays put, and
@@ -4491,7 +4491,7 @@ function startRelocatePoll() {
   clearInterval(relocatePoll);
   relocatePoll = setInterval(() => {
     if (dragging) {
-      void Promise.resolve(petShell.relocate?.({})).catch(() => {});
+      void Promise.resolve(petShell.relocate?.({})).catch(() => { /* Transient drag telemetry may race overlay closure; final position uses dragCommit. */ });
     }
   }, 150);
 }
@@ -4543,7 +4543,7 @@ function onCanvasPointerDown(event) {
       console.log('pet: feed button hit');
       if (growth && growth.nextFeed > 0) {
         closePanel('feed-action');
-        void Promise.resolve(petShell.feedTokens?.({})).catch(() => {});
+        void Promise.resolve(petShell.feedTokens?.({})).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
       }
       return;
     }
@@ -4644,7 +4644,7 @@ function landFromPhys(now, fromThrow = false) {
     x: Math.round(drawPos.x + overlayOrigin.x),
     y: Math.round(drawPos.y + overlayOrigin.y),
   };
-  void Promise.resolve(petShell.dragCommit?.(petScreen)).catch(() => {});
+  void Promise.resolve(petShell.dragCommit?.(petScreen)).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
 }
 
 function endDrag(event) {
@@ -4779,7 +4779,7 @@ function celebrateLevelUp() {
 // Care events ride to main where they persist; the pushed snapshot comes
 // back with fresh stats. feedToken is applied main-side inside feedTokens.
 function care(kind) {
-  void Promise.resolve(petShell.care?.({ kind })).catch(() => {});
+  void Promise.resolve(petShell.care?.({ kind })).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
 }
 
 function onGrowthPush(snap) {
@@ -4860,9 +4860,9 @@ async function mount() {
     dialogueStore = store;
     LINES = store.global || {};
     wireDialogue();
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   // The panel avatar needs greet; fallback poses load on demand in setStill.
-  void loadStill('greet').catch(() => {});
+  void loadStill('greet').catch(() => { /* The optional greeting still leaves the model pose visible. */ });
   // Main process relays the persisted screen position; convert it to
   // canvas coordinates by subtracting the overlay's own origin.
   petShell.onLayout?.((layout) => {
@@ -4920,13 +4920,13 @@ async function mount() {
   void Promise.resolve(petShell.getGrowth?.()).then((snap) => {
     if (snap && !growth) { growth = snap; }
     if (snap && snap.stats) { stats = snap.stats; }
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   // Pet settings: pull once, then ride the change push. applySettings is
   // the single fan-out point for side effects (scale rect, timers, roam
   // rect) — writes are owned by the main window's settings page.
   void Promise.resolve(petShell.getSettings?.()).then((s) => {
     if (s && typeof s === 'object') { applySettings(s); }
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[src/renderer/pet-live2d.js] background operation failed', error); });
   petShell.onSettings?.((s) => {
     if (s && typeof s === 'object') { applySettings(s); }
   });
@@ -4970,7 +4970,7 @@ async function mount() {
       // The rig is the visible renderer now — pull the state stills it draws.
       for (const name of ['pick-up', 'running', 'eat', 'sleep', 'react-head',
         'angry', 'celebrate', 'star', 'tail-swing']) {
-        void loadStill(name).catch(() => {});
+        void loadStill(name).catch(() => { /* An unavailable optional still leaves the existing model pose visible. */ });
       }
     }
   }

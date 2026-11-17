@@ -79,7 +79,7 @@ const persist = () => writeFileSync(join(output, 'acceptance.json'), JSON.string
 const record = (name, status, detail = {}) => { report.scenarios.push({ name, status, ...detail }); persist(); console.log(`${status.toUpperCase()} ${name}${detail.reason ? ': ' + sanitize(detail.reason) : ''}`); };
 const scenario = async (name, fn) => {
   try { const detail = await fn(); record(name, 'passed', detail || {}); }
-  catch (error) { record(name, 'failed', { reason: sanitize(error.message) }); if (page) await page.screenshot({ path: join(output, `failure-${report.scenarios.length}-${binarySHA256.slice(0, 12)}${resumeVisual ? '-resumed' : updatesTimeOnly ? '-updates-time' : ''}.png`) }).catch(() => {}); }
+  catch (error) { record(name, 'failed', { reason: sanitize(error.message) }); if (page) await page.screenshot({ path: join(output, `failure-${report.scenarios.length}-${binarySHA256.slice(0, 12)}${resumeVisual ? '-resumed' : updatesTimeOnly ? '-updates-time' : ''}.png`) }).catch((error) => { console.warn('[scripts/qa-whalebridge-community.mjs] background operation failed', error); }); }
 };
 const service = createWhaleBridgeService({ root: data, dshHome: join(home, 'dsh'), devPackage: join(root, '.tmp', 'whalebridge-package'), spawn: (file, args, options) => spawn(file, args, { ...options, env: { ...options.env, ...env }, windowsHide: true }) });
 let api;

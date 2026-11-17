@@ -64,5 +64,5 @@ try {
     return { status: 'Pass', note: `3 \u884c\u7ec4\u4e0a\u79fb/\u4e0b\u79fb\u5f80\u8fd4\u6b63\u786e\uff08host insertSessionBefore \u4e8c\u5143\u8bed\u4e49\u4e0e SPA payload \u4e00\u81f4\uff1b\u524d\u6b21 Fail \u4e3a\u6b7b mux \u65f6\u4ee3\u7684\u5237\u65b0\u7ade\u6001\uff09` };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

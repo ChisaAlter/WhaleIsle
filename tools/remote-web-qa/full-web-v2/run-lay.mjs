@@ -303,6 +303,6 @@ try {
   record('LAY-014', 'Pass', '各 sheet/抽屉在三视口下可滚到底（LAY-005/010/012 截图内含底部项）');
   record('LAY-015', 'NA-track', '真机安全区需实体手机（rehearsal 无刘海）');
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }
 console.log('[lay] done');

@@ -26,6 +26,12 @@
 
 vendor web 构建对 `apps/web` 之外的包报 TS6059/TS6307 时，先在 vendor 目录执行 `node node_modules/typescript/bin/tsc -b apps/web --clean` 清除过期增量状态再重建；不要改 web 项目的文件列表掩盖错误。
 
+## 错误与诊断
+
+可恢复失败沿现有结果或状态返回给发起操作的界面，说明失败的操作与下一步（例如检查应用数据目录写入权限、解锁系统密钥库、从启动器重试）。后台失败使用已有日志；主进程的启动与恢复诊断走 `DshManager.log`，格式为 `[source] message`，由启动器日志及导出启动日志入口读取。SSH 插件使用 Cordis logger；页面和独立 QA 工具使用带组件前缀的 console，保留在对应进程的诊断输出。不同进程的日志不汇总到新的全局文件，不把完整凭据写入错误提示。主进程和 renderer 崩溃报告位于 Electron `app.getPath('logs')/crash`，源码启动器自身的紧急日志位于其 logs 目录。
+
+ESLint 的 `no-empty` 禁止未说明的空 catch，`whaleisle/no-empty-promise-catch` 同样检查 Promise 的内联空处理器。取消、释放已关闭资源、只观察已返回给调用方的 Promise 等情况可在块内写明具体原因；注释豁免仍需代码审查，lint 不能判断理由是否真实。不要为了消除诊断把用户操作改成成功结果。
+
 ## CI 与发布
 
 `test.yml` 在 PR、main 推送及手动运行时提供开发反馈。文档修改不触发产品构建。产品改动在 Windows 上构建实际分发 profile、运行行为测试、生成安装包并启动打包后的应用；上游行为与原生窗口检查按影响选择。版本号变化的 main 推送会同时构建 macOS 安装包，其他时候按需手动启用。

@@ -124,13 +124,13 @@ export class SshPool {
         if (settled) return
         settled = true
         if (!isCurrent()) {
-          try { client.end() } catch {}
+          try { client.end() } catch { /* The stale connection is rejected below even if it has already closed. */ }
           reject(new Error('ssh target changed during connect'))
           return
         }
         this.client = client
         resolve(client)
-        if (this.onReady) { try { this.onReady(client) } catch {} }
+        if (this.onReady) { try { this.onReady(client) } catch (error) { console.warn('[dsh-remote/pool] notify connection ready failed', error); } }
       })
       client.on('error', (e) => rejectOnce(e))
       client.on('close', () => {
@@ -155,7 +155,7 @@ export class SshPool {
         }
         let password = this.config.password || ''
         if (!password && this.passwordResolver) {
-          try { password = (await this.passwordResolver()) || '' } catch {}
+          try { password = (await this.passwordResolver()) || '' } catch (error) { throw new Error('无法读取 SSH 凭据；请解锁系统密钥库或重新保存凭据后重试。', { cause: error }) }
         }
         if (password) {
           opts.password = password
@@ -231,7 +231,7 @@ export class SshPool {
         await this._resolveGitBash()
         return
       }
-    } catch {}
+    } catch { /* The existing platform probe falls through to POSIX when cmd is unavailable. */ }
     this.platform = 'posix'
     this.shellMode = 'native'
     this.gitBashPath = ''
@@ -260,7 +260,7 @@ export class SshPool {
         this.shellMode = 'git-bash'
         return
       }
-    } catch {}
+    } catch { /* The explicit path probe falls through to the existing Git Bash candidates. */ }
     const candidates = [
       'C:\\Program Files\\Git\\bin\\bash.exe',
       'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
@@ -297,7 +297,7 @@ export class SshPool {
       if (this.platform === 'windows' && this.gitBashPath) {
         const script = String(command)
         return this._execRaw(`"${this.gitBashPath}" -s`, { ...opts, timeoutMs: opts.timeoutMs || this.config.commandTimeoutMs }, (stream) => {
-          try { stream.end(script) } catch {}
+          try { stream.end(script) } catch (error) { stream.destroy(error) }
         })
       }
       return this._execRaw(command, opts)
@@ -358,9 +358,9 @@ export class SshPool {
                 // the SSH connection after we've given up on its output.
                 try {
                   if (typeof stream.signal === 'function') stream.signal('SIGTERM')
-                } catch {}
+                } catch { /* The hard channel close below still runs when the server does not support signals. */ }
                 const hardClose = setTimeout(() => {
-                  try { stream.close() } catch {}
+                  try { stream.close() } catch { /* The command has already settled as timed out; the channel may already be closed. */ }
                 }, 800)
                 if (typeof hardClose.unref === 'function') hardClose.unref()
                 settle()
@@ -384,7 +384,7 @@ export class SshPool {
                 reject(new Error('ssh stream error: ' + ((e && e.message) || e)))
               })
               if (stdinWriter) {
-                try { stdinWriter(stream) } catch {}
+                try { stdinWriter(stream) } catch (error) { stream.destroy(error) }
               }
             })
           }
@@ -475,14 +475,14 @@ export class SshPool {
     const pending = this.connecting
     this.connecting = null
     if (pending && typeof pending.catch === 'function') {
-      try { pending.catch(() => {}) } catch {}
+      try { pending.catch(() => { /* Observe abandoned connection failure during teardown; its original waiter owns the error. */ }) } catch { /* Observe an abandoned connection attempt during teardown; the original waiter owns its error. */ }
     }
     if (this.proxyPool) {
-      try { this.proxyPool.close() } catch {}
+      try { this.proxyPool.close() } catch { /* Continue closing the SSH client even if its proxy is already closed. */ }
       this.proxyPool = null
     }
     if (client) {
-      try { client.end() } catch {}
+      try { client.end() } catch { /* An already ended client has no further teardown. */ }
     }
   }
 
@@ -493,19 +493,19 @@ export class SshPool {
     const pending = this.connecting
     this.connecting = null
     if (pending && typeof pending.catch === 'function') {
-      try { pending.catch(() => {}) } catch {}
+      try { pending.catch(() => { /* Observe abandoned connection failure during teardown; its original waiter owns the error. */ }) } catch { /* Observe an abandoned connection attempt during teardown; the original waiter owns its error. */ }
     }
     if (this.proxyPool) {
-      try { this.proxyPool.close() } catch {}
+      try { this.proxyPool.close() } catch { /* Continue closing the SSH client even if its proxy is already closed. */ }
       this.proxyPool = null
     }
     if (client) {
       try {
         client.end()
-      } catch {}
+      } catch { /* An already ended client has no further teardown. */ }
     }
     if (this.onCloseHook) {
-      try { this.onCloseHook() } catch {}
+      try { this.onCloseHook() } catch { /* The client is already closed; a consumer notification must not interrupt disposal. */ }
     }
   }
 }

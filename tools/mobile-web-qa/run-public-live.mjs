@@ -306,7 +306,7 @@ async function main() {
       assert(noise.length === 0, noise.slice(0, 5).join(' | '));
     });
   } finally {
-    await browser.close().catch(() => {});
+    await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
     await writeFile(path.join(SHOT_DIR, 'report.txt'), `${results.join('\n')}\n`, 'utf8');
   }
 

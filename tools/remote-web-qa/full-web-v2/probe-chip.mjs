@@ -32,5 +32,5 @@ try {
   console.log('after dismiss:', JSON.stringify(after));
   try { await page.click('#access-chip'); console.log('click ok'); } catch (e) { console.log('click failed:', String(e.message).slice(0, 80)); }
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

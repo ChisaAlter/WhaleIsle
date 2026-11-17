@@ -93,7 +93,7 @@ class UpdateCenterWindow {
     const url = new URL(page);
     url.searchParams.set('scheme', theme().scheme === 'dark' ? 'dark' : 'light');
     if (isMaximized(parent)) url.searchParams.set('maximized', '1');
-    void window.loadURL(url.href).catch(() => {});
+    void window.loadURL(url.href).catch((/** @type {unknown} */ error) => { console.warn('[src/main/update-center/ipc.js] background operation failed', error); });
     return window;
   }
 

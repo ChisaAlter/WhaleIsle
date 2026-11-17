@@ -463,7 +463,7 @@ try {
   record('GIT-013', 'Blocked', '默认分支确认三键需 push 默认分支场景驱动 dialog（本场 pill 停 Sync/分叉）；留人工');
   record('GIT-015', 'Blocked', '未授权 cwd 需一个未登记目录会话（无目录会话 pill 隐藏=合规）；显式授权错误文案留人工');
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }
 console.log('[git] done');

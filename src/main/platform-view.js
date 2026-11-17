@@ -162,7 +162,7 @@ class DesktopPlatformView {
     view.webContents.setWindowOpenHandler(({ url }) => {
       const destination = new URL(url);
       if (destination.protocol === 'https:' && !destination.username && !destination.password) {
-        void openExternalHttp(url).catch(() => {});
+        void openExternalHttp(url).catch((error) => { console.warn('[src/main/platform-view.js] background operation failed', error); });
       }
       return { action: 'deny' };
     });

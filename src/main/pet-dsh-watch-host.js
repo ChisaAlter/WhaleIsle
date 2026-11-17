@@ -127,7 +127,7 @@ function createDshWatchWorker(options) {
   }
   function start(intervalMs = 2000) {
     if (closed || timer) return;
-    timer = setInterval(() => poll().catch(() => {}), intervalMs);
+    timer = setInterval(() => poll().catch((/** @type {unknown} */ error) => { console.warn('[src/main/pet-dsh-watch-host.js] background operation failed', error); }), intervalMs);
     timer.unref?.();
     return close;
   }

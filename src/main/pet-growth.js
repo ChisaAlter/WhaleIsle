@@ -637,7 +637,7 @@ function createScanWorker({ workerFile } = {}) {
       if (w) {
         try {
           await w.terminate();
-        } catch {}
+        } catch { /* Pending requests were rejected above; an already exited worker needs no further shutdown. */ }
       }
     },
   };

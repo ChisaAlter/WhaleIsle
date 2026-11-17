@@ -67,7 +67,7 @@ export function createTaskStore(ctx, storeFile) {
     if (settling.has(task.taskId)) return settling.get(task.taskId);
     const operation = settle(parent, task, outcome);
     settling.set(task.taskId, operation);
-    operation.finally(() => settling.delete(task.taskId)).catch(() => {});
+    operation.finally(() => settling.delete(task.taskId)).catch(() => { /* The original settlement promise is returned to its caller; only remove its tracking entry. */ });
     return operation;
   }
   async function settle(parent, task, outcome) {

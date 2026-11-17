@@ -575,7 +575,7 @@ class DshdRemote extends EventEmitter {
   }
 
   async stopMobileWebServer() {
-    await this.mobileWebStarting?.catch(() => {});
+    await this.mobileWebStarting?.catch(() => { /* Wait for any failed startup before releasing the acquired HTTP server. */ });
     const server = this.mobileWebServer;
     if (!server) {
       return;
@@ -1088,7 +1088,7 @@ class DshdRemote extends EventEmitter {
     const stopped = await Promise.allSettled(handles.map((handle) => this.terminateDaemonProcess(handle)));
     // The cancelled startup no longer publishes ready, but can still be
     // finishing a concrete server listen. Wait for those resource acquisitions.
-    await this.gitTunnelStarting?.catch(() => {});
+    await this.gitTunnelStarting?.catch(() => { /* Wait for cancelled tunnel acquisition before releasing its resources. */ });
     const cleanup = [];
     if (this.gitTunnel) {
       const tunnel = this.gitTunnel;

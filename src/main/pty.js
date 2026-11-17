@@ -723,7 +723,7 @@ function createPtyController(options = {}) {
       }
       for (const session of sessions.values()) {
         try {
-          cleanup.push(Promise.resolve(session.kill()).catch(() => {}));
+          cleanup.push(Promise.resolve(session.kill()).catch(() => { /* Continue terminating the other sessions if this PTY is already closed. */ }));
         } catch {
           // A backend that already exited must not block the sweep.
         }
@@ -767,7 +767,7 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
     for (const [id, owner] of [...owners]) {
       if (owner !== sender) continue;
       owners.delete(id);
-      void Promise.resolve(live.kill(id)).catch(() => {});
+      void Promise.resolve(live.kill(id)).catch(() => { /* The sender is gone and its PTY may already have exited. */ });
     }
   }
 
@@ -838,7 +838,7 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
       const created = await context.live.create(input);
       if (!created || typeof created.id !== 'string') return created;
       if (!isCurrent(context)) {
-        void Promise.resolve(context.live.kill(created.id)).catch(() => {});
+        void Promise.resolve(context.live.kill(created.id)).catch(() => { /* Ownership rejection below remains the outcome even if the stale PTY already exited. */ });
         throw unauthorized();
       }
       owners.set(created.id, context.sender);

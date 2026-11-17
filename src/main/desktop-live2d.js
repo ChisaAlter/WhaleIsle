@@ -219,7 +219,7 @@ function createLive2dPetManager(options = {}) {
       }
       try {
         win.webContents.send('shell:live2d-dsh', { state: s });
-      } catch {}
+      } catch { /* The overlay can be destroyed between the readiness check and this state push. */ }
     },
     isPetVisible: () => Boolean(petRendererReady && win && !win.isDestroyed?.() && win.isVisible()),
   });
@@ -482,7 +482,7 @@ function createLive2dPetManager(options = {}) {
     try {
       win.webContents.send('shell:live2d-cursor',
         inside ? { inside: true, x, y } : { inside: false });
-    } catch {}
+    } catch { /* The overlay can close between cursor sampling and this transient push. */ }
   }
   function startCursorPump() {
     if (cursorTimer) {
@@ -613,7 +613,7 @@ function createLive2dPetManager(options = {}) {
   async function feedTokens(amount) {
     try {
       await growth.refresh();
-    } catch {}
+    } catch (error) { console.warn('[desktop-live2d] refresh growth before feeding failed', error); }
     const res = growth.feed(amount);
     if (res.fed > 0) {
       writeStats(petStats.applyCare(readStats(), 'feedToken', Date.now()).state);
@@ -786,7 +786,7 @@ function createLive2dPetManager(options = {}) {
         path.join(require('electron').app?.getPath?.('userData') || '', 'pet-debug.log'),
         `${new Date().toISOString()} ${msg}\n`,
       );
-    } catch {}
+    } catch { /* Debug logging must not interrupt pet interaction. */ }
   }
 
   function createWindow() {
@@ -824,8 +824,8 @@ function createLive2dPetManager(options = {}) {
     require('./chrome').markWindowTransparent(win);
     // Creation clamps the window to the primary display's size; re-apply the
     // union bounds so the overlay really covers every monitor.
-    try { win.setBounds(overlayBounds()); } catch {}
-    try { dbg(`pet: actual bounds ${JSON.stringify(win.getBounds())}`); } catch {}
+    try { win.setBounds(overlayBounds()); } catch (error) { console.warn('[desktop-live2d] resize overlay failed', error); }
+    try { dbg(`pet: actual bounds ${JSON.stringify(win.getBounds())}`); } catch { /* Bounds diagnostics must not prevent the overlay from becoming visible. */ }
     win.setAlwaysOnTop(true, 'screen-saver');
     win.setVisibleOnAllWorkspaces?.(true, { visibleOnFullScreen: true });
     surfaceRegionKey = '';
@@ -865,7 +865,7 @@ function createLive2dPetManager(options = {}) {
       roamRect = null; // fresh page re-reports; a stale zone would wedge hover
       hitRects = [];
     });
-    void win.loadURL(petUrl).catch(() => {});
+    void win.loadURL(petUrl).catch((/** @type {unknown} */ error) => { console.warn('[src/main/desktop-live2d.js] background operation failed', error); });
     return win;
   }
 
@@ -963,7 +963,7 @@ function createLive2dPetManager(options = {}) {
     }
     // Every enabled flip — pet panel 隐藏, settings page, tray — reaches this
     // funnel; the shell rebuilds its tray checkbox snapshot off the callback.
-    try { options.onEnabledChange?.(state.enabled); } catch {}
+    try { options.onEnabledChange?.(state.enabled); } catch (error) { console.warn('[desktop-live2d] notify enabled change failed', error); }
     return { ...state };
   }
 
@@ -1007,7 +1007,7 @@ function createLive2dPetManager(options = {}) {
   async function growthSnapshot() {
     try {
       await growth.refresh();
-    } catch {}
+    } catch (error) { console.warn('[desktop-live2d] refresh growth snapshot failed', error); }
     return { ...growth.snapshot(), stats: petStats.statsSnapshot(readStats()) };
   }
 
@@ -1017,7 +1017,7 @@ function createLive2dPetManager(options = {}) {
     }
     try {
       protocol?.handle?.('pet', createPetProtocolHandler(rendererFile));
-    } catch {}
+    } catch (error) { console.warn('[desktop-live2d] register pet protocol failed', error); }
     // Every pet channel authorizes with the ownership check; payloads are
     // optional objects — the old `payload?.x` reads tolerate non-objects,
     // so the validator normalizes instead of rejecting.
@@ -1350,7 +1350,7 @@ function createLive2dPetManager(options = {}) {
   function dispose() {
     clearInterval(growthTimer);
     growthTimer = 0;
-    const growthClosed = Promise.resolve(growth.close?.()).catch(() => {});
+    const growthClosed = Promise.resolve(growth.close?.()).catch(() => { /* Continue releasing IPC, windows and watchers even if growth disposal failed. */ });
     clearTimeout(mirrorTimer);
     mirrorTimer = 0;
     stopCursorPump();
@@ -1385,7 +1385,7 @@ function createLive2dPetManager(options = {}) {
       handlersRegistered = false;
     }
     while (surfaceWatch.length) {
-      try { surfaceWatch.pop()(); } catch {}
+      try { surfaceWatch.pop()(); } catch { /* Continue releasing the other watchers even if one is already disposed. */ }
     }
     return Promise.all([growthClosed, watcherClosed]);
   }

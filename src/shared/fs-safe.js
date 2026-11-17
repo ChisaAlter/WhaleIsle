@@ -174,8 +174,8 @@ async function atomicWriteFile(file, data, options = {}) {
     await renameWithRetry(tmp, file);
     renamed = true;
   } finally {
-    if (handle) await handle.close().catch(() => {});
-    if (!renamed) await fs.promises.unlink(tmp).catch(() => {});
+    if (handle) await handle.close().catch(() => { /* Preserve the original atomic write failure if the handle already closed. */ });
+    if (!renamed) await fs.promises.unlink(tmp).catch(() => { /* Preserve the original atomic write failure if the temporary file is already absent. */ });
   }
 }
 
@@ -303,7 +303,7 @@ async function withOwnedTempDir(prefix, fn, options = {}) {
         tmpRoot = path.resolve(os.tmpdir());
       }
       if (real && isInside(tmpRoot, real)) {
-        await fs.promises.rm(dir, { recursive: true, force: true, ...options.rmOptions }).catch(() => {});
+        await fs.promises.rm(dir, { recursive: true, force: true, ...options.rmOptions }).catch(() => { /* This is failure cleanup for a directory that never became owned; preserve its original error. */ });
       }
     }
   }

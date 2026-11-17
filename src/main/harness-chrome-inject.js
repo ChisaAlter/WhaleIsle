@@ -354,7 +354,7 @@
       Promise.resolve(window.shell.getWindowState()).then((state) => {
         window.__dshShellMaximized = Boolean(state && state.maximized);
         measure();
-      }).catch(() => {});
+      }).catch((error) => { console.warn('[src/main/harness-chrome-inject.js] background operation failed', error); });
     }
     window.setTimeout(measure, 200);
     window.setTimeout(measure, 800);

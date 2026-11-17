@@ -3264,7 +3264,7 @@ function pullCurrentHistory() {
       renderComposer();
       renderApproval();
     })
-    .catch(() => {})
+    .catch((error) => { console.warn('[mobile/web/app.js] background operation failed', error); })
     .finally(() => { historyPullInflight = null; });
   return historyPullInflight;
 }
@@ -3275,7 +3275,7 @@ function forceLogout(message, { forget = true } = {}) {
     state.chisacode?.dispose?.();
     const closing = state.chisacode?.client?.close?.();
     if (closing && typeof closing.catch === 'function') {
-      void closing.catch(() => {});
+      void closing.catch(() => { /* The old paired client may already have disconnected; continue replacing it. */ });
     }
   } catch { /* ignore */ }
   if (state.transport === 'chisacode' && serverId) {
@@ -3516,7 +3516,7 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
     return;
   }
   state.chisacode = paired;
-  const closeOnAbort = () => { void paired.client.close().catch(() => {}); };
+  const closeOnAbort = () => { void paired.client.close().catch(() => { /* The pairing abort owns the outcome; the client may already be closed. */ }); };
   signal?.addEventListener('abort', closeOnAbort, { once: true });
   const disposeEvents = bindChisaCodeEvents(paired);
   const disposeWatch = watchConnection(paired.client, {
@@ -8235,7 +8235,7 @@ gitPill.addEventListener('click', () => {
   renderSheet();
   refreshGit().then(() => {
     if (state.gitDialog === 'menu') renderSheet();
-  }).catch(() => {});
+  }).catch((error) => { console.warn('[mobile/web/app.js] background operation failed', error); });
 });
 
 // —— 启动 —— //

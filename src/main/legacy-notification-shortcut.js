@@ -127,7 +127,7 @@ async function migrateLegacyNotificationShortcut({
     try { shellNotified = await notifyMoved(shortcut, backupPath); } catch { /* The backup is already safe. */ }
     return { status: 'migrated', backupPath, shellNotified: shellNotified === true };
   } catch {
-    if (backupDirectory) await io.rmdir(backupDirectory).catch(() => {});
+    if (backupDirectory) await io.rmdir(backupDirectory).catch(() => { /* The migration returns its stage failure below; the empty backup directory may already be absent. */ });
     return { status: 'failed', reason: `${stage}-failed` };
   }
 }

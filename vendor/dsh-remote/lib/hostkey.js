@@ -41,7 +41,7 @@ export function loadKnownHosts(file) {
   try {
     const j = JSON.parse(readFileSync(file, 'utf8'))
     if (j && typeof j === 'object' && !Array.isArray(j)) return j
-  } catch {}
+  } catch { /* Unreadable or malformed records are untrusted; the existing host-key policy still verifies the peer. */ }
   return {}
 }
 
@@ -58,7 +58,7 @@ export function createHostKeyGuard(config, knownHostsFile) {
   const read = () => loadKnownHosts(knownHostsFile)
   const write = (kh) => {
     if (!knownHostsFile) return
-    try { mkdirSync(path.dirname(knownHostsFile), { recursive: true }) } catch {}
+    try { mkdirSync(path.dirname(knownHostsFile), { recursive: true }) } catch { /* The following write reports a directory or permission failure to the caller. */ }
     writeFileSync(knownHostsFile, JSON.stringify(kh, null, 2))
   }
   const guard = {

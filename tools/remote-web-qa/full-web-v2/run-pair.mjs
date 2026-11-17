@@ -217,6 +217,6 @@ try {
   record('PAIR-019', 'Blocked', '断中继会打断全场，放收尾单独做');
   record('PAIR-020', 'Pass', '=PAIR-014（断开这台设备）已过');
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }
 console.log('[pair] done');

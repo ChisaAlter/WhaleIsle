@@ -143,7 +143,7 @@ function ensureAssistantSession(ctx, scope, controller) {
   pendingEnsures.set(scope, operation);
   void operation.finally(() => {
     if (pendingEnsures.get(scope) === operation) pendingEnsures.delete(scope);
-  }).catch(() => {});
+  }).catch(() => { /* The original ensure operation is returned; this only releases its tracking entry. */ });
   return operation;
 }
 
@@ -186,7 +186,7 @@ async function createOrReuseAssistantSession(ctx, scope, controller) {
       ?? existing?.presentation;
     if (current?.owner === PRESENTATION_OWNER
       && (current?.title !== presentation.title || current?.composer !== presentation.composer)) {
-      await controller.setPresentation({ sessionId, presentation }).catch(() => {});
+      await controller.setPresentation({ sessionId, presentation }).catch((error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
     }
   }
   if (snap.sessionId !== sessionId) {
@@ -201,7 +201,7 @@ async function createOrReuseAssistantSession(ctx, scope, controller) {
       model: snap.modelModel,
       ...(snap.modelReasoningEffort ? { reasoningEffort: snap.modelReasoningEffort } : {}),
       saveAsDefault: false,
-    }).catch(() => {});
+    }).catch((error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
   }
   return { ok: true, sessionId, created };
 }
@@ -704,7 +704,7 @@ function registerRpc(ctx, scope) {
               owner: PRESENTATION_OWNER,
               title: whaleDisplayName(next),
             },
-          })?.catch?.(() => {});
+          })?.catch?.((error) => { console.warn('[vendor/dsh-whale/lib/index.js] background operation failed', error); });
         }
         return next;
       }

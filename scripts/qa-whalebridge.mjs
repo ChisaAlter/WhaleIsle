@@ -100,7 +100,7 @@ try{
  assert.doesNotMatch(readFileSync(profile,'utf8'),/whalebridge|qa-vendor\/qa-model/);
  console.log('PASS native install, private settings, suppliers/subscription choices, DSH route preservation, routing, streaming/tool calls, usage, busy-stop protection, restart, update, rollback, uninstall and reinstall');
 }finally{
- releaseStream();await pendingStream?.catch(()=>{});
+ releaseStream();await pendingStream?.catch(()=>{ /* The test owns the original streaming outcome; wait for its released stream before stopping the service. */ });
  if(service?.state())await service.stop();
  await new Promise(r=>upstream.close(r));
 }

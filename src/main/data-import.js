@@ -131,7 +131,7 @@ function walkSessionDirs(sessionsRoot) {
   let step = walk.next();
   while (!step.done) {
     let entries = [];
-    try { entries = fs.readdirSync(step.value, { withFileTypes: true }); } catch {}
+    try { entries = fs.readdirSync(step.value, { withFileTypes: true }); } catch { /* Unreadable or vanished scan branches contain no discoverable sessions; import itself reports read failures. */ }
     step = walk.next(entries);
   }
   return step.value;
@@ -142,7 +142,7 @@ async function walkSessionDirsAsync(sessionsRoot) {
   let step = walk.next();
   while (!step.done) {
     let entries = [];
-    try { entries = await fs.promises.readdir(step.value, { withFileTypes: true }); } catch {}
+    try { entries = await fs.promises.readdir(step.value, { withFileTypes: true }); } catch { /* Unreadable or vanished scan branches contain no discoverable sessions; import itself reports read failures. */ }
     step = walk.next(entries);
   }
   return step.value;
@@ -1147,7 +1147,7 @@ async function scanImportAsync({ sourceHome, destHome: dest, extraSkillDirs, age
         try {
           const entries = await fs.promises.readdir(path.join(target, 'sessions', row.rel));
           conflict = entries.some((name) => SESSION_LOG.test(name));
-        } catch {}
+        } catch { /* A missing destination directory has no existing session to conflict with. */ }
       }
       sessions[index] = { ...row, id: meta.id, cwd: meta.cwd, title: meta.title,
         createdAt: meta.createdAt, compressedLog: Boolean(meta.compressedLog), conflict };

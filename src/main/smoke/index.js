@@ -190,7 +190,7 @@ async function ensureSurfacesViewport(win, wc) {
     }, 3_000);
   }
   if (wide) {
-    await wc.executeJavaScript('window.dispatchEvent(new Event(\'resize\'))').catch(() => {});
+    await wc.executeJavaScript('window.dispatchEvent(new Event(\'resize\'))').catch(() => { /* Resize dispatch is only a settling hint; viewport assertions below still determine success. */ });
     await sleep(400);
     return;
   }
@@ -520,7 +520,7 @@ function createSmokeRunner(deps) {
         Promise.resolve(desktopResources?.pty?.killAll()),
         Promise.resolve(desktopResources?.preview?.closeAll()),
       ]);
-      await Promise.resolve(harness.shutdown()).catch(() => {});
+      await Promise.resolve(harness.shutdown()).catch(() => { /* The smoke result owns its failure; continue disposing the pet after shutdown. */ });
       await getLive2dPet()?.dispose();
       app.exit(code);
     };
@@ -663,7 +663,7 @@ function createSmokeRunner(deps) {
         cancelPtyMarker();
         unsubscribePty();
         if (created) {
-          await desktopResources.pty.kill(created.id).catch(() => {});
+          await desktopResources.pty.kill(created.id).catch(() => { /* The test outcome is already recorded; its PTY may already have exited. */ });
         }
       }
       console.log('[DSH_SMOKE_PTY]', ptyStatus);

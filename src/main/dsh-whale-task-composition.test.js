@@ -15,7 +15,7 @@ const cli = createRequire(path.join(harness, 'apps/cli/package.json'));
 const anchors = HARNESS.ok
   ? [cli, createRequire(cli.resolve('@deepseek-ai/dsh-base/package.json')), createRequire(cli.resolve('@deepseek-ai/dsh-web-app/package.json'))]
   : [];
-const resolve = name => { for (const anchor of anchors) try { return anchor.resolve(name); } catch {} throw new Error(name); };
+const resolve = name => { for (const anchor of anchors) try { return anchor.resolve(name); } catch { /* Try the next installed package anchor; throw after all anchors fail. */ } throw new Error(name); };
 const load = name => import(pathToFileURL(resolve(name)).href);
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 

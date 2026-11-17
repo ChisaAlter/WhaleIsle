@@ -55,7 +55,7 @@ export async function listRemoteDrives(sshPool) {
   try {
     const res = await sshPool.exec('cmd /c fsutil fsinfo drives', { timeoutMs: Math.min(sshPool.config.commandTimeoutMs || 8000, 8000) })
     letters = [...String(res.stdout || '').matchAll(/([a-zA-Z]):\\?/g)].map((mm) => mm[1].toUpperCase())
-  } catch {}
+  } catch { /* Use the existing PowerShell drive enumeration when fsutil is unavailable. */ }
   if (!letters.length) {
     try {
       const res = await sshPool.exec('ls -d /[a-z] 2>/dev/null', { timeoutMs: Math.min(sshPool.config.commandTimeoutMs || 8000, 8000) })
@@ -64,7 +64,7 @@ export async function listRemoteDrives(sshPool) {
         .map((s) => s.replace(/^\/+|\/+$/g, ''))
         .filter((s) => /^[a-zA-Z]$/.test(s))
         .map((s) => s.toUpperCase())
-    } catch {}
+    } catch { /* Neither supported drive probe succeeded; the picker has no available drives. */ }
   }
   return [...new Set(letters)].sort().map((l) => ({ name: l + ':\\', path: l + ':\\', type: 'dir', drive: true, size: 0, mtime: 0 }))
 }
@@ -84,7 +84,7 @@ export async function removeRemoteTree(sftp, p, maxFiles = 2000) {
       const isDir = !!(e.attrs && e.attrs.isDirectory && e.attrs.isDirectory())
       if (isDir) await walk(fp)
       else {
-        try { await sftp.unlink(fp); removed++ } catch {}
+        try { await sftp.unlink(fp); removed++ } catch (error) { if (error?.code !== 'ENOENT') throw error }
       }
     }
     try { await sftp.rmdir(dir); removed++ } catch { /* already gone or non-empty */ }
