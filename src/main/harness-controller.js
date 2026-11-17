@@ -1,7 +1,7 @@
 const EventEmitter = require('events');
 const { isPluginTreeFailure } = require('./plugin-tree-failure');
 const { stickySkipActive, kernelLogTail } = require('./launcher-gate');
-const { dshImImplicated } = require('./dsh-im-desktop');
+const { prepareDshImForStart } = require('./dsh-im-desktop');
 const importGuard = require('./import-guard');
 
 const DEFAULT_STABLE_MS = 60_000;
@@ -550,28 +550,6 @@ class HarnessController extends EventEmitter {
     this.dsh.log(`${label}不可用，本次启动已跳过：${reason}`, 'app');
   }
 
-  // dsh-im follows its feature switch; recovery skips it only when this
-  // startup's saved evidence names it. Full retry restores normal mounting.
-  async prepareDshImForStart(startConfig, skipUserPlugins, checkCurrent, patchFiles) {
-    const imEnabledByConfig = startConfig.dshImEnabled !== false;
-    const imRecoverySkip = skipUserPlugins && imEnabledByConfig && dshImImplicated(
-      [this.pluginRecovery?.reason, ...(this.pluginRecovery?.logTail || [])].join('\n'));
-    const im = await this.prepareOptionalBuiltin('消息渠道（dsh-im）', () => this.ensureDshImPlugin({
-      enabled: imEnabledByConfig && !imRecoverySkip,
-    }), checkCurrent);
-    if (im?.overlayFile) {
-      patchFiles.push(im.overlayFile);
-    }
-    if (imRecoverySkip) {
-      // Same 启动诊断 entry as a broken built-in so the skip is visible.
-      this.skipBuiltin('消息渠道（dsh-im）', '启动失败证据指向 dsh-im');
-    } else if (im && im.ok && im.disabled) {
-      this.dsh.log('桌面内置 dsh-im 已按设置关闭', 'app');
-    } else if (im && im.ok) {
-      this.dsh.log(im.added ? '已接入桌面内置 dsh-im（消息渠道）' : '桌面内置 dsh-im 已就绪', 'app');
-    }
-  }
-
   async performStartOnce({ showBoot, generation, skipUserPlugins, assertCurrent = () => {} }) {
     const checkCurrent = () => {
       this.assertOperationCurrent(generation);
@@ -761,7 +739,7 @@ class HarnessController extends EventEmitter {
     } else {
       this.dsh.log('跳过用户插件：不预置会话搜索', 'app');
     }
-    await this.prepareDshImForStart(startConfig, skipUserPlugins, checkCurrent, patchFiles);
+    await prepareDshImForStart(this, startConfig, skipUserPlugins, checkCurrent, patchFiles);
     // Keep the built-in Settings market available on full and recovery starts;
     // a broken market copy leaves it off for this start (listed in 启动诊断).
     const market = await this.prepareOptionalBuiltin('插件市场', () => this.ensureDesktopMarket(), checkCurrent);

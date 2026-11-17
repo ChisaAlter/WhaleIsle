@@ -210,7 +210,37 @@ function dshImImplicated(text) {
     .some((name) => DSH_IM_ALIASES.includes(name) || name.split(/[\\/]+/).includes('dsh-im'));
 }
 
+// dsh-im follows its feature switch; recovery skips it only when this
+// startup's saved evidence names it. Full retry restores normal mounting.
+/**
+ * @param {import('./harness-controller').HarnessController} controller
+ * @param {{dshImEnabled?: boolean}} startConfig
+ * @param {boolean} skipUserPlugins
+ * @param {() => void} checkCurrent
+ * @param {string[]} patchFiles
+ */
+async function prepareDshImForStart(controller, startConfig, skipUserPlugins, checkCurrent, patchFiles) {
+    const imEnabledByConfig = startConfig.dshImEnabled !== false;
+    const imRecoverySkip = skipUserPlugins && imEnabledByConfig && dshImImplicated(
+      [controller.pluginRecovery?.reason, ...(controller.pluginRecovery?.logTail || [])].join('\n'));
+    const im = await controller.prepareOptionalBuiltin('消息渠道（dsh-im）', () => controller.ensureDshImPlugin({
+      enabled: imEnabledByConfig && !imRecoverySkip,
+    }), checkCurrent);
+    if (im?.overlayFile) {
+      patchFiles.push(im.overlayFile);
+    }
+    if (imRecoverySkip) {
+      // Same 启动诊断 entry as a broken built-in so the skip is visible.
+      controller.skipBuiltin('消息渠道（dsh-im）', '启动失败证据指向 dsh-im');
+    } else if (im && im.ok && im.disabled) {
+      controller.dsh.log('桌面内置 dsh-im 已按设置关闭', 'app');
+    } else if (im && im.ok) {
+      controller.dsh.log(im.added ? '已接入桌面内置 dsh-im（消息渠道）' : '桌面内置 dsh-im 已就绪', 'app');
+    }
+  }
+
 module.exports = {
+  prepareDshImForStart,
   DSH_IM_PACKAGE,
   DSH_IM_BEGIN,
   DSH_IM_END,
