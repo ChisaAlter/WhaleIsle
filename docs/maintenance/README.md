@@ -28,6 +28,14 @@ vendor web 构建对 `apps/web` 之外的包报 TS6059/TS6307 时，先在 vendo
 
 ## CI 与发布
 
+### 性能调查
+
+`node scripts/measure-desktop-runtime.mjs --out <新结果目录>` 在已执行 `npm run setup` 的源码环境中启动真实 Electron，用独立配置与 Git 工作区测量首次启动至工作台、经 `shell:restart` 重启至工作台、主线程 25 ms 心跳的最大延迟，以及 Electron 进程工作集的采样峰值总和（不含独立 Harness Node 进程）。首次启动保留操作系统缓存，不等同于清空磁盘缓存的冷启动。`--previous <report.json>` 对比同平台与架构的上次成功结果；源码快照可用 `--source-root <已准备目录>` 只读复用。正常或失败退出后先等待子进程结束，再回收临时配置；日志、原始采样和摘要留在结果目录。
+
+调查预算在 `scripts/desktop-runtime-budgets.json`：启动与重启各 30 秒、主线程最大延迟 200 ms、Electron 工作集峰值 1024 MiB。预算在测量前登记，超出时发出 CI 警告并显示实测值；它们是定位问题的线索，不是产品服务承诺，也不作为普通测试的时间断言。`Desktop performance trend` 每周一与手动在三平台运行，保存 90 天原始报告并与上次成功结果比较。超预算项以报告、平台和源码身份进入 Issue 后再做优化。
+
+原有 `scripts/measure-desktop-lifecycle.mjs --profile c1` 继续只测隔离 Node 进程中的导入与目录列举热路径；其结果不能替代真实 Electron 启动、重启或主线程测量。
+
 `test.yml` 在 PR、main 推送及手动运行时提供开发反馈。文档修改不触发产品构建。产品改动在 Windows 上构建实际分发 profile、运行行为测试、生成安装包并启动打包后的应用；上游行为与原生窗口检查按影响选择。版本号变化的 main 推送会同时构建 macOS 安装包，其他时候按需手动启用。
 
 main 的开发 CI 成功后，`release.yml` 使用该次构建的原始资产。package.json 的版本高于已发布版本时自动发布；版本未增加则不发版。上传失败重试分发，不重编译。具体操作见[发布说明](../handbook/modules/release-process.md)。

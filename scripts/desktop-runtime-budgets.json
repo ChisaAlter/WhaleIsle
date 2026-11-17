@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "startupMs": 30000,
+  "restartMs": 30000,
+  "mainThreadLagMs": 200,
+  "peakWorkingSetMiB": 1024
+}
