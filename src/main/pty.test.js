@@ -376,7 +376,7 @@ test('registerPtyIpc authorizes every renderer request before dispatch', async (
   const ipcMain = { handle(channel, fn) { handlers.set(channel, fn); } };
   let authorized = 0;
   const controller = {
-    create() {},
+    create() { return { id: 'pty-1' }; },
     write() {},
     resize() {},
     kill() { return 'killed'; },
@@ -388,8 +388,12 @@ test('registerPtyIpc authorizes every renderer request before dispatch', async (
     },
   });
   const sender = { id: 7, once() {}, isDestroyed: () => false };
-  assert.equal(await handlers.get('shell:pty-kill')({ sender }, 'missing'), 'killed');
-  assert.equal(authorized, 1);
+  await handlers.get('shell:pty-create')({ sender }, { cwd: ws });
+  assert.equal(await handlers.get('shell:pty-kill')({ sender }, 'pty-1'), 'killed');
+  assert.equal(authorized, 2);
+  // Unregistered ids are still authorized, then fail closed in the handler.
+  assert.throws(() => handlers.get('shell:pty-kill')({ sender }, 'missing'), /unknown pty id/);
+  assert.equal(authorized, 3);
 });
 
 test('a PTY created after its renderer navigated is killed instead of becoming an orphan', async () => {
@@ -487,6 +491,23 @@ test('a non-owner renderer cannot write, resize, or kill another sender PTY', as
   assert.deepEqual(session.writes, []);
   assert.deepEqual(session.resizes, []);
   assert.equal(session.kills, 0);
+});
+
+test('pty-kill fails closed on unregistered ids but kills an owned session', async () => {
+  const { handlers, ipcMain } = ptyHandlers();
+  const pty = createPtyController({ emit() {}, spawn: fakeSpawn() });
+  registerPtyIpc(ipcMain, pty);
+  const owner = lifecycleSender(51);
+  const created = await handlers.get('shell:pty-create')({ sender: owner }, { cwd: ws });
+
+  // Same rule as write/ack/resize: an id the sender does not own — including
+  // one that was never registered — is rejected before dispatch.
+  assert.throws(() => handlers.get('shell:pty-kill')({ sender: owner }, 'missing'), /unknown pty id/);
+
+  await handlers.get('shell:pty-kill')({ sender: owner }, created.id);
+  await assert.rejects(() => pty.write(created.id, 'x'), /unknown pty id/);
+  // A second kill is a foreign id again, not a silent no-op.
+  assert.throws(() => handlers.get('shell:pty-kill')({ sender: owner }, created.id), /unknown pty id/);
 });
 
 test('a destroyed sender is rejected before any PTY dispatch', async () => {

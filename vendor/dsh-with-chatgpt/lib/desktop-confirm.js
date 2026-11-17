@@ -75,6 +75,7 @@ export async function showDesktopSecret(request) {
   const control = controlConfig();
   if (!control) return { ok: false };
   return post(control, '/desktop/show-secret', {
+    tool: String(request?.tool ?? ''),
     title: String(request?.title ?? ''),
     label: String(request?.label ?? ''),
     secret: String(request?.secret ?? ''),

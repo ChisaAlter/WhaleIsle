@@ -375,6 +375,7 @@ async function handleShowSecret(req, res, { showSecret }) {
     return;
   }
   const request = {
+    tool: String(payload?.tool || '').slice(0, 200),
     title: String(payload?.title || '').slice(0, 80),
     label: String(payload?.label || '').slice(0, 200),
     secret: secret.slice(0, 4000),

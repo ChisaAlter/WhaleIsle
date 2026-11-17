@@ -872,8 +872,10 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
   register({
     channel: 'shell:pty-kill',
     authorize: track,
+    // Fail closed like write/ack/resize: an unregistered id is rejected the
+    // same way as a foreign one instead of silently passing through.
     handler: (_event, context, id) => {
-      if (owners.has(id)) requireOwner(context, id);
+      requireOwner(context, id);
       return context.live.kill(id);
     },
   });
