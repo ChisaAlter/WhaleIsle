@@ -28,9 +28,9 @@ Feature card：[../../features/desktop-live2d-pet.md](../../features/desktop-liv
 | 隐藏 | 状态卡「隐藏」或托盘「桌面宠物」checkbox；`live2dPet.enabled=false` 持久化 |
 | 多屏 | 拖拽越过屏幕边缘时 overlay 整体跳到光标所在显示器，拖拽不中断；跳屏去抖——光标须连续两次 relocate 轮询都在目标屏上才跳（快速甩出擦边不跳屏），轮询间隔 >400ms 视为新拖拽会话、计数清零 |
 
-当前只有一张正式身份母版和 THA4 实时变形。代码登记了 24 个动作标签和 12 个表情映射，但标签含别名和未触发程序，不能视为 24 套完成的动画；其中进食和甩出仍缺可辨的手部/全身新姿态。自主害羞仅在亲密度足够时出现，低落仅在心情较低时出现。ImageGen 关键姿态的桌面尺寸审查全部未通过，留在 `docs/qa/whale-animation-review/candidates/`，正式渲染未读取。`review-live/choreography/` 中抬饭碗和空中张眼是已回退的失败试验，不能当成正式功能或验收通过的美术。审查证据见同目录 `review-screen.png` 和 `review-live/contact.png`。
+当前只有一张正式身份母版和 THA4 实时变形。代码登记了 24 个动作标签和 12 个表情映射，但标签含别名和未触发程序，不能视为 24 套完成的动画；其中进食和甩出仍缺可辨的手部/全身新姿态。自主害羞仅在亲密度足够时出现，低落仅在心情较低时出现。ImageGen 关键姿态的桌面尺寸审查全部未通过，正式渲染未读取。`review-live/choreography/` 中抬饭碗和空中张眼是已回退的失败试验，不能当成正式功能或验收通过的美术。原 `docs/qa/whale-animation-review/` 目录已随截图清理移出仓库，候选与审查证据（`review-screen.png`、`review-live/contact.png`）留在提交 `6503942ca0`。
 
-审查目录的 `review-live/full-motion/` 是全部 36 段透明动态 WebP 的可播放导出（按动作取样 12–30 fps），仅供对照；正式桌宠仍实时推理，拖拽和甩动轨迹实时读取指针物理。导出逐帧检查无空帧及裁切，不能代替真正全身新姿态的美术验收。
+`review-live/full-motion/` 的全部 36 段透明动态 WebP 可播放导出（按动作取样 12–30 fps，同在提交 `6503942ca0`）仅供对照；正式桌宠仍实时推理，拖拽和甩动轨迹实时读取指针物理。导出逐帧检查无空帧及裁切，不能代替真正全身新姿态的美术验收。
 
 ## 架构总览
 

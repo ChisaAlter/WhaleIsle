@@ -10,4 +10,4 @@
 
 ## 正文历史段落
 
-本次附加检查未全绿：Oxlint 类型感知检查对 `ui-message-edit` 的 `ctx.sessions` 报 `error typed`，独立 TypeScript 检查通过；`verify-type-equiv` 的阻断为未改动的 `docs/subsystems/llm-streaming.md` 中 `GenerateOptions.purpose` 与源码不一致。本次未运行全量覆盖率和 CI 安装包实机验收，未生成新安装包。
+本次附加检查未全绿：Oxlint 类型感知检查对 `ui-message-edit` 的 `ctx.sessions` 报 `error typed`，独立 TypeScript 检查通过；`verify-type-equiv` 的阻断为未改动的 `vendor/deepseek-harness/docs/subsystems/llm-streaming.md` 中 `GenerateOptions.purpose` 与源码不一致。本次未运行全量覆盖率和 CI 安装包实机验收，未生成新安装包。

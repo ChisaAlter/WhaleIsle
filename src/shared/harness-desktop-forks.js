@@ -203,7 +203,7 @@ const FORK_FILE_MARKERS = [
   // Composer family width linkage: the drag-resized input card publishes
   // --dsh-composer-resized-width on the seat AND the conversation column (so
   // the transcript sees it); the session stats line, the chat flow column,
-  // and the dock cards (queue / todo / goal) consume it so they follow.
+  // and the dock cards (queue / todos / goal) consume it so they follow.
   // rc.1 renamed the stats row to StatsPills (stat-dialog pair); the follow
   // contract moved with it.
   { file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css', includes: ['dsh-composer-resized-width'] },

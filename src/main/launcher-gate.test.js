@@ -591,7 +591,7 @@ test('quitting abandons the drain before any ask', async () => {
 });
 
 test('a background second instance does not raise the owner, while ordinary launches still do', () => {
-  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, 'app-events.js'), 'utf8');
   const start = source.indexOf("app.on('second-instance'");
   const end = source.indexOf('// The pet overlay', start);
   let listener;
@@ -607,37 +607,35 @@ test('a background second instance does not raise the owner, while ordinary laun
 });
 
 test('background startup ignores initial app activation without changing later user activation', () => {
-  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, 'app-events.js'), 'utf8');
   const start = source.indexOf("app.on('activate'");
-  const end = source.indexOf("app.on('before-quit'", start);
+  const end = source.indexOf('\n}', start);
   let listener, raised = 0;
   const context = vm.createContext({
-    backgroundStartup: true,
+    state: { backgroundStartup: true },
     app: { on(_event, fn) { listener = fn; } },
     showForeground() { raised++; },
   });
   vm.runInContext(source.slice(start, end), context);
   listener();
   assert.equal(raised, 0);
-  context.backgroundStartup = false;
+  context.state.backgroundStartup = false;
   listener();
   assert.equal(raised, 1);
 });
 
 test('background startup passes inactive presentation only to the initial gate and resets after success or failure', async () => {
-  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
-  const start = source.indexOf('    const startupOptions =');
-  const end = source.indexOf("    if (qaEnv('DSH_SMOKE'))", start);
+  const source = fs.readFileSync(path.join(__dirname, 'app-ready.js'), 'utf8');
+  const start = source.indexOf('const startupOptions =');
+  const end = source.indexOf('\n}', start);
   for (const direct of [false, true]) {
     for (const fail of [false, true]) {
       const calls = [];
       let updateChecks = 0;
       const context = vm.createContext({
-        backgroundStartup: true,
+        state: { backgroundStartup: true, updateCenter: null },
         process: { argv: direct ? ['--dshd-from-launcher', '--background'] : ['--background'] },
         harness: {},
-        // Slim launcher package: no update center, the legacy check seeds status.
-        updateCenter: null,
         checkUpdate() {
           updateChecks++;
           return Promise.resolve({ status: 'none' });
@@ -656,7 +654,7 @@ test('background startup passes inactive presentation only to the initial gate a
       else await result;
       assert.deepEqual(calls, [[direct ? 'start' : 'gate', false]]);
       assert.equal(updateChecks, direct && !fail ? 1 : 0, 'a direct startup seeds update status after its promise resolves');
-      assert.equal(context.backgroundStartup, false, 'later explicit entry points retain normal activation');
+      assert.equal(context.state.backgroundStartup, false, 'later explicit entry points retain normal activation');
     }
   }
 });

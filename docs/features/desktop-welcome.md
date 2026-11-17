@@ -27,7 +27,7 @@
 
 - `src/main/index.js`, `src/main/welcome-entry.test.js`, and the boot-lifecycle handbook: entry wiring and account watching only, as requested by the user.
 
-- `src/renderer/welcome.html`, `welcome-layout.css`, `welcome/`, `assets/welcome-brand.svg`, `assets/window-material.css`.
+- `src/renderer/welcome.html`, `welcome-layout.css`, `welcome/`, `src/renderer/assets/welcome-brand.svg`, `src/renderer/assets/window-material.css`.
 - `src/main/welcome-window.js`, `src/main/welcome*.test.js`, `src/preload/welcome.js`, `src/preload/welcome.test.js`, `src/main/smoke/client-ready.js` and its tests.
 - `src/main/smoke/welcome-presentation.js`, `src/renderer/welcome-renderer.test.js`, `src/renderer/welcome-renderer.child.cjs`.
 - This card, design language, build-release handbook and release QA evidence.

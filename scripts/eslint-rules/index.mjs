@@ -356,6 +356,54 @@ const noRequestBodyAccumulate = {
   },
 };
 
+// Marker governance (#459): a comment annotating a stopgap must carry the
+// tracking issue on the same line so the note cannot outlive review. Marker
+// words are `HACK`/`FIXME`/`TODO`/`XXX`/`workaround`（大小写不限）plus
+// `临时`/`暂时`. Backtick- and double-quoted spans are stripped before the
+// scan — a quoted "暂时" UI string or a `todo` role token is a reference,
+// not a marker (single quotes stay, they double as apostrophes).
+const QUOTED_SPAN = /`[^`\r\n]*`|"[^"\r\n]*"/gu;
+const TEMP_MARKER = /\b(?:hack|fixme|todo|xxx|workaround)\b|临时|暂时/iu;
+const ISSUE_REF = /#\d+(?!\w)|https?:\/\/\S+?\/issues\/\d+/u;
+
+const tempMarkerIssue = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'require an issue reference on the same line as temporary-marker comments',
+    },
+    schema: [],
+    messages: {
+      missingIssueRef:
+        '带 {{marker}} 标记的注释必须在同一行注明议题编号（#123 或议题 URL），让临时措施可追踪；'
+        + '若非临时措施请改写措辞去掉标记词。来源：issue #459 P6-2。',
+    },
+  },
+  create(context) {
+    return {
+      Program() {
+        for (const comment of context.sourceCode.getAllComments()) {
+          const lines = comment.value.split('\n');
+          for (const [index, raw] of lines.entries()) {
+            const marker = raw.replace(QUOTED_SPAN, '').match(TEMP_MARKER);
+            if (marker === null || ISSUE_REF.test(raw)) continue;
+            const line = comment.loc.start.line + index;
+            const column = index === 0 ? comment.loc.start.column : 0;
+            context.report({
+              loc: {
+                start: { line, column },
+                end: { line, column: column + raw.length },
+              },
+              messageId: 'missingIssueRef',
+              data: { marker: marker[0] },
+            });
+          }
+        }
+      },
+    };
+  },
+};
+
 export default {
   rules: {
     'ipc-handler-reads-event': ipcHandlerReadsEvent,
@@ -365,5 +413,6 @@ export default {
     'no-raw-html': noRawHtml,
     'no-secret-compare': noSecretCompare,
     'no-request-body-accumulate': noRequestBodyAccumulate,
+    'temp-marker-issue': tempMarkerIssue,
   },
 };

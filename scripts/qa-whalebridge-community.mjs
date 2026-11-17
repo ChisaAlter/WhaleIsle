@@ -24,7 +24,7 @@ const executable = process.env.ELECTRON_PATH;
 assert.ok(executable && existsSync(executable), 'ELECTRON_PATH must name the existing Electron executable');
 mkdirSync(output, { recursive: true });
 mkdirSync(join(root, '.tmp'), { recursive: true });
-// QA 验收工作目录按设计保留供复核；位于仓库 .tmp/ 而非系统临时目录
+// QA 验收工作目录按设计保留供复核；位于仓库 .tmp/ 而非操作系统 tmp 目录
 const dir = createUniqueDir(join(root, '.tmp'), 'whalebridge-community-qa-');
 const data = join(dir, 'component');
 const home = join(dir, 'isolated-home');

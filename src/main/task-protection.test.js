@@ -289,18 +289,28 @@ test('failed terminal commit preserves services and cleanup hooks until a succes
 function productionQuit(overrides = {}) {
   const fs = require('node:fs');
   const vm = require('node:vm');
-  const source = fs.readFileSync(require('node:path').join(__dirname, 'index.js'), 'utf8');
-  const start = source.indexOf("  app.on('before-quit'");
-  const end = source.indexOf("  app.on('window-all-closed'", start);
+  const dir = require('node:path').join(__dirname);
+  const lifecycleSource = fs.readFileSync(`${dir}/app-lifecycle.js`, 'utf8');
+  const windowsSource = fs.readFileSync(`${dir}/app-windows.js`, 'utf8');
+  const indexSource = fs.readFileSync(`${dir}/index.js`, 'utf8');
+  const start = lifecycleSource.indexOf("app.on('before-quit'");
+  const end = lifecycleSource.indexOf("app.on('window-all-closed'", start);
   assert.ok(start >= 0 && end > start);
-  const requestStart = source.indexOf('function quitApp()');
-  const requestEnd = source.indexOf('function ignoreFailure(', requestStart);
+  const requestStart = indexSource.indexOf('function quitApp()');
+  const requestEnd = indexSource.indexOf('function ignoreFailure(', requestStart);
   const appEvents = new (require('node:events').EventEmitter)();
-  const closeStart = source.indexOf('function bindMainClose(');
-  const closeEnd = source.indexOf('async function openLauncher(', closeStart);
+  const closeStart = windowsSource.indexOf('function bindMainClose(');
+  const closeEnd = windowsSource.indexOf('async function openLauncher(', closeStart);
   assert.ok(closeStart >= 0 && closeEnd > closeStart);
+  const { state: stateOverrides, ...deps } = overrides;
   const context = {
-    quitting: true, stoppingForQuit: false, closingOverlayActive: false, quitInProgress: false, nativeQuitReady: false,
+    state: {
+      quitting: true, stoppingForQuit: false, closingOverlayActive: false,
+      quitInProgress: false, nativeQuitReady: false, launcherWindowHandle: null,
+      ...stateOverrides,
+    },
+    console,
+    drainParkedUpdateCheck: { drain: () => {} },
     dsh: { log: () => {} },
     stopDesktopInstallControl: () => {}, taskControlPeer: { stop: async () => {} },
     cleanupDesktopResources: async () => {},
@@ -315,12 +325,12 @@ function productionQuit(overrides = {}) {
     mainCloseBound: new WeakSet(), launcherCloseBound: new WeakSet(),
     hideOnClose: require('./close-behavior').hideOnClose,
     setTimeout, clearTimeout,
-    ...overrides,
+    ...deps,
   };
   context.app.on = appEvents.on.bind(appEvents);
   context.app.once = appEvents.once.bind(appEvents);
-  const functions = vm.runInNewContext(source.slice(start, end) + '\n' + source.slice(requestStart, requestEnd)
-    + '\n' + source.slice(closeStart, closeEnd)
+  const functions = vm.runInNewContext(lifecycleSource.slice(start, end) + '\n' + indexSource.slice(requestStart, requestEnd)
+    + '\n' + windowsSource.slice(closeStart, closeEnd)
     + '; ({ quit: finalizeQuit, request: quitApp, bindMainClose, bindLauncherClose })', context);
   return { ...functions, beforeQuit: event => appEvents.emit('before-quit', event), appEvents, context };
 }
@@ -385,7 +395,7 @@ function nativeQuitLifecycle({ blocked = '', pendingShutdown = false } = {}) {
     },
   };
   fixture = productionQuit({
-    quitting: false,
+    state: { quitting: false },
     taskProtection: protection,
     getMainWindow: () => windows[0],
     harness: { shutdown: () => {
@@ -416,7 +426,7 @@ test('one tray click closes main and launcher after cleanup; repeated clicks do 
   fixture.finishShutdown();
   await new Promise(setImmediate);
   assert.deepEqual(fixture.events, ['app.quit', 'app.quit', 'quit']);
-  assert.equal(fixture.context.quitInProgress, true, 'one explicit attempt stays latched through native exit');
+  assert.equal(fixture.context.state.quitInProgress, true, 'one explicit attempt stays latched through native exit');
   assert.equal(fixture.clock.timers.size, 0, 'actual quit clears the final deadline');
 });
 
@@ -426,8 +436,8 @@ test('a vetoed or unresponsive final native close exits automatically without an
     fixture.clickQuit();
     await new Promise(setImmediate);
     assert.equal(fixture.shutdowns, 1, blocked);
-    assert.equal(fixture.context.quitInProgress, true, blocked);
-    assert.equal(fixture.context.nativeQuitReady, true, blocked);
+    assert.equal(fixture.context.state.quitInProgress, true, blocked);
+    assert.equal(fixture.context.state.nativeQuitReady, true, blocked);
     assert.equal(fixture.clock.timers.size, 1, blocked);
     const deadline = fixture.clock.timers.get(5000);
     assert.equal(typeof deadline, 'function', blocked);
@@ -463,8 +473,8 @@ test('failed Host admission automatically cleans supervised services and exits w
     assert.deepEqual(events, ['shutdown', 'cleanup', 'pet-dispose', 'control-stop', 'peer-stop', 'services-stop', 'exit'], code);
     assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire']);
     assert.ok(diagnostics[0].includes('resolveAgent'));
-    assert.equal(context.quitting, true);
-    assert.equal(context.quitInProgress, false);
+    assert.equal(context.state.quitting, true);
+    assert.equal(context.state.quitInProgress, false);
   }
 });
 
@@ -486,7 +496,7 @@ test('repeated tray quits share one automatic cleanup without duplicate shutdown
   assert.equal(prevented, true);
   await quit();
   assert.equal(shutdowns, 1);
-  assert.equal(context.quitting, true);
+  assert.equal(context.state.quitting, true);
   finishShutdown();
   await first;
   assert.equal(exits, 1);
