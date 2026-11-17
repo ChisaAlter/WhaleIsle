@@ -7,7 +7,7 @@ const userData = path.join(directory, 'profile');
 fs.mkdirSync(userData, { recursive: true });
 app.setPath('userData', userData);
 app.disableHardwareAcceleration();
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const { delay, waitForDom } = require('./fixture-wait.cjs');
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1100, height: 220, show: false, webPreferences: { offscreen: true, backgroundThrottling: false, contextIsolation: true, nodeIntegration: false } });
@@ -51,7 +51,15 @@ app.whenReady().then(async () => {
       const before = await read();
       const imBefore = await readImReferences();
       await js("feedbackBench.render('busy')");
-      await delay(60);
+      // The scrolling-label display and its CSS animation are applied by a
+      // post-render effect pass; poll until all four scrolling buttons show
+      // both instead of guessing a fixed wait.
+      await waitForDom(js, `['short','english','im','compact'].every(id => {
+        const button = document.getElementById(id);
+        const track = button && button.querySelector('[class*="feedbackLabel"]');
+        return button && button.getAttribute('data-feedback-display') === 'scrolling-label'
+          && track && track.getAnimations().length > 0;
+      })`);
       const busy = await read();
       const imBusy = await readImReferences();
       const edges = await js(`['short','english','im','compact'].map(id => {
@@ -77,11 +85,15 @@ app.whenReady().then(async () => {
         continuity = await js(continuityProbe);
       }
       await motion('reduce');
-      await delay(20);
+      // Media emulation reaches the renderer asynchronously; the computed
+      // animation dropping to 'none' proves the reduced-motion pass applied.
+      await waitForDom(js, `getComputedStyle(document.querySelector('#english [class*="feedbackLabel"]')).animationName === 'none'`);
       const reduced = (await read()).english;
       await motion('no-preference');
       await js("feedbackBench.render('result')");
-      await delay(450);
+      // The result label settles into scrolling-label through the same
+      // post-render effect pass as the busy state; poll for it.
+      await waitForDom(js, `document.getElementById('english')?.getAttribute('data-feedback-display') === 'scrolling-label'`);
       const result = await read();
       await js("feedbackBench.render('idle')");
       const restored = await read();
