@@ -1,3 +1,4 @@
+import { h } from './ui/dom.js';
 import { callUnary, respond } from './host/rpc.js';
 import { applyHostFrame, hostFrameNeedsCatalogRefresh, hostLabel } from './host/frames.js';
 import { textBlock, imageBlock, promptPayload, ALLOWED_IMAGE_TYPES } from './host/prompt.js';
@@ -710,7 +711,9 @@ function renderSavedComputers() {
     const tile = document.createElement('span');
     tile.className = 'saved-tile';
     tile.setAttribute('aria-hidden', 'true');
-    tile.append(svgNode('<svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="3.5" width="15" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M7 16.5h6M10 13.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'));
+    tile.append(h('svg', { width: '16', height: '16', viewBox: '0 0 20 20', fill: 'none' },
+      h('rect', { x: '2.5', y: '3.5', width: '15', height: '10', rx: '1.5', stroke: 'currentColor', 'stroke-width': '1.4' }),
+      h('path', { d: 'M7 16.5h6M10 13.5v3', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round' })));
     const main = document.createElement('span');
     main.className = 'saved-main';
     const name = document.createElement('b');
@@ -725,7 +728,8 @@ function renderSavedComputers() {
     ].filter(Boolean).join(' · ');
     open.setAttribute('aria-label', `${entry.computerName} · ${desc.textContent}`);
     main.append(name, desc);
-    open.append(tile, main, svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="chev"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'));
+    open.append(tile, main, h('svg', { width: '14', height: '14', viewBox: '0 0 16 16', fill: 'none', class: 'chev' },
+      h('path', { d: 'm6 3.5 4.5 4.5L6 12.5', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })));
     buttonBusy(open, connectBusy && connectingServerId === entry.serverId, { label: '连接中…' });
     open.addEventListener('click', () => { void connectSaved(entry.serverId); });
     const forget = document.createElement('button');
@@ -1080,13 +1084,14 @@ function sessionRowNode(row, { subagentCount = 0 } = {}) {
   return wrap;
 }
 
-const FOLDER_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1a1 1 0 0 1 .7.3l1 1a1 1 0 0 0 .7.3h3.5A1.5 1.5 0 0 1 14 6.1v5.4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-const CHEVRON_ICON_SVG = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function folderIcon() {
+  return h('svg', { width: '16', height: '16', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+    h('path', { d: 'M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1a1 1 0 0 1 .7.3l1 1a1 1 0 0 0 .7.3h3.5A1.5 1.5 0 0 1 14 6.1v5.4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }));
+}
 
-function svgNode(markup) {
-  const template = document.createElement('template');
-  template.innerHTML = markup;
-  return template.content.firstElementChild;
+function chevronIcon() {
+  return h('svg', { width: '12', height: '12', viewBox: '0 0 12 12', fill: 'none', 'aria-hidden': 'true' },
+    h('path', { d: 'M4.5 2.5 8 6l-3.5 3.5', stroke: 'currentColor', 'stroke-width': '1.3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
 }
 
 function workspaceHeadNode(workspace, { count = 0 } = {}) {
@@ -1102,9 +1107,9 @@ function workspaceHeadNode(workspace, { count = 0 } = {}) {
   expand.setAttribute('aria-label', `${expanded ? '折叠' : '展开'}工作区 ${workspace.title || workspace.path || ''}`.trim());
   const lead = document.createElement('span');
   lead.className = 'workspace-lead';
-  const chevron = svgNode(CHEVRON_ICON_SVG);
+  const chevron = chevronIcon();
   chevron.classList.add('workspace-chevron');
-  const folder = svgNode(FOLDER_ICON_SVG);
+  const folder = folderIcon();
   folder.classList.add('workspace-folder');
   lead.append(chevron, folder);
   const text = document.createElement('span');
@@ -2054,24 +2059,52 @@ function renderMarkdownInto(node, text, options = {}) {
 
 // —— 流程行（对应桌面 ui-tool ToolRow / ui-chat ReasoningRow / TurnProcessNodeView） —— //
 
-const FLOW_ICONS = {
-  think: '<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.75a4.25 4.25 0 0 1 2.4 7.76c-.4.28-.65.7-.65 1.17V11H6.25v-.32c0-.47-.25-.9-.65-1.17A4.25 4.25 0 0 1 8 1.75Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6.5 13h3M7 14.5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
-  search: '<svg viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.25" stroke="currentColor" stroke-width="1.2"/><path d="m10.2 10.2 3.3 3.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
-  read: '<svg viewBox="0 0 16 16" fill="none"><path d="M4 1.75h5.2L13 5.55V13.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9 1.75V5.5h4M5.5 8.5h5M5.5 11h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
-  bash: '<svg viewBox="0 0 16 16" fill="none"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="m4.5 6 2 2-2 2M8 10h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  write: '<svg viewBox="0 0 16 16" fill="none"><path d="M4 1.75h5.2L13 5.55V13.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 7v5M5.5 9.5h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
-  edit: '<svg viewBox="0 0 16 16" fill="none"><path d="m10.6 2.4 3 3-7.7 7.7-3.6.6.6-3.6 7.7-7.7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="m9.2 3.8 3 3" stroke="currentColor" stroke-width="1.2"/></svg>',
-  code: '<svg viewBox="0 0 16 16" fill="none"><path d="m5 4.5-3.5 3.5L5 11.5M11 4.5l3.5 3.5-3.5 3.5M9.3 2.5 6.7 13.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  others: '<svg viewBox="0 0 16 16" fill="none"><path d="M9.3 2.2a3.4 3.4 0 0 0 4.2 4.3l-6.9 6.9a1.6 1.6 0 1 1-2.3-2.3l6.9-6.9Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
-  subagent: '<svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 13.5a4.5 4.5 0 0 1 9 0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
-  chevron: '<svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+const FLOW_ICON_CHILDREN = {
+  think: [
+    h('path', { d: 'M8 1.75a4.25 4.25 0 0 1 2.4 7.76c-.4.28-.65.7-.65 1.17V11H6.25v-.32c0-.47-.25-.9-.65-1.17A4.25 4.25 0 0 1 8 1.75Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }),
+    h('path', { d: 'M6.5 13h3M7 14.5h2', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' }),
+  ],
+  search: [
+    h('circle', { cx: '7', cy: '7', r: '4.25', stroke: 'currentColor', 'stroke-width': '1.2' }),
+    h('path', { d: 'm10.2 10.2 3.3 3.3', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' }),
+  ],
+  read: [
+    h('path', { d: 'M4 1.75h5.2L13 5.55V13.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }),
+    h('path', { d: 'M9 1.75V5.5h4M5.5 8.5h5M5.5 11h5', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' }),
+  ],
+  bash: [
+    h('rect', { x: '1.75', y: '2.75', width: '12.5', height: '10.5', rx: '1.5', stroke: 'currentColor', 'stroke-width': '1.2' }),
+    h('path', { d: 'm4.5 6 2 2-2 2M8 10h3.5', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+  ],
+  write: [
+    h('path', { d: 'M4 1.75h5.2L13 5.55V13.25a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }),
+    h('path', { d: 'M8 7v5M5.5 9.5h5', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' }),
+  ],
+  edit: [
+    h('path', { d: 'm10.6 2.4 3 3-7.7 7.7-3.6.6.6-3.6 7.7-7.7Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }),
+    h('path', { d: 'm9.2 3.8 3 3', stroke: 'currentColor', 'stroke-width': '1.2' }),
+  ],
+  code: [
+    h('path', { d: 'm5 4.5-3.5 3.5L5 11.5M11 4.5l3.5 3.5-3.5 3.5M9.3 2.5 6.7 13.5', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+  ],
+  others: [
+    h('path', { d: 'M9.3 2.2a3.4 3.4 0 0 0 4.2 4.3l-6.9 6.9a1.6 1.6 0 1 1-2.3-2.3l6.9-6.9Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }),
+  ],
+  subagent: [
+    h('circle', { cx: '8', cy: '5', r: '2.5', stroke: 'currentColor', 'stroke-width': '1.2' }),
+    h('path', { d: 'M3.5 13.5a4.5 4.5 0 0 1 9 0', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' }),
+  ],
+  chevron: [
+    h('path', { d: 'm4 6 4 4 4-4', stroke: 'currentColor', 'stroke-width': '1.3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+  ],
 };
 
 /** Which rows / disclosures the user has opened, keyed by row id. */
 const flowOpen = new Set();
 
 function flowIcon(kind) {
-  const node = svgNode(FLOW_ICONS[kind] || FLOW_ICONS.others);
+  const node = h('svg', { viewBox: '0 0 16 16', fill: 'none' },
+    ...(FLOW_ICON_CHILDREN[kind] || FLOW_ICON_CHILDREN.others).map((child) => child.cloneNode(true)));
   node.setAttribute('width', '14');
   node.setAttribute('height', '14');
   node.setAttribute('aria-hidden', 'true');
@@ -2450,7 +2483,9 @@ function messageActionsNode(text) {
   copy.className = 'msg-action';
   copy.setAttribute('aria-label', '复制回复');
   copy.title = '复制回复';
-  copy.append(svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 3.5v-.25A1.25 1.25 0 0 0 9.25 2h-5A1.25 1.25 0 0 0 3 3.25v5A1.25 1.25 0 0 0 4.25 9.5h.25" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'));
+  copy.append(h('svg', { width: '14', height: '14', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+    h('rect', { x: '5.5', y: '5.5', width: '8', height: '8', rx: '1.5', stroke: 'currentColor', 'stroke-width': '1.2' }),
+    h('path', { d: 'M10.5 3.5v-.25A1.25 1.25 0 0 0 9.25 2h-5A1.25 1.25 0 0 0 3 3.25v5A1.25 1.25 0 0 0 4.25 9.5h.25', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' })));
   copy.addEventListener('click', () => { void copyText(text, { done: '回复已复制' }); });
   actions.append(copy);
   return actions;
@@ -5482,25 +5517,27 @@ function switchNode(on, onToggle) {
   return button;
 }
 
-const SETTINGS_ROW_ICONS = {
-  '阅读与输入': '<path d="M4 14.5 3 17l3.2-1.1A7 7 0 1 0 4 14.5Z"/>',
-  '会话用量': '<path d="M4 16.5V11M8.5 16.5V7M13 16.5V9.5M17 16.5V4"/>',
-  '权限': '<path d="M10 2.5 4 5v4.5c0 3.6 2.6 6.6 6 8 3.4-1.4 6-4.4 6-8V5l-6-2.5Z"/>',
-  '模型': '<path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M4.7 4.7l2.8 2.8M12.5 12.5l2.8 2.8M15.3 4.7l-2.8 2.8M7.5 12.5l-2.8 2.8"/>',
-  '文件': '<path d="M5 2.5h6.5L15 6v11.5H5v-15Z"/><path d="M11 2.5V6.5h4"/>',
-  '外观': '<path d="M16 12.5A6.5 6.5 0 0 1 7.5 4a6.5 6.5 0 1 0 8.5 8.5Z"/>',
-  '电脑外观': '<rect x="2.5" y="3.5" width="15" height="10" rx="1.5"/><path d="M7 16.5h6M10 13.5v3"/>',
-  '界面设置': '<path d="M4 6.5h12M4 13.5h12"/><circle cx="8" cy="6.5" r="2"/><circle cx="13" cy="13.5" r="2"/>',
-  'MCP': '<path d="M7 3v4M13 3v4M5 7h10v3a5 5 0 0 1-10 0V7ZM10 15v2.5"/>',
-  '技能': '<path d="M4 3.5h9.5A2.5 2.5 0 0 1 16 6v10.5H6.5A2.5 2.5 0 0 1 4 14V3.5Z"/><path d="M4 14a2.5 2.5 0 0 1 2.5-2.5H16"/>',
-  '插件': '<path d="M8 3.5v3M8 13.5v3M3.5 8h3M13.5 8h3"/><path d="M5.5 5.5h9v9h-9z"/>',
-  '市场': '<path d="M4 7h12l-1 9.5H5L4 7Z"/><path d="M7.5 9.5a2.5 2.5 0 0 0 5 0"/>',
-  '关于': '<circle cx="10" cy="10" r="7"/><path d="M10 9v4.5M10 6.5v.01"/>',
+const SETTINGS_ROW_ICON_CHILDREN = {
+  '阅读与输入': [h('path', { d: 'M4 14.5 3 17l3.2-1.1A7 7 0 1 0 4 14.5Z' })],
+  '会话用量': [h('path', { d: 'M4 16.5V11M8.5 16.5V7M13 16.5V9.5M17 16.5V4' })],
+  '权限': [h('path', { d: 'M10 2.5 4 5v4.5c0 3.6 2.6 6.6 6 8 3.4-1.4 6-4.4 6-8V5l-6-2.5Z' })],
+  '模型': [h('path', { d: 'M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M4.7 4.7l2.8 2.8M12.5 12.5l2.8 2.8M15.3 4.7l-2.8 2.8M7.5 12.5l-2.8 2.8' })],
+  '文件': [h('path', { d: 'M5 2.5h6.5L15 6v11.5H5v-15Z' }), h('path', { d: 'M11 2.5V6.5h4' })],
+  '外观': [h('path', { d: 'M16 12.5A6.5 6.5 0 0 1 7.5 4a6.5 6.5 0 1 0 8.5 8.5Z' })],
+  '电脑外观': [h('rect', { x: '2.5', y: '3.5', width: '15', height: '10', rx: '1.5' }), h('path', { d: 'M7 16.5h6M10 13.5v3' })],
+  '界面设置': [h('path', { d: 'M4 6.5h12M4 13.5h12' }), h('circle', { cx: '8', cy: '6.5', r: '2' }), h('circle', { cx: '13', cy: '13.5', r: '2' })],
+  'MCP': [h('path', { d: 'M7 3v4M13 3v4M5 7h10v3a5 5 0 0 1-10 0V7ZM10 15v2.5' })],
+  '技能': [h('path', { d: 'M4 3.5h9.5A2.5 2.5 0 0 1 16 6v10.5H6.5A2.5 2.5 0 0 1 4 14V3.5Z' }), h('path', { d: 'M4 14a2.5 2.5 0 0 1 2.5-2.5H16' })],
+  '插件': [h('path', { d: 'M8 3.5v3M8 13.5v3M3.5 8h3M13.5 8h3' }), h('path', { d: 'M5.5 5.5h9v9h-9z' })],
+  '市场': [h('path', { d: 'M4 7h12l-1 9.5H5L4 7Z' }), h('path', { d: 'M7.5 9.5a2.5 2.5 0 0 0 5 0' })],
+  '关于': [h('circle', { cx: '10', cy: '10', r: '7' }), h('path', { d: 'M10 9v4.5M10 6.5v.01' })],
 };
 
 function settingsRowIcon(pane) {
-  const path = SETTINGS_ROW_ICONS[pane] || SETTINGS_ROW_ICONS['关于'];
-  return `<svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${path}</g></svg>`;
+  const children = SETTINGS_ROW_ICON_CHILDREN[pane] || SETTINGS_ROW_ICON_CHILDREN['关于'];
+  return h('svg', { width: '18', height: '18', viewBox: '0 0 20 20', fill: 'none', 'aria-hidden': 'true' },
+    h('g', { stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+      ...children.map((child) => child.cloneNode(true))));
 }
 
 function openSettingsRow(pane) {
@@ -5581,7 +5618,7 @@ function renderSettingsHub() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'link-row';
-      button.append(svgNode(settingsRowIcon(item.pane)));
+      button.append(settingsRowIcon(item.pane));
       const main = document.createElement('span');
       main.className = 'link-main';
       const title = document.createElement('span');
@@ -5607,7 +5644,8 @@ function renderSettingsHub() {
   const dangerRow = document.createElement('button');
   dangerRow.type = 'button';
   dangerRow.className = 'link-row danger';
-  dangerRow.append(svgNode('<svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8 3.5H4.5v13H8M12 6.5 15.5 10 12 13.5M15.5 10H7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'));
+  dangerRow.append(h('svg', { width: '18', height: '18', viewBox: '0 0 20 20', fill: 'none', 'aria-hidden': 'true' },
+    h('path', { d: 'M8 3.5H4.5v13H8M12 6.5 15.5 10 12 13.5M15.5 10H7.5', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })));
   const dangerMain = document.createElement('span');
   dangerMain.className = 'link-main';
   const dangerTitle = document.createElement('span');
@@ -5720,7 +5758,11 @@ function gitCapsuleNode() {
   return capsule;
 }
 
-const FILE_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 1.75h5.2L13 5.55v7.7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9 1.75V5.5h4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+function fileIcon() {
+  return h('svg', { width: '16', height: '16', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+    h('path', { d: 'M4 1.75h5.2L13 5.55v7.7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.75a1 1 0 0 1 1-1Z', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }),
+    h('path', { d: 'M9 1.75V5.5h4', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' }));
+}
 
 function mentionButton(path) {
   const button = document.createElement('button');
@@ -5742,7 +5784,7 @@ function fileEntryRow(entry, { onOpen }) {
   button.type = 'button';
   button.className = 'file-open';
   button.disabled = entry.kind === 'other';
-  const icon = svgNode(entry.kind === 'directory' ? FOLDER_ICON_SVG : FILE_ICON_SVG);
+  const icon = entry.kind === 'directory' ? folderIcon() : fileIcon();
   icon.classList.add('file-icon');
   const main = document.createElement('span');
   main.className = 'file-main';
@@ -6255,7 +6297,7 @@ function renderSkillsPane(pane) {
         row.modelInvocable ? '模型可调用' : '模型调用关闭',
         row.userInvocable ? '用户可调用' : '用户调用关闭',
       ].filter(Boolean).join(' · '), 'ext-meta'));
-      button.append(main, svgNode(DRILL_CHEVRON));
+      button.append(main, drillChevron());
       button.addEventListener('click', () => { void loadSkillDetail(row.name); });
       return button;
     },
@@ -7142,11 +7184,21 @@ function renderModePickerSheet() {
 }
 
 const DRILL_ICONS = {
-  effort: '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M10 6v4l2.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
-  mode: '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 4 5v4.5c0 3.6 2.6 6.6 6 8 3.4-1.4 6-4.4 6-8V5l-6-2.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
-  more: '<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="15.5" cy="10" r="1.5"/></svg>',
+  effort: () => h('svg', { width: '16', height: '16', viewBox: '0 0 20 20', fill: 'none', 'aria-hidden': 'true' },
+    h('circle', { cx: '10', cy: '10', r: '7', stroke: 'currentColor', 'stroke-width': '1.4' }),
+    h('path', { d: 'M10 6v4l2.5 2', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round' })),
+  mode: () => h('svg', { width: '16', height: '16', viewBox: '0 0 20 20', fill: 'none', 'aria-hidden': 'true' },
+    h('path', { d: 'M10 2.5 4 5v4.5c0 3.6 2.6 6.6 6 8 3.4-1.4 6-4.4 6-8V5l-6-2.5Z', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linejoin': 'round' })),
+  more: () => h('svg', { width: '16', height: '16', viewBox: '0 0 20 20', fill: 'currentColor', 'aria-hidden': 'true' },
+    h('circle', { cx: '4.5', cy: '10', r: '1.5' }),
+    h('circle', { cx: '10', cy: '10', r: '1.5' }),
+    h('circle', { cx: '15.5', cy: '10', r: '1.5' })),
 };
-const DRILL_CHEVRON = '<svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function drillChevron() {
+  return h('svg', { class: 'chev', width: '16', height: '16', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+    h('path', { d: 'm6 3.5 4.5 4.5L6 12.5', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+}
 
 function drillRow({ icon, title, value, page = '', accent = false, enabled = true, onClick }) {
   const button = document.createElement('button');
@@ -7156,7 +7208,7 @@ function drillRow({ icon, title, value, page = '', accent = false, enabled = tru
   button.disabled = !enabled;
   const round = document.createElement('span');
   round.className = 'drill-icon';
-  round.append(svgNode(icon));
+  round.append(icon());
   const main = document.createElement('span');
   main.className = 'drill-main';
   const t = document.createElement('span');
@@ -7169,7 +7221,7 @@ function drillRow({ icon, title, value, page = '', accent = false, enabled = tru
     v.textContent = value;
     main.append(v);
   }
-  button.append(round, main, svgNode(DRILL_CHEVRON));
+  button.append(round, main, drillChevron());
   if (enabled) button.addEventListener('click', onClick);
   return button;
 }
@@ -7422,7 +7474,8 @@ function renderSheet() {
       main.className = 'sheet-item-main';
       const ref = document.createElement('span');
       ref.className = 'git-sheet-ref';
-      ref.append(svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 3a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm0 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6-7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM5 6v4m6-4c0 2-1.5 3-3.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>'));
+      ref.append(h('svg', { width: '14', height: '14', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+        h('path', { d: 'M5 3a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm0 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6-7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM5 6v4m6-4c0 2-1.5 3-3.5 3', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' })));
       const refName = document.createElement('b');
       refName.textContent = status.refName ?? '—';
       ref.append(refName);
@@ -7943,11 +7996,17 @@ function renderToast() {
     mark.className = `mark ${bad ? 'bad' : state.toastTone === 'success' ? 'ok' : ''}`;
     mark.setAttribute('aria-hidden', 'true');
     // The standalone SPA uses the same SVG artwork as the shared Toast.
-    mark.append(svgNode(bad
-      ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 14.5C11.5899 14.5 14.5 11.5899 14.5 8C14.5 4.41015 11.5899 1.5 8 1.5C4.41015 1.5 1.5 4.41015 1.5 8C1.5 11.5899 4.41015 14.5 8 14.5Z" stroke="currentColor"/><path d="M8 4.29199V9.79199M8 10.708V11.708" stroke="currentColor"/></svg>'
+    mark.append(bad
+      ? h('svg', { width: '16', height: '16', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+        h('path', { d: 'M8 14.5C11.5899 14.5 14.5 11.5899 14.5 8C14.5 4.41015 11.5899 1.5 8 1.5C4.41015 1.5 1.5 4.41015 1.5 8C1.5 11.5899 4.41015 14.5 8 14.5Z', stroke: 'currentColor' }),
+        h('path', { d: 'M8 4.29199V9.79199M8 10.708V11.708', stroke: 'currentColor' }))
       : state.toastTone === 'success'
-        ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M12.5303 6.53027L8.80273 10.2578C8.54967 10.5109 8.31796 10.7439 8.10645 10.9141C7.88375 11.0932 7.616 11.2602 7.27344 11.3145C7.09229 11.3431 6.90771 11.3431 6.72656 11.3145C6.384 11.2602 6.11625 11.0932 5.89355 10.9141C5.68204 10.7439 5.45033 10.5109 5.19727 10.2578L3.46973 8.53027L4.53027 7.46973L6.25781 9.19727C6.53457 9.47402 6.70036 9.63859 6.83398 9.74609C6.95637 9.84453 6.98241 9.83644 6.96094 9.83301C6.98679 9.83709 7.01321 9.83709 7.03906 9.83301C7.01759 9.83644 7.04363 9.84453 7.16602 9.74609C7.29964 9.63859 7.46543 9.47402 7.74219 9.19727L11.4697 5.46973L12.5303 6.53027Z" fill="currentColor"/><path d="M14.5996 8C14.5996 4.35492 11.6451 1.40039 8 1.40039C4.35492 1.40039 1.40039 4.35492 1.40039 8C1.40039 11.6451 4.35492 14.5996 8 14.5996C11.6451 14.5996 14.5996 11.6451 14.5996 8ZM15.9004 8C15.9004 12.363 12.363 15.9004 8 15.9004C3.63695 15.9004 0.0996094 12.363 0.0996094 8C0.0996094 3.63695 3.63695 0.0996094 8 0.0996094C12.363 0.0996094 15.9004 3.63695 15.9004 8Z" fill="currentColor"/></svg>'
-        : '<svg width="16" height="16" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M12.5757 7.00012C12.5757 3.92085 10.0794 1.42463 7.00012 1.42456C3.9208 1.42456 1.42456 3.9208 1.42456 7.00012C1.42463 10.0794 3.92085 12.5757 7.00012 12.5757C10.0793 12.5756 12.5756 10.0793 12.5757 7.00012ZM13.8002 7.00012C13.8001 10.7559 10.7559 13.8001 7.00012 13.8002C3.2443 13.8002 0.199291 10.7559 0.199219 7.00012C0.199219 3.24426 3.24426 0.199219 7.00012 0.199219C10.7559 0.199291 13.8002 3.2443 13.8002 7.00012Z" fill="currentColor"/><path d="M7.6127 3.18921V4.55986H6.38735V3.18921H7.6127ZM7.6127 5.68921V10.8109H6.38735V5.68921H7.6127Z" fill="currentColor"/></svg>'));
+        ? h('svg', { width: '16', height: '16', viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true' },
+          h('path', { d: 'M12.5303 6.53027L8.80273 10.2578C8.54967 10.5109 8.31796 10.7439 8.10645 10.9141C7.88375 11.0932 7.616 11.2602 7.27344 11.3145C7.09229 11.3431 6.90771 11.3431 6.72656 11.3145C6.384 11.2602 6.11625 11.0932 5.89355 10.9141C5.68204 10.7439 5.45033 10.5109 5.19727 10.2578L3.46973 8.53027L4.53027 7.46973L6.25781 9.19727C6.53457 9.47402 6.70036 9.63859 6.83398 9.74609C6.95637 9.84453 6.98241 9.83644 6.96094 9.83301C6.98679 9.83709 7.01321 9.83709 7.03906 9.83301C7.01759 9.83644 7.04363 9.84453 7.16602 9.74609C7.29964 9.63859 7.46543 9.47402 7.74219 9.19727L11.4697 5.46973L12.5303 6.53027Z', fill: 'currentColor' }),
+          h('path', { d: 'M14.5996 8C14.5996 4.35492 11.6451 1.40039 8 1.40039C4.35492 1.40039 1.40039 4.35492 1.40039 8C1.40039 11.6451 4.35492 14.5996 8 14.5996C11.6451 14.5996 14.5996 11.6451 14.5996 8ZM15.9004 8C15.9004 12.363 12.363 15.9004 8 15.9004C3.63695 15.9004 0.0996094 12.363 0.0996094 8C0.0996094 3.63695 3.63695 0.0996094 8 0.0996094C12.363 0.0996094 15.9004 3.63695 15.9004 8Z', fill: 'currentColor' }))
+        : h('svg', { width: '16', height: '16', viewBox: '0 0 14 14', fill: 'none', 'aria-hidden': 'true' },
+          h('path', { d: 'M12.5757 7.00012C12.5757 3.92085 10.0794 1.42463 7.00012 1.42456C3.9208 1.42456 1.42456 3.9208 1.42456 7.00012C1.42463 10.0794 3.92085 12.5757 7.00012 12.5757C10.0793 12.5756 12.5756 10.0793 12.5757 7.00012ZM13.8002 7.00012C13.8001 10.7559 10.7559 13.8001 7.00012 13.8002C3.2443 13.8002 0.199291 10.7559 0.199219 7.00012C0.199219 3.24426 3.24426 0.199219 7.00012 0.199219C10.7559 0.199291 13.8002 3.2443 13.8002 7.00012Z', fill: 'currentColor' }),
+          h('path', { d: 'M7.6127 3.18921V4.55986H6.38735V3.18921H7.6127ZM7.6127 5.68921V10.8109H6.38735V5.68921H7.6127Z', fill: 'currentColor' })));
     toast.append(mark);
   }
   const main = document.createElement('span');

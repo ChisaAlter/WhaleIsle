@@ -1,5 +1,9 @@
 'use strict';
 
+const { h, mount } = (typeof module !== 'undefined' && module.exports)
+  ? require('../shared/dom')
+  : window.whaleDom;
+
 function $(id) {
   return document.getElementById(id);
 }
@@ -252,7 +256,7 @@ function bindTablist(tablist, { orientation = 'horizontal', activate } = {}) {
 }
 
 function badge(text, warn) {
-  return `<span class="badge${warn ? ' warn' : ''}">${text}</span>`;
+  return h('span', { class: `badge${warn ? ' warn' : ''}` }, text);
 }
 
 function uninstallErrorHint(result) {
@@ -333,23 +337,27 @@ function releaseActionButtons(row, rowDelta) {
   // The update center picks the cheapest transfer itself; no per-row choice.
   const delta = updateCenterApi() ? null : rowDelta;
   if (delta && label) {
-    parts.push(`<button type="button" class="primary small" data-delta-tag="${escapeHtml(row.tag || '')}">增量更新</button>`);
+    parts.push(h('button', { type: 'button', class: 'primary small', dataset: { deltaTag: row.tag || '' } }, '增量更新'));
   }
   if (label) {
     const kind = row.newer ? 'update' : 'switch';
-    parts.push(`<button type="button" class="${delta ? 'ghost' : 'primary'} small" data-install-tag="${escapeHtml(row.tag || '')}" data-install-kind="${kind}">${label}</button>`);
+    parts.push(h('button', {
+      type: 'button',
+      class: `${delta ? 'ghost' : 'primary'} small`,
+      dataset: { installTag: row.tag || '', installKind: kind },
+    }, label));
   } else if (!row.current) {
     const reason = row.installable ? '不可用' : '无安装包';
-    parts.push(`<button type="button" class="ghost small" disabled>${reason}</button>`);
+    parts.push(h('button', { type: 'button', class: 'ghost small', disabled: true }, reason));
   }
-  return parts.join('');
+  return parts;
 }
 
 const { plainReleaseNotes } = typeof module !== 'undefined' && module.exports
   ? require('../shared/release-notes')
   : window.releaseNotes;
 
-function releaseDetailHtml(row, delta, running) {
+function releaseDetailNode(row, delta, running) {
   const meta = [];
   if (row.publishedAt) {
     meta.push(`发布于 ${String(row.publishedAt).slice(0, 10)}`);
@@ -364,11 +372,12 @@ function releaseDetailHtml(row, delta, running) {
   }
   const notes = plainReleaseNotes(row.notes);
   const actions = releaseActionButtons(row, delta);
-  return `<div class="rel-detail" hidden>
-    <div class="rel-detail-meta row-meta">${escapeHtml(meta.join(' · '))}</div>
-    <p class="rel-notes">${notes ? escapeHtml(notes) : '该版本未提供更新说明。'}</p>
-    ${actions ? `<div class="rel-detail-actions">${actions}</div>` : (row.current ? `<div class="row-meta">当前${running ? '正在运行' : '已安装'}此版本</div>` : '')}
-  </div>`;
+  return h('div', { class: 'rel-detail', hidden: true },
+    h('div', { class: 'rel-detail-meta row-meta' }, meta.join(' · ')),
+    h('p', { class: 'rel-notes' }, notes || '该版本未提供更新说明。'),
+    actions.length
+      ? h('div', { class: 'rel-detail-actions' }, ...actions)
+      : (row.current ? h('div', { class: 'row-meta' }, `当前${running ? '正在运行' : '已安装'}此版本`) : null));
 }
 
 function renderReleases(payload) {
@@ -394,7 +403,7 @@ function renderReleases(payload) {
     badgeEl.className = 'badge blue';
     badgeEl.hidden = false;
     if (cta) {
-      cta.innerHTML = releaseActionButtons(updateRow, delta);
+      mount(cta, ...releaseActionButtons(updateRow, delta));
       bindVersionActions(cta);
     }
   } else {
@@ -404,23 +413,23 @@ function renderReleases(payload) {
     badgeEl.className = 'badge green';
     badgeEl.hidden = !known;
     if (cta) {
-      cta.innerHTML = '';
+      mount(cta);
     }
   }
   if (!rows.length) {
-    list.innerHTML = `<li><span class="row-meta">${escapeHtml(payload?.message || '暂无可列出的正式版。')}</span></li>`;
+    mount(list, h('li', {}, h('span', { class: 'row-meta' }, payload?.message || '暂无可列出的正式版。')));
     return;
   }
   const latestIdx = rows.findIndex((row) => row && !row.prerelease);
-  list.innerHTML = rows.map((row, index) => {
+  mount(list, ...rows.map((row, index) => {
     const delta = row && row.newer ? (row.delta || deltaFor(row.tag)) : null;
     const marks = [
-      index === latestIdx ? '<span class="badge green">最新</span>' : '',
-      row.current ? badge('当前') : '',
-      row.prerelease ? badge('预发布') : '',
-      delta ? `<span class="badge blue">增量${escapeHtml(formatBytes(delta.size) ? ` ${formatBytes(delta.size)}` : '')}</span>` : '',
-      row.installable ? '' : badge('无安装包', true),
-    ].join('');
+      index === latestIdx ? h('span', { class: 'badge green' }, '最新') : null,
+      row.current ? badge('当前') : null,
+      row.prerelease ? badge('预发布') : null,
+      delta ? h('span', { class: 'badge blue' }, `增量${formatBytes(delta.size) ? ` ${formatBytes(delta.size)}` : ''}`) : null,
+      row.installable ? null : badge('无安装包', true),
+    ];
     const metaBits = [];
     if (row.publishedAt) {
       metaBits.push(String(row.publishedAt).slice(0, 10));
@@ -428,18 +437,16 @@ function renderReleases(payload) {
     if (row.assetSize) {
       metaBits.push(formatBytes(row.assetSize));
     }
-    return `<li class="rel-row">
-      <button type="button" class="rel-line" data-rel-toggle aria-expanded="false">
-        <span class="row-main">
-          <span class="row-title">${escapeHtml(row.tag || row.version || '')} ${marks}</span>
-          <span class="row-meta">${escapeHtml(metaBits.join(' · '))}</span>
-        </span>
-        ${row.current ? `<span class="row-meta">${payload?.current ? '运行中' : '已安装'}</span>` : ''}
-        <svg class="rel-chev" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 10.6 3.7 6.3l1.1-1.1L8 8.4l3.2-3.2 1.1 1.1z"/></svg>
-      </button>
-      ${releaseDetailHtml(row, delta, Boolean(payload?.current))}
-    </li>`;
-  }).join('');
+    return h('li', { class: 'rel-row' },
+      h('button', { type: 'button', class: 'rel-line', dataset: { relToggle: '' }, 'aria-expanded': 'false' },
+        h('span', { class: 'row-main' },
+          h('span', { class: 'row-title' }, `${row.tag || row.version || ''} `, ...marks),
+          h('span', { class: 'row-meta' }, metaBits.join(' · '))),
+        row.current ? h('span', { class: 'row-meta' }, payload?.current ? '运行中' : '已安装') : null,
+        h('svg', { class: 'rel-chev', viewBox: '0 0 16 16', 'aria-hidden': 'true' },
+          h('path', { fill: 'currentColor', d: 'M8 10.6 3.7 6.3l1.1-1.1L8 8.4l3.2-3.2 1.1 1.1z' }))),
+      releaseDetailNode(row, delta, Boolean(payload?.current)));
+  }));
   list.querySelectorAll('[data-rel-toggle]').forEach((line) => {
     line.addEventListener('click', () => {
       const item = line.closest('li');
@@ -527,54 +534,51 @@ function renderPluginBoard(forensics, options = {}) {
     }
   }
   if (!forensics) {
-    list.innerHTML = '<li><span class="row-meta">尚未扫描，点击「重新扫描」生成排查结果。</span></li>';
+    mount(list, h('li', {}, h('span', { class: 'row-meta' }, '尚未扫描，点击「重新扫描」生成排查结果。')));
     return;
   }
   const allowRemove = options.allowRemove === true;
   const rows = pluginBoardRows(forensics, options.sortSuspectsFirst === true);
   if (!rows.length) {
-    list.innerHTML = '<li><span class="row-meta">未检测到插件，当前插件环境为空。</span></li>';
+    mount(list, h('li', {}, h('span', { class: 'row-meta' }, '未检测到插件，当前插件环境为空。')));
     return;
   }
-  list.innerHTML = rows.map((row) => {
+  mount(list, ...rows.map((row) => {
     const marks = [
-      row.inBox ? badge('内置组件', true) : (row.orphan ? badge('未在 profile 登记', true) : ''),
-      row.officialTemplate ? badge('官方模板') : '',
-      row.preset ? badge('桌面预置') : '',
-      row.disabled ? badge('已禁用') : '',
-      row.suspect ? badge('可疑冲突', true) : '',
-    ].join('');
-    let actions = '';
+      row.inBox ? badge('内置组件', true) : (row.orphan ? badge('未在 profile 登记', true) : null),
+      row.officialTemplate ? badge('官方模板') : null,
+      row.preset ? badge('桌面预置') : null,
+      row.disabled ? badge('已禁用') : null,
+      row.suspect ? badge('可疑冲突', true) : null,
+    ];
+    const actions = [];
     if (row.inBox) {
-      actions = '<span class="row-meta">桌面内置组件损坏；禁用或跳过均无效，需重装桌面端。</span>';
+      actions.push(h('span', { class: 'row-meta' }, '桌面内置组件损坏；禁用或跳过均无效，需重装桌面端。'));
     } else if (row.orphan) {
-      actions = '<span class="row-meta">日志中出现但未写入 profile，无法在此禁用。</span>';
+      actions.push(h('span', { class: 'row-meta' }, '日志中出现但未写入 profile，无法在此禁用。'));
     } else if (row.officialTemplate) {
-      actions = '<span class="row-meta" title="官方模板插件不可禁用。">不可禁用</span>';
+      actions.push(h('span', { class: 'row-meta', title: '官方模板插件不可禁用。' }, '不可禁用'));
     } else if (row.disabled) {
-      actions = `<button type="button" class="ghost small" data-enable="${escapeHtml(row.name)}">启用</button>`;
+      actions.push(h('button', { type: 'button', class: 'ghost small', dataset: { enable: row.name } }, '启用'));
     } else {
-      actions = `<button type="button" class="ghost small" data-disable="${escapeHtml(row.name)}">禁用</button>`;
+      actions.push(h('button', { type: 'button', class: 'ghost small', dataset: { disable: row.name } }, '禁用'));
     }
     if (allowRemove && !row.preset && !row.orphan) {
       // Slim packages ship no vendored plugin toolchain, so removal is
       // intentionally routed to the installed desktop app.
-      actions += lastStatus?.launcherPackage === true
-        ? '<span class="row-meta" title="轻量启动器不含插件工具链">需在桌面端内移除</span>'
-        : `<button type="button" class="danger small" data-remove="${escapeHtml(row.name)}">移除</button>`;
+      actions.push(lastStatus?.launcherPackage === true
+        ? h('span', { class: 'row-meta', title: '轻量启动器不含插件工具链' }, '需在桌面端内移除')
+        : h('button', { type: 'button', class: 'danger small', dataset: { remove: row.name } }, '移除'));
     }
     const evidence = evidenceLines(forensics, row.name)
-      .map((line) => `<div class="row-meta evidence">${escapeHtml(line)}</div>`)
-      .join('');
-    return `<li>
-      <div class="row-main">
-        <div class="row-title">${escapeHtml(row.name)} ${marks}</div>
-        <div class="row-meta">${escapeHtml(row.spec || '')}</div>
-        ${evidence}
-      </div>
-      <div class="row-actions">${actions}</div>
-    </li>`;
-  }).join('');
+      .map((line) => h('div', { class: 'row-meta evidence' }, line));
+    return h('li', {},
+      h('div', { class: 'row-main' },
+        h('div', { class: 'row-title' }, `${row.name} `, ...marks),
+        h('div', { class: 'row-meta' }, row.spec || ''),
+        ...evidence),
+      h('div', { class: 'row-actions' }, ...actions));
+  }));
   list.querySelectorAll('[data-disable]').forEach((button) => {
     button.addEventListener('click', () => actPlugin('disablePlugin', button.dataset.disable, button));
   });
@@ -800,7 +804,7 @@ function renderRouteControls(status) {
     componentRoute.querySelector('.cur-line').textContent = selected?.label || selected?.id || '';
     componentRoute.hidden = !selected;
   }
-  // Remember which route had focus so an innerHTML re-render (triggered by a
+  // Remember which route had focus so a re-render (triggered by a
   // status refresh) can restore focus to the same logical option by id.
   const focusedPickerRoute = document.activeElement?.dataset?.routePick;
   const focusedSegRoute = document.activeElement?.dataset?.route;
@@ -842,21 +846,25 @@ function renderRouteControls(status) {
   }
   const picker = $('route-picker');
   if (picker) {
-    picker.innerHTML = routes.map((route) => `
-      <button type="button" role="radio"
-        class="line-card${route.id === current ? ' is-sel' : ''}${route.verified ? '' : ' is-disabled'}"
-        data-route-pick="${escapeHtml(route.id)}"
-        aria-checked="${route.id === current ? 'true' : 'false'}"
-        tabindex="${route.id === current ? '0' : '-1'}"
-        ${route.verified ? '' : 'disabled'}>
-        <span class="lc-title"><span class="lc-radio" aria-hidden="true"></span>${escapeHtml(route.label)}${route.verified ? '' : ' <span class="badge warn">未启用</span>'}</span>
-        <span class="lc-desc">${escapeHtml(route.detail || '')}</span>
-      </button>`).join('');
+    mount(picker, ...routes.map((route) => h('button', {
+      type: 'button',
+      role: 'radio',
+      class: `line-card${route.id === current ? ' is-sel' : ''}${route.verified ? '' : ' is-disabled'}`,
+      dataset: { routePick: route.id },
+      'aria-checked': route.id === current ? 'true' : 'false',
+      tabindex: route.id === current ? '0' : '-1',
+      disabled: route.verified ? undefined : true,
+    },
+      h('span', { class: 'lc-title' },
+        h('span', { class: 'lc-radio', 'aria-hidden': 'true' }),
+        route.label,
+        route.verified ? null : [' ', h('span', { class: 'badge warn' }, '未启用')]),
+      h('span', { class: 'lc-desc' }, route.detail || ''))));
     picker.querySelectorAll('[data-route-pick]').forEach((button) => {
       button.addEventListener('click', () => pickRoute(button.dataset.routePick, current));
     });
     // Bind the container handler exactly once: re-rendering only replaces
-    // innerHTML, so a handler re-added each render would stack and replay a
+    // the children, so a handler re-added each render would stack and replay a
     // single keypress many times.
     if (!picker.dataset.navBound) {
       picker.dataset.navBound = '1';
@@ -882,12 +890,16 @@ function renderRouteControls(status) {
   const seg = $('route-seg');
   const segNote = $('route-seg-note');
   if (seg) {
-    seg.innerHTML = routes.map((route) => `
-      <button type="button" role="radio" class="seg${route.id === current ? ' is-active' : ''}"
-        data-route="${escapeHtml(route.id)}" ${route.verified ? '' : 'disabled'}
-        aria-checked="${route.id === current ? 'true' : 'false'}"
-        tabindex="${route.id === current ? '0' : '-1'}"
-        title="${escapeHtml(route.detail || '')}${route.verified ? '' : '（待验证）'}">${escapeHtml(route.label)}</button>`).join('');
+    mount(seg, ...routes.map((route) => h('button', {
+      type: 'button',
+      role: 'radio',
+      class: `seg${route.id === current ? ' is-active' : ''}`,
+      dataset: { route: route.id },
+      disabled: route.verified ? undefined : true,
+      'aria-checked': route.id === current ? 'true' : 'false',
+      tabindex: route.id === current ? '0' : '-1',
+      title: `${route.detail || ''}${route.verified ? '' : '（待验证）'}`,
+    }, route.label)));
     if (segNote) {
       const disabled = routes.filter((route) => !route.verified);
       segNote.hidden = disabled.length === 0;
@@ -1023,10 +1035,10 @@ function paintProgress(prefix, payload) {
   if (host) {
     host.hidden = unsettled;
     const now = phaseRank(phase);
-    host.innerHTML = PHASE_STEPS.map((step, index) => {
+    mount(host, ...PHASE_STEPS.map((step, index) => {
       const cls = index < now ? ' done' : (index === now ? ' now' : '');
-      return `<span class="phase${cls}"><i class="phase-dot"></i>${PHASE_LABELS[step]}</span>`;
-    }).join('');
+      return h('span', { class: `phase${cls}` }, h('i', { class: 'phase-dot' }), PHASE_LABELS[step]);
+    }));
   }
 }
 
@@ -1486,12 +1498,13 @@ function mountComponents() {
     } catch (error) {
       // Fall through to the empty state; a broken components lane must not
       // take the launcher down.
-      host.innerHTML = '';
+      mount(host);
     }
   }
-  host.innerHTML = `<header class="page-head"><h2>组件</h2></header>
-    <p class="lede lede-block">组件列表由组件模块提供。</p>
-    <div class="card"><p class="row-meta">组件模块尚未加载，暂无可用内容。</p></div>`;
+  mount(host,
+    h('header', { class: 'page-head' }, h('h2', {}, '组件')),
+    h('p', { class: 'lede lede-block' }, '组件列表由组件模块提供。'),
+    h('div', { class: 'card' }, h('p', { class: 'row-meta' }, '组件模块尚未加载，暂无可用内容。')));
 }
 
 function activateTab(name) {
@@ -1549,14 +1562,6 @@ async function checkUpdateNow() {
 
 let importSourceHome;
 const extraSkillDirs = [];
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function skillSourceLabel(source) {
   if (source === 'home') {
@@ -1822,7 +1827,7 @@ function renderSessionList(rows, options = {}) {
   const foldState = options.foldState;
   const host = $('import-sessions');
   if (!rows.length) {
-    host.innerHTML = '<li><span class="row-meta">没有可列出的项。</span></li>';
+    mount(host, h('li', {}, h('span', { class: 'row-meta' }, '没有可列出的项。')));
     return;
   }
   const groups = new Map();
@@ -1833,7 +1838,7 @@ function renderSessionList(rows, options = {}) {
     }
     groups.get(key).push(row);
   }
-  const html = [];
+  const nodes = [];
   const groupEntries = [...groups.entries()].sort((left, right) => {
     const rank = (items) => {
       let score = 0;
@@ -1857,59 +1862,76 @@ function renderSessionList(rows, options = {}) {
       ? foldState.get(key)
       : items.length < IMPORT_COLLAPSE_AT;
     const label = sessionGroupLabel(key, items);
-    html.push(`<li class="import-cluster">
-      <div class="import-cluster-head">
-        <button type="button" class="import-fold${expanded ? '' : ' is-collapsed'}" data-import-fold="${escapeHtml(key)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="折叠或展开分组">
-          <svg class="import-fold-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.2 3.2 10.8 8 6.2 12.8 5.2 11.8 8.8 8 5.2 4.2z"/></svg>
-        </button>
-        <label class="check-row">
-          <input type="checkbox" data-import-cluster="${escapeHtml(key)}" ${enabled.length ? 'checked' : 'disabled'} />
-          <span class="row-main">
-            <span class="row-title">${escapeHtml(label)}</span>
-            <span class="row-meta">${items.length} 项</span>
-          </span>
-        </label>
-      </div>
-    </li>`);
+    nodes.push(h('li', { class: 'import-cluster' },
+      h('div', { class: 'import-cluster-head' },
+        h('button', {
+          type: 'button',
+          class: `import-fold${expanded ? '' : ' is-collapsed'}`,
+          dataset: { importFold: key },
+          'aria-expanded': expanded ? 'true' : 'false',
+          'aria-label': '折叠或展开分组',
+        },
+          h('svg', { class: 'import-fold-icon', viewBox: '0 0 16 16', 'aria-hidden': 'true' },
+            h('path', { fill: 'currentColor', d: 'M6.2 3.2 10.8 8 6.2 12.8 5.2 11.8 8.8 8 5.2 4.2z' }))),
+        h('label', { class: 'check-row' },
+          h('input', {
+            type: 'checkbox',
+            dataset: { importCluster: key },
+            checked: enabled.length ? true : undefined,
+            disabled: enabled.length ? undefined : true,
+          }),
+          h('span', { class: 'row-main' },
+            h('span', { class: 'row-title' }, label),
+            h('span', { class: 'row-meta' }, `${items.length} 项`))))));
     for (const row of items) {
       const disabled = Boolean(row.unsupported);
       const checked = !disabled && shouldCheckImportItem(selections, 'session-rel', row.rel, true);
-      html.push(`<li class="import-item" data-import-group-item="${escapeHtml(key)}"${expanded ? '' : ' hidden'}>
-        <label class="check-row">
-          <input type="checkbox" name="session-rel" value="${escapeHtml(row.rel)}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''} />
-          <span class="row-main">
-            <span class="row-title">${escapeHtml(sessionRowTitle(row))}${disabled ? badge('不兼容', true) : (row.conflict ? badge('已存在') : '')}</span>
-            <span class="row-meta">${escapeHtml(sessionRowMeta(row))}</span>
-          </span>
-        </label>
-      </li>`);
+      nodes.push(h('li', { class: 'import-item', dataset: { importGroupItem: key }, hidden: expanded ? undefined : true },
+        h('label', { class: 'check-row' },
+          h('input', {
+            type: 'checkbox',
+            name: 'session-rel',
+            value: row.rel,
+            disabled: disabled || undefined,
+            checked: checked || undefined,
+          }),
+          h('span', { class: 'row-main' },
+            h('span', { class: 'row-title' }, sessionRowTitle(row), disabled ? badge('不兼容', true) : (row.conflict ? badge('已存在') : null)),
+            h('span', { class: 'row-meta' }, sessionRowMeta(row))))));
     }
   }
-  host.innerHTML = html.join('');
+  mount(host, ...nodes);
 }
 
 function renderCheckList(targetId, rows, options) {
   const host = $(targetId);
   const selections = options.selections;
   if (!rows.length) {
-    host.innerHTML = '<li><span class="row-meta">没有可列出的项。</span></li>';
+    mount(host, h('li', {}, h('span', { class: 'row-meta' }, '没有可列出的项。')));
     return;
   }
-  host.innerHTML = rows.map((row) => {
+  mount(host, ...rows.map((row) => {
     const disabled = options.disabled(row);
     const defaultChecked = !disabled;
     const checked = shouldCheckImportItem(selections, options.name, options.value(row), defaultChecked);
-    const marks = typeof options.marks === 'function' ? options.marks(row) : '';
-    return `<li>
-      <label class="check-row">
-        <input type="checkbox" name="${options.name}" value="${escapeHtml(options.value(row))}" ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''} />
-        <span class="row-main">
-          <span class="row-title">${escapeHtml(options.title(row))}${disabled ? badge(options.skipLabel(row), true) : ''}${marks}${!disabled && row.conflict ? badge('已存在') : ''}</span>
-          <span class="row-meta">${escapeHtml(options.meta(row))}</span>
-        </span>
-      </label>
-    </li>`;
-  }).join('');
+    const marks = typeof options.marks === 'function' ? options.marks(row) : null;
+    return h('li', {},
+      h('label', { class: 'check-row' },
+        h('input', {
+          type: 'checkbox',
+          name: options.name,
+          value: options.value(row),
+          disabled: disabled || undefined,
+          checked: checked || undefined,
+        }),
+        h('span', { class: 'row-main' },
+          h('span', { class: 'row-title' },
+            options.title(row),
+            disabled ? badge(options.skipLabel(row), true) : null,
+            marks,
+            !disabled && row.conflict ? badge('已存在') : null),
+          h('span', { class: 'row-meta' }, options.meta(row)))));
+  }));
 }
 
 function scanOptions() {
@@ -2059,7 +2081,7 @@ async function refreshImport(options = {}) {
       skipLabel: () => '',
       marks: (row) => (Array.isArray(row.sourceCollision) && row.sourceCollision.length > 1
         ? badge('同名冲突', true)
-        : ''),
+        : null),
       selections: savedSelections,
     });
     const slimPackage = lastStatus?.launcherPackage === true;
@@ -2071,7 +2093,7 @@ async function refreshImport(options = {}) {
         : (slimPackage ? '轻量启动器不含插件工具链' : (row.spec || ''))),
       disabled: (row) => Boolean(row.skipped) || slimPackage,
       skipLabel: (row) => (slimPackage && !row.skipped ? '需在桌面端内重装' : pluginSkipLabel(row.reason)),
-      marks: (row) => (!row.skipped && row.alreadyInstalled ? badge('已安装') : ''),
+      marks: (row) => (!row.skipped && row.alreadyInstalled ? badge('已安装') : null),
       selections: savedSelections,
     });
     renderCheckList('import-mcp', mcp, {
@@ -2190,18 +2212,21 @@ function renderRouteOptions(pop, routes, routeId, onPick) {
   const selectedId = routes.find(route => route.verified && route.id === routeId)?.id
     || routes.find(route => route.verified)?.id;
   const focusId = routes.some(route => route.verified && route.id === focusedId) ? focusedId : selectedId;
-  pop.innerHTML = routes.map((route) => `
-    <button type="button" role="option" class="route-opt"
-      data-route-opt="${escapeHtml(route.id)}"
-      aria-selected="${route.id === routeId ? 'true' : 'false'}"
-      tabindex="${route.id === focusId ? '0' : '-1'}"
-      ${route.verified ? '' : 'disabled'}>
-      <span class="route-opt-check" aria-hidden="true">${route.id === routeId ? '✓' : ''}</span>
-      <span class="route-opt-body">
-        <span class="route-opt-title">${escapeHtml(route.label || route.id)}${route.verified ? '' : ' <span class="badge warn">未启用</span>'}</span>
-        <span class="route-opt-desc">${escapeHtml(route.detail || '')}${route.verified ? '' : '（待验证，暂不可用）'}</span>
-      </span>
-    </button>`).join('');
+  mount(pop, ...routes.map((route) => h('button', {
+    type: 'button',
+    role: 'option',
+    class: 'route-opt',
+    dataset: { routeOpt: route.id },
+    'aria-selected': route.id === routeId ? 'true' : 'false',
+    tabindex: route.id === focusId ? '0' : '-1',
+    disabled: route.verified ? undefined : true,
+  },
+    h('span', { class: 'route-opt-check', 'aria-hidden': 'true' }, route.id === routeId ? '✓' : ''),
+    h('span', { class: 'route-opt-body' },
+      h('span', { class: 'route-opt-title' },
+        route.label || route.id,
+        route.verified ? null : [' ', h('span', { class: 'badge warn' }, '未启用')]),
+      h('span', { class: 'route-opt-desc' }, `${route.detail || ''}${route.verified ? '' : '（待验证，暂不可用）'}`)))));
   pop.querySelectorAll('[data-route-opt]').forEach((button) => {
     button.addEventListener('click', () => { void onPick(button.dataset.routeOpt); });
   });

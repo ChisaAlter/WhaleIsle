@@ -2,6 +2,10 @@
 
 // Shell surfaces use the same floating feedback contract as ui-primitives Toast.
 (function () {
+  const { h, mount } = (typeof module !== 'undefined' && module.exports)
+    ? require('../shared/dom')
+    : window.whaleDom;
+
   let stack;
   let placementFrame = 0;
 
@@ -86,7 +90,8 @@
     button.type = 'button';
     button.className = 'shell-feedback-close';
     button.setAttribute('aria-label', label);
-    button.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    mount(button, h('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': 'true' },
+      h('path', { d: 'm4 4 8 8M12 4l-8 8', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round' })));
     button.addEventListener('click', close);
     return button;
   }
@@ -102,7 +107,9 @@
     if (tone === 'success') {
       const icon = document.createElement('span');
       icon.className = 'shell-feedback-success';
-      icon.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m5 8 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      mount(icon, h('svg', { viewBox: '0 0 16 16', width: '16', height: '16', 'aria-hidden': 'true' },
+        h('circle', { cx: '8', cy: '8', r: '6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5' }),
+        h('path', { d: 'm5 8 2 2 4-4', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })));
       node.append(icon);
     }
     const text = document.createElement('span');

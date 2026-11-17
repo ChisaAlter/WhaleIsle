@@ -105,13 +105,16 @@ function createPetProtocolHandler(rendererFile) {
       const url = new URL(request.url);
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
       const sharedTokens = rel === 'dsh-webui-tokens.css';
+      const sharedDom = rel === 'dom.js';
       const projectHead = rel === 'pet-head.png';
       const file = sharedTokens
         ? path.resolve(root, '../shared/dsh-webui-tokens.css')
-        : projectHead
-          ? path.resolve(root, '../../assets/whale-head.png')
-          : path.normalize(path.join(root, rel));
-      if ((!sharedTokens && !projectHead && !file.startsWith(root + path.sep))
+        : sharedDom
+          ? path.resolve(root, '../shared/dom.js')
+          : projectHead
+            ? path.resolve(root, '../../assets/whale-head.png')
+            : path.normalize(path.join(root, rel));
+      if ((!sharedTokens && !sharedDom && !projectHead && !file.startsWith(root + path.sep))
         || !fs.statSync(file).isFile()) {
         return new Response('not found', { status: 404 });
       }

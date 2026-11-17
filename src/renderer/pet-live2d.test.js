@@ -260,6 +260,7 @@ function loadPet() {
       addEventListener: () => {},
       matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
       shell: {},
+      whaleDom: require('../shared/dom'),
     },
     performance: { now: () => now },
     Image: class {},

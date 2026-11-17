@@ -148,7 +148,7 @@ test('launcher versions panel: current version on top, expandable release rows, 
   assert.match(html, /id="btn-uninstall-app"/);
   assert.match(js, /renderVersionLead/);
   assert.match(js, /data-rel-toggle/);
-  assert.match(js, /releaseDetailHtml/);
+  assert.match(js, /releaseDetailNode/);
   assert.match(js, /setRoutePop/);
   assert.match(js, /closeRoutePops/);
   assert.match(js, /renderRouteOptions/);

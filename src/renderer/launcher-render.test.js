@@ -3,27 +3,80 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-// Minimal DOM for renderReleases: the function writes innerHTML on the list
-// element, stamps text on the installed card, then binds listeners through
-// querySelectorAll (empty here — wiring is exercised by the real page).
-function fakeDocument() {
-  const els = new Map();
-  const el = () => ({
-    innerHTML: '',
-    textContent: '',
+// Minimal DOM for renderReleases: the function mounts real nodes on the
+// list element (replaceChildren), stamps text on the installed card, then
+// binds listeners through querySelectorAll (empty here — wiring is
+// exercised by the real page). innerHTML is serialized back from the node
+// tree so assertions keep comparing the same markup contract.
+function fakeText(text) {
+  return { nodeType: 3, textContent: String(text), children: [] };
+}
+
+function serialize(node) {
+  if (node.nodeType === 3) {
+    return node.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  const open = Object.entries(node.attrs).map(([name, value]) => ` ${name}="${value}"`).join('');
+  return `<${node.tagName.toLowerCase()}${open}>${node.children.map(serialize).join('')}</${node.tagName.toLowerCase()}>`;
+}
+
+function textOf(node) {
+  return node.children.map((child) => (child.nodeType === 3 ? child.textContent : textOf(child))).join('');
+}
+
+function fakeElement(tag, namespaceURI = null) {
+  const el = {
+    nodeType: 1,
+    tagName: String(tag).toUpperCase(),
+    namespaceURI,
+    children: [],
+    attrs: {},
+    dataset: {},
     hidden: false,
     title: '',
     className: '',
-    setAttribute() {},
-    querySelectorAll: () => [],
-    classList: { toggle() {} },
-  });
+    disabled: false,
+    style: {
+      props: {},
+      setProperty(name, value) { this.props[name] = String(value); },
+    },
+    classList: {
+      set: new Set(),
+      contains(name) { return this.set.has(name); },
+      add(name) { this.set.add(name); },
+      remove(name) { this.set.delete(name); },
+      toggle(name, force) {
+        const on = force === undefined ? !this.set.has(name) : Boolean(force);
+        if (on) this.set.add(name); else this.set.delete(name);
+        return on;
+      },
+    },
+    appendChild(child) { this.children.push(child); return child; },
+    replaceChildren(...nodes) { this.children = []; nodes.forEach((node) => this.appendChild(node)); },
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    getAttribute(name) { return this.attrs[name] ?? null; },
+    querySelectorAll() { return []; },
+    querySelector() { return null; },
+    closest() { return null; },
+    addEventListener() {},
+    get innerHTML() { return this.children.map(serialize).join(''); },
+    get textContent() { return textOf(this); },
+    set textContent(value) { this.children = String(value) === '' ? [] : [fakeText(value)]; },
+  };
+  return el;
+}
+
+function fakeDocument() {
+  const els = new Map();
   return {
     els,
     getElementById(id) {
-      if (!els.has(id)) els.set(id, el());
+      if (!els.has(id)) els.set(id, fakeElement('div'));
       return els.get(id);
     },
+    createElement: (tag) => fakeElement(tag),
+    createElementNS: (ns, tag) => fakeElement(tag, ns),
+    createTextNode: fakeText,
     querySelectorAll: () => [],
     addEventListener() {},
   };

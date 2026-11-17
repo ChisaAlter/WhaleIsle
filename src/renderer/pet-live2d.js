@@ -10,6 +10,7 @@
 // {forward:true})`), so mousemove keeps arriving everywhere. While the
 // pointer is inside the pet bounds we ask the main process to make the
 // window interactive, which enables tap reactions and dragging.
+const { h, mount: mountNodes } = window.whaleDom;
 const canvas = document.getElementById('pet');
 // `let` (not const) so the status-card raster cache can point the shared
 // painter at an offscreen context for the duration of one synchronous build.
@@ -2111,10 +2112,6 @@ let chatPollTimer = 0;
 let chatPickerOpen = ''; // 'root' | 'model' | 'effort' — portaled menu pane
 let chatPickPending = false;
 
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
-
 function chatPart(sel) {
   return chatDom ? chatDom.querySelector(sel) : null;
 }
@@ -2328,12 +2325,11 @@ function chatRenderEfforts(prefer) {
     const caption = chatPart('#pc-model-trigger .pc-choice-effort');
     if (caption) { caption.hidden = true; caption.textContent = ''; }
     if (chatPickerOpen === 'effort') { chatClosePicker(); }
-    effSel.innerHTML = '';
+    mountNodes(effSel);
     chatSyncPickTitle(sel);
     return;
   }
-  effSel.innerHTML = efforts
-    .map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+  mountNodes(effSel, ...efforts.map((e) => h('option', { value: e.id }, e.name)));
   if (effBox) { effBox.hidden = false; }
   if (prefer && efforts.some((e) => e.id === prefer)) {
     effSel.value = prefer;
@@ -2347,17 +2343,14 @@ function chatRenderModels(selected) {
   const sel = chatPart('#pc-model');
   if (!sel) { return; }
   chatFlatModels = [];
-  sel.innerHTML = chatGroups.map((g) => (
-    `<optgroup label="${esc(g.name || g.id)}">${
-      (g.models || []).map((m) => {
-        chatFlatModels.push({
-          provider: g.id, model: m.id,
-          efforts: m.efforts || [], defaultEffort: m.defaultEffort || '',
-        });
-        return `<option value="${esc(g.id)}::${esc(m.id)}">${esc(m.name || m.id)}</option>`;
-      }).join('')
-    }</optgroup>`
-  )).join('');
+  mountNodes(sel, ...chatGroups.map((g) => h('optgroup', { label: g.name || g.id },
+    ...(g.models || []).map((m) => {
+      chatFlatModels.push({
+        provider: g.id, model: m.id,
+        efforts: m.efforts || [], defaultEffort: m.defaultEffort || '',
+      });
+      return h('option', { value: `${g.id}::${m.id}` }, m.name || m.id);
+    }))));
   if (selected?.provider && selected?.model) {
     sel.value = `${selected.provider}::${selected.model}`;
   }
@@ -2368,7 +2361,7 @@ function chatRenderModels(selected) {
 function chatClosePicker(restoreFocus = false) {
   chatPickerOpen = '';
   const picker = chatPickerEl;
-  if (picker) { picker.hidden = true; picker.innerHTML = ''; }
+  if (picker) { picker.hidden = true; mountNodes(picker); }
   chatPickerRect = null;
   chatPart('#pc-model-trigger')?.setAttribute('aria-expanded', 'false');
   if (restoreFocus) { chatPart('#pc-model-trigger')?.focus?.(); }
@@ -2381,23 +2374,50 @@ function chatShowPicker(kind) {
   if (kind === 'root') {
     const model = chatPart('#pc-model')?.selectedOptions?.[0]?.textContent || '选择模型';
     const effort = chatPart('#pc-model-trigger .pc-choice-effort')?.textContent || '';
-    picker.innerHTML = `<button class="pc-option" type="button" data-pane="model" role="menuitem"><span class="pc-option-name">模型</span><span class="pc-option-detail">${esc(model)}</span><span aria-hidden="true">›</span></button>${chatPart('#pc-effort-box')?.hidden ? '' : `<button class="pc-option" type="button" data-pane="effort" role="menuitem"><span class="pc-option-name">思考</span><span class="pc-option-detail">${esc(effort)}</span><span aria-hidden="true">›</span></button>`}`;
+    mountNodes(picker,
+      h('button', { class: 'pc-option', type: 'button', dataset: { pane: 'model' }, role: 'menuitem' },
+        h('span', { class: 'pc-option-name' }, '模型'),
+        h('span', { class: 'pc-option-detail' }, model),
+        h('span', { 'aria-hidden': 'true' }, '›')),
+      chatPart('#pc-effort-box')?.hidden ? null : h('button', {
+        class: 'pc-option', type: 'button', dataset: { pane: 'effort' }, role: 'menuitem',
+      },
+        h('span', { class: 'pc-option-name' }, '思考'),
+        h('span', { class: 'pc-option-detail' }, effort),
+        h('span', { 'aria-hidden': 'true' }, '›')));
   } else if (kind === 'model') {
-    picker.innerHTML = '<button class="pc-option" type="button" data-pane="root" role="menuitem"><span aria-hidden="true">‹</span><span class="pc-option-name">模型</span></button>' + chatGroups.map((group) => `<div class="pc-picker-group">${esc(group.name || group.id)}</div>${
-      (group.models || []).map((m) => {
-        const value = `${group.id}::${m.id}`;
-        const picked = value === selected;
-        return `<button class="pc-option" type="button" role="menuitemradio" data-value="${esc(value)}" aria-checked="${picked}"><span class="pc-option-name">${esc(m.name || m.id)}</span>${picked ? '<span class="pc-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
-      }).join('')
-    }`).join('');
+    mountNodes(picker,
+      h('button', { class: 'pc-option', type: 'button', dataset: { pane: 'root' }, role: 'menuitem' },
+        h('span', { 'aria-hidden': 'true' }, '‹'),
+        h('span', { class: 'pc-option-name' }, '模型')),
+      ...chatGroups.flatMap((group) => [
+        h('div', { class: 'pc-picker-group' }, group.name || group.id),
+        ...(group.models || []).map((m) => {
+          const value = `${group.id}::${m.id}`;
+          const picked = value === selected;
+          return h('button', {
+            class: 'pc-option', type: 'button', role: 'menuitemradio',
+            dataset: { value }, 'aria-checked': String(picked),
+          },
+            h('span', { class: 'pc-option-name' }, m.name || m.id),
+            picked ? h('span', { class: 'pc-option-check', 'aria-hidden': 'true' }, '✓') : null);
+        }),
+      ]));
   } else {
     const m = chatFlatModels.find((x) => `${x.provider}::${x.model}` === chatPart('#pc-model')?.value);
-    picker.innerHTML = `<button class="pc-option" type="button" data-pane="root" role="menuitem"><span aria-hidden="true">‹</span><span class="pc-option-name">思考</span></button>${
-      (m?.efforts || []).map((e) => {
+    mountNodes(picker,
+      h('button', { class: 'pc-option', type: 'button', dataset: { pane: 'root' }, role: 'menuitem' },
+        h('span', { 'aria-hidden': 'true' }, '‹'),
+        h('span', { class: 'pc-option-name' }, '思考')),
+      ...(m?.efforts || []).map((e) => {
         const picked = e.id === selected;
-        return `<button class="pc-option" type="button" role="menuitemradio" data-value="${esc(e.id)}" aria-checked="${picked}"><span class="pc-option-name">${esc(chatEffortName(e))}</span>${picked ? '<span class="pc-option-check" aria-hidden="true">✓</span>' : ''}</button>`;
-      }).join('')
-    }`;
+        return h('button', {
+          class: 'pc-option', type: 'button', role: 'menuitemradio',
+          dataset: { value: e.id }, 'aria-checked': String(picked),
+        },
+          h('span', { class: 'pc-option-name' }, chatEffortName(e)),
+          picked ? h('span', { class: 'pc-option-check', 'aria-hidden': 'true' }, '✓') : null);
+      }));
   }
   chatPickerOpen = kind;
   picker.hidden = false;

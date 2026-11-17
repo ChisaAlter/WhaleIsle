@@ -23,7 +23,12 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
   const nativeMotion = require('./native-window-motion');
   const controlsCss = fs.readFileSync(rendererFile('window-controls.css'), 'utf8')
     + fs.readFileSync(rendererFile('whalebridge-window.css'), 'utf8');
-  const controlsScript = fs.readFileSync(rendererFile('window-controls.js'), 'utf8');
+  // window-controls.js builds its buttons through window.whaleDom; the
+  // injected snippet cannot load scripts, so the shared builder's source is
+  // concatenated ahead of it.
+  const controlsScript = fs.readFileSync(path.join(__dirname, '..', 'shared', 'dom.js'), 'utf8')
+    + '\n'
+    + fs.readFileSync(rendererFile('window-controls.js'), 'utf8');
   const mountControls = `(() => {
     if (!document.getElementById('whalebridge-window-controls')) {
       const host = document.createElement('div');

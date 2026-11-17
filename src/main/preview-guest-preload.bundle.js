@@ -292,6 +292,189 @@
     }
   });
 
+  // src/shared/dom.js
+  var require_dom = __commonJS({
+    "src/shared/dom.js"(exports, module) {
+      "use strict";
+      var whaleDom = /* @__PURE__ */ (() => {
+        const SVG_NS = "http://www.w3.org/2000/svg";
+        const SVG_TAGS = /* @__PURE__ */ new Set([
+          "svg",
+          "g",
+          "defs",
+          "symbol",
+          "use",
+          "marker",
+          "mask",
+          "pattern",
+          "clipPath",
+          "path",
+          "rect",
+          "circle",
+          "ellipse",
+          "line",
+          "polyline",
+          "polygon",
+          "text",
+          "tspan",
+          "textPath",
+          "foreignObject",
+          "linearGradient",
+          "radialGradient",
+          "stop",
+          "animate",
+          "animateMotion",
+          "animateTransform",
+          "set",
+          "mpath",
+          "filter",
+          "feBlend",
+          "feColorMatrix",
+          "feComponentTransfer",
+          "feComposite",
+          "feConvolveMatrix",
+          "feDiffuseLighting",
+          "feDisplacementMap",
+          "feDistantLight",
+          "feDropShadow",
+          "feFlood",
+          "feFuncA",
+          "feFuncB",
+          "feFuncG",
+          "feFuncR",
+          "feGaussianBlur",
+          "feImage",
+          "feMerge",
+          "feMergeNode",
+          "feMorphology",
+          "feOffset",
+          "fePointLight",
+          "feSpecularLighting",
+          "feSpotLight",
+          "feTile",
+          "feTurbulence",
+          "desc",
+          "metadata",
+          "view"
+        ]);
+        function kebab(name) {
+          return String(name).replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+        }
+        function camel(name) {
+          return String(name).replace(/-([a-z])/g, (_m, c) => c.toUpperCase());
+        }
+        function isAttrs(value) {
+          if (value === null || value === void 0) {
+            return true;
+          }
+          if (typeof value !== "object" || Array.isArray(value)) {
+            return false;
+          }
+          return value.nodeType === void 0;
+        }
+        function applyDataset(el, dataset) {
+          for (const [key, value] of Object.entries(dataset)) {
+            if (value === null || value === void 0 || value === false) {
+              continue;
+            }
+            el.setAttribute(`data-${kebab(key)}`, String(value));
+          }
+        }
+        function applyStyle(el, style) {
+          for (const [prop, value] of Object.entries(style)) {
+            if (value === null || value === void 0 || value === false) {
+              continue;
+            }
+            if (el.style && typeof el.style.setProperty === "function") {
+              el.style.setProperty(prop.startsWith("--") ? prop : kebab(prop), String(value));
+            } else {
+              el.style[camel(prop)] = String(value);
+            }
+          }
+        }
+        function applyAttrs(el, attrs) {
+          for (const [rawName, value] of Object.entries(attrs)) {
+            if (value === null || value === void 0 || value === false) {
+              continue;
+            }
+            const name = String(rawName);
+            if (/^on/i.test(name)) {
+              throw new TypeError(`h(): on* attribute "${name}" is not allowed; bind events with addEventListener`);
+            }
+            if (typeof value === "string" && /^\s*j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:/i.test(value)) {
+              throw new TypeError(`h(): javascript: URL is not allowed ("${name}")`);
+            }
+            if (name === "class") {
+              el.setAttribute("class", Array.isArray(value) ? value.filter(Boolean).join(" ") : value);
+              continue;
+            }
+            if (name === "dataset" && typeof value === "object") {
+              applyDataset(el, value);
+              continue;
+            }
+            if (name === "style" && typeof value === "object") {
+              applyStyle(el, value);
+              continue;
+            }
+            el.setAttribute(name, value === true ? "" : String(value));
+          }
+        }
+        function collectChild(out, child) {
+          if (child === null || child === void 0 || child === false || child === true) {
+            return;
+          }
+          if (Array.isArray(child)) {
+            for (const item of child) {
+              collectChild(out, item);
+            }
+            return;
+          }
+          if (typeof child === "string" || typeof child === "number") {
+            out.push(document.createTextNode(String(child)));
+            return;
+          }
+          out.push(child);
+        }
+        function h2(tag, attrs, ...children) {
+          if (!isAttrs(attrs)) {
+            children.unshift(attrs);
+            attrs = null;
+          }
+          const el = SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+          if (attrs) {
+            applyAttrs(el, attrs);
+          }
+          const flat = [];
+          for (const child of children) {
+            collectChild(flat, child);
+          }
+          for (const node of flat) {
+            el.appendChild(node);
+          }
+          return el;
+        }
+        function mount2(el, ...children) {
+          const flat = [];
+          for (const child of children) {
+            collectChild(flat, child);
+          }
+          el.replaceChildren(...flat);
+          return el;
+        }
+        return { h: h2, mount: mount2 };
+      })();
+      if (typeof module !== "undefined" && module.exports) {
+        module.exports = whaleDom;
+      }
+      if (typeof window !== "undefined") {
+        window.whaleDom = whaleDom;
+      }
+      if (typeof globalThis !== "undefined") {
+        globalThis.whaleDom = whaleDom;
+      }
+    }
+  });
+
   // src/main/preview-guest-preload.js
   var { ipcRenderer } = __require("electron");
   var {
@@ -305,6 +488,7 @@
   var { resolveAnnotationSubmission } = require_preview_annotation_keyboard();
   var { computeLabelPosition } = require_preview_pick_label();
   var { applyAnnotationTheme, captureElement } = require_preview_pick_helpers();
+  var { h, mount } = require_dom();
   var OVERLAY_ATTRIBUTE = "data-dshd-annotation-ui";
   var TOOL_ATTRIBUTE = "data-dshd-annotation-tool";
   var Z_INDEX_OVERLAY = 2147483646;
@@ -635,7 +819,11 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
     adjust.setAttribute("aria-label", "Expand annotation editor");
     adjust.setAttribute("aria-expanded", "false");
     adjust.className = "ann-btn ann-icon";
-    adjust.innerHTML = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+    mount(adjust, h(
+      "svg",
+      { viewBox: "0 0 20 20", width: "15", height: "15", "aria-hidden": "true" },
+      h("path", { d: "M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round" })
+    ));
     composerRow.appendChild(adjust);
     const comment = document.createElement("textarea");
     comment.placeholder = "Describe the change\u2026";
@@ -862,7 +1050,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
     dimensions.style.cssText = "display:grid;grid-template-columns:82px minmax(0,1fr);gap:8px;align-items:center";
     const dimensionLabel = document.createElement("div");
     dimensionLabel.style.cssText = "display:grid;gap:8px;font:500 12px var(--dshd-preview-font-sans,system-ui);color:var(--dshd-preview-muted-foreground)";
-    dimensionLabel.innerHTML = "<span>Width</span><span>Height</span>";
+    mount(dimensionLabel, h("span", {}, "Width"), h("span", {}, "Height"));
     const dimensionControls = document.createElement("div");
     dimensionControls.style.cssText = "position:relative;display:grid;gap:3px;padding-left:22px";
     const widthInput = createUnitInput("px", "auto");
@@ -878,7 +1066,12 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
     let aspectLocked = true;
     let aspectRatio = 1;
     const refreshAspectButton = () => {
-      aspectLock.innerHTML = aspectLocked ? '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M8 6.5 9.5 5A3.5 3.5 0 0 1 14.5 10l-1.5 1.5M12 13.5 10.5 15A3.5 3.5 0 0 1 5.5 10L7 8.5M7.5 12.5l5-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>' : '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="m6 6 8 8M8 6.5 9.5 5A3.5 3.5 0 0 1 14 9M12 13.5 10.5 15A3.5 3.5 0 0 1 6 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+      const aspectPath = aspectLocked ? "M8 6.5 9.5 5A3.5 3.5 0 0 1 14.5 10l-1.5 1.5M12 13.5 10.5 15A3.5 3.5 0 0 1 5.5 10L7 8.5M7.5 12.5l5-5" : "m6 6 8 8M8 6.5 9.5 5A3.5 3.5 0 0 1 14 9M12 13.5 10.5 15A3.5 3.5 0 0 1 6 11";
+      mount(aspectLock, h(
+        "svg",
+        { viewBox: "0 0 20 20", width: "14", height: "14", "aria-hidden": "true" },
+        h("path", { d: aspectPath, fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round" })
+      ));
       aspectLock.setAttribute("aria-pressed", String(aspectLocked));
       aspectLock.setAttribute("data-active", aspectLocked ? "true" : "false");
     };
