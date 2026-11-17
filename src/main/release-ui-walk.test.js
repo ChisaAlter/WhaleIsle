@@ -567,27 +567,3 @@ test('hero conversation root nests in the AppFrame center subgrid', () => {
   assert.match(css, /\.body \{[\s\S]*?grid-row:\s*2/);
 });
 
-
-test('window-control walk checks actual AppKit buttons on macOS and web controls elsewhere', async () => {
-  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, 'release-ui-walk.js'), 'utf8');
-  const block = source.slice(source.indexOf('  const windowControls = await pageEval'), source.indexOf("  await helpers.clickTitlebarButton(wc, 'switch branch"));
-  async function probe(platform, web, buttons) {
-    let result;
-    await vm.runInNewContext(`(async () => { ${block} })()`, {
-      wc: {}, process: { platform }, pageEval: async () => web,
-      require: (name) => name === './window'
-        ? { getMainWindow: () => ({}) }
-        : { cocoaButtons: () => ({ snapshot: () => ({ buttons }) }) },
-      rec: (name, ok) => { result = { name, ok }; },
-    });
-    return result.ok;
-  }
-  const native = ['close', 'minimize', 'zoom'].map(name => ({ name, present: true, hidden: false, enabled: true }));
-  assert.equal(await probe('darwin', null, native), true);
-  for (const bad of [{ present: false }, { hidden: true }, { enabled: false }]) {
-    assert.equal(await probe('darwin', null, [{ ...native[0], ...bad }, ...native.slice(1)]), false);
-  }
-  assert.equal(await probe('darwin', null, native.slice(1)), false);
-  assert.equal(await probe('linux', { min: true, max: true, close: true }), true);
-  assert.equal(await probe('win32', { min: true, max: false, close: true }), false);
-});

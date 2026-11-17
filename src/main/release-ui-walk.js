@@ -1355,25 +1355,8 @@ async function runReleaseUiWalk(wc, helpers) {
   rec('titlebar.git', titlebar?.git, '');
   rec('titlebar.terminal', titlebar?.terminal, '');
   rec('titlebar.surfaces', titlebar?.surfaces, '');
-  const windowControls = await pageEval(wc, () => {
-    const host = document.getElementById('dshd-shell-controls');
-    if (!host) return null;
-    return {
-      min: Boolean(host.querySelector('[data-act="minimize"]')),
-      max: Boolean(host.querySelector('[data-act="maximize"]')),
-      close: Boolean(host.querySelector('[data-act="close"]')),
-    };
-  });
-  let controlsOk = Boolean(windowControls?.min && windowControls?.max && windowControls?.close);
-  let controlsDetail = windowControls ? '' : 'injected window-control plate missing';
-  if (process.platform === 'darwin') {
-    const win = require('./window').getMainWindow();
-    const native = require('./smoke/macos-chrome').cocoaButtons().snapshot(win);
-    controlsOk = !windowControls && native.buttons.length === 3
-      && native.buttons.every((button) => button.present && !button.hidden && button.enabled);
-    controlsDetail = `native AppKit buttons: ${JSON.stringify(native.buttons)}`;
-  }
-  rec('titlebar.windowControls', controlsOk, controlsDetail);
+  const windowControls = await require('./release-ui-window-controls').probeWindowControls(wc);
+  rec('titlebar.windowControls', windowControls.ok, windowControls.detail);
 
   await helpers.clickTitlebarButton(wc, 'switch branch|切换分支');
   const branchMenu = await waitUntil(() => pageEval(wc, () => {
