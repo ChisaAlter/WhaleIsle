@@ -372,7 +372,7 @@
     },
     "src/launcher/product.js": {
       "TS2339": {
-        "Property 'dshdPackage' does not exist on type '{ name: string; productName: string; version: string; description: string; author: string; license: string; main: string; private: boolean; scripts: { \"prepare:openui\": string; \"prepare:whale-ui\": string; ... 45 more ...; \"docs:check\": string; }; ... 5 more ...; dependencies: { ...; }; }'.": 1
+        "Property 'dshdPackage' does not exist on type '{ name: string; productName: string; version: string; description: string; author: string; license: string; main: string; private: boolean; scripts: { \"prepare:openui\": string; \"prepare:whale-ui\": string; ... <n> more ...; \"docs:check\": string; }; ... <n> more ...; dependencies: { ...; }; }'.": 1
       },
       "TS7005": {
         "Variable 'cachedFlavor' implicitly has an 'any' type.": 2
@@ -1140,7 +1140,7 @@
         "Variable 'win' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... 4 more ...; fileEat: { ...; }; }'.": 1,
+        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... <n> more ...; fileEat: { ...; }; }'.": 1,
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ '.html': string; '.js': string; '.mjs': string; '.css': string; '.json': string; '.png': string; '.webp': string; '.gif': string; '.onnx': string; '.wasm': string; }'.": 1
       }
     },
@@ -1398,9 +1398,9 @@
         "Property 'code' does not exist on type 'Error'.": 2,
         "Property 'code' does not exist on type '{}'.": 4,
         "Property 'expiresAtMs' does not exist on type '{ relayEnabled: boolean; url: null; qr: null; }'.": 3,
-        "Property 'getHarnessOrigin' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... 4 more ...; execFile?: typeof execFile | undefined; }'.": 2,
-        "Property 'getSessionCookie' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... 4 more ...; execFile?: typeof execFile | undefined; }'.": 2,
-        "Property 'git' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... 4 more ...; execFile?: typeof execFile | undefined; }'.": 1,
+        "Property 'getHarnessOrigin' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 2,
+        "Property 'getSessionCookie' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 2,
+        "Property 'git' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 1,
         "Property 'gitTunnelUrl' does not exist on type '{ baseEnv: ProcessEnv; home: string; vendorDir: string | null; shimDir: string | null; config: { apiKey?: string | undefined; baseUrl?: string | undefined; }; }'.": 1,
         "Property 'harnessOrigin' does not exist on type '{ baseEnv: ProcessEnv; home: string; vendorDir: string | null; shimDir: string | null; config: { apiKey?: string | undefined; baseUrl?: string | undefined; }; }'.": 1,
         "Property 'linkUrl' does not exist on type '{ relayEnabled: boolean; url: null; qr: null; }'.": 1,
@@ -1436,7 +1436,7 @@
         "This comparison appears to be unintentional because the types '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; } | null' and '{ readyResolve: () => void; readyReject: (err: Error) => void; }' have no overlap.": 1
       },
       "TS2739": {
-        "Type '{}' is missing the following properties from type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... 4 more ...; execFile?: typeof execFile | undefined; }': getConfig, saveConfig, getHomeDir": 1
+        "Type '{}' is missing the following properties from type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }': getConfig, saveConfig, getHomeDir": 1
       },
       "TS2810": {
         "Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.": 2
@@ -1980,9 +1980,9 @@
         "Object literal may only specify known properties, and 'appDataDir' does not exist in type '{ platform?: Platform | undefined; isPackaged?: boolean | undefined; launcher?: boolean | undefined; io?: typeof import(\"node:fs/promises\") | undefined; createBackupId?: ((options?: RandomUUIDOptions | undefined) => `${string}-${string}-${string}-${string}-${string}`) | undefined; notifyShortcutMoved?: ((oldPath: an...'.": 1,
         "Object literal may only specify known properties, and 'dsh' does not exist in type '{ startWhenIdle?: boolean | undefined; }'.": 1,
         "Object literal may only specify known properties, and 'fullPluginRetry' does not exist in type '{ preConfirmed?: boolean | undefined; }'.": 1,
-        "Object literal may only specify known properties, and 'getHarnessOrigin' does not exist in type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... 4 more ...; execFile?: typeof execFile | undefined; }'.": 1,
+        "Object literal may only specify known properties, and 'getHarnessOrigin' does not exist in type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 1,
         "Object literal may only specify known properties, and 'preConfirmed' does not exist in type '{ commit?: (() => void | Promise<void>) | undefined; terminal?: boolean | undefined; }'.": 4,
-        "Object literal may only specify known properties, and 'repository' does not exist in type '{ tokenProvider?: (() => string) | undefined; fetchImpl?: { (input: URL | RequestInfo, init?: RequestInit | undefined): Promise<Response>; (input: string | ... 1 more ... | Request, init?: RequestInit | undefined): Promise<...>; } | undefined; apiBase?: string | undefined; }'.": 1
+        "Object literal may only specify known properties, and 'repository' does not exist in type '{ tokenProvider?: (() => string) | undefined; fetchImpl?: { (input: URL | RequestInfo, init?: RequestInit | undefined): Promise<Response>; (input: string | ... <n> more ... | Request, init?: RequestInit | undefined): Promise<...>; } | undefined; apiBase?: string | undefined; }'.": 1
       },
       "TS2769": {
         "No overload matches this call.": 1
@@ -2494,7 +2494,7 @@
         "Property 'message' does not exist on type '{}'.": 6
       },
       "TS2345": {
-        "Argument of type '{ siblingPath?: string | undefined; gitBranchList?: ((cwd: string) => Promise<{ ok?: boolean | undefined; branches?: unknown[] | undefined; message?: string | undefined; }>) | undefined; ... 9 more ...; existsSync?: ((file: string) => boolean) | undefined; }' is not assignable to parameter of type '{ resourcesPath: any; runtimeRoot: any; userData: any; appVersion: any; expectedPin: any; expectedArchiveIdentity: any; }'.": 1
+        "Argument of type '{ siblingPath?: string | undefined; gitBranchList?: ((cwd: string) => Promise<{ ok?: boolean | undefined; branches?: unknown[] | undefined; message?: string | undefined; }>) | undefined; ... <n> more ...; existsSync?: ((file: string) => boolean) | undefined; }' is not assignable to parameter of type '{ resourcesPath: any; runtimeRoot: any; userData: any; appVersion: any; expectedPin: any; expectedArchiveIdentity: any; }'.": 1
       },
       "TS2353": {
         "Object literal may only specify known properties, and 'runtime' does not exist in type '{ ok: boolean; steps: { name: string; ok: boolean; detail: string; }[]; }'.": 1
@@ -2762,9 +2762,9 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... 4 more ...; fileEat: { ...; }; }'.": 1,
+        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... <n> more ...; fileEat: { ...; }; }'.": 1,
         "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{}'.": 1,
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... 4 more ...; fileEat: { ...; }; }'.": 1,
+        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ feedToken: { satiety: number; mood: number; affection: number; }; play: { satiety: number; mood: number; affection: number; }; pat: { mood: number; affection: number; }; tease: { mood: number; affection: number; }; ... <n> more ...; fileEat: { ...; }; }'.": 1,
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 1
       }
     },
@@ -3042,7 +3042,7 @@
         "Variable 'server' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ html: string; htm: string; xhtml: string; css: string; js: string; mjs: string; json: string; map: string; svg: string; png: string; jpg: string; jpeg: string; gif: string; webp: string; bmp: string; ico: string; ... 18 more ...; flac: string; }'.": 1
+        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ html: string; htm: string; xhtml: string; css: string; js: string; mjs: string; json: string; map: string; svg: string; png: string; jpg: string; jpeg: string; gif: string; webp: string; bmp: string; ico: string; ... <n> more ...; flac: string; }'.": 1
       }
     },
     "src/main/preview.js": {
@@ -3160,7 +3160,7 @@
         "Property 'listIssues' does not exist on type '{}'.": 1,
         "Property 'listPulls' does not exist on type '{ since?: null | undefined; }'.": 1,
         "Property 'listPulls' does not exist on type '{}'.": 1,
-        "Property 'repository' does not exist on type '{ tokenProvider?: (() => string) | undefined; fetchImpl?: { (input: URL | RequestInfo, init?: RequestInit | undefined): Promise<Response>; (input: string | ... 1 more ... | Request, init?: RequestInit | undefined): Promise<...>; } | undefined; apiBase?: string | undefined; }'.": 1
+        "Property 'repository' does not exist on type '{ tokenProvider?: (() => string) | undefined; fetchImpl?: { (input: URL | RequestInfo, init?: RequestInit | undefined): Promise<Response>; (input: string | ... <n> more ... | Request, init?: RequestInit | undefined): Promise<...>; } | undefined; apiBase?: string | undefined; }'.": 1
       },
       "TS2353": {
         "Object literal may only specify known properties, and 'listIssues' does not exist in type '{ since?: null | undefined; }'.": 1
@@ -3724,7 +3724,7 @@
         "Variable 'bindings' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ Slash: string; Comma: string; Period: string; Backslash: string; Backquote: string; Minus: string; Equal: string; BracketLeft: string; BracketRight: string; Semicolon: string; Quote: string; Enter: string; ... 8 more ...; ArrowRight: string; }'.": 2,
+        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ Slash: string; Comma: string; Period: string; Backslash: string; Backquote: string; Minus: string; Equal: string; BracketLeft: string; BracketRight: string; Semicolon: string; Quote: string; Enter: string; ... <n> more ...; ArrowRight: string; }'.": 2,
         "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ control: string; alt: string; shift: string; meta: string; }'.": 2,
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 2
       }
@@ -3937,7 +3937,7 @@
         "Parameter 'url' implicitly has an 'any' type.": 3
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ ERR_CONNECTION_RESET: string; ERR_CONNECTION_CLOSED: string; ERR_CONNECTION_ABORTED: string; ERR_EMPTY_RESPONSE: string; ERR_HTTP2_PROTOCOL_ERROR: string; ERR_TIMED_OUT: string; ERR_CONNECTION_TIMED_OUT: string; ... 7 more ...; ERR_ADDRESS_UNREACHABLE: string; }'.": 1
+        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ ERR_CONNECTION_RESET: string; ERR_CONNECTION_CLOSED: string; ERR_CONNECTION_ABORTED: string; ERR_EMPTY_RESPONSE: string; ERR_HTTP2_PROTOCOL_ERROR: string; ERR_TIMED_OUT: string; ERR_CONNECTION_TIMED_OUT: string; ... <n> more ...; ERR_ADDRESS_UNREACHABLE: string; }'.": 1
       }
     },
     "src/main/task-control-peer.js": {
@@ -4165,7 +4165,7 @@
         "Variable 'running' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ check: () => Promise<{ phase: string; current: any; checkedAt: number; route: any; routeExplicit: any; routes: any; autoDownload: any; target: { version: any; tag: any; route: any; publishedAt: any; notes: any; htmlUrl: any; } | null; ... 5 more ...; platform: any; }>; ... 8 more ...; setAutoDownload: (enabled: an...'.": 1
+        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ check: () => Promise<{ phase: string; current: any; checkedAt: number; route: any; routeExplicit: any; routes: any; autoDownload: any; target: { version: any; tag: any; route: any; publishedAt: any; notes: any; htmlUrl: any; } | null; ... <n> more ...; platform: any; }>; ... <n> more ...; setAutoDownload: (enabled: an...'.": 1
       }
     },
     "src/main/update-dialog.js": {

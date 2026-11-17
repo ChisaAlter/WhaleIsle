@@ -40,6 +40,19 @@ test('vendor content changes gate the tools job that runs the provenance check',
   const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
   assert.ok(ci.jobs.tools.steps.some(s => s.run === 'npm run check:vendor'))
 })
+test('registered generated artifacts and their inputs gate the tools job', () => {
+  for (const file of [
+    'mobile/web/chisacode/entry.mjs',
+    'mobile/web/chisacode/daemon-client.bundle.js',
+    'src/renderer/welcome/welcome.js',
+    'assets/icon.svg',
+    'dsh-acp/tools/runtime-build/entry.ts',
+  ]) {
+    assert.equal(selectChecks([file]).tools, true, file)
+  }
+  const ci = load(readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8'))
+  assert.ok(ci.jobs.tools.steps.some(s => s.run === 'npm run check:generated'))
+})
 test('lint config and its suppression ledger select product and tools checks', () => {
   assert.deepEqual(selectChecks(['eslint.config.mjs']),
     { product: true, vendor: false, tools: true, motion: false })
