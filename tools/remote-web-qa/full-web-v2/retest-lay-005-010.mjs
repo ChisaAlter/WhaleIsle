@@ -62,5 +62,5 @@ try {
     return { status: 'Pass', note: '新会话+浏览目录三视口（行高复核通过）', evidence: files };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

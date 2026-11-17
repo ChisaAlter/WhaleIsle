@@ -552,7 +552,7 @@ async function revealHarnessView(win) {
     // Fallback must release the hold and attach the view, not just hide boot.
     let released = !cssKey;
     if (cssKey) {
-      try { await view.webContents.removeInsertedCSS(cssKey); released = true; } catch {}
+      try { await view.webContents.removeInsertedCSS(cssKey); released = true; } catch { /* Try removing the document curtain below when CSS removal fails. */ }
     }
     if (!current()) return;
     try {
@@ -560,14 +560,14 @@ async function revealHarnessView(win) {
         `document.getElementById('dshd-boot-curtains')?.remove(); document.documentElement && document.documentElement.removeAttribute('data-dshd-harness-fade')`,
       );
       released = true;
-    } catch {}
+    } catch { /* The original reveal error is rethrown below unless another release path succeeded. */ }
     if (!released) throw error;
   } finally {
     if (curtainWindow) {
       if (!curtainWindow.isDestroyed()) curtainWindow.destroy();
     }
     if (cssKey && !view.webContents.isDestroyed()) {
-      await view.webContents.removeInsertedCSS(cssKey).catch(() => {});
+      await view.webContents.removeInsertedCSS(cssKey).catch(() => { /* The reveal result is already determined; CSS removal may race a destroyed renderer. */ });
     }
   }
   if (!current()) return;
@@ -753,8 +753,8 @@ function ensureHarnessView(win) {
         // A display/session reconfiguration can leave a transparent
         // window's layered surface compositing opaque-black; invalidate
         // forces a repaint so an alive renderer's content returns.
-        try { win.webContents.invalidate(); } catch {}
-        try { harnessView?.webContents.invalidate(); } catch {}
+        try { win.webContents.invalidate(); } catch { /* A display change can race a closed main renderer. */ }
+        try { harnessView?.webContents.invalidate(); } catch { /* A display change can race a closed Harness renderer. */ }
       }
     };
     if (screen && typeof screen.on === 'function') {

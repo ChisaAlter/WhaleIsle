@@ -12,8 +12,15 @@ import { CONTROL_PREFIX } from './http.js';
 const WRAPPED = Symbol.for('dsh-task-control.wrapped');
 const ORIGINAL = Symbol.for('cordis.original');
 const GATE_TYPES = new Set(['agent', 'job', 'schedule-task', 'socket', 'request', 'resume']);
+/** @type {WeakMap<object, Array<{ active: boolean, restores: Array<() => void> }>>} */
 const guardsByState = new WeakMap();
 
+/**
+ * @param {{ restores: Array<() => void> }} guard
+ * @param {any} target
+ * @param {string | symbol} key
+ * @param {any} value
+ */
 function replaceOwnedProperty(guard, target, key, value) {
   const original = Object.getOwnPropertyDescriptor(target, key);
   target[key] = value;
@@ -24,8 +31,12 @@ function replaceOwnedProperty(guard, target, key, value) {
   });
 }
 
+/**
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {any} target
+ */
 function createGuard(state, target) {
-  const guard = { active: true, restores: [] };
+  const guard = { active: true, restores: /** @type {Array<() => void>} */ ([]) };
   replaceOwnedProperty(guard, target, WRAPPED, guard);
   let guards = guardsByState.get(state);
   if (!guards) guardsByState.set(state, guards = []);
@@ -33,7 +44,9 @@ function createGuard(state, target) {
   return guard;
 }
 
-/** Remove only this state's guards, leaving later owners' replacements intact. */
+/** Remove only this state's guards, leaving later owners' replacements intact.
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ */
 export function disposeGuards(state) {
   const guards = guardsByState.get(state) || [];
   guardsByState.delete(state);
@@ -47,6 +60,7 @@ export function disposeGuards(state) {
 
 /** Error returned/raised when admission is refused while locked. */
 export class AdmissionLockedError extends Error {
+  /** @param {string} [detail] */
   constructor(detail) {
     super(`desktop task admission locked${detail ? `: ${detail}` : ''}`);
     this.name = 'AdmissionLockedError';
@@ -55,6 +69,7 @@ export class AdmissionLockedError extends Error {
   }
 }
 
+/** @param {string} path */
 function exempt(path) {
   return path === CONTROL_PREFIX || path.startsWith(`${CONTROL_PREFIX}/`);
 }
@@ -67,6 +82,7 @@ function exempt(path) {
 // default drain window.
 const UNDRAINED_PATHS = new Set(['/api/conversation.next-prompt']);
 
+/** @param {any} req */
 export function undrained(req) {
   if (isReadMethod(req)) return true;
   const path = String(req.url || '').split('?', 1)[0];
@@ -78,16 +94,24 @@ export function undrained(req) {
 // admission, so the request counts once in inspection and drain.
 const ADMITTED = Symbol('dsh-task-control.admitted');
 
+/** @param {any} req */
 export function admittedBefore(req) {
   return Boolean(req && req[ADMITTED]);
 }
 
+/** @param {any} req */
 export function markAdmitted(req) {
   if (req && typeof req === 'object') req[ADMITTED] = true;
 }
 
+/**
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {{ active: boolean, restores: Array<() => void> }} guard
+ * @param {string} path
+ * @param {(req: any, res: any) => any} handler
+ */
 function gateHttpHandler(state, guard, path, handler) {
-  return async function gatedRoute(req, res) {
+  return async function gatedRoute(/** @type {import('node:http').IncomingMessage} */ req, /** @type {any} */ res) {
     if (!guard.active || admittedBefore(req)) return handler(req, res);
     const admission = admit(state, `http ${req.method} ${req.url}`);
     if (!admission.accepted) {
@@ -120,8 +144,14 @@ function gateHttpHandler(state, guard, path, handler) {
   };
 }
 
+/**
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {{ active: boolean, restores: Array<() => void> }} guard
+ * @param {string} path
+ * @param {(req: any, socket: any, head: any) => any} handler
+ */
 function gateUpgradeHandler(state, guard, path, handler) {
-  return function gatedUpgrade(req, socket, head) {
+  return function gatedUpgrade(/** @type {import('node:http').IncomingMessage} */ req, /** @type {import('node:stream').Duplex} */ socket, /** @type {any} */ head) {
     if (!guard.active) return handler(req, socket, head);
     const admission = admit(state, `upgrade ${req.url}`);
     if (!admission.accepted) {
@@ -142,10 +172,17 @@ function gateUpgradeHandler(state, guard, path, handler) {
   };
 }
 
+/** @param {any} req */
 function isReadMethod(req) {
   return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
 }
 
+/**
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {{ active: boolean, restores: Array<() => void> }} guard
+ * @param {any} route
+ * @param {boolean} [upgrade]
+ */
 function wrapRouteEntry(state, guard, route, upgrade = false) {
   if (route === undefined || route[WRAPPED] || (!upgrade && exempt(route.path))) return;
   const gate = upgrade ? gateUpgradeHandler : gateHttpHandler;
@@ -156,6 +193,8 @@ function wrapRouteEntry(state, guard, route, upgrade = false) {
 /**
  * Wrap one WebServer instance: gate already-registered routes in place and
  * intercept future register/registerUpgrade/registerFallback calls.
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {any} webServer
  * @returns true when the wrap was applied.
  */
 export function wrapWebServer(state, webServer) {
@@ -167,22 +206,36 @@ export function wrapWebServer(state, webServer) {
   const guard = createGuard(state, webServer);
 
   const originalRegister = webServer.register;
-  replaceOwnedProperty(guard, webServer, 'register', function registerGuarded(route) {
+  /**
+   * @this {any}
+   * @param {any} route
+   */
+  function registerGuarded(route) {
     if (guard.active && route) wrapRouteEntry(state, guard, route);
     return originalRegister.call(this, route);
-  });
+  }
+  replaceOwnedProperty(guard, webServer, 'register', registerGuarded);
   const originalRegisterUpgrade = typeof webServer.registerUpgrade === 'function'
     ? webServer.registerUpgrade : null;
   if (originalRegisterUpgrade) {
-    replaceOwnedProperty(guard, webServer, 'registerUpgrade', function registerUpgradeGuarded(route) {
+    /**
+     * @this {any}
+     * @param {any} route
+     */
+    function registerUpgradeGuarded(route) {
       if (guard.active && route) wrapRouteEntry(state, guard, route, true);
       return originalRegisterUpgrade.call(this, route);
-    });
+    }
+    replaceOwnedProperty(guard, webServer, 'registerUpgrade', registerUpgradeGuarded);
   }
   const originalRegisterFallback = typeof webServer.registerFallback === 'function'
     ? webServer.registerFallback : null;
   if (originalRegisterFallback) {
-    replaceOwnedProperty(guard, webServer, 'registerFallback', function registerFallbackGuarded(handler) {
+    /**
+     * @this {any}
+     * @param {any} handler
+     */
+    function registerFallbackGuarded(handler) {
       const gated = guard.active ? gateFallback(state, guard, handler) : handler;
       const dispose = originalRegisterFallback.call(this, gated);
       if (guard.active) {
@@ -191,7 +244,8 @@ export function wrapWebServer(state, webServer) {
         });
       }
       return dispose;
-    });
+    }
+    replaceOwnedProperty(guard, webServer, 'registerFallback', registerFallbackGuarded);
   }
 
   // Routes registered before this plugin loaded (e.g. the connection `/api`
@@ -212,12 +266,17 @@ export function wrapWebServer(state, webServer) {
   return true;
 }
 
+/**
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {{ active: boolean, restores: Array<() => void> }} guard
+ * @param {any} handler
+ */
 function gateFallback(state, guard, handler) {
   // The fallback seat also takes a `{ resource }` responder (frontend-static
   // serves the SPA that way). A resource only ever answers GET and HEAD, the
   // read path this gate leaves open, so there is no handler to wrap.
   if (typeof handler !== 'function') return handler;
-  const gated = async function gatedFallback(req, res) {
+  const gated = async function gatedFallback(/** @type {any} */ req, /** @type {any} */ res) {
     if (!guard.active) return handler(req, res);
     // The fallback serves SPA assets; locking it would white-out a visible
     // window during the confirmation wait. Mutating methods on unmatched
@@ -241,6 +300,8 @@ function gateFallback(state, guard, handler) {
  * channels, and Typert lookups. Locked calls fail with the
  * stable `session/agent-busy` result shape so producers keep their armed
  * state instead of crashing.
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {any} sessionController
  */
 export function wrapSessionController(state, sessionController) {
   sessionController = sessionController?.[ORIGINAL] || sessionController;
@@ -249,7 +310,11 @@ export function wrapSessionController(state, sessionController) {
   const original = sessionController.resolveAgent;
   if (typeof original !== 'function') return false;
   const guard = createGuard(state, sessionController);
-  replaceOwnedProperty(guard, sessionController, 'resolveAgent', async function resolveAgentGuarded(...args) {
+  /**
+   * @this {any}
+   * @param {any[]} args
+   */
+  async function resolveAgentGuarded(...args) {
     if (!guard.active) return original.apply(this, args);
     const admission = admit(state, 'resolveAgent');
     if (!admission.accepted) {
@@ -260,18 +325,26 @@ export function wrapSessionController(state, sessionController) {
     } finally {
       admission.done();
     }
-  });
+  }
+  replaceOwnedProperty(guard, sessionController, 'resolveAgent', resolveAgentGuarded);
   return true;
 }
 
-/** Wrap `jobs.start` so background-job producers cannot start during a lock. */
+/** Wrap `jobs.start` so background-job producers cannot start during a lock.
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {any} jobs
+ */
 export function wrapJobs(state, jobs) {
   jobs = jobs?.[ORIGINAL] || jobs;
   if (jobs === undefined || jobs === null || jobs[WRAPPED]) return false;
   const original = jobs.start;
   if (typeof original !== 'function') return false;
   const guard = createGuard(state, jobs);
-  replaceOwnedProperty(guard, jobs, 'start', function jobsStartGuarded(...args) {
+  /**
+   * @this {any}
+   * @param {any[]} args
+   */
+  function jobsStartGuarded(...args) {
     if (!guard.active) return original.apply(this, args);
     const admission = admit(state, 'jobs.start');
     if (!admission.accepted) {
@@ -285,7 +358,8 @@ export function wrapJobs(state, jobs) {
     } finally {
       admission.done();
     }
-  });
+  }
+  replaceOwnedProperty(guard, jobs, 'start', jobsStartGuarded);
   return true;
 }
 

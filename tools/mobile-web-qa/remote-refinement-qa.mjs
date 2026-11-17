@@ -28,7 +28,7 @@ async function check(name, run) {
   try { await run(); results.push({ name, ok: true }); }
   catch (error) {
     results.push({ name, ok: false, error: error.stack || String(error) });
-    if (activePage) await activePage.screenshot({ path: resolve(output, `failure-${results.length}.png`) }).catch(() => {});
+    if (activePage) await activePage.screenshot({ path: resolve(output, `failure-${results.length}.png`) }).catch((error) => { console.warn('[tools/mobile-web-qa/remote-refinement-qa.mjs] background operation failed', error); });
   }
   console.log(`${results.at(-1).ok ? 'PASS' : 'FAIL'} ${name}${results.at(-1).ok ? '' : `: ${results.at(-1).error}`}`);
 }

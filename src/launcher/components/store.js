@@ -16,6 +16,7 @@ const path = require('path');
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 const RECORD_STATES = new Set(['installed', 'stopped', 'running', 'error']);
 
+/** @param {any} id */
 function validComponentId(id) {
   return typeof id === 'string' && ID_PATTERN.test(id);
 }
@@ -31,6 +32,7 @@ function defaultUserDataDir() {
 
 // The launcher's OWN userData — never the managed desktop runtime dir and
 // never inside a dsh-home / profiles tree.
+/** @param {{ componentsRoot?: string, userDataDir?: string }} [deps] */
 function componentsRoot(deps = {}) {
   if (deps.componentsRoot) {
     return deps.componentsRoot;
@@ -39,34 +41,64 @@ function componentsRoot(deps = {}) {
   return base ? path.join(base, 'components') : '';
 }
 
+/** @param {string} root */
 function registryFile(root) {
   return path.join(root, 'registry.json');
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ */
 function versionsDir(root, id) {
   return path.join(root, id, 'versions');
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ * @param {any} version
+ */
 function versionDir(root, id, version) {
   return path.join(root, id, 'versions', String(version));
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ */
 function stagingDir(root, id) {
   return path.join(root, id, 'versions', `.staging-${process.pid}-${Date.now()}`);
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ */
 function dataDir(root, id) {
   return path.join(root, id, 'data');
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ */
 function stateFile(root, id) {
   return path.join(dataDir(root, id), 'state.json');
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ */
 function logFile(root, id) {
   return path.join(dataDir(root, id), 'component.log');
 }
 
+/**
+ * @param {string} id
+ * @param {any} raw
+ */
 function normalizeRecord(id, raw) {
   if (!raw || typeof raw !== 'object') {
     return null;
@@ -87,7 +119,9 @@ function normalizeRecord(id, raw) {
   return record.version ? record : null;
 }
 
+/** @param {any} raw */
 function normalizeRegistry(raw) {
+  /** @type {{ components: Record<string, any> }} */
   const out = { components: {} };
   if (!raw || typeof raw !== 'object' || typeof raw.components !== 'object' || !raw.components) {
     return out;
@@ -106,6 +140,10 @@ function normalizeRegistry(raw) {
 
 // Tolerant read: a torn/corrupt file is moved aside for evidence and the
 // platform starts from an empty registry rather than crashing the panel.
+/**
+ * @param {string} root
+ * @param {{ readFileSync?: typeof fs.readFileSync, renameSync?: typeof fs.renameSync }} [deps]
+ */
 function loadRegistry(root, deps = {}) {
   const readFile = deps.readFileSync || fs.readFileSync.bind(fs);
   const rename = deps.renameSync || fs.renameSync.bind(fs);
@@ -130,6 +168,11 @@ function loadRegistry(root, deps = {}) {
 
 // Atomic-ish write: same-directory tmp + rename so a crash mid-write never
 // leaves a half JSON; Windows rename replaces existing targets on modern Node.
+/**
+ * @param {string} root
+ * @param {any} registry
+ * @param {{ fs?: typeof fs }} [deps]
+ */
 function saveRegistry(root, registry, deps = {}) {
   const fsp = deps.fs || fs;
   const file = registryFile(root);

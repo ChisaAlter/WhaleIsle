@@ -17,7 +17,7 @@ const consoleErrors = []
 page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 200)) })
 page.on('pageerror', e => consoleErrors.push('PAGEERROR: ' + String(e).slice(0, 200)))
 
-const shot = async name => page.screenshot({ path: `${OUT}/${name}.png` }).catch(() => {})
+const shot = async name => page.screenshot({ path: `${OUT}/${name}.png` }).catch((/** @type {unknown} */ error) => { console.warn('[scripts/c-acceptance/ui-audit.mjs] background operation failed', error); })
 
 /** In-page layout audit: overflow, clipping, dead zones, hit-test conflicts. */
 async function auditDom(label) {
@@ -122,7 +122,7 @@ for (const [label, name] of [['06-panel-browser', '浏览器'], ['07-panel-termi
   await page.evaluate(() => {
     const t = [...document.querySelectorAll('button, [role="tab"], [role="button"]')].find(e => /打开一个面板|新标签页|\+/.test(e.getAttribute('aria-label') ?? e.textContent ?? ''))
     t?.click()
-  }).catch(() => {})
+  }).catch((/** @type {unknown} */ error) => { console.warn('[scripts/c-acceptance/ui-audit.mjs] background operation failed', error); })
 }
 
 // S6. composer affordances (preset, model picker)

@@ -1,4 +1,6 @@
 node_modules/
 bridge/node_modules/
-bridge/dist/
+# bridge/dist 是可选构建产物；入库的 *.d.ts 供 checkJs 稳定解析（#438），其余产物仍忽略
+bridge/dist/**/*.js
+bridge/dist/**/*.js.map
 *.tgz

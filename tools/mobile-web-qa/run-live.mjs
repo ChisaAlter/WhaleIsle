@@ -1048,8 +1048,8 @@ async function main() {
     });
   } finally {
     await cleanupCreated();
-    await shot('live-final').catch(() => {});
-    await browser.close().catch(() => {});
+    await shot('live-final').catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
+    await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
     await new Promise((resolve) => server.close(resolve));
     await stopBouncedDaemon();
   }

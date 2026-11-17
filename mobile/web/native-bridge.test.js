@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { isNativeBootstrapEpoch, projectNativeApproval, projectNativeRows, projectNativeSnapshot, validateNativeAction } from './native-bridge.js';
 
+// #442: the native bootstrap/action bridge moved from app.js to app/native.js,
+// and renderComposer to app/composer.js; the assertions below pin those files.
+const splitSource = (...files) => files.map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
+
 test('native snapshots wait for a valid per-document bootstrap epoch', () => {
   const epoch = '572d2231-8950-47fe-8052-8b2933574781';
   assert.equal(isNativeBootstrapEpoch(epoch), true);
@@ -10,7 +14,7 @@ test('native snapshots wait for a valid per-document bootstrap epoch', () => {
   assert.equal(isNativeBootstrapEpoch(''), false);
   assert.equal(isNativeBootstrapEpoch('not-a-uuid'), false);
   assert.equal(isNativeBootstrapEpoch('00000000-0000-0000-0000-000000000000'), false);
-  const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+  const app = splitSource('./app.js', './app/native.js');
   assert.match(app, /if \(!nativeAndroidApp \|\| !nativeSnapshotEpoch \|\| nativeSnapshotQueued\) return;/);
   assert.match(app, /if \(!nativeSnapshotEpoch \|\| typeof bridge\?\.postMessage !== 'function'\) return;/);
   assert.match(app, /window\.__dshdNativeBootstrap = \(epoch\) => \{[\s\S]*?scheduleNativeSnapshot\(\);\s*return true;/);
@@ -22,7 +26,7 @@ test('native snapshots wait for a valid per-document bootstrap epoch', () => {
 });
 
 test('native draft keeps web composer current without publishing a timeline snapshot per keypress', () => {
-  const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+  const app = splitSource('./app.js', './app/native.js', './app/composer.js');
   assert.match(app, /function renderComposer\(\{ nativeSnapshot = true \} = \{\}\)/);
   assert.match(app, /if \(nativeSnapshot\) scheduleNativeSnapshot\(\)/);
   assert.match(app, /case 'draft':\s*draft\.value = action\.text;[\s\S]*?draftStore\?\.save\(action\.sessionId, action\.text\);\s*renderComposer\(\{ nativeSnapshot: false \}\);/);

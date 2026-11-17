@@ -9,8 +9,15 @@
 
 const { Tray, Menu, nativeImage } = require('electron');
 
+/**
+ * @param {{
+ *   onShow: () => void,
+ *   onQuit: () => void,
+ *   statusLabel?: string | (() => string | undefined),
+ * }} options
+ */
 function launcherTrayTemplate({ onShow, onQuit, statusLabel }) {
-  const items = [];
+  const items = /** @type {import('electron').MenuItemConstructorOptions[]} */ ([]);
   const label = typeof statusLabel === 'function' ? statusLabel() : statusLabel;
   if (label) {
     items.push({ label, enabled: false }, { type: 'separator' });
@@ -23,6 +30,14 @@ function launcherTrayTemplate({ onShow, onQuit, statusLabel }) {
   return items;
 }
 
+/**
+ * @param {{
+ *   onShow: () => void,
+ *   onQuit: () => void,
+ *   toolTip?: string,
+ *   statusLabel?: string | (() => string | undefined),
+ * }} options
+ */
 function createLauncherTray({ onShow, onQuit, toolTip, statusLabel }) {
   // Lazy: window.js pulls the chrome/navigation graph; requiring it at module
   // top would make the pure template un-unit-testable under plain node.

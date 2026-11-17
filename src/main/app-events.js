@@ -14,8 +14,9 @@ const { devToolsShortcutAllowed, attachDevToolsShortcut } = require('./devtools-
  * @param {object} deps
  * @param {import('./app-shell-state').ShellState} deps.state
  * @param {() => void} deps.showForeground
+ * @param {(message: string) => void} deps.log
  */
-function registerAppEvents({ state, showForeground }) {
+function registerAppEvents({ state, showForeground, log }) {
   app.on('second-instance', (_event, commandLine) => {
     if (commandLine.includes('--background')) return;
     showForeground();
@@ -25,11 +26,11 @@ function registerAppEvents({ state, showForeground }) {
   // process crash can leave its layered surface compositing opaque-black over
   // the whole display (whale sprite still draws). Rebuild it on GPU death.
   (/** @type {any} */ (app)).on('gpu-process-crashed', () => {
-    try { getLive2dPet()?.recreateWindow(); } catch {}
+    try { getLive2dPet()?.recreateWindow(); } catch (error) { log(`恢复桌宠窗口失败；请在内置功能中关闭再启用桌宠：${error instanceof Error ? error.message : String(error)}`); }
   });
   app.on('child-process-gone', (_event, details) => {
     if (details?.type === 'GPU') {
-      try { getLive2dPet()?.recreateWindow(); } catch {}
+      try { getLive2dPet()?.recreateWindow(); } catch (error) { log(`恢复桌宠窗口失败；请在内置功能中关闭再启用桌宠：${error instanceof Error ? error.message : String(error)}`); }
     }
   });
 

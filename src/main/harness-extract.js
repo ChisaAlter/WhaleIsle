@@ -31,7 +31,7 @@ const backgroundWork = new Set();
 
 function trackBackground(promise) {
   backgroundWork.add(promise);
-  promise.finally(() => backgroundWork.delete(promise)).catch(() => {});
+  promise.finally(() => backgroundWork.delete(promise)).catch(() => { /* The original background promise is returned to its owner; this only removes its tracking entry. */ });
   return promise;
 }
 
@@ -268,7 +268,7 @@ function runTar(args, { signal, log = () => {}, spawn: spawnChild = spawn,
 async function ensurePackagedHarness(log = () => {}, options = {}) {
   if (!app.isPackaged) return null;
   const dest = extractedHarnessRoot();
-  while (extractions.has(dest)) await extractions.get(dest).catch(() => {});
+  while (extractions.has(dest)) await extractions.get(dest).catch(() => { /* A failed previous extraction must not block a fresh explicit preparation. */ });
   const work = preparePackagedHarness(log, options);
   extractions.set(dest, work);
   try { return await work; } finally {

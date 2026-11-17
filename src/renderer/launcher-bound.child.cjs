@@ -416,7 +416,9 @@ app.whenReady().then(async () => {
       }
       }
       const crypto = require('crypto');
-      const sourceHashes = Object.fromEntries(['launcher.html', 'launcher.css', 'launcher.js', 'theme.js'].map(name =>
+      const pageScripts = [...fs.readFileSync(LAUNCHER_HTML, 'utf8').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)]
+        .map((match) => match[1]).filter((src) => !src.includes('/'));
+      const sourceHashes = Object.fromEntries(['launcher.html', 'launcher.css', ...pageScripts].map(name =>
         [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, name))).digest('hex')]));
       sourceHashes.preload = crypto.createHash('sha256').update(fs.readFileSync(PRELOAD)).digest('hex');
       const display = screen.getDisplayMatching(win.getBounds());

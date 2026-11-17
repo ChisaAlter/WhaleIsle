@@ -145,7 +145,7 @@ let profileAlignChain = Promise.resolve();
 
 function enqueueProfileAlign(work) {
   const run = profileAlignChain.then(work, work);
-  profileAlignChain = run.catch(() => {});
+  profileAlignChain = run.catch(() => { /* The original alignment is returned; a failed operation must not poison the serial queue. */ });
   return run;
 }
 
@@ -281,7 +281,7 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
 }
 
 /** Config fields that choose which built-in plugin overlays the next Harness start composes. */
-const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'];
+const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled', 'dshImEnabled'];
 
 /**
  * Apply a renderer-writable config patch with the same normalization and
@@ -324,7 +324,7 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
     harness.refreshPolicy();
   }
   if (harness && typeof startHarness === 'function' && toggles.length) {
-    // The Project / whale-assistant / remote-workspace toggles change
+    // Built-in feature toggles change
     // which overlays the next start composes, so Harness restarts. The revert
     // stays inside the maintenance slot the write acquired.
     const restart = () => holdThrough(token, enqueueProfileAlign(async () => {
@@ -343,7 +343,7 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
     // confirmation. Other callers (the desktop-control channel, whose own
     // request is in flight) get the saved config first and restart off-thread.
     if (waitForRestart) return restart();
-    setImmediate(() => { void restart().catch(() => {}); });
+    setImmediate(() => { void restart().catch((error) => { if (typeof log === 'function') log(`切换内置插件后重启失败；请从启动器重试启动：${error instanceof Error ? error.message : String(error)}`); }); });
     return next;
   }
   releaseMaintenance(token);

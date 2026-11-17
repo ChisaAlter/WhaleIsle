@@ -10,6 +10,7 @@ const ipcComponents = require('../main/ipc-components');
 const ipcDelta = require('../main/ipc-delta');
 const runtimeInstall = require('../launcher/runtime-install');
 
+/** @param {{launcherConfirm?: {ask?: unknown, register?: (ctx: any) => void}}} [options] */
 function registerSlimIpc({ launcherConfirm } = {}) {
   // No in-process kernel: status/forensics read the shared product home, and
   // desktop start/stop delegate to the managed runtime process. A stub dsh
@@ -17,7 +18,7 @@ function registerSlimIpc({ launcherConfirm } = {}) {
   const dsh = {
     logs: [],
     snapshot: () => ({ state: 'external' }),
-    log: (line) => console.log(line),
+    log: (/** @type {string} */ line) => console.log(line),
   };
   const startExternal = () => runtimeInstall.startExternalDesktop();
   const launcher = createLauncherService({

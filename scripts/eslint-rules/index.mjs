@@ -1,3 +1,5 @@
+import { maxLines, complexity } from './structure.mjs';
+import { noEmptyPromiseCatch } from './empty-catch.mjs';
 // Local guardrail rules for the desktop shell. Every message carries the
 // reason and the replacement so a single review correction keeps protecting
 // the codebase; see docs/maintenance/README.md.
@@ -406,6 +408,9 @@ const tempMarkerIssue = {
 
 export default {
   rules: {
+    'max-lines': maxLines,
+    complexity,
+    'no-empty-promise-catch': noEmptyPromiseCatch,
     'ipc-handler-reads-event': ipcHandlerReadsEvent,
     'ipc-via-register': ipcViaRegister,
     'ipc-channel-contract': ipcChannelContract,

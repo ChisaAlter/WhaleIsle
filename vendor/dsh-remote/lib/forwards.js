@@ -33,7 +33,7 @@ export class ForwardManager {
     try {
       const j = JSON.parse(readFileSync(this.file, 'utf8'))
       if (Array.isArray(j.defs)) return j.defs
-    } catch {}
+    } catch (error) { if (error?.code !== 'ENOENT') throw new Error('无法读取端口转发配置；请检查文件权限与 JSON 格式后重试。', { cause: error }); }
     return []
   }
 
@@ -42,7 +42,7 @@ export class ForwardManager {
     try {
       mkdirSync(path.dirname(this.file), { recursive: true })
       writeFileSync(this.file, JSON.stringify({ defs: this.defs }, null, 2))
-    } catch {}
+    } catch (error) { throw new Error('无法保存端口转发配置；请检查应用数据目录的写入权限后重试。', { cause: error }); }
   }
 
   /** Called by the pool after a successful connect: restore autoStart tunnels. */
@@ -55,7 +55,7 @@ export class ForwardManager {
     client.on('close', this.onClose)
     for (const d of this.defs) {
       if (d.autoStart && d.direction === 'local' && !this.servers.has(d.id)) {
-        this.start(d).catch(() => {})
+        this.start(d).catch((error) => { console.warn('[vendor/dsh-remote/lib/forwards.js] background operation failed', error); })
       }
     }
   }
@@ -100,14 +100,14 @@ export class ForwardManager {
       machineId: machineId || null,
     }
     this.defs.push(d)
-    this._save()
+    try { this._save() } catch (error) { this.defs.pop(); throw error }
     return d
   }
 
   remove(id) {
     this.stop(id)
     const i = this.defs.findIndex((d) => d.id === id)
-    if (i >= 0) { this.defs.splice(i, 1); this._save(); return true }
+    if (i >= 0) { const [removed] = this.defs.splice(i, 1); try { this._save() } catch (error) { this.defs.splice(i, 0, removed); throw error } return true }
     return false
   }
 
@@ -139,7 +139,7 @@ export class ForwardManager {
           if (err) { socket.destroy(); return }
           socket.pipe(channel)
           channel.pipe(socket)
-          const kill = () => { try { socket.destroy() } catch {}; try { channel.close() } catch {} }
+          const kill = () => { try { socket.destroy() } catch { /* The peer may have closed first; still release the other half of the tunnel. */ }; try { channel.close() } catch { /* The peer may have closed first; still release the other half of the tunnel. */ } }
           socket.on('error', kill)
           channel.on('error', kill)
           socket.on('close', kill)
@@ -178,8 +178,8 @@ export class ForwardManager {
         channel.pipe(socket)
         entry.sockets.add(socket)
         const kill = () => {
-          try { socket.destroy() } catch {}
-          try { channel.close() } catch {}
+          try { socket.destroy() } catch { /* The peer may have already destroyed its socket. */ }
+          try { channel.close() } catch { /* The SSH channel may have already closed. */ }
           entry.sockets.delete(socket)
         }
         socket.on('error', kill)
@@ -208,10 +208,10 @@ export class ForwardManager {
         const d = this._defFor(entry)
         entry.client.unforwardIn('127.0.0.1', d.listenPort, () => {})
       }
-    } catch {}
+    } catch { /* Even if unforwarding fails, revoke accepted sockets below. */ }
     // unforwardIn cancels new connections only; revoke accepted channels too.
     // Each target socket's close handler also closes its SSH channel.
-    for (const socket of entry.sockets) { try { socket.destroy() } catch {} }
+    for (const socket of entry.sockets) { try { socket.destroy() } catch { /* A previously closed socket needs no further teardown. */ } }
     entry.sockets.clear()
     this.servers.delete(id)
   }

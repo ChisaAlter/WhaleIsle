@@ -79,7 +79,7 @@ while (!url && Date.now() < deadline) {
 
 if (!url) {
   console.error('No pairing URL within 180s')
-  await killProcessTree(child.pid).catch(() => {})
+  await killProcessTree(child.pid).catch((error) => { console.warn('[scripts/run-remote-phone-host.mjs] background operation failed', error); })
   process.exit(1)
 }
 
@@ -87,4 +87,4 @@ writeFileSync(path.join(dirs.userData, 'pairing-url.final.txt'), `${url}\n`)
 console.log(`Host ready. Staying up ${Math.round(keepMs / 1000)}s.`)
 console.log(`PAIR_URL=${url}`)
 await new Promise((r) => setTimeout(r, keepMs))
-await killProcessTree(child.pid).catch(() => {})
+await killProcessTree(child.pid).catch((error) => { console.warn('[scripts/run-remote-phone-host.mjs] background operation failed', error); })

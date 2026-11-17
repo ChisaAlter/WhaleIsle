@@ -67,7 +67,7 @@ const stageLog = (msg) => {
   if (!file) return;
   try {
     fs.appendFileSync(file, `${new Date().toISOString()} ${msg}\n`);
-  } catch {}
+  } catch { /* Stage logging must not replace the authentication or turn outcome. */ }
 };
 
 // ---------------------------------------------------------------------------
@@ -364,8 +364,8 @@ export class AcpTurnExecution {
     // session/cancel must reach the agent before local teardown — otherwise
     // the agent keeps running a turn nobody is consuming (AC-002).
     try {
-      this.connection.api?.cancel?.().catch(() => {});
-    } catch {}
+      this.connection.api?.cancel?.().catch(() => { /* Local abort still fails the active turn if the remote cancel channel is closed. */ });
+    } catch { /* Local abort below still fails the turn when the remote cancel channel is closed. */ }
     this.fail(abortSignalError());
     this.connection.workQuarantined = true;
   }
@@ -405,7 +405,7 @@ export class AcpTurnExecution {
         this.complete(result);
       })
       .catch((error) => this.fail(error));
-    this.promptPromise.catch(() => {});
+    this.promptPromise.catch(() => { /* The original prompt promise is returned and reports failure to its caller. */ });
     return this.promptPromise;
   }
 
@@ -581,7 +581,7 @@ export class AcpSessionConnection {
       async (err) => {
         release();
         this.readyPromise = null;
-        await this.close().catch(() => {});
+        await this.close().catch(() => { /* Preserve the original startup failure while releasing its session. */ });
         throw err;
       },
     );
@@ -738,7 +738,7 @@ export class AcpSessionConnection {
     // Abort/timeout can fire while createSession is in flight: the runtime
     // spawned the agent already, so a stale handle must die here (AC-008).
     if (this.closed || signal?.aborted) {
-      await disposeSession(handle).catch(() => {});
+      await disposeSession(handle).catch(() => { /* Cancellation below remains the outcome even if the stale session already closed. */ });
       if (this._agyPlan) { await this._agyPlan.cleanup(); this._agyPlan = null; }
       throw this.closed ? new Error('connection closed') : abortSignalError();
     }
@@ -891,7 +891,7 @@ export class AcpSessionConnection {
     const { effect } = runtimeBundle();
     if (event?._tag === 'EventStreamBarrier') {
       // The runtime gates resume/load history on barrier acknowledgements.
-      effect.run(effect.Deferred.succeed(event.acknowledge, undefined)).catch(() => {});
+      effect.run(effect.Deferred.succeed(event.acknowledge, undefined)).catch(() => { /* The runtime may close its barrier during cancellation; no user operation remains. */ });
       return;
     }
     if (event?._tag === 'ConnectionTerminated') {
@@ -1080,7 +1080,7 @@ export class AcpSessionConnection {
         : new Error(`ACP agent "${this.agentConfig?.name}" connection terminated`);
     this.activeTurn?.fail(failure);
     // Avoid closing the event subscription from inside its own callback.
-    queueMicrotask(() => { void this.close().catch(() => {}); });
+    queueMicrotask(() => { void this.close().catch(() => { /* The active turn already received the connection failure above. */ }); });
   }
 
   async _wireHandlers() {
@@ -1308,7 +1308,7 @@ export class AcpSessionConnection {
               effect.Effect.sync(() => this._finishSubagent(notice)),
           }),
         )
-        .catch(() => {});
+        .catch(() => { /* Copilot routing is an optional notification; it must not change the completed session event. */ });
     }
   }
 
@@ -1632,7 +1632,7 @@ export class AcpSessionConnection {
       const agyPlan = this._agyPlan;
       this._agyPlan = null;
       try { if (agyPlan) await agyPlan.cleanup(); }
-      finally { await this._startupPromise?.catch(() => {}); }
+      finally { await this._startupPromise?.catch(() => { /* Observe cancelled startup before completing session disposal. */ }); }
     }
   }
 }
@@ -1745,7 +1745,7 @@ async function probeAntigravityLiveSession(ctx, agent, cwd, { binaryPath, versio
     return { ok: false, error: err?.message || String(err), binaryPath };
   } finally {
     if (timer) clearTimeout(timer);
-    await conn.close().catch(() => {});
+    await conn.close().catch(() => { /* The probe result already carries success or failure; dispose its connection. */ });
   }
 }
 

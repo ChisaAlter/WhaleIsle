@@ -144,7 +144,7 @@ try {
     return { status: 'Pass', note: `桌面取消归档 → 手机 ${Math.round((Date.now() - t0) / 1000)}s 恢复` };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }
 console.log('[retest-sync-reverse] done');

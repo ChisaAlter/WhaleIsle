@@ -47,5 +47,5 @@ try {
   }
   console.log(errors.slice(0, 8).join('\n') || 'no page errors');
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

@@ -1312,7 +1312,7 @@ html[data-ds-theme-source="dark"] .dsh-acp-child-icon img { filter: brightness(0
             .then((data) => {
               if (data) setCatalog(data);
             })
-            .catch(() => {});
+            .catch((error) => { console.warn('[dsh-acp/client/client.js] background operation failed', error); });
         }, 1500);
         return () => clearInterval(timer);
       }, [flowActive, selectedAgent?.id, rpc]);
@@ -1333,7 +1333,7 @@ html[data-ds-theme-source="dark"] .dsh-acp-child-icon img { filter: brightness(0
           setCatalog(next);
           if (enabled) {
             setTimeout(() => {
-              void rpc('catalog').then((d) => d && setCatalog(d)).catch(() => {});
+              void rpc('catalog').then((d) => d && setCatalog(d)).catch((error) => { console.warn('[dsh-acp/client/client.js] background operation failed', error); });
             }, 2200);
           }
         } catch (err) {
@@ -1485,7 +1485,7 @@ html[data-ds-theme-source="dark"] .dsh-acp-child-icon img { filter: brightness(0
         setCopiedUrl(true);
         setTimeout(() => setCopiedUrl(false), 1800);
         if (flowNeedsConsent) {
-          await respondLoginFlow({ type: 'browser', action: 'accept' }).catch(() => {});
+          await respondLoginFlow({ type: 'browser', action: 'accept' });
         }
       };
 

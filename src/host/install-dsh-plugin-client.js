@@ -10,8 +10,9 @@
 // src/shared/secret.js，故按同一 globalThis 契约就地实现
 // （canonical：src/shared/secret.js 的 internalSecret；不回退 process.env）。
 // 存储是只读密钥视图（带 get(name) 的对象；议题 #514 起不再暴露可变 Map）。
+/** @param {string} name */
 function internalSecret(name) {
-  const store = globalThis[Symbol.for('whaleisle.internalSecrets')];
+  const store = Reflect.get(globalThis, Symbol.for('whaleisle.internalSecrets'));
   const value = store && typeof store.get === 'function' ? store.get(name) : undefined;
   return typeof value === 'string' ? value : '';
 }
@@ -28,8 +29,8 @@ const MAX_ALLOW_BUILDS = 32;
  * The control channel installs marketplace plugins only: a bare github:
  * owner/repo spec with an optional #ref. Anything else (registry names,
  * tarballs, local paths, git URLs) must never reach `pnpm add`.
- * @param spec - candidate install spec.
- * @returns whether the spec is a github: owner/repo reference.
+ * @param {unknown} spec - candidate install spec.
+ * @returns {boolean} whether the spec is a github: owner/repo reference.
  */
 function isValidGithubSpec(spec) {
   const value = String(spec || '').trim();
@@ -54,6 +55,7 @@ function isValidGithubSpec(spec) {
     && !ref.endsWith('/');
 }
 
+/** @param {unknown} value */
 function isValidAllowBuild(value) {
   if (typeof value !== 'string') {
     return false;
@@ -65,6 +67,7 @@ function isValidAllowBuild(value) {
   return isValidPackageName(key) || GITHUB_ALLOW_BUILD_PATTERN.test(key) || GIT_ALLOW_BUILD_PATTERN.test(key);
 }
 
+/** @param {unknown} value */
 function isValidPackageName(value) {
   if (typeof value !== 'string') {
     return false;
@@ -82,8 +85,8 @@ function isValidPackageName(value) {
  * Validate pnpm allowBuilds keys: package names, `github.com/owner/repo`,
  * and `name@git+https://github.com/owner/repo.git`. Rejects bare `https://`
  * URLs, YAML, paths, and arbitrary objects from a renderer/tool call.
- * @param value - candidate allowBuilds array.
- * @returns a unique normalized array, or null when any item is invalid.
+ * @param {unknown} value - candidate allowBuilds array.
+ * @returns {string[] | null} a unique normalized array, or null when any item is invalid.
  */
 function normalizeAllowBuilds(value) {
   if (value == null) {
@@ -107,6 +110,10 @@ function normalizeAllowBuilds(value) {
   return keys;
 }
 
+/**
+ * @param {string} error
+ * @param {string} [spec]
+ */
 function emptyInstallResult(error, spec = '') {
   return {
     ok: false,
@@ -120,6 +127,10 @@ function emptyInstallResult(error, spec = '') {
   };
 }
 
+/**
+ * @param {Record<string, unknown> | null | undefined} result
+ * @param {string} spec
+ */
 function normalizeInstallResult(result, spec) {
   const needsAllowBuilds = Boolean(result?.needsAllowBuilds);
   const ok = Boolean(result?.ok);
@@ -135,6 +146,9 @@ function normalizeInstallResult(result, spec) {
   };
 }
 
+/**
+ * @param {{declined: boolean, needsAllowBuilds: boolean, allowBuilds: string[], spec: string, ok: boolean, error: string}} value
+ */
 function renderInstall(value) {
   if (value.declined) {
     return '用户拒绝了这次插件变更，不要重试，除非用户再次明确要求。';
@@ -151,11 +165,11 @@ function renderInstall(value) {
 
 /**
  * POST one install request to the desktop control endpoint.
- * @param url - loopback base URL from DSH_DESKTOP_INSTALL_URL.
- * @param token - bearer token from DSH_DESKTOP_INSTALL_TOKEN.
- * @param spec - github:owner/repo[#sha] spec.
- * @param allowBuilds - optional pnpm allowBuilds keys.
- * @returns the desktop install result JSON.
+ * @param {string | URL} url - loopback base URL from DSH_DESKTOP_INSTALL_URL.
+ * @param {string} token - bearer token from DSH_DESKTOP_INSTALL_TOKEN.
+ * @param {string} spec - github:owner/repo[#sha] spec.
+ * @param {string[]} [allowBuilds] - optional pnpm allowBuilds keys.
+ * @returns {Promise<Record<string, unknown>>} the desktop install result JSON.
  */
 async function requestDesktopInstall(url, token, spec, allowBuilds = []) {
   const endpoint = new URL('/install', url);
@@ -182,10 +196,10 @@ async function requestDesktopInstall(url, token, spec, allowBuilds = []) {
 
 /**
  * Validate the spec, call the control endpoint, and normalize the result.
- * @param control - loopback URL and token.
- * @param spec - github: spec from the model.
- * @param allowBuilds - optional pnpm allowBuilds keys.
- * @param request - injectable HTTP client.
+ * @param {{url: string, token: string}} control - loopback URL and token.
+ * @param {unknown} spec - github: spec from the model.
+ * @param {unknown} [allowBuilds] - optional pnpm allowBuilds keys.
+ * @param {(url: string | URL, token: string, spec: string, allowBuilds: string[]) => Promise<Record<string, unknown>>} [request] - injectable HTTP client.
  */
 async function executeInstallDshPlugin(control, spec, allowBuilds = [], request = requestDesktopInstall) {
   const trimmed = String(spec || '').trim();

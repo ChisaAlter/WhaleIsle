@@ -65,7 +65,7 @@ function stageLogIndex(msg) {
   if (!file) return;
   try {
     fs.appendFileSync(file, `${new Date().toISOString()} ${msg}\n`);
-  } catch {}
+  } catch { /* Stage logging must not replace the delegated task outcome. */ }
 }
 
 // Diagnostic: write full error stacks for ACP stream failures to a sidecar log.
@@ -465,7 +465,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
         await assertCredentialsStable(agent);
         conn = createConnection(agent, identity.cwd, childId, parent, identity);
         sessionConnections.set(connKey, conn);
-        onAbortPreparation = () => { void conn.close().catch(() => {}); };
+        onAbortPreparation = () => { void conn.close().catch(() => { /* The aborted preparation owns its failure; release the pending connection. */ }); };
         signal.addEventListener('abort', onAbortPreparation, { once: true });
         signal.throwIfAborted();
         await conn.ensureReady(signal);
@@ -494,7 +494,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
         const receipt = tasks.attach(parent, task, child);
         const onAbort = () => { void tasks.cancel(parent, task.taskId).catch((error) => appendAcpErrorLog('delegation/cancel', error, {})); };
         signal.addEventListener('abort', onAbort, { once: true });
-        receipt.result.finally(() => signal.removeEventListener('abort', onAbort)).catch(() => {});
+        receipt.result.finally(() => signal.removeEventListener('abort', onAbort)).catch(() => { /* The task receipt owns its failure; this observer only removes the abort listener. */ });
         if (signal.aborted) await tasks.cancel(parent, task.taskId);
         return receipt;
       } catch (error) {
@@ -530,7 +530,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
       const initial = await tasks.snapshot(parent, id);
       if (initial.status !== 'running') return tasks.snapshot(parent, id, true);
       await changed; return tasks.snapshot(parent, id, true);
-    } finally { clearTimeout(timer); off?.(); signal.removeEventListener('abort', onAbort); changed.catch(() => {}); }
+    } finally { clearTimeout(timer); off?.(); signal.removeEventListener('abort', onAbort); changed.catch(() => { /* A completed or failed snapshot read must still observe its abandoned change waiter. */ }); }
   }
 
   const MCP_BRIDGE_PATH = fileURLToPath(new URL('./vendor/mcp-bridge.cjs', import.meta.url));
@@ -1088,7 +1088,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
         if (!sessionResolved) {
           sessionConnections.delete(connKey);
           releaseConnMcpToken(conn);
-          void conn.close().catch(() => {});
+          void conn.close().catch(() => { /* The failed delegation reports its original error after releasing the unresolved session. */ });
         }
       }
     },
@@ -1149,7 +1149,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
       if (decodeConnKey(key)[1] === agentId) {
         sessionConnections.delete(key);
         releaseConnMcpToken(conn);
-        closing.push(conn.close().catch(() => {}));
+        closing.push(conn.close().catch(() => { /* Continue closing the other connections after one is already disconnected. */ }));
       }
     }
     await Promise.all(closing);
@@ -1180,7 +1180,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
     const closing = [];
     for (const [, conn] of sessionConnections.entries()) {
       releaseConnMcpToken(conn);
-      closing.push(conn.close().catch(() => {}));
+      closing.push(conn.close().catch(() => { /* Continue closing the other connections after one is already disconnected. */ }));
     }
     sessionConnections.clear();
     await Promise.all(closing);
@@ -1330,7 +1330,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
     // Persist the runtime's confirmed-auth marker too — account status reads authState,
     // not acpAuthedAt, so without this the UI reports "未登录" forever and
     // re-prompts sign-in after every successful session authenticate.
-    authManager?.markAuthenticated?.(agent);
+    void authManager?.markAuthenticated?.(agent).catch(error => appendAcpErrorLog('authentication/persist', error, { agentId }));
     if (agent.acpAuthedAt) return;
     const updated = normalizeAgentRecord(
       { ...agent, acpAuthedAt: Date.now() },
@@ -1451,7 +1451,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
                   mergeDiscoveredModels(id, extractModelsFromProbe(probe));
                 }
               })
-              .catch(() => {});
+              .catch((error) => { console.warn('[dsh-acp/lib/index.js] background operation failed', error); });
           }
         }
         return buildCatalog();
@@ -1746,7 +1746,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
           if (conn) {
             sessionConnections.delete(key);
             releaseConnMcpToken(conn);
-            await conn.close().catch(() => {});
+            await conn.close().catch(() => { /* Continue deleting the agent configuration after its connection is already closed. */ });
           }
           delete sessionStore[key];
         } else if (agentId) {

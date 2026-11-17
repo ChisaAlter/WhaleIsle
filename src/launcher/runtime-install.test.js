@@ -439,7 +439,7 @@ for (const route of ['github', 'cnb']) {
         } finally {
           runtimeInstall.cancelRuntimeInstall();
           finishLookup?.();
-          if (pending) await pending.catch(() => {});
+          if (pending) await pending.catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
           global.fetch = previousFetch;
         }
       });

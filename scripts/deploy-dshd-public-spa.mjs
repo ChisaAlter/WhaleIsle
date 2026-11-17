@@ -113,7 +113,7 @@ def stamp_module_versions(source: str, stamp: str) -> tuple[str, int]:
     # ESM child modules have their own cache keys. Keep relative imports in
     # uploaded JavaScript on the same deploy stamp as index.html, otherwise a
     # fresh app.js can be evaluated with an older fold/tool module.
-    pattern = re.compile(r'(from\s+|import\s*(?:\(\s*)?)(["\'])(\./[^"\'?]+\.m?js)(?:\?v=[^"\']*)?\2')
+    pattern = re.compile(r'(from\s+|import\s*(?:\(\s*)?)(["\'])(\.{1,2}/[^"\'?]+\.m?js)(?:\?v=[^"\']*)?\2')
     count = 0
 
     def repl(match):
@@ -331,11 +331,14 @@ if (!files.some((f) => f.rel === 'host/backend.js') || !files.some((f) => f.rel 
   process.exit(1);
 }
 const appJs = readFileSync(join(LOCAL_ROOT, 'app.js'), 'utf8');
-if (appJs.includes('fetchAgents')) {
-  console.error('refuse to publish app.js that still mentions fetchAgents');
+// #442: the SPA catalog call moved from app.js into app/session.js during the
+// split; the guard checks its new home so a stale pre-split tree still fails.
+const appSessionJs = readFileSync(join(LOCAL_ROOT, 'app', 'session.js'), 'utf8');
+if (appJs.includes('fetchAgents') || appSessionJs.includes('fetchAgents')) {
+  console.error('refuse to publish SPA sources that still mention fetchAgents');
   process.exit(1);
 }
-if (!appJs.includes("hostCall(client, 'session.list'")) {
+if (!appSessionJs.includes("hostCall(client, 'session.list'")) {
   console.error('refuse to publish SPA without hostCall session.list');
   process.exit(1);
 }

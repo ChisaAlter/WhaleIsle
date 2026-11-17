@@ -122,6 +122,18 @@ jobs:
         run: npm run prepare:dshd-remote
       - name: Desktop behavior tests
         run: npm test
+      - name: Scripted source UI walkthrough
+        env:
+          DSH_QA_EVIDENCE_DIR: work/source-ui-walk
+        run: npm run qa:source
+      - name: Source UI walkthrough evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: source-ui-walk-${{ runner.os }}
+          path: work/source-ui-walk
+          if-no-files-found: warn
+          retention-days: 14
       - name: Update download network recovery
         run: npm run qa:update-download
       - name: GUI behavior tests
@@ -233,7 +245,22 @@ jobs:
       - name: Allow Chromium sandbox user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Desktop behavior tests
-        run: xvfb-run --auto-servernum npm test
+        # Electron fixtures open and close the last X client between tests.
+        # Keep Xvfb alive without resetting its display while the next client
+        # connects; a reset can reject that connection before Electron starts.
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -noreset" npm test
+      - name: Scripted source UI walkthrough
+        env:
+          DSH_QA_EVIDENCE_DIR: work/source-ui-walk
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -noreset" npm run qa:source
+      - name: Source UI walkthrough evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: source-ui-walk-${{ runner.os }}
+          path: work/source-ui-walk
+          if-no-files-found: warn
+          retention-days: 14
   macos-tests:
     needs: scope
     if: needs.scope.outputs.product == 'true'
@@ -263,6 +290,18 @@ jobs:
         run: npm run prepare:dshd-remote
       - name: Desktop behavior tests
         run: npm test
+      - name: Scripted source UI walkthrough
+        env:
+          DSH_QA_EVIDENCE_DIR: work/source-ui-walk
+        run: npm run qa:source
+      - name: Source UI walkthrough evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: source-ui-walk-${{ runner.os }}
+          path: work/source-ui-walk
+          if-no-files-found: warn
+          retention-days: 14
   result:
     name: CI
     if: always()

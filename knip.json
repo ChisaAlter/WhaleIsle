@@ -34,7 +34,8 @@
     // renderer：<script src>（boot/launcher/pet/file-preview/update-dialog/
     // update-center/welcome/pet-live2d HTML）、vm 测试夹具（*.child.cjs）、
     // readFileSync 注入与 wasm 载荷——knip 不解析 HTML
-    "src/renderer/{boot,feedback,file-preview,launcher-components,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher}.js",
+    "src/renderer/{boot,feedback,file-preview,launcher-components,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher,launcher-core,launcher-versions,launcher-plugins,launcher-routes,launcher-home,launcher-import}.js",
+    "src/renderer/pet-live2d-*.js",
     "src/renderer/**/*.child.cjs",
     // 测试按路径打包/装载的渲染夹具
     "src/renderer/**/*.fixture.*",
@@ -114,6 +115,8 @@
     "src/main/{git-exec,import-guard,ipc-components,ipc-delta,pet-settings,pet-stats,marketplace-install,update-dialog}.js": ["exports"],
     // module.exports 本体在 knip 中记为 default 导出，CJS 单导出模块属误报
     "src/{main/{browser-guests,preview-session,updates-state},shared/{ipc-contract,launcher-recovery}}.js": ["exports"],
+    // 测试夹具：全部经 kit.loadLauncherPage 这类命名空间成员访问消费
+    "src/renderer/launcher-test-kit.cjs": ["exports"],
     // @chisacode/* 由 vendored vendor/chisacode-remote 在 bundle 构建时提供
     "mobile/web/chisacode/**": ["unlisted"],
     // install-harness.cjs 被 electron-builder 拷进 $INSTDIR/resources/runtime/，

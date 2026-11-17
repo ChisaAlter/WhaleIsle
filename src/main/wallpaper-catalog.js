@@ -300,7 +300,7 @@ async function undiciAgentClass() {
     undiciAgentPromise = (async () => {
       if (!undiciGlobalDispatcher()) {
         // Warm the lazy global dispatcher; the request outcome is irrelevant.
-        await fetch('http://127.0.0.1:1/', { signal: AbortSignal.timeout(500) }).catch(() => {});
+        await fetch('http://127.0.0.1:1/', { signal: AbortSignal.timeout(500) }).catch(() => { /* This refused loopback request only initializes undici; no wallpaper download is involved. */ });
       }
       const dispatcher = undiciGlobalDispatcher();
       const Agent = dispatcher && dispatcher.constructor;

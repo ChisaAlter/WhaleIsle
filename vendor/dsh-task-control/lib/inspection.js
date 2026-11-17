@@ -17,16 +17,23 @@ LOOPBACK.addAddress('::1', 'ipv6');
 // ScheduleRecord.kind discriminators; 'after'/'at' are one-shots.
 const RECURRING_KINDS = new Set(['every', 'daily', 'weekly', 'cron']);
 
+/** @param {string} name */
 function envFlag(name) {
   const value = process.env[name];
   return value === '1' || value === 'true';
 }
 
+/** @param {any} agent */
 function hasAgentWork(agent) {
   return agent.status === 'running'
     || (agent.inbox && (agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0));
 }
 
+/**
+ * @param {any} agents
+ * @param {any[]} activeWork
+ * @param {Record<string, string>} coverage
+ */
 function collectAgents(agents, activeWork, coverage) {
   if (agents === undefined || agents === null || typeof agents.list !== 'function') {
     coverage.agents = 'unavailable';
@@ -52,6 +59,12 @@ function collectAgents(agents, activeWork, coverage) {
   return list;
 }
 
+/**
+ * @param {any} jobs
+ * @param {any[]} liveAgents
+ * @param {any[]} activeWork
+ * @param {Record<string, string>} coverage
+ */
 function collectJobs(jobs, liveAgents, activeWork, coverage) {
   if (jobs === undefined || jobs === null || typeof jobs.list !== 'function') {
     coverage.jobs = 'unavailable';
@@ -76,10 +89,16 @@ function collectJobs(jobs, liveAgents, activeWork, coverage) {
   }
 }
 
+/** @param {{ kind: string }} record */
 function isRecurringRecord(record) {
   return RECURRING_KINDS.has(record.kind);
 }
 
+/**
+ * @param {import('@deepseek-ai/cordis').Context} ctx
+ * @param {any[]} scheduledWork
+ * @param {Record<string, string>} coverage
+ */
 async function collectSchedule(ctx, scheduledWork, coverage) {
   // The desktop declares schedule off by not passing DSHD_SCHEDULE_ENABLED;
   // per the coverage contract that is `intentional-disabled`, not damage.
@@ -119,6 +138,10 @@ async function collectSchedule(ctx, scheduledWork, coverage) {
   }
 }
 
+/**
+ * @param {any} webServer
+ * @param {any[]} activeWork
+ */
 function collectSockets(webServer, activeWork) {
   const sockets = webServer && webServer.upgradedSockets;
   if (!(sockets instanceof Set)) return 0;
@@ -143,8 +166,11 @@ function collectSockets(webServer, activeWork) {
  */
 export async function collectInspection(ctx, state, options = {}) {
   const observedAt = (options.now ?? Date.now)();
+  /** @type {any[]} */
   const activeWork = [];
+  /** @type {any[]} */
   const scheduledWork = [];
+  /** @type {Record<string, string>} */
   const coverage = {};
   const liveAgents = collectAgents(ctx.get('agents'), activeWork, coverage);
   collectJobs(ctx.get('jobs'), liveAgents, activeWork, coverage);

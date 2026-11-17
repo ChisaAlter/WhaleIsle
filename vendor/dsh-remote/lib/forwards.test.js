@@ -447,3 +447,20 @@ test('forward definitions persist to disk and reload with their scope intact', (
     { id: reverse.id, direction: 'reverse', listenPort: 19090, autoStart: true, machineId: 'synthetic-machine' },
   ])
 })
+
+test('failed persistence reports an actionable error and does not claim the definition was saved', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'whale-forward-errors-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // The blocker is portable: using a file as a directory fails even as root.
+  const blocker = path.join(root, 'blocker');
+  const file = path.join(blocker, 'forwards.json');
+  const manager = new ForwardManager(fakePool(new FakeClient()), { file });
+  manager.file = root; // writing JSON to a directory must fail
+  assert.throws(() => manager.define({ listenPort: 1111, targetPort: 2222 }), /无法保存端口转发配置/);
+  assert.deepEqual(manager.list(), []);
+  manager.file = null;
+  const saved = manager.define({ listenPort: 1111, targetPort: 2222 });
+  manager.file = root;
+  assert.throws(() => manager.remove(saved.id), /写入权限/);
+  assert.equal(manager.list()[0].id, saved.id);
+});

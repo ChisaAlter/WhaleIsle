@@ -189,6 +189,8 @@ export default [
     languageOptions: { ecmaVersion: 'latest' },
     rules: {
       'no-dupe-keys': 'error',
+      'no-empty': 'error',
+      'whaleisle/no-empty-promise-catch': 'error',
       'no-dupe-class-members': 'error',
       'no-dupe-else-if': 'error',
       'no-duplicate-case': 'error',
@@ -320,5 +322,15 @@ export default [
     files: ['scripts/**/*.{js,mjs,cjs}'],
     ignores: ['**/*.test.{js,mjs,cjs}'],
     rules: { 'no-restricted-syntax': ['error', ...RESTRICTED_SYNTAX_BASE, ...RESTRICTED_MKDTEMP] },
+  },
+  // #443: production ownership only. Existing over-budget files/functions
+  // retain explicit ceilings in structure-baseline.json; new ones get 800/20.
+  {
+    files: CHECKED_FILES,
+    ignores: ['**/*.test.{js,mjs,cjs}', '**/*.child.cjs', '**/*.fixture.*', '**/*-test-kit.cjs'],
+    rules: {
+      'whaleisle/max-lines': 'error',
+      'whaleisle/complexity': 'error',
+    },
   },
 ];

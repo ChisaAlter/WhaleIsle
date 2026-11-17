@@ -130,7 +130,7 @@ function scheduleRestart(startHarness, delayMs) {
     }
     active.restartTimer = null;
     if (typeof startHarness === 'function') {
-      Promise.resolve(startHarness()).catch(() => {});
+      Promise.resolve().then(() => startHarness()).catch((error) => { console.warn('[desktop-install-control] 插件变更后的重启失败；请从启动器重试启动。', error); });
     }
   }, delayMs);
 }

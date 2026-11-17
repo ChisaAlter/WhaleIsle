@@ -1,48 +1,34 @@
 'use strict';
 
+// Behavior characterization for the launcher page. The tests evaluate the
+// real page scripts in page order through launcher-test-kit (one shared
+// global scope over a fake DOM parsed from launcher.html) and drive the
+// actual functions — not extracted source slices — with stubbed bridge
+// answers and collaborator globals.
+
 const assert = require('node:assert/strict');
 const test = require('node:test');
-
-// Minimal DOM the module needs at load time (bind() is not invoked under
-// node --test because it only runs on DOMContentLoaded in the real page).
-// The shared DOM builder needs element factories for paintProgress.
-global.window = {};
-global.document = {
-  getElementById: () => null,
-  querySelector: () => null,
-  querySelectorAll: () => [],
-  addEventListener() {},
-  createElement: (tag) => ({ tagName: tag.toUpperCase(), children: [], attrs: {}, style: { setProperty() {} }, setAttribute() {}, appendChild(c) { this.children.push(c); return c; } }),
-  createElementNS: (ns, tag) => global.document.createElement(tag),
-  createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
-  activeElement: null,
-};
-
-const { radioNextIndex, issueRouteSave, installPhaseText, paintProgress } = require('./launcher');
+const kit = require('./launcher-test-kit.cjs');
 
 test('version installation displays manual DMG instructions and releases busy state', async () => {
-  const fs = require('node:fs');
-  const vm = require('node:vm');
-  const source = fs.readFileSync(require('node:path').join(__dirname, 'launcher.js'), 'utf8');
-  const start = source.indexOf('async function installTag(');
-  const end = source.indexOf('async function installDelta(', start);
-  const elements = new Map(['update-progress-title', 'update-progress'].map((id) => [id, { textContent: '' }]));
+  const api = { installRelease: async () => ({ manualInstall: true, launched: false, message: 'Drag into Applications' }) };
+  const { context, document: doc, evalIn } = kit.loadLauncherPage({ api });
   const phases = [];
-  const context = vm.createContext({ updateBusy: false, lastStatus: {}, progressPanels: new Map(),
+  Object.assign(context, {
     // Slim launcher package: no update center answers, the legacy flow runs.
     openUpdateCenter: async () => false,
-    pageShell: () => ({ installRelease: async () => ({ manualInstall: true, launched: false, message: 'Drag into Applications' }) }),
-    appConfirm: async () => true, $: (id) => elements.get(id),
     paintProgress: (_id, state) => phases.push(state.phase),
     refreshStatus: () => assert.fail('opening a DMG does not certify installation'),
-    errText: (error) => error.message });
-  await vm.runInContext(`${source.slice(start, end)}; installTag('v9.9.9', 'update')`, context);
-  assert.equal(elements.get('update-progress').textContent, 'Drag into Applications');
+  });
+  await context.installTag('v9.9.9', 'update');
+  assert.equal(doc.getElementById('update-progress').textContent, 'Drag into Applications');
   assert.equal(phases.at(-1), 'waiting');
-  assert.equal(context.updateBusy, false);
+  assert.equal(evalIn('updateBusy'), false);
 });
 
 test('installation feedback distinguishes unknown length, retry and waiting for the wizard', () => {
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const installPhaseText = context.installPhaseText;
   const text = installPhaseText({ phase: 'download', percent: null, received: 1048576, total: 0 });
   assert.match(text, /1\.0 MB/);
   assert.doesNotMatch(text, /%/);
@@ -52,11 +38,6 @@ test('installation feedback distinguishes unknown length, retry and waiting for 
 });
 
 test('delta fallback reports actual installer stages and only certifies applied installation', async () => {
-  const fs = require('node:fs');
-  const vm = require('node:vm');
-  const source = fs.readFileSync(require('node:path').join(__dirname, 'launcher.js'), 'utf8');
-  const start = source.indexOf('async function installDelta(');
-  const end = source.indexOf('async function saveSettings(', start);
   const scenarios = [
     { result: { mode: 'full', ok: true, launched: true, status: 'waiting' }, phase: 'waiting' },
     { result: { mode: 'full', ok: true, status: 'quit-pending' }, phase: 'waiting' },
@@ -68,18 +49,20 @@ test('delta fallback reports actual installer stages and only certifies applied 
     { result: { mode: 'full', cancelled: true, status: 'waiting', message: '已停止等待，安装向导仍在运行' }, phase: 'waiting' },
   ];
   for (const { result, phase } of scenarios) {
-    const elements = new Map(['update-progress-title', 'update-progress'].map(id => [id, { textContent: '' }]));
+    const { context, document: doc, evalIn } = kit.loadLauncherPage({
+      api: { installDelta: async () => result },
+    });
     const phases = [];
     let refreshes = 0;
-    const context = vm.createContext({ updateBusy: false, progressPanels: new Map(),
-      pageShell: () => ({ installDelta: async () => result }), appConfirm: async () => true,
-      $: id => elements.get(id), paintProgress: (_id, state) => phases.push(state.phase),
-      refreshStatus: () => { refreshes++; }, refreshReleases: () => { refreshes++; },
-      errText: error => error.message, setHint: () => assert.fail('valid installer stages are not errors') });
-    await vm.runInContext(`${source.slice(start, end)}; installDelta('v9.9.9')`, context);
+    Object.assign(context, {
+      paintProgress: (_id, state) => phases.push(state.phase),
+      refreshStatus: () => { refreshes += 1; },
+      refreshReleases: () => { refreshes += 1; },
+    });
+    await context.installDelta('v9.9.9');
     assert.equal(phases.at(-1), phase, JSON.stringify(result));
-    assert.equal(context.updateBusy, false);
-    const text = elements.get('update-progress').textContent;
+    assert.equal(evalIn('updateBusy'), false);
+    const text = doc.getElementById('update-progress').textContent;
     if (phase === 'waiting') {
       assert.ok(text.trim(), 'an unconfirmed installation remains visible');
       assert.doesNotMatch(text, /完成安装：|安装完成：|已增量更新到/);
@@ -88,28 +71,28 @@ test('delta fallback reports actual installer stages and only certifies applied 
       assert.match(text, /(?:完成安装|已增量更新到).*9\.9\.9/);
       assert.equal(refreshes, 2);
     }
+    assert.equal(doc.querySelectorAll('.shell-feedback-toast').length, 0,
+      'valid installer stages are not errors');
   }
 });
 
 test('unconfirmed installation clears activity and a retry restores the progress surface', () => {
-  const elements = new Map();
-  for (const id of ['card', 'title', 'pct', 'bar', 'phases', 'kind']) {
-    elements.set(`test-${id}`, { hidden: false, textContent: '', style: {}, parentElement: { hidden: false }, replaceChildren(...nodes) { this.children = nodes; }, children: [] });
-  }
-  const old = document.getElementById;
-  document.getElementById = (id) => elements.get(id);
-  try {
-    paintProgress('test', { phase: 'download', percent: 80 });
-    paintProgress('test', { phase: 'waiting' });
-    assert.equal(elements.get('test-title').textContent, '安装结果待确认');
-    assert.equal(elements.get('test-pct').textContent, '');
-    assert.equal(elements.get('test-bar').parentElement.hidden, true);
-    assert.equal(elements.get('test-phases').hidden, true);
-    paintProgress('test', { phase: 'download', percent: null });
-    assert.equal(elements.get('test-bar').parentElement.hidden, false);
-    assert.equal(elements.get('test-bar').style.width, '0%');
-    assert.equal(elements.get('test-phases').hidden, false);
-  } finally { document.getElementById = old; }
+  const { context, document: doc } = kit.loadLauncherPage({ api: {} });
+  const paintProgress = context.paintProgress;
+  const wrap = doc.createElement('div');
+  doc.body.appendChild(wrap);
+  wrap.appendChild(doc.getElementById('test-bar'));
+  const el = (id) => doc.getElementById(`test-${id}`);
+  paintProgress('test', { phase: 'download', percent: 80 });
+  paintProgress('test', { phase: 'waiting' });
+  assert.equal(el('title').textContent, '安装结果待确认');
+  assert.equal(el('pct').textContent, '');
+  assert.equal(el('bar').parentElement.hidden, true);
+  assert.equal(el('phases').hidden, true);
+  paintProgress('test', { phase: 'download', percent: null });
+  assert.equal(el('bar').parentElement.hidden, false);
+  assert.equal(el('bar').style.width, '0%');
+  assert.equal(el('phases').hidden, false);
 });
 
 function buttons(n, disabled = []) {
@@ -117,6 +100,8 @@ function buttons(n, disabled = []) {
 }
 
 test('radioNextIndex advances right/down and wraps at the end', () => {
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const radioNextIndex = context.radioNextIndex;
   const enabled = buttons(3);
   assert.equal(radioNextIndex(enabled, 0, 'ArrowRight'), 1);
   assert.equal(radioNextIndex(enabled, 2, 'ArrowRight'), 0);
@@ -124,6 +109,8 @@ test('radioNextIndex advances right/down and wraps at the end', () => {
 });
 
 test('radioNextIndex retreats left/up and wraps at the start', () => {
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const radioNextIndex = context.radioNextIndex;
   const enabled = buttons(3);
   assert.equal(radioNextIndex(enabled, 2, 'ArrowLeft'), 1);
   assert.equal(radioNextIndex(enabled, 0, 'ArrowLeft'), 2);
@@ -131,6 +118,8 @@ test('radioNextIndex retreats left/up and wraps at the start', () => {
 });
 
 test('radioNextIndex ignores non-arrow keys so other controls keep them', () => {
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const radioNextIndex = context.radioNextIndex;
   const enabled = buttons(2);
   assert.equal(radioNextIndex(enabled, 0, 'Tab'), -1);
   assert.equal(radioNextIndex(enabled, 0, 'Enter'), -1);
@@ -141,6 +130,8 @@ test('radio group callers pre-filter disabled so the enabled list never lands on
   // The navigation helper is only ever handed the enabled subset — the same
   // filter renderRouteControls applies — so a disabled middle item is skipped
   // by construction (it is not in `enabled` at all).
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const radioNextIndex = context.radioNextIndex;
   const all = buttons(4, [1, 3]);
   const enabled = all.filter((b) => !b.disabled);
   assert.deepEqual(enabled.map((b) => b.idx), [0, 2]);
@@ -152,9 +143,10 @@ test('a single keypress maps to exactly one index step (no replay)', () => {
   // Regression for stacked listeners: the handler computes one `next` from
   // the live enabled list and applies it once. Multiple render passes must
   // not multiply the step — the container binds once via dataset.navBound.
+  const { context } = kit.loadLauncherPage({ api: {} });
   const enabled = buttons(3);
   const presses = ['ArrowRight'];
-  const applied = presses.map((k) => radioNextIndex(enabled, 0, k)).filter((i) => i >= 0);
+  const applied = presses.map((k) => context.radioNextIndex(enabled, 0, k)).filter((i) => i >= 0);
   assert.equal(applied.length, 1);
   assert.equal(applied[0], 1);
 });
@@ -163,6 +155,8 @@ test('route pick serialization: Right then Left before refresh issues BOTH saves
   // Regression for the pickRoute race: Right (issue A) then Left (issue B)
   // before the status refresh re-renders must not drop B just because the
   // rendered selection still showed the first target.
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const issueRouteSave = context.issueRouteSave;
   const saved = [];
   const api = { saveLauncherConfig: async ({ downloadRoute }) => { saved.push(downloadRoute); } };
   let refreshed = 0;
@@ -179,6 +173,8 @@ test('route pick serialization: Right then Left before refresh issues BOTH saves
 });
 
 test('route pick surfaces save errors only for the latest issued pick', async () => {
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const issueRouteSave = context.issueRouteSave;
   const saved = [];
   const api = {
     saveLauncherConfig: async ({ downloadRoute }) => {
@@ -195,6 +191,8 @@ test('a failed route save resets the issued marker so the same route can be retr
   // Regression for the dedup marker surviving a failed save: previously a
   // rejected write left `lastIssuedRoute` pointing at the un-persisted value,
   // so re-picking that route compared equal and was silently dropped.
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const issueRouteSave = context.issueRouteSave;
   const saved = [];
   let fail = true;
   const api = {
@@ -220,6 +218,8 @@ test('a resolved {ok:false} route-save refusal is treated as a failure, not succ
   // maintenance-in-progress) rather than reject. issueRouteSave must treat
   // that as a failed save — reset the marker and surface the error — instead
   // of returning success on a route that was never persisted.
+  const { context } = kit.loadLauncherPage({ api: {} });
+  const issueRouteSave = context.issueRouteSave;
   const saved = [];
   let refuse = true;
   const api = {
@@ -255,10 +255,8 @@ test('launcher.html import sub-panes are div[role=tabpanel] with tabindex', () =
 });
 
 test('route picker renders roving tabindex radios bound once via navBound', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const src = fs.readFileSync(path.join(__dirname, 'launcher.js'), 'utf8');
   // The picker buttons carry a roving tabindex (current = 0, rest = -1).
+  const src = [...kit.launcherSources().values()].join('\n');
   assert.match(src, /tabindex: route\.id === current \? '0' : '-1'/, 'picker radio must rove tabindex');
   // Focus handlers bind exactly once (navBound) for both picker and seg.
   const navBinds = (src.match(/dataset\.navBound = '1'/g) || []).length;

@@ -132,8 +132,8 @@ test('closing the parent stdin stops the host and its SIGTERM-ignoring tree', po
   fixture.stdin.on('error', () => {});
   let pids = null;
   t.after(async () => {
-    await killProcessTree(fixture.pid).catch(() => {});
-    if (pids) await killProcessTree(pids.leaf, { graceMs: 200 }).catch(() => {});
+    await killProcessTree(fixture.pid).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
+    if (pids) await killProcessTree(pids.leaf, { graceMs: 200 }).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     fs.rmSync(dir, { recursive: true, force: true });
   });
   pids = await readPidLine(fixture);
@@ -158,10 +158,10 @@ test('a SIGKILLed middle parent still lets the host observe stdin close', posixO
   });
   let pids = null;
   t.after(async () => {
-    await killProcessTree(middle.pid).catch(() => {});
+    await killProcessTree(middle.pid).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     if (pids) {
-      await killProcessTree(pids.self, { graceMs: 200 }).catch(() => {});
-      await killProcessTree(pids.leaf, { graceMs: 200 }).catch(() => {});
+      await killProcessTree(pids.self, { graceMs: 200 }).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
+      await killProcessTree(pids.leaf, { graceMs: 200 }).catch(() => { /* The test awaits the original promise; this observer prevents an early unhandled rejection. */ });
     }
     fs.rmSync(dir, { recursive: true, force: true });
   });

@@ -159,7 +159,7 @@ async function runPackagedP0(deps = {}) {
     ptyDetail = String(error && error.message ? error.message : error);
   } finally {
     if (created && created.id && pty && typeof pty.kill === 'function') {
-      await Promise.resolve(pty.kill(created.id)).catch(() => {});
+      await Promise.resolve(pty.kill(created.id)).catch(() => { /* The PTY probe result above owns the failure; its test process may already be closed. */ });
     }
   }
   record(steps, 'packaged.pty.create', ptyOk, ptyDetail);

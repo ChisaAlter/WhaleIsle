@@ -623,7 +623,10 @@ test('dsh-im, usage-panel, market, and remote overlays ride --patch on full and 
   const f = fixture({
     ensureDesktopInstallPlugin: () => ({ ok: true, overlayFile: installOverlay }),
     ensureUsagePanelPlugin: async () => ({ ok: true, added: false, overlayFile: usageOverlay }),
-    ensureDshImPlugin: async () => ({ ok: true, added: false, overlayFile: imOverlay }),
+    ensureDshImPlugin: async (options) => {
+      assert.deepEqual(options, { enabled: true });
+      return { ok: true, added: false, overlayFile: imOverlay };
+    },
     ensureDesktopMarket: async () => ({ ok: true, added: false, overlayFile: marketOverlay }),
     ensureDshRemotePlugin: async (options) => {
       assert.deepEqual(options, { enabled: true });
@@ -636,7 +639,10 @@ test('dsh-im, usage-panel, market, and remote overlays ride --patch on full and 
   const skipped = fixture({
     ensureDesktopInstallPlugin: () => ({ ok: true, overlayFile: installOverlay }),
     ensureUsagePanelPlugin: async () => ({ ok: true, added: false, overlayFile: usageOverlay }),
-    ensureDshImPlugin: async () => ({ ok: true, added: false, overlayFile: imOverlay }),
+    ensureDshImPlugin: async (options) => {
+      assert.deepEqual(options, { enabled: true });
+      return { ok: true, added: false, overlayFile: imOverlay };
+    },
     ensureDesktopMarket: async () => ({ ok: true, added: false, overlayFile: marketOverlay }),
     ensureDshRemotePlugin: async (options) => {
       assert.deepEqual(options, { enabled: true });
@@ -647,6 +653,59 @@ test('dsh-im, usage-panel, market, and remote overlays ride --patch on full and 
   await skipped.controller.start();
   assert.equal(skipped.dsh.startOptions[0].skipUserPlugins, true);
   assert.deepEqual(skipped.dsh.startOptions[0].patchFiles, [installOverlay, usageOverlay, imOverlay, marketOverlay, remoteOverlay]);
+});
+
+test('dsh-im can be disabled through the built-in feature toggle', async () => {
+  const imOverlay = 'C:/profiles/web/desktop-plugins/dsh-im/desktop-dsh-im.patch.yml';
+  let args;
+  const f = fixture({
+    initialConfig: { dshImEnabled: false },
+    ensureDshImPlugin: async (options) => {
+      args = options;
+      return { ok: true, added: false, disabled: true };
+    },
+  });
+  await f.controller.start();
+  assert.deepEqual(args, { enabled: false });
+  assert.equal(f.dsh.startCalls, 1);
+  assert.ok(!f.dsh.startOptions[0].patchFiles.includes(imOverlay));
+  assert.ok(f.dsh.logs.some((line) => /dsh-im 已按设置关闭/.test(line)));
+});
+
+test('a skip-user-plugins start drops dsh-im when the failure evidence names it', async () => {
+  const imOverlay = 'C:/profiles/web/desktop-plugins/dsh-im/desktop-dsh-im.patch.yml';
+  let args;
+  const f = fixture({
+    ensureDshImPlugin: async (options) => {
+      args = options;
+      return { ok: true, added: false, disabled: true };
+    },
+  });
+  f.controller.writePluginSkip(new Error('failed to apply loader entry xmanrui-dsh-im (@xmanrui/dsh-im)'));
+  await f.controller.start();
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
+  assert.deepEqual(args, { enabled: false });
+  assert.ok(!f.dsh.startOptions[0].patchFiles.includes(imOverlay));
+  assert.deepEqual(f.controller.skippedBuiltins, [
+    { label: '消息渠道（dsh-im）', error: '启动失败证据指向 dsh-im' },
+  ]);
+});
+
+test('a skip-user-plugins start keeps dsh-im when the failure names a user plugin', async () => {
+  const imOverlay = 'C:/profiles/web/desktop-plugins/dsh-im/desktop-dsh-im.patch.yml';
+  let args;
+  const f = fixture({
+    ensureDshImPlugin: async (options) => {
+      args = options;
+      return { ok: true, added: false, overlayFile: imOverlay };
+    },
+  });
+  f.controller.writePluginSkip(new Error("cannot find package 'some-user-plugin'"));
+  await f.controller.start();
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
+  assert.deepEqual(args, { enabled: true });
+  assert.ok(f.dsh.startOptions[0].patchFiles.includes(imOverlay));
+  assert.equal(f.controller.skippedBuiltins.length, 0);
 });
 
 test('pad overlay loads by default on both normal and recovery starts', async () => {
@@ -1401,4 +1460,25 @@ test('workspace registration uses the start config snapshot, not a mid-start sav
   await f.controller.start();
   assert.deepEqual(registered, ['C:/workspace']);
   await f.controller.shutdown();
+});
+
+test('an IM loader failure automatically recovers without its overlay and restores it on a full retry', async () => {
+  const overlayFile = '/profile/desktop-plugins/dsh-im/desktop-dsh-im.patch.yml';
+  const calls = [];
+  const f = fixture({
+    ensureDshImPlugin: async ({ enabled }) => {
+      calls.push(enabled);
+      return enabled ? { ok: true, overlayFile } : { ok: true, disabled: true };
+    },
+  });
+  f.dsh.startResults.push(new Error('failed to apply loader entry xmanrui-dsh-im (@xmanrui/dsh-im)'));
+  await f.controller.start();
+  assert.deepEqual(calls, [true, false]);
+  assert.ok(f.dsh.startOptions[0].patchFiles.includes(overlayFile));
+  assert.ok(!f.dsh.startOptions[1].patchFiles.includes(overlayFile));
+  assert.equal(f.dsh.startOptions[1].skipUserPlugins, true);
+  assert.equal(f.controller.skippedBuiltins[0].label, '消息渠道（dsh-im）');
+  await f.controller.retryFullPlugins();
+  assert.deepEqual(calls, [true, false, true]);
+  assert.ok(f.dsh.startOptions[2].patchFiles.includes(overlayFile));
 });

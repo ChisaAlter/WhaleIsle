@@ -3,11 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const kit = require('./launcher-test-kit.cjs');
 
 const rendererDir = __dirname;
 const html = fs.readFileSync(path.join(rendererDir, 'launcher.html'), 'utf8');
 const css = fs.readFileSync(path.join(rendererDir, 'launcher.css'), 'utf8');
 const themeSrc = fs.readFileSync(path.join(rendererDir, 'theme.js'), 'utf8');
+
+// The launcher page ships as several classic scripts sharing one scope; the
+// source-contract checks below scan the concatenated page scripts so the
+// file split (#440) cannot weaken them.
+const pageJs = () => [...kit.launcherSources().values()].join('\n');
 
 test('launcher.html is an official shell, not the boot canvas', () => {
   assert.match(html, /data-shell-theme="official"/);
@@ -77,14 +83,14 @@ test('theme.js still paints wallpaper seeds on ordinary shells', () => {
   assert.equal(rootVars.get('--dsw-alias-bg-base'), '#f3efe6');
 });
 
-test('launcher.js does not redeclare the preload shell binding', () => {
-  const js = fs.readFileSync(path.join(rendererDir, 'launcher.js'), 'utf8');
+test('launcher page scripts do not redeclare the preload shell binding', () => {
+  const js = pageJs();
   assert.doesNotMatch(js, /function\s+shell\s*\(/);
   assert.match(js, /function\s+pageShell\s*\(/);
 });
 
 test('launcher import pane lists sessions skills plugins and MCP without dumping JSON', () => {
-  const js = fs.readFileSync(path.join(rendererDir, 'launcher.js'), 'utf8');
+  const js = pageJs();
   assert.match(html, /id="import-sessions"/);
   assert.match(html, /id="import-skills"/);
   assert.match(html, /id="import-plugins"/);
@@ -107,7 +113,7 @@ test('launcher import pane lists sessions skills plugins and MCP without dumping
 });
 
 test('launcher import rescan preserves selections and shows scan feedback', () => {
-  const js = fs.readFileSync(path.join(rendererDir, 'launcher.js'), 'utf8');
+  const js = pageJs();
   assert.match(html, /id="installed-uninstall-note"/);
   assert.match(html, /id="btn-scan"/);
   assert.match(js, /captureImportSelections/);
@@ -120,7 +126,7 @@ test('launcher import rescan preserves selections and shows scan feedback', () =
 });
 
 test('launcher rail footer route chip opens the shared route popover', () => {
-  const js = fs.readFileSync(path.join(rendererDir, 'launcher.js'), 'utf8');
+  const js = pageJs();
   assert.match(html, /id="rail-route-btn"/);
   assert.match(html, /id="rail-route-pop"/);
   assert.match(html, /route-pop-up/);
@@ -132,14 +138,14 @@ test('launcher rail footer route chip opens the shared route popover', () => {
 });
 
 test('launcher home toggles start/stop desktop from running state', () => {
-  const js = fs.readFileSync(path.join(rendererDir, 'launcher.js'), 'utf8');
+  const js = pageJs();
   assert.match(js, /desktopIsRunning/);
   assert.match(js, /关闭桌面端/);
   assert.match(js, /stopDesktop/);
 });
 
 test('launcher versions panel: current version on top, expandable release rows, inline route dropdown', () => {
-  const js = fs.readFileSync(path.join(rendererDir, 'launcher.js'), 'utf8');
+  const js = pageJs();
   assert.match(html, /id="ver-now"/);
   assert.match(html, /id="ver-num"/);
   assert.match(html, /id="release-list"/);

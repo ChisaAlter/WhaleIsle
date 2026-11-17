@@ -8,6 +8,7 @@ import {
   assertDesktopHarnessHome, assertSmokeResult, createSmokeDirs, electronSpawnEnv,
   initGitWorkspace, reservePort, writeSmokeConfig,
 } from './smoke-workspace.mjs'
+import { writeSourceQaEvidence } from './source-qa-evidence.mjs'
 import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js'
 
 const require = createRequire(import.meta.url)
@@ -84,6 +85,7 @@ function printStepTable(qa) {
 const dirs = createSmokeDirs('dsh-source-qa-')
 const keepRequested = process.env.DSH_SMOKE_KEEP === '1'
 let keepArtifacts = keepRequested
+let qaError = null
 
 try {
   const executable = electronExecutable()
@@ -109,9 +111,17 @@ try {
   console.log(`Source release QA passed on port ${port}.`)
 } catch (error) {
   keepArtifacts = true
+  qaError = error
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 } finally {
+  try {
+    writeSourceQaEvidence(dirs, process.env.DSH_QA_EVIDENCE_DIR, { error: qaError })
+  } catch (error) {
+    keepArtifacts = true
+    console.error(`Could not export QA evidence: ${error instanceof Error ? error.message : String(error)}`)
+    process.exitCode = 1
+  }
   if (keepArtifacts) {
     console.log(`QA artifacts kept at ${dirs.smokeRoot}`)
     if (existsSync(path.join(dirs.userData, 'dshd-qa.png'))) {

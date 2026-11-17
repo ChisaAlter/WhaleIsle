@@ -4,7 +4,9 @@
 | --- | --- |
 | **id** | `office-runtime` |
 | **status** | `active` |
-| **last verified** | 2026-09-25 — office-runtime 装配 + overlay + kit 闭包 + 预览路由落地；office-runtime.test.js 13/13、harness-controller +3、ui-files/ui-surfaces spec 各增用例全绿；打包 payload（primary-runtime 生成）与格式矩阵实机验收进行中。 |
+| **last verified** | 2026-09-25 |
+
+历史验证与变更记录见 [docs/history/office-runtime.md](../history/office-runtime.md)。
 
 ## User paths
 

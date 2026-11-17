@@ -251,6 +251,6 @@ try {
     return { status: 'Pass', note: `创建并检出 ${name}；切回=${back}` };
   });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }
 console.log('[retest-git2] done');

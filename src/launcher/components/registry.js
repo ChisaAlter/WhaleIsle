@@ -33,6 +33,10 @@ function defaultSamplesRoot() {
   return candidates[0] || '';
 }
 
+/**
+ * @param {any} a
+ * @param {any} b
+ */
 function compareVersions(a, b) {
   const pa = String(a || '').split('.').map((part) => parseInt(part, 10) || 0);
   const pb = String(b || '').split('.').map((part) => parseInt(part, 10) || 0);
@@ -45,6 +49,10 @@ function compareVersions(a, b) {
   return 0;
 }
 
+/**
+ * @param {string} dir
+ * @param {any} entry
+ */
 function safeEntryPath(dir, entry) {
   if (typeof entry !== 'string' || !entry || path.isAbsolute(entry) || path.win32.isAbsolute(entry) || /^[a-z]:/i.test(entry)) {
     return '';
@@ -59,6 +67,10 @@ function safeEntryPath(dir, entry) {
 
 // A manifest that fails validation yields no catalog row — a broken payload
 // must not become installable by accident.
+/**
+ * @param {string} dir
+ * @param {{ fs?: typeof fs }} [deps]
+ */
 function readManifest(dir, deps = {}) {
   const fsp = deps.fs || fs;
   let manifest;
@@ -99,9 +111,14 @@ function readManifest(dir, deps = {}) {
 
 // Scan samplesRoot/<id>/<version>/ — a version dir only counts when its
 // manifest id/version match the directory names.
+/**
+ * @param {{ samplesRoot?: string }} [options]
+ * @param {{ fs?: typeof fs }} [deps]
+ */
 function scanCatalog(options = {}, deps = {}) {
   const fsp = deps.fs || fs;
   const root = options.samplesRoot !== undefined ? options.samplesRoot : defaultSamplesRoot();
+  /** @type {Map<string, any>} */
   const components = new Map();
   if (!root) {
     return [];
@@ -148,7 +165,7 @@ function scanCatalog(options = {}, deps = {}) {
   }
   const list = [];
   for (const entry of components.values()) {
-    entry.versions.sort((a, b) => compareVersions(a.version, b.version));
+    entry.versions.sort((/** @type {any} */ a, /** @type {any} */ b) => compareVersions(a.version, b.version));
     entry.latest = entry.versions.length ? entry.versions[entry.versions.length - 1].version : '';
     entry.description = entry.description || (entry.versions[0]?.description ?? '');
     if (entry.versions.length) {
@@ -159,6 +176,10 @@ function scanCatalog(options = {}, deps = {}) {
   return list;
 }
 
+/**
+ * @param {any} entry
+ * @param {string} [version]
+ */
 function resolveCatalogVersion(entry, version) {
   if (!entry || !Array.isArray(entry.versions) || !entry.versions.length) {
     return null;
@@ -166,7 +187,7 @@ function resolveCatalogVersion(entry, version) {
   if (!version) {
     return entry.versions[entry.versions.length - 1];
   }
-  return entry.versions.find((row) => row.version === version) || null;
+  return entry.versions.find((/** @type {any} */ row) => row.version === version) || null;
 }
 
 module.exports = {

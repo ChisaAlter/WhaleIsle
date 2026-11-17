@@ -420,7 +420,7 @@ export async function apply(ctx, config) {
     if (typeof autoPushWatchers !== 'undefined' && autoPushWatchers) {
       for (const [, entry] of autoPushWatchers) {
         if (!entry) continue
-        try { entry.watcher && entry.watcher.close() } catch {}
+        try { entry.watcher && entry.watcher.close() } catch { /* Continue releasing the remaining file watchers after an individual close fails. */ }
         if (entry.timer) clearTimeout(entry.timer)
       }
       autoPushWatchers.clear()
@@ -497,7 +497,7 @@ export async function apply(ctx, config) {
     try {
       const line = [new Date().toISOString(), `${user || '?'}@${host || '?'}:${port}`, op, code == null ? '-' : String(code), String(cmd || '').replace(/\s+/g, ' ').slice(0, 400)].join(' | ') + '\n'
       appendFileSync(auditFile(), line, 'utf8')
-    } catch {}
+    } catch (error) { ctx.logger.warn('写入 SSH 审计日志失败；请检查应用数据目录的写入权限。', error); }
   }
   const readAudit = (limit) => {
     try {
@@ -584,7 +584,7 @@ export async function apply(ctx, config) {
   ctx.effect(() => () => {
     for (const e of autoPushWatchers.values()) {
       if (e.timer) clearTimeout(e.timer)
-      try { e.watcher && e.watcher.close() } catch {}
+      try { e.watcher && e.watcher.close() } catch { /* Continue releasing the remaining file watchers after an individual close fails. */ }
     }
     autoPushWatchers.clear()
   }, 'dsh-remote.autopush')
@@ -1768,7 +1768,7 @@ export async function apply(ctx, config) {
       try {
         statSync(root)
         out.push({ name: root.slice(0, -1), path: root })
-      } catch {}
+      } catch { /* Absent or inaccessible drive letters are omitted from the drive picker. */ }
     }
     return out
   }
@@ -2165,7 +2165,7 @@ export async function apply(ctx, config) {
               if (i < 0) return sendJson(res, 404, { ok: false, error: 'machine not found' })
               const m = machines[i]
               if (m.credentialBackend && m.credentialBackend !== 'plain') {
-                await deleteSecret(m.id, secretsDir()).catch(() => {})
+                await deleteSecret(m.id, secretsDir())
               }
               machines.splice(i, 1)
               const wasCurrent = store.currentId === m.id

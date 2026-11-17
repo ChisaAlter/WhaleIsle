@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "legacy",
+    "target": "es2022",
+    "lib": [
+      "es2022",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "skipLibCheck": true
+  },
+  "exclude": [
+    "**/*.test.*",
+    "**/*-test-kit.cjs",
+    "**/*.child.cjs"
+  ],
+  "include": [
+    "src/renderer/pet-live2d*.js"
+  ]
+}

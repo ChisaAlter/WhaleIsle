@@ -103,3 +103,52 @@ test('truncated type counts are normalized so unrelated additions do not look ne
   const { counts } = parseDiagnostics(text, '/abs/repo');
   assert.deepEqual([...counts.get('src/main/a.js').get('TS2339').keys()], [`Property 'x' does not exist on type '{ a: string; ... <n> more ...; z: string; }'.`]);
 });
+
+test('node_modules paths in messages normalize to <node_modules> regardless of checkout layout', () => {
+  // worktree 的 node_modules 常是指向别处的符号链接，同一诊断在不同环境
+  // 出现的绝对路径不同；归一后折叠为同一条。
+  const text = [
+    "scripts/a.js(1,1): error TS7016: Could not find a declaration file for module 'semver'. '/work/repo/node_modules/semver/index.js' implicitly has an 'any' type.",
+    "scripts/a.js(2,1): error TS7016: Could not find a declaration file for module 'semver'. '/opt/shared/real/node_modules/semver/index.js' implicitly has an 'any' type.",
+    "scripts/a.js(3,1): error TS7016: Could not find a declaration file for module 'semver'. 'C:\\ci\\repo\\node_modules\\semver\\index.js' implicitly has an 'any' type.",
+  ].join('\n');
+  const { counts } = parseDiagnostics(text, '/work/repo');
+  const byMessage = counts.get('scripts/a.js').get('TS7016');
+  const messages = [...byMessage.keys()];
+  assert.deepEqual(messages, ["Could not find a declaration file for module 'semver'. '<node_modules>/semver/index.js' implicitly has an 'any' type."]);
+  assert.equal(byMessage.get(messages[0]), 3);
+});
+
+test('diagnostics on files pulled in via import but outside tsconfig scope are not counted', (t) => {
+  const { project, baseline } = fixture(t, {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [] },
+      files: ['a.js'],
+    }),
+    // out.js 有隐式 any 诊断，但它不在 files/include 里（只是被 import
+    // 拉进程序），不计入总数——否则构建产物、node_modules 是否存在会
+    // 改变基线结果。
+    'a.js': "import './out.js';\nexport const ok = 1;\n",
+    'out.js': ERROR_JS,
+  });
+  const result = run(project, baseline);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /诊断共 0 条/);
+});
+
+test('classic page programs resolve their own shared globals and keep the two pages separate', async () => {
+  const { default: ts } = await import('typescript');
+  for (const [page, file, symbol, other] of [
+    ['pet', 'pet-live2d-animation.js', 'ctx2d', 'launcher-home.js'],
+    ['launcher', 'launcher-home.js', '$', 'pet-live2d-animation.js'],
+  ]) {
+    const project = fileURLToPath(new URL(`../tsconfig.check.${page}.json`, import.meta.url));
+    const parsed = ts.parseJsonConfigFileContent(ts.readConfigFile(project, ts.sys.readFile).config, ts.sys, fileURLToPath(new URL('../', import.meta.url)));
+    const program = ts.createProgram(parsed.fileNames, parsed.options);
+    const source = program.getSourceFiles().find(s => s.fileName.endsWith('/' + file));
+    assert.ok(source);
+    assert.ok(!program.getSourceFiles().some(s => s.fileName.endsWith('/' + other)));
+    const missing = program.getSemanticDiagnostics(source).filter(d => [2304, 2592].includes(d.code) && ts.flattenDiagnosticMessageText(d.messageText, '\n').includes(`'${symbol}'`));
+    assert.deepEqual(missing, [], `${page} must see its own page's shared ${symbol}`);
+  }
+});

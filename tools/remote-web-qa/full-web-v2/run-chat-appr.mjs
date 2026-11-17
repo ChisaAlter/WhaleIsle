@@ -277,7 +277,7 @@ try {
     }), usersBefore);
     const file = await shot(page, 'cmp-021-attach');
     if (state.stop || state.usersGained > 0) {
-      await page.click('#stop-btn').catch(() => {});
+      await page.click('#stop-btn').catch((error) => { console.warn('[tools/remote-web-qa/full-web-v2/run-chat-appr.mjs] background operation failed', error); });
       throw new Error(`附图在文本模型上发出去了（users+${state.usersGained}）`);
     }
     if (!/不支持图片/.test(state.banner)) throw new Error(`无拒图 banner: ${state.banner.slice(0, 60)}`);
@@ -454,7 +454,7 @@ try {
   record('APPR-007', 'Pass', 'F-APPR 执行了①②两档并截图；③桌面调档因异会话限制记录在案');
   record('APPR-008', 'Pass', '允许/拒绝点击均有效（APPR-002/004）');
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
   dBrowser.disconnect();
 }
 console.log('[chat-appr] done');

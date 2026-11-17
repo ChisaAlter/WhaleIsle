@@ -12,6 +12,8 @@
 
 `npm test` 运行桌面和移动端行为测试；`npm run test:tools` 运行构建、发布及维护工具测试。定向验证直接调用现有测试文件。新增测试应能发现实际故障，不用测试数量或覆盖率目标替代用户结果。
 
+自有生产 JavaScript 的行数/复杂度规则为 `whaleisle/max-lines`（800 行，含注释与空行）和 `whaleisle/complexity`（函数圈复杂度 20，沿用 ESLint 计法）。`scripts/structure-baseline.json` 逐文件、逐函数记录存量上限：本轮有 33 个超长文件、331 个复杂函数；这不代表已清零。新文件和同文件中的新函数使用默认值，既有预算也不允许继续增长。匿名回调用源内容哈希标识，修改后需按当前函数复核。拆分后应删除消失条目、下调对应上限，不能用通配文件豁免或抬高全局限制。
+
 依赖 Harness 构建产物、vendor 插件运行时、真实 Electron 或打包产物的用例经 `scripts/lib/test-prerequisites.cjs` 检测前提；缺失时按写明补齐命令的原因跳过，`WHALE_REQUIRE_TEST_PREREQS=1`（跑 `npm test` 的 CI 作业均设置）时改为失败，避免环境缺失被误读为真实回归或被跳过掩盖。
 
 在 Linux 上启动真实 Electron 的测试进程会自动处理沙箱：chrome-sandbox 不是 root 所有或缺少 4755（以及测试本身以 root 运行）时，共享辅助 `scripts/lib/electron-sandbox.cjs` 给测试子进程加 `ELECTRON_DISABLE_SANDBOX=1`；`npm start` 与打包产物不受影响。
@@ -26,7 +28,27 @@
 
 vendor web 构建对 `apps/web` 之外的包报 TS6059/TS6307 时，先在 vendor 目录执行 `node node_modules/typescript/bin/tsc -b apps/web --clean` 清除过期增量状态再重建；不要改 web 项目的文件列表掩盖错误。
 
+## 定期全面审查
+
+每个大版本或每季度安排一次全面审查：按安全、生命周期、模块边界、构建发布与用户路径分路检查，先用 `npm run health` 保存可比较的指标，再由未参与实现的审查者独立复核。发现的问题进入 GitHub Issues，写明用户影响、复现方法和实际验证；先约定本轮收尾范围，新的低优先级问题留待后续，不因审查持续扩张任务。指标变化用于定位问题，不替代真实应用走查，也不宣称达到指标就没有缺陷。
+
+`npm run typecheck` 保留 strict checkJs，并按 Node、独立 DOM 模块及两个经典脚本页面分别检查。启动器和桌宠的分文件脚本在各自页面内共享词法变量，检查项目使用同样的页面作用域；剩余类型诊断按实际位置记录在基线中，基线通过不等于类型错误为零。
+
+## 错误与诊断
+
+可恢复失败沿现有结果或状态返回给发起操作的界面，说明失败的操作与下一步（例如检查应用数据目录写入权限、解锁系统密钥库、从启动器重试）。后台失败使用已有日志；主进程的启动与恢复诊断走 `DshManager.log`，格式为 `[source] message`，由启动器日志及导出启动日志入口读取。SSH 插件使用 Cordis logger；页面和独立 QA 工具使用带组件前缀的 console，保留在对应进程的诊断输出。不同进程的日志不汇总到新的全局文件，不把完整凭据写入错误提示。主进程和 renderer 崩溃报告位于 Electron `app.getPath('logs')/crash`，源码启动器自身的紧急日志位于其 logs 目录。
+
+ESLint 的 `no-empty` 禁止未说明的空 catch，`whaleisle/no-empty-promise-catch` 同样检查 Promise 的内联空处理器。取消、释放已关闭资源、只观察已返回给调用方的 Promise 等情况可在块内写明具体原因；注释豁免仍需代码审查，lint 不能判断理由是否真实。不要为了消除诊断把用户操作改成成功结果。
+
 ## CI 与发布
+
+### 性能调查
+
+`node scripts/measure-desktop-runtime.mjs --out <新结果目录>` 在已执行 `npm run setup` 的源码环境中启动真实 Electron，用独立配置与 Git 工作区测量首次启动至工作台、经 `shell:restart` 重启至工作台、主线程 25 ms 心跳的最大延迟，以及 Electron 进程工作集的采样峰值总和（不含独立 Harness Node 进程）。首次启动保留操作系统缓存，不等同于清空磁盘缓存的冷启动。`--previous <report.json>` 对比同平台与架构的上次成功结果；源码快照可用 `--source-root <已准备目录>` 只读复用。正常或失败退出后先等待子进程结束，再回收临时配置；日志、原始采样和摘要留在结果目录。报告同时保留总峰值那一刻的进程 PID、Electron 类型和工作集分解，不能把不同时间的各进程峰值相加当作总峰值。
+
+调查预算在 `scripts/desktop-runtime-budgets.json`：启动与重启各 30 秒、主线程最大延迟 200 ms、Electron 工作集峰值 1024 MiB。预算在测量前登记，超出时发出 CI 警告并显示实测值；它们是定位问题的线索，不是产品服务承诺，也不作为普通测试的时间断言。`Desktop performance trend` 每周一与手动在三平台运行，保存 90 天原始报告并与上次成功结果比较。超预算项以报告、平台和源码身份进入 Issue 后再做优化。
+
+原有 `scripts/measure-desktop-lifecycle.mjs --profile c1` 继续只测隔离 Node 进程中的导入与目录列举热路径；其结果不能替代真实 Electron 启动、重启或主线程测量。
 
 `test.yml` 在 PR、main 推送及手动运行时提供开发反馈。文档修改不触发产品构建。产品改动在 Windows 上构建实际分发 profile、运行行为测试、生成安装包并启动打包后的应用；上游行为与原生窗口检查按影响选择。版本号变化的 main 推送会同时构建 macOS 安装包，其他时候按需手动启用。
 

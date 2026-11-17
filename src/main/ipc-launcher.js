@@ -26,9 +26,11 @@ function configLocale(config = loadConfig()) {
 // Neither nodeBin nor dshBin is renderer-writable, so the detection result
 // cannot change at runtime; memoize it instead of re-probing on every
 // get-config / launcher-status / save-config response.
+/** @type {any} */
 let detectedShellInfoCache = null;
 let detectedShellInfoKey = '';
 
+/** @param {any} config */
 function detectedShellInfo(config) {
   const key = `${config.nodeBin || ''}${config.dshBin || ''}`;
   if (detectedShellInfoCache && detectedShellInfoKey === key) {
@@ -53,6 +55,7 @@ function detectedShellInfo(config) {
   return detectedShellInfoCache;
 }
 
+/** @param {any} config */
 function configPayload(config) {
   return {
     ...publicConfig(config),
@@ -72,10 +75,20 @@ function configPayload(config) {
  * `recordBootRestart`/`harness`/`dsh` only matter for non-launcher roles on
  * shared-surface channels; the slim package passes stubs and only ever sees
  * launcher-role senders.
+ * @param {{
+ *   launcher: any,
+ *   dsh: any,
+ *   harness: any,
+ *   startDesktop?: () => Promise<any>,
+ *   recordBootRestart: () => Promise<any>,
+ *   extraChannels?: Array<{register?: (ctx: any) => void} | null | undefined>,
+ *   onQuitCommit?: (reason: string) => any,
+ * }} options
  */
 function registerLauncherChannels({ launcher, dsh, harness, startDesktop, recordBootRestart, extraChannels = [], onQuitCommit }) {
   // Shared wrapper: kind/roles/validate resolve from the IPC contract —
   // lane modules mount through the same bound handle, never ipcMain directly.
+  /** @type {(channel: string, listener: (event: any, ...args: any[]) => any) => void} */
   const handle = (channel, listener) => {
     registerIpc({ channel, handler: listener });
   };
@@ -86,7 +99,7 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
     handle,
     launcher,
     onQuitCommit,
-    send: (event, channel, payload) => {
+    send: (/** @type {any} */ event, /** @type {string} */ channel, /** @type {any} */ payload) => {
       if (event.sender && !event.sender.isDestroyed()) {
         event.sender.send(channel, payload);
       }
@@ -99,7 +112,7 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
   // launch records last-desktop-start itself); harness senders take the
   // kernel path and record here. Boot senders are refused upstream by the
   // contract roles — the boot page restarts through shell:restart instead.
-  handle('shell:retry-full-plugins', async (event) => {
+  handle('shell:retry-full-plugins', async (/** @type {any} */ event) => {
     const role = assertIpcSender(event, RETRY_SURFACES);
     if (role === IPC_ROLES.LAUNCHER && typeof startDesktop === 'function') {
       return launcher.retryFullPlugins();
@@ -116,7 +129,7 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
 
   handle('shell:check-update', () => launcher.checkUpdate());
 
-  handle('shell:install-update', async (event) => launcher.installUpdate((payload) => {
+  handle('shell:install-update', async (/** @type {any} */ event) => launcher.installUpdate((/** @type {any} */ payload) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send('shell:update-progress', payload);
     }
@@ -124,25 +137,25 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
 
   handle('shell:launcher-status', () => launcher.status());
 
-  handle('shell:save-launcher-config', (_event, patch) => launcher.saveLauncherConfig(patch));
+  handle('shell:save-launcher-config', (/** @type {any} */ _event, /** @type {any} */ patch) => launcher.saveLauncherConfig(patch));
 
-  handle('shell:scan-import', (_event, payload) => launcher.scanImport(payload));
+  handle('shell:scan-import', (/** @type {any} */ _event, /** @type {any} */ payload) => launcher.scanImport(payload));
 
   handle('shell:pick-import-source', () => launcher.pickImportSource());
 
   handle('shell:pick-skill-dir', () => launcher.pickSkillDir());
 
-  handle('shell:run-import', async (event, options = {}) => launcher.runImport(options, (payload) => {
+  handle('shell:run-import', async (/** @type {any} */ event, /** @type {any} */ options = {}) => launcher.runImport(options, (/** @type {any} */ payload) => {
     if (event.sender && !event.sender.isDestroyed()) {
       event.sender.send('shell:import-progress', payload);
     }
   }));
 
-  handle('shell:cancel-import', (_event, options = {}) => launcher.cancelImport(options));
+  handle('shell:cancel-import', (/** @type {any} */ _event, /** @type {any} */ options = {}) => launcher.cancelImport(options));
 
   handle('shell:list-releases', () => launcher.listReleases());
 
-  handle('shell:install-release', async (event, tag) => launcher.installRelease(tag, (payload) => {
+  handle('shell:install-release', async (/** @type {any} */ event, /** @type {any} */ tag) => launcher.installRelease(tag, (/** @type {any} */ payload) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send('shell:update-progress', payload);
     }
@@ -150,7 +163,7 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
 
   handle('shell:uninstall-app', () => launcher.uninstallApp());
 
-  handle('shell:install-runtime', async (event, options = {}) => launcher.installRuntime(options, (payload) => {
+  handle('shell:install-runtime', async (/** @type {any} */ event, /** @type {any} */ options = {}) => launcher.installRuntime(options, (/** @type {any} */ payload) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send('shell:update-progress', payload);
     }
@@ -162,15 +175,15 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
 
   handle('shell:plugin-forensics', () => launcher.pluginForensics());
 
-  handle('shell:disable-plugins', (_event, names) => launcher.disablePlugins(names));
+  handle('shell:disable-plugins', (/** @type {any} */ _event, /** @type {any} */ names) => launcher.disablePlugins(names));
 
-  handle('shell:disable-suspects-and-start', (_event, names) => launcher.disableSuspectsAndStart(names));
+  handle('shell:disable-suspects-and-start', (/** @type {any} */ _event, /** @type {any} */ names) => launcher.disableSuspectsAndStart(names));
 
-  handle('shell:disable-plugin', (_event, name) => launcher.disablePlugin(name));
+  handle('shell:disable-plugin', (/** @type {any} */ _event, /** @type {any} */ name) => launcher.disablePlugin(name));
 
-  handle('shell:enable-plugin', (_event, name) => launcher.enablePlugin(name));
+  handle('shell:enable-plugin', (/** @type {any} */ _event, /** @type {any} */ name) => launcher.enablePlugin(name));
 
-  handle('shell:remove-plugin', async (event, name) => launcher.removePlugin(name, (payload) => {
+  handle('shell:remove-plugin', async (/** @type {any} */ event, /** @type {any} */ name) => launcher.removePlugin(name, (/** @type {any} */ payload) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send('shell:plugin-progress', payload);
     }

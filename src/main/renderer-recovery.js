@@ -107,7 +107,7 @@ function attachRecovery(contents, {
 
   const reload = () => {
     if (contents.isDestroyed()) return;
-    if (lastUrl && showingFailure()) void Promise.resolve(contents.loadURL(lastUrl)).catch(() => {});
+    if (lastUrl && showingFailure()) void Promise.resolve(contents.loadURL(lastUrl)).catch(() => { /* did-fail-load records the navigation failure and displays the existing recovery surface. */ });
     else contents.reloadIgnoringCache();
   };
 
@@ -123,7 +123,7 @@ function attachRecovery(contents, {
         reload();
         return;
       }
-      void Promise.resolve(contents.loadURL(failurePageUrl({ label, why, reportPath }))).catch(() => {});
+      void Promise.resolve(contents.loadURL(failurePageUrl({ label, why, reportPath }))).catch(() => { /* The original renderer failure was already recorded; the window may have closed. */ });
     } finally {
       recovering = false;
     }

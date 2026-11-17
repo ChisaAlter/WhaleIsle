@@ -7,14 +7,17 @@ const { atomicWriteFileSync } = require('../shared/fs-safe');
 // Local copy of the blocked predicate so the gate can honor an unreadable
 // journal the same way the service/index admission paths do (fail closed),
 // without taking a hard require on data-import here.
+/** @param {any} journal */
 function journalIsBlockedImpl(journal) {
   return Boolean(journal) && (journal.phase === 'blocked' || journal.unreadable === true);
 }
 
+/** @param {string} userDataDir */
 function lastDesktopStartPath(userDataDir) {
   return path.join(userDataDir, 'last-desktop-start.json');
 }
 
+/** @param {string} userDataDir */
 function readLastDesktopStart(userDataDir) {
   try {
     const raw = JSON.parse(fs.readFileSync(lastDesktopStartPath(userDataDir), 'utf8'));
@@ -25,11 +28,11 @@ function readLastDesktopStart(userDataDir) {
       // Bounded kernel-log tail captured at the failure instant — the slim
       // launcher's only window into plugin loader errors, since a packaged
       // runtime's console does not reliably reach a piped stderr.
-      logTail: Array.isArray(raw.logTail) ? raw.logTail.filter((l) => typeof l === 'string') : [],
+      logTail: Array.isArray(raw.logTail) ? raw.logTail.filter((/** @type {any} */ l) => typeof l === 'string') : [],
       // Optional built-ins a successful start went without; 启动诊断 lists them.
       skipped: Array.isArray(raw.skipped)
-        ? raw.skipped.filter((row) => row && typeof row.label === 'string' && row.label)
-          .map((row) => ({ label: row.label, error: typeof row.error === 'string' ? row.error : '' }))
+        ? raw.skipped.filter((/** @type {any} */ row) => row && typeof row.label === 'string' && row.label)
+          .map((/** @type {any} */ row) => ({ label: row.label, error: typeof row.error === 'string' ? row.error : '' }))
         : [],
     };
   } catch {
@@ -41,20 +44,28 @@ const LAST_START_LOG_TAIL = 80;
 
 // dsh.logs rows are objects ({message}/{line}) in the kernel but sometimes
 // plain strings — normalize to a flat string tail for last-desktop-start.json.
+/**
+ * @param {any} dsh
+ * @param {number} [limit]
+ */
 function kernelLogTail(dsh, limit = LAST_START_LOG_TAIL) {
   const rows = typeof dsh?.currentStartLogs === 'function'
     ? dsh.currentStartLogs()
     : (Array.isArray(dsh?.logs) ? dsh.logs : []);
   return rows
     .slice(-limit)
-    .map((row) => (typeof row === 'string' ? row : row?.message || row?.line || String(row)));
+    .map((/** @type {any} */ row) => (typeof row === 'string' ? row : row?.message || row?.line || String(row)));
 }
 
+/**
+ * @param {string} userDataDir
+ * @param {any} payload
+ */
 function writeLastDesktopStart(userDataDir, payload) {
   fs.mkdirSync(userDataDir, { recursive: true });
   const file = lastDesktopStartPath(userDataDir);
   const logTail = Array.isArray(payload.logTail)
-    ? payload.logTail.slice(-LAST_START_LOG_TAIL).map((l) => String(l).slice(0, 240))
+    ? payload.logTail.slice(-LAST_START_LOG_TAIL).map((/** @type {any} */ l) => String(l).slice(0, 240))
     : [];
   atomicWriteFileSync(file, `${JSON.stringify({
     ok: payload.ok === true,
@@ -63,8 +74,8 @@ function writeLastDesktopStart(userDataDir, payload) {
     logTail,
     skipped: Array.isArray(payload.skipped)
       ? payload.skipped.slice(0, 12)
-        .map((row) => ({ label: String(row?.label || ''), error: String(row?.error || '').slice(0, 240) }))
-        .filter((row) => row.label)
+        .map((/** @type {any} */ row) => ({ label: String(row?.label || ''), error: String(row?.error || '').slice(0, 240) }))
+        .filter((/** @type {{ label: string }} */ row) => row.label)
       : [],
   }, null, 2)}\n`, { encoding: 'utf8' });
 }
@@ -74,6 +85,10 @@ function writeLastDesktopStart(userDataDir, payload) {
  * Every start path (launcher, boot retry, menu/tray restart, plugin align)
  * must go through one writer so a stale `{ ok:false }` can never keep holding
  * the next cold start at the launcher after the desktop actually recovered.
+ * @param {string} userDataDir
+ * @param {() => Promise<any>} work
+ * @param {(() => any[]) | undefined} evidence
+ * @param {(() => any[]) | undefined} skipped
  */
 async function recordLastDesktopStart(userDataDir, work, evidence, skipped) {
   try {
@@ -83,13 +98,14 @@ async function recordLastDesktopStart(userDataDir, work, evidence, skipped) {
   } catch (error) {
     writeLastDesktopStart(userDataDir, {
       ok: false,
-      error: error && error.message ? error.message : String(error),
+      error: error instanceof Error ? error.message : String(error),
       logTail: typeof evidence === 'function' ? evidence() : [],
     });
     throw error;
   }
 }
 
+/** @param {{ askOnUpdate?: boolean, check: any }} args */
 function shouldPromptUpdate({ askOnUpdate, check }) {
   return askOnUpdate !== false && check && check.status === 'available';
 }
@@ -98,6 +114,7 @@ function shouldPromptUpdate({ askOnUpdate, check }) {
  * Single source of truth for "skip user plugins is sticky for this build".
  * A recovery marker written by another app version is stale, not active.
  * Owner shape: { pluginRecovery, appVersion } (HarnessController or snapshot).
+ * @param {any} owner
  */
 function stickySkipActive(owner) {
   const recovery = owner && owner.pluginRecovery;
@@ -107,6 +124,7 @@ function stickySkipActive(owner) {
   return recovery.appVersion === owner.appVersion;
 }
 
+/** @param {{ autoStartDesktop?: boolean, holdForImport: boolean, updateFlowHold: boolean, lastStartFailed: boolean }} args */
 function shouldAutoStartDesktop({
   autoStartDesktop,
   holdForImport,
@@ -120,11 +138,14 @@ function shouldAutoStartDesktop({
   return true;
 }
 
+/** @param {{ desktopReady?: boolean, quitAfterStart?: boolean }} args */
 function shouldCloseLauncher({ desktopReady, quitAfterStart }) {
   return desktopReady === true && quitAfterStart !== false;
 }
 
-/** Launcher may close only after a confirmed healthy full start. */
+/** Launcher may close only after a confirmed healthy full start.
+ * @param {{ desktopReady?: boolean, quitAfterStart?: boolean, stickySkip?: boolean, recoveryLaunch?: boolean, lastStartOk?: boolean | null }} args
+ */
 function shouldCloseLauncherAfterDesktopStart({
   desktopReady,
   quitAfterStart,
@@ -141,7 +162,10 @@ function shouldCloseLauncherAfterDesktopStart({
   return lastStartOk === true;
 }
 
-/** Hint shown when an accepted update did not end with the app quitting. */
+/** Hint shown when an accepted update did not end with the app quitting.
+ * @param {any} check
+ * @param {any} outcome
+ */
 function updateStayHint(check, outcome) {
   if (outcome?.manualInstall === true) {
     const message = outcome.message || '已打开安装映像，请将 Whale Isle 拖入 Applications 完成更新';
@@ -169,8 +193,10 @@ function updateStayHint(check, outcome) {
  * disk format, no cross-launch state) so the ask can still happen the next time
  * the user actually opens the launcher in this process.
  */
+/** @type {any} */
 let parkedUpdateCheck = null;
 
+/** @param {any} check */
 function parkUpdateCheck(check) {
   if (!check || check.status !== 'available') {
     return;
@@ -203,11 +229,11 @@ function resetParkedUpdateCheck() {
  * asked twice, because the first drain takes it.
  *
  * @param {{
- *   readConfig: () => object,
+ *   readConfig: () => any,
  *   isVisible: () => boolean,
  *   isQuitting: () => boolean,
  *   isCurrentGeneration?: (generation: unknown) => boolean,
- *   present: (check: object, context: { generation: unknown }) => Promise<object | void>,
+ *   present: (check: any, context: { generation: unknown }) => Promise<any>,
  *   log?: (message: string) => void,
  * }} deps
  */
@@ -219,9 +245,11 @@ function createParkedUpdateDrainer({
   present,
   log = () => {},
 }) {
+  /** @type {Promise<any> | null} */
   let inFlight = null;
 
   return {
+    /** @param {{ generation?: unknown }} [args] */
     async drain({ generation } = {}) {
       if (inFlight) return inFlight;
       if (isQuitting()) return { drained: false, reason: 'quitting' };
@@ -257,7 +285,7 @@ function createParkedUpdateDrainer({
           }
           return { drained: true, check: taken, outcome };
         } catch (error) {
-          log(`更新提示失败：${error && error.message ? error.message : String(error)}`);
+          log(`更新提示失败：${error instanceof Error ? error.message : String(error)}`);
           return { drained: false, reason: 'error', check: taken };
         }
       })().finally(() => {
@@ -274,6 +302,17 @@ function createParkedUpdateDrainer({
  * cold-start gate and the "late result" drain so both keep one contract —
  * the ask never sits on an invisible window, and only packaged + installer
  * waits for the app to quit.
+ * @param {{
+ *   config: any,
+ *   isPackaged: boolean,
+ *   check: any,
+ *   confirmUpdate: (check: any) => Promise<any>,
+ *   installUpdate: (progress: (payload: any) => void, check: any) => Promise<any>,
+ *   openLauncher: () => Promise<any>,
+ *   sendToLauncher: (channel: string, payload: any) => void,
+ *   alreadyVisible?: boolean,
+ *   shouldContinue?: () => boolean,
+ * }} deps
  */
 async function presentUpdateAsk({
   config,
@@ -322,7 +361,7 @@ async function presentUpdateAsk({
     }
     sendToLauncher('shell:launcher-hint', { check: updateStayHint(check, outcome) });
   } catch (error) {
-    const message = error && error.message ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
     sendToLauncher('shell:launcher-hint', {
       check: {
         ...check,
@@ -350,6 +389,21 @@ async function presentUpdateAsk({
  *   the launcher home so「启动桌面端」still works — no hidden window-less
  *   process is ever left behind. Only packaged + installer-launched waits for
  *   the app to quit.
+ * @param {{
+ *   config: any,
+ *   userDataDir: string,
+ *   isPackaged: boolean,
+ *   checkUpdate: () => Promise<any>,
+ *   confirmUpdate: (check: any) => Promise<any>,
+ *   installUpdate: (progress: (payload: any) => void, check: any) => Promise<any>,
+ *   openLauncher: () => Promise<any>,
+ *   sendToLauncher: (channel: string, payload: any) => void,
+ *   recoverInterruptedImport: () => { recovered?: boolean, removedTmp?: any[], blocked?: boolean } | undefined,
+ *   readImportJournal?: (userDataDir: string) => any,
+ *   journalIsBlocked?: (journal: any) => boolean,
+ *   startDesktop: () => Promise<any>,
+ *   log?: (line: string, level?: string) => void,
+ * }} deps
  */
 async function runColdStartGate({
   config,
@@ -372,15 +426,16 @@ async function runColdStartGate({
     try {
       return await checkUpdate();
     } catch (error) {
-      return { status: 'error', message: error && error.message ? error.message : String(error) };
+      return { status: 'error', message: error instanceof Error ? error.message : String(error) };
     }
   })();
 
+  /** @type {{ recovered?: boolean, removedTmp?: any[], blocked?: boolean }} */
   let importRecovery = { recovered: false, removedTmp: [] };
   try {
     importRecovery = recoverInterruptedImport() || importRecovery;
   } catch (error) {
-    log(`导入日志恢复失败：${error && error.message ? error.message : String(error)}`, 'error');
+    log(`导入日志恢复失败：${error instanceof Error ? error.message : String(error)}`, 'error');
     // A recovery exception must fail closed: hold at the launcher instead of
     // risking an auto-start over unknown transaction state.
     importRecovery.blocked = true;
@@ -428,7 +483,7 @@ async function runColdStartGate({
       desktopResult = await startDesktop();
     } catch (error) {
       desktopThrew = true;
-      const message = error && error.message ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       log(`桌面启动失败：${message}`, 'error');
       desktopResult = { ok: false, error: message };
     }
@@ -449,7 +504,7 @@ async function runColdStartGate({
     void updateCheck.then((check) => {
       parkUpdateCheck(check);
       sendToLauncher('shell:launcher-hint', { check });
-    }).catch((error) => {
+    }).catch((/** @type {any} */ error) => {
       log(`迟到更新处理失败：${error && error.message ? error.message : String(error)}`, 'error');
     });
     return {

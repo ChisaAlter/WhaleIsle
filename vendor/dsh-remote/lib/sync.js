@@ -116,7 +116,7 @@ export async function syncTree(sftp, remoteDir, localDir, opts = {}) {
       try {
         const buf = await sftp.readFile(rp)
         writeFileSync(lp, buf)
-        try { utimesSync(lp, new Date(r.mtime * 1000), new Date(r.mtime * 1000)) } catch {}
+        try { utimesSync(lp, new Date(r.mtime * 1000), new Date(r.mtime * 1000)) } catch { /* The file contents are already saved; unsupported mtime preservation is nonfatal. */ }
         stats.files++
         stats.touched.push(rp)
         nextState[rel] = { size: r.size, mtime: r.mtime }
@@ -201,9 +201,9 @@ export async function pushTree(sftp, localDir, remoteDir, opts = {}) {
         // Align local mtime to whatever the remote server assigned, so the
         // L==R==S invariant holds for the next run.
         let r2 = null
-        try { r2 = await sftp.stat(rp) } catch {}
+        try { r2 = await sftp.stat(rp) } catch { /* Use the existing current-time estimate if the server cannot stat the uploaded file. */ }
         const rmt = r2 ? r2.mtime : Math.floor(Date.now() / 1000)
-        try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch {}
+        try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch { /* The upload succeeded; unsupported local mtime preservation is nonfatal. */ }
         stats.files++
         stats.pushed.push(rp)
         nextState[rel] = { size: l.size, mtime: rmt }
@@ -224,7 +224,7 @@ export function loadSyncState(localDir) {
   try {
     const j = JSON.parse(readFileSync(path.join(localDir, '.dsh-remote-sync-state.json'), 'utf8'))
     if (j && typeof j === 'object' && !Array.isArray(j)) return j
-  } catch {}
+  } catch { /* Missing or invalid sync state is treated as an initial comparison, not saved user content. */ }
   return {}
 }
 
@@ -265,9 +265,9 @@ export async function pushOneFile(sftp, localDir, remoteDir, rel, opts = {}) {
   try {
     await sftp.writeFile(rp, readFileSync(lp))
     let r2 = null
-    try { r2 = await sftp.stat(rp) } catch {}
+    try { r2 = await sftp.stat(rp) } catch { /* Use the existing current-time estimate if the server cannot stat the uploaded file. */ }
     const rmt = r2 ? r2.mtime : Math.floor(Date.now() / 1000)
-    try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch {}
+    try { utimesSync(lp, new Date(rmt * 1000), new Date(rmt * 1000)) } catch { /* The upload succeeded; unsupported local mtime preservation is nonfatal. */ }
     return { status: 'pushed', state: { [rel]: { size: l.size, mtime: rmt } } }
   } catch (e) {
     return { status: 'skipped', error: String((e && e.message) || e) }

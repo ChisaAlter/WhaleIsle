@@ -32,5 +32,5 @@ try {
   }, target.id);
   console.log(JSON.stringify(info, null, 1));
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

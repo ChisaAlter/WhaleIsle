@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/renderer/**/*",
+    "mobile/web/**/*",
+    "vendor/dsh-deepseek-tools/client/**/*",
+    "vendor/dsh-project/client/**/*",
+    "vendor/dsh-whale/client/**/*"
+  ],
+  "exclude": [
+    "**/*.test.*",
+    // Classic scripts share globals within their own HTML page, checked separately.
+    "src/renderer/launcher*.js",
+    "src/renderer/pet-live2d*.js",
+    "**/*.bundle.js",
+    "**/node_modules/**",
+    // 生成物：npm run setup 才产出，未构建环境不存在（#438 环境一致性）
+    "src/renderer/openui/**",
+    "src/renderer/welcome/welcome.js",
+    "src/renderer/whale-ui/**",
+    "mobile/web/whale-ui/**",
+    "src/renderer/pet-live2d/ort/**",
+    "src/renderer/pet-live2d/anime4k.js"
+  ]
+}

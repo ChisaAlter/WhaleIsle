@@ -2125,10 +2125,9 @@ describe('continuable review regressions', () => {
     })
     const started = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'caller' })
     try {
-      let settled = false
-      const result = started.result.then((value) => { settled = true; return value })
-      await vi.waitFor(() => { expect(settled).toBe(true) })
-      await expect(result).resolves.toMatchObject({ stopReason: 'error' })
+      // The result is the completion signal. Polling a shadow boolean adds
+      // vi.waitFor's 1s deadline to async persistence/disposal on busy runners.
+      await expect(started.result).resolves.toMatchObject({ stopReason: 'error' })
       expect(ends).toHaveLength(1)
       expect(ends[0]!.stopReason).toBe('error')
       expect(adapter.requests).toHaveLength(failedEvent === 'turn/start' ? 0 : 1)

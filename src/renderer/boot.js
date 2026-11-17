@@ -110,7 +110,7 @@ function listen(method, handler) {
     if (!api || typeof api[method] !== 'function') {
       return;
     }
-    Promise.resolve(api[method](handler)).catch(() => {});
+    Promise.resolve(api[method](handler)).catch(() => { /* The boot page can close while its unsubscribe or event registration is in flight. */ });
   } catch {
     // ignore
   }

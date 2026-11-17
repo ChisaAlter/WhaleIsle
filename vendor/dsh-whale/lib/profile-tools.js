@@ -60,7 +60,7 @@ export function registerProfileTools(ctx) {
         await controllerFrom(ctx)?.setPresentation?.({
           sessionId: next.sessionId,
           presentation: { owner: 'dsh-whale:assistant', title: next.name },
-        }).catch(() => {});
+        }).catch((/** @type {unknown} */ error) => { console.warn('[vendor/dsh-whale/lib/profile-tools.js] background operation failed', error); });
       }
       return { ok: true, detail: `Whale profile updated: ${Object.keys(patch).join(', ')}.` };
     },

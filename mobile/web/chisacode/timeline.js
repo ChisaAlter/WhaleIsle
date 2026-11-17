@@ -86,9 +86,9 @@ function mergeOlderEntries(older, current) {
  * instead of yanking the log back down.
  * @param {object} options
  * @param {'auto'|'bottom'|'preserve'|'hold'} [options.anchor]
- * @param {number} options.scrollTop pre-render scrollTop
- * @param {number} options.scrollHeight pre-render scrollHeight
- * @param {number} options.clientHeight viewport height
+ * @param {number} [options.scrollTop] pre-render scrollTop
+ * @param {number} [options.scrollHeight] pre-render scrollHeight
+ * @param {number} [options.clientHeight] viewport height
  * @param {number} [options.threshold] px slack still counted as "at bottom"
  * @returns {'bottom'|'preserve'|'hold'}
  */

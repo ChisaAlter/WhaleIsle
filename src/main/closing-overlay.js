@@ -180,7 +180,7 @@ async function showClosingOverlay(win, locale, contents = win?.webContents) {
         await contents.executeJavaScript(overlayScript(closingCopy(locale), generation));
       })().finally(() => {
         // A hidden/unresponsive page may finish painting after cancellation.
-        if (dismissed) void dismiss().catch(() => {});
+        if (dismissed) void dismiss().catch(() => { /* A cancelled overlay may already have been removed by window teardown. */ });
       }),
       new Promise(resolve => { paintTimeout = setTimeout(resolve, 500); }),
     ]);

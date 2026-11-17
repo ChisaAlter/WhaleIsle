@@ -91,7 +91,7 @@ const TOOLS = Object.freeze({
   whale_marketplace: { level: 'read', confirm: false, reason: '读插件目录。' },
   whale_desktop_config: {
     level: 'local', confirm: 'keys',
-    keys: ['githubToken', 'remoteWorkspaceEnabled', 'openAtLogin', 'autoStartDesktop', 'openDevTools', 'downloadRoute', 'projectEnabled', 'whaleAssistantEnabled'],
+    keys: ['githubToken', 'remoteWorkspaceEnabled', 'dshImEnabled', 'openAtLogin', 'autoStartDesktop', 'openDevTools', 'downloadRoute', 'projectEnabled', 'whaleAssistantEnabled'],
     reason: '普通外观/策略键本地可逆；列出的键写凭据、改变对外暴露边界或切换内置能力。',
     actions: {
       patch: { level: 'external', reason: '写敏感键（对外暴露边界、内置能力或启动项）；"始终允许"按实际写入的键集合记忆。' },

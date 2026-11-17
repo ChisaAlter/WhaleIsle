@@ -45,5 +45,5 @@ try {
   console.log(JSON.stringify(view));
   await page.screenshot({ path: 'docs/qa/results/2026-09-01/full-web-v2/cmp-021-attach-guard.png' });
 } finally {
-  await browser.close().catch(() => {});
+  await browser.close().catch(() => { /* Continue writing the QA result after a browser that may already have exited is closed. */ });
 }

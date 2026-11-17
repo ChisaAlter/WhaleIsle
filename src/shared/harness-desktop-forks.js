@@ -134,6 +134,13 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['RemoteWorkspaceRow'] },
   { file: 'packages/client/ui-settings-general/src/client/locales.ts', includes: ['remoteWorkspace.title'] },
   { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['remoteWorkspaceEnabled'] },
+  // Message channels (dsh-im) toggle: same desktop-only built-in row family,
+  // sharing the settings.features.item section with remote-workspace.
+  { file: 'packages/client/ui-settings-general/src/client/DshImRow.tsx', includes: ['dshImEnabled'] },
+  { file: 'packages/client/ui-settings-general/src/client/DshImRow.module.css', includes: [] },
+  { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['DshImRow'] },
+  { file: 'packages/client/ui-settings-general/src/client/locales.ts', includes: ['dshIm.title'] },
+  { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['dshImEnabled'] },
   // Project toggle (default off) with its help tip, in the same Interface section.
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.tsx', includes: ['projectEnabled', "t('project.help')"] },
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.module.css', includes: [] },

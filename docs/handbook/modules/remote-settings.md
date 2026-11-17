@@ -15,7 +15,7 @@
 | 网关 | `gateway` | `ui-settings-remote` |
 | 消息渠道 | `channels` | 桌面内置 `@xmanrui/dsh-im`（`dsh-im-desktop.js`，不再软预置拷贝） |
 
-加载入口：`src/main/dsh-im-desktop.js` → 桌面自有 overlay `desktop-plugins/dsh-im/desktop-dsh-im.patch.yml`（包名 insert，每次启动经 `--patch` 传，全量 + skip）+ `node_modules` junction 到 `vendor/dsh-im`；用户的 `cordis.patch.yml` 只做遗留受管块 strip（迁移），绝不写回。禁用名单不适用（config 归一化剔除别名；`shell:disable-plugin(s)` 返回 `desktop-builtin`）。缺依赖挡 `dsh web` 启动（skip 修不了）。市场同名包 `DROPPED`（家族 basename 匹配）。
+加载入口：`src/main/dsh-im-desktop.js` → 桌面自有 overlay `desktop-plugins/dsh-im/desktop-dsh-im.patch.yml`（包名 insert，`dshImEnabled` 开启时经 `--patch` 传；失败证据指向 dsh-im 的恢复启动跳过）+ `node_modules` junction 到 `vendor/dsh-im`；用户的 `cordis.patch.yml` 只做遗留受管块 strip（迁移），绝不写回。禁用名单不适用（config 归一化剔除别名；`shell:disable-plugin(s)` 返回 `desktop-builtin`）。设置 → 内置功能 →「消息渠道（IM）」默认开启；切换后重启 Harness，取消重启则恢复开关。关闭保留渠道数据；缺依赖或命中 dsh-im 的恢复启动跳过挂载并列入启动诊断，其余功能继续启动。市场同名包 `DROPPED`（家族 basename 匹配）。
 
 ## 公网部署
 
