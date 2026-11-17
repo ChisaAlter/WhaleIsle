@@ -11,7 +11,7 @@ import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js
 import { electronSpawnEnv, initGitWorkspace, reservePort, writeSmokeConfig } from './smoke-workspace.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/** @typedef {{schemaVersion?: number, ok: boolean, error?: string, startupMs?: number, restartMs?: number, mainThreadLagMs?: number, peakWorkingSetMiB?: number, platform?: string, arch?: string, revision?: string | null, measuredAt?: string}} RuntimeReport */
+/** @typedef {{schemaVersion?: number, ok: boolean, error?: string, startupMs?: number, restartMs?: number, mainThreadLagMs?: number, peakWorkingSetMiB?: number, peakProcessSnapshot?: {phase: string, elapsedMs: number, processes: {pid: number, type: string, workingSetMiB: number}[]}, platform?: string, arch?: string, revision?: string | null, measuredAt?: string}} RuntimeReport */
 /** @typedef {'startupMs' | 'restartMs' | 'mainThreadLagMs' | 'peakWorkingSetMiB'} Metric */
 /** @typedef {{metric: Metric, value: number, limit: number, exceeded: boolean, delta: number | null}} Assessment */
 /** @type {Record<Metric, number>} */
@@ -47,6 +47,12 @@ export function summary(report, rows) {
     '| Metric | Observed | Investigation budget | Change from comparable previous run | Result |',
     '| --- | ---: | ---: | ---: | --- |',
     ...rows.map(row => `| ${row.metric} | ${row.value.toFixed(2)} | ${row.limit} | ${row.delta === null ? 'unavailable' : row.delta.toFixed(2)} | ${row.exceeded ? 'OVER BUDGET' : 'within budget'} |`), '',
+    ...(report.peakProcessSnapshot ? [
+      `Peak process snapshot: ${report.peakProcessSnapshot.phase}, ${report.peakProcessSnapshot.elapsedMs.toFixed(2)} ms.`, '',
+      '| PID | Electron process type | Working set MiB at total peak |',
+      '| ---: | --- | ---: |',
+      ...report.peakProcessSnapshot.processes.map(item => `| ${item.pid} | ${item.type} | ${item.workingSetMiB.toFixed(2)} |`), '',
+    ] : []),
     'Budgets trigger investigation, not timing assertions in ordinary tests. A single maximum does not establish a leak or a latency percentile.', ''].join('\n');
 }
 

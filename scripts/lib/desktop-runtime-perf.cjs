@@ -14,6 +14,8 @@ const samples = [];
 let expected = performance.now() + 25;
 let maxLagMs = 0;
 let peakWorkingSetMiB = 0;
+/** @type {{phase: string, elapsedMs: number, processes: {pid: number, type: string, workingSetMiB: number}[]} | undefined} */
+let peakProcessSnapshot;
 let phase = 'startup';
 /** @type {ReturnType<typeof setInterval>} */
 let timer;
@@ -30,7 +32,14 @@ function sample() {
     // Electron reports workingSetSize in KiB, for this app's entire process set.
     const processes = app.getAppMetrics();
     const workingSetMiB = processes.reduce((sum, item) => sum + item.memory.workingSetSize, 0) / 1024;
-    peakWorkingSetMiB = Math.max(peakWorkingSetMiB, workingSetMiB);
+    if (workingSetMiB > peakWorkingSetMiB) {
+      peakWorkingSetMiB = workingSetMiB;
+      // Capture one simultaneous process set, not the sum of each process's
+      // individual peak at different times. Store no argv or profile paths.
+      peakProcessSnapshot = { phase, elapsedMs: now, processes: processes.map(item => ({
+        pid: item.pid, type: item.type, workingSetMiB: item.memory.workingSetSize / 1024,
+      })) };
+    }
     samples.push({ phase, elapsedMs: now, lagMs, workingSetMiB, processCount: processes.length });
   } catch (error) {
     samplingError = error instanceof Error ? error.message : String(error);
@@ -81,6 +90,7 @@ async function measure() {
     if (samples.length === 0) throw new Error('No Electron process samples collected');
     report.mainThreadLagMs = maxLagMs;
     report.peakWorkingSetMiB = peakWorkingSetMiB;
+    report.peakProcessSnapshot = peakProcessSnapshot;
     report.ok = true;
   } catch (error) {
     report.error = error instanceof Error ? error.stack || error.message : String(error);
