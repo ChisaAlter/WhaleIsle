@@ -1621,7 +1621,7 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 }
 .whale-ui-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  min-height: 36px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1);
+  min-height: 44px; padding: 4px 6px 4px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary);
   font-size: 12px; line-height: 18px;
 }
@@ -1637,10 +1637,13 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
   background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
 }
 .whale-ui-tab {
-  height: 22px; padding: 0 8px; border: 0; border-radius: 4px;
+  position: relative; height: auto; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 4px;
   background: transparent; color: var(--dsw-alias-label-tertiary);
   font-size: 12px; line-height: 18px;
 }
+/* Transparent hit area brings compact chrome to the shared 44px touch target. */
+.whale-ui-tab::before, .whale-ui-copy::before { content: ""; position: absolute; inset: -6px -4px; }
+.whale-ui-copy { position: relative; }
 .whale-ui-tab.is-active {
   background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary);
   font-weight: 500;

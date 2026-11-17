@@ -33,6 +33,14 @@ HTTP(S) 链接由宿主打开，复制由宿主剪贴板完成，导出由父页
 
 地图、图片、YouTube、媒体和 HtmlView 可使用其资源服务，因此不是离线环境。HtmlView 还有独立的 `allow-scripts` sandbox，外部脚本限于已列出的 CDN，主题通过消息更新而不重建页面。生成内容的动作仍遵守既有工具和权限链路。
 
+## 移动端
+
+浏览器 SPA 与 Android 原生聊天使用同一构建出的 viewer 与同一桥接协议，不另维护组件实现。宿主在 render 消息中携带 `density:"coarse"`，viewer 把主控件点击目标提到共享 44px 契约，细指针桌面的几何不变。
+
+- **浏览器 SPA**（`mobile/web`）：iframe 卡复用 `--dsw-alias-*` 镜像令牌与 `navigator.language` 语言；卡片外框 44px 命中区；三个固定资源端点由页面内 fetch 实现，与桌面同一校验与缓存语义。
+- **Android**（`NativeWhaleUi.kt`）：Compose 卡内嵌 WebView，经 `shouldInterceptRequest` 只服务 `whale-ui.local` 本地打包资源；外部子资源由 viewer CSP 与 `MIXED_CONTENT_NEVER_ALLOW` 约束，导航仍交给宿主外部打开。主题由 `DshPalette` 映射 `--dsw-alias-*`，语言随设备，viewer 字号跟随阅读偏好 `textZoom`，卡片控件满足 48dp 命中区。三个固定资源端点在本机以相同校验实现并缓存 200 结果。动作桥：assistant 排入所属会话发送，clipboard 写剪贴板，open-url 仅 http(s) 外部打开，download 走系统分享。
+- **声明差距**：声明式 `panel:true` 在移动端没有输入区面板对应面，该操作消息被宿主忽略；规格页本身仍在对话中作为卡片渲染。
+
 ## 验证
 
 基础组件、数据函数、语言与 React 状态、GenUI 解析与专用图形，以及主进程/预加载桥接有定向回归。受控图形工厂和 jsdom 可验证状态、回执和卸载，不能证明 GPU、外部资源或源码 Electron 的端到端结果。当前变更的实际构建与应用验证结果记录在对应 PR。

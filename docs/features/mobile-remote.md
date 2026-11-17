@@ -102,7 +102,7 @@
 - 浏览器 SPA 与原生 Android 的文件、更改、MCP、技能与插件页面均接正式服务；禁止把请求失败画成没有文件/没有服务器。
 - 只读 Files/Diff 的旧契约（不写盘、不 Stage）下一轮仍有效；本轮不转发 `git-stage` / `unstage` / `discard`。
 - 2026-10-27 原生 Android 补全轮已接入 MCP/技能正式管理服务；写入与只读 composition 的判断由 Host 服务决定。浏览器 SPA（2026-10-28）提供其中的启停、测试、删除与调用开关，不提供 MCP/技能新增编辑、插件安装、电脑设置与账户页，也不声称这些已对齐。
-- 消息编辑/rewind、Trajectory、Context meter、Session log 下载、标题栏终端/表面开关、Generative UI：本轮不声称对齐。
+- 消息编辑/rewind、Trajectory、Context meter、Session log 下载、标题栏终端/表面开关、上游 chisacode-ui 套件：本轮不声称对齐。Whale UI 由共享 viewer 在 SPA 与 Android 内渲染，属于既有能力而非对齐声明，见 [Whale UI](openui.md)。
 
 ## NEVER
 
