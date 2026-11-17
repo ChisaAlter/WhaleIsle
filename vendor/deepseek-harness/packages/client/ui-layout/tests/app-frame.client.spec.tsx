@@ -1017,6 +1017,109 @@ describe('AppFrame — titlebar density and conversation reserve', () => {
     expect(frame.getAttribute('data-titlebar-density')).toBe('full')
     expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('0px')
   })
+
+  it('concedes the announced reveal room once and holds it through every animation frame', () => {
+    trailingClusterWidth = 160
+    const { frame } = mountFrame()
+    const trailing = frame.querySelector('[data-titlebar-trailing]')!
+    const occupant = trailing.firstElementChild!
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('160px')
+    const seatObserver = observers.find(observer => !observer.disconnected && observer.targets.has(trailing))!
+
+    occupant.setAttribute('data-titlebar-pending-room', '60')
+    act(() => {
+      occupant.dispatchEvent(new TransitionEvent('transitionrun', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    // The reserve jumps to the announced final width before the animation runs.
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+
+    for (const width of [180, 200, 220]) {
+      trailingClusterWidth = width
+      act(() => { seatObserver.fire() })
+      expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+    }
+
+    occupant.removeAttribute('data-titlebar-pending-room')
+    act(() => {
+      occupant.dispatchEvent(new TransitionEvent('transitionend', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+  })
+
+  it('sums pending-room announcements from several occupants', () => {
+    trailingClusterWidth = 160
+    const { frame } = mountFrame()
+    const trailing = frame.querySelector('[data-titlebar-trailing]')!
+    const occupant = trailing.firstElementChild!
+    const extra = document.createElement('span')
+    extra.setAttribute('data-titlebar-pending-room', '30.5')
+    occupant.setAttribute('data-titlebar-pending-room', '60')
+    occupant.appendChild(extra)
+    act(() => {
+      occupant.dispatchEvent(new TransitionEvent('transitionrun', { bubbles: true, propertyName: 'width' }))
+    })
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('251px')
+  })
+
+  it('holds the expanded reserve while a collapse transition runs, then measures once', () => {
+    trailingClusterWidth = 220
+    const { frame } = mountFrame()
+    const trailing = frame.querySelector('[data-titlebar-trailing]')!
+    const occupant = trailing.firstElementChild!
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+    const seatObserver = observers.find(observer => !observer.disconnected && observer.targets.has(trailing))!
+
+    occupant.setAttribute('data-titlebar-pending-room', '-60')
+    act(() => {
+      occupant.dispatchEvent(new TransitionEvent('transitionrun', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+
+    for (const width of [200, 180, 160]) {
+      trailingClusterWidth = width
+      act(() => { seatObserver.fire() })
+      expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+    }
+
+    occupant.removeAttribute('data-titlebar-pending-room')
+    act(() => {
+      occupant.dispatchEvent(new TransitionEvent('transitionend', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('160px')
+  })
+
+  it('waits for every transitioned property and settles after transitioncancel', () => {
+    trailingClusterWidth = 160
+    const { frame } = mountFrame()
+    const trailing = frame.querySelector('[data-titlebar-trailing]')!
+    const occupant = trailing.firstElementChild!
+    const seatObserver = observers.find(observer => !observer.disconnected && observer.targets.has(trailing))!
+    const transition = (type: string, propertyName: string) => {
+      act(() => { occupant.dispatchEvent(new TransitionEvent(type, { bubbles: true, propertyName })) })
+    }
+
+    occupant.setAttribute('data-titlebar-pending-room', '60')
+    for (const propertyName of ['grid-template-columns', 'opacity', 'transform']) transition('transitionrun', propertyName)
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+
+    occupant.removeAttribute('data-titlebar-pending-room')
+    transition('transitionend', 'opacity')
+    transition('transitionend', 'transform')
+    trailingClusterWidth = 160
+    act(() => { seatObserver.fire() })
+    // grid-template-columns still runs: the reserve keeps its conceded width.
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+
+    transition('transitionend', 'grid-template-columns')
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('160px')
+
+    occupant.setAttribute('data-titlebar-pending-room', '60')
+    transition('transitionrun', 'grid-template-columns')
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('220px')
+    occupant.removeAttribute('data-titlebar-pending-room')
+    transition('transitioncancel', 'grid-template-columns')
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('160px')
+  })
 })
 
 describe('AppFrame — narrow-viewport auto-collapse', () => {

@@ -32,7 +32,7 @@ import {
 } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
-import { resolveTitlebarDensity, titlebarConversationReserve } from './titlebar-density.ts'
+import { resolveTitlebarDensity, titlebarConversationReserve, TITLEBAR_PENDING_ROOM_ATTR } from './titlebar-density.ts'
 import css from './AppFrame.module.css'
 
 /** Full composed props: runtime share + child-slot render share + store share. */
@@ -196,6 +196,16 @@ function subscribe(
   return () => { target.removeEventListener?.(type, fn) }
 }
 
+/** Extra width trailing occupants announced through TITLEBAR_PENDING_ROOM_ATTR. */
+function announcedRoom(trailing: HTMLElement): number {
+  let room = 0
+  for (const element of trailing.querySelectorAll(`[${TITLEBAR_PENDING_ROOM_ATTR}]`)) {
+    const value = Number.parseFloat(element.getAttribute(TITLEBAR_PENDING_ROOM_ATTR) ?? '')
+    if (Number.isFinite(value)) room += value
+  }
+  return room
+}
+
 /** The four-column frame (see module doc). */
 export function AppFrame({
   useStore,
@@ -221,13 +231,35 @@ export function AppFrame({
   const viewport = layoutInfo.viewportWidth
   const [landscape, setLandscape] = useState(() => readDeviceLandscape())
   const [trailingWidth, setTrailingWidth] = useState(0)
-  const measureTrailing = useCallback(() => {
+  const publishedTrailingWidth = useRef(0)
+  // Transitions running inside the cluster (element → property names). While
+  // any are in flight the reserve publishes at transition edges only, so a
+  // 200ms label reveal does not reflow the conversation header every frame.
+  const trailingTransitions = useRef(new Map<Element, Set<string>>())
+  const measureTrailing = useCallback((room = 0, hold = false) => {
     const trailing = trailingRef.current
     /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
     if (trailing === null) return
     const inset = Number.parseFloat(window.getComputedStyle(trailing).marginRight) || 0
     // Round up so fractional widths cannot lose the conversation's clearance.
-    setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset)))
+    let width = Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset + room))
+    // Mid-transition publishes never shrink the reserve: a collapsing capsule
+    // still occupies the expanded space until its transition settles.
+    if (hold) width = Math.max(width, publishedTrailingWidth.current)
+    if (width === publishedTrailingWidth.current) return
+    publishedTrailingWidth.current = width
+    setTrailingWidth(width)
+  }, [])
+  // True when no transition runs inside the cluster. Detached elements keep
+  // no transition and may never fire transitioncancel, so entries that left
+  // the cluster are dropped here instead of wedging the reserve.
+  const trailingIdle = useCallback(() => {
+    const trailing = trailingRef.current
+    const active = trailingTransitions.current
+    if (trailing !== null) {
+      for (const element of active.keys()) if (!trailing.contains(element)) active.delete(element)
+    }
+    return active.size === 0
   }, [])
 
   // This seat changes independently of the frame: a Session's Git controls
@@ -238,10 +270,43 @@ export function AppFrame({
     /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
     if (trailing === null) return
     let disposed = false
-    const observer = new ResizeObserver(() => { if (!disposed) measureTrailing() })
+    const active = trailingTransitions.current
+    active.clear()
+    const observer = new ResizeObserver(() => {
+      if (disposed) return
+      if (!trailingIdle()) return
+      measureTrailing()
+    })
     observer.observe(trailing)
-    return () => { disposed = true; observer.disconnect() }
-  }, [activeSession, measureTrailing])
+    const onRun = (event: Event): void => {
+      if (!(event instanceof TransitionEvent) || !(event.target instanceof Element)) return
+      trailingIdle()
+      const properties = active.get(event.target) ?? new Set<string>()
+      properties.add(event.propertyName)
+      active.set(event.target, properties)
+      // A reveal start concedes the announced final width in one publish.
+      measureTrailing(announcedRoom(trailing), true)
+    }
+    const onSettle = (event: Event): void => {
+      if (!(event instanceof TransitionEvent) || !(event.target instanceof Element)) return
+      const properties = active.get(event.target)
+      if (properties === undefined) return
+      properties.delete(event.propertyName)
+      if (properties.size === 0) active.delete(event.target)
+      if (active.size === 0 && !disposed) measureTrailing()
+    }
+    trailing.addEventListener('transitionrun', onRun)
+    trailing.addEventListener('transitionend', onSettle)
+    trailing.addEventListener('transitioncancel', onSettle)
+    return () => {
+      disposed = true
+      observer.disconnect()
+      active.clear()
+      trailing.removeEventListener('transitionrun', onRun)
+      trailing.removeEventListener('transitionend', onSettle)
+      trailing.removeEventListener('transitioncancel', onSettle)
+    }
+  }, [activeSession, measureTrailing, trailingIdle])
 
   // Session switch on phone/tablet: drop the overlay/re-expanded drawer
   // without rewriting the wide-window width preference.
@@ -328,7 +393,11 @@ export function AppFrame({
     }
   }, [actions])
 
-  useLayoutEffect(measureTrailing)
+  useLayoutEffect(() => {
+    // In-flight label transitions publish at their own edges; a mid-animation
+    // measure here would drag the reserve through every frame again.
+    if (trailingIdle()) measureTrailing()
+  })
 
   // Narrow viewports auto-collapse the sidebar; the store mirror keeps
   // toggleSidebar's semantics right (narrow toggles flip the manual

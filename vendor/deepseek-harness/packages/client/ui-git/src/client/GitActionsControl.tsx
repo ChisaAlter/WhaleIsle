@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   Button,
@@ -49,6 +49,76 @@ import labelCss from './GitLabel.module.css'
 
 /** Must match ui-surfaces; client packages cannot share a value export. */
 const GIT_INIT_EVENT = 'dshd-git-init'
+
+/** Must match ui-layout's TITLEBAR_PENDING_ROOM_ATTR; client packages cannot share a value export. */
+const TITLEBAR_PENDING_ROOM_ATTR = 'data-titlebar-pending-room'
+
+/**
+ * While a capsule label animates its clip open or closed (GitLabel.module.css
+ * grid-template-columns), announce on the toolbar how many px the cluster
+ * will still gain or shed once every running transition settles — positive
+ * while expanding, negative while collapsing. ui-layout concedes that room up
+ * front and holds it until the transitions settle instead of republishing
+ * the conversation reserve every animation frame.
+ * @param toolbar - the split-button toolbar owning the capsule labels.
+ * @returns a disposer removing the listeners and the attribute.
+ */
+function watchLabelRoom(toolbar: HTMLElement): () => void {
+  // Animating labels → true while the transition grows them. Direction is
+  // sampled at transitionrun: an expanding label's text is wider than its
+  // clip, a collapsing one's clip still covers it.
+  const animating = new Map<Element, boolean>()
+  // .label > .clip > .text (GitLabel.module.css): the text keeps its
+  // max-content width while the grid track animates the clip open or closed.
+  const labelRoom = (label: Element, expanding: boolean): number | null => {
+    const clip = label.firstElementChild
+    const text = clip === null ? null : clip.firstElementChild
+    if (clip === null || text === null) return null
+    const clipWidth = clip.getBoundingClientRect().width
+    return expanding ? Math.max(0, text.getBoundingClientRect().width - clipWidth) : -clipWidth
+  }
+  const refresh = (): void => {
+    let room = 0
+    for (const [label, expanding] of animating) {
+      if (!toolbar.contains(label)) {
+        animating.delete(label)
+        continue
+      }
+      room += labelRoom(label, expanding) ?? 0
+    }
+    if (room !== 0) toolbar.setAttribute(TITLEBAR_PENDING_ROOM_ATTR, String(room))
+    else toolbar.removeAttribute(TITLEBAR_PENDING_ROOM_ATTR)
+  }
+  const labelTransition = (event: Event): Element | null => (
+    event instanceof TransitionEvent
+      && event.propertyName === 'grid-template-columns'
+      && event.target instanceof Element
+      ? event.target
+      : null
+  )
+  const onRun = (event: Event): void => {
+    const label = labelTransition(event)
+    if (label !== null) {
+      const room = labelRoom(label, true)
+      if (room !== null) animating.set(label, room > 0)
+    }
+    refresh()
+  }
+  const onSettle = (event: Event): void => {
+    const label = labelTransition(event)
+    if (label !== null) animating.delete(label)
+    refresh()
+  }
+  toolbar.addEventListener('transitionrun', onRun)
+  toolbar.addEventListener('transitionend', onSettle)
+  toolbar.addEventListener('transitioncancel', onSettle)
+  return () => {
+    toolbar.removeEventListener('transitionrun', onRun)
+    toolbar.removeEventListener('transitionend', onSettle)
+    toolbar.removeEventListener('transitioncancel', onSettle)
+    toolbar.removeAttribute(TITLEBAR_PENDING_ROOM_ATTR)
+  }
+}
 
 /** Desktop git IPC the plugin injects from `window.shell`. */
 export interface GitActionsInjected {
@@ -250,6 +320,11 @@ export function GitActionsControl({
   const [publishRemoteUrl, setPublishRemoteUrl] = useState('')
   const actionSeq = useRef(0)
   const refreshSeq = useRef(0)
+  const unwatchLabelRoom = useRef<(() => void) | null>(null)
+  const bindToolbar = useCallback((toolbar: HTMLDivElement | null) => {
+    unwatchLabelRoom.current?.()
+    unwatchLabelRoom.current = toolbar === null ? null : watchLabelRoom(toolbar)
+  }, [])
   const largeFileScanSeq = useRef(0)
   const lastProgressLine = useRef<string | null>(null)
   const currentPhaseLabel = useRef('Running git action...')
@@ -818,6 +893,7 @@ export function GitActionsControl({
     <>
       {showChrome && loaded && cwd !== undefined && status !== null ? (showInit ? initButton : (
         <div
+          ref={bindToolbar}
           className={clsx(css.split, labelCss.toolbar)}
           data-git-toolbar
           data-git-reveal-branch={revealedParts.branch || undefined}
