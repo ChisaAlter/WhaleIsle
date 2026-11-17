@@ -40,11 +40,12 @@ export function selectChecks(paths, { manual = false } = {}) {
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
         /^(vendor\/[^/]+|dsh-acp)\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
     if (path.startsWith('scripts/')) scope.tools = true
-    // #437: checkJs covers shared/preload/main directly; host and launcher are
-    // pulled into the program by imports (test files are excluded). A source
-    // edit in any of them still has to run the tools job's typecheck step.
-    if (/^tsconfig\.check\.json$/.test(path) ||
-        (/^src\/(shared|preload|main|host|launcher)\//.test(path) && !/\.test\.(js|mjs|cjs)$/.test(path))) scope.tools = true
+    // #437/#438: checkJs covers all own JS — shared/preload/main directly;
+    // main-launcher/host/launcher/renderer, mobile/web, scripts and own vendor
+    // plugins via the two tsconfig.check* programs (test files excluded). A
+    // source edit in any of them still has to run the tools job's typecheck.
+    if (/^tsconfig\.check(\.dom)?\.json$/.test(path) ||
+        (/^(src\/(shared|preload|main|main-launcher|host|launcher|renderer)\/|mobile\/web\/)/.test(path) && !/\.test\.(js|mjs|cjs)$/.test(path))) scope.tools = true
     if (/^(eslint\.config\.mjs|eslint-suppressions\.json)$/.test(path)) { scope.product = true; scope.tools = true }
     if (path === '.github/workflows/cnb-mirror.yml') { scope.tools = true; continue }
     if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue

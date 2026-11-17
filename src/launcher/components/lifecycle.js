@@ -11,10 +11,17 @@ const { spawnTreeOptions, signalProcessTree, killProcessTree } = require('../../
 
 const LOG_MAX_BYTES = 256 * 1024;
 
+/** @typedef {{ platform?: NodeJS.Platform, processKill?: (pid: number, signal?: any) => boolean, execFileSync?: typeof execFileSync, execFile?: typeof execFile, spawn?: typeof spawn, execPath?: string, fs?: typeof fs, log?: (message: string) => void }} LifecycleDeps */
+
+/** @param {LifecycleDeps} [deps] */
 function resolvePlatform(deps = {}) {
   return typeof deps.platform === 'string' ? deps.platform : process.platform;
 }
 
+/**
+ * @param {number} pid
+ * @param {LifecycleDeps} [deps]
+ */
 function isPidAlive(pid, deps = {}) {
   if (!Number.isInteger(pid) || pid <= 0) {
     return false;
@@ -25,8 +32,9 @@ function isPidAlive(pid, deps = {}) {
     (deps.processKill || process.kill)(pid, 0);
     return true;
   } catch (error) {
-    if (error && error.code === 'EPERM') return true;
-    if (error && error.code === 'ESRCH') return false;
+    const code = /** @type {any} */ (error).code;
+    if (code === 'EPERM') return true;
+    if (code === 'ESRCH') return false;
     throw error;
   }
 }
@@ -34,6 +42,11 @@ function isPidAlive(pid, deps = {}) {
 // Synchronous forced kill for paths that cannot await (the before-quit
 // shutdown hook). Delivery only — exit confirmation lives in killPidTree or
 // the caller's own wait loop.
+/**
+ * @param {number} pid
+ * @param {{ force?: boolean }} [options]
+ * @param {LifecycleDeps} [deps]
+ */
 function killPid(pid, { force = true } = {}, deps = {}) {
   return signalProcessTree(pid, {
     signal: force ? 'SIGKILL' : 'SIGTERM',
@@ -45,6 +58,11 @@ function killPid(pid, { force = true } = {}, deps = {}) {
 // Graceful tree stop: `signal` to the group, SIGKILL escalation after
 // graceMs, confirmation before returning. Throws PROCESS_TREE_STOP_FAILED
 // when the tree is still alive afterwards.
+/**
+ * @param {number} pid
+ * @param {{ graceMs?: number }} [options]
+ * @param {LifecycleDeps} [deps]
+ */
 async function killPidTree(pid, { graceMs = 2000 } = {}, deps = {}) {
   await killProcessTree(pid, {
     graceMs,
@@ -74,7 +92,7 @@ function openLogStream(file, deps = {}) {
     // becomes an uncaughtException in the main process. Report once and
     // drop the stream; the next spawnComponent call rebuilds it.
     let reported = false;
-    stream.on('error', (error) => {
+    stream.on('error', (/** @type {any} */ error) => {
       if (!reported) {
         reported = true;
         const log = typeof deps.log === 'function' ? deps.log : console.warn;
@@ -94,6 +112,10 @@ function openLogStream(file, deps = {}) {
 
 // Spawn one component generation. Child output lands in <dataDir>/component.log
 // so a crashed service leaves evidence for the panel/error state.
+/**
+ * @param {{ entryFile: string, dir: string, dataDir: string, logFile: string, id: string, version: any }} spec
+ * @param {LifecycleDeps} [deps]
+ */
 function spawnComponent({ entryFile, dir, dataDir: dataPath, logFile: logPath, id, version }, deps = {}) {
   const doSpawn = deps.spawn || spawn;
   const fsp = deps.fs || fs;
@@ -140,6 +162,11 @@ function spawnComponent({ entryFile, dir, dataDir: dataPath, logFile: logPath, i
 // their endpoint is up. Poll briefly; an absent file is not an error (plain
 // tools never write one) — liveness is the spawn/alive probe, this is only
 // how `url` reaches the panel.
+/**
+ * @param {string} file
+ * @param {{ timeoutMs?: number, pollMs?: number, isDead?: () => boolean }} [options]
+ * @param {LifecycleDeps} [deps]
+ */
 async function waitForStateFile(file, { timeoutMs = 4000, pollMs = 200, isDead } = {}, deps = {}) {
   const fsp = deps.fs || fs;
   const deadline = Date.now() + timeoutMs;
@@ -160,6 +187,10 @@ async function waitForStateFile(file, { timeoutMs = 4000, pollMs = 200, isDead }
   return null;
 }
 
+/**
+ * @param {string} file
+ * @param {LifecycleDeps} [deps]
+ */
 function readStateFile(file, deps = {}) {
   const fsp = deps.fs || fs;
   try {
@@ -172,6 +203,11 @@ function readStateFile(file, deps = {}) {
 
 // Keep manual traversal for ASAR payloads, with asynchronous filesystem calls
 // so staging a component does not block Electron's main event loop.
+/**
+ * @param {string} src
+ * @param {string} dest
+ * @param {LifecycleDeps} [deps]
+ */
 async function copyDir(src, dest, deps = {}) {
   const fsp = (deps.fs || fs).promises;
   await fsp.mkdir(dest, { recursive: true });
@@ -186,6 +222,9 @@ async function copyDir(src, dest, deps = {}) {
   }
 }
 
+/** @param {string} dir
+ * @param {LifecycleDeps} [deps]
+ */
 async function removeDir(dir, deps = {}) {
   const fsp = (deps.fs || fs).promises;
   try {

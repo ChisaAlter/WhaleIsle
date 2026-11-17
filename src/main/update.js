@@ -374,7 +374,13 @@ async function githubJson(url, timeoutMs = CHECK_TIMEOUT_MS, { signal } = {}) {
   return response.json();
 }
 
-function snapshot(extra = {}, route = 'github') {
+/**
+ * @template {object} T
+ * @param {T} [extra]
+ * @param {string} [route]
+ * @returns {T & { current: string, repo: string, repoUrl: string, releasesUrl: string, route: string, status?: string, latest?: string, message?: string }}
+ */
+function snapshot(extra = /** @type {T} */ ({}), route = 'github') {
   const page = route === 'github' ? RELEASES_PAGE : require('../launcher/release-source').ROUTES[route].page;
   return {
     current: currentVersion(),

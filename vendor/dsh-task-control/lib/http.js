@@ -12,6 +12,11 @@ import { constantTimeEqual, readBodyLimited } from '../../dsh-shared/lib/secret.
 export const CONTROL_PREFIX = '/dshd-task-control';
 const MAX_BODY_BYTES = 64 * 1024;
 
+/**
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} status
+ * @param {unknown} body
+ */
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -21,18 +26,26 @@ function sendJson(res, status, body) {
   res.end(payload);
 }
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {string} token
+ */
 function authorized(req, token) {
   if (!token) return false;
   const header = req.headers.authorization || '';
   return constantTimeEqual(header, `Bearer ${token}`);
 }
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ */
 async function readJson(req, res) {
   let raw;
   try {
     raw = await readBodyLimited(req, MAX_BODY_BYTES, { res });
   } catch (error) {
-    if (error && error.code === 'BODY_TOO_LARGE') {
+    if (error instanceof Error && 'code' in error && error.code === 'BODY_TOO_LARGE') {
       throw new Error('body too large');
     }
     throw error;
@@ -50,23 +63,28 @@ async function readJson(req, res) {
  * unauthorized requests never reach inspection or lock mutation.
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {ReturnType<import('./state.js').createControlState>} state
- * @param {{ token: string }} options
+ * @param {{ token: string, onUnlock?: () => void }} options
  */
 export function createControlHandler(ctx, state, options) {
   const token = String(options.token || '');
   const onUnlock = typeof options.onUnlock === 'function' ? options.onUnlock : () => {};
+  /**
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   */
   return async function controlRoute(req, res) {
     if (!authorized(req, token)) {
       sendJson(res, 401, { ok: false, code: 'dshd/unauthorized' });
       return;
     }
     const op = new URL(req.url || '/', 'http://x').pathname.slice(CONTROL_PREFIX.length).replace(/^\/+|\/+$/g, '');
+    /** @type {any} */
     let body = {};
     if (req.method === 'POST') {
       try {
         body = await readJson(req, res);
       } catch (error) {
-        sendJson(res, 400, { ok: false, code: 'dshd/bad-request', detail: error.message });
+        sendJson(res, 400, { ok: false, code: 'dshd/bad-request', detail: error instanceof Error ? error.message : String(error) });
         return;
       }
     }
@@ -97,7 +115,8 @@ export function createControlHandler(ctx, state, options) {
           if (released.ok) {
             // Best-effort cancellation signal; producers that accept
             // cancellation subscribe on the Host context.
-            ctx.emit('dsh-task-control/cancel', {
+            // Desktop-emitted event; absent from cordis's Events map.
+            ctx.emit(/** @type {any} */ ('dsh-task-control/cancel'), {
               owner: String(body.owner || ''),
               reason: String(body.reason || ''),
             });

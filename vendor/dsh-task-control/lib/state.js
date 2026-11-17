@@ -15,7 +15,7 @@ export const LOCKED_CODE = 'dshd/admission-locked';
  *   startedAt: number,
  *   lockEpoch: number,
  *   lock: null | { lockId: string, owner: string, kind: string, generation: number, acquiredAt: number, expiresAt: number },
- *   pending: Set<Promise<unknown>>,
+ *   pending: Set<{ label: string, promise: Promise<unknown> }>,
  *   stopping: boolean,
  * }}
  */
@@ -30,10 +30,18 @@ export function createControlState() {
   };
 }
 
+/**
+ * @param {ReturnType<typeof createControlState>} state
+ * @param {number} now
+ */
 function lockLive(state, now) {
   return state.lock !== null && state.lock.expiresAt > now;
 }
 
+/**
+ * @param {ReturnType<typeof createControlState>} state
+ * @param {number} now
+ */
 function pruneExpiredLock(state, now) {
   if (state.lock !== null && state.lock.expiresAt <= now) {
     state.lock = null;
@@ -54,7 +62,8 @@ export function admit(state, label) {
   pruneExpiredLock(state, Date.now());
   if (state.stopping) return { accepted: false, code: 'dshd/host-stopping' };
   if (lockLive(state, Date.now())) return { accepted: false, code: LOCKED_CODE };
-  let settle;
+  /** @type {(value?: unknown) => void} */
+  let settle = () => {};
   const entry = { label: String(label || '?'), promise: new Promise((resolve) => { settle = resolve; }) };
   state.pending.add(entry);
   let closed = false;
@@ -69,6 +78,10 @@ export function admit(state, label) {
   };
 }
 
+/**
+ * @param {ReturnType<typeof createControlState>} state
+ * @param {number} timeoutMs
+ */
 async function waitForDrain(state, timeoutMs) {
   const pending = [...state.pending];
   if (pending.length === 0) return { drained: true, count: 0 };
@@ -102,17 +115,18 @@ export async function acquireLock(state, request) {
   if (state.stopping) return { ok: false, code: 'dshd/host-stopping' };
   const owner = String(request.owner || '').trim();
   if (!owner) return { ok: false, code: 'dshd/bad-owner' };
-  const ttlMs = Number.isFinite(request.ttlMs) && request.ttlMs > 0 ? request.ttlMs : 60000;
-  if (lockLive(state, now)) {
-    if (state.lock.owner === owner) {
+  const ttlMs = typeof request.ttlMs === 'number' && request.ttlMs > 0 ? request.ttlMs : 60000;
+  let lock = state.lock;
+  if (lock !== null && lock.expiresAt > now) {
+    if (lock.owner === owner) {
       // Same-owner re-acquire renews and re-drains; the lock identity is stable
       // so a held lockId remains valid.
-      state.lock.expiresAt = now + ttlMs;
+      lock.expiresAt = now + ttlMs;
     } else {
-      return { ok: false, code: 'dshd/lock-held', owner: state.lock.owner };
+      return { ok: false, code: 'dshd/lock-held', owner: lock.owner };
     }
   } else {
-    state.lock = {
+    state.lock = lock = {
       lockId: randomUUID(),
       owner,
       kind: String(request.kind || 'generic'),
@@ -121,10 +135,10 @@ export async function acquireLock(state, request) {
       expiresAt: now + ttlMs,
     };
   }
-  const generation = state.lock.generation;
+  const generation = lock.generation;
   const drain = await waitForDrain(state, Number(request.drainTimeoutMs) || 30000);
   if (state.stopping) {
-    releaseLock(state, { lockId: state.lock.lockId, owner });
+    releaseLock(state, { lockId: lock.lockId, owner });
     return { ok: false, code: 'dshd/host-stopping' };
   }
   // Expiry is lazy — prune BEFORE the generation check so a lock whose TTL
@@ -134,16 +148,16 @@ export async function acquireLock(state, request) {
     return { ok: false, code: 'dshd/lock-superseded' };
   }
   if (!drain.drained) {
-    releaseLock(state, { lockId: state.lock.lockId, owner });
+    releaseLock(state, { lockId: lock.lockId, owner });
     return { ok: false, code: 'dshd/drain-timeout', pendingCount: drain.count, pendingLabels: drain.labels };
   }
   return {
     ok: true,
-    lockId: state.lock.lockId,
+    lockId: lock.lockId,
     owner,
     generation,
     hostGeneration: state.hostGeneration,
-    expiresAt: state.lock.expiresAt,
+    expiresAt: lock.expiresAt,
     drainedPending: drain.count,
   };
 }
@@ -171,12 +185,14 @@ export function renewLock(state, request) {
   if (state.lock.lockId !== request.lockId || state.lock.owner !== request.owner) {
     return { ok: false, code: 'dshd/lock-mismatch' };
   }
-  const ttlMs = Number.isFinite(request.ttlMs) && request.ttlMs > 0 ? request.ttlMs : 60000;
+  const ttlMs = typeof request.ttlMs === 'number' && request.ttlMs > 0 ? request.ttlMs : 60000;
   state.lock.expiresAt = Date.now() + ttlMs;
   return { ok: true, expiresAt: state.lock.expiresAt };
 }
 
-/** Lock + pending snapshot for the `status` op. */
+/** Lock + pending snapshot for the `status` op.
+ * @param {ReturnType<typeof createControlState>} state
+ */
 export function lockStatus(state) {
   const now = Date.now();
   pruneExpiredLock(state, now);

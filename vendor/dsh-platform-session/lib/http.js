@@ -10,6 +10,11 @@ import { constantTimeEqual } from '../../dsh-shared/lib/secret.mjs';
 
 export const PLATFORM_PREFIX = '/dshd-platform';
 
+/**
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} status
+ * @param {unknown} body
+ */
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -19,6 +24,10 @@ function sendJson(res, status, body) {
   res.end(payload);
 }
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {string} token
+ */
 function authorized(req, token) {
   if (!token) return false;
   return constantTimeEqual(req.headers.authorization || '', `Bearer ${token}`);
@@ -28,7 +37,7 @@ function authorized(req, token) {
  * @param {object} options
  * @param {string} options.token - per-boot credential; empty keeps closed.
  * @param {() => Promise<object|null>} options.read - PlatformSession reader.
- * @returns route handler for webServer.register.
+ * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>} route handler for webServer.register.
  */
 export function createPlatformHandler({ token, read }) {
   return async (req, res) => {

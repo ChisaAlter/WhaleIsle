@@ -55,7 +55,7 @@ async function loadDefineTool() {
 
 /**
  * Register install_dsh_plugin when the desktop control endpoint is in the environment.
- * @param ctx - Host context with the tools registry.
+ * @param {{ tools: { register(tool: unknown): void } }} ctx - Host context with the tools registry.
  */
 export async function apply(ctx) {
   const control = controlConfig()
@@ -64,7 +64,7 @@ export async function apply(ctx) {
   try {
     defineTool = await loadDefineTool()
   } catch (error) {
-    const message = error && error.message ? error.message : String(error)
+    const message = error instanceof Error && error.message ? error.message : String(error)
     console.error(`[dshd-desktop-plugin-install] skipped install_dsh_plugin: ${message}`)
     return
   }
@@ -98,11 +98,17 @@ export async function apply(ctx) {
           restarting: { type: 'boolean', required: true },
         },
       },
+      /**
+       * @param {Record<string, unknown>} _args
+       * @param {{declined: boolean, needsAllowBuilds: boolean, allowBuilds: string[], spec: string, ok: boolean, error: string}} value
+       */
       render: (_args, value) => [{ type: 'text', text: renderInstall(value) }],
     },
+    /** @param {{spec?: unknown, allowBuilds?: unknown}} args */
     async execute(args) {
       return executeInstallDshPlugin(control, args.spec, args.allowBuilds ?? [])
     },
+    /** @param {{spec?: unknown}} args */
     presentCall: args => ({ card: 'generic', title: '安装插件', kind: 'other', rawInput: args.spec }),
   }))
 }

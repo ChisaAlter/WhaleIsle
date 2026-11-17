@@ -18,14 +18,16 @@ const fs = require('fs');
 const path = require('path');
 
 // Packaged GUI processes have no console: fatal failures must leave a trace.
+/** @type {(line: string) => void} */
 let trace = () => {};
 // A fatal failure is answered with a crash report and an exit, never an error box.
+/** @type {(error: unknown) => void} */
 let exitAfterReport = () => app.exit(1);
 try {
   const logDir = path.join(app.getPath('userData'), 'logs');
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, 'main.log');
-  const write = (line) => {
+  const write = (/** @type {string} */ line) => {
     try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`); } catch {}
   };
   trace = write;
@@ -62,7 +64,7 @@ try {
     exitAfterReport(error);
   });
   process.on('unhandledRejection', (reason) => {
-    write(`unhandledRejection: ${reason && reason.stack ? reason.stack : reason}`);
+    write(`unhandledRejection: ${reason instanceof Error && reason.stack ? reason.stack : reason}`);
   });
 } catch {}
 const { getLauncherWindow, prepareLauncher, showLauncher, sendToLauncher } = require('../main/window');
@@ -87,6 +89,7 @@ const { registerSlimIpc } = require('./ipc');
 const { createLauncherConfirm } = require('../launcher/launcher-confirm');
 
 let quitting = false;
+/** @type {import('electron').Tray | null} */
 let tray = null;
 
 // Launcher-owned confirmations (update ask, unverified installer) render as
@@ -113,6 +116,7 @@ function supervisedComponentsLabel() {
   }
 }
 
+/** @param {import('electron').BrowserWindow} win */
 function bindLauncherClose(win) {
   win.on('close', (event) => {
     if (quitting || !tray || !hideOnClose(loadConfig(), quitting)) {
@@ -131,11 +135,12 @@ function bindLauncherClose(win) {
         saveConfig({ trayHintShown: true });
       }
     } catch (error) {
-      trace(`tray hint failed: ${error && error.message ? error.message : error}`);
+      trace(`tray hint failed: ${error instanceof Error && error.message ? error.message : String(error)}`);
     }
   });
 }
 
+/** @param {{tag?: string, latest?: string} | null | undefined} info */
 async function confirmUnverified(info) {
   const message = `版本 ${info?.tag || info?.latest || ''} 未提供 SHA512SUMS.txt 校验清单，无法验证安装包完整性。仍要下载并安装吗？`;
   const bridged = await launcherConfirm.ask({
@@ -160,6 +165,7 @@ async function confirmUnverified(info) {
   return result.response === 0;
 }
 
+/** @param {{latest?: string, version?: string, notes?: unknown}} check */
 async function confirmUpdateAsk(check) {
   const notes = plainReleaseNotes(check?.notes);
   const body = `是否更新到 ${check.latest || check.version || ''}？`
@@ -190,6 +196,10 @@ async function confirmUpdateAsk(check) {
 // The cold-start install path is the runtime install lane: the launcher
 // stays alive, the installer runs elevated, and the registration settles by
 // polling rather than by this process quitting.
+/**
+ * @param {(payload: unknown) => void} onProgress
+ * @param {{tag?: string, route?: string} | undefined} check
+ */
 function gateInstallUpdate(onProgress, check) {
   return runtimeInstall.installRuntime(
     check ? { tag: check.tag, route: check.route } : {},
@@ -281,7 +291,7 @@ if (!gotLock) {
         statusLabel: supervisedComponentsLabel,
       });
     } catch (error) {
-      trace(`tray create failed: ${error && error.stack ? error.stack : error}`);
+      trace(`tray create failed: ${error instanceof Error && error.stack ? error.stack : String(error)}`);
     }
     bindLauncherClose(win);
     // A visible launcher is the only surface allowed to consume a parked
@@ -301,14 +311,14 @@ if (!gotLock) {
       sendToLauncher,
       recoverInterruptedImport: () => recoverInterruptedImport({ userDataDir: desktopDir }),
       startDesktop: () => runtimeInstall.startExternalDesktop(),
-      log: (line, level) => {
+      log: /** @type {(line: string, level?: string) => void} */ ((line, level) => {
         trace(`gate:${line}`);
         (level === 'error' ? console.error : console.log)(`[launcher] ${line}`);
-      },
+      }),
     });
     trace('gate-done');
   }).catch((error) => {
-    trace(`whenReady chain failed: ${error && error.stack ? error.stack : error}`);
+    trace(`whenReady chain failed: ${error instanceof Error && error.stack ? error.stack : String(error)}`);
     // Never strand a hidden window-less process: leave a crash report and exit.
     exitAfterReport(error);
   });

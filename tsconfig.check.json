@@ -9,16 +9,55 @@
     "target": "es2022",
     "types": ["node"],
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      // 宿主运行时注入的依赖：类型直接指向 vendor/dsh-whale 自带的
+      // node_modules 里那份（与运行时同源）。paths 候选不能落在
+      // node_modules 目录上——tsc 会按 pnpm 布局去 .pnpm 探测而失败，所以
+      // 逐条指到包的 types 文件。未列出的宿主注入包（dsh-agent-team、
+      // dsh-client-* 等）保持未解析，进基线。
+      "@deepseek-ai/cordis": ["vendor/dsh-whale/node_modules/@deepseek-ai/cordis/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-tools": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-tools/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-llm": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-scope": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-scope/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-brand": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-brand/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-timeout": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-timeout/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-typert-protocol": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-typert-protocol/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-util-crypto": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-util-crypto/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-util-values": ["vendor/dsh-whale/node_modules/@deepseek-ai/dsh-util-values/lib/types/index.d.ts"],
+      "@deepseek-ai/cosmokit": ["vendor/dsh-whale/node_modules/@deepseek-ai/cosmokit/lib/types/index.d.ts"],
+      "@deepseek-ai/schemastery": ["vendor/dsh-whale/node_modules/@deepseek-ai/schemastery/lib/types/index.d.ts"],
+      "zod": ["vendor/dsh-whale/node_modules/zod/index.d.ts"],
+      // playwright-core 是 dsh-with-chatgpt 的可选依赖，装在插件自己的
+      // node_modules（npm run setup 生成），未安装则解析失败。paths 优先于
+      // node_modules，始终指到入库的最小声明，解析结果不随环境漂移（#438）。
+      "playwright-core": ["vendor/dsh-with-chatgpt/types/playwright-core.d.ts"]
+    }
   },
   "include": [
     "src/shared/**/*",
     "src/preload/**/*",
-    "src/main/**/*"
+    "src/main/**/*",
+    "src/main-launcher/**/*",
+    "src/host/**/*",
+    "src/launcher/**/*",
+    "scripts/**/*",
+    "vendor/dsh-deepseek-tools/**/*",
+    "vendor/dsh-platform-session/**/*",
+    "vendor/dsh-project/**/*",
+    "vendor/dsh-shared/**/*",
+    "vendor/dsh-task-control/**/*",
+    "vendor/dsh-whale/**/*",
+    "vendor/dsh-with-chatgpt/**/*"
   ],
   "exclude": [
     "**/*.test.*",
     "**/*.bundle.js",
-    "src/main/test-fixtures/**"
+    "**/node_modules/**",
+    "src/main/test-fixtures/**",
+    "src/renderer/**",
+    "vendor/*/client/**",
+    "vendor/dsh-with-chatgpt/bridge/**"
   ]
 }
