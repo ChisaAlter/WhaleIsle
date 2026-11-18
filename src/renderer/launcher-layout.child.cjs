@@ -23,6 +23,7 @@ const handlers = {
   'shell:scan-import': () => ({ ok: true, sourceHome: 'C:\\fixture\\source', homeDir: 'C:\\fixture\\target', sessions: Array.from({ length: 6 }, (_, i) => ({ rel: `workspace/session-${i}`, title: `会话 ${i}`, cwd: 'C:\\fixture\\workspace' })), skills: [], plugins: [], mcp: [], settings: [], presets: [] }),
   'shell:launcher-check-update': () => ({ status: 'none' }),
   'shell:check-update': () => ({ status: 'none' }),
+  'shell:app-confirm:response': () => ({ ok: true }),
 };
 for (const [channel, fn] of Object.entries(handlers)) ipcMain.handle(channel, fn);
 
@@ -33,6 +34,23 @@ app.whenReady().then(async () => {
   attachRendererConsoleTail(win.webContents, tail);
   await win.loadFile(path.join(__dirname, 'launcher.html'));
   const js = (source) => win.webContents.executeJavaScript(source);
+  const baseDpr = (await js('devicePixelRatio')) / (win.webContents.getZoomFactor() || 1);
+  /** @param {number} zoom */
+  const waitForStableViewport = async (zoom) => {
+    const expectedDpr = baseDpr * zoom;
+    await waitForMain(
+      () => Math.abs(win.webContents.getZoomFactor() - zoom) < 0.01,
+      `zoom factor ${zoom}`,
+    );
+    await js('window.__layoutViewport = null');
+    await waitForDom(js, `(() => {
+      if (Math.abs(devicePixelRatio - ${expectedDpr}) >= ${0.05 * baseDpr}) return false;
+      const now = innerWidth + 'x' + innerHeight + '@' + devicePixelRatio;
+      const prev = window.__layoutViewport;
+      window.__layoutViewport = { now, same: prev && prev.now === now ? prev.same + 1 : 0 };
+      return window.__layoutViewport.same >= 5;
+    })()`);
+  };
   const feedbackSurfaces = await js("['install-progress-card','update-progress-card','import-progress-card','home-update'].map(id=>({id,floating:!!document.getElementById(id).closest('.shell-feedback-stack'),position:getComputedStyle(document.getElementById(id).closest('.shell-feedback-stack')).position}))");
   await js("console.info('LAYOUT_INFO_CONTROL'); console.error('LAYOUT_ERROR_SENTINEL')");
   // Tail lines carry a timestamp prefix, so match the message inside each line.
@@ -58,12 +76,7 @@ app.whenReady().then(async () => {
       // default screen) clamps the content size, and the measurements below
       // are relative to whatever viewport the window actually has.
       await waitForDom(js, `document.querySelectorAll('.import-board-body input[name="session-rel"]').length === 6`);
-      await waitForDom(js, `(() => {
-        const now = innerWidth + 'x' + innerHeight + '@' + devicePixelRatio;
-        const prev = window.__layoutViewport;
-        window.__layoutViewport = { now, same: prev && prev.now === now ? prev.same + 1 : 0 };
-        return window.__layoutViewport.same >= 5;
-      })()`);
+      await waitForStableViewport(zoom);
       for (const expanded of [false, true]) {
         await js(`document.querySelector('.import-scope-detail').open = ${expanded}`);
         const measured = await js(`(() => {
@@ -89,16 +102,19 @@ app.whenReady().then(async () => {
   await js("document.querySelector('[data-tab=home]').click(); document.querySelector('#home-recovery').hidden = false");
   const heading = await js("(() => { const s = getComputedStyle(document.querySelector('.recovery-head h3')); return [s.fontSize, s.lineHeight]; })()");
   const dialogs = [];
-  const [dialogWidth, dialogHeight] = win.getContentSize();
+  let dialogSeq = 0;
   for (const zoom of [1, 1.5, 2]) {
     win.webContents.setZoomFactor(zoom);
+    // Do not require innerWidth * zoom to equal win.getContentSize(): on Linux
+    // Xvfb, viewport clamping or rounding at fractional zoom (1.5x) makes the
+    // CSS viewport differ from the content size, just like the import tab.
+    await waitForStableViewport(zoom);
     for (const text of ['更新说明\n'.repeat(120).slice(0, 600), '诊断内容 connection interrupted\n'.repeat(100)]) {
-      win.webContents.send('shell:app-confirm', { id: 'layout-test', title: '确认更新', body: text, confirmText: '继续', cancelText: '取消' });
-      // The modal renders on the IPC event and the zoom factor applies
-      // asynchronously; the new body text plus the matching CSS viewport
-      // prove both landed before measuring.
-      await waitForDom(js, `document.getElementById('app-confirm-body').textContent === ${JSON.stringify(text)}
-        && Math.abs(innerWidth * ${zoom} - ${dialogWidth}) < 2 && Math.abs(innerHeight * ${zoom} - ${dialogHeight}) < 2`);
+      const dialogId = `layout-test-${++dialogSeq}`;
+      win.webContents.send('shell:app-confirm', { id: dialogId, title: '确认更新', body: text, confirmText: '继续', cancelText: '取消' });
+      await waitForDom(js, `!document.getElementById('app-confirm').hidden
+        && document.getElementById('app-confirm-body').textContent === ${JSON.stringify(text)}
+        && Math.abs(devicePixelRatio - ${baseDpr * zoom}) < ${0.05 * baseDpr}`);
       dialogs.push(await js(`(() => {
         const body = document.querySelector('.modal-body');
         return { zoom: ${zoom}, length: ${text.length}, bodyHeight: body.clientHeight, buttons: ['app-confirm-ok', 'app-confirm-cancel'].map(id => {
@@ -108,6 +124,10 @@ app.whenReady().then(async () => {
         }) };
       })()`));
       if (evidence && zoom === 1.5) fs.writeFileSync(path.join(evidence, `confirm-${text.length}-150.png`), (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
+      // Dismiss each modal cleanly before sending the next one so the confirm
+      // IPC response path settles between cases instead of racing a fresh modal.
+      await js("document.getElementById('app-confirm-cancel').click()");
+      await waitForDom(js, "document.getElementById('app-confirm').hidden === true");
     }
   }
   const result = { diagnostics, cases, heading, dialogs, feedbackSurfaces };
