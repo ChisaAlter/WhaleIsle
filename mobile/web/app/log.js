@@ -7,10 +7,10 @@ import { reconcileChildren } from '../ui/keyed-list.js?v=20261028-mobile';
 import { hostCall } from '../host/backend.js';
 import { hostHistoryPage, mergeOlderHistory } from '../host/history.js?v=20261028-mobile';
 import { responseForAction, genericResponse } from '../chisacode/approvals.js';
-import { operationError, showBanner, updateDocumentTitle } from './chrome.js?v=20261117-app-split';
+import { operationError, setToast, showBanner, updateDocumentTitle } from './chrome.js?v=20261117-app-split';
 import { renderSlashPop } from './composer.js?v=20261117-app-split';
 import { approval, approvalActions, approvalCommand, approvalTitle, blankEl, composer, el, jumpBottom, logEl, logList, readonlyNote, state, store } from './context.js?v=20261117-app-split';
-import { renderDrawer } from './drawer.js?v=20261117-app-split';
+import { openSession, renderDrawer } from './drawer.js?v=20261117-app-split';
 import { currentReadOnlyReason } from './header.js?v=20261117-app-split';
 import { logRowNode, outboxNode, queuePanelNode } from './log-rows.js?v=20261117-app-split';
 import { scheduleNativeSnapshot } from './native.js?v=20261117-app-split';
@@ -44,6 +44,33 @@ function syncJumpBottom() {
   jumpBottom.setAttribute('aria-label', away && logUnseen ? '有新消息，回到最新' : '回到最新消息');
 }
 
+/** In-log placeholder when the open session's timeline fetch failed. */
+function timelineErrorNode() {
+  const node = document.createElement('div');
+  node.className = 'timeline-error';
+  const text = document.createElement('p');
+  text.className = 'log-error';
+  text.textContent = `载入会话失败：${state.timelineError}`;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'ghost-btn';
+  retry.textContent = '重试';
+  retry.addEventListener('click', () => {
+    if (state.toastTone === 'error') setToast('');
+    showBanner('');
+    const subagent = state.subagentRow
+      ? {
+        parentSessionId: state.subagentRow.parentSessionId,
+        mode: state.subagentRow.subagentMode,
+        label: state.subagentRow.projections?.values?.title || '',
+      }
+      : null;
+    openSession(state.sessionId, subagent ? { subagent } : {}).catch((/** @type {any} */ error) => showBanner(error?.message || '电脑没有响应'));
+  });
+  node.append(text, retry);
+  return node;
+}
+
 /**
  * @param {{ anchor?: 'auto' | 'bottom' | 'preserve' | 'hold' }} options
  * 'preserve' keeps the visual scroll position across a prepend (load-older),
@@ -72,17 +99,19 @@ export function renderLog({ anchor = 'auto' } = {}) {
   const nodes = [];
   logEl.classList.toggle('surface-busy', state.timelineLoading && !rows.length);
   logEl.setAttribute('aria-busy', String(state.timelineLoading));
-  if (!state.timelineError && state.transport === 'chisacode' && state.timelinePage.hasOlder) {
-    const older = document.createElement('button');
-    older.type = 'button';
-    older.className = 'load-older';
-    older.disabled = state.timelineLoadingOlder;
-    older.textContent = '加载更早消息';
-    buttonBusy(older, state.timelineLoadingOlder, { label: '加载中…' });
-    older.addEventListener('click', () => loadOlderMessages());
-    nodes.push(older);
-  }
-  if (!state.timelineError) {
+  if (state.timelineError) {
+    nodes.push(timelineErrorNode());
+  } else {
+    if (state.transport === 'chisacode' && state.timelinePage.hasOlder) {
+      const older = document.createElement('button');
+      older.type = 'button';
+      older.className = 'load-older';
+      older.disabled = state.timelineLoadingOlder;
+      older.textContent = '加载更早消息';
+      buttonBusy(older, state.timelineLoadingOlder, { label: '加载中…' });
+      older.addEventListener('click', () => loadOlderMessages());
+      nodes.push(older);
+    }
     // Unchanged rows keep their nodes: a live tick rebuilds only what changed.
     nodes.push(...logList.nodes(rows, { key: (row) => `${row.role}:${row.id}`, build: (row) => logRowNode(row) }));
     nodes.push(...state.outbox.map(outboxNode));

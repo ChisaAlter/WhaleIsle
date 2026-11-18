@@ -565,6 +565,7 @@ export async function openSession(sessionId, options = {}) {
   }
   if (state.sessionId !== sessionId) return;
   state.timelineLoading = false;
+  if (state.toastTone === 'error' && state.gitToast.startsWith('载入会话失败：')) setToast('');
   const previousCwd = state.cwd;
   applyHistoryPayload(history.value || history);
   state.cwd = currentRow()?.cwd || '';
