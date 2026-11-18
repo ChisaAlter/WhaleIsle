@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ensureDir, readJsonStore, writeJsonStore } from './store-file.js';
 
 export const ACP_PROVIDER_PREFIX = 'acp:';
 
@@ -451,7 +452,7 @@ export function buildAgentRuntimeEnv(agentConfig, resolvedBinary = null) {
 
   if (profileDir) {
     try {
-      fs.mkdirSync(profileDir, { recursive: true });
+      ensureDir(profileDir);
     } catch {
       // ignore
     }
@@ -493,8 +494,8 @@ export function buildAgentRuntimeEnv(agentConfig, resolvedBinary = null) {
       try {
         const agyAcpDir = path.join(mergedEnv.GEMINI_HOME, 'antigravity-acp');
         const tmpDir = path.join(mergedEnv.GEMINI_HOME, 'tmp');
-        fs.mkdirSync(agyAcpDir, { recursive: true });
-        fs.mkdirSync(tmpDir, { recursive: true });
+        ensureDir(agyAcpDir);
+        ensureDir(tmpDir);
         mergedEnv.TEMP = tmpDir;
         mergedEnv.TMP = tmpDir;
         const settingsFile = path.join(agyAcpDir, 'settings.json');
@@ -512,7 +513,7 @@ export function buildAgentRuntimeEnv(agentConfig, resolvedBinary = null) {
             : mergedEnv.GEMINI_API_KEY
               ? 'gemini-api-key'
               : 'oauth-personal';
-          fs.writeFileSync(settingsFile, JSON.stringify({ auth: { type: authType } }), 'utf8');
+          fs.writeFileSync(settingsFile, JSON.stringify({ auth: { type: authType } }), { encoding: 'utf8', mode: 0o600 });
         }
       } catch {
         // ignore
@@ -651,31 +652,17 @@ export function resolveProfilesBaseDir(storeFile) {
 }
 
 export function loadAgentsConfig(storeFile) {
-  const file = resolveStoreFile(storeFile);
-  let stored = [];
-  try {
-    if (fs.existsSync(file)) {
-      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (Array.isArray(parsed?.agents)) {
-        stored = parsed.agents;
-      } else if (Array.isArray(parsed)) {
-        stored = parsed;
-      }
-    }
-  } catch {
-    stored = [];
-  }
+  const parsed = readJsonStore(resolveStoreFile(storeFile), {
+    accept: (value) => Array.isArray(value?.agents) || Array.isArray(value),
+  });
+  const stored = Array.isArray(parsed?.agents) ? parsed.agents : Array.isArray(parsed) ? parsed : [];
   return mergeAgentsWithPresets(stored);
 }
 
 export function saveAgentsConfig(agents, storeFile) {
   const file = resolveStoreFile(storeFile);
   const normalized = mergeAgentsWithPresets(agents);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const payload = JSON.stringify({ version: 2, agents: normalized }, null, 2);
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmp, payload, 'utf8');
-  fs.renameSync(tmp, file);
+  writeJsonStore(file, JSON.stringify({ version: 2, agents: normalized }, null, 2));
   return normalized;
 }
 
@@ -690,27 +677,14 @@ export function resolveSessionStoreFile(storeFile) {
 }
 
 export function loadSessionStore(storeFile) {
-  const file = resolveSessionStoreFile(storeFile);
-  try {
-    if (fs.existsSync(file)) {
-      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (parsed && typeof parsed === 'object' && parsed.sessions && typeof parsed.sessions === 'object') {
-        return parsed.sessions;
-      }
-    }
-  } catch {
-    // corrupt store -> start fresh
-  }
-  return {};
+  const parsed = readJsonStore(resolveSessionStoreFile(storeFile), {
+    accept: (value) => value?.sessions && typeof value.sessions === 'object' && !Array.isArray(value.sessions),
+  });
+  return parsed?.sessions || {};
 }
 
 export function saveSessionStore(sessions, storeFile) {
-  const file = resolveSessionStoreFile(storeFile);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const payload = JSON.stringify({ version: 1, sessions }, null, 2);
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmp, payload, 'utf8');
-  fs.renameSync(tmp, file);
+  writeJsonStore(resolveSessionStoreFile(storeFile), JSON.stringify({ version: 1, sessions }, null, 2));
 }
 
 /**

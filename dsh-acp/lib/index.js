@@ -38,8 +38,13 @@ import { createWhaleIsleMcp } from './mcp-server.js';
 import { DELEGATION_PROVIDER, registerDelegation } from './delegation.js';
 import { createTaskStore, TASK_ADMISSION } from './tasks.js';
 import { createTaskCheckout } from './isolation.js';
+import { TEAM_GUIDANCE, teamEnabled } from './team.js';
+import { appendPrivateLog, ensurePrivateDir, listStoreIssues } from './store-file.js';
 import { acpErrorMessage, preparationError } from './errors.js';
-import { executionProvider, approvalPolicyOf } from './host-contract.js';
+import { executionProvider, approvalPolicyOf, acpRuntimePolicy } from './host-contract.js';
+import { isAuxiliaryCall, extractLatestUserPromptBlocks, conversationPrompt } from './prompt-context.js';
+
+export { isAuxiliaryCall, extractLatestUserPromptBlocks, conversationPrompt };
 
 export const name = 'dsh-acp-agents';
 export const inject = ['llm', 'connection', 'webServer'];
@@ -63,9 +68,7 @@ const MAX_RPC_BODY_BYTES = 2 * 1024 * 1024;
 function stageLogIndex(msg) {
   const file = process.env.DSH_ACP_STAGE_LOG;
   if (!file) return;
-  try {
-    fs.appendFileSync(file, `${new Date().toISOString()} ${msg}\n`);
-  } catch { /* Stage logging must not replace the delegated task outcome. */ }
+  appendPrivateLog(file, `${new Date().toISOString()} ${msg}\n`);
 }
 
 // Diagnostic: write full error stacks for ACP stream failures to a sidecar log.
@@ -73,8 +76,7 @@ function stageLogIndex(msg) {
 // small by truncating each entry.
 function appendAcpErrorLog(tag, err, extra = {}) {
   try {
-    const dir = path.dirname(resolveStoreFile());
-    const file = path.join(dir, 'acp-error.log');
+    const file = path.join(path.dirname(resolveStoreFile()), 'acp-error.log');
     const entry = [
       `[${new Date().toISOString()}] ${tag}`,
       `message: ${err?.message || String(err)}`,
@@ -82,7 +84,7 @@ function appendAcpErrorLog(tag, err, extra = {}) {
       `extra: ${JSON.stringify(extra).slice(0, 1000)}`,
       '---',
     ].join('\n');
-    fs.appendFileSync(file, `${entry}\n`);
+    appendPrivateLog(file, `${entry}\n`);
   } catch {
     // diagnostics must never break the turn
   }
@@ -168,101 +170,6 @@ async function readBoundedJson(req, maxBytes) {
   }
 }
 
-/**
- * Auxiliary LLM calls (session title, compaction, vision describe, and the
- * next-prompt predictor) must not become ACP conversation turns. They are
- * detected by an explicit `purpose` or by the predictor's tool-less
- * suggestion-prompt signature.
- */
-export function isAuxiliaryCall(callOptions) {
-  if (!callOptions || typeof callOptions !== 'object') return false;
-  if (callOptions.purpose !== undefined) return true;
-  const tools = callOptions.tools;
-  if (!Array.isArray(tools) || tools.length !== 0) return false;
-  const text = (callOptions.messages ?? [])
-    .map((m) => {
-      if (typeof m?.content === 'string') return m.content;
-      if (Array.isArray(m?.content)) return m.content.filter((b) => b?.type === 'text').map((b) => b.text).join(' ');
-      return '';
-    })
-    .join('\n');
-  return text.includes('Conversation reference data')
-    || text.includes("USER'S NEXT message")
-    || text.includes('Predict one short message');
-}
-
-/**
- * Extract the latest user turn's prompt blocks from `GenerateOptions.messages`.
- */
-export function extractLatestUserPromptBlocks(messages) {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return [{ type: 'text', text: '' }];
-  }
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const msg = messages[i];
-    if (!msg || msg.role !== 'user') continue;
-    // DSH injects non-user-authored user-role rows at the tail (model-change
-    // markers, continuation predictions). Only an explicitly authored source
-    // counts as the user's turn.
-    const sourceKind = msg.source?.kind;
-    if (sourceKind !== undefined && !['user', 'agent-message', 'subagent-settled'].includes(sourceKind)) continue;
-    const blocks = [];
-    if (typeof msg.content === 'string') {
-      if (msg.content.trim()) blocks.push({ type: 'text', text: msg.content });
-    } else if (Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (!block || typeof block !== 'object') continue;
-        if (block.type === 'text' && typeof block.text === 'string') {
-          blocks.push({ type: 'text', text: block.text });
-        } else if (block.type === 'file' && block.attachment) {
-          blocks.push(block);
-        } else if (block.type === 'image' && block.attachment) {
-          blocks.push(block);
-        }
-      }
-    }
-    if (blocks.length > 0) {
-      return blocks;
-    }
-  }
-  return [{ type: 'text', text: 'Continue.' }];
-}
-
-/** Seed a newly selected agent with the visible conversation, then relay only missed turns. */
-export function conversationPrompt(messages, connection) {
-  const rows = Array.isArray(messages) ? messages : [];
-  const previous = connection.promptCursor;
-  const index = previous ? rows.findIndex((message) => message.id === previous) : -1;
-  const relevant = index >= 0 ? rows.slice(index + 1) : connection.restoredSession && !connection.promptStarted ? [] : rows;
-  const transcript = relevant.filter((message) => {
-    if (message.role === 'assistant') return true;
-    return message.role === 'user'
-      && (message.source?.kind === undefined || ['user', 'agent-message', 'subagent-settled'].includes(message.source.kind));
-  }).map((message) => {
-    const text = typeof message.content === 'string' ? message.content : (message.content || [])
-      .map((block) => {
-        if (block?.type === 'text') return block.text;
-        if ((block?.type === 'file' || block?.type === 'image') && block.attachment) {
-          return `[Attached ${block.type}: ${block.attachment.name || block.attachment.path || 'attachment'}]`;
-        }
-        return '';
-      }).filter(Boolean).join('\n');
-    return text ? `${message.role === 'assistant' ? 'Assistant' : 'User'}:\n${text}` : '';
-  }).filter(Boolean);
-  const latest = extractLatestUserPromptBlocks(rows);
-  connection.promptCursor = rows.findLast((message) => message.role === 'user'
-    && (message.source?.kind === undefined || ['user', 'agent-message', 'subagent-settled'].includes(message.source.kind)))?.id;
-  connection.promptStarted = true;
-  const prompt = transcript.length > 1
-    ? [{ type: 'text', text: 'Conversation context (earlier turns may have used another agent):\n\n' + transcript.join('\n\n') }]
-    : latest;
-  if (transcript.length > 1) for (const message of relevant) for (const block of Array.isArray(message.content) ? message.content : []) {
-    if (block.type === 'image' && block.attachment && !block.offloaded) prompt.push(block);
-    if (block.type === 'file' && block.attachment) prompt.push(block);
-  }
-  return prompt;
-}
-
 function resolveActiveDshAgent(ctx, options) {
   const agentsSvc = safeGetService(ctx, 'agents');
   if (!agentsSvc) return null;
@@ -307,6 +214,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
   const storeFile = options.storeFile || resolveStoreFile();
   let agentList = loadAgentsConfig(storeFile);
   let sessionStore = loadSessionStore(storeFile);
+  // Default per-agent profiles hold agent credentials.
+  if (fs.existsSync(resolveProfilesBaseDir(storeFile))) ensurePrivateDir(resolveProfilesBaseDir(storeFile));
   const discoveredModels = new Map();
   const liveModelIds = new Map();
   // Map<encodeConnKey(sessionId, agentId) = `${sessionId}::${agentId}`,
@@ -329,10 +238,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
     tasks,
     waitTask: (...args) => waitTask(...args),
     diag: (tag, extra) => {
-      try {
-        const file = path.join(path.dirname(resolveStoreFile()), 'acp-error.log');
-        fs.appendFileSync(file, `[${new Date().toISOString()}] whaleisleMcp.${tag} ${JSON.stringify(extra)}\n`);
-      } catch { /* diagnostics never break the turn */ }
+      const file = path.join(path.dirname(resolveStoreFile()), 'acp-error.log');
+      appendPrivateLog(file, `[${new Date().toISOString()}] whaleisleMcp.${tag} ${JSON.stringify(extra)}\n`);
     },
   });
   let adapterHandle = null;
@@ -364,6 +271,9 @@ export function createAcpAgentsManager(ctx, options = {}) {
       const answer = await questions.ask({ agent: owner, questions: [question], signal });
       agent.session.append('acp-interaction/answered', { id: question.id, kind, answer }, { ignorable: true });
       return answer;
+    } catch (error) {
+      agent.session.append('acp-interaction/failed', { id: question.id, kind, diagnostic: acpErrorMessage(error) }, { ignorable: true });
+      throw error;
     } finally { tasks.setInteraction(agent.id, null); }
   }
   async function askOperation(agent, signal, question) {
@@ -383,10 +293,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
     const mode = currentSandbox(agent);
     const readOnly = mode === 'read-only' || planActive(agent) || planActive(humanOwner(agent)) || task?.interactionMode === 'plan' || task?.runtimeMode === 'read-only';
     const hostPolicy = approvalPolicyOf(safeGetService(ctx, 'approval'), humanOwner(agent).session);
-    const sandboxPolicy = { type: readOnly ? 'readOnly' : mode === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite', writableRoots: [connection.cwd] };
     const ask = !readOnly && (task?.runtimeMode === 'approval-required' || hostPolicy !== 'never');
-    return { cwd: connection.cwd, runtimeMode: readOnly ? 'approval-required' : ask ? 'approval-required' : 'full-access',
-      approvalPolicy: ask ? 'on-request' : 'never', sandboxPolicy };
+    return acpRuntimePolicy({ cwd: connection.cwd, readOnly, sandboxMode: mode, ask });
   }
 
   async function attachmentPrompt(blocks, connection, signal) {
@@ -419,18 +327,15 @@ export function createAcpAgentsManager(ctx, options = {}) {
     }));
   }
 
-  async function delegate(args, parent, signal, delivery, subagents = safeGetService(ctx, 'subagents')) {
-    if (!parent) throw new Error('Agent delegation requires an active parent session.');
-    const agent = agentList.find((item) => item.id === args.agent && item.enabled);
-    if (!agent) throw new Error(`Agent "${args.agent}" is not enabled. Call acp_agents for available agents.`);
-    if (typeof args.prompt !== 'string' || !args.prompt.trim()) throw new Error('A non-empty task prompt is required.');
-    if (!subagents?.getProvider?.(DELEGATION_PROVIDER)) throw new Error('The host subagent service is not available.');
-    signal.throwIfAborted();
-    const model = args.model || getEffectiveModels(agent)[0]?.id || 'default';
-    const models = getEffectiveModels(agent);
-    if (!models.some((entry) => entry.id === model)) {
-      throw new Error(`Unknown model "${model}" for ${agent.name}. Available model ids: ${models.map((entry) => entry.id).join(', ')}. Omit model to use ${models[0]?.id || 'default'}.`);
-    }
+  function validateDelegateChoices(args) {
+    if (args.mode !== undefined && !['async', 'wait'].includes(args.mode)) throw new Error('mode must be async or wait.');
+    if (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 0 || args.timeout_ms > 20000)) throw new Error('timeout_ms must be from 0 to 20000.');
+    if (args.isolation !== undefined && !['shared', 'worktree'].includes(args.isolation)) throw new Error('isolation must be shared or worktree.');
+    if (args.interaction_mode !== undefined && !['default', 'plan'].includes(args.interaction_mode)) throw new Error('interaction_mode must be default or plan.');
+    if (args.runtime_mode !== undefined && !['inherit', 'read-only', 'approval-required'].includes(args.runtime_mode)) throw new Error('runtime_mode cannot raise the host permission policy.');
+  }
+
+  function validateDelegateOptions(args) {
     if (args.reasoning_effort !== undefined && (typeof args.reasoning_effort !== 'string' || !args.reasoning_effort)) throw new Error('reasoning_effort must be a non-empty advertised effort id.');
     if (args.options !== undefined) {
       if (!Array.isArray(args.options)) throw new Error('options must be an array of discovered id/value settings.');
@@ -438,83 +343,112 @@ export function createAcpAgentsManager(ctx, options = {}) {
         if (!setting || typeof setting.id !== 'string' || !['string', 'boolean'].includes(typeof setting.value)) throw new Error('Each option requires a string id and a string or boolean value.');
       }
     }
-    if (args.mode !== undefined && !['async', 'wait'].includes(args.mode)) throw new Error('mode must be async or wait.');
-    if (args.timeout_ms !== undefined && (!Number.isInteger(args.timeout_ms) || args.timeout_ms < 0 || args.timeout_ms > 20000)) throw new Error('timeout_ms must be from 0 to 20000.');
-    if (args.isolation !== undefined && !['shared', 'worktree'].includes(args.isolation)) throw new Error('isolation must be shared or worktree.');
-    if (args.interaction_mode !== undefined && !['default', 'plan'].includes(args.interaction_mode)) throw new Error('interaction_mode must be default or plan.');
-    if (args.runtime_mode !== undefined && !['inherit', 'read-only', 'approval-required'].includes(args.runtime_mode)) throw new Error('runtime_mode cannot raise the host permission policy.');
-    return tasks.once(parent, args.client_request_id, args, async (requestKey, requestArguments) => {
-      const childId = crypto.randomUUID(), taskId = crypto.randomUUID();
-      const identity = { childId, agentId: agent.id, agentName: agent.name,
-        model, modelName: models.find((entry) => entry.id === model)?.name || model, task: args.description || args.prompt,
-        turn: parent.session?.snapshotEvents().findLast((event) => event.type === 'turn/start')?.data.turn ?? null,
-        interactionMode: planActive(parent) ? 'plan' : args.interaction_mode || 'default', runtimeMode: args.runtime_mode || 'inherit',
-        cwd: parent.session.header.cwd || process.cwd(), options: args.options || [], delivery: 'caller', requestKey, requestArguments };
-      let conn, task, onAbortPreparation, stage = 'connection';
-      const connKey = encodeConnKey(childId, agent.id);
-      try {
-        if (args.isolation === 'worktree') {
-          stage = 'worktree';
-          if (identity.interactionMode === 'plan' || identity.runtimeMode === 'read-only' || currentSandbox(parent) === 'read-only') throw new Error('Worktree creation requires a writable host policy.');
-          if (!(await askOperation(parent, signal, `Create an isolated checkout from committed HEAD for ${agent.name}?`))) throw new Error('Worktree creation was not approved.');
-          Object.assign(identity, await createTaskCheckout(identity.cwd, taskId, signal));
-        }
-        // Prepare the actual child connection, not a throwaway model probe.
-        // No host child, prompt, task row or acceptance receipt exists yet.
-        stage = 'connection/authentication';
-        await assertCredentialsStable(agent);
-        conn = createConnection(agent, identity.cwd, childId, parent, identity);
-        sessionConnections.set(connKey, conn);
-        onAbortPreparation = () => { void conn.close().catch(() => { /* The aborted preparation owns its failure; release the pending connection. */ }); };
-        signal.addEventListener('abort', onAbortPreparation, { once: true });
-        signal.throwIfAborted();
-        await conn.ensureReady(signal);
-        stage = 'model';
-        await conn.syncModelAndEffort(model, args.reasoning_effort, signal, args.reasoning_effort !== undefined);
-        stage = 'settings';
-        for (const setting of identity.options) await conn.syncOption(setting.id, setting.value);
-        await conn.syncRuntimeMode(identity.interactionMode, signal);
-        signal.throwIfAborted();
-        if (!getAgentById(agent.id)?.enabled) throw new Error('Agent was disabled while preparing the task.');
-        signal.removeEventListener('abort', onAbortPreparation);
-        task = tasks.begin(parent, identity, { taskId });
-        const maxDepth = subagents.resolveMaxDepth();
-        const request = { parent, prompt: [{ type: 'text', text: args.prompt }],
-          agentOptions: { provider: agent.providerId, model, ...(args.reasoning_effort ? { reasoningEffort: args.reasoning_effort } : {}) },
-          ...(maxDepth === undefined ? {} : { maxDepth }) };
-        const child = await subagents.startActivation({
-          provider: DELEGATION_PROVIDER, childId,
-          environment: { cwd: identity.cwd, admissionPolicy: TASK_ADMISSION },
-          label: args.description || `Delegate to ${agent.name}`,
-          // Host 0.2.2 flattens the 0.2.1 activation request. Supply the same
-          // request in both positions; never retry a possibly admitted task.
-          ...request, request,
-          signal, delivery: 'caller',
-        });
-        const receipt = tasks.attach(parent, task, child);
-        const onAbort = () => { void tasks.cancel(parent, task.taskId).catch((error) => appendAcpErrorLog('delegation/cancel', error, {})); };
-        signal.addEventListener('abort', onAbort, { once: true });
-        receipt.result.finally(() => signal.removeEventListener('abort', onAbort)).catch(() => { /* The task receipt owns its failure; this observer only removes the abort listener. */ });
-        if (signal.aborted) await tasks.cancel(parent, task.taskId);
-        return receipt;
-      } catch (error) {
-        sessionConnections.delete(connKey);
-        releaseConnMcpToken(conn);
-        await conn?.close();
-        if (task) {
-            task.deliveryState = signal.aborted ? 'disposed' : 'acknowledged';
-            await tasks.finish(parent, task, { output: [], stopReason: signal.aborted ? 'aborted' : 'error', diagnostic: acpErrorMessage(error) });
-            if (signal.aborted) throw signal.reason;
-          throw error;
-        }
-          if (signal.aborted) throw signal.reason;
-        const failure = preparationError(error, stage, agent, stage === 'model' ? modelsFromConfigOptions(conn?.configOptions).map(model => model.id) : undefined);
-        if (identity.repositoryRoot) failure.message += ` Retained checkout: ${identity.cwd}`;
-        throw failure;
-      } finally {
-        if (onAbortPreparation) signal.removeEventListener('abort', onAbortPreparation);
-      }
-    });
+    validateDelegateChoices(args);
+    if (args.name !== undefined && (typeof args.name !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(args.name) || args.name === 'lead')) throw new Error('name must be 1-32 lower-case letters, digits or hyphens, start with a letter, and not be "lead".');
+  }
+
+  function validateDelegateRequest(args, parent, signal, subagents) {
+    if (!parent) throw new Error('Agent delegation requires an active parent session.');
+    const agent = agentList.find((item) => item.id === args.agent && item.enabled);
+    if (!agent) throw new Error(`Agent "${args.agent}" is not enabled. Call acp_agents for available agents.`);
+    if (typeof args.prompt !== 'string' || !args.prompt.trim()) throw new Error('A non-empty task prompt is required.');
+    if (!subagents?.getProvider?.(DELEGATION_PROVIDER)) throw new Error('The host subagent service is not available.');
+    signal.throwIfAborted();
+    const models = getEffectiveModels(agent);
+    const model = args.model || models[0]?.id || 'default';
+    if (!models.some((entry) => entry.id === model)) {
+      throw new Error(`Unknown model "${model}" for ${agent.name}. Available model ids: ${models.map((entry) => entry.id).join(', ')}. Omit model to use ${models[0]?.id || 'default'}.`);
+    }
+    validateDelegateOptions(args);
+    return { agent, models, model };
+  }
+
+  async function prepareDelegationConnection(args, parent, signal, agent, model, identity, connKey, setStage) {
+    if (args.isolation === 'worktree') {
+      setStage('worktree');
+      if (identity.interactionMode === 'plan' || identity.runtimeMode === 'read-only' || currentSandbox(parent) === 'read-only') throw new Error('Worktree creation requires a writable host policy.');
+      if (!(await askOperation(parent, signal, `Create an isolated checkout from committed HEAD for ${agent.name}?`))) throw new Error('Worktree creation was not approved.');
+      Object.assign(identity, await createTaskCheckout(identity.cwd, identity.taskId, signal));
+    }
+    setStage('connection/authentication');
+    await assertCredentialsStable(agent);
+    const conn = createConnection(agent, identity.cwd, identity.childId, parent, identity);
+    sessionConnections.set(connKey, conn);
+    const onAbortPreparation = () => { void conn.close().catch(() => { /* The aborted preparation owns its failure; release the pending connection. */ }); };
+    signal.addEventListener('abort', onAbortPreparation, { once: true });
+    try {
+      signal.throwIfAborted();
+      await conn.ensureReady(signal);
+      setStage('model');
+      await conn.syncModelAndEffort(model, args.reasoning_effort, signal, args.reasoning_effort !== undefined);
+      setStage('settings');
+      for (const setting of identity.options) await conn.syncOption(setting.id, setting.value);
+      await conn.syncRuntimeMode(identity.interactionMode, signal);
+      signal.throwIfAborted();
+      if (!getAgentById(agent.id)?.enabled) throw new Error('Agent was disabled while preparing the task.');
+      return conn;
+    } catch (error) {
+      error._failedConn = conn;
+      throw error;
+    } finally {
+      signal.removeEventListener('abort', onAbortPreparation);
+    }
+  }
+
+  async function handleFailedDelegationAttempt(error, { connKey, conn, task, parent, signal, stage, agent, identity }) {
+    sessionConnections.delete(connKey);
+    releaseConnMcpToken(conn);
+    await conn?.close();
+    if (task) {
+      task.deliveryState = signal.aborted ? 'disposed' : 'acknowledged';
+      await tasks.finish(parent, task, { output: [], stopReason: signal.aborted ? 'aborted' : 'error', diagnostic: acpErrorMessage(error) });
+      if (signal.aborted) throw signal.reason;
+      throw error;
+    }
+    if (signal.aborted) throw signal.reason;
+    const failure = preparationError(error, stage, agent, stage === 'model' ? modelsFromConfigOptions(conn?.configOptions).map(entry => entry.id) : undefined);
+    if (identity.repositoryRoot) failure.message += ` Retained checkout: ${identity.cwd}`;
+    throw failure;
+  }
+
+  async function runDelegationAttempt(args, parent, signal, subagents, { agent, models, model }, requestKey, requestArguments) {
+    const childId = crypto.randomUUID(), taskId = crypto.randomUUID();
+    const identity = { childId, taskId, agentId: agent.id, agentName: agent.name,
+      model, modelName: models.find((entry) => entry.id === model)?.name || model, task: args.description || args.prompt,
+      turn: parent.session?.snapshotEvents().findLast((event) => event.type === 'turn/start')?.data.turn ?? null,
+      interactionMode: planActive(parent) ? 'plan' : args.interaction_mode || 'default', runtimeMode: args.runtime_mode || 'inherit',
+      cwd: parent.session.header.cwd || process.cwd(), options: args.options || [], delivery: 'caller', requestKey, requestArguments };
+    let conn, task, stage = 'connection';
+    const connKey = encodeConnKey(childId, agent.id);
+    try {
+      conn = await prepareDelegationConnection(args, parent, signal, agent, model, identity, connKey, (next) => { stage = next; });
+      task = tasks.begin(parent, identity, { taskId });
+      const maxDepth = subagents.resolveMaxDepth();
+      const request = { parent, prompt: [{ type: 'text', text: args.prompt }],
+        agentOptions: { provider: agent.providerId, model, ...(args.reasoning_effort ? { reasoningEffort: args.reasoning_effort } : {}) },
+        ...(maxDepth === undefined ? {} : { maxDepth }) };
+      const child = await subagents.startActivation({
+        provider: DELEGATION_PROVIDER, childId,
+        environment: { cwd: identity.cwd, admissionPolicy: TASK_ADMISSION },
+        label: args.description || `Delegate to ${agent.name}`,
+        ...(args.name ? { name: args.name } : {}),
+        ...request, request, signal, delivery: 'caller',
+      });
+      const receipt = tasks.attach(parent, task, child);
+      const onAbort = () => { void tasks.cancel(parent, task.taskId).catch((error) => appendAcpErrorLog('delegation/cancel', error, {})); };
+      signal.addEventListener('abort', onAbort, { once: true });
+      receipt.result.finally(() => signal.removeEventListener('abort', onAbort)).catch(() => { /* The task receipt owns its failure; this observer only removes the abort listener. */ });
+      if (signal.aborted) await tasks.cancel(parent, task.taskId);
+      return receipt;
+    } catch (error) {
+      return handleFailedDelegationAttempt(error, { connKey, conn: conn || error?._failedConn, task, parent, signal, stage, agent, identity });
+    }
+  }
+
+  async function delegate(args, parent, signal, delivery, subagents = safeGetService(ctx, 'subagents')) {
+    const validated = validateDelegateRequest(args, parent, signal, subagents);
+    return tasks.once(parent, args.client_request_id, args, (requestKey, requestArguments) =>
+      runDelegationAttempt(args, parent, signal, subagents, validated, requestKey, requestArguments));
   }
 
   async function waitTask(parent, id, waitMs, signal) {
@@ -680,6 +614,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
         content: [{ type: 'text', text: `${agentConfig.name}: native background output is ready.` }],
         source: { kind: 'acp-background', form: 'notice', summary: 'Native ACP background output is ready.', agentId: agentConfig.id } });
     };
+    conn.onActivity = (activity) => tasks.activity(conn.hostAgent?.id, activity);
     conn.hostAgent = hostAgent;
     conn.preparingTask = preparingTask;
     conn.restoredSession = !preparingTask && Boolean(sessionStore[connKey]?.sessionId);
@@ -945,7 +880,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
           const instructions = interactionMode === 'plan'
             ? 'Plan mode: investigate with read-only actions. Do not edit files, run modifying commands, or start implementation. Return a decision-complete plan.'
             : 'Default mode: carry out the authorized request. Ask the user only when a missing decision materially changes the result.';
-          if (!String(promptBlocks[0]?.text || '').trimStart().startsWith('/')) promptBlocks = [{ type: 'text', text: `${instructions}\nConfigured-agent tools: use acp_agents once before selecting a configured agent. Use acp_delegate for cross-agent or background work; prefer native children for same-provider, same-settings work completed in this turn. Use a stable client_request_id for retries. Follow next and end your turn; do not poll. Final task results are delivered automatically; do not send_message a second final report. Send earlier messages only for actionable coordination. Use acp_cancel to cancel a task and interrupt_agent only to pause it. As a child, do not delegate again unless the task explicitly authorizes it.` }, ...promptBlocks];
+          const team = teamEnabled(ctx, dshAgent) ? `\n${TEAM_GUIDANCE}` : '';
+          if (!String(promptBlocks[0]?.text || '').trimStart().startsWith('/')) promptBlocks = [{ type: 'text', text: `${instructions}${team}\nConfigured-agent tools: use acp_agents once before selecting a configured agent. Use acp_delegate for cross-agent or background work; prefer native children for same-provider, same-settings work completed in this turn. Use a stable client_request_id for retries. Follow next and end your turn; do not poll. Final task results are delivered automatically; do not send_message a second final report. Send earlier messages only for actionable coordination. Use acp_cancel to cancel a task and interrupt_agent only to pause it. As a child, do not delegate again unless the task explicitly authorizes it.` }, ...promptBlocks];
           if (sessionResolved && sessionStore[connKey]?.promptCursor !== conn.promptCursor) {
             sessionStore[connKey] = { ...sessionStore[connKey], promptCursor: conn.promptCursor };
             saveSessionStore(sessionStore, storeFile);
@@ -1023,6 +959,7 @@ export function createAcpAgentsManager(ctx, options = {}) {
 
           if (item.type === 'tool-call') {
             const entry = item.entry;
+            entry.projected = true;
             yield* closeBlock();
             const callIndex = nextIndex++;
             const argsJson = JSON.stringify({
@@ -1251,6 +1188,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
       activeSessions,
       storeFile,
       profilesBaseDir: resolveProfilesBaseDir(storeFile),
+      // Unreadable stores were preserved aside; the settings page reports them.
+      storeIssues: listStoreIssues(),
     };
   }
 

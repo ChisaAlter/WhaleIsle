@@ -497,7 +497,7 @@ test('host plugin registers dynamic LLM adapter, handles RPC catalog/toggle/test
       async () => ({ content: [{ type: 'text', text: 'fallback' }], isError: false }),
     );
     assert.equal(execResult.isError, false, JSON.stringify(execResult));
-    assert.equal(execResult.content[0].text, 'Completed');
+    assert.equal(execResult.content[0].text, 'Permission outcome: opt_allow_once');
     assert.equal(JSON.parse(fs.readFileSync(path.join(tmpHome, 'permission-result.json'), 'utf8')).outcome.optionId, 'opt_allow_once');
     assert.equal(approvalCalls.length, 1);
     assert.equal(approvalCalls[0].callId, 'call_acp_1', 'approval must retain the original native ACP tool identity');
@@ -694,5 +694,8 @@ test('client bundle registers Agent settings and extends the host-owned model op
   assert.equal(modelSlot.spec.id, 'dsh-acp-options');
   assert.equal(modelSlot.spec.order, 20);
   assert.equal(modelSlot.spec.children, undefined, 'must not redeclare child slot keys owned by ui-model-selection');
-  assert.equal(registeredSlots.some(s => s.spec.name === 'conversation.input.model'), false);
+  const pickerSlot = registeredSlots.find((s) => s.spec.name === 'conversation.input.model');
+  assert.ok(pickerSlot, 'expected conversation.input.model registration');
+  assert.equal(pickerSlot.spec.priority, -10);
+  assert.equal(pickerSlot.spec.children, undefined, 'must not redeclare child slot keys owned by ui-model-selection');
 });

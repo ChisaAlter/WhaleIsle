@@ -1,37 +1,82 @@
 /** Durable task receipts around the host's managed, continuable child sessions. */
-import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { listDirectChildren } from './host-contract.js';
+import { readJsonStore, writeJsonStore } from './store-file.js';
 
 export const TASK_ADMISSION = 'configured-agent-task';
+export const TASK_QUIET_MS = 5 * 60 * 1000;
 const terminal = (task) => Boolean(task?.endedAt);
 const text = (output = []) => output.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
 const statusOf = (reason) => reason === 'completed' ? 'completed' : reason === 'aborted' ? 'cancelled' : 'failed';
+const snapshotWorkState = ({ running, pending, quiet, pendingChildren, pendingInput, start }) => !running
+  ? 'result_available'
+  : pending
+    ? `waiting_for_${pending.kind}`
+    : quiet
+      ? 'awaiting_activity'
+      : pendingChildren
+        ? 'waiting_for_children'
+        : pendingInput && !start
+          ? 'queued'
+          : 'working';
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
 
 export function createTaskStore(ctx, storeFile) {
   const service = (name) => typeof ctx.get === 'function' ? ctx.get(name) : ctx[name];
   const file = path.join(path.dirname(storeFile), 'acp-tasks.json');
-  const tasks = new Map(fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).tasks.map((task) => [task.taskId, task]) : []);
+  const stored = readJsonStore(file, {
+    accept: (value) => Array.isArray(value?.tasks),
+    warn: (message) => (ctx.logger?.warn ? ctx.logger.warn(message) : console.warn(message)),
+  });
+  const tasks = new Map((stored?.tasks || []).map((task) => [task.taskId, task]));
   const receipts = new Map();
   const active = new Map();
   const settling = new Map();
   const recovering = new Map();
+  const dirty = new Set();
   const save = () => {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, tasks: [...tasks.values()] }), 'utf8');
-    fs.renameSync(`${file}.tmp`, file);
+    writeJsonStore(file, JSON.stringify({ version: 1, tasks: [...tasks.values()] }));
   };
   const append = (parent, kind, task) => {
     const { requestKey, requestArguments, ...presentation } = task;
     parent.session.append(`acp-delegation/${kind}`, JSON.parse(JSON.stringify({ ...presentation, runId: task.taskId, preview: text(task.output).slice(0, 1200) })), { ignorable: true });
   };
   const latest = (parentId, childId) => [...tasks.values()].findLast((task) => task.parentId === parentId && task.childId === childId);
+  function activity(childId, update) {
+    const task = [...tasks.values()].findLast(item => item.childId === childId && !terminal(item));
+    if (!task) return;
+    Object.assign(task, update, { quiet: false });
+    dirty.add(task.taskId);
+  }
+  // Batch token/tool notifications without synchronous disk writes per chunk.
+  // A quiet notice is informational, once per task, never a death verdict.
+  async function checkActivity(now = Date.now()) {
+    for (const task of tasks.values()) {
+      if (terminal(task)) { dirty.delete(task.taskId); continue; }
+      const quiet = !task.pendingInteraction && now - (task.lastActivityAt || task.startedAt) >= TASK_QUIET_MS;
+      if (task.quiet !== quiet) { task.quiet = quiet; dirty.add(task.taskId); }
+      const parent = service('agents')?.get(task.parentId);
+      if (parent && dirty.delete(task.taskId)) { save(); append(parent, 'state', task); }
+      if (quiet && parent && !task.quietNoticeAt && task.deliveryState !== 'disposed') {
+        const message = {
+          id: `acp-quiet-${task.taskId}`, role: 'user',
+          content: [{ type: 'text', text: `Child task ${task.taskId} (${task.agentName}) has sent no native activity for at least five minutes. It is not confirmed dead. Last activity: ${new Date(task.lastActivityAt || task.startedAt).toISOString()}. Active tools: ${(task.activeTools || []).map(tool => tool.title).join(', ') || 'none reported'}. Inspect acp_result once and investigate or cancel if appropriate; do not launch a duplicate or repeatedly poll.` }],
+          source: { kind: 'agent-message', senderSessionId: task.childId },
+        };
+        if (!delivered(parent, { deliveryMessageId: message.id })) {
+          if (parent.status === 'idle') parent.followup(message); else parent.steer(message);
+          await flush();
+        }
+        task.quietNoticeAt = now; save();
+      }
+    }
+  }
   const get = (parentId, id) => {
     const task = tasks.get(id) || latest(parentId, id);
-    if (!task || task.parentId !== parentId) throw new Error('Task access requires its direct parent conversation.');
+    if (!task) throw new Error(`Unknown task "${id}".`);
+    if (task.parentId !== parentId) throw new Error('Task access requires its direct parent conversation.');
     return task;
   };
   const observe = async (id) => {
@@ -82,7 +127,7 @@ export function createTaskStore(ctx, storeFile) {
       }
       diagnostic ||= `${task.agentName} stopped: ${outcome.stopReason}.`;
     }
-    Object.assign(task, outcome, { endedAt: Date.now(), status: statusOf(outcome.stopReason), ...(diagnostic ? { diagnostic } : {}) });
+    Object.assign(task, outcome, { endedAt: Date.now(), status: statusOf(outcome.stopReason), quiet: false, activeTools: [], usagePending: false, pendingInteraction: null, ...(diagnostic ? { diagnostic } : {}) });
     save(); append(parent, 'end', task); await flush();
     if (task.delivery === 'caller') await offer(parent, task);
     else if (delivered(parent, task)) { task.deliveryState = 'delivered'; save(); }
@@ -91,7 +136,7 @@ export function createTaskStore(ctx, storeFile) {
   function begin(parent, identity, extra = {}) {
     const taskId = extra.taskId || crypto.randomUUID();
     const task = { ...identity, ...extra, parentId: parent.id, taskId, runId: taskId,
-      startedAt: Date.now(), startSeq: service('agents')?.get(identity.childId)?.session.seq ?? 0, status: 'running', deliveryState: 'pending', deliveryMessageId: `acp-result-${taskId}`, output: [] };
+      startedAt: Date.now(), lastActivityAt: Date.now(), usagePending: true, quiet: false, quietNoticeAt: undefined, activeTools: [], startSeq: service('agents')?.get(identity.childId)?.session.seq ?? 0, status: 'running', deliveryState: 'pending', deliveryMessageId: `acp-result-${taskId}`, output: [] };
     tasks.set(taskId, task); save(); append(parent, 'start', task); return task;
   }
   async function once(parent, requestId, args, start) {
@@ -144,7 +189,7 @@ export function createTaskStore(ctx, storeFile) {
     const running = !terminal(task);
     const pending = task.pendingInteraction || null;
     const value = { ...task, subagentId: task.childId, status: running ? 'running' : task.status,
-      workState: !running ? 'result_available' : pending ? `waiting_for_${pending.kind}` : pendingChildren ? 'waiting_for_children' : pendingInput && !start ? 'queued' : 'working',
+      workState: snapshotWorkState({ running, pending, quiet: task.quiet, pendingChildren, pendingInput, start }),
       output: running ? (tail.findLast((event) => event.type === 'assistant/message')?.data.message.content || []).filter((part) => part.type === 'text') : task.output,
       ...(end && running ? { latestTurnStatus: end.data.reason.kind } : {}), pendingInteraction: pending };
     if (acknowledge && terminal(task) && task.deliveryState !== 'disposed') { task.deliveryState = 'acknowledged'; save(); }
@@ -189,6 +234,16 @@ export function createTaskStore(ctx, storeFile) {
     recovering.set(parent.id, operation); return operation;
   }
   function install(scope) {
+    scope.effect(() => {
+      let checking;
+      const timer = setInterval(() => {
+        if (checking) return;
+        checking = checkActivity().catch(error => ctx.logger.warn('Task activity update failed: %s', error.message))
+          .finally(() => { checking = undefined; });
+      }, 5000);
+      timer.unref?.();
+      return async () => { clearInterval(timer); await checking; };
+    });
     scope.effect(() => scope.subagents.registerContinuationPolicy(TASK_ADMISSION, async ({ parent, childId, reason }) => {
       const task = latest(parent.id, childId);
       if (reason === 'settlement' && task?.deliveryState === 'disposed') {
@@ -228,10 +283,10 @@ export function createTaskStore(ctx, storeFile) {
       }
     }, { global: true });
   }
-  return { begin, attach, once, snapshot, cancel, recover, get, latest, install, save, finish, tasks,
+  return { begin, attach, once, snapshot, cancel, recover, get, latest, install, save, finish, tasks, activity, checkActivity,
     setInteraction(childId, interaction) {
       const task = [...tasks.values()].findLast((item) => item.childId === childId && !terminal(item));
-      if (task) { task.pendingInteraction = interaction; save(); const parent = service('agents').get(task.parentId); if (parent) append(parent, 'state', task); }
+      if (task) { task.pendingInteraction = interaction; task.lastActivityAt = Date.now(); task.quiet = false; save(); const parent = service('agents').get(task.parentId); if (parent) append(parent, 'state', task); }
     },
     async followup(parent, childId, message, signal) {
       const previous = latest(parent.id, childId);

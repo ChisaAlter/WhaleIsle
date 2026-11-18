@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { resolveStoreFile } from './presets.js';
+import { ensurePrivateDir } from './store-file.js';
 
 const require = createRequire(import.meta.url);
 // Required lazily: the 3.2MB vendor bundle's parse must not sit on the cordis
@@ -74,8 +75,8 @@ export function runtimeHomeDir() {
   const base = path.dirname(resolveStoreFile());
   const legacy = path.join(base, 't3');
   const dir = fs.existsSync(legacy) ? legacy : path.join(base, 'acp-runtime');
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  // Managed installations retain agent authentication caches.
+  return ensurePrivateDir(dir);
 }
 
 export async function initAgentRuntime() {

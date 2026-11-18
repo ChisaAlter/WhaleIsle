@@ -18,6 +18,7 @@ export const AGENT_TOOLS = [
         agent: { type: 'string', description: 'Configured agent instance id from acp_agents.' },
         prompt: { type: 'string', description: 'Complete task and context for the child.' },
         description: { type: 'string', description: 'Short task label.' },
+        name: { type: 'string', description: 'Optional child name, unique among your children: 1-32 lower-case letters, digits or hyphens, starting with a letter (not "lead"). Teammates are addressed as lead/<name>.' },
         model: { type: 'string', description: 'Optional model id; omit for the configured agent default.' },
         reasoning_effort: { type: 'string', description: 'Optional reasoning effort id.' },
         client_request_id: { type: 'string', description: 'Stable id for safe retries; reuse only for identical arguments.' },
@@ -34,6 +35,44 @@ export const AGENT_TOOLS = [
   },
 ];
 
+/** Task control shared by the host tools and the MCP bridge: one schema, one validation. */
+export const CONTROL_TOOLS = [
+  {
+    name: 'acp_cancel',
+    description: 'Cancel a direct child task, clear queued work, stop descendants, and suppress its completion wake. Completed output remains readable. Use interrupt_agent only to pause the current execution while retaining queued work.',
+    inputSchema: { type: 'object', properties: { task_id: { type: 'string', description: 'Task identity returned by acp_delegate.' } }, required: ['task_id'], additionalProperties: false },
+  },
+  {
+    name: 'acp_result',
+    description: 'Read the state and output of a direct child task after its completion wakes you, or when the user requests status. Do not poll a running child: completion automatically delivers its result and wakes this conversation. Earlier tasks remain readable by task_id. Provide task_id (preferred) or agent_id (selects that child\'s latest task). Optional wait_ms (up to 20000) waits for completion.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'Exact task identity; preferred to the compatibility child-session id.' },
+        agent_id: { type: 'string', description: 'Child session id; selects its latest task.' },
+        wait_ms: { type: 'integer', minimum: 0, maximum: 20000 },
+      },
+      additionalProperties: false,
+    },
+  },
+];
+
+/** Validate acp_result arguments; returns the requested id and bounded wait. */
+export function resultRequest(args = {}) {
+  const id = args.task_id || args.agent_id;
+  if (typeof id !== 'string' || !id) throw new Error('acp_result requires task_id or agent_id.');
+  if (args.wait_ms !== undefined && (!Number.isInteger(args.wait_ms) || args.wait_ms < 0 || args.wait_ms > 20000)) throw new Error('wait_ms must be an integer from 0 to 20000.');
+  return { id, waitMs: args.wait_ms || 0 };
+}
+
+/** Host tools declare per-parameter `required`; MCP uses a JSON Schema `required` list. */
+function hostParameters(inputSchema) {
+  const required = new Set(inputSchema.required || []);
+  return Object.fromEntries(Object.entries(inputSchema.properties).map(([name, schema]) => [
+    name, { ...schema, ...(required.has(name) ? { required: true } : {}) },
+  ]));
+}
+
 export function registerDelegation(ctx, manager) {
   ctx.effect(() => ctx.subagents.registerProvider({
     name: DELEGATION_PROVIDER,
@@ -41,41 +80,39 @@ export function registerDelegation(ctx, manager) {
     inheritsParentContext: false,
     prepareContinuable: async () => ({}),
   }));
-  for (const tool of AGENT_TOOLS) {
-    const required = new Set(tool.inputSchema.required || []);
+  const handlers = {
+    acp_agents: () => ({ agents: manager.listDelegationAgents() }),
+    async acp_delegate(args, exec) {
+      const confirmation = await confirmModelAction({
+        tool: 'acp_delegate',
+        action: 'delegate',
+        effect: 'code',
+        summary: `在已配置代理 ${String(args.agent ?? '?')} 上启动一个可以执行命令的子任务`,
+        details: String(args.prompt ?? '').slice(0, 2000),
+      });
+      if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
+      const child = await manager.delegate(args, exec.agent, exec.signal, 'parent', ctx.subagents);
+      if (args.mode === 'wait') return manager.waitTask(exec.agent, child.taskId, args.timeout_ms ?? 15000, exec.signal);
+      if (child.recovered || manager.tasks.get(exec.agent.id, child.taskId).endedAt) return manager.tasks.snapshot(exec.agent, child.taskId, true);
+      return { kind: 'activation', subagentId: child.childId, ...(child.name ? { name: child.name } : {}), taskId: child.taskId, status: 'running', next: 'Completion wakes this conversation. End your turn; do not poll.' };
+    },
+    acp_cancel: (args, exec) => manager.tasks.cancel(exec.agent, args.task_id),
+    acp_result(args, exec) {
+      const { id, waitMs } = resultRequest(args);
+      return manager.waitTask(exec.agent, manager.tasks.get(exec.agent.id, id).taskId, waitMs, exec.signal);
+    },
+  };
+  for (const tool of [...AGENT_TOOLS, ...CONTROL_TOOLS]) {
     ctx.effect(() => ctx.tools.register({
       name: tool.name,
       description: tool.description,
-      parameters: Object.fromEntries(Object.entries(tool.inputSchema.properties).map(([name, schema]) => [
-        name, { ...schema, ...(required.has(name) ? { required: true } : {}) },
-      ])),
+      parameters: hostParameters(tool.inputSchema),
       output: {
         schema: { type: 'object', additionalProperties: true },
         render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }],
       },
       isConcurrencySafe: () => true,
-      async execute(args, exec) {
-        if (tool.name === 'acp_agents') return { agents: manager.listDelegationAgents() };
-        const confirmation = await confirmModelAction({
-          tool: 'acp_delegate',
-          action: 'delegate',
-          effect: 'code',
-          summary: `在已配置代理 ${String(args.agent ?? '?')} 上启动一个可以执行命令的子任务`,
-          details: String(args.prompt ?? '').slice(0, 2000),
-        });
-        if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
-        const child = await manager.delegate(args, exec.agent, exec.signal, 'parent', ctx.subagents);
-        if (args.mode === 'wait') return manager.waitTask(exec.agent, child.taskId, args.timeout_ms ?? 15000, exec.signal);
-        if (child.recovered || manager.tasks.get(exec.agent.id, child.taskId).endedAt) return manager.tasks.snapshot(exec.agent, child.taskId, true);
-        return { kind: 'activation', subagentId: child.childId, taskId: child.taskId, status: 'running', next: 'Completion wakes this conversation. End your turn; do not poll.' };
-      },
+      execute: (args, exec) => handlers[tool.name](args, exec),
     }));
   }
-  for (const definition of [
-    { name: 'acp_cancel', description: 'Cancel a configured-agent task, its queued work and descendants. Suppress its completion wake; retain its output.', parameters: { task_id: { type: 'string', required: true } },
-      run: (args, exec) => manager.tasks.cancel(exec.agent, args.task_id) },
-    { name: 'acp_result', description: 'Read a configured-agent task after completion wakes you, or when the user asks for status. Do not poll running tasks.', parameters: { task_id: { type: 'string', required: true } },
-      run: (args, exec) => manager.tasks.snapshot(exec.agent, args.task_id, true) },
-  ]) ctx.effect(() => ctx.tools.register({ ...definition, output: { schema: { type: 'object', additionalProperties: true }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] }, isConcurrencySafe: () => true,
-    execute: definition.run }));
 }

@@ -13,9 +13,10 @@
  */
 import crypto from 'node:crypto';
 import { executionProvider, listDirectChildren } from './host-contract.js';
-import { AGENT_TOOLS } from './delegation.js';
+import { AGENT_TOOLS, CONTROL_TOOLS, resultRequest } from './delegation.js';
 import { acpErrorMessage } from './errors.js';
 import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+import { TEAM_TOOLS, executeTeamTool, isTeamTool, listTeamMembers, teamAvailable, teamEnabled } from './team.js';
 
 const MCP_PROTOCOL_VERSION = '2025-06-18';
 const SERVER_INFO = { name: 'whaleisle', title: 'WhaleIsle', version: '0.1.0' };
@@ -23,37 +24,25 @@ const RUNNING_TASK_NEXT = 'Completion wakes this conversation and delivers the r
 
 const TOOL_DEFINITIONS = [
   ...AGENT_TOOLS,
-  {
-    name: 'acp_cancel',
-    description: 'Cancel a direct child task, clear queued work, stop descendants, and suppress its completion wake. Completed output remains readable. Use interrupt_agent only to pause the current execution while retaining queued work.',
-    inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false },
-  },
-  {
-    name: 'acp_result',
-    description: 'Read the state and output of an existing direct child after its completion wakes you, or when the user requests status. Do not poll a running child: completion automatically delivers its result and wakes this conversation. Works for earlier child sessions too. Optional wait_ms (up to 20000) retains explicit bounded-wait support.',
-    inputSchema: {
-      type: 'object', properties: { agent_id: { type: 'string' }, task_id: { type: 'string', description: 'Exact task identity; preferred to the compatibility child-session id.' }, wait_ms: { type: 'integer', minimum: 0, maximum: 20000 } },
-      additionalProperties: false,
-    },
-  },
+  ...CONTROL_TOOLS,
   {
     name: 'send_message',
-    description: 'Send a follow-up task or result to your parent or one of your child agents. Use the session id returned by acp_delegate, or the parent id given in your task.',
+    description: 'Send a message to another agent in your subagent tree: your parent ("lead" for the root), a child, or a teammate. A working agent receives it at its next step; an idle agent starts a new turn with it.',
     inputSchema: {
-      type: 'object', properties: { agent_id: { type: 'string' }, message: { type: 'string' } },
+      type: 'object', properties: { agent_id: { type: 'string', description: 'Agent name from list_agents (for example lead or lead/reviewer), or a session id.' }, message: { type: 'string' } },
       required: ['agent_id', 'message'], additionalProperties: false,
     },
   },
   {
     name: 'list_agents',
-    description: 'List your direct child sessions with current state, output preview and error when needed. Do not poll running children: completion automatically delivers results and wakes this conversation.',
+    description: 'List your direct child sessions with name, current state, output preview and error when needed. When Agent Teams is enabled, list the whole team instead: the root as "lead" and every continuable member by path name, with your own row marked self. Do not poll running children: completion automatically delivers results and wakes this conversation.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'interrupt_agent',
-    description: 'Stop one of your child agent sessions. The child stays available for a follow-up message.',
+    description: 'Stop the current work of an agent you created: a direct child or a deeper descendant. It stays available for a follow-up message.',
     inputSchema: {
-      type: 'object', properties: { agent_id: { type: 'string' } },
+      type: 'object', properties: { agent_id: { type: 'string', description: 'Agent name from list_agents, or a session id.' } },
       required: ['agent_id'], additionalProperties: false,
     },
   },
@@ -247,6 +236,61 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
     };
   };
 
+  async function handleListAgents(parent, subagents, signal) {
+    if (teamEnabled(ctx, parent)) {
+      const members = await listTeamMembers(ctx, parent, signal);
+      // Members this caller delegated also carry their task receipt state.
+      const agents = await Promise.all(members.map(async (member) => {
+        const task = tasks?.latest(parent.id, member.id);
+        if (!task) return member;
+        const { taskId, workState, status: taskStatus } = await tasks.snapshot(parent, member.id);
+        return { ...member, taskId, taskStatus, workState };
+      }));
+      return textResult(JSON.stringify({ agents }), { structuredContent: { agents } });
+    }
+    const children = await listDirectChildren(subagents, parent.id, signal);
+    const agents = await Promise.all(children.map(async (child) => ({ ...child, ...await (tasks?.latest(parent.id, child.id) ? tasks.snapshot(parent, child.id) : childSnapshot(child.id, signal)) })));
+    return textResult(JSON.stringify({ agents }), { structuredContent: { agents } });
+  }
+
+  async function handleAcpResult(parent, subagents, args, signal) {
+    const { waitMs } = resultRequest(args);
+    if (args.task_id) return resultResponse(await waitTask(parent, tasks.get(parent.id, args.task_id).taskId, waitMs, signal));
+    const task = tasks?.latest(parent.id, args.agent_id);
+    if (task) return resultResponse(await waitTask(parent, task.taskId, waitMs, signal));
+    // Children without a configured-agent receipt (other host providers).
+    const children = await listDirectChildren(subagents, parent.id, signal);
+    if (!children.some((child) => child.id === args.agent_id)) return errorResult('Result access requires a direct child of this conversation.');
+    return resultResponse(await readChildResult(args.agent_id, signal, waitMs));
+  }
+
+  async function handleAgentControl(name, args, session) {
+    const parent = safeGetService('agents')?.get?.(session.dshSession?.id);
+    const subagents = safeGetService('subagents');
+    if (!parent || !session.signal || !subagents) return errorResult('Agent control requires an active host session.');
+    if (name === 'list_agents') return handleListAgents(parent, subagents, session.signal);
+    if (name === 'acp_cancel') return resultResponse(await tasks.cancel(parent, args.task_id));
+    if (name === 'acp_result') return handleAcpResult(parent, subagents, args, session.signal);
+    if (typeof args.agent_id !== 'string' || !args.agent_id) return errorResult('agent_id is required.');
+    // Names resolve within the caller's tree like the host tools; a session id resolves to itself.
+    const targetId = typeof subagents.resolveName === 'function'
+      ? await subagents.resolveName(parent, args.agent_id, session.signal)
+      : args.agent_id;
+    if (name === 'interrupt_agent') {
+      const descendants = typeof subagents.listDescendants === 'function'
+        ? (await subagents.listDescendants(parent.id, session.signal)).filter((row) => row.kind !== 'diagnostic')
+        : await listDirectChildren(subagents, parent.id, session.signal);
+      if (!descendants.some((child) => child.id === targetId)) return errorResult('Interrupt requires an agent you created (a direct child or deeper descendant).');
+      subagents.interrupt(targetId, { kind: 'ancestor', agent: parent });
+      return textResult(`Interrupted ${args.agent_id}.`);
+    }
+    if (typeof args.message !== 'string' || !args.message.trim()) return errorResult('message must be non-empty.');
+    const messageId = tasks?.latest(parent.id, targetId)
+      ? await tasks.followup(parent, targetId, args.message, session.signal)
+      : await subagents.sendMessage(parent, targetId, [{ type: 'text', text: args.message }], { signal: session.signal });
+    return textResult(JSON.stringify({ messageId }));
+  }
+
   async function callTool(name, args, session) {
     const current = safeGetService('agents')?.get?.(session.dshSession?.id);
     const provider = executionProvider(current);
@@ -255,36 +299,15 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       const edge = current?.session.snapshotEvents().findLast((event) => ['turn/start', 'turn/end'].includes(event.type));
       if (edge?.type !== 'turn/start') return errorResult('Delegation requires an open turn owned by this agent connection.');
     }
-    if (['acp_delegate', 'acp_cancel', 'send_message', 'interrupt_agent'].includes(name) && session.signal?.aborted) return errorResult('This agent execution has ended; its MCP connection cannot start or change work.');
+    if (['acp_delegate', 'acp_cancel', 'send_message', 'interrupt_agent', 'team_task_create', 'team_task_update'].includes(name) && session.signal?.aborted) return errorResult('This agent execution has ended; its MCP connection cannot start or change work.');
+    if (isTeamTool(name)) {
+      const caller = safeGetService('agents')?.get?.(session.dshSession?.id);
+      if (!caller || !session.signal) return errorResult('Agent Teams requires an active host session.');
+      const value = await executeTeamTool(ctx, name, args, caller, session.signal);
+      return textResult(JSON.stringify(value), { structuredContent: value });
+    }
     if (['send_message', 'list_agents', 'interrupt_agent', 'acp_result', 'acp_cancel'].includes(name)) {
-      const parent = safeGetService('agents')?.get?.(session.dshSession?.id);
-      const subagents = safeGetService('subagents');
-      if (!parent || !session.signal || !subagents) return errorResult('Agent control requires an active host session.');
-      if (name === 'list_agents') {
-        const children = await listDirectChildren(subagents, parent.id, session.signal);
-        const agents = await Promise.all(children.map(async (child) => ({ ...child, ...await (tasks?.latest(parent.id, child.id) ? tasks.snapshot(parent, child.id) : childSnapshot(child.id, session.signal)) })));
-        return textResult(JSON.stringify({ agents }), { structuredContent: { agents } });
-      }
-      if (name === 'acp_cancel') return resultResponse(await tasks.cancel(parent, args.task_id));
-      if (name === 'acp_result' && args.task_id) args = { ...args, agent_id: tasks.get(parent.id, args.task_id).childId };
-      if (typeof args.agent_id !== 'string' || !args.agent_id) return errorResult('agent_id is required.');
-      if (name === 'acp_result') {
-        if (args.wait_ms !== undefined && (!Number.isInteger(args.wait_ms) || args.wait_ms < 0 || args.wait_ms > 20000)) return errorResult('wait_ms must be an integer from 0 to 20000.');
-        const task = tasks?.latest(parent.id, args.agent_id);
-        if (task) return resultResponse(await waitTask(parent, args.task_id || task.taskId, args.wait_ms || 0, session.signal));
-        const children = await listDirectChildren(subagents, parent.id, session.signal);
-        if (!children.some((child) => child.id === args.agent_id)) return errorResult('Result access requires a direct child of this conversation.');
-        return resultResponse(await readChildResult(args.agent_id, session.signal, args.wait_ms));
-      }
-      if (name === 'interrupt_agent') {
-        subagents.interrupt(args.agent_id, { kind: 'ancestor', agent: parent });
-        return textResult(`Interrupted ${args.agent_id}.`);
-      }
-      if (typeof args.message !== 'string' || !args.message.trim()) return errorResult('message must be non-empty.');
-      const messageId = tasks?.latest(parent.id, args.agent_id)
-        ? await tasks.followup(parent, args.agent_id, args.message, session.signal)
-        : await subagents.sendMessage(parent, args.agent_id, [{ type: 'text', text: args.message }], { signal: session.signal });
-      return textResult(JSON.stringify({ messageId }));
+      return handleAgentControl(name, args, session);
     }
     if (name === 'acp_agents') {
       const agents = listAgents();
@@ -305,7 +328,7 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       const child = await delegate(args, parent, signal);
       if (args.mode === 'wait') return resultResponse(await waitTask(parent, child.taskId, args.timeout_ms ?? 15000, signal));
       if (child.recovered || tasks?.get(parent.id, child.taskId).endedAt) return resultResponse(await tasks.snapshot(parent, child.taskId, true));
-      return resultResponse({ subagentId: child.childId, taskId: child.taskId, status: 'running', output: [] });
+      return resultResponse({ subagentId: child.childId, ...(child.name ? { name: child.name } : {}), taskId: child.taskId, status: 'running', output: [] });
     }
     if (name === 'whaleisle_skill_list') {
       const skills = safeGetService('skills');
@@ -398,6 +421,19 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
     return errorResult(`Unknown whaleisle tool "${name}".`);
   }
 
+  function toolCallErrorResponse(messageId, err) {
+    return {
+      status: 200,
+      body: {
+        jsonrpc: '2.0',
+        id: messageId ?? null,
+        result: { ...errorResult(acpErrorMessage(err)), ...(err?.code === 'ACP_PREPARATION_FAILED' ? {
+          structuredContent: { status: 'rejected', failure: { code: err.code, stage: err.stage, message: acpErrorMessage(err), ...(err.availableModels ? { availableModels: err.availableModels } : {}) } },
+        } : {}) },
+      },
+    };
+  }
+
   /**
    * Dispatch one parsed JSON-RPC message against an authenticated session.
    * @returns {{ status: number, body?: object }} HTTP status + optional JSON body.
@@ -428,9 +464,11 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
       return { status: 200, body: { jsonrpc: '2.0', id: message.id ?? null, result: {} } };
     }
     if (method === 'tools/list') {
+      // MCP tool lists are fixed per connection here; Team calls check the live mode.
+      const tools = teamAvailable(ctx) ? [...TOOL_DEFINITIONS, ...TEAM_TOOLS] : TOOL_DEFINITIONS;
       return {
         status: 200,
-        body: { jsonrpc: '2.0', id: message.id ?? null, result: { tools: TOOL_DEFINITIONS } },
+        body: { jsonrpc: '2.0', id: message.id ?? null, result: { tools } },
       };
     }
     if (method === 'tools/call') {
@@ -438,16 +476,7 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
         const result = await callTool(message.params?.name, message.params?.arguments ?? {}, session);
         return { status: 200, body: { jsonrpc: '2.0', id: message.id ?? null, result } };
       } catch (err) {
-        return {
-          status: 200,
-          body: {
-            jsonrpc: '2.0',
-            id: message.id ?? null,
-            result: { ...errorResult(acpErrorMessage(err)), ...(err?.code === 'ACP_PREPARATION_FAILED' ? {
-              structuredContent: { status: 'rejected', failure: { code: err.code, stage: err.stage, message: acpErrorMessage(err), ...(err.availableModels ? { availableModels: err.availableModels } : {}) } },
-            } : {}) },
-          },
-        };
+        return toolCallErrorResponse(message.id, err);
       }
     }
     if (message.id === undefined) {

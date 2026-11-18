@@ -3,9 +3,14 @@ export function acpErrorMessage(error) {
   const message = error?.message || String(error);
   const details = typeof error?.data?.details === 'string' ? error.data.details : '';
   const text = details && !message.includes(details) ? `${message}: ${details}` : message;
-  return text.replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
+  return redactSecrets(text);
+}
+
+/** Remove URL credentials, bearer tokens and common secret assignments from diagnostic text. */
+export function redactSecrets(text) {
+  return String(text).replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
     .replace(/\b(Bearer\s+)[\w.+/=-]+/gi, '$1[redacted]')
-    .replace(/((?:access_token|refresh_token|api_key|password|client_secret)["']?\s*[:=]\s*["']?)[^\s"'&,)]+/gi, '$1[redacted]');
+    .replace(/((?:access_token|refresh_token|id_token|api_key|apikey|password|client_secret|secret|token)["']?\s*[:=]\s*["']?)[^\s"'&,)]+/gi, '$1[redacted]');
 }
 
 export function preparationError(error, stage, agent, availableModels) {

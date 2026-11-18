@@ -22,3 +22,16 @@ export function approvalPolicyOf(approval, session) {
   }
   return 'never';
 }
+
+/**
+ * Map the host's sandbox/approval state to the ACP client runtime policy.
+ * Only an unrestricted host sandbox may put the agent in its own no-prompt
+ * mode (Antigravity "yolo"); under workspace-write, requests must still reach
+ * the client policy, which enforces the sandbox.
+ */
+export function acpRuntimePolicy({ cwd, readOnly, sandboxMode, ask }) {
+  const sandboxPolicy = { type: readOnly ? 'readOnly' : sandboxMode === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite', writableRoots: [cwd] };
+  const fullAccess = !readOnly && !ask && sandboxPolicy.type === 'dangerFullAccess';
+  return { cwd, runtimeMode: fullAccess ? 'full-access' : 'approval-required',
+    approvalPolicy: ask ? 'on-request' : 'never', sandboxPolicy };
+}
