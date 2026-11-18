@@ -425,9 +425,6 @@
     "src/main/task-protection.js": {
       "createTaskProtection/coordinate": 26
     },
-    "src/main/update-center/service.js": {
-      "createUpdateCenter/check": 24
-    },
     "src/main/update-dialog.js": {
       "show": 22
     },

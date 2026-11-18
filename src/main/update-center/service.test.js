@@ -254,6 +254,54 @@ test('changing the update proxy re-checks and resumes from the downloaded bytes,
   assert.equal(f.calls.download.at(-1).offset, 500);
 });
 
+test('saving a proxy while the automatic check is pending immediately uses the new proxy', async (t) => {
+  const proxies = [];
+  const old = Promise.withResolvers();
+  let runAutomaticCheck;
+  const f = fixture(t, {
+    timers: { setTimeout: (run) => { runAutomaticCheck = run; return 1; }, clearTimeout() {} },
+    resolveRelease: async () => {
+      proxies.push(f.config.proxy);
+      return proxies.length === 1 ? old.promise : release('0.3.12');
+    },
+  });
+  f.config.proxy = 'http://127.0.0.1:7890';
+  const center = f.make();
+  center.start();
+  const automatic = runAutomaticCheck();
+  assert.equal(center.snapshot().phase, 'checking');
+  const saved = await center.command('setProxy', 'http://127.0.0.1:7891');
+  assert.equal(saved.phase, 'current');
+  old.reject(Object.assign(new Error('old proxy failed'), { code: 'ETIMEDOUT' }));
+  await automatic;
+  assert.equal(center.snapshot().phase, 'current');
+  assert.equal(center.snapshot().error, null);
+  assert.deepEqual(proxies, ['http://127.0.0.1:7890', 'http://127.0.0.1:7891']);
+});
+
+test('a superseded check cannot replace the new target after planning its old download', async (t) => {
+  const started = Promise.withResolvers();
+  const oldPlan = Promise.withResolvers();
+  const f = fixture(t, {
+    getAutoDownload: () => false,
+    resolveRelease: async () => release(f.config.proxy ? '0.3.14' : '0.3.13'),
+    planDelta: async ({ version }) => {
+      if (version === '0.3.14') return { ok: true, downloadBytes: 210 };
+      started.resolve();
+      return oldPlan.promise;
+    },
+  });
+  const center = f.make();
+  const check = center.command('check');
+  await started.promise;
+  const view = await center.command('setProxy', 'http://127.0.0.1:7891');
+  assert.equal(view.target.version, '0.3.14');
+  oldPlan.resolve({ ok: true, downloadBytes: 400 });
+  await check;
+  assert.equal(center.snapshot().target.version, '0.3.14');
+  assert.equal(center.snapshot().plan.downloadBytes, 210);
+});
+
 test('a failing update proxy is reported as itself, not as a route to switch', async (t) => {
   const proxyDown = Object.assign(new Error('无法通过更新代理 http://127.0.0.1:7890 连接'), { code: 'ERR_UPDATE_PROXY' });
   const f = fixture(t, { resolveRelease: async () => { throw proxyDown; } });

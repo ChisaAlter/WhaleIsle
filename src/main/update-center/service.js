@@ -106,6 +106,7 @@ function createUpdateCenter(deps) {
   let running = null;
   let lastPersist = 0;
   let autoTimer = null;
+  let latestCheck = null;
 
   function snapshot() {
     const target = saved.target;
@@ -224,69 +225,79 @@ function createUpdateCenter(deps) {
     return full;
   }
 
-  async function resolveWithFallback(tag) {
+  async function resolveWithFallback(tag, isCurrent = () => true) {
     const route = getRoute();
     try {
       return { release: await resolveRelease(route, tag), route };
     } catch (error) {
       const other = routes.map((row) => row.id).find((id) => id !== route);
       // A route the user picked stays picked; the default may fall back once.
-      if (isRouteExplicit() || !other || !isNetworkError(error)) throw Object.assign(error, { route });
+      if (!isCurrent() || isRouteExplicit() || !other || !isNetworkError(error)) throw Object.assign(error, { route });
       log(`update-center ${route} unreachable (${error.message}); trying ${other}`);
       return { release: await resolveRelease(other, tag), route: other };
     }
   }
 
-  async function check({ manual = false } = {}) {
-    if (BUSY.has(model.phase)) return snapshot();
+  function publishAvailable(target, manual) {
+    const { partial } = paths(target);
+    const resumable = saved.job?.resume?.total > 0 && fileSize(partial, fsx) > 0;
+    set({
+      phase: resumable ? 'paused' : 'available',
+      progress: resumable ? { received: fileSize(partial, fsx), total: saved.job.resume.total } : null,
+    });
+    cleanup();
+    // A download the user paused stays paused until they resume it.
+    if (getAutoDownload() && !saved.job?.userPaused) startDownload({ explicit: manual });
+    return snapshot();
+  }
+
+  async function applyLatestRelease(release, route, manual, isCurrent) {
+    if (!release?.version || compareVersions(release.version, currentVersion()) <= 0) {
+      discardJob();
+      saved.target = null;
+      saved.plan = null;
+      persist();
+      set({ phase: 'current', progress: null });
+      cleanup();
+      return snapshot();
+    }
+    const target = toTarget(release, route);
+    if (!target.assetUrl || !target.checksumUrl) {
+      return fail('check', Object.assign(new Error(`v${target.version} 没有适用于本机的安装包`), { code: 'no-installer' }), { route });
+    }
+    const same = sameArtifact(saved.target, target);
+    const ready = same && saved.job?.ready && fileSize(saved.job.ready.file, fsx) > 0;
+    const existingPlan = same ? saved.plan : null;
+    const plan = ready || existingPlan ? existingPlan : await makePlan(target);
+    if (!isCurrent()) return snapshot();
+    if (!same) discardJob();
+    saved.target = target;
+    saved.plan = plan;
+    persist();
+    if (ready) {
+      set({ phase: 'ready', progress: null });
+      cleanup();
+      return snapshot();
+    }
+    return publishAvailable(target, manual);
+  }
+
+  async function check({ manual = false, replace = false } = {}) {
+    // A proxy change may supersede a latest-version check, but not an explicit install.
+    if (BUSY.has(model.phase) && !(replace && latestCheck && model.phase === 'checking')) return snapshot();
+    const owner = Symbol('latest update check');
+    latestCheck = owner;
+    const isCurrent = () => latestCheck === owner;
     set({ phase: 'checking', error: null, explicit: manual });
     try {
-      let resolved;
-      try {
-        resolved = await resolveWithFallback(null);
-      } catch (error) {
-        return fail('check', error, { route: error.route });
-      }
+      const { release, route } = await resolveWithFallback(null, isCurrent);
+      if (!isCurrent()) return snapshot();
       model.checkedAt = now();
-      const { release, route } = resolved;
-      if (!release?.version || compareVersions(release.version, currentVersion()) <= 0) {
-        discardJob();
-        saved.target = null;
-        saved.plan = null;
-        persist();
-        set({ phase: 'current', progress: null });
-        cleanup();
-        return snapshot();
-      }
-      const target = toTarget(release, route);
-      if (!target.assetUrl || !target.checksumUrl) {
-        return fail('check', Object.assign(new Error(`v${target.version} 没有适用于本机的安装包`), { code: 'no-installer' }), { route });
-      }
-      if (!sameArtifact(saved.target, target)) {
-        discardJob();
-        saved.plan = null;
-      }
-      saved.target = target;
-      if (saved.job?.ready && fileSize(saved.job.ready.file, fsx) > 0) {
-        persist();
-        set({ phase: 'ready', progress: null });
-        cleanup();
-        return snapshot();
-      }
-      if (!saved.plan) saved.plan = await makePlan(target);
-      persist();
-      const { partial } = paths(target);
-      const resumable = saved.job?.resume?.total > 0 && fileSize(partial, fsx) > 0;
-      set({
-        phase: resumable ? 'paused' : 'available',
-        progress: resumable ? { received: fileSize(partial, fsx), total: saved.job.resume.total } : null,
-      });
-      cleanup();
-      // A download the user paused stays paused until they resume it.
-      if (getAutoDownload() && !saved.job?.userPaused) startDownload({ explicit: manual });
-      return snapshot();
+      return await applyLatestRelease(release, route, manual, isCurrent);
     } catch (error) {
-      return fail('check', error);
+      return isCurrent() ? fail('check', error, { route: error.route }) : snapshot();
+    } finally {
+      if (isCurrent()) latestCheck = null;
     }
   }
 
@@ -531,14 +542,14 @@ function createUpdateCenter(deps) {
     // Same shape as setRoute: the transfer is interrupted, the new network path is saved, then re-checked.
     // saveProxy validates first, so an invalid address changes nothing.
     setProxy: async (/** @type {string} */ value) => {
-      const wasDownloading = Boolean(controller);
       await saveProxy(value);
+      const wasDownloading = Boolean(controller);
       if (wasDownloading) await stopActive('pause');
       /** @type {{userPaused?: boolean} | null} */
       const job = /** @type {{userPaused?: boolean} | null} */ (saved.job);
       if (job) job.userPaused = !wasDownloading && Boolean(job.userPaused);
       if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
-      return check({ manual: true });
+      return check({ manual: true, replace: true });
     },
     setAutoDownload: async (enabled) => {
       await saveAutoDownload(enabled === true);
