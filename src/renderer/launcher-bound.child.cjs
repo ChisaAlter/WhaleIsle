@@ -12,7 +12,8 @@ const os = require('os');
 const { delay, waitForDom, waitForMain } = require('./fixture-wait.cjs');
 
 // All launcher state belongs to the fixture, never the installed application.
-const fixtureUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-launcher-bound-'));
+// 父测试进程创建并回收夹具目录，经 argv 传入（#478）；独立运行时退回自建目录。
+const fixtureUserData = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-launcher-bound-'));
 app.setPath('userData', fixtureUserData);
 
 const LAUNCHER_HTML = path.join(__dirname, 'launcher.html');

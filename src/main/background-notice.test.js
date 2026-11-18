@@ -7,8 +7,19 @@ const path = require('node:path');
 const test = require('node:test');
 const { TrayHideNotice } = require('./background-notice');
 
-function fixture() {
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-tray-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function fixture() {
+  const dir = tempDir();
   let notified = 0;
   const notice = new TrayHideNotice({
     markerPath: path.join(dir, 'ack'),
@@ -31,7 +42,7 @@ test('first close hides and toasts once; later closes hide silently', () => {
 });
 
 test('a pre-existing marker suppresses the toast entirely', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-tray-'));
+  const dir = tempDir();
   fs.writeFileSync(path.join(dir, 'ack'), '');
   let notified = 0;
   const notice = new TrayHideNotice({
@@ -45,7 +56,7 @@ test('a pre-existing marker suppresses the toast entirely', () => {
 });
 
 test('a failing toast still leaves the hide and the marker in place', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-tray-'));
+  const dir = tempDir();
   const notice = new TrayHideNotice({
     markerPath: path.join(dir, 'ack'),
     notify: () => { throw new Error('toast backend down'); },

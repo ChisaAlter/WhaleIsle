@@ -7,8 +7,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { createProactiveService } = require('./service');
 
+// 临时目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 function createUserDataPath() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'whale-proactive-recovery-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-proactive-recovery-'));
+  tempDirs.push(dir);
+  return dir;
 }
 
 function createIds(prefix = 'id') {

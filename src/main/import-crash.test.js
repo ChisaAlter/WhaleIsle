@@ -10,6 +10,12 @@ const { fork } = require('child_process');
 const CRASH_CHILD = path.join(__dirname, 'test-fixtures', 'import-crash-child.js');
 const RECOVER_CHILD = path.join(__dirname, 'test-fixtures', 'import-recover-child.js');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 /**
  * Run a fixture-owned child to settlement. One cleanup path: the timeout is
  * cleared on real exit, a genuine timeout kills only this fixture child and
@@ -25,7 +31,10 @@ function runChild(script, args) {
       if (settled) return;
       settled = true;
       try { child.kill('SIGKILL'); } catch { /* The timed-out test child may have exited before the kill. */ }
-      resolve({ code: -1, out, errOut, timedOut: true });
+      // 等子进程真正退出再判定超时（上限 10s），保证回收夹具目录时
+      // fixture 已停止写文件（#478）。
+      const giveUp = setTimeout(() => resolve({ code: -1, out, errOut, timedOut: true }), 10_000);
+      child.once('exit', () => { clearTimeout(giveUp); resolve({ code: -1, out, errOut, timedOut: true }); });
     }, 30000);
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { errOut += d; if (errOut.length > 4000) errOut = errOut.slice(0, 4000); });
@@ -46,6 +55,7 @@ function runChild(script, args) {
 
 function makeHome() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-crash-')));
+  tempDirs.push(root);
   const source = path.join(root, 'official');
   const dest = path.join(root, 'desktop');
   const userData = path.join(root, 'userData');

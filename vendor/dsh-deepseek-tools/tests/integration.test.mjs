@@ -124,7 +124,9 @@ test('real web profile: persistent settings, native tools, file permissions, str
   prepareProfile('web');
   const mount = ensureDesktopDeepSeekTools({ sourceDir: join(root, 'vendor/dsh-deepseek-tools'), profileDir });
   assert.equal(mount.ok, true, mount.error);
-  const launch = async () => (await runProfile({ profile: 'web', patchFiles: [], args: ['--no-open', '--port', '0'], environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { ...process.env } }]) })).ctx;
+  const spillPatch = join(scratch, 'spill.patch.yml');
+  await writeFile(spillPatch, `${JSON.stringify([{ id: 'spill-local', config: { root: join(scratch, 'spill'), cleanupPeriodDays: 0 } }])}\n`);
+  const launch = async () => (await runProfile({ profile: 'web', patchFiles: [spillPatch], args: ['--no-open', '--port', '0'], environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { ...process.env } }]) })).ctx;
   ctx = await launch();
   console.log('DeepSeek integration: initial profile ready');
   const state = () => ctx.settings.describe().find(row => row.ns === 'dsh-deepseek-tools');

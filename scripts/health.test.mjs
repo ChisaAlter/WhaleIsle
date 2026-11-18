@@ -125,9 +125,14 @@ test('coverage summary extracts the all-files line, branch and funcs totals', ()
 })
 
 test('test globs come from the npm test script, quoted or not', () => {
+  const globs = ['src/**/*.test.js', 'mobile/web/**/*.test.js', 'vendor/dsh-project/tests/*.test.mjs', 'vendor/dsh-deepseek-tools/tests/*.test.mjs']
+  assert.deepEqual(
+    extractTestGlobs('node scripts/run-tests.mjs "src/**/*.test.js" "mobile/web/**/*.test.js" "vendor/dsh-project/tests/*.test.mjs" "vendor/dsh-deepseek-tools/tests/*.test.mjs"'),
+    globs)
+  assert.deepEqual(extractTestGlobs('node scripts/run-tests.mjs a.test.js'), ['a.test.js'])
   assert.deepEqual(
     extractTestGlobs('node --test "src/**/*.test.js" "mobile/web/**/*.test.js" "vendor/dsh-project/tests/*.test.mjs" "vendor/dsh-deepseek-tools/tests/*.test.mjs"'),
-    ['src/**/*.test.js', 'mobile/web/**/*.test.js', 'vendor/dsh-project/tests/*.test.mjs', 'vendor/dsh-deepseek-tools/tests/*.test.mjs'])
+    globs)
   assert.deepEqual(extractTestGlobs('node --test a.test.js'), ['a.test.js'])
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   assert.ok(extractTestGlobs(pkg.scripts.test).length > 0)

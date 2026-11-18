@@ -7,8 +7,15 @@ const path = require('node:path');
 const test = require('node:test');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 function makeTree() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-import-')));
+  tempDirs.push(root);
   const source = path.join(root, 'official');
   const dest = path.join(root, 'desktop');
   const userData = path.join(root, 'userData');
@@ -425,6 +432,7 @@ test('scanImport lists skills and MCP without exposing secrets, and holds on ski
 
   const emptyDest = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-empty-dest-')));
   const skillsOnly = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-skills-only-')));
+  tempDirs.push(emptyDest, skillsOnly);
   writeSkill(path.join(skillsOnly, 'skills'), 'solo');
   const skillsScan = scanImport({
     sourceHome: skillsOnly,
@@ -727,6 +735,7 @@ test('probeImportHold matches shouldHoldForImport(scanImport()) without reading 
   fs.rmSync(tree.root, { recursive: true, force: true });
 
   const bare = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-probe-bare-')));
+  tempDirs.push(bare);
   const emptySource = path.join(bare, 'official');
   const emptyDest = path.join(bare, 'desktop');
   fs.mkdirSync(emptySource, { recursive: true });
@@ -744,6 +753,7 @@ test('probeImportHold matches shouldHoldForImport(scanImport()) without reading 
 
 test('probeImportHold ignores preset fixture sessions and legacy-db-only sources', () => {
   const bare = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-probe-preset-')));
+  tempDirs.push(bare);
   const source = path.join(bare, 'official');
   const dest = path.join(bare, 'desktop');
   fs.mkdirSync(path.join(source, 'sessions', '_no-cwd', 'preset-demo'), { recursive: true });

@@ -130,9 +130,10 @@ test('testGlobs derives the npm test glob list', () => {
   const real = testGlobs();
   assert.ok(real.length > 0);
   assert.ok(real.every(glob => !glob.startsWith('-')));
+  assert.deepEqual(testGlobs({ scripts: { test: 'node scripts/run-tests.mjs "a/**/*.test.js" "b/*.test.mjs"' } }), ['a/**/*.test.js', 'b/*.test.mjs']);
   assert.deepEqual(testGlobs({ scripts: { test: 'node --test "a/**/*.test.js" "b/*.test.mjs"' } }), ['a/**/*.test.js', 'b/*.test.mjs']);
-  assert.throws(() => testGlobs({ scripts: { test: 'vitest run' } }), /node --test/);
-  assert.throws(() => testGlobs({ scripts: { test: 'node --test' } }), /glob/);
+  assert.throws(() => testGlobs({ scripts: { test: 'vitest run' } }), /run-tests\.mjs/);
+  assert.throws(() => testGlobs({ scripts: { test: 'node scripts/run-tests.mjs' } }), /glob/);
 });
 
 // Exercise the actual Node reporter, not only hand-written XML fixtures.

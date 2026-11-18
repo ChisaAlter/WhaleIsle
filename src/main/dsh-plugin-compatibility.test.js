@@ -74,6 +74,7 @@ test('real rc.2 profile preflight and Loader expose SSH tools and the optional C
     { id: 'storage-json', config: { root: join(home, 'storages') } },
     { id: 'session-persistence-jsonl', config: { root: join(home, 'sessions') } },
     { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } },
+    { id: 'spill-local', config: { root: join(home, 'spill'), cleanupPeriodDays: 0 } },
     { id: 'agent-default-model', config: { provider: 'no-network', model: 'no-calls' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
     ...['harness-dev-context', 'webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map(id => ({ id, disabled: true })),

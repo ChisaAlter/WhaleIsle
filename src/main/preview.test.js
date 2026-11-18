@@ -27,6 +27,17 @@ const {
   fitPictureInPictureContentSize,
 } = require('./preview-pip-protocol.js');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(async () => {
+  while (tempDirs.length) await fs.rm(tempDirs.pop(), { recursive: true, force: true });
+});
+async function tempDir(prefix) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 const leftoverPrimaryCss = `--${['t', '3'].join('')}-primary`;
 
 function fakePartitionSession() {
@@ -552,8 +563,8 @@ test('closeAll destroys every live view', async () => {
 });
 
 test('workspace-file IPC serves a no-workspace session file through the production scratch authority', async (t) => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-home-'));
-  const boot = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-boot-'));
+  const home = await tempDir('dshd-preview-home-');
+  const boot = await tempDir('dshd-preview-boot-');
   const configPath = require.resolve('./config');
   const previousConfig = require.cache[configPath];
   const handlers = new Map();
@@ -635,8 +646,8 @@ test('registerPreviewIpc exposes workspace-file and closeAll closes that server'
 });
 
 test('floating-window IPC normalizes an absolute scratch file through the real preview stack', async (t) => {
-  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-ipc-workspace-'));
-  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-ipc-scratch-'));
+  const workspace = await tempDir('dshd-preview-ipc-workspace-');
+  const scratch = await tempDir('dshd-preview-ipc-scratch-');
   const note = path.join(scratch, 'note.txt');
   await fs.writeFile(note, 'scratch text\n');
   const authority = createWorkspaceAuthority({ workspace, extraWorkspaces: [scratch] });
@@ -1250,7 +1261,7 @@ test('a stale teardown never closes a shared preview singleton its successor cla
  * returned URL is a real loopback port serving real bytes.
  */
 async function realPreviewPair(t) {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-real-'));
+  const cwd = await tempDir('dshd-preview-real-');
   const authority = createWorkspaceAuthority({ workspace: cwd });
   const workspacePreview = createWorkspacePreviewController({ authority });
   const fileWindows = [];
@@ -1649,7 +1660,7 @@ test('Cmd+R before-input-event prevents default and reloads', async () => {
 test('stop, screenshot, title, and loading bind on the fake guest', async () => {
   const seen = [];
   const fake = fakeAttach();
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-shot-bind-'));
+  const dir = await tempDir('dshd-preview-shot-bind-');
   const preview = createPreviewController({
     attach: fake.attach,
     onState: (state) => { seen.push(state); },
@@ -1683,7 +1694,7 @@ test('stop, screenshot, title, and loading bind on the fake guest', async () => 
 });
 
 test('captureScreenshot writes a png under preview-recordings', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-shot-'));
+  const dir = await tempDir('dshd-preview-shot-');
   const fake = fakeAttach();
   const preview = createPreviewController({ attach: fake.attach, userDataPath: dir });
   const opened = await preview.open({ url: 'http://127.0.0.1:3000' });
@@ -1702,7 +1713,7 @@ test('captureScreenshot writes a png under preview-recordings', async () => {
 });
 
 test('captureScreenshot rejects an empty native image without writing an artifact', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-empty-shot-'));
+  const dir = await tempDir('dshd-preview-empty-shot-');
   const fake = fakeAttach();
   const preview = createPreviewController({ attach: fake.attach, userDataPath: dir });
   try {
@@ -2009,7 +2020,7 @@ test('native preview attachment preserves capture through menu hide, PiP, and si
   await loadPreviewModule('preview-ipc');
   const previewModule = await loadPreviewModule('preview');
   const pip = createPipFactory();
-  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-native-attachment-'));
+  const userDataPath = await tempDir('preview-native-attachment-');
   t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
   const preview = previewModule.createPreviewController({ createPipWindow: pip.createPipWindow, userDataPath });
   const bounds = { x: 10, y: 20, width: 539, height: 750 };
@@ -2352,7 +2363,7 @@ test('closing and reopening PiP waits for its old in-flight capture', async (t) 
 });
 
 test('saveRecording writes under preview-recordings', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-rec-'));
+  const dir = await tempDir('dshd-preview-rec-');
   const fake = fakeAttach();
   const preview = createPreviewController({ attach: fake.attach, userDataPath: dir });
   const opened = await preview.open({ url: 'http://127.0.0.1:3000' });
@@ -2376,7 +2387,7 @@ test('saveRecording writes under preview-recordings', async () => {
 });
 
 test('saveRecording rejects a payload over the 512 MiB cap without writing', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-rec-cap-'));
+  const dir = await tempDir('dshd-preview-rec-cap-');
   const fake = fakeAttach();
   const preview = createPreviewController({ attach: fake.attach, userDataPath: dir });
   const opened = await preview.open({ url: 'http://127.0.0.1:3000' });
@@ -2391,7 +2402,7 @@ test('saveRecording rejects a payload over the 512 MiB cap without writing', asy
 });
 
 test('revealArtifact only opens files under preview-recordings', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-reveal-'));
+  const dir = await tempDir('dshd-preview-reveal-');
   const recDir = path.join(dir, 'preview-recordings');
   await fs.mkdir(recDir);
   const inside = path.join(recDir, 'rec.webm');
@@ -2413,7 +2424,7 @@ test('revealArtifact only opens files under preview-recordings', async () => {
 });
 
 test('copyArtifactToClipboard only reads images under preview-recordings', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-copy-'));
+  const dir = await tempDir('dshd-preview-copy-');
   const recDir = path.join(dir, 'preview-recordings');
   await fs.mkdir(recDir);
   const inside = path.join(recDir, 'shot.png');

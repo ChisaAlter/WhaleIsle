@@ -85,7 +85,8 @@ export function extractTestGlobs(testScript) {
     tokens.push(match[1] ?? match[2] ?? match[3])
   }
   const args = tokens[0] === 'node' ? tokens.slice(1) : tokens
-  return args.filter(token => !token.startsWith('-'))
+  // `node scripts/run-tests.mjs` 的包装脚本路径不是测试 glob（#478）。
+  return args.filter(token => !token.startsWith('-') && !/(^|[\\/])run-tests\.mjs$/.test(token))
 }
 
 export function formatText(report) {

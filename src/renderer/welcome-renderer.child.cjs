@@ -6,7 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { assertWelcomePresentation } = require('../main/smoke/welcome-presentation');
 const { delay, waitForMain } = require('./fixture-wait.cjs');
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-welcome-render-'));
+// 父测试进程创建并回收夹具目录，经 argv 传入（#478）；独立运行时退回自建目录。
+const fixture = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-welcome-render-'));
 app.setPath('userData', fixture);
 const root = process.env.DSH_WELCOME_TEST_ROOT || path.resolve(__dirname, '../..');
 const { openWelcomeWindow } = require(path.join(root, 'src/main/welcome-window'));

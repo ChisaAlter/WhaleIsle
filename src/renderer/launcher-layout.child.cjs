@@ -7,7 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { RendererConsoleTail, attachRendererConsoleTail, writeCrashReport } = require('../main/crash-report');
 const { waitForDom, waitForMain } = require('./fixture-wait.cjs');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-layout-'));
+// 父测试进程创建并回收夹具目录，经 argv 传入（#478）；独立运行时退回自建目录。
+const root = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-layout-'));
 const evidence = process.env.DSHD_LAYOUT_EVIDENCE_DIR;
 if (evidence) fs.mkdirSync(evidence, { recursive: true });
 app.setPath('userData', root);

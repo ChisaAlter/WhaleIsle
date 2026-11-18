@@ -7,8 +7,19 @@ const path = require('node:path');
 const test = require('node:test');
 const { UpdateJournal, updateJournalState } = require('./update-journal');
 
-test('journal writes flushed JSONL milestones and dedupes identical states', () => {
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-journal-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+test('journal writes flushed JSONL milestones and dedupes identical states', () => {
+  const dir = tempDir();
   const journal = new UpdateJournal(dir, '0.3.3');
   journal.action('check-requested');
   journal.state({ phase: 'available', version: '0.4.0' });
@@ -29,7 +40,7 @@ test('journal writes flushed JSONL milestones and dedupes identical states', () 
 
 test('journal rejects unknown actions and relative dirs', () => {
   assert.throws(() => new UpdateJournal('relative/dir', '0.3.3'));
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-journal-'));
+  const dir = tempDir();
   const journal = new UpdateJournal(dir, '0.3.3');
   assert.throws(() => journal.action('free-text'));
 });

@@ -320,11 +320,12 @@ test('moveTo relays positions to the renderer and ignores malformed payloads', (
   assert.deepEqual(deps.win.sends.at(-1), ['shell:live2d-move', { x: 300, y: 200 }]);
 });
 
-test('pet protocol serves bundled renderer assets and rejects traversal', async () => {
+test('pet protocol serves bundled renderer assets and rejects traversal', async (t) => {
   const fs = require('node:fs');
   const os = require('node:os');
   const path = require('node:path');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-renderer-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'pet-live2d.html'), '<html></html>');
   const handler = createPetProtocolHandler((name) => path.join(root, name));
   const ok = handler({ url: 'pet://pet/pet-live2d.html' });
@@ -380,8 +381,11 @@ function growthDeps(t, overrides = {}) {
   const os = require('node:os');
   const path = require('node:path');
   const zlib = require('node:zlib');
-  const sessionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-sessions-'));
-  t.after(() => fs.rmSync(sessionsDir, { recursive: true, force: true }));
+  // sessionsDir 必须比夹具根目录再深一层：watch worker 会把 data/whale/*
+  // 写到 dirname(sessionsDir) 下（#478）。
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-sessions-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const sessionsDir = path.join(home, 'sessions');
   const sessionDir = path.join(sessionsDir, 'sess-a');
   fs.mkdirSync(sessionDir, { recursive: true });
   const body = [
@@ -445,8 +449,10 @@ test('DSH config write retries after save mutates memory then throws', async (t)
   const os = require('node:os');
   const path = require('node:path');
   const zlib = require('node:zlib');
-  const sessionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-dsh-retry-'));
-  t.after(() => fs.rmSync(sessionsDir, { recursive: true, force: true }));
+  // 同上：sessionsDir 深一层，dirname(sessionsDir)/data/whale 才落在夹具内（#478）。
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-dsh-retry-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const sessionsDir = path.join(home, 'sessions');
   const log = path.join(sessionsDir, 'ws-a', 'sess-a', 'session.jsonl.zstd');
   fs.mkdirSync(path.dirname(log), { recursive: true });
   fs.writeFileSync(log, zlib.zstdCompressSync(Buffer.from(JSON.stringify({ type: 'turn/start', data: { turn: 1 } }) + '\n')));

@@ -67,6 +67,10 @@ function runRunner({ cli, pnpm, result, secrets, declareChannel }) {
     SHARED_SECRET,
     RESULT_PATH: result,
   };
+  // 继承被门禁隔离的临时目录变量，runner 进程不得在系统 tmp 下留痕（#478）。
+  for (const key of ['TMPDIR', 'TMP', 'TEMP']) {
+    if (process.env[key]) env[key] = process.env[key];
+  }
   if (declareChannel) env[INTERNAL_SECRETS_ENV] = '1';
   const child = spawn(process.execPath, [RUNNER, cli, pnpm, 'web', '--port', '0'], {
     stdio: ['pipe', 'ignore', 'pipe'],

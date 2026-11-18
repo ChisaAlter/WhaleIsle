@@ -61,11 +61,42 @@ function electronTestEnv(electronBinary, baseEnv = process.env, deps) {
   if (shouldDisableElectronSandbox(electronBinary, deps)) {
     env.ELECTRON_DISABLE_SANDBOX = '1';
   }
+  // Electron 内嵌的 Node 默认把 node-compile-cache 写进 TMPDIR，残留会触发
+  // run-tests 的临时目录门禁；测试子进程不需要它（#478）。
+  env.NODE_DISABLE_COMPILE_CACHE = '1';
   return env;
+}
+
+/**
+ * 终止测试子进程并等它真正退出：SIGTERM 后最多等 waitMs，仍未退出就升级
+ * SIGKILL 再最多等 killWaitMs。超时路径里调用方随后才 reject 并回收
+ * 临时目录，保证渲染进程已释放 profile 文件（#478）。
+ * @param {import('node:child_process').ChildProcess} child
+ * @param {number} [waitMs]
+ * @param {number} [killWaitMs]
+ * @returns {Promise<boolean>} true 表示等来了 exit，false 表示两轮等待都耗尽
+ */
+function terminateChild(child, waitMs = 10_000, killWaitMs = 5_000) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve(true);
+    /** @type {NodeJS.Timeout | undefined} */
+    let killTimer;
+    const giveUp = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* 已退出的子进程 kill 抛错属正常竞态。 */ }
+      killTimer = setTimeout(() => resolve(false), killWaitMs);
+    }, waitMs);
+    child.once('exit', () => {
+      clearTimeout(giveUp);
+      clearTimeout(killTimer);
+      resolve(true);
+    });
+    try { child.kill(); } catch { /* 已退出的子进程 kill 抛错属正常竞态。 */ }
+  });
 }
 
 module.exports = {
   chromeSandboxUsable,
   shouldDisableElectronSandbox,
   electronTestEnv,
+  terminateChild,
 };

@@ -10,6 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const forensicsLog = require('./forensics-log');
+const { terminateChild } = require('../../scripts/lib/electron-sandbox.cjs');
 
 function fakeChild() {
   const child = new EventEmitter();
@@ -169,7 +170,8 @@ test('exited child flush drains backpressured stdio and retains the final crash 
     assert.ok(fs.statSync(file).size <= forensicsLog.MAX_BYTES);
     assert.ok((await forensicsLog.readBootLogTailAsync(file)).includes('FINAL_CRASH_EVIDENCE'));
   } finally {
-    if (child.exitCode === null) child.kill();
+    // kill 后等子进程真正退出（上限由 terminateChild 定）再删目录（#478）。
+    await terminateChild(child);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

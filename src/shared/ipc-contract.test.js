@@ -23,6 +23,17 @@ const { IPC_ROLES } = require('../main/ipc-authorization');
 
 const SRC = path.resolve(__dirname, '..');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-contract-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
 // --- contract shape -----------------------------------------------------------
 
 test('contract rows are well-formed and unique per (channel, kind)', () => {
@@ -95,7 +106,7 @@ function electronStub() {
       getAllDisplays: () => [{ workAreaSize: { width: 1920, height: 1080 } }],
     },
     app: {
-      getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-contract-')),
+      getPath: () => tempDir(),
       getVersion: () => '0.0.0',
       setLoginItemSettings() {},
       commandLine: { appendSwitch() {} },
@@ -161,7 +172,7 @@ test('main-process registrations equal the contract invoke/send rows', () => {
     ['../main/chrome', (m) => m.bindChromeIpc()],
     ['../main/shortcuts', (m) => m.installShortcutService({
       ipcMain: {},
-      userData: fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-contract-')),
+      userData: tempDir(),
       platform: 'linux',
       getView: () => undefined,
       getWindow: () => undefined,

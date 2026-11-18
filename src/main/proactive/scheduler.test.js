@@ -8,8 +8,15 @@ const path = require('node:path');
 const { JsonEventStore } = require('./task-runtime');
 const { TaskScheduler } = require('./scheduler');
 
+// 临时目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 function setup() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-scheduler-'));
+  tempDirs.push(directory);
   const store = new JsonEventStore(path.join(directory, 'events.ndjson'));
   return { store, scheduler: new TaskScheduler({ store, now: () => '2026-11-05T00:00:00Z', idFactory: (() => { let i = 0; return () => `schedule-${i++}`; })() }) };
 }

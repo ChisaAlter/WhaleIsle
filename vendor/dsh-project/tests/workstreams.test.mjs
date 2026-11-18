@@ -558,10 +558,11 @@ test('research adds only web search and fetch to the read-only tools; every call
 
 test('the research sites list is an ordinary editable material that the guard reads', async () => {
   const f = setup(), item = f.add('Research work', true, 1), agent = { id: item.worker.sessionId };
-  const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-hosts-')), storage = await projectDirectory(root, f.project.id);
-  f.service.home = root; f.service.project(f.project.id).storageRoot = storage; await fs.mkdir(join(storage, 'docs'));
-  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.role = 'research';
+  const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-hosts-'));
   try {
+    const storage = await projectDirectory(root, f.project.id);
+    f.service.home = root; f.service.project(f.project.id).storageRoot = storage; await fs.mkdir(join(storage, 'docs'));
+    f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.role = 'research';
     const read = () => f.service.command('store/read', { projectId: f.project.id, path: 'research-hosts.txt' });
     assert.deepEqual(await read(), { path: 'research-hosts.txt', text: '' }, 'it exists, empty, the first time it is opened');
     assert.equal(f.service.guard({ name: 'web_fetch', arguments: { url: 'https://anywhere.test/' }, agent }), undefined);

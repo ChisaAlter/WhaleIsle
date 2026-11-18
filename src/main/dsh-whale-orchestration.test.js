@@ -34,6 +34,8 @@ let whaleIndex;
 let whaleScope;
 
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-pulse-'));
+// 模块级夹具目录由文件级钩子回收（#478）。
+test.after(() => fs.rmSync(tmpHome, { recursive: true, force: true }));
 
 function stubCtx(controller) {
   const tools = new Map();

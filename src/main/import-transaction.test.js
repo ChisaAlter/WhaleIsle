@@ -7,8 +7,15 @@ const os = require('os');
 
 const { replaceDirJournaled, commitStagedDir, recoverImportTransactions, reconcileImportTransactionsSync, overlayDir } = require('./import-transaction');
 
+// 所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 function makeRoot() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-txn-')));
+  tempDirs.push(root);
   return {
     root,
     src: path.join(root, 'src'),
@@ -144,6 +151,7 @@ test('commitStagedDir publishes a pre-built staging tree', async () => {
 test('reconcileImportTransactionsSync refuses a journal pointing outside the tree', () => {
   const t = makeRoot();
   const foreign = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-foreign-')));
+  tempDirs.push(foreign);
   fs.writeFileSync(path.join(foreign, 'sentinel.txt'), 'keep-me');
   const destDir = path.join(t.root, 'skills');
   fs.mkdirSync(destDir, { recursive: true });
@@ -379,6 +387,7 @@ test('replaceDirJournaled refuses to write through a junctioned destination pare
   // escape the intended home — refuse before any write.
   const t = makeRoot();
   const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-out-')));
+  tempDirs.push(outside);
   fs.mkdirSync(path.join(outside, 'real'), { recursive: true });
   // Place a junction at <root>/linkparent pointing to the outside tree.
   const linkParent = path.join(t.root, 'linkparent');

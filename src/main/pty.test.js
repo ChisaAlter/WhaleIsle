@@ -21,6 +21,8 @@ const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home')
 
 // One shared workspace root for the whole suite; cwd checks resolve inside it.
 const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-pty-ws-'));
+// 模块级共享目录由文件级钩子回收（#478）。
+test.after(() => fs.rmSync(ws, { recursive: true, force: true }));
 setWorkspaceAuthority(createWorkspaceAuthority({ workspace: ws }));
 
 function fakeSpawn() {

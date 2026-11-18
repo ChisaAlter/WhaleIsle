@@ -9,7 +9,8 @@ app.disableHardwareAcceleration();
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-feedback-'));
+// 父测试进程创建并回收夹具目录，经 argv 传入（#478）；独立运行时退回自建目录。
+const profile = process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'whale-feedback-'));
 app.setPath('userData', profile);
 let checkResolve;
 let checkCalls = 0;
