@@ -6,14 +6,13 @@ const { spawn } = require('child_process');
 const { app, shell } = require('electron');
 const { downloadLatestViaUpdater, differentialAvailability } = require('./update-updater');
 const { UpdateJournal } = require('./update-journal');
-const { agentFor, systemFetch } = require('./system-proxy');
+const { agentFor, systemFetch, hasUpdateProxy, explainUpdateProxyFailure } = require('./system-proxy');
 const { checkInstallSpace } = require('./install-space');
 const { openExternalHttp } = require('./open-external');
 const { sanitizeDownloadFilename } = require('./download-path');
 const { setTimeout: delay } = require('node:timers/promises');
 const installDetect = require('../launcher/install-detect');
 const { currentVersion, getInstalledAppInfo } = installDetect;
-
 const GITHUB_OWNER = 'ChisaAlter';
 const GITHUB_REPO = 'WhaleIsle';
 const RELEASES_LATEST = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
@@ -560,8 +559,9 @@ async function downloadFile(url, dest, onProgress, options = {}) {
       (progress) => onProgress?.({ ...progress, attempt, maxAttempts }),
       { ...options, agent, resumeState, signal, timeoutMs: remainingMs }).catch((error) => {
       // A dead or refusing system proxy must not block a reachable direct route.
+      // A proxy the user chose is retried like any transient failure but never bypassed.
       if (agent && error.proxyFailure) {
-        agent = null;
+        if (!hasUpdateProxy()) agent = null;
         error.retryable = true;
       }
       throw error;
@@ -574,7 +574,7 @@ async function downloadFile(url, dest, onProgress, options = {}) {
     // keepPartial: a paused or failed transfer keeps its written bytes for a
     // later resume; the caller owns cleanup.
     if (!(options.keepPartial && resumeState?.offset > 0)) cleanupPartial(dest);
-    throw error;
+    throw explainUpdateProxyFailure(error);
   }
 }
 

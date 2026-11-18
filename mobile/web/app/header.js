@@ -1,4 +1,5 @@
 // app/header.js — split from app.js (#442).
+import { gitPillLabel as gitPillText } from '../git/quick.js';
 import { withHeldLiveRow } from '../host/catalog.js';
 import { DEFAULT_PRESETS, permissionLabel } from '../host/permission.js';
 import { modelChipLabel } from '../host/models.js';
@@ -87,8 +88,8 @@ export function renderHeader() {
   // The center slot is either the Git pill or the session title, never both.
   chatTitle.classList.toggle('hidden', showPill);
   if (showPill) {
-    const hasRef = state.gitStatus.refName != null;
-    gitPillLabel.textContent = hasRef ? state.gitStatus.refName : 'Initialize Git';
+    const hasRef = state.gitStatus.refName != null && !state.gitAuthError;
+    gitPillLabel.textContent = gitPillText(state.gitStatus, state.gitAuthError);
     gitPillCount.textContent = hasRef && state.gitStatus.aheadCount > 0 ? `↑${state.gitStatus.aheadCount}` : '';
   }
   syncSubagentButton(row);

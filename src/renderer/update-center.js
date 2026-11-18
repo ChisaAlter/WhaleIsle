@@ -170,6 +170,7 @@
 
   const api = window.whaleUpdateCenter;
   const $ = (id) => document.getElementById(id);
+  /** @type {Parameters<typeof describe>[0] | null} */
   let view = null;
   let pending = false;
   let notesTab = 0;
@@ -196,6 +197,37 @@
     node.disabled = Boolean(action.disabled) || pending;
     node.addEventListener('click', () => run(action.id, action.arg));
     return node;
+  }
+
+  // A rejected proxy is an input problem, not a failed check: report it beside
+  // the field, keep what the user typed, and leave the update state alone.
+  const proxyInput = /** @type {HTMLInputElement} */ (document.getElementById('proxy'));
+  const proxyError = /** @type {HTMLElement} */ (document.getElementById('proxy-error'));
+  let proxyRejected = false;
+  /** @param {string} message */
+  function showProxyError(message) {
+    proxyRejected = Boolean(message);
+    proxyError.textContent = message;
+    proxyError.hidden = !message;
+    proxyInput.setAttribute('aria-invalid', String(proxyRejected));
+  }
+
+  /** @param {string} value */
+  async function saveProxy(value) {
+    if (pending) return;
+    pending = true;
+    try {
+      render(await api.command('setProxy', value));
+      showProxyError('');
+    } catch (error) {
+      // Same IPC prefix stripping as the launcher's error text.
+      showProxyError(String(error instanceof Error ? error.message : error)
+        .replace(/^Error invoking remote method '[^']*':\s*/i, '')
+        .replace(/^Error:\s*/, ''));
+    } finally {
+      pending = false;
+      if (view) render(view);
+    }
   }
 
   async function run(id, arg) {
@@ -274,11 +306,20 @@
       return node;
     }));
     $('auto-download').checked = Boolean(view.autoDownload);
+    // Do not overwrite what the user is typing; the saved value is shown whenever the field is not focused.
+    if (document.activeElement !== proxyInput && !proxyRejected) proxyInput.value = view.proxy || '';
+    proxyInput.disabled = pending;
     $('auto-download').disabled = pending;
     $('actions').replaceChildren(...model.actions.map(button));
     document.body.classList.add('visible');
   }
 
+  proxyInput.addEventListener('change', (event) => {
+    const value = proxyInput.value.trim();
+    if (value !== (view?.proxy || '')) void saveProxy(value);
+    else showProxyError('');
+  });
+  proxyInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') proxyInput.blur(); });
   $('auto-download').addEventListener('change', (event) => { void run('setAutoDownload', event.target.checked); });
   $('close').addEventListener('click', () => { void api.close(); });
   document.addEventListener('keydown', (event) => {

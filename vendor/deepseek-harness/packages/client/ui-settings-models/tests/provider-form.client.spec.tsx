@@ -563,6 +563,9 @@ describe('model list editing', () => {
   it('separates emptying the list from restoring the adapter defaults', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'kept' }] } },
+      // The adapter pins its catalog beneath the user layer, so a reset has
+      // rows to return to — a route without them gets no reset affordance.
+      baseProviders: { openai: { models: [{ id: 'adapter-default' }] } },
     })
     openEditor('openai')
 
@@ -570,10 +573,24 @@ describe('model list editing', () => {
     // from handing the catalog back, which is what the reset affordance does.
     expect(screen.getByText(en.modelsCustomized)).toBeTruthy()
     fireEvent.click(screen.getByText(en.resetModels))
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('adapter-default')
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     expect(firstMutate(mutate).ops)
       .toContainEqual({ op: 'unset', path: ['providers', 'openai', 'models'] })
+  })
+
+  it('offers no restore for a declared route with nothing to inherit', async () => {
+    await mountSection({
+      providers: { 'acme-gateway': { baseURL: 'https://gw.example/v1', models: [{ id: 'kept' }] } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+
+    // The user layer owns the list, but reset would fall through to empty
+    // inheritance; hiding it beats an affordance that erases every row.
+    expect(screen.getByText(en.modelsCustomized)).toBeTruthy()
+    expect(screen.queryByText(en.resetModels)).toBeNull()
   })
 
 })

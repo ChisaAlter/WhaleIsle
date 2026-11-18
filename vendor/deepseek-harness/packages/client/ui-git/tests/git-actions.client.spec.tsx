@@ -91,6 +91,11 @@ function filesTree(files: Array<{ path: string; insertions: number; deletions: n
   }
 }
 
+// jsdom has no layout; pretend the element is `width` px wide and 20px tall.
+const labelRect = (width: number) => () => (
+  { width, height: 20, top: 0, left: 0, right: width, bottom: 20, x: 0, y: 0, toJSON: () => ({}) }
+)
+
 function mount(opts: {
   cwd?: string | undefined
   git?: VcsStatus | null
@@ -646,6 +651,57 @@ describe('GitActionsControl', () => {
     const trigger = await screen.findByRole('button', { name: 'Switch branch' })
     expect(trigger.textContent).toContain('master')
     expect(screen.getByRole('button', { name: 'Commit' }).textContent).toContain('Commit')
+  })
+
+  it('announces the remaining reveal room while a capsule label expands', async () => {
+    mount({ cwd: '/work', git: status() })
+    await screen.findByRole('button', { name: 'Commit' })
+    const toolbar = document.querySelector<HTMLElement>('[data-git-toolbar]')!
+    // .label > .clip > .text is the fixed capsule structure in GitLabel.module.css.
+    const label = toolbar.querySelector('[data-git-part="action"]')!.querySelector('span')!
+    const clip = label.firstElementChild!
+    const text = clip.firstElementChild!
+    // The text keeps its 64px max-content width while the clip starts at 0.
+    Object.defineProperty(text, 'getBoundingClientRect', { configurable: true, value: labelRect(64) })
+    Object.defineProperty(clip, 'getBoundingClientRect', { configurable: true, value: labelRect(0) })
+
+    act(() => {
+      label.dispatchEvent(new TransitionEvent('transitionrun', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(toolbar.getAttribute('data-titlebar-pending-room')).toBe('64')
+
+    // A non-size transition on the same label does not count as pending room.
+    act(() => {
+      label.dispatchEvent(new TransitionEvent('transitionrun', { bubbles: true, propertyName: 'opacity' }))
+    })
+    expect(toolbar.getAttribute('data-titlebar-pending-room')).toBe('64')
+
+    act(() => {
+      label.dispatchEvent(new TransitionEvent('transitionend', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(toolbar.hasAttribute('data-titlebar-pending-room')).toBe(false)
+  })
+
+  it('announces negative room while a capsule collapses and clears it on transitioncancel', async () => {
+    mount({ cwd: '/work', git: status() })
+    await screen.findByRole('button', { name: 'Commit' })
+    const toolbar = document.querySelector<HTMLElement>('[data-git-toolbar]')!
+    const label = toolbar.querySelector('[data-git-part="branch"]')!.querySelector('span')!
+    const clip = label.firstElementChild!
+    const text = clip.firstElementChild!
+    // At a collapse run the clip still covers the settled text: room turns negative.
+    Object.defineProperty(text, 'getBoundingClientRect', { configurable: true, value: labelRect(64) })
+    Object.defineProperty(clip, 'getBoundingClientRect', { configurable: true, value: labelRect(64) })
+
+    act(() => {
+      label.dispatchEvent(new TransitionEvent('transitionrun', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(toolbar.getAttribute('data-titlebar-pending-room')).toBe('-64')
+
+    act(() => {
+      label.dispatchEvent(new TransitionEvent('transitioncancel', { bubbles: true, propertyName: 'grid-template-columns' }))
+    })
+    expect(toolbar.hasAttribute('data-titlebar-pending-room')).toBe(false)
   })
 
   it('hides Initialize Git text at compact density', async () => {

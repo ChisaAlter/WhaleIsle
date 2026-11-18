@@ -14,6 +14,17 @@ export const TITLEBAR_DENSITY_COZY = 900
 export const TITLEBAR_DENSITY_COMPACT = 720
 
 /**
+ * Data attribute a trailing-cluster occupant writes while one of its labels
+ * animates open or closed: the px the cluster will still gain (positive) or
+ * shed (negative) once the running transition settles. The frame reads it at
+ * `transitionrun` to concede the final reserve in one step instead of letting
+ * the ResizeObserver republish the conversation reserve every animation
+ * frame. The occupant keeps it fresh while transitions run and removes it
+ * when none are left; the frame ignores it outside transitions.
+ */
+export const TITLEBAR_PENDING_ROOM_ATTR = 'data-titlebar-pending-room'
+
+/**
  * Resolve titlebar label density from the conversation column width.
  * @param center - solved conversation column width in px.
  * @param clusterOverConversation - true while the visible cluster sits in that column (details closed).

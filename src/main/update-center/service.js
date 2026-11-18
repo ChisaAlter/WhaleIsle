@@ -76,6 +76,8 @@ function createUpdateCenter(deps) {
     saveRoute = () => {},
     getAutoDownload = () => true,
     saveAutoDownload = () => {},
+    getProxy = () => '',
+    saveProxy = (/** @type {string} */ _value) => {},
     resolveRelease,
     planDelta = async () => ({ ok: false, reason: 'unsupported' }),
     readChecksum,
@@ -98,6 +100,7 @@ function createUpdateCenter(deps) {
   let saved = { version: 1, target: null, plan: null, job: null };
   // Live: what the UI renders.
   const model = { phase: 'idle', checkedAt: 0, progress: null, error: null, explicit: false };
+  /** @type {AbortController | null} */
   let controller = null;
   let abortReason = null;
   let running = null;
@@ -114,6 +117,7 @@ function createUpdateCenter(deps) {
       routeExplicit: isRouteExplicit(),
       routes,
       autoDownload: getAutoDownload(),
+      proxy: getProxy(),
       target: target ? {
         version: target.version, tag: target.tag, route: target.route, publishedAt: target.publishedAt,
         notes: target.notes, htmlUrl: target.htmlUrl,
@@ -524,6 +528,18 @@ function createUpdateCenter(deps) {
       if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
       return check({ manual: true });
     },
+    // Same shape as setRoute: the transfer is interrupted, the new network path is saved, then re-checked.
+    // saveProxy validates first, so an invalid address changes nothing.
+    setProxy: async (/** @type {string} */ value) => {
+      const wasDownloading = Boolean(controller);
+      await saveProxy(value);
+      if (wasDownloading) await stopActive('pause');
+      /** @type {{userPaused?: boolean} | null} */
+      const job = /** @type {{userPaused?: boolean} | null} */ (saved.job);
+      if (job) job.userPaused = !wasDownloading && Boolean(job.userPaused);
+      if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
+      return check({ manual: true });
+    },
     setAutoDownload: async (enabled) => {
       await saveAutoDownload(enabled === true);
       if (enabled === true && model.phase === 'available') return startDownload({ explicit: false });
@@ -539,7 +555,7 @@ function createUpdateCenter(deps) {
       return () => listeners.delete(listener);
     },
     async command(action, arg) {
-      const run = Object.prototype.hasOwnProperty.call(commands, action) ? commands[action] : null;
+      const run = Object.prototype.hasOwnProperty.call(commands, action) ? commands[/** @type {keyof typeof commands} */ (action)] : null;
       if (typeof run !== 'function') throw new Error(`unknown update command ${action}`);
       return run(arg);
     },

@@ -124,6 +124,9 @@ pelican-bike.html
 build/office-runtime/
 build/office-runtime-cache/
 
+# Mobile web QA run output (screenshots, manifests, audit reports)
+tools/mobile-web-qa/results/
+
 # Build-time esbuild is installed for the host by the root lockfile.
 vendor/dsh-remote/node_modules/esbuild/
 vendor/dsh-remote/node_modules/@esbuild/

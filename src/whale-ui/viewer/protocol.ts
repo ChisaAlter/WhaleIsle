@@ -11,7 +11,7 @@ export type PanelOperation = { sourceId: string; order: number[]; append: boolea
 
 type Envelope = { channel: typeof WHALE_CHANNEL; version: typeof WHALE_VERSION; instanceId: string };
 export type HostMessage = Envelope & (
-  | { type: 'render'; program: string; language: SourceLanguage; streaming: boolean; state: InteractionState; theme: WhaleTheme; locale: 'zh' | 'en'; panel?: boolean }
+  | { type: 'render'; program: string; language: SourceLanguage; streaming: boolean; state: InteractionState; theme: WhaleTheme; locale: 'zh' | 'en'; panel?: boolean; density?: 'coarse' }
   | { type: 'resource-response'; requestId: string; status: number; body: unknown }
   | { type: 'action-response'; requestId: string; result: ActionResult }
   | { type: 'bundle-response'; requestId: string; name: string; base64?: string; error?: string }

@@ -53,8 +53,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 internal data class NativeWhaleUiPayload(
     val instanceKey: String,
@@ -282,12 +288,14 @@ internal fun NativeWhaleUiCard(
                     Text(
                         text = "复制",
                         modifier = Modifier
+                            .heightIn(min = 48.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .clickable(role = Role.Button) {
                                 clipboard.setText(AnnotatedString(payload.program))
                                 Toast.makeText(context, "已复制源码", Toast.LENGTH_SHORT).show()
                             }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .padding(horizontal = 8.dp)
+                            .wrapContentHeight(Alignment.CenterVertically),
                         color = colors.labelSecondary,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
@@ -300,13 +308,16 @@ internal fun NativeWhaleUiCard(
                         .padding(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val tabModifier = Modifier.clip(RoundedCornerShape(6.dp))
+                    val tabModifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(6.dp))
                     Text(
                         text = "预览",
                         modifier = tabModifier
                             .background(if (!showSource) colors.navActive else Color.Transparent)
                             .clickable(role = Role.Button) { showSource = false }
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .padding(horizontal = 8.dp)
+                            .wrapContentHeight(Alignment.CenterVertically),
                         color = if (!showSource) colors.labelPrimary else colors.labelTertiary,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
@@ -316,7 +327,8 @@ internal fun NativeWhaleUiCard(
                         modifier = tabModifier
                             .background(if (showSource) colors.navActive else Color.Transparent)
                             .clickable(role = Role.Button) { showSource = true }
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .padding(horizontal = 8.dp)
+                            .wrapContentHeight(Alignment.CenterVertically),
                         color = if (showSource) colors.labelPrimary else colors.labelTertiary,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
@@ -394,7 +406,8 @@ internal fun NativeWhaleUiCard(
                                 "appearance" to currentAppearance,
                                 "variables" to JsonObject(currentThemeVars.mapValues { JsonPrimitive(it.value) }),
                             ),
-                            "locale" to "zh",
+                            "locale" to if (java.util.Locale.getDefault().language == "en") "en" else "zh",
+                            "density" to "coarse",
                             "panel" to false,
                         ),
                     )
@@ -460,6 +473,7 @@ internal fun NativeWhaleUiCard(
                     },
                     update = { wv ->
                         wv.setBackgroundColor(colors.bgBase.toArgb())
+                        wv.settings.textZoom = (100 * scale).toInt().coerceIn(50, 250)
                         webViewRef = wv
                     },
                 )
@@ -596,18 +610,25 @@ private fun createSandboxedWhaleUiWebView(
                     }
                     "resource" -> {
                         val requestId = parsed.string("requestId")
-                        onPostMessage(
-                            webView,
-                            obj(
-                                "channel" to "whale-ui",
-                                "version" to 2,
-                                "instanceId" to instanceId,
-                                "type" to "resource-response",
-                                "requestId" to requestId,
-                                "status" to 503,
-                                "body" to obj("error" to "Resource API is unavailable on mobile"),
-                            ),
-                        )
+                        val resPath = parsed.string("path")
+                        val resQuery = parsed["query"] as? JsonObject
+                        Thread({
+                            val (status, body) = resolveWhaleUiResource(resPath, resQuery)
+                            mainHandler.post {
+                                onPostMessage(
+                                    webView,
+                                    obj(
+                                        "channel" to "whale-ui",
+                                        "version" to 2,
+                                        "instanceId" to instanceId,
+                                        "type" to "resource-response",
+                                        "requestId" to requestId,
+                                        "status" to status,
+                                        "body" to body,
+                                    ),
+                                )
+                            }
+                        }, "whale-ui-resource").apply { isDaemon = true }.start()
                     }
                     "action" -> {
                         val requestId = parsed.string("requestId")
@@ -666,11 +687,13 @@ private fun createSandboxedWhaleUiWebView(
             view: WebView?,
             request: WebResourceRequest?,
         ): WebResourceResponse? {
-            val url = request?.url ?: return blockedResponse()
+            val url = request?.url ?: return null
             val scheme = url.scheme?.lowercase() ?: ""
             val host = url.host?.lowercase() ?: ""
+            // Only packaged assets are served locally; CSP in viewer.html and
+            // MIXED_CONTENT_NEVER_ALLOW govern external subresources.
             if (scheme != "https" || host != "whale-ui.local") {
-                return blockedResponse()
+                return null
             }
             val rawPath = url.path?.trimStart('/').orEmpty().ifBlank { "viewer.html" }
             if (rawPath.contains("..")) return blockedResponse()
@@ -739,7 +762,7 @@ private fun openExternalWhaleUiUrl(context: Context, rawUrl: String) {
         return
     }
     val scheme = uri.scheme?.lowercase() ?: return
-    if (scheme !in setOf("http", "https", "mailto")) return
+    if (scheme !in setOf("http", "https")) return
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: Exception) {
@@ -794,4 +817,127 @@ private fun shareWhaleUiDownload(
         context.startActivity(Intent.createChooser(intent, safeName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: Exception) {
     }
+}
+
+// Fixed resource endpoints, mirroring the web SPA resolver (mobile/web/app/whale-ui.js):
+// Wikipedia page info, Wikimedia image search and OSRM street routes. Calls are
+// blocking and run on a dedicated thread; only 2xx responses are cached.
+private val whaleUiResourceHttp = OkHttpClient.Builder()
+    .connectTimeout(10, TimeUnit.SECONDS)
+    .readTimeout(15, TimeUnit.SECONDS)
+    .build()
+private val whaleUiResourceCache = ConcurrentHashMap<String, Pair<Int, JsonObject>>()
+private val whaleUiWikiPhotoReject = Regex("""\.(?:svg)(?:\?|$)|(?:flag|logo|coat_of_arms|locator_map)""", RegexOption.IGNORE_CASE)
+private val whaleUiSearchPhotoReject = Regex("""\.(?:svg)(?:\?|$)|(?:flag|logo|coat_of_arms|locator_map|signature)""", RegexOption.IGNORE_CASE)
+
+internal fun whaleUiHttpGetJson(url: String, client: OkHttpClient = whaleUiResourceHttp): JsonObject =
+    client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        if (!response.isSuccessful) throw java.io.IOException("Resource service returned HTTP ${response.code}")
+        val text = response.body?.string().orEmpty()
+        Json.parseToJsonElement(text) as? JsonObject
+            ?: throw java.io.IOException("Resource service returned a non-object JSON response")
+    }
+
+private fun safeWhaleUiImageUrl(value: String): String {
+    val raw = value.trim().let { if (it.startsWith("//")) "https:$it" else it }
+    val url = raw.toHttpUrlOrNull() ?: return ""
+    return if (url.scheme == "https") url.toString() else ""
+}
+
+internal fun resolveWhaleUiResource(
+    path: String,
+    query: JsonObject?,
+    getJson: (String) -> JsonObject = { url -> whaleUiHttpGetJson(url) },
+): Pair<Int, JsonObject> {
+    val key = "$path ${query?.toString().orEmpty()}"
+    whaleUiResourceCache[key]?.let { return it }
+    fun err(status: Int, message: String): Pair<Int, JsonObject> =
+        status to obj("error" to obj("message" to message))
+    val result = try {
+        when (path) {
+            "/api/wiki" -> {
+                val title = query.objectValue().string("title").trim()
+                if (title.isEmpty() || title.length > 200) {
+                    return err(400, "title must contain 1 to 200 characters.")
+                }
+                val article = URLEncoder.encode(title.replace(' ', '_'), "UTF-8")
+                val summary = getJson("https://en.wikipedia.org/api/rest_v1/page/summary/$article")
+                val media = getJson("https://en.wikipedia.org/api/rest_v1/page/media-list/$article")
+                val photos = mutableListOf<String>()
+                fun addPhoto(candidate: String?) {
+                    val url = candidate?.let(::safeWhaleUiImageUrl).orEmpty()
+                    if (url.isNotEmpty() && url !in photos && !whaleUiWikiPhotoReject.containsMatchIn(url)) {
+                        photos += url
+                    }
+                }
+                addPhoto(summary["thumbnail"].objectValue()["source"].text())
+                for (item in media["items"].arrayValue()) {
+                    if (item.objectValue()["type"].text() == "image") {
+                        addPhoto(item.objectValue()["srcset"].arrayValue().firstOrNull().objectValue()["src"].text())
+                    }
+                    if (photos.size >= 3) break
+                }
+                val lat = summary["coordinates"].objectValue()["lat"]?.jsonPrimitive?.doubleOrNull
+                val lng = summary["coordinates"].objectValue()["lon"]?.jsonPrimitive?.doubleOrNull
+                200 to buildJsonObject {
+                    if (lat != null && lng != null) {
+                        put("lat", JsonPrimitive(lat))
+                        put("lng", JsonPrimitive(lng))
+                    }
+                    put("photos", JsonArray(photos.take(3).map(::JsonPrimitive)))
+                }
+            }
+            "/api/image-search" -> {
+                val term = query.objectValue().string("q").trim().replace(Regex("""\s+"""), " ")
+                if (term.length < 2 || term.length > 200) {
+                    return err(400, "q must contain 2 to 200 characters.")
+                }
+                val url = "https://en.wikipedia.org/w/api.php".toHttpUrlOrNull()!!.newBuilder()
+                    .addQueryParameter("action", "query")
+                    .addQueryParameter("format", "json")
+                    .addQueryParameter("formatversion", "2")
+                    .addQueryParameter("origin", "*")
+                    .addQueryParameter("generator", "search")
+                    .addQueryParameter("gsrsearch", term)
+                    .addQueryParameter("gsrlimit", "6")
+                    .addQueryParameter("prop", "pageimages")
+                    .addQueryParameter("piprop", "thumbnail")
+                    .addQueryParameter("pithumbsize", "960")
+                    .build()
+                val data = getJson(url.toString())
+                val photos = mutableListOf<String>()
+                for (page in data["query"].objectValue()["pages"].arrayValue()) {
+                    val src = safeWhaleUiImageUrl(page.objectValue()["thumbnail"].objectValue()["source"].text())
+                    if (src.isNotEmpty() && src !in photos && !whaleUiSearchPhotoReject.containsMatchIn(src)) {
+                        photos += src
+                    }
+                }
+                200 to obj("images" to JsonArray(photos.take(4).map(::JsonPrimitive)))
+            }
+            "/api/street-route" -> {
+                val source = query.objectValue().string("coords")
+                val points = source.split(';').map { pair -> pair.split(',').map { it.trim() } }
+                val valid = points.size in 2..25 && points.all { pair ->
+                    pair.size == 2 && pair.all { it.toDoubleOrNull()?.isFinite() == true }
+                }
+                if (!valid) return err(400, "Invalid coordinates.")
+                val coordinates = points.joinToString(";") { it.joinToString(",") }
+                val data = getJson(
+                    "https://router.project-osrm.org/route/v1/driving/$coordinates?overview=full&geometries=geojson&steps=false"
+                )
+                val route = data["routes"].arrayValue().firstOrNull()
+                    .objectValue()["geometry"].objectValue()["coordinates"].arrayValue()
+                if (route.size < 2) return err(502, "No street route was returned.")
+                val coords = route.mapNotNull { node ->
+                    node.arrayValue().takeIf { it.size >= 2 }?.let { JsonArray(listOf(it[1], it[0])) }
+                }
+                200 to obj("points" to JsonArray(coords))
+            }
+            else -> 404 to obj("error" to obj("message" to "Unknown resource path."))
+        }
+    } catch (error: Exception) {
+        502 to obj("error" to obj("message" to (error.message ?: "Resource unavailable.")))
+    }
+    if (result.first == 200) whaleUiResourceCache[key] = result
+    return result
 }

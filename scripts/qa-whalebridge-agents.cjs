@@ -191,7 +191,7 @@ async function runNative() {
    record('compact native select navigation',{allPagesPreserved:true,helpAndModelsReached:true,agentSelectionRetained:true});
    const dismiss=async()=>{if(await js(`!document.querySelector('#message').hidden`))await click('#dismiss-message');};
    const inspect=async(scheme,width,height,selector,name)=>{
-    nativeTheme.themeSource=scheme;const native=await resize(width,height);await dismiss();
+    nativeTheme.themeSource=/** @type {'dark'|'light'|'system'} */ (scheme);const native=await resize(width,height);await dismiss();
     await js(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'start'})`);await capture(name);
     const geometry=await js(`(()=>{const main=document.querySelector('#main');const overflow=[...document.querySelectorAll('#agents-page select,#agents-page textarea,#agents-page button,#agents-page label,.agent-path dd,.agent-sync-error')].flatMap(node=>{const r=node.getBoundingClientRect();return r.width && (r.left< -1 || r.right>innerWidth+1)?[{tag:node.tagName,left:r.left,right:r.right}]:[]});return {documentOverflow:document.documentElement.scrollWidth-innerWidth,mainOverflow:main.scrollWidth-main.clientWidth,mainVisibleHeight:main.getBoundingClientRect().height,sidebarHeight:document.querySelector('.sidebar').getBoundingClientRect().height,overflow}})()`);
     assert.ok(geometry.documentOverflow===0 && geometry.mainOverflow===0 && geometry.overflow.length===0,JSON.stringify(geometry));
@@ -253,7 +253,7 @@ async function runNative() {
   assert.equal((await fieldState('effort')).value,resetEffort,'UI reads the actual model default after reset');
   record('explicit default reset',{nativeKeyRemoved:true,currentEffort:resetEffort});
   for(const scheme of ['light','dark']){
-   nativeTheme.themeSource=scheme;
+   nativeTheme.themeSource=/** @type {'dark'|'light'|'system'} */ (scheme);
    for(const [width,height] of [[1120,780],[380,600]]){
     const resized=await resize(width,height);
     await js(`document.querySelector('#main').scrollTop=0`);

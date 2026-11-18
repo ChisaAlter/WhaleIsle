@@ -143,8 +143,9 @@ function Viewer() {
     if (!message) return;
     variables.current = applyTheme(message.theme, variables.current);
     document.documentElement.lang = message.locale === 'zh' ? 'zh-CN' : 'en';
+    document.documentElement.toggleAttribute('data-density-coarse', message.density === 'coarse');
     setGenuiLocale(message.locale);
-  }, [message?.theme, message?.locale]);
+  }, [message?.theme, message?.locale, message?.density]);
 
   const onError = useCallback((errors: OpenUIError[]) => {
     setRuntimeResult({ key: sourceKey, errors: errors.filter(error => error.severity !== 'warning').map(error => ({ phase: error.source === 'parser' ? 'parse' : 'evaluate', code: error.code, message: error.message, path: error.path })) });

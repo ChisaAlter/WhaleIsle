@@ -98,7 +98,7 @@ export interface ModelListEditorProps {
   /** Replace the drafted rows. */
   onChange: (models: ModelDraft[]) => void
   /** Remove the user-owned array and return to inheritance; absent on a create. */
-  onReset?: () => void
+  onReset?: (() => void) | undefined
   /** Endpoint facts for the fetch action. */
   probe: ProbeTarget
   /**

@@ -80,6 +80,24 @@ main#center #notes { white-space: pre-wrap; font-size: 13px; line-height: 21px; 
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--dsw-elevation-subtle, 0 1px 2px rgb(0 0 0 / 12%));
 }
+.text-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 280px;
+  min-height: 28px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+.text-field:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+.text-field:disabled { opacity: 0.6; }
+.pref-hint { padding: 0; margin: -4px 0 0; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.pref-error { color: var(--dsw-alias-state-error-primary); }
+.text-field[aria-invalid="true"] { border-color: var(--dsw-alias-state-error-primary); }
 .toggle { cursor: pointer; }
 .toggle input {
   appearance: none;
