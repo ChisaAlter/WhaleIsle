@@ -10,14 +10,89 @@ import { atomicWriteFileSync, withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { killProcessTree, spawnTreeOptions } from '../src/shared/process-tree.js';
 import { electronSpawnEnv, initGitWorkspace, reservePort, writeSmokeConfig } from './smoke-workspace.mjs';
 
+const require = createRequire(import.meta.url);
+const { summarizeProcessSnapshot } = require('./lib/desktop-runtime-perf.cjs');
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/** @typedef {{schemaVersion?: number, ok: boolean, error?: string, startupMs?: number, restartMs?: number, mainThreadLagMs?: number, peakWorkingSetMiB?: number, peakProcessSnapshot?: {phase: string, elapsedMs: number, processes: {pid: number, type: string, workingSetMiB: number}[]}, platform?: string, arch?: string, revision?: string | null, measuredAt?: string}} RuntimeReport */
+/** @typedef {{pid: number, type: string, workingSetMiB: number, privateMiB?: number, pssMiB?: number, sharedMiB?: number}} ProcessMemorySnapshot */
+/** @typedef {{workingSetMiB: number, processCount: number, privateMiB?: number, privateProcessCount?: number, pssMiB?: number, pssProcessCount?: number, sharedMiB?: number, sharedProcessCount?: number}} PeakProcessTotals */
+/** @typedef {{phase: string, elapsedMs: number, processes: ProcessMemorySnapshot[], totals?: PeakProcessTotals}} PeakProcessSnapshot */
+/** @typedef {{schemaVersion?: number, ok: boolean, error?: string, startupMs?: number, restartMs?: number, mainThreadLagMs?: number, peakWorkingSetMiB?: number, peakProcessSnapshot?: PeakProcessSnapshot, platform?: string, arch?: string, revision?: string | null, measuredAt?: string}} RuntimeReport */
 /** @typedef {'startupMs' | 'restartMs' | 'mainThreadLagMs' | 'peakWorkingSetMiB'} Metric */
 /** @typedef {{metric: Metric, value: number, limit: number, exceeded: boolean, delta: number | null}} Assessment */
 /** @type {Record<Metric, number>} */
 const BUDGETS = JSON.parse(readFileSync(new URL('./desktop-runtime-budgets.json', import.meta.url), 'utf8'));
 /** @type {Metric[]} */
 const METRICS = ['startupMs', 'restartMs', 'mainThreadLagMs', 'peakWorkingSetMiB'];
+
+/** @param {number | undefined} value */
+function formatOptionalMiB(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : 'unavailable';
+}
+
+/** @param {string} label @param {number} value @param {number | undefined} count @param {number} totalCount @param {string} [suffix] */
+function formatCoveredTotal(label, value, count, totalCount, suffix = '') {
+  const coverage = typeof count === 'number' && count < totalCount ? ` (${count}/${totalCount} processes)` : '';
+  return `${label} ${value.toFixed(2)} MiB${coverage}${suffix ? ` ${suffix}` : ''}`;
+}
+
+/** @param {PeakProcessTotals} totals @param {ProcessMemorySnapshot[]} processes */
+function snapshotSummaryLine(totals, processes) {
+  const noun = totals.processCount === 1 ? 'process' : 'processes';
+  const parts = [`summed working set ${totals.workingSetMiB.toFixed(2)} MiB (counts shared pages per process)`];
+  if (totals.pssMiB !== undefined) {
+    parts.push(formatCoveredTotal('summed PSS', totals.pssMiB, totals.pssProcessCount, totals.processCount, '(proportional shared-page attribution)'));
+  }
+  const commitAboveWsCount = totals.pssMiB === undefined
+    ? processes.filter(item => typeof item.privateMiB === 'number' && Number.isFinite(item.privateMiB)
+      && typeof item.workingSetMiB === 'number' && Number.isFinite(item.workingSetMiB)
+      && item.privateMiB > item.workingSetMiB).length
+    : 0;
+  if (totals.privateMiB !== undefined) {
+    const note = totals.pssMiB !== undefined
+      ? '(process-exclusive resident memory)'
+      : commitAboveWsCount > 0
+        ? `(process privateBytes commit; exceeds resident working set in ${commitAboveWsCount} ${commitAboveWsCount === 1 ? 'process' : 'processes'})`
+        : '(process privateBytes)';
+    parts.push(formatCoveredTotal('summed private', totals.privateMiB, totals.privateProcessCount, totals.processCount, note));
+  }
+  if (totals.sharedMiB !== undefined) {
+    parts.push(formatCoveredTotal('summed shared', totals.sharedMiB, totals.sharedProcessCount, totals.processCount));
+  }
+  if (totals.pssMiB === undefined) {
+    if (totals.privateMiB !== undefined && totals.privateProcessCount === totals.processCount && commitAboveWsCount === 0 && totals.workingSetMiB >= totals.privateMiB) {
+      parts.push(`working-set minus private ${(totals.workingSetMiB - totals.privateMiB).toFixed(2)} MiB`);
+    }
+    parts.push(totals.privateMiB === undefined ? 'per-process private/PSS metrics unavailable' : 'PSS unavailable');
+  }
+  return `Peak memory breakdown (${totals.processCount} ${noun}): ${parts.join('; ')}.`;
+}
+
+/** @param {PeakProcessSnapshot} snapshot */
+function snapshotBreakdownLines(snapshot) {
+  const processes = Array.isArray(snapshot.processes) ? snapshot.processes : [];
+  const totals = summarizeProcessSnapshot(processes);
+  const hasPrivate = totals.privateMiB !== undefined;
+  const hasPss = totals.pssMiB !== undefined;
+  const hasShared = totals.sharedMiB !== undefined;
+  const headers = ['PID', 'Electron process type', 'Working set MiB at total peak',
+    ...(hasPrivate ? ['Private MiB'] : []), ...(hasPss ? ['PSS MiB'] : []), ...(hasShared ? ['Shared MiB'] : [])];
+  const aligns = ['---:', '---', '---:',
+    ...(hasPrivate ? ['---:'] : []), ...(hasPss ? ['---:'] : []), ...(hasShared ? ['---:'] : [])];
+  const rows = processes.map(item => `| ${[
+    String(item.pid), item.type, formatOptionalMiB(item.workingSetMiB),
+    ...(hasPrivate ? [formatOptionalMiB(item.privateMiB)] : []),
+    ...(hasPss ? [formatOptionalMiB(item.pssMiB)] : []),
+    ...(hasShared ? [formatOptionalMiB(item.sharedMiB)] : []),
+  ].join(' | ')} |`);
+  return [
+    `Peak process snapshot: ${snapshot.phase}, ${snapshot.elapsedMs.toFixed(2)} ms.`, '',
+    `| ${headers.join(' | ')} |`,
+    `| ${aligns.join(' | ')} |`,
+    ...rows, '',
+    snapshotSummaryLine(totals, processes), '',
+  ];
+}
 
 /** @param {RuntimeReport} report
  * @param {Record<Metric, number>} [budgets]
@@ -47,12 +122,7 @@ export function summary(report, rows) {
     '| Metric | Observed | Investigation budget | Change from comparable previous run | Result |',
     '| --- | ---: | ---: | ---: | --- |',
     ...rows.map(row => `| ${row.metric} | ${row.value.toFixed(2)} | ${row.limit} | ${row.delta === null ? 'unavailable' : row.delta.toFixed(2)} | ${row.exceeded ? 'OVER BUDGET' : 'within budget'} |`), '',
-    ...(report.peakProcessSnapshot ? [
-      `Peak process snapshot: ${report.peakProcessSnapshot.phase}, ${report.peakProcessSnapshot.elapsedMs.toFixed(2)} ms.`, '',
-      '| PID | Electron process type | Working set MiB at total peak |',
-      '| ---: | --- | ---: |',
-      ...report.peakProcessSnapshot.processes.map(item => `| ${item.pid} | ${item.type} | ${item.workingSetMiB.toFixed(2)} |`), '',
-    ] : []),
+    ...(report.peakProcessSnapshot ? snapshotBreakdownLines(report.peakProcessSnapshot) : []),
     'Budgets trigger investigation, not timing assertions in ordinary tests. A single maximum does not establish a leak or a latency percentile.', ''].join('\n');
 }
 
@@ -81,7 +151,7 @@ async function run(out, previousPath, sourceRoot = ROOT) {
     mkdirSync(userData); mkdirSync(workspace);
     initGitWorkspace(workspace);
     writeSmokeConfig(userData, workspace, await reservePort());
-    const executable = process.env.ELECTRON_PATH || createRequire(import.meta.url)('electron');
+    const executable = process.env.ELECTRON_PATH || require('electron');
     const child = spawn(executable, [path.join(ROOT, 'scripts/lib/desktop-runtime-perf.cjs'),
       `--source-root=${sourceRoot}`, `--perf-report=${reportPath}`, `--user-data-dir=${userData}`, '--no-first-run'], {
       cwd: sourceRoot, ...spawnTreeOptions(), env: measurementEnv(electronSpawnEnv()), stdio: ['ignore', 'pipe', 'pipe'],
