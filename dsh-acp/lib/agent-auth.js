@@ -11,6 +11,7 @@ import {
   agentRuntimeIdentity,
 } from './agent-runtime.js';
 import { agentWiring, antigravityAuthConfigFor } from './acp-session.js';
+import { ensureDir } from './store-file.js';
 import {
   buildAgentRuntimeEnv,
   discoverDefaultAntigravityHome,
@@ -90,8 +91,35 @@ export function openExternalUrl(url) {
   }
 }
 
+async function resolveAccountVersion(agent, commandPath, wiring) {
+  if (wiring.isAntigravity) {
+    const { antigravityManagedExecutable } = runtimeBundle();
+    const executable = await antigravityManagedExecutable({
+      baseDir: runtimeHomeDir(),
+      installIfMissing: false,
+    }).catch(() => null);
+    return executable?.version || null;
+  }
+  if (commandPath && agent.enabled !== false) {
+    try {
+      const { catalog } = runtimeBundle();
+      const environment = agentEnvironment(agent);
+      if (wiring.isClaude) environment.CLAUDE_AGENT_ACP_EXPERIMENTAL_V2 ??= '1';
+      const inspected = await catalog.inspect(
+        registrySettingsFor(agent, commandPath),
+        { ...process.env, ...environment },
+      );
+      return inspected?.version || null;
+    } catch {
+      // Version probing is best-effort.
+    }
+  }
+  return null;
+}
+
 function settingsFingerprint(agent, commandPath) {
-  return agentRuntimeIdentity(agent, commandPath);
+  const { enabled, ...settings } = agent;
+  return agentRuntimeIdentity(settings, commandPath);
 }
 
 /**
@@ -454,7 +482,7 @@ export class AgentAuthManager {
     let flowCwd = String(agent.profileDir || '').trim();
     if (flowCwd) {
       try {
-        fs.mkdirSync(flowCwd, { recursive: true });
+        ensureDir(flowCwd);
       } catch {
         flowCwd = '';
       }
@@ -493,6 +521,7 @@ export class AgentAuthManager {
   }
 
   async _authStateEntry(agent) {
+    await initAgentRuntime();
     const commandPath = agent.command ? resolveCommandBinary(agent.command, agent.env) : '';
     // Same env as _createEntry — the profile vars are hashed into the
     // persisted binding, so the marker this writes must match what the
@@ -521,7 +550,8 @@ export class AgentAuthManager {
 
   async getAgentAccountStatus(agent, { forceRefresh = false } = {}) {
     const commandPath = agent.command ? resolveCommandBinary(agent.command, agent.env) : '';
-    const cacheKey = `${agent.id}:${settingsFingerprint(agent, commandPath)}`;
+    const fingerprint = settingsFingerprint(agent, commandPath);
+    const cacheKey = `${agent.id}:${fingerprint}:${agent.enabled !== false}`;
     const cached = this.statusCache.get(cacheKey);
     if (cached && !forceRefresh && cached.expiresAt > Date.now()) {
       return cached.value;
@@ -530,8 +560,9 @@ export class AgentAuthManager {
     // Disabled agents get no live probing — entry creation spawns the
     // provider binary for method discovery, which a disabled route never
     // justifies.
+    const existing = this.entries.get(agent.id);
     const entry = agent.enabled === false
-      ? null
+      ? existing?.fingerprint === fingerprint ? existing : await this._authStateEntry(agent)
       : await this._entry(agent).catch(() => null);
     let authenticated = false;
     if (entry?.authState) {
@@ -551,31 +582,8 @@ export class AgentAuthManager {
       }
     }
 
-    let version = null;
     const stateMethods = entry?.lastState?.methods || [];
-    if (wiring.isAntigravity) {
-      const { antigravityManagedExecutable } = runtimeBundle();
-      const executable = await antigravityManagedExecutable({
-        baseDir: runtimeHomeDir(),
-        installIfMissing: false,
-      }).catch(() => null);
-      version = executable?.version || null;
-    } else if (commandPath) {
-      try {
-        const { catalog } = runtimeBundle();
-        const environment = agentEnvironment(agent);
-        if (wiring.isClaude) {
-          environment.CLAUDE_AGENT_ACP_EXPERIMENTAL_V2 ??= '1';
-        }
-        const inspected = await catalog.inspect(
-          registrySettingsFor(agent, commandPath),
-          { ...process.env, ...environment },
-        );
-        version = inspected?.version || null;
-      } catch {
-        // Version probing is best-effort.
-      }
-    }
+    const version = await resolveAccountVersion(agent, commandPath, wiring);
 
     // ACP runtime ProviderAuthMethod {id,name,description,type} → client's method cards.
     // Antigravity methods are static — the driver never probes the binary.

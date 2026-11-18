@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createTaskStore } from '../lib/tasks.js';
-import { AcpSessionConnection, modelsFromConfigOptions } from '../lib/acp-session.js';
+import { createTaskStore, TASK_QUIET_MS } from '../lib/tasks.js';
+import { AcpSessionConnection, AcpTurnExecution, modelsFromConfigOptions } from '../lib/acp-session.js';
 import { conversationPrompt } from '../lib/index.js';
 import { createTaskCheckout } from '../lib/isolation.js';
 import { execFileSync } from 'node:child_process';
@@ -30,6 +30,39 @@ function fixture() {
   const storeFile = path.join(dir, 'agents.json');
   return { dir, parent, children, agents, ctx, storeFile, store: createTaskStore(ctx, storeFile), disposals: () => disposals };
 }
+
+test('native activity, quiet notification, user wait and terminal status remain distinct', async () => {
+  const f = fixture();
+  try {
+    const task = f.store.begin(f.parent, { childId: 'child', agentName: 'Agent' });
+    const activityAt = task.startedAt + 1000;
+    f.store.activity('child', { lastActivityAt: activityAt, usagePending: true, activeTools: [{ id: 'long', title: 'Long background command', status: 'in_progress' }] });
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS - 1);
+    assert.equal(f.parent.inbox.nextTurn.length, 0);
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS);
+    assert.equal(task.quiet, true);
+    assert.equal(task.status, 'running', 'quiet is not dead or completed');
+    assert.equal(f.parent.inbox.nextTurn.length, 1);
+    assert.match(f.parent.inbox.nextTurn[0].content[0].text, /not confirmed dead.*Last activity/s);
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS * 2);
+    assert.equal(f.parent.inbox.nextTurn.length, 1, 'never wake on each monitor tick');
+    task.quietNoticeAt = undefined; // Crash after inbox flush, before saving the receipt.
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS * 2);
+    assert.equal(f.parent.inbox.nextTurn.length, 1, 'durable message identity deduplicates recovery');
+    f.store.activity('child', { lastActivityAt: activityAt + TASK_QUIET_MS * 2, activeTools: [] });
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS * 2);
+    assert.equal(task.quiet, false);
+    f.store.setInteraction('child', { kind: 'question' });
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS * 20);
+    assert.equal(task.quiet, false, 'human wait is not provider inactivity');
+    await f.store.finish(f.parent, task, { stopReason: 'completed', output: [] });
+    await f.store.checkActivity(activityAt + TASK_QUIET_MS * 40);
+    assert.equal(task.usagePending, false);
+    assert.equal(task.pendingInteraction, null);
+    assert.equal(task.quiet, false);
+    assert.equal(f.parent.inbox.nextTurn.length, 1);
+  } finally { fs.rmSync(f.dir, { recursive: true }); }
+});
 
 test('durable request receipts deduplicate concurrent retries and reject changed arguments', async () => {
   const f = fixture();
@@ -114,7 +147,7 @@ test('image handoff retains actual attachment references and discovered settings
 test('Antigravity multiple-choice input returns the selected native option instead of cancelling it', async () => {
   const conn = new AcpSessionConnection({ agentConfig: { name: 'Antigravity' }, requestUserInput: async (_context, question) => ({ answers: [{ id: question.id, selected: [question.options[1].label] }] }) });
   conn.wiring = { isAntigravity: true };
-  conn.activeTurn = { toolCalls: new Map(), registerToolCall(fields) { this.toolCalls.set(fields.toolCallId, { ...fields, waiters: [] }); } };
+  conn.activeTurn = new AcpTurnExecution({ connection: conn });
   const request = { sessionId: 's', toolCall: { toolCallId: 'interaction_choose', title: 'Pick a target', kind: 'other' }, options: [
     { optionId: 'one', name: 'First target', kind: 'allow_once' }, { optionId: 'two', name: 'Second target', kind: 'allow_once' },
   ] };

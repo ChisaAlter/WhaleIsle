@@ -12,6 +12,7 @@ import * as plugin from '../lib/index.js';
 import { saveAgentsConfig } from '../lib/presets.js';
 import { runtimeBundle } from '../lib/agent-runtime.js';
 import { createTaskStore } from '../lib/tasks.js';
+import { allowDesktopConfirm } from './confirm-stub.mjs';
 
 if (!process.env.DSH_HARNESS_ROOT) throw new Error('Set DSH_HARNESS_ROOT to a built DeepSeek Harness checkout.');
 const req = createRequire(path.join(process.env.DSH_HARNESS_ROOT, 'packages/subagent/subagent-spawn-in-process/package.json'));
@@ -73,7 +74,9 @@ async function rpc(method, payload = {}) {
   assert.equal(value.result.ok, true, JSON.stringify(value));
   return value.result.value;
 }
+let disposeConfirm;
 try {
+  disposeConfirm = await allowDesktopConfirm();
   await mountAgentLoopTestDependencies(ctx, { workingDirectory: true });
   await ctx.plugin(LocalSubprocess);
   await ctx.plugin(Approval);
@@ -431,6 +434,7 @@ try {
   } finally { await restoredHost.fiber.dispose(); }
   console.log(JSON.stringify({ checks: checks.length, result: 'PASS', environment: 'real host services, scripted ACP subprocess' }));
 } finally {
+  await disposeConfirm?.();
   await ctx.fiber.dispose();
   await runtimeBundle().disposeAgentRuntime();
   await new Promise((resolve) => server.close(resolve));

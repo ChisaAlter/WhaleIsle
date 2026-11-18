@@ -11,6 +11,7 @@ import { saveAgentsConfig } from '../lib/presets.js';
 import { runtimeBundle } from '../lib/agent-runtime.js';
 import { registerDelegation, DELEGATION_PROVIDER } from '../lib/delegation.js';
 import { AcpTurnExecution, AcpSessionConnection } from '../lib/acp-session.js';
+import { ADD_PROVIDER_CARDS } from '../client-src/utils.js';
 import { constantTimeEqual } from '../../vendor/dsh-shared/lib/secret.mjs';
 import { storeInternalSecrets, INTERNAL_SECRETS_KEY } from '../../vendor/dsh-shared/lib/internal-secret.mjs';
 
@@ -49,16 +50,66 @@ const message = (id, role, text, kind) => ({ id, role, content: [{ type: 'text',
 
 test('delegation entries stay compact and preserve child navigation and full diagnostics', () => {
   const source = fs.readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-  const start = source.indexOf('    function DelegationRow(');
-  const end = source.indexOf('\n    function apply(ctx)', start);
   const h = (type, props, ...children) => ({ type, props: props || {}, children });
-  const render = vm.compileFunction(`${source.slice(start, end)}\nreturn DelegationRow(props);`,
-    ['props', 'h', 'useState', 'useEffect', 'ADD_PROVIDER_CARDS', 'IconAgentPresetOutlineRegular', 'StateDot', 'IconChevronRightOutlineRegular']);
+  let loaded;
+  vm.runInNewContext(source, {
+    window: {
+      __ModuleLoader__: {
+        load({ factory }) {
+          loaded = factory(name => {
+            if (name === 'react') {
+              return {
+                createElement: h,
+                Fragment: 'Fragment',
+                useState: value => [typeof value === 'function' ? value() : value, () => {}],
+                useEffect() {},
+                useLayoutEffect() {},
+                useMemo: fn => fn(),
+                useCallback: fn => fn,
+                useRef: current => ({ current }),
+                useId: () => 'delegation-test',
+                useSyncExternalStore: (_sub, snapshot) => snapshot(),
+              };
+            }
+            if (name === 'react-dom') return { createPortal: tree => tree };
+            if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+              return { IconAgentPresetOutlineRegular: 'AgentIcon', StateDot: 'StateDot', IconChevronRightOutlineRegular: 'Chevron' };
+            }
+            throw new Error(`Unexpected require ${name}`);
+          });
+        },
+      },
+    },
+    document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} }, body: {} },
+    setTimeout,
+    clearTimeout,
+    console,
+  });
+  let DelegationRow;
+  const ctx = {
+    effect() {},
+    locale: { register: () => () => {}, bind: () => key => key },
+    connection: { rpc: { call: async () => ({}) } },
+    slots: {
+      inject: (_name, fn) => fn(),
+      entriesOfSlot: () => [],
+      subscribe: () => () => {},
+      register: (spec, component) => {
+        if (spec.name === 'conversation.chat.node') DelegationRow = component;
+        return () => {};
+      },
+    },
+    uiConversation: { events: { register() {} } },
+    uiWorkspace: { openSession() {} },
+    inject: (deps, fn) => {
+      if (deps.includes('uiConversation')) fn({ ...ctx });
+    },
+  };
+  loaded.apply(ctx);
+  const antigravityIcon = ADD_PROVIDER_CARDS.find((card) => card.id === 'antigravity').icon;
   const data = { childId: 'child-compact', agentId: 'antigravity', agentName: 'Antigravity (反重力)', modelName: 'Gemini 4 Carbon (High)', task: 'Review the project', startedAt: Date.now() - 1000 };
   const opened = [];
-  const run = (patch = {}) => render({ node: { data: { ...data, ...patch } }, openChild: (id) => opened.push(id), t: (key) => key },
-    h, (value) => [typeof value === 'function' ? value() : value, () => {}], () => {},
-    [{ id: 'antigravity', icon: 'https://example.test/antigravity.svg' }], 'AgentIcon', 'StateDot', 'Chevron');
+  const run = (patch = {}) => DelegationRow({ node: { data: { ...data, ...patch } }, openChild: (id) => opened.push(id), t: (key) => key });
   const row = run();
   assert.equal(row.props['data-status'], 'running');
   assert.equal(row.children.length, 1, 'no extra model, preview or diagnostic rows');
@@ -66,7 +117,7 @@ test('delegation entries stay compact and preserve child navigation and full dia
   assert.equal(button.type, 'button');
   assert.match(button.props.title, /Gemini 4 Carbon/);
   assert.equal(button.children[0].children[0].type, 'img');
-  assert.equal(button.children[0].children[0].props.src, 'https://example.test/antigravity.svg');
+  assert.equal(button.children[0].children[0].props.src, antigravityIcon);
   assert.equal(button.children[1].children[0].children[0], 'Antigravity');
   assert.equal(button.children[1].children[1].children[0], 'Gemini 4 Carbon (High)');
   assert.equal(button.children[2].children[0], 'Review the project');
@@ -85,6 +136,11 @@ test('delegation entries stay compact and preserve child navigation and full dia
   assert.equal(fullWidth.children[0].children[1].children[0].children[0], 'Antigravity · Work');
   assert.equal(fullWidth.children[0].children[1].children[1].children[0], 'gemini-4-carbon-high');
   assert.equal(run({ agentName: 'Custom (Work)' }).children[0].children[1].children[0].children[0], 'Custom (Work)');
+  const quiet = run({ quiet: true, usagePending: true, lastActivityAt: Date.now() - 360000, activeTools: [{ title: 'Background terminal' }] });
+  assert.equal(quiet.props['data-status'], 'running', 'inactivity must not pretend to be a failure');
+  assert.match(quiet.children[0].props.title, /delegate.awaiting_activity.*delegate.usage_pending.*Background terminal/);
+  assert.match(quiet.children[0].children[4].children[0], /delegate.usage_pending/);
+  assert.equal(run({ quiet: true, pendingInteraction: { kind: 'question' } }).children[0].children[3].children[1], 'delegate.waiting_question');
 });
 
 test('prompt settlement releases host tool waiters even without terminal tool updates', async () => {

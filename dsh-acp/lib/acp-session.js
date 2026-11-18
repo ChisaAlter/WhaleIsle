@@ -10,6 +10,22 @@ import {
 } from './agent-runtime.js';
 import { buildAgentRuntimeEnv, resolveCommandBinary } from './presets.js';
 import { acpErrorMessage } from './errors.js';
+import { appendPrivateLog } from './store-file.js';
+import {
+  abortSignalError,
+  providerRequestKind,
+  permissionDecisionOf,
+  hostToolName,
+  permissionOutcome,
+  autoAllowedOutcome,
+  agentWiring,
+  antigravityAuthConfigFor,
+  clientCapabilitiesFor,
+  TurnQueue,
+  createDeferred,
+} from './acp-session-utils.js';
+
+export { agentWiring, antigravityAuthConfigFor };
 
 const STARTUP_TIMEOUT_MS = 30_000;
 // Antigravity's managed runtime unpacks ~1 GB on cold start (same bound the
@@ -17,234 +33,13 @@ const STARTUP_TIMEOUT_MS = 30_000;
 const STARTUP_TIMEOUT_AGY_MS = 180_000;
 const MAX_WRITTEN_PATHS = 4096;
 
-function abortSignalError() {
-  const err = new Error('aborted');
-  err.name = 'AbortError';
-  return err;
-}
-
-// ACP runtime adapter.ts providerRequestKind — approved "command" requests feed the
-// terminal/create execute grant.
-function providerRequestKind(kind) {
-  const k = String(kind || '').toLowerCase();
-  if (k === 'read' || k === 'search' || k === 'fetch') return 'file-read';
-  if (k === 'edit' || k === 'delete' || k === 'move') return 'file-change';
-  return 'command';
-}
-
-// Host decisions arrive as booleans/'cancelled' today; a richer host may pass
-// the runtime's decision vocabulary through. Unknown values decline (fail-closed).
-function permissionDecisionOf(approved) {
-  if (approved === 'cancelled' || approved === 'cancel') return 'cancel';
-  if (approved === true || approved === 'accept' || approved === 'allowed-once') return 'accept';
-  if (
-    approved === 'acceptForSession'
-    || approved === 'allow_always'
-    || approved === 'allow-always'
-    || approved === 'allowed-always'
-  ) {
-    return 'acceptForSession';
-  }
-  return 'decline';
-}
-
-// Host tool-call contract: the yielded block.name must satisfy
-// [A-Za-z0-9_-]{1,64} and resolve to a registered tool. ACP tool calls carry
-// free-text titles (e.g. the shell command itself), so map the ACP `kind` to a
-// stable host-registered name; the human title stays in `title`/`args._title`.
-const ACP_TOOL_KINDS = new Set([
-  'read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode',
-]);
-function hostToolName(kind) {
-  const k = String(kind || '').toLowerCase();
-  return ACP_TOOL_KINDS.has(k) ? `acp_${k}` : 'acp_tool';
-}
-
 // Temporary stage tracing for diagnosing startup hangs. Enabled by
 // DSH_ACP_STAGE_LOG=<file path>.
 const stageLog = (msg) => {
   const file = process.env.DSH_ACP_STAGE_LOG;
   if (!file) return;
-  try {
-    fs.appendFileSync(file, `${new Date().toISOString()} ${msg}\n`);
-  } catch { /* Stage logging must not replace the authentication or turn outcome. */ }
+  appendPrivateLog(file, `${new Date().toISOString()} ${msg}\n`);
 };
-
-// ---------------------------------------------------------------------------
-// Permission option selection — verbatim port of ACP runtime adapter.ts:969-990.
-// allow → allow_once (fallback allow_always); deny → reject_once.
-// ---------------------------------------------------------------------------
-
-function selectPermissionOptionId(request, decision) {
-  const kind =
-    decision === 'acceptForSession'
-      ? 'allow_always'
-      : decision === 'accept'
-        ? 'allow_once'
-        : 'reject_once';
-  const list = Array.isArray(request?.options) ? request.options : [];
-  const found = list.find((option) => option?.kind === kind);
-  const optionId = String(found?.optionId || '').trim();
-  return optionId || undefined;
-}
-
-function selectAutoApprovedPermissionOption(request) {
-  return (
-    selectPermissionOptionId(request, 'accept')
-    ?? selectPermissionOptionId(request, 'acceptForSession')
-  );
-}
-
-function permissionOutcome(request, decision) {
-  if (decision === 'cancel') {
-    return { outcome: { outcome: 'cancelled' } };
-  }
-  const optionId = selectPermissionOptionId(request, decision);
-  return optionId === undefined
-    ? { outcome: { outcome: 'cancelled' } }
-    : { outcome: { outcome: 'selected', optionId } };
-}
-
-function autoAllowedOutcome(request) {
-  const optionId = selectAutoApprovedPermissionOption(request);
-  return optionId === undefined
-    ? { outcome: { outcome: 'cancelled' } }
-    : { outcome: { outcome: 'selected', optionId } };
-}
-
-// ---------------------------------------------------------------------------
-// Per-agent wiring — mirrors ACP runtime provider-acp-registry adapter.ts:185-296.
-// Registry ids apply to `source: 'registry'`; local installs are detected by
-// command basename exactly like the runtime's copilot/claude local detection.
-// ---------------------------------------------------------------------------
-
-export function agentWiring(agent, commandPath) {
-  const registryAgentId = String(agent?.registryAgentId || '');
-  const base = path.basename(String(commandPath || '')).toLowerCase();
-  const isDevin =
-    registryAgentId === 'devin' || /^devin(?:\.(exe|cmd))?$/i.test(base);
-  const isClaude =
-    registryAgentId === 'claude-acp' || /^claude-agent-acp(?:\.(exe|cmd))?$/i.test(base);
-  const isCopilot =
-    registryAgentId === 'github-copilot-cli' || /^copilot(?:\.(exe|cmd))?$/i.test(base);
-  const isAntigravity =
-    registryAgentId === 'antigravity-acp' || /^agy_acp_server(?:\.exe)?$/i.test(base);
-  return { registryAgentId, isDevin, isClaude, isCopilot, isAntigravity };
-}
-
-const AGY_AUTH_METHODS = new Set([
-  'oauth-personal',
-  'oauth-business',
-  'gemini-api-key',
-  'agent-platform',
-]);
-
-/** AntigravitySettings equivalent from our agent record + env. */
-export function antigravityAuthConfigFor(agent, environment = {}) {
-  const raw = String(agent?.acpAuthMethodId || agent?.authMethod || '');
-  return {
-    authMethod: AGY_AUTH_METHODS.has(raw) ? raw : 'oauth-personal',
-    apiKey: environment.GEMINI_API_KEY || environment.GOOGLE_API_KEY || '',
-    gcpProject: environment.AGY_ACP_GCP_PROJECT || environment.GOOGLE_CLOUD_PROJECT || '',
-    gcpLocation: environment.AGY_ACP_GCP_LOCATION || environment.GOOGLE_CLOUD_LOCATION || '',
-  };
-}
-
-function clientCapabilitiesFor(wiring, clientMeta) {
-  const meta = {
-    ...(wiring.isDevin
-      ? {
-          'cognition.ai/subagentSupport': true,
-          'cognition.ai/messageGrouping': true,
-        }
-      : {}),
-    ...(clientMeta || {}),
-  };
-  return {
-    // fs handlers are registered for every session; advertising false left
-    // them unreachable and broke the writtenPaths delivery record (AC-017).
-    fs: { readTextFile: true, writeTextFile: true },
-    // Devin runs commands through client terminals and has no ask mode over
-    // ACP to fall back on (ACP runtime adapter.ts:286).
-    terminal: true,
-    elicitation: { form: {}, url: {} },
-    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Turn machinery — DSH stream-item queue fed by AcpSessionRuntime events.
-// Item vocabulary is unchanged for index.js's projection loop.
-// ---------------------------------------------------------------------------
-
-class TurnQueue {
-  constructor() {
-    this.items = [];
-    this.waiters = [];
-    this.closed = false;
-  }
-
-  push(item) {
-    if (this.closed) return;
-    this.items.push(item);
-    this._flush();
-  }
-
-  close() {
-    this.closed = true;
-    this._flush();
-  }
-
-  _flush() {
-    while (this.waiters.length > 0) {
-      const waiter = this.waiters.shift();
-      if (this.items.length > 0) {
-        waiter.cleanup?.();
-        waiter.resolve({ value: this.items.shift(), done: false });
-      } else if (this.closed) {
-        waiter.cleanup?.();
-        waiter.resolve({ value: undefined, done: true });
-      } else {
-        this.waiters.unshift(waiter);
-        break;
-      }
-    }
-  }
-
-  next(signal) {
-    if (signal?.aborted) {
-      return Promise.reject(abortSignalError());
-    }
-    if (this.items.length > 0) {
-      return Promise.resolve({ value: this.items.shift(), done: false });
-    }
-    if (this.closed) {
-      return Promise.resolve({ value: undefined, done: true });
-    }
-    return new Promise((resolve, reject) => {
-      const waiter = { resolve };
-      const onAbort = () => {
-        const idx = this.waiters.indexOf(waiter);
-        if (idx >= 0) this.waiters.splice(idx, 1);
-        reject(abortSignalError());
-      };
-      waiter.signal = signal;
-      waiter.cleanup = () => signal?.removeEventListener('abort', onAbort);
-      signal?.addEventListener?.('abort', onAbort, { once: true });
-      this.waiters.push(waiter);
-    });
-  }
-}
-
-function createDeferred() {
-  let resolve;
-  let reject;
-  const promise = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
 
 export class AcpTurnExecution {
   constructor({ connection, promptBlocks, signal, hostAgent }) {
@@ -255,7 +50,7 @@ export class AcpTurnExecution {
     this.turnKey = crypto.randomUUID();
     this.queue = new TurnQueue();
     this.toolCalls = new Map();
-    this.usage = { inputTokens: 0, outputTokens: 0 };
+    this.usage = null;
     this.contextUsage = null;
     this.stopReason = null;
     this.promptDone = false;
@@ -279,70 +74,97 @@ export class AcpTurnExecution {
     };
     entry.name = hostToolName(entry.kind);
     this.toolCalls.set(entry.toolCallId, entry);
-    this.queue.push({ type: 'tool-call', entry });
+    // Native tools execute independently of the Host mirror. Only a settled
+    // receipt enters the synchronous Host executor; pending/background work
+    // must not block consumption of later native text and tool updates.
+    this.publishTool(entry);
     return entry;
+  }
+
+  publishTool(entry) {
+    if (!entry.projected && !entry.projectionQueued && ['completed', 'failed'].includes(entry.status)) {
+      entry.projectionQueued = true;
+      this.queue.push({ type: 'tool-call', entry });
+    }
+  }
+
+  reportActivity() {
+    this.connection.onActivity?.({
+      lastActivityAt: Date.now(), usagePending: !this.promptDone,
+      activeTools: [...this.toolCalls.values()]
+        .filter(entry => !['completed', 'failed'].includes(entry.status))
+        .map(entry => ({ id: entry.toolCallId, title: entry.title || entry.name, status: entry.status })),
+    });
+  }
+
+  _normalizeToolStatus(status) {
+    if (status === 'completed') return 'completed';
+    if (status === 'failed') return 'failed';
+    if (status === 'inProgress') return 'in_progress';
+    return 'pending';
+  }
+
+  _applySubagentToolUpdate(conn, tc, fields) {
+    const subagent = conn?._extractSubagentUpdate(tc);
+    if (subagent) {
+      fields.subagent = subagent;
+      fields.title = subagent.title || fields.title;
+      if (subagent.status === 'completed' || subagent.status === 'failed') fields.status = subagent.status;
+      if (subagent.result) fields.outputText = subagent.result;
+      if (subagent.childSessionId && conn) {
+        conn._subagentToolByChildSession.set(subagent.childSessionId, tc.toolCallId);
+      }
+    }
+    // ACP runtime isProvisionalSubagentTool: claude emits a placeholder Task tool
+    // before its input arrives — keep it pending and unnamed until then.
+    if (conn?._isProvisionalSubagentTool?.(tc)) {
+      fields.status = 'pending';
+      fields.provisional = true;
+    }
+  }
+
+  _handleToolCallUpdated(event) {
+    const conn = this.connection;
+    const tc = conn?._normalizeToolCall(event.toolCall) ?? event.toolCall;
+    if (!tc?.toolCallId) return;
+    const entry = this.toolCalls.get(tc.toolCallId);
+    const fields = {
+      toolCallId: tc.toolCallId,
+      name: hostToolName(tc.kind),
+      kind: tc.kind,
+      title: tc.title || tc.command || '',
+      args: tc.data?.rawInput ?? tc.data ?? {},
+      locations: tc.data?.locations,
+      status: this._normalizeToolStatus(tc.status),
+    };
+    this._applySubagentToolUpdate(conn, tc, fields);
+    if (entry) {
+      Object.assign(entry, fields);
+      const outputText = extractToolCallOutputText(tc);
+      if (outputText) entry.outputText = outputText;
+      for (const waiter of entry.waiters.splice(0)) waiter();
+    } else {
+      const created = this.registerToolCall(fields);
+      const outputText = extractToolCallOutputText(tc);
+      if (outputText) created.outputText = outputText;
+    }
+    this.publishTool(this.toolCalls.get(tc.toolCallId));
+    this.reportActivity();
   }
 
   handleEvent(event) {
     switch (event?._tag) {
       case 'ContentDelta':
         if (event.text) this.queue.push({ type: 'text', text: event.text });
+        if (event.text) this.reportActivity();
         return;
       case 'ThoughtDelta':
         if (event.text) this.queue.push({ type: 'thought', text: event.text });
+        if (event.text) this.reportActivity();
         return;
-      case 'ToolCallUpdated': {
-        const conn = this.connection;
-        const tc = conn?._normalizeToolCall(event.toolCall) ?? event.toolCall;
-        if (!tc?.toolCallId) return;
-        const entry = this.toolCalls.get(tc.toolCallId);
-        const fields = {
-          toolCallId: tc.toolCallId,
-          name: hostToolName(tc.kind),
-          kind: tc.kind,
-          title: tc.title || tc.command || '',
-          args: tc.data?.rawInput ?? tc.data ?? {},
-          locations: tc.data?.locations,
-          status:
-            tc.status === 'completed'
-              ? 'completed'
-              : tc.status === 'failed'
-                ? 'failed'
-                : tc.status === 'inProgress'
-                  ? 'in_progress'
-                  : 'pending',
-        };
-        // ACP runtime extractSubagentUpdate: subagent traffic is projected onto the
-        // tool call it rode in on (the host surface has no subagent lanes).
-        const subagent = conn?._extractSubagentUpdate(tc);
-        if (subagent) {
-          fields.subagent = subagent;
-          fields.title = subagent.title || fields.title;
-          if (subagent.status === 'completed') fields.status = 'completed';
-          if (subagent.status === 'failed') fields.status = 'failed';
-          if (subagent.result) fields.outputText = subagent.result;
-          if (subagent.childSessionId && conn) {
-            conn._subagentToolByChildSession.set(subagent.childSessionId, tc.toolCallId);
-          }
-        }
-        // ACP runtime isProvisionalSubagentTool: claude emits a placeholder Task tool
-        // before its input arrives — keep it pending and unnamed until then.
-        if (conn?._isProvisionalSubagentTool?.(tc)) {
-          fields.status = 'pending';
-          fields.provisional = true;
-        }
-        if (entry) {
-          Object.assign(entry, fields);
-          const outputText = extractToolCallOutputText(tc);
-          if (outputText) entry.outputText = outputText;
-          for (const waiter of entry.waiters.splice(0)) waiter();
-        } else {
-          const created = this.registerToolCall(fields);
-          const outputText = extractToolCallOutputText(tc);
-          if (outputText) created.outputText = outputText;
-        }
+      case 'ToolCallUpdated':
+        this._handleToolCallUpdated(event);
         return;
-      }
       case 'UsageUpdated': {
         // ACP runtime normalizes all ACP usage into context-window occupancy
         // ({usedTokens, maxTokens?, cost?}), not per-turn input/output. Keep it
@@ -452,7 +274,9 @@ export class AcpTurnExecution {
         entry.outputText ||= error ? acpErrorMessage(error) : 'Agent turn completed without a separate tool result.';
       }
       for (const waiter of entry.waiters.splice(0)) waiter();
+      this.publishTool(entry);
     }
+    this.reportActivity();
   }
 
   fail(error) {
@@ -478,7 +302,8 @@ function extractToolCallOutputText(toolCall) {
   const content = data.content;
   if (Array.isArray(content)) {
     return content
-      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .map((part) => part?.type === 'content' && part.content?.type === 'text'
+        ? part.content.text : typeof part?.text === 'string' ? part.text : '')
       .filter(Boolean)
       .join('\n');
   }
@@ -1001,6 +826,8 @@ export class AcpSessionConnection {
       entry.status = subEvent.status === 'cancelled' ? 'failed' : subEvent.status;
       if (subEvent.result) entry.outputText = String(subEvent.result);
       for (const waiter of entry.waiters.splice(0)) waiter();
+      turn.publishTool(entry);
+      turn.reportActivity();
       this._subagentToolByChildSession.delete(subEvent.childSessionId);
     }
   }
@@ -1238,59 +1065,23 @@ export class AcpSessionConnection {
     }
 
     if (this.terminals) {
+      // Teardown clears this.terminals before awaiting disposal. Requests
+      // already dispatched by the native process still own this service.
+      const terminals = this.terminals;
       const toPromise = (eff) => effect.runCatch(eff);
       // ACP runtime guardClientTerminalCreate (adapter.ts:5867-5877): client terminals
       // run with host privileges, so creation passes the execute disposition —
       // allow, a recorded approval grant, or a fresh interactive approval.
-      handlers.handleCreateTerminal = async (request) => {
-        const disposition = providers.AcpClientPolicy.acpClientExecuteDisposition(runtimePolicy);
-        if (disposition === 'deny') {
-          throw new Error('The active runtime policy does not allow terminal/create.');
-        }
-        const turn = this.activeTurn;
-        if (
-          disposition !== 'allow'
-          && !(turn && this._policyGrants?.allowsExecute(turn.turnKey))
-        ) {
-          const decision = await this._requestApproval({
-            title: request?.command
-              ? `Run terminal command: ${request.command}`
-              : 'Run terminal command',
-            kind: 'execute',
-            params: {},
-            toolCall: {
-              title: request?.command || 'terminal/create',
-              kind: 'execute',
-              rawInput: { command: request?.command, args: request?.args, cwd: request?.cwd },
-            },
-            options: [
-              { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
-              { optionId: 'allow-always', name: 'Allow for this session', kind: 'allow_always' },
-              { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
-            ],
-          });
-          if (decision !== 'accept' && decision !== 'acceptForSession') {
-            throw new Error(
-              'The active runtime policy requires approval for terminal/create. '
-              + 'Request permission with session/request_permission before retrying.',
-            );
-          }
-          this._policyGrants?.recordApproval({
-            kind: 'command',
-            scope: decision === 'acceptForSession' ? 'session' : 'turn',
-            turnKey: turn?.turnKey ?? null,
-          });
-        }
-        return toPromise(this.terminals.create(request));
-      };
+      handlers.handleCreateTerminal = (request) =>
+        this._handleCreateTerminal(request, terminals, runtimePolicy, providers, toPromise);
       handlers.handleTerminalOutput = (request) =>
-        toPromise(this.terminals.output(request));
+        toPromise(terminals.output(request));
       handlers.handleTerminalWaitForExit = (request) =>
-        toPromise(this.terminals.waitForExit(request));
+        toPromise(terminals.waitForExit(request));
       handlers.handleTerminalKill = (request) =>
-        toPromise(this.terminals.kill(request));
+        toPromise(terminals.kill(request));
       handlers.handleTerminalRelease = (request) =>
-        toPromise(this.terminals.release(request));
+        toPromise(terminals.release(request));
     }
 
     stageLog('assign-handlers-start ' + Object.keys(handlers).join(','));
@@ -1312,6 +1103,50 @@ export class AcpSessionConnection {
     }
   }
 
+  async _requestTerminalExecuteApproval(request) {
+    const turn = this.activeTurn;
+    const decision = await this._requestApproval({
+      title: request?.command ? `Run terminal command: ${request.command}` : 'Run terminal command',
+      kind: 'execute',
+      params: {},
+      toolCall: {
+        title: request?.command || 'terminal/create',
+        kind: 'execute',
+        rawInput: { command: request?.command, args: request?.args, cwd: request?.cwd },
+      },
+      options: [
+        { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow-always', name: 'Allow for this session', kind: 'allow_always' },
+        { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+      ],
+    });
+    if (decision !== 'accept' && decision !== 'acceptForSession') {
+      throw new Error(
+        'The active runtime policy requires approval for terminal/create. '
+        + 'Request permission with session/request_permission before retrying.',
+      );
+    }
+    this._policyGrants?.recordApproval({
+      kind: 'command',
+      scope: decision === 'acceptForSession' ? 'session' : 'turn',
+      turnKey: turn?.turnKey ?? null,
+    });
+  }
+
+  async _handleCreateTerminal(request, terminals, runtimePolicy, providers, toPromise) {
+    if (this.closed) throw new Error('ACP connection closed before terminal creation.');
+    const disposition = providers.AcpClientPolicy.acpClientExecuteDisposition(runtimePolicy);
+    if (disposition === 'deny') {
+      throw new Error('The active runtime policy does not allow terminal/create.');
+    }
+    const turn = this.activeTurn;
+    if (disposition !== 'allow' && !(turn && this._policyGrants?.allowsExecute(turn.turnKey))) {
+      await this._requestTerminalExecuteApproval(request);
+    }
+    if (this.closed) throw new Error('ACP connection closed before terminal creation.');
+    return toPromise(terminals.create(request));
+  }
+
   _finishSubagent(notice) {
     // notice.childSessionId for copilot is `copilot-task:${toolCallId}`.
     const toolCallId = this._subagentToolByChildSession.get(notice.childSessionId)
@@ -1325,6 +1160,8 @@ export class AcpSessionConnection {
     entry.status = notice.status === 'cancelled' ? 'failed' : notice.status;
     if (notice.result) entry.outputText = String(notice.result);
     for (const waiter of entry.waiters.splice(0)) waiter();
+    turn.publishTool(entry);
+    turn.reportActivity();
     if (entry.status === 'completed' || entry.status === 'failed') {
       this._subagentToolByChildSession.delete(notice.childSessionId);
     }
@@ -1366,6 +1203,8 @@ export class AcpSessionConnection {
     }));
     entry.status = decision === 'accept' || decision === 'acceptForSession' ? 'completed' : 'failed';
     for (const waiter of entry.waiters.splice(0)) waiter();
+    turn.publishTool(entry);
+    turn.reportActivity();
     return decision;
   }
 
@@ -1407,7 +1246,11 @@ export class AcpSessionConnection {
         const selected = answer.answers?.find((item) => item.id === question.id)?.selected?.[0];
         const option = question.options.find((item) => item.label === selected);
         const entry = turn.toolCalls.get(String(params.toolCall.toolCallId));
-        if (entry) { entry.status = option ? 'completed' : 'failed'; entry.outputText = selected || 'Question cancelled'; for (const waiter of entry.waiters.splice(0)) waiter(); }
+        if (entry) {
+          entry.status = option ? 'completed' : 'failed'; entry.outputText = selected || 'Question cancelled';
+          for (const waiter of entry.waiters.splice(0)) waiter();
+          turn.publishTool(entry); turn.reportActivity();
+        }
         return option ? { outcome: { outcome: 'selected', optionId: option.value } } : { outcome: { outcome: 'cancelled' } };
       } catch (error) {
         if (turn.signal?.aborted) return { outcome: { outcome: 'cancelled' } };

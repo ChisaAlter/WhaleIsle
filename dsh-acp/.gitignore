@@ -4,16 +4,25 @@
 !/.gitignore
 !/LICENSE
 !/README.md
+!/README.en.md
+!/docs/
+/docs/*
+!/docs/screenshots/
+/docs/screenshots/*
+!/docs/screenshots/agent-picker.png
+!/docs/screenshots/agent-account.png
 !/THIRD_PARTY_NOTICES.md
 !/package.json
 !/cordis.patch.yml
 !/lib/
 !/client/
+!/client-src/
 !/tests/
 !/tools/
 /tools/*
 !/tools/runtime-build/
 !/tools/host-compat/
+!/tools/build-client.mjs
 
 node_modules/
 artifacts/

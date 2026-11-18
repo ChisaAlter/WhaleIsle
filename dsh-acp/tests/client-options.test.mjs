@@ -2,16 +2,72 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { editableModelOptions } from '../client-src/utils.js';
+
 const source = fs.readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-const start = source.indexOf('    function editableModelOptions(');
-const end = source.indexOf('\n    // Separate, durable reply', start);
-const compile = vm.compileFunction(`${source.slice(start, end)}\nreturn { editableModelOptions, AgentSessionOptions };`,
- ['h', 'useSyncExternalStore', 'useState', 'useEffect', 'useRef', 'ACP_PREFIX', 'Button', 'IconSettingsOutline16']);
 const treeNode = (type, props, ...children) => ({ type, props, children });
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.children)];
-function fixture({ config = null, current = { provider: 'acp:fixture', model: 'model' }, pending = null, saving = false, effect = () => {} } = {}) {
- const values = [config, saving];
- return compile(treeNode, (_, snapshot) => snapshot(), () => [values.shift(), () => {}], effect, current => ({current}), 'acp:', 'Button', 'SettingsIcon');
+
+function fixture({ config = null, saving = false, effect = () => {} } = {}) {
+  const values = [config, saving];
+  let loaded;
+  const hooks = {
+    createElement: treeNode,
+    Fragment: 'Fragment',
+    useSyncExternalStore: (_, snapshot) => snapshot(),
+    useState: () => [values.shift(), () => {}],
+    useEffect: effect,
+    useLayoutEffect() {},
+    useMemo: fn => fn(),
+    useCallback: fn => fn,
+    useRef: current => ({ current }),
+    useId: () => 'test-options',
+  };
+  const primitives = {
+    Button: 'Button',
+    IconSettingsOutline16: 'SettingsIcon',
+    IconSettingsOutlineRegular: 'SettingsIcon',
+  };
+  vm.runInNewContext(source, {
+    window: {
+      __ModuleLoader__: {
+        load({ factory }) {
+          loaded = factory(name => {
+            if (name === 'react') return hooks;
+            if (name === 'react-dom') return { createPortal: tree => tree };
+            if (name === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
+            throw new Error(`Unexpected require ${name}`);
+          });
+        },
+      },
+    },
+    document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} }, body: {} },
+    setTimeout,
+    clearTimeout,
+    console,
+  });
+  let AgentSessionOptions;
+  const ctx = {
+    effect() {},
+    locale: { register: () => () => {}, bind: () => key => key },
+    connection: { rpc: { call: async () => ({}) } },
+    slots: {
+      inject: (_name, fn) => fn(),
+      entriesOfSlot: () => [],
+      subscribe: () => () => {},
+      register: (spec, component) => {
+        if (spec.name === 'conversation.input.model.options') AgentSessionOptions = component;
+        return () => {};
+      },
+    },
+    modelDirectories: { directoryFor: () => ({ store: {}, load: async () => {}, select: async () => ({}) }) },
+    sessions: { subagentAddress: () => undefined },
+    inject: (deps, fn) => {
+      if (deps.every(dep => dep in ctx)) fn({ ...ctx });
+    },
+  };
+  loaded.apply(ctx);
+  return { editableModelOptions, AgentSessionOptions };
 }
 test('native menu options preserve dynamic boolean/select values and exclude routing, reasoning and permissions', () => {
  const { editableModelOptions } = fixture();
@@ -45,7 +101,7 @@ test('native options respect host lock, persisted false/empty values, and Escape
    let stopped = false; tree.props.onKeyDown({ key, stopPropagation: () => { stopped = true; } });
    assert.equal(stopped, key !== 'Escape');
   }
-  nodes(tree).find(node => node.type === 'Button').props.onClick();
+  nodes(tree).find(node => node.type === 'Button' || node.type?.name === 'Button').props.onClick();
   assert.equal(dismissed, true); assert.equal(failure, 'error.settingsNav');
  }
 });

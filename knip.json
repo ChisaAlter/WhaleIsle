@@ -66,7 +66,7 @@
     "vendor/dsh-deepseek-tools/tests/**",
     "vendor/dsh-project/tests/**",
     // ACP 插件包入口与手动 runner
-    "dsh-acp/{lib,client,tests,tools}/**",
+    "dsh-acp/{lib,client,client-src,tests,tools}/**",
     // 所有脚本都是 npm script 或手动运行的入口点
     "scripts/**/*.{js,cjs,mjs}",
     // QA/调试工具同样是手动入口
@@ -87,6 +87,7 @@
   "ignore": [
     // 生成产物
     "mobile/web/chisacode/daemon-client.bundle.js",
+    "dsh-acp/client/client.js",
     // knip 会把嵌套 package.json 自动检测成 workspace；这些树在任务范围外，
     // 必须按文件级 ignore 兜底，否则其测试/源码依赖会混入报告
     "vendor/{deepseek-harness,chisacode-remote,open-intelligent-ui,dsh-im,dsh-pad,dsh-remote,dsh-usage-panel,dshmarket}/**",
@@ -133,7 +134,7 @@
     // 还原别名消费方；exports/types 报告不属于真实死代码
     "src/whale-ui/**": ["unlisted", "exports", "types"],
     "dsh-acp/tools/runtime-build/**": ["unlisted"],
-    "{dsh-acp,vendor/dsh-deepseek-tools,vendor/dsh-project,vendor/dsh-whale}/client/**": ["unlisted"],
+    "{dsh-acp/client,dsh-acp/client-src,vendor/dsh-deepseek-tools/client,vendor/dsh-project/client,vendor/dsh-whale/client}/**": ["unlisted"],
     "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale,dsh-with-chatgpt}/**": ["unlisted"],
     // 测试渲染夹具的 react 由 whale-ui/宿主运行时解析
     "src/renderer/**/*.fixture.*": ["unlisted"],

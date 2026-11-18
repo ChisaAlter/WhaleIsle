@@ -21,7 +21,7 @@ test('desktop code gets product and typecheck checks without the upstream matrix
     { product: true, tools: true, vendor: false, motion: false })
 })
 test('relocated ACP source and tests retain plugin checks while its docs stay lightweight', () => {
-  for (const file of ['dsh-acp/lib/index.js', 'dsh-acp/client/client.js', 'dsh-acp/tests/plugin.test.mjs']) {
+  for (const file of ['dsh-acp/lib/index.js', 'dsh-acp/tests/plugin.test.mjs']) {
     assert.deepEqual(selectChecks([file]), { product: true, vendor: true, tools: false, motion: false })
   }
   assert.deepEqual(selectChecks(['dsh-acp/README.md']),
@@ -47,6 +47,8 @@ test('registered generated artifacts and their inputs gate the tools job', () =>
     'src/renderer/welcome/welcome.js',
     'assets/icon.svg',
     'dsh-acp/tools/runtime-build/entry.ts',
+    'dsh-acp/client-src/index.js',
+    'dsh-acp/client/client.js',
   ]) {
     assert.equal(selectChecks([file]).tools, true, file)
   }

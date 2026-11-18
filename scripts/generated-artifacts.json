@@ -113,6 +113,29 @@
         ]
       }
     },
+    "dsh-acp/client/client.js": {
+      "kind": "rebuild",
+      "origin": "esbuild CJS bundle wrapped in window.__ModuleLoader__.load from dsh-acp/client-src/index.js (dsh-acp/tools/build-client.mjs)",
+      "rebuildCommand": "node dsh-acp/tools/build-client.mjs",
+      "rebuild": {
+        "inputs": [
+          "dsh-acp/package.json",
+          "dsh-acp/tools/build-client.mjs",
+          "dsh-acp/client-src"
+        ],
+        "links": [
+          "node_modules"
+        ],
+        "commands": [
+          [
+            "dsh-acp/tools/build-client.mjs"
+          ]
+        ],
+        "outputs": [
+          "dsh-acp/client/client.js"
+        ]
+      }
+    },
     "src/renderer/pet-live2d/ort": {
       "kind": "artifacts",
       "origin": "onnxruntime-web@1.22.0 vendored dist: ort.all.min.js loader plus the WASM/JSEP backend pair",

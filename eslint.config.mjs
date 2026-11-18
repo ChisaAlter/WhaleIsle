@@ -66,6 +66,7 @@ const BROWSER_SCRIPT_FILES = [
 const BROWSER_MODULE_FILES = [
   'mobile/web/**/*.{js,mjs}',
   'vendor/dsh-remote/plugin-src/client/**/*.js',
+  'dsh-acp/client-src/**/*.js',
 ];
 
 // Base no-restricted-syntax selectors. File-scoped blocks below must re-include
@@ -173,6 +174,7 @@ export default [
       'vendor/dsh-with-chatgpt/skills/**', // 技能资源
       'vendor/dsh-with-chatgpt/tests/**', // 插件测试（本期范围外）
       'vendor/dsh-remote/lib/client.js', // 打包产物（esbuild，源码在 plugin-src/client）
+      'dsh-acp/client/client.js', // 打包产物（esbuild，源码在 dsh-acp/client-src）
       'dsh-acp/lib/vendor/**', // 打包产物（tools/runtime-build 输出）
       // 范围内的打包 / 第三方产物
       'src/whale-ui/**', // TS 项目，由 tsc 负责
