@@ -7,6 +7,7 @@ import { workspaceDrawerSections } from '../host/catalog.js';
 import { hostCall } from '../host/backend.js';
 import { operationError, showBanner } from './chrome.js?v=20261117-app-split';
 import { openSession, runReconnectResync } from './connect.js?v=20261117-app-split';
+export { openSession };
 import { drawerAccount, drawerAccountName, drawerAvatar, drawerDirectory, drawerStatus, navSessionsCount, search, sessionList, state } from './context.js?v=20261117-app-split';
 import { renderDialog } from './dialogs.js?v=20261117-app-split';
 import { syncSubagentButton } from './header.js?v=20261117-app-split';
@@ -231,6 +232,16 @@ function appendGroupedRows(nodes, rows, { inWorkspace = false } = {}) {
   }
 }
 
+/**
+ * @param {any[]} nodes
+ * @param {boolean} busy
+ */
+function appendSessionsError(nodes, busy) {
+  if (!state.sessionsError) return;
+  nodes.push(descNode(state.sessionsError, 'row-desc drawer-empty'));
+  nodes.push(drawerFootButton('重试加载会话', { disabled: busy, onClick: () => runReconnectResync() }));
+}
+
 export function renderSessions() {
   const query = state.query.trim();
   // Blank rows may enter state.sessions live via host/session-added; the
@@ -281,9 +292,10 @@ export function renderSessions() {
       group.append(cardOfRows(collectRows(ungrouped)));
       nodes.push(group);
     }
-  } else {
+  } else if (rows.length) {
     nodes.push(cardOfRows(collectRows(rows)));
   }
+  if (!query) appendSessionsError(nodes, state.catalogBusy === true);
   if (state.transport === 'chisacode' && !query) {
     nodes.push(drawerFootButton(
       state.sessionView === 'grouped' ? '一个列表' : '按工作区分组',
@@ -337,11 +349,7 @@ export function renderDrawer(visibleRows) {
   if (!busy && !sections.length && !ungrouped.length && !state.sessionsError) {
     nodes.push(descNode('还没有会话，选择工作区或开始新会话。', 'row-desc drawer-empty'));
   }
-  if (state.sessionsError) {
-    const retry = drawerFootButton('重试加载会话', { disabled: busy, onClick: () => runReconnectResync() });
-    retry.title = state.sessionsError;
-    nodes.push(retry);
-  }
+  appendSessionsError(nodes, busy);
   if (state.transport === 'chisacode') {
     nodes.push(drawerFootButton('已归档会话', { onClick: () => openHistorySheet() }));
   }

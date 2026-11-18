@@ -12,7 +12,15 @@ The printed URL contains the actual OS-assigned port. Use that URL in T3 preview
 
 Existing `startQaServer()` and `startQaServer(port)` callers retain root mounting and default port 3180. New callers can pass `{ port: 0, prefix: '/dshd/' }` and obtain the URL with `qaServerUrl(server)`.
 
-The existing standalone browser runner accepts the same `--port` and `--prefix`, plus its original `--screenshots DIR`. Running it launches Puppeteer; it is a separate reproducibility entrypoint, not the current T3 preview workflow.
+The standalone browser runner accepts `--port`, `--prefix`, and `--screenshots DIR`:
+
+```powershell
+# Prerequisites: run `npm run setup` once (installs playwright-core under vendor/chisacode-remote)
+# and have Chrome or Edge installed (or set CHROME_PATH; optional PLAYWRIGHT_CORE_PATH override).
+node tools/mobile-web-qa/run-qa.mjs
+```
+
+`run-qa.mjs` launches headless Chromium via `playwright-core` (reusing the `vendor/chisacode-remote` dependency without extra npm installs) and stores screenshots in an OS temporary directory that is cleaned up automatically on exit unless `--screenshots <dir>` is explicitly passed. It is a separate fake-daemon reproducibility entrypoint, not the T3 live preview workflow.
 
 ## Runtime Contract
 

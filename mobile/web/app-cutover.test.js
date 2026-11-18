@@ -354,3 +354,98 @@ test('paired SPA uses host history poll and formal Host services, not ACP files'
   assert.equal(app.includes('listDirectoryView'), false);
   assert.equal(app.includes('openEventSockets({ origin'), false);
 });
+
+function fakeDomElement(tag = 'div') {
+  return {
+    tag,
+    className: '',
+    textContent: '',
+    title: '',
+    disabled: false,
+    children: [],
+    listeners: {},
+    attributes: {},
+    classList: {
+      set: new Set(),
+      toggle(name, force) { if (force) this.set.add(name); else this.set.delete(name); },
+      contains(name) { return this.set.has(name); },
+    },
+    setAttribute(name, value) { this.attributes[name] = String(value); },
+    append(...nodes) { this.children.push(...nodes); },
+    replaceChildren(...nodes) { this.children = nodes; },
+    addEventListener(name, handler) { this.listeners[name] = handler; },
+    querySelectorAll() { return []; },
+  };
+}
+
+test('renderLog renders an in-log .timeline-error placeholder with retry when session.history fails', async () => {
+  const logEl = fakeDomElement('div');
+  const blankEl = fakeDomElement('div');
+  const jumpBottom = fakeDomElement('button');
+  const retried = [];
+  const state = {
+    sessionId: 's-3', transport: 'chisacode', events: [], outbox: [], sessionValues: {},
+    running: false, timelineError: 'timeline exploded', timelineLoading: false,
+    timelinePage: { hasOlder: false, beforeSeq: null }, toastTone: 'error', gitToast: '载入会话失败：timeline exploded',
+  };
+  const context = {
+    state, store: { showReasoning: true }, logEl, blankEl, jumpBottom,
+    logTail: '', logUnseen: false, syncJumpBottom: () => {},
+    logList: { nodes: () => [] },
+    visibleLogRows: () => [{ role: 'assistant', id: 'stale', text: 'stale' }],
+    document: { createElement: (tag) => fakeDomElement(tag) },
+    groupTurns: () => [], foldEvents: () => [], queuedMessages: () => [],
+    resolveLogAnchor: () => 'bottom', clearButtonBusy: () => {}, buttonBusy: () => {},
+    reconcileChildren: (parent, nodes) => { parent.children = nodes; },
+    renderBlankHero: () => {}, scheduleNativeSnapshot: () => {}, updateDocumentTitle: () => {},
+    setToast: (value) => { state.gitToast = value; }, showBanner: () => {},
+    openSession: async (id) => { retried.push(id); },
+  };
+  runInNewContext(sliceInFile('function timelineErrorNode()', 'async function loadOlderMessages()'), context);
+  context.renderLog({ anchor: 'bottom' });
+  assert.equal(blankEl.classList.contains('hidden'), true);
+  assert.equal(logEl.classList.contains('hidden'), false);
+  assert.equal(logEl.children.length, 1);
+  assert.equal(logEl.children[0].className, 'timeline-error');
+  assert.equal(logEl.children[0].children[0].textContent, '载入会话失败：timeline exploded');
+  assert.equal(logEl.children[0].children[1].textContent, '重试');
+  await logEl.children[0].children[1].listeners.click();
+  assert.deepEqual(retried, ['s-3']);
+  assert.equal(state.gitToast, '');
+});
+
+test('renderDrawer and renderSessions show visible sessionsError copy alongside retry', () => {
+  const sessionList = fakeDomElement('div');
+  const drawerDirectory = fakeDomElement('div');
+  const drawerStatus = fakeDomElement('div');
+  const drawerAccount = fakeDomElement('button');
+  const drawerAvatar = fakeDomElement('span');
+  const drawerAccountName = fakeDomElement('span');
+  const navSessionsCount = fakeDomElement('span');
+  const state = {
+    query: '', sessions: [], workspaces: { items: [], archivedSessionIds: [] },
+    sessionView: 'grouped', transport: 'chisacode', catalogBusy: false,
+    sessionsError: '桌面端未启动', hostName: 'Mac Studio', expandedWorkspaces: {},
+  };
+  const textOf = (node) => [node.textContent, ...(node.children || []).map(textOf)].filter(Boolean).join(' ');
+  const context = {
+    state, sessionList, drawerDirectory, drawerStatus, drawerAccount,
+    drawerAvatar, drawerAccountName, navSessionsCount,
+    document: { createElement: (tag) => fakeDomElement(tag) },
+    isUntitledBlank: () => false, visibleSessionRows: (rows) => rows,
+    workspaceDrawerSections: () => ({ sections: [], ungrouped: [] }),
+    descNode: (text, cls = 'row-desc') => Object.assign(fakeDomElement('p'), { className: cls, textContent: text }),
+    syncSubagentButton: () => {}, scheduleNativeSnapshot: () => {},
+    runReconnectResync: () => {}, openHistorySheet: () => {},
+    sheetTrigger: () => null, scheduleNavigation: () => {}, renderSheet: () => {},
+  };
+  runInNewContext(sliceInFile('function drawerFootButton(', 'async function runSessionSearch('), context);
+  context.renderSessions();
+  const drawerText = textOf(drawerDirectory);
+  const listText = textOf(sessionList);
+  assert.ok(drawerText.includes('桌面端未启动'), `drawer missing error text: ${drawerText}`);
+  assert.ok(drawerText.includes('重试加载会话'), `drawer missing retry button: ${drawerText}`);
+  assert.equal(drawerText.includes('还没有会话'), false);
+  assert.ok(listText.includes('桌面端未启动'), `session-list missing error text: ${listText}`);
+  assert.ok(listText.includes('重试加载会话'), `session-list missing retry button: ${listText}`);
+});

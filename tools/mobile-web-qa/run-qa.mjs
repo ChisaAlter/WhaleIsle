@@ -3,14 +3,38 @@
  * host-tunnel DaemonClient (session.list / gitRpc / mux — not ACP agents).
  *
  * Usage: node tools/mobile-web-qa/run-qa.mjs [--screenshots <dir>] [--port 0] [--prefix /dshd/]
- * Requires puppeteer-core (dev-only): npm i --no-save puppeteer-core
+ * Requires playwright-core (from `npm run setup` / vendor/chisacode-remote) and Chrome/Edge.
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startQaServer, qaServerOptions, qaServerUrl } from './server.mjs';
+
+function loadPlaywright() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const localRequire = createRequire(import.meta.url);
+  if (process.env.PLAYWRIGHT_CORE_PATH) return localRequire(process.env.PLAYWRIGHT_CORE_PATH);
+  try { return localRequire('playwright-core'); } catch (error) {
+    if (error?.code !== 'MODULE_NOT_FOUND') throw error;
+  }
+  const manifests = [
+    resolve(here, '../../vendor/chisacode-remote/package.json'),
+    'C:/AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/package.json',
+  ];
+  for (const manifest of manifests) {
+    if (!existsSync(manifest)) continue;
+    try { return createRequire(manifest)('playwright-core'); } catch (error) {
+      if (error?.code !== 'MODULE_NOT_FOUND') throw error;
+    }
+  }
+  throw new Error('playwright-core not found; run `npm run setup` or set PLAYWRIGHT_CORE_PATH');
+}
+
+const { chromium } = loadPlaywright();
 
 function chromePath() {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
@@ -28,7 +52,8 @@ function chromePath() {
 
 const CHROME = chromePath();
 const serverOptions = qaServerOptions();
-const SHOT_DIR = serverOptions.screenshots || 'docs/qa/results/2026-08-30';
+const ownedShotDir = !serverOptions.screenshots;
+let shotDir = serverOptions.screenshots || '';
 
 const results = [];
 let failures = 0;
@@ -41,7 +66,9 @@ async function check(name, fn) {
   } catch (error) {
     failures += 1;
     results.push(`NOT OK - ${name}: ${error?.message || error}`);
-    await activePage?.screenshot({ path: join(SHOT_DIR, `failure-${failures}.png`), fullPage: true });
+    if (shotDir) {
+      await activePage?.screenshot({ path: join(shotDir, `failure-${failures}.png`), fullPage: true });
+    }
   }
 }
 
@@ -61,7 +88,7 @@ async function waitFor(page, fn, message, timeout = 5000) {
 }
 
 async function clickByText(page, selector, text) {
-  const clicked = await page.evaluate((sel, needle) => {
+  const clicked = await page.evaluate(({ sel, needle }) => {
     const nodes = [...document.querySelectorAll(sel)];
     const hit = nodes.find((node) => node.textContent.includes(needle) && !node.disabled);
     if (hit) {
@@ -69,7 +96,7 @@ async function clickByText(page, selector, text) {
       return true;
     }
     return false;
-  }, selector, text);
+  }, { sel: selector, needle: text });
   assert(clicked, `no clickable "${text}" in ${selector}`);
 }
 
@@ -105,19 +132,29 @@ async function clickId(page, id) {
   assert(clicked, `no clickable #${id}`);
 }
 
+async function setInput(page, selector, value) {
+  await page.evaluate(({ sel, next }) => {
+    const input = document.querySelector(sel);
+    input.value = next;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, { sel: selector, next: value });
+}
+
 async function main() {
   const server = await startQaServer(serverOptions);
   const BASE = qaServerUrl(server).replace(/\/$/, '');
   let browser;
   try {
-  browser = await puppeteer.launch({
+  if (ownedShotDir) shotDir = await mkdtemp(join(tmpdir(), 'mobile-web-qa-'));
+  else await mkdir(shotDir, { recursive: true });
+  browser = await chromium.launch({
     executablePath: CHROME,
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', ...(/msedge\.exe$/i.test(CHROME) ? ['--edge-skip-compat-layer-relaunch'] : [])],
   });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   activePage = page;
-  await page.setViewport({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 390, height: 844 });
   const consoleErrors = [];
   page.on('console', (message) => {
     const url = message.location()?.url || '';
@@ -126,13 +163,12 @@ async function main() {
     }
   });
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
-  await mkdir(SHOT_DIR, { recursive: true });
-  const shot = (name) => page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
+  const shot = (name) => page.screenshot({ path: join(shotDir, `${name}.png`) });
 
-  await page.goto(`${BASE}/`, { waitUntil: 'networkidle0' });
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
   await check('配对：offer 链接进入 chat', async () => {
     await clickId(page, 'paste-toggle');
-    await page.type('#paste', `${BASE}/#offer=QAFAKE`);
+    await page.locator('#paste').pressSequentially(`${BASE}/#offer=QAFAKE`);
     await clickId(page, 'paste-enter');
     await waitFor(page, () => !document.querySelector('#screen-chat').classList.contains('hidden'), 'chat visible');
   });
@@ -186,35 +222,12 @@ async function main() {
   await shot('mobile-web-phase1-sessions');
 
   await check('搜索：session.search 展示 snippet', async () => {
-    await page.evaluate(() => {
-      const input = document.querySelector('#search');
-      input.value = 'unique-snippet-needle';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#session-list .session')].some((node) => node.textContent.includes('unique-snippet-needle')),
-      'search snippet visible',
-      3000,
-    );
-    const searches = await qaCalls(page, 'session.search');
-    assert(searches.length >= 1, 'session.search was not called');
-    await page.evaluate(() => {
-      const input = document.querySelector('#search');
-      input.value = '子任务';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await waitFor(
-      page,
-      () => (document.querySelector('#session-list')?.textContent || '').includes('没有匹配的会话'),
-      'subagent search hit filtered',
-      3000,
-    );
-    await page.evaluate(() => {
-      const input = document.querySelector('#search');
-      input.value = '';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await setInput(page, '#search', 'unique-snippet-needle');
+    await waitFor(page, () => [...document.querySelectorAll('#session-list .session')].some((n) => n.textContent.includes('unique-snippet-needle')), 'search snippet visible', 3000);
+    assert((await qaCalls(page, 'session.search')).length >= 1, 'session.search was not called');
+    await setInput(page, '#search', '子任务');
+    await waitFor(page, () => (document.querySelector('#session-list')?.textContent || '').includes('没有匹配的会话'), 'subagent search hit filtered', 3000);
+    await setInput(page, '#search', '');
     await sleep(250);
   });
 
@@ -271,7 +284,7 @@ async function main() {
     );
   });
 
-  const emitMuxEvent = (seq, text) => page.evaluate((eventSeq, eventText) => {
+  const emitMuxEvent = (seq, text) => page.evaluate(({ eventSeq, eventText }) => {
     window.__qa.emitMux({
       rpcId: `mux-${eventSeq}`,
       envelope: {
@@ -286,7 +299,7 @@ async function main() {
         },
       },
     });
-  }, seq, text);
+  }, { eventSeq: seq, eventText: text });
 
   await check('流事件：阅读历史时保持位置不拉底', async () => {
     const before = await page.evaluate(() => {
@@ -295,29 +308,17 @@ async function main() {
       return { rows: log.children.length, scrollTop: log.scrollTop };
     });
     await emitMuxEvent(500, '阅读历史时到达的流事件');
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#log .assistant')]
-        .some((node) => node.textContent.includes('阅读历史时到达的流事件')),
-      'stream row appended',
-    );
-    const after = await page.evaluate(() => {
-      const log = document.querySelector('#log');
-      return { rows: log.children.length, scrollTop: log.scrollTop };
-    });
+    await waitFor(page, () => [...document.querySelectorAll('#log .assistant')].some((n) => n.textContent.includes('阅读历史时到达的流事件')), 'stream row appended');
+    const after = await page.evaluate(() => ({ rows: document.querySelector('#log').children.length, scrollTop: document.querySelector('#log').scrollTop }));
     assert(after.rows === before.rows + 1, `rows ${before.rows} → ${after.rows}`);
     assert(after.scrollTop === before.scrollTop, `scrollTop yanked ${before.scrollTop} → ${after.scrollTop}`);
   });
 
   await check('打开会话失败：清空旧内容并显示错误占位', async () => {
-    await page.click('#menu');
+    await openDrawer(page);
     await page.evaluate(() => window.__qa.setFail('session.history', 'timeline exploded'));
-    await clickByText(page, '#session-list .session', '会话 3');
-    await waitFor(
-      page,
-      () => Boolean(document.querySelector('#log .timeline-error')),
-      'error placeholder rendered',
-    );
+    await clickByText(page, '#drawer-directory .session', '会话 3');
+    await waitFor(page, () => Boolean(document.querySelector('#log .timeline-error')), 'error placeholder rendered');
     const view = await page.evaluate(() => ({
       rows: document.querySelector('#log').children.length,
       placeholder: document.querySelector('#log .timeline-error')?.textContent || '',
@@ -334,28 +335,23 @@ async function main() {
     await clickByText(page, '#log .timeline-error button', '重试');
     await waitFor(
       page,
-      () => !document.querySelector('#log .timeline-error')
-        && document.querySelectorAll('#log > *').length >= 2,
+      () => !document.querySelector('#log .timeline-error') && document.querySelectorAll('#log > *').length >= 2,
       'retry recovered the timeline',
     );
-    await page.click('#menu');
-    await clickByText(page, '#session-list .session', '会话 1');
+    await openDrawer(page);
+    await clickByText(page, '#drawer-directory .session', '会话 1');
     await waitFor(page, () => document.querySelectorAll('#log > *').length > 20, 's-1 reopened');
   });
 
   await check('斜杠命令：/ 弹出 host 命令', async () => {
-    await page.focus('#draft');
-    await page.type('#draft', '/');
+    await page.locator('#draft').focus();
+    await page.locator('#draft').pressSequentially('/');
     await waitFor(page, () => document.querySelectorAll('#slash-pop .slash-item').length >= 2, 'slash popup');
     const names = await page.evaluate(
       () => [...document.querySelectorAll('#slash-pop .slash-item b')].map((node) => node.textContent),
     );
     assert(names.some((name) => name.includes('/permission')), `slash: ${names}`);
-    await page.evaluate(() => {
-      const input = document.querySelector('#draft');
-      input.value = '';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await setInput(page, '#draft', '');
   });
   await shot('mobile-web-phase1-slash');
 
@@ -366,19 +362,34 @@ async function main() {
     await page.click('#model-chip');
     await waitFor(page, () => document.querySelectorAll('#sheet-root .mode-row').length >= 2, 'model rows');
     const copy = await page.evaluate(() => document.querySelector('#sheet-root').textContent);
-    assert(copy.includes('含思考档'), 'reasoning hint missing on R3');
+    assert(copy.includes('可调整思考强度'), 'reasoning hint missing on R3');
     await clickByText(page, '#sheet-root .mode-row', 'Lite');
-    await waitFor(page, () => document.querySelector('#model-chip').textContent.includes('Lite'), 'chip updated');
-    await page.click('#model-chip');
-    const afterLite = await page.evaluate(() => document.querySelector('#sheet-root').textContent);
-    assert(!afterLite.includes('思考强度'), `fake effort chip after Lite: ${afterLite}`);
+    await waitFor(
+      page,
+      () => document.querySelector('#model-chip').textContent.includes('Lite')
+        && [...document.querySelectorAll('#sheet-root .mode-row')].some((node) => node.textContent.includes('DeepSeek R3') && !node.disabled),
+      'chip updated to Lite',
+    );
+    const hasEffortDrill = await page.evaluate(
+      () => Boolean(document.querySelector('#sheet-root .drill[data-picker-page="effort"]')),
+    );
+    assert(!hasEffortDrill, 'fake effort drill shown after Lite');
     const selects = await qaCalls(page, 'session.selectModel');
     assert(selects.length >= 1, 'session.selectModel was not called');
     await clickByText(page, '#sheet-root .mode-row', 'DeepSeek R3');
-    await waitFor(page, () => document.querySelector('#model-chip').textContent.includes('R3'), 'R3 selected');
-    await page.click('#model-chip');
-    await waitFor(page, () => document.querySelector('#sheet-root').textContent.includes('思考强度'), 'effort rows');
-    await clickByText(page, '#sheet-root .effort-option', 'Low');
+    await waitFor(
+      page,
+      () => document.querySelector('#model-chip').textContent.includes('R3')
+        && Boolean(document.querySelector('#sheet-root .drill[data-picker-page="effort"]')),
+      'R3 selected with effort drill',
+    );
+    await page.click('#sheet-root .drill[data-picker-page="effort"]');
+    await waitFor(
+      page,
+      () => [...document.querySelectorAll('#sheet-root .mode-row')].some((node) => node.textContent.includes('Low') && !node.disabled),
+      'effort rows',
+    );
+    await clickByText(page, '#sheet-root .mode-row', 'Low');
     await waitFor(page, () => document.querySelector('#model-chip').textContent.includes('low'), 'effort chip');
     await closeOverlays(page);
   });
@@ -435,36 +446,23 @@ async function main() {
   });
 
   await check('草稿：文本随会话切换互不串', async () => {
-    await page.focus('#draft');
-    await page.type('#draft', '会话1的草稿');
-    await page.click('#menu');
-    await clickByText(page, '#session-list .session', '会话 2');
+    await page.locator('#draft').focus();
+    await page.locator('#draft').pressSequentially('会话1的草稿');
+    await openDrawer(page);
+    await clickByText(page, '#drawer-directory .session', '会话 2');
     await waitFor(page, () => document.querySelector('#draft').value === '', 's-2 draft empty');
-    await page.focus('#draft');
-    await page.type('#draft', '会话2的草稿');
-    await page.click('#menu');
-    await clickByText(page, '#session-list .session', '会话 1');
+    await page.locator('#draft').focus();
+    await page.locator('#draft').pressSequentially('会话2的草稿');
+    await openDrawer(page);
+    await clickByText(page, '#drawer-directory .session', '会话 1');
     await waitFor(page, () => document.querySelector('#draft').value === '会话1的草稿', 's-1 draft restored');
   });
 
   await check('子智能体：父会话入口打开只读并可返回', async () => {
-    await waitFor(
-      page,
-      () => {
-        const btn = document.querySelector('#subagents-btn');
-        return btn && !btn.classList.contains('hidden');
-      },
-      'subagent entry visible',
-    );
+    await waitFor(page, () => { const b = document.querySelector('#subagents-btn'); return b && !b.classList.contains('hidden'); }, 'subagent entry visible');
     await page.click('#subagents-btn');
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
-        .some((node) => node.textContent.includes('子任务')),
-      'subagent sheet item',
-    );
-    const calls = await qaCalls(page, 'subagent.list');
-    assert(calls.length >= 1, 'subagent.list was not called');
+    await waitFor(page, () => [...document.querySelectorAll('#sheet-root .sheet-item')].some((n) => n.textContent.includes('子任务')), 'subagent sheet item');
+    assert((await qaCalls(page, 'subagent.list')).length >= 1, 'subagent.list was not called');
     await clickByText(page, '#sheet-root .sheet-item', '子任务');
     await waitFor(page, () => !document.querySelector('#readonly-note').classList.contains('hidden'), 'readonly note');
     const view = await page.evaluate(() => ({
@@ -476,52 +474,20 @@ async function main() {
     assert(view.composerHidden, 'composer must hide for read-only');
     assert(view.title.includes('子任务'), `child title: ${view.title}`);
     await page.click('#subagents-btn');
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
-        .some((node) => node.textContent.includes('返回父会话')),
-      'parent entry',
-    );
+    await waitFor(page, () => [...document.querySelectorAll('#sheet-root .sheet-item')].some((n) => n.textContent.includes('返回父会话')), 'parent entry');
     await clickByText(page, '#sheet-root .sheet-item', '返回父会话');
-    await waitFor(
-      page,
-      () => (document.querySelector('#chat-title')?.textContent || '').includes('会话 1'),
-      'back to parent',
-    );
+    await waitFor(page, () => (document.querySelector('#chat-title')?.textContent || '').includes('会话 1'), 'back to parent');
     // A child absent from session.list must still open through its durable catalog address.
     await page.click('#subagents-btn');
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
-        .some((node) => node.textContent.includes('补录子任务')),
-      'catalog-only child',
-    );
+    await waitFor(page, () => [...document.querySelectorAll('#sheet-root .sheet-item')].some((n) => n.textContent.includes('补录子任务')), 'catalog-only child');
     await clickByText(page, '#sheet-root .sheet-item', '补录子任务');
-    await waitFor(
-      page,
-      () => !document.querySelector('#readonly-note').classList.contains('hidden'),
-      'catalog-only readonly',
-    );
+    await waitFor(page, () => !document.querySelector('#readonly-note').classList.contains('hidden'), 'catalog-only readonly');
     const historyCalls = await qaCalls(page, 'session.history');
-    assert(
-      historyCalls.some(([payload]) => payload?.address?.kind === 'subagent'
-        && payload.address.childSessionId === 's-sub2'
-        && payload.address.parentSessionId === 's-1'),
-      'subagent history address missing',
-    );
+    assert(historyCalls.some(([p]) => p?.address?.kind === 'subagent' && p.address.childSessionId === 's-sub2' && p.address.parentSessionId === 's-1'), 'subagent history address missing');
     await page.click('#subagents-btn');
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#sheet-root .sheet-item')]
-        .some((node) => node.textContent.includes('返回父会话')),
-      'parent entry for catalog child',
-    );
+    await waitFor(page, () => [...document.querySelectorAll('#sheet-root .sheet-item')].some((n) => n.textContent.includes('返回父会话')), 'parent entry for catalog child');
     await clickByText(page, '#sheet-root .sheet-item', '返回父会话');
-    await waitFor(
-      page,
-      () => (document.querySelector('#chat-title')?.textContent || '').includes('会话 1'),
-      'back to parent again',
-    );
+    await waitFor(page, () => (document.querySelector('#chat-title')?.textContent || '').includes('会话 1'), 'back to parent again');
   });
   await shot('mobile-web-phase1-readonly');
 
@@ -537,56 +503,33 @@ async function main() {
     await waitFor(page, () => document.querySelector('#sheet-root .sheet'), 'menu sheet open');
     await clickByText(page, '#sheet-root .sheet-item', '重命名');
     await waitFor(page, () => document.querySelector('#dialog-root .dialog input'), 'rename dialog');
-    await page.evaluate(() => {
-      const input = document.querySelector('#dialog-root .dialog input');
-      input.value = '';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await page.type('#dialog-root .dialog input', 'QA 改名');
+    await setInput(page, '#dialog-root .dialog input', '');
+    await page.locator('#dialog-root .dialog input').pressSequentially('QA 改名');
     await clickByText(page, '#dialog-root .dialog button', '保存');
-    await waitFor(
-      page,
-      () => !document.querySelector('#dialog-root .dialog')
-        && [...document.querySelectorAll('#session-list .session b')].some((node) => node.textContent === 'QA 改名'),
-      'renamed row visible',
-    );
-    const calls = await qaCalls(page, 'session.rename');
-    assert(calls.length >= 1, 'session.rename was not called');
+    await waitFor(page, () => !document.querySelector('#dialog-root .dialog') && [...document.querySelectorAll('#session-list .session b')].some((n) => n.textContent === 'QA 改名'), 'renamed row visible');
+    assert((await qaCalls(page, 'session.rename')).length >= 1, 'session.rename was not called');
   });
 
   await check('归档：活会话归档后离开抽屉', async () => {
     await page.evaluate(() => {
-      const row = [...document.querySelectorAll('#session-list .session-row')]
-        .find((node) => node.textContent.includes('QA 改名'));
+      const row = [...document.querySelectorAll('#session-list .session-row')].find((n) => n.textContent.includes('QA 改名'));
       row.querySelector('.session-more').click();
     });
     await clickByText(page, '#sheet-root .sheet-item', '归档');
     await waitFor(page, () => document.querySelector('#dialog-root .dialog'), 'confirm dialog');
     await clickByText(page, '#dialog-root .dialog button', '归档');
-    await waitFor(
-      page,
-      () => ![...document.querySelectorAll('#session-list .session b')].some((node) => node.textContent === 'QA 改名'),
-      'archived row left drawer',
-    );
-    const calls = await qaCalls(page, 'workspace.archiveSession');
-    assert(calls.length >= 1, 'workspace.archiveSession was not called');
+    await waitFor(page, () => ![...document.querySelectorAll('#session-list .session b')].some((n) => n.textContent === 'QA 改名'), 'archived row left drawer');
+    assert((await qaCalls(page, 'workspace.archiveSession')).length >= 1, 'workspace.archiveSession was not called');
   });
 
   await check('已归档：取消归档 / 删除走 host', async () => {
     await clickByText(page, '#session-list .session-list-action', '已归档会话');
     await waitFor(page, () => document.querySelector('#sheet-root .sheet')?.textContent.includes('归档的旧会话'), 'history sheet');
-    const labels = await page.evaluate(
-      () => [...document.querySelectorAll('#sheet-root .sheet-item')].map((node) => node.textContent),
-    );
+    const labels = await page.evaluate(() => [...document.querySelectorAll('#sheet-root .sheet-item')].map((n) => n.textContent));
     assert(labels.some((label) => label.includes('删除')), `delete archived missing: ${labels}`);
     await clickByText(page, '#sheet-root .sheet-item', '归档的旧会话');
-    await waitFor(
-      page,
-      () => [...document.querySelectorAll('#session-list .session b')].some((node) => node.textContent === '归档的旧会话'),
-      'unarchived into drawer',
-    );
-    const unarchive = await qaCalls(page, 'workspace.unarchiveSession');
-    assert(unarchive.length >= 1, 'workspace.unarchiveSession was not called');
+    await waitFor(page, () => [...document.querySelectorAll('#session-list .session b')].some((n) => n.textContent === '归档的旧会话'), 'unarchived into drawer');
+    assert((await qaCalls(page, 'workspace.unarchiveSession')).length >= 1, 'workspace.unarchiveSession was not called');
     await closeOverlays(page);
   });
 
@@ -610,7 +553,7 @@ async function main() {
     });
     assert(clickedDir, 'new-app directory row missing');
     await waitFor(page, () => document.querySelector('#sheet-root .sheet')?.textContent.includes('/repo/new-app'), 'entered new-app');
-    await clickByText(page, '#sheet-root .sheet-item', '使用此目录作为工作区');
+    await clickByText(page, '#sheet-root .task-actions button', '使用此目录作为工作区');
     await waitFor(page, () => !document.querySelector('#sheet-root .sheet'), 'chooser closed');
     const created = await qaCalls(page, 'workspace.create');
     const sessions = await qaCalls(page, 'session.create');
@@ -633,17 +576,14 @@ async function main() {
     // Dispatch on the current control, then verify the actual branch RPC/UI.
     await page.$eval('#options .cap-branch', (node) => node.click());
     await waitFor(page, () => document.querySelector('#sheet-root .sheet')?.textContent.includes('创建并检出'), 'branch sheet');
-    await page.evaluate(() => {
-      const input = document.querySelector('#sheet-root input.paste');
-      input.value = 'qa-branch';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await setInput(page, '#sheet-root input.paste', 'qa-branch');
     await clickByText(page, '#sheet-root .sheet-item', '创建并检出分支「qa-branch」');
     await waitFor(page, () => document.querySelector('#dialog-root .dialog'), 'create dialog');
     await clickByText(page, '#dialog-root .dialog button', 'Create branch');
     await waitFor(
       page,
-      () => window.__qa.calls.some((call) => call.method === 'git-create-branch' || (call.method === 'gitRpc' && call.args[0] === 'git-create-branch')),
+      () => !document.querySelector('#dialog-root .dialog')
+        && window.__qa.calls.some((call) => call.method === 'git-create-branch' || (call.method === 'gitRpc' && call.args[0] === 'git-create-branch')),
       'git-create-branch called',
     );
     await page.click('#close-settings');
@@ -662,23 +602,29 @@ async function main() {
     await closeOverlays(page);
     await openDrawer(page);
     await clickId(page, 'nav-workspace');
-    await waitFor(page, () => (document.querySelector('#options .cap-primary')?.textContent || '').includes('Commit'), 'primary restored');
-    const label = await page.evaluate(() => document.querySelector('#options .cap-primary')?.textContent || '');
-    if (label.includes('Commit & push')) {
-      await page.click('#options .cap-primary');
-      await waitFor(page, () => document.querySelector('#dialog-root .dialog'), 'commit dialog');
-      await clickByText(page, '#dialog-root .dialog button', '提交');
-      await waitFor(
-        page,
-        () => {
-          const git = window.__qa.calls.filter((call) => call.method === 'gitRpc').map((call) => call.args[0]);
-          const commit = git.lastIndexOf('git-commit');
-          const push = git.lastIndexOf('git-push');
-          return commit >= 0 && push > commit;
-        },
-        'commit then push',
-      );
-    }
+    await waitFor(
+      page,
+      () => (document.querySelector('#options .cap-branch')?.textContent || '').includes('main')
+        && (document.querySelector('#options .cap-primary')?.textContent || '').includes('Commit & push'),
+      'primary Commit & push restored',
+    );
+    await page.click('#options .cap-primary');
+    await waitFor(
+      page,
+      () => [...document.querySelectorAll('#dialog-root .dialog button')].some((node) => node.textContent.includes('Commit & push') && !node.disabled),
+      'commit dialog ready',
+    );
+    await clickByText(page, '#dialog-root .dialog button', 'Commit & push');
+    await waitFor(
+      page,
+      () => {
+        const git = window.__qa.calls.filter((call) => call.method === 'gitRpc').map((call) => call.args[0]);
+        const commit = git.lastIndexOf('git-commit');
+        const push = git.lastIndexOf('git-push');
+        return !document.querySelector('#dialog-root .dialog') && commit >= 0 && push > commit;
+      },
+      'commit then push',
+    );
     await page.click('#close-settings');
   });
 
@@ -709,8 +655,8 @@ async function main() {
   await check('已保存电脑：断开后连接页列出其它电脑', async () => {
     await closeOverlays(page);
     await openDrawer(page);
-    await clickId(page, 'open-settings');
-    await clickByText(page, '#options .link-row', '连接详情');
+    await clickId(page, 'drawer-account');
+    await waitFor(page, () => document.querySelector('#settings-title')?.textContent === '连接详情', 'connection details');
     await page.evaluate(() => {
       const key = 'dsh-chisacode-device-secrets';
       const all = JSON.parse(localStorage.getItem(key) || '{}');
@@ -747,52 +693,34 @@ async function main() {
         .find((node) => node.textContent.includes('Whale Studio'));
       row.querySelector('.saved-forget').click();
     });
-    await waitFor(
-      page,
-      () => document.querySelectorAll('#saved-computers .saved-row').length === 1,
-      'row removed after forget',
-    );
+    await waitFor(page, () => document.querySelectorAll('#saved-computers .saved-row').length === 1, 'row removed after forget');
   });
 
   await check('已保存电脑：点选后 sticky 重连走 session.list', async () => {
     await page.evaluate(() => {
       window.__qa.calls = window.__qa.calls.filter((call) => call.method !== 'session.list');
-      const row = [...document.querySelectorAll('#saved-computers .saved-row')]
-        .find((node) => node.textContent.includes('Whale Office'));
+      const row = [...document.querySelectorAll('#saved-computers .saved-row')].find((n) => n.textContent.includes('Whale Office'));
       row.querySelector('.saved-open').click();
     });
     await waitFor(page, () => !document.querySelector('#screen-chat').classList.contains('hidden'), 'chat visible');
     await waitFor(page, () => window.__qa.calls.some((call) => call.method === 'session.list'), 'session.list after reconnect');
-    const agents = await qaCalls(page, 'fetchAgents');
-    assert(agents.length === 0, 'fetchAgents after reconnect');
+    assert((await qaCalls(page, 'fetchAgents')).length === 0, 'fetchAgents after reconnect');
   });
 
   await check('Harness 未就绪：抽屉明示桌面端未启动', async () => {
     await page.evaluate(() => localStorage.clear());
     await page.goto(`${BASE}/?qa=${Date.now()}`, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(async () => {
-      await import(new URL('./chisacode/daemon-client.bundle.js', location.href).href);
-    });
+    await page.evaluate(async () => { await import(new URL('./chisacode/daemon-client.bundle.js', location.href).href); });
     await waitFor(page, () => Boolean(window.__qa), 'fake host world loaded');
     await page.evaluate(() => window.__qa.setFail('session.list', '桌面端未启动'));
-    await waitFor(
-      page,
-      () => !document.querySelector('#screen-connect').classList.contains('hidden'),
-      'connect screen',
-    );
+    await waitFor(page, () => !document.querySelector('#screen-connect').classList.contains('hidden'), 'connect screen');
     await clickId(page, 'paste-toggle');
-    await page.type('#paste', `${BASE}/#offer=QAFAKE`);
+    await page.locator('#paste').pressSequentially(`${BASE}/#offer=QAFAKE`);
     await clickId(page, 'paste-enter');
     await waitFor(page, () => !document.querySelector('#screen-chat').classList.contains('hidden'), 'chat visible');
     await openDrawer(page);
-    await waitFor(
-      page,
-      () => (document.querySelector('#session-list')?.textContent || '').includes('桌面端未启动'),
-      'harness-down copy',
-    );
-    const titles = await page.evaluate(
-      () => [...document.querySelectorAll('#session-list .session b')].map((node) => node.textContent),
-    );
+    await waitFor(page, () => (document.querySelector('#drawer-directory')?.textContent || '').includes('桌面端未启动'), 'harness-down copy');
+    const titles = await page.evaluate(() => [...document.querySelectorAll('#drawer-directory .session b')].map((n) => n.textContent));
     assert(!titles.includes('新会话') || titles.length === 0, `empty new-session pretend: ${titles}`);
   });
 
@@ -801,9 +729,14 @@ async function main() {
   });
 
   await check('目录同步失败：抽屉重试恢复真实目录', async () => {
-    await clickByText(page, '#session-list button', '重试');
-    await waitFor(page, () => document.querySelectorAll('#session-list .session').length >= 3, 'catalog retry');
-    assert(!(await page.$eval('#banner', (node) => node.textContent)), 'sync error did not clear');
+    await clickByText(page, '#drawer-directory button', '重试');
+    await waitFor(page, () => document.querySelectorAll('#drawer-directory .session').length >= 3, 'catalog retry');
+    const cleared = await page.evaluate(() => (
+      !document.querySelector('#banner')?.textContent
+      && !(document.querySelector('#drawer-directory')?.textContent || '').includes('桌面端未启动')
+      && !document.querySelector('#toast-root .toast[data-tone="error"]')
+    ));
+    assert(cleared, 'sync error did not clear');
   });
 
   console.log(results.join('\n'));
@@ -811,7 +744,12 @@ async function main() {
   if (failures > 0) process.exitCode = 1;
   } finally {
     try { await browser?.close(); }
-    finally { await new Promise((resolve) => server.close(resolve)); }
+    finally {
+      try { await new Promise((resolve) => server.close(resolve)); }
+      finally {
+        if (ownedShotDir && shotDir) await rm(shotDir, { recursive: true, force: true });
+      }
+    }
   }
 }
 
