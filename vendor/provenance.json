@@ -153,11 +153,6 @@
     "dshmarket": {
       "kind": "source",
       "origin": "attribution stub; npm dshmarket@1.14.0 source snapshot removed (DESKTOP-FORK.md)"
-    },
-    "open-intelligent-ui": {
-      "kind": "source",
-      "origin": "https://github.com/thesysdev/open-intelligent-ui @ 6a4a0ba192ea285b3a5ed39dcc1295d7d4080d6f (UPSTREAM.md)",
-      "rebuildCommand": "npm run prepare:whale-ui (viewer emitted under src/renderer/openui, outside vendor, untracked)"
     }
   }
 }

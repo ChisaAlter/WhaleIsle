@@ -17,7 +17,6 @@
 
 历史验证与变更记录见 [docs/history/git-titlebar.md](../history/git-titlebar.md)。
 
-| **last verified (reveal reflow)** | 2026-11-15 — 胶囊悬停展开/收起期间 `AppFrame` 不再逐帧更新 trailing 宽度 state：展开开始即一次性让出 `data-titlebar-pending-room` 宣告的额外空间，收起期间保持展开宽度，全部相关过渡 end/cancel 归零后才重测终值；零时长过渡（reduced-motion/minimal）与非动画尺寸变化仍即时照常更新。`vitest run packages/client/ui-layout packages/client/ui-git packages/client/ui-conversation` 105 文件 1617/1617 通过；`tsc -b tsconfig.client.json` 通过；改动行 oxlint 零告警。|
 
 ## User paths
 

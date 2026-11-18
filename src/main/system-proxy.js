@@ -65,12 +65,14 @@ function parseProxyRule(rule) {
 }
 
 // { host, port, url } while the user has set an update proxy, else null.
+/** @type {{host: string, port: number, url: string} | null} */
 let updateProxy = null;
 
 /**
  * '' clears. Otherwise a plain HTTP proxy as "host:port" or "http://host:port".
  * Credentials are refused so no secret lands in the plain-text settings file.
  */
+/** @param {unknown} value */
 function parseUpdateProxy(value) {
   const text = String(value ?? '').trim();
   if (!text) return null;
@@ -90,7 +92,9 @@ function parseUpdateProxy(value) {
   return { host, port: Number(port), url: `http://${host.includes(':') ? `[${host}]` : host}:${port}` };
 }
 
-/** Canonical form of a valid update proxy ('' when cleared); throws on an invalid one. */
+/** Canonical form of a valid update proxy ('' when cleared); throws on an invalid one.
+ * @param {unknown} value
+ */
 function normalizeUpdateProxy(value) {
   return parseUpdateProxy(value)?.url || '';
 }
@@ -103,6 +107,7 @@ function normalizeUpdateProxy(value) {
  */
 let applying = Promise.resolve();
 
+/** @param {unknown} value */
 function setUpdateProxy(value) {
   // Serialized, and the in-memory choice changes only after the session accepted it,
   // so concurrent or failed changes never leave the two disagreeing.
@@ -114,7 +119,10 @@ function setUpdateProxy(value) {
     }
     updateProxy = next;
   });
-  applying = run.catch(() => {});
+  applying = run.catch(() => {
+    // The caller receives run's rejection; only the queue tail must settle
+    // so a failed choice cannot prevent the next explicit change.
+  });
   return run;
 }
 
@@ -122,9 +130,14 @@ function setUpdateProxy(value) {
  * A failure of the user's own update proxy, said plainly: switching route would
  * not help, so it must not read as an unstable network. Other errors pass through.
  */
+/** @template T
+ * @param {T} error
+ */
 function explainUpdateProxyFailure(error) {
-  if (!updateProxy || !error || error.code === 'ERR_UPDATE_PROXY') return error;
-  if (!error.proxyFailure && !PROXY_NET_ERROR.test(String(error.message || ''))) return error;
+  if (!updateProxy || !(error instanceof Error)) return error;
+  const detail = /** @type {Error & {code?: string, proxyFailure?: boolean}} */ (error);
+  if (detail.code === 'ERR_UPDATE_PROXY') return error;
+  if (!detail.proxyFailure && !PROXY_NET_ERROR.test(String(error.message || ''))) return error;
   return Object.assign(new Error(`无法通过更新代理 ${updateProxy.url} 连接，请确认代理正在运行且无需登录，或清空「更新代理」以跟随系统代理`),
     { code: 'ERR_UPDATE_PROXY', cause: error });
 }

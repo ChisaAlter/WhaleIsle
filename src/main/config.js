@@ -306,7 +306,9 @@ function normalizeDisabledPlugins(list) {
   ))))))];
 }
 
-/** A stored proxy that no longer parses is dropped rather than breaking every update check. */
+/** A stored proxy that no longer parses is dropped rather than breaking every update check.
+ * @param {unknown} value
+ */
 function validUpdateProxy(value) {
   try { return normalizeUpdateProxy(value); } catch { return ''; }
 }

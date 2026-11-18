@@ -38,7 +38,7 @@ async function planDelta(target, deps = {}) {
   return { ok: true, downloadBytes };
 }
 
-function createDesktopUpdateCenter({ app, loadConfig, saveConfig, taskProtection, log = () => {} }) {
+function createDesktopUpdateCenter({ app, loadConfig, saveConfig, taskProtection, log = (/** @type {string} */ _message) => {} }) {
   const update = require('../update');
   const updater = require('../update-updater');
   const releaseSource = require('../../launcher/release-source');
@@ -56,14 +56,14 @@ function createDesktopUpdateCenter({ app, loadConfig, saveConfig, taskProtection
     getAutoDownload: () => loadConfig().autoDownloadUpdates !== false,
     saveAutoDownload: (enabled) => saveConfig({ autoDownloadUpdates: enabled }),
     getProxy: () => loadConfig().updateProxy || '',
-    saveProxy: async (value) => {
+    saveProxy: async (/** @type {string} */ value) => {
       const proxy = normalizeUpdateProxy(value);
       const previous = loadConfig().updateProxy || '';
       await setUpdateProxy(proxy);
       try {
         saveConfig({ updateProxy: proxy });
       } catch (error) {
-        await setUpdateProxy(previous).catch(() => {});
+        await setUpdateProxy(previous).catch((rollbackError) => log(`更新代理回滚失败：${rollbackError.message}`));
         throw error;
       }
     },

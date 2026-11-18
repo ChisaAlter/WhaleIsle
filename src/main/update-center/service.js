@@ -77,7 +77,7 @@ function createUpdateCenter(deps) {
     getAutoDownload = () => true,
     saveAutoDownload = () => {},
     getProxy = () => '',
-    saveProxy = () => {},
+    saveProxy = (/** @type {string} */ _value) => {},
     resolveRelease,
     planDelta = async () => ({ ok: false, reason: 'unsupported' }),
     readChecksum,
@@ -100,6 +100,7 @@ function createUpdateCenter(deps) {
   let saved = { version: 1, target: null, plan: null, job: null };
   // Live: what the UI renders.
   const model = { phase: 'idle', checkedAt: 0, progress: null, error: null, explicit: false };
+  /** @type {AbortController | null} */
   let controller = null;
   let abortReason = null;
   let running = null;
@@ -529,11 +530,13 @@ function createUpdateCenter(deps) {
     },
     // Same shape as setRoute: the transfer is interrupted, the new network path is saved, then re-checked.
     // saveProxy validates first, so an invalid address changes nothing.
-    setProxy: async (value) => {
+    setProxy: async (/** @type {string} */ value) => {
       const wasDownloading = Boolean(controller);
       await saveProxy(value);
       if (wasDownloading) await stopActive('pause');
-      if (saved.job) saved.job.userPaused = !wasDownloading && Boolean(saved.job.userPaused);
+      /** @type {{userPaused?: boolean} | null} */
+      const job = /** @type {{userPaused?: boolean} | null} */ (saved.job);
+      if (job) job.userPaused = !wasDownloading && Boolean(job.userPaused);
       if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
       return check({ manual: true });
     },
@@ -552,7 +555,7 @@ function createUpdateCenter(deps) {
       return () => listeners.delete(listener);
     },
     async command(action, arg) {
-      const run = Object.prototype.hasOwnProperty.call(commands, action) ? commands[action] : null;
+      const run = Object.prototype.hasOwnProperty.call(commands, action) ? commands[/** @type {keyof typeof commands} */ (action)] : null;
       if (typeof run !== 'function') throw new Error(`unknown update command ${action}`);
       return run(arg);
     },

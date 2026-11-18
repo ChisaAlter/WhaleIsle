@@ -161,7 +161,8 @@ async function main() {
       });
       assert(view.density, 'viewer missing data-density-coarse');
       assert(view.buttonHeight >= 44, `coarse button height ${view.buttonHeight}px < 44px`);
-      assert(view.lang.startsWith('zh'), `viewer lang: ${view.lang}`);
+      const expectedLocale = await page.evaluate(() => /^en\b/i.test(navigator.language || '') ? 'en' : 'zh');
+      assert(view.lang === expectedLocale, `viewer lang: ${view.lang}, host locale: ${expectedLocale}`);
     });
 
     await check('卡片外框满足 44px 触控契约', async () => {

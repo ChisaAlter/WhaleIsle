@@ -20,3 +20,5 @@
 ## 正文历史段落
 
 最近验证：2026-09-28，登记 watcher 增加低频元数据核对与去重，漏原生事件/创建/改写/删除/停止反例通过；与预览、工作区、编辑器组合 200/200。完整远端候选结果以发布准备报告为准。
+
+| **last verified (reveal reflow)** | 2026-11-15 — 胶囊悬停展开/收起期间 `AppFrame` 不再逐帧更新 trailing 宽度 state：展开开始即一次性让出 `data-titlebar-pending-room` 宣告的额外空间，收起期间保持展开宽度，全部相关过渡 end/cancel 归零后才重测终值；零时长过渡（reduced-motion/minimal）与非动画尺寸变化仍即时照常更新。`vitest run packages/client/ui-layout packages/client/ui-git packages/client/ui-conversation` 105 文件 1617/1617 通过；`tsc -b tsconfig.client.json` 通过；改动行 oxlint 零告警。|

@@ -37,6 +37,9 @@ function resolveGitQuick(status, busy) {
   return quick('Commit', true, 'show_hint', null, '分支已是最新，无需操作。');
 }
 
+/** @param {{refName?: string | null}} status
+ * @param {string} authError
+ */
 function gitPillLabel(status, authError) {
   if (authError) return 'Git';
   if (typeof status.refName === 'string') return status.refName;

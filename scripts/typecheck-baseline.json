@@ -3220,9 +3220,6 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 1
       },
-      "TS2322": {
-        "Type 'string' is not assignable to type '\"dark\" | \"light\" | \"system\"'.": 1
-      },
       "TS2339": {
         "Property '_initPaths' does not exist on type 'typeof Module'.": 1,
         "Property 'cleanup' does not exist on type '{ binary: { version: any; size: number; sha256: string; }; visualOnly: boolean; errorOnly: boolean; splitSmoke: boolean; checks: never[]; screenshots: never[]; layouts: never[]; requests: never[]; rendererErrors: never[]; }'.": 2,
@@ -7971,7 +7968,6 @@
       },
       "TS7005": {
         "Variable 'autoTimer' implicitly has an 'any' type.": 2,
-        "Variable 'controller' implicitly has an 'any' type.": 3,
         "Variable 'running' implicitly has an 'any' type.": 1
       },
       "TS7006": {
@@ -8000,11 +7996,7 @@
       },
       "TS7034": {
         "Variable 'autoTimer' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'controller' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'running' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ check: () => Promise<{ phase: string; current: any; checkedAt: number; route: any; routeExplicit: any; routes: any; autoDownload: any; target: { version: any; tag: any; route: any; publishedAt: any; notes: any; htmlUrl: any; } | null; ... <n> more ...; platform: any; }>; ... <n> more ...; setAutoDownload: (enabled: an...'.": 1
       }
     },
     "src/main/update-dialog.js": {
@@ -10147,9 +10139,6 @@
       "TS2531": {
         "Object is possibly 'null'.": 23
       },
-      "TS7005": {
-        "Variable 'view' implicitly has an 'any' type.": 7
-      },
       "TS7006": {
         "Parameter 'action' implicitly has an 'any' type.": 1,
         "Parameter 'arg' implicitly has an 'any' type.": 1,
@@ -10168,9 +10157,6 @@
         "Parameter 'theme' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 1,
         "Parameter 'view' implicitly has an 'any' type.": 3
-      },
-      "TS7034": {
-        "Variable 'view' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ check: string; download: string; install: string; }'.": 1

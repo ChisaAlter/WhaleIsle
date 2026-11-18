@@ -13,7 +13,6 @@ const { sanitizeDownloadFilename } = require('./download-path');
 const { setTimeout: delay } = require('node:timers/promises');
 const installDetect = require('../launcher/install-detect');
 const { currentVersion, getInstalledAppInfo } = installDetect;
-
 const GITHUB_OWNER = 'ChisaAlter';
 const GITHUB_REPO = 'WhaleIsle';
 const RELEASES_LATEST = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;

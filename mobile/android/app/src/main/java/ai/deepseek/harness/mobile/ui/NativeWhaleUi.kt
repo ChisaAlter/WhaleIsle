@@ -819,7 +819,7 @@ private fun shareWhaleUiDownload(
     }
 }
 
-// Fixed resource endpoints, mirroring the web SPA resolver (mobile/web/app.js):
+// Fixed resource endpoints, mirroring the web SPA resolver (mobile/web/app/whale-ui.js):
 // Wikipedia page info, Wikimedia image search and OSRM street routes. Calls are
 // blocking and run on a dedicated thread; only 2xx responses are cached.
 private val whaleUiResourceHttp = OkHttpClient.Builder()
@@ -830,14 +830,13 @@ private val whaleUiResourceCache = ConcurrentHashMap<String, Pair<Int, JsonObjec
 private val whaleUiWikiPhotoReject = Regex("""\.(?:svg)(?:\?|$)|(?:flag|logo|coat_of_arms|locator_map)""", RegexOption.IGNORE_CASE)
 private val whaleUiSearchPhotoReject = Regex("""\.(?:svg)(?:\?|$)|(?:flag|logo|coat_of_arms|locator_map|signature)""", RegexOption.IGNORE_CASE)
 
-private fun whaleUiHttpGetJson(url: String): JsonObject = try {
-    whaleUiResourceHttp.newCall(Request.Builder().url(url).build()).execute().use { response ->
-        val text = if (response.isSuccessful) response.body?.string().orEmpty() else ""
-        text.takeIf { it.isNotBlank() }?.let { Json.parseToJsonElement(it) as? JsonObject } ?: JsonObject(emptyMap())
+internal fun whaleUiHttpGetJson(url: String, client: OkHttpClient = whaleUiResourceHttp): JsonObject =
+    client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        if (!response.isSuccessful) throw java.io.IOException("Resource service returned HTTP ${response.code}")
+        val text = response.body?.string().orEmpty()
+        Json.parseToJsonElement(text) as? JsonObject
+            ?: throw java.io.IOException("Resource service returned a non-object JSON response")
     }
-} catch (_: Exception) {
-    JsonObject(emptyMap())
-}
 
 private fun safeWhaleUiImageUrl(value: String): String {
     val raw = value.trim().let { if (it.startsWith("//")) "https:$it" else it }
@@ -845,7 +844,11 @@ private fun safeWhaleUiImageUrl(value: String): String {
     return if (url.scheme == "https") url.toString() else ""
 }
 
-internal fun resolveWhaleUiResource(path: String, query: JsonObject?): Pair<Int, JsonObject> {
+internal fun resolveWhaleUiResource(
+    path: String,
+    query: JsonObject?,
+    getJson: (String) -> JsonObject = { url -> whaleUiHttpGetJson(url) },
+): Pair<Int, JsonObject> {
     val key = "$path ${query?.toString().orEmpty()}"
     whaleUiResourceCache[key]?.let { return it }
     fun err(status: Int, message: String): Pair<Int, JsonObject> =
@@ -858,8 +861,8 @@ internal fun resolveWhaleUiResource(path: String, query: JsonObject?): Pair<Int,
                     return err(400, "title must contain 1 to 200 characters.")
                 }
                 val article = URLEncoder.encode(title.replace(' ', '_'), "UTF-8")
-                val summary = whaleUiHttpGetJson("https://en.wikipedia.org/api/rest_v1/page/summary/$article")
-                val media = whaleUiHttpGetJson("https://en.wikipedia.org/api/rest_v1/page/media-list/$article")
+                val summary = getJson("https://en.wikipedia.org/api/rest_v1/page/summary/$article")
+                val media = getJson("https://en.wikipedia.org/api/rest_v1/page/media-list/$article")
                 val photos = mutableListOf<String>()
                 fun addPhoto(candidate: String?) {
                     val url = candidate?.let(::safeWhaleUiImageUrl).orEmpty()
@@ -901,7 +904,7 @@ internal fun resolveWhaleUiResource(path: String, query: JsonObject?): Pair<Int,
                     .addQueryParameter("piprop", "thumbnail")
                     .addQueryParameter("pithumbsize", "960")
                     .build()
-                val data = whaleUiHttpGetJson(url.toString())
+                val data = getJson(url.toString())
                 val photos = mutableListOf<String>()
                 for (page in data["query"].objectValue()["pages"].arrayValue()) {
                     val src = safeWhaleUiImageUrl(page.objectValue()["thumbnail"].objectValue()["source"].text())
@@ -919,7 +922,7 @@ internal fun resolveWhaleUiResource(path: String, query: JsonObject?): Pair<Int,
                 }
                 if (!valid) return err(400, "Invalid coordinates.")
                 val coordinates = points.joinToString(";") { it.joinToString(",") }
-                val data = whaleUiHttpGetJson(
+                val data = getJson(
                     "https://router.project-osrm.org/route/v1/driving/$coordinates?overview=full&geometries=geojson&steps=false"
                 )
                 val route = data["routes"].arrayValue().firstOrNull()
