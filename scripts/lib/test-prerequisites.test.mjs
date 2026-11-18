@@ -8,7 +8,6 @@ const {
   harnessDependencies,
   harnessBuild,
   harnessWorkspace,
-  vendorPluginArtifacts,
   electronBinary,
   packagedExecutable,
   allPrerequisites,
@@ -91,15 +90,6 @@ test('harnessWorkspace fails on either missing half', () => {
     existsSync: existsOnly(path.join(root, 'node_modules'), path.join(root, 'apps/cli/node_modules'), path.join(root, 'apps/cli/lib/bin.js')),
   });
   assert.equal(full.ok, true);
-});
-
-test('vendorPluginArtifacts names the plugin and remediation command', () => {
-  const check = vendorPluginArtifacts('dsh-with-chatgpt', ['node_modules', 'bridge/dist/workspace/manager.js'], { existsSync: none });
-  assert.equal(check.ok, false);
-  assert.match(check.reason, /dsh-with-chatgpt/);
-  assert.match(check.reason, /npm run setup/);
-  const ready = vendorPluginArtifacts('dsh-with-chatgpt', ['node_modules'], { existsSync: existsOnly('node_modules') });
-  assert.equal(ready.ok, true);
 });
 
 test('electronBinary prefers ELECTRON_PATH and reports per-platform candidates', () => {

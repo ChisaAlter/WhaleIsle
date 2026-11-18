@@ -2533,10 +2533,9 @@
       "TS7006": {
         "Parameter 'check' implicitly has an 'any' type.": 3,
         "Parameter 'command' implicitly has an 'any' type.": 1,
-        "Parameter 'entries' implicitly has an 'any' type.": 3,
-        "Parameter 'entry' implicitly has an 'any' type.": 4,
+        "Parameter 'entries' implicitly has an 'any' type.": 2,
+        "Parameter 'entry' implicitly has an 'any' type.": 3,
         "Parameter 'existsSync' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'reason' implicitly has an 'any' type.": 1,
         "Parameter 'root' implicitly has an 'any' type.": 1,
         "Parameter 't' implicitly has an 'any' type.": 2,
@@ -2772,11 +2771,6 @@
       "TS7031": {
         "Binding element 'outputMtime' implicitly has an 'any' type.": 1,
         "Binding element 'sourceMtime' implicitly has an 'any' type.": 1
-      }
-    },
-    "scripts/prepare-dsh-with-chatgpt-bundle.mjs": {
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1
       }
     },
     "scripts/prepare-dshd-remote.mjs": {
@@ -11725,130 +11719,6 @@
       },
       "TS7006": {
         "Parameter 'ctx' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/bridge-client.js": {
-      "TS2339": {
-        "Property 'ELECTRON_RUN_AS_NODE' does not exist on type '{ D2C_STATE_DIR: any; }'.": 2
-      },
-      "TS2551": {
-        "Property 'C2C_STATE_DIR' does not exist on type '{ D2C_STATE_DIR: any; }'. Did you mean 'D2C_STATE_DIR'?": 1
-      },
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 2,
-        "Parameter 'chunk' implicitly has an 'any' type.": 1,
-        "Parameter 'configured' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 1,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'signal' implicitly has an 'any' type.": 2,
-        "Parameter 'stream' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1,
-        "Parameter 'workspace' implicitly has an 'any' type.": 2
-      },
-      "TS7031": {
-        "Binding element 'node' implicitly has an 'any' type.": 1,
-        "Binding element 'stateDir' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/browser.js": {
-      "TS18048": {
-        "'owner.context' is possibly 'undefined'.": 6
-      },
-      "TS2322": {
-        "Type 'Promise<undefined>' is not assignable to type 'undefined'.": 1
-      },
-      "TS2339": {
-        "Property 'checked' does not exist on type 'Element'.": 1,
-        "Property 'disabled' does not exist on type 'Element'.": 1,
-        "Property 'goto' does not exist on type 'never'.": 1,
-        "Property 'href' does not exist on type 'Element'.": 1,
-        "Property 'innerText' does not exist on type 'Element'.": 2,
-        "Property 'isClosed' does not exist on type 'never'.": 1,
-        "Property 'locator' does not exist on type 'never'.": 1,
-        "Property 'readOnly' does not exist on type 'Element'.": 1,
-        "Property 'url' does not exist on type 'never'.": 4,
-        "Property 'value' does not exist on type 'Element'.": 2
-      },
-      "TS2349": {
-        "This expression is not callable.": 4
-      },
-      "TS7006": {
-        "Parameter 'agent' implicitly has an 'any' type.": 5,
-        "Parameter 'configured' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'frame' implicitly has an 'any' type.": 1,
-        "Parameter 'id' implicitly has an 'any' type.": 2,
-        "Parameter 'node' implicitly has an 'any' type.": 4,
-        "Parameter 'origin' implicitly has an 'any' type.": 1,
-        "Parameter 'other' implicitly has an 'any' type.": 1,
-        "Parameter 'owner' implicitly has an 'any' type.": 7,
-        "Parameter 'page' implicitly has an 'any' type.": 3,
-        "Parameter 'profileDir' implicitly has an 'any' type.": 1,
-        "Parameter 'request' implicitly has an 'any' type.": 4,
-        "Parameter 'route' implicitly has an 'any' type.": 1,
-        "Parameter 'signal' implicitly has an 'any' type.": 3,
-        "Parameter 'target' implicitly has an 'any' type.": 3,
-        "Parameter 'url' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 6
-      },
-      "TS7031": {
-        "Binding element 'attribute' implicitly has an 'any' type.": 1,
-        "Binding element 'executablePath' implicitly has an 'any' type.": 1,
-        "Binding element 'length' implicitly has an 'any' type.": 1,
-        "Binding element 'loginPage' implicitly has an 'any' type.": 1,
-        "Binding element 'nonce' implicitly has an 'any' type.": 1,
-        "Binding element 'offset' implicitly has an 'any' type.": 1,
-        "Binding element 'profileDir' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/desktop-confirm.js": {
-      "TS7006": {
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'control' implicitly has an 'any' type.": 1,
-        "Parameter 'pathname' implicitly has an 'any' type.": 1,
-        "Parameter 'request' implicitly has an 'any' type.": 2
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/index.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 1
-      },
-      "TS2339": {
-        "Property 'bridge' does not exist on type '{}'.": 1,
-        "Property 'browser' does not exist on type '{}'.": 1,
-        "Property 'browserExecutable' does not exist on type '{}'.": 1,
-        "Property 'headless' does not exist on type '{}'.": 1,
-        "Property 'node' does not exist on type '{}'.": 1,
-        "Property 'stateDir' does not exist on type '{}'.": 1
-      },
-      "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 4,
-        "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'definition' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 5,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
-        "Parameter 'root' implicitly has an 'any' type.": 3,
-        "Parameter 'value' implicitly has an 'any' type.": 2
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/state.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 2
-      },
-      "TS2345": {
-        "Argument of type 'string | number' is not assignable to parameter of type 'number | undefined'.": 1
-      },
-      "TS7006": {
-        "Parameter 'agent' implicitly has an 'any' type.": 5,
-        "Parameter 'configured' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 2,
-        "Parameter 'patch' implicitly has an 'any' type.": 2,
-        "Parameter 'root' implicitly has an 'any' type.": 1,
-        "Parameter 'sessionId' implicitly has an 'any' type.": 1,
-        "Parameter 'stateDir' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
       }
     }
   }

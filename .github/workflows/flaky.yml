@@ -34,8 +34,6 @@ jobs:
         run: npm run setup:harness
       - name: Whale UI behavior tests
         run: npm run test:whale-ui
-      - name: Build optional ChatGPT bundle for native compatibility checks
-        run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Build the vendored DSHD remote
         run: npm run prepare:dshd-remote
       - name: Allow Chromium sandbox user namespaces

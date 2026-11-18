@@ -62,15 +62,6 @@ function harnessWorkspace(options = {}) {
   return allPrerequisites(harnessDependencies(options), harnessBuild(options));
 }
 
-/**
- * A vendored plugin's runtime: built entries (lib/dist) and its node_modules,
- * relative to vendor/<name>. `command` names the step that restores them.
- */
-function vendorPluginArtifacts(name, entries, { command = SETUP_COMMAND, vendorRoot = path.join(ROOT, 'vendor'), existsSync = fs.existsSync } = {}) {
-  const absent = absentEntries(path.join(vendorRoot, name), entries, existsSync);
-  return absent.length ? missing(`vendor/${name} 依赖或构建产物`, absent.map(entry => `vendor/${name}/${entry}`), command) : READY;
-}
-
 /** Real Electron executable for fixture-driven renderer tests. */
 function electronBinary({ root = ROOT, env = process.env, platform = process.platform, existsSync = fs.existsSync } = {}) {
   const dist = path.join('node_modules', 'electron', 'dist');
@@ -144,7 +135,6 @@ module.exports = {
   harnessDependencies,
   harnessBuild,
   harnessWorkspace,
-  vendorPluginArtifacts,
   electronBinary,
   packagedExecutable,
   allPrerequisites,

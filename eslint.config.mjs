@@ -14,7 +14,6 @@ const CHECKED_FILES = [
   'vendor/dsh-deepseek-tools/lib/**/*.{js,mjs,cjs}',
   'vendor/dsh-task-control/lib/**/*.{js,mjs,cjs}',
   'vendor/dsh-platform-session/lib/**/*.{js,mjs,cjs}',
-  'vendor/dsh-with-chatgpt/lib/**/*.{js,mjs,cjs}',
   'vendor/dsh-remote/**/*.{js,mjs,cjs}',
   'vendor/dsh-shared/**/*.{js,mjs,cjs}',
   'dsh-acp/**/*.{js,mjs,cjs}',
@@ -46,7 +45,6 @@ const NODE_ESM_FILES = [
   'vendor/dsh-deepseek-tools/lib/**/*.{js,mjs}',
   'vendor/dsh-task-control/lib/**/*.{js,mjs}',
   'vendor/dsh-platform-session/lib/**/*.{js,mjs}',
-  'vendor/dsh-with-chatgpt/lib/**/*.{js,mjs}',
   'vendor/dsh-remote/lib/**/*.{js,mjs}',
   'vendor/dsh-remote/plugin-src/**/*.mjs',
   'vendor/dsh-shared/lib/**/*.{js,mjs}',
@@ -169,10 +167,6 @@ export default [
       'vendor/dsh-project/tests/**', // 插件测试（本期范围外）
       'vendor/dsh-deepseek-tools/client/**', // 页面侧注入脚本（本期范围外）
       'vendor/dsh-deepseek-tools/tests/**', // 插件测试（本期范围外）
-      'vendor/dsh-with-chatgpt/bridge/**', // 页面侧桥接脚本（本期范围外）
-      'vendor/dsh-with-chatgpt/locale/**', // 翻译资源
-      'vendor/dsh-with-chatgpt/skills/**', // 技能资源
-      'vendor/dsh-with-chatgpt/tests/**', // 插件测试（本期范围外）
       'vendor/dsh-remote/lib/client.js', // 打包产物（esbuild，源码在 plugin-src/client）
       'dsh-acp/client/client.js', // 打包产物（esbuild，源码在 dsh-acp/client-src）
       'dsh-acp/lib/vendor/**', // 打包产物（tools/runtime-build 输出）

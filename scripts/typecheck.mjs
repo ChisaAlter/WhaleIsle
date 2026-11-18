@@ -15,10 +15,6 @@
 //   它们是否存在于磁盘不影响结果；
 // - 消息里的 …/node_modules/ 路径前缀统一归一为 <node_modules>/（worktree
 //   的 node_modules 常是指向共享目录的符号链接，绝对路径随环境不同）；
-// - 可选构建产物/可选依赖的解析由入库 .d.ts 固定：lib/index.js 导入的
-//   ../bridge/dist/workspace/manager.js 由同路径的入库 manager.d.ts 抢先
-//   解析（.d.ts 先于 .js），playwright-core 由 tsconfig.check.json 的
-//   paths 指到 vendor/dsh-with-chatgpt/types/playwright-core.d.ts。
 //
 // 基线只减不增：
 // - 出现基线外的新诊断或同一诊断计数增加 → 失败；
