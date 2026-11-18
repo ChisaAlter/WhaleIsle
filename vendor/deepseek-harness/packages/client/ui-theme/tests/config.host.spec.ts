@@ -36,13 +36,13 @@ describe('ui-theme host', () => {
     expect(Object.keys(initial as Record<string, unknown>).sort()).toEqual(Object.keys(ThemeSettingsFields).sort())
     await configuration.update({
       preference: 'dark', fontSize: 16, activeDarkThemeId: 'custom-night',
-      glassOpacity: 72, terminalOpacity: 83, transparentTheme: true,
+      glassOpacity: 72, terminalOpacity: 83, transparentTheme: true, windowAcrylic: true,
       wallpaperImage: 'data:image/png;base64,AA==', backgroundEffectSpeed: 135,
       cursorEffectEnabled: true, metallicPaintEnabled: true, fontFamilyTerminal: 'Consolas',
     })
     expect(plainConfig(configuration.fiber.effectiveConfig)).toMatchObject({
       preference: 'dark', fontSize: 16, activeDarkThemeId: 'custom-night',
-      glassOpacity: 72, terminalOpacity: 83, transparentTheme: true,
+      glassOpacity: 72, terminalOpacity: 83, transparentTheme: true, windowAcrylic: true,
       wallpaperImage: 'data:image/png;base64,AA==', backgroundEffectSpeed: 135,
       cursorEffectEnabled: true, metallicPaintEnabled: true, fontFamilyTerminal: 'Consolas',
     })

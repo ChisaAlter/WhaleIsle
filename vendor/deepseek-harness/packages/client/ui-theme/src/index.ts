@@ -37,6 +37,7 @@ export const Config = z.object({
   glassOpacity: ThemeSettingsFields.glassOpacity.volatile(),
   terminalOpacity: ThemeSettingsFields.terminalOpacity.volatile(),
   transparentTheme: ThemeSettingsFields.transparentTheme.volatile(),
+  windowAcrylic: ThemeSettingsFields.windowAcrylic.volatile(),
   sidebarMaskHidden: ThemeSettingsFields.sidebarMaskHidden.volatile(),
   wallpaperImage: ThemeSettingsFields.wallpaperImage.volatile(),
   skinWallpaperEnabled: ThemeSettingsFields.skinWallpaperEnabled.volatile(),

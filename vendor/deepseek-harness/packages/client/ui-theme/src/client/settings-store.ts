@@ -34,6 +34,8 @@ export interface AppearanceSyncSnapshot {
   terminalOpacity: number
   /** Transparent theme flag; effective only while a wallpaper is set. */
   transparentTheme: boolean
+  /** Window acrylic flag; effective only while the shell reports material support. */
+  windowAcrylic: boolean
   /** Sidebar mask flag; the rail paints the canvas fill while on. */
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
@@ -119,6 +121,8 @@ export interface AppearanceRowState {
   terminalOpacity: number
   /** Transparent theme flag; effective only while a wallpaper is set. */
   transparentTheme: boolean
+  /** Window acrylic flag; effective only while the shell reports material support. */
+  windowAcrylic: boolean
   /** Sidebar mask flag; the rail paints the canvas fill while on. */
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
@@ -200,6 +204,7 @@ const EMPTY: Omit<AppearanceRowState, 'revision'> = {
   glassOpacity: DEFAULT_THEME_SETTINGS.glassOpacity,
   terminalOpacity: DEFAULT_THEME_SETTINGS.terminalOpacity,
   transparentTheme: DEFAULT_THEME_SETTINGS.transparentTheme,
+  windowAcrylic: DEFAULT_THEME_SETTINGS.windowAcrylic,
   sidebarMaskHidden: DEFAULT_THEME_SETTINGS.sidebarMaskHidden,
   wallpaperImage: '',
   skinWallpaperImage: '',
@@ -253,6 +258,7 @@ export function createAppearanceRowStore(): EngineStoreHandle<AppearanceRowState
         d.glassOpacity = snapshot.glassOpacity
         d.terminalOpacity = snapshot.terminalOpacity
         d.transparentTheme = snapshot.transparentTheme
+        d.windowAcrylic = snapshot.windowAcrylic
         d.sidebarMaskHidden = snapshot.sidebarMaskHidden
         d.wallpaperImage = snapshot.wallpaperImage
         d.skinWallpaperImage = snapshot.skinWallpaperImage ?? ''

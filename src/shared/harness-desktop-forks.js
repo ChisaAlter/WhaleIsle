@@ -57,7 +57,7 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 const FORK_FILE_MARKERS = [
   // Reversible rendering policy and bounded desktop startup recommendation.
   { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['minimalMode', 'minimalModeSuggestions', 'minimalModeSnoozedUntil'] },
-  { file: 'packages/client/ui-theme/src/appearance-apply.ts', includes: ['data-dsh-minimal', 'dsh:render-mode'] },
+  { file: 'packages/client/ui-theme/src/appearance-apply.ts', includes: ['data-dsh-minimal', 'dsh:render-mode', 'WINDOW_MATERIAL_ATTR'] },
   { file: 'packages/client/ui-theme/src/client/startup-responsiveness.ts', includes: ['observeStartupResponsiveness', 'maxFrameSamples', 'dsh:render-resume'] },
   { file: 'packages/client/ui-theme/src/client/minimal-mode-lifecycle.ts', includes: ['claimSuggestion', 'stopWaiting'] },
   { file: 'packages/client/ui-layout/src/client/MinimalModePrompt.tsx', includes: ['minimal.prompt.enable', 'minimal.prompt.never'] },
@@ -167,12 +167,12 @@ const FORK_FILE_MARKERS = [
   // pre-paint root attribute and skin-selected mascot seats.
   { file: 'packages/client/ui-theme/src/theme-family.ts', includes: ['ThemeSkinId', 'skin?: ThemeSkinId', 'wallpaper?: string'] },
   { file: 'packages/client/ui-theme/src/builtin-families.ts', includes: ['CODEX_FAMILY', 'CLAUDE_FAMILY', '--dsh-codex-panel'] },
-  { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['THEME_SKIN_WALLPAPER_FIELD', 'skinWallpaperEnabled'] },
-  { file: 'packages/client/ui-theme/src/index.ts', includes: ['skinWallpaperEnabled'] },
-  { file: 'packages/client/ui-theme/src/client/index.ts', includes: ['DEFAULT_THEME_SKIN', 'skin: family.skin', 'skinWallpaperEnabled'] },
-  { file: 'packages/client/ui-theme/src/client/settings-store.ts', includes: ['skinWallpaperImage', 'skinWallpaperEnabled'] },
-  { file: 'packages/client/ui-theme/src/client/locales.ts', includes: ['wallpaper.skin'] },
-  { file: 'packages/client/ui-theme/src/boot-theme.ts', includes: ['lightSkin', "data-dsh-skin"] },
+  { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['THEME_SKIN_WALLPAPER_FIELD', 'skinWallpaperEnabled', 'THEME_WINDOW_ACRYLIC_FIELD', 'windowAcrylic', 'windowMaterialSupported'] },
+  { file: 'packages/client/ui-theme/src/index.ts', includes: ['skinWallpaperEnabled', 'windowAcrylic'] },
+  { file: 'packages/client/ui-theme/src/client/index.ts', includes: ['DEFAULT_THEME_SKIN', 'skin: family.skin', 'skinWallpaperEnabled', 'setWindowAcrylic'] },
+  { file: 'packages/client/ui-theme/src/client/settings-store.ts', includes: ['skinWallpaperImage', 'skinWallpaperEnabled', 'windowAcrylic'] },
+  { file: 'packages/client/ui-theme/src/client/locales.ts', includes: ['wallpaper.skin', 'glass.windowAcrylic'] },
+  { file: 'packages/client/ui-theme/src/boot-theme.ts', includes: ['lightSkin', "data-dsh-skin", 'windowAcrylic', 'data-window-material-supported'] },
   { file: 'packages/client/ui-theme/src/client/styles.ts', includes: ['skins.css'] },
   { file: 'packages/client/ui-theme/src/styles/base.css', includes: ['--dsh-bubble-radius'] },
   { file: 'packages/client/ui-theme/src/styles/skins.css', includes: ["data-dsh-skin='codex'", "data-dsh-skin='claude'", '--dsh-windows-sidebar-width', 'data-dsh-hero-headline', 'data-dsh-message-bubble', 'data-dsh-sidebar-brand-identity', 'data-dsh-mascot'] },
@@ -202,7 +202,7 @@ const FORK_FILE_MARKERS = [
   // Standing wallpaper fork on the upstream ui-theme package.
   { file: 'packages/client/ui-theme/src/client/WallpaperGalleryModal.tsx', includes: [] },
   { file: 'packages/client/ui-theme/src/client/WallpaperRow.tsx', includes: ['skinWallpaperImage', 'wallpaper.skin'] },
-  { file: 'packages/client/ui-theme/src/client/AppearanceSection.tsx', includes: ['skinWallpaperImage', 'effectiveWallpaperImage'] },
+  { file: 'packages/client/ui-theme/src/client/AppearanceSection.tsx', includes: ['skinWallpaperImage', 'effectiveWallpaperImage', 'glass.windowAcrylic', 'glass.transparentPausedByAcrylic'] },
   // Appearance section typography: the upstream sheet references
   // --dsw-font-size-* tokens nothing defines, so every styled text fell back
   // to the inherited 16px root size; the fork pins the documented settings
@@ -294,8 +294,8 @@ const FORK_FILE_MARKERS = [
   // layout every frame and, in a long transcript, that pass alone saturates the main thread while a turn runs.
   { file: 'packages/client/ui-primitives/src/StateDot.module.css', includes: ['animation: dsh-state-dot-spin 1.5s linear infinite'], excludes: ['.spinnerMotion'] },
   { file: 'packages/client/ui-primitives/tests/state-dot-styles.client.spec.ts', includes: ['rotates the svg itself'] },
-  { file: 'packages/client/ui-theme/src/wallpaper.ts', includes: ['TRANSPARENT_ATTR', 'data-dsh-transparent'] },
-  { file: 'packages/client/ui-theme/src/styles/wallpaper.css', includes: ['html[data-dsh-transparent]'] },
+  { file: 'packages/client/ui-theme/src/wallpaper.ts', includes: ['TRANSPARENT_ATTR', 'data-dsh-transparent', 'WINDOW_MATERIAL_ATTR', 'data-dsh-window-material'] },
+  { file: 'packages/client/ui-theme/src/styles/wallpaper.css', includes: ['html[data-dsh-transparent]', 'html[data-dsh-window-material]'] },
   // Motion call sites the alpha.2/rc.2 merges resolved toward upstream,
   // deleting the theme recipes docs/motion.md requires: FlipText on the
   // model/reasoning and transcript triggers, and the presence markers on
