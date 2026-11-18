@@ -507,7 +507,9 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
     ...composition.userPatch ? loadOverlayPatches('project-composition', composition.userPatch) : [],
     ...composition.project === false ? [] : loadOverlayPatches('project-composition', composition.overlayFile ?? join(projectPackage, 'cordis.patch.yml')),
     { id: 'storage-json', config: { root: join(home, 'storages') } }, { id: 'session-persistence-jsonl', config: { root: join(home, 'sessions') } },
-    { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } }, { id: 'agent-default-model', config: { provider: 'composition', model: 'project-model' } },
+    { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } },
+    { id: 'spill-local', config: { root: join(home, 'spill'), cleanupPeriodDays: 0 } },
+    { id: 'agent-default-model', config: { provider: 'composition', model: 'project-model' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
     ...visualRepliesEnabled ? [{ id: 'visual-replies', config: { enabled: true } }] : [],
     // Project roles explicitly stay native even when a user's ambient mode is PTC.

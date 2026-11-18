@@ -5,10 +5,11 @@
 // Asserts DOM and IPC effects — not pure-function behavior.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
+const { electronTestEnv, terminateChild } = require('../../scripts/lib/electron-sandbox.cjs');
 const { electronBinary, prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
 const PREREQ = electronBinary();
@@ -16,9 +17,17 @@ const ELECTRON = PREREQ.binary;
 
 const CHILD = path.join(__dirname, 'launcher-bound.child.cjs');
 
+// 子进程的 userData 由父进程创建并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+});
+
 function runBound(env = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(ELECTRON, [CHILD], {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-launcher-bound-'));
+    tempDirs.push(fixtureDir);
+    const child = spawn(ELECTRON, [CHILD, fixtureDir], {
       env: electronTestEnv(ELECTRON, { ...process.env, ELECTRON_RUN_AS_NODE: undefined, ...env }),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -26,9 +35,16 @@ function runBound(env = {}) {
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', () => {});
-    const timer = setTimeout(() => { try { child.kill(); } catch { /* The timeout still rejects if the test child already exited. */ } reject(new Error('bound harness timed out')); }, 45000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      // kill 后等子进程真正退出（上限由 terminateChild 定）再失败，
+      // test.after 回收目录时渲染进程已释放 profile（#478）。
+      void terminateChild(child).then(() => reject(new Error('bound harness timed out')));
+    }, 45000);
     child.on('exit', (code) => {
       clearTimeout(timer);
+      if (timedOut) return;
       const marker = out.indexOf('BOUND_RESULT:');
       const errMarker = out.indexOf('BOUND_ERROR:');
       if (errMarker >= 0) return reject(new Error('bound harness error: ' + out.slice(errMarker + 12)));

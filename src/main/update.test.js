@@ -1244,11 +1244,12 @@ test('default full download bypasses the updater and publishes its actual failur
     return request;
   };
   const fake = fakeUpdaterChannel({ failCheck: true });
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-update-full-'));
   try {
     await assert.rejects(
       () => installUpdate(null, {
         updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake },
-        userDataDir: os.tmpdir(),
+        userDataDir,
       }),
       /HTTP 500/,
       'full selection must surface the whole-file download error',
@@ -1263,6 +1264,7 @@ test('default full download bypasses the updater and publishes its actual failur
     setUpdateStateSink(null);
     global.fetch = previousFetch;
     https.get = previousGet;
+    fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 });
 

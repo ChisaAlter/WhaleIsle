@@ -29,6 +29,8 @@ const RC5_PIN = {
 // Keep git fixtures hermetic: no global insteadOf rewrites or system config.
 process.env.GIT_CONFIG_GLOBAL = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-git-isolation-')), 'gitconfig');
 fs.writeFileSync(process.env.GIT_CONFIG_GLOBAL, '');
+// 模块级隔离目录由文件级钩子回收（#478）。
+test.after(() => fs.rmSync(path.dirname(process.env.GIT_CONFIG_GLOBAL), { recursive: true, force: true }));
 process.env.GIT_CONFIG_NOSYSTEM = '1';
 
 function git(args, options) {

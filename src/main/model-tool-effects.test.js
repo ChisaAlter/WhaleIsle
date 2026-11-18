@@ -17,6 +17,17 @@ const {
 
 const ROOT = path.join(__dirname, '..', '..');
 const HIGH_RISK = new Set(['destructive', 'external', 'code']);
+
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
 const DECLINED_TEXT = '用户拒绝了这次操作，不要重试，除非用户再次明确要求。';
 
 // ---------------------------------------------------------------------------
@@ -660,7 +671,7 @@ describe('refusal path', () => {
     const { ctx, tools } = makeCtx({
       agents: { get: (id) => (id === agent.id ? agent : undefined) },
     });
-    apply(ctx, { stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'd2c-state-')) }, {
+    apply(ctx, { stateDir: tempDir('d2c-state-') }, {
       bridge: { run: async (...args) => { ran.push(args); return { ok: true }; } },
       browser: { setBridgeOrigin: () => {}, run: async () => ({}) },
     });
@@ -681,7 +692,7 @@ describe('refusal path', () => {
     const { ctx, tools } = makeCtx({
       agents: { get: (id) => (id === agent.id ? agent : undefined) },
     });
-    apply(ctx, { stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'd2c-state-')) }, {
+    apply(ctx, { stateDir: tempDir('d2c-state-') }, {
       bridge: { run: async () => ({ ok: true }) },
       browser: { setBridgeOrigin: () => {}, run: async (...args) => { ran.push(args); return {}; } },
     });
@@ -701,7 +712,7 @@ describe('refusal path', () => {
     const { ctx, tools } = makeCtx({
       agents: { get: (id) => (id === agent.id ? agent : undefined) },
     });
-    apply(ctx, { stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'd2c-state-')) }, {
+    apply(ctx, { stateDir: tempDir('d2c-state-') }, {
       bridge: { run: async (...args) => { ran.push(args); return { ok: true }; } },
       browser: { setBridgeOrigin: () => {}, run: async () => ({}) },
     });
@@ -744,7 +755,7 @@ describe('refusal path', () => {
   test('pad_test_source does not run a command source when confirmation declines', async () => {
     ensureLoaderHooks();
     const { registerTools } = await import('../../vendor/dsh-pad/lib/index.js');
-    const marker = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pad-test-')), 'ran');
+    const marker = path.join(tempDir('pad-test-'), 'ran');
     const { ctx, tools } = makeCtx();
     registerTools({
       ctx,

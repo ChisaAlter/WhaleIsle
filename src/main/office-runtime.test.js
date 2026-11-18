@@ -16,8 +16,16 @@ const {
   ensureDesktopOfficeRuntime,
 } = require('./office-runtime');
 
+// 本文件所有 tempHome 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 function tempHome() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-office-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-office-test-'));
+  tempDirs.push(dir);
+  return dir;
 }
 
 function writePayload(root) {

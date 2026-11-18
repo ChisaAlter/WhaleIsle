@@ -1,25 +1,42 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { electronTestEnv } = require('../../scripts/lib/electron-sandbox.cjs');
+const { electronTestEnv, terminateChild } = require('../../scripts/lib/electron-sandbox.cjs');
 const { electronBinary, prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 const ELECTRON = electronBinary();
 const electron = ELECTRON.binary;
 
+// 子进程的 userData 由父进程创建并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+});
+
 async function runFixture(bootOnly = false) {
   return new Promise((resolve, reject) => {
-    const child = spawn(electron, [path.join(__dirname, 'launcher-feedback.child.cjs')], {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-feedback-'));
+    tempDirs.push(fixtureDir);
+    const child = spawn(electron, [path.join(__dirname, 'launcher-feedback.child.cjs'), fixtureDir], {
       env: electronTestEnv(electron, { ...process.env, ELECTRON_RUN_AS_NODE: undefined, DSHD_FEEDBACK_BOOT_ONLY: bootOnly ? '1' : '0' }), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '', stderr = '';
     child.stdout.on('data', data => { stdout += data; });
     child.stderr.on('data', data => { stderr += data; });
-    const timer = setTimeout(() => { child.kill(); reject(new Error('feedback fixture timeout')); }, 30000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      // kill 后等子进程真正退出（上限由 terminateChild 定）再失败，
+      // test.after 回收目录时渲染进程已释放 profile（#478）。
+      void terminateChild(child).then(() => reject(new Error('feedback fixture timeout')));
+    }, 30000);
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('exit', code => {
       clearTimeout(timer);
+      if (timedOut) return;
       const line = stdout.split(/\r?\n/).find(text => text.startsWith('FEEDBACK_RESULT:'));
       if (code !== 0 || !line) return reject(new Error(`feedback fixture ${code}: ${stderr}\n${stdout}`));
       try { resolve(JSON.parse(line.slice('FEEDBACK_RESULT:'.length))); } catch (error) { reject(error); }

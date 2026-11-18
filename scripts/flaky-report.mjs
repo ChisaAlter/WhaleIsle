@@ -228,13 +228,14 @@ export function sortRoundLogs(paths) {
   return [...paths].sort((a, b) => roundNumber(a) - roundNumber(b) || a.localeCompare(b));
 }
 
-// scripts.test 形如 `node --test "glob" "glob" ...`；--collect 复用同一组
+// scripts.test 形如 `node scripts/run-tests.mjs "glob" "glob" ...`（#478 的
+// tmp 隔离门禁包装器把 glob 原样透传给 `node --test`）；--collect 复用同一组
 // glob，避免工作流复制一份随脚本漂移。脚本的其余形态变化直接报错让人改这里。
 /** @param {{scripts?: {test?: string}}} [packageJson] */
 export function testGlobs(packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))) {
   const script = packageJson.scripts?.test ?? '';
-  if (!/^node\s+--test\b/.test(script)) {
-    throw new Error('scripts.test 不是 `node --test "glob" ...` 形式，--collect 无法派生运行命令：' + script);
+  if (!/^node\s+(?:--test|scripts\/run-tests\.mjs)\b/.test(script)) {
+    throw new Error('scripts.test 不是 `node scripts/run-tests.mjs "glob" ...` 形式，--collect 无法派生运行命令：' + script);
   }
   const globs = [...script.matchAll(/"([^"]+)"/g)].map(match => match[1]);
   if (globs.length === 0) throw new Error('未能从 scripts.test 解析出测试 glob：' + script);

@@ -7,8 +7,19 @@ const os = require('node:os');
 const path = require('node:path');
 const { createProactiveService } = require('./service');
 
+// 临时目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 test('creates one durable service rooted in user data', async () => {
-  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-service-'));
+  const userDataPath = tempDir('whale-service-');
   const service = createProactiveService({ userDataPath, now: () => '2026-11-05T00:00:00Z', idFactory: (() => { let i = 0; return () => `id-${i++}`; })() });
   const task = await service.dispatch('task/create', { title: 'Persist through restart', autonomy: 2 });
   assert.equal(task.title, 'Persist through restart');
@@ -18,7 +29,7 @@ test('creates one durable service rooted in user data', async () => {
 });
 
 test('syncs GitHub items into durable Inbox and preserves the cursor', async () => {
-  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-service-source-'));
+  const userDataPath = tempDir('whale-service-source-');
   const calls = [];
   const githubSource = {
     discover: async options => {

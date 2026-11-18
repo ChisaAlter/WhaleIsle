@@ -282,9 +282,13 @@ test('withOwnedTempDir refuses to delete a path replaced by an outside link', as
   const outside = path.join(dir, 'outside');
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, 'sentinel'), 'keep');
+  let leasedDir;
   await withOwnedTempDir('fs-safe-', (leased) => {
+    leasedDir = leased;
     fs.rmSync(leased, { recursive: true, force: true });
     fs.symlinkSync(outside, leased, process.platform === 'win32' ? 'junction' : 'dir');
   });
   assert.equal(fs.readFileSync(path.join(outside, 'sentinel'), 'utf8'), 'keep');
+  // The guard leaves the planted link untouched; the test reclaims it here (#478).
+  fs.rmSync(leasedDir, { force: true });
 });

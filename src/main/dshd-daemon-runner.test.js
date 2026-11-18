@@ -10,6 +10,17 @@ const { DshdRemote, RUNNER_PATH, VENDOR_ROOT } = require('./dshd-remote');
 const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 const { localImportClosure } = require('../../scripts/lib/import-closure.cjs');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 const VENDOR_RUNNABLE = fs.existsSync(path.join(VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'exports.js'))
   && fs.existsSync(path.join(VENDOR_ROOT, 'node_modules'));
 const VENDOR_HINT = 'dshd remote dist/依赖缺失（scripts/prepare-dshd-remote.mjs 会构建）';
@@ -20,7 +31,7 @@ const VENDOR = { ok: VENDOR_RUNNABLE, reason: VENDOR_HINT };
  * (createRootLogger + createChisaCodeDaemon), controllable via env.
  */
 function writeStubServerExport() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-stub-api-'));
+  const dir = tempDir('dsh-stub-api-');
   const file = path.join(dir, 'exports.mjs');
   fs.writeFileSync(file, [
     'export function createRootLogger() {',
@@ -43,7 +54,7 @@ function writeStubServerExport() {
 }
 
 function writeLaunchFile(overrides = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-runner-home-'));
+  const home = tempDir('dsh-runner-home-');
   const launchFile = path.join(home, 'daemon-launch.json');
   fs.writeFileSync(launchFile, JSON.stringify({
     serverExport: writeStubServerExport(),
@@ -53,7 +64,7 @@ function writeLaunchFile(overrides = {}) {
   return launchFile;
 }
 
-function spawnRunner(launchFile, env = {}) {
+function spawnRunner(t, launchFile, env = {}) {
   const child = spawn(process.execPath, [RUNNER_PATH, launchFile], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...env },
@@ -74,7 +85,14 @@ function spawnRunner(launchFile, env = {}) {
     }
   });
   const exit = new Promise((resolve) => {
-    child.on('exit', (code, signal) => resolve({ code, signal }));
+    child.once('exit', (code, signal) => resolve({ code, signal }));
+    child.once('error', () => resolve({ code: null, signal: null }));
+  });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      try { child.kill('SIGKILL'); } catch { /* 已退出属正常竞态。 */ }
+      await exit;
+    }
   });
   const waitFor = (msg, timeoutMs = 10_000) => new Promise((resolve, reject) => {
     const started = Date.now();
@@ -92,8 +110,8 @@ function spawnRunner(launchFile, env = {}) {
   return { child, lines, exit, waitFor };
 }
 
-test('runner boots the daemon, reports ready, and stops gracefully on stdin stop', async () => {
-  const r = spawnRunner(writeLaunchFile());
+test('runner boots the daemon, reports ready, and stops gracefully on stdin stop', async (t) => {
+  const r = spawnRunner(t, writeLaunchFile());
   const ready = await r.waitFor('dshd_daemon_ready');
   assert.equal(ready.listen, '127.0.0.1:16799');
   r.child.stdin.write('stop\n');
@@ -103,8 +121,8 @@ test('runner boots the daemon, reports ready, and stops gracefully on stdin stop
   assert.equal(code, 0);
 });
 
-test('runner self-stops when its stdin closes (dead parent leaves no orphan)', async () => {
-  const r = spawnRunner(writeLaunchFile());
+test('runner self-stops when its stdin closes (dead parent leaves no orphan)', async (t) => {
+  const r = spawnRunner(t, writeLaunchFile());
   await r.waitFor('dshd_daemon_ready');
   r.child.stdin.end();
   await r.waitFor('stub_daemon_stop_called');
@@ -112,16 +130,16 @@ test('runner self-stops when its stdin closes (dead parent leaves no orphan)', a
   assert.equal(code, 0);
 });
 
-test('runner reports startup failure on stdout and exits 1', async () => {
-  const r = spawnRunner(writeLaunchFile(), { STUB_FAIL: '1' });
+test('runner reports startup failure on stdout and exits 1', async (t) => {
+  const r = spawnRunner(t, writeLaunchFile(), { STUB_FAIL: '1' });
   const failed = await r.waitFor('dshd_daemon_start_failed');
   assert.match(String(failed.error), /boom-start/);
   const { code } = await r.exit;
   assert.equal(code, 1);
 });
 
-test('runner fails loud on an unreadable launch file', async () => {
-  const r = spawnRunner(path.join(os.tmpdir(), 'nope', 'missing-launch.json'));
+test('runner fails loud on an unreadable launch file', async (t) => {
+  const r = spawnRunner(t, path.join(os.tmpdir(), 'nope', 'missing-launch.json'));
   const failed = await r.waitFor('dshd_daemon_start_failed');
   assert.match(String(failed.error), /launch file unreadable/);
   const { code } = await r.exit;
@@ -131,8 +149,8 @@ test('runner fails loud on an unreadable launch file', async () => {
 test(
   'runner stops gracefully on SIGTERM (posix)',
   { skip: process.platform === 'win32' ? 'Windows 无 SIGTERM 语义（stdin 通道即优雅路径）' : false },
-  async () => {
-    const r = spawnRunner(writeLaunchFile());
+  async (t) => {
+    const r = spawnRunner(t, writeLaunchFile());
     await r.waitFor('dshd_daemon_ready');
     r.child.kill('SIGTERM');
     await r.waitFor('stub_daemon_stop_called');
@@ -140,6 +158,15 @@ test(
     assert.equal(code, 0);
   },
 );
+
+test('spawnRunner cleanup terminates an unstopped child so failed tests do not hang', async (t) => {
+  let r;
+  await t.test('leaves daemon runner open without writing stop', async (st) => {
+    r = spawnRunner(st, writeLaunchFile());
+    await r.waitFor('dshd_daemon_ready');
+  });
+  assert.ok(r.child.exitCode !== null || r.child.signalCode !== null);
+});
 
 // ---------------------------------------------------------------------------
 // Real vendored daemon through the full DshdRemote face (dist-gated)
@@ -150,7 +177,7 @@ test(
   { skip: prerequisiteSkip(VENDOR), timeout: 120_000 },
   async (t) => {
     requirePrerequisite(t, VENDOR);
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-real-'));
+    const home = tempDir('dsh-cc-real-');
     const port = 17000 + Math.floor(Math.random() * 20000);
     const config = {
       remoteEnabled: true,

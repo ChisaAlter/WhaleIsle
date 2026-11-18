@@ -49,6 +49,7 @@ test(
   async (t) => {
     requirePrerequisite(t, DIST);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-epipe-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }));
     const binDir = path.join(dir, 'bin');
     fs.mkdirSync(binDir, { recursive: true });
     if (process.platform === 'win32') {

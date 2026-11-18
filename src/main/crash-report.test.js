@@ -20,6 +20,17 @@ const {
   writeCrashReport,
 } = require('./crash-report');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 test('desktopErrorState flattens AggregateError chains', () => {
   const state = desktopErrorState(new AggregateError([new Error('a'), new Error('b')], 'top'));
   assert.equal(state.phase, 'error');
@@ -39,7 +50,7 @@ test('console tail bounds bytes, dropping oldest lines', () => {
 });
 
 test('report renders header, error, host diagnostic, and console tail', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-crash-'));
+  const dir = tempDir('dshd-crash-');
   const file = await writeCrashReport(dir, {
     source: 'renderer',
     phase: 'running',
@@ -60,7 +71,7 @@ test('report renders header, error, host diagnostic, and console tail', async ()
 const MAIN_APP = { name: 'Whale Isle', version: '0.3.14', platform: 'win32', arch: 'x64', electron: '44', node: '24', locale: 'zh-CN' };
 
 test('main failure reporter writes one main crash report, then prunes', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-crash-'));
+  const dir = tempDir('dshd-crash-');
   const pruned = [];
   const report = createMainFailureReporter({
     directory: () => dir,
@@ -112,7 +123,7 @@ test('main failure reporter never throws when the directory or the write fails',
 });
 
 test('prune deletes only matching names beyond retained', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-crash-'));
+  const dir = tempDir('dshd-crash-');
   for (let i = 0; i < 12; i += 1) {
     fs.writeFileSync(path.join(dir, crashReportFileName(new Date(Date.UTC(2026, 0, i + 1)), 'main')), 'x');
   }

@@ -14,8 +14,22 @@ const ipcDelta = require('../../main/ipc-delta');
 const { IPC_ROLES } = require('../../main/ipc-authorization');
 const { IPC_CONTRACT } = require('../../shared/ipc-contract');
 
+// 固定名 deltaDir 与 tmpdir() 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+
 function tmpdir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-delta-ipc-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-delta-ipc-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function deltaDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-delta-cache-'));
+  tempDirs.push(dir);
+  return dir;
 }
 
 const RELEASE = {
@@ -46,7 +60,7 @@ function baseDeps(overrides = {}) {
     },
     applyFile: async () => ({ ok: true, applied: { added: 1, patched: 2, deleted: 1, skipped: 0 } }),
     fullInstall: async () => ({ ok: true, launched: true }),
-    deltaDir: path.join(os.tmpdir(), 'dshd-delta-cache-test'),
+    deltaDir: deltaDir(),
     ...overrides,
   };
 }

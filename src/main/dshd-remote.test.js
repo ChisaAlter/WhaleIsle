@@ -25,6 +25,17 @@ const {
 const { killProcessTree } = require('../shared/process-tree');
 const { prerequisiteSkip, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 
+// 本文件所有 mkdtemp 目录统一登记，套件结束后无论成败一并回收（#478）。
+const tempDirs = [];
+test.after(() => {
+  while (tempDirs.length) fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
+function tempDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
 // dist/ 是构建产物（vendor 内嵌 .gitignore 挡住了提交），fresh clone / CI 没有。
 // 打包机通过 build:server-deps 产出后随 extraResources 发货；这里只在有产物时验证。
 const VENDOR_BUILT = fs.existsSync(path.join(
@@ -103,7 +114,7 @@ test('defaults bake in desktop Away relay from lan.js constants (packaged path)'
 });
 
 test('pairingAppBaseUrl in LAN mode is :3180 never the relay host', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: false, remoteMode: 'lan', remoteBindAddress: '127.0.0.1' }),
     getHomeDir: () => home,
@@ -142,7 +153,7 @@ test('pairingAppBaseUrl defaults to the server landing page without a saved mode
 });
 
 test('pairingAppBaseUrl in away mode is the public SPA path not LAN or :8411', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true, remoteMode: 'relay' }),
     getHomeDir: () => home,
@@ -236,7 +247,7 @@ test('renameDevice writes through the re-opened device store and stays a no-op w
   };
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true }),
-    getHomeDir: () => fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-')),
+    getHomeDir: () => tempDir('dsh-cc-'),
   });
   remote.serverApi = { RelayDeviceCredentialStore: class { constructor() { return store; } } };
   const snap = remote.renameDevice('dev_phone_1234', 'Pixel 9');
@@ -257,7 +268,7 @@ test('unbindDevice revokes the credential so a reopened store rejects its reconn
   const auth = await import(pathToFileURL(path.join(
     VENDOR_ROOT, 'node_modules', '@chisacode', 'server', 'dist', 'server', 'server', 'relay-device-auth.js',
   )).href);
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-unbind-'));
+  const home = tempDir('dsh-cc-unbind-');
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
 
   const remote = new DshdRemote({
@@ -316,7 +327,7 @@ test('relay TLS follows the persisted endpoint transport setting', () => {
 });
 
 test('refreshPairing passes LAN appBaseUrl and includeQr false', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const calls = [];
   const remote = new DshdRemote({
     getConfig: () => ({
@@ -342,7 +353,7 @@ test('refreshPairing passes LAN appBaseUrl and includeQr false', async () => {
 });
 
 test('refreshPairing in away mode passes public SPA appBaseUrl', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const calls = [];
   const { DEFAULT_PUBLIC_APP_BASE_URL } = require('../shared/lan');
   const remote = new DshdRemote({
@@ -367,7 +378,7 @@ test('refreshPairing in away mode passes public SPA appBaseUrl', async () => {
 });
 
 test('ensurePairing mints when daemon up and url empty', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   let refreshCalls = 0;
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true }),
@@ -387,7 +398,7 @@ test('ensurePairing mints when daemon up and url empty', async () => {
 });
 
 test('ensurePairing no-ops when url present', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   let refreshCalls = 0;
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true }),
@@ -404,7 +415,7 @@ test('ensurePairing no-ops when url present', async () => {
 });
 
 test('ensurePairing suppresses after failure until rotateToken clears it', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   let refreshCalls = 0;
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true }),
@@ -431,7 +442,7 @@ test('ensurePairing suppresses after failure until rotateToken clears it', async
 });
 
 test('ensurePairing unblocks after sync succeeds', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   let refreshCalls = 0;
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true }),
@@ -498,7 +509,7 @@ test('pushHarnessOrigin writes control lines and refuses a newline origin', () =
  * @param {string} body - script body appended after the launch-file preamble
  */
 function writeFakeRunner(body) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-runner-'));
+  const dir = tempDir('dsh-runner-');
   const file = path.join(dir, 'fake-runner.mjs');
   fs.writeFileSync(file, [
     "import fs from 'node:fs';",
@@ -561,7 +572,7 @@ function fakeRemote({ home, runnerBody = READY_RUNNER_BODY, config, options = {}
 }
 
 test('startDaemon spawns the runner child and restarts it when relay config changes', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const f = fakeRemote({ home });
 
   await f.remote.startDaemon();
@@ -600,7 +611,7 @@ test('startDaemon spawns the runner child and restarts it when relay config chan
 });
 
 test('the port control changes the real loopback daemon endpoint and restarts its child', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-port-'));
+  const home = tempDir('dsh-cc-port-');
   const f = fakeRemote({ home, config: { remoteEnabled: true, remotePort: 7788 } });
   t.after(async () => {
     await f.remote.stopDaemon();
@@ -620,7 +631,7 @@ test('the port control changes the real loopback daemon endpoint and restarts it
 });
 
 test('the git tunnel token reaches the daemon over stdin, not env', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-git-'));
+  const home = tempDir('dsh-cc-git-');
   const body = [
     'fs.writeFileSync(launch.daemonConfig.chisacodeHome + "/runner-env.json", JSON.stringify({',
     '  DSHD_GIT_TUNNEL_URL: process.env.DSHD_GIT_TUNNEL_URL || null,',
@@ -655,7 +666,7 @@ test('the git tunnel token reaches the daemon over stdin, not env', async (t) =>
 });
 
 test('daemon child relay log lines drive snapshot relay state across the process boundary', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const relayBody = [
     'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
     'setTimeout(() => emit({ level: 30, msg: "relay_control_connected" }), 30);',
@@ -677,7 +688,7 @@ test('daemon child relay log lines drive snapshot relay state across the process
 });
 
 test('daemon child crash is visible (snapshot.error) and never resolves to listening', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const crashBody = [
     'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
     'setTimeout(() => process.exit(7), 50);',
@@ -697,7 +708,7 @@ test('daemon child crash is visible (snapshot.error) and never resolves to liste
 });
 
 test('a retry publishes startup until ready and clears the previous failure', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-starting-'));
+  const home = tempDir('dsh-cc-starting-');
   const f = fakeRemote({ home });
   const api = f.remote.serverApi;
   let releaseApi;
@@ -726,7 +737,7 @@ test('a retry publishes startup until ready and clears the previous failure', as
 });
 
 test('daemon start failure surfaces the child error and stderr tail', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const failBody = [
     'process.stderr.write("boom-detail\\n");',
     'setTimeout(() => { emit({ msg: "dshd_daemon_start_failed", error: "EADDRINUSE :6767" }); process.exit(1); }, 20);',
@@ -751,7 +762,7 @@ test('a stale saved bind address fails the pairing page listen with an actionabl
 });
 
 test('a spawn failure (missing executable) rejects fast instead of stalling on a ghost child', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const f = fakeRemote({
     home,
     options: { execPath: path.join(home, 'no-such-node'), readyTimeoutMs: 5_000 },
@@ -763,7 +774,7 @@ test('a spawn failure (missing executable) rejects fast instead of stalling on a
 });
 
 test('a failure after the child is ready (pairing) terminates the child instead of leaking it', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const f = fakeRemote({ home });
   f.remote.serverApi = {
     DSH_VENDOR_PACKAGES: [],
@@ -778,7 +789,7 @@ test('a failure after the child is ready (pairing) terminates the child instead 
 });
 
 test('stopDaemon force-kills a child that ignores the stdin stop line', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const stubborn = [
     'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
     'setInterval(() => {}, 1000);',
@@ -797,7 +808,7 @@ test('stopDaemon force-kills a child that ignores the stdin stop line', async ()
 });
 
 test('stop before the real child ready line cancels startup and leaves no owned process', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-ready-stop-'));
+  const home = tempDir('dsh-cc-ready-stop-');
   const marker = path.join(home, 'runner-pid');
   const f = fakeRemote({ home, runnerBody: [
     'fs.writeFileSync(launch.daemonConfig.chisacodeHome + "/runner-pid", String(process.pid));',
@@ -835,7 +846,7 @@ test('stop before the real child ready line cancels startup and leaves no owned 
 });
 
 test('Windows stop accepts the observed child exit when taskkill loses the exit race', { skip: process.platform !== 'win32' }, async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-stop-race-'));
+  const home = tempDir('dsh-cc-stop-race-');
   let child;
   const f = fakeRemote({ home, options: {
     stopTimeoutMs: 20,
@@ -862,7 +873,7 @@ test('Windows stop accepts the observed child exit when taskkill loses the exit 
 });
 
 test('a refused daemon kill retains the real handle and stop retry observes its exit', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-stop-refused-'));
+  const home = tempDir('dsh-cc-stop-refused-');
   const f = fakeRemote({ home, options: {
     stopTimeoutMs: 20,
     execFile: (command, args, options, callback) => callback(new Error('owned tree kill refused')),
@@ -911,7 +922,7 @@ test('a refused daemon kill retains the real handle and stop retry observes its 
 test('Windows daemon timeout keeps refused Node and Electron owned trees tracked until retry', { skip: process.platform !== 'win32' }, async (t) => {
   for (const [runtime, execPath] of [['Node', process.execPath], ['Electron RUN_AS_NODE', require('electron')]]) {
     await t.test(runtime, async (t) => {
-      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-owned-tree-'));
+      const home = tempDir('dsh-cc-owned-tree-');
       let child;
       let descendantPid;
       let allowTaskkill = false;
@@ -964,7 +975,7 @@ test('Windows daemon timeout keeps refused Node and Electron owned trees tracked
 });
 
 test('stop invalidates pending API preparation without waiting or allowing a late spawn', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-api-stop-'));
+  const home = tempDir('dsh-cc-api-stop-');
   const f = fakeRemote({ home });
   const api = f.remote.serverApi;
   let releaseApi;
@@ -988,7 +999,7 @@ test('stop invalidates pending API preparation without waiting or allowing a lat
 });
 
 test('DshdRemote exposes the product pairing URL it generated, not a synthesized one', async () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   const remote = new DshdRemote({
     getConfig: () => ({ remoteEnabled: true, remoteRelayEndpoint: 'ayase.cn:443', remoteRelayUseTls: true }),
     getHomeDir: () => home,
@@ -1043,7 +1054,7 @@ test('loadServerApi fails loud with the vendor-build hint when dist is absent', 
 });
 
 function fakeHarnessRoot(builtPackages, unbuiltPackages = []) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-harness-'));
+  const root = tempDir('dsh-harness-');
   for (const pkg of builtPackages) {
     fs.mkdirSync(path.join(root, 'node_modules', '@deepseek-ai', pkg, 'lib'), { recursive: true });
     fs.writeFileSync(path.join(root, 'node_modules', '@deepseek-ai', pkg, 'lib', 'index.js'), '');
@@ -1167,12 +1178,12 @@ test('buildDaemonChildEnv bridges CHISACODE_* into the child only and applies th
 });
 
 test('ensureDshAcpShim materializes PATH shims only when the bundled ACP entry is built', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
-  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-harness-'));
+  const home = tempDir('dsh-cc-');
+  const emptyRoot = tempDir('dsh-harness-');
   assert.equal(ensureDshAcpShim({ home, harnessRoot: emptyRoot, execPath: '/usr/bin/node' }), null);
   assert.equal(fs.existsSync(path.join(home, 'bin')), false);
 
-  const builtRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-harness-'));
+  const builtRoot = tempDir('dsh-harness-');
   const entryDir = path.join(builtRoot, 'packages', 'examples', 'acp-demo', 'lib');
   fs.mkdirSync(entryDir, { recursive: true });
   const entry = path.join(entryDir, 'bin.js');
@@ -1323,7 +1334,7 @@ test('stop cancels an in-flight pairing mint and queued revocation before publis
 });
 
 test('DshdRemote snapshot is chisacode-v2 and has no host-token wall', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
+  const home = tempDir('dsh-cc-');
   let config = { remoteEnabled: false, remoteMode: 'lan', remoteRelayEndpoint: 'relay.example.com:443' };
   const remote = new DshdRemote({
     getConfig: () => config,
