@@ -62,6 +62,9 @@ export const THEME_TERMINAL_OPACITY_FIELD = 'terminalOpacity'
 /** Field toggling the fully transparent chrome (透明主题). */
 export const THEME_TRANSPARENT_FIELD = 'transparentTheme'
 
+/** Field toggling the native Windows acrylic window material (窗口毛玻璃). */
+export const THEME_WINDOW_ACRYLIC_FIELD = 'windowAcrylic'
+
 /** Field toggling the sidebar mask so the rail shares the canvas fill (隐藏侧栏遮罩). */
 export const THEME_SIDEBAR_MASK_FIELD = 'sidebarMaskHidden'
 
@@ -316,6 +319,14 @@ export interface ThemeSettings {
    */
   transparentTheme: boolean
   /**
+   * Window acrylic (窗口毛玻璃): the primary window's frame hosts the native
+   * Windows 11 acrylic material and chrome surfaces mix down so the
+   * system-blurred desktop shows through. Effective only while the desktop
+   * shell reports material support and Minimal mode is off; elsewhere the
+   * flag is stored but inert.
+   */
+  windowAcrylic: boolean
+  /**
    * Sidebar mask (隐藏侧栏遮罩): the rail paints the main canvas fill instead
    * of its own mask, so only the divider separates it from the workspace.
    */
@@ -408,6 +419,7 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   glassOpacity: DEFAULT_GLASS_OPACITY,
   terminalOpacity: DEFAULT_TERMINAL_OPACITY,
   transparentTheme: false,
+  windowAcrylic: false,
   sidebarMaskHidden: true,
   wallpaperImage: '',
   skinWallpaperEnabled: true,
@@ -476,6 +488,7 @@ export const ThemeSettingsFields = {
   [THEME_TERMINAL_OPACITY_FIELD]: z.number().min(MIN_TERMINAL_OPACITY).max(MAX_TERMINAL_OPACITY)
     .default(DEFAULT_TERMINAL_OPACITY),
   [THEME_TRANSPARENT_FIELD]: z.boolean().default(false),
+  [THEME_WINDOW_ACRYLIC_FIELD]: z.boolean().default(false),
   [THEME_SIDEBAR_MASK_FIELD]: z.boolean().default(true),
   [THEME_WALLPAPER_IMAGE_FIELD]: z.string().default(''),
   [THEME_SKIN_WALLPAPER_FIELD]: z.boolean().default(true),
@@ -599,6 +612,21 @@ export function defaultBackgroundEffect(): BackgroundEffect {
 export function lowPowerGpu(): boolean {
   const desktop = (globalThis as { dshDesktop?: { renderHints?: { lowPowerGpu?: unknown } } }).dshDesktop
   return desktop?.renderHints?.lowPowerGpu === true
+}
+
+/**
+ * Root attribute the desktop preload sets when the main process advertised
+ * the native acrylic window material (Windows 11 22H2+ only).
+ */
+export const WINDOW_MATERIAL_SUPPORTED_ATTR = 'data-window-material-supported'
+
+/**
+ * Whether the host window reported acrylic material support. Read on demand;
+ * on every other platform and in browsers the attribute is simply absent.
+ */
+export function windowMaterialSupported(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.documentElement.hasAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR)
 }
 
 /**

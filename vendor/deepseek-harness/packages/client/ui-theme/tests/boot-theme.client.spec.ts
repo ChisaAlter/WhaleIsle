@@ -24,6 +24,8 @@ afterEach(() => {
   document.documentElement.style.fontSize = ''
   delete document.documentElement.dataset.dsThemeSource
   document.documentElement.removeAttribute('data-dsh-skin')
+  document.documentElement.removeAttribute('data-dsh-window-material')
+  document.documentElement.removeAttribute('data-window-material-supported')
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.style.cssText = ''
   document.body.style.removeProperty('--dsh-content-font-size')
@@ -195,6 +197,46 @@ describe('theme bootstrap row', () => {
       transparentTheme: true,
     })
     expect(withoutWallpaper.glassOpacity).toBe(70)
+    // Window acrylic pauses the wallpaper the transparent theme needs, so
+    // the pre-plugin interval keeps painting the slider value too.
+    const withAcrylic = buildThemeBootPayload({
+      ...DEFAULT_THEME_SETTINGS,
+      customThemes: [],
+      glassOpacity: 70,
+      transparentTheme: true,
+      windowAcrylic: true,
+      wallpaperImage: png,
+    })
+    expect(withAcrylic.glassOpacity).toBe(70)
+  })
+
+  it('carries the window acrylic flag into the bootstrap only on a marked window', () => {
+    const payload = buildThemeBootPayload({
+      ...DEFAULT_THEME_SETTINGS,
+      customThemes: [],
+      windowAcrylic: true,
+    })
+    expect(payload.windowAcrylic).toBe(true)
+    const [, body] = bootThemeInjections(payload)
+    if (body?.kind !== 'script') throw new Error('theme body bootstrap row is not a script')
+    // Without the preload's support mark the request stays inert.
+    runInNewContext(body.text, { document, matchMedia: globalThis.matchMedia })
+    expect(document.documentElement.hasAttribute('data-dsh-window-material')).toBe(false)
+    // A marked window gets the material attribute before the client activates.
+    document.documentElement.setAttribute('data-window-material-supported', '')
+    runInNewContext(body.text, { document, matchMedia: globalThis.matchMedia })
+    expect(document.documentElement.getAttribute('data-dsh-window-material')).toBe('acrylic')
+    // Minimal mode suspends the request even on a marked window.
+    const minimal = buildThemeBootPayload({
+      ...DEFAULT_THEME_SETTINGS,
+      customThemes: [],
+      windowAcrylic: true,
+      minimalMode: true,
+    })
+    const [, minimalBody] = bootThemeInjections(minimal)
+    if (minimalBody?.kind !== 'script') throw new Error('theme body bootstrap row is not a script')
+    runInNewContext(minimalBody.text, { document, matchMedia: globalThis.matchMedia })
+    expect(document.documentElement.hasAttribute('data-dsh-window-material')).toBe(false)
   })
 
   it('embeds a transparent rail fill while the sidebar mask is hidden', () => {

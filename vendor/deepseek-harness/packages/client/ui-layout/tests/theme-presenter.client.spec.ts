@@ -31,6 +31,7 @@ function snapshot(
     glassOpacity: 80,
     terminalOpacity: 75,
     transparentTheme: false,
+    windowAcrylic: false,
     sidebarMaskHidden: false,
     wallpaperImage: '',
     wallpaperBlur: 0,

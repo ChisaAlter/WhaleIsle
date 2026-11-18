@@ -49,6 +49,14 @@ export const GRADIENT_ATTR = 'data-dsh-gradient'
 export const TRANSPARENT_ATTR = 'data-dsh-transparent'
 
 /**
+ * Root attribute flipped on while the native window material is effective
+ * (the acrylic flag is on, the shell reported support, and Minimal mode is
+ * off). The desktop preload mirrors it to the main process and the
+ * stylesheet keeps the page transparent so the frame's blur shows through.
+ */
+export const WINDOW_MATERIAL_ATTR = 'data-dsh-window-material'
+
+/**
  * Solidity fed into {@link mixWallpaperSurfaces} while the transparent theme
  * is effective: every chrome surface keeps a 0% fill so only the wallpaper
  * paints behind content. The terminal pane still follows its own

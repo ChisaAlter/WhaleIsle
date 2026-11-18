@@ -6,6 +6,14 @@ const { resolveTheme, officialShellBackground, windowBackgroundForShell } = requ
 const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
 const { createRegisterIpc } = require('./ipc-register');
 const { enableNativeWindowMotion, hasNativeWindowMotion, isNativeWindowMaximized, toggleNativeMaximize } = require('./native-window-motion');
+const {
+  windowsAcrylicSupported,
+  isValidWindowMaterial,
+  hasAcrylicMaterial,
+  rememberChromeColor,
+  applyWindowMaterial,
+  resetWindowMaterial,
+} = require('./window-material');
 
 const TITLEBAR_HEIGHT = 48;
 // The inject script builds its window controls through window.whaleDom; the
@@ -92,7 +100,11 @@ function isHarnessUrl(url) {
 }
 
 function paintBackground(win, color) {
-  if (!win || win.isDestroyed() || !color || transparentWindows.has(win)) {
+  if (!win || win.isDestroyed() || !color) {
+    return;
+  }
+  rememberChromeColor(win, color);
+  if (transparentWindows.has(win) || hasAcrylicMaterial(win)) {
     return;
   }
   win.setBackgroundColor(color);
@@ -276,6 +288,26 @@ function bindChromeIpc() {
     }
     },
   });
+
+  // Only the owned harness view may swap the main window's frame material,
+  // and only on Windows builds whose frame supports acrylic.
+  register({
+    channel: 'shell:window-material',
+    authorize: (/** @type {Electron.IpcMainEvent} */ event) => authorizedRole(event, [IPC_ROLES.HARNESS]),
+    handler: (
+      /** @type {Electron.IpcMainEvent} */ event,
+      /** @type {string | null} */ role,
+      /** @type {unknown} */ material,
+    ) => {
+      if (!role || !windowsAcrylicSupported() || !isValidWindowMaterial(material)) return;
+      const win = windowFromEvent(event, role);
+      if (!win || win.isDestroyed()) return;
+      applyWindowMaterial(win, material, {
+        transparent: transparentWindows.has(win),
+        restoreColor: chromeBackgroundFor(win),
+      });
+    },
+  });
 }
 
 // Transient rejections happen when the eval races a navigation frame swap —
@@ -414,6 +446,21 @@ function attachIntegratedChrome(win, options = {}) {
   win.webContents.on('did-navigate-in-page', apply);
 }
 
+/**
+ * Reset native window acrylic when detaching the harness view back to boot or closing.
+ * @param {Electron.BrowserWindow | null | undefined} win
+ * @returns {boolean}
+ */
+function clearWindowMaterial(win) {
+  if (!win || win.isDestroyed()) {
+    return false;
+  }
+  return resetWindowMaterial(win, {
+    transparent: transparentWindows.has(win),
+    restoreColor: chromeBackgroundFor(win),
+  });
+}
+
 module.exports = {
   TITLEBAR_HEIGHT,
   bindChromeIpc,
@@ -432,4 +479,5 @@ module.exports = {
   markWindowTransparent,
   paintBackground,
   officialShellBackground,
+  resetWindowMaterial: clearWindowMaterial,
 };

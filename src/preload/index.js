@@ -26,6 +26,11 @@ function lowPowerGpu(argv = process.argv) {
   return argv.includes('--dshd-low-power-gpu=1');
 }
 
+// Windows 11 acrylic capability arrives from src/main/window-material.js.
+function windowMaterialSupported(argv = process.argv) {
+  return argv.includes('--dshd-window-material=acrylic');
+}
+
 /**
  * @param {Electron.IpcRenderer} renderer
  * @param {string} channel
@@ -502,6 +507,49 @@ if (role === 'harness' && isMainFrame) {
     }
   } catch {
     // Theme mirroring is cosmetic; a missing document root is not a failure.
+  }
+  // Native window material bridge (Windows 11 22H2+): advertise support ahead
+  // of boot-theme parsing and mirror html[data-dsh-window-material] back to
+  // the main process. Inert when the host did not pass the acrylic flag.
+  if (windowMaterialSupported()) {
+    try {
+      /** @type {string | undefined} */
+      let sentMaterial;
+      const sendMaterial = () => {
+        const root = document.documentElement;
+        if (!root) return;
+        const value = root.getAttribute('data-dsh-window-material') === 'acrylic' ? 'acrylic' : 'none';
+        if (value === sentMaterial) return;
+        sentMaterial = value;
+        ipcRenderer.send('shell:window-material', value);
+      };
+      let installed = false;
+      const installMaterial = () => {
+        if (installed) return true;
+        const root = document.documentElement;
+        if (!root) return false;
+        installed = true;
+        root.setAttribute('data-window-material-supported', '');
+        if (typeof MutationObserver === 'function') {
+          new MutationObserver(sendMaterial).observe(root, { attributeFilter: ['data-dsh-window-material'] });
+        }
+        sendMaterial();
+        return true;
+      };
+      if (!installMaterial()) {
+        if (typeof MutationObserver === 'function') {
+          const watcher = new MutationObserver(() => {
+            if (installMaterial()) watcher.disconnect();
+          });
+          watcher.observe(document, { childList: true });
+        }
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+          window.addEventListener('DOMContentLoaded', () => { installMaterial(); }, { once: true });
+        }
+      }
+    } catch {
+      // Material bridging is cosmetic; an unavailable document root is not fatal.
+    }
   }
 }
 

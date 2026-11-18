@@ -4,9 +4,9 @@ import {
   DEFAULT_CODE_FONT_SIZE,
   DEFAULT_INTERFACE_FONT_SIZE,
 } from './theme-family.ts'
-import { TRANSPARENT_ATTR, applyWallpaperLayer, isWallpaperDataUrl } from './wallpaper.ts'
+import { TRANSPARENT_ATTR, WINDOW_MATERIAL_ATTR, applyWallpaperLayer, isWallpaperDataUrl } from './wallpaper.ts'
 import { applyCursorFxLayer } from './cursor-fx.ts'
-import type { BackgroundEffect } from './theme-settings.ts'
+import { windowMaterialSupported, type BackgroundEffect } from './theme-settings.ts'
 
 const DEFAULT_SANS_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif"
 const DEFAULT_CODE_STACK = "'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei'"
@@ -92,6 +92,13 @@ export interface AppearanceDocumentExtras {
   cursorEffectSize?: number
   /** Transparent theme flag; effective only while a wallpaper is live. */
   transparentTheme?: boolean
+  /**
+   * Window acrylic flag (窗口毛玻璃). Effective only while the shell reported
+   * material support; while effective the wallpaper and gradient layers stay
+   * stored but stop painting so they cannot cover the native blur, and the
+   * transparent theme pauses with the wallpaper it needs.
+   */
+  windowAcrylic?: boolean
   /** Button hover sheen switch (按钮悬停光泽); absent means off. */
   metallicPaintEnabled?: boolean
 }
@@ -122,12 +129,18 @@ export function applyAppearanceDocumentExtras(extras: AppearanceDocumentExtras):
     '--dsw-font-family-terminal',
     appearanceFontStack(extras.fontFamilyTerminal ?? '', code),
   )
-  const wallpaperImage = minimal ? '' : extras.wallpaperImage ?? ''
+  // Window acrylic outranks the painted backdrops: while it is effective the
+  // wallpaper and gradient layers are suppressed so they cannot cover the
+  // frame's native blur; the stored values return when it is off.
+  const acrylic = !minimal && extras.windowAcrylic === true && windowMaterialSupported()
+  if (acrylic) root.setAttribute(WINDOW_MATERIAL_ATTR, 'acrylic')
+  else root.removeAttribute(WINDOW_MATERIAL_ATTR)
+  const wallpaperImage = minimal || acrylic ? '' : extras.wallpaperImage ?? ''
   applyWallpaperLayer({
     wallpaperImage,
     wallpaperBlur: extras.wallpaperBlur ?? 0,
     wallpaperPixelate: extras.wallpaperPixelate ?? 0,
-    backgroundEffect: minimal ? 'none' : extras.backgroundEffect ?? 'none',
+    backgroundEffect: minimal || acrylic ? 'none' : extras.backgroundEffect ?? 'none',
     backgroundEffectColors: extras.backgroundEffectColors ?? [],
     backgroundEffectSpeed: extras.backgroundEffectSpeed,
     backgroundEffectCount: extras.backgroundEffectCount,
@@ -140,6 +153,9 @@ export function applyAppearanceDocumentExtras(extras: AppearanceDocumentExtras):
     cursorEffectSpeed: extras.cursorEffectSpeed,
     cursorEffectSize: extras.cursorEffectSize,
   })
+  // The transparent theme needs the painted wallpaper: while acrylic (or
+  // Minimal mode) suppresses the layer it pauses too, so the attribute keys
+  // on the suppressed image, not the stored one.
   root.toggleAttribute(
     TRANSPARENT_ATTR,
     !minimal && extras.transparentTheme === true && isWallpaperDataUrl(wallpaperImage),

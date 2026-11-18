@@ -7,7 +7,7 @@ const { attachRecovery, UNRESPONSIVE } = require('./renderer-recovery');
 const { rendererFile, assetFile, preloadFile } = require('./paths');
 const { applyWindowsAppDetails } = require('./window-app-details');
 const { REMOTE_FEATURE_ENABLED } = require('./config');
-const { shellWindowChrome, attachIntegratedChrome, hideNativeMenu, prepareHarnessChrome, syncHarnessChrome, currentTheme, markWindowTransparent, paintBackground } = require('./chrome');
+const { shellWindowChrome, attachIntegratedChrome, hideNativeMenu, prepareHarnessChrome, syncHarnessChrome, currentTheme, markWindowTransparent, paintBackground, resetWindowMaterial } = require('./chrome');
 const { normalizeSettingsSection, buildSettingsSectionScript } = require('./settings-jump');
 const { buildMarketplaceScript } = require('./marketplace-jump');
 const {
@@ -20,7 +20,7 @@ const {
   shouldAllowPrivilegedRedirect,
 } = require('./local-url');
 const { openExternalHttp } = require('./open-external');
-
+const { WINDOW_MATERIAL_ARGUMENT, windowsAcrylicSupported } = require('./window-material');
 const { applyHarnessCookieToSession, launchTokenFromUrl, loadUrlAfterRedeem } = require('./harness-browser-auth');
 const { createForegroundPolicy } = require('./foreground');
 
@@ -381,6 +381,7 @@ function hideHarnessView(win) {
   harnessOrigin = '';
   notifyHarnessOrigin();
   setBootHarnessCovered(win, false);
+  resetWindowMaterial?.(win);
   cancelPluginBootWatch();
   desktopPet()?.hide(win);
   if (!harnessView) {
@@ -393,9 +394,7 @@ function hideHarnessView(win) {
   } catch {
     // already detached
   }
-  if (!view.webContents.isDestroyed()) {
-    view.webContents.close();
-  }
+  if (!view.webContents.isDestroyed()) view.webContents.close();
 }
 
 function layoutHarnessView(win) {
@@ -665,6 +664,7 @@ function ensureHarnessView(win) {
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
         ...(renderHints.lowPowerGpu ? ['--dshd-low-power-gpu=1'] : []),
+        ...(windowsAcrylicSupported() ? [WINDOW_MATERIAL_ARGUMENT] : []),
       ],
       contextIsolation: true,
       nodeIntegration: false,

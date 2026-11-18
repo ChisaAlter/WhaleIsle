@@ -595,11 +595,13 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
       ['--dshd-shell-role=boot'],
     );
     const { REMOTE_FEATURE_ENABLED } = require('./config');
+    const { WINDOW_MATERIAL_ARGUMENT, windowsAcrylicSupported } = require('./window-material');
     assert.deepEqual(
       harnessContents.ownerOptions.webPreferences.additionalArguments,
       [
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
+        ...(windowsAcrylicSupported() ? [WINDOW_MATERIAL_ARGUMENT] : []),
       ],
     );
 

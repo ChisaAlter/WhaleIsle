@@ -22,7 +22,7 @@ vi.mock(desktopIpc.electron, () => ({
   contextBridge: { exposeInMainWorld: (name: string, value: unknown) => { vi.stubGlobal(name, value) } },
 }))
 vi.mock('../../../../apps/desktop/src/preload-platform.ts', () => ({ markDocumentPlatform: vi.fn(), syncWindowFullscreen: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/preload-theme.ts', () => ({ syncNativeTheme: vi.fn(), syncWindowMaterial: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/preload-windows.ts', () => ({ syncWindowsAppearance: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/preload-mandatory-overlay.ts', () => ({ installMandatoryUpdateOverlay: vi.fn() }))
 

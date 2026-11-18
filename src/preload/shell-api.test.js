@@ -536,3 +536,141 @@ test('non-harness roles do not expose updates/browser/platform bridges', () => {
   assert.equal(exposures.dshDesktop?.browser, undefined);
   assert.equal(exposures.dshPlatform, undefined);
 });
+
+test('harness main frame marks data-window-material-supported and mirrors attribute changes when enabled', (t) => {
+  withMainFrame(t, true);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const savedObserver = Object.getOwnPropertyDescriptor(globalThis, 'MutationObserver');
+  t.after(() => {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+    else delete globalThis.window;
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+    else delete globalThis.document;
+    if (savedObserver) Object.defineProperty(globalThis, 'MutationObserver', savedObserver);
+    else delete globalThis.MutationObserver;
+  });
+
+  const attrs = new Map();
+  const root = {
+    dataset: {},
+    setAttribute(name, value) { attrs.set(name, String(value)); },
+    getAttribute(name) { return attrs.has(name) ? attrs.get(name) : null; },
+    hasAttribute(name) { return attrs.has(name); },
+    toggleAttribute(name, value) { if (value) attrs.set(name, ''); else attrs.delete(name); },
+  };
+  const observers = [];
+  globalThis.MutationObserver = class FakeMutationObserver {
+    constructor(cb) { this.cb = cb; this.disconnected = false; observers.push(this); }
+    observe(target, opts) { this.target = target; this.opts = opts; }
+    disconnect() { this.disconnected = true; }
+  };
+  globalThis.window = { addEventListener() {} };
+  globalThis.document = { documentElement: root, readyState: 'loading', createElement: () => ({ dataset: {} }), head: { appendChild() {} }, dispatchEvent() {} };
+
+  const sent = [];
+  loadPreload(
+    ['electron', '--dshd-shell-role=harness', '--dshd-window-material=acrylic'],
+    { ipcRenderer: { ...fakeRenderer(), send: (ch, ...args) => sent.push([ch, ...args]) } },
+  );
+
+  assert.equal(attrs.has('data-window-material-supported'), true);
+  assert.deepEqual(sent.filter(([ch]) => ch === 'shell:window-material'), [['shell:window-material', 'none']]);
+
+  const materialObserver = observers.find((o) => o.target === root && o.opts?.attributeFilter?.includes('data-dsh-window-material'));
+  assert.ok(materialObserver);
+  attrs.set('data-dsh-window-material', 'acrylic');
+  materialObserver.cb();
+  materialObserver.cb();
+  attrs.delete('data-dsh-window-material');
+  materialObserver.cb();
+  assert.deepEqual(sent.filter(([ch]) => ch === 'shell:window-material'), [
+    ['shell:window-material', 'none'],
+    ['shell:window-material', 'acrylic'],
+    ['shell:window-material', 'none'],
+  ]);
+});
+
+test('window material preload watcher waits for documentElement when preload executes early', (t) => {
+  withMainFrame(t, true);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const savedObserver = Object.getOwnPropertyDescriptor(globalThis, 'MutationObserver');
+  t.after(() => {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+    else delete globalThis.window;
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+    else delete globalThis.document;
+    if (savedObserver) Object.defineProperty(globalThis, 'MutationObserver', savedObserver);
+    else delete globalThis.MutationObserver;
+  });
+
+  const attrs = new Map([['data-dsh-window-material', 'acrylic']]);
+  const root = {
+    dataset: {},
+    setAttribute(name, value) { attrs.set(name, String(value)); },
+    getAttribute(name) { return attrs.has(name) ? attrs.get(name) : null; },
+    hasAttribute(name) { return attrs.has(name); },
+    toggleAttribute(name, value) { if (value) attrs.set(name, ''); else attrs.delete(name); },
+  };
+  const observers = [];
+  globalThis.MutationObserver = class FakeMutationObserver {
+    constructor(cb) { this.cb = cb; this.disconnected = false; observers.push(this); }
+    observe(target, opts) { this.target = target; this.opts = opts; }
+    disconnect() { this.disconnected = true; }
+  };
+  const events = new Map();
+  globalThis.window = { addEventListener: (name, cb) => { events.set(name, cb); } };
+  globalThis.document = { documentElement: null, readyState: 'loading', createElement: () => ({ dataset: {} }), head: { appendChild() {} }, dispatchEvent() {} };
+
+  const sent = [];
+  loadPreload(
+    ['electron', '--dshd-shell-role=harness', '--dshd-window-material=acrylic'],
+    { ipcRenderer: { ...fakeRenderer(), send: (ch, ...args) => sent.push([ch, ...args]) } },
+  );
+
+  const docWatcher = observers.find((o) => o.target === globalThis.document && o.opts?.childList);
+  assert.ok(docWatcher);
+  assert.equal(attrs.has('data-window-material-supported'), false);
+
+  globalThis.document.documentElement = root;
+  docWatcher.cb();
+  assert.equal(docWatcher.disconnected, true);
+  assert.equal(attrs.has('data-window-material-supported'), true);
+  assert.deepEqual(sent.filter(([ch]) => ch === 'shell:window-material'), [['shell:window-material', 'acrylic']]);
+});
+
+test('window material mark and IPC stay inert without the flag, in subframes, or non-harness roles', (t) => {
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  t.after(() => {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+    else delete globalThis.window;
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+    else delete globalThis.document;
+  });
+
+  for (const [role, isMainFrame, args] of [
+    ['harness', true, ['--dshd-shell-role=harness']],
+    ['harness', false, ['--dshd-shell-role=harness', '--dshd-window-material=acrylic']],
+    ['boot', true, ['--dshd-shell-role=boot', '--dshd-window-material=acrylic']],
+  ]) {
+    withMainFrame(t, isMainFrame);
+    const attrs = new Map();
+    const root = {
+      dataset: {},
+      setAttribute(name, value) { attrs.set(name, String(value)); },
+      getAttribute(name) { return attrs.has(name) ? attrs.get(name) : null; },
+      hasAttribute(name) { return attrs.has(name); },
+      toggleAttribute(name, value) { if (value) attrs.set(name, ''); else attrs.delete(name); },
+    };
+    globalThis.window = { addEventListener() {} };
+    globalThis.document = { documentElement: root, readyState: 'complete', createElement: () => ({ dataset: {} }), head: { appendChild() {} }, dispatchEvent() {} };
+    const sent = [];
+    loadPreload(['electron', ...args], {
+      ipcRenderer: { ...fakeRenderer(), send: (ch, ...rest) => sent.push([ch, ...rest]) },
+    });
+    assert.equal(attrs.has('data-window-material-supported'), false, `${role}/${isMainFrame}`);
+    assert.deepEqual(sent.filter(([ch]) => ch === 'shell:window-material'), []);
+  }
+});

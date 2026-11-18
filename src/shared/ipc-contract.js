@@ -129,6 +129,8 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:render-resume', kind: 'event', roles: ALL_SURFACES },
   { channel: 'shell:native-theme', kind: 'send', roles: HARNESS_ONLY, authorize: OWNED,
     validate: prependAuth(firstArg) },
+  { channel: 'shell:window-material', kind: 'send', roles: HARNESS_ONLY, authorize: OWNED,
+    validate: prependAuth(stringArg) },
   { channel: 'shell:proactive', kind: 'invoke', roles: HARNESS_ONLY,
     validate(args) {
       const [action, payload] = args;

@@ -69,7 +69,13 @@
           "vendor/deepseek-harness/apps/desktop/src",
           "vendor/deepseek-harness/apps/desktop/package.json",
           "vendor/deepseek-harness/apps/desktop/tsdown.config.ts",
-          "vendor/deepseek-harness/packages/client/ui-theme/src",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/gradient-shadow-text.css",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/brand-font.css",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/montserrat-regular.woff2",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/montserrat-light.woff2",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/montserrat-medium.woff2",
+          "vendor/deepseek-harness/packages/client/ui-theme/src/styles/Montserrat-OFL.txt",
           "vendor/deepseek-harness/pnpm-lock.yaml"
         ],
         "artifacts": [
@@ -78,7 +84,7 @@
           "src/renderer/assets/welcome-brand.svg",
           "src/renderer/assets/window-material.css"
         ],
-        "sourceHash": "578ed1b9b38d849d454f066dc5c76a2da5a83f19eeab63f6e4342723d8ca0544",
+        "sourceHash": "4b23854014e9d9064f204ee446a652a52f27cefa2b642287956686c0218fe1a8",
         "artifactHash": "aeab15c8154e0198f62718c864dbfd09893291c50d88d4316671a6dd7afee469"
       }
     },
