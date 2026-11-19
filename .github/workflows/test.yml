@@ -193,6 +193,8 @@ jobs:
       - run: npm run setup:harness
       - name: Build the vendored DSHD remote
         run: npm run prepare:dshd-remote
+      - name: Whale UI behavior tests
+        run: npm run test:whale-ui
       - run: npm test
       - id: mac_package
         run: npm run dist:mac
