@@ -1,6 +1,6 @@
 # 模块：dsh-whale 内置鲸鱼娘助理
 
-`dsh-whale` 是随桌面安装包交付的第一方插件（`vendor/dsh-whale`），提供一个恒定的 `whale-girl` 会话、侧栏入口和 preset 作用域统筹工具面。默认**开启**（`whaleAssistantEnabled: true`），已有显式关闭配置继续生效。设置导航为「鲸鱼娘」，助理开关位于「聊天与能力」页。
+`dsh-whale` 是随桌面安装包交付的第一方插件（`vendor/dsh-whale`），提供一个恒定的 `whale-girl` 会话、侧栏入口和 preset 作用域统筹工具面。默认**关闭**（`whaleAssistantEnabled: false`），已有显式开启配置继续生效；`saveConfig` 会把完整配置写盘，保存过任何设置的安装已持久化旧值，不受默认值变化影响。设置导航为「鲸鱼娘」，助理开关位于「聊天与能力」页。
 
 ## 挂载路径
 

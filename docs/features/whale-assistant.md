@@ -10,7 +10,7 @@
 
 ## User paths
 
-1. 默认**挂载**；已有显式关闭配置保持关闭。主窗 Settings → `pet` 分区 →「鲸鱼娘助理」（`whaleAssistantEnabled`，默认开；宠物右键 ⚙ 格也直达该分区）→ 保存配置触发 Harness 重启 → 侧栏「新会话」下方出现「✨ {名字}」全局面板行（默认鲸鱼娘，跟随配置名），`pet` 分区「助理」组在开关下方出现她的全部字段（无独立导航分区），会话列表出现常驻会话「🐳 {名字}」。
+1. 默认**不挂载**；已有显式开启配置保持开启。主窗 Settings → `pet` 分区 →「鲸鱼娘助理」（`whaleAssistantEnabled`，默认关；宠物右键 ⚙ 格也直达该分区）→ 保存配置触发 Harness 重启 → 侧栏「新会话」下方出现「✨ {名字}」全局面板行（默认鲸鱼娘，跟随配置名），`pet` 分区「助理」组在开关下方出现她的全部字段（无独立导航分区），会话列表出现常驻会话「🐳 {名字}」。
 2. 助理会话是真实 DSH session：`whale-girl` agent preset（persona + fs/fs-search/skill + `dsh-whale/tools` 统筹工具面），cwd 固定 `dsh-home/data/whale/`（她的"家"——AGENTS.md/MEMORY.md/skills 都在里面，随会话自动注入）。`sessionId` 持久化于 `data/whale/settings.json`，重启复用不重建；旧 `settings.yaml.imported` 保留，但旧会话 ID 不自动复用。
 3. 设置导航名称为「鲸鱼娘」。页面内使用「聊天与能力」和「桌面形象与行为」两页签；前者收拢助理开关、名字与称呼、模型/思考强度、IM 接入、额外人设、长期记忆和技能，后者收拢显示、外观、性格、活动、拖拽、快捷对话与看看模型。`settings.pet.item` id `whale` 挂在前一页；助理字段逐个 write-through，长文本与技能仍用 `ui-primitives` Modal。性格仅在后一页修改并镜像至助理。
 4. 统筹工具面（preset-scoped 注册，仅 whale-girl 会话可见）：
@@ -31,7 +31,7 @@
 ## Invariants
 
 - `vendor/dsh-whale` 是随包发布的实现源，`build.extraResources` 含 `dsh-whale/**`；`vendor/dsh-whale/node_modules` 随仓跟踪（`.gitignore` 例外，与 dsh-im 同例）。
-- 挂载只经桌面自有 overlay `desktop-plugins/dsh-whale/desktop-dsh-whale.patch.yml`，仅 `whaleAssistantEnabled`（默认 true）为 true 时随每次启动（全量+skip）经 `--patch` 传入；false 时 ensure 删 overlay、不校验 vendor、不阻断启动。绝不写用户层 `cordis.patch.yml`；受管块残留每次启动 strip。
+- 挂载只经桌面自有 overlay `desktop-plugins/dsh-whale/desktop-dsh-whale.patch.yml`，仅 `whaleAssistantEnabled`（默认 false）为 true 时随每次启动（全量+skip）经 `--patch` 传入；false 时 ensure 删 overlay、不校验 vendor、不阻断启动。绝不写用户层 `cordis.patch.yml`；受管块残留每次启动 strip。
 - 包名解析走 `profiles/web/node_modules/dsh-whale` junction → vendor 源；junction 指向错误时重建。
 - ensure 失败（源缺失/声明入口或运行时依赖不全）在启用时阻断启动。
 - `dsh-whale` 入 `DROPPED`/`DROPPED_BASENAMES`（市场目录隐藏、安装拒绝、manifest 剥离）；disable 名单免疫（`withoutDshWhaleAliases`）。
