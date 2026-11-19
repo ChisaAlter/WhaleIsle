@@ -30,14 +30,15 @@ export function releaseDecision({ run, repo, sha, version, latest, existing, art
   if (windows[0].expired) throw new Error('Installer artifact expired; a new development build is needed')
   if (existing && existing.target_commitish !== sha) throw new Error('Existing draft belongs to another commit')
   const macos = artifacts.some(a => a.name === 'Whale-Isle-macos-arm64' && !a.expired)
-  return desktopPublishGate({ tag, latestDesktop, macos, windowsOnlyTag })
+  return { tag, macos: macosPublishRequirement({ tag, latestDesktop, macos, windowsOnlyTag }) }
 }
-function desktopPublishGate({ tag, latestDesktop, macos, windowsOnlyTag }) {
+/** @param {{ tag: string, latestDesktop: { tag_name?: string } | null, macos: boolean, windowsOnlyTag: string }} gate @returns {boolean} */
+function macosPublishRequirement({ tag, latestDesktop, macos, windowsOnlyTag }) {
   if (latestDesktop && !macos) {
     if (windowsOnlyTag !== tag) throw new Error('Refusing to publish ' + tag + ' without a macOS installer artifact (missing or expired): it supersedes ' + latestDesktop.tag_name + '; rerun Development CI on main with include_macos; or dispatch Release with windows_only_tag=' + tag)
-    return { tag, macos: false }
+    return false
   }
-  return { tag, macos }
+  return macos
 }
 async function hash(file, algorithm) {
   const digest = createHash(algorithm)
