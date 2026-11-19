@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -14,6 +14,7 @@ import {
   prepareSmokeWorkspace,
   readWorkspaceGitIdentity,
   resolveExistingWorkspace,
+  writeSmokeConfig,
 } from './smoke-workspace.mjs'
 
 /**
@@ -220,4 +221,16 @@ test('existing-workspace mode keeps the historical mutating helper out of its pa
   assert.match(source, /externalWorkspace/)
   assert.match(source, /initGitWorkspace/)
   assert.doesNotMatch(source, /git\(/, 'prepareSmokeWorkspace must not shell out to Git itself')
+})
+
+test('smoke config enables the whale assistant for new and existing QA profiles', (t) => {
+  const root = makeTempRoot(t)
+  const userData = path.join(root, 'user-data')
+  mkdirSync(userData)
+  const file = path.join(userData, 'config.json')
+  writeSmokeConfig(userData, path.join(root, 'workspace'), 12345)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).whaleAssistantEnabled, true)
+  writeFileSync(file, JSON.stringify({ whaleAssistantEnabled: false }))
+  writeSmokeConfig(userData, path.join(root, 'workspace'), 12345)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).whaleAssistantEnabled, true)
 })
