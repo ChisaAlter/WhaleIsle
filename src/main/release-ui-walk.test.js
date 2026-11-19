@@ -8,7 +8,7 @@ const {
   PAGE_HELPERS,
   waitForComposerIdle,
   waitForComposerSubmission,
-  probeSessionLogMenu,
+  probeDesktopSessionMenus,
   probeGitCommitMenu,
   probeRemoteEntry,
   probeSignedOutAccountMenu,
@@ -303,43 +303,26 @@ test('submission does not accept Stop without the matching user echo, or a disab
   assert.equal(await waitForComposerSubmission(world.wc, 'ping Low', 10), null);
 });
 
-test('session log menu probes a sent session and waits for its own enabled download', async () => {
+test('desktop session menu probe checks both headers without counting sidebar controls', async () => {
   const more = pageNode({ 'aria-label': 'More actions' });
-  const unrelated = pageNode({}, '', { controls: [pageNode({}, 'Commit')] });
-  const download = pageNode({}, 'Download session log');
-  download.disabled = true;
-  const ownMenu = pageNode({}, '', { controls: [download] });
-  const queries = { controls: [more], '[data-chat-flow-kind="user"]': [pageNode({}, 'sent ping')],
-    '[role="menu"]': [unrelated] };
-  more.click = () => { queries['[role="menu"]'].push(ownMenu); };
-  const world = pageWorld(queries);
-  let reads = 0;
-  const wc = { executeJavaScript: async (script) => {
-    const value = await world.wc.executeJavaScript(script);
-    reads++;
-    if (reads === 2) download.disabled = false;
-    return value;
-  } };
-  const result = await probeSessionLogMenu(wc, 2_000);
-  assert.equal(result.ordinary, true);
-  assert.equal(result.opened, true);
-  assert.equal(result.download, true);
-  assert.equal(result.extraShortcut, false);
-  assert.equal(reads, 3, 'disabled download cannot count as reachable');
-});
-
-test('session log probe rejects a blank draft and retains the duplicate-shortcut failure', async () => {
-  const more = pageNode({ 'aria-label': 'More actions' });
-  let clicks = 0;
-  more.click = () => { clicks++; };
-  const queries = { controls: [more], '[data-chat-flow-kind="user"]': [],
-    '#dshd-shell-titlebar-trailing': [pageNode({}, '', { controls: [pageNode({}, 'Session log')] })] };
-  const world = pageWorld(queries);
-  const result = await probeSessionLogMenu(world.wc, 10);
-  assert.equal(result.ordinary, false);
-  assert.equal(result.download, false);
-  assert.equal(result.extraShortcut, true);
-  assert.equal(clicks, 0, 'blank drafts have no session menu to verify');
+  const header = { '[data-conversation-header-leading]': [pageNode()], controls: [] };
+  const trailing = { controls: [pageNode({}, 'Session log')] };
+  const queries = {
+    controls: [more],
+    header: [pageNode({}, '', header)],
+    '[data-chat-flow-kind="user"]': [pageNode({}, 'sent ping')],
+    '#dshd-shell-titlebar-trailing': [pageNode({}, '', trailing)],
+  };
+  const { wc } = pageWorld(queries);
+  const probe = async () => JSON.parse(JSON.stringify(await probeDesktopSessionMenus(wc)));
+  assert.deepEqual(await probe(), { ordinary: true, more: false, extraShortcut: true });
+  trailing.controls = [more];
+  assert.deepEqual(await probe(), { ordinary: true, more: true, extraShortcut: false });
+  trailing.controls = [];
+  header.controls = [more];
+  assert.equal((await probe()).more, true);
+  header.controls = [];
+  assert.deepEqual(await probe(), { ordinary: true, more: false, extraShortcut: false });
 });
 
 test('Git Commit entry is reachable through the menu when the primary action is Publish', async () => {

@@ -1044,6 +1044,17 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 
+  it.each([false, true])('omits only the caption context-menu trigger in Whale Isle (desktop=%s)', desktop => {
+    if (desktop) vi.stubGlobal('shell', { windowAction: vi.fn() })
+    const b = mount(sessionSnapshotOf(), undefined, undefined, { entryActions: true })
+    if (desktop) expect(b.headerFactory).not.toHaveBeenCalled()
+    else expect(b.headerFactory).toHaveBeenCalledWith('contextMenu.button', expect.objectContaining({
+      target: expect.objectContaining({ kind: 'sessionHeader' }),
+    }))
+    expect(b.view.getByTestId('view-conversation.session.header.utilities')).toBeTruthy()
+    expect(b.view.getByRole('button', { name: zh['session.moreViews'] })).toBeTruthy()
+  })
+
   it('hides the Chat/Trajectory tablist when view tabs are disabled', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, { viewTabsChrome: false })
     expect(b.view.queryByRole('tablist')).toBeNull()

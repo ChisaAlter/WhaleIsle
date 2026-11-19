@@ -8,11 +8,6 @@ const { buildSettingsSectionScript } = require('./settings-jump');
 const { REMOTE_FEATURE_ENABLED } = require('./config');
 
 /**
- * In-page helpers for the Electron release walk. Kept as a string so
- * executeJavaScript can eval them without a Node closure.
- */
-
-/**
  * QA log line for a Remote snapshot. Never includes token or pairing URLs.
  * @param {object | null | undefined} snap
  * @returns {string}
@@ -559,23 +554,46 @@ function waitForComposerSubmission(wc, text, timeoutMs = 30_000) {
   }, text), timeoutMs);
 }
 
-async function probeSessionLogMenu(wc, timeoutMs = 5_000) {
-  const entry = await pageEval(wc, () => {
+/** @param {Electron.WebContents} wc */
+function probeDesktopSessionMenus(wc) {
+  return pageEval(wc, () => {
     const ordinary = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]')).some(dshShown);
-    const more = ordinary && dshFind('^more actions$|^更多操作$');
     const bar = document.querySelector('#dshd-shell-titlebar-trailing');
+    const headers = [bar, ...Array.from(document.querySelectorAll('header')).filter((header) =>
+      header.querySelector('[data-conversation-header-leading]'))].filter(Boolean);
+    const more = headers.some((header) => Boolean(dshFind('^more actions$|^更多操作$', header)));
     const extraShortcut = Boolean(bar && dshFind('session log|会话日志|Session 日志', bar));
-    const opened = Boolean(more && !more.disabled);
-    if (opened) more.click();
-    return { ordinary, opened, extraShortcut };
+    return { ordinary, more, extraShortcut };
   });
-  const download = entry.opened && Boolean(await waitUntil(() => pageEval(wc, () => {
-    const menu = Array.from(document.querySelectorAll('[role="menu"]')).find((el) =>
-      dshShown(el) && dshFind('download session log|下载会话日志', el));
-    const item = menu && dshFind('download session log|下载会话日志', menu);
-    return item && !item.disabled && item.getAttribute('aria-disabled') !== 'true' ? true : null;
-  }), timeoutMs));
-  return { ...entry, download: Boolean(download) };
+}
+
+/** @param {Electron.WebContents} wc */
+function clickComposerSend(wc) {
+  return pageEval(wc, () => {
+    const send = dshComposerSend();
+    if (!send || send.disabled) return false;
+    send.click();
+    return true;
+  });
+}
+
+/** @param {Electron.WebContents} wc */
+async function probeSessionExport(wc) {
+  if (!await waitForComposerIdle(wc, 10_000, '/export')) return false;
+  let started = false;
+  const onDownload = (/** @type {Electron.Event} */ event, /** @type {Electron.DownloadItem} */ item,
+    /** @type {Electron.WebContents} */ owner) => {
+    if (owner !== wc || !new URL(item.getURL()).pathname.endsWith('/api/session.export')) return;
+    // Observe the real browser download, without leaving a file in Downloads.
+    event.preventDefault();
+    started = /^dsh-session-.*\.zip$/.test(item.getFilename());
+  };
+  wc.session.on('will-download', onDownload);
+  try {
+    return Boolean(await clickComposerSend(wc) && await waitUntil(() => started, 5_000));
+  } finally {
+    wc.session.removeListener('will-download', onDownload);
+  }
 }
 
 /** The Git primary action varies with repository state; Commit lives in its menu. */
@@ -994,16 +1012,15 @@ async function runReleaseUiWalk(wc, helpers) {
     Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]')).some(dshShown));
   if (!hasUserMessage) {
     const probeText = 'Desktop session export check';
-    if (await typeIntoComposer(wc, probeText)) {
-      await pageEval(wc, () => { const send = dshComposerSend(); if (send && !send.disabled) send.click(); });
+    if (await typeIntoComposer(wc, probeText) && await clickComposerSend(wc)) {
       await waitUntil(() => pageEval(wc, () =>
         Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]')).some(dshShown)), 10_000);
     }
   }
-  const sessionLog = await probeSessionLogMenu(wc);
-  const sessionLogMenu = sessionLog.download;
-  rec('titlebar.sessionLog', !sessionLog.extraShortcut && sessionLog.ordinary && sessionLogMenu,
-    `ordinary=${sessionLog.ordinary} extraShortcut=${sessionLog.extraShortcut} menuDownload=${sessionLogMenu}`);
+  const { ordinary, more, extraShortcut } = await probeDesktopSessionMenus(wc);
+  const exportStarted = ordinary && await probeSessionExport(wc);
+  rec('titlebar.sessionLog', ordinary && !more && !extraShortcut && exportStarted,
+    `ordinary=${ordinary} more=${more} extraShortcut=${extraShortcut} exportStarted=${exportStarted}`);
   await dismiss();
   await clickNewSession(wc);
   await waitUntil(() => pageEval(wc, () => (
@@ -1074,12 +1091,7 @@ async function runReleaseUiWalk(wc, helpers) {
 
   const titlebar = await pageEval(wc, () => {
     const bar = document.querySelector('#dshd-shell-titlebar-trailing');
-    const labels = bar
-      ? Array.from(bar.querySelectorAll('button')).map((el) => dshLabel(el)).filter(Boolean).slice(0, 12)
-      : [];
     return {
-      sessionLog: Boolean(bar && dshFind('session log|会话日志|Session 日志', bar)),
-      labels,
       branch: Boolean(dshFind('switch branch|切换分支', bar)),
       git: Boolean(dshFind('git actions|git 操作', bar)),
       terminal: Boolean(dshFind('terminal|终端', bar)),
@@ -1733,7 +1745,7 @@ async function runReleaseUiWalk(wc, helpers) {
   rec('features.botsRemoved', Boolean(featuresOpened && botsSetting?.nav && !botsSetting?.switchPresent),
     `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent}`);
 
-  // The single Session-menu entry no longer has an Interface visibility switch.
+  // The desktop no longer offers a switch for a Session log titlebar action.
   await dismiss();
   await sleep(300);
   const interfaceOpened = await openSettings('interface');
@@ -1743,8 +1755,8 @@ async function runReleaseUiWalk(wc, helpers) {
       .find((el) => /(会话日志|session log)/i.test(dshLabel(el)));
     return Boolean(dialog && !control);
   });
-  rec('interface.sessionLogMenu', Boolean(interfaceOpened && sessionLogSwitchRemoved && sessionLogMenu),
-    `switchRemoved=${sessionLogSwitchRemoved} menuDownload=${sessionLogMenu}`);
+  rec('interface.sessionLogMenu', Boolean(interfaceOpened && sessionLogSwitchRemoved),
+    `switchRemoved=${sessionLogSwitchRemoved}`);
   await dismiss();
   const botsTab = await pageEval(wc, () => {
     const tab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) =>
@@ -1797,7 +1809,7 @@ module.exports = {
   clickNewSession,
   waitForComposerIdle,
   waitForComposerSubmission,
-  probeSessionLogMenu,
+  probeDesktopSessionMenus,
   probeGitCommitMenu,
   probeRemoteEntry,
   probeSignedOutAccountMenu,

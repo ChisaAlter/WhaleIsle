@@ -30,9 +30,10 @@
   transition: width var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-/* macOS desktop: the AppFrame column owns the translucent sidebar tint; an
-   opaque fill here would sit on top of it and block the window vibrancy. */
-:global([data-platform='darwin']) .root {
+/* Native blur: AppFrame owns the sidebar fill; the nested sidebar must not
+   paint the same tint on top. Phone drawers still paint their own surface. */
+:global([data-platform='darwin']) .root,
+:global(html[data-dsh-window-material='acrylic']:not([data-dsh-skin='codex'], [data-dsh-skin='claude']) [data-dsh-frame]:not([data-phone])) .root {
   background: transparent;
 }
 

@@ -93,6 +93,7 @@
     },
     "files": [
       "src/**/*",
+      "!src/native/**",
       "!src/whale-ui/**",
       "!**/*.test.js",
       "!src/renderer/pet-live2d/avatar/model_hd.onnx",

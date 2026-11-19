@@ -1,4 +1,4 @@
-param([long]$WindowHandle, [string]$OutputPath)
+param([long]$WindowHandle, [string]$OutputPath, [switch]$SampleBackdrop)
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -38,6 +38,14 @@ foreach ($cornerIndex in 0..3) {
  $cornerInside=$cornerBitmap.GetPixel($cornerInsideX,$cornerInsideY)
  $cornerInsideDelta=[Math]::Max([Math]::Abs($cornerInside.R-208),[Math]::Max([Math]::Abs($cornerInside.G-32),[Math]::Abs($cornerInside.B-208)))
  $cornerResults+=@{kind='inside';corner=$cornerIndex;rgb=@($cornerInside.R,$cornerInside.G,$cornerInside.B);delta=$cornerInsideDelta}
+}
+if ($SampleBackdrop) {
+ $middleX=[int][Math]::Floor($cornerBitmap.Width / 2)
+ $middleY=[int][Math]::Floor($cornerBitmap.Height / 2)
+ foreach ($offset in @(-12, 12)) {
+  $pixel=$cornerBitmap.GetPixel($middleX+$offset,$middleY)
+  $cornerResults+=@{kind='backdrop';offset=$offset;rgb=@($pixel.R,$pixel.G,$pixel.B)}
+ }
 }
 $cornerSheet.Save($OutputPath,[System.Drawing.Imaging.ImageFormat]::Png)
 $cornerSheetGraphics.Dispose();$cornerSheet.Dispose();$cornerGraphics.Dispose();$cornerBitmap.Dispose()

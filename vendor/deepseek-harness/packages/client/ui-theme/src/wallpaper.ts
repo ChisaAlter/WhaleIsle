@@ -1,6 +1,6 @@
 /** Wallpaper extras: data-URL validation, encode, and surface mixing. */
 
-import type { ThemeTokens } from './theme-family.ts'
+import { DEFAULT_GLASS_OPACITY, type ThemeTokens } from './theme-family.ts'
 
 /** Lowest wallpaper blur/pixelate the settings slider accepts (percent). */
 export const MIN_WALLPAPER_EFFECT = 0
@@ -449,6 +449,8 @@ export function wallpaperCanvasSolidity(solidity: number): number {
  * @param solidity - percent of the solid fill kept (the user's glass opacity).
  * @param terminalSolidity - percent of the terminal pane fill kept (the
  *   user's terminal opacity setting).
+ * @param acrylic - apply the slider to window chrome only; raised surfaces
+ *   keep the standard frosted tint over the native backdrop.
  * @returns a new token dictionary.
  */
 export function mixWallpaperSurfaces(
@@ -456,11 +458,16 @@ export function mixWallpaperSurfaces(
   mode: 'light' | 'dark',
   solidity: number,
   terminalSolidity: number,
+  acrylic = false,
 ): ThemeTokens {
   const next: ThemeTokens = { ...tokens }
   const kept = Math.min(100, Math.max(0, Math.round(solidity)))
-  const canvas = wallpaperCanvasSolidity(kept)
-  const sidebar = Math.round((wallpaperCanvasSolidityUncapped(kept) + kept) / 2)
+  const canvasUncapped = wallpaperCanvasSolidityUncapped(kept)
+  const canvas = acrylic
+    ? Math.round(100 * (canvasUncapped / 100) ** 1.5)
+    : Math.min(canvasUncapped, MAX_WALLPAPER_CANVAS_SOLIDITY)
+  const sidebar = Math.round((canvasUncapped + kept) / 2)
+  const raisedSolidity = acrylic ? DEFAULT_GLASS_OPACITY : kept
   const base = mode === 'dark'
     ? 'var(--dsw-static-neutral-bluish-950)'
     : 'var(--dsw-static-neutral-bluish-00)'
@@ -469,8 +476,8 @@ export function mixWallpaperSurfaces(
     : 'var(--dsw-static-neutral-bluish-00)'
   const surfaces: Record<string, { fallback: string; percent: number }> = {
     '--dsw-alias-bg-base': { fallback: base, percent: canvas },
-    '--dsw-alias-bg-layer-1': { fallback: raised, percent: kept },
-    '--dsw-alias-bg-layer-2': { fallback: raised, percent: kept },
+    '--dsw-alias-bg-layer-1': { fallback: raised, percent: raisedSolidity },
+    '--dsw-alias-bg-layer-2': { fallback: raised, percent: raisedSolidity },
     '--dsw-specific-sidebar-fill': { fallback: raised, percent: sidebar },
   }
   for (const [name, { fallback, percent }] of Object.entries(surfaces)) {

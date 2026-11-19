@@ -1,6 +1,7 @@
 'use strict';
 
 const os = require('node:os');
+const { setWindowAcrylic } = require('./window-acrylic');
 
 /** @typedef {'acrylic' | 'none'} WindowMaterial */
 
@@ -96,10 +97,9 @@ function rememberChromeColor(win, color) {
 }
 
 /**
- * Swap a window between native Windows acrylic (`'acrylic'`) and plain backdrop (`'none'`).
- * Transparent WhaleIsle shell windows retain their `#00000000` background color so
- * alpha-rounded window corners stay intact; non-transparent windows clear to transparent
- * while acrylic is active and restore the cached/fallback chrome fill when disabled.
+ * The transparent shell uses a clipped compositor visual, not Electron's
+ * rectangular HWND material. In particular, even setting Electron's 'none'
+ * would replace the shell's alpha surface with a default fill.
  * @param {MaterialWindowLike | null | undefined} win
  * @param {unknown} material
  * @param {WindowMaterialOptions} [options]
@@ -109,26 +109,22 @@ function applyWindowMaterial(win, material, options = {}) {
   if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) {
     return false;
   }
-  if (!isValidWindowMaterial(material) || typeof win.setBackgroundMaterial !== 'function') {
-    return false;
-  }
-  const transparent = Boolean(options.transparent);
-  if (material === 'acrylic') {
-    win.setBackgroundMaterial('acrylic');
-    acrylicWindows.add(win);
-    if (!transparent && typeof win.setBackgroundColor === 'function') {
-      win.setBackgroundColor('#00000000');
-    }
-    return true;
-  }
-  win.setBackgroundMaterial('none');
-  acrylicWindows.delete(win);
-  if (!transparent && typeof win.setBackgroundColor === 'function') {
-    const color = restoreColors.get(win) || (isValidChromeColor(options.restoreColor) ? options.restoreColor.trim() : '');
-    if (color) {
-      win.setBackgroundColor(color);
+  if (!isValidWindowMaterial(material)) return false;
+  const enabled = material === 'acrylic';
+  if (enabled === acrylicWindows.has(win)) return true;
+  if (options.transparent) {
+    if (!setWindowAcrylic(/** @type {Electron.BrowserWindow} */ (win), enabled)) return false;
+  } else {
+    if (typeof win.setBackgroundMaterial !== 'function') return false;
+    win.setBackgroundMaterial(material);
+    if (typeof win.setBackgroundColor === 'function') {
+      const color = enabled ? '#00000000' : restoreColors.get(win)
+        || (isValidChromeColor(options.restoreColor) ? options.restoreColor.trim() : '');
+      if (color) win.setBackgroundColor(color);
     }
   }
+  if (enabled) acrylicWindows.add(win);
+  else acrylicWindows.delete(win);
   return true;
 }
 

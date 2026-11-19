@@ -3,6 +3,7 @@ const { app, BrowserWindow, screen } = require('electron');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
+const http = require('node:http');
 const { execFileSync, execFile } = require('node:child_process');
 const exec = require('node:util').promisify(execFile);
 const { createSupervisedDir, startDirCleanupSupervisor } = require('./lib/owned-dir-supervisor.cjs');
@@ -13,7 +14,9 @@ const userData = profile.root;
 app.setPath('userData', userData);
 startDirCleanupSupervisor(profile);
 app.on('window-all-closed', () => {});
+/** @param {number} ms */
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+/** @param {() => boolean} predicate @param {string} label */
 async function until(predicate, label) {
   const deadline = Date.now() + 5000;
   while (!predicate() && Date.now() < deadline) await delay(25);
@@ -22,6 +25,7 @@ async function until(predicate, label) {
 app.whenReady().then(async () => {
   const windows = require('../src/main/window');
   const { rendererFile } = require('../src/main/paths');
+  const { windowsAcrylicSupported, hasAcrylicMaterial } = require('../src/main/window-material');
   const composed = process.argv.includes('--composed');
   // Composed-mode evidence must outlive the run: the supervised userData is
   // removed after exit, so the default lands in the repo's explicit .tmp
@@ -42,23 +46,83 @@ app.whenReady().then(async () => {
     await focusSink.loadURL('data:text/html,<body style="background:%23d020d0"></body>');
     console.log(`Composed desktop corner evidence: ${evidence}`);
   }
-  async function checkComposed(win, label) {
-    if (!composed) return;
+  /** @param {Electron.BrowserWindow} win @param {string} label @param {boolean} [sampleBackdrop] */
+  async function checkComposed(win, label, sampleBackdrop = false) {
+    if (!composed) return [];
     await delay(350);
     const result = await exec('powershell.exe', ['-NoProfile', '-File', path.join(__dirname, 'probe-window-corners.ps1'),
-      '-WindowHandle', String(win.getNativeWindowHandle().readBigUInt64LE()), '-OutputPath', path.join(evidence, `${label}.png`)], { encoding: 'utf8', windowsHide: true });
+      '-WindowHandle', String(win.getNativeWindowHandle().readBigUInt64LE()), '-OutputPath', path.join(evidence, `${label}.png`),
+      ...(sampleBackdrop ? ['-SampleBackdrop'] : [])], { encoding: 'utf8', windowsHide: true });
+    /** @type {Array<{ kind: 'cutout', delta: number } | { kind: 'inside', delta: number } | { kind: 'backdrop', offset: number, rgb: number[] }>} */
     const pixels = JSON.parse(result.stdout);
     fs.writeFileSync(path.join(evidence, `${label}.json`), JSON.stringify(pixels, null, 2));
     assert.equal(pixels.filter(p => p.kind === 'cutout').length, 20);
     assert.equal(pixels.filter(p => p.kind === 'inside').length, 4);
     assert.ok(pixels.filter(p => p.kind === 'cutout').every(p => p.delta <= 24), `${label}: composed four corners must not contain a native rectangle`);
-    assert.ok(pixels.filter(p => p.kind === 'inside').every(p => p.delta > 24), `${label}: test window must be visible, not hidden behind the backdrop`);
-    console.log(`PASS ${label}: composed four-corner cutouts + visible interior`);
+    if (!sampleBackdrop) {
+      assert.ok(pixels.filter(p => p.kind === 'inside').every(p => p.delta > 24), `${label}: test window must be visible, not hidden behind the backdrop`);
+    }
+    console.log(`PASS ${label}: composed four-corner cutouts`);
+    return pixels.filter(p => p.kind === 'backdrop').sort((a, b) => a.offset - b.offset).map(p => p.rgb);
   }
-  for (const [name, factory, page] of [
+
+  /** @param {Electron.BrowserWindow} win @param {Electron.BrowserWindow} stage */
+  async function checkHarnessAcrylic(win, stage) {
+    // Probe real preload -> IPC -> borrowed HWND composition through the same
+    // BrowserView and boot-cover handoff as the main workbench.
+    const fixture = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><style>
+        html body #dshd-frame-canvas { background: transparent !important; }
+      </style><div class="frame"></div>`);
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        fixture.once('error', reject);
+        fixture.listen(0, '127.0.0.1', () => resolve(undefined));
+      });
+      const address = fixture.address();
+      assert.ok(address && typeof address !== 'string');
+      const origin = `http://127.0.0.1:${address.port}`;
+      await windows.showHarness(origin);
+      const view = windows.getHarnessWebContents(win);
+      assert.ok(view, 'Harness view attached');
+      assert.equal(await view.executeJavaScript("document.documentElement.hasAttribute('data-window-material-supported')"), true);
+      const bounds = win.getBounds();
+      const base = stage.getBounds();
+      await stage.webContents.executeJavaScript(`document.body.insertAdjacentHTML('beforeend',
+        '<div id="contrast" style="position:absolute;left:${bounds.x - base.x + bounds.width / 2}px;top:${bounds.y - base.y + bounds.height / 2 - 80}px;width:100px;height:160px;background:#30df38"></div>')`);
+      const plain = await checkComposed(win, 'main-material-initial-none', true);
+      assert.ok(plain[1][1] - plain[0][1] > 150, 'unblurred backdrop must show the fixture contrast');
+      await view.executeJavaScript("document.documentElement.setAttribute('data-dsh-window-material','acrylic')");
+      await until(() => hasAcrylicMaterial(win), 'preload enabled acrylic');
+      const blurred = await checkComposed(win, 'main-material-enabled', true);
+      const diff = blurred[1][1] - blurred[0][1];
+      assert.ok(diff > 4 && diff < (plain[1][1] - plain[0][1]) * 0.8,
+        `acrylic must soften, not cover, the real backdrop contrast: ${JSON.stringify({ plain, blurred })}`);
+      console.log('PASS acrylic actually blurs the desktop behind the workbench');
+      win.setBounds({ ...bounds, width: bounds.width - 36, height: bounds.height - 24 });
+      await checkComposed(win, 'main-material-resized', true);
+      await view.executeJavaScript("window.shell.windowAction('maximize')");
+      await until(() => win.isMaximized(), 'acrylic keeps native maximize');
+      await view.executeJavaScript("window.shell.windowAction('maximize')");
+      await until(() => !win.isMaximized(), 'acrylic keeps native restore');
+      await checkComposed(win, 'main-material-restored', true);
+      win.setBounds(bounds);
+      await view.executeJavaScript("document.documentElement.removeAttribute('data-dsh-window-material')");
+      await until(() => !hasAcrylicMaterial(win), 'preload disabled acrylic');
+      const cleared = await checkComposed(win, 'main-material-disabled', true);
+      assert.deepEqual(cleared, plain, 'disabling acrylic restores the original unblurred transparent surface');
+      windows.hideHarnessView(win);
+    } finally {
+      await stage.webContents.executeJavaScript("document.querySelector('#contrast')?.remove()");
+      fixture.close();
+    }
+  }
+  for (const [name, factory, page] of /** @type {const} */ ([
     ['main', windows.createMainWindow, 'boot.html'],
     ['launcher', windows.createLauncherWindow, 'launcher.html'],
-  ]) {
+  ])) {
     const win = factory();
     await win.loadFile(rendererFile(page));
     if (composed) win.setAlwaysOnTop(true, 'screen-saver');
@@ -83,6 +147,7 @@ app.whenReady().then(async () => {
     const corner = await win.webContents.capturePage({ x: 0, y: 0, width: 30, height: 30 });
     const size = corner.getSize();
     const pixels = corner.toBitmap();
+    /** @param {number} x @param {number} y */
     const alpha = (x, y) => pixels[(Math.floor(y * size.height / 30) * size.width + Math.floor(x * size.width / 30)) * 4 + 3];
     assert.equal(alpha(3, 3), 0, `${name}: 20px corner cutout must be truly transparent (8px system corner is insufficient)`);
     assert.ok(alpha(20, 20) > 240, `${name}: inside the corner must remain painted`);
@@ -90,7 +155,7 @@ app.whenReady().then(async () => {
     for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 0 && pixels[i] < 255) coverage.add(pixels[i]);
     assert.ok(coverage.size >= 8, `${name}: preserve alpha antialiasing rather than a binary corner mask`);
     await checkComposed(win, `${name}-active`);
-    if (composed) {
+    if (focusSink) {
       focusSink.show();
       focusSink.focus();
       await until(() => !win.isFocused(), `${name}: focus moved to isolated QA target`);
@@ -131,6 +196,7 @@ app.whenReady().then(async () => {
     assert.ok(after.dwmReadOk && !after.nonClientRendering, `${name}: DWM rectangle must remain suppressed after transitions`);
     await checkComposed(win, `${name}-restored`);
     console.log(`PASS ${name}: 20px alpha corners AND native maximize/unmaximize/minimize/restore through production factories + IPC`);
+    if (stage && name === 'main' && windowsAcrylicSupported()) await checkHarnessAcrylic(win, stage);
     win.destroy();
   }
   stage?.destroy();

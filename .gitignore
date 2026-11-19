@@ -118,6 +118,7 @@ pelican-bike.html
 # Generated Office runtime payload + download cache (prepare:office-runtime)
 build/office-runtime/
 build/office-runtime-cache/
+build/whale-window-acrylic.dll
 
 # Mobile web QA run output (screenshots, manifests, audit reports)
 tools/mobile-web-qa/results/

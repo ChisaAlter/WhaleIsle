@@ -3416,26 +3416,6 @@
         "Parameter 's' implicitly has an 'any' type.": 2
       }
     },
-    "scripts/qa-window-motion.cjs": {
-      "TS18048": {
-        "'focusSink' is possibly 'undefined'.": 3
-      },
-      "TS2345": {
-        "Argument of type 'string | (({ activate }?: { activate?: boolean | undefined; }) => any)' is not assignable to parameter of type 'string'.": 1
-      },
-      "TS2349": {
-        "This expression is not callable.": 1
-      },
-      "TS7006": {
-        "Parameter 'label' implicitly has an 'any' type.": 2,
-        "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 6,
-        "Parameter 'predicate' implicitly has an 'any' type.": 1,
-        "Parameter 'win' implicitly has an 'any' type.": 1,
-        "Parameter 'x' implicitly has an 'any' type.": 1,
-        "Parameter 'y' implicitly has an 'any' type.": 1
-      }
-    },
     "scripts/record-android-release.mjs": {
       "TS7006": {
         "Parameter 'manifest' implicitly has an 'any' type.": 1
@@ -7284,17 +7264,17 @@
         "Cannot find name 'dshDialog'.": 13,
         "Cannot find name 'dshDialogNamed'.": 27,
         "Cannot find name 'dshField'.": 2,
-        "Cannot find name 'dshFind'.": 53,
+        "Cannot find name 'dshFind'.": 50,
         "Cannot find name 'dshHeading'.": 4,
         "Cannot find name 'dshInputInventory'.": 1,
-        "Cannot find name 'dshLabel'.": 17,
+        "Cannot find name 'dshLabel'.": 16,
         "Cannot find name 'dshMcpSnapshot'.": 2,
         "Cannot find name 'dshModelsDiagnostic'.": 1,
         "Cannot find name 'dshQaPngFile'.": 1,
         "Cannot find name 'dshSavedCustomProvider'.": 2,
         "Cannot find name 'dshSelectComposerAll'.": 1,
         "Cannot find name 'dshSetValue'.": 1,
-        "Cannot find name 'dshShown'.": 41,
+        "Cannot find name 'dshShown'.": 40,
         "Cannot find name 'dshSkillsSnapshot'.": 2
       },
       "TS2339": {
@@ -7357,7 +7337,7 @@
         "Parameter 'value' implicitly has an 'any' type.": 3,
         "Parameter 'want' implicitly has an 'any' type.": 3,
         "Parameter 'wanted' implicitly has an 'any' type.": 1,
-        "Parameter 'wc' implicitly has an 'any' type.": 17,
+        "Parameter 'wc' implicitly has an 'any' type.": 16,
         "Parameter 'workspacePath' implicitly has an 'any' type.": 3
       },
       "TS7019": {

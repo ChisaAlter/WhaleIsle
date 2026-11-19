@@ -284,7 +284,7 @@ export function AppearanceSection({
           <h2 id="appearance-glass-heading" className={css.heading}>{t('glass.title')}</h2>
           <span className={css.value}>{glassOpacity}%</span>
         </div>
-        <p className={css.hint}>{t('glass.description')}</p>
+        <p className={css.hint}>{t(acrylicActive ? 'glass.acrylicDescription' : 'glass.description')}</p>
         <input
           type="range"
           className={css.slider}

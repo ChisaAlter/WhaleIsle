@@ -32,7 +32,7 @@ import { installMinimalModeLifecycle } from './minimal-mode-lifecycle.ts'
 import { wallpaperShell } from './wallpaper-shell.ts'
 import { deriveThemeTokens } from '../derive.ts'
 import {
-  DEFAULT_FAMILY_ID, DEFAULT_THEME_SKIN, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
+  DEFAULT_FAMILY_ID, DEFAULT_GLASS_OPACITY, DEFAULT_THEME_SKIN, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
   type ThemeFamily, type ThemeSkinId, type ThemeTokens as FamilyTokens,
 } from '../theme-family.ts'
 import { listThemeFamilies, resolveThemeFamily } from '../builtin-families.ts'
@@ -1092,8 +1092,8 @@ export class ThemeRuntime {
     const tokens: ThemeTokens = { ...active.tokens }
     const wallpapered = isWallpaperDataUrl(effectiveWallpaperImage)
     // Window acrylic is a backdrop too: the native frame material blurs the
-    // desktop behind the window, so chrome surfaces mix to the glass solidity
-    // the same way they do over a live wallpaper.
+    // desktop behind the window. It uses a lighter canvas tint than wallpaper
+    // and lets the high end of the glass slider reach an opaque canvas.
     const acrylic = this.acrylicEffective()
     // The ambient gradient is a backdrop too: while it is live (and no image
     // covers it) chrome surfaces mix to the same glass solidity so the blooms
@@ -1102,8 +1102,8 @@ export class ThemeRuntime {
     // 透明主题 needs the wallpaper: fully transparent chrome over an opaque
     // canvas would leave menus and dialogs invisible, so the flag is inert
     // until an image is set. Acrylic pauses that wallpaper, so while it is
-    // effective the transparent theme pauses too and surfaces follow the
-    // glass slider alone.
+    // effective the transparent theme pauses. The slider then controls the
+    // window canvas and sidebar, not the raised surfaces.
     // A flat skin (Codex) opts out of glass and the backdrop entirely: its
     // chrome is opaque, so neither the wallpaper nor the ambient gradient may
     // wash the surfaces, and the family's own solid tokens stay authoritative.
@@ -1113,10 +1113,10 @@ export class ThemeRuntime {
       : this.settings.transparentTheme && wallpapered && !acrylic
         ? TRANSPARENT_GLASS_SOLIDITY
         : this.settings.glassOpacity
-    tokens['--dsw-alias-glass-opacity'] = `${solidity}%`
+    tokens['--dsw-alias-glass-opacity'] = `${acrylic && !flatChrome ? DEFAULT_GLASS_OPACITY : solidity}%`
     if (!flatChrome) {
       if (backdropLive) {
-        Object.assign(tokens, mixWallpaperSurfaces(tokens, mode, solidity, this.settings.terminalOpacity))
+        Object.assign(tokens, mixWallpaperSurfaces(tokens, mode, solidity, this.settings.terminalOpacity, acrylic))
       } else {
         // The base sheet mixes DeepSeek's raised fills directly. Custom
         // families supply their own colors, so apply the same glass value here.

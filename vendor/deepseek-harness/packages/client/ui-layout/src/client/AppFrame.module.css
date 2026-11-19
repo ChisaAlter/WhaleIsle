@@ -55,6 +55,19 @@
   top: var(--dsh-windows-titlebar-height);
 }
 
+/* One canvas tint over the native blur. The caption pseudo-element still
+   reserves its no-drag region but must not paint a second tint. The sidebar
+   column can add its own tint when the user enables its background mask. */
+:global(html[data-dsh-window-material='acrylic']:not([data-dsh-skin='codex'], [data-dsh-skin='claude'])) .frame {
+  background: var(--dsw-alias-bg-base);
+}
+
+:global(html[data-dsh-window-material='acrylic']:not([data-dsh-skin='codex'], [data-dsh-skin='claude'])) .frame::before,
+:global(html[data-dsh-window-material='acrylic']:not([data-dsh-skin='codex'], [data-dsh-skin='claude'])) .centerCol,
+:global(html[data-dsh-window-material='acrylic']:not([data-dsh-skin='codex'], [data-dsh-skin='claude'])) .bottomRow {
+  background: transparent;
+}
+
 /* macOS desktop lets the window vibrancy reach the sidebar while the
    conversation canvas remains opaque. */
 :global([data-platform='darwin']) .frame {
@@ -180,6 +193,8 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Bound the panel's own scrollport to the available content height. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .terminalDrawerCol {
