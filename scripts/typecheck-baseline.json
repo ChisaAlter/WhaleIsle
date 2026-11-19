@@ -7919,43 +7919,18 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 8
       },
-      "TS18047": {
-        "'saved.job' is possibly 'null'.": 2
-      },
-      "TS2322": {
-        "Type '{ method: any; expected: any; ready: { file: any; expected: any; installerArgs: string[]; }; }' is not assignable to type 'null'.": 1,
-        "Type '{ method: string; downloadBytes: any; fullBytes: any; }' is not assignable to type 'null'.": 2,
-        "Type '{ method: string; downloadBytes: number; fullBytes: number; }' is not assignable to type 'null'.": 1,
-        "Type '{ method: string; expected: any; resume: any; }' is not assignable to type 'null'.": 1,
-        "Type '{ received: number; total: any; bytesPerSecond: number; etaSeconds: number | null; resumedFrom: any; retrying: { attempt: any; maxAttempts: any; } | null; }' is not assignable to type 'null'.": 1,
-        "Type '{ received: number; total: any; }' is not assignable to type 'null'.": 1,
-        "Type '{ version: any; tag: any; route: any; publishedAt: any; notes: any; htmlUrl: any; assetName: any; assetUrl: any; assetSize: number; checksumUrl: any; blockmapUrl: any; updaterMetadataUrl: any; }' is not assignable to type 'null'.": 2
-      },
       "TS2339": {
-        "Property 'assetSize' does not exist on type 'never'.": 2,
         "Property 'attempt' does not exist on type '{}'.": 1,
         "Property 'bytesPerSecond' does not exist on type '{}'.": 1,
-        "Property 'downloadBytes' does not exist on type 'never'.": 1,
-        "Property 'expected' does not exist on type 'never'.": 1,
-        "Property 'htmlUrl' does not exist on type 'never'.": 1,
         "Property 'maxAttempts' does not exist on type '{}'.": 1,
-        "Property 'method' does not exist on type 'never'.": 2,
-        "Property 'notes' does not exist on type 'never'.": 1,
         "Property 'phase' does not exist on type '{}'.": 1,
-        "Property 'publishedAt' does not exist on type 'never'.": 1,
-        "Property 'ready' does not exist on type 'never'.": 8,
         "Property 'received' does not exist on type '{}'.": 1,
-        "Property 'resume' does not exist on type 'never'.": 5,
         "Property 'retrying' does not exist on type '{}'.": 1,
-        "Property 'route' does not exist on type 'never'.": 2,
         "Property 'route' does not exist on type '{}'.": 1,
-        "Property 'tag' does not exist on type 'never'.": 1,
-        "Property 'total' does not exist on type '{}'.": 1,
-        "Property 'userPaused' does not exist on type 'never'.": 6,
-        "Property 'version' does not exist on type 'never'.": 1
+        "Property 'total' does not exist on type '{}'.": 1
       },
       "TS2698": {
-        "Spread types may only be created from object types.": 3
+        "Spread types may only be created from object types.": 1
       },
       "TS2769": {
         "No overload matches this call.": 1

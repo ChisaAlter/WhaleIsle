@@ -96,16 +96,24 @@ function createUpdateCenter(deps) {
   const stateFile = path.join(userDataDir, STATE_FILE);
   const listeners = new Set();
 
+  /** @typedef {{method: string, downloadBytes: number, fullBytes: number}} DownloadPlan */
+  /** @typedef {{file: string, expected: string, installerArgs: string[]}} VerifiedInstaller */
+  /** @typedef {{offset: number, total: number, validator: string | null, route?: string}} ResumeState */
+  /** @typedef {{method: string, expected: string, userPaused?: boolean, resume?: ResumeState, ready?: VerifiedInstaller}} DownloadJob */
+  /** @typedef {{received: number, total: number, bytesPerSecond?: number, etaSeconds?: number | null,
+   * resumedFrom?: number, retrying?: {attempt: number, maxAttempts: number} | null}} DownloadProgress */
   // Durable: target, plan and the job (resume state or a verified installer).
+  /** @type {{version: number, target: ReturnType<typeof toTarget> | null, plan: DownloadPlan | null, job: DownloadJob | null}} */
   let saved = { version: 1, target: null, plan: null, job: null };
   // Live: what the UI renders.
-  const model = { phase: 'idle', checkedAt: 0, progress: null, error: null, explicit: false };
+  const model = { phase: 'idle', checkedAt: 0, progress: /** @type {DownloadProgress | null} */ (null), error: null, explicit: false };
   /** @type {AbortController | null} */
   let controller = null;
   let abortReason = null;
   let running = null;
   let lastPersist = 0;
   let autoTimer = null;
+  /** @type {symbol | null} */
   let latestCheck = null;
 
   function snapshot() {
@@ -238,12 +246,16 @@ function createUpdateCenter(deps) {
     }
   }
 
+  /** @param {ReturnType<typeof toTarget>} target @param {boolean} manual */
   function publishAvailable(target, manual) {
     const { partial } = paths(target);
-    const resumable = saved.job?.resume?.total > 0 && fileSize(partial, fsx) > 0;
+    const resume = saved.job?.resume;
+    const progress = resume && resume.total > 0 && fileSize(partial, fsx) > 0
+      ? { received: fileSize(partial, fsx), total: resume.total }
+      : null;
     set({
-      phase: resumable ? 'paused' : 'available',
-      progress: resumable ? { received: fileSize(partial, fsx), total: saved.job.resume.total } : null,
+      phase: progress ? 'paused' : 'available',
+      progress,
     });
     cleanup();
     // A download the user paused stays paused until they resume it.
@@ -251,6 +263,12 @@ function createUpdateCenter(deps) {
     return snapshot();
   }
 
+  /**
+   * @param {Awaited<ReturnType<typeof import('../../launcher/release-source').releaseFor>>} release
+   * @param {string} route
+   * @param {boolean} manual
+   * @param {() => boolean} isCurrent
+   */
   async function applyLatestRelease(release, route, manual, isCurrent) {
     if (!release?.version || compareVersions(release.version, currentVersion()) <= 0) {
       discardJob();
@@ -492,7 +510,7 @@ function createUpdateCenter(deps) {
       saved = { version: 1, target: loaded.target, plan: loaded.plan || null, job: loaded.job || null };
       const { partial } = paths(saved.target);
       if (saved.job?.ready && fileSize(saved.job.ready.file, fsx) > 0) model.phase = 'ready';
-      else if (saved.job?.resume?.total > 0 && fileSize(partial, fsx) > 0) {
+      else if (saved.job?.resume && saved.job.resume.total > 0 && fileSize(partial, fsx) > 0) {
         model.phase = 'paused';
         model.progress = { received: fileSize(partial, fsx), total: saved.job.resume.total };
       } else {
@@ -545,9 +563,7 @@ function createUpdateCenter(deps) {
       await saveProxy(value);
       const wasDownloading = Boolean(controller);
       if (wasDownloading) await stopActive('pause');
-      /** @type {{userPaused?: boolean} | null} */
-      const job = /** @type {{userPaused?: boolean} | null} */ (saved.job);
-      if (job) job.userPaused = !wasDownloading && Boolean(job.userPaused);
+      if (saved.job) saved.job.userPaused = !wasDownloading && Boolean(saved.job.userPaused);
       if (model.phase === 'paused' || model.phase === 'error') model.phase = 'available';
       return check({ manual: true, replace: true });
     },
