@@ -14,7 +14,7 @@ import { validateReleaseAssets } from './check-release-assets.mjs'
 // tags are desktop releases for the version comparison below.
 const DESKTOP_TAG = /^v\d+\.\d+\.\d+$/
 
-export function releaseDecision({ run, repo, sha, version, latest, existing, artifacts }) {
+export function releaseDecision({ run, repo, sha, version, latest, existing, artifacts, windowsOnlyTag = '' }) {
   if (run.status !== 'completed' || run.conclusion !== 'success' ||
       run.path !== '.github/workflows/test.yml' || run.head_branch !== 'main' ||
       run.head_repository?.full_name !== repo || !['push', 'workflow_dispatch'].includes(run.event) ||
@@ -30,8 +30,12 @@ export function releaseDecision({ run, repo, sha, version, latest, existing, art
   if (windows[0].expired) throw new Error('Installer artifact expired; a new development build is needed')
   if (existing && existing.target_commitish !== sha) throw new Error('Existing draft belongs to another commit')
   const macos = artifacts.some(a => a.name === 'Whale-Isle-macos-arm64' && !a.expired)
+  return desktopPublishGate({ tag, latestDesktop, macos, windowsOnlyTag })
+}
+function desktopPublishGate({ tag, latestDesktop, macos, windowsOnlyTag }) {
   if (latestDesktop && !macos) {
-    throw new Error('Refusing to publish ' + tag + ' without a macOS installer artifact (missing or expired): it supersedes ' + latestDesktop.tag_name + '; rerun Development CI on main with include_macos')
+    if (windowsOnlyTag !== tag) throw new Error('Refusing to publish ' + tag + ' without a macOS installer artifact (missing or expired): it supersedes ' + latestDesktop.tag_name + '; rerun Development CI on main with include_macos; or dispatch Release with windows_only_tag=' + tag)
+    return { tag, macos: false }
   }
   return { tag, macos }
 }
@@ -58,7 +62,7 @@ async function scanReleases(request, prefix, tag) {
     if (releases.length < 100) return { existing, latest }
   }
 }
-export async function publish({ repo, runId, request, gh, sha, root = process.cwd(), output = console.log }) {
+export async function publish({ repo, runId, request, gh, sha, windowsOnlyTag = '', root = process.cwd(), output = console.log }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !/^\d+$/.test(String(runId))) throw new Error('Repository and numeric CI run ID are required')
   const prefix = 'repos/' + repo
   const run = await request(prefix + '/actions/runs/' + runId)
@@ -68,7 +72,7 @@ export async function publish({ repo, runId, request, gh, sha, root = process.cw
     scanReleases(request, prefix, tag),
     request(prefix + '/actions/runs/' + runId + '/artifacts?per_page=100'),
   ])
-  const decision = releaseDecision({ run, repo, sha, version, latest, existing, artifacts: artifactList.artifacts })
+  const decision = releaseDecision({ run, repo, sha, version, latest, existing, artifacts: artifactList.artifacts, windowsOnlyTag })
   if (decision.skip) { output(decision.skip); return { skipped: decision.skip } }
   const tagRef = await request(prefix + '/git/ref/tags/' + tag, { missing: true })
   if (tagRef) {
@@ -127,6 +131,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     await publish({
       repo: process.env.GITHUB_REPOSITORY, runId: process.env.RUN_ID, request,
       sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      windowsOnlyTag: process.env.WINDOWS_ONLY_TAG || '',
       gh: args => execFileSync(process.env.GH_PATH || 'gh', args, { stdio: 'inherit' }),
     })
   } catch (error) { console.error(error.message); process.exitCode = 1 }

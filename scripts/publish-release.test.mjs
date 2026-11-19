@@ -40,6 +40,12 @@ test('a version bump without a macOS installer is refused instead of publishing 
   // The first published desktop release has no predecessor to supersede.
   assert.equal(releaseDecision({ ...state(), latest: null, artifacts: [artifact] }).macos, false)
 })
+test('a Windows-only publish needs windowsOnlyTag to equal the version tag exactly', () => {
+  const windowsOnly = { ...state(), artifacts: [artifact] }
+  assert.throws(() => releaseDecision(windowsOnly), /macOS installer/)
+  assert.deepEqual(releaseDecision({ ...windowsOnly, windowsOnlyTag: 'v1.2.3' }), { tag: 'v1.2.3', macos: false })
+  assert.throws(() => releaseDecision({ ...windowsOnly, windowsOnlyTag: 'v9.9.9' }), /macOS installer/)
+})
 test('documentation-only builds skip publishing; expired and foreign drafts do not pass', () => {
   assert.match(releaseDecision({ ...state(), artifacts: [] }).skip, /no installer/)
   assert.throws(() => releaseDecision({ ...state(), artifacts: [{ ...artifact, expired: true }] }), /expired/)

@@ -43,6 +43,8 @@ npm run dist:mac
 
 同版本已发布、版本不高于 latest、或该 CI 只有文档/工具而没有安装包时不发布。PR 和 fork 的构建不能进入自动分发。现有正式版本与 tag 不覆盖。
 
+新版本默认需要同一次 CI 的 macOS 包，缺失时 Release 拒绝发布。确需先发 Windows 时，手动运行 Release，填写 `run_id` 与 `windows_only_tag`（必须等于该版本 tag）；该入口只放行这一个 tag，不影响自动路径。之后 macOS 包走下面「既有正式版本补发 Mac」流程。
+
 ### 既有正式版本补发 Mac
 
 用户明确要求补发时，先在 `Release macOS single-file diagnosis` 填写既有 `source_tag`，完成该标签的 Mac 打包、原生按钮及窗口检查，并实际审阅普通、窄窗、侧栏和全屏截图。产品源码保持标签提交；构建来源附件记录两项编译工具的原始哈希。工具提交须经评审合入 main。
