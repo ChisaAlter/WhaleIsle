@@ -180,6 +180,8 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Bound the panel's own scrollport to the available content height. */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .terminalDrawerCol {
