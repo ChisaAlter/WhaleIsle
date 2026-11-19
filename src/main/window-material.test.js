@@ -309,8 +309,8 @@ test('chrome paintBackground skips opaque fills while acrylic is active and rest
   }
 });
 
-test('window showHarness passes acrylic argument iff supported and hideHarnessView resets material', async () => {
-  for (const supported of [true, false]) {
+test('window advertises acrylic only with OS support and a ready compositor', async () => {
+  for (const [supported, ready] of [[true, true], [true, false], [false, true]]) {
     const windowPath = require.resolve('./window');
     const materialPath = require.resolve('./window-material');
     const electronPath = require.resolve('electron');
@@ -319,6 +319,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
     const shortcutsPath = require.resolve('./shortcuts');
     const guestsPath = require.resolve('./browser-guests');
     const authPath = require.resolve('./ipc-authorization');
+    const acrylicEntry = require.cache[acrylicPath];
     const restoreList = [
       [electronPath, require.cache[electronPath]],
       [chromePath, require.cache[chromePath]],
@@ -326,6 +327,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
       [shortcutsPath, require.cache[shortcutsPath]],
       [guestsPath, require.cache[guestsPath]],
       [authPath, require.cache[authPath]],
+      [acrylicPath, acrylicEntry],
       [materialPath, require.cache[materialPath]],
       [windowPath, require.cache[windowPath]],
     ];
@@ -423,6 +425,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
       require.cache[shortcutsPath] = { id: shortcutsPath, filename: shortcutsPath, loaded: true, exports: { getShortcutService: () => null } };
       require.cache[guestsPath] = { id: guestsPath, filename: guestsPath, loaded: true, exports: { getBrowserGuests: () => null } };
       require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: { registerPrivilegedSurfaces() {}, IPC_ROLES } };
+      require.cache[acrylicPath] = { ...acrylicEntry, exports: { ...acrylicEntry.exports, prepareWindowAcrylic: () => ready } };
       delete require.cache[materialPath];
       const realMaterial = require('./window-material');
       require.cache[materialPath].exports = { ...realMaterial, windowsAcrylicSupported: () => supported };
@@ -431,7 +434,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
       await winMod.showHarness('http://127.0.0.1:41234/app');
       assert.equal(
         createdViewOptions.webPreferences.additionalArguments.includes(WINDOW_MATERIAL_ARGUMENT),
-        supported,
+        supported && ready,
       );
       const owner = winMod.getMainWindow();
       winMod.hideHarnessView(owner);
