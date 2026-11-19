@@ -425,9 +425,6 @@
     "src/main/task-protection.js": {
       "createTaskProtection/coordinate": 26
     },
-    "src/main/update-center/service.js": {
-      "createUpdateCenter/check": 24
-    },
     "src/main/update-dialog.js": {
       "show": 22
     },
@@ -656,16 +653,6 @@
     },
     "vendor/dsh-whale/lib/tools.js": {
       "apply/execute": 21
-    },
-    "vendor/dsh-with-chatgpt/lib/browser.js": {
-      "perform": 40,
-      "snapshot/7a3c4b3d82de3cdb/48a874402c685031": 23
-    },
-    "vendor/dsh-with-chatgpt/lib/index.js": {
-      "apply/execute": 21
-    },
-    "vendor/dsh-with-chatgpt/lib/state.js": {
-      "update": 26
     }
   },
   "maxLines": {

@@ -8,8 +8,7 @@
   // vendor/open-intelligent-ui（任务显式排除）、kind 为 rebuild/hashed/
   // artifacts 的 vendor（dsh-im、dsh-pad、dsh-remote、dsh-usage-panel，
   // lib/ 为生成 bundle）、vendor/dshmarket（无代码署名桩）、
-  // vendor/dsh-with-chatgpt/bridge（pinned MIT fork）、mobile/android、
-  // docs/、构建产物。
+  // mobile/android、docs/、构建产物。
   "entry": [
     // package.json main：Electron 主进程
     "src/main/index.js",
@@ -57,9 +56,8 @@
     "src/whale-ui/tests/*.mjs",
     // 自有 vendor 插件：package.json main/exports 即宿主加载入口；
     // client/client.js 是 ModuleLoader 客户端工厂，按 exports["./client"] 加载
-    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale,dsh-with-chatgpt}/lib/**",
+    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale}/lib/**",
     "vendor/{dsh-deepseek-tools,dsh-project,dsh-whale}/client/client.js",
-    "vendor/dsh-with-chatgpt/tests/**",
     "vendor/dsh-whale/{presets,stickers}/**",
     "vendor/dsh-shared/lib/**",
     // 手动 UI QA 入口（不挂 npm script）
@@ -81,8 +79,7 @@
     "mobile/web/**/*.{js,cjs,mjs}",
     "tools/**/*.{js,cjs,mjs}",
     "dsh-acp/**/*.{js,cjs,mjs,ts,tsx}",
-    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-shared,dsh-task-control,dsh-whale}/**/*.{js,cjs,mjs,ts}",
-    "vendor/dsh-with-chatgpt/{lib,tests}/**/*.{js,cjs,mjs,ts}"
+    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-shared,dsh-task-control,dsh-whale}/**/*.{js,cjs,mjs,ts}"
   ],
   "ignore": [
     // 生成产物
@@ -91,7 +88,6 @@
     // knip 会把嵌套 package.json 自动检测成 workspace；这些树在任务范围外，
     // 必须按文件级 ignore 兜底，否则其测试/源码依赖会混入报告
     "vendor/{deepseek-harness,chisacode-remote,open-intelligent-ui,dsh-im,dsh-pad,dsh-remote,dsh-usage-panel,dshmarket}/**",
-    "vendor/dsh-with-chatgpt/bridge/**",
     "dsh-acp/tools/runtime-build/upstream/**",
     "mobile/android/**"
   ],
@@ -135,7 +131,7 @@
     "src/whale-ui/**": ["unlisted", "exports", "types"],
     "dsh-acp/tools/runtime-build/**": ["unlisted"],
     "{dsh-acp/client,dsh-acp/client-src,vendor/dsh-deepseek-tools/client,vendor/dsh-project/client,vendor/dsh-whale/client}/**": ["unlisted"],
-    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale,dsh-with-chatgpt}/**": ["unlisted"],
+    "vendor/{dsh-deepseek-tools,dsh-platform-session,dsh-project,dsh-task-control,dsh-whale}/**": ["unlisted"],
     // 测试渲染夹具的 react 由 whale-ui/宿主运行时解析
     "src/renderer/**/*.fixture.*": ["unlisted"],
     // 本地 CDP 调试脚本，import 指向开发机绝对路径的 playwright

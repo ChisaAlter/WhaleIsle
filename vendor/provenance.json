@@ -145,11 +145,6 @@
       "kind": "source",
       "origin": "desktop-owned"
     },
-    "dsh-with-chatgpt": {
-      "kind": "source",
-      "origin": "desktop-owned bundle; bridge is a pinned MIT fork of https://github.com/XiaoDuoYa/codex-with-chatgpt (bridge/NOTICE.md)",
-      "rebuildCommand": "npm run prepare:dsh-with-chatgpt-bundle (bridge/dist is generated at pack time, untracked)"
-    },
     "dshmarket": {
       "kind": "source",
       "origin": "attribution stub; npm dshmarket@1.14.0 source snapshot removed (DESKTOP-FORK.md)"

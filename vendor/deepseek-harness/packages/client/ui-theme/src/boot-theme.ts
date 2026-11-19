@@ -10,7 +10,7 @@
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import { deriveThemeTokens } from './derive.ts'
 import {
-  DEFAULT_FAMILY_ID, DEFAULT_THEME_SKIN, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
+  DEFAULT_FAMILY_ID, DEFAULT_GLASS_OPACITY, DEFAULT_THEME_SKIN, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
   type ThemeSkinId, type ThemeTokens,
 } from './theme-family.ts'
 import { resolveThemeFamily } from './builtin-families.ts'
@@ -90,7 +90,8 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
   // Effective glass: the transparent theme (wallpaper-gated) bypasses the
   // slider, so the pre-plugin interval already paints see-through chrome.
   // Window acrylic pauses the wallpaper the transparent theme needs, so it
-  // pauses the theme too and the slider keeps painting during acrylic.
+  // pauses the theme too. During acrylic the client uses the slider only
+  // for the window canvas and sidebar.
   const transparent = settings.transparentTheme && isWallpaperDataUrl(settings.wallpaperImage)
     && !settings.windowAcrylic
   return {
@@ -172,8 +173,9 @@ function bootThemeScript(payload: ThemeBootPayload): string {
   // acrylic request is honored immediately, otherwise the client applies it
   // after activation. Without the mark the flag stays inert so unsupported
   // hosts never boot transparent.
-  if (${JSON.stringify(payload.windowAcrylic === true && payload.minimalMode !== true)}
-    && document.documentElement.hasAttribute('data-window-material-supported'))
+  const acrylic = ${JSON.stringify(payload.windowAcrylic === true && payload.minimalMode !== true)}
+    && document.documentElement.hasAttribute('data-window-material-supported')
+  if (acrylic)
     document.documentElement.setAttribute('data-dsh-window-material', 'acrylic')
   else document.documentElement.removeAttribute('data-dsh-window-material')
   document.documentElement.dataset.dsThemeSource = preference
@@ -184,7 +186,7 @@ function bootThemeScript(payload: ThemeBootPayload): string {
   for (const [name, value] of Object.entries(tokens)) {
     document.body.style.setProperty(name, value)
   }
-  document.body.style.setProperty('--dsw-alias-glass-opacity', glassOpacity + '%')
+  document.body.style.setProperty('--dsw-alias-glass-opacity', (acrylic && skin !== 'codex' ? ${DEFAULT_GLASS_OPACITY} : glassOpacity) + '%')
 ${sizes}${families}
 })()`
 }

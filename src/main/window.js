@@ -21,9 +21,9 @@ const {
 } = require('./local-url');
 const { openExternalHttp } = require('./open-external');
 const { WINDOW_MATERIAL_ARGUMENT, windowsAcrylicSupported } = require('./window-material');
+const { prepareWindowAcrylic } = require('./window-acrylic');
 const { applyHarnessCookieToSession, launchTokenFromUrl, loadUrlAfterRedeem } = require('./harness-browser-auth');
 const { createForegroundPolicy } = require('./foreground');
-
 // Render hints (src/main/gpu-tier.js), resolved once after ready. The Harness
 // view waits briefly for them because its preload reads them from argv.
 const RENDER_HINTS_WAIT_MS = 3000;
@@ -664,7 +664,7 @@ function ensureHarnessView(win) {
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
         ...(renderHints.lowPowerGpu ? ['--dshd-low-power-gpu=1'] : []),
-        ...(windowsAcrylicSupported() ? [WINDOW_MATERIAL_ARGUMENT] : []),
+        ...(windowsAcrylicSupported() && prepareWindowAcrylic(win) ? [WINDOW_MATERIAL_ARGUMENT] : []),
       ],
       contextIsolation: true,
       nodeIntegration: false,

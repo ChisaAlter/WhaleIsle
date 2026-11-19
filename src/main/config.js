@@ -61,8 +61,8 @@ const DEFAULTS = {
   downloadRoute: '',
   disabledPlugins: [],
   projectEnabled: true,
-  // Built-in assistant is available on first launch; persisted opt-outs win.
-  whaleAssistantEnabled: true,
+  // Built-in assistant is opt-in; persisted choices win.
+  whaleAssistantEnabled: false,
   // Remote workspaces (SSH) — on by default; toggling restarts Harness so
   // the dsh-remote overlay composes or drops on the next start. Distinct
   // from `remoteEnabled`, which gates the phone/LAN remote pairing daemon.

@@ -1848,12 +1848,12 @@ module.exports = async function afterPack(context) {
   assertVendoredPluginRuntimeDeps(resources, 'dsh-project');
   require('../src/main/dsh-project-desktop').projectPeerDirectories(harnessDest,
     JSON.parse(fs.readFileSync(path.join(resources, 'vendor', 'dsh-project', 'package.json'), 'utf8')));
-  // Office payload + kit closure is a win-x64 deliverable only (see the
-  // feature card's limitations); other targets ship without Office and the
-  // desktop overlay stays unwritten because the bundled payload is absent.
+  // Office payload and the acrylic bridge are Windows x64 deliverables.
   if (context.electronPlatformName === 'win32') {
     pruneOfficeRuntime(path.join(resources, 'runtime', 'primary-runtime'), target);
     assertOfficeRuntime(resources, harnessDest);
+    const { buildWindowAcrylic, filename } = require('./build-window-acrylic.cjs');
+    await buildWindowAcrylic(path.join(resources, filename));
   }
   // Skip compose contract against the REAL packaged CLI: unit tests mock
   // dsh.start, so this dist-path gate is the only automated place where the

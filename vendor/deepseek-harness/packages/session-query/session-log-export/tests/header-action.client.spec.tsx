@@ -100,8 +100,17 @@ function bench(options: {
 }
 
 afterEach(cleanup)
+afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Session export Header action', () => {
+  it('hides the Whale Isle menu without removing shared download feedback', async () => {
+    vi.stubGlobal('shell', { windowAction: vi.fn() })
+    const b = bench({ feedbackAvailable: true })
+    expect(b.view.queryByRole('button', { name: 'More actions' })).toBeNull()
+    await act(async () => { await b.controller.download(SID) })
+    expect(b.view.getByRole('alert').textContent).toContain(en['dialog.successTitle'])
+  })
+
   it('opens Session feedback and closes the menu without starting a download', () => {
     const b = bench({ feedbackAvailable: true })
     fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))

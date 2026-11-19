@@ -23,7 +23,6 @@ const SENTINEL_STORE_VALUE = 'store-value-7f31';
 const ESM_ACCESSORS = [
   'vendor/dsh-shared/lib/internal-secret.mjs',
   'vendor/dsh-project/lib/internal-secret.mjs',
-  'vendor/dsh-with-chatgpt/lib/internal-secret.mjs',
   'dsh-acp/lib/internal-secret.mjs',
 ];
 // canonical 用静态 require，保持它在依赖图里可见（knip 据此判断导出被使用）。

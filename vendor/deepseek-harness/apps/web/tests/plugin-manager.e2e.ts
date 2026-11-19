@@ -353,7 +353,12 @@ describe('web e2e: plugin manager', () => {
       const restingBarBottom = await bar.evaluate(element => element.getBoundingClientRect().bottom)
       expect(await body.locator('[data-plugin-group]').first().evaluate(element => element.getBoundingClientRect().top))
         .toBeCloseTo(restingBarBottom + 32, 1)
-      await body.evaluate((element) => { element.scrollTop = element.scrollHeight })
+      const scrollRange = await body.evaluate(element => element.scrollHeight - element.clientHeight)
+      expect(scrollRange).toBeGreaterThan(100)
+      const viewport = (await body.boundingBox())!
+      await page.mouse.move(viewport.x + viewport.width / 2, viewport.y + viewport.height - 32)
+      await page.mouse.wheel(0, scrollRange + 32)
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThanOrEqual(scrollRange - 1)
       const bottom = await body.evaluate(element => element.scrollTop)
       expect(bottom).toBeGreaterThan(100)
       expect(await headerTop()).toBe(resting)

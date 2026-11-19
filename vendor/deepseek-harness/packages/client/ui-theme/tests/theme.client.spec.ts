@@ -823,20 +823,34 @@ describe('ThemeRuntime', () => {
     expect(events.length).toBe(published)
   })
 
-  it('mixes chrome fills over the window acrylic material like a wallpaper', () => {
+  it('changes only the window tint over acrylic, and restores the shared slider over gradients', () => {
     const { theme, host } = makeBare()
     document.documentElement.setAttribute(WINDOW_MATERIAL_SUPPORTED_ATTR, '')
     theme.setWindowAcrylic(true)
     expect(theme.getTheme().windowAcrylic).toBe(true)
-    // Supported acrylic is a backdrop: surfaces follow the glass slider
-    // through the wallpaper canvas curve (80 -> 45, 40 -> 15).
+    // Low values remain see-through; the high end can reach an opaque canvas.
     expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('color-mix')
-    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('45%')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('30%')
     theme.setGlassOpacity(40)
-    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('15%')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('6%')
+    const overlayTokens = () => {
+      const tokens = theme.getTheme().active.tokens
+      return [tokens['--dsw-alias-glass-opacity'], tokens['--dsw-alias-bg-layer-1'], tokens['--dsw-alias-bg-layer-2']]
+    }
+    const frosted = overlayTokens()
+    expect(frosted.every(token => token?.includes('80%'))).toBe(true)
     flushWrites()
     expect(host.set).toHaveBeenCalledWith('windowAcrylic', true)
     expect(host.set).toHaveBeenCalledWith('glassOpacity', 40)
+    theme.setGlassOpacity(90)
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('62%')
+    theme.setGlassOpacity(100)
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).not.toContain('color-mix')
+    expect(overlayTokens()).toEqual(frosted)
+    theme.setWindowAcrylic(false)
+    theme.setWallpaper({ backgroundEffect: 'gradient' })
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('45%')
+    expect(overlayTokens()[0]).toBe('100%')
   })
 
   it('pauses the transparent theme while window acrylic is effective', () => {
@@ -845,13 +859,13 @@ describe('ThemeRuntime', () => {
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
     theme.setWindowAcrylic(true)
     theme.setWallpaper({ wallpaperImage: png })
-    // The flag flips on while acrylic pauses its wallpaper: surfaces keep
+    // The flag flips on while acrylic pauses its wallpaper: the canvas keeps
     // the glass slider instead of dropping to the 0% transparent mix, and
     // no blur nudge fires.
     theme.setTransparentTheme(true)
     expect(theme.getTheme().transparentTheme).toBe(true)
     expect(theme.getTheme().active.tokens['--dsw-alias-glass-opacity']).toBe('80%')
-    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('45%')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toContain('30%')
     expect(theme.getTheme().wallpaperBlur).toBe(0)
     // A wallpaper arriving under acrylic does not become effective either.
     theme.setWallpaper({ wallpaperImage: '' })

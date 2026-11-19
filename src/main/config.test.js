@@ -52,14 +52,14 @@ test('Live2D pet is opt-in through config defaults and persistence', () => {
   assert.equal(loadConfig().live2dPet.x, 12);
 });
 
-test('whale assistant defaults on while an explicit opt-out persists', () => {
-  assert.equal(DEFAULTS.whaleAssistantEnabled, true);
+test('whale assistant defaults off while an explicit opt-in persists', () => {
+  assert.equal(DEFAULTS.whaleAssistantEnabled, false);
   fs.writeFileSync(path.join(userData, 'config.json'), '{}');
-  assert.equal(loadConfig().whaleAssistantEnabled, true);
-  saveConfig({ whaleAssistantEnabled: false });
   assert.equal(loadConfig().whaleAssistantEnabled, false);
   saveConfig({ whaleAssistantEnabled: true });
   assert.equal(loadConfig().whaleAssistantEnabled, true);
+  saveConfig({ whaleAssistantEnabled: false });
+  assert.equal(loadConfig().whaleAssistantEnabled, false);
 });
 
 test('Project defaults on for new and existing settings without a saved choice, while explicit opt-out persists', () => {

@@ -43,11 +43,6 @@ dist/
 !vendor/dsh-whale/node_modules/**/dist/**
 !vendor/dsh-remote/node_modules/**/dist/
 !vendor/dsh-remote/node_modules/**/dist/**
-# bridge/dist 是可选构建产物；checkJs 靠入库的 *.d.ts 声明让
-# ../bridge/dist/* 的解析与构建产物是否存在无关（#438），其余产物仍忽略
-!vendor/dsh-with-chatgpt/bridge/dist/
-vendor/dsh-with-chatgpt/bridge/dist/**/*.js
-vendor/dsh-with-chatgpt/bridge/dist/**/*.js.map
 dist-release/
 out/
 /release/
@@ -123,6 +118,7 @@ pelican-bike.html
 # Generated Office runtime payload + download cache (prepare:office-runtime)
 build/office-runtime/
 build/office-runtime-cache/
+build/whale-window-acrylic.dll
 
 # Mobile web QA run output (screenshots, manifests, audit reports)
 tools/mobile-web-qa/results/

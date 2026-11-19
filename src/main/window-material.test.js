@@ -6,6 +6,12 @@ const { EventEmitter } = require('node:events');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+const acrylicPath = require.resolve('./window-acrylic');
+require.cache[acrylicPath] = { id: acrylicPath, filename: acrylicPath, loaded: true, exports: {
+  prepareWindowAcrylic: () => true,
+  setWindowAcrylic: (win, visible) => win.updateAcrylic?.(visible) ?? false,
+} };
+
 const {
   WINDOW_MATERIAL_ARGUMENT,
   ACRYLIC_MINIMUM_WINDOWS_BUILD,
@@ -31,6 +37,7 @@ function fakeWindow({ isDestroyed = false } = {}) {
     isDestroyed: () => isDestroyed,
     setBackgroundMaterial(material) { calls.push(['setBackgroundMaterial', material]); },
     setBackgroundColor(color) { calls.push(['setBackgroundColor', color]); },
+    updateAcrylic(visible) { calls.push(['updateAcrylic', visible]); return true; },
   };
   return { win, calls };
 }
@@ -118,18 +125,34 @@ test('isValidWindowMaterial accepts only acrylic and none', () => {
   assert.equal(isValidWindowMaterial(123), false);
 });
 
-test('applyWindowMaterial preserves transparent windows without overriding #00000000', () => {
+test('initial none leaves the transparent compositor surface untouched', () => {
+  const { win, calls } = fakeWindow();
+  assert.equal(applyWindowMaterial(win, 'none', { transparent: true }), true);
+  assert.deepEqual(calls, []);
+});
+
+test('transparent shells use only the rounded composition visual', () => {
   const { win, calls } = fakeWindow();
   assert.equal(applyWindowMaterial(win, 'acrylic', { transparent: true, restoreColor: '#ffffff' }), true);
   assert.equal(hasAcrylicMaterial(win), true);
-  assert.deepEqual(calls, [['setBackgroundMaterial', 'acrylic']]);
+  assert.deepEqual(calls, [['updateAcrylic', true]]);
 
   assert.equal(applyWindowMaterial(win, 'none', { transparent: true, restoreColor: '#ffffff' }), true);
   assert.equal(hasAcrylicMaterial(win), false);
   assert.deepEqual(calls, [
-    ['setBackgroundMaterial', 'acrylic'],
-    ['setBackgroundMaterial', 'none'],
+    ['updateAcrylic', true],
+    ['updateAcrylic', false],
   ]);
+  applyWindowMaterial(win, 'none', { transparent: true });
+  assert.equal(calls.length, 2);
+});
+
+test('a transparent window without a composition target never falls back to rectangular material', () => {
+  const { win, calls } = fakeWindow();
+  delete win.updateAcrylic;
+  assert.equal(applyWindowMaterial(win, 'acrylic', { transparent: true }), false);
+  assert.equal(hasAcrylicMaterial(win), false);
+  assert.deepEqual(calls, []);
 });
 
 test('applyWindowMaterial clears opaque windows to transparent and restores cached chrome fill', () => {
@@ -175,8 +198,8 @@ test('applyWindowMaterial and resetWindowMaterial reject invalid windows/materia
   assert.equal(resetWindowMaterial(fresh, { transparent: true }), true);
   assert.equal(resetWindowMaterial(fresh, { transparent: true }), false);
   assert.deepEqual(freshCalls, [
-    ['setBackgroundMaterial', 'acrylic'],
-    ['setBackgroundMaterial', 'none'],
+    ['updateAcrylic', true],
+    ['updateAcrylic', false],
   ]);
 });
 
@@ -207,6 +230,7 @@ test('shell:window-material IPC accepts only validated harness loopback senders 
     const listener = ipcListeners.get('shell:window-material');
     assert.equal(typeof listener, 'function');
 
+    listener({ sender: harnessWc, senderFrame: harnessWc.mainFrame }, 'none');
     listener({ sender: harnessWc, senderFrame: harnessWc.mainFrame }, 'acrylic');
     listener({ sender: harnessWc, senderFrame: harnessWc.mainFrame }, 'none');
     // Spoofed boot / wrong frame / cross-origin / invalid payload must be ignored.
@@ -217,8 +241,8 @@ test('shell:window-material IPC accepts only validated harness loopback senders 
     listener({ sender: harnessWc, senderFrame: harnessWc.mainFrame }, 42);
 
     assert.deepEqual(calls, [
-      ['setBackgroundMaterial', 'acrylic'],
-      ['setBackgroundMaterial', 'none'],
+      ['updateAcrylic', true],
+      ['updateAcrylic', false],
     ]);
   } finally {
     restore();
@@ -285,8 +309,8 @@ test('chrome paintBackground skips opaque fills while acrylic is active and rest
   }
 });
 
-test('window showHarness passes acrylic argument iff supported and hideHarnessView resets material', async () => {
-  for (const supported of [true, false]) {
+test('window advertises acrylic only with OS support and a ready compositor', async () => {
+  for (const [supported, ready] of [[true, true], [true, false], [false, true]]) {
     const windowPath = require.resolve('./window');
     const materialPath = require.resolve('./window-material');
     const electronPath = require.resolve('electron');
@@ -295,6 +319,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
     const shortcutsPath = require.resolve('./shortcuts');
     const guestsPath = require.resolve('./browser-guests');
     const authPath = require.resolve('./ipc-authorization');
+    const acrylicEntry = require.cache[acrylicPath];
     const restoreList = [
       [electronPath, require.cache[electronPath]],
       [chromePath, require.cache[chromePath]],
@@ -302,6 +327,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
       [shortcutsPath, require.cache[shortcutsPath]],
       [guestsPath, require.cache[guestsPath]],
       [authPath, require.cache[authPath]],
+      [acrylicPath, acrylicEntry],
       [materialPath, require.cache[materialPath]],
       [windowPath, require.cache[windowPath]],
     ];
@@ -399,6 +425,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
       require.cache[shortcutsPath] = { id: shortcutsPath, filename: shortcutsPath, loaded: true, exports: { getShortcutService: () => null } };
       require.cache[guestsPath] = { id: guestsPath, filename: guestsPath, loaded: true, exports: { getBrowserGuests: () => null } };
       require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: { registerPrivilegedSurfaces() {}, IPC_ROLES } };
+      require.cache[acrylicPath] = { ...acrylicEntry, exports: { ...acrylicEntry.exports, prepareWindowAcrylic: () => ready } };
       delete require.cache[materialPath];
       const realMaterial = require('./window-material');
       require.cache[materialPath].exports = { ...realMaterial, windowsAcrylicSupported: () => supported };
@@ -407,7 +434,7 @@ test('window showHarness passes acrylic argument iff supported and hideHarnessVi
       await winMod.showHarness('http://127.0.0.1:41234/app');
       assert.equal(
         createdViewOptions.webPreferences.additionalArguments.includes(WINDOW_MATERIAL_ARGUMENT),
-        supported,
+        supported && ready,
       );
       const owner = winMod.getMainWindow();
       winMod.hideHarnessView(owner);

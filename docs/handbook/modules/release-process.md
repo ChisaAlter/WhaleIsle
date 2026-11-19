@@ -17,6 +17,8 @@
 
 安装或升级行为发生变化时，在开发阶段验证相应实际操作，并在 PR 说明结果。没有固定的每版人工验收全表。
 
+Windows x64 打包使用现有 Visual Studio C++ Build Tools 和 Windows SDK 编译窗口毛玻璃桥；缺编译器时构建失败，不生成缺少功能的正式包。源码版开发不用先编译此桥；要测试窗口毛玻璃，先运行 `node scripts/build-window-acrylic.cjs`。
+
 ## Mac 本地包验证
 
 修改 Harness 客户端源码后，在仓库根目录先刷新生产客户端，再打包：

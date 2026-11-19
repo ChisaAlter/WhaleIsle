@@ -2533,10 +2533,9 @@
       "TS7006": {
         "Parameter 'check' implicitly has an 'any' type.": 3,
         "Parameter 'command' implicitly has an 'any' type.": 1,
-        "Parameter 'entries' implicitly has an 'any' type.": 3,
-        "Parameter 'entry' implicitly has an 'any' type.": 4,
+        "Parameter 'entries' implicitly has an 'any' type.": 2,
+        "Parameter 'entry' implicitly has an 'any' type.": 3,
         "Parameter 'existsSync' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'reason' implicitly has an 'any' type.": 1,
         "Parameter 'root' implicitly has an 'any' type.": 1,
         "Parameter 't' implicitly has an 'any' type.": 2,
@@ -2772,11 +2771,6 @@
       "TS7031": {
         "Binding element 'outputMtime' implicitly has an 'any' type.": 1,
         "Binding element 'sourceMtime' implicitly has an 'any' type.": 1
-      }
-    },
-    "scripts/prepare-dsh-with-chatgpt-bundle.mjs": {
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1
       }
     },
     "scripts/prepare-dshd-remote.mjs": {
@@ -3420,26 +3414,6 @@
         "Parameter 'options' implicitly has an 'any' type.": 1,
         "Parameter 'path' implicitly has an 'any' type.": 1,
         "Parameter 's' implicitly has an 'any' type.": 2
-      }
-    },
-    "scripts/qa-window-motion.cjs": {
-      "TS18048": {
-        "'focusSink' is possibly 'undefined'.": 3
-      },
-      "TS2345": {
-        "Argument of type 'string | (({ activate }?: { activate?: boolean | undefined; }) => any)' is not assignable to parameter of type 'string'.": 1
-      },
-      "TS2349": {
-        "This expression is not callable.": 1
-      },
-      "TS7006": {
-        "Parameter 'label' implicitly has an 'any' type.": 2,
-        "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 6,
-        "Parameter 'predicate' implicitly has an 'any' type.": 1,
-        "Parameter 'win' implicitly has an 'any' type.": 1,
-        "Parameter 'x' implicitly has an 'any' type.": 1,
-        "Parameter 'y' implicitly has an 'any' type.": 1
       }
     },
     "scripts/record-android-release.mjs": {
@@ -7290,17 +7264,17 @@
         "Cannot find name 'dshDialog'.": 13,
         "Cannot find name 'dshDialogNamed'.": 27,
         "Cannot find name 'dshField'.": 2,
-        "Cannot find name 'dshFind'.": 53,
+        "Cannot find name 'dshFind'.": 50,
         "Cannot find name 'dshHeading'.": 4,
         "Cannot find name 'dshInputInventory'.": 1,
-        "Cannot find name 'dshLabel'.": 17,
+        "Cannot find name 'dshLabel'.": 16,
         "Cannot find name 'dshMcpSnapshot'.": 2,
         "Cannot find name 'dshModelsDiagnostic'.": 1,
         "Cannot find name 'dshQaPngFile'.": 1,
         "Cannot find name 'dshSavedCustomProvider'.": 2,
         "Cannot find name 'dshSelectComposerAll'.": 1,
         "Cannot find name 'dshSetValue'.": 1,
-        "Cannot find name 'dshShown'.": 41,
+        "Cannot find name 'dshShown'.": 40,
         "Cannot find name 'dshSkillsSnapshot'.": 2
       },
       "TS2339": {
@@ -7363,7 +7337,7 @@
         "Parameter 'value' implicitly has an 'any' type.": 3,
         "Parameter 'want' implicitly has an 'any' type.": 3,
         "Parameter 'wanted' implicitly has an 'any' type.": 1,
-        "Parameter 'wc' implicitly has an 'any' type.": 17,
+        "Parameter 'wc' implicitly has an 'any' type.": 16,
         "Parameter 'workspacePath' implicitly has an 'any' type.": 3
       },
       "TS7019": {
@@ -7925,43 +7899,18 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 8
       },
-      "TS18047": {
-        "'saved.job' is possibly 'null'.": 2
-      },
-      "TS2322": {
-        "Type '{ method: any; expected: any; ready: { file: any; expected: any; installerArgs: string[]; }; }' is not assignable to type 'null'.": 1,
-        "Type '{ method: string; downloadBytes: any; fullBytes: any; }' is not assignable to type 'null'.": 2,
-        "Type '{ method: string; downloadBytes: number; fullBytes: number; }' is not assignable to type 'null'.": 1,
-        "Type '{ method: string; expected: any; resume: any; }' is not assignable to type 'null'.": 1,
-        "Type '{ received: number; total: any; bytesPerSecond: number; etaSeconds: number | null; resumedFrom: any; retrying: { attempt: any; maxAttempts: any; } | null; }' is not assignable to type 'null'.": 1,
-        "Type '{ received: number; total: any; }' is not assignable to type 'null'.": 1,
-        "Type '{ version: any; tag: any; route: any; publishedAt: any; notes: any; htmlUrl: any; assetName: any; assetUrl: any; assetSize: number; checksumUrl: any; blockmapUrl: any; updaterMetadataUrl: any; }' is not assignable to type 'null'.": 2
-      },
       "TS2339": {
-        "Property 'assetSize' does not exist on type 'never'.": 2,
         "Property 'attempt' does not exist on type '{}'.": 1,
         "Property 'bytesPerSecond' does not exist on type '{}'.": 1,
-        "Property 'downloadBytes' does not exist on type 'never'.": 1,
-        "Property 'expected' does not exist on type 'never'.": 1,
-        "Property 'htmlUrl' does not exist on type 'never'.": 1,
         "Property 'maxAttempts' does not exist on type '{}'.": 1,
-        "Property 'method' does not exist on type 'never'.": 2,
-        "Property 'notes' does not exist on type 'never'.": 1,
         "Property 'phase' does not exist on type '{}'.": 1,
-        "Property 'publishedAt' does not exist on type 'never'.": 1,
-        "Property 'ready' does not exist on type 'never'.": 8,
         "Property 'received' does not exist on type '{}'.": 1,
-        "Property 'resume' does not exist on type 'never'.": 5,
         "Property 'retrying' does not exist on type '{}'.": 1,
-        "Property 'route' does not exist on type 'never'.": 2,
         "Property 'route' does not exist on type '{}'.": 1,
-        "Property 'tag' does not exist on type 'never'.": 1,
-        "Property 'total' does not exist on type '{}'.": 1,
-        "Property 'userPaused' does not exist on type 'never'.": 6,
-        "Property 'version' does not exist on type 'never'.": 1
+        "Property 'total' does not exist on type '{}'.": 1
       },
       "TS2698": {
-        "Spread types may only be created from object types.": 3
+        "Spread types may only be created from object types.": 1
       },
       "TS2769": {
         "No overload matches this call.": 1
@@ -11725,130 +11674,6 @@
       },
       "TS7006": {
         "Parameter 'ctx' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/bridge-client.js": {
-      "TS2339": {
-        "Property 'ELECTRON_RUN_AS_NODE' does not exist on type '{ D2C_STATE_DIR: any; }'.": 2
-      },
-      "TS2551": {
-        "Property 'C2C_STATE_DIR' does not exist on type '{ D2C_STATE_DIR: any; }'. Did you mean 'D2C_STATE_DIR'?": 1
-      },
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 2,
-        "Parameter 'chunk' implicitly has an 'any' type.": 1,
-        "Parameter 'configured' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 1,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'signal' implicitly has an 'any' type.": 2,
-        "Parameter 'stream' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1,
-        "Parameter 'workspace' implicitly has an 'any' type.": 2
-      },
-      "TS7031": {
-        "Binding element 'node' implicitly has an 'any' type.": 1,
-        "Binding element 'stateDir' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/browser.js": {
-      "TS18048": {
-        "'owner.context' is possibly 'undefined'.": 6
-      },
-      "TS2322": {
-        "Type 'Promise<undefined>' is not assignable to type 'undefined'.": 1
-      },
-      "TS2339": {
-        "Property 'checked' does not exist on type 'Element'.": 1,
-        "Property 'disabled' does not exist on type 'Element'.": 1,
-        "Property 'goto' does not exist on type 'never'.": 1,
-        "Property 'href' does not exist on type 'Element'.": 1,
-        "Property 'innerText' does not exist on type 'Element'.": 2,
-        "Property 'isClosed' does not exist on type 'never'.": 1,
-        "Property 'locator' does not exist on type 'never'.": 1,
-        "Property 'readOnly' does not exist on type 'Element'.": 1,
-        "Property 'url' does not exist on type 'never'.": 4,
-        "Property 'value' does not exist on type 'Element'.": 2
-      },
-      "TS2349": {
-        "This expression is not callable.": 4
-      },
-      "TS7006": {
-        "Parameter 'agent' implicitly has an 'any' type.": 5,
-        "Parameter 'configured' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'frame' implicitly has an 'any' type.": 1,
-        "Parameter 'id' implicitly has an 'any' type.": 2,
-        "Parameter 'node' implicitly has an 'any' type.": 4,
-        "Parameter 'origin' implicitly has an 'any' type.": 1,
-        "Parameter 'other' implicitly has an 'any' type.": 1,
-        "Parameter 'owner' implicitly has an 'any' type.": 7,
-        "Parameter 'page' implicitly has an 'any' type.": 3,
-        "Parameter 'profileDir' implicitly has an 'any' type.": 1,
-        "Parameter 'request' implicitly has an 'any' type.": 4,
-        "Parameter 'route' implicitly has an 'any' type.": 1,
-        "Parameter 'signal' implicitly has an 'any' type.": 3,
-        "Parameter 'target' implicitly has an 'any' type.": 3,
-        "Parameter 'url' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 6
-      },
-      "TS7031": {
-        "Binding element 'attribute' implicitly has an 'any' type.": 1,
-        "Binding element 'executablePath' implicitly has an 'any' type.": 1,
-        "Binding element 'length' implicitly has an 'any' type.": 1,
-        "Binding element 'loginPage' implicitly has an 'any' type.": 1,
-        "Binding element 'nonce' implicitly has an 'any' type.": 1,
-        "Binding element 'offset' implicitly has an 'any' type.": 1,
-        "Binding element 'profileDir' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/desktop-confirm.js": {
-      "TS7006": {
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'control' implicitly has an 'any' type.": 1,
-        "Parameter 'pathname' implicitly has an 'any' type.": 1,
-        "Parameter 'request' implicitly has an 'any' type.": 2
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/index.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 1
-      },
-      "TS2339": {
-        "Property 'bridge' does not exist on type '{}'.": 1,
-        "Property 'browser' does not exist on type '{}'.": 1,
-        "Property 'browserExecutable' does not exist on type '{}'.": 1,
-        "Property 'headless' does not exist on type '{}'.": 1,
-        "Property 'node' does not exist on type '{}'.": 1,
-        "Property 'stateDir' does not exist on type '{}'.": 1
-      },
-      "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 4,
-        "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'definition' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 5,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
-        "Parameter 'root' implicitly has an 'any' type.": 3,
-        "Parameter 'value' implicitly has an 'any' type.": 2
-      }
-    },
-    "vendor/dsh-with-chatgpt/lib/state.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 2
-      },
-      "TS2345": {
-        "Argument of type 'string | number' is not assignable to parameter of type 'number | undefined'.": 1
-      },
-      "TS7006": {
-        "Parameter 'agent' implicitly has an 'any' type.": 5,
-        "Parameter 'configured' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 2,
-        "Parameter 'patch' implicitly has an 'any' type.": 2,
-        "Parameter 'root' implicitly has an 'any' type.": 1,
-        "Parameter 'sessionId' implicitly has an 'any' type.": 1,
-        "Parameter 'stateDir' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
       }
     }
   }

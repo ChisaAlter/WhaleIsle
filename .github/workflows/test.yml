@@ -116,8 +116,6 @@ jobs:
         run: npm run setup:harness
       - name: Whale UI behavior tests
         run: npm run test:whale-ui
-      - name: Build optional ChatGPT bundle for native compatibility checks
-        run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Build the vendored DSHD remote
         run: npm run prepare:dshd-remote
       - name: Desktop behavior tests
@@ -193,7 +191,6 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run setup:harness
-      - run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Build the vendored DSHD remote
         run: npm run prepare:dshd-remote
       - run: npm test
@@ -236,8 +233,6 @@ jobs:
         run: npm run setup:harness
       - name: Whale UI behavior tests
         run: npm run test:whale-ui
-      - name: Build optional ChatGPT bundle for native compatibility checks
-        run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Build the vendored DSHD remote
         run: npm run prepare:dshd-remote
       # Ubuntu 24.04 runners restrict unprivileged user namespaces; Electron's
@@ -284,8 +279,6 @@ jobs:
         run: npm run setup:harness
       - name: Whale UI behavior tests
         run: npm run test:whale-ui
-      - name: Build optional ChatGPT bundle for native compatibility checks
-        run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Build the vendored DSHD remote
         run: npm run prepare:dshd-remote
       - name: Desktop behavior tests

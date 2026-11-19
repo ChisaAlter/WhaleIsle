@@ -8,7 +8,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { register: registerLoaderHooks } = require('node:module');
 
-const { TOOLS, ENDPOINTS, LEVELS, effectOf } = require('../shared/model-tool-effects');
+const { TOOLS, LEGACY_TOOLS, ENDPOINTS, LEVELS, effectOf } = require('../shared/model-tool-effects');
 const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 const {
   startDesktopInstallControl,
@@ -36,7 +36,6 @@ const DECLINED_TEXT = '用户拒绝了这次操作，不要重试，除非用户
 
 const SCAN_DIRS = [
   'vendor/dsh-whale/lib',
-  'vendor/dsh-with-chatgpt/lib',
   'vendor/dsh-pad/lib',
   'vendor/dsh-project/lib',
   'vendor/dsh-deepseek-tools/lib',
@@ -140,9 +139,6 @@ const CONFIRM_TOOL_DOMAIN = {
   'vendor/dsh-deepseek-tools/lib/index.js': ['deepseek_tts', 'deepseek_asr', 'deepseek_ocr'],
 };
 const CONFIRM_ACTION_DOMAIN = {
-  // CONNECTION_CONFIRM_ACTIONS plus doctor-with-fix in the plugin source.
-  chatgpt_connection: ['setup', 'pair', 'unpair', 'prefs_set', 'tunnel_choose', 'doctor'],
-  chatgpt_browser: ['navigate', 'click', 'fill', 'press'],
   // remove skips the dialog; only steer/edit confirm.
   whale_update_queue: ['steer', 'edit'],
 };
@@ -229,6 +225,7 @@ function confirmCalls() {
 describe('model tool effect registry', () => {
   const discovered = scanToolNames();
   const confirms = confirmCalls();
+  const allEffects = Object.entries({ ...TOOLS, ...LEGACY_TOOLS });
 
   test('every registered tool name appears in the registry', () => {
     const missing = [...discovered.keys()].filter((name) => !(name in TOOLS));
@@ -240,8 +237,17 @@ describe('model tool effect registry', () => {
     assert.deepEqual(stale, []);
   });
 
+  test('legacy confirmation entries are only for the retired, separately installed bundle', () => {
+    assert.deepEqual(Object.keys(LEGACY_TOOLS).sort(), [
+      'chatgpt_browser', 'chatgpt_checkpoint', 'chatgpt_connection', 'chatgpt_record',
+    ]);
+    for (const name of Object.keys(LEGACY_TOOLS)) {
+      assert.ok(!discovered.has(name) && !Object.hasOwn(TOOLS, name), `${name} is not supplied by the desktop`);
+    }
+  });
+
   test('registry levels and confirm flags are well formed', () => {
-    for (const [name, entry] of Object.entries(TOOLS)) {
+    for (const [name, entry] of allEffects) {
       assert.ok(LEVELS.includes(entry.level), `${name}: bad level ${entry.level}`);
       assert.ok(
         entry.confirm === true || entry.confirm === false || entry.confirm === 'keys' || entry.confirm === 'endpoint',
@@ -258,7 +264,7 @@ describe('model tool effect registry', () => {
 
   test('every high-risk action requires a confirmation path', () => {
     const unguarded = [];
-    for (const [name, entry] of Object.entries(TOOLS)) {
+    for (const [name, entry] of allEffects) {
       const risky = effectiveLevels(entry).some((level) => HIGH_RISK.has(level));
       if (risky && !EFFECTIVE_CONFIRM.has(entry.confirm)) unguarded.push(name);
     }
@@ -422,15 +428,12 @@ function ensureLoaderHooks() {
     '@deepseek-ai/schemastery': schemasteryShim,
     '@deepseek-ai/dsh-tools': vendorUrl('@deepseek-ai/dsh-tools'),
     '@deepseek-ai/dsh-llm': vendorUrl('@deepseek-ai/dsh-llm'),
-    'playwright-core': 'data:text/javascript,export const chromium = { launch() { throw new Error("playwright stub"); } };',
   };
-  const workspaceStub = 'data:text/javascript,export class Workspace { resolve(value) { return { abs: String(value) }; } }';
-  const needyParents = ['/vendor/dsh-pad/', '/vendor/dsh-deepseek-tools/', '/vendor/dsh-with-chatgpt/'];
+  const needyParents = ['/vendor/dsh-pad/', '/vendor/dsh-deepseek-tools/'];
   const hooks = `export async function resolve(specifier, context, next) {
     const map = ${JSON.stringify(map)};
     const needy = ${JSON.stringify(needyParents)}.some((dir) => (context.parentURL || '').includes(dir));
     if (needy && Object.hasOwn(map, specifier)) return { url: map[specifier], shortCircuit: true };
-    if (needy && specifier.endsWith('bridge/dist/workspace/manager.js')) return { url: ${JSON.stringify(workspaceStub)}, shortCircuit: true };
     return next(specifier, context);
   }`;
   registerLoaderHooks(`data:text/javascript,${encodeURIComponent(hooks)}`);
@@ -661,67 +664,6 @@ describe('refusal path', () => {
       /拒绝了这次操作/,
     );
     assert.equal(staged.length, 0);
-  });
-
-  test('chatgpt_connection confirmed actions do not run bridge commands when declined', async () => {
-    ensureLoaderHooks();
-    const { apply } = await import('../../vendor/dsh-with-chatgpt/lib/index.js');
-    const ran = [];
-    const agent = agentAt(ROOT);
-    const { ctx, tools } = makeCtx({
-      agents: { get: (id) => (id === agent.id ? agent : undefined) },
-    });
-    apply(ctx, { stateDir: tempDir('d2c-state-') }, {
-      bridge: { run: async (...args) => { ran.push(args); return { ok: true }; } },
-      browser: { setBridgeOrigin: () => {}, run: async () => ({}) },
-    });
-    await decliningControl();
-    for (const action of ['setup', 'pair', 'unpair', 'prefs_set', 'tunnel_choose']) {
-      const args = { action, ...(action === 'tunnel_choose' ? { mode: 'quick' } : {}) };
-      const result = await tools.get('chatgpt_connection').execute(args, execFor(agent));
-      assert.equal(result.ok, false, action);
-    }
-    assert.equal(ran.length, 0);
-  });
-
-  test('chatgpt_browser confirmed actions do not drive the browser when declined', async () => {
-    ensureLoaderHooks();
-    const { apply } = await import('../../vendor/dsh-with-chatgpt/lib/index.js');
-    const ran = [];
-    const agent = agentAt(ROOT);
-    const { ctx, tools } = makeCtx({
-      agents: { get: (id) => (id === agent.id ? agent : undefined) },
-    });
-    apply(ctx, { stateDir: tempDir('d2c-state-') }, {
-      bridge: { run: async () => ({ ok: true }) },
-      browser: { setBridgeOrigin: () => {}, run: async (...args) => { ran.push(args); return {}; } },
-    });
-    await decliningControl();
-    for (const action of ['navigate', 'click', 'fill', 'press']) {
-      const result = await tools.get('chatgpt_browser').execute({ action, url: 'https://chatgpt.com/', text: 'x', key: 'Enter', target: 't' }, execFor(agent));
-      assert.equal(result.ok, false, action);
-    }
-    assert.equal(ran.length, 0);
-  });
-
-  test('chatgpt_record does not run the bridge when confirmation declines', async () => {
-    ensureLoaderHooks();
-    const { apply } = await import('../../vendor/dsh-with-chatgpt/lib/index.js');
-    const ran = [];
-    const agent = agentAt(ROOT);
-    const { ctx, tools } = makeCtx({
-      agents: { get: (id) => (id === agent.id ? agent : undefined) },
-    });
-    apply(ctx, { stateDir: tempDir('d2c-state-') }, {
-      bridge: { run: async (...args) => { ran.push(args); return { ok: true }; } },
-      browser: { setBridgeOrigin: () => {}, run: async () => ({}) },
-    });
-    await decliningControl();
-    const exec = execFor(agent);
-    await tools.get('chatgpt_checkpoint').execute({ action: 'start', taskId: 'd2c_test' }, exec);
-    const result = await tools.get('chatgpt_record').execute({ iteration: 1, changedFiles: ['a.js'], tests: 'ok', exitStatus: 'pass' }, exec);
-    assert.equal(result.ok, false);
-    assert.equal(ran.length, 0);
   });
 
   test('deepseek_tts does not call the API when confirmation declines', async () => {

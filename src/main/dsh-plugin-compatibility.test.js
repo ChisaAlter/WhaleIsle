@@ -6,7 +6,7 @@ const { createRequire } = require('node:module');
 const { dirname, join, resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const {
-  gateTests, harnessWorkspace, requirePrerequisite, vendorPluginArtifacts,
+  gateTests, harnessWorkspace,
 } = require('../../scripts/lib/test-prerequisites.cjs');
 
 const root = resolve(__dirname, '../..');
@@ -14,9 +14,6 @@ const harness = join(root, 'vendor/deepseek-harness');
 // Anchors resolve workspace package entries, so every case needs the built Harness.
 const HARNESS = harnessWorkspace();
 const test = gateTests(nodeTest, HARNESS);
-// The second case boots a real profile over the shipped plugins; the ChatGPT
-// bridge reaches bridge/dist and its own node_modules.
-const CHATGPT = vendorPluginArtifacts('dsh-with-chatgpt', ['node_modules', 'bridge/dist/workspace/manager.js']);
 const cli = createRequire(join(harness, 'apps/cli/package.json'));
 const anchors = [];
 if (HARNESS.ok) {
@@ -31,31 +28,28 @@ function resolveHarness(name) {
   throw new Error(`Missing built Harness dependency ${name}`);
 }
 const moduleOf = name => import(pathToFileURL(resolveHarness(name)).href);
-const plugins = ['dsh-remote', 'dsh-with-chatgpt'].map(name => ({
-  name,
-  manifest: JSON.parse(readFileSync(join(root, 'vendor', name, 'package.json'), 'utf8')),
-  entry: pathToFileURL(join(root, 'vendor', name, 'lib/index.js')).href,
-}));
+const ssh = {
+  id: 'dsh-remote',
+  name: pathToFileURL(join(root, 'vendor', 'dsh-remote', 'lib/index.js')).href,
+};
 
-test('SSH and ChatGPT declare rc.2 support while retaining verified earlier runtimes', async () => {
+test('SSH declares rc.2 support while retaining verified earlier runtimes', async () => {
   const { evaluatePluginCompatibility, getDshRuntimeVersion } = await moduleOf('@deepseek-ai/dsh-app-boot');
   assert.equal(getDshRuntimeVersion(), '0.2.2-rc.2');
-  for (const { name, manifest } of plugins) {
-    assert.equal(evaluatePluginCompatibility(manifest), undefined, `${name} is admitted without exemptions`);
-    for (const version of ['0.2.1-alpha.1', '0.2.1-alpha.3', '0.2.1-rc.2', '0.2.1-rc.4', '0.2.2-rc.1']) {
-      assert.equal(evaluatePluginCompatibility(manifest, {}, version), undefined, `${name} keeps support for ${version}`);
-    }
-    for (const version of ['0.2.1-alpha.4', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.1', '0.2.2-rc.3', '0.2.2']) {
-      assert.ok(evaluatePluginCompatibility(manifest, {}, version), `${name} does not assume compatibility with ${version}`);
-    }
-    const old = structuredClone(manifest);
-    for (const [peer, range] of Object.entries(old.peerDependencies)) if (peer.startsWith('@deepseek-ai/dsh-')) old.peerDependencies[peer] = range.replace(' || 0.2.2-rc.2', '');
-    assert.ok(evaluatePluginCompatibility(old), `${name}'s previous metadata reproduces the rc.2 rejection`);
+  const manifest = JSON.parse(readFileSync(join(root, 'vendor', ssh.id, 'package.json'), 'utf8'));
+  assert.equal(evaluatePluginCompatibility(manifest), undefined, 'SSH is admitted without exemptions');
+  for (const version of ['0.2.1-alpha.1', '0.2.1-alpha.3', '0.2.1-rc.2', '0.2.1-rc.4', '0.2.2-rc.1']) {
+    assert.equal(evaluatePluginCompatibility(manifest, {}, version), undefined, `SSH keeps support for ${version}`);
   }
+  for (const version of ['0.2.1-alpha.4', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.1', '0.2.2-rc.3', '0.2.2']) {
+    assert.ok(evaluatePluginCompatibility(manifest, {}, version), `SSH does not assume compatibility with ${version}`);
+  }
+  const old = structuredClone(manifest);
+  for (const [peer, range] of Object.entries(old.peerDependencies)) if (peer.startsWith('@deepseek-ai/dsh-')) old.peerDependencies[peer] = range.replace(' || 0.2.2-rc.2', '');
+  assert.ok(evaluatePluginCompatibility(old), 'previous SSH metadata reproduces the rc.2 rejection');
 });
 
-test('real rc.2 profile preflight and Loader expose SSH tools and the optional ChatGPT skill to native Sessions', { timeout: 60000 }, async t => {
-  if (!requirePrerequisite(t, CHATGPT)) return;
+test('real rc.2 profile preflight and Loader expose SSH tools to native Sessions', { timeout: 60000 }, async () => {
   const { boot, loadOverlayPatches, bundlePatchPaths, prepareProfileEntries, PluginPackages, createRuntimeResolution } = await moduleOf('@deepseek-ai/dsh-app-boot');
   const { provideCmdline } = await moduleOf('@deepseek-ai/dsh-cmdline');
   const { ToolCallId } = await moduleOf('@deepseek-ai/dsh-llm');
@@ -78,7 +72,7 @@ test('real rc.2 profile preflight and Loader expose SSH tools and the optional C
     { id: 'agent-default-model', config: { provider: 'no-network', model: 'no-calls' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
     ...['harness-dev-context', 'webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map(id => ({ id, disabled: true })),
-    { insert: plugins.map(({ name, entry }) => ({ id: name, name: entry, ...(name === 'dsh-with-chatgpt' ? { config: { stateDir: join(home, 'chatgpt'), headless: true } } : {}) })) },
+    { insert: [ssh] },
   ];
   const previous = Object.fromEntries(['DSH_HOME', 'DSHD_HOME', 'DSH_TELEMETRY_DISABLED'].map(key => [key, process.env[key]]));
   Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_TELEMETRY_DISABLED: '1' });
@@ -88,24 +82,20 @@ test('real rc.2 profile preflight and Loader expose SSH tools and the optional C
     ctx = await boot('plugin-rc2', join(home, 'cordis.yml'), patches, async ctx => {
       await ctx.plugin(PluginPackages, { resolution });
       ctx.provide('profileContext', profileContext);
-      const admitted = prepareProfileEntries(ctx, plugins.map(({ name, entry }) => ({ id: name, name: entry })), pathToFileURL(`${home}/`).href);
-      assert.ok(admitted.every(row => row.disabled !== true), 'neither actual package is disabled by native profile preflight');
+      const [admitted] = prepareProfileEntries(ctx, [ssh], pathToFileURL(`${home}/`).href);
+      assert.notEqual(admitted.disabled, true, 'SSH passes native profile preflight');
       ctx.provide('connection', { fetch: { register: () => () => {} }, rpc: { intercept: () => () => {} } });
       provideCmdline(ctx, { args: [], exit: () => {} });
       ctx.loader.internal = { version: 'v2', async import(name) { return name.startsWith('file:') ? import(name) : import(pathToFileURL(resolveHarness(name)).href); } };
     });
-    for (const { name } of plugins) {
-      const entry = [...ctx.loader.entries()].find(row => row.options.id === name);
-      assert.ok(entry?.fiber, `${name} must import and activate before checking its tools`);
-      assert.equal(entry.fiber.state, 2, `${name} must be active`);
-    }
+    const entry = [...ctx.loader.entries()].find(row => row.options.id === ssh.id);
+    assert.ok(entry?.fiber, 'SSH must import and activate before checking its tools');
+    assert.equal(entry.fiber.state, 2, 'SSH must be active');
     const created = await ctx.sessionController.create({ requestId: 'rc2-native-create', cwd: directory });
     const first = ctx.agents.get(created.sessionId);
     assert.ok(first, 'Session creation publishes an actual live Agent');
     const names = ctx.tools.schemas(first).map(tool => tool.name);
     assert.equal(names.filter(name => name.startsWith('rw_')).length, 20);
-    assert.deepEqual(names.filter(name => name.startsWith('chatgpt_')).sort(), ['chatgpt_browser', 'chatgpt_checkpoint', 'chatgpt_connection', 'chatgpt_record']);
-    assert.ok((await ctx.skills.get('dsh-with-chatgpt', { cwd: directory })).content.includes('ChatGPT plans and reviews'));
     assert.ok(ctx.commands.list(first).some(command => command.name === 'remote'));
     let calls = 0;
     const call = async (agent, name, args) => (await ctx.tools.execute({
@@ -118,13 +108,6 @@ test('real rc.2 profile preflight and Loader expose SSH tools and the optional C
     assert.match(info.value.text, /this session is LOCAL/);
     const denied = await call(first, 'rw_read_file', { path: '/must-not-connect' });
     assert.equal(denied.isError, true, 'a local Session cannot silently use an active SSH target');
-    const saved = await call(first, 'chatgpt_checkpoint', { action: 'set', state: 'EXECUTING', goal: 'Native rc.2 compatibility check' });
-    assert.equal(saved.isError, false, JSON.stringify(saved));
-    const secondSession = await ctx.sessionController.create({ requestId: 'rc2-second-create', cwd: directory });
-    const second = ctx.agents.get(secondSession.sessionId);
-    const empty = await call(second, 'chatgpt_checkpoint', { action: 'get' });
-    assert.equal(empty.isError, false, JSON.stringify(empty));
-    assert.equal(empty.value.data.session, null, 'another native Session cannot borrow the checkpoint');
   } finally {
     await disposeProfileApplication(ctx);
     for (const [key, value] of Object.entries(previous)) value === undefined ? delete process.env[key] : process.env[key] = value;

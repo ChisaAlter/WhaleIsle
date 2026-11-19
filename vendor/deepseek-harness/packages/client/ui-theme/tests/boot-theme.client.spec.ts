@@ -197,8 +197,7 @@ describe('theme bootstrap row', () => {
       transparentTheme: true,
     })
     expect(withoutWallpaper.glassOpacity).toBe(70)
-    // Window acrylic pauses the wallpaper the transparent theme needs, so
-    // the pre-plugin interval keeps painting the slider value too.
+    // Keep the saved slider in the payload for hosts without acrylic support.
     const withAcrylic = buildThemeBootPayload({
       ...DEFAULT_THEME_SETTINGS,
       customThemes: [],
@@ -210,11 +209,12 @@ describe('theme bootstrap row', () => {
     expect(withAcrylic.glassOpacity).toBe(70)
   })
 
-  it('carries the window acrylic flag into the bootstrap only on a marked window', () => {
+  it('boots with the standard frosted tint only when window acrylic is supported', () => {
     const payload = buildThemeBootPayload({
       ...DEFAULT_THEME_SETTINGS,
       customThemes: [],
       windowAcrylic: true,
+      glassOpacity: 45,
     })
     expect(payload.windowAcrylic).toBe(true)
     const [, body] = bootThemeInjections(payload)
@@ -222,10 +222,12 @@ describe('theme bootstrap row', () => {
     // Without the preload's support mark the request stays inert.
     runInNewContext(body.text, { document, matchMedia: globalThis.matchMedia })
     expect(document.documentElement.hasAttribute('data-dsh-window-material')).toBe(false)
+    expect(document.body.style.getPropertyValue('--dsw-alias-glass-opacity')).toBe('45%')
     // A marked window gets the material attribute before the client activates.
     document.documentElement.setAttribute('data-window-material-supported', '')
     runInNewContext(body.text, { document, matchMedia: globalThis.matchMedia })
     expect(document.documentElement.getAttribute('data-dsh-window-material')).toBe('acrylic')
+    expect(document.body.style.getPropertyValue('--dsw-alias-glass-opacity')).toBe('80%')
     // Minimal mode suspends the request even on a marked window.
     const minimal = buildThemeBootPayload({
       ...DEFAULT_THEME_SETTINGS,

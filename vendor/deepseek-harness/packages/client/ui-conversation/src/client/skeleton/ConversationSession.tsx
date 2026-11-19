@@ -154,6 +154,8 @@ export function ConversationSessionHeader({
     return { visibleTabs, moreTabs: tabs.filter(tab => !visibleIds.has(tab.id)) }
   }, [tabs, unpinned, hasEntryActions, visibleViewLimit])
   const currentInMore = moreTabs.some(tab => tab.id === active?.id)
+  // Whale Isle's native shell keeps the folder and Git controls, not this menu trigger.
+  const whaleDesktop = typeof (globalThis as { shell?: { windowAction?: unknown } }).shell?.windowAction === 'function'
   return (
     <header
       className={clsx(css.header, hideChrome && css.headerBlank, !showTabStrip && css.headerNoTabs)}
@@ -234,7 +236,7 @@ export function ConversationSessionHeader({
             {!managed && (
               <div className={css.headerUtilities}>
                 {renderSlot('conversation.session.header.utilities', {})}
-                {renderFactorySlot('contextMenu.button', {
+                {!whaleDesktop && renderFactorySlot('contextMenu.button', {
                   target: { kind: 'sessionHeader', value: { sessionId } },
                   label: t('header.more'), className: css.headerMenuButton, size: 'sm',
                 })}

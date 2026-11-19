@@ -3,8 +3,8 @@
  * `npm run setup`: one command to a working local development environment.
  *
  * Reuses the existing entry points in order: engines check → npm ci →
- * setup:harness → prepare-whale-ui → the ChatGPT bundle the compatibility
- * test imports. Ready steps skip fast, so the command is safe to re-run.
+ * setup:harness → prepare-whale-ui → prepare-dshd-remote.
+ * Ready steps skip fast, so the command is safe to re-run.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,6 @@ const { harnessHasGhosttyAssets } = require('../src/shared/ghostty-assets.js');
 
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const harness = path.join(root, 'vendor', 'deepseek-harness');
-const chatgpt = path.join(root, 'vendor', 'dsh-with-chatgpt');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 /**
@@ -82,11 +81,6 @@ function harnessReady() {
     && harnessHasGhosttyAssets(harness);
 }
 
-function chatgptBundleReady() {
-  return fs.existsSync(path.join(chatgpt, 'node_modules'))
-    && fs.existsSync(path.join(chatgpt, 'bridge', 'dist', 'workspace', 'manager.js'));
-}
-
 assertNodeVersion(process.versions.node, manifest.engines?.node);
 console.log(`[setup] Node v${process.versions.node} 满足 engines ${manifest.engines.node}`);
 
@@ -113,13 +107,5 @@ run(process.execPath, [path.join('scripts', 'prepare-whale-ui.mjs')]);
 // WHALE_REQUIRE_TEST_PREREQS mode included); the script self-skips once the
 // vendored workspace deps and packages/*/dist are fresh.
 run(process.execPath, [path.join('scripts', 'prepare-dshd-remote.mjs')]);
-
-// dsh-plugin-compatibility.test.js imports vendor/dsh-with-chatgpt/lib, which
-// reaches bridge/dist and the bundle's own node_modules.
-if (chatgptBundleReady()) {
-  console.log('[setup] ChatGPT 插件桥接已构建，跳过 prepare:dsh-with-chatgpt-bundle');
-} else {
-  run(process.execPath, [path.join('scripts', 'prepare-dsh-with-chatgpt-bundle.mjs')]);
-}
 
 console.log('[setup] 开发环境就绪');

@@ -460,10 +460,12 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
   const electronPath = require.resolve('electron');
   const chromePath = require.resolve('./chrome.js');
   const pathsPath = require.resolve('./paths.js');
+  const acrylicPath = require.resolve('./window-acrylic');
   const cached = new Map([
     [electronPath, require.cache[electronPath]],
     [chromePath, require.cache[chromePath]],
     [pathsPath, require.cache[pathsPath]],
+    [acrylicPath, require.cache[acrylicPath]],
   ]);
 
   class FakeWebContents extends EventEmitter {
@@ -580,6 +582,10 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
   };
 
   try {
+    require.cache[acrylicPath] = {
+      id: acrylicPath, filename: acrylicPath, loaded: true,
+      exports: { prepareWindowAcrylic: () => false },
+    };
     delete require.cache[require.resolve('./window.js')];
     const { getHarnessWebContents, getMainWindow, showBoot, showHarness } = require('./window.js');
     const outcome = showHarness('http://127.0.0.1:3080/').then(
@@ -595,13 +601,11 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
       ['--dshd-shell-role=boot'],
     );
     const { REMOTE_FEATURE_ENABLED } = require('./config');
-    const { WINDOW_MATERIAL_ARGUMENT, windowsAcrylicSupported } = require('./window-material');
     assert.deepEqual(
       harnessContents.ownerOptions.webPreferences.additionalArguments,
       [
         '--dshd-shell-role=harness',
         `--dshd-remote-feature=${REMOTE_FEATURE_ENABLED ? '1' : '0'}`,
-        ...(windowsAcrylicSupported() ? [WINDOW_MATERIAL_ARGUMENT] : []),
       ],
     );
 

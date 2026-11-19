@@ -109,48 +109,6 @@ const TOOLS = Object.freeze({
     },
   },
 
-  // ---------- dsh-with-chatgpt ----------
-  chatgpt_connection: {
-    level: 'read', confirm: true, reason: 'status/prefs/tunnel_status 只读；其余动作建立或改变对 ChatGPT 的公开连接。',
-    actions: {
-      status: { level: 'read', reason: '读连接状态。' },
-      prefs: { level: 'read', reason: '读偏好。' },
-      prefs_set: { level: 'external', reason: '改连接偏好（含开发者模式）。' },
-      setup: { level: 'external', reason: '创建桥接与配对码，可开启公网连接。' },
-      doctor: { level: 'external', reason: '诊断默认会修复，可能重建公开连接；diagnoseOnly 为只读。' },
-      pair: { level: 'external', reason: '生成配对码，授权 ChatGPT 访问工作区；配对码只经桌面弹窗展示。' },
-      unpair: { level: 'external', reason: '吊销本工作区的 ChatGPT 访问令牌。' },
-      tunnel_status: { level: 'read', reason: '读隧道状态。' },
-      tunnel_choose: { level: 'external', reason: '切换公开隧道地址。' },
-    },
-  },
-  chatgpt_browser: {
-    level: 'read', confirm: true, reason: 'snapshot/read_reply 只读、close 本地；navigate/click/fill/press 向 ChatGPT 提交内容。',
-    actions: {
-      snapshot: { level: 'read', reason: '读页面快照。' },
-      read_reply: { level: 'read', reason: '读 ChatGPT 回复。' },
-      close: { level: 'local', reason: '释放浏览器所有权，保留登录数据。' },
-      navigate: { level: 'external', reason: '控制专用浏览器打开地址。' },
-      click: { level: 'external', reason: '在 ChatGPT 页面执行点击。' },
-      fill: { level: 'external', reason: '向 ChatGPT 页面填入文本。' },
-      press: { level: 'external', reason: '在 ChatGPT 页面按键提交。' },
-    },
-  },
-  chatgpt_checkpoint: {
-    level: 'read', confirm: false, reason: 'get 只读；set/start 写本地检查点状态。',
-    actions: {
-      get: { level: 'read', reason: '读检查点。' },
-      set: { level: 'local', reason: '写本地协作检查点。' },
-      start: { level: 'local', reason: '开启本地协作检查点。' },
-    },
-  },
-  chatgpt_record: {
-    level: 'external', confirm: true, reason: '把本地迭代记录与输出文件登记为 ChatGPT 可读。',
-    actions: {
-      record: { level: 'external', reason: '登记一次迭代的变更与输出为 ChatGPT 可读。' },
-    },
-  },
-
   // ---------- dsh-pad ----------
   pad_list: { level: 'read', confirm: false, reason: '列面板。' },
   pad_get: { level: 'read', confirm: false, reason: '读面板定义与最新数据。' },
@@ -244,6 +202,51 @@ const TOOLS = Object.freeze({
   },
 });
 
+// Separately installed dsh-with-chatgpt bundles still use the confirmation endpoint.
+/** @type {Readonly<Record<string, ToolEffect>>} */
+const LEGACY_TOOLS = Object.freeze({
+  chatgpt_connection: {
+    level: 'read', confirm: true, reason: 'status/prefs/tunnel_status 只读；其余动作建立或改变对 ChatGPT 的公开连接。',
+    actions: {
+      status: { level: 'read', reason: '读连接状态。' },
+      prefs: { level: 'read', reason: '读偏好。' },
+      prefs_set: { level: 'external', reason: '改连接偏好（含开发者模式）。' },
+      setup: { level: 'external', reason: '创建桥接与配对码，可开启公网连接。' },
+      doctor: { level: 'external', reason: '诊断默认会修复，可能重建公开连接；diagnoseOnly 为只读。' },
+      pair: { level: 'external', reason: '生成配对码，授权 ChatGPT 访问工作区；配对码只经桌面弹窗展示。' },
+      unpair: { level: 'external', reason: '吊销本工作区的 ChatGPT 访问令牌。' },
+      tunnel_status: { level: 'read', reason: '读隧道状态。' },
+      tunnel_choose: { level: 'external', reason: '切换公开隧道地址。' },
+    },
+  },
+  chatgpt_browser: {
+    level: 'read', confirm: true, reason: 'snapshot/read_reply 只读、close 本地；navigate/click/fill/press 向 ChatGPT 提交内容。',
+    actions: {
+      snapshot: { level: 'read', reason: '读页面快照。' },
+      read_reply: { level: 'read', reason: '读 ChatGPT 回复。' },
+      close: { level: 'local', reason: '释放浏览器所有权，保留登录数据。' },
+      navigate: { level: 'external', reason: '控制专用浏览器打开地址。' },
+      click: { level: 'external', reason: '在 ChatGPT 页面执行点击。' },
+      fill: { level: 'external', reason: '向 ChatGPT 页面填入文本。' },
+      press: { level: 'external', reason: '在 ChatGPT 页面按键提交。' },
+    },
+  },
+  chatgpt_checkpoint: {
+    level: 'read', confirm: false, reason: 'get 只读；set/start 写本地检查点状态。',
+    actions: {
+      get: { level: 'read', reason: '读检查点。' },
+      set: { level: 'local', reason: '写本地协作检查点。' },
+      start: { level: 'local', reason: '开启本地协作检查点。' },
+    },
+  },
+  chatgpt_record: {
+    level: 'external', confirm: true, reason: '把本地迭代记录与输出文件登记为 ChatGPT 可读。',
+    actions: {
+      record: { level: 'external', reason: '登记一次迭代的变更与输出为 ChatGPT 可读。' },
+    },
+  },
+});
+
 /** @type {Readonly<Record<string, ToolEffect>>} */
 const ENDPOINTS = Object.freeze({
   'POST /install': { level: 'code', confirm: 'endpoint', reason: '安装插件代码并重启；端点内串行桌面确认。' },
@@ -281,7 +284,7 @@ const NEVER_ALWAYS_LEVELS = new Set(['destructive', 'code']);
  * @returns {string | undefined}
  */
 function effectOf(toolName, action) {
-  const entry = TOOLS[toolName];
+  const entry = TOOLS[toolName] ?? LEGACY_TOOLS[toolName];
   if (!entry) return undefined;
   if (action === undefined) return entry.level;
   const actionEntry = entry.actions?.[action];
@@ -298,4 +301,4 @@ function effectOf(toolName, action) {
   );
 }
 
-module.exports = { LEVELS, TOOLS, ENDPOINTS, effectOf, NEVER_ALWAYS_LEVELS };
+module.exports = { LEVELS, TOOLS, LEGACY_TOOLS, ENDPOINTS, effectOf, NEVER_ALWAYS_LEVELS };
