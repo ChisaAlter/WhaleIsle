@@ -142,6 +142,8 @@ export function writeSmokeConfig(userData, workspace, port) {
     openAtLogin: false,
     openDevTools: false,
     remoteEnabled: false,
+    // The product default is off; smoke steps drive the assistant entry point.
+    whaleAssistantEnabled: true,
   }, null, 2))
 }
 

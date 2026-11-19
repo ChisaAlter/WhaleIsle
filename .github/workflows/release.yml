@@ -10,6 +10,10 @@ on:
         description: Successful main Development CI run (reuse its installers)
         type: string
         required: true
+      windows_only_tag:
+        description: Exact tag, for example v0.3.16, to publish without a macOS installer; the Mac package is added later through the supplement workflow
+        type: string
+        required: false
 permissions:
   contents: read
   actions: read
@@ -62,4 +66,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          WINDOWS_ONLY_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_only_tag || '' }}
         run: node scripts/publish-release.mjs
