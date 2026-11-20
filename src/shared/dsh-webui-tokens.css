@@ -12,7 +12,9 @@
   --ds-transition-duration-fast: 0.1s;
   --ds-motion-duration-overlay: 0.2s;
   --ds-motion-duration-overlay-out: 0.1s;
+  --ds-motion-duration-popover: 0.16s;
   --ds-motion-distance-overlay: 8px;
+  --ds-motion-distance-popover: 4px;
   --ds-motion-scale-overlay: 0.96;
   --dsw-shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
   --dsw-shadow-lv3:
@@ -25,10 +27,12 @@
   --dsw-radius-lg: 16px;
   --dsw-radius-xl: 20px;
   --dsw-radius-panel: 28px;
+  --dsw-radius-button-sm: 14px;
   --dsw-alias-glass-opacity: 80%;
   --dsw-alias-bg-base: rgb(255, 255, 255);
   --dsw-alias-bg-layer-1: rgb(255, 255, 255);
   --dsw-alias-bg-layer-2: rgb(255, 255, 255);
+  --dsw-alias-bg-panel-solid: rgb(255, 255, 255);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24);
   --dsw-alias-bg-module-platform: rgb(245, 246, 247);
   --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
@@ -43,6 +47,7 @@
   --dsw-alias-button-primary-hover: rgb(67, 69, 74);
   --dsw-alias-button-info-fill: rgb(65, 118, 230);
   --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-interactive-bg-hover-danger: rgba(236, 19, 19, 0.05);
   --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
   --dsw-alias-label-primary: rgb(15, 17, 21);
   --dsw-alias-label-primary-foreground: rgb(255, 255, 255);
@@ -50,6 +55,7 @@
   --dsw-alias-label-tertiary: rgb(129, 133, 140);
   --dsw-alias-label-caption: rgb(173, 178, 184);
   --dsw-alias-label-dimmed: rgb(225, 229, 238);
+  --dsw-alias-markdown-code-block: rgb(249, 250, 251);
   /* Official Toast remains dark in both schemes (bluish-800 / bluish-750). */
   --dsw-alias-toast-bg: rgb(53, 54, 56);
   --dsw-alias-toast-label: rgb(255, 255, 255);
@@ -57,6 +63,10 @@
   --dsw-alias-state-business-primary: rgb(65, 118, 230);
   --dsw-alias-state-error-primary: rgb(236, 19, 19);
   --dsw-alias-state-success-primary: rgb(34, 197, 94);
+  --dsw-alias-state-warn-label: rgb(221, 134, 41);
+  --dsw-alias-state-warn-primary: rgb(245, 158, 11);
+  --dsw-alias-state-warn-secondary: rgb(247, 173, 49);
+  --dsw-alias-state-warn-tertiary: rgb(254, 245, 231);
   --dsw-static-amber-400: rgb(247, 173, 49);
   --dsw-specific-bubble: rgb(237, 243, 254);
   --dsw-specific-input-major: color-mix(in srgb, rgb(255, 255, 255) 80%, transparent);
@@ -91,6 +101,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-bg-base: rgb(21, 21, 23);
   --dsw-alias-bg-layer-1: rgb(35, 35, 36);
   --dsw-alias-bg-layer-2: rgb(44, 44, 46);
+  --dsw-alias-bg-panel-solid: rgb(44, 44, 46);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
   --dsw-alias-bg-module-platform: rgb(53, 54, 56);
   --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
@@ -102,6 +113,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-button-primary-hover: rgb(235, 238, 242);
   --dsw-alias-button-info-fill: rgb(103, 158, 254);
   --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, 0.15);
   --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
   --dsw-alias-label-primary: rgb(249, 250, 251);
   --dsw-alias-label-primary-foreground: rgb(15, 17, 21);
@@ -109,9 +121,14 @@ body[data-ds-dark-theme] {
   --dsw-alias-label-tertiary: rgb(173, 178, 184);
   --dsw-alias-label-caption: rgb(129, 133, 140);
   --dsw-alias-label-dimmed: rgb(67, 69, 74);
+  --dsw-alias-markdown-code-block: rgb(27, 27, 28);
   --dsw-alias-toast-bg: rgb(67, 69, 74);
   --dsw-alias-state-business-primary: rgb(103, 158, 254);
   --dsw-alias-state-error-primary: rgb(242, 90, 90);
+  --dsw-alias-state-warn-label: rgb(221, 134, 41);
+  --dsw-alias-state-warn-primary: rgb(245, 158, 11);
+  --dsw-alias-state-warn-secondary: rgb(247, 173, 49);
+  --dsw-alias-state-warn-tertiary: rgb(39, 36, 31);
   --dsw-specific-bubble: rgb(44, 44, 46);
   --dsw-specific-input-major: color-mix(in srgb, rgb(44, 44, 46) 80%, transparent);
   --dsw-specific-menu: color-mix(in srgb, rgb(53, 54, 56) 80%, transparent);
@@ -127,5 +144,6 @@ body[data-ds-dark-theme] {
     --ds-transition-duration-fast: 0s;
     --ds-motion-duration-overlay: 0s;
     --ds-motion-duration-overlay-out: 0s;
+    --ds-motion-duration-popover: 0s;
   }
 }
