@@ -120,8 +120,9 @@ function normalizeMessage(message, root) {
  * @param {string} root
  * @param {Set<string>} [seen]
  * @param {Set<string>} [inScope]
+ * @param {string} [configFile]
  */
-export function parseDiagnostics(text, root, seen, inScope) {
+export function parseDiagnostics(text, root, seen, inScope, configFile) {
   /** @type {DiagCounts} */
   const counts = new Map();
   /** @type {string[]} */
@@ -134,6 +135,10 @@ export function parseDiagnostics(text, root, seen, inScope) {
     if (hit) {
       raw += 1;
       const file = normalizeFile(hit[1]);
+      if (configFile && file === configFile) {
+        globals.push(`${file}(${hit[2]},${hit[3]}) ${hit[4]}: ${normalizeMessage(hit[5], root)}`);
+        continue;
+      }
       if (inScope && !inScope.has(file)) continue;
       const message = normalizeMessage(hit[5], root);
       if (seen) {
@@ -306,7 +311,8 @@ function main() {
   const seen = new Set();
   for (const project of projects) {
     const { text, status } = runTsc(project);
-    const parsed = parseDiagnostics(text, ROOT, seen, projectFiles(project));
+    const configFile = normalizeFile(relative(dirname(project), project));
+    const parsed = parseDiagnostics(text, ROOT, seen, projectFiles(project), configFile);
     mergeCounts(counts, parsed.counts);
     globals.push(...parsed.globals);
     if (status !== 0 && parsed.raw === 0 && parsed.globals.length === 0) {

@@ -7279,8 +7279,8 @@
       },
       "TS2339": {
         "Property 'available' does not exist on type 'object'.": 1,
-        "Property 'click' does not exist on type 'Element'.": 7,
-        "Property 'disabled' does not exist on type 'Element'.": 5,
+        "Property 'click' does not exist on type 'Element'.": 6,
+        "Property 'disabled' does not exist on type 'Element'.": 4,
         "Property 'enabled' does not exist on type 'object'.": 1,
         "Property 'error' does not exist on type 'object'.": 2,
         "Property 'innerText' does not exist on type 'Element'.": 6,
@@ -8558,6 +8558,9 @@
         "Type '{ id: string; className: string; \"data-kind\": string; \"data-size\": string; loading: boolean; feedback: string | undefined; }' is not assignable to type '{ id: string; loading: boolean; feedback?: string | undefined; children: React.ReactNode; } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, \"id\">'.": 1,
         "Type '{ id: string; className: string; \"data-kind\": string; loading: boolean; feedback: string | undefined; }' is not assignable to type '{ id: string; loading: boolean; feedback?: string | undefined; children: React.ReactNode; } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, \"id\">'.": 5,
         "Type '{ id: string; className: string; type: string; \"data-kind\": string; loading: boolean; feedback: string | undefined; }' is not assignable to type '{ id: string; loading: boolean; feedback?: string | undefined; children: React.ReactNode; } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, \"id\">'.": 2
+      },
+      "TS2882": {
+        "Cannot find module or type declarations for side-effect import of '../../vendor/deepseek-harness/packages/client/ui-theme/src/styles/design-platform.css'.": 1
       },
       "TS6142": {
         "Module '../../vendor/deepseek-harness/packages/client/ui-primitives/src/Button' was resolved to '<root>/vendor/deepseek-harness/packages/client/ui-primitives/src/Button.tsx', but '--jsx' is not set.": 1
@@ -11187,7 +11190,7 @@
     },
     "vendor/dsh-whale/lib/desktop-tools.js": {
       "TS2322": {
-        "Type '() => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: {}, exec: ToolRunContext) => Promise<never>'.": 1,
+        "Type '() => Promise<{ ok: boolean; detail: string; } | { ok: false; detail: any; }>' is not assignable to type '(args: {}, exec: ToolRunContext) => Promise<never>'.": 1,
         "Type '(args: { action: string; name?: string | undefined; spec?: string | undefined; id?: string | undefined; allowBuilds?: string[] | undefined; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { action: string; name?: string | undefined; spec?: string | undefined; id?: string | undefined; allowBuilds?: string[] | undefined; }, exec: ToolRunContext) => Promise<...>'.": 1,
         "Type '(args: { patch: Record<string, JsonValue>; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { patch: Record<string, JsonValue>; }, exec: ToolRunContext) => Promise<never>'.": 1,
         "Type '(args: { patch?: Record<string, JsonValue> | undefined; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { patch?: Record<string, JsonValue> | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,

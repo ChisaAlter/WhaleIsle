@@ -90,6 +90,20 @@ test('tsconfig 缺失等配置级错误直接失败', (t) => {
   assert.match(result.stdout + result.stderr, /配置级错误|未产生诊断/);
 });
 
+test('tsconfig 自身带行列号的配置诊断（如 TS5101）同样作为配置级错误失败，不能被范围过滤吞掉', (t) => {
+  const { project, baseline } = fixture(t, {
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [], baseUrl: '.' },
+      files: ['a.js'],
+    }),
+    'a.js': CLEAN_JS,
+  });
+  const result = run(project, baseline);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /配置级错误/);
+  assert.match(result.stdout + result.stderr, /TS5101/);
+});
+
 test('absolute repo paths in messages are replaced so the baseline is portable', () => {
   const root = '/abs/repo';
   const text = `src/main/a.js(1,1): error TS2322: Type 'typeof import("/abs/repo/src/main/b")' is not assignable to type 'never'.`;
