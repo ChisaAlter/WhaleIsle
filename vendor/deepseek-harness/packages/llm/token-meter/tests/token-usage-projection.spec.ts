@@ -371,6 +371,26 @@ describe('contextPressure session projection', () => {
     expect(ctx.tokenMeter.contextPressure(session)).toEqual({ contextWindow: 64_000 })
   })
 
+  it('does not display zero occupancy when the provider rejects the request as too long', async () => {
+    const { ctx, session } = await harness()
+    startStep(session, 1, 1)
+    recordContext(session, 'large', 262_000)
+    usageChunk(session, { inputTokens: 180_000, outputTokens: 10 }, 1, 1)
+    startStep(session, 2, 1)
+    session.append('assistant/attempt', { turn: 2, step: 1, stream: [
+      { type: 'chunk', time: 0, chunk: { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } } },
+      { type: 'chunk', time: 1, chunk: { type: 'finish', reason: {
+        kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED', message: 'Input too long' },
+      } } },
+    ] })
+    expect(pressure(ctx, session)).toEqual({ contextWindow: 262_000 })
+    expect(projected(ctx, session)).toEqual({ ...ZERO, uncachedInputTokens: 180_000, outputTokens: 10 })
+
+    startStep(session, 3, 1)
+    finalUsage(session, { inputTokens: 40_000, outputTokens: 20 }, 3, 1)
+    expect(pressure(ctx, session).pressureTokens).toBe(40_000)
+  })
+
   it('sums prompt-side buckets and excludes response output', async () => {
     const { ctx, session } = await harness()
     startStep(session, 1, 1)
@@ -447,7 +467,7 @@ describe('contextPressure session projection', () => {
     const checkpoint = JSON.parse(JSON.stringify(
       ctx.sessionProjections.checkpoint(session),
     )) as ReturnType<typeof ctx.sessionProjections.checkpoint>
-    expect(checkpoint.contextPressure?.ver).toBe(5)
+    expect(checkpoint.contextPressure?.ver).toBe(6)
 
     await meterFiber.dispose()
     expect(ctx.sessionProjections.snapshot(session).values).not.toHaveProperty('contextPressure')

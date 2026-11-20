@@ -522,6 +522,7 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
     ctx.loader.internal = { version: 'v2', async import(name) {
       if (name === '@deepseek-ai/dsh-experimental-agent-team' && composition.beforeTeamImport) await composition.beforeTeamImport(ctx);
       if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href);
+      if (name === 'dsh-whale/tools') return import('../../dsh-whale/lib/tools.js');
       if (name.startsWith('file:')) return import(name);
       return import(pathToFileURL(resolvePackage(name)).href);
     } };
@@ -570,6 +571,38 @@ class ProjectCompactionModel extends LlmAdapter {
     yield* blocks('The same conversation continued after context compaction.');
   }
 }
+
+test('the Whale assistant recovers a rejected request in its existing session', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'whale-assistant-compaction-'));
+  let ctx;
+  const prior = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = root;
+    const { whalePresetDefinition } = await import('../../dsh-whale/lib/preset.js');
+    const model = new ProjectCompactionModel();
+    ctx = await bootHost(root, model, undefined, false, false, { project: false });
+    await ctx.agentPresets.register(whalePresetDefinition(root));
+    const { sessionId } = await ctx.sessionController.create({ cwd: root, agentPreset: 'whale-girl' });
+    const agent = ctx.agents.get(sessionId);
+    assert.ok(ctx.commands.list(agent).some(command => command.name === 'compact'));
+    for (const [index, phase] of ['WARM', 'WARM', 'OVERFLOW'].entries()) {
+      model.phase = phase;
+      await ctx.sessionController.prompt({ sessionId, requestId: `whale-context-${index}`, mode: 'queue', content: [{ type: 'text', text: `Whale assistant message ${index}` }] }, signal);
+      await agent.whenIdle();
+    }
+    const requests = model.requests.filter(request => request.sessionId === sessionId && request.purpose !== 'session-title');
+    assert.equal(requests.length, 4, 'two warm turns, the rejected request, and exactly one rebuilt request');
+    assert.equal(model.summaries.length, 1);
+    assert.ok(requests.at(-1).messages.some(message => messageText(message).includes('<compacted-summary>')));
+    assert.equal(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end').data.reason.kind, 'completed');
+  } finally {
+    try { if (ctx) await disposeProfileApplication(ctx); } finally {
+      if (prior === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prior;
+      assert.equal(await realpath(root), root);
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
 
 test('Project presets compact long history, recover overflow and restore the original role Sessions', { timeout: 120000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-compaction-')), home = join(root, 'home'), directory = join(root, 'selected');
