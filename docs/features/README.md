@@ -89,5 +89,6 @@
 | [update-center](update-center.md) | 启动器与桌面共用的更新中心：后台下载、自动选增量、断点与重启续传、线路回退 | `src/main/update-center/` / `renderer/update-center.*` | 服务/界面单测；隔离实例端到端续传与安装 |
 | [task-protection](task-protection.md) | 退出/停止/更新前检查活动任务并确认；锁接纳排空后放行 | task-protection / dsh-task-control / peer 握手 | 协调器+插件单测；实机验收待 C |
 | [close-behavior](close-behavior.md) | 关闭=收托盘或直接退出；首次隐藏一次性 toast | `background-notice` / `CloseBehaviorRow` | 定向测试 |
+| [minimized-approval-popup](minimized-approval-popup.md) | 最小化或隐藏到托盘时右下角独立审批浮窗 + 跨平台应用图标数字角标 | `src/main/approval-monitor/` / `ApprovalPopupRow` | 单测、契约、官方构建与 Electron 实机 |
 | [office-runtime](office-runtime.md) | 文档格式：DOCX/PPTX 创建编辑校验、PDF/XLSX 预览（拟议） | standalone runtime / `libreoffice-kit` | 待 P3 收口 |
 | [keyboard-shortcuts](keyboard-shortcuts.md) | 统一快捷键体系（拟议） | 快捷键注册层 | 待 P2 收口 |
