@@ -104,6 +104,81 @@ test('tsconfig 自身带行列号的配置诊断（如 TS5101）同样作为配�
   assert.match(result.stdout + result.stderr, /TS5101/);
 });
 
+test('extends 继承链上的父 tsconfig 配置错误与语法错误同样作为配置级错误失败', (t) => {
+  const root = makeFixture(t, {
+    'root.json': JSON.stringify({ compilerOptions: { bogusOption: true } }),
+    'sub/mid.json': JSON.stringify({
+      extends: '../root.json',
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [] },
+    }),
+    'sub/tsconfig.json': JSON.stringify({ extends: './mid', files: ['a.js'] }),
+    'sub/a.js': CLEAN_JS,
+  });
+  const baseline = join(root, 'baseline.json');
+  writeFileSync(baseline, JSON.stringify({ version: 1, errors: {} }));
+  const badOpt = run(join(root, 'sub/tsconfig.json'), baseline);
+  assert.notEqual(badOpt.status, 0);
+  assert.match(badOpt.stdout + badOpt.stderr, /配置级错误/);
+  assert.match(badOpt.stdout + badOpt.stderr, /TS5023/);
+
+  const syntaxRoot = makeFixture(t, {
+    'base.json': '{ "compilerOptions": { "strict": true, } bad',
+    'tsconfig.json': JSON.stringify({
+      extends: './base.json',
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [] },
+      files: ['a.js'],
+    }),
+    'a.js': CLEAN_JS,
+  });
+  const syntaxBaseline = join(syntaxRoot, 'baseline.json');
+  writeFileSync(syntaxBaseline, JSON.stringify({ version: 1, errors: {} }));
+  const badSyntax = run(join(syntaxRoot, 'tsconfig.json'), syntaxBaseline);
+  assert.notEqual(badSyntax.status, 0);
+  assert.match(badSyntax.stdout + badSyntax.stderr, /配置级错误/);
+  assert.match(badSyntax.stdout + badSyntax.stderr, /TS1005/);
+
+  const rootSyntax = makeFixture(t, {
+    'tsconfig.json': '{ "compilerOptions": { "allowJs": true } bad',
+    'a.js': CLEAN_JS,
+  });
+  const rootSyntaxBaseline = join(rootSyntax, 'baseline.json');
+  writeFileSync(rootSyntaxBaseline, JSON.stringify({ version: 1, errors: {} }));
+  const badRoot = run(join(rootSyntax, 'tsconfig.json'), rootSyntaxBaseline);
+  assert.notEqual(badRoot.status, 0);
+  assert.match(badRoot.stdout + badRoot.stderr, /配置级错误/);
+  assert.match(badRoot.stdout + badRoot.stderr, /TS1005/);
+});
+
+test('--project 指向目录时解析目录下的 tsconfig.json，不吞掉配置错误和源码诊断', (t) => {
+  const cfgRoot = makeFixture(t, {
+    'sub/tsconfig.json': JSON.stringify({
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [], baseUrl: '.' },
+      files: ['a.js'],
+    }),
+    'sub/a.js': CLEAN_JS,
+  });
+  const cfgBaseline = join(cfgRoot, 'baseline.json');
+  writeFileSync(cfgBaseline, JSON.stringify({ version: 1, errors: {} }));
+  const cfgResult = run(join(cfgRoot, 'sub'), cfgBaseline);
+  assert.notEqual(cfgResult.status, 0);
+  assert.match(cfgResult.stdout + cfgResult.stderr, /配置级错误/);
+  assert.match(cfgResult.stdout + cfgResult.stderr, /TS5101/);
+
+  const srcRoot = makeFixture(t, {
+    'sub/tsconfig.json': JSON.stringify({
+      compilerOptions: { allowJs: true, checkJs: true, strict: true, noEmit: true, types: [] },
+      files: ['a.js'],
+    }),
+    'sub/a.js': ERROR_JS,
+  });
+  const srcBaseline = join(srcRoot, 'baseline.json');
+  writeFileSync(srcBaseline, JSON.stringify({ version: 1, errors: {} }));
+  const srcResult = run(join(srcRoot, 'sub'), srcBaseline);
+  assert.notEqual(srcResult.status, 0);
+  assert.match(srcResult.stdout + srcResult.stderr, /新诊断/);
+  assert.match(srcResult.stdout + srcResult.stderr, /TS7006/);
+});
+
 test('absolute repo paths in messages are replaced so the baseline is portable', () => {
   const root = '/abs/repo';
   const text = `src/main/a.js(1,1): error TS2322: Type 'typeof import("/abs/repo/src/main/b")' is not assignable to type 'never'.`;

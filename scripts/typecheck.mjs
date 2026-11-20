@@ -20,10 +20,10 @@
 // - 出现基线外的新诊断或同一诊断计数增加 → 失败；
 // - 某项计数比基线少或从基线消失 → 也失败，提示运行
 //   `npm run typecheck -- --update-baseline` 收紧基线；
-// - 无文件归属的配置级错误（error TS…: …）不参与基线，直接失败。
+// - 配置级错误（全局 error TS… 或 tsconfig 及其 extends 链配置文件上的诊断）不参与基线，直接失败。
 // 仅完全一致时通过。
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -73,6 +73,27 @@ function normalizeFile(file) {
   return file.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+/** @param {string} file */
+function toPosixPath(file) {
+  return file.replace(/\\/g, '/');
+}
+
+/** @param {string} file */
+function configMatchKey(file) {
+  const normalized = normalizeFile(file);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+/** @param {string | Iterable<string> | undefined} configFiles */
+function toConfigMatchSet(configFiles) {
+  if (!configFiles) return null;
+  const entries = typeof configFiles === 'string' ? [configFiles] : configFiles;
+  /** @type {Set<string>} */
+  const set = new Set();
+  for (const entry of entries) set.add(configMatchKey(entry));
+  return set.size > 0 ? set : null;
+}
+
 /**
  * @param {DiagCounts} counts
  * @param {string} file
@@ -120,13 +141,14 @@ function normalizeMessage(message, root) {
  * @param {string} root
  * @param {Set<string>} [seen]
  * @param {Set<string>} [inScope]
- * @param {string} [configFile]
+ * @param {string | Iterable<string>} [configFiles]
  */
-export function parseDiagnostics(text, root, seen, inScope, configFile) {
+export function parseDiagnostics(text, root, seen, inScope, configFiles) {
   /** @type {DiagCounts} */
   const counts = new Map();
   /** @type {string[]} */
   const globals = [];
+  const configSet = toConfigMatchSet(configFiles);
   // raw：tsc 实际输出的诊断行数（去重与范围过滤前），用于区分
   // "tsc 静默失败"与"诊断全部落在范围外"。
   let raw = 0;
@@ -135,7 +157,7 @@ export function parseDiagnostics(text, root, seen, inScope, configFile) {
     if (hit) {
       raw += 1;
       const file = normalizeFile(hit[1]);
-      if (configFile && file === configFile) {
+      if (configSet && configSet.has(configMatchKey(file))) {
         globals.push(`${file}(${hit[2]},${hit[3]}) ${hit[4]}: ${normalizeMessage(hit[5], root)}`);
         continue;
       }
@@ -155,21 +177,51 @@ export function parseDiagnostics(text, root, seen, inScope, configFile) {
   return { counts, globals, raw };
 }
 
-// 返回 tsconfig 的 files/include 命中文件集（相对项目目录、posix 分隔）。
-// 与 tsc 同一套展开逻辑：只含根文件，不含经 import 拉入程序的文件——
-// 这正是"范围内"的判定依据。
+/** @param {string} project */
+function resolveProjectConfig(project) {
+  if (existsSync(project) && statSync(project).isDirectory()) {
+    return resolve(project, 'tsconfig.json');
+  }
+  return project;
+}
+
+// 解析 tsconfig 的实际文件路径、files/include 命中文件集与整条 extends 链涉及的
+// 配置文件集（均相对项目目录、posix 分隔）。与 tsc 同一套展开逻辑：files 只含根文件，
+// 不含经 import 拉入程序的文件——这正是"范围内"的判定依据。
+/** @param {string} project */
+function readProjectConfig(project) {
+  const configPath = resolveProjectConfig(project);
+  const dir = dirname(configPath);
+  /** @type {Set<string>} */
+  const files = new Set();
+  /** @type {Set<string>} */
+  const configFiles = new Set([normalizeFile(relative(dir, configPath))]);
+  if (existsSync(configPath) && statSync(configPath).isFile()) {
+    const posixConfig = toPosixPath(configPath);
+    const sourceFile = ts.readJsonConfigFile(posixConfig, ts.sys.readFile);
+    if (Array.isArray(sourceFile.statements)) {
+      const parsed = ts.parseJsonSourceFileConfigFileContent(
+        sourceFile,
+        ts.sys,
+        toPosixPath(dir),
+        undefined,
+        posixConfig
+      );
+      for (const file of parsed.fileNames) files.add(normalizeFile(relative(dir, file)));
+      for (const extended of sourceFile.extendedSourceFiles || []) {
+        configFiles.add(normalizeFile(relative(dir, extended)));
+      }
+    }
+  }
+  return { configPath, files, configFiles };
+}
+
 /**
- * @param {string} project tsconfig 的绝对路径
+ * @param {string} project tsconfig 文件或包含 tsconfig.json 的目录路径
  * @returns {Set<string>}
  */
 export function projectFiles(project) {
-  const dir = dirname(project);
-  const config = ts.readConfigFile(project, ts.sys.readFile);
-  const parsed = ts.parseJsonConfigFileContent(config.config ?? {}, ts.sys, dir);
-  /** @type {Set<string>} */
-  const files = new Set();
-  for (const file of parsed.fileNames) files.add(normalizeFile(relative(dir, file)));
-  return files;
+  return readProjectConfig(project).files;
 }
 
 // 与基线同构的纯对象，键排序保证基线文件 diff 稳定。
@@ -310,13 +362,13 @@ function main() {
   /** @type {Set<string>} */
   const seen = new Set();
   for (const project of projects) {
-    const { text, status } = runTsc(project);
-    const configFile = normalizeFile(relative(dirname(project), project));
-    const parsed = parseDiagnostics(text, ROOT, seen, projectFiles(project), configFile);
+    const { configPath, files, configFiles } = readProjectConfig(project);
+    const { text, status } = runTsc(configPath);
+    const parsed = parseDiagnostics(text, ROOT, seen, files, configFiles);
     mergeCounts(counts, parsed.counts);
     globals.push(...parsed.globals);
     if (status !== 0 && parsed.raw === 0 && parsed.globals.length === 0) {
-      console.error('tsc -p ' + project + ' 退出码 ' + status + ' 但未产生诊断输出。');
+      console.error('tsc -p ' + configPath + ' 退出码 ' + status + ' 但未产生诊断输出。');
       process.exit(1);
     }
   }
