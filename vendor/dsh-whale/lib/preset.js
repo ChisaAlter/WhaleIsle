@@ -54,6 +54,13 @@ export function whalePresetDefinition(homeDir) {
       { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: false, customSkillDirs: [whaleSkillsDir(homeDir)] } },
       { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
       { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
+      { id: 'compaction', name: 'cordis:group', group: true,
+        isolate: { compaction: true, toolResultPruner: true }, config: [
+          { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
+          { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
+          { id: 'tool-result-pruner', name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
+            config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 } },
+        ] },
       { id: 'whale-tools', name: 'dsh-whale/tools' },
     ],
   };

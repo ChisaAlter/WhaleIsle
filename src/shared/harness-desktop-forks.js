@@ -569,6 +569,9 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx', includes: ['loading={current?.loading === true}'] },
   // Desktop-only Host endpoints a viewer must never reach.
   { file: 'packages/experimental/liveshare/src/endpoint-classification.ts', includes: ["'skillInventory/create': 'owner-only'", "'session/setPresentation': 'owner-only'"] },
+  // A rejected request with zero billable tokens or CONTEXT_WINDOW_EXCEEDED drops the stale pressure sample instead of showing 0% occupancy.
+  { file: 'packages/llm/token-meter/src/usage-projection.ts', includes: ['CONTEXT_WINDOW_EXCEEDED_CODE', 'stateVersion: 6'] },
+  { file: 'packages/llm/token-meter/tests/token-usage-projection.spec.ts', includes: ['does not display zero occupancy when the provider rejects the request as too long'] },
 ];
 
 /**

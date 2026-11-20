@@ -250,6 +250,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-model-selection/src/client/service.ts': "ctx.remote.$on('llm/models-updated', refresh)\n",
       'packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx': 'loading={current?.loading === true}\n',
       'packages/experimental/liveshare/src/endpoint-classification.ts': "'skillInventory/create': 'owner-only'\n'session/setPresentation': 'owner-only'\n",
+      'packages/llm/token-meter/src/usage-projection.ts': 'CONTEXT_WINDOW_EXCEEDED_CODE\nstateVersion: 6\n',
+      'packages/llm/token-meter/tests/token-usage-projection.spec.ts': "it('does not display zero occupancy when the provider rejects the request as too long', () => {})\n",
       'tsconfig.host.json': '{"references":[{"path":"packages/host/mcp-servers"},{"path":"packages/host/skill-inventory"},{"path":"packages/llm/llm-vision-fallback"},{"path":"packages/mcp/mcp-servers-file"}],"include":["apps/web/tests/caption-drag-dead-zones.e2e.ts"]}\n',
       'tsconfig.base.json': '{"paths":{"@deepseek-ai/dsh-host-mcp-servers":[],"@deepseek-ai/dsh-host-skill-inventory":[],"@deepseek-ai/dsh-llm-vision-fallback":[],"@deepseek-ai/dsh-mcp-servers-file":[]}}\n',
       'apps/cli/tests/web-agent-presets.e2e.ts': "    { insert: [\n      { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },\n    ] },\n",

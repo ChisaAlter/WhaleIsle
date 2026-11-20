@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import { lastAssistantStreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, lastAssistantStreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -172,7 +172,7 @@ export const tokenUsageProjectionDefinition = {
  */
 export const contextPressureProjectionDefinition = {
   key: 'contextPressure',
-  stateVersion: 5,
+  stateVersion: 6,
   stateSchema: contextPressureStateSchema,
   init: () => ({ surfaceTokens: 0 }),
   apply: (state, event) => {
@@ -190,8 +190,19 @@ export const contextPressureProjectionDefinition = {
       }
     }
     const usage = usageSampleOf(event)?.usage
-    if (usage !== undefined) {
-      const pressureTokens = pressureFrom(usage)
+    const pressureTokens = usage === undefined ? undefined : pressureFrom(usage)
+    const finish = event.type === 'assistant/attempt'
+      ? lastAssistantStreamChunk(event.data.stream, 'finish')?.reason
+      : undefined
+    // A rejected request may report zero billable tokens, which does not
+    // measure the prompt it rejected. Nor can an older sample describe an overflow.
+    if (finish?.kind === 'error' && (pressureTokens === 0
+      || (pressureTokens === undefined && finish.failure.code === CONTEXT_WINDOW_EXCEEDED_CODE))) {
+      if (next.pressureTokens !== undefined) {
+        const { pressureTokens: _pressure, sampledSurfaceTokens: _surface, ...withoutSample } = next
+        next = withoutSample
+      }
+    } else if (pressureTokens !== undefined) {
       if (pressureTokens !== next.pressureTokens || next.sampledSurfaceTokens !== next.surfaceTokens) {
         next = { ...next, pressureTokens, sampledSurfaceTokens: next.surfaceTokens }
       }
