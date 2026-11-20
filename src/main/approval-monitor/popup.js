@@ -74,6 +74,8 @@ function createApprovalPopupController(deps = {}) {
   let disposed = false;
   /** @type {import('./state').PopupView | null} */
   let latestView = null;
+  /** @type {{ x: number, y: number, width: number, height: number } | null} */
+  let lastBounds = null;
   /** @type {(() => void) | null} */
   let unbindEnvironment = null;
 
@@ -86,10 +88,23 @@ function createApprovalPopupController(deps = {}) {
     return { x: 0, y: 0, width: 1440, height: 900 };
   }
 
+  /** @param {{ x: number, y: number, width: number, height: number }} bounds */
+  function syncBounds(bounds) {
+    if (!win || win.isDestroyed()) return;
+    const same = lastBounds
+      && lastBounds.x === bounds.x
+      && lastBounds.y === bounds.y
+      && lastBounds.width === bounds.width
+      && lastBounds.height === bounds.height;
+    if (win.isVisible() && same) return;
+    win.setBounds(bounds, false);
+    lastBounds = { ...bounds };
+  }
+
   function applyBoundsAndPresent() {
     if (!win || win.isDestroyed() || !loaded || !desiredVisible) return;
     const bounds = computePopupBounds(currentWorkArea());
-    win.setBounds(bounds, false);
+    syncBounds(bounds);
     if (!win.isVisible()) {
       win.showInactive();
     }
@@ -115,7 +130,7 @@ function createApprovalPopupController(deps = {}) {
     const reposition = () => {
       if (!win || win.isDestroyed()) return;
       if (desiredVisible && loaded) {
-        win.setBounds(computePopupBounds(currentWorkArea()), false);
+        syncBounds(computePopupBounds(currentWorkArea()));
       }
       try {
         win.webContents.invalidate?.();
@@ -138,6 +153,7 @@ function createApprovalPopupController(deps = {}) {
     if (win && !win.isDestroyed()) return win;
 
     loaded = false;
+    lastBounds = null;
     const bounds = computePopupBounds(currentWorkArea());
     const created = new BrowserWindowCtor({
       x: bounds.x,
@@ -196,6 +212,7 @@ function createApprovalPopupController(deps = {}) {
       if (win !== created) return;
       win = null;
       loaded = false;
+      lastBounds = null;
       detachEnvironmentListeners();
       if (!created.isDestroyed()) created.destroy();
       if (desiredVisible && !disposed) {
@@ -206,6 +223,7 @@ function createApprovalPopupController(deps = {}) {
       if (win === created) {
         win = null;
         loaded = false;
+        lastBounds = null;
         detachEnvironmentListeners();
       }
     });
@@ -240,6 +258,7 @@ function createApprovalPopupController(deps = {}) {
     const current = win;
     win = null;
     loaded = false;
+    lastBounds = null;
     detachEnvironmentListeners();
     if (current && !current.isDestroyed()) {
       current.destroy();
@@ -266,6 +285,7 @@ function createApprovalPopupController(deps = {}) {
     const current = win;
     win = null;
     loaded = false;
+    lastBounds = null;
     if (current && !current.isDestroyed()) {
       current.destroy();
     }

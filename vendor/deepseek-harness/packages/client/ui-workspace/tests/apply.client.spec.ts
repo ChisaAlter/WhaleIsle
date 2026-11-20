@@ -1092,3 +1092,30 @@ it('captures Workspace menu requests, rechecks mutable access, and withdraws reg
   await fiber.dispose()
   expect(pending.source.getSnapshot()).toEqual([])
 })
+
+it('opens sessions pushed through window.shell.onOpenSession and unsubscribes on unload', async () => {
+  let listener: ((payload: { sessionId?: string }) => void) | undefined
+  const unsubscribe = vi.fn(() => { listener = undefined })
+  vi.stubGlobal('window', {
+    shell: {
+      onOpenSession: (handler: (payload: { sessionId?: string }) => void) => {
+        listener = handler
+        return unsubscribe
+      },
+    },
+  })
+  onTestFinished(() => { vi.unstubAllGlobals() })
+  const b = await bench()
+  const closeSettings = vi.fn()
+  b.ctx.provide('settingsNavigation' as never, { close: closeSettings } as never)
+  const fiber = b.ctx.plugin({ inject: [...inject], apply })
+  await fiber.await()
+  const openSession = vi.spyOn(b.ctx.uiWorkspace, 'openSession')
+  listener?.({ sessionId: '   ' })
+  expect(openSession).not.toHaveBeenCalled()
+  listener?.({ sessionId: 'sess-approval-1' })
+  expect(closeSettings).toHaveBeenCalledOnce()
+  expect(openSession).toHaveBeenCalledExactlyOnceWith('sess-approval-1')
+  await fiber.dispose()
+  expect(unsubscribe).toHaveBeenCalledOnce()
+})

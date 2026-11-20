@@ -144,9 +144,11 @@ const FORK_FILE_MARKERS = [
   // Project toggle (default off) with its help tip, in the same Interface section.
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.tsx', includes: ['projectEnabled', "t('project.help')"] },
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.module.css', includes: [] },
-  { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['ProjectRow', 'leaveProjectLead'] },
-  { file: 'packages/client/ui-settings-general/src/client/locales.ts', includes: ['project.help'] },
-  { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['projectEnabled', 'restartCancelled'] },
+  { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['ProjectRow', 'leaveProjectLead', 'ApprovalPopupRow'] },
+  { file: 'packages/client/ui-settings-general/src/client/locales.ts', includes: ['project.help', 'approvalPopup.title'] },
+  { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['projectEnabled', 'restartCancelled', 'approvalPopupEnabled'] },
+  // Minimized approval popup toggle in General settings.
+  { file: 'packages/client/ui-settings-general/src/client/ApprovalPopupRow.tsx', includes: ['approvalPopupEnabled', "t('approvalPopup.title')"] },
   { file: 'packages/client/locale/src/client/LanguageRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-conversation/src/client/settings/EnterBehaviorRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-permission-presets/src/client/PermissionRow.tsx', includes: ['SettingsSelect'] },
@@ -334,8 +336,8 @@ const FORK_FILE_MARKERS = [
   // seat carries their Project tag in every row state.
   { file: 'packages/client/ui-workspace/src/client/contract/slots.ts', includes: ["'sidebar.session.row.badge'"] },
   { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ["renderSlot('sidebar.session.row.badge'", 'PinnedSectionHeader', 'css.context'] },
-  // Directory actions and archived-Session deletion ride the unified context menu.
-  { file: 'packages/client/ui-workspace/src/client/index.ts', includes: ["id: 'workspace.directory', target: 'workspace'", "id: 'session.delete', target: 'session'"] },
+  // Directory actions, archived-Session deletion, and desktop session-jump bridge.
+  { file: 'packages/client/ui-workspace/src/client/index.ts', includes: ["id: 'workspace.directory', target: 'workspace'", "id: 'session.delete', target: 'session'", 'onOpenSession'] },
   { file: 'packages/client/ui-workspace/src/client/rows/Rows.module.css', includes: ['.sessionRow .context'] },
   { file: 'packages/client/ui-workspace/tests/tree.client.spec.ts', includes: ["describe('pinned section'"] },
   { file: 'packages/client/ui-workspace/tests/workspace-browser.client.spec.tsx', includes: ['leads the sidebar with a pinned section'] },

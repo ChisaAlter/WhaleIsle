@@ -122,6 +122,7 @@ export type DesktopConfig = {
   releasesUrl?: string
   closeToTray?: boolean
   autoStartDesktop?: boolean
+  approvalPopupEnabled?: boolean
   downloadRoute?: DownloadRoute | ''
   dshHome?: string
   /**

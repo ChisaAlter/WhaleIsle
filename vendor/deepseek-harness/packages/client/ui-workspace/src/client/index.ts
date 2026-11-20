@@ -191,6 +191,19 @@ export function apply(ctx: Context): void {
   const openSession: WorkspaceBrowserInjected['open'] = (sessionId) => {
     uiWorkspace.openSession(sessionId)
   }
+  const onOpenSession = typeof window === 'undefined'
+    ? undefined
+    : (window as Window & {
+      shell?: { onOpenSession?: (handler: (payload: { sessionId?: string }) => void) => () => void }
+    }).shell?.onOpenSession
+  if (typeof onOpenSession === 'function') {
+    ctx.effect(() => onOpenSession((payload) => {
+      const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : ''
+      if (!sessionId) return
+      ;(ctx.get('settingsNavigation' as never) as { close?: () => void } | undefined)?.close?.()
+      uiWorkspace.openSession(sessionId as SessionId)
+    }), 'ui-workspace: desktop open-session bridge')
+  }
   // Registry-global sets as Sets, rebuilt only when the Workspace snapshot changes.
   const pinnedSet = derive(workspaces.list, snapshot => new Set<SessionId>(snapshot.pinnedSessionIds))
   let archiveWorkspaceSnapshot: WorkspaceSnapshot | undefined
