@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   // 范围：只扫自有代码，单 workspace 模型（不配 workspaces——一旦声明，
   // knip 会把 vendor 嵌套 package.json 自动检测成 workspace 并全量扫描）。
   // project 只含：src/、scripts/、mobile/web/、tools/、dsh-acp/，以及
@@ -10,8 +10,6 @@
   // lib/ 为生成 bundle）、vendor/dshmarket（无代码署名桩）、
   // mobile/android、docs/、构建产物。
   "entry": [
-    // package.json main：Electron 主进程
-    "src/main/index.js",
     // 按路径 spawn/fork 的子进程入口（index.js / dshd-remote.js / smoke 等）
     "src/main/{dsh-cli-runner,dshd-daemon-runner,parent-lifeline,shortcuts-protocol}.mjs",
     // new Worker 按路径启动
@@ -83,7 +81,6 @@
   ],
   "ignore": [
     // 生成产物
-    "mobile/web/chisacode/daemon-client.bundle.js",
     "dsh-acp/client/client.js",
     // knip 会把嵌套 package.json 自动检测成 workspace；这些树在任务范围外，
     // 必须按文件级 ignore 兜底，否则其测试/源码依赖会混入报告
@@ -100,16 +97,19 @@
     "@eslint/js"
   ],
   "ignoreBinaries": [
-    // check:unused 的 knip binary 由 devDependency knip 自身提供；部分环境
-    // （node_modules 为外部链接、knip 经 npx 缓存运行）下被误报 unlisted
-    "knip"
+    // Windows / Linux 系统命令与 Android SDK 工具，非 npm 二进制
+    "rundll32",
+    "xdg-open",
+    "tasklist",
+    "adb"
   ],
   "ignoreIssues": {
-    // CJS 命名空间成员访问（const m = require('./m'); m.name()）不在 knip 的
-    // 使用跟踪内。下列文件的导出均由这类消费方（components/index.js 聚合、
-    // main-launcher、主进程 ipc.js、测试）使用；已抽查确认，按文件保留。
-    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client}.js": ["exports"],
-    "src/main/{git-exec,import-guard,ipc-components,ipc-delta,pet-settings,pet-stats,marketplace-install,update-dialog}.js": ["exports"],
+    // CJS 命名空间成员访问（const m = require('./m'); m.name() 或 require('./m').name()）
+    // 不在 knip 的使用跟踪内。下列文件的导出均由这类消费方（components/index.js 聚合、
+    // main-launcher、主进程 ipc.js/dsh.js/app-ready.js/release-ui-walk.js、测试）使用；
+    // 已逐项确认，按文件保留。
+    "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client,whalebridge}.js": ["exports"],
+    "src/main/{git-exec,html-preview,import-guard,ipc-components,ipc-delta,pet-settings,pet-stats,marketplace-install,release-ui-window-controls,update-dialog,whale-ui-host}.js": ["exports"],
     // module.exports 本体在 knip 中记为 default 导出，CJS 单导出模块属误报
     "src/{main/{browser-guests,preview-session,updates-state},shared/{ipc-contract,launcher-recovery}}.js": ["exports"],
     // 测试夹具：全部经 kit.loadLauncherPage 这类命名空间成员访问消费
