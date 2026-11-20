@@ -19,8 +19,14 @@ import { mountWhaleTasks } from './task-service.js';
 import { mountWhaleTodos } from './todo-service.js';
 import { defaultTaskRootDir, resolvedTaskRootDir, validateTaskCwd } from './task-paths.js';
 import { isSessionTainted } from './call-origin.js';
-import { INDEX_MAX_BYTES, INDEX_MAX_LINES, readPushIndex } from './memory-store.js';
-import { migrateLegacySchedules } from './schedule-migration.js';
+import {
+  INDEX_MAX_BYTES,
+  INDEX_MAX_LINES,
+  evaluateIndexWriteGuard,
+  memoryIndexPath,
+  readPushIndex,
+} from './memory-store.js';
+import { installLegacyScheduleMigration } from './schedule-migration.js';
 import { askSideQuestion } from './side-qa.js';
 import { createWhaleSseHub } from './sse-hub.js';
 import {
@@ -78,7 +84,6 @@ const WhaleSchema = z.object({
 export const Config = WhaleSchema;
 
 const PRESENTATION_OWNER = 'dsh-whale:assistant';
-const MEMORY_MAX_CHARS = INDEX_MAX_BYTES;
 const MAX_RPC_BODY_BYTES = 4 * 1024 * 1024;
 
 async function readBoundedJson(req, maxBytes) {
@@ -270,7 +275,7 @@ function writeMemory(text) {
   const home = dshHomeDir();
   const file = memoryFile();
   if (!file || !home) throw new Error('missing-home');
-  const nextText = trimTo(text, MEMORY_MAX_CHARS);
+  const nextText = String(text ?? '');
   const guard = evaluateIndexWriteGuard(home, nextText);
   if (!guard.allowed) throw new Error(guard.reason);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -512,7 +517,7 @@ async function petLook(ctx, scope, { provider, model, image }) {
       model,
       ...(reasoningOff ? { reasoningEffort: 'off' } : {}),
       messages: [createUserMessage({
-        source: { kind: 'plugin', plugin: 'dsh-whale' },
+        source: { kind: 'dsh-whale:look' },
         content: [
           { type: 'image', attachment: ref },
           { type: 'text', text: '这是用户此刻的屏幕截图。用你的人设随口点评你实际看到的东西——像瞟了一眼工位那样，一两句话，别报菜名。' },
@@ -629,8 +634,7 @@ async function logLookNote(ctx, scope, reply) {
     if (typeof agent?.session?.append !== 'function') return;
     agent.session.append('user/message', createUserMessage({
       source: {
-        kind: 'plugin',
-        plugin: 'dsh-whale',
+        kind: 'dsh-whale:look',
         form: 'notice',
         summary: '她瞟了一眼屏幕',
       },
@@ -689,7 +693,7 @@ function registerRpc(ctx, scope, sseHub) {
         return ensureAssistantSession(ctx, scope, controllerFrom(ctx));
       }
       case 'memory/replace': {
-        const text = trimTo(input?.text, MEMORY_MAX_CHARS);
+        const text = String(input?.text ?? '');
         writeMemory(text);
         return { ok: true, chars: text.length };
       }
@@ -891,18 +895,11 @@ export function apply(ctx) {
 
   // Current Harness has no `.agent-presets` directory scanner. Register her
   // composition before attempting to create or reopen her session.
+  const runScheduleMigrationOnce = installLegacyScheduleMigration(ctx, scope, home, ensureAssistantSession);
   ctx.inject?.(['agentPresets', 'sessionController'], (host) => host.effect(async () => {
     const unregister = await host.agentPresets.register(whalePresetDefinition(home));
     void ensureAssistantSession(ctx, scope, host.sessionController).then(async (ensured) => {
-      if (ensured?.ok && home) {
-        await migrateLegacySchedules(host, {
-          home,
-          sessionId: ensured.sessionId,
-          logger: ctx.logger,
-        }).catch((error) => {
-          ctx.logger?.warn?.(`dsh-whale legacy schedule migration failed: ${error?.message ?? error}`);
-        });
-      }
+      if (ensured?.ok && home) await runScheduleMigrationOnce(host, ensured.sessionId);
     }).catch((error) => {
       ctx.logger?.warn?.(`dsh-whale assistant ensure failed: ${error?.message ?? error}`);
     });

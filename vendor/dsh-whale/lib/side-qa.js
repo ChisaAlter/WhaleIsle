@@ -117,7 +117,7 @@ function buildSideRequest({ route, settings, events, tainted, home, question, si
     model: route.model,
     ...(route.reasoningEffort ? { reasoningEffort: route.reasoningEffort } : {}),
     messages: [createUserMessage({
-      source: { kind: 'plugin', plugin: 'dsh-whale', form: 'side-qa' },
+      source: { kind: 'dsh-whale:side-qa' },
       content: [{ type: 'text', text: userBody }],
     })],
     system: systemParts.join('\n\n'),

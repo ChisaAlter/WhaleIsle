@@ -498,7 +498,9 @@ export async function mountWhaleTasks(ctx, options) {
   });
   try {
     domain = await ctx.storageDomain.open(taskDomain);
-    const store = new TaskStore(domain);
+    const store = new TaskStore(domain, (taskId) => {
+      if (service?.available) ctx.emit?.('whale-tasks/updated', { taskId });
+    });
     service = new WhaleTasks(ctx, store, options);
     service.available = false;
     ctx.provide('whaleTasks', service);

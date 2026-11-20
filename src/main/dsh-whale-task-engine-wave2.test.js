@@ -336,8 +336,7 @@ test('workspace-task decouples from subagent/catalog, wires delegated approval, 
   assert.equal(reviewed.state, 'review');
   assert.equal(fx.delegatedDisposed.includes(running.sessionId), true);
   assert.equal(fx.ownerAppends.length, 1);
-  assert.equal(fx.ownerAppends[0].data.source.kind, 'plugin');
-  assert.equal(fx.ownerAppends[0].data.source.plugin, 'dsh-whale');
+  assert.equal(fx.ownerAppends[0].data.source.kind, 'dsh-whale:todo-receipt');
   assert.equal(fx.ownerAppends[0].data.source.form, 'notice');
   assert.equal(fx.ownerAppends[0].data.source.cardId, card.id);
   const receiptText = fx.ownerAppends[0].data.content[0].text;

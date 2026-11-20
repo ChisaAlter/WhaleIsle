@@ -11716,12 +11716,12 @@ function installImStyles() {
 
 // plugin-src/client/single-owner-pairing.js
 var React21 = __toESM(require("react"), 1);
-var SINGLE_OWNER_ACCESS_CHANNEL = "/dsh-im/access";
+var SINGLE_OWNER_ACCESS_CHANNEL = "/dsh-im";
 var SINGLE_OWNER_ACCESS_ENDPOINTS = Object.freeze({
-  status: "access.status",
-  approve: "access.approve",
-  reject: "access.reject",
-  revoke: "access.revoke"
+  status: "access/status",
+  approve: "access/approve",
+  reject: "access/reject",
+  revoke: "access/revoke"
 });
 var SINGLE_OWNER_CLIENT_CHANNELS = Object.freeze([
   "weixin",

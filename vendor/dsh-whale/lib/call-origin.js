@@ -65,6 +65,8 @@ function activeTurnMessage(events) {
     && event.seq > start.seq
     && (event.data?.source?.kind === 'user'
       || event.data?.source?.kind === 'dsh-im:inbound'
+      || event.data?.source?.kind === 'schedule'
+      || String(event.data?.source?.kind ?? '').startsWith('dsh-whale:')
       || event.data?.source?.plugin === 'dsh-whale'));
   if (!message) return null;
   if (events.some((/** @type {any} */ event) => event?.type === 'turn/end' && event.seq > message.seq)) return null;
@@ -75,6 +77,9 @@ function activeTurnMessage(events) {
 function classifyActiveMessage(message) {
   const source = message.data?.source ?? {};
   const rpcId = String(source.rpcId ?? '');
+  if (source.kind === 'schedule' || source.kind === 'dsh-whale:pulse') {
+    return { kind: 'pulse', message, reason: '' };
+  }
   if (source.kind === 'plugin' && source.plugin === 'dsh-whale' && (source.form === 'pulse' || PULSE_RPC_RE.test(rpcId))) {
     return { kind: 'pulse', message, reason: '' };
   }

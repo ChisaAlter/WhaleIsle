@@ -245,8 +245,7 @@ export async function deliverStructuredReceipt(ctx, scope, card, run) {
   owner.session.append('user/message', Object.freeze({
     ...createUserMessage({
       source: {
-        kind: 'plugin',
-        plugin: 'dsh-whale',
+        kind: 'dsh-whale:todo-receipt',
         form: 'notice',
         summary: `任务「${card.title}」${card.state}`,
         cardId: card.id,
@@ -293,9 +292,11 @@ export async function executeReadonlyBriefRun({
   if (!files.length) {
     throw new Error('readonly-brief 任务需要至少一个待阅读的文本文件（files）。');
   }
-  const isIm = card.origin?.kind === 'im';
+  const explicitAllowed = Array.isArray(card.origin?.allowedFiles) && card.origin.allowedFiles.length
+    ? card.origin.allowedFiles
+    : undefined;
   const inputs = await captureInputs(files, {
-    allowedFiles: isIm ? files : undefined,
+    allowedFiles: explicitAllowed,
     forbiddenRoot: home || undefined,
   });
   const now = Date.now();

@@ -33,7 +33,7 @@ export const inject = ['tools', 'agents'];
 
 export const Config = z.object({});
 
-const WAKE_SOURCE = Object.freeze({ kind: 'plugin', plugin: 'dsh-whale', form: 'relay' });
+const WAKE_SOURCE = Object.freeze({ kind: 'dsh-whale:relay', form: 'relay' });
 const SEND_MAX_CHARS = 4000;
 const FORBIDDEN_PRESETS = new Set(['whale-girl', 'whale-task-reader', 'project-worker', 'project-coordinator']);
 
@@ -171,6 +171,19 @@ function resolveWorkspaceCreateRequest(ctx, args) {
   return workspaceId
     ? resolveWorkspaceById(registry, workspaceId, dshHome)
     : resolveWorkspaceByCwd(registry, rawCwd, dshHome);
+}
+
+function validateRelayArgs(args, exec, getSelfId) {
+  if (isSessionTainted(exec?.agent)) return { error: TAINTED_SESSION_REFUSAL_TEXT };
+  const sessionId = String(args.sessionId ?? '').trim();
+  const text = String(args.text ?? '').trim().slice(0, SEND_MAX_CHARS);
+  const mode = args.mode === undefined ? 'queue' : String(args.mode).trim();
+  if (!sessionId || !text) return { error: 'sessionId and text are required.' };
+  if (mode !== 'queue' && mode !== 'steer') return { error: 'mode must be queue or steer.' };
+  if (sessionId === getSelfId() || sessionId === exec?.agent?.id) {
+    return { error: 'Cannot send a relay message to her own resident conversation.' };
+  }
+  return { sessionId, text, mode };
 }
 
 async function precheckViaSessionQuery(ctx, querySvc, sessionId, signal) {
@@ -397,14 +410,9 @@ export function apply(ctx) {
       content: [{ type: 'text', text: String(result.value?.detail ?? '') }],
     }),
     async execute(args, exec) {
-      const sessionId = String(args.sessionId ?? '').trim();
-      const text = String(args.text ?? '').trim().slice(0, SEND_MAX_CHARS);
-      const mode = args.mode === undefined ? 'queue' : String(args.mode).trim();
-      if (!sessionId || !text) return { ok: false, messageId: '', detail: 'sessionId and text are required.' };
-      if (mode !== 'queue' && mode !== 'steer') return { ok: false, messageId: '', detail: 'mode must be queue or steer.' };
-      if (sessionId === getSelfId() || sessionId === exec?.agent?.id) {
-        return { ok: false, messageId: '', detail: 'Cannot send a relay message to her own resident conversation.' };
-      }
+      const parsed = validateRelayArgs(args, exec, getSelfId);
+      if (parsed.error) return { ok: false, messageId: '', detail: parsed.error };
+      const { sessionId, text, mode } = parsed;
       const preBlocked = await precheckRelayTarget(ctx, sessionId, exec?.signal);
       if (preBlocked) return { ok: false, messageId: '', detail: preBlocked };
       const confirmation = await confirmModelAction({
@@ -451,6 +459,9 @@ export function apply(ctx) {
       content: [{ type: 'text', text: String(args.cwd ?? args.workspaceId ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, sessionId: '', detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const controller = controllerFrom(ctx);
       if (typeof controller?.create !== 'function') {
         return { ok: false, sessionId: '', detail: 'Session controller is unavailable.' };

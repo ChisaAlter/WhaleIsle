@@ -128,7 +128,7 @@ export function registerDiscoveryTools(ctx, { getSelfId = () => '' } = {}) {
         const rows = await registry.list();
         const workspaces = (Array.isArray(rows) ? rows : []).map((ws) => ({
           id: String(ws?.id ?? ''),
-          name: String(ws?.name ?? ws?.label ?? ''),
+          name: String(ws?.title ?? ws?.name ?? ws?.label ?? ''),
           path: String(ws?.path ?? ws?.cwd ?? ''),
         })).filter((ws) => ws.path || ws.id);
         return { ok: true, workspaces, detail: `${workspaces.length} workspace(s).` };

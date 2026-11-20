@@ -813,6 +813,29 @@ export class SingleOwnerAccessGate {
     return this.publicStatus({ channel, botId, now });
   }
 
+  /**
+   * Internal same-process lookup for host adapters (e.g. Feishu task binding)
+   * to sync the paired owner without ever exposing raw platform IDs via RPC.
+   */
+  ownerPlatformUserId({ channel, botId, botConfig }) {
+    const key = this.botKey(channel, botId);
+    const id = cleanString(botId);
+    const effectiveConfig = botConfig ?? this.#lookupRegisteredBotConfig(channel, id);
+    const record = this.#state.bots[key];
+    if (record?.revoked) return null;
+    if (record?.owner?.platformUserId && record.owner.source !== 'migrated') {
+      return record.owner.platformUserId;
+    }
+    if (effectiveConfig) {
+      const legacy = resolveLegacyOwnerCandidates(channel, effectiveConfig);
+      if (legacy.singleCandidate) return legacy.singleCandidate;
+    }
+    if (record?.owner?.platformUserId && record.owner.source === 'migrated' && !effectiveConfig) {
+      return record.owner.platformUserId;
+    }
+    return null;
+  }
+
   publicStatus({ channel, botId, botConfig, now = this.#clock() }) {
     const key = this.botKey(channel, botId);
     const id = cleanString(botId);
@@ -931,6 +954,11 @@ export class SingleOwnerAccessGate {
         botId: id,
         botConfig: resolveConfig(),
         senderId,
+      }),
+      getOwnerPlatformUserId: () => this.ownerPlatformUserId({
+        channel,
+        botId: id,
+        botConfig: resolveConfig(),
       }),
       evaluateInbound: async ({ senderId, senderAlternateIds, displayName, chatType, harness, preset } = {}) => {
         const effectivePreset = preset !== undefined ? preset : await resolvePreset(harness);

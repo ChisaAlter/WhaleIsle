@@ -38,10 +38,11 @@ function resolveSelfId(ctx, todoService) {
  */
 function assertTodoCaller(exec, selfSessionId, { allowPulse = false, allowImOwner = false } = {}) {
   const origin = classifyCallOrigin(exec, { selfSessionId });
+  if (origin.kind === 'im-non-owner') throw new Error(origin.reason || '当前消息来自非主人 IM 来源，禁止授权或执行敏感操作。');
+  if (isSessionTainted(exec?.agent)) throw new Error(TAINTED_SESSION_REFUSAL_TEXT);
   if (origin.kind === 'desktop') return origin;
   if (allowPulse && origin.kind === 'pulse') return origin;
   if (allowImOwner && (origin.kind === 'im-owner' || origin.kind === 'im')) {
-    if (isSessionTainted(exec?.agent)) throw new Error(TAINTED_SESSION_REFUSAL_TEXT);
     return origin;
   }
   if (origin.kind === 'pulse') throw new Error('定时/观察唤醒的无人值守回合不能直接创建或变更个人任务卡。');

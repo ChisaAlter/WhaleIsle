@@ -2,13 +2,13 @@ import * as React from 'react';
 import { ActionButton, ConfirmDialog } from './feedback.js';
 import { h, localizeText } from './i18n.js';
 
-export const SINGLE_OWNER_ACCESS_CHANNEL = '/dsh-im/access';
+export const SINGLE_OWNER_ACCESS_CHANNEL = '/dsh-im';
 
 export const SINGLE_OWNER_ACCESS_ENDPOINTS = Object.freeze({
-  status: 'access.status',
-  approve: 'access.approve',
-  reject: 'access.reject',
-  revoke: 'access.revoke',
+  status: 'access/status',
+  approve: 'access/approve',
+  reject: 'access/reject',
+  revoke: 'access/revoke',
 });
 
 // Must match host SINGLE_OWNER_CHANNELS (excludes AI Office Connector).

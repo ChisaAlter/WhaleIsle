@@ -336,7 +336,10 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       }],
     },
     presentCall: () => ({ card: 'generic', title: 'Recent events', kind: 'other', content: [] }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, events: [], detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const events = recentEvents({
         sessionId: String(args.sessionId ?? ''),
         limit: Number(args.limit) || 30,
@@ -366,6 +369,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const action = String(args.action ?? '').trim();
       if (action === 'list') {
         const watches = listWatches();
@@ -424,6 +428,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.text ?? args.id ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const action = String(args.action ?? '').trim();
       if (action === 'list') {
         const schedules = listSchedules();
@@ -471,6 +476,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.cancel !== 'function') return unavailable();
@@ -501,6 +507,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.title ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.rename !== 'function') return unavailable();
@@ -546,6 +553,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, sessionId: '', detail: TAINTED_SESSION_REFUSAL_TEXT };
       if (exec?.signal?.aborted) return { ok: false, sessionId: '', detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.fork !== 'function') return { ...unavailable(), sessionId: '' };
@@ -586,6 +594,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.delete !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -630,6 +639,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: `${String(args.provider ?? '')}/${String(args.model ?? '')}` }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.selectModel !== 'function') return unavailable();
@@ -676,6 +686,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       content: [{ type: 'text', text: String(args.itemId ?? '') }],
     }),
     async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.updateQueue !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -686,7 +697,6 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       }
       const built = buildQueueAction(action, args.text);
       if (built.error) return { ok: false, detail: built.error };
-      const queueAction = built.queueAction;
       if (action !== 'remove') {
         const confirmation = await confirmModelAction({
           tool: 'whale_update_queue',
@@ -699,13 +709,17 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
           return { ok: false, detail: refusalTextFor(confirmation, exec?.signal) };
         }
       }
-      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
-      try {
-        await controller.updateQueue({ sessionId, itemId, action: queueAction });
-        return { ok: true, detail: `Queue item ${itemId} ${action} applied.` };
-      } catch (error) {
-        return failed(error);
-      }
+      return applyQueueUpdate(controller, { sessionId, itemId, action, queueAction: built.queueAction }, exec?.signal);
     },
   }));
+}
+
+async function applyQueueUpdate(controller, { sessionId, itemId, action, queueAction }, signal) {
+  if (signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
+  try {
+    await controller.updateQueue({ sessionId, itemId, action: queueAction });
+    return { ok: true, detail: `Queue item ${itemId} ${action} applied.` };
+  } catch (error) {
+    return failed(error);
+  }
 }

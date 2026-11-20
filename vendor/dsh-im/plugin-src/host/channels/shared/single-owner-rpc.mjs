@@ -4,12 +4,21 @@ import {
   SINGLE_OWNER_CHANNELS,
 } from '../../../../src/channels/shared/single-owner-gate.mjs';
 
-export const SINGLE_OWNER_RPC_CHANNEL = '/dsh-im/access';
+// Must be a single path segment matching Harness `CHANNEL_PATTERN` (`/^\/[A-Za-z0-9._~-]+$/`).
+// Combined with `access/*` endpoints this serves `/dsh-im/access/{status,approve,reject,revoke}`.
+export const SINGLE_OWNER_RPC_CHANNEL = '/dsh-im';
 export const SINGLE_OWNER_ENDPOINTS = Object.freeze({
-  status: 'access.status',
-  approve: 'access.approve',
-  reject: 'access.reject',
-  revoke: 'access.revoke',
+  status: 'access/status',
+  approve: 'access/approve',
+  reject: 'access/reject',
+  revoke: 'access/revoke',
+});
+
+const LEGACY_ENDPOINT_ALIASES = Object.freeze({
+  'access.status': SINGLE_OWNER_ENDPOINTS.status,
+  'access.approve': SINGLE_OWNER_ENDPOINTS.approve,
+  'access.reject': SINGLE_OWNER_ENDPOINTS.reject,
+  'access.revoke': SINGLE_OWNER_ENDPOINTS.revoke,
 });
 
 const ENDPOINTS = Object.freeze(Object.values(SINGLE_OWNER_ENDPOINTS));
@@ -107,19 +116,24 @@ function payloadFailure(endpoint, payload) {
   return 'Unknown single-owner access endpoint.';
 }
 
+function rpcError(code, message) {
+  return { ok: false, error: { code, message, details: {} } };
+}
+
 export function createSingleOwnerRpcHandler(gate) {
   if (!gate || typeof gate.publicStatus !== 'function') {
     throw new TypeError('A SingleOwnerAccessGate instance is required');
   }
-  return async (endpoint, payload = {}, signal) => {
+  return async (rawEndpoint, payload = {}, signal) => {
     if (signal?.aborted) {
-      return { ok: false, error: { code: 'cancelled', message: 'The request was cancelled.' } };
+      return rpcError('cancelled', 'The request was cancelled.');
     }
+    const endpoint = LEGACY_ENDPOINT_ALIASES[rawEndpoint] ?? rawEndpoint;
     if (!ENDPOINTS.includes(endpoint)) {
-      return { ok: false, error: { code: 'bad-request', message: 'Unknown access endpoint.' } };
+      return rpcError('bad-request', 'Unknown access endpoint.');
     }
     const invalid = payloadFailure(endpoint, payload);
-    if (invalid) return { ok: false, error: { code: 'bad-request', message: invalid } };
+    if (invalid) return rpcError('bad-request', invalid);
     try {
       let value;
       if (endpoint === SINGLE_OWNER_ENDPOINTS.status) {
@@ -153,18 +167,15 @@ export function createSingleOwnerRpcHandler(gate) {
         });
       }
       return signal?.aborted
-        ? { ok: false, error: { code: 'cancelled', message: 'The request was cancelled.' } }
+        ? rpcError('cancelled', 'The request was cancelled.')
         : { ok: true, value: sanitizePublic(value) };
     } catch (error) {
       return signal?.aborted
-        ? { ok: false, error: { code: 'cancelled', message: 'The request was cancelled.' } }
-        : {
-            ok: false,
-            error: {
-              code: typeof error?.code === 'string' ? error.code : 'access-operation-failed',
-              message: error?.message ?? '单人助理配对操作失败，请稍后重试。',
-            },
-          };
+        ? rpcError('cancelled', 'The request was cancelled.')
+        : rpcError(
+            typeof error?.code === 'string' ? error.code : 'access-operation-failed',
+            error?.message ?? '单人助理配对操作失败，请稍后重试。',
+          );
     }
   };
 }

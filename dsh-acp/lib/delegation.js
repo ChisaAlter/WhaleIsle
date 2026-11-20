@@ -1,4 +1,5 @@
 import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+import { resolveDelegationCwd } from './delegate-cwd.js';
 
 /** Configured external agents share the host's managed child lifecycle. */
 export const DELEGATION_PROVIDER = 'configured-acp';
@@ -84,7 +85,9 @@ export function registerDelegation(ctx, manager) {
   const handlers = {
     acp_agents: () => ({ agents: manager.listDelegationAgents() }),
     async acp_delegate(args, exec) {
-      const targetCwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : '';
+      const resolvedCwd = resolveDelegationCwd(args, exec.agent);
+      const hasExplicitCwd = typeof args.cwd === 'string' && args.cwd.trim() !== '';
+      const targetCwd = hasExplicitCwd ? resolvedCwd : '';
       const confirmation = await confirmModelAction({
         tool: 'acp_delegate',
         action: 'delegate',

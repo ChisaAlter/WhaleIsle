@@ -53,6 +53,7 @@ export const taskRunSchema = z.object({
   attempt: z.number().int().positive(),
   sessionId: z.string().max(256).default(''),
   mode: z.enum(TASK_MODES).default('workspace-task'),
+  baseSeq: z.number().int().nonnegative().default(0),
   startedAt: z.number(),
   endedAt: z.number().default(0),
   state: z.enum(TASK_STATES).default('starting'),
@@ -67,6 +68,7 @@ export const taskOriginSchema = z.object({
   actor: z.string().max(256).default('desktop-owner'),
   eventId: z.string().max(256).default(''),
   route: z.record(z.string(), z.unknown()).optional(),
+  allowedFiles: z.array(z.string().max(2000)).max(20).optional(),
 });
 
 export const taskEffectSchema = z.object({

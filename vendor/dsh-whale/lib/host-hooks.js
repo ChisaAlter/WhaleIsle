@@ -24,11 +24,30 @@ import { buildWorkbenchSnapshot } from './sse-hub.js';
 
 const WRITE_TOOL_NAMES = new Set(['write', 'write_file', 'fs_write', 'create_file']);
 const EDIT_TOOL_NAMES = new Set(['edit', 'edit_file', 'fs_edit', 'multi_edit', 'replace_file']);
+const PATCH_TOOL_NAMES = new Set(['apply_patch']);
 const DELETE_TOOL_NAMES = new Set(['delete', 'delete_file', 'remove_file', 'rm', 'unlink']);
+const MEMORY_DELETE_REFUSAL = '分层记忆禁止物理删除记忆文件；请使用 whale_memory_supersede 标记为 superseded 归档。';
+
+function canonicalPathForGuard(value) {
+  const resolved = path.resolve(value);
+  const missing = [];
+  let cursor = resolved;
+  while (true) {
+    try {
+      const real = fs.realpathSync.native(cursor);
+      return missing.length ? path.join(real, ...missing.reverse()) : real;
+    } catch {
+      const parent = path.dirname(cursor);
+      if (parent === cursor) return resolved;
+      missing.push(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+}
 
 function normPath(value) {
-  const resolved = path.resolve(value);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  const real = canonicalPathForGuard(value);
+  return process.platform === 'win32' ? real.toLowerCase() : real;
 }
 
 function extractToolTargetPath(args) {
@@ -44,9 +63,15 @@ function checkDirectEditGuard(home, args) {
   const newStr = typeof args?.new_string === 'string' ? args.new_string
     : typeof args?.newText === 'string' ? args.newText : '';
   if (!oldStr && !newStr) return undefined;
+  const replaceAll = args?.replace_all === true || args?.replaceAll === true;
   try {
     const current = fs.existsSync(memoryIndexPath(home)) ? fs.readFileSync(memoryIndexPath(home), 'utf8') : '';
-    const proposed = oldStr && current.includes(oldStr) ? current.replace(oldStr, newStr) : `${current}\n${newStr}`;
+    let proposed;
+    if (oldStr && current.includes(oldStr)) {
+      proposed = replaceAll ? current.split(oldStr).join(newStr) : current.replace(oldStr, newStr);
+    } else {
+      proposed = `${current}\n${newStr}`;
+    }
     const check = evaluateIndexWriteGuard(home, proposed);
     return check.allowed ? undefined : check.reason;
   } catch {
@@ -68,18 +93,80 @@ function checkDirectWriteGuard(home, args) {
   return check.allowed ? undefined : check.reason;
 }
 
+function parsePatchSections(patchText) {
+  const sections = [];
+  let current = null;
+  for (const line of String(patchText ?? '').split(/\r?\n/u)) {
+    const header = /^\*\*\*\s+(Add|Update|Delete)\s+File:\s*(.+)$/u.exec(line);
+    if (header) {
+      current = { op: header[1].toLowerCase(), target: header[2].trim(), moveTo: '', added: [], removed: [] };
+      sections.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const move = /^\*\*\*\s+Move\s+to:\s*(.+)$/u.exec(line);
+    if (move) { current.moveTo = move[1].trim(); continue; }
+    if (line.startsWith('***')) continue;
+    if (line.startsWith('+')) current.added.push(line.slice(1));
+    else if (line.startsWith('-')) current.removed.push(line.slice(1));
+  }
+  return sections;
+}
+
+function projectPatchIndexText(home, section) {
+  if (section.op === 'add') return section.added.join('\n');
+  const existing = fs.existsSync(memoryIndexPath(home)) ? fs.readFileSync(memoryIndexPath(home), 'utf8') : '';
+  const lines = existing ? existing.split(/\r?\n/u) : [];
+  for (const rem of section.removed) {
+    const idx = lines.indexOf(rem);
+    if (idx >= 0) lines.splice(idx, 1);
+  }
+  lines.push(...section.added);
+  return lines.join('\n');
+}
+
+function checkApplyPatchGuard(home, indexTarget, memoryRoot, exec, args) {
+  const patchText = typeof args.input === 'string' ? args.input
+    : typeof args.patch === 'string' ? args.patch : '';
+  if (!patchText) return undefined;
+  for (const section of parsePatchSections(patchText)) {
+    const resolved = resolveGuardPath(home, exec, section.target);
+    const inMemoryDir = resolved.startsWith(`${memoryRoot}${path.sep}`);
+    if ((section.op === 'delete' || section.moveTo) && (inMemoryDir || (resolved === indexTarget && isUnattendedPulseTurn(exec)))) {
+      return MEMORY_DELETE_REFUSAL;
+    }
+    const writeTarget = section.moveTo ? resolveGuardPath(home, exec, section.moveTo) : resolved;
+    if (writeTarget === indexTarget && (section.op === 'add' || section.op === 'update')) {
+      const check = evaluateIndexWriteGuard(home, projectPatchIndexText(home, section));
+      if (!check.allowed) return check.reason;
+    }
+  }
+  return undefined;
+}
+
+function isBlankMemoryDirWrite(inMemoryDir, toolName, exec, args) {
+  if (!inMemoryDir || !WRITE_TOOL_NAMES.has(toolName) || !isUnattendedPulseTurn(exec)) return false;
+  const content = typeof args.content === 'string' ? args.content : typeof args.text === 'string' ? args.text : null;
+  return content !== null && !content.trim();
+}
+
+function isForbiddenMemoryDelete(toolName, inMemoryDir, isIndex, exec) {
+  return DELETE_TOOL_NAMES.has(toolName) && (inMemoryDir || (isIndex && isUnattendedPulseTurn(exec)));
+}
+
 function evaluateMemoryGuardExec(home, indexTarget, memoryRoot, exec) {
-  const toolName = String((exec && exec.name) || '');
-  const args = (exec && (exec.args || exec.input)) || {};
+  const toolName = String(exec?.name ?? '');
+  // Real Harness ToolRunContext carries parsed parameters on `exec.arguments`.
+  const args = exec?.arguments || exec?.args || exec?.input || {};
+  if (PATCH_TOOL_NAMES.has(toolName)) return checkApplyPatchGuard(home, indexTarget, memoryRoot, exec, args);
   const rawPath = extractToolTargetPath(args);
   if (!rawPath) return undefined;
   const resolved = resolveGuardPath(home, exec, rawPath);
   const inMemoryDir = resolved.startsWith(`${memoryRoot}${path.sep}`);
-
-  if (DELETE_TOOL_NAMES.has(toolName) && (inMemoryDir || (resolved === indexTarget && isUnattendedPulseTurn(exec)))) {
-    return '分层记忆禁止物理删除记忆文件；请使用 whale_memory_supersede 标记为 superseded 归档。';
-  }
-  if (resolved !== indexTarget) return undefined;
+  const isIndex = resolved === indexTarget;
+  if (isForbiddenMemoryDelete(toolName, inMemoryDir, isIndex, exec)) return MEMORY_DELETE_REFUSAL;
+  if (isBlankMemoryDirWrite(inMemoryDir, toolName, exec, args)) return MEMORY_DELETE_REFUSAL;
+  if (!isIndex) return undefined;
   if (WRITE_TOOL_NAMES.has(toolName)) return checkDirectWriteGuard(home, args);
   if (EDIT_TOOL_NAMES.has(toolName)) return checkDirectEditGuard(home, args);
   return undefined;
@@ -225,14 +312,25 @@ export function installWhaleMemoryLifecycle(ctx, scope, home, { readSettings, is
   const flushedEpochBySession = new Map();
   ctx.on('agent/pre-step', async (input, next) => {
     if (typeof next !== 'function') return;
+    let flush = null;
     try {
       if (home && isWhaleAssistantContext({ agent: input?.agent }, readSettings(scope), home)) {
-        await maybeTriggerPreCompactionFlush(ctx, input.agent, flushedEpochBySession);
+        flush = await maybeTriggerPreCompactionFlush(ctx, input.agent, flushedEpochBySession, {
+          modelSelection: input?.modelSelection,
+          deferInject: true,
+        });
       }
     } catch (error) {
       ctx.logger?.warn?.(`dsh-whale pre-compaction flush skipped: ${error?.message ?? error}`);
     }
-    return next();
+    const decision = await next();
+    if (flush?.triggered && flush.notice) {
+      if (decision && decision.kind === 'enter') {
+        return { ...decision, messages: [...(decision.messages ?? []), flush.notice] };
+      }
+      if (typeof input?.agent?.inject === 'function') input.agent.inject(flush.notice);
+    }
+    return decision;
   });
   ctx.on('session/event', (session, event) => {
     handleIdleTurnEnd(ctx, scope, home, session, event, readSettings);
@@ -256,21 +354,19 @@ export function createWhalePulseWake(ctx, host, scope, ensureAssistantSession) {
       throw new Error('refusing-pulse-into-active-task-session');
     }
     const live = await resolveResidentLiveAgent(host, ensured.sessionId);
-    if (live && live.session?.header?.origin !== 'subagent' && typeof live.followup === 'function') {
-      await live.followup(createUserMessage({
-        source: { kind: 'plugin', plugin: 'dsh-whale', form: 'pulse', rpcId },
-        content: [{ type: 'text', text: trimTo(text, 2000) }],
-      }));
-      return { accepted: true };
+    if (!live || live.session?.header?.origin === 'subagent' || typeof live.followup !== 'function') {
+      // Never fall back to `sessionController.prompt()` because that writes `source.kind: 'user'`.
+      throw new Error('resident-agent-unavailable-for-pulse');
     }
-    if (typeof host.sessionController?.prompt !== 'function') {
-      throw new Error('session-controller-unavailable');
-    }
-    return host.sessionController.prompt({
-      requestId: rpcId,
-      sessionId: ensured.sessionId,
-      mode: 'queue',
+    await live.followup(createUserMessage({
+      source: {
+        kind: 'dsh-whale:pulse',
+        form: 'notice',
+        summary: '鲸鱼娘定时/观察唤醒',
+        rpcId,
+      },
       content: [{ type: 'text', text: trimTo(text, 2000) }],
-    }, new AbortController().signal);
+    }));
+    return { accepted: true };
   };
 }

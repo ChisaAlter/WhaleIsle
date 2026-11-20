@@ -33,7 +33,8 @@ export function mapLegacyScheduleToNative(row, sessionId, now = Date.now(), time
   if (!row || row.enabled === false) return null;
   const prompt = String(row.text ?? '').trim();
   if (!prompt) return null;
-  const title = prompt.slice(0, 80);
+  const title = prompt.slice(0, 80).trim();
+  if (!title) return null;
   const target = { kind: 'session', sessionId };
 
   if (row.kind === 'once') {
@@ -88,6 +89,64 @@ function renameLegacyBackup(dir, legacyFile, backupFile) {
   return finalBackup;
 }
 
+const PERMANENT_ROW_ERRORS = new Set([
+  'not_future',
+  'invalid_prompt',
+  'invalid_rule',
+  'invalid_selector',
+  'invalid_time_zone',
+  'time_out_of_range',
+  'frequency_too_high',
+]);
+
+function rowDedupKey(kind, title, prompt) {
+  return `${String(kind ?? '')}\0${String(title ?? '').trim()}\0${String(prompt ?? '').trim()}`;
+}
+
+async function existingSessionScheduleKeys(scheduleSvc, sessionId) {
+  const keys = new Set();
+  if (typeof scheduleSvc?.list !== 'function') return keys;
+  try {
+    const listed = await scheduleSvc.list({ active: true, limit: 500 });
+    for (const item of listed?.items ?? []) {
+      if (item?.target?.kind === 'session' && item.target.sessionId === sessionId) {
+        keys.add(rowDedupKey(item.kind, item.title, item.prompt));
+      }
+    }
+  } catch {
+    // Best-effort dedupe only; never block migration if list is unavailable.
+  }
+  return keys;
+}
+
+async function createWithTzFallback(scheduleSvc, req, sessionId) {
+  try {
+    return await scheduleSvc.create(req, sessionId, AbortSignal.timeout(15_000));
+  } catch (/** @type {any} */ error) {
+    if (error?.code === 'invalid_time_zone' && req?.timing?.kind === 'daily' && req.timing.daily?.time_zone !== 'UTC') {
+      const utcReq = { ...req, timing: { kind: 'daily', daily: { ...req.timing.daily, time_zone: 'UTC' } } };
+      return await scheduleSvc.create(utcReq, sessionId, AbortSignal.timeout(15_000));
+    }
+    throw error;
+  }
+}
+
+async function migrateOneLegacyRow(scheduleSvc, row, { sessionId, now, tz, seenKeys, logger }) {
+  const req = mapLegacyScheduleToNative(row, sessionId, now, tz);
+  if (!req) return { kind: 'skip' };
+  const key = rowDedupKey(req.timing.kind, req.title, req.prompt);
+  if (seenKeys.has(key)) return { kind: 'skip' };
+  try {
+    const created = await createWithTzFallback(scheduleSvc, req, sessionId);
+    seenKeys.add(key);
+    return { kind: 'created', id: created?.id ?? '' };
+  } catch (/** @type {any} */ error) {
+    if (!PERMANENT_ROW_ERRORS.has(String(error?.code ?? ''))) throw error;
+    logger?.warn?.(`dsh-whale schedule migration skipped invalid row (${error.code}): ${error?.message ?? error}`);
+    return { kind: 'invalid' };
+  }
+}
+
 /**
  * Migrate active entries from `schedules.json` into native `ctx.schedule`
  * targeting the resident whale-girl session (never any active subagent or
@@ -109,19 +168,53 @@ export async function migrateLegacySchedules(ctx, { home, sessionId, now = Date.
   if (!loaded.ok) return { migrated: 0, skipped: true, reason: 'corrupt-json' };
 
   const tz = timeZone || localTimeZone();
+  const seenKeys = await existingSessionScheduleKeys(scheduleSvc, sessionId);
   const createdIds = [];
+  let skippedInvalid = 0;
   for (const row of loaded.rows) {
-    const req = mapLegacyScheduleToNative(row, sessionId, now, tz);
-    if (!req) continue;
-    const created = await scheduleSvc.create(req, sessionId, AbortSignal.timeout(15_000));
-    if (created?.id) createdIds.push(created.id);
+    const outcome = await migrateOneLegacyRow(scheduleSvc, row, { sessionId, now, tz, seenKeys, logger });
+    if (outcome.kind === 'created' && outcome.id) createdIds.push(outcome.id);
+    else if (outcome.kind === 'invalid') skippedInvalid += 1;
   }
   const finalBackup = renameLegacyBackup(dir, legacyFile, path.join(dir, MIGRATED_FILENAME));
   return {
     migrated: createdIds.length,
     totalLegacyRows: loaded.rows.length,
     createdIds,
+    skippedInvalid,
     backupFile: finalBackup,
     skipped: false,
   };
+}
+
+/**
+ * Create a deduplicated migration runner and also subscribe to `['schedule',
+ * 'agentPresets', 'sessionController']` so async `ScheduleService` activation
+ * never causes legacy `schedules.json` migration to be skipped.
+ */
+export function installLegacyScheduleMigration(ctx, scope, home, ensureAssistantSession) {
+  let inflight = null;
+  const runOnce = (targetCtx, sessionId) => {
+    if (!home || !sessionId) return Promise.resolve();
+    if (inflight) return inflight;
+    inflight = migrateLegacySchedules(targetCtx, { home, sessionId, logger: ctx.logger })
+      .catch((error) => {
+        ctx.logger?.warn?.(`dsh-whale legacy schedule migration failed: ${error?.message ?? error}`);
+        return { skipped: true, reason: 'error' };
+      })
+      .then((res) => {
+        if (res?.skipped && (res.reason === 'native-schedule-unavailable' || res.reason === 'error')) {
+          inflight = null;
+        }
+        return res;
+      });
+    return inflight;
+  };
+  if (home) {
+    ctx.inject?.(['schedule', 'agentPresets', 'sessionController'], (schedHost) => schedHost.effect(async () => {
+      const ensured = await ensureAssistantSession(ctx, scope, schedHost.sessionController).catch(() => null);
+      if (ensured?.ok) await runOnce(schedHost, ensured.sessionId);
+    }));
+  }
+  return runOnce;
 }

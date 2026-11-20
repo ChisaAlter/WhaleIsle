@@ -167,8 +167,14 @@ export function evaluateIndexWriteGuard(home, proposedContent) {
     try {
       const existing = measureIndex(fs.readFileSync(indexFile, 'utf8'));
       const alreadyOver = existing.lines > INDEX_MAX_LINES || existing.bytes > INDEX_MAX_BYTES;
-      if (alreadyOver && proposed.bytes < existing.bytes && proposed.lines <= existing.lines) {
-        return { allowed: true, reason: 'compression-shrink-allowed' };
+      if (alreadyOver) {
+        const bytesWithinBound = proposed.bytes <= Math.max(INDEX_MAX_BYTES, existing.bytes);
+        const linesWithinBound = proposed.lines <= Math.max(INDEX_MAX_LINES, existing.lines);
+        const shrankOverflowDim = (existing.bytes > INDEX_MAX_BYTES && proposed.bytes < existing.bytes)
+          || (existing.lines > INDEX_MAX_LINES && proposed.lines < existing.lines);
+        if (bytesWithinBound && linesWithinBound && shrankOverflowDim) {
+          return { allowed: true, reason: 'compression-shrink-allowed' };
+        }
       }
     } catch { /* Fall through to cap refusal. */ }
   }
@@ -467,11 +473,16 @@ export function supersedeMemoryFact(home, id, opts = {}) {
  * and return 85% of it as the pre-compaction flush trigger.
  * @param {number} contextWindow
  */
-export function computePreCompactionFlushThreshold(contextWindow) {
+export function computePreCompactionFlushThreshold(contextWindow, opts = {}) {
   if (!Number.isFinite(contextWindow) || contextWindow <= 0) return 0;
-  const ratioTarget = Math.floor(contextWindow * DEFAULT_COMPACT_RATIO);
-  const headroomTarget = contextWindow > DEFAULT_COMPACT_HEADROOM
-    ? contextWindow - DEFAULT_COMPACT_HEADROOM
+  const reserved = Math.max(0, Math.floor(Number(opts?.reservedCompletionTokens) || 0));
+  const explicitCompact = Number(opts?.compactionThreshold);
+  const messageBudget = Math.max(1, contextWindow - reserved);
+  const ratioTarget = Number.isFinite(explicitCompact) && explicitCompact > 0
+    ? Math.floor(explicitCompact)
+    : Math.floor(contextWindow * DEFAULT_COMPACT_RATIO);
+  const headroomTarget = messageBudget > DEFAULT_COMPACT_HEADROOM
+    ? messageBudget - DEFAULT_COMPACT_HEADROOM
     : Math.floor(contextWindow * 0.69);
   const compactionPoint = Math.min(ratioTarget, headroomTarget);
   return Math.max(1000, Math.floor(compactionPoint * PRE_COMPACT_FLUSH_FACTOR));
@@ -479,8 +490,27 @@ export function computePreCompactionFlushThreshold(contextWindow) {
 
 function extractMeasuredTokens(measured) {
   if (typeof measured === 'number' && Number.isFinite(measured)) return measured;
+  if (typeof measured?.totalTokens === 'number' && Number.isFinite(measured.totalTokens)) return measured.totalTokens;
+  if (typeof measured?.pressureTokens === 'number' && Number.isFinite(measured.pressureTokens)) return measured.pressureTokens;
   if (typeof measured?.total === 'number' && Number.isFinite(measured.total)) return measured.total;
   if (typeof measured?.tokens === 'number' && Number.isFinite(measured.tokens)) return measured.tokens;
+  return null;
+}
+
+async function measureSessionViaMeter(meter, session) {
+  if (typeof meter?.measure === 'function') {
+    try {
+      const epochHeader = typeof session?.requestHeader === 'function' ? session.requestHeader() : undefined;
+      const measured = epochHeader ? await meter.measure(session, epochHeader) : await meter.measure(session);
+      const value = extractMeasuredTokens(measured);
+      if (value !== null) return value;
+    } catch { /* Fall through to contextPressure / conservative estimate. */ }
+  }
+  if (typeof meter?.contextPressure === 'function') {
+    try {
+      return extractMeasuredTokens(meter.contextPressure(session));
+    } catch { /* Fall through to conservative estimate. */ }
+  }
   return null;
 }
 
@@ -492,12 +522,8 @@ function extractMeasuredTokens(measured) {
  */
 export async function estimateSessionTokens(ctx, session) {
   const meter = ctx?.get?.('tokenMeter') ?? ctx?.tokenMeter;
-  if (typeof meter?.measure === 'function') {
-    try {
-      const value = extractMeasuredTokens(await meter.measure(session, session?.header));
-      if (value !== null) return value;
-    } catch { /* Fall through to conservative estimate. */ }
-  }
+  const measured = await measureSessionViaMeter(meter, session);
+  if (measured !== null) return measured;
   const events = typeof session?.snapshotEvents === 'function' ? session.snapshotEvents() : [];
   let chars = 0;
   for (const ev of events) {
@@ -506,17 +532,66 @@ export async function estimateSessionTokens(ctx, session) {
   return Math.ceil(chars / 3);
 }
 
-async function resolveFlushContextWindow(ctx, session, opts) {
-  const explicit = Number(opts?.contextWindow) || 0;
-  if (explicit) return explicit;
-  const llm = ctx?.get?.('llm') ?? ctx?.llm;
-  const sel = session.header?.model;
-  if (typeof llm?.resolveModelInfo === 'function' && sel?.provider && sel?.model) {
-    const info = await llm.resolveModelInfo(sel.provider, sel.model).catch(() => null);
-    const resolved = Number(info?.contextWindow) || 0;
-    if (resolved) return resolved;
+function pickProviderModel(candidate) {
+  return candidate && candidate.provider && candidate.model
+    ? { provider: candidate.provider, model: candidate.model }
+    : null;
+}
+
+function resolveSessionModelSelection(agent, session, opts) {
+  const candidates = [
+    opts?.modelSelection,
+    typeof agent?.model?.current === 'function' ? agent.model.current() : null,
+    typeof session?.requestHeader === 'function' ? session.requestHeader()?.config : null,
+    session?.header?.model,
+    agent?.options,
+  ];
+  for (const item of candidates) {
+    const picked = pickProviderModel(item);
+    if (picked) return picked;
   }
-  return 131072;
+  return null;
+}
+
+function readPressureWindow(ctx, session) {
+  const meter = ctx?.get?.('tokenMeter') ?? ctx?.tokenMeter;
+  if (typeof meter?.contextPressure !== 'function') return 0;
+  try {
+    return Number(meter.contextPressure(session)?.contextWindow) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function resolveModelBudgetFromLlm(ctx, sel, reqMaxTokens, pressureWindow) {
+  const llm = ctx?.get?.('llm') ?? ctx?.llm;
+  if (typeof llm?.resolveModelInfo !== 'function' || !sel) return null;
+  const info = await llm.resolveModelInfo(sel.provider, sel.model).catch(() => null);
+  const resolved = Number(info?.contextWindow) || pressureWindow;
+  if (!resolved) return null;
+  return {
+    contextWindow: resolved,
+    reservedCompletionTokens: reqMaxTokens || (Number(info?.defaultMaxTokens) || 0),
+    compactionThreshold: Number(info?.compactionThreshold) || undefined,
+  };
+}
+
+async function resolveFlushBudgetParams(ctx, agent, session, opts) {
+  const reqMaxTokens = typeof session?.requestHeader === 'function'
+    ? Number(session.requestHeader()?.config?.maxTokens) || 0
+    : 0;
+  const explicit = Number(opts?.contextWindow) || 0;
+  if (explicit) return { contextWindow: explicit, reservedCompletionTokens: reqMaxTokens };
+  const pressureWindow = readPressureWindow(ctx, session);
+  const sel = resolveSessionModelSelection(agent, session, opts);
+  const fromLlm = await resolveModelBudgetFromLlm(ctx, sel, reqMaxTokens, pressureWindow);
+  if (fromLlm) return fromLlm;
+  return { contextWindow: pressureWindow || 131072, reservedCompletionTokens: reqMaxTokens };
+}
+
+function isCompactionEpochEvent(ev) {
+  return ev?.type === 'compaction/summary'
+    || (ev?.type === 'user/message' && ev?.data?.source?.kind === 'compact-checkpoint');
 }
 
 /**
@@ -528,29 +603,28 @@ async function resolveFlushContextWindow(ctx, session, opts) {
  * @param {any} ctx
  * @param {any} agent
  * @param {Map<string, number>} flushedEpochBySession
- * @param {{ contextWindow?: number }} [opts]
+ * @param {{ contextWindow?: number, modelSelection?: any, deferInject?: boolean }} [opts]
  */
 export async function maybeTriggerPreCompactionFlush(ctx, agent, flushedEpochBySession, opts = {}) {
   const session = agent?.session;
   if (!session || typeof session.snapshotEvents !== 'function') return { triggered: false, reason: 'no-session' };
   if (isSessionTainted(session)) return { triggered: false, reason: 'tainted' };
 
-  const lastCompact = session.snapshotEvents().findLast((ev) => ev?.type === 'compaction/summary');
+  const lastCompact = session.snapshotEvents().findLast(isCompactionEpochEvent);
   const epochSeq = Number(lastCompact?.seq ?? 0);
   if (flushedEpochBySession.get(session.id) === epochSeq) {
     return { triggered: false, reason: 'already-flushed-this-epoch' };
   }
 
-  const contextWindow = await resolveFlushContextWindow(ctx, session, opts);
-  const flushAt = computePreCompactionFlushThreshold(contextWindow);
+  const budget = await resolveFlushBudgetParams(ctx, agent, session, opts);
+  const flushAt = computePreCompactionFlushThreshold(budget.contextWindow, budget);
   const usedTokens = await estimateSessionTokens(ctx, session);
   if (usedTokens < flushAt) return { triggered: false, usedTokens, flushAt };
 
   flushedEpochBySession.set(session.id, epochSeq);
   const notice = createUserMessage({
     source: {
-      kind: 'plugin',
-      plugin: 'dsh-whale',
+      kind: 'dsh-whale:pre-compaction-flush',
       form: 'notice',
       subtype: 'pre-compaction-flush',
       summary: '上下文接近自动压缩阈值，静默沉淀关键记忆',
@@ -560,9 +634,11 @@ export async function maybeTriggerPreCompactionFlush(ctx, agent, flushedEpochByS
       text: `（系统静默提醒：当前上下文约 ${usedTokens} tokens，已接近自动压缩阈值；请先用 whale_remember 把本阶段主人明确表达的偏好、约定、重要时刻或待办计划沉淀进分层记忆，再用 whale_memory_supersede 归档已过时事实；切勿物理删除记忆文件。）`,
     }],
   });
-  if (typeof agent.inject === 'function') agent.inject(notice);
-  else if (typeof session.append === 'function') session.append('user/message', notice, { surfaceOp: 'append' });
-  return { triggered: true, usedTokens, flushAt, epochSeq };
+  if (opts.deferInject !== true) {
+    if (typeof agent.inject === 'function') agent.inject(notice);
+    else if (typeof session.append === 'function') session.append('user/message', notice, { surfaceOp: 'append' });
+  }
+  return { triggered: true, usedTokens, flushAt, epochSeq, notice };
 }
 
 // ── Cursor-based Idle Incremental Memory Review ───────────────────────────

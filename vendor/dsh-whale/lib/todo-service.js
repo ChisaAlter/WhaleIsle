@@ -29,8 +29,11 @@ import {
   launchReadonlyBriefTask,
   normalizeCardOrigin,
   patchRun,
+  readCurrentSessionSeq,
   recoverManagedCard,
+  runAutoAdvance,
   stopManagedCard,
+  validateCardDependsOn,
 } from './todo-runtime.js';
 
 export { todoSchema, todoDomain };
@@ -87,6 +90,7 @@ export class WhaleTodos {
     this.directHandles = new Map();
     this.listeners = new Set();
     this.localAutoAdvance = null;
+    this.autoAdvanceInFlight = null;
     this.closeController = new AbortController();
     this.activeBySession = new Map();
     for (const [, card] of this.cards.entries()) {
@@ -189,7 +193,7 @@ export class WhaleTodos {
         this.activeBySession.delete(previous.sessionId);
       }
     }
-    if (next && isBusyCard(next) && next.sessionId) {
+    if (next && isBusyCard(next) && next.sessionId && !next.legacyTaskId) {
       this.activeBySession.set(next.sessionId, next.id);
     }
   }
@@ -227,14 +231,7 @@ export class WhaleTodos {
 
   /** @param {string} id @param {string[]} deps */
   validateDependsOn(id, deps) {
-    if (!Array.isArray(deps)) return [];
-    const unique = [...new Set(deps.map((entry) => String(entry ?? '').trim()).filter(Boolean))];
-    if (unique.length > 20) throw new Error('前置依赖最多 20 项。');
-    for (const depId of unique) {
-      if (depId === id) throw new Error('任务不能依赖自身。');
-      if (!this.cards.get(depId)) throw new Error(`前置依赖任务不存在：${depId}`);
-    }
-    return unique;
+    return validateCardDependsOn(this.cards, id, deps);
   }
 
   /** @param {any} card */
@@ -391,14 +388,21 @@ export class WhaleTodos {
     return validated;
   }
 
-  async start(id) {
+  async start(id, { onlyWhenIdle = false } = {}) {
     const admitted = await this.serial(async () => {
       if (this.closed) throw new Error('任务服务已停止。');
       this.assertAdmissionOpen();
+      if (onlyWhenIdle && this.list().some((item) => isBusyCard(item))) return null;
       const card = this.get(id);
-      if (card.state !== 'pending' || card.archived) throw new Error('只能开始未执行的任务。');
+      if (card.state !== 'pending' || card.archived) {
+        if (onlyWhenIdle) return null;
+        throw new Error('只能开始未执行的任务。');
+      }
       const unmet = this.unmetDependencies(card);
-      if (unmet.length) throw new Error(`前置依赖尚未完成：${unmet.join('、')}`);
+      if (unmet.length) {
+        if (onlyWhenIdle) return null;
+        throw new Error(`前置依赖尚未完成：${unmet.join('、')}`);
+      }
       const resolvedCwd = this.prepareStartCwd(card.cwd);
       const generation = card.generation + 1;
       const attempt = (card.runs?.length ?? 0) + 1;
@@ -408,6 +412,7 @@ export class WhaleTodos {
         attempt,
         sessionId: '',
         mode: card.mode,
+        baseSeq: 0,
         startedAt: Date.now(),
         endedAt: 0,
         state: 'starting',
@@ -430,6 +435,7 @@ export class WhaleTodos {
         summary: '',
       });
     });
+    if (!admitted) return null;
 
     const controller = this.ctx.sessionController;
     const abort = new AbortController();
@@ -463,6 +469,7 @@ export class WhaleTodos {
         throw new Error('仅待验收、已中断或失败的任务卡支持继续追问。');
       }
       if (!card.sessionId) throw new Error('该任务卡尚无关联会话，请先开始执行。');
+      const baseSeq = await readCurrentSessionSeq(this.ctx, card.sessionId);
       const generation = card.generation + 1;
       const attempt = (card.runs?.length ?? 0) + 1;
       const runId = `run-${generation}-${attempt}`;
@@ -471,6 +478,7 @@ export class WhaleTodos {
         attempt,
         sessionId: card.sessionId,
         mode: card.mode,
+        baseSeq,
         startedAt: Date.now(),
         endedAt: 0,
         state: 'starting',
@@ -577,7 +585,7 @@ export class WhaleTodos {
         signal,
       });
       createdSessionId = sessionId;
-      if (created.directHandle) this.directHandles.set(admitted.id, created.directHandle);
+      if (created.directHandle) this.directHandles.set(sessionId, created.directHandle);
 
       const attached = await this.serial(async () => {
         const current = this.get(admitted.id);
@@ -728,26 +736,8 @@ export class WhaleTodos {
    * automatically start the oldest unblocked `pending` card (all `dependsOn`
    * are `completed`). Finished cards still stop in `review` for human confirmation.
    */
-  async maybeAutoAdvance(_trigger = '') {
-    if (this.closed || !this.autoAdvanceEnabled()) return null;
-    try {
-      this.assertAdmissionOpen();
-    } catch {
-      return null;
-    }
-    const cards = this.list();
-    if (cards.some((card) => isBusyCard(card))) return null;
-    const candidates = cards
-      .filter((card) => card.state === 'pending' && !card.archived && this.unmetDependencies(card).length === 0)
-      .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.createdAt - b.createdAt);
-    const next = candidates[0];
-    if (!next) return null;
-    try {
-      return await this.start(next.id);
-    } catch (error) {
-      this.ctx.logger?.warn?.(`whale todos auto-advance failed for ${next.id}: ${error?.message ?? error}`);
-      return null;
-    }
+  maybeAutoAdvance() {
+    return runAutoAdvance(this);
   }
 
   /** Non-destructively mirror legacy `whale_tasks` records into unified cards on startup. */
@@ -761,7 +751,7 @@ export class WhaleTodos {
   }
 
   async recover() {
-    for (const card of this.list().filter((item) => isBusyCard(item))) {
+    for (const card of this.list().filter((item) => isBusyCard(item) && !item.legacyTaskId)) {
       await this.recoverOneCard(card);
     }
   }
@@ -790,9 +780,11 @@ export async function mountWhaleTodos(ctx, options) {
   ctx.on('session/event', (session, event) => {
     void service.event(session, event)?.catch((error) => ctx.logger?.warn?.(`whale todos: ${error.message}`));
   }, { global: true });
-  ctx.on('whale-tasks/ready', () => {
+  const syncLegacy = () => {
     void service.importLegacyWhaleTasks().catch((error) => ctx.logger?.warn?.(`whale todos legacy import: ${error.message}`));
-  });
+  };
+  ctx.on('whale-tasks/ready', syncLegacy);
+  ctx.on('whale-tasks/updated', syncLegacy);
   installTodoRecursiveGuard(ctx, service);
   ctx.effect(() => () => service.close());
   return service;

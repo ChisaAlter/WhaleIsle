@@ -56,12 +56,82 @@ export function normalizeCardOrigin(input) {
   if (!input?.origin || typeof input.origin !== 'object') {
     return { kind: 'desktop', actor: 'desktop-owner', eventId: '' };
   }
+  const allowedFiles = Array.isArray(input.origin.allowedFiles)
+    ? input.origin.allowedFiles.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, 20)
+    : undefined;
   return {
     kind: input.origin.kind === 'im' ? 'im' : 'desktop',
     actor: String(input.origin.actor ?? 'desktop-owner'),
     eventId: String(input.origin.eventId ?? ''),
     ...(input.origin.route ? { route: input.origin.route } : {}),
+    ...(allowedFiles?.length ? { allowedFiles } : {}),
   };
+}
+
+/**
+ * Validate `dependsOn` references exist, contain no self-reference, and form no cycles.
+ * @param {any} cardsTable
+ * @param {string} id
+ * @param {unknown} deps
+ */
+export function validateCardDependsOn(cardsTable, id, deps) {
+  if (!Array.isArray(deps)) return [];
+  const unique = [...new Set(deps.map((entry) => String(entry ?? '').trim()).filter(Boolean))];
+  if (unique.length > 20) throw new Error('前置依赖最多 20 项。');
+  for (const depId of unique) {
+    if (depId === id) throw new Error('任务不能依赖自身。');
+    if (!cardsTable.get(depId)) throw new Error(`前置依赖任务不存在：${depId}`);
+  }
+  const visited = new Set();
+  const stack = [...unique];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur === id) throw new Error('前置依赖不能形成循环。');
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    const row = cardsTable.get(cur);
+    for (const nextDep of row?.dependsOn ?? []) stack.push(nextDep);
+  }
+  return unique;
+}
+
+function readLiveSessionSeq(ctx, sessionId) {
+  const live = (ctx?.get?.('agents') ?? ctx?.agents)?.get?.(sessionId);
+  const session = live?.session;
+  if (!session) return null;
+  if (Number.isInteger(session.seq) && session.seq >= 0) return session.seq;
+  if (typeof session.snapshotEvents !== 'function') return null;
+  const events = session.snapshotEvents();
+  const last = events.at(-1);
+  return Number.isInteger(last?.seq) ? last.seq + 1 : events.length;
+}
+
+async function readQuerySessionSeq(ctx, sessionId) {
+  const querySvc = ctx?.get?.('sessionQuery');
+  if (typeof querySvc?.observeSession !== 'function') return 0;
+  let observation;
+  try {
+    observation = await querySvc.observeSession(sessionId, { projectionMode: 'none' });
+    const last = observation?.events?.at?.(-1);
+    if (Number.isInteger(last?.seq)) return last.seq + 1;
+    if (Number.isInteger(observation?.cursor)) return observation.cursor + 1;
+  } catch { /* Best-effort seq capture. */ }
+  finally { observation?.[Symbol.dispose]?.(); }
+  return 0;
+}
+
+/**
+ * Capture the session's current next event seq before `continue()` sends a new
+ * follow-up prompt so crash recovery never mistakes a previous run's `turn/end`
+ * for the new run's completion.
+ * @param {any} ctx
+ * @param {string} sessionId
+ */
+export async function readCurrentSessionSeq(ctx, sessionId) {
+  if (!sessionId) return 0;
+  const liveSeq = readLiveSessionSeq(ctx, sessionId);
+  if (liveSeq !== null) return liveSeq;
+  return readQuerySessionSeq(ctx, sessionId);
 }
 
 function evaluateReadonlyOutcome(execution, inputs, terminal) {
@@ -242,6 +312,7 @@ function buildPendingTransitionPatch(current, kind, asked, event) {
 
 async function handleNonStoppingLiveEvent(service, current, event) {
   if (event.type === 'tool/call') {
+    if (current.state === 'waiting_approval' || current.state === 'waiting_input') return;
     const name = String((event.data && event.data.name) || '').trim();
     if (name) await service.put({ ...current, phase: `调用工具 ${name}` });
     return;
@@ -258,7 +329,7 @@ async function handleNonStoppingLiveEvent(service, current, event) {
 export async function applyCardSessionEvent(service, cardId, session, event) {
   if (service.closed) return;
   const current = service.cards.get(cardId);
-  if (!current || !isBusyCard(current) || current.sessionId !== session.id) return;
+  if (!current || !isBusyCard(current) || current.sessionId !== session.id || current.legacyTaskId) return;
 
   if (event.type === 'assistant/message') {
     const summary = eventText(event).trim();
@@ -288,21 +359,32 @@ export async function applyCardSessionEvent(service, cardId, session, event) {
   if (current.state !== 'stopping') await handleNonStoppingLiveEvent(service, current, event);
 }
 
+function resolveRecoveredTurnOutcome(scopedEvents, baseSeq) {
+  const end = scopedEvents.findLast((value) => value.type === 'turn/end');
+  const start = scopedEvents.findLast((value) => value.type === 'turn/start');
+  const validTurn = baseSeq > 0
+    ? Boolean(end && start && end.seq > start.seq)
+    : Boolean(end && (!start || end.seq > start.seq));
+  if (!validTurn) return null;
+  const kind = end.data?.reason?.kind;
+  const state = kind === 'completed' ? 'review' : kind === 'aborted' ? 'cancelled' : 'failed';
+  return { state, error: state === 'failed' ? '执行未完成，请查看关联对话。' : '' };
+}
+
 function inspectRecoveredEvents(card, events, wasStopping) {
   let state = wasStopping ? 'cancelled' : 'interrupted';
   let error = wasStopping ? '' : '应用曾中断；检查关联对话后重新打开任务，不会自动重发。';
-  const summary = lastAssistantText(events) || card.summary;
-  const presented = events
+  const activeRun = Array.isArray(card.runs) ? card.runs.find((r) => r.runId === card.activeRunId) : null;
+  const baseSeq = Number(activeRun?.baseSeq) || 0;
+  const scopedEvents = baseSeq > 0 ? events.filter((ev) => Number(ev?.seq ?? 0) >= baseSeq) : events;
+  const summary = lastAssistantText(scopedEvents) || card.summary;
+  const presented = scopedEvents
     .filter((ev) => ev?.type === 'deliverables/presented')
     .flatMap((ev) => extractDeliverablesFromEvent(card.sessionId, ev));
   const deliverables = presented.length ? mergeDeliverables(card.deliverables ?? [], presented) : (card.deliverables ?? []);
   if (!wasStopping) {
-    const end = events.findLast((value) => value.type === 'turn/end');
-    const start = events.findLast((value) => value.type === 'turn/start');
-    if (end && (!start || end.seq > start.seq)) {
-      state = end.data.reason?.kind === 'completed' ? 'review' : end.data.reason?.kind === 'aborted' ? 'cancelled' : 'failed';
-      error = state === 'failed' ? '执行未完成，请查看关联对话。' : '';
-    }
+    const turn = resolveRecoveredTurnOutcome(scopedEvents, baseSeq);
+    if (turn) ({ state, error } = turn);
   }
   return { state, summary, error, deliverables };
 }
@@ -346,26 +428,42 @@ export async function recoverManagedCard(service, card) {
 }
 
 export async function importLegacyTasksIntoTodos(service) {
+  if (service.closed) return 0;
   const legacySvc = service.ctx?.get?.('whaleTasks');
   const legacyList = legacySvc?.available && typeof legacySvc.list === 'function' ? legacySvc.list() : [];
   if (!legacyList.length) return 0;
-  const existingLegacyIds = new Set(service.list().map((card) => card.legacyTaskId).filter(Boolean));
-  let imported = 0;
+  let synced = 0;
   for (const legacy of legacyList) {
-    if (!legacy?.id || existingLegacyIds.has(legacy.id)) continue;
+    if (!legacy?.id) continue;
     try {
       const projected = projectLegacyTaskToCard(legacy, { home: service.home, settings: service.scope?.get?.() });
       await service.serial(async () => {
-        if (!service.cards.get(projected.id)) {
+        if (service.closed) return;
+        const existing = service.cards.get(projected.id);
+        if (!existing) {
           await service.put(projected);
-          imported += 1;
+          synced += 1;
+          return;
         }
+        const changed = existing.state !== projected.state
+          || existing.summary !== projected.summary
+          || existing.error !== projected.error
+          || existing.sessionId !== projected.sessionId
+          || existing.generation !== projected.generation
+          || existing.effects.length !== projected.effects.length;
+        if (!changed) return;
+        await service.put({
+          ...projected,
+          pinned: existing.pinned,
+          archived: existing.archived,
+        });
+        synced += 1;
       });
     } catch (error) {
       service.ctx.logger?.warn?.(`whale todos legacy import skipped (${legacy.id}): ${error?.message ?? error}`);
     }
   }
-  return imported;
+  return synced;
 }
 
 async function markCardCancelled(service, id) {
@@ -471,6 +569,31 @@ export async function closeWhaleTodosService(service) {
     service.directHandles.clear();
     await service.domain.close();
   }
+}
+
+export async function runAutoAdvance(service) {
+  if (service.closed || !service.autoAdvanceEnabled()) return null;
+  if (service.autoAdvanceInFlight) return service.autoAdvanceInFlight;
+  const run = (async () => {
+    try { service.assertAdmissionOpen(); } catch { return null; }
+    const next = await service.serial(() => {
+      if (service.closed || !service.autoAdvanceEnabled()) return null;
+      const cards = service.list();
+      if (cards.some((card) => isBusyCard(card))) return null;
+      return cards
+        .filter((card) => card.state === 'pending' && !card.archived && service.unmetDependencies(card).length === 0)
+        .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.createdAt - b.createdAt)[0] ?? null;
+    });
+    if (!next) return null;
+    try {
+      return await service.start(next.id, { onlyWhenIdle: true });
+    } catch (error) {
+      service.ctx.logger?.warn?.(`whale todos auto-advance failed for ${next.id}: ${error?.message ?? error}`);
+      return null;
+    }
+  })();
+  service.autoAdvanceInFlight = run;
+  try { return await run; } finally { if (service.autoAdvanceInFlight === run) service.autoAdvanceInFlight = null; }
 }
 
 export function installTodoRecursiveGuard(ctx, service) {

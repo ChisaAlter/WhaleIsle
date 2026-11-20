@@ -37,12 +37,12 @@ export const digest = value => crypto.createHash('sha256').update(value).digest(
 
 /** Single owner serializes admission as well as record-level CAS. */
 export class TaskStore {
-  constructor(domain) { this.domain = domain; this.tasks = domain.table('tasks'); this.origins = domain.table('origins'); this.owners = domain.table('owners'); this.chain = Promise.resolve(); }
+  constructor(domain, onChange = null) { this.domain = domain; this.tasks = domain.table('tasks'); this.origins = domain.table('origins'); this.owners = domain.table('owners'); this.chain = Promise.resolve(); this.onChange = typeof onChange === 'function' ? onChange : null; }
   serial(fn) { const next = this.chain.then(fn); this.chain = next.catch(() => { /* The original operation is returned; a failed write must not poison the next queued write. */ }); return next; }
   get(id) { const value = this.tasks.get(id); if (!value) throw new Error('找不到任务。'); return copy(value); }
   list() { return [...this.tasks.entries()].map(([, value]) => copy(value)); }
-  async put(value) { const parsed = taskSchema.parse(value); await this.tasks.put(parsed.id, parsed); return copy(parsed); }
-  async change(id, fn) { return this.tasks.update(id, current => taskSchema.parse(fn(copy(current)))); }
+  async put(value) { const parsed = taskSchema.parse(value); await this.tasks.put(parsed.id, parsed); try { this.onChange?.(parsed.id); } catch { /* Observer isolation. */ } return copy(parsed); }
+  async change(id, fn) { const updated = await this.tasks.update(id, current => taskSchema.parse(fn(copy(current)))); try { this.onChange?.(id); } catch { /* Observer isolation. */ } return updated; }
   async close() { await this.chain; await this.domain.close(); }
 }
 

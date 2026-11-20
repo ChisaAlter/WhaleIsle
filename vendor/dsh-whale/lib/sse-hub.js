@@ -34,17 +34,36 @@ function readRootTurn(ctx, session) {
   }
 }
 
-function readLivePendingInputs(ctx, session) {
-  const pending = [];
-  for (const [serviceName, kind] of [['approval', 'approval'], ['userQuestions', 'question']]) {
-    const svc = ctx?.get?.(serviceName);
-    if (typeof svc?.pending !== 'function') continue;
-    try {
-      const rows = svc.pending(session);
-      if (Array.isArray(rows) && rows.length > 0) pending.push(kind);
-    } catch { /* Optional service inspection. */ }
+function gatewayEventKind(eventName) {
+  if (eventName === 'approval/request') return 'approval';
+  if (eventName === 'user-questions/request') return 'question';
+  return 'other';
+}
+
+function collectGatewayPendingInputs(ctx, sid, pending) {
+  const gateway = ctx?.get?.('typertGateway');
+  if (!sid || typeof gateway?.getPendingRemoteEvents !== 'function') return;
+  try {
+    for (const entry of gateway.getPendingRemoteEvents() ?? []) {
+      if (String(entry?.agentId ?? '') === sid) pending.add(gatewayEventKind(entry?.event));
+    }
+  } catch { /* Optional gateway inspection. */ }
+}
+
+function readLivePendingInputs(ctx, session, sessionId = '') {
+  const pending = new Set();
+  if (session) {
+    for (const [serviceName, kind] of [['approval', 'approval'], ['userQuestions', 'question']]) {
+      const svc = ctx?.get?.(serviceName);
+      if (typeof svc?.pending !== 'function') continue;
+      try {
+        const rows = svc.pending(session);
+        if (Array.isArray(rows) && rows.length > 0) pending.add(kind);
+      } catch { /* Optional service inspection. */ }
+    }
   }
-  return pending;
+  collectGatewayPendingInputs(ctx, String(session?.id ?? sessionId ?? ''), pending);
+  return [...pending];
 }
 
 /**
@@ -57,9 +76,12 @@ export function readAuthoritativeSessionState(ctx, sessionId) {
   if (!sessionId) return { active: false, running: false, rootTurn: null, pendingInput: [] };
   const agentsSvc = ctx?.get?.('agents') ?? ctx?.agents;
   const agent = agentsSvc?.get?.(sessionId);
-  if (!agent) return { active: false, running: false, rootTurn: null, pendingInput: [] };
+  if (!agent) {
+    const gatewayPending = readLivePendingInputs(ctx, null, sessionId);
+    return { active: false, running: false, rootTurn: null, pendingInput: gatewayPending };
+  }
   const rootTurn = readRootTurn(ctx, agent.session);
-  const pendingInput = readLivePendingInputs(ctx, agent.session);
+  const pendingInput = readLivePendingInputs(ctx, agent.session, sessionId);
   return {
     active: true,
     running: agent.status === 'running' || rootTurn?.open === true,
@@ -68,7 +90,7 @@ export function readAuthoritativeSessionState(ctx, sessionId) {
   };
 }
 
-function projectCardLiveState(ctx, card) {
+function projectCardLiveState(ctx, card, { residentSessionId = '', delegated = false } = {}) {
   if (!card.sessionId || !isBusyCard(card)) return card;
   const live = readAuthoritativeSessionState(ctx, card.sessionId);
   const mergedPending = [...new Set([...(card.pendingInput ?? []), ...live.pendingInput])];
@@ -77,20 +99,38 @@ function projectCardLiveState(ctx, card) {
     if (mergedPending.includes('approval')) projectedState = 'waiting_approval';
     else if (mergedPending.includes('question')) projectedState = 'waiting_input';
   }
-  return { ...card, state: projectedState, pendingInput: mergedPending, rootTurn: live.rootTurn };
+  const delegatedApproval = Boolean(delegated && residentSessionId);
+  const actionSessionId = projectedState === 'waiting_approval' && delegatedApproval
+    ? residentSessionId
+    : card.sessionId;
+  return {
+    ...card,
+    state: projectedState,
+    pendingInput: mergedPending,
+    rootTurn: live.rootTurn,
+    delegatedApproval,
+    actionSessionId,
+  };
 }
 
 function collectNeedsYouEntries(settings, residentSessionId, resident, cards) {
   const needsYou = [];
-  if (resident.pendingInput.length > 0 && residentSessionId) {
-    const waitingApproval = resident.pendingInput.includes('approval');
+  const hasDelegatedCardApproval = cards.some(
+    (card) => card.state === 'waiting_approval' && card.delegatedApproval && card.actionSessionId === residentSessionId,
+  );
+  const residentOwnPending = hasDelegatedCardApproval
+    ? resident.pendingInput.filter((kind) => kind !== 'approval')
+    : resident.pendingInput;
+  if (residentOwnPending.length > 0 && residentSessionId) {
+    const waitingApproval = residentOwnPending.includes('approval');
     needsYou.push({
       kind: 'resident',
       cardId: '',
       title: String(settings.name || '鲸鱼娘'),
       sessionId: residentSessionId,
+      actionSessionId: residentSessionId,
       state: waitingApproval ? 'waiting_approval' : 'waiting_input',
-      pendingInput: resident.pendingInput,
+      pendingInput: residentOwnPending,
       phase: waitingApproval ? '主对话等待审批' : '主对话等待回答',
     });
   }
@@ -101,6 +141,8 @@ function collectNeedsYouEntries(settings, residentSessionId, resident, cards) {
       cardId: card.id,
       title: card.title,
       sessionId: card.sessionId,
+      actionSessionId: card.actionSessionId || card.sessionId,
+      delegatedApproval: Boolean(card.delegatedApproval),
       state: card.state,
       pendingInput: card.pendingInput ?? [],
       phase: card.phase || (card.state === 'waiting_approval' ? '等待审批' : '等待回答'),
@@ -121,7 +163,10 @@ export function buildWorkbenchSnapshot(ctx, scope) {
   const residentSessionId = String(settings.sessionId ?? '').trim();
   const todos = ctx?.get?.('whaleTodos');
   const rawCards = todos?.available && typeof todos.list === 'function' ? todos.list() : [];
-  const cards = rawCards.map((card) => projectCardLiveState(ctx, card));
+  const cards = rawCards.map((card) => projectCardLiveState(ctx, card, {
+    residentSessionId,
+    delegated: Boolean(todos?.delegationDisposers?.has?.(card.id)),
+  }));
   const resident = readAuthoritativeSessionState(ctx, residentSessionId);
   const needsYou = collectNeedsYouEntries(settings, residentSessionId, resident, cards);
   return {

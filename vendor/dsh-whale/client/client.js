@@ -1192,6 +1192,7 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
               cardId: card.id,
               title: card.title,
               sessionId: card.sessionId,
+              actionSessionId: card.actionSessionId || card.sessionId,
               state: card.state,
               phase: card.phase || "",
             }));
@@ -1262,7 +1263,10 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
             return;
           }
           try {
-            es = new ES("/dsh-whale/events");
+            const sseUrl = typeof document !== "undefined" && document.baseURI && typeof URL === "function"
+              ? new URL("dsh-whale/events", document.baseURI).toString()
+              : "dsh-whale/events";
+            es = new ES(sseUrl);
           } catch {
             fetchFull();
             scheduleReconnect();
@@ -1385,8 +1389,8 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
           card.summary ? h(Fragment, null, h("h4", null, tr("执行结果", "Run result")), h("p", null, card.summary)) : null,
           card.sessionId ? h(Button, { variant: "ghost", size: "sm", onClick: () => onOpen(card.sessionId) }, tr("打开关联对话", "Open linked conversation")) : null,
         ) : null,
-        needsYou && card.sessionId ? h("div", { className: "dsh-whale-todo-footer" },
-          h(Button, { variant: "primary", size: "sm", onClick: () => onOpen(card.sessionId) }, card.state === "waiting_approval" ? tr("去审批", "Review approval") : tr("去回答", "Answer now"))) : null,
+        needsYou && (card.actionSessionId || card.sessionId) ? h("div", { className: "dsh-whale-todo-footer" },
+          h(Button, { variant: "primary", size: "sm", onClick: () => onOpen(card.actionSessionId || card.sessionId) }, card.state === "waiting_approval" ? tr("去审批", "Review approval") : tr("去回答", "Answer now"))) : null,
         card.state === "pending" ? h("div", { className: "dsh-whale-todo-footer" }, h(Button, { variant: "outline", size: "sm", disabled: pending, onClick: () => onConfirm(card, "start") }, tr("开始执行", "Start"))) : null,
         card.state === "review" ? h("div", { className: "dsh-whale-todo-footer" },
           h(Button, { variant: "ghost", size: "sm", onClick: () => onExpand(!expanded) }, expanded ? tr("收起成果", "Hide result") : tr("查看成果", "Review result")),
@@ -1755,8 +1759,9 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
       const firstNeedsYou = needsYouItems[0] ?? null;
       const jumpToNeedsYou = () => {
         if (!firstNeedsYou) return;
-        if (firstNeedsYou.sessionId) {
-          void Promise.resolve(openSession(firstNeedsYou.sessionId))
+        const targetSessionId = firstNeedsYou.actionSessionId || firstNeedsYou.sessionId;
+        if (targetSessionId) {
+          void Promise.resolve(openSession(targetSessionId))
             .then(() => { collapseIfNarrow(); })
             .catch((err) => mode.set({ error: err?.message || String(err), errorAttempt: state.errorAttempt + 1 }));
           return;

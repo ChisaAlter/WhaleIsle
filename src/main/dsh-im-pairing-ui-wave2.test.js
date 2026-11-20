@@ -43,7 +43,7 @@ function makeTempDir(t, prefix) {
 }
 
 async function mountImSettingsWithLiveGate(t, { gate, botsByChannel = {} } = {}) {
-  const { createSingleOwnerRpcHandler } = await import(singleOwnerRpcUrl);
+  const { createSingleOwnerRpcHandler, SINGLE_OWNER_RPC_CHANNEL } = await import(singleOwnerRpcUrl);
   const accessHandler = createSingleOwnerRpcHandler(gate);
 
   const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
@@ -108,7 +108,7 @@ async function mountImSettingsWithLiveGate(t, { gate, botsByChannel = {} } = {})
     connection: {
       rpc: {
         call: async (channel, endpoint, payload, signal) => {
-          if (channel === '/dsh-im/access') {
+          if (channel === SINGLE_OWNER_RPC_CHANNEL) {
             const response = await accessHandler(endpoint, payload, signal);
             accessCalls.push({ endpoint, payload, response });
             return response;
