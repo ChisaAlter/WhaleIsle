@@ -668,3 +668,163 @@ harnessTest('real SessionController exercises whale_session_queue, whale_read_se
   const recentRes = await recentDef.execute({ limit: 5 }, exec);
   assert.ok(Array.isArray(recentRes.events));
 });
+
+// ---------------------------------------------------------------------------
+// 7. Adversarial review regression tests (tool/result schema, search paging,
+//    project-owned relay precheck, non-owner IM plugin block, win32 path norm)
+// ---------------------------------------------------------------------------
+
+nodeTest('formatRecords handles real Harness tool/result toolCallId + data.error and session/presentation title', async () => {
+  const { formatRecords } = await importWhale('session-helpers.js');
+  const lines = formatRecords([
+    { event: { seq: 1, type: 'session/presentation', data: { owner: 'dsh-whale:todo', title: 'Quarterly Audit' } } },
+    { event: { seq: 2, type: 'tool/call', data: { callId: 'call_42', name: 'bash', arguments: '{"cmd":"ls"}' } } },
+    {
+      event: {
+        seq: 3,
+        type: 'tool/result',
+        data: {
+          turn: 1,
+          step: 1,
+          message: { role: 'tool', toolCallId: 'call_42', isError: true, content: [{ type: 'text', text: 'exit 1' }] },
+          error: { name: 'Error', code: 'TOOL_TIMEOUT', reason: 'command timed out' },
+        },
+      },
+    },
+  ], { includeToolDetails: true });
+  assert.ok(lines.some((line) => line.includes('[#1]') && line.includes('Quarterly Audit')), `missing presentation title: ${JSON.stringify(lines)}`);
+  assert.ok(lines.some((line) => line.includes('[#3]') && line.includes('call_42') && line.includes('TOOL_TIMEOUT') && line.includes('command timed out') && line.includes('exit 1')),
+    `missing toolCallId/error/body: ${JSON.stringify(lines)}`);
+});
+
+nodeTest('searchWhaleOwnedSessions paginates nextCursor and falls back when >20 regular sessions match first', async () => {
+  const { searchWhaleOwnedSessions } = await importWhale('session-helpers.js');
+  let calls = 0;
+  const ctx = {
+    get: (name) => {
+      if (name === 'sessionQuery') {
+        return {
+          searchSessions: async (req) => {
+            calls += 1;
+            if (!req.cursor) {
+              return {
+                items: Array.from({ length: 20 }, (_, i) => ({
+                  header: { id: `normal-${i}` },
+                  bestMatch: { snippet: 'normal hit' },
+                })),
+                nextCursor: 'page-2',
+              };
+            }
+            return {
+              items: [{ header: { id: 'whale-resident' }, bestMatch: { snippet: '…paged resident hit…' } }],
+              nextCursor: undefined,
+            };
+          },
+        };
+      }
+      return undefined;
+    },
+  };
+  const seen = new Set();
+  const hits = await searchWhaleOwnedSessions(ctx, {}, 'report', new Set(['whale-resident']), seen, new AbortController().signal);
+  assert.equal(calls, 2);
+  assert.deepEqual(hits, [{ sessionId: 'whale-resident', snippet: '…paged resident hit…' }]);
+});
+
+nodeTest('whale_send_to_session blocks exact owner=project and project-coordinator BEFORE popping confirm dialog', async (t) => {
+  const { apply: applyTools } = await importWhale('tools.js');
+  const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
+  const prevSecrets = globalThis[INTERNAL_SECRETS_KEY];
+  t.after(() => {
+    stopDesktopInstallControl();
+    if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL;
+    else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
+    globalThis[INTERNAL_SECRETS_KEY] = prevSecrets;
+  });
+
+  let confirmCalls = 0;
+  const control = startDesktopInstallControl({
+    confirmModelAction: async () => { confirmCalls += 1; return 'once'; },
+    showSecret: async () => false,
+    installPlugin: async () => ({ ok: true }),
+    startHarness: () => {},
+  });
+  const { url, token } = await control.ready;
+  process.env.DSH_DESKTOP_INSTALL_URL = url;
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', token]]);
+
+  const tools = new Map();
+  const agents = new Map([
+    ['proj-worker', {
+      id: 'proj-worker',
+      session: {
+        header: { cwd: ROOT },
+        snapshotEvents: () => [{ type: 'session/presentation', data: { owner: 'project', title: 'Worker', composer: 'managed' } }],
+      },
+      followup: () => {},
+    }],
+    ['proj-lead', {
+      id: 'proj-lead',
+      session: {
+        header: { cwd: ROOT, agentPreset: 'project-coordinator' },
+        snapshotEvents: () => [],
+      },
+      followup: () => {},
+    }],
+  ]);
+  const controller = {
+    resolveAgent: async (sid) => (agents.has(sid) ? { agent: agents.get(sid) } : { error: new Error('not found') }),
+  };
+  applyTools({
+    tools: { register: (def) => tools.set(def.name, def) },
+    get: (k) => (k === 'sessionController' ? controller : undefined),
+    on: () => () => {},
+    emit: () => {},
+  });
+
+  const exec = { agent: makeFakeAgent('resident', activeUserEvents('ui-1')), signal: new AbortController().signal };
+  const send = tools.get('whale_send_to_session');
+  const r1 = await send.execute({ sessionId: 'proj-worker', text: 'hi' }, exec);
+  const r2 = await send.execute({ sessionId: 'proj-lead', text: 'hi' }, exec);
+  const r3 = await send.execute({ sessionId: 'missing-session', text: 'hi' }, exec);
+  assert.equal(r1.ok, false);
+  assert.equal(r2.ok, false);
+  assert.equal(r3.ok, false);
+  assert.equal(confirmCalls, 0, 'unreachable or internal target must be rejected before popping confirmation dialog');
+});
+
+nodeTest('whale_desktop_plugin fails closed for non-owner IM speaker turns without hitting /desktop/plugin', async (t) => {
+  const { registerDesktopTools } = await importWhale('desktop-tools.js');
+  const { NON_OWNER_IM_REFUSAL_TEXT } = await importWhale('desktop-confirm.js');
+  const prevUrl = process.env.DSH_DESKTOP_INSTALL_URL;
+  const prevSecrets = globalThis[INTERNAL_SECRETS_KEY];
+  t.after(() => {
+    stopDesktopInstallControl();
+    if (prevUrl === undefined) delete process.env.DSH_DESKTOP_INSTALL_URL;
+    else process.env.DSH_DESKTOP_INSTALL_URL = prevUrl;
+    globalThis[INTERNAL_SECRETS_KEY] = prevSecrets;
+  });
+
+  let pluginConfirmCalls = 0;
+  const control = startDesktopInstallControl({
+    confirmModelAction: async () => { pluginConfirmCalls += 1; return 'once'; },
+    showSecret: async () => false,
+    installPlugin: async () => ({ ok: true }),
+    startHarness: () => {},
+    desktop: { installCatalog: async () => ({ ok: true }) },
+  });
+  const { url, token } = await control.ready;
+  process.env.DSH_DESKTOP_INSTALL_URL = url;
+  storeInternalSecrets([['DSH_DESKTOP_INSTALL_TOKEN', token]]);
+
+  const tools = new Map();
+  registerDesktopTools({ tools: { register: (def) => tools.set(def.name, def) } });
+  const guestExec = {
+    agent: makeFakeAgent('resident', activeUserEvents('feishu-guest-private-11111111-2222-3333-4444-555555555555', 'dsh-im:inbound')),
+    signal: new AbortController().signal,
+  };
+  const res = await tools.get('whale_desktop_plugin').execute({ action: 'install', id: 'some-plugin' }, guestExec);
+  assert.equal(res.ok, false);
+  assert.equal(res.detail, NON_OWNER_IM_REFUSAL_TEXT);
+  assert.equal(pluginConfirmCalls, 0);
+});

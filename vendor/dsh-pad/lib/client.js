@@ -3089,6 +3089,43 @@ function createWhalePanels(client) {
     const chatAnchor = toast?.anchorToChat && typeof document !== "undefined"
       ? (document.querySelector('[data-dsh-frame-region="center"]') || document.querySelector("[data-conversation-content]") || null)
       : null;
+    const focusOverlay = focusedView ? h("div", {
+      className: "dshpad-focus",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": focusedView.definition.title,
+      onClick: event => { if (event.target === event.currentTarget) setFocusedId(void 0); },
+    }, h("div", { className: "dshpad-focus-panel" },
+      h("header", { className: "dshpad-focus-head" },
+        focusedView.definition.icon ? h("span", { className: "dshpad-card-icon" }, focusedView.definition.icon) : null,
+        h("span", { className: "dshpad-focus-title" }, focusedView.definition.title),
+        h("button", { type: "button", className: "dshpad-icon-btn", "aria-label": t("card.close"), title: t("card.close"), onClick: () => setFocusedId(void 0) }, Icon2.close),
+      ),
+      awaitingFirstData(focusedView.definition, focusedView.data)
+        ? h("p", { className: "dshpad-card-note" }, t("card.firstData"))
+        : h(PanelFrame, {
+          view: focusedView,
+          histories: () => client.historiesOf(focusedView.id),
+          theme,
+          lang,
+          onRefresh: () => void client.act({ op: "refresh", panelId: focusedView.id }),
+          onAsk: text => { ask(text); },
+          onRun: (runPrompt, system) => client.run(focusedView.id, runPrompt, system),
+          onScriptError: () => {},
+          resizeLabel: t("card.resize"),
+          resizable: false,
+        }),
+    )) : null;
+    let portalFocus = focusOverlay;
+    if (focusOverlay && typeof document !== "undefined" && document.body) {
+      try {
+        const reactDom = require("react-dom");
+        if (typeof reactDom?.createPortal === "function") {
+          portalFocus = reactDom.createPortal(focusOverlay, document.body);
+        }
+      } catch {
+      }
+    }
     return h("div", { className: "dshpad-root dshpad-whale-panels", ref: root },
       !snap.connected ? h("p", { role: "status", className: "dshpad-whale-notice" }, label("面板连接中；保留上次读数。", "Connecting; keeping the last readings.")) : null,
       toast && typeof Toast === "function" ? h(Toast, {
@@ -3127,33 +3164,7 @@ function createWhalePanels(client) {
           })),
           h("p", null, label("需求会追加到当前草稿，发送后由鲸鱼娘创建；数据源仍需原有授权。", "Append a request to your draft, then send it. Existing data-source approvals still apply.")),
         )),
-      focusedView ? h("div", {
-        className: "dshpad-focus",
-        role: "dialog",
-        "aria-modal": "true",
-        "aria-label": focusedView.definition.title,
-        onClick: event => { if (event.target === event.currentTarget) setFocusedId(void 0); },
-      }, h("div", { className: "dshpad-focus-panel" },
-        h("header", { className: "dshpad-focus-head" },
-          focusedView.definition.icon ? h("span", { className: "dshpad-card-icon" }, focusedView.definition.icon) : null,
-          h("span", { className: "dshpad-focus-title" }, focusedView.definition.title),
-          h("button", { type: "button", className: "dshpad-icon-btn", "aria-label": t("card.close"), title: t("card.close"), onClick: () => setFocusedId(void 0) }, Icon2.close),
-        ),
-        awaitingFirstData(focusedView.definition, focusedView.data)
-          ? h("p", { className: "dshpad-card-note" }, t("card.firstData"))
-          : h(PanelFrame, {
-            view: focusedView,
-            histories: () => client.historiesOf(focusedView.id),
-            theme,
-            lang,
-            onRefresh: () => void client.act({ op: "refresh", panelId: focusedView.id }),
-            onAsk: text => { ask(text); },
-            onRun: (runPrompt, system) => client.run(focusedView.id, runPrompt, system),
-            onScriptError: () => {},
-            resizeLabel: t("card.resize"),
-            resizable: false,
-          }),
-      )) : null,
+      portalFocus,
     );
   };
 }

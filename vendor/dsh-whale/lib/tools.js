@@ -34,7 +34,7 @@ export const Config = z.object({});
 const WAKE_SOURCE = Object.freeze({ kind: 'plugin', plugin: 'dsh-whale', form: 'relay' });
 const SEND_MAX_CHARS = 4000;
 const REMEMBER_MAX_CHARS = 40000;
-const FORBIDDEN_PRESETS = new Set(['whale-girl', 'whale-task-reader', 'project-worker']);
+const FORBIDDEN_PRESETS = new Set(['whale-girl', 'whale-task-reader', 'project-worker', 'project-coordinator']);
 
 /** @param {string} value */
 const pathKey = (value) => {
@@ -82,7 +82,7 @@ async function internalWorkerReason(ctx, agent) {
   const pres = events.findLast((/** @type {any} */ ev) => ev?.type === 'session/presentation')?.data;
   const owner = String(pres?.owner ?? '');
   if (owner === 'dsh-whale:assistant' || owner.startsWith('dsh-whale:task')
-    || owner.startsWith('project:') || owner.startsWith('dsh-project:')) {
+    || owner === 'project' || owner.startsWith('project:') || owner.startsWith('dsh-project:')) {
     return `Cannot relay messages to internal session owned by "${owner}".`;
   }
   return '';
@@ -148,6 +148,22 @@ function resolveWorkspaceCreateRequest(ctx, args) {
   return workspaceId
     ? resolveWorkspaceById(registry, workspaceId, dshHome)
     : resolveWorkspaceByCwd(registry, rawCwd, dshHome);
+}
+
+/**
+ * Pre-validate reachability and internal worker rules before popping a human
+ * confirmation dialog whenever a real sessionController.resolveAgent is wired.
+ * @param {any} ctx
+ * @param {string} sessionId
+ */
+async function precheckRelayTarget(ctx, sessionId) {
+  const controller = controllerFrom(ctx);
+  if (typeof controller?.resolveAgent !== 'function') return '';
+  const precheck = await controller.resolveAgent(sessionId);
+  if (precheck == null || 'error' in precheck || !precheck.agent) {
+    return `Session ${sessionId} cannot be reached: ${precheck?.error?.message ?? 'not found'}.`;
+  }
+  return internalWorkerReason(ctx, precheck.agent);
 }
 
 /**
@@ -298,6 +314,8 @@ export function apply(ctx) {
       if (sessionId === getSelfId() || sessionId === exec?.agent?.id) {
         return { ok: false, messageId: '', detail: 'Cannot send a relay message to her own resident conversation.' };
       }
+      const preBlocked = await precheckRelayTarget(ctx, sessionId);
+      if (preBlocked) return { ok: false, messageId: '', detail: preBlocked };
       const confirmation = await confirmModelAction({
         tool: 'whale_send_to_session',
         action: 'send',

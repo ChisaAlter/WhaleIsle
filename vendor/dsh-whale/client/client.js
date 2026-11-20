@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const react = require("react");
     const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
     const { createElement: h, useState, useEffect, useMemo, useCallback, useRef, Fragment } = react;
+    const useLayoutEffectHook = typeof react.useLayoutEffect === "function" ? react.useLayoutEffect : useEffect;
     const { Button, Input, Modal, Menu, SettingsSelect, StateDot, Switch, Toast, Tooltip, IconSettingsOutline16,
       IconEllipsisOutline16, IconPlusOutline16, IconPanelRightOutline16, IconPinOutlineRegular } = primitives;
     const useModalLayerHook = typeof primitives.useModalLayer === "function" ? primitives.useModalLayer : () => {};
@@ -966,9 +967,13 @@ window.__ModuleLoader__.load({
           : typeof catalog?.defaultTaskRootDir === "string"
             ? catalog.defaultTaskRootDir.trim()
             : state.taskRootDir;
+        const sessionId = typeof catalog?.sessionId === "string" && catalog.sessionId.trim()
+          ? catalog.sessionId.trim()
+          : state.sessionId;
         return {
           name: nextName || state.name,
           taskRootDir,
+          sessionId,
         };
       };
       const mode = {
@@ -1285,6 +1290,8 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
       narrowRef.current = narrow;
       const activeRef = useRef(state.active);
       activeRef.current = state.active;
+      const wideningFromDrawer = useRef(false);
+      const preservedFocus = useRef(null);
 
       const currentSession = useSessions?.((/** @type {any} */ list) => {
         const rows = Object.values(list?.byId ?? {});
@@ -1300,9 +1307,19 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
       useEffect(() => { if (!state.active) setAdd({ task: 0, panel: 0 }); }, [state.active]);
       useEffect(() => {
         if (typeof window === "undefined") return undefined;
+        const applyNarrow = (/** @type {boolean} */ nextNarrow) => {
+          if (narrowRef.current && !nextNarrow) {
+            wideningFromDrawer.current = true;
+            const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+            preservedFocus.current = activeEl && side.current?.contains?.(activeEl) && activeEl !== toggleSide.current
+              ? activeEl
+              : null;
+          }
+          setNarrow(nextNarrow);
+        };
         if (typeof window.matchMedia === "function") {
           const mql = window.matchMedia("(max-width: 900px)");
-          const onChange = (/** @type {any} */ event) => setNarrow(Boolean(event.matches));
+          const onChange = (/** @type {any} */ event) => applyNarrow(Boolean(event.matches));
           setNarrow(Boolean(mql.matches));
           if (typeof mql.addEventListener === "function") {
             mql.addEventListener("change", onChange);
@@ -1313,7 +1330,7 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
             return () => mql.removeListener(onChange);
           }
         }
-        const resize = () => setNarrow(Number(window.innerWidth) <= 900);
+        const resize = () => applyNarrow(Number(window.innerWidth) <= 900);
         window.addEventListener?.("resize", resize);
         return () => window.removeEventListener?.("resize", resize);
       }, []);
@@ -1340,24 +1357,48 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
 
       const drawerOpen = state.active && narrow && state.sideOpen;
       const closeDrawer = useCallback(() => { mode.set({ sideOpen: false }); }, [mode]);
-      useModalLayerHook(side, drawerOpen, closeDrawer);
 
-      useEffect(() => {
+      // Release center.inert before useModalLayer's closing commit restores focus,
+      // so returning focus to an element inside center succeeds cleanly.
+      useLayoutEffectHook(() => {
         if (!drawerOpen) return undefined;
         const center = document.querySelector?.('[data-dsh-frame-region="center"]');
         const wasInert = center?.inert;
         if (center) center.inert = true;
         return () => {
           if (center) center.inert = wasInert;
-          // Only return focus to toggleSide when collapsing inside narrow mode; never steal focus on widening or exit.
-          if (activeRef.current && narrowRef.current) {
-            const activeEl = document.activeElement;
-            if (!activeEl || activeEl === document.body || side.current?.contains?.(activeEl)) {
-              toggleSide.current?.focus?.();
-            }
-          }
         };
       }, [drawerOpen]);
+
+      useModalLayerHook(side, drawerOpen, closeDrawer);
+
+      useLayoutEffectHook(() => {
+        if (drawerOpen) return undefined;
+        if (wideningFromDrawer.current) {
+          wideningFromDrawer.current = false;
+          const target = preservedFocus.current;
+          preservedFocus.current = null;
+          // Widening out of narrow mode keeps the sidebar open; never let useModalLayer
+          // yank focus back onto toggleSide.
+          if (state.active && !narrow && state.sideOpen) {
+            if (target && target.isConnected && typeof target.focus === "function") {
+              target.focus({ preventScroll: true });
+            } else if (typeof document !== "undefined" && document.activeElement === toggleSide.current) {
+              const fallback = side.current?.querySelector?.("[data-modal-autofocus]");
+              if (fallback && typeof fallback.focus === "function") fallback.focus({ preventScroll: true });
+              else toggleSide.current?.blur?.();
+            }
+          }
+          return undefined;
+        }
+        if (activeRef.current && narrowRef.current && !state.sideOpen && typeof document !== "undefined") {
+          const activeEl = document.activeElement;
+          if (!activeEl || activeEl === document.body || side.current?.contains?.(activeEl)) {
+            toggleSide.current?.focus?.();
+          }
+        }
+        return undefined;
+      }, [drawerOpen, narrow, state.active, state.sideOpen]);
 
       const finishDrag = useCallback(() => {
         const current = drag.current;

@@ -13,11 +13,12 @@ import { genericOutput, trimTo } from './shared.js';
 import {
   ABORTED_TEXT,
   CONFIRM_TOOL_TIMEOUT_MS,
+  NON_OWNER_IM_REFUSAL_TEXT,
   UNATTENDED_REFUSAL_TEXT,
   confirmModelAction,
   refusalTextFor,
 } from './desktop-confirm.js';
-import { isUnattendedPulseTurn } from './call-origin.js';
+import { isNonOwnerImTurn, isUnattendedPulseTurn } from './call-origin.js';
 
 const CONTROL_TIMEOUT_MS = 15_000;
 const INSTALL_TIMEOUT_MS = CONFIRM_TOOL_TIMEOUT_MS;
@@ -355,6 +356,7 @@ export function registerDesktopTools(ctx) {
       }
       if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       if (isUnattendedPulseTurn(exec)) return { ok: false, detail: UNATTENDED_REFUSAL_TEXT };
+      if (isNonOwnerImTurn(exec)) return { ok: false, detail: NON_OWNER_IM_REFUSAL_TEXT };
       const body = buildPluginBody(action, args);
       if (body.error) return { ok: false, detail: body.error };
       const result = await desktopCall(control, '/desktop/plugin', {

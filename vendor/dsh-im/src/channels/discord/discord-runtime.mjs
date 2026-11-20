@@ -705,7 +705,10 @@ export class DiscordRuntime {
   async #acceptMessage(message, bridge) {
     const messageId = String(message?.id ?? '');
     if (!messageId || this.#state.hasSeen(messageId)) return;
-    if (message?.guild_id && this.#harness?.accessGate?.isWhaleEnforcedSync?.() === true) {
+    const cachedChannel = this.#channels.get(String(message?.channel_id ?? ''));
+    const isNonDmChannel = Boolean(message?.guild_id)
+      || (cachedChannel && Number(cachedChannel.type) !== 1);
+    if (isNonDmChannel && this.#harness?.accessGate?.isWhaleEnforcedSync?.() === true) {
       this.#status.messagesRejected += 1;
       this.#status.lastRejectedAt = new Date().toISOString();
       await this.#state.markSeen(messageId).catch(() => undefined);

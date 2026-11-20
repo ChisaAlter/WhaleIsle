@@ -984,6 +984,10 @@ export function createWorkspaceAwareController(controller, {
   const singleOwnerOptions = singleOwnerGate && channel
     ? { gate: singleOwnerGate, channel, listBotConfigs }
     : null;
+  if (singleOwnerGate && channel && typeof listBotConfigs === 'function'
+    && typeof singleOwnerGate.registerBotConfigSource === 'function') {
+    singleOwnerGate.registerBotConfigSource(channel, listBotConfigs);
+  }
   const transitions = new Map();
   const withBotTransition = (botId, operation) => {
     const previous = transitions.get(botId) ?? Promise.resolve();

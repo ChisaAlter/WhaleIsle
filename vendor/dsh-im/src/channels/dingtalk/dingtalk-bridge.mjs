@@ -439,7 +439,7 @@ export class DingtalkHarnessBridge {
       || this.#acceptedMessageIds.has(messageId)) return Promise.resolve();
     this.#acceptedMessageIds.add(messageId);
     const gate = this.#accessGate;
-    const chatType = String(message?.conversationType) === '2' ? 'group' : 'private';
+    const chatType = String(message?.conversationType) === '1' ? 'private' : 'group';
     if (gate && typeof gate.evaluateInbound === 'function') {
       return Promise.resolve().then(async () => {
         const decision = await gate.evaluateInbound({

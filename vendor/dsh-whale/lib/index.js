@@ -115,7 +115,9 @@ function readSettings(scope) {
  */
 function isLegacyWhaleHomeCwd(header, home) {
   if (!home || header?.agentPreset || typeof header?.cwd !== 'string' || !header.cwd) return false;
-  return path.resolve(header.cwd) === path.resolve(whaleHomeDir(home));
+  const a = path.resolve(header.cwd);
+  const b = path.resolve(whaleHomeDir(home));
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
 export function isWhaleAssistantContext(assembleCtx, snap, home) {

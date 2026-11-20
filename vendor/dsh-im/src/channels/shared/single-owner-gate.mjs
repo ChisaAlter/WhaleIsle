@@ -391,6 +391,8 @@ export class SingleOwnerAccessGate {
   #state = structuredClone(EMPTY_DOCUMENT);
   #writeQueue = Promise.resolve();
   #ownerListeners = new Set();
+  #migratedKeys = new Map();
+  #botConfigSources = new Map();
 
   constructor({
     path = null,
@@ -406,6 +408,45 @@ export class SingleOwnerAccessGate {
       : MAX_PENDING_PAIRINGS;
     this.#clock = typeof clock === 'function' ? clock : () => Date.now();
     this.#defaultHome = home;
+  }
+
+  registerBotConfigSource(channel, listBotConfigs) {
+    assertSupportedChannel(channel);
+    if (typeof listBotConfigs !== 'function') {
+      this.#botConfigSources.delete(channel);
+      return () => {};
+    }
+    this.#botConfigSources.set(channel, listBotConfigs);
+    return () => {
+      if (this.#botConfigSources.get(channel) === listBotConfigs) {
+        this.#botConfigSources.delete(channel);
+      }
+    };
+  }
+
+  #stableMigratedKey(channel, botId, candidateId, existingKey = null) {
+    const comparable = canonicalSenderId(channel, candidateId) ?? candidateId;
+    const cacheKey = `${channel}:${botId}:${comparable}`;
+    if (existingKey && OWNER_KEY_PATTERN.test(existingKey)) {
+      this.#migratedKeys.set(cacheKey, existingKey);
+      return existingKey;
+    }
+    if (!this.#migratedKeys.has(cacheKey)) {
+      this.#migratedKeys.set(cacheKey, deriveOwnerSenderKey());
+    }
+    return this.#migratedKeys.get(cacheKey);
+  }
+
+  #lookupRegisteredBotConfig(channel, botId) {
+    const listFn = this.#botConfigSources.get(channel);
+    if (typeof listFn !== 'function') return undefined;
+    try {
+      const rows = listFn();
+      if (!Array.isArray(rows)) return undefined;
+      return rows.find((row) => cleanString(row?.botId ?? row?.id) === botId);
+    } catch {
+      return undefined;
+    }
   }
 
   onOwnerChange(listener) {
@@ -482,7 +523,7 @@ export class SingleOwnerAccessGate {
     if (existingComparable && existingComparable === candidateComparable) return false;
 
     record.owner = {
-      senderKey: record.owner?.senderKey ?? deriveOwnerSenderKey(),
+      senderKey: this.#stableMigratedKey(channel, record.botId, legacy.singleCandidate, record.owner?.senderKey),
       platformUserId: legacy.singleCandidate,
       displayName: cleanDisplayName(botConfig.ownerDisplayName, '已迁移主人'),
       pairedAt: new Date(nowMs).toISOString(),
@@ -774,9 +815,11 @@ export class SingleOwnerAccessGate {
 
   publicStatus({ channel, botId, botConfig, now = this.#clock() }) {
     const key = this.botKey(channel, botId);
+    const id = cleanString(botId);
+    const effectiveConfig = botConfig ?? this.#lookupRegisteredBotConfig(channel, id);
     const record = this.#state.bots[key]
       ? this.#state.bots[key]
-      : { channel, botId: cleanString(botId), owner: null, revoked: false, pending: [] };
+      : { channel, botId: id, owner: null, revoked: false, pending: [] };
     const clone = {
       ...record,
       pending: record.pending.filter((entry) => {
@@ -784,15 +827,15 @@ export class SingleOwnerAccessGate {
         return Number.isFinite(exp) && exp > now;
       }),
     };
-    if (!clone.revoked && (!clone.owner || clone.owner.source === 'migrated') && botConfig) {
-      const legacy = resolveLegacyOwnerCandidates(channel, botConfig);
+    if (!clone.revoked && (!clone.owner || clone.owner.source === 'migrated') && effectiveConfig) {
+      const legacy = resolveLegacyOwnerCandidates(channel, effectiveConfig);
       if (legacy.singleCandidate) {
         clone.owner = clone.owner && this.#matchesOwner(channel, clone.owner, legacy.singleCandidate)
           ? clone.owner
           : {
-              senderKey: clone.owner?.senderKey ?? deriveOwnerSenderKey(),
+              senderKey: this.#stableMigratedKey(channel, id, legacy.singleCandidate, clone.owner?.senderKey),
               platformUserId: legacy.singleCandidate,
-              displayName: cleanDisplayName(botConfig.ownerDisplayName, '已迁移主人'),
+              displayName: cleanDisplayName(effectiveConfig.ownerDisplayName, '已迁移主人'),
               pairedAt: new Date(now).toISOString(),
               source: 'migrated',
             };
@@ -802,7 +845,7 @@ export class SingleOwnerAccessGate {
     }
     return Object.freeze({
       channel,
-      botId: cleanString(botId),
+      botId: id,
       mode: 'single-owner',
       owner: publicOwner(clone.owner),
       pending: Object.freeze(clone.pending.map(publicPending)),
@@ -812,11 +855,40 @@ export class SingleOwnerAccessGate {
   }
 
   listPublicStatuses({ now = this.#clock() } = {}) {
-    return Object.values(this.#state.bots).map((record) => this.publicStatus({
-      channel: record.channel,
-      botId: record.botId,
-      now,
-    }));
+    const seenKeys = new Set();
+    const statuses = [];
+    for (const record of Object.values(this.#state.bots)) {
+      const key = `${record.channel}:${record.botId}`;
+      seenKeys.add(key);
+      statuses.push(this.publicStatus({
+        channel: record.channel,
+        botId: record.botId,
+        now,
+      }));
+    }
+    for (const [channel, listFn] of this.#botConfigSources.entries()) {
+      let rows;
+      try {
+        rows = listFn();
+      } catch {
+        rows = null;
+      }
+      if (!Array.isArray(rows)) continue;
+      for (const row of rows) {
+        const id = cleanString(row?.botId ?? row?.id);
+        if (!id) continue;
+        const key = `${channel}:${id}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        statuses.push(this.publicStatus({
+          channel,
+          botId: id,
+          botConfig: row,
+          now,
+        }));
+      }
+    }
+    return statuses;
   }
 
   /**

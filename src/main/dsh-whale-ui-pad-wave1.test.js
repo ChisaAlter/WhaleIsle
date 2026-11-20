@@ -426,3 +426,13 @@ test('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelCard 
   assert.equal(docProps.get('--dshpad-reserve'), '0px');
   for (const cleanup of effectCleanups) cleanup();
 });
+
+test('WhaleWorkbench preserves focus across narrow->wide transition without yanking to toggleSide and portals dshpad-focus', () => {
+  const whaleSrc = fs.readFileSync(WHALE_CLIENT, 'utf8');
+  const padSrc = fs.readFileSync(PAD_CLIENT, 'utf8');
+  assert.match(whaleSrc, /useLayoutEffectHook/);
+  assert.match(whaleSrc, /wideningFromDrawer/);
+  assert.match(whaleSrc, /preservedFocus/);
+  assert.match(whaleSrc, /sessionId:\s*typeof catalog\?\.sessionId === "string"|const sessionId = typeof catalog\?\.sessionId === "string"/);
+  assert.match(padSrc, /createPortal\(focusOverlay,\s*document\.body\)/);
+});

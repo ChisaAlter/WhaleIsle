@@ -542,3 +542,191 @@ test('channel bridges and consolidated Feishu whale-tasks enforce SingleOwnerAcc
   assert.equal(fsGate.isOwner('ou_real_owner'), false);
   assert.deepEqual(ownerSyncLog.at(-1), ['revoke', 'fs-1']);
 });
+
+test('Wecom, QQ, DingTalk, and Feishu bridges enforce fail-closed P2P, pairing, menu restrictions, and zero raw-ID leakage', async (t) => {
+  const { home } = await createTempHome(t, { sessionId: 'session-whale-1' });
+  const prevDshHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  t.after(() => {
+    if (prevDshHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevDshHome;
+  });
+  const gate = new SingleOwnerAccessGate({ path: join(home, 'gate-bridges.json'), home });
+
+  // Stable migrated senderKey & registered bot config visibility before any inbound message
+  gate.registerBotConfigSource('feishu', () => [{ id: 'fs-mig', ownerOpenIds: ['ou_legacy_only'] }]);
+  const st1 = gate.publicStatus({ channel: 'feishu', botId: 'fs-mig' });
+  const st2 = gate.publicStatus({ channel: 'feishu', botId: 'fs-mig' });
+  assert.equal(st1.owner?.source, 'migrated');
+  assert.equal(st1.owner.senderKey, st2.owner.senderKey, 'migrated senderKey must remain stable across polls');
+  const listed = gate.listPublicStatuses();
+  assert.ok(listed.some((row) => row.channel === 'feishu' && row.botId === 'fs-mig' && row.owner?.senderKey === st1.owner.senderKey));
+
+  // 1. WeCom bridge: group & unknown chattype rejected fail-closed; unpaired single DM gets pairing code; approved owner passes
+  const wcSent = [];
+  const wcSeen = new Set();
+  const wcSpeakers = [];
+  const wcGate = gate.createBotGate({ channel: 'wecom', botId: 'wc-1', getBotConfig: () => ({}), getPreset: () => 'whale-girl', home });
+  const wcBridge = new WecomHarnessBridge({
+    client: {
+      replyStream: async (_f, _id, text) => { wcSent.push(text); },
+      sendMessage: async (_chatId, body) => { wcSent.push(body?.markdown?.content ?? body?.text?.content ?? ''); },
+    },
+    harness: {
+      accessGate: wcGate,
+      agentPresetSettings: async () => ({ agentPreset: 'whale-girl' }),
+      ensureRunning: async () => {},
+      ask: async (_sid, _text, opts) => { wcSpeakers.push(opts?.speaker); return { text: 'ok' }; },
+      sessionExists: async () => true,
+      createSession: async () => 'session-whale-1',
+    },
+    state: { hasSeen: (id) => wcSeen.has(id), markSeen: async (id) => { wcSeen.add(id); }, sessionFor: () => 'session-whale-1', setSession: async () => {} },
+    status: { messagesReceived: 0, messagesReplied: 0, messagesRejected: 0 },
+    logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+  });
+  // Group & unknown chattype rejected silently
+  await wcBridge.accept({ headers: { req_id: 'r1' }, body: { msgid: 'wc-g1', chattype: 'group', chatid: 'g1', from: { userid: 'wc_u1' }, msgtype: 'text', text: { content: 'hi' } } });
+  await wcBridge.accept({ headers: { req_id: 'r2' }, body: { msgid: 'wc-u1', chattype: 'channel', chatid: 'c1', from: { userid: 'wc_u1' }, msgtype: 'text', text: { content: 'hi' } } });
+  assert.equal(wcSent.length, 0);
+  // Single DM unpaired -> pairing reply
+  await wcBridge.accept({ headers: { req_id: 'r3' }, body: { msgid: 'wc-p1', chattype: 'single', chatid: 'u1', from: { userid: 'wc_u1', name: 'Alice' }, msgtype: 'text', text: { content: 'hello' } } });
+  assert.equal(wcSent.length, 1);
+  assert.match(wcSent[0], /配对码/);
+  const wcPending = gate.publicStatus({ channel: 'wecom', botId: 'wc-1' }).pending[0];
+  await gate.approvePairing({ channel: 'wecom', botId: 'wc-1', code: wcPending.code });
+  await wcBridge.accept({ headers: { req_id: 'r4' }, body: { msgid: 'wc-p2', chattype: 'single', chatid: 'u1', from: { userid: 'wc_u1' }, msgtype: 'text', text: { content: 'hi again' } } });
+  assert.equal(wcSpeakers.length, 1);
+  assert.deepEqual(wcSpeakers[0], { role: 'owner', chat: 'private' });
+
+  // 2. QQ bridge: group & unknown kind rejected fail-closed; unpaired c2c gets pairing code; approved owner works even if legacy ownerUserOpenid='*'
+  const qqSent = [];
+  const qqSeen = new Set();
+  const qqSpeakers = [];
+  const qqGate = gate.createBotGate({ channel: 'qq', botId: 'qq-1', getBotConfig: () => ({ ownerUserOpenid: '*' }), getPreset: () => 'whale-girl', home });
+  const qqBridge = new QqHarnessBridge({
+    bot: { sendText: async (_t, text) => { qqSent.push(text); return { providerMessageIds: ['m1'] }; } },
+    ownerUserOpenid: '*',
+    harness: {
+      accessGate: qqGate,
+      agentPresetSettings: async () => ({ agentPreset: 'whale-girl' }),
+      ensureRunning: async () => {},
+      ask: async (_sid, _text, opts) => { qqSpeakers.push(opts?.speaker); return { text: 'ok' }; },
+      sessionExists: async () => true,
+    },
+    state: { hasSeen: (id) => qqSeen.has(id), markSeen: async (id) => { qqSeen.add(id); }, sessionFor: () => 'session-whale-1', setSession: async () => {} },
+    status: { messagesReceived: 0, messagesReplied: 0, messagesRejected: 0 },
+    logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+  });
+  await qqBridge.accept({ messageId: 'qq-g1', kind: 'group', groupOpenid: 'grp1', senderId: 'qq_u1', content: 'hi', replyTarget: { scope: 'group', targetId: 'grp1' } });
+  await qqBridge.accept({ messageId: 'qq-x1', kind: 'guild', senderId: 'qq_u1', content: 'hi', replyTarget: { scope: 'guild', targetId: 'ch1' } });
+  assert.equal(qqSent.length, 0);
+  await qqBridge.accept({ messageId: 'qq-p1', kind: 'c2c', senderId: 'qq_u1', content: 'hello', replyTarget: { scope: 'c2c', targetId: 'qq_u1' } });
+  assert.equal(qqSent.length, 1);
+  assert.match(qqSent[0], /配对码/);
+  const qqPending = gate.publicStatus({ channel: 'qq', botId: 'qq-1' }).pending[0];
+  await gate.approvePairing({ channel: 'qq', botId: 'qq-1', code: qqPending.code });
+  await qqBridge.accept({ messageId: 'qq-p2', kind: 'c2c', senderId: 'qq_u1', content: 'hi owner', replyTarget: { scope: 'c2c', targetId: 'qq_u1' } });
+  assert.deepEqual(qqSpeakers, [{ role: 'owner', chat: 'private' }]);
+
+  // 3. DingTalk bridge: group ('2') & unknown conversationType rejected; unpaired single ('1') gets pairing code; approved owner works
+  const dtSent = [];
+  const dtSeen = new Set();
+  const dtSpeakers = [];
+  const dtGate = gate.createBotGate({ channel: 'dingtalk', botId: 'dt-1', getBotConfig: () => ({ approvedSenders: [] }), getPreset: () => 'whale-girl', home });
+  const dtBridge = new DingtalkHarnessBridge({
+    api: { sendText: async ({ text }) => { dtSent.push(text); return { ok: true }; } },
+    clientId: 'dt-client',
+    clientSecret: 'dt-secret',
+    harness: {
+      accessGate: dtGate,
+      agentPresetSettings: async () => ({ agentPreset: 'whale-girl' }),
+      ensureRunning: async () => {},
+      ask: async (_sid, _text, opts) => { dtSpeakers.push(opts?.speaker); return { text: 'ok' }; },
+      sessionExists: async () => true,
+    },
+    state: { hasSeen: (id) => dtSeen.has(id), markSeen: async (id) => { dtSeen.add(id); }, sessionFor: () => 'session-whale-1', setSession: async () => {} },
+    status: { messagesReceived: 0, messagesReplied: 0, messagesRejected: 0 },
+    logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+  });
+  const webhook = 'https://oapi.dingtalk.com/robot/sendBySession?session=test123';
+  await dtBridge.accept({ msgId: 'dt-g1', conversationType: '2', conversationId: 'cg1', senderStaffId: 'staff_1', msgtype: 'text', text: { content: 'hi' }, sessionWebhook: webhook, isInAtList: true });
+  await dtBridge.accept({ msgId: 'dt-x1', conversationType: '9', conversationId: 'cx1', senderStaffId: 'staff_1', msgtype: 'text', text: { content: 'hi' }, sessionWebhook: webhook });
+  assert.equal(dtSent.length, 0);
+  await dtBridge.accept({ msgId: 'dt-p1', conversationType: '1', senderStaffId: 'staff_1', senderNick: 'Bob', msgtype: 'text', text: { content: 'hello' }, sessionWebhook: webhook });
+  assert.equal(dtSent.length, 1);
+  assert.match(dtSent[0], /配对码/);
+  const dtPending = gate.publicStatus({ channel: 'dingtalk', botId: 'dt-1' }).pending[0];
+  await gate.approvePairing({ channel: 'dingtalk', botId: 'dt-1', code: dtPending.code });
+  await dtBridge.accept({ msgId: 'dt-p2', conversationType: '1', senderStaffId: 'staff_1', msgtype: 'text', text: { content: 'owner ping' }, sessionWebhook: webhook });
+  assert.deepEqual(dtSpeakers, [{ role: 'owner', chat: 'private' }]);
+
+  // 4. Feishu bridge: never leaks raw user_id into displayName, blocks /m -> 1/2/3 menu bypass & preset_default card action
+  const fsSent = [];
+  const fsSeen = new Set();
+  const fsBridgeGate = gate.createBotGate({ channel: 'feishu', botId: 'fs-bridge', getBotConfig: () => ({ ownerOpenIds: [] }), getPreset: () => 'whale-girl', home });
+  let clearCalls = 0;
+  let presetDefaultCalled = false;
+  const fsBridge = new FeishuHarnessBridge({
+    client: {
+      im: {
+        v1: {
+          message: {
+            create: async (req) => {
+              fsSent.push(req?.data?.content ?? '');
+              return { code: 0, data: { message_id: `fs-out-${fsSent.length}` } };
+            },
+          },
+        },
+      },
+    },
+    harness: {
+      accessGate: fsBridgeGate,
+      agentPresetSettings: async () => ({ agentPreset: 'whale-girl' }),
+      setAgentPreset: async () => { presetDefaultCalled = true; },
+      ensureRunning: async () => {},
+      listWorkspaces: async () => ['/tmp/ws'],
+      listWorkspaceSessions: async () => ({ workspace: '/tmp/ws', sessions: [] }),
+      sessionExists: async () => true,
+      ask: async () => ({ text: 'ok' }),
+    },
+    state: {
+      hasSeen: (id) => fsSeen.has(id),
+      markSeen: async (id) => { fsSeen.add(id); },
+      sessionFor: () => 'session-whale-1',
+      setSession: async () => {},
+      clearSession: async () => { clearCalls += 1; },
+    },
+    status: { messagesReceived: 0, messagesReplied: 0, messagesRejected: 0 },
+    allowedSenderOpenIds: new Set(['*']),
+    logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+  });
+  await fsBridge.accept({
+    sender: { sender_id: { open_id: 'ou_secret_open', user_id: 'raw_feishu_uid_999' } },
+    message: { message_id: 'fsm-1', chat_id: 'oc_p2p', chat_type: 'p2p', message_type: 'text', content: JSON.stringify({ text: 'hello' }) },
+  });
+  const fsPublic = gate.publicStatus({ channel: 'feishu', botId: 'fs-bridge' });
+  assert.equal(fsPublic.pending.length, 1);
+  assert.equal(JSON.stringify(fsPublic).includes('raw_feishu_uid_999'), false, 'Feishu raw user_id must never leak via displayName');
+  assert.equal(JSON.stringify(fsPublic).includes('ou_secret_open'), false);
+  await gate.approvePairing({ channel: 'feishu', botId: 'fs-bridge', code: fsPublic.pending[0].code });
+  // Open /m menu, then reply "2" (new) and "1" (workspaces): both must be blocked in Whale single-owner mode!
+  await fsBridge.accept({
+    sender: { sender_id: { open_id: 'ou_secret_open' } },
+    message: { message_id: 'fsm-2', chat_id: 'oc_p2p', chat_type: 'p2p', message_type: 'text', content: JSON.stringify({ text: '/m' }) },
+  });
+  const sentBeforePick = fsSent.length;
+  await fsBridge.accept({
+    sender: { sender_id: { open_id: 'ou_secret_open' } },
+    message: { message_id: 'fsm-3', chat_id: 'oc_p2p', chat_type: 'p2p', message_type: 'text', content: JSON.stringify({ text: '2' }) },
+  });
+  assert.equal(clearCalls, 0, '/m -> 2 must NOT clear session in Whale mode');
+  assert.ok(fsSent.slice(sentBeforePick).some((body) => body.includes('常驻对话') || body.includes('单人私人助理')));
+  // Card action preset_default must also be blocked!
+  await fsBridge.onCardAction({
+    operator: { open_id: 'ou_secret_open' },
+    action: { value: { action: 'preset_default' } },
+    context: { open_message_id: 'fs-out-2', open_chat_id: 'oc_p2p' },
+  });
+  await fsBridge.waitForIdle();
+  assert.equal(presetDefaultCalled, false);
+});

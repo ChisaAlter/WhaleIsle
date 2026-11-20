@@ -550,7 +550,7 @@ export class WecomHarnessBridge {
     const key = conversationKey(frame);
     this.#acceptedMessageIds.add(messageId);
     const gate = this.#accessGate;
-    const chatType = body.chattype === 'group' ? 'group' : 'private';
+    const chatType = body.chattype === 'single' ? 'private' : 'group';
     if (gate && typeof gate.evaluateInbound === 'function') {
       return Promise.resolve().then(async () => {
         const decision = await gate.evaluateInbound({

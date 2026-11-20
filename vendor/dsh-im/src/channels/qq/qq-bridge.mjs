@@ -434,7 +434,7 @@ export class QqHarnessBridge {
     const key = conversationKey(message);
     this.#acceptedMessageIds.add(messageId);
     const gate = this.#accessGate;
-    const chatType = message.kind === 'group' ? 'group' : 'private';
+    const chatType = message.kind === 'c2c' ? 'private' : 'group';
     if (gate && typeof gate.evaluateInbound === 'function') {
       return Promise.resolve().then(async () => {
         const decision = await gate.evaluateInbound({

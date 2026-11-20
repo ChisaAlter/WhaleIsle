@@ -51,6 +51,16 @@ import {
   isWhaleEnforcedForHarness,
   whaleRestrictedCommandReply,
 } from '../shared/single-owner-gate.mjs';
+
+function isWhaleRestrictedFeishuAction(action) {
+  return typeof action === 'string' && (
+    ['workspace_pick', 'session_pick', 'preset_pick', 'preset_default', 'new', 'sessions', 'workspaces', 'presets'].includes(action)
+    || action.startsWith('workspace:')
+    || action.startsWith('use:')
+    || action.startsWith('preset:')
+    || action.startsWith('sessions:')
+  );
+}
 import { deliverOutboundArtifacts } from '../shared/semantic/artifact-delivery.mjs';
 import {
   createDeliveryReceipt,
@@ -542,7 +552,6 @@ export class FeishuHarnessBridge {
       return Promise.resolve().then(async () => {
         const decision = await gate.evaluateInbound({
           senderId: senderOpenId,
-          displayName: nonEmptyString(event?.sender?.sender_id?.user_id),
           chatType,
           harness: this.#harness,
         });
@@ -1559,12 +1568,7 @@ export class FeishuHarnessBridge {
     const action = nonEmptyString(actionValue.action)
       ?? nonEmptyString(event?.action?.action);
     if (!action) return Promise.resolve();
-    if (whaleEnforced && (
-      ['workspace_pick', 'session_pick', 'preset_pick', 'new', 'sessions', 'workspaces', 'presets'].includes(action)
-      || action.startsWith('workspace:')
-      || action.startsWith('use:')
-      || action.startsWith('preset:')
-    )) {
+    if (whaleEnforced && isWhaleRestrictedFeishuAction(action)) {
       this.#logger.warn?.('[dsh-feishu] blocked restricted card action in Whale single-owner mode');
       return Promise.resolve();
     }
@@ -1598,6 +1602,10 @@ export class FeishuHarnessBridge {
       ?? nonEmptyString(event?.open_message_id)
       ?? nonEmptyString(event?.message_id);
     const route = messageId ? this.#cardKeys.get(messageId) : null;
+    if (whaleEnforced && route?.key && !route.key.startsWith('p2p:')) {
+      this.#logger.warn?.('[dsh-feishu] blocked group card action in Whale single-owner mode');
+      return Promise.resolve();
+    }
     if (!route) {
       // The card predates this process (the in-memory mapping resets on
       // restart) or never came from us: nudge instead of staying silent.
@@ -1820,6 +1828,10 @@ export class FeishuHarnessBridge {
     sessionPage = 0,
     selections = [],
   }) {
+    if (isWhaleRestrictedFeishuAction(action) && await isWhaleEnforcedForHarness(this.#harness)) {
+      await this.#send(chatId, whaleRestrictedCommandReply(action === 'new' ? '/new' : `/${action}`));
+      return;
+    }
     if (action === 'sessions' || /^sessions:\d+$/.test(action)) {
       const page = action === 'sessions' ? 0 : Number(action.slice('sessions:'.length));
       await this.#showSessions(

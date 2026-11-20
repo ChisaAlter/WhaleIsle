@@ -53,13 +53,18 @@ function formatToolCall(tag, ev, includeToolDetails) {
  */
 function formatToolResult(tag, ev, includeToolDetails) {
   const msg = ev?.data?.message ?? {};
-  const callId = String(msg.source?.callId ?? msg.callId ?? '');
-  const isError = msg.isError === true;
+  const err = ev?.data?.error;
+  const callId = String(msg.toolCallId ?? msg.source?.callId ?? msg.callId ?? '');
+  const isError = msg.isError === true || Boolean(err);
   const status = isError ? 'error' : 'ok';
   const base = `${tag} 工具结果 ${callId}（${status}）`;
   if (!includeToolDetails && !isError) return base;
+  const errorText = err
+    ? [err.code, err.reason].filter((part) => typeof part === 'string' && part.trim()).join(': ')
+    : '';
   const body = trimTo(eventText(ev).trim(), includeToolDetails ? READ_TOOL_MAX : 240);
-  return body ? `${base}: ${body}` : base;
+  const detail = [errorText, body].filter(Boolean).join(' — ');
+  return detail ? `${base}: ${trimTo(detail, includeToolDetails ? READ_TOOL_MAX : 300)}` : base;
 }
 
 /** @type {Record<string, (tag: string, ev: any, includeToolDetails: boolean) => string>} */
@@ -77,7 +82,7 @@ const EVENT_FORMATTERS = {
   'turn/start': (tag, ev) => `${tag} ── 回合 #${ev?.data?.turn ?? '?'} 开始`,
   'turn/end': (tag, ev) => `${tag} ── 回合 #${ev?.data?.turn ?? '?'} 结束（${String(ev?.data?.reason?.kind ?? 'unknown')}）`,
   'session/presentation': (tag, ev) => {
-    const title = String(ev?.data?.presentation?.title ?? '');
+    const title = String(ev?.data?.title ?? ev?.data?.presentation?.title ?? '');
     return title ? `${tag} 标题: ${trimTo(title, 120)}` : '';
   },
 };
@@ -163,6 +168,23 @@ export async function collectWhaleOwnedSessionIds(ctx, controller, getSelfId) {
   return ids;
 }
 
+const MAX_WHALE_SEARCH_PAGES = 10;
+
+/**
+ * @param {any[]} items
+ * @param {Set<string>} ownedIds
+ * @param {Set<string>} seen
+ * @param {Array<{ sessionId: string, snippet: string }>} hits
+ */
+function collectOwnedPageHits(items, ownedIds, seen, hits) {
+  for (const hit of items) {
+    const sid = String(hit?.header?.id ?? '');
+    if (!sid || !ownedIds.has(sid) || seen.has(sid)) continue;
+    seen.add(sid);
+    hits.push({ sessionId: sid, snippet: trimTo(hit?.bestMatch?.snippet ?? '', 240) });
+  }
+}
+
 /**
  * @param {any} ctx
  * @param {string} query
@@ -174,22 +196,34 @@ async function searchWhaleOwnedViaQuery(ctx, query, ownedIds, seen, signal) {
   const querySvc = ctx.get?.('sessionQuery');
   if (typeof querySvc?.searchSessions !== 'function') return null;
   try {
+    /** @type {Array<{ sessionId: string, snippet: string }>} */
     const hits = [];
-    const page = await querySvc.searchSessions({
-      query,
-      eventFilters: [
-        { kind: 'type', values: ['user/message', 'assistant/message'] },
-        { kind: 'surface', values: ['current'] },
-      ],
-      limit: 20,
-    }, { signal });
-    for (const hit of page?.items ?? []) {
-      const sid = String(hit?.header?.id ?? '');
-      if (!sid || !ownedIds.has(sid) || seen.has(sid)) continue;
-      seen.add(sid);
-      hits.push({ sessionId: sid, snippet: trimTo(hit?.bestMatch?.snippet ?? '', 240) });
+    const seenCursors = new Set();
+    /** @type {any} */
+    let cursor;
+    let complete = false;
+    for (let pageNo = 0; pageNo < MAX_WHALE_SEARCH_PAGES; pageNo += 1) {
+      /** @type {any} */
+      const page = await querySvc.searchSessions({
+        query,
+        eventFilters: [
+          { kind: 'type', values: ['user/message', 'assistant/message'] },
+          { kind: 'surface', values: ['current'] },
+        ],
+        limit: 20,
+        ...(cursor === undefined ? {} : { cursor }),
+      }, { signal });
+      collectOwnedPageHits(page?.items ?? [], ownedIds, seen, hits);
+      const remaining = [...ownedIds].some((sid) => !seen.has(sid));
+      const next = page?.nextCursor;
+      if (!remaining || next === undefined || seenCursors.has(next)) {
+        complete = !remaining || next === undefined;
+        break;
+      }
+      seenCursors.add(next);
+      cursor = next;
     }
-    return hits;
+    return { hits, complete };
   } catch {
     return null;
   }
@@ -233,9 +267,9 @@ function findMatchingSnippet(events, needle) {
 export async function searchWhaleOwnedSessions(ctx, controller, query, ownedIds, seen, signal) {
   if (!ownedIds.size) return [];
   const viaQuery = await searchWhaleOwnedViaQuery(ctx, query, ownedIds, seen, signal);
-  if (viaQuery !== null) return viaQuery;
+  const hits = viaQuery ? [...viaQuery.hits] : [];
+  if (viaQuery?.complete) return hits;
   const needle = query.toLowerCase();
-  const hits = [];
   for (const sid of ownedIds) {
     if (seen.has(sid)) continue;
     const events = await readEventsForSearch(ctx, controller, sid);

@@ -192,13 +192,14 @@ export class TextHarnessBridge {
     }
     this.#acceptedMessageIds.add(messageId);
     const gate = this.#accessGate;
+    const chatType = kind === 'direct' ? 'private' : 'group';
     if (gate && typeof gate.evaluateInbound === 'function') {
       return Promise.resolve().then(async () => {
         const decision = await gate.evaluateInbound({
           senderId,
           senderAlternateIds: normalized.senderAlternateId ? [normalized.senderAlternateId] : [],
           displayName: normalized.senderName ?? normalized.displayName,
-          chatType: kind === 'group' ? 'group' : 'private',
+          chatType,
           harness: this.#harness,
         });
         if (!decision.allowed) {
@@ -220,7 +221,7 @@ export class TextHarnessBridge {
     }
     attachImmutableSpeaker(normalized, {
       role: 'guest',
-      chat: kind === 'group' ? 'group' : 'private',
+      chat: chatType,
     });
     return this.#acceptWithReaction(normalized, messageId, senderId);
   }

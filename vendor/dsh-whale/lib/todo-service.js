@@ -1,9 +1,10 @@
 /** Personal task cards. Runs use ordinary, isolated sessions, never the resident assistant. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { eventText } from './shared.js';
-import { ensureSafeTaskDir, resolvedTaskRootDir, validateTaskCwd } from './task-paths.js';
+import { ensureSafeTaskDir, resolvedTaskRootDir, validateTaskCwd, within } from './task-paths.js';
 
 const text = z.string().max(6000);
 export const todoSchema = z.object({
@@ -174,7 +175,10 @@ export class WhaleTodos {
   prepareStartCwd(cwd) {
     const validated = validateTaskCwd(cwd, { dshHome: this.home, requireExisting: false });
     const defaultRoot = resolvedTaskRootDir(this.scope?.get?.(), this.home);
-    if (this.home && fs.existsSync(this.home) && validated === defaultRoot) {
+    const resolvedValidated = path.resolve(validated);
+    const resolvedDefault = path.resolve(defaultRoot);
+    const matchesDefault = within(resolvedDefault, resolvedValidated) && within(resolvedValidated, resolvedDefault);
+    if (this.home && fs.existsSync(this.home) && matchesDefault) {
       ensureSafeTaskDir(validated, { dshHome: this.home });
     }
     return validated;
