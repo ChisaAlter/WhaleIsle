@@ -331,6 +331,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
             Promise.resolve().then(() => harness.shutdown()),
             Promise.resolve().then(() => cleanupDesktopResources()),
             Promise.resolve().then(() => getLive2dPet()?.dispose()),
+            Promise.resolve().then(() => state.approvalMonitor?.dispose()),
             Promise.resolve().then(() => stopDesktopInstallControl()),
             Promise.resolve().then(() => taskControlPeer.stop()),
             Promise.resolve().then(() => taskProtection.cleanupAfterQuit()),

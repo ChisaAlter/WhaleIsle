@@ -10,6 +10,7 @@ const { REMOTE_FEATURE_ENABLED } = require('./config');
 const { shellWindowChrome, attachIntegratedChrome, hideNativeMenu, prepareHarnessChrome, syncHarnessChrome, currentTheme, markWindowTransparent, paintBackground, resetWindowMaterial } = require('./chrome');
 const { normalizeSettingsSection, buildSettingsSectionScript } = require('./settings-jump');
 const { buildMarketplaceScript } = require('./marketplace-jump');
+const { createListenerSet, createSessionJumpQueue } = require('./session-jump');
 const {
   isLoopbackHttpUrl,
   isSameOriginLoopbackUrl,
@@ -158,7 +159,9 @@ let mainWindow = null;
 let harnessView = null;
 let harnessRevealed = false;
 let harnessOrigin = '';
-let harnessOriginListener = null;
+const harnessOriginListeners = createListenerSet();
+const mainWindowListeners = createListenerSet();
+const sessionJump = createSessionJumpQueue();
 let pluginBootWatch = null;
 let pendingMarketplaceJump = false;
 let launcherWindow = null;
@@ -238,6 +241,7 @@ function createMainWindow({ activate = true } = {}) {
   mainWindow.on('closed', () => {
     hideHarnessView(mainWindow);
     mainWindow = null;
+    mainWindowListeners.emit(null);
   });
 
   attachPrivilegedNavigationGuards(mainWindow.webContents, {
@@ -245,6 +249,7 @@ function createMainWindow({ activate = true } = {}) {
     openDeniedExternal: true,
   });
   attachRendererRecovery(mainWindow.webContents, '桌面端');
+  mainWindowListeners.emit(mainWindow);
 
   return mainWindow;
 }
@@ -333,17 +338,16 @@ function getHarnessOrigin() {
 }
 
 function onHarnessOriginChange(listener) {
-  harnessOriginListener = typeof listener === 'function' ? listener : null;
+  return harnessOriginListeners.add(listener);
+}
+
+/** @param {(win: Electron.BrowserWindow | null) => void} listener */
+function onMainWindowChange(listener) {
+  return mainWindowListeners.add(listener);
 }
 
 function notifyHarnessOrigin() {
-  if (typeof harnessOriginListener === 'function') {
-    try {
-      harnessOriginListener(getHarnessOrigin());
-    } catch {
-      // Origin fans-out must not break BrowserView load.
-    }
-  }
+  harnessOriginListeners.emit(getHarnessOrigin());
 }
 
 function isHarnessNavigationUrl(url) {
@@ -573,6 +577,7 @@ async function revealHarnessView(win) {
   setBootHarnessCovered(win, true);
   desktopPet()?.show(win);
   consumePendingMarketplaceJump(win);
+  consumePendingSessionJump(win);
 }
 
 function watchPluginBoot(view, win) {
@@ -909,6 +914,16 @@ function openMarketplace() {
   return jumpToMarketplaceTab();
 }
 
+/** @param {any} win */
+function consumePendingSessionJump(win) {
+  sessionJump.consume(win, isHarnessLoaded, getHarnessWebContents);
+}
+
+/** @param {string} sessionId */
+function openHarnessSession(sessionId) {
+  return sessionJump.request(showMain({ activate: true }), isHarnessLoaded, getHarnessWebContents, sessionId);
+}
+
 function sendToBoot(channel, payload) {
   const win = getMainWindow();
   if (!win) {
@@ -1014,31 +1029,9 @@ function closeLauncherWindow() {
 }
 
 module.exports = {
-  setRenderHintsSource,
-  createMainWindow,
-  getMainWindow,
-  getHarnessView,
-  getHarnessWebContents,
-  getHarnessOrigin,
-  onHarnessOriginChange,
-  isHarnessNavigationUrl,
-  hideHarnessView,
-  dismissMainWindow,
-  showBoot,
-  showHarness,
-  showMain,
-  openHarnessSettings,
-  openMarketplace,
-  sendToBoot,
-  createLauncherWindow,
-  getLauncherWindow,
-  showLauncher,
-  prepareLauncher,
-  sendToLauncher,
-  closeLauncherWindow,
-  setBootHarnessCovered,
-  isBootLoaded,
-  isHarnessLoaded,
-  iconImage,
-  attachPrivilegedNavigationGuards,
+  setRenderHintsSource, createMainWindow, getMainWindow, getHarnessView, getHarnessWebContents,
+  getHarnessOrigin, onHarnessOriginChange, onMainWindowChange, isHarnessNavigationUrl, hideHarnessView,
+  dismissMainWindow, showBoot, showHarness, showMain, openHarnessSettings, openMarketplace, openHarnessSession,
+  sendToBoot, createLauncherWindow, getLauncherWindow, showLauncher, prepareLauncher, sendToLauncher,
+  closeLauncherWindow, setBootHarnessCovered, isBootLoaded, isHarnessLoaded, iconImage, attachPrivilegedNavigationGuards,
 };

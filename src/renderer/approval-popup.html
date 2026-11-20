@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: http://127.0.0.1:* http://localhost:*"
+    />
+    <title>Whale Isle</title>
+    <link rel="stylesheet" href="../shared/dsh-webui-tokens.css" />
+    <link rel="stylesheet" href="approval-popup.css" />
+    <script src="approval-popup.js" defer></script>
+  </head>
+  <body>
+    <main class="stage">
+      <section class="card" id="card" data-state="closed" role="dialog" aria-modal="false" aria-labelledby="card-title">
+        <header class="strip">
+          <div class="strip-status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="strip-kind" id="kind-label"></span>
+          </div>
+          <div class="strip-controls">
+            <div class="pager" id="pager" hidden>
+              <button class="icon-btn" id="prev-btn" type="button" aria-label="Previous">‹</button>
+              <span class="pager-count" id="pager-count"></span>
+              <button class="icon-btn" id="next-btn" type="button" aria-label="Next">›</button>
+            </div>
+            <button class="icon-btn" id="dismiss-btn" type="button" aria-label="Dismiss">×</button>
+          </div>
+        </header>
+
+        <div class="body" id="body" tabindex="0">
+          <div class="meta-row" id="meta-row" hidden>
+            <span class="session-name" id="session-name"></span>
+            <span class="requester-tag" id="requester-tag" hidden></span>
+          </div>
+          <div class="subject-row" id="subject-row" hidden>
+            <img class="subject-icon" id="subject-icon" alt="" width="28" height="28" hidden />
+            <span class="subject-name" id="subject-name"></span>
+          </div>
+          <h1 class="title" id="card-title"></h1>
+          <p class="description" id="card-description" hidden></p>
+          <pre class="preview" id="card-preview" hidden></pre>
+        </div>
+
+        <footer class="footer">
+          <button class="link-btn" id="open-session-btn" type="button"></button>
+          <div class="actions" id="actions"></div>
+        </footer>
+
+        <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+      </section>
+    </main>
+  </body>
+</html>

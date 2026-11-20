@@ -150,6 +150,7 @@ function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animatio
     prepareHarnessChrome() {},
     syncHarnessChrome() { events.push('chrome'); return chrome; },
     consumePendingMarketplaceJump() {},
+    consumePendingSessionJump() {},
     setTimeout() { events.push('main-timer'); },
   };
   const api = vm.runInNewContext(`${snippet}\n({ reveal: revealHarnessView, cancel() { harnessView = null; harnessRevealed = false; } })`, context);

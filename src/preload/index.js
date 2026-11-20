@@ -115,6 +115,7 @@ function harnessApi(renderer, remoteFeature) {
     openuiApi: invoke(renderer, 'shell:openui-api'),
     openuiBundle: invoke(renderer, 'shell:openui-bundle'),
     openSettings: invoke(renderer, 'shell:open-settings'),
+    onOpenSession: subscribe(renderer, 'shell:open-session'),
     pickWorkspaceDirectory: invoke(renderer, 'shell:pick-workspace-directory'),
     reloadPage: invoke(renderer, 'shell:reload-page'),
     // Live2D pet settings section writes — normalize + persist + push to

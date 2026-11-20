@@ -20,15 +20,24 @@ function rpcEndpoint(baseUrl, method) {
   return endpoint.toString();
 }
 
+/**
+ * @param {string} baseUrl
+ * @param {string} method
+ * @param {Record<string, unknown>} args
+ * @param {typeof fetch} [fetchImpl]
+ * @param {{ cookie?: string, signal?: AbortSignal }} [options]
+ */
 async function rpc(baseUrl, method, args, fetchImpl = fetch, options = {}) {
   const rpcId = randomUUID();
+  /** @type {Record<string, string>} */
   const headers = {
     'content-type': 'application/json',
   };
   if (options.cookie) {
     headers.Cookie = options.cookie;
   }
-  const response = await fetchImpl(rpcEndpoint(baseUrl, method), {
+  /** @type {RequestInit} */
+  const init = {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -37,7 +46,11 @@ async function rpc(baseUrl, method, args, fetchImpl = fetch, options = {}) {
       method,
       payload: { args: args && typeof args === 'object' && !Array.isArray(args) ? args : {} },
     }),
-  });
+  };
+  if (options.signal) {
+    init.signal = options.signal;
+  }
+  const response = await fetchImpl(rpcEndpoint(baseUrl, method), init);
   const body = await response.text();
   let parsed;
   try {

@@ -21,6 +21,7 @@
  * @property {any} updateCenter — desktop update-center service (full package)
  * @property {any} platformView — embedded Platform documents view
  * @property {Function|undefined} platformSessionRefresh — session refetch hook
+ * @property {any} approvalMonitor — minimized approval popup & app badge coordinator
  */
 
 /**
@@ -48,6 +49,7 @@ function createShellState() {
     updateCenter: null,
     platformView: undefined,
     platformSessionRefresh: undefined,
+    approvalMonitor: null,
   };
 }
 

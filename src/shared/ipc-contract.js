@@ -41,6 +41,7 @@ const SURFACES = Object.freeze({
   PLATFORM: 'platform',
   WHALEBRIDGE: 'whalebridge',
   PREVIEW_GUEST: 'preview-guest',
+  APPROVAL_POPUP: 'approval-popup',
 });
 
 const BOOT_ONLY = [SURFACES.BOOT];
@@ -56,6 +57,7 @@ const CENTER_BROADCAST = CENTER_CALLERS;
 const THEME_SURFACES = [
   SURFACES.BOOT, SURFACES.HARNESS, SURFACES.LAUNCHER, SURFACES.PET,
   SURFACES.FILE_PREVIEW, SURFACES.UPDATE_DIALOG, SURFACES.UPDATE_CENTER,
+  SURFACES.APPROVAL_POPUP,
 ];
 
 /**
@@ -165,6 +167,7 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'shell:pick-workspace-directory', kind: 'invoke', roles: HARNESS_ONLY,
     validate: optionalObject },
   { channel: 'shell:open-settings', kind: 'invoke', roles: HARNESS_ONLY, validate: optionalString },
+  { channel: 'shell:open-session', kind: 'event', roles: HARNESS_ONLY },
   { channel: 'shell:reload-page', kind: 'invoke', roles: HARNESS_ONLY, validate: noArgs },
   { channel: 'shell:live2d-pet-settings', kind: 'invoke', roles: HARNESS_ONLY, validate: objectArg },
   { channel: 'shell:open-dsh-home', kind: 'invoke', roles: HARNESS_ONLY, validate: noArgs },
@@ -559,6 +562,19 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'whalebridge:window-state', kind: 'invoke', roles: [SURFACES.WHALEBRIDGE],
     transport: 'webContents' },
   { channel: 'whalebridge:window-state', kind: 'event', roles: [SURFACES.WHALEBRIDGE] },
+
+  // --- Minimized approval popup window ------------------------------------------------------
+  { channel: 'shell:approval-popup-state', kind: 'invoke', roles: [SURFACES.APPROVAL_POPUP],
+    authorize: OWNED, validate: noArgs },
+  { channel: 'shell:approval-popup-decide', kind: 'invoke', roles: [SURFACES.APPROVAL_POPUP],
+    authorize: OWNED, validate: requiredObject },
+  { channel: 'shell:approval-popup-select', kind: 'send', roles: [SURFACES.APPROVAL_POPUP],
+    authorize: OWNED, validate: requiredObject },
+  { channel: 'shell:approval-popup-open-session', kind: 'invoke', roles: [SURFACES.APPROVAL_POPUP],
+    authorize: OWNED, validate: requiredObject },
+  { channel: 'shell:approval-popup-dismiss', kind: 'send', roles: [SURFACES.APPROVAL_POPUP],
+    authorize: OWNED, validate: noArgs },
+  { channel: 'shell:approval-popup-changed', kind: 'event', roles: [SURFACES.APPROVAL_POPUP] },
 ]);
 
 module.exports = {

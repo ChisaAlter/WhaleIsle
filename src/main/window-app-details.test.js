@@ -109,6 +109,7 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
     rendererFile: name => name,
     preloadFile: () => 'isolated-preload.js',
     hideHarnessView() {},
+    mainWindowListeners: { emit() {} },
     isBootLoaded: () => false,
     paintBackground() {},
     currentTheme: () => ({ bg: '#151517' }),

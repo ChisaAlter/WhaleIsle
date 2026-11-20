@@ -24,6 +24,7 @@ const DEFAULTS = {
   dshBin: '',
   nodeBin: '',
   closeToTray: DEFAULT_CLOSE_TO_TRAY,
+  approvalPopupEnabled: true,
   openAtLogin: false,
   openDevTools: false,
   theme: 'deepseek',
@@ -147,7 +148,7 @@ function normalizeRendererConfigPatch(patch) {
   }
   const next = {};
   for (const [key, value] of Object.entries(patch)) {
-    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled', 'dshImEnabled'].includes(key)) {
+    if (['closeToTray', 'approvalPopupEnabled', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled', 'dshImEnabled'].includes(key)) {
       if (typeof value !== 'boolean') {
         throw new TypeError(`${key} must be a boolean`);
       }
@@ -316,6 +317,7 @@ function validUpdateProxy(value) {
 function normalizeLauncherSettings(config) {
   return {
     ...config,
+    approvalPopupEnabled: config.approvalPopupEnabled !== false,
     quitAfterStart: config.quitAfterStart !== false,
     autoStartDesktop: config.autoStartDesktop !== false,
     askOnUpdate: config.askOnUpdate !== false,

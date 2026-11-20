@@ -8,6 +8,7 @@ import { stubConfigForm, StaticRemoteAccess, TestRemote, usePinnedBrowserLanguag
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { CloseBehaviorRow } from '../src/client/CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from '../src/client/AutoStartDesktopRow.tsx'
+import { ApprovalPopupRow } from '../src/client/ApprovalPopupRow.tsx'
 import { ProjectRow } from '../src/client/ProjectRow.tsx'
 import { RemoteWorkspaceRow } from '../src/client/RemoteWorkspaceRow.tsx'
 import { DshImRow } from '../src/client/DshImRow.tsx'
@@ -77,6 +78,10 @@ describe('ui-settings-general desktop close-behavior row', () => {
     const autoStartRow = rows.find(row => row.options.id === 'auto-start-desktop')!
     expect(autoStartRow.component).toBe(AutoStartDesktopRow)
     expect(autoStartRow.options).toMatchObject({ id: 'auto-start-desktop', order: 26 })
+    const approvalPopupRow = rows.find(row => row.options.id === 'approval-popup')!
+    expect(approvalPopupRow.component).toBe(ApprovalPopupRow)
+    expect(approvalPopupRow.options).toMatchObject({ id: 'approval-popup', order: 27 })
+    expect(approvalPopupRow.locale).toBe('settings')
     const featureRows = b.slots.entries('settings.features.item')
     const projectRow = featureRows.find(row => row.options.id === 'project')!
     expect(projectRow.component).toBe(ProjectRow)
@@ -146,7 +151,7 @@ describe('ui-settings-general desktop close-behavior row', () => {
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     expect(b.slots.entries('settings.general.item').some(row =>
-      row.options.id === 'close-behavior' || row.options.id === 'auto-start-desktop')).toBe(false)
+      row.options.id === 'close-behavior' || row.options.id === 'auto-start-desktop' || row.options.id === 'approval-popup')).toBe(false)
     expect(b.slots.entries('settings.interface.item')).toEqual([])
     expect(b.slots.entries('settings.section').some(row => row.options.id === 'features')).toBe(false)
   })

@@ -79,6 +79,21 @@ test('Project defaults on for new and existing settings without a saved choice, 
   }
 });
 
+test('approvalPopupEnabled defaults on, persists, and is renderer-writable', () => {
+  const before = loadConfig();
+  try {
+    assert.equal(DEFAULTS.approvalPopupEnabled, true);
+    assert.deepEqual(normalizeRendererConfigPatch({ approvalPopupEnabled: false }), { approvalPopupEnabled: false });
+    assert.throws(() => normalizeRendererConfigPatch({ approvalPopupEnabled: 'no' }), /boolean/);
+    saveConfig({ approvalPopupEnabled: false });
+    assert.equal(loadConfig().approvalPopupEnabled, false);
+    saveConfig({ approvalPopupEnabled: true });
+    assert.equal(loadConfig().approvalPopupEnabled, true);
+  } finally {
+    saveConfig(before);
+  }
+});
+
 test('retired Bots flags are discarded on load and save', () => {
   const before = loadConfig();
   try {
