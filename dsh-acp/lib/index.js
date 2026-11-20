@@ -36,6 +36,7 @@ import {
 import { initAgentRuntime, runtimeBundle, configureRuntimeHost, agentRuntimeIdentity } from './agent-runtime.js';
 import { createWhaleIsleMcp } from './mcp-server.js';
 import { DELEGATION_PROVIDER, registerDelegation } from './delegation.js';
+import { resolveDelegationCwd } from './delegate-cwd.js';
 import { createTaskStore, TASK_ADMISSION } from './tasks.js';
 import { createTaskCheckout } from './isolation.js';
 import { TEAM_GUIDANCE, teamEnabled } from './team.js';
@@ -360,7 +361,8 @@ export function createAcpAgentsManager(ctx, options = {}) {
       throw new Error(`Unknown model "${model}" for ${agent.name}. Available model ids: ${models.map((entry) => entry.id).join(', ')}. Omit model to use ${models[0]?.id || 'default'}.`);
     }
     validateDelegateOptions(args);
-    return { agent, models, model };
+    const cwd = resolveDelegationCwd(args, parent);
+    return { agent, models, model, cwd };
   }
 
   async function prepareDelegationConnection(args, parent, signal, agent, model, identity, connKey, setStage) {
@@ -411,13 +413,30 @@ export function createAcpAgentsManager(ctx, options = {}) {
     throw failure;
   }
 
-  async function runDelegationAttempt(args, parent, signal, subagents, { agent, models, model }, requestKey, requestArguments) {
-    const childId = crypto.randomUUID(), taskId = crypto.randomUUID();
-    const identity = { childId, taskId, agentId: agent.id, agentName: agent.name,
-      model, modelName: models.find((entry) => entry.id === model)?.name || model, task: args.description || args.prompt,
+  function buildDelegationIdentity(args, parent, { agent, models, model, cwd }, requestKey, requestArguments) {
+    return {
+      childId: crypto.randomUUID(),
+      taskId: crypto.randomUUID(),
+      agentId: agent.id,
+      agentName: agent.name,
+      model,
+      modelName: models.find((entry) => entry.id === model)?.name || model,
+      task: args.description || args.prompt,
       turn: parent.session?.snapshotEvents().findLast((event) => event.type === 'turn/start')?.data.turn ?? null,
-      interactionMode: planActive(parent) ? 'plan' : args.interaction_mode || 'default', runtimeMode: args.runtime_mode || 'inherit',
-      cwd: parent.session.header.cwd || process.cwd(), options: args.options || [], delivery: 'caller', requestKey, requestArguments };
+      interactionMode: planActive(parent) ? 'plan' : args.interaction_mode || 'default',
+      runtimeMode: args.runtime_mode || 'inherit',
+      cwd: cwd || parent.session.header.cwd || process.cwd(),
+      options: args.options || [],
+      delivery: 'caller',
+      requestKey,
+      requestArguments,
+    };
+  }
+
+  async function runDelegationAttempt(args, parent, signal, subagents, validated, requestKey, requestArguments) {
+    const { agent, model } = validated;
+    const identity = buildDelegationIdentity(args, parent, validated, requestKey, requestArguments);
+    const { childId, taskId } = identity;
     let conn, task, stage = 'connection';
     const connKey = encodeConnKey(childId, agent.id);
     try {

@@ -17,6 +17,7 @@ export const AGENT_TOOLS = [
       properties: {
         agent: { type: 'string', description: 'Configured agent instance id from acp_agents.' },
         prompt: { type: 'string', description: 'Complete task and context for the child.' },
+        cwd: { type: 'string', description: 'Optional absolute target working directory. Required when delegating from whale-girl; must be an existing directory outside $DSH_HOME and data/whale.' },
         description: { type: 'string', description: 'Short task label.' },
         name: { type: 'string', description: 'Optional child name, unique among your children: 1-32 lower-case letters, digits or hyphens, starting with a letter (not "lead"). Teammates are addressed as lead/<name>.' },
         model: { type: 'string', description: 'Optional model id; omit for the configured agent default.' },
@@ -83,12 +84,13 @@ export function registerDelegation(ctx, manager) {
   const handlers = {
     acp_agents: () => ({ agents: manager.listDelegationAgents() }),
     async acp_delegate(args, exec) {
+      const targetCwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : '';
       const confirmation = await confirmModelAction({
         tool: 'acp_delegate',
         action: 'delegate',
         effect: 'code',
-        summary: `在已配置代理 ${String(args.agent ?? '?')} 上启动一个可以执行命令的子任务`,
-        details: String(args.prompt ?? '').slice(0, 2000),
+        summary: `在已配置代理 ${String(args.agent ?? '?')} 上启动一个可以执行命令的子任务${targetCwd ? `（目录：${targetCwd}）` : ''}`,
+        details: `${targetCwd ? `目标目录：${targetCwd}\n\n` : ''}${String(args.prompt ?? '').slice(0, 2000)}`,
       });
       if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
       const child = await manager.delegate(args, exec.agent, exec.signal, 'parent', ctx.subagents);

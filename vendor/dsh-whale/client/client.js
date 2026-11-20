@@ -1093,7 +1093,28 @@ html[data-dsh-whale-mode] [data-dsh-frame-region="sidebar"],html[data-dsh-whale-
 html[data-dsh-whale-mode] [data-project-rail="true"]>[data-conversation-content]{margin-right:0!important}
 html[data-dsh-whale-mode] .dshpad-root:not(.dshpad-whale-panels){display:none!important}
 .dsh-whale-mode-head{position:absolute;top:var(--dsh-frame-chrome-top,0px);left:20px;right:max(calc(var(--dsh-whale-track,360px) + 16px),calc(var(--dshd-wco-controls,8px) + 40px));height:48px;display:flex;align-items:center;gap:8px;user-select:none;-webkit-app-region:drag}
-.dsh-whale-mode-head>button{-webkit-app-region:no-drag}.dsh-whale-mode-head .dsh-whale-mode-name{display:flex;flex:0 1 auto;align-items:center;gap:8px;min-width:0;font-size:14px;line-height:22px;font-weight:500}.dsh-whale-mode-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-whale-mode-spacer{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;overflow:hidden}.dsh-whale-mode-current{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-whale-mode-exit{white-space:nowrap}
+.dsh-whale-mode-head>button,.dsh-whale-mode-head .dsh-whale-needs-you{-webkit-app-region:no-drag}.dsh-whale-mode-head .dsh-whale-mode-name{display:flex;flex:0 1 auto;align-items:center;gap:8px;min-width:0;font-size:14px;line-height:22px;font-weight:500}.dsh-whale-mode-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-whale-mode-spacer{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;overflow:hidden}.dsh-whale-mode-current{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-whale-mode-exit{white-space:nowrap}
+.dsh-whale-needs-you{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:13px;border:.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d97706) 45%,transparent);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d97706) 14%,transparent);color:var(--dsw-alias-state-warn-primary,#d97706);font:inherit;font-size:12px;line-height:18px;font-weight:500;cursor:pointer;white-space:nowrap}
+.dsh-whale-needs-you:hover{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d97706) 22%,transparent)}
+.dsh-whale-needs-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.dsh-whale-side-btn{white-space:nowrap;font-family:var(--ds-font-family-code,monospace);font-size:12px}
+.dsh-whale-todo-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding:6px 10px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dsh-whale-todo-toolbar-left{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.dsh-whale-todo-card[data-needs-you="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d97706) 55%,var(--dsw-alias-border-l2))}
+.dsh-whale-todo-badge{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:99px;font-size:11px;line-height:16px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
+.dsh-whale-todo-badge[data-tone="warn"]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#d97706) 16%,transparent);color:var(--dsw-alias-state-warn-primary,#d97706);font-weight:500}
+.dsh-whale-todo-phase{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);margin:4px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-whale-deliverables{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.dsh-whale-deliverable-row{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform,transparent);font-size:12px}
+.dsh-whale-deliverable-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+.dsh-whale-continue-box{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-top:8px;border-top:.5px solid var(--dsw-alias-border-l2)}
+.dsh-whale-side-qa{display:flex;flex-direction:column;gap:12px;max-height:66vh}
+.dsh-whale-side-log{flex:1;min-height:120px;max-height:38vh;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:2px 0}
+.dsh-whale-side-item{padding:10px 12px;border-radius:10px;border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid,var(--dsw-alias-bg-layer-1));font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.dsh-whale-side-q{font-weight:500;margin-bottom:6px;color:var(--dsw-alias-label-primary)}
+.dsh-whale-side-a{color:var(--dsw-alias-label-secondary)}
+.dsh-whale-side-meta{margin-top:6px;font-size:11px;color:var(--dsw-alias-label-tertiary)}
+.dsh-whale-mode-select{height:34px;padding:0 10px;border-radius:8px;border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-primary,transparent);color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:13px}
 html[data-platform="darwin"] .dsh-whale-mode-head{left:88px}
 html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
 .dsh-whale-mode-side{position:absolute;inset:var(--dsh-frame-chrome-top,0px) 0 0 auto;width:var(--dsh-whale-width,360px);max-width:100%;display:flex;flex-direction:column;min-height:0;background:var(--dsh-sidebar-rail-fill,var(--dsw-specific-sidebar-fill));border-left:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);container-type:inline-size}
@@ -1115,14 +1136,207 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
       return () => style.remove();
     }
 
-    const todoBusy = card => ["starting", "running", "stopping"].includes(card.state);
+    const todoBusy = card => ["starting", "running", "waiting_approval", "waiting_input", "stopping"].includes(card.state);
+    const todoNeedsYou = card => card.state === "waiting_approval" || card.state === "waiting_input";
     const todoGroup = card => todoBusy(card) ? "running" : card.state === "pending" ? "pending" : "executed";
     const isDocumentHidden = () => (typeof document !== "undefined"
       && (document.hidden === true || Boolean(document.documentElement?.hasAttribute?.("data-dshd-window-hidden"))));
 
-    function WhaleTodoCard({ card, tr, pending, onAction, onEdit, onConfirm, onOpen, onExpand, expanded }) {
+    const fileBaseName = (filePath) => {
+      const text = String(filePath ?? "");
+      const parts = text.split(/[\\/]/u).filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : text;
+    };
+
+    async function openPresentedDeliverable(item, action = "open") {
+      if (typeof fetch !== "function") throw new Error("fetch unavailable");
+      const params = new URLSearchParams({
+        sessionId: String(item.sessionId ?? ""),
+        seq: String(item.seq ?? 0),
+        index: String(item.index ?? 0),
+      });
+      if (action === "reveal") params.set("action", "reveal");
+      const res = await fetch(`api/present.open?${params.toString()}`, { method: "POST" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+    }
+
+    /**
+     * Live SSE subscription for Big Fish Workbench (`/dsh-whale/events`).
+     * Eliminates 3s polling; reconnects with exponential backoff and forces a
+     * full authoritative snapshot reconciliation after every reconnect.
+     * NEVER treats SSE close / `wasClean` as task termination.
+     */
+    function useWhaleLiveWorkbench({ rpc, active }) {
+      const [snapshot, setSnapshot] = useState({
+        cards: [],
+        autoAdvance: false,
+        needsYou: [],
+        resident: null,
+        activeCount: 0,
+        loaded: false,
+        connected: false,
+      });
+      const [loadError, setLoadError] = useState(null);
+      const errSeq = useRef(0);
+
+      const applyIncoming = useCallback((value) => {
+        if (!value || typeof value !== "object") return;
+        const cards = Array.isArray(value.cards) ? value.cards : [];
+        const needsYou = Array.isArray(value.needsYou)
+          ? value.needsYou
+          : cards.filter(todoNeedsYou).map((card) => ({
+              kind: "card",
+              cardId: card.id,
+              title: card.title,
+              sessionId: card.sessionId,
+              state: card.state,
+              phase: card.phase || "",
+            }));
+        setSnapshot((prev) => ({
+          ...prev,
+          cards,
+          autoAdvance: typeof value.autoAdvance === "boolean" ? value.autoAdvance : prev.autoAdvance,
+          needsYou,
+          resident: value.resident ?? prev.resident,
+          activeCount: typeof value.activeCount === "number" ? value.activeCount : cards.filter(todoBusy).length,
+          loaded: true,
+        }));
+        setLoadError(null);
+      }, []);
+
+      const reconcile = useCallback(async (isCancelled = () => false) => {
+        try {
+          const value = await rpc("todos/snapshot");
+          if (!isCancelled()) applyIncoming(value);
+        } catch {
+          const fallback = await rpc("todos/list");
+          if (!isCancelled()) applyIncoming(fallback);
+        }
+      }, [applyIncoming, rpc]);
+
+      useEffect(() => {
+        if (!active) return undefined;
+        let cancelled = false;
+        let es = null;
+        let reconnectTimer = null;
+        let attempt = 0;
+        const isCancelled = () => cancelled;
+
+        const reportErr = (err) => {
+          if (cancelled) return;
+          errSeq.current += 1;
+          setLoadError({ text: err?.message || String(err), attempt: errSeq.current });
+        };
+
+        const fetchFull = () => {
+          if (cancelled || isDocumentHidden()) return;
+          void reconcile(isCancelled).catch(reportErr);
+        };
+
+        const closeSource = () => {
+          if (es) {
+            try { es.close?.(); } catch { /* Ignore close error. */ }
+            es = null;
+          }
+        };
+
+        const scheduleReconnect = () => {
+          if (cancelled || reconnectTimer !== null) return;
+          const delay = Math.min(10000, 1000 * (2 ** Math.min(attempt, 3)));
+          attempt += 1;
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            if (!cancelled && !isDocumentHidden()) connect(true);
+          }, delay);
+        };
+
+        const connect = (isReconnect = false) => {
+          closeSource();
+          if (cancelled || isDocumentHidden()) return;
+          const ES = typeof EventSource === "function" ? EventSource : (typeof window !== "undefined" ? window.EventSource : null);
+          if (typeof ES !== "function") {
+            fetchFull();
+            return;
+          }
+          try {
+            es = new ES("/dsh-whale/events");
+          } catch {
+            fetchFull();
+            scheduleReconnect();
+            return;
+          }
+          es.addEventListener?.("open", () => {
+            if (cancelled) return;
+            attempt = 0;
+            setSnapshot((prev) => ({ ...prev, connected: true }));
+            // Force full authoritative snapshot reconciliation after any reconnect.
+            if (isReconnect) fetchFull();
+          });
+          es.addEventListener?.("snapshot", (event) => {
+            if (cancelled) return;
+            try {
+              const parsed = JSON.parse(event?.data || "{}");
+              applyIncoming(parsed);
+            } catch { /* Ignore malformed frame. */ }
+          });
+          es.onerror = () => {
+            if (cancelled) return;
+            // Never interpret SSE disconnect/close as task termination; reconnect & reconcile.
+            setSnapshot((prev) => ({ ...prev, connected: false }));
+            closeSource();
+            scheduleReconnect();
+          };
+        };
+
+        // Initial authoritative snapshot + live SSE stream.
+        fetchFull();
+        connect(false);
+
+        const onResume = () => {
+          if (cancelled || isDocumentHidden()) return;
+          fetchFull();
+          if (!es) connect(true);
+        };
+        if (typeof document !== "undefined") {
+          document.addEventListener?.("visibilitychange", onResume);
+          document.addEventListener?.("dsh:render-resume", onResume);
+        }
+        return () => {
+          cancelled = true;
+          closeSource();
+          if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+          if (typeof document !== "undefined") {
+            document.removeEventListener?.("visibilitychange", onResume);
+            document.removeEventListener?.("dsh:render-resume", onResume);
+          }
+        };
+      }, [active, applyIncoming, reconcile]);
+
+      return { snapshot, loadError, setLoadError, reconcile };
+    }
+
+    function WhaleTodoCard({ card, tr, pending, onAction, onContinue, onEdit, onConfirm, onOpen, onOpenDeliverable, onExpand, expanded }) {
       const [menu, setMenu] = useState(false);
-      const labels = { pending: tr("尚未开始", "Not started"), starting: tr("正在启动", "Starting"), running: tr("正在执行", "Running"), stopping: tr("正在停止", "Stopping"), review: tr("执行结束 · 待确认", "Run ended · Review needed"), completed: tr("已完成", "Completed"), cancelled: tr("已取消", "Cancelled"), failed: tr("执行失败", "Failed"), interrupted: tr("执行中断 · 需检查", "Interrupted · Check session") };
+      const [continueOpen, setContinueOpen] = useState(false);
+      const [feedback, setFeedback] = useState("");
+      const labels = {
+        pending: tr("尚未开始", "Not started"),
+        starting: tr("正在启动", "Starting"),
+        running: tr("正在执行", "Running"),
+        waiting_approval: tr("等待审批", "Approval needed"),
+        waiting_input: tr("等待回答", "Input needed"),
+        stopping: tr("正在停止", "Stopping"),
+        review: tr("执行结束 · 待确认", "Run ended · Review needed"),
+        completed: tr("已完成", "Completed"),
+        cancelled: tr("已取消", "Cancelled"),
+        failed: tr("执行失败", "Failed"),
+        interrupted: tr("执行中断 · 需检查", "Interrupted · Check session"),
+      };
+      const needsYou = todoNeedsYou(card);
+      const deliverables = Array.isArray(card.deliverables) ? card.deliverables : [];
       const entries = [{ id: "pin", label: card.pinned ? tr("取消置顶", "Unpin") : tr("置顶", "Pin") }, { id: "detail", label: tr("查看详情", "View details") }];
       if (card.state === "pending") entries.push({ id: "edit", label: tr("编辑任务", "Edit task") }, { id: "start", label: tr("交给鲸鱼娘执行…", "Run with Whale…") });
       if (todoBusy(card)) entries.push({ id: "cancel", label: tr("停止执行…", "Stop run…"), disabled: card.state === "stopping" && !card.error });
@@ -1139,28 +1353,70 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
         else if (id === "start" || id === "delete" || id === "cancel" && todoBusy(card)) onConfirm(card, id);
         else onAction(card, id);
       };
-      return h("article", { className: "dsh-whale-todo-card", "data-whale-todo": card.id },
+      const submitContinue = async () => {
+        const text = feedback.trim();
+        if (!text) return;
+        const ok = await onContinue(card, text);
+        if (ok) {
+          setFeedback("");
+          setContinueOpen(false);
+        }
+      };
+      return h("article", { className: "dsh-whale-todo-card", "data-whale-todo": card.id, "data-needs-you": needsYou ? "true" : undefined },
         h("div", { className: "dsh-whale-todo-row" }, h("button", { type: "button", className: "dsh-whale-todo-title", "aria-expanded": expanded, onClick: () => onExpand(!expanded) }, card.title),
           h(Menu, { open: menu, portal: true, align: "end", items: entries.map(item => ({ ...item, disabled: item.disabled || pending })), onSelect: choose, onClose: () => setMenu(false), anchor: h(Button, { variant: "ghost", size: "sm", className: "dsh-whale-icon-btn", "aria-label": tr("任务操作：", "Task actions: ") + card.title, "aria-expanded": menu, onClick: () => setMenu(!menu) }, h(IconEllipsisOutline16)) })),
-        h("div", { className: "dsh-whale-todo-meta", role: pending ? "status" : undefined }, todoBusy(card) ? h(StateDot, { state: "ongoing", size: 12 }) : null, labels[card.state], card.pinned ? h("span", { role: "img", "aria-label": tr("已置顶", "Pinned") }, h(IconPinOutlineRegular, { size: 12 })) : null),
+        h("div", { className: "dsh-whale-todo-meta", role: pending ? "status" : undefined },
+          todoBusy(card) ? h(StateDot, { state: "ongoing", size: 12 }) : null,
+          needsYou ? h("span", { className: "dsh-whale-todo-badge", "data-tone": "warn" }, labels[card.state]) : labels[card.state],
+          card.mode === "readonly-brief" ? h("span", { className: "dsh-whale-todo-badge" }, tr("只读资料", "Read-only")) : null,
+          card.pinned ? h("span", { role: "img", "aria-label": tr("已置顶", "Pinned") }, h(IconPinOutlineRegular, { size: 12 })) : null),
+        todoBusy(card) && card.phase ? h("p", { className: "dsh-whale-todo-phase", title: card.phase }, card.phase) : null,
         card.error ? h("p", { className: "dsh-whale-todo-result dsh-whale-todo-error" }, card.error) : null,
+        deliverables.length ? h("div", { className: "dsh-whale-deliverables" },
+          deliverables.map((item, idx) => h("div", { key: `${item.path}:${item.seq}:${idx}`, className: "dsh-whale-deliverable-row" },
+            h("span", { className: "dsh-whale-deliverable-name", title: item.description ? `${item.path} — ${item.description}` : item.path }, fileBaseName(item.path)),
+            h(Button, { variant: "ghost", size: "sm", onClick: () => onOpenDeliverable(item, "open") }, tr("打开", "Open")),
+            h(Button, { variant: "ghost", size: "sm", onClick: () => onOpenDeliverable(item, "reveal") }, tr("定位", "Reveal"))))) : null,
         expanded ? h("div", { className: "dsh-whale-todo-result" },
           card.description ? h(Fragment, null, h("h4", null, tr("任务说明", "Description")), h("p", null, card.description)) : null,
           card.criteria ? h(Fragment, null, h("h4", null, tr("完成条件", "Acceptance criteria")), h("p", null, card.criteria)) : null,
+          card.files?.length ? h(Fragment, null, h("h4", null, tr("资料文件", "Input files")), h("p", null, card.files.join("\n"))) : null,
           h("h4", null, tr("工作目录", "Working directory")), h("p", null, card.cwd),
           card.summary ? h(Fragment, null, h("h4", null, tr("执行结果", "Run result")), h("p", null, card.summary)) : null,
           card.sessionId ? h(Button, { variant: "ghost", size: "sm", onClick: () => onOpen(card.sessionId) }, tr("打开关联对话", "Open linked conversation")) : null,
         ) : null,
+        needsYou && card.sessionId ? h("div", { className: "dsh-whale-todo-footer" },
+          h(Button, { variant: "primary", size: "sm", onClick: () => onOpen(card.sessionId) }, card.state === "waiting_approval" ? tr("去审批", "Review approval") : tr("去回答", "Answer now"))) : null,
         card.state === "pending" ? h("div", { className: "dsh-whale-todo-footer" }, h(Button, { variant: "outline", size: "sm", disabled: pending, onClick: () => onConfirm(card, "start") }, tr("开始执行", "Start"))) : null,
-        card.state === "review" ? h("div", { className: "dsh-whale-todo-footer" }, h(Button, { variant: "ghost", size: "sm", onClick: () => onExpand(!expanded) }, expanded ? tr("收起成果", "Hide result") : tr("查看成果", "Review result")), h(Button, { variant: "outline", size: "sm", disabled: pending, onClick: () => onAction(card, "complete") }, tr("确认完成", "Confirm complete"))) : null,
+        card.state === "review" ? h("div", { className: "dsh-whale-todo-footer" },
+          h(Button, { variant: "ghost", size: "sm", onClick: () => onExpand(!expanded) }, expanded ? tr("收起成果", "Hide result") : tr("查看成果", "Review result")),
+          card.sessionId && card.mode !== "readonly-brief" ? h(Button, { variant: "ghost", size: "sm", disabled: pending, onClick: () => setContinueOpen(!continueOpen) }, tr("追问修订", "Follow up")) : null,
+          h(Button, { variant: "outline", size: "sm", disabled: pending, onClick: () => onAction(card, "complete") }, tr("确认完成", "Confirm complete"))) : null,
+        continueOpen && card.state === "review" ? h("div", { className: "dsh-whale-continue-box" },
+          h("textarea", {
+            className: "dsh-whale-textarea",
+            placeholder: tr("输入修订意见，将在原任务会话继续执行…", "Enter follow-up instructions to continue the same task session…"),
+            value: feedback,
+            disabled: pending,
+            "aria-label": tr("追问修订", "Follow-up feedback"),
+            onChange: (/** @type {any} */ e) => setFeedback(e.target.value),
+          }),
+          h("div", { className: "dsh-whale-todo-footer" },
+            h(Button, { variant: "ghost", size: "sm", disabled: pending, onClick: () => setContinueOpen(false) }, tr("取消", "Cancel")),
+            h(Button, { variant: "primary", size: "sm", disabled: pending || !feedback.trim(), loading: pending, onClick: () => { void submitContinue(); } }, tr("继续执行", "Continue run")))) : null,
       );
     }
 
     /** @param {any} props */
-    function WhaleTodosView({ rpc, mode, requestAdd, openSession, onSessionOpened, t, visible }) {
+    function WhaleTodosView({ rpc, mode, live, requestAdd, openSession, onSessionOpened, t }) {
       const tr = mode.tr;
-      const [cards, setCards] = useState([]), [loaded, setLoaded] = useState(false);
-      const [loadError, setLoadError] = useState(null), [actionError, setActionError] = useState(null);
+      const cards = live.snapshot.cards;
+      const loaded = live.snapshot.loaded;
+      const autoAdvance = live.snapshot.autoAdvance;
+      const loadError = live.loadError;
+      const setLoadError = live.setLoadError;
+      const load = live.reconcile;
+      const [actionError, setActionError] = useState(null);
       const [editor, setEditor] = useState(null), [confirm, setConfirm] = useState(null), [pending, setPending] = useState("");
       const [expanded, setExpanded] = useState(null), [archive, setArchive] = useState(false);
       const heldGroup = useRef(null), lastConfirm = useRef(null), lastEditor = useRef(null), errorSeq = useRef(0);
@@ -1169,51 +1425,10 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
       const confirmView = confirm ?? lastConfirm.current;
       const editorView = editor ?? lastEditor.current;
       const nextAttempt = () => { errorSeq.current += 1; return errorSeq.current; };
-      const reportLoadError = useCallback((/** @type {any} */ err) => {
-        setLoadError({ text: err?.message || String(err), attempt: nextAttempt() });
-      }, []);
       const reportActionError = useCallback((/** @type {any} */ err) => {
         setActionError({ text: err?.message || String(err), attempt: nextAttempt() });
       }, []);
-      const load = useCallback(async (isCancelled = () => false) => {
-        const value = await rpc("todos/list");
-        if (!isCancelled()) {
-          setCards(value.cards);
-          setLoaded(true);
-          setLoadError(null);
-        }
-      }, [rpc]);
-      useEffect(() => {
-        if (!visible) return undefined;
-        let cancelled = false;
-        /** @type {any} */
-        let timer = null;
-        const isCancelled = () => cancelled;
-        const tick = () => {
-          if (cancelled || isDocumentHidden()) return;
-          void load(isCancelled).catch((/** @type {any} */ err) => { if (!cancelled) reportLoadError(err); });
-        };
-        const syncPolling = () => {
-          if (timer !== null) { clearInterval(timer); timer = null; }
-          if (cancelled || isDocumentHidden()) return;
-          tick();
-          timer = setInterval(tick, 3000);
-        };
-        syncPolling();
-        if (typeof document !== "undefined") {
-          document.addEventListener?.("visibilitychange", syncPolling);
-          document.addEventListener?.("dsh:render-resume", syncPolling);
-        }
-        return () => {
-          cancelled = true;
-          if (timer !== null) clearInterval(timer);
-          if (typeof document !== "undefined") {
-            document.removeEventListener?.("visibilitychange", syncPolling);
-            document.removeEventListener?.("dsh:render-resume", syncPolling);
-          }
-        };
-      }, [load, reportLoadError, visible]);
-      const add = () => setEditor({ title: "", description: "", criteria: "", cwd: mode.get().taskRootDir || "" });
+      const add = () => setEditor({ title: "", description: "", criteria: "", cwd: mode.get().taskRootDir || "", mode: "workspace-task", filesText: "" });
       useEffect(() => { if (requestAdd) add(); }, [requestAdd]);
       const action = async (card, id) => {
         setPending(card.id); setActionError(null);
@@ -1226,18 +1441,48 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
         } catch (err) { reportActionError(err); }
         finally { setPending(""); }
       };
+      const continueCard = async (card, feedback) => {
+        setPending(card.id); setActionError(null);
+        try {
+          await rpc("todos/continue", { id: card.id, feedback });
+          heldGroup.current = null;
+          await load();
+          return true;
+        } catch (err) {
+          reportActionError(err);
+          return false;
+        } finally { setPending(""); }
+      };
+      const toggleAutoAdvance = async (enabled) => {
+        setPending("auto-advance"); setActionError(null);
+        try {
+          await rpc("todos/auto-advance", { enabled });
+          await load();
+        } catch (err) { reportActionError(err); }
+        finally { setPending(""); }
+      };
+      const openDeliverable = async (item, kind) => {
+        try {
+          await openPresentedDeliverable(item, kind);
+        } catch (err) { reportActionError(err); }
+      };
       const save = async () => {
         setPending("editor"); setActionError(null);
         try {
-          const { id, title, description, criteria, cwd } = editor;
-          if (id) await rpc("todos/update", { id, patch: { title, description, criteria, cwd } });
-          else await rpc("todos/create", { title, description, criteria, cwd });
+          const { id, title, description, criteria, cwd, mode: cardMode, filesText } = editor;
+          const files = cardMode === "readonly-brief"
+            ? String(filesText ?? "").split(/\r?\n/u).map((v) => v.trim()).filter(Boolean)
+            : [];
+          if (id) await rpc("todos/update", { id, patch: { title, description, criteria, cwd, mode: cardMode || "workspace-task", files } });
+          else await rpc("todos/create", { title, description, criteria, cwd, mode: cardMode || "workspace-task", files });
           setEditor(null); await load();
         } catch (err) { reportActionError(err); } finally { setPending(""); }
       };
       const groupOf = card => heldGroup.current?.id === card.id ? heldGroup.current.group : todoGroup(card);
       const renderCard = card => h(WhaleTodoCard, { key: card.id, card, tr, pending: pending === card.id,
-        onAction: action, onEdit: setEditor, onConfirm: (value, id) => setConfirm({ card: value, action: id }),
+        onAction: action, onContinue: continueCard, onOpenDeliverable: openDeliverable,
+        onEdit: (c) => setEditor({ ...c, mode: c.mode || "workspace-task", filesText: Array.isArray(c.files) ? c.files.join("\n") : "" }),
+        onConfirm: (value, id) => setConfirm({ card: value, action: id }),
         onOpen: id => {
           Promise.resolve(openSession(id))
             .then(() => { onSessionOpened?.(id); })
@@ -1255,7 +1500,15 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
         .filter((/** @type {any} */ card) => card.archived)
         .sort((/** @type {any} */ a, /** @type {any} */ b) => Number(b.pinned) - Number(a.pinned) || (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
       return h(Fragment, null,
-        loadError ? h(Feedback, { key: `${loadError.attempt}:load`, text: loadError.text, t, onDismiss: () => setLoadError(null), actions: [{ label: t("retry"), onClick: () => { setLoadError(null); void load().catch(reportLoadError); } }] }) : null,
+        h("div", { className: "dsh-whale-todo-toolbar" },
+          h("span", { className: "dsh-whale-todo-toolbar-left" }, tr("自动顺延下一张", "Auto-advance")),
+          h(Switch, {
+            checked: autoAdvance === true,
+            disabled: pending === "auto-advance",
+            "aria-label": tr("自动顺延下一张任务卡", "Auto-advance next pending task card"),
+            onChange: (/** @type {any} */ e) => { void toggleAutoAdvance(Boolean(e?.target?.checked)); },
+          })),
+        loadError ? h(Feedback, { key: `${loadError.attempt}:load`, text: loadError.text, t, onDismiss: () => setLoadError(null), actions: [{ label: t("retry"), onClick: () => { setLoadError(null); void load().catch(reportActionError); } }] }) : null,
         actionError ? h(Feedback, { key: `${actionError.attempt}:action`, text: actionError.text, t, onDismiss: () => setActionError(null) }) : null,
         !loaded ? h("p", { className: "dsh-whale-todo-empty", role: "status" }, t("loading")) : null,
         [["running", tr("进行中", "In progress")], ["pending", tr("未执行", "Not started")], ["executed", tr("已执行", "Executed")]].map(([group, label]) => {
@@ -1267,11 +1520,83 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
           h("summary", null, h("span", null, tr("归档", "Archive")), h("span", null, archivedCards.length)),
           archivedCards.length ? archivedCards.map(renderCard) : h("p", { className: "dsh-whale-todo-empty" }, tr("没有归档的任务", "No archived tasks"))),
         h(Modal, { open: Boolean(editor), title: editorView?.id ? tr("编辑任务", "Edit task") : tr("新增任务", "New task"), closeLabel: t("dialog.close"), onClose: () => { if (!pending) setEditor(null); }, footer: h(Fragment, null, h(Button, { variant: "outline", disabled: Boolean(pending), onClick: () => setEditor(null) }, t("dialog.cancel")), h(Button, { variant: "primary", loading: pending === "editor", disabled: Boolean(pending) || !editorView?.title?.trim(), onClick: save }, t("save"))) },
-          editorView ? h("div", { className: "dsh-whale-todo-fields" }, fields.map(([key, label]) => h("label", { key }, label,
-            key === "description" || key === "criteria" ? h("textarea", { className: "dsh-whale-textarea", value: editorView[key] ?? "", maxLength: 6000, onChange: (/** @type {any} */ e) => setEditor((/** @type {any} */ prev) => (prev ? { ...prev, [key]: e.target.value } : prev)) }) : h(Input, { value: editorView[key] ?? "", maxLength: key === "title" ? 200 : 2000, "data-modal-autofocus": key === "title" ? "" : undefined, onChange: (/** @type {any} */ e) => setEditor((/** @type {any} */ prev) => (prev ? { ...prev, [key]: e.target.value } : prev)) }))),
+          editorView ? h("div", { className: "dsh-whale-todo-fields" },
+            h("label", null, tr("执行模式", "Execution mode"),
+              h("select", {
+                className: "dsh-whale-mode-select",
+                value: editorView.mode || "workspace-task",
+                "aria-label": tr("执行模式", "Execution mode"),
+                onChange: (/** @type {any} */ e) => setEditor((/** @type {any} */ prev) => (prev ? { ...prev, mode: e.target.value } : prev)),
+              },
+              h("option", { value: "workspace-task" }, tr("工作区任务（独立子目录 · 完整工具）", "Workspace task (isolated folder)")),
+              h("option", { value: "readonly-brief" }, tr("只读资料整理（无写权限 · 仅读指定文本）", "Read-only brief (selected text files)")))),
+            fields.map(([key, label]) => h("label", { key }, label,
+              key === "description" || key === "criteria" ? h("textarea", { className: "dsh-whale-textarea", value: editorView[key] ?? "", maxLength: 6000, onChange: (/** @type {any} */ e) => setEditor((/** @type {any} */ prev) => (prev ? { ...prev, [key]: e.target.value } : prev)) }) : h(Input, { value: editorView[key] ?? "", maxLength: key === "title" ? 200 : 2000, "data-modal-autofocus": key === "title" ? "" : undefined, onChange: (/** @type {any} */ e) => setEditor((/** @type {any} */ prev) => (prev ? { ...prev, [key]: e.target.value } : prev)) }))),
+            editorView.mode === "readonly-brief"
+              ? h("label", null, tr("资料文件路径（每行一个绝对路径）", "Input file paths (one absolute path per line)"),
+                  h("textarea", {
+                    className: "dsh-whale-textarea",
+                    value: editorView.filesText ?? "",
+                    onChange: (/** @type {any} */ e) => setEditor((/** @type {any} */ prev) => (prev ? { ...prev, filesText: e.target.value } : prev)),
+                  }))
+              : null,
             h("p", null, tr("保存到未执行列表，不会自动开始。", "Save to Not started. Nothing runs automatically."))) : null),
         h(Modal, { open: Boolean(confirm), title: confirmView?.card.title || "", closeLabel: t("dialog.close"), onClose: () => { if (!pending) setConfirm(null); }, footer: h(Fragment, null, h(Button, { variant: "outline", disabled: Boolean(pending), onClick: () => setConfirm(null) }, t("dialog.cancel")), h(Button, { variant: "primary", className: confirmView?.action === "delete" ? "dsh-whale-danger-button" : undefined, loading: Boolean(pending), disabled: Boolean(pending), onClick: () => action(confirmView.card, confirmView.action) }, confirmView?.action === "start" ? tr("开始执行", "Start run") : confirmView?.action === "delete" ? tr("删除任务卡", "Delete card") : tr("停止执行", "Stop run"))) }, h("p", { className: "dsh-whale-todo-confirm" }, messages[confirmView?.action])),
       );
+    }
+
+    /** Non-polluting, tool-free `/side` side-question modal for Big Fish mode. */
+    function WhaleSideQaModal({ open, onClose, rpc, sessionId, tr, t }) {
+      const [question, setQuestion] = useState("");
+      const [busy, setBusy] = useState(false);
+      const [error, setError] = useState("");
+      const [items, setItems] = useState([]);
+      const ask = async () => {
+        const text = question.trim();
+        if (!text || busy) return;
+        setBusy(true);
+        setError("");
+        try {
+          const res = await rpc("side/ask", { question: text, sessionId });
+          if (res?.ok !== true) throw new Error(res?.detail || res?.error || tr("旁路提问失败", "Side question failed"));
+          setItems((prev) => [...prev, { id: Date.now(), q: text, a: res.answer, model: res.model || "" }]);
+          setQuestion("");
+        } catch (/** @type {any} */ err) {
+          setError(err?.message || String(err));
+        } finally {
+          setBusy(false);
+        }
+      };
+      return h(Modal, {
+        open,
+        title: tr("/side 旁路快问（不污染主会话）", "/side Quick Q&A (non-polluting)"),
+        description: tr("只读近期上下文、无工具执行、绝不写入主会话日志。", "Read-only context snapshot, zero tools, never written to the main session log."),
+        closeLabel: t("dialog.close"),
+        onClose: () => { if (!busy) onClose(); },
+        footer: h(Fragment, null,
+          items.length ? h(Button, { variant: "ghost", disabled: busy, onClick: () => setItems([]) }, tr("清空", "Clear")) : null,
+          h(Button, { variant: "outline", disabled: busy, onClick: onClose }, t("dialog.close")),
+          h(Button, { variant: "primary", disabled: busy || !question.trim(), loading: busy, onClick: () => { void ask(); } }, tr("发送旁路提问", "Ask /side"))),
+      },
+        h("div", { className: "dsh-whale-side-qa" },
+          items.length ? h("div", { className: "dsh-whale-side-log" },
+            items.map((row) => h("div", { key: row.id, className: "dsh-whale-side-item" },
+              h("div", { className: "dsh-whale-side-q" }, `/side ${row.q}`),
+              h("div", { className: "dsh-whale-side-a" }, row.a),
+              row.model ? h("div", { className: "dsh-whale-side-meta" }, `${row.model} · ${tr("未写入主会话", "Not written to session")}`) : null))) : null,
+          h("textarea", {
+            className: "dsh-whale-textarea",
+            value: question,
+            disabled: busy,
+            maxLength: 2000,
+            placeholder: tr("问一个关于当前上下文的快问题，不会打断或污染主对话…", "Ask a quick side question about current context without polluting main chat…"),
+            "aria-label": tr("旁路提问内容", "Side question"),
+            onChange: (/** @type {any} */ e) => setQuestion(e.target.value),
+            onKeyDown: (/** @type {any} */ e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void ask(); }
+            },
+          }),
+          error ? h(Feedback, { text: error, t, onDismiss: () => setError("") }) : null));
     }
 
     const readNarrowViewport = () => {
@@ -1284,7 +1609,9 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
     function WhaleWorkbench({ mode, rpc, openSession, renderSlot, useSessions, t }) {
       const state = useBigFish(mode), tr = mode.tr;
       const [add, setAdd] = useState({ task: 0, panel: 0 });
+      const [sideQaOpen, setSideQaOpen] = useState(false);
       const [narrow, setNarrow] = useState(readNarrowViewport);
+      const live = useWhaleLiveWorkbench({ rpc, active: state.active });
       const drag = useRef(null), side = useRef(null), toggleSide = useRef(null);
       const narrowRef = useRef(narrow);
       narrowRef.current = narrow;
@@ -1424,6 +1751,19 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
         || currentSession.owner === "dsh-whale:assistant"
         || (Boolean(state.sessionId) && currentSession.id === state.sessionId);
       const inertProps = drawerOpen ? { inert: "" } : {};
+      const needsYouItems = live.snapshot.needsYou ?? [];
+      const firstNeedsYou = needsYouItems[0] ?? null;
+      const jumpToNeedsYou = () => {
+        if (!firstNeedsYou) return;
+        if (firstNeedsYou.sessionId) {
+          void Promise.resolve(openSession(firstNeedsYou.sessionId))
+            .then(() => { collapseIfNarrow(); })
+            .catch((err) => mode.set({ error: err?.message || String(err), errorAttempt: state.errorAttempt + 1 }));
+          return;
+        }
+        void mode.tab("task");
+        mode.set({ sideOpen: true });
+      };
       return h(Fragment, null,
         state.error ? h(Feedback, { key: `${state.errorAttempt}:mode`, text: state.error, t, onDismiss: () => mode.clearError() }) : null,
         h(Modal, { open: state.prompt, title: tr("进入大肥鱼模式？", "Enter Big Fish mode?"), closeLabel: t("dialog.close"), onClose: () => { if (!state.busy) void mode.choose(false); }, footer: h(Fragment, null,
@@ -1438,8 +1778,19 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
               !isAssistantSession && currentSession?.title
                 ? h("span", { className: "dsh-whale-mode-current", title: currentSession.title }, currentSession.title)
                 : null),
+            firstNeedsYou ? h("button", {
+              type: "button",
+              ...inertProps,
+              className: "dsh-whale-needs-you",
+              "data-whale-needs-you": String(needsYouItems.length),
+              "aria-label": tr("待处理：", "Needs you: ") + firstNeedsYou.title,
+              onClick: jumpToNeedsYou,
+            }, h("span", { className: "dsh-whale-needs-dot", "aria-hidden": "true" }),
+            `${firstNeedsYou.state === "waiting_approval" ? tr("待审批", "Approval") : tr("待回答", "Input")}${needsYouItems.length > 1 ? ` (${needsYouItems.length})` : ""}`) : null,
+            h(Button, { variant: "ghost", size: "sm", ...inertProps, className: "dsh-whale-side-btn", "aria-label": tr("旁路问答 (/side)", "Side Q&A (/side)"), onClick: () => setSideQaOpen(true) }, "/side"),
             h(Button, { variant: "ghost", size: "sm", className: "dsh-whale-icon-btn", ...inertProps, "aria-label": tr("鲸鱼娘设置", "Whale settings"), onClick: () => mode.settings() }, h(IconSettingsOutline16)),
             h(Button, { variant: "ghost", size: "sm", ...inertProps, className: "dsh-whale-mode-exit", onClick: () => void mode.exit() }, tr("退出模式", "Exit mode"))),
+          h(WhaleSideQaModal, { open: sideQaOpen, onClose: () => setSideQaOpen(false), rpc, sessionId: currentSession?.id || state.sessionId, tr, t }),
           drawerOpen ? h("button", { type: "button", tabIndex: -1, className: "dsh-whale-mode-mask", "aria-label": tr("收起右边栏", "Close sidebar"), onClick: closeDrawer }) : null,
           h("aside", { ref: side, tabIndex: -1, className: "dsh-whale-mode-side", "data-open": state.sideOpen ? "" : undefined, role: drawerOpen ? "dialog" : state.sideOpen ? undefined : "presentation", "aria-modal": drawerOpen || undefined, "aria-label": state.sideOpen ? tr("鲸鱼娘右边栏", "Whale sidebar") : undefined, style: { "--dsh-whale-width": `${state.width}px` } },
             h("div", { className: "dsh-whale-mode-resize", role: "separator", "aria-label": tr("调整右边栏宽度", "Resize sidebar"), "aria-orientation": "vertical", "aria-valuemin": BIG_FISH_MIN_WIDTH, "aria-valuemax": BIG_FISH_MAX_WIDTH, "aria-valuenow": state.width, tabIndex: 0,
@@ -1472,7 +1823,7 @@ html[data-platform="darwin"][data-fullscreen] .dsh-whale-mode-head{left:20px}
               h(Button, { variant: "ghost", size: "sm", className: "dsh-whale-icon-btn", "aria-label": state.tab === "task" ? tr("新增任务", "New task") : tr("添加面板", "Add panel"), onClick: () => setAdd(value => ({ ...value, [state.tab]: value[state.tab] + 1 })) }, h(IconPlusOutline16))),
             h("div", { id: "dsh-whale-mode-content", className: "dsh-whale-mode-scroll", "data-window-drag-exclude": "" },
               h("div", { id: "dsh-whale-mode-panel-content", role: "tabpanel", "aria-labelledby": "dsh-whale-mode-panel", hidden: state.tab !== "panel" }, renderSlot("whale.panels", { requestAdd: add.panel, active: state.sideOpen && state.tab === "panel", onDraftInserted: collapseIfNarrow }, { fallback: h("p", { className: "dsh-whale-todo-empty" }, tr("面板嵌入不可用。请在设置中启用内置 dsh-pad；若使用独立安装版，请更新到支持鲸鱼娘侧栏的版本。", "Panel embedding is unavailable. Enable bundled dsh-pad in settings, or update your independently installed copy to a version supporting the Whale sidebar.")) })),
-              h("div", { id: "dsh-whale-mode-task-content", role: "tabpanel", "aria-labelledby": "dsh-whale-mode-task", hidden: state.tab !== "task" }, h(WhaleTodosView, { rpc, mode, requestAdd: add.task, openSession, onSessionOpened: collapseIfNarrow, t, visible: state.sideOpen && state.tab === "task" })),
+              h("div", { id: "dsh-whale-mode-task-content", role: "tabpanel", "aria-labelledby": "dsh-whale-mode-task", hidden: state.tab !== "task" }, h(WhaleTodosView, { rpc, mode, live, requestAdd: add.task, openSession, onSessionOpened: collapseIfNarrow, t })),
             ),
             h("button", { ref: toggleSide, type: "button", className: "dsh-whale-mode-toggle", "aria-label": state.sideOpen ? tr("收起右边栏", "Close sidebar") : tr("展开右边栏", "Open sidebar"), "aria-pressed": state.sideOpen, "aria-controls": "dsh-whale-mode-content", onClick: () => mode.set({ sideOpen: !state.sideOpen }) }, h(IconPanelRightOutline16, { size: 14 }))),
         ) : null,

@@ -49,8 +49,19 @@ import {
   replacePageLocation,
 } from './loopback-recovery.js';
 import { installImStyles } from './styles.js';
+import {
+  isSingleOwnerClientChannel,
+  SINGLE_OWNER_ACCESS_CHANNEL,
+  SingleOwnerPairingPanel,
+} from './single-owner-pairing.js';
 import { WorkspaceDirectoryPickerContext } from './workspace-editor.js';
 
+export {
+  isSingleOwnerClientChannel,
+  SINGLE_OWNER_ACCESS_CHANNEL,
+  SINGLE_OWNER_CLIENT_CHANNELS,
+  SingleOwnerPairingPanel,
+} from './single-owner-pairing.js';
 export const name = 'im-settings';
 export const inject = ['slots', 'connection', 'locale', 'workspaces'];
 export const IM_PLUGIN_VERSION = manifest.version;
@@ -138,6 +149,7 @@ export function LoopbackRecoveryNotice({ recovery, onNavigate = replacePageLocat
 }
 
 export function IMSettingsTab({
+  accessRpcCall,
   dingtalkRpcCall,
   discordRpcCall,
   feishuRpcCall,
@@ -159,6 +171,7 @@ export function IMSettingsTab({
     setLoopbackRecovery((current) => current?.url === recovery.url ? current : recovery);
   }, []);
   const rpcCalls = React.useMemo(() => createLoopbackAwareRpcCalls({
+    accessRpcCall,
     dingtalkRpcCall,
     discordRpcCall,
     feishuRpcCall,
@@ -173,6 +186,7 @@ export function IMSettingsTab({
     location: browserLocation,
     onRecovery: reportLoopbackRecovery,
   }), [
+    accessRpcCall,
     browserLocation,
     dingtalkRpcCall,
     discordRpcCall,
@@ -236,7 +250,15 @@ export function IMSettingsTab({
                     ? h(DiscordSettingsTab, { rpcCall: rpcCalls.discordRpcCall })
                     : active.id === 'whatsapp'
                       ? h(WhatsappSettingsTab, { rpcCall: rpcCalls.whatsappRpcCall })
-                      : h(OfficeSettingsTab, { rpcCall: rpcCalls.officeRpcCall })),
+                      : h(OfficeSettingsTab, { rpcCall: rpcCalls.officeRpcCall }),
+      isSingleOwnerClientChannel(active.id) && typeof rpcCalls.accessRpcCall === 'function'
+        ? h(SingleOwnerPairingPanel, {
+            key: `pairing:${active.id}`,
+            channel: active.id,
+            channelLabel: active.label,
+            rpcCall: rpcCalls.accessRpcCall,
+          })
+        : null),
     ),
   ));
 }
@@ -267,6 +289,8 @@ export function apply(ctx) {
     };
   }, 'im-settings: install combined channel styles');
 
+  const accessRpcCall = (endpoint, payload, signal) =>
+    ctx.connection.rpc.call(SINGLE_OWNER_ACCESS_CHANNEL, endpoint, payload, signal);
   const feishuRpcCall = (endpoint, payload, signal) =>
     ctx.connection.rpc.call(FEISHU_RPC_CHANNEL, endpoint, payload, signal);
   const weixinRpcCall = (endpoint, payload, signal) =>
@@ -299,6 +323,7 @@ export function apply(ctx) {
     label: () => (ctx.locale.getLocale().active === 'en' ? 'Channels' : '消息渠道'),
     locale: IM_LOCALE_NAMESPACE,
     inject: () => ({
+      accessRpcCall,
       dingtalkRpcCall,
       discordRpcCall,
       feishuRpcCall,

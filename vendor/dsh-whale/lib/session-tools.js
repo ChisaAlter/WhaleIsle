@@ -26,6 +26,7 @@ import {
   confirmModelAction,
   refusalTextFor,
 } from './desktop-confirm.js';
+import { TAINTED_SESSION_REFUSAL_TEXT, isSessionTainted } from './call-origin.js';
 import {
   buildQueueAction,
   collectQueueSessionIds,
@@ -104,7 +105,10 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.query ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, items: [], hasMore: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const controller = controllerFrom(ctx);
       if (typeof controller?.search !== 'function') return { ...unavailable(), items: [], hasMore: false };
       const query = String(args.query ?? '').trim();
@@ -170,45 +174,37 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      const emptyRead = (detail, sessionId = '') => ({ ok: false, sessionId, lines: [], hasMore: false, oldestSeq: 0, detail });
+      if (isSessionTainted(exec?.agent)) return emptyRead(TAINTED_SESSION_REFUSAL_TEXT);
       const controller = controllerFrom(ctx);
       if (typeof controller?.follow !== 'function' || typeof controller?.page !== 'function') {
         return { ...unavailable(), sessionId: '', lines: [], hasMore: false, oldestSeq: 0 };
       }
       const sessionId = String(args.sessionId ?? '').trim();
-      if (!sessionId) return { ok: false, sessionId: '', lines: [], hasMore: false, oldestSeq: 0, detail: 'sessionId is required.' };
+      if (!sessionId) return emptyRead('sessionId is required.');
       const maxMessages = Math.max(5, Math.min(100, Number(args.maxMessages) || READ_DEFAULT_MESSAGES));
-      const includeToolDetails = args.includeToolDetails === true;
       try {
         const snapshot = await sessionSnapshot(controller, sessionId, maxMessages);
-        if (!snapshot) {
-          return { ok: false, sessionId, lines: [], hasMore: false, oldestSeq: 0, detail: `Session ${sessionId} is not readable (missing or not yet visible).` };
-        }
-        let records = snapshot.records;
-        let hasMore = snapshot.hasMore === true;
+        if (!snapshot) return emptyRead(`Session ${sessionId} is not readable (missing or not yet visible).`, sessionId);
         const beforeSeq = Number(args.beforeSeq);
-        if (Number.isFinite(beforeSeq) && beforeSeq > 0) {
-          const page = await controller.page({
-            address: { kind: 'session', sessionId },
-            throughSeq: snapshot.cursor,
-            beforeSeq,
-            maxMessages,
-          }, AbortSignal.timeout(15_000));
-          records = page?.records ?? [];
-          hasMore = page?.hasMore === true;
-        }
-        const lines = formatRecords(records, { includeToolDetails });
-        const oldestSeq = Number(records?.[0]?.event?.seq ?? 0);
+        const paged = Number.isFinite(beforeSeq) && beforeSeq > 0
+          ? await controller.page({ address: { kind: 'session', sessionId }, throughSeq: snapshot.cursor, beforeSeq, maxMessages }, AbortSignal.timeout(15_000))
+          : snapshot;
+        const records = (paged && paged.records) || [];
+        const hasMore = Boolean(paged && paged.hasMore === true);
+        const lines = formatRecords(records, { includeToolDetails: args.includeToolDetails === true });
+        const firstSeq = records.length > 0 && records[0].event ? Number(records[0].event.seq) || 0 : 0;
         return {
           ok: true,
           sessionId,
           lines,
           hasMore,
-          oldestSeq,
+          oldestSeq: firstSeq,
           detail: `${lines.length} line(s)${hasMore ? ', earlier history available' : ''}.`,
         };
       } catch (error) {
-        return { ok: false, sessionId, lines: [], hasMore: false, oldestSeq: 0, detail: String(error?.message ?? error) };
+        return emptyRead(String(error instanceof Error ? error.message : error), sessionId);
       }
     },
   }));
@@ -267,7 +263,10 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       }],
     },
     presentCall: () => ({ card: 'generic', title: 'Session queues', kind: 'other', content: [] }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, queues: [], detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const controller = controllerFrom(ctx);
       if (typeof controller?.state !== 'function') return { ...unavailable(), queues: [] };
       const wanted = String(args.sessionId ?? '').trim();

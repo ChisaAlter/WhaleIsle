@@ -48,12 +48,14 @@ export function whalePresetDefinition(homeDir) {
     hidden: true,
     plugins: [
       { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { includeRuntimeContext: false, prefix: '' } },
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
       { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
       { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
       { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
       { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: false, customSkillDirs: [whaleSkillsDir(homeDir)] } },
       { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
       { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
+      { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
       { id: 'compaction', name: 'cordis:group', group: true,
         isolate: { compaction: true, toolResultPruner: true }, config: [
           { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
@@ -137,6 +139,7 @@ export function ensureWhalePreset(homeDir, sourceDir = whalePresetSourceDir()) {
 export function ensureWhaleHome(homeDir) {
   if (!homeDir) return { ok: false, error: 'missing-home' };
   const dir = whaleHomeDir(homeDir);
+  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
   fs.mkdirSync(whaleSkillsDir(homeDir), { recursive: true });
   fs.mkdirSync(whaleDisabledSkillsDir(homeDir), { recursive: true });
   fs.mkdirSync(whaleStickersDir(homeDir), { recursive: true });

@@ -184,6 +184,13 @@ export async function collectInspection(ctx, state, options = {}) {
     coverage.whaleTasks = whaleTasks.available ? 'ok' : 'unavailable';
     if (whaleTasks.available) activeWork.push(...whaleTasks.inspect());
   }
+  const whaleTodos = ctx.get('whaleTodos');
+  if (whaleTodos) {
+    coverage.whaleTodos = whaleTodos.available ? 'ok' : 'unavailable';
+    if (whaleTodos.available && typeof whaleTodos.inspect === 'function') {
+      activeWork.push(...whaleTodos.inspect());
+    }
+  }
   return {
     ok: true,
     hostGeneration: state.hostGeneration,

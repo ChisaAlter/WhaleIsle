@@ -320,9 +320,26 @@ export function removeSchedule(id) {
   return { ok: true };
 }
 
+/** @param {string} sessionId */
+function isManagedTaskOrSubagent(sessionId) {
+  if (!sessionId) return false;
+  if (/^session-whale-todo-/u.test(sessionId) || /^task-[a-f0-9]{32}-worker-r\d+$/u.test(sessionId)) return true;
+  const agent = liveAgentFor(sessionId);
+  if (agent?.session?.header?.origin === 'subagent') return true;
+  const todos = state.ctx?.get?.('whaleTodos');
+  if (todos?.activeBySession?.has?.(sessionId)) return true;
+  const tasks = state.ctx?.get?.('whaleTasks');
+  if (tasks?.workerAgents?.has?.(sessionId)) return true;
+  return false;
+}
+
 async function wake(text) {
   const deliver = state.wake;
   if (typeof deliver !== 'function') throw new Error('assistant-unavailable');
+  const targetId = selfSessionId();
+  if (targetId && isManagedTaskOrSubagent(targetId)) {
+    throw new Error('refusing-pulse-into-task-or-subagent-session');
+  }
   const result = await deliver(trimTo(text, WAKE_TEXT_MAX));
   if (result?.ok === false || result?.accepted === false) throw new Error(result.error || 'prompt-not-accepted');
 }
@@ -368,9 +385,17 @@ function expireStaleSchedule(schedule, now) {
 }
 
 // Exported so tests can drive the scheduler without waiting on TICK_MS.
+// Once `schedules.json` has been migrated to native `@deepseek-ai/dsh-schedule`
+// (`schedules.json.migrated` exists and `schedules.json` is absent), legacy
+// schedule ticking stays inert while watches and event buffering continue.
 export async function tick(now = Date.now()) {
   ensureLoaded();
   await deliverWatches();
+  const legacyFile = file(SCHEDULES_FILE);
+  if (legacyFile && !fs.existsSync(legacyFile) && fs.existsSync(`${legacyFile}.migrated`)) {
+    state.schedules = [];
+    return;
+  }
   const due = state.schedules.filter((s) => s.enabled !== false && Number(s.nextRunAt) > 0 && s.nextRunAt <= now);
   if (!due.length) return;
   for (const s of due) {

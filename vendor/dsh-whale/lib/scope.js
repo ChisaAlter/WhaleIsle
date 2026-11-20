@@ -13,6 +13,7 @@ const defaults = {
   modelProvider: '', modelModel: '', modelReasoningEffort: '',
   imDefault: true, sessionId: '', taskRootDir: '',
   bigFishPrompted: false, bigFishEnabled: false, bigFishTab: 'panel',
+  autoAdvance: false,
 };
 
 function values(source) {

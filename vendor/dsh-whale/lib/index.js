@@ -17,8 +17,21 @@ import { buildPersonaText, normalizePersonality, PERSONALITIES } from './persona
 import { startPulse } from './observe.js';
 import { mountWhaleTasks } from './task-service.js';
 import { mountWhaleTodos } from './todo-service.js';
-import { parseTask } from './task-store.js';
 import { defaultTaskRootDir, resolvedTaskRootDir, validateTaskCwd } from './task-paths.js';
+import { isSessionTainted } from './call-origin.js';
+import { INDEX_MAX_BYTES, INDEX_MAX_LINES, readPushIndex } from './memory-store.js';
+import { migrateLegacySchedules } from './schedule-migration.js';
+import { askSideQuestion } from './side-qa.js';
+import { createWhaleSseHub } from './sse-hub.js';
+import {
+  createWhalePulseWake,
+  handleLegacyTasksEndpoint,
+  handleWhaleTodosEndpoint,
+  installMemoryToolGuard,
+  installWhaleMemoryLifecycle,
+  isInvalidRpcEndpoint,
+  isValidClientRequestBody,
+} from './host-hooks.js';
 import {
   SYSTEM_REMINDER_RE,
   controllerFrom,
@@ -60,11 +73,12 @@ const WhaleSchema = z.object({
   bigFishPrompted: live(z.boolean().default(false)),
   bigFishEnabled: live(z.boolean().default(false)),
   bigFishTab: live(z.string().default('panel')),
+  autoAdvance: live(z.boolean().default(false)),
 });
 export const Config = WhaleSchema;
 
 const PRESENTATION_OWNER = 'dsh-whale:assistant';
-const MEMORY_MAX_CHARS = 40000;
+const MEMORY_MAX_CHARS = INDEX_MAX_BYTES;
 const MAX_RPC_BODY_BYTES = 4 * 1024 * 1024;
 
 async function readBoundedJson(req, maxBytes) {
@@ -219,7 +233,7 @@ function sanitizePatch(input) {
   if (Object.prototype.hasOwnProperty.call(input, 'userTitle')) patch.userTitle = trimTo(input.userTitle, 64).trim();
   if (Object.prototype.hasOwnProperty.call(input, 'personaText')) patch.personaText = trimTo(input.personaText, 4000);
   if (Object.prototype.hasOwnProperty.call(input, 'imDefault')) patch.imDefault = input.imDefault === true;
-  for (const key of ['bigFishPrompted', 'bigFishEnabled']) {
+  for (const key of ['bigFishPrompted', 'bigFishEnabled', 'autoAdvance']) {
     if (Object.prototype.hasOwnProperty.call(input, key)) {
       if (typeof input[key] !== 'boolean') throw new Error(`${key} must be a boolean`);
       patch[key] = input[key];
@@ -243,21 +257,25 @@ function sanitizePatch(input) {
 
 function memoryFile() {
   const home = dshHomeDir();
-  return home ? path.join(whaleHomeDir(home), 'MEMORY.md') : '';
+  return home ? memoryIndexPath(home) : '';
 }
 
 function readMemory() {
-  const file = memoryFile();
-  if (!file || !fs.existsSync(file)) return '';
-  return trimTo(fs.readFileSync(file, 'utf8'), MEMORY_MAX_CHARS);
+  const home = dshHomeDir();
+  if (!home) return '';
+  return readPushIndex(home);
 }
 
 function writeMemory(text) {
+  const home = dshHomeDir();
   const file = memoryFile();
-  if (!file) throw new Error('missing-home');
+  if (!file || !home) throw new Error('missing-home');
+  const nextText = trimTo(text, MEMORY_MAX_CHARS);
+  const guard = evaluateIndexWriteGuard(home, nextText);
+  if (!guard.allowed) throw new Error(guard.reason);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  try { fs.writeFileSync(tmp, trimTo(text, MEMORY_MAX_CHARS), 'utf8'); fs.renameSync(tmp, file); }
+  try { fs.writeFileSync(tmp, nextText, 'utf8'); fs.renameSync(tmp, file); }
   finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
 }
 
@@ -623,64 +641,23 @@ async function logLookNote(ctx, scope, reply) {
   }
 }
 
-function registerRpc(ctx, scope) {
-  const taskIdFrom = input => {
-    if (!input || typeof input.taskId !== 'string' || !input.taskId || Object.keys(input).some(key => key !== 'taskId')) throw new Error('任务控制仅接受 taskId；动作由专用入口指定，不能修改模型或资料。');
-    return input.taskId;
-  };
+function registerRpc(ctx, scope, sseHub) {
   const handle = async (endpoint, input) => {
     const home = dshHomeDir();
     if (endpoint.startsWith('todos/')) {
-      const service = ctx.get('whaleTodos');
-      if (!service?.available) throw new Error(service?.error || '任务卡服务尚未就绪。');
-      if (endpoint === 'todos/list') return { cards: service.list() };
-      if (endpoint === 'todos/create') return service.create(input ?? {});
-      if (endpoint === 'todos/update') return service.update(input?.id, input?.patch ?? {});
-      if (endpoint === 'todos/action') {
-        if (input?.action === 'start') return service.start(input.id);
-        if (input?.action === 'cancel') return service.stop(input.id);
-        return service.transition(input?.id, input?.action);
-      }
-      throw new Error('未知任务卡接口。');
+      return handleWhaleTodosEndpoint(ctx, scope, endpoint, input);
+    }
+    if (endpoint.startsWith('tasks/')) {
+      return handleLegacyTasksEndpoint(ctx, scope, endpoint, input, ensureAssistantSession);
+    }
+    if (endpoint === 'side/ask') {
+      return askSideQuestion(ctx, scope, {
+        question: input?.question,
+        sessionId: input?.sessionId,
+        home,
+      });
     }
     switch (endpoint) {
-      case 'tasks/start': {
-        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
-        const ensured = await ensureAssistantSession(ctx, scope, controllerFrom(ctx)); if (!ensured.ok) throw new Error(ensured.error);
-        const id = crypto.randomUUID();
-        const text = `/task ${JSON.stringify(input)}`;
-        parseTask(text);
-        const origin = { eventId: `desktop-${id}`, kind: 'desktop', actor: 'desktop-owner',
-          sessionId: ensured.sessionId, messageId: `desktop-task-${id}`, rpcId: '', text, files: [] };
-        await tasks.recordInbound(origin, text);
-        const task = await tasks.accept(origin); tasks.schedule(task.id); return task;
-      }
-      case 'tasks/resume': {
-        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
-        const id = taskIdFrom(input); return tasks.resume(id, tasks.desktopControl(id, 'resume'));
-      }
-      case 'tasks/revoke-owner': {
-        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
-        await tasks.revokeOwner(input?.botId); return { ok: true };
-      }
-      case 'tasks/list': {
-        const tasks = ctx.get('whaleTasks');
-        return { available: Boolean(tasks?.available), error: tasks?.error ?? '', tasks: tasks?.available ? tasks.list().map(task => tasks.view(task)) : [] };
-      }
-      case 'tasks/get': {
-        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
-        return tasks.view(tasks.store.get(input?.taskId));
-      }
-      case 'tasks/stop': {
-        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
-        const id = taskIdFrom(input); return tasks.stop(id, 'user', tasks.desktopControl(id, 'stop'));
-      }
-      case 'tasks/owner': {
-        const tasks = ctx.get('whaleTasks'); if (!tasks?.available) throw new Error('后台任务不可用。');
-        if (!input || input.channel !== 'feishu' || typeof input.botId !== 'string' || !input.botId || typeof input.actor !== 'string' || !input.actor || input.actor === '*') throw new Error('需明确飞书机器人和个人 open_id，不接受通配符。');
-        await tasks.setOwner(input.botId, input.actor);
-        return { ok: true };
-      }
       case 'catalog': {
         const snap = readSettings(scope);
         return {
@@ -811,9 +788,11 @@ function registerRpc(ctx, scope) {
         }
         const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname;
         const endpoint = pathname.startsWith('/dsh-whale/') ? pathname.slice('/dsh-whale/'.length) : '';
-        const badEndpoint = !endpoint || endpoint.split('/')
-          .some((seg) => !seg || seg === '.' || seg === '..' || !/^[A-Za-z0-9_$.-]+$/.test(seg));
-        if (req.method !== 'POST' || badEndpoint) {
+        if (req.method === 'GET' && endpoint === 'events') {
+          sseHub.handleStream(req, res);
+          return;
+        }
+        if (req.method !== 'POST' || isInvalidRpcEndpoint(endpoint)) {
           res.writeHead(404);
           res.end('not found');
           return;
@@ -824,9 +803,9 @@ function registerRpc(ctx, scope) {
           res.end('content type must be application/json');
           return;
         }
-        const reply = (status, body) => {
+        const reply = (status, payload) => {
           res.writeHead(status, { 'content-type': 'application/json' });
-          res.end(JSON.stringify(body));
+          res.end(JSON.stringify(payload));
         };
         const fail = (rpcId, message) => reply(200, {
           type: 'server-response',
@@ -841,16 +820,15 @@ function registerRpc(ctx, scope) {
           res.end(error?.message ?? 'bad request body');
           return;
         }
-        if (!body || typeof body !== 'object' || Array.isArray(body)
-          || body.type !== 'client-request' || typeof body.rpcId !== 'string' || body.method !== endpoint) {
-          fail(body?.rpcId, `invalid client-request message for ${JSON.stringify(endpoint)}`);
+        if (!isValidClientRequestBody(body, endpoint)) {
+          fail(body && body.rpcId, `invalid client-request message for ${JSON.stringify(endpoint)}`);
           return;
         }
         try {
           const value = await handle(endpoint, body.payload);
           reply(200, { type: 'server-response', rpcId: body.rpcId, result: { ok: true, value } });
         } catch (error) {
-          fail(body.rpcId, String(error?.message ?? error));
+          fail(body.rpcId, String(error instanceof Error ? error.message : error));
         }
       },
   }));
@@ -858,6 +836,8 @@ function registerRpc(ctx, scope) {
 
 export function apply(ctx) {
   const scope = createWhaleScope(dshHomeDir());
+  const sseHub = createWhaleSseHub(ctx, scope);
+  ctx.effect?.(() => () => sseHub.close(), 'dsh-whale:sse-hub');
 
   const home = dshHomeDir();
   if (home) {
@@ -885,12 +865,23 @@ export function apply(ctx) {
     order: 21,
     text: (assembleCtx) => {
       if (!isWhaleAssistantContext(assembleCtx, readSettings(scope), home)) return '';
+      // Irreversible taint boundary: a session touched by guest or group NEVER receives owner memory.
+      if (isSessionTainted(assembleCtx?.agent)) return '';
       const memory = readMemory();
-      return memory.trim() ? `你的长期记忆（用户与自身保存的记录）：\n${memory}` : '';
+      return memory.trim()
+        ? `你的长期记忆索引（窄 Push 索引 ≤${INDEX_MAX_LINES} 行 / ${Math.round(INDEX_MAX_BYTES / 1024)}KB；细节请按需用 whale_memory_search / whale_memory_read 拉取）：\n${memory}`
+        : '';
     },
   });
 
-  registerRpc(ctx, scope);
+  registerRpc(ctx, scope, sseHub);
+
+  // Pre-compaction flush (~85% of effective compaction threshold) + idle incremental review.
+  installWhaleMemoryLifecycle(ctx, scope, home, { readSettings, isWhaleAssistantContext });
+
+  if (home) {
+    ctx.inject?.(['tools'], (host) => { installMemoryToolGuard(host, home); });
+  }
   if (home) ctx.inject?.(['storageDomain', 'sessionController', 'agents'], host => host.effect(async () => {
     await mountWhaleTodos(host, { home, scope });
   }));
@@ -902,25 +893,24 @@ export function apply(ctx) {
   // composition before attempting to create or reopen her session.
   ctx.inject?.(['agentPresets', 'sessionController'], (host) => host.effect(async () => {
     const unregister = await host.agentPresets.register(whalePresetDefinition(home));
-    void ensureAssistantSession(ctx, scope, host.sessionController).catch((error) => {
+    void ensureAssistantSession(ctx, scope, host.sessionController).then(async (ensured) => {
+      if (ensured?.ok && home) {
+        await migrateLegacySchedules(host, {
+          home,
+          sessionId: ensured.sessionId,
+          logger: ctx.logger,
+        }).catch((error) => {
+          ctx.logger?.warn?.(`dsh-whale legacy schedule migration failed: ${error?.message ?? error}`);
+        });
+      }
+    }).catch((error) => {
       ctx.logger?.warn?.(`dsh-whale assistant ensure failed: ${error?.message ?? error}`);
     });
     if (home) {
       startPulse(host, {
         home: whaleHomeDir(home),
         getSelfId: () => String(readSettings(scope).sessionId ?? ''),
-        wake: async (text) => {
-          const ensured = await ensureAssistantSession(ctx, scope, host.sessionController);
-          if (!ensured.ok || typeof host.sessionController?.prompt !== 'function') {
-            throw new Error(ensured.error || 'session-controller-unavailable');
-          }
-          return host.sessionController.prompt({
-            requestId: `whale-pulse-${crypto.randomUUID()}`,
-            sessionId: ensured.sessionId,
-            mode: 'queue',
-            content: [{ type: 'text', text: trimTo(text, 2000) }],
-          }, new AbortController().signal);
-        },
+        wake: createWhalePulseWake(ctx, host, scope, ensureAssistantSession),
         logger: ctx.logger,
       });
     }

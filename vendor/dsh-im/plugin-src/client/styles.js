@@ -957,6 +957,159 @@ const CSS = String.raw`
 .dim-confirmDialog button:disabled { opacity: .5; cursor: not-allowed; }
 @keyframes dim-feedback-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dim-controlSpinner { animation: none; } }
+.dim-panel .dim-pairingCard {
+  margin-top: 14px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 12px;
+}
+.dim-panel .dim-pairingHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dim-panel .dim-pairingHeaderCopy { min-width: 0; display: grid; gap: 4px; }
+.dim-panel .dim-pairingTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.dim-panel .dim-pairingSubtitle,
+.dim-panel .dim-pairingHint {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.dim-panel .dim-pairingFeedback {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.dim-panel .dim-pairingFeedback--success {
+  color: var(--dsw-alias-state-success-primary, #1f7a4c);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #1f7a4c) 10%, transparent);
+}
+.dim-panel .dim-pairingFeedback--error {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+}
+.dim-panel .dim-pairingBotList { display: grid; gap: 10px; }
+.dim-panel .dim-pairingBotItem {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dim-panel .dim-pairingBotHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dim-panel .dim-pairingBotMeta { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dim-panel .dim-pairingBotId {
+  font: 600 13px/18px var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--dsw-alias-label-primary);
+}
+.dim-panel .dim-pairingState,
+.dim-panel .dim-pairingBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+.dim-panel .dim-pairingState.is-paired {
+  color: var(--dsw-alias-state-success-primary, #1f7a4c);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary, #1f7a4c) 35%, var(--dsw-alias-border-l2));
+}
+.dim-panel .dim-pairingOwnerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.dim-panel .dim-pairingOwnerName { font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dim-panel .dim-pairingTime { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dim-panel .dim-pairingPendingBlock { display: grid; gap: 10px; }
+.dim-panel .dim-pairingPendingList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dim-panel .dim-pairingPendingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dim-panel .dim-pairingPendingInfo { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dim-panel .dim-pairingCode {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--dim-blue-soft);
+  color: var(--dim-blue);
+  font: 700 13px/18px var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0.08em;
+}
+.dim-panel .dim-pairingPendingName { font-size: 13px; font-weight: 500; color: var(--dsw-alias-label-primary); }
+.dim-panel .dim-pairingPendingActions { display: inline-flex; align-items: center; gap: 6px; }
+.dim-panel .dim-pairingRefreshBtn,
+.dim-panel .dim-pairingApproveBtn,
+.dim-panel .dim-pairingRejectBtn,
+.dim-panel .dim-pairingDangerBtn,
+.dim-panel .dim-pairingCodeSubmit {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 15px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dim-panel .dim-pairingApproveBtn {
+  border: none;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+.dim-panel .dim-pairingDangerBtn { color: var(--dsw-alias-state-error-primary); }
+.dim-panel .dim-pairingCodeForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dim-panel .dim-pairingCodeInput {
+  flex: 1 1 180px;
+  min-width: 140px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: 13px/18px var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  text-transform: uppercase;
+}
 `;
 
 export function installImStyles() {
