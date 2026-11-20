@@ -10,6 +10,11 @@ import { apply as applyWeixin } from './channels/weixin/index.mjs';
 import { apply as applyWhatsapp } from './channels/whatsapp/index.mjs';
 import { installOutboundArtifactTool } from '../../src/channels/shared/semantic/artifact.mjs';
 import { setImHostLanguage } from '../../src/channels/shared/i18n.mjs';
+import {
+  isSingleOwnerChannel,
+  sharedSingleOwnerGate,
+} from '../../src/channels/shared/single-owner-gate.mjs';
+import { installSingleOwnerRpc } from './channels/shared/single-owner-rpc.mjs';
 
 export const name = 'dsh-im-host';
 export const inject = [
@@ -19,11 +24,16 @@ export const inject = [
   'typertGateway',
 ];
 
-function channelConfig(config, name) {
+function channelConfig(config, name, singleOwnerGate) {
   const channel = config[name] ?? {};
-  return config.rpcAuthority === undefined
+  const base = config.rpcAuthority === undefined
     ? channel
     : { ...channel, rpcAuthority: config.rpcAuthority };
+  // AI Office Connector stays independent and is excluded from SingleOwnerAccessGate.
+  if (!singleOwnerGate || !isSingleOwnerChannel(name) || base.singleOwnerGate !== undefined) {
+    return base;
+  }
+  return { ...base, singleOwnerGate };
 }
 
 function channelContext(ctx) {
@@ -75,13 +85,22 @@ export function createImHostPlugin(internals = {}) {
       } else {
         installOutboundArtifactTool(scopedCtx);
       }
+      const singleOwnerGate = internals.singleOwnerGate
+        ?? config.singleOwnerGate
+        ?? await sharedSingleOwnerGate(config.dshHome);
+      if (typeof ctx?.effect === 'function') {
+        ctx.effect(() => installSingleOwnerRpc(scopedCtx, singleOwnerGate, config.rpcAuthority),
+          'dsh-im: single-owner access rpc');
+      } else {
+        installSingleOwnerRpc(scopedCtx, singleOwnerGate, config.rpcAuthority);
+      }
       const logger = typeof ctx?.logger === 'function'
         ? ctx.logger(name)
         : (ctx?.logger ?? console);
       const failures = [];
       for (const [channel, start] of channels) {
         try {
-          await start(scopedCtx, channelConfig(config, channel));
+          await start(scopedCtx, channelConfig(config, channel, singleOwnerGate));
         } catch (error) {
           failures.push(error);
           logger.error?.(`[dsh-im] failed to activate ${channel}; continuing with the remaining channels`, error);

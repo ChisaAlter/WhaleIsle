@@ -381,13 +381,6 @@
     "src/main/preview-file-window.js": {
       "createFilePreviewWindowController/open": 28
     },
-    "src/main/proactive/ipc.js": {
-      "createProactiveIpc/dispatch": 24
-    },
-    "src/main/proactive/task-runtime.js": {
-      "#executionTrace": 23,
-      "createTask": 26
-    },
     "src/main/profile-ops.js": {
       "applyRendererConfigPatch": 21
     },

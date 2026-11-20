@@ -2,23 +2,32 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { sharedWhaleSessionId, currentWhaleSessionResolution } from '../../../../src/channels/shared/whale-session.mjs';
+import { resolveLegacyOwnerCandidates } from '../../../../src/channels/shared/single-owner-gate.mjs';
 import { stageInboundFiles } from '../../../../src/channels/shared/inbound-file.mjs';
 import { extractInboundMessage } from '../../../../src/channels/feishu/message-utils.mjs';
 
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, configStore }) {
+export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, configStore, accessGate = null }) {
   const incarnation = hash([botId, botConfig.appId, botConfig.createdAt, botConfig.connectedAt]);
+  const isSingleOwner = (actor, current) => {
+    if (typeof actor !== 'string' || !actor.trim() || actor.trim() === '*') return false;
+    if (accessGate && typeof accessGate.isOwner === 'function') {
+      return accessGate.isOwner(actor);
+    }
+    const legacy = resolveLegacyOwnerCandidates('feishu', current);
+    return Boolean(legacy.singleCandidate && legacy.singleCandidate === actor);
+  };
   return {
     attach({ client, signal, allowedSenderOpenIds }) {
       let service;
       let dispose;
+      let disposeGateSync;
       const currentRouteStatus = route => {
         const current = configStore.list().find(row => row.id === botId);
         if (route.channel !== 'feishu' || route.botId !== botId || route.incarnation !== incarnation || !current
           || hash([botId, current.appId, current.createdAt, current.connectedAt]) !== route.incarnation
           || !workspaces.has(botId) || current.deletionPending) return 'revoked';
-        const owners = current.ownerOpenIds ?? [];
-        if (!owners.includes(route.actor) && !owners.includes('*')) return 'revoked';
+        if (!isSingleOwner(route.actor, current)) return 'revoked';
         if (signal.aborted) return 'offline';
         const preset = workspaces.agentPresetFor(botId);
         if (preset && preset !== 'whale-girl') return 'revoked';
@@ -64,14 +73,24 @@ export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, con
       const connect = () => {
         const current = ctx.get('whaleTasks');
         if (current?.available && current !== service) {
-          dispose?.(); service = current;
+          dispose?.(); disposeGateSync?.(); service = current;
           dispose = current.registerChannel(`feishu:${botId}`, channel);
+          if (typeof accessGate?.gate?.onOwnerChange === 'function') {
+            disposeGateSync = accessGate.gate.onOwnerChange(async (change) => {
+              if (change?.channel !== 'feishu' || change?.botId !== botId) return;
+              if (change.action === 'approve' && change.platformUserId && typeof current.setOwner === 'function') {
+                await current.setOwner(botId, change.platformUserId);
+              } else if (change.action === 'revoke' && typeof current.revokeOwner === 'function') {
+                await current.revokeOwner(botId);
+              }
+            });
+          }
         }
       };
       connect();
       const off = ctx.on('internal/service', name => { if (name === 'whaleTasks') connect(); });
       const readyOff = ctx.on('whale-tasks/ready', connect);
-      const close = () => { dispose?.(); off?.(); readyOff?.(); };
+      const close = () => { dispose?.(); disposeGateSync?.(); off?.(); readyOff?.(); };
       signal.addEventListener('abort', close, { once: true });
       return {
         async handle(event, message, harness) {
@@ -80,7 +99,10 @@ export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, con
           if (!/^\/task(?:\s|$)/u.test(text)) return null;
           if (!service?.available) return '后台任务服务不可用，未接纳。';
           const actor = event.sender?.sender_id?.open_id;
-          if (!actor || (!allowedSenderOpenIds.has(actor) && !allowedSenderOpenIds.has('*'))) return '当前用户不能提交后台任务。';
+          const current = configStore.list().find(row => row.id === botId);
+          if (!actor || !isSingleOwner(actor, current) || (!accessGate && !allowedSenderOpenIds.has(actor))) {
+            return '当前用户不能提交后台任务。';
+          }
           if (!await sharedWhaleSessionId(harness)) return '当前机器人未进入鲸鱼娘共享对话，未接纳后台任务。';
           const route = { channel: 'feishu', botId, incarnation, actor, chatId: event.message.chat_id, messageId: event.message.message_id };
           if (await routeStatus(route) !== 'ready') return '原渠道已失效，未接纳任务。';
@@ -139,8 +161,10 @@ export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, con
           try {
             const task = service.store.get(command.taskId); const route = task.origin.route;
             const validate = () => {
+              const current = configStore.list().find(row => row.id === botId);
               if (task.origin.actor !== actor || route?.botId !== botId || route?.chatId !== event.message.chat_id || route?.incarnation !== incarnation
-                || (!allowedSenderOpenIds.has(actor) && !allowedSenderOpenIds.has('*')) || currentRouteStatus(route) !== 'ready') throw new Error('任务授权或原会话已失效。');
+                || !isSingleOwner(actor, current) || (!accessGate && !allowedSenderOpenIds.has(actor))
+                || currentRouteStatus(route) !== 'ready') throw new Error('任务授权或原会话已失效。');
             };
             validate();
             if (await routeStatus(route) !== 'ready') throw new Error('任务路线不可用。');

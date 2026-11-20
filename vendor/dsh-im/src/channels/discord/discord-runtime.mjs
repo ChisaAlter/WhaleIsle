@@ -705,6 +705,12 @@ export class DiscordRuntime {
   async #acceptMessage(message, bridge) {
     const messageId = String(message?.id ?? '');
     if (!messageId || this.#state.hasSeen(messageId)) return;
+    if (message?.guild_id && this.#harness?.accessGate?.isWhaleEnforcedSync?.() === true) {
+      this.#status.messagesRejected += 1;
+      this.#status.lastRejectedAt = new Date().toISOString();
+      await this.#state.markSeen(messageId).catch(() => undefined);
+      return;
+    }
     let route = this.#routing.get(messageId);
     if (!route) {
       route = resolveDiscordMessageRoute(message, this.#config.platformId, {

@@ -18,6 +18,7 @@ import { startPulse } from './observe.js';
 import { mountWhaleTasks } from './task-service.js';
 import { mountWhaleTodos } from './todo-service.js';
 import { parseTask } from './task-store.js';
+import { defaultTaskRootDir, resolvedTaskRootDir, validateTaskCwd } from './task-paths.js';
 import {
   SYSTEM_REMINDER_RE,
   controllerFrom,
@@ -55,6 +56,7 @@ const WhaleSchema = z.object({
   modelReasoningEffort: live(z.string().default('')),
   imDefault: live(z.boolean().default(true)),
   sessionId: live(z.string().default('')),
+  taskRootDir: live(z.string().default('')),
   bigFishPrompted: live(z.boolean().default(false)),
   bigFishEnabled: live(z.boolean().default(false)),
   bigFishTab: live(z.string().default('panel')),
@@ -108,21 +110,21 @@ function readSettings(scope) {
 }
 
 /**
- * Her identity lives on the whale-girl preset, not on one session id:
- * `agentPreset` is durable session-header metadata, so a rebuilt or stale
- * whale conversation still gets her persona. The stored sessionId (same id
- * pre-preset sessions) and the whale-home cwd (headers older than the
- * agentPreset field) are secondary matches.
+ * @param {any} header
+ * @param {string} home
  */
+function isLegacyWhaleHomeCwd(header, home) {
+  if (!home || header?.agentPreset || typeof header?.cwd !== 'string' || !header.cwd) return false;
+  return path.resolve(header.cwd) === path.resolve(whaleHomeDir(home));
+}
+
 export function isWhaleAssistantContext(assembleCtx, snap, home) {
   const session = assembleCtx?.agent?.session;
   const header = session?.header;
   if (header?.agentPreset === WHALE_PRESET_ID) return true;
   const sessionId = String(session?.id ?? assembleCtx?.agent?.id ?? '');
   if (snap?.sessionId && sessionId === snap.sessionId) return true;
-  const whaleHome = home ? whaleHomeDir(home) : '';
-  return Boolean(whaleHome && typeof header?.cwd === 'string' && header.cwd
-    && path.resolve(header.cwd) === path.resolve(whaleHome));
+  return isLegacyWhaleHomeCwd(header, home);
 }
 
 export function whaleDisplayName(settings) {
@@ -207,38 +209,32 @@ async function createOrReuseAssistantSession(ctx, scope, controller) {
 }
 
 function sanitizePatch(input) {
+  /** @type {Record<string, any>} */
   const patch = {};
-  if (input && typeof input === 'object') {
-    if (Object.prototype.hasOwnProperty.call(input, 'name')) {
-      patch.name = trimTo(input.name, 64).trim() || '鲸鱼娘';
+  if (!input || typeof input !== 'object') return patch;
+  if (Object.prototype.hasOwnProperty.call(input, 'name')) patch.name = trimTo(input.name, 64).trim() || '鲸鱼娘';
+  if (Object.prototype.hasOwnProperty.call(input, 'personality')) patch.personality = normalizePersonality(input.personality);
+  if (Object.prototype.hasOwnProperty.call(input, 'userTitle')) patch.userTitle = trimTo(input.userTitle, 64).trim();
+  if (Object.prototype.hasOwnProperty.call(input, 'personaText')) patch.personaText = trimTo(input.personaText, 4000);
+  if (Object.prototype.hasOwnProperty.call(input, 'imDefault')) patch.imDefault = input.imDefault === true;
+  for (const key of ['bigFishPrompted', 'bigFishEnabled']) {
+    if (Object.prototype.hasOwnProperty.call(input, key)) {
+      if (typeof input[key] !== 'boolean') throw new Error(`${key} must be a boolean`);
+      patch[key] = input[key];
     }
-    if (Object.prototype.hasOwnProperty.call(input, 'personality')) {
-      patch.personality = normalizePersonality(input.personality);
-    }
-    if (Object.prototype.hasOwnProperty.call(input, 'userTitle')) {
-      patch.userTitle = trimTo(input.userTitle, 64).trim();
-    }
-    if (Object.prototype.hasOwnProperty.call(input, 'personaText')) {
-      patch.personaText = trimTo(input.personaText, 4000);
-    }
-    if (Object.prototype.hasOwnProperty.call(input, 'imDefault')) {
-      patch.imDefault = input.imDefault === true;
-    }
-    for (const key of ['bigFishPrompted', 'bigFishEnabled']) {
-      if (Object.prototype.hasOwnProperty.call(input, key)) {
-        if (typeof input[key] !== 'boolean') throw new Error(`${key} must be a boolean`);
-        patch[key] = input[key];
-      }
-    }
-    if (Object.prototype.hasOwnProperty.call(input, 'bigFishTab')) {
-      if (!['panel', 'task'].includes(input.bigFishTab)) throw new Error('Unknown big fish tab');
-      patch.bigFishTab = input.bigFishTab;
-    }
-    if (input.model && typeof input.model === 'object') {
-      patch.modelProvider = trimTo(input.model.provider, 128);
-      patch.modelModel = trimTo(input.model.model, 128);
-      patch.modelReasoningEffort = trimTo(input.model.reasoningEffort, 32);
-    }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'bigFishTab')) {
+    if (!['panel', 'task'].includes(input.bigFishTab)) throw new Error('Unknown big fish tab');
+    patch.bigFishTab = input.bigFishTab;
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'taskRootDir')) {
+    const raw = trimTo(input.taskRootDir, 2000).trim();
+    patch.taskRootDir = raw ? validateTaskCwd(raw, { dshHome: dshHomeDir(), requireExisting: false }) : '';
+  }
+  if (input.model && typeof input.model === 'object') {
+    patch.modelProvider = trimTo(input.model.provider, 128);
+    patch.modelModel = trimTo(input.model.model, 128);
+    patch.modelReasoningEffort = trimTo(input.model.reasoningEffort, 32);
   }
   return patch;
 }
@@ -258,9 +254,9 @@ function writeMemory(text) {
   const file = memoryFile();
   if (!file) throw new Error('missing-home');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, trimTo(text, MEMORY_MAX_CHARS), 'utf8');
-  fs.renameSync(tmp, file);
+  const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try { fs.writeFileSync(tmp, trimTo(text, MEMORY_MAX_CHARS), 'utf8'); fs.renameSync(tmp, file); }
+  finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
 }
 
 // ── pet bridge ─────────────────────────────────────────────────
@@ -691,6 +687,8 @@ function registerRpc(ctx, scope) {
           skills: home ? listWhaleSkills(home) : [],
           memory: readMemory(),
           homeDir: home ? whaleHomeDir(home) : '',
+          defaultTaskRootDir: defaultTaskRootDir(home),
+          effectiveTaskRootDir: resolvedTaskRootDir(snap, home),
         };
       }
       case 'settings/update': {

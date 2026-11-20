@@ -10,16 +10,23 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { internalSecret } from '../../dsh-shared/lib/internal-secret.mjs';
 import { genericOutput, trimTo } from './shared.js';
-import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+import {
+  ABORTED_TEXT,
+  CONFIRM_TOOL_TIMEOUT_MS,
+  UNATTENDED_REFUSAL_TEXT,
+  confirmModelAction,
+  refusalTextFor,
+} from './desktop-confirm.js';
+import { isUnattendedPulseTurn } from './call-origin.js';
 
 const CONTROL_TIMEOUT_MS = 15_000;
-const INSTALL_TIMEOUT_MS = 240_000;
+const INSTALL_TIMEOUT_MS = CONFIRM_TOOL_TIMEOUT_MS;
 
 // Renderer-writable keys that change credentials, external exposure, startup
 // behavior or built-in capability — a patch touching any of them confirms on
 // the desktop first. Ordinary appearance/policy keys stay local.
-const SENSITIVE_CONFIG_KEYS = new Set([
-  'githubToken', 'remoteWorkspaceEnabled', 'openAtLogin', 'autoStartDesktop',
+export const SENSITIVE_CONFIG_KEYS = new Set([
+  'githubToken', 'remoteWorkspaceEnabled', 'dshImEnabled', 'openAtLogin', 'autoStartDesktop',
   'openDevTools', 'downloadRoute', 'projectEnabled', 'whaleAssistantEnabled',
 ]);
 
@@ -38,7 +45,23 @@ function unavailable() {
   return { ok: false, detail: 'desktop-unavailable — no control channel in this host.' };
 }
 
-async function desktopCall(control, pathname, { method = 'GET', body, timeoutMs = CONTROL_TIMEOUT_MS } = {}) {
+/**
+ * @param {number} timeoutMs
+ * @param {AbortSignal | null | undefined} signal
+ */
+function combineSignal(timeoutMs, signal) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!signal) return timeout;
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([timeout, signal]) : signal;
+}
+
+/**
+ * @param {{ url: string, token: string }} control
+ * @param {string} pathname
+ * @param {{ method?: string, body?: any, timeoutMs?: number, signal?: AbortSignal | null }} [opts]
+ */
+async function desktopCall(control, pathname, { method = 'GET', body, timeoutMs = CONTROL_TIMEOUT_MS, signal } = {}) {
+  if (signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
   let response;
   try {
     response = await fetch(`${control.url}${pathname}`, {
@@ -48,9 +71,10 @@ async function desktopCall(control, pathname, { method = 'GET', body, timeoutMs 
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: combineSignal(timeoutMs, signal),
     });
   } catch (error) {
+    if (signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
     return { ok: false, detail: `control channel unreachable: ${String(error?.message ?? error)}` };
   }
   const text = await response.text();
@@ -78,6 +102,53 @@ const pluginListOutput = {
   }],
 };
 
+/**
+ * @param {string} action
+ * @param {any} args
+ */
+function buildPluginBody(action, args) {
+  /** @type {Record<string, any>} */
+  const payload = { action };
+  if (action === 'install') {
+    const id = String(args.id ?? '').trim();
+    const spec = String(args.spec ?? '').trim();
+    if (!id && !spec) return { error: 'install needs a catalog id or a github:owner/repo spec.' };
+    if (id) payload.id = id;
+    if (spec) payload.spec = spec;
+    if (Array.isArray(args.allowBuilds)) payload.allowBuilds = args.allowBuilds;
+    return { payload };
+  }
+  const name = String(args.name ?? '').trim();
+  if (!name) return { error: `${action} needs a package name.` };
+  payload.name = name;
+  return { payload };
+}
+
+/**
+ * @param {string} action
+ * @param {any} args
+ * @param {any} result
+ */
+function formatPluginResult(action, args, result) {
+  if (result.ok !== true) {
+    if (result.declined === true) {
+      return { ok: false, detail: '用户拒绝了这次插件变更，不要重试，除非用户再次明确要求。' };
+    }
+    if (result.needsAllowBuilds === true) {
+      return {
+        ok: false,
+        detail: `该插件需要构建脚本许可。向用户确认后用 allowBuilds=[${(result.allowBuilds ?? []).join(', ')}] 重试。`,
+      };
+    }
+    return { ok: false, detail: String(result.error ?? result.detail ?? `${action} failed`) };
+  }
+  const restarting = result.restarting === true || result.harnessRestarted === true;
+  return {
+    ok: true,
+    detail: `${action} ${String(args.name ?? args.id ?? args.spec ?? '')} 完成${restarting ? '，Harness 正在重启' : ''}。`,
+  };
+}
+
 export function registerDesktopTools(ctx) {
   ctx.tools.register(defineTool({
     name: 'whale_pet_settings',
@@ -95,13 +166,14 @@ export function registerDesktopTools(ctx) {
       card: 'generic', title: 'Whale settings', kind: 'other',
       content: [{ type: 'text', text: JSON.stringify(args.patch ?? {}) }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
       const control = controlConfig();
       if (!control) return unavailable();
       const patch = args.patch;
+      if (patch !== undefined && exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const result = patch === undefined
-        ? await desktopCall(control, '/desktop/pet-settings')
-        : await desktopCall(control, '/desktop/pet-settings', { method: 'POST', body: { patch } });
+        ? await desktopCall(control, '/desktop/pet-settings', { signal: exec?.signal })
+        : await desktopCall(control, '/desktop/pet-settings', { method: 'POST', body: { patch }, signal: exec?.signal });
       if (result.ok !== true) return { ok: false, detail: result.error ?? result.detail ?? 'whale settings failed' };
       return { ok: true, detail: JSON.stringify({ enabled: result.enabled, settings: result.settings }) };
     },
@@ -186,7 +258,7 @@ export function registerDesktopTools(ctx) {
       + 'policy keys, githubToken). Built-in plugin toggles and theme apply immediately; '
       + 'toggling a built-in plugin restarts Harness — your own session '
       + 'goes with it, so tell the user first.',
-    timeoutMs: CONTROL_TIMEOUT_MS,
+    timeoutMs: CONFIRM_TOOL_TIMEOUT_MS,
     parameters: {
       patch: {
         type: 'object',
@@ -202,13 +274,14 @@ export function registerDesktopTools(ctx) {
       kind: 'other',
       content: [{ type: 'text', text: JSON.stringify(args.patch ?? {}) }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
       const control = controlConfig();
       if (!control) return unavailable();
       const patch = args.patch;
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
         return { ok: false, detail: 'patch must be an object of config keys.' };
       }
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const sensitive = Object.keys(patch).filter((key) => SENSITIVE_CONFIG_KEYS.has(key)).sort();
       if (sensitive.length) {
         const touchesCredential = sensitive.some((key) => CREDENTIAL_CONFIG_KEYS.has(key));
@@ -222,10 +295,13 @@ export function registerDesktopTools(ctx) {
           scope: sensitive.join(','),
           summary: `修改影响安全或对外暴露的桌面配置：${sensitive.join(', ')}`,
           details: JSON.stringify(patch, null, 2),
-        });
-        if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
+        }, exec?.signal, exec);
+        if (confirmation.ok !== true || exec?.signal?.aborted) {
+          return { ok: false, detail: refusalTextFor(confirmation, exec?.signal) };
+        }
       }
-      const result = await desktopCall(control, '/desktop/config', { method: 'POST', body: { patch } });
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
+      const result = await desktopCall(control, '/desktop/config', { method: 'POST', body: { patch }, signal: exec?.signal });
       if (result.ok !== true) return { ok: false, detail: result.detail ?? String(result.error ?? 'config write failed') };
       return { ok: true, detail: `Config applied: ${Object.keys(patch).join(', ')}.` };
     },
@@ -258,12 +334,12 @@ export function registerDesktopTools(ctx) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.name ?? args.id ?? args.spec ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
       const control = controlConfig();
       if (!control) return unavailable();
       const action = String(args.action ?? '').trim();
       if (action === 'list') {
-        const result = await desktopCall(control, '/desktop/state');
+        const result = await desktopCall(control, '/desktop/state', { signal: exec?.signal });
         if (result.ok !== true) return { ok: false, detail: result.detail ?? 'state read failed' };
         const plugins = Array.isArray(result.plugins) ? result.plugins : [];
         const disabled = Array.isArray(result.disabledPlugins) ? result.disabledPlugins : [];
@@ -277,42 +353,18 @@ export function registerDesktopTools(ctx) {
       if (!['install', 'remove', 'disable', 'enable'].includes(action)) {
         return { ok: false, detail: 'action must be list | install | remove | disable | enable.' };
       }
-      const body = { action };
-      if (action === 'install') {
-        const id = String(args.id ?? '').trim();
-        const spec = String(args.spec ?? '').trim();
-        if (!id && !spec) return { ok: false, detail: 'install needs a catalog id or a github:owner/repo spec.' };
-        if (id) body.id = id;
-        if (spec) body.spec = spec;
-        if (Array.isArray(args.allowBuilds)) body.allowBuilds = args.allowBuilds;
-      } else {
-        const name = String(args.name ?? '').trim();
-        if (!name) return { ok: false, detail: `${action} needs a package name.` };
-        body.name = name;
-      }
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
+      if (isUnattendedPulseTurn(exec)) return { ok: false, detail: UNATTENDED_REFUSAL_TEXT };
+      const body = buildPluginBody(action, args);
+      if (body.error) return { ok: false, detail: body.error };
       const result = await desktopCall(control, '/desktop/plugin', {
         method: 'POST',
-        body,
+        body: body.payload,
         // Every mutation waits on a desktop confirmation dialog.
         timeoutMs: INSTALL_TIMEOUT_MS,
+        signal: exec?.signal,
       });
-      if (result.ok !== true) {
-        if (result.declined === true) {
-          return { ok: false, detail: '用户拒绝了这次插件变更，不要重试，除非用户再次明确要求。' };
-        }
-        if (result.needsAllowBuilds === true) {
-          return {
-            ok: false,
-            detail: `该插件需要构建脚本许可。向用户确认后用 allowBuilds=[${(result.allowBuilds ?? []).join(', ')}] 重试。`,
-          };
-        }
-        return { ok: false, detail: String(result.error ?? result.detail ?? `${action} failed`) };
-      }
-      const restarting = result.restarting === true || result.harnessRestarted === true;
-      return {
-        ok: true,
-        detail: `${action} ${String(args.name ?? args.id ?? args.spec ?? '')} 完成${restarting ? '，Harness 正在重启' : ''}。`,
-      };
+      return formatPluginResult(action, args, result);
     },
   }));
 }

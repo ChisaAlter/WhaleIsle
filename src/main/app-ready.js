@@ -122,7 +122,6 @@ function installApprovalMonitor(state, dsh) {
  * @param {(promise: any) => void} deps.ignoreFailure
  * @param {() => void} deps.quitApp
  * @param {any} deps.projectEnvironment
- * @param {any} deps.proactiveService
  * @param {(options?: Record<string, any>) => Promise<any>} deps.openLauncher
  * @param {(win: any) => any} deps.bindLauncherClose
  * @param {() => void} deps.showForeground
@@ -152,7 +151,6 @@ async function runAppReady({
   ignoreFailure,
   quitApp,
   projectEnvironment,
-  proactiveService,
   openLauncher,
   bindLauncherClose,
   showForeground,
@@ -277,7 +275,6 @@ async function runAppReady({
     // so config writes and plugin toggles share one serialized align
     // chain no matter which surface asked.
     desktop: {
-      proactive: (/** @type {any} */ payload) => proactiveService.dispatch(payload),
       project: (/** @type {any} */ payload) => projectEnvironment.dispatch(payload),
       htmlPreview: (/** @type {any} */ input, /** @type {any} */ signal) => require('./html-preview').captureHtmlPreview(input, signal),
       state: () => {
@@ -388,7 +385,6 @@ async function runAppReady({
   state.desktopResources = registerIpc(/** @type {any} */ ({
     updateCenter: state.updateCenter,
     openUpdateCenter,
-    proactiveService,
     dsh,
     harness,
     startHarness: restartWithCleanup,

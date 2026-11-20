@@ -548,9 +548,37 @@ function assertCurrentBotScope(isCurrentScope) {
   throw error;
 }
 
-function decorateResult(workspaces, result, catalog) {
+function decorateResult(workspaces, result, catalog, singleOwnerOptions = null) {
+  const applySingleOwner = (value) => {
+    if (!singleOwnerOptions?.gate || !singleOwnerOptions?.channel || !value || typeof value !== 'object') {
+      return value;
+    }
+    if (!Array.isArray(value.bots)) return value;
+    const configById = new Map();
+    if (typeof singleOwnerOptions.listBotConfigs === 'function') {
+      for (const row of singleOwnerOptions.listBotConfigs() ?? []) {
+        const id = row?.botId ?? row?.id;
+        if (id) configById.set(id, row);
+      }
+    }
+    return {
+      ...value,
+      bots: value.bots.map((bot) => {
+        const id = bot?.botId ?? bot?.id;
+        if (!id) return bot;
+        return {
+          ...bot,
+          singleOwner: singleOwnerOptions.gate.publicStatus({
+            channel: singleOwnerOptions.channel,
+            botId: id,
+            botConfig: configById.get(id),
+          }),
+        };
+      }),
+    };
+  };
   const decorate = (value) => {
-    const decorated = workspaces.decorateStatus(value);
+    const decorated = applySingleOwner(workspaces.decorateStatus(value));
     if (!catalog || !decorated || typeof decorated !== 'object') return decorated;
     const attachCatalog = (agentPresetCatalog) => (
       agentPresetCatalog ? { ...decorated, agentPresetCatalog } : decorated
@@ -595,7 +623,7 @@ export function observeBotWorkspaceRemovals(
 
 export function createBotWorkspaceScope(
   harness,
-  { botId, workspaces, state, agentPresetCatalog } = {},
+  { botId, workspaces, state, agentPresetCatalog, accessGate = null } = {},
 ) {
   if (!harness || !workspaces || !state) throw new TypeError('harness, workspaces, and state are required');
   const incarnation = workspaces.incarnationFor(botId);
@@ -897,6 +925,9 @@ export function createBotWorkspaceScope(
           return target.executeCommand(sessionId, ...args);
         };
       }
+      if (property === 'accessGate') {
+        return accessGate;
+      }
       const value = Reflect.get(target, property, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
@@ -925,6 +956,9 @@ export function createBotWorkspaceScope(
           return target.setSession(key, sessionId, ...args);
         };
       }
+      if (property === 'accessGate') {
+        return accessGate;
+      }
       const value = Reflect.get(target, property, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
@@ -936,10 +970,20 @@ export function createBotScopedHarness(harness, options) {
   return createBotWorkspaceScope(harness, options).harness;
 }
 
-export function createWorkspaceAwareController(controller, { workspaces, stateFor, agentPresetCatalog } = {}) {
+export function createWorkspaceAwareController(controller, {
+  workspaces,
+  stateFor,
+  agentPresetCatalog,
+  singleOwnerGate = null,
+  channel = null,
+  listBotConfigs = null,
+} = {}) {
   if (!controller || !workspaces || typeof stateFor !== 'function') {
     throw new TypeError('controller, workspaces, and stateFor are required');
   }
+  const singleOwnerOptions = singleOwnerGate && channel
+    ? { gate: singleOwnerGate, channel, listBotConfigs }
+    : null;
   const transitions = new Map();
   const withBotTransition = (botId, operation) => {
     const previous = transitions.get(botId) ?? Promise.resolve();
@@ -949,7 +993,7 @@ export function createWorkspaceAwareController(controller, { workspaces, stateFo
       if (transitions.get(botId) === current) transitions.delete(botId);
     });
   };
-  const decorate = (value) => decorateResult(workspaces, value, agentPresetCatalog);
+  const decorate = (value) => decorateResult(workspaces, value, agentPresetCatalog, singleOwnerOptions);
   const updateWorkspace = (botId, workspace) => {
     // Capture at API invocation, before even waiting for an older outer
     // transition. A queued request still belongs to the incarnation that the
@@ -992,6 +1036,7 @@ export function createWorkspaceAwareController(controller, { workspaces, stateFo
         workspaces,
         await controller.status(),
         catalog ?? agentPresetCatalog,
+        singleOwnerOptions,
       );
     });
   };

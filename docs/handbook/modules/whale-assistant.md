@@ -20,7 +20,7 @@
 | IM 接入 | `vendor/dsh-im/src/channels/shared/whale-session.mjs` | 助理启用时 `imDefault` 默认 true；bot 未显式选择其他预设时读取鲸鱼娘持久 `sessionId`，不同聊天共享它。沿用渠道既有访问规则；缺会话时报错，不逐聊天新建；显式其他预设沿用独立会话。 |
 | client | `client/client.js` | `__ModuleLoader__.load({id:'dsh-whale'})`；`settings.pet.item` id `whale`——字段块挂进主窗 `pet` 分区「助理」组、总开关正下方：紧凑行逐个 write-through（名字+称呼一行双输入 blur/Enter 提交、默认模型+推理强度一行双下拉、IM 默认行内开关），额外人设/长期记忆/技能收 `ui-primitives` Modal 弹窗（人设·记忆显式保存、技能开关即时）；无性格控件——桌宠性格由主进程 `applySettings` 经 `/dsh-whale` `settings/update` 镜像进 catalog；不注册独立 `settings.section`；侧栏「新会话」下方 `sidebar.panellist` 面板行（label 跟随配置名，透明品牌头像在 Claude 皮肤下切为大小姐形象；同一头像用于会话标题与准备页）+ `main` keyed 重定向（选中即 `sessions.open` 她的会话并 `selectPanel(null)`），经 `slots.spec`+`subscribe` 门控注册，无 panellist 的宿主回落 `sidebar.footer.action`；会话头部 `conversation.session.header.actions` 注册 ⚙ 齿轮（`presentation.owner` 门控）→ `settingsNavigation.open('pet')` 直达设置 |
 
-侧栏保留三个平级入口：助理使用跟随皮肤的彩色头像和配置名称；「收件箱 / Inbox」使用共享的单色线性下箭头托盘图标；「待审批 / Approvals」使用同笔画的单色文件勾选图标。导航名称与页面标题使用同一份本地化文案，展开、收起、悬停和选中状态沿用宿主侧栏。待审批仍使用原 `whale-outbox` 面板身份与 `outbox` 数据接口。
+侧栏保留助理入口：使用跟随皮肤的彩色头像和配置名称，导航名称沿用配置，展开、收起、悬停和选中状态沿用宿主侧栏。历史 `Proactive`（`whale-inbox`/`whale-outbox`）空壳已移除。
 
 ## 后台资料整理
 

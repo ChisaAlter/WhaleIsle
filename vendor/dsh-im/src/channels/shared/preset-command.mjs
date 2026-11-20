@@ -6,6 +6,10 @@ import { t } from './i18n.mjs';
 import { withSessionBindingLock } from './session-binding-lock.mjs';
 import { splitWorkspaceCommandMessage } from './workspace-command.mjs';
 import { WORKSPACE_SESSION_STALE } from './workspace-session.mjs';
+import {
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from './single-owner-gate.mjs';
 
 const PRESET_COMMAND = /^\/preset(?=$|\s)/iu;
 const PRESET_LIST_COMMAND = /^\/presetlist(?=$|\s)/iu;
@@ -251,6 +255,9 @@ export function isPresetCommand(text) {
 export async function runPresetCommand(text, harness, state, key, options = {}) {
   if (!isPresetCommand(text)) return null;
   const command = text.trim();
+  if (await isWhaleEnforcedForHarness(harness)) {
+    return commandResult(whaleRestrictedCommandReply(command));
+  }
   if (options.hasImages) {
     return commandResult(t('Agent Preset 命令仅支持纯文字，请移除图片后重试。'));
   }

@@ -28,6 +28,11 @@ import { runWorkspaceCommand } from '../shared/workspace-command.mjs';
 import { askInWorkspaceSession } from '../shared/workspace-session.mjs';
 import { sharedWhaleSessionId } from '../shared/whale-session.mjs';
 import {
+  attachImmutableSpeaker,
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from '../shared/single-owner-gate.mjs';
+import {
   hasInboundImages,
   ImagePromptError,
   imagePromptDiagnostic,
@@ -491,6 +496,7 @@ export class WecomHarnessBridge {
   #approvals;
   #batchInputs = new BatchInputManager();
   #prefetchedImageCount = 0;
+  #accessGate;
 
   constructor({
     client,
@@ -502,6 +508,7 @@ export class WecomHarnessBridge {
     generateStreamId = generateReqId,
     fileUploadTimeoutMs = DEFAULT_FILE_UPLOAD_TIMEOUT_MS,
     signal,
+    accessGate = null,
   }) {
     if (!client || typeof client.replyStream !== 'function' || typeof client.sendMessage !== 'function') {
       throw new TypeError('Enterprise WeChat client is required');
@@ -519,6 +526,7 @@ export class WecomHarnessBridge {
     this.#generateReqId = generateStreamId;
     this.#fileUploadTimeoutMs = Math.min(fileUploadTimeoutMs, DEFAULT_FILE_UPLOAD_TIMEOUT_MS);
     this.#signal = signal;
+    this.#accessGate = accessGate ?? harness?.accessGate ?? null;
     this.#approvals = new HarnessApprovalQueue({ label: 'wecom', logger });
   }
 
@@ -541,6 +549,40 @@ export class WecomHarnessBridge {
 
     const key = conversationKey(frame);
     this.#acceptedMessageIds.add(messageId);
+    const gate = this.#accessGate;
+    const chatType = body.chattype === 'group' ? 'group' : 'private';
+    if (gate && typeof gate.evaluateInbound === 'function') {
+      return Promise.resolve().then(async () => {
+        const decision = await gate.evaluateInbound({
+          senderId,
+          displayName: nonEmptyString(body.from?.name),
+          chatType,
+          harness: this.#harness,
+        });
+        if (!decision.allowed) {
+          this.#acceptedMessageIds.delete(messageId);
+          await this.#state.markSeen(messageId).catch(() => undefined);
+          this.#status.messagesRejected += 1;
+          this.#status.lastRejectedAt = new Date().toISOString();
+          if (decision.replyText) {
+            await this.#sendImmediate(frame, chatId, decision.replyText).catch(() => undefined);
+          }
+          return;
+        }
+        const stamped = { ...frame };
+        attachImmutableSpeaker(stamped, decision.speaker);
+        return this.#acceptAuthorized(stamped, body, messageId, senderId, chatId, key);
+      }).catch((error) => {
+        this.#acceptedMessageIds.delete(messageId);
+        throw error;
+      });
+    }
+    const stamped = { ...frame };
+    attachImmutableSpeaker(stamped, { role: 'guest', chat: chatType });
+    return this.#acceptAuthorized(stamped, body, messageId, senderId, chatId, key);
+  }
+
+  #acceptAuthorized(frame, body, messageId, senderId, chatId, key) {
     if (body.chattype === 'single') {
       rememberConnectionTestTarget(this.#state, { chatId });
     }
@@ -889,8 +931,8 @@ export class WecomHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness)) {
-          await this.#sendImmediate(frame, chatId, t('鲸鱼娘只有一条常驻对话，继续发送消息即可。'));
+        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+          await this.#sendImmediate(frame, chatId, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(key);
           await this.#sendImmediate(frame, chatId, t('已开启新会话。请发送你的问题。'));
@@ -942,6 +984,7 @@ export class WecomHarnessBridge {
         key,
         text,
         content,
+        speaker: frame.speaker,
         createOptions: { signal: this.#signal },
         existsOptions: { signal: this.#signal },
         askOptions: {

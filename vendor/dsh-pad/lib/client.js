@@ -491,7 +491,7 @@ function readLayout() {
   }
 }
 var PadClient = class {
-  snapshot = { panels: [], connected: false, loaded: false, layout: readLayout(), fresh: void 0 };
+  snapshot = { panels: [], connected: false, loaded: false, layout: readLayout(), fresh: void 0, embeddedMode: false };
   listeners = /* @__PURE__ */ new Set();
   history = /* @__PURE__ */ new Map();
   source;
@@ -500,6 +500,14 @@ var PadClient = class {
   freshTimer;
   modelCatalog;
   started = false;
+  embeddedCount = 0;
+  setEmbeddedMode(enabled) {
+    this.embeddedCount = Math.max(0, this.embeddedCount + (enabled ? 1 : -1));
+    const next = this.embeddedCount > 0;
+    if (next === this.snapshot.embeddedMode) return;
+    this.update({ embeddedMode: next });
+    this.reconnect();
+  }
   subscribe = (listener) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -623,8 +631,9 @@ var PadClient = class {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
-  /** Panels the Host should poll: everything visible in an expanded dock. */
+  /** Panels the Host should poll: everything visible in an expanded dock, or only embedded panels in embedded mode. */
   watchIds() {
+    if (this.snapshot.embeddedMode) return [...new Set(this.embeddedWatch ?? [])];
     const dock = this.snapshot.layout.expanded ? this.snapshot.panels.filter((p) => !p.collapsed && !p.needsApproval).map((p) => p.id) : [];
     return [...new Set([...dock, ...this.embeddedWatch ?? []])];
   }
@@ -676,7 +685,7 @@ var PadClient = class {
   /** A panel appeared while the page was open: open the dock and highlight it. */
   announce(panelId) {
     clearTimeout(this.freshTimer);
-    if (!this.snapshot.layout.expanded) this.setLayout({ expanded: true });
+    if (!this.snapshot.embeddedMode && !this.snapshot.layout.expanded) this.setLayout({ expanded: true });
     this.update({ fresh: panelId });
     this.freshTimer = setTimeout(() => this.update({ fresh: void 0 }), 2400);
   }
@@ -1192,7 +1201,7 @@ var MenuIcon = {
   ] }),
   trash: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("svg", { viewBox: "0 0 16 16", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M3 4.6h10M6.4 4.6V2.9h3.2v1.7M4.9 4.6l.5 8.5h5.2l.5-8.5" }) })
 };
-function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTarget, dropZone, onAsk, onExpand, onDragStart, sidebarActions, onRemove }) {
+function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTarget, dropZone, onAsk, onExpand, onDragStart, sidebarActions, onRemove, height, onHeightChange }) {
   const [menuOpen, setMenuOpen] = (0, import_react2.useState)(false);
   const [confirmDelete, setConfirmDelete] = (0, import_react2.useState)(false);
   const [modelOpen, setModelOpen] = (0, import_react2.useState)(false);
@@ -1211,17 +1220,27 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
     if (!confirmDelete && !modelOpen) return;
     const onKey = (event) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         setConfirmDelete(false);
         setModelOpen(false);
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [confirmDelete, modelOpen]);
   (0, import_react2.useEffect)(() => {
     if (!menuOpen) return;
     const close = (event) => {
-      if (event instanceof KeyboardEvent ? event.key === "Escape" : !menuRef.current?.contains(event.target)) setMenuOpen(false);
+      if (event instanceof KeyboardEvent) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setMenuOpen(false);
+        }
+        return;
+      }
+      if (!menuRef.current?.contains(event.target)) setMenuOpen(false);
     };
     document.addEventListener("pointerdown", close, true);
     document.addEventListener("keydown", close, true);
@@ -1350,7 +1369,16 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("card.model") }),
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-menu-value", children: modelLabel })
               ] }),
-              ...(sidebarActions ?? []).map(action => (0, import_jsx_runtime2.jsx)("button", { type: "button", role: "menuitem", disabled: action.disabled, onClick: () => { setMenuOpen(false); action.run(); }, children: action.label }, action.label)),
+              ...(sidebarActions ?? []).map((action) => (0, import_jsx_runtime2.jsxs)("button", {
+                type: "button",
+                role: "menuitem",
+                disabled: action.disabled,
+                onClick: () => { setMenuOpen(false); action.run(); },
+                children: [
+                  action.icon ? (0, import_jsx_runtime2.jsx)("span", { className: "dshpad-mi", children: action.icon }) : null,
+                  action.label
+                ]
+              }, action.label)),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("hr", {}),
               /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", role: "menuitem", className: onRemove ? void 0 : "is-danger", onClick: () => {
                 setMenuOpen(false);
@@ -1480,8 +1508,8 @@ function PanelCard({ view, client, theme, lang, t, now, fresh, dragging, dropTar
               onAsk: (text) => onAsk(text, false),
               onRun: (prompt, system) => client.run(view.id, prompt, system),
               onScriptError: setScriptError,
-              height: client.panelHeight(view.id),
-              onHeightChange: (next) => client.setPanelHeight(view.id, next),
+              height: onHeightChange !== void 0 ? height : client.panelHeight(view.id),
+              onHeightChange: onHeightChange ?? ((next) => client.setPanelHeight(view.id, next)),
               resizeLabel: t("card.resize")
             }
           ),
@@ -1547,7 +1575,7 @@ function watchTheme(onChange) {
     frame = requestAnimationFrame(onChange);
   };
   const observer = new MutationObserver(schedule);
-  const options = { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-color-scheme"] };
+  const options = { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-color-scheme", "data-ds-dark-theme", "data-dsh-skin"] };
   observer.observe(document.documentElement, options);
   if (document.body) observer.observe(document.body, options);
   const media = matchMedia("(prefers-color-scheme: dark)");
@@ -1810,7 +1838,7 @@ function createDock(client) {
       height: renderedHeight,
       maxHeight
     };
-    const reserve = snap.layout.expanded && dockPoint.x + dockWidth >= viewport.width - EDGE_GAP - 2 ? Math.round(dockWidth) + 12 : 0;
+    const reserve = !snap.embeddedMode && snap.layout.expanded && dockPoint.x + dockWidth >= viewport.width - EDGE_GAP - 2 ? Math.round(dockWidth) + 12 : 0;
     (0, import_react3.useEffect)(() => {
       const root = document.documentElement;
       root.classList.toggle("dshpad-reserve", reserve > 0);
@@ -2941,6 +2969,7 @@ var DOCK_CSS = `
 @keyframes dshpad-pop{from{opacity:0;scale:.96}to{opacity:1;scale:1}}
 @keyframes dshpad-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes dshpad-flash{0%,30%{box-shadow:inset 0 0 0 1.5px var(--dshpad-accent)}100%{box-shadow:inset 0 0 0 .5px var(--dsw-alias-settings-card-stroke,var(--dshpad-border))}}
+.dshpad-whale-panels .dshpad-card-head{cursor:default}
 @media (prefers-reduced-motion:reduce){
   .dshpad-root *{animation-duration:1ms!important;transition-duration:1ms!important}
 }
@@ -2952,17 +2981,32 @@ var inject = ["slots", "locale"];
 // DSHD: an additive, read-only view onto the SAME PadClient and PanelCard.
 // Separate display preferences never rewrite the floating dock's layout or delete panels.
 function createWhalePanels(client) {
-  const { createElement: h, useState, useEffect, useRef, useSyncExternalStore } = import_react4;
-  return function WhalePanels({ t, requestAdd = 0, active = true }) {
-    const { Button, Input, Modal } = require("@deepseek-ai/dsh-client-ui-primitives");
+  const { createElement: h, useState, useEffect, useRef, useSyncExternalStore, Fragment } = import_react4;
+  return function WhalePanels({ t, requestAdd = 0, active = true, onDraftInserted }) {
+    const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+    const { Button, Input, Modal, Toast } = primitives;
     const snap = useSyncExternalStore(client.subscribe, client.getSnapshot);
     const root = useRef(null);
     const [theme, setTheme] = useState({ mode: "light", css: ":root{}" });
     const [add, setAdd] = useState(false), [prompt, setPrompt] = useState("");
-    const [notice, setNotice] = useState("");
+    const [focusedId, setFocusedId] = useState(void 0);
+    const [toast, setToast] = useState(null);
+    const toastSeq = useRef(0);
     const [prefs, setPrefs] = useState(() => {
-      try { const saved = JSON.parse(localStorage.getItem("dsh-whale:pad-display") || "{}"); return { hidden: Array.isArray(saved.hidden) ? saved.hidden : [], order: Array.isArray(saved.order) ? saved.order : [] }; }
-      catch { return { hidden: [], order: [] }; }
+      try {
+        const saved = JSON.parse(localStorage.getItem("dsh-whale:pad-display") || "{}");
+        const hidden = Array.isArray(saved.hidden) ? [...new Set(saved.hidden.filter(id => typeof id === "string"))] : [];
+        const order = Array.isArray(saved.order) ? saved.order.filter(id => typeof id === "string") : [];
+        const heights = {};
+        if (saved.heights && typeof saved.heights === "object") {
+          for (const [id, value] of Object.entries(saved.heights)) {
+            if (typeof value === "number" && Number.isFinite(value)) heights[id] = clampPanelHeight(value);
+          }
+        }
+        return { hidden, order, heights };
+      } catch {
+        return { hidden: [], order: [], heights: {} };
+      }
     });
     const now = useNow(10000), zh = t("dock.title") === "\u9762\u677F", lang = zh ? "zh-CN" : "en";
     const label = (cn, en) => zh ? cn : en;
@@ -2970,8 +3014,40 @@ function createWhalePanels(client) {
       const ai = prefs.order.indexOf(a.id), bi = prefs.order.indexOf(b.id);
       return (ai < 0 ? Number.MAX_SAFE_INTEGER : ai) - (bi < 0 ? Number.MAX_SAFE_INTEGER : bi);
     });
-    const persist = next => { localStorage.setItem("dsh-whale:pad-display", JSON.stringify(next)); setPrefs(next); };
+    const focusedView = focusedId === void 0 ? void 0 : snap.panels.find(p => p.id === focusedId);
+    const persist = next => {
+      const clean = {
+        hidden: [...new Set(Array.isArray(next.hidden) ? next.hidden : [])],
+        order: Array.isArray(next.order) ? next.order : [],
+        heights: next.heights && typeof next.heights === "object" ? next.heights : {},
+      };
+      try {
+        localStorage.setItem("dsh-whale:pad-display", JSON.stringify(clean));
+      } catch {
+      }
+      setPrefs(clean);
+    };
+    const pushToast = (text, { success = false, anchorToChat = false } = {}) => {
+      toastSeq.current += 1;
+      setToast({ seq: toastSeq.current, text, success, anchorToChat });
+    };
+    useEffect(() => {
+      client.setEmbeddedMode(true);
+      return () => client.setEmbeddedMode(false);
+    }, []);
     useEffect(() => { if (requestAdd) setAdd(true); }, [requestAdd]);
+    useEffect(() => {
+      if (focusedId === void 0) return;
+      const onKey = event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setFocusedId(void 0);
+        }
+      };
+      document.addEventListener("keydown", onKey, true);
+      return () => document.removeEventListener("keydown", onKey, true);
+    }, [focusedId]);
     useEffect(() => {
       const update = () => { if (root.current) setTheme(readTheme(root.current)); };
       update(); return watchTheme(update);
@@ -2982,26 +3058,102 @@ function createWhalePanels(client) {
       client.embeddedWatch = ids; client.reconnect();
       return () => { client.embeddedWatch = []; client.reconnect(); };
     }, [active, visible.map(p => `${p.id}:${p.collapsed}:${p.needsApproval}`).join(",")]);
-    const ask = text => { const result = composer.insert(text); setNotice(result === "unavailable" ? label("输入框尚未就绪，请回到鲸鱼娘对话重试。", "Open the assistant conversation and try again.") : label("已放入输入框；检查后发送。", "Added to your draft. Review and send.")); };
+    const ask = text => {
+      const result = composer.insert(text);
+      if (result === "unavailable") {
+        pushToast(label("输入框尚未就绪，请回到鲸鱼娘对话重试。", "Open the assistant conversation and try again."), { success: false, anchorToChat: false });
+        return false;
+      }
+      pushToast(label("已放入主对话输入框；检查后发送。", "Added to the conversation draft. Review and send."), { success: true, anchorToChat: true });
+      onDraftInserted?.();
+      return true;
+    };
+    const submitAdd = () => {
+      const trimmed = prompt.trim();
+      if (!trimmed) return;
+      if (ask(t("new.prefix") + trimmed)) {
+        setAdd(false);
+        setPrompt("");
+      }
+    };
+    const setEmbeddedHeight = (panelId, nextHeight) => {
+      const heights = { ...prefs.heights };
+      if (nextHeight === void 0) delete heights[panelId];
+      else heights[panelId] = clampPanelHeight(nextHeight);
+      persist({ ...prefs, heights });
+    };
     const move = (id, delta) => {
       const order = visible.map(p => p.id), i = order.indexOf(id), to = i + delta;
       if (to >= 0 && to < order.length) { [order[i], order[to]] = [order[to], order[i]]; persist({ ...prefs, order }); }
     };
+    const chatAnchor = toast?.anchorToChat && typeof document !== "undefined"
+      ? (document.querySelector('[data-dsh-frame-region="center"]') || document.querySelector("[data-conversation-content]") || null)
+      : null;
     return h("div", { className: "dshpad-root dshpad-whale-panels", ref: root },
       !snap.connected ? h("p", { role: "status", className: "dshpad-whale-notice" }, label("面板连接中；保留上次读数。", "Connecting; keeping the last readings.")) : null,
-      notice ? h("p", { role: "status", className: "dshpad-whale-notice" }, notice) : null,
+      toast && typeof Toast === "function" ? h(Toast, {
+        key: `${toast.seq}:${toast.text}`,
+        text: toast.text,
+        tone: toast.success ? "success" : void 0,
+        anchor: chatAnchor,
+        onDone: () => setToast(current => (current?.seq === toast.seq ? null : current)),
+      }) : null,
       visible.length ? visible.map((view, index) => h(PanelCard, { key: view.id, view, client, theme, lang, t, now, fresh: snap.fresh === view.id,
-        onAsk: ask, onExpand: () => client.setPanelHeight(view.id, client.panelHeight(view.id) ? void 0 : 480), onDragStart: () => {},
-        onRemove: () => persist({ ...prefs, hidden: [...prefs.hidden, view.id] }),
-        sidebarActions: [{ label: label("上移", "Move up"), disabled: index === 0, run: () => move(view.id, -1) }, { label: label("下移", "Move down"), disabled: index === visible.length - 1, run: () => move(view.id, 1) }],
+        height: prefs.heights[view.id],
+        onHeightChange: nextHeight => setEmbeddedHeight(view.id, nextHeight),
+        onAsk: ask, onExpand: () => setFocusedId(view.id), onDragStart: () => {},
+        onRemove: () => persist({ ...prefs, hidden: [...new Set([...prefs.hidden, view.id])] }),
+        sidebarActions: [
+          { label: label("上移", "Move up"), icon: MenuIcon.up, disabled: index === 0, run: () => move(view.id, -1) },
+          { label: label("下移", "Move down"), icon: MenuIcon.down, disabled: index === visible.length - 1, run: () => move(view.id, 1) },
+        ],
       })) : h("div", { className: "dshpad-whale-empty" }, h("p", null, label("把想看的内容放在这里", "Keep useful panels here")), h(Button, { variant: "outline", onClick: () => setAdd(true) }, label("添加面板", "Add panel"))),
-      h(Modal, { open: add, title: label("添加自定义面板", "Add a custom panel"), closeLabel: label("关闭", "Close"), onClose: () => setAdd(false) },
+      h(Modal, { open: add, title: label("添加自定义面板", "Add a custom panel"), closeLabel: label("关闭", "Close"), onClose: () => setAdd(false), footer: h(Fragment, null,
+        h(Button, { variant: "outline", onClick: () => setAdd(false) }, label("取消", "Cancel")),
+        h(Button, { variant: "primary", disabled: !prompt.trim(), onClick: submitAdd }, label("放入对话", "Add to draft"))) },
         h("div", { className: "dshpad-whale-add" },
           snap.panels.filter(p => prefs.hidden.includes(p.id)).map(view => h(Button, { key: view.id, variant: "outline", onClick: () => { persist({ ...prefs, hidden: prefs.hidden.filter(id => id !== view.id) }); setAdd(false); } }, label("添加已有：", "Restore: ") + view.definition.title)),
-          h("label", null, label("想创建什么面板？", "What should the new panel show?"), h(Input, { value: prompt, onChange: e => setPrompt(e.target.value), placeholder: label("例如：服务器性能、今日备忘", "For example: server health or notes") })),
+          h("label", null, label("想创建什么面板？", "What should the new panel show?"), h(Input, {
+            value: prompt,
+            "data-modal-autofocus": "",
+            onChange: e => setPrompt(e.target.value),
+            onKeyDown: e => {
+              if (e.key === "Enter" && !e.nativeEvent?.isComposing) {
+                e.preventDefault();
+                submitAdd();
+              }
+            },
+            placeholder: label("例如：服务器性能、今日备忘", "For example: server health or notes"),
+          })),
           h("p", null, label("需求会追加到当前草稿，发送后由鲸鱼娘创建；数据源仍需原有授权。", "Append a request to your draft, then send it. Existing data-source approvals still apply.")),
-          h(Button, { disabled: !prompt.trim(), onClick: () => { ask(t("new.prefix") + prompt.trim()); setAdd(false); setPrompt(""); } }, label("放入对话", "Add to draft")),
         )),
+      focusedView ? h("div", {
+        className: "dshpad-focus",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": focusedView.definition.title,
+        onClick: event => { if (event.target === event.currentTarget) setFocusedId(void 0); },
+      }, h("div", { className: "dshpad-focus-panel" },
+        h("header", { className: "dshpad-focus-head" },
+          focusedView.definition.icon ? h("span", { className: "dshpad-card-icon" }, focusedView.definition.icon) : null,
+          h("span", { className: "dshpad-focus-title" }, focusedView.definition.title),
+          h("button", { type: "button", className: "dshpad-icon-btn", "aria-label": t("card.close"), title: t("card.close"), onClick: () => setFocusedId(void 0) }, Icon2.close),
+        ),
+        awaitingFirstData(focusedView.definition, focusedView.data)
+          ? h("p", { className: "dshpad-card-note" }, t("card.firstData"))
+          : h(PanelFrame, {
+            view: focusedView,
+            histories: () => client.historiesOf(focusedView.id),
+            theme,
+            lang,
+            onRefresh: () => void client.act({ op: "refresh", panelId: focusedView.id }),
+            onAsk: text => { ask(text); },
+            onRun: (runPrompt, system) => client.run(focusedView.id, runPrompt, system),
+            onScriptError: () => {},
+            resizeLabel: t("card.resize"),
+            resizable: false,
+          }),
+      )) : null,
     );
   };
 }

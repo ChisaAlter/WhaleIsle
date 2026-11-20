@@ -3,6 +3,11 @@ import { isAbsolute, resolve } from 'node:path';
 
 import { t } from './i18n.mjs';
 import { WORKSPACE_SESSION_STALE } from './workspace-session.mjs';
+import {
+  isWhaleEnforcedForHarness,
+  isWhaleRestrictedCommand,
+  whaleRestrictedCommandReply,
+} from './single-owner-gate.mjs';
 
 const WORKSPACE_COMMAND = /^\/workspace(?:\s+([\s\S]+))?$/i;
 const WORKSPACE_LIST_COMMAND = /^\/workspacelist(?:\s+([\s\S]+))?$/i;
@@ -354,6 +359,9 @@ async function runSessionBindCommand(command, harness, conversationKey) {
 export async function runWorkspaceCommand(text, harness, conversationKey) {
   if (typeof text !== 'string') return null;
   const command = text.trim();
+  if (isWhaleRestrictedCommand(command) && await isWhaleEnforcedForHarness(harness)) {
+    return commandResult(whaleRestrictedCommandReply(command));
+  }
   if (SESSION_BIND_PREFIX.test(command)) {
     return runSessionBindCommand(command, harness, conversationKey);
   }

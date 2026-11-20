@@ -11,16 +11,17 @@ import { parse } from 'yaml';
 const defaults = {
   name: '鲸鱼娘', personality: 'natural', userTitle: '', personaText: '',
   modelProvider: '', modelModel: '', modelReasoningEffort: '',
-  imDefault: true, sessionId: '',
+  imDefault: true, sessionId: '', taskRootDir: '',
   bigFishPrompted: false, bigFishEnabled: false, bigFishTab: 'panel',
 };
 
 function values(source) {
+  /** @type {Record<string, any>} */
   const result = { ...defaults };
   for (const key of Object.keys(defaults)) {
-    if (typeof source?.[key] === typeof defaults[key]) result[key] = source[key];
+    if (typeof source?.[key] === typeof result[key]) result[key] = source[key];
   }
-  return result;
+  return /** @type {typeof defaults} */ (result);
 }
 
 /** Apply the profile's model to the resident session before saving the choice. */

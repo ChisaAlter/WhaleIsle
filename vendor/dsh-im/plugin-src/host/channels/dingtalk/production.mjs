@@ -15,6 +15,7 @@ import {
   observeBotWorkspaceRemovals,
 } from '../../../../src/channels/shared/bot-workspace-store.mjs';
 import { listAgentPresetCatalog } from '../../../../src/channels/shared/agent-preset.mjs';
+import { sharedSingleOwnerGate } from '../../../../src/channels/shared/single-owner-gate.mjs';
 import { createConnectionSupervisor } from './connection-supervisor.mjs';
 import { createHarnessCommandExecutor } from '../../harness-command-executor.mjs';
 import { createHarnessSessionExecutors } from '../../harness-session-coordinator.mjs';
@@ -56,6 +57,9 @@ export async function createProductionController(ctx, config = {}, internals = {
     : (ctx.logger ?? console);
   const agentPresetCatalog = () => listAgentPresetCatalog(ctx);
   const paths = pluginPaths(config);
+  const singleOwnerGate = internals.singleOwnerGate
+    ?? config.singleOwnerGate
+    ?? await sharedSingleOwnerGate(config.dshHome);
   const configStore = await new ConfigStore(paths.config).load();
   const defaultWorkspace = resolve(config.workspace ?? process.cwd());
   const WorkspaceStore = internals.WorkspaceStore ?? BotWorkspaceStore;
@@ -112,8 +116,17 @@ export async function createProductionController(ctx, config = {}, internals = {
     createRuntime: async ({ botId, config: botConfig, clientSecret }) => {
       const state = await stateFor(botId);
       await workspaces.ensure(botId, { defaultAgentPreset: config.agentPreset });
+      const accessGate = singleOwnerGate && botId
+        ? singleOwnerGate.createBotGate({
+            channel: 'dingtalk',
+            botId,
+            getBotConfig: () => configStore.get?.(botId) ?? botConfig,
+            getPreset: () => workspaces.agentPresetFor?.(botId) ?? null,
+            home: config.dshHome,
+          })
+        : null;
       const workspaceScope = createBotWorkspaceScope(harness, {
-        botId, workspaces, state, agentPresetCatalog,
+        botId, workspaces, state, agentPresetCatalog, accessGate,
       });
       return new Runtime({
         config: botConfig,
@@ -149,6 +162,9 @@ export async function createProductionController(ctx, config = {}, internals = {
     workspaces,
     stateFor,
     agentPresetCatalog,
+    singleOwnerGate,
+    channel: 'dingtalk',
+    listBotConfigs: () => (typeof configStore.list === 'function' ? configStore.list() : []),
   });
   const supervisor = createSupervisor({
     controller,

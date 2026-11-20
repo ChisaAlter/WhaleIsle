@@ -505,12 +505,15 @@ export async function mountWhaleTasks(ctx, options) {
     ctx.effect(() => async () => service.close());
     const unregister = await ctx.agentPresets.register(taskWorkerPreset);
     ctx.effect(() => unregister);
-    const stopOwned = async sessionId => {
-      if (sessionId === options.scope.get().sessionId) return Promise.all(service.inspect().map(task => service.stop(task.id)));
+    const stopWorkerTask = async (/** @type {string} */ sessionId) => {
       const task = service.list().find(task => task.execution?.sessionId === sessionId);
       return task ? service.stop(task.id) : undefined;
     };
-    ctx.on('session/before-cancel', ({ agent }) => stopOwned(agent.id));
+    const stopOwned = async sessionId => {
+      if (sessionId === options.scope.get().sessionId) return Promise.all(service.inspect().map(task => service.stop(task.id)));
+      return stopWorkerTask(sessionId);
+    };
+    ctx.on('session/before-cancel', ({ agent }) => stopWorkerTask(agent.id));
     ctx.on('workspace/session-stop', ({ sessionId }) => stopOwned(sessionId));
     await service.recover();
     service.available = true;

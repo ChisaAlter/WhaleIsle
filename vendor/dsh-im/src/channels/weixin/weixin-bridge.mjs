@@ -34,6 +34,11 @@ import { runWorkspaceCommand } from '../shared/workspace-command.mjs';
 import { askInWorkspaceSession } from '../shared/workspace-session.mjs';
 import { sharedWhaleSessionId } from '../shared/whale-session.mjs';
 import {
+  attachImmutableSpeaker,
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from '../shared/single-owner-gate.mjs';
+import {
   hasInboundImages,
   imagePromptDiagnostic,
   imagePromptUserMessage,
@@ -202,6 +207,7 @@ export class WeixinHarnessBridge {
   #typingClosed = false;
   #typingRetryAt = 0;
   #typingTicketStale = false;
+  #accessGate;
 
   constructor({
     api,
@@ -216,6 +222,7 @@ export class WeixinHarnessBridge {
     maxMessageChars = DEFAULT_WEIXIN_MAX_MESSAGE_CHARS,
     typingKeepaliveMs = DEFAULT_TYPING_KEEPALIVE_MS,
     signal,
+    accessGate = null,
   }) {
     if (!api || typeof api.sendText !== 'function') throw new TypeError('Weixin API is required');
     if (!baseUrl || !token || !ownerUserId) throw new TypeError('Weixin account credentials are required');
@@ -235,6 +242,7 @@ export class WeixinHarnessBridge {
     this.#maxMessageChars = maxMessageChars;
     this.#typingKeepaliveMs = typingKeepaliveMs;
     this.#signal = signal;
+    this.#accessGate = accessGate ?? harness?.accessGate ?? null;
     this.#approvals = new HarnessApprovalQueue({ label: 'weixin', logger });
   }
 
@@ -250,7 +258,43 @@ export class WeixinHarnessBridge {
     if (!messageId || !sender || this.#state.hasSeen(messageId)
       || this.#acceptedMessageIds.has(messageId)) return Promise.resolve();
     this.#acceptedMessageIds.add(messageId);
-    if (sender === this.#ownerUserId) {
+    const gate = this.#accessGate;
+    if (gate && typeof gate.evaluateInbound === 'function') {
+      return Promise.resolve().then(async () => {
+        const decision = await gate.evaluateInbound({
+          senderId: sender,
+          displayName: nonEmptyString(message?.from_user_name),
+          chatType: 'private',
+          harness: this.#harness,
+        });
+        if (!decision.allowed) {
+          this.#acceptedMessageIds.delete(messageId);
+          await this.#state.markSeen(messageId).catch(() => undefined);
+          this.#status.messagesRejected += 1;
+          this.#status.lastRejectedAt = new Date().toISOString();
+          if (decision.replyText) {
+            const contextToken = nonEmptyString(message?.context_token) ?? undefined;
+            const runId = nonEmptyString(message?.run_id) ?? undefined;
+            await this.#send(sender, decision.replyText, contextToken, runId).catch(() => undefined);
+          }
+          return;
+        }
+        const stamped = { ...message };
+        attachImmutableSpeaker(stamped, decision.speaker);
+        return this.#acceptAuthorized(stamped, messageId, sender, decision.enforced);
+      }).catch((error) => {
+        this.#acceptedMessageIds.delete(messageId);
+        throw error;
+      });
+    }
+    const stamped = { ...message };
+    attachImmutableSpeaker(stamped, { role: 'guest', chat: 'private' });
+    return this.#acceptAuthorized(stamped, messageId, sender, false);
+  }
+
+  #acceptAuthorized(message, messageId, sender, gateEnforced) {
+    const allowed = gateEnforced ? message.speaker?.role === 'owner' : sender === this.#ownerUserId;
+    if (allowed) {
       rememberConnectionTestTarget(this.#state, { toUserId: sender });
     }
     const key = conversationKey(sender);
@@ -260,7 +304,7 @@ export class WeixinHarnessBridge {
     const commandText = nonEmptyString(extractWeixinText(message)) ?? '';
     const batchCommand = isBatchInputCommand(commandText);
     const batchStatus = this.#batchInputs.status(key);
-    if (sender === this.#ownerUserId
+    if (allowed
       && (batchCommand || batchStatus.phase === 'collecting')) {
       const exactBatchStart = /^\/batch$/iu.test(commandText);
       const result = exactBatchStart
@@ -293,7 +337,7 @@ export class WeixinHarnessBridge {
       : (isModelCommand(commandText)
           ? runModelCommand
           : (isPresetCommand(commandText) ? runPresetCommand : null));
-    if (commandRunner && sender === this.#ownerUserId) {
+    if (commandRunner && allowed) {
       let task;
       task = this.#processFastCommand(
         message,
@@ -380,7 +424,7 @@ export class WeixinHarnessBridge {
     alreadyRecorded = false,
     batchSubmission = null,
   } = {}) {
-    const preparedMessage = message.from_user_id === this.#ownerUserId
+    const preparedMessage = (message.speaker?.role === 'owner' || message.from_user_id === this.#ownerUserId)
       ? prefetchInboundFiles(
           weixinInboundMessage(message, this.#api),
           { signal: this.#signal },
@@ -502,7 +546,7 @@ export class WeixinHarnessBridge {
       this.#status.messagesReceived += 1;
       this.#status.lastMessageAt = new Date().toISOString();
     }
-    if (sender !== this.#ownerUserId) {
+    if (message.speaker?.role !== 'owner' && sender !== this.#ownerUserId) {
       this.#status.messagesRejected += 1;
       this.#status.lastRejectedAt = new Date().toISOString();
       return;
@@ -536,8 +580,8 @@ export class WeixinHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness)) {
-          await this.#send(sender, t('鲸鱼娘只有一条常驻对话，继续发送消息即可。'), contextToken, runId);
+        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+          await this.#send(sender, whaleRestrictedCommandReply('/new'), contextToken, runId);
         } else {
           await this.#state.clearSession(key);
           await this.#send(sender, t('已开启新会话。请发送你的问题。'), contextToken, runId);
@@ -584,6 +628,7 @@ export class WeixinHarnessBridge {
           state: this.#state,
           key,
           ...(hasImages ? { content } : { text }),
+          speaker: message.speaker,
           createOptions: { signal: this.#signal },
           existsOptions: { signal: this.#signal },
           askOptions: {

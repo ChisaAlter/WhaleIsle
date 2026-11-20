@@ -431,47 +431,22 @@ test('whale slots use the project head and keep normal sessions untouched', () =
   assert.equal(other, null);
 });
 
-test('assistant, inbox and approvals keep distinct glyphs at expanded and rail sizes', () => {
-  const InboxIcon = () => {};
-  const { exports } = loadPlugin({ primitives: { IconDownloadOutlineRegular: InboxIcon } });
+test('sidebar registers only the assistant entry and keeps relative claude-isle-head.png', () => {
+  const { exports } = loadPlugin();
   const { ctx, registrations } = makeCtx();
   exports.apply(ctx);
   const panels = registrations.filter(entry => entry.decl.name === 'sidebar.panellist');
-  assert.deepEqual(panels.map(entry => entry.decl.id), ['whale', 'whale-inbox', 'whale-outbox']);
-  assert.deepEqual(panels.map(entry => entry.decl.order), [20, 21, 22]);
-  const [assistant, inbox, approvals] = panels;
-  assert.equal(inbox.component, InboxIcon, 'Inbox reuses the shared down-arrow tray');
-  assert.equal(new Set(panels.map(entry => entry.component)).size, 3);
+  assert.deepEqual(panels.map(entry => entry.decl.id), ['whale']);
+  assert.deepEqual(panels.map(entry => entry.decl.order), [20]);
+  const mainEntries = registrations.filter(entry => entry.decl.name === 'main');
+  assert.deepEqual(mainEntries.map(entry => entry.decl.key), ['whale']);
+  const [assistant] = panels;
   for (const size of [16, 18]) {
-    assert.equal(findElement(assistant.component({ size }), node => node.type === 'img').props.width, size);
-    const glyph = approvals.component({ size });
-    assert.equal(glyph.type, 'svg');
-    assert.equal(glyph.props.width, size);
-    assert.equal(glyph.props.height, size);
-    assert.equal(glyph.props.stroke, 'currentColor');
-    assert.equal(glyph.props.strokeWidth, 1);
-    assert.equal(glyph.props['aria-hidden'], 'true');
-    assert.equal(glyph.children.length, 2, 'document outline and check mark');
-    assert.equal(findElement(glyph, node => node.type === 'img'), null);
+    const rendered = assistant.component({ size });
+    assert.equal(findElement(rendered, node => node.type === 'img' && node.props['data-dsh-mascot'] === 'default').props.width, size);
+    assert.equal(findElement(rendered, node => node.type === 'img' && node.props['data-dsh-mascot'] === 'claude').props.src, 'claude-isle-head.png');
   }
 });
-
-for (const [language, labels] of [['zh', ['收件箱', '待审批']], ['en', ['Inbox', 'Approvals']]]) {
-  test(`${language} navigation and page headings share Inbox/Approvals labels without changing panel identities`, () => {
-    const { exports } = loadPlugin();
-    const { ctx, registrations } = makeCtx({ language });
-    exports.apply(ctx);
-    for (const [index, id] of ['whale-inbox', 'whale-outbox'].entries()) {
-      const panel = registrations.find(entry => entry.decl.name === 'sidebar.panellist' && entry.decl.id === id);
-      assert.equal(panel.decl.label(), labels[index]);
-      const page = registrations.find(entry => entry.decl.name === 'main' && entry.decl.key === id);
-      const operations = page.component(page.decl.inject());
-      assert.equal(operations.props.mode, index === 0 ? 'inbox' : 'outbox');
-      const tree = operations.type({ ...operations.props, proactiveDispatch: async () => [] });
-      assert.equal(findElement(tree, node => node.props.className === 'dsh-whale-ops-title').children[0], labels[index]);
-    }
-  });
-}
 
 test('Big Fish mode reserves the native window controls and a stable sidebar toggle', () => {
   const css = fs.readFileSync(CLIENT_FILE, 'utf8');

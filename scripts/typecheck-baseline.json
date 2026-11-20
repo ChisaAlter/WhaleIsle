@@ -5969,7 +5969,6 @@
         "Property 'allowBuilds' does not exist on type '{}'.": 6,
         "Property 'categories' does not exist on type '{}'.": 2,
         "Property 'defaultPath' does not exist on type 'object'.": 5,
-        "Property 'dispatch' does not exist on type 'never'.": 2,
         "Property 'force' does not exist on type '{}'.": 2,
         "Property 'kind' does not exist on type '{}'.": 2,
         "Property 'locale' does not exist on type '{}'.": 2,
@@ -5993,8 +5992,7 @@
         "Variable 'pendingWorkspaceDirectoryDialog' implicitly has an 'any' type.": 3
       },
       "TS7006": {
-        "Parameter '_event' implicitly has an 'any' type.": 26,
-        "Parameter 'action' implicitly has an 'any' type.": 1,
+        "Parameter '_event' implicitly has an 'any' type.": 25,
         "Parameter 'actionId' implicitly has an 'any' type.": 1,
         "Parameter 'channel' implicitly has an 'any' type.": 1,
         "Parameter 'cwd' implicitly has an 'any' type.": 6,
@@ -6959,119 +6957,6 @@
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ html: string; htm: string; xhtml: string; css: string; js: string; mjs: string; json: string; map: string; svg: string; png: string; jpg: string; jpeg: string; gif: string; webp: string; bmp: string; ico: string; ... <n> more ...; flac: string; }'.": 1
-      }
-    },
-    "src/main/proactive/github-source.js": {
-      "TS2339": {
-        "Property 'Authorization' does not exist on type '{ Accept: string; 'User-Agent': string; 'X-GitHub-Api-Version': string; }'.": 1,
-        "Property 'listIssues' does not exist on type '{ since?: null | undefined; }'.": 1,
-        "Property 'listIssues' does not exist on type '{}'.": 1,
-        "Property 'listPulls' does not exist on type '{ since?: null | undefined; }'.": 1,
-        "Property 'listPulls' does not exist on type '{}'.": 1,
-        "Property 'repository' does not exist on type '{ tokenProvider?: (() => string) | undefined; fetchImpl?: { (input: URL | RequestInfo, init?: RequestInit | undefined): Promise<Response>; (input: string | ... <n> more ... | Request, init?: RequestInit | undefined): Promise<...>; } | undefined; apiBase?: string | undefined; }'.": 1
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'listIssues' does not exist in type '{ since?: null | undefined; }'.": 1
-      },
-      "TS7006": {
-        "Parameter 'issue' implicitly has an 'any' type.": 1,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'label' implicitly has an 'any' type.": 1,
-        "Parameter 'options' implicitly has an 'any' type.": 2
-      }
-    },
-    "src/main/proactive/ipc.js": {
-      "TS2339": {
-        "Property 'approvalId' does not exist on type '{}'.": 1,
-        "Property 'at' does not exist on type '{}'.": 1,
-        "Property 'autonomy' does not exist on type '{}'.": 1,
-        "Property 'cursor' does not exist on type '{}'.": 1,
-        "Property 'decision' does not exist on type '{}'.": 1,
-        "Property 'github' does not exist on type '{}'.": 1,
-        "Property 'jobId' does not exist on type '{}'.": 1,
-        "Property 'since' does not exist on type '{}'.": 1,
-        "Property 'state' does not exist on type '{}'.": 1,
-        "Property 'taskId' does not exist on type '{}'.": 4
-      },
-      "TS7006": {
-        "Parameter 'action' implicitly has an 'any' type.": 1
-      },
-      "TS7031": {
-        "Binding element 'runtime' implicitly has an 'any' type.": 1,
-        "Binding element 'scheduler' implicitly has an 'any' type.": 1
-      }
-    },
-    "src/main/proactive/scheduler.js": {
-      "TS2339": {
-        "Property 'at' does not exist on type '{ intervalMs?: null | undefined; id?: `${string}-${string}-${string}-${string}-${string}` | undefined; metadata?: null | undefined; }'.": 1,
-        "Property 'store' does not exist on type '{ now?: (() => string) | undefined; idFactory?: ((options?: RandomUUIDOptions | undefined) => `${string}-${string}-${string}-${string}-${string}`) | undefined; }'.": 1
-      },
-      "TS7006": {
-        "Parameter 'event' implicitly has an 'any' type.": 2,
-        "Parameter 'jobId' implicitly has an 'any' type.": 1,
-        "Parameter 'taskId' implicitly has an 'any' type.": 1
-      }
-    },
-    "src/main/proactive/service.js": {
-      "TS2339": {
-        "Property 'cursor' does not exist on type '{ autonomy?: number | undefined; }'.": 1,
-        "Property 'discover' does not exist on type 'never'.": 2,
-        "Property 'idFactory' does not exist on type '{ githubSource?: null | undefined; }'.": 1,
-        "Property 'now' does not exist on type '{ githubSource?: null | undefined; }'.": 1,
-        "Property 'since' does not exist on type '{ autonomy?: number | undefined; }'.": 1,
-        "Property 'userDataPath' does not exist on type '{ githubSource?: null | undefined; }'.": 1
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'store' does not exist in type '{ now?: (() => string) | undefined; idFactory?: ((options?: RandomUUIDOptions | undefined) => `${string}-${string}-${string}-${string}-${string}`) | undefined; }'.": 2
-      },
-      "TS7006": {
-        "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'latest' implicitly has an 'any' type.": 1
-      }
-    },
-    "src/main/proactive/task-runtime.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 1
-      },
-      "TS2339": {
-        "Property 'action' does not exist on type '{}'.": 1,
-        "Property 'autonomy' does not exist on type '{}'.": 1,
-        "Property 'dataClass' does not exist on type '{}'.": 1,
-        "Property 'description' does not exist on type '{}'.": 1,
-        "Property 'id' does not exist on type '{}'.": 2,
-        "Property 'idempotencyKey' does not exist on type '{}'.": 1,
-        "Property 'kind' does not exist on type '{ id: any; title: string; description: string; autonomy: number; state: string; source: string; createdAt: string; updatedAt: string; approvalId: null; idempotencyKey: any; }'.": 3,
-        "Property 'kind' does not exist on type '{}'.": 2,
-        "Property 'labels' does not exist on type '{ id: any; title: string; description: string; autonomy: number; state: string; source: string; createdAt: string; updatedAt: string; approvalId: null; idempotencyKey: any; }'.": 3,
-        "Property 'labels' does not exist on type '{}'.": 2,
-        "Property 'risk' does not exist on type '{}'.": 1,
-        "Property 'source' does not exist on type '{}'.": 1,
-        "Property 'sourceItemId' does not exist on type '{ id: any; title: string; description: string; autonomy: number; state: string; source: string; createdAt: string; updatedAt: string; approvalId: null; idempotencyKey: any; }'.": 3,
-        "Property 'sourceItemId' does not exist on type '{}'.": 3,
-        "Property 'sourceUpdatedAt' does not exist on type '{ id: any; title: string; description: string; autonomy: number; state: string; source: string; createdAt: string; updatedAt: string; approvalId: null; idempotencyKey: any; }'.": 3,
-        "Property 'sourceUrl' does not exist on type '{}'.": 2,
-        "Property 'store' does not exist on type '{ now?: (() => string) | undefined; idFactory?: ((options?: RandomUUIDOptions | undefined) => `${string}-${string}-${string}-${string}-${string}`) | undefined; }'.": 1,
-        "Property 'target' does not exist on type '{}'.": 1,
-        "Property 'title' does not exist on type '{}'.": 1,
-        "Property 'updatedAt' does not exist on type '{}'.": 2
-      },
-      "TS2551": {
-        "Property 'sourceUrl' does not exist on type '{ id: any; title: string; description: string; autonomy: number; state: string; source: string; createdAt: string; updatedAt: string; approvalId: null; idempotencyKey: any; }'. Did you mean 'source'?": 3
-      },
-      "TS7006": {
-        "Parameter 'approvalId' implicitly has an 'any' type.": 1,
-        "Parameter 'decision' implicitly has an 'any' type.": 1,
-        "Parameter 'event' implicitly has an 'any' type.": 4,
-        "Parameter 'filePath' implicitly has an 'any' type.": 1,
-        "Parameter 'items' implicitly has an 'any' type.": 1,
-        "Parameter 'source' implicitly has an 'any' type.": 1,
-        "Parameter 'sourceItemId' implicitly has an 'any' type.": 1,
-        "Parameter 'state' implicitly has an 'any' type.": 1,
-        "Parameter 'taskId' implicitly has an 'any' type.": 4,
-        "Parameter 'value' implicitly has an 'any' type.": 2
-      },
-      "TS7031": {
-        "Binding element 'evidence' implicitly has an 'any[]' type.": 1
       }
     },
     "src/main/profile-ops.js": {
@@ -11052,7 +10937,7 @@
     },
     "vendor/dsh-whale/client/client.js": {
       "TS18046": {
-        "'err' is of type 'unknown'.": 3
+        "'err' is of type 'unknown'.": 1
       },
       "TS2307": {
         "Cannot find module '@deepseek-ai/dsh-client-ui-primitives' or its corresponding type declarations.": 1,
@@ -11065,10 +10950,9 @@
         "Property 'disabled' does not exist on type '{ id: string; label: any; }'.": 1,
         "Property 'inert' does not exist on type 'Element'.": 3,
         "Property 'inject' does not exist on type '{}'.": 1,
-        "Property 'message' does not exist on type '{}'.": 11,
+        "Property 'message' does not exist on type '{}'.": 9,
         "Property 'name' does not exist on type '{}'.": 1,
-        "Property 'rpcError' does not exist on type 'Error'.": 1,
-        "Property 'shell' does not exist on type 'Window & typeof globalThis'.": 1
+        "Property 'rpcError' does not exist on type 'Error'.": 1
       },
       "TS2353": {
         "Object literal may only specify known properties, and 'disabled' does not exist in type '{ id: string; label: any; }'.": 1,
@@ -11080,27 +10964,20 @@
       },
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 1,
-        "Parameter 'action' implicitly has an 'any' type.": 1,
         "Parameter 'b' implicitly has an 'any' type.": 1,
-        "Parameter 'card' implicitly has an 'any' type.": 8,
-        "Parameter 'cn' implicitly has an 'any' type.": 1,
+        "Parameter 'card' implicitly has an 'any' type.": 6,
         "Parameter 'control' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'current' implicitly has an 'any' type.": 4,
-        "Parameter 'decision' implicitly has an 'any' type.": 1,
         "Parameter 'desc' implicitly has an 'any' type.": 2,
-        "Parameter 'e' implicitly has an 'any' type.": 8,
+        "Parameter 'e' implicitly has an 'any' type.": 5,
         "Parameter 'effect' implicitly has an 'any' type.": 1,
-        "Parameter 'en' implicitly has an 'any' type.": 1,
         "Parameter 'enabled' implicitly has an 'any' type.": 2,
         "Parameter 'endpoint' implicitly has an 'any' type.": 1,
-        "Parameter 'err' implicitly has an 'any' type.": 4,
-        "Parameter 'error' implicitly has an 'any' type.": 1,
+        "Parameter 'err' implicitly has an 'any' type.": 2,
         "Parameter 'event' implicitly has an 'any' type.": 11,
-        "Parameter 'fn' implicitly has an 'any' type.": 1,
         "Parameter 'id' implicitly has an 'any' type.": 4,
-        "Parameter 'input' implicitly has an 'any' type.": 2,
-        "Parameter 'item' implicitly has an 'any' type.": 3,
+        "Parameter 'input' implicitly has an 'any' type.": 1,
         "Parameter 'key' implicitly has an 'any' type.": 2,
         "Parameter 'method' implicitly has an 'any' type.": 1,
         "Parameter 'mode' implicitly has an 'any' type.": 1,
@@ -11108,9 +10985,9 @@
         "Parameter 'next' implicitly has an 'any' type.": 1,
         "Parameter 'nextEffort' implicitly has an 'any' type.": 1,
         "Parameter 'nextModel' implicitly has an 'any' type.": 1,
-        "Parameter 'patch' implicitly has an 'any' type.": 2,
+        "Parameter 'patch' implicitly has an 'any' type.": 1,
         "Parameter 'prev' implicitly has an 'any' type.": 1,
-        "Parameter 'props' implicitly has an 'any' type.": 8,
+        "Parameter 'props' implicitly has an 'any' type.": 5,
         "Parameter 'require' implicitly has an 'any' type.": 1,
         "Parameter 'response' implicitly has an 'any' type.": 2,
         "Parameter 'sessionId' implicitly has an 'any' type.": 1,
@@ -11118,39 +10995,26 @@
         "Parameter 'skillName' implicitly has an 'any' type.": 1,
         "Parameter 'source' implicitly has an 'any' type.": 1,
         "Parameter 'state' implicitly has an 'any' type.": 2,
-        "Parameter 'task' implicitly has an 'any' type.": 2,
+        "Parameter 'task' implicitly has an 'any' type.": 1,
         "Parameter 'title' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 8
+        "Parameter 'value' implicitly has an 'any' type.": 7
       },
       "TS7031": {
-        "Binding element 'actions' implicitly has an 'any' type.": 1,
-        "Binding element 'busy' implicitly has an 'any' type.": 1,
         "Binding element 'card' implicitly has an 'any' type.": 1,
         "Binding element 'expanded' implicitly has an 'any' type.": 1,
-        "Binding element 'item' implicitly has an 'any' type.": 1,
         "Binding element 'layout' implicitly has an 'any' type.": 1,
-        "Binding element 'loading' implicitly has an 'any' type.": 1,
-        "Binding element 'mode' implicitly has an 'any' type.": 2,
         "Binding element 'onAction' implicitly has an 'any' type.": 1,
         "Binding element 'onConfirm' implicitly has an 'any' type.": 1,
-        "Binding element 'onDecision' implicitly has an 'any' type.": 1,
         "Binding element 'onEdit' implicitly has an 'any' type.": 1,
         "Binding element 'onExpand' implicitly has an 'any' type.": 1,
         "Binding element 'onOpen' implicitly has an 'any' type.": 1,
-        "Binding element 'openSession' implicitly has an 'any' type.": 3,
-        "Binding element 'outbox' implicitly has an 'any' type.": 1,
+        "Binding element 'openSession' implicitly has an 'any' type.": 1,
         "Binding element 'pending' implicitly has an 'any' type.": 1,
-        "Binding element 'renderSlot' implicitly has an 'any' type.": 1,
-        "Binding element 'requestAdd' implicitly has an 'any' type.": 1,
-        "Binding element 'rpc' implicitly has an 'any' type.": 4,
+        "Binding element 'rpc' implicitly has an 'any' type.": 2,
         "Binding element 'settingsNavigation' implicitly has an 'any' type.": 1,
         "Binding element 'size' implicitly has an 'any' type.": 1,
-        "Binding element 'success' implicitly has an 'any' type.": 1,
-        "Binding element 't' implicitly has an 'any' type.": 6,
-        "Binding element 'task' implicitly has an 'any' type.": 1,
-        "Binding element 'text' implicitly has an 'any' type.": 1,
-        "Binding element 'tr' implicitly has an 'any' type.": 1,
-        "Binding element 'visible' implicitly has an 'any' type.": 1
+        "Binding element 't' implicitly has an 'any' type.": 2,
+        "Binding element 'tr' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'panelDispose' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
@@ -11158,48 +11022,21 @@
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ pending: any; starting: any; running: any; stopping: any; review: any; completed: any; cancelled: any; failed: any; interrupted: any; }'.": 1,
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ start: any; cancel: any; delete: any; }'.": 1,
-        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{}'.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/desktop-confirm.js": {
-      "TS7006": {
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'control' implicitly has an 'any' type.": 1,
-        "Parameter 'pathname' implicitly has an 'any' type.": 1,
-        "Parameter 'request' implicitly has an 'any' type.": 2
+        "Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ start: any; cancel: any; delete: any; }'.": 1
       }
     },
     "vendor/dsh-whale/lib/desktop-tools.js": {
       "TS2322": {
-        "Type '() => Promise<{ ok: boolean; detail: string; } | { ok: false; detail: any; }>' is not assignable to type '(args: {}, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '(args: { action: string; name?: string | undefined; spec?: string | undefined; id?: string | undefined; allowBuilds?: string[] | undefined; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { action: string; name?: string | undefined; spec?: string | undefined; id?: string | undefined; allowBuilds?: string[] | undefined; }, exec: ToolRunContext) => Promise<...>'.": 1,
-        "Type '(args: { patch: Record<string, JsonValue>; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { patch: Record<string, JsonValue>; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '(args: { patch?: Record<string, JsonValue> | undefined; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { patch?: Record<string, JsonValue> | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,
         "Type '(args: { query?: string | undefined; refresh?: boolean | undefined; }) => Promise<{ ok: boolean; plugins: never[]; detail: any; } | { ok: boolean; plugins: any; detail: string; }>' is not assignable to type '(args: { query?: string | undefined; refresh?: boolean | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { action: string; name?: string | undefined; spec?: string | undefined; id?: string | undefined; allowBuilds?: string[] | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { patch: Record<string, JsonValue>; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { patch?: Record<string, JsonValue> | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: {}, value: never): ContentBlock[]; presentationMeta?(args: {}, value: never): JsonValue; }'.": 1,
         "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; plugins: { type: string; required: boolean; items: { type: string; }; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { query?: string | undefined; refresh?: boolean | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1
       },
       "TS2339": {
-        "Property 'allowBuilds' does not exist on type '{ action: string; }'.": 1,
-        "Property 'body' does not exist on type '{ method?: string | undefined; timeoutMs?: number | undefined; }'.": 1,
-        "Property 'id' does not exist on type '{ action: string; }'.": 1,
-        "Property 'message' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{ action: string; }'.": 1,
-        "Property 'spec' does not exist on type '{ action: string; }'.": 1
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'body' does not exist in type '{ method?: string | undefined; timeoutMs?: number | undefined; }'.": 3
+        "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
         "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'control' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'p' implicitly has an 'any' type.": 1,
-        "Parameter 'pathname' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
@@ -11264,9 +11101,6 @@
       "TS7034": {
         "Variable 'off' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'texts' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ name: string; personality: any; userTitle: string; personaText: string; imDefault: boolean; bigFishTab: any; modelProvider: string; modelModel: string; modelReasoningEffort: string; }'.": 1
       }
     },
     "vendor/dsh-whale/lib/observe.js": {
@@ -11350,18 +11184,8 @@
       }
     },
     "vendor/dsh-whale/lib/profile-tools.js": {
-      "TS2322": {
-        "Type '(args: { patch?: Record<string, JsonValue> | undefined; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { patch?: Record<string, JsonValue> | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { patch?: Record<string, JsonValue> | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1
-      },
-      "TS2339": {
-        "Property 'message' does not exist on type '{}'.": 1
-      },
       "TS7006": {
         "Parameter 'ctx' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ name: string; personality: string; userTitle: string; personaText: string; modelProvider: string; modelModel: string; modelReasoningEffort: string; imDefault: boolean; sessionId: string; bigFishPrompted: boolean; bigFishEnabled: boolean; bigFishTab: string; }'.": 3
       }
     },
     "vendor/dsh-whale/lib/scope.js": {
@@ -11373,28 +11197,11 @@
         "Parameter 'previous' implicitly has an 'any' type.": 1,
         "Parameter 'scope' implicitly has an 'any' type.": 1,
         "Parameter 'source' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ name: string; personality: string; userTitle: string; personaText: string; modelProvider: string; modelModel: string; modelReasoningEffort: string; imDefault: boolean; sessionId: string; bigFishPrompted: boolean; bigFishEnabled: boolean; bigFishTab: string; }'.": 2
       }
     },
     "vendor/dsh-whale/lib/session-tools.js": {
       "TS18048": {
         "'s' is possibly 'undefined'.": 3
-      },
-      "TS2322": {
-        "Type '(args: { action: string; sessionId?: string | undefined; once?: boolean | undefined; note?: string | undefined; }) => Promise<{ ok: boolean; detail: any; }>' is not assignable to type '(args: { action: string; sessionId?: string | undefined; once?: boolean | undefined; note?: string | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '(args: { action: string; text?: string | undefined; id?: string | undefined; daily?: string | undefined; inMinutes?: number | undefined; everyMinutes?: number | undefined; maxRuns?: number | undefined; }) => Promise<...>' is not assignable to type '(args: { action: string; text?: string | undefined; id?: string | undefined; daily?: string | undefined; inMinutes?: number | undefined; everyMinutes?: number | undefined; maxRuns?: number | undefined; }, exec: ToolRunContext) => Promise<...>'.": 1,
-        "Type '(args: { sessionId: string; action: string; itemId: string; text?: string | undefined; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { sessionId: string; action: string; itemId: string; text?: string | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '(args: { sessionId: string; model: string; provider: string; reasoningEffort?: string | undefined; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { sessionId: string; model: string; provider: string; reasoningEffort?: string | undefined; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '(args: { sessionId: string; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { sessionId: string; }, exec: ToolRunContext) => Promise<never>'.": 2,
-        "Type '(args: { title: string; sessionId: string; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { title: string; sessionId: string; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { action: string; sessionId?: string | undefined; once?: boolean | undefined; note?: string | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { action: string; text?: string | undefined; id?: string | undefined; daily?: string | undefined; inMinutes?: number | undefined; everyMinutes?: number | undefined; maxRuns?: number | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value...'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { sessionId: string; action: string; itemId: string; text?: string | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { sessionId: string; model: string; provider: string; reasoningEffort?: string | undefined; }, value: never): ContentBlock[]; presentationMeta?(args: { ...; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { sessionId: string; }, value: never): ContentBlock[]; presentationMeta?(args: { sessionId: string; }, value: never): JsonValue; }'.": 2,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { title: string; sessionId: string; }, value: never): ContentBlock[]; presentationMeta?(args: { title: string; sessionId: string; }, value: never): JsonValue; }'.": 1
       },
       "TS2339": {
         "Property 'atSeq' does not exist on type '{ sessionId: string; }'.": 1,
@@ -11402,21 +11209,15 @@
         "Property 'message' does not exist on type '{}'.": 2
       },
       "TS7006": {
-        "Parameter 'b' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 1,
-        "Parameter 'item' implicitly has an 'any' type.": 2,
-        "Parameter 'job' implicitly has an 'any' type.": 1,
+        "Parameter 'item' implicitly has an 'any' type.": 1,
         "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'records' implicitly has an 'any' type.": 1,
         "Parameter 's' implicitly has an 'any' type.": 1,
-        "Parameter 'source' implicitly has an 'any' type.": 1,
         "Parameter 'w' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/shared.js": {
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
         "Parameter 'controller' implicitly has an 'any' type.": 2,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'ev' implicitly has an 'any' type.": 1,
@@ -11424,7 +11225,7 @@
         "Parameter 'maxMessages' implicitly has an 'any' type.": 1,
         "Parameter 'row' implicitly has an 'any' type.": 2,
         "Parameter 'sessionId' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 3
+        "Parameter 'value' implicitly has an 'any' type.": 2
       }
     },
     "vendor/dsh-whale/lib/sticker-tools.js": {
@@ -11563,15 +11364,14 @@
         "Type '{ schema: { type: string; additionalProperties: boolean; }; render: (_args: any, value: any) => { type: string; text: string; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { [x: string]: unknown; }, value: never): ContentBlock[]; presentationMeta?(args: { [x: string]: unknown; }, value: never): JsonValue; }'.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 4,
+        "Parameter '_args' implicitly has an 'any' type.": 3,
         "Parameter 'args' implicitly has an 'any' type.": 4,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'description' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 7,
+        "Parameter 'exec' implicitly has an 'any' type.": 6,
         "Parameter 'execute' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'parameters' implicitly has an 'any' type.": 1,
-        "Parameter 'task' implicitly has an 'any' type.": 2,
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
@@ -11613,11 +11413,10 @@
     },
     "vendor/dsh-whale/lib/todo-service.js": {
       "TS18046": {
-        "'error' is of type 'unknown'.": 3,
+        "'error' is of type 'unknown'.": 2,
         "'failure' is of type 'unknown'.": 1
       },
       "TS2339": {
-        "Property 'sessionId' does not exist on type 'void'.": 1,
         "Property 'state' does not exist on type 'void'.": 1
       },
       "TS7006": {
@@ -11632,25 +11431,15 @@
         "Parameter 'options' implicitly has an 'any' type.": 1,
         "Parameter 'patch' implicitly has an 'any' type.": 1,
         "Parameter 'session' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 3
+        "Parameter 'value' implicitly has an 'any' type.": 2
       },
       "TS7031": {
         "Binding element 'home' implicitly has an 'any' type.": 1,
         "Binding element 'scope' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 1
       }
     },
     "vendor/dsh-whale/lib/tools.js": {
-      "TS2322": {
-        "Type '(args: { text: string; sessionId: string; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { text: string; sessionId: string; }, exec: ToolRunContext) => Promise<never>'.": 1,
-        "Type '(args: { text: string; }) => Promise<{ ok: boolean; detail: string; }>' is not assignable to type '(args: { text: string; }, exec: ToolRunContext) => Promise<never>'.": 3,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { text: string; sessionId: string; }, value: never): ContentBlock[]; presentationMeta?(args: { text: string; sessionId: string; }, value: never): JsonValue; }'.": 1,
-        "Type '{ schema: { type: string; additionalProperties: boolean; properties: { ok: { type: string; required: boolean; }; detail: { type: string; required: boolean; }; }; }; render: (_args: any, value: any) => { ...; }[]; }' is not assignable to type '{ readonly schema: ValueSchemaSpec; render(args: { text: string; }, value: never): ContentBlock[]; presentationMeta?(args: { text: string; }, value: never): JsonValue; }'.": 3
-      },
       "TS2339": {
-        "Property 'agentPreset' does not exist on type '{ cwd: string; }'.": 1,
         "Property 'ok' does not exist on type 'ToolResult'.": 1,
         "Property 'value' does not exist on type 'ToolResult'.": 1
       },

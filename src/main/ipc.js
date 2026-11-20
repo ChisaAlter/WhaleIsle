@@ -101,7 +101,7 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 
 function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
-  getLive2dPet, proactiveService = null, updateCenter = null, openUpdateCenter = () => {},
+  getLive2dPet, updateCenter = null, openUpdateCenter = () => {},
   onConfigChanged = /** @type {((next: Record<string, any>, patch?: Record<string, any>) => void) | undefined} */ (undefined),
 }) {
   // Every channel mounts through the shared wrapper: the IPC contract
@@ -119,12 +119,6 @@ function registerIpc({
   });
   handle('shell:claim-minimal-suggestion', () => renderMode.claimMinimalSuggestion());
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
-  handle('shell:proactive', (_event, action, payload = {}) => {
-    if (!proactiveService || typeof proactiveService.dispatch !== 'function') {
-      throw new Error('Proactive service unavailable');
-    }
-    return proactiveService.dispatch(action, payload);
-  });
   let pendingWorkspaceDirectoryDialog = null;
   // Launcher orchestration lives in the service; handlers below stay thin
   // authorization + renderer-transport delegates so the same service can sit

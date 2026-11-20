@@ -19,8 +19,6 @@ const {
 const { createMainFailureReporter } = require('./crash-report');
 const { qaFlag, qaRemoteMode: readRemoteMode } = require('./qa-gate');
 const { createProjectEnvironment } = require('./project-environment');
-const { createProactiveService } = require('./proactive/service');
-const { createGitHubApiSource } = require('./proactive/github-source');
 const { createShellState } = require('./app-shell-state');
 const { createShellDialogs } = require('./app-dialogs');
 const { createAppWindows } = require('./app-windows');
@@ -176,13 +174,6 @@ const updates = createUpdateFlow({
   startDesktopFromLauncher: lifecycle.startDesktopFromLauncher,
 });
 const projectEnvironment = createProjectEnvironment({ getGithubToken: () => loadConfig().githubToken });
-const proactiveService = createProactiveService(/** @type {any} */ ({
-  userDataPath: app.getPath('userData'),
-  githubSource: /** @type {any} */ (createGitHubApiSource(/** @type {any} */ ({
-    repository: process.env.WHALEISLE_GITHUB_REPOSITORY || 'ChisaAlter/WhaleIsle',
-    tokenProvider: () => loadConfig().githubToken,
-  }))),
-}));
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -204,7 +195,6 @@ if (!gotLock) {
       ignoreFailure,
       quitApp,
       projectEnvironment,
-      proactiveService,
       openLauncher: windows.openLauncher,
       bindLauncherClose: windows.bindLauncherClose,
       showForeground: windows.showForeground,

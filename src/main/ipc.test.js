@@ -377,7 +377,6 @@ function loadIpc(options = {}) {
     remote: options.remote === undefined ? null : options.remote,
     onOpenLauncher: options.onOpenLauncher,
     getLive2dPet: options.getLive2dPet,
-    proactiveService: options.proactiveService,
   });
 
   async function invoke(channel, event, ...args) {
@@ -429,27 +428,10 @@ function loadIpc(options = {}) {
   };
 }
 
-test('proactive IPC delegates only from the trusted Harness role', async () => {
-  const calls = [];
-  const result = { ok: true, taskId: 'task-1' };
-  const ipc = loadIpc({
-    proactiveService: {
-      dispatch: async (...args) => {
-        calls.push(args);
-        return result;
-      },
-    },
-  });
+test('proactive IPC channel is removed and not registered', () => {
+  const ipc = loadIpc();
   try {
-    assert.deepEqual(
-      await ipc.invoke('shell:proactive', harnessEvent(), 'task/create', { title: 'IPC task' }),
-      result,
-    );
-    assert.deepEqual(calls, [['task/create', { title: 'IPC task' }]]);
-    await assert.rejects(
-      () => ipc.invoke('shell:proactive', bootEvent(), 'task/create', { title: 'blocked' }),
-      (error) => error?.code === 'ERR_DSH_IPC_SENDER',
-    );
+    assert.equal(ipc.handlers.has('shell:proactive'), false);
   } finally {
     ipc.restore();
   }

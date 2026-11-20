@@ -308,6 +308,32 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
  * so one grant never covers a different key set), and never apply to
  * destructive/code effects.
  */
+/** @param {unknown} raw */
+function normalizeConfirmScope(raw) {
+  return String(raw || '').slice(0, 200)
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+}
+
+/**
+ * @param {any} payload
+ * @param {string} tool
+ * @param {string} action
+ * @param {string} level
+ */
+function buildConfirmRequest(payload, tool, action, level) {
+  return {
+    tool,
+    action,
+    effect: level,
+    summary: String(payload?.summary || '').slice(0, 500),
+    details: String(payload?.details || '').slice(0, 6000),
+  };
+}
+
 async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed }) {
   let payload;
   try {
@@ -322,15 +348,12 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
     badRequest(res, 'missing tool or effect');
     return;
   }
+  if (payload?.unattended === true) {
+    sendJson(res, 200, declinedBody('无人值守回合禁止自动执行需要人工确认的操作'));
+    return;
+  }
   const action = String(payload?.action || '').slice(0, 200);
-  // Optional caller-declared scope narrows a remembered grant to the exact
-  // same set of targets (sorted, so order cannot mint a second grant).
-  const scope = String(payload?.scope || '').slice(0, 200)
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .sort()
-    .join(',');
+  const scope = normalizeConfirmScope(payload?.scope);
   const level = effectOf(tool, action) || 'code';
   const rememberable = !NEVER_ALWAYS_LEVELS.has(level);
   const memoryKey = `${tool} ${action} ${scope}`;
@@ -338,13 +361,7 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
     sendJson(res, 200, { ok: true });
     return;
   }
-  const request = {
-    tool,
-    action,
-    effect: level,
-    summary: String(payload?.summary || '').slice(0, 500),
-    details: String(payload?.details || '').slice(0, 6000),
-  };
+  const request = buildConfirmRequest(payload, tool, action, level);
   const confirmation = await confirmForRequest(res, confirmModelAction, request, ACTION_WORDING);
   if (confirmation.allowed && confirmation.always && rememberable) {
     sessionAllowed.add(memoryKey);
