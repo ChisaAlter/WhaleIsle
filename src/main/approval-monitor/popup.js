@@ -303,13 +303,6 @@ function createApprovalPopupController(deps = {}) {
 }
 
 module.exports = {
-  CARD_WIDTH,
-  CARD_HEIGHT,
-  SHADOW_GUTTER,
-  EDGE_MARGIN,
-  WINDOW_WIDTH,
-  WINDOW_HEIGHT,
   APPROVAL_POPUP_IPC,
-  computePopupBounds,
   createApprovalPopupController,
 };

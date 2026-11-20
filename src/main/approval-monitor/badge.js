@@ -508,7 +508,6 @@ function createBadgePresenter(deps = {}) {
 
 module.exports = {
   formatBadgeText,
-  formatBadgeLabels,
   encodeRgbaPng,
   premultipliedBgraToStraightRgba,
   renderOverlayBadgePng,

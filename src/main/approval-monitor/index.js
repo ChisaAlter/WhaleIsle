@@ -337,7 +337,6 @@ function createApprovalMonitor(deps) {
 }
 
 module.exports = {
-  APPROVAL_POPUP_IPC,
   registerApprovalPopupIpc,
   createApprovalMonitor,
 };

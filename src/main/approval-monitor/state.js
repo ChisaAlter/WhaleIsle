@@ -516,7 +516,6 @@ function projectPopupView(state, options = {}) {
 module.exports = {
   createInitialState,
   resolveLocalizedText,
-  hasUnsnoozedItem,
   selectBadgeCount,
   selectPopupVisible,
   reduceApprovalState,

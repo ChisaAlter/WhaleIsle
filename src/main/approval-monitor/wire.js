@@ -695,13 +695,7 @@ function createApprovalWireClient(options = {}) {
 
 module.exports = {
   sanitizeIconUrl,
-  extractCommandPreview,
-  extractPlanPreview,
   normalizeWaterfallFrame,
   buildSettlementOutcome,
-  extractTitleFromProjectionValues,
-  extractTitleFromProjectionChanges,
-  findCommandInSessionEvents,
-  muxUrlForOrigin,
   createApprovalWireClient,
 };
