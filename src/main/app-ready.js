@@ -10,10 +10,13 @@ const {
   getHarnessWebContents,
   getHarnessView,
   getHarnessOrigin,
+  onHarnessOriginChange,
+  onMainWindowChange,
   isHarnessLoaded,
   sendToLauncher,
   showMain,
   openHarnessSettings,
+  openHarnessSession,
   prepareLauncher,
   setRenderHintsSource,
 } = require('./window');
@@ -61,7 +64,8 @@ const { registerUpdateCenterIpc } = require('./update-center/ipc');
 const { registerIpc } = require('./ipc');
 const { installShortcutService, getShortcutService } = require('./shortcuts');
 const { buildMenu } = require('./menu');
-const { createTray, refreshTrayMenu } = require('./tray');
+const { createTray, getBaseTrayIcon, setTrayBadge, refreshTrayMenu } = require('./tray');
+const { createApprovalMonitor } = require('./approval-monitor');
 const { createUpdatesState } = require('./updates-state');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { DesktopPlatformView } = require('./platform-view');
@@ -71,6 +75,34 @@ const { installMediaPermissions } = require('./media-permissions');
 const { pruneCrashReports } = require('./crash-report');
 const { downloadSavePath } = require('./download-path');
 const { ipcSenderRole } = require('./ipc-authorization');
+
+/**
+ * @param {import('./app-shell-state').ShellState} state
+ * @param {import('./dsh').DshManager} dsh
+ */
+function installApprovalMonitor(state, dsh) {
+  const monitor = createApprovalMonitor({
+    getMainWindow,
+    openHarnessSession,
+    loadConfig,
+    getBaseTrayIcon,
+    setTrayBadge,
+    getSessionCookie: () => dsh.sessionCookie || '',
+    log: (line) => dsh.log(line, 'app'),
+  });
+  state.approvalMonitor = monitor;
+  monitor.start();
+  onHarnessOriginChange((/** @type {string} */ origin) => {
+    monitor.setHarnessOrigin(origin, dsh.sessionCookie || '');
+  });
+  onMainWindowChange((/** @type {any} */ win) => {
+    monitor.attachMainWindow(win);
+  });
+  const existingOrigin = getHarnessOrigin();
+  if (existingOrigin) {
+    monitor.setHarnessOrigin(existingOrigin, dsh.sessionCookie || '');
+  }
+}
 
 /**
  * The `app.whenReady()` body extracted from index.js (#439 P3-4): legacy
@@ -283,6 +315,7 @@ async function runAppReady({
             harness,
             startHarness: restartWithCleanup,
             log: (/** @type {string} */ line) => dsh.log(line, 'app'),
+            onConfigChanged: (/** @type {Record<string, any>} */ updated) => state.approvalMonitor?.syncConfig(updated),
           }));
           return { ok: true, config: publicConfig(next) };
         } catch (error) {
@@ -364,6 +397,7 @@ async function runAppReady({
     stopDesktopCleanup: cleanupDesktopResources,
     remote,
     getLive2dPet,
+    onConfigChanged: (/** @type {Record<string, any>} */ updated) => state.approvalMonitor?.syncConfig(updated),
     onOpenLauncher: async (/** @type {Record<string, any>} */ options = {}) => {
       await openLauncher();
       // Boot-page bridge: land on the home tab so the Recovery Board is
@@ -420,6 +454,7 @@ async function runAppReady({
     } : {}),
   }));
 
+  installApprovalMonitor(state, dsh);
   watchSystemTheme();
 
   // In-app update indicator backend (upstream dshDesktop.updates): the Web

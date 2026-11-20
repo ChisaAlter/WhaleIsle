@@ -102,6 +102,7 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
   getLive2dPet, proactiveService = null, updateCenter = null, openUpdateCenter = () => {},
+  onConfigChanged = /** @type {((next: Record<string, any>, patch?: Record<string, any>) => void) | undefined} */ (undefined),
 }) {
   // Every channel mounts through the shared wrapper: the IPC contract
   // authorizes the sender roles and normalizes the argument list before the
@@ -111,7 +112,11 @@ function registerIpc({
   };
   const renderMode = require('./render-mode');
   handle('shell:get-render-mode', () => renderMode.getMinimalMode());
-  handle('shell:set-render-mode', (_event, minimal) => renderMode.setMinimalMode(minimal));
+  handle('shell:set-render-mode', (_event, minimal) => {
+    const result = renderMode.setMinimalMode(minimal);
+    onConfigChanged?.(loadConfig(), { minimalMode: minimal });
+    return result;
+  });
   handle('shell:claim-minimal-suggestion', () => renderMode.claimMinimalSuggestion());
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
   handle('shell:proactive', (_event, action, payload = {}) => {
@@ -156,6 +161,7 @@ function registerIpc({
       startHarness,
       log: (line) => dsh.log(line, 'app'),
       waitForRestart: true,
+      onConfigChanged,
     });
     return next.restartCancelled ? { ...configPayload(next), restartCancelled: true } : configPayload(next);
   });

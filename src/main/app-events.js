@@ -27,10 +27,12 @@ function registerAppEvents({ state, showForeground, log }) {
   // the whole display (whale sprite still draws). Rebuild it on GPU death.
   (/** @type {any} */ (app)).on('gpu-process-crashed', () => {
     try { getLive2dPet()?.recreateWindow(); } catch (error) { log(`恢复桌宠窗口失败；请在内置功能中关闭再启用桌宠：${error instanceof Error ? error.message : String(error)}`); }
+    try { state.approvalMonitor?.recreatePopupIfVisible(); } catch (error) { log(`恢复审批浮窗失败：${error instanceof Error ? error.message : String(error)}`); }
   });
   app.on('child-process-gone', (_event, details) => {
     if (details?.type === 'GPU') {
       try { getLive2dPet()?.recreateWindow(); } catch (error) { log(`恢复桌宠窗口失败；请在内置功能中关闭再启用桌宠：${error instanceof Error ? error.message : String(error)}`); }
+      try { state.approvalMonitor?.recreatePopupIfVisible(); } catch (error) { log(`恢复审批浮窗失败：${error instanceof Error ? error.message : String(error)}`); }
     }
   });
 

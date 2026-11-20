@@ -238,6 +238,15 @@ test('main-process registrations equal the contract invoke/send rows', () => {
       getMainWindow: () => null,
       sessionsDir: '',
     })],
+    ['../main/approval-monitor', (m) => m.registerApprovalPopupIpc({
+      ipcMain: {},
+      authorize: () => true,
+      getState: () => ({}),
+      decide: async () => ({ ok: true }),
+      select() {},
+      openSession: async () => ({ ok: true }),
+      dismiss() {},
+    })],
   ]);
 
   // Registration specs carry no inline contract fields — those are resolved
@@ -267,6 +276,7 @@ const PRELOAD_SURFACE = Object.freeze({
   'welcome.js': IPC_SURFACES.WELCOME,
   'whalebridge.js': IPC_SURFACES.WHALEBRIDGE,
   'file-preview.js': IPC_SURFACES.FILE_PREVIEW,
+  'approval-popup.js': IPC_SURFACES.APPROVAL_POPUP,
 });
 
 /** Extract { channel -> Set('invoke'|'send'|'event') } from preload source. */
@@ -542,6 +552,7 @@ test('every literal push channel in main/launcher code is a contract event', () 
   const files = [
     ...fs.readdirSync(path.join(SRC, 'main')).filter((f) => f.endsWith('.js') && !f.endsWith('.test.js')).map((f) => `main/${f}`),
     ...fs.readdirSync(path.join(SRC, 'main', 'update-center')).filter((f) => f.endsWith('.js') && !f.endsWith('.test.js')).map((f) => `main/update-center/${f}`),
+    ...fs.readdirSync(path.join(SRC, 'main', 'approval-monitor')).filter((f) => f.endsWith('.js') && !f.endsWith('.test.js')).map((f) => `main/approval-monitor/${f}`),
     ...fs.readdirSync(path.join(SRC, 'launcher')).filter((f) => f.endsWith('.js') && !f.endsWith('.test.js')).map((f) => `launcher/${f}`),
   ];
   const events = new Set(IPC_CONTRACT.filter((row) => row.kind === 'event').map((row) => row.channel));
@@ -550,14 +561,14 @@ test('every literal push channel in main/launcher code is a contract event', () 
   for (const file of files) {
     const src = fs.readFileSync(path.join(SRC, file), 'utf8');
     const table = {};
-    for (const m of src.matchAll(/const (IPC|CHANNELS|PLATFORM_IPC|UPDATE_CENTER_IPC|UPDATE_DIALOG_IPC|WELCOME_IPC|BROWSER_IPC)\s*=\s*(?:Object\.freeze\()?\{([^}]*)\}/g)) {
+    for (const m of src.matchAll(/const (IPC|CHANNELS|PLATFORM_IPC|UPDATE_CENTER_IPC|UPDATE_DIALOG_IPC|WELCOME_IPC|BROWSER_IPC|APPROVAL_POPUP_IPC)\s*=\s*(?:Object\.freeze\()?\{([^}]*)\}/g)) {
       for (const kv of m[2].matchAll(/(\w+)\s*:\s*'([^']+)'/g)) table[`${m[1]}.${kv[1]}`] = kv[2];
     }
     tables.set(file, table);
     // literal sends: .send('ch', ...)
     for (const m of src.matchAll(/\.send\(\s*'([^']+)'/g)) found.add(m[1]);
     // table sends: .send(IPC.x / CHANNELS.x / PLATFORM_IPC.x / ...)
-    for (const m of src.matchAll(/\.send\(\s*((?:IPC|CHANNELS|PLATFORM_IPC|UPDATE_CENTER_IPC|UPDATE_DIALOG_IPC|WELCOME_IPC|BROWSER_IPC)\.\w+)/g)) {
+    for (const m of src.matchAll(/\.send\(\s*((?:IPC|CHANNELS|PLATFORM_IPC|UPDATE_CENTER_IPC|UPDATE_DIALOG_IPC|WELCOME_IPC|BROWSER_IPC|APPROVAL_POPUP_IPC)\.\w+)/g)) {
       const channel = table[m[1]];
       assert.ok(channel, `${file}: ${m[1]} is not a channel table entry`);
       found.add(channel);

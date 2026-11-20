@@ -282,6 +282,19 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
 
 /** Config fields that choose which built-in plugin overlays the next Harness start composes. */
 const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled', 'dshImEnabled'];
+const LIVE_CONFIG_FIELDS = ['approvalPopupEnabled', 'locale'];
+
+/**
+ * @param {((next: Record<string, any>, patch: Record<string, any>) => void) | undefined} onConfigChanged
+ * @param {Record<string, any>} next
+ * @param {Record<string, any>} safePatch
+ */
+function notifyLiveConfigChanged(onConfigChanged, next, safePatch) {
+  if (typeof onConfigChanged !== 'function') return;
+  if (LIVE_CONFIG_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(safePatch, key))) {
+    onConfigChanged(next, safePatch);
+  }
+}
 
 /**
  * Apply a renderer-writable config patch with the same normalization and
@@ -292,8 +305,31 @@ const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'rem
  * the running Harness mounts.
  * Returns the saved config; with `waitForRestart`, a promise of the config
  * after that restart settles, marked `restartCancelled` when it was refused.
+ * @param {Record<string, any>} patch
+ * @param {{
+ *   app?: any,
+ *   applyAppTheme?: () => unknown,
+ *   harness?: any,
+ *   startHarness?: (...args: any[]) => Promise<any>,
+ *   log?: (line: string) => void,
+ *   waitForRestart?: boolean,
+ *   configIO?: { load: () => Record<string, any>, save: (next: Record<string, any>) => Record<string, any> },
+ *   onConfigChanged?: (next: Record<string, any>, patch: Record<string, any>) => void,
+ * }} [options]
  */
-function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHarness, log, waitForRestart = false, configIO } = {}) {
+function applyRendererConfigPatch(
+  patch,
+  {
+    app,
+    applyAppTheme,
+    harness,
+    startHarness,
+    log,
+    waitForRestart = false,
+    configIO,
+    onConfigChanged,
+  } = {},
+) {
   // A config write mutates the destination the import journal protects.
   // Acquire the slot for the synchronous write; when the patch also triggers
   // a deferred align restart, hold ownership until that work settles.
@@ -316,6 +352,7 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
   if (Object.prototype.hasOwnProperty.call(safePatch, 'theme') && typeof applyAppTheme === 'function') {
     applyAppTheme();
   }
+  notifyLiveConfigChanged(onConfigChanged, next, safePatch);
   if (harness && [
     'harnessAutoRestart',
     'harnessRestartMaxAttempts',

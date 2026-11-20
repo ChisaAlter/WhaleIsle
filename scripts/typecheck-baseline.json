@@ -5984,7 +5984,6 @@
         "Argument of type '{ title?: any; properties: string[]; defaultPath: any; }' is not assignable to parameter of type 'OpenDialogOptions'.": 1
       },
       "TS2353": {
-        "Object literal may only specify known properties, and 'app' does not exist in type '{ waitForRestart?: boolean | undefined; }'.": 1,
         "Object literal may only specify known properties, and 'version' does not exist in type '{ snapshot?: {} | undefined; logs?: never[] | undefined; }'.": 1
       },
       "TS2554": {
@@ -6006,7 +6005,6 @@
         "Parameter 'id' implicitly has an 'any' type.": 6,
         "Parameter 'ids' implicitly has an 'any' type.": 1,
         "Parameter 'input' implicitly has an 'any' type.": 3,
-        "Parameter 'line' implicitly has an 'any' type.": 1,
         "Parameter 'listener' implicitly has an 'any' type.": 1,
         "Parameter 'minimal' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 2,
@@ -7078,18 +7076,12 @@
     },
     "src/main/profile-ops.js": {
       "TS2339": {
-        "Property 'app' does not exist on type '{ waitForRestart?: boolean | undefined; }'.": 1,
-        "Property 'applyAppTheme' does not exist on type '{ waitForRestart?: boolean | undefined; }'.": 1,
         "Property 'configIO' does not exist on type '{ startWhenIdle?: boolean | undefined; }'.": 1,
-        "Property 'configIO' does not exist on type '{ waitForRestart?: boolean | undefined; }'.": 1,
         "Property 'configIO' does not exist on type '{}'.": 1,
         "Property 'dsh' does not exist on type '{ startWhenIdle?: boolean | undefined; }'.": 1,
         "Property 'dsh' does not exist on type '{}'.": 1,
-        "Property 'harness' does not exist on type '{ waitForRestart?: boolean | undefined; }'.": 1,
         "Property 'journalBlocked' does not exist on type '{}'.": 1,
-        "Property 'log' does not exist on type '{ waitForRestart?: boolean | undefined; }'.": 1,
         "Property 'startHarness' does not exist on type '{ startWhenIdle?: boolean | undefined; }'.": 1,
-        "Property 'startHarness' does not exist on type '{ waitForRestart?: boolean | undefined; }'.": 1,
         "Property 'startHarness' does not exist on type '{}'.": 1
       },
       "TS2783": {
@@ -7107,7 +7099,6 @@
         "Parameter 'name' implicitly has an 'any' type.": 3,
         "Parameter 'names' implicitly has an 'any' type.": 2,
         "Parameter 'ownerToken' implicitly has an 'any' type.": 1,
-        "Parameter 'patch' implicitly has an 'any' type.": 1,
         "Parameter 'promise' implicitly has an 'any' type.": 1,
         "Parameter 'startHarness' implicitly has an 'any' type.": 1,
         "Parameter 'token' implicitly has an 'any' type.": 2,
@@ -7827,7 +7818,6 @@
     },
     "src/main/tray.js": {
       "TS7005": {
-        "Variable 'tray' implicitly has an 'any' type.": 2,
         "Variable 'trayActions' implicitly has an 'any' type.": 2,
         "Variable 'trayMenuParams' implicitly has an 'any' type.": 1
       },
@@ -7845,7 +7835,6 @@
         "Binding element 'updateLabel' implicitly has an 'any' type.": 1
       },
       "TS7034": {
-        "Variable 'tray' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'trayActions' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'trayMenuParams' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
@@ -8344,7 +8333,6 @@
         "No overload matches this call.": 2
       },
       "TS7005": {
-        "Variable 'harnessOriginListener' implicitly has an 'any' type.": 2,
         "Variable 'harnessView' implicitly has an 'any' type.": 11,
         "Variable 'launcherWindow' implicitly has an 'any' type.": 3,
         "Variable 'mainWindow' implicitly has an 'any' type.": 5,
@@ -8377,7 +8365,6 @@
         "Parameter 'win' implicitly has an 'any' type.": 13
       },
       "TS7034": {
-        "Variable 'harnessOriginListener' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'harnessView' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'launcherWindow' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
         "Variable 'mainWindow' implicitly has type 'any' in some locations where its type cannot be determined.": 1,

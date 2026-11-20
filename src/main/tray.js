@@ -3,9 +3,34 @@ const { showMain, iconImage, openHarnessSettings, openMarketplace } = require('.
 const { assetFile } = require('./paths');
 const { trayMenuTemplate } = require('./tray-menu');
 
+/** @type {Electron.Tray | null} */
 let tray = null;
 let trayActions = null;
 let trayMenuParams = null;
+/** @type {Electron.NativeImage | null} */
+let baseTrayImage = null;
+/** @type {{ width: number, height: number, bgra: Buffer } | null} */
+let baseTrayBitmap = null;
+/** @type {{ image?: Electron.NativeImage, tooltip?: string } | null | undefined} */
+let pendingTrayBadge;
+
+/** @param {{ image?: Electron.NativeImage, tooltip?: string } | null} indicator */
+function applyTrayBadge(indicator) {
+  if (!tray) return;
+  if (!indicator) {
+    if (baseTrayImage && !baseTrayImage.isEmpty()) {
+      tray.setImage(baseTrayImage);
+    }
+    tray.setToolTip('Whale Isle');
+    return;
+  }
+  if (indicator.image && !indicator.image.isEmpty()) {
+    tray.setImage(indicator.image);
+  } else if (baseTrayImage && !baseTrayImage.isEmpty()) {
+    tray.setImage(baseTrayImage);
+  }
+  tray.setToolTip(typeof indicator.tooltip === 'string' && indicator.tooltip ? indicator.tooltip : 'Whale Isle');
+}
 
 function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, petEnabled, updateLabel, onUpdate }) {
   if (tray) {
@@ -19,6 +44,14 @@ function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, pe
   if (process.platform === 'win32' && image && !image.isEmpty()) {
     image = image.resize({ width: 24, height: 24 });
   }
+  baseTrayImage = image && !image.isEmpty() ? image : null;
+  if (baseTrayImage && typeof baseTrayImage.getSize === 'function' && typeof baseTrayImage.toBitmap === 'function') {
+    const size = baseTrayImage.getSize();
+    const bgra = baseTrayImage.toBitmap();
+    if (size.width > 0 && size.height > 0 && bgra.length === size.width * size.height * 4) {
+      baseTrayBitmap = { width: size.width, height: size.height, bgra };
+    }
+  }
 
   trayActions = {
     show: onShow || (() => showMain()),
@@ -29,7 +62,7 @@ function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, pe
     quit: onQuit,
     petToggle: onPetToggle || (() => {}),
   };
-  tray = new Tray(image && !image.isEmpty() ? image : nativeImage.createEmpty());
+  tray = new Tray(baseTrayImage || nativeImage.createEmpty());
   tray.setToolTip('Whale Isle');
   trayMenuParams = {
     onShow: trayActions.show,
@@ -45,7 +78,24 @@ function createTray({ onShow, onOpenLauncher, onRestart, onQuit, onPetToggle, pe
   };
   refreshTrayMenu();
   tray.on('click', () => trayActions.show());
+  if (pendingTrayBadge !== undefined) {
+    applyTrayBadge(pendingTrayBadge);
+    pendingTrayBadge = undefined;
+  }
   return tray;
+}
+
+function getBaseTrayIcon() {
+  return baseTrayBitmap;
+}
+
+/** @param {{ image?: Electron.NativeImage, tooltip?: string } | null} indicator */
+function setTrayBadge(indicator) {
+  if (!tray) {
+    pendingTrayBadge = indicator ?? null;
+    return;
+  }
+  applyTrayBadge(indicator ?? null);
 }
 
 // The template's `checked: petEnabled()` is a build-time snapshot — toggles
@@ -68,6 +118,8 @@ function invokeTrayAction(name) {
 
 module.exports = {
   createTray,
+  getBaseTrayIcon,
+  setTrayBadge,
   refreshTrayMenu,
   invokeTrayAction,
 };
