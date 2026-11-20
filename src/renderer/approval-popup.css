@@ -39,11 +39,13 @@ body {
   border-radius: var(--dsw-radius-xl);
   corner-shape: round;
   box-shadow: var(--dsw-shadow-lv3);
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card[data-state='closed'] {
   opacity: 0;
-  transform: translateY(var(--ds-motion-distance-popover));
-  transition:
-    opacity var(--ds-motion-duration-popover) var(--ds-ease-in-out),
-    transform var(--ds-motion-duration-popover) var(--ds-ease-in-out);
+  pointer-events: none;
 }
 
 .card[data-state='open'] {
@@ -405,6 +407,7 @@ html[data-dsh-minimal] .toast,
 html[data-dsh-minimal] .icon-btn,
 html[data-dsh-minimal] .link-btn,
 html[data-dsh-minimal] .action-btn {
+  animation: none;
   transition: none;
   transform: none;
 }
@@ -412,6 +415,7 @@ html[data-dsh-minimal] .action-btn {
 @media (prefers-reduced-motion: reduce) {
   .card,
   .toast {
+    animation: none;
     transform: none;
   }
 }

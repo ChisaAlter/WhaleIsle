@@ -7,8 +7,8 @@
 
 ## User paths
 
-1. 主窗口可见且未最小化时收到待审批项（工具越权审批 `approval/request`、CUA 权限审批 `intent.kind === 'approval'`、计划审阅 `intent.kind === 'plan-review'`）：立即更新应用图标数字角标（Windows 任务栏覆盖图标、Windows 托盘叠加角标与 Tooltip、macOS Dock 角标与托盘 Tooltip），不弹出右下角浮窗。
-2. 主窗口最小化或按 `closeToTray` 隐藏至托盘，且 Harness 处于活跃态、`approvalPopupEnabled` 为开且存在未静默的待审批项时：在主显示器 `workArea` 右下角以不抢焦点（`showInactive()`）方式弹出 380×300px 独立审批浮窗。
+1. 主窗口可见且未最小化时收到待审批项（工具越权审批 `approval/request`、CUA 权限审批 `intent.kind === 'approval'`、计划审阅 `intent.kind === 'plan-review'`）：不弹出右下角浮窗，也不显示应用图标数字角标。
+2. 主窗口最小化或按 `closeToTray` 隐藏至托盘且 Harness 处于活跃态、存在待审批项时：立即更新应用图标数字角标（Windows 任务栏覆盖图标、Windows 托盘叠加角标与 Tooltip、macOS Dock 角标与托盘 Tooltip）；若 `approvalPopupEnabled` 为开且存在未静默项，同时在主显示器 `workArea` 右下角以不抢焦点（`showInactive()`）方式弹出 380×300px 独立审批浮窗。
 3. 用户可在浮窗内直接提交审批决策（允许一次、始终允许、拒绝、要求修改），查看命令预览、翻页浏览多条待审批队列，或点击「查看会话」唤醒主窗口并跳转到对应会话；点关闭钮或按 `Esc` 仅静默收起浮窗，不拒绝审批也不清除角标，后续新审批到达时自动重新唤醒。
 4. 「设置 → 通用 → 最小化时弹出审批窗口」可关闭右下角浮窗，关闭后应用图标与托盘数字角标仍保持同步。
 

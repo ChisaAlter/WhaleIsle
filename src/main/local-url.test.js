@@ -129,3 +129,18 @@ test('loopback hostnames do not authorize non-HTTP protocols', () => {
     assert.equal(isLoopbackHttpUrl(url), false, url);
   }
 });
+
+test('isLocalAppNavigationUrl tolerates Windows drive-letter casing differences', { skip: process.platform !== 'win32' }, () => {
+  const dir = path.join(os.tmpdir(), `dsh-drive-case-${process.pid}`);
+  const boot = path.join(dir, 'boot.html');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(boot, '<html></html>');
+  try {
+    const lowerDrive = boot.replace(/^[A-Z]:/, (m) => m.toLowerCase());
+    const upperDrive = boot.replace(/^[a-z]:/, (m) => m.toUpperCase());
+    assert.equal(isLocalAppNavigationUrl(pathToFileURL(upperDrive).href, { resolveBootPath: () => lowerDrive }), true);
+    assert.equal(isLocalAppNavigationUrl(pathToFileURL(lowerDrive).href, { resolveBootPath: () => upperDrive }), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

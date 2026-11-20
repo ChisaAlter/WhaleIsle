@@ -159,7 +159,7 @@ function hasUnsnoozedItem(state) {
  * @returns {number}
  */
 function selectBadgeCount(state) {
-  return state.harnessActive ? state.items.length : 0;
+  return state.harnessActive && !state.mainVisible ? state.items.length : 0;
 }
 
 /**

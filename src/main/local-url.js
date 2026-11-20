@@ -93,11 +93,18 @@ function packagedRendererPath(relativeFromRenderer, resolvePath) {
  * @returns {boolean}
  */
 function sameFilePath(left, right) {
+  let resolvedLeft;
+  let resolvedRight;
   try {
-    return fs.realpathSync(left) === fs.realpathSync(right);
+    resolvedLeft = fs.realpathSync(left);
+    resolvedRight = fs.realpathSync(right);
   } catch {
-    return path.normalize(left).toLowerCase() === path.normalize(right).toLowerCase();
+    resolvedLeft = path.normalize(left);
+    resolvedRight = path.normalize(right);
   }
+  return process.platform === 'win32'
+    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
+    : resolvedLeft === resolvedRight;
 }
 
 /**

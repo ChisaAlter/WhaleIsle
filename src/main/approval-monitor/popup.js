@@ -105,10 +105,13 @@ function createApprovalPopupController(deps = {}) {
     if (!win || win.isDestroyed() || !loaded || !desiredVisible) return;
     const bounds = computePopupBounds(currentWorkArea());
     syncBounds(bounds);
+    pushView();
     if (!win.isVisible()) {
       win.showInactive();
+      if (win.webContents && !win.webContents.isDestroyed()) {
+        win.webContents.invalidate?.();
+      }
     }
-    pushView();
   }
 
   function pushView() {

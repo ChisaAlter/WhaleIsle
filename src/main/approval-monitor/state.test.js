@@ -51,7 +51,10 @@ test('visibility requires harness active, popup enabled, main hidden, and an uns
   state = reduceApprovalState(state, { type: 'SET_POPUP_ENABLED', enabled: true });
   state = reduceApprovalState(state, { type: 'SET_MAIN_VISIBLE', visible: true });
   assert.equal(selectPopupVisible(state), false, 'visible main window hides popup');
-  assert.equal(selectBadgeCount(state), 1, 'visible main window retains badge count');
+  assert.equal(selectBadgeCount(state), 0, 'visible main window clears badge count');
+
+  state = reduceApprovalState(state, { type: 'SET_MAIN_VISIBLE', visible: false });
+  assert.equal(selectBadgeCount(state), 1, 'minimizing again restores badge count');
 });
 
 test('dismiss snoozes current items without rejecting, wakes on new item, and clears snooze when main becomes visible', () => {
