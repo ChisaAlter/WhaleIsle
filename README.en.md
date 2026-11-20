@@ -1,128 +1,170 @@
-<p align="center">
-  <img src="assets/icon.png" width="80" alt="Whale Isle" />
+<div align="center">
+
+<img src="assets/icon.png" width="84" height="84" alt="Whale Isle" />
+
+# Whale Isle
+
+<p>
+  An open-source community desktop client built on <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a><br />
+  Conversations, code workbench, AI teams, and mobile remote in one window.
 </p>
 
-<h1 align="center">Whale Isle</h1>
-
-<p align="center">
-  An open-source community desktop client built on DeepSeek Harness<br />
-  Conversations, files, terminal, Git and AI team work in one window.
-</p>
-
-<p align="center">
-  <a href="README.md">中文</a> · English ·
+<p>
+  <a href="README.md">中文</a> ·
+  <strong>English</strong> ·
+  <a href="#download">Download</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#run-from-source">Run from source</a> ·
   <a href="https://github.com/ChisaAlter/WhaleIsle/releases/latest">Release notes</a> ·
-  <a href="https://github.com/ChisaAlter/WhaleIsle/issues">Report an issue</a>
+  <a href="https://github.com/ChisaAlter/WhaleIsle/issues">Issues</a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/ChisaAlter/WhaleIsle/releases/latest"><img src="https://img.shields.io/github/v/release/ChisaAlter/WhaleIsle" alt="Release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChisaAlter/WhaleIsle" alt="MIT" /></a>
-  <img src="https://img.shields.io/badge/Windows-x64-0A66C2" alt="Windows x64" />
-  <img src="https://img.shields.io/badge/macOS-ARM64-333333" alt="macOS ARM64" />
-  <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84" alt="Android 8.0+" />
+<p>
+  <a href="https://github.com/ChisaAlter/WhaleIsle/releases/latest"><img src="https://img.shields.io/github/v/release/ChisaAlter/WhaleIsle?style=flat-square&color=4176E6&label=Release" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ChisaAlter/WhaleIsle?style=flat-square&color=64748B&label=License" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/Windows-x64-0A66C2?style=flat-square" alt="Windows x64" />
+  <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-1F2937?style=flat-square" alt="macOS Apple Silicon" />
+  <img src="https://img.shields.io/badge/Android-8.0%2B-22C55E?style=flat-square" alt="Android 8.0+" />
 </p>
 
-<p align="center">
-  <img src="docs/images/v0.3.14/screenshot-project.png" alt="Whale Isle 0.3.14: a Project carrying out a request, the side panel showing stages and member progress, and a command waiting for your approval" width="920" />
+<br />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v0.3.16/hero-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/v0.3.16/hero-light.png" />
+  <img src="docs/images/v0.3.16/hero-light.png" width="100%" alt="Whale Isle 0.3.16 workbench showing sessions, syntax-highlighted conversation, and the live Git diff panel" />
+</picture>
+
+<p>
+  <sub>Independently maintained by the community, not an official DeepSeek product. The service runs locally and your data stays on your machine.</sub>
 </p>
 
-Independently maintained by the community, not an official DeepSeek product.
+</div>
 
-## What it is
+---
 
-Whale Isle turns [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) into a ready-to-use desktop app: the service starts on your machine, your data stays on your machine, and the interface, updates and model setup all live in the app.
+## Features
 
-| You want to | Whale Isle gives you |
-| --- | --- |
-| Change code together with a model | Read and write files and run commands right in the conversation; anything that needs more permission asks you first |
-| Hand a task to an AI team | **Project**: state the goal, members work in parallel, and you are interrupted only when you are needed |
-| See results without leaving the window | Files, diffs, web previews, a terminal and Git next to the conversation |
-| Keep going away from your PC | Connect the Android app to the desktop by scanning a QR code |
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>All-in-one code workbench</strong><br />
+      Browse and edit workspace files, review Git diffs, switch branches, and commit right next to the conversation. Includes a terminal drawer, floating web and artifact previews, and SSH remote workspaces.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Project and Agent Teams</strong><br />
+      Ships with ACP 0.4.9 and Agent Teams: choose an agent first, then preview its model and reasoning effort. Turn on Project to delegate goals to parallel subagents with inspectable, undoable deliverables.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Minimized approval popup and badges</strong><br />
+      When the main window is minimized or hidden to the tray, pending tool, permission, and plan approvals open an unfocused floating card in the bottom-right corner and update the taskbar, tray, or macOS Dock badge.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Whale UI and Whale assistant</strong><br />
+      Render interactive charts, forms, Mermaid diagrams, 3D scenes, and maps directly inside a reply. Enable the optional Whale assistant for Big Fish focus mode, automatic context compaction with <code>/compact</code>, and a Live2D desktop companion.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Native look and acrylic material</strong><br />
+      Switch between DeepSeek, Codex, Claude, Midnight, Celadon, Paper, and more paired light/dark themes, plus a wallpaper gallery and ambient gradients. Windows 11 22H2+ supports native window acrylic with 20px rounded corners.
+    </td>
+    <td width="50%" valign="top">
+      <strong>Launcher and mobile remote</strong><br />
+      A dedicated launcher manages desktop versions, resumable delta updates, official config imports, and <a href="docs/features/launcher-components.md">WhaleBridge</a>. Scan a QR code from the Android app or mobile web client for an end-to-end encrypted session away from your desk.
+    </td>
+  </tr>
+</table>
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/images/v0.3.16/showcase-approval.png" width="100%" alt="Whale Isle 0.3.16 minimized approval popup in light and dark themes with taskbar and tray badges" /><br />
+      <strong>Minimized approval popup and badges</strong><br />
+      <sub>Approve, deny, or review plans without stealing focus, with queue paging and one-click session jump.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/images/v0.3.16/showcase-project.png" width="100%" alt="Whale Isle Project workspace showing request stages, member progress, and command approval" /><br />
+      <strong>Project team workflow</strong><br />
+      <sub>Track stages and member progress in the right panel; the coordinator interrupts only for decisions or permissions.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/images/v0.3.16/showcase-appearance.png" width="100%" alt="Whale Isle 0.3.16 Appearance settings with paired light and dark themes" /><br />
+      <strong>Themes and native window materials</strong><br />
+      <sub>Paired light and dark themes, wallpaper gallery, glass opacity controls, and Windows 11 acrylic.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/images/v0.3.16/showcase-ecosystem.png" width="100%" alt="Whale Isle 0.3.16 desktop launcher and mobile remote QR connection screen" /><br />
+      <strong>Launcher and mobile remote</strong><br />
+      <sub>Manage versions, CNB/GitHub routes, and components from the launcher; pair your phone with one scan.</sub>
+    </td>
+  </tr>
+</table>
+
+---
 
 ## Download
 
-| Platform | GitHub | CNB mirror |
-| --- | --- | --- |
-| Windows 10+ · x64 · v0.3.14 | [Installer](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.14/Whale-Isle-Setup-0.3.14.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.14/Whale-Isle-Setup-0.3.14.exe) |
-| macOS 14+ · Apple Silicon · v0.3.13 | [ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.13/Whale-Isle-0.3.13-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.13/Whale-Isle-0.3.13-mac-arm64.dmg) |
-| Android 8.0+ · v0.3.11 | [APK](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) |
+| Platform | Version | GitHub Releases | CNB mirror |
+| --- | --- | --- | --- |
+| **Windows 10 / 11** (x64) | `v0.3.16` | [Whale-Isle-Setup-0.3.16.exe](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.16/Whale-Isle-Setup-0.3.16.exe) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.16/Whale-Isle-Setup-0.3.16.exe) |
+| **macOS 14+** (Apple Silicon) | `v0.3.16` | [Whale-Isle-0.3.16-mac-arm64.dmg](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.16/Whale-Isle-0.3.16-mac-arm64.dmg) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v0.3.16/Whale-Isle-0.3.16-mac-arm64.dmg) |
+| **Android 8.0+** (separate release) | `v0.3.11` | [Whale-Isle-0.3.11-android.apk](https://github.com/ChisaAlter/WhaleIsle/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) | [CNB](https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/android-v0.3.11/Whale-Isle-0.3.11-android.apk) |
 
-v0.3.14 has no Mac installer yet, so the table lists the latest Mac version; Android is released separately. The desktop installers are unsigned; on a Mac, right-click and choose Open the first time. Each release provides SHA512 checksums.
+> [!NOTE]
+> Desktop installers are currently unsigned. On macOS, right-click the app and select Open on first launch. Every release ships with a `SHA512SUMS.txt` checksum manifest. Windows 11 window acrylic requires Windows 11 22H2 or later.
 
-## Getting started
+### Quick start
 
-1. Install and start the desktop app (the launcher handles versions, updates, import and components).
-2. Open Settings → Models and configure an API service; your model provider charges for usage.
-3. Choose a workspace, or just start a new conversation.
-4. To let a team do the work: turn on Project in Settings → Built-in features, then click "Project" on the new-session screen.
-5. To use your phone: scan the QR code in the desktop app's Remote dialog with the Android app.
+1. Install and launch Whale Isle (use the launcher to manage versions, download routes, imports, and WhaleBridge).
+2. Open **Settings → Models** to configure your API provider. Model usage is billed by your chosen provider.
+3. Pick a local folder or mount an SSH remote workspace, then start a new conversation.
+4. Enable optional capabilities as needed: **Settings → Built-in plugins** for Project, **Settings → Whale** for the assistant, and **Settings → Remote** for QR pairing.
 
-## Highlights
+---
 
-### Project: state the goal, let a team do it
+## Shortcuts and FAQ
 
-Project turns a local directory into a long-running project. You keep adding requirements in the main conversation, the coordinator hands them to team members (subagents) one by one, and the Requests panel on the right shows stages, member progress and results.
+<details>
+<summary><strong>Common shortcuts</strong></summary>
 
-- **Interrupts you only when needed**: when information or a decision is missing, the coordinator asks one concrete question with a few answers you can click, pinned in the panel, and the header shows "N waiting for you".
-- **Asks before taking more permission**: when a member needs to run a command outside the sandbox, an approval appears above the input box; approve once, it runs once.
-- **Can research the web**: members can search and read web pages (read-only, no commands), the sources they consulted are recorded with the result, and you can set an allowlist of research sites in the materials.
-- **Results you can inspect**: after delivery you can review the changes, and undo them.
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/images/v0.3.14/project-ask.png" alt="Project needs you: the coordinator asks one concrete question and offers answers to click" width="430" /></td>
-    <td align="center"><img src="docs/images/v0.3.14/project-result.png" alt="Project delivered: result summary and changed-file count, with review and undo" width="430" /></td>
-  </tr>
-  <tr>
-    <td align="center">Needs you: one concrete question, click or type</td>
-    <td align="center">Delivered: summary and changes, undoable any time</td>
-  </tr>
-</table>
-
-Project is off by default; turning it off only hides the entry points and keeps the data of existing Projects.
-
-### Development workbench
-
-<p align="center">
-  <img src="docs/images/v0.3.14/screenshot-workbench.png" alt="Whale Isle 0.3.14: a conversation next to the Git diff panel" width="860" />
-</p>
-
-- **Files and previews**: browse and edit workspace files; web pages and diffs preview in the built-in panel.
-- **Terminal and Git**: a terminal drawer at the bottom, and branch switching and Git status in the title bar.
-- **SSH remote workspaces**: use a directory on a remote machine as your workspace.
-- **Live panels**: floating panels refreshed by commands, HTTP or AI.
-
-Common shortcuts: `Ctrl+N` new session · `Ctrl+\` right sidebar · `` Ctrl+` `` terminal · `Ctrl+,` settings.
-
-### More
-
-| Feature | What it does |
+| Shortcut | Action |
 | --- | --- |
-| **Whale UI** | Generate interactive pages in the conversation: charts, forms, Mermaid, 3D, maps, quizzes and more |
-| **Phone remote** | Connect the Android app by QR code; off by default, and it listens only once enabled |
-| **Extensions** | MCP, skills and the plugin marketplace; on Windows, install [WhaleBridge](docs/features/launcher-components.md) to manage model providers, subscription logins, routing and usage |
-| **Updates** | The update center downloads and verifies in the background, picks the cheaper of an incremental or full download, and resumes after a dropped connection or a restart |
-| **Appearance and usage** | Codex / Claude skins, a wallpaper gallery, a Live2D whale companion, token and cost statistics |
+| `Ctrl+N` / `Cmd+N` | New session |
+| `Ctrl+\` / `Cmd+\` | Toggle right workbench sidebar |
+| `` Ctrl+` `` / `` Cmd+` `` | Toggle bottom terminal drawer |
+| `Ctrl+,` / `Cmd+,` | Open settings |
+| `Esc` | Close dialog or snooze the approval popup without rejecting |
 
-<table>
-  <tr><th>Launcher</th><th>Android connection screen</th></tr>
-  <tr>
-    <td align="center"><img src="docs/images/v0.3.14/screenshot-launcher.png" alt="Whale Isle 0.3.14 launcher on Windows" width="560" /></td>
-    <td align="center"><img src="docs/images/v0.3.10/screenshot-android.png" alt="Whale Isle Android connection screen" width="220" /></td>
-  </tr>
-</table>
+</details>
 
-## FAQ
+<details>
+<summary><strong>Frequently asked questions</strong></summary>
 
-- **Does it cost money?** The app is free and open source (MIT); the model provider you configure charges for usage.
-- **Where is my data?** `%APPDATA%\Deepseek-Harness-Desktop` on Windows and `~/Library/Application Support/Deepseek-Harness-Desktop` on macOS, kept across in-place upgrades. The desktop app does not read the official `~/.dsh`; the launcher's Import page can bring in its skills, MCP servers and settings.
-- **How is it different from the official `dsh web`?** The interface and core capabilities are the same; the desktop app adds the launcher, terminal, Git, workspace files, SSH remote workspaces, phone remote, the plugin marketplace, wallpapers and usage statistics.
-- **How do I upgrade?** The app checks and downloads new versions in the background; once ready, click "Install and restart" in Settings → About, the tray or the launcher.
+- **Does Whale Isle cost money?**
+  The app is free and open source under the MIT license. Your model provider charges for API usage.
+- **Where is my data stored, and do upgrades keep it?**
+  Data lives in `%APPDATA%\Deepseek-Harness-Desktop` on Windows and `~/Library/Application Support/Deepseek-Harness-Desktop` on macOS, and stays intact across in-place upgrades. Whale Isle does not read the official `~/.dsh` directory; use the launcher's Import tab to bring over skills, MCP servers, and settings read-only.
+- **How is it different from the official `dsh web`?**
+  Core conversation and runtime behavior match the pinned upstream release. The desktop client adds the launcher, resumable delta updates, workspace files and diffs, titlebar Git controls, an integrated terminal, SSH remote workspaces, minimized approval popups, mobile remote, a built-in marketplace, themes, and usage statistics.
+- **How do I update?**
+  The update center checks and downloads releases in the background, picks incremental or full packages automatically, and resumes interrupted transfers. Click Install and restart from **Settings → About**, the tray menu, or the launcher. You can also configure a dedicated HTTP proxy for update downloads.
+
+</details>
+
+---
 
 ## Run from source
 
-Requires Git and Node.js 24.9+ (the CI version is in [.nvmrc](.nvmrc)). Quit the installed app, including its tray process, first: both share a single-instance lock.
+Requires Git and Node.js 24.9+ (CI pins the exact version in [.nvmrc](.nvmrc)). Quit the installed app and its tray process before running from source because both share a single-instance lock.
 
 ```shell
 git clone https://github.com/ChisaAlter/WhaleIsle.git
@@ -132,21 +174,37 @@ npm run setup:harness
 npm start
 ```
 
-| Directory | Contents |
+<details>
+<summary><strong>Repository layout</strong></summary>
+
+| Path | Responsibility |
 | --- | --- |
-| `src/main`, `src/renderer` | The Electron main process; the launcher and boot pages |
+| `src/main`, `src/preload`, `src/renderer` | Electron main process, sandboxed preloads, launcher, boot page, and approval popup |
+| `src/whale-ui` | Whale UI interactive page runtime and component library |
 | `vendor/deepseek-harness` | Upstream DeepSeek Harness (pinned and synced) |
-| `vendor/dsh-project` | The Project plugin |
-| `mobile/` | The Android app and the phone web page |
-| `scripts/` | Build, packaging and release scripts |
-| `docs/` | Product handbook, feature cards and maintenance docs |
+| `vendor/dsh-project`, `vendor/dsh-whale`, etc. | Bundled first-party plugins (Project, Whale assistant, SSH remote, live panels, usage, IM) |
+| `dsh-acp` | Bundled ACP 0.4.9 and Agent Teams integration |
+| `mobile/` | Native Android client and mobile web SPA |
+| `scripts/` | Build, verification, packaging, and release scripts |
+| `docs/` | Product handbook, feature cards, design language, and maintenance docs |
+
+</details>
+
+---
 
 ## Documentation and community
 
-[Product handbook](docs/handbook/README.md) · [Development](docs/maintenance/README.md) · [Contributing](CONTRIBUTING.en.md) · [Report an issue](https://github.com/ChisaAlter/WhaleIsle/issues/new/choose)
+- [Product handbook](docs/handbook/README.md) · [Feature index](docs/features/README.md) · [Design language](docs/design-language.md)
+- [Development guide](docs/maintenance/README.md) · [Release process](docs/handbook/modules/release-process.md) · [Contributing](CONTRIBUTING.en.md)
 
-<p align="center">
-  <img src="assets/wechat-group.png" alt="WeChat community QR code" width="180" />
-</p>
-
-Thanks to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), [yetone / Magpie](https://github.com/yetone/magpie) and the [Linux.do](https://linux.do) community. · [MIT](LICENSE)
+<div align="center">
+  <img src="assets/wechat-group.png" width="168" alt="Whale Isle WeChat community QR code" /><br />
+  <sub>Scan to join the Whale Isle WeChat community</sub>
+  <br /><br />
+  <sub>
+    Thanks to <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> ·
+    <a href="https://github.com/yetone/magpie">yetone / Magpie</a> ·
+    <a href="https://linux.do">Linux.do</a> ·
+    <a href="LICENSE">MIT License</a>
+  </sub>
+</div>
