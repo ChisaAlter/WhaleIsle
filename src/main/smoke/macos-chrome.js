@@ -239,12 +239,29 @@ async function runMacosChromeQa(win, wc, helpers) {
       await waitFor(() => wc.executeJavaScript(`typeof window.__dshWhaleOpen === 'function'`), 'built-in Session navigation');
       const sessionId = await wc.executeJavaScript('window.__dshWhaleOpen()');
       assert.equal(typeof sessionId, 'string', 'the product entry must open a real Session');
+      // First-time open of the Whale assistant prompts to enter Big Fish mode;
+      // decline it so its modal backdrop does not intercept hit-testing below.
+      const dismissedBigFish = await wc.executeJavaScript(`new Promise((resolve) => {
+        const deadline = Date.now() + 3000;
+        const findDecline = () => Array.from(document.querySelectorAll('[role="dialog"] button'))
+          .find((el) => /^(暂不进入|Not now)$/.test((el.textContent || '').trim()));
+        const poll = () => {
+          const btn = findDecline();
+          if (btn) { btn.click(); return resolve(true); }
+          if (Date.now() >= deadline) return resolve(false);
+          setTimeout(poll, 50);
+        };
+        poll();
+      })`);
+      if (dismissedBigFish) {
+        await waitFor(() => wc.executeJavaScript(`!document.querySelector('[role="dialog"]')`), 'Big Fish mode prompt dismissal');
+      }
       await rpc(helpers.dsh.baseUrl, 'session/rename', { request: { sessionId, title } }, fetch, auth);
       await rpc(helpers.dsh.baseUrl, 'session/setPresentation', { request: {
         sessionId, presentation: { owner: 'mac-caption-qa', title },
       } }, fetch, auth);
       await waitFor(() => wc.executeJavaScript(`Boolean(document.querySelector('[data-dshd-caption="title"]')?.textContent.includes(${JSON.stringify(title)}))`), 'persisted long caption');
-      return { sessionId, title, entry: 'window.__dshWhaleOpen', presentationOwner: 'mac-caption-qa', modelCalls: 0 };
+      return { sessionId, title, entry: 'window.__dshWhaleOpen', dismissedBigFish, presentationOwner: 'mac-caption-qa', modelCalls: 0 };
     });
     await record('main.native-buttons', async () => {
       const snapshot = native.snapshot(win);
