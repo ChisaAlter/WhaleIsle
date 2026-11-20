@@ -1,7 +1,5 @@
 'use strict';
 
-/** Isolated sandboxed bridge for the floating minimized approval popup window. */
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 const CHANNELS = {

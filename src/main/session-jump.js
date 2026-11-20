@@ -1,14 +1,11 @@
 'use strict';
 
 /**
- * Multicast listener set and pending session-jump queue for window.js.
- */
-
-/**
  * @template T
+ * @param {(error: unknown) => void} [onError]
  * @returns {{ add: (listener: (value: T) => void) => () => void, emit: (value: T) => void }}
  */
-function createListenerSet() {
+function createListenerSet(onError) {
   /** @type {Set<(value: T) => void>} */
   const listeners = new Set();
   return {
@@ -21,8 +18,8 @@ function createListenerSet() {
       for (const listener of [...listeners]) {
         try {
           listener(value);
-        } catch {
-          // Listener errors must not break window lifecycle fan-out.
+        } catch (error) {
+          onError?.(error);
         }
       }
     },

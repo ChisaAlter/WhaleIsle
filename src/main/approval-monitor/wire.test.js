@@ -155,7 +155,8 @@ test('wire client multiplexes streams, ignores ordinary ask_user without sending
     rpcImpl: async (origin, method, args, fetchFn, opts) => {
       rpcCalls.push({ origin, method, args, opts });
       if (method === 'session/events') {
-        await fetchFn(`${origin}/api/session/events`, {});
+        eventsAbortSignal = opts?.signal || null;
+        await fetchFn(`${origin}/api/session/events`, opts?.signal ? { signal: opts.signal } : {});
         return new Promise((_resolve, reject) => {
           eventsAbortSignal?.addEventListener('abort', () => reject(new Error('aborted')));
         });

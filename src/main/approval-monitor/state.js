@@ -1,11 +1,6 @@
 'use strict';
 
 /**
- * Pure domain state machine and safe renderer view projection for the
- * minimized approval popup and app badge. Zero Electron or I/O imports.
- */
-
-/**
  * @typedef {'tool-approval' | 'permission-approval' | 'plan-review'} ApprovalKind
  * @typedef {'allow-once' | 'allow-always' | 'reject' | 'request-changes'} ApprovalAction
  * @typedef {'zh' | 'en'} ApprovalLocale
@@ -224,8 +219,6 @@ function reduceUpsert(state, incoming) {
     sessionTitle: incoming.sessionTitle ?? cachedTitle,
   };
   const nextItems = [...state.items, normalized];
-  // Focus the new item if the popup was hidden/snoozed or empty; keep the
-  // user's current selection stable when they are already reading a card.
   const keepCurrent = wasShowing
     && state.selectedEventId !== null
     && state.items.some((item) => item.eventId === state.selectedEventId);

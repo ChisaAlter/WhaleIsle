@@ -1,15 +1,12 @@
 'use strict';
 
-/**
- * Zero-dependency badge PNG rasterizer (SDF anti-aliased pill + bitmap digits)
- * and cross-platform taskbar / tray / Dock badge presenter.
- */
-
 const zlib = require('node:zlib');
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-// Mirrors --dsw-static-red-600 so the badge matches the design system alert red.
-const BADGE_FILL = [236, 19, 19, 255];
+const PNG_BIT_DEPTH_8 = 8;
+const PNG_COLOR_TYPE_RGBA = 6;
+const PNG_FILTER_NONE = 0;
+const DSW_STATIC_RED_600_RGBA = [236, 19, 19, 255];
 const BADGE_RIM = [255, 255, 255, 235];
 const BADGE_TEXT = [255, 255, 255, 255];
 
@@ -96,8 +93,8 @@ function encodeRgbaPng(rgba, width, height) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // 8-bit depth
-  ihdr[9] = 6; // RGBA
+  ihdr[8] = PNG_BIT_DEPTH_8;
+  ihdr[9] = PNG_COLOR_TYPE_RGBA;
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
@@ -105,7 +102,7 @@ function encodeRgbaPng(rgba, width, height) {
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y += 1) {
     const dstOffset = y * (stride + 1);
-    raw[dstOffset] = 0; // filter None
+    raw[dstOffset] = PNG_FILTER_NONE;
     Buffer.from(rgba.buffer, rgba.byteOffset + y * stride, stride).copy(raw, dstOffset + 1);
   }
   const idat = zlib.deflateSync(raw);
@@ -128,7 +125,6 @@ function formatBadgeText(count) {
 }
 
 /**
- * Porter-Duff source-over blend onto straight-alpha RGBA destination buffer.
  * @param {Uint8Array} dst
  * @param {number} offset
  * @param {number} sr
@@ -155,7 +151,6 @@ function blendPixel(dst, offset, sr, sg, sb, sa01) {
 }
 
 /**
- * Signed distance to an axis-aligned rounded box centered at origin.
  * @param {number} px
  * @param {number} py
  * @param {number} bx
@@ -177,13 +172,12 @@ function sdRoundBox(px, py, bx, by, radius) {
  * @param {number} x
  * @returns {number}
  */
-function clamp01(edge0, edge1, x) {
+function smoothstep(edge0, edge1, x) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 }
 
 /**
- * Draw an anti-aliased rounded pill with centered bitmap digits onto an RGBA buffer.
  * @param {Uint8Array} rgba
  * @param {number} width
  * @param {number} height
@@ -202,18 +196,18 @@ function drawBadgePill(rgba, width, height, spec) {
   for (let y = minY; y <= maxY; y += 1) {
     for (let x = minX; x <= maxX; x += 1) {
       const dist = sdRoundBox(x + 0.5 - spec.cx, y + 0.5 - spec.cy, bx, by, radius);
-      const outerCoverage = 1 - clamp01(-0.5, 0.5, dist);
+      const outerCoverage = 1 - smoothstep(-0.5, 0.5, dist);
       if (outerCoverage <= 0) continue;
       const offset = (y * width + x) * 4;
       if (spec.rimWidth > 0) {
-        const innerCoverage = 1 - clamp01(-0.5, 0.5, dist + spec.rimWidth);
+        const innerCoverage = 1 - smoothstep(-0.5, 0.5, dist + spec.rimWidth);
         const rimAlpha = outerCoverage * (BADGE_RIM[3] / 255);
         blendPixel(rgba, offset, BADGE_RIM[0], BADGE_RIM[1], BADGE_RIM[2], rimAlpha);
         if (innerCoverage > 0) {
-          blendPixel(rgba, offset, BADGE_FILL[0], BADGE_FILL[1], BADGE_FILL[2], innerCoverage);
+          blendPixel(rgba, offset, DSW_STATIC_RED_600_RGBA[0], DSW_STATIC_RED_600_RGBA[1], DSW_STATIC_RED_600_RGBA[2], innerCoverage);
         }
       } else {
-        blendPixel(rgba, offset, BADGE_FILL[0], BADGE_FILL[1], BADGE_FILL[2], outerCoverage);
+        blendPixel(rgba, offset, DSW_STATIC_RED_600_RGBA[0], DSW_STATIC_RED_600_RGBA[1], DSW_STATIC_RED_600_RGBA[2], outerCoverage);
       }
     }
   }

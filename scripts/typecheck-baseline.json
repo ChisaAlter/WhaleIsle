@@ -8427,14 +8427,9 @@
       }
     },
     "src/main/workspace-rpc.js": {
-      "TS2339": {
-        "Property 'Cookie' does not exist on type '{ 'content-type': string; }'.": 1,
-        "Property 'cookie' does not exist on type '{}'.": 2
-      },
       "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1,
-        "Parameter 'baseUrl' implicitly has an 'any' type.": 3,
-        "Parameter 'method' implicitly has an 'any' type.": 3,
+        "Parameter 'baseUrl' implicitly has an 'any' type.": 2,
+        "Parameter 'method' implicitly has an 'any' type.": 2,
         "Parameter 'workspacePath' implicitly has an 'any' type.": 1
       }
     },

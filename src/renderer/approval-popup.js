@@ -271,6 +271,15 @@
     }
   }
 
+  /** @param {readonly { eventId: string }[]} items */
+  function pruneLockedWidths(items) {
+    const activeIds = new Set(items.map((entry) => entry.eventId));
+    for (const key of lockedWidths.keys()) {
+      const eventId = key.slice(0, key.lastIndexOf(':'));
+      if (!activeIds.has(eventId)) lockedWidths.delete(key);
+    }
+  }
+
   /** @param {PopupSnapshot} view */
   function render(view) {
     currentView = view;
@@ -297,6 +306,8 @@
     if (els.openSessionBtn) {
       els.openSessionBtn.textContent = copy.viewSession;
     }
+
+    pruneLockedWidths(view.items);
 
     const item = view.activeItem;
     if (!item) return;
@@ -351,6 +362,6 @@
   bridge.onState(render);
   bridge.onTheme(applyTheme);
   void bridge.getState().then(render).catch(() => {
-    // Initial snapshot fetch may race window teardown; push updates stay authoritative.
+    // Window teardown can cancel the initial IPC fetch; push events stay authoritative.
   });
 })();

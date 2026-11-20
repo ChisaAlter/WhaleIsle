@@ -1,11 +1,5 @@
 'use strict';
 
-/**
- * Harness Gateway wire adapter: multiplexes `$events` and `session/control`
- * over `/api/remote.mux` and submits settlements via `/api/$events/result`.
- * Keeps wire settlement recipes private to this boundary.
- */
-
 const WebSocket = require('ws');
 const { rpc } = require('../workspace-rpc');
 const { isSameOriginLoopbackUrl } = require('../local-url');
@@ -453,14 +447,16 @@ function createApprovalWireClient(options = {}) {
     socket = null;
     clientId = '';
     if (!current) return;
-    try { current.terminate ? current.terminate() : current.close(); } catch { /* already closed */ }
+    try { current.terminate ? current.terminate() : current.close(); } catch { return; }
   }
 
   /** @param {string} origin @param {string} method @param {Record<string, unknown>} args @param {AbortSignal} [signal] */
   function callRpc(origin, method, args, signal) {
-    /** @type {typeof fetch} */
-    const fetchWithSignal = signal ? (url, init) => baseFetch(url, { ...init, signal }) : baseFetch;
-    return rpcImpl(origin, method, args, fetchWithSignal, activeCookie ? { cookie: activeCookie } : {});
+    /** @type {{ cookie?: string, signal?: AbortSignal }} */
+    const rpcOptions = {};
+    if (activeCookie) rpcOptions.cookie = activeCookie;
+    if (signal) rpcOptions.signal = signal;
+    return rpcImpl(origin, method, args, baseFetch, rpcOptions);
   }
 
   /** @param {PendingApprovalItem} item @param {number} gen */
@@ -480,7 +476,7 @@ function createApprovalWireClient(options = {}) {
       const preview = findCommandInSessionEvents(page, item.callId, item.toolName || '');
       if (preview) options.onCommandPreview?.(item.eventId, preview);
     } catch {
-      // Best-effort enrichment falls back to toolName + reason without blocking.
+      return;
     } finally {
       if (enrichments.get(item.eventId) === controller) enrichments.delete(item.eventId);
     }
@@ -499,7 +495,7 @@ function createApprovalWireClient(options = {}) {
         options.onSessionTitles?.({ [sessionId]: title }, { replace: false });
       }
     } catch {
-      // Missing session projections leave the fallback session label intact.
+      return;
     } finally {
       inflightTitleFetches.delete(sessionId);
     }

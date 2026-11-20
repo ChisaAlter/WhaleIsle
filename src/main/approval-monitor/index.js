@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * Facade for the minimized approval popup and app icon badge subsystem.
- * External callers import only this module.
- */
-
 const { app, ipcMain, nativeImage } = require('electron');
 const { createRegisterIpc, unauthorizedError } = require('../ipc-register');
 const { currentTheme } = require('../chrome');
@@ -250,12 +245,10 @@ function createApprovalMonitor(deps) {
 
   /** @param {Record<string, any>} [config] */
   function syncConfig(config = deps.loadConfig()) {
-    if (disposed) return;
-    state = reduceApprovalState(state, {
+    dispatch({
       type: 'SET_POPUP_ENABLED',
       enabled: config?.approvalPopupEnabled !== false,
     });
-    syncOutputs();
   }
 
   /** @param {Record<string, unknown>} payload */

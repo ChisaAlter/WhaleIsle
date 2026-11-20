@@ -132,10 +132,8 @@ function createApprovalPopupController(deps = {}) {
       if (desiredVisible && loaded) {
         syncBounds(computePopupBounds(currentWorkArea()));
       }
-      try {
+      if (win.webContents && !win.webContents.isDestroyed()) {
         win.webContents.invalidate?.();
-      } catch {
-        // Window may close while a display event fires.
       }
     };
     screenApi?.on?.('display-metrics-changed', reposition);
@@ -179,6 +177,7 @@ function createApprovalPopupController(deps = {}) {
         nodeIntegration: false,
         sandbox: true,
         spellcheck: false,
+        backgroundThrottling: false,
       },
     });
     win = created;
