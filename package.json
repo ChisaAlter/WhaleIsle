@@ -70,7 +70,7 @@
     "electron-builder": "^26.17.0",
     "esbuild": "0.28.2",
     "eslint": "^10.15.0",
-    "fast-check": "4.9.0",
+    "fast-check": "4.10.2",
     "globals": "^17.14.0",
     "knip": "5.88.1",
     "pnpm": "12.12.1",
