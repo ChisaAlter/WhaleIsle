@@ -257,7 +257,7 @@ function bench({ withoutTeamScopes = false, available = true, rejectCreation = f
     if (entry.options.select && matched === null) return null;
     return h(entry.component, { ...injected, useProjects: selectHook(injected.hooks.projects), useProjectSessions: selectHook(injected.hooks.projectSessions),
       useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useWorkspaceList: selectHook(injected.hooks.workspaceList), useDirectoryChecks: selectHook(injected.hooks.directoryChecks),
-      openWithDraft: sessionId => navigation.push(['draft', sessionId]), useRequestModes: selectHook(injected.hooks.requestModes), useDismissals: selectHook(injected.hooks.dismissals), useProjectView: selectHook(injected.hooks.projectView),
+      openWithDraft: sessionId => navigation.push(['draft', sessionId]), useProjectView: selectHook(injected.hooks.projectView),
       ...Object.fromEntries(Object.entries(injected.hooks ?? {}).map(([name, source]) => ['use' + name[0].toUpperCase() + name.slice(1), selectHook(source)])),
       ...(sidebarTab ? { useTabInfo: () => ({ panel: { host: 'dock' }, tab: { ...sidebarTab, actions: { close: () => openTabs.set(openTabs.getSnapshot().filter(tab => tab !== sidebarTab)) } } }) } : {}),
       renderFactorySlot: (name, props, options) => { factoryCalls.push({ name, props, options }); return factoryRenderer ? factoryRenderer(name, props, options) : options?.fallback ?? null; },
@@ -1504,7 +1504,7 @@ test('a delivered requirement shows its own changes, reverts after confirmation 
   const diff = ['diff --git a/src/login.js b/src/login.js', '--- a/src/login.js', '+++ b/src/login.js', '@@ -1 +1,2 @@', '-old', '+new', '+remember', ''].join('\n');
   const b = bench({ cards: [task], rpcOverride: (method, input) => method === 'requests/changes'
     ? { ok: true, value: { files: [{ path: 'src/login.js', status: 'M', added: 2, removed: 1 }, { path: 'assets/logo.png', status: 'A', added: 0, removed: 0, binary: true }], diff, truncated: false, final: true } }
-    : method === 'requests/revert' ? conflict ? { ok: false, error: { code: 'revert_conflict', message: 'error: patch failed: src/login.js:1' } } : { ok: true, value: { requestId: input.requestId, reverted: true } } : undefined });
+    : method === 'requests/revert' ? conflict ? { ok: false, error: { code: 'project/revert_conflict', message: 'error: patch failed: src/login.js:1' } } : { ok: true, value: { requestId: input.requestId, reverted: true } } : undefined });
   try {
     await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
     const card = await b.openRequest(task.id, false); await b.flush();
@@ -1707,5 +1707,147 @@ test('a delivered card lists its files, opens them with exact authority and show
     await b.press('openFile: login.js');
     const opened = b.requests.filter(request => request.method === 'open').at(-1).input;
     assert.equal(opened.workstreamId, 'work-one'); assert.equal(opened.delegationRef, 'actual-assignment'); assert.equal(opened.path, 'src/login.js');
+  } finally { await b.dispose(); }
+});
+
+test('completed cards do not show resume after restart, do not duplicate delivered artifacts, and hide viewChanges without a baseline or writable work', async () => {
+  const done = taskCard('done-after-restart', 'Completed work', 'completed');
+  done.queue = { state: 'active', released: true };
+  done.work = [{ workstreamId: 'w-done', delegationRef: 'd-done', workerSessionId: 'worker-done', title: 'Write file', status: 'completed', memberRole: 'development', current: true }];
+  done.delivery.artifacts = [{ path: 'src/a.js', size: 40, sha256: 'a', type: 'file', workstreamId: 'w-done', delegationRef: 'd-done' }];
+  done.delivery.pages = [];
+  const discussing = taskCard('discussing-readonly', 'Research discussion', 'running');
+  discussing.queue = { state: 'discussing', released: false };
+  discussing.work = [{ workstreamId: 'w-ro', delegationRef: 'd-ro', workerSessionId: 'worker-ro', title: 'Read docs', status: 'running', memberRole: 'research', current: true }];
+  const b = bench({ cards: [done, discussing] });
+  b.project.paused = true;
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const discCard = await b.openRequest(discussing.id); await b.flush();
+    assert.equal([...discCard.querySelectorAll('button')].some(btn => btn.textContent === 'viewChanges'), false, 'readonly/no-baseline card hides viewChanges');
+    const doneCard = await b.openRequest(done.id); await b.flush();
+    assert.equal([...doneCard.querySelectorAll('button')].some(btn => btn.textContent === 'requestResume'), false, 'completed card never shows resume even when project is paused');
+    const artifactButtons = [...doneCard.querySelectorAll('button')].filter(btn => btn.textContent.includes('a.js'));
+    assert.equal(artifactButtons.length, 1, 'delivered artifacts render once inside ProjectTaskDelivery without duplicate buttons');
+  } finally { await b.dispose(); }
+});
+
+test('rail pagination avoids O(N) requests/get storms on next pages and taskBack resets retained cards to page 1', async () => {
+  const cards = Array.from({ length: 12 }, (_, i) => taskCard('page-goal-' + i, 'Page Goal ' + i));
+  const b = bench({ cards });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    assert.equal(b.document.querySelectorAll('[data-project-request]').length, 10);
+    const getCountBeforeMore = b.requests.filter(row => row.method === 'requests/get').length;
+    await b.press('more'); await b.flush();
+    assert.equal(b.document.querySelectorAll('[data-project-request]').length, 12);
+    assert.equal(b.requests.filter(row => row.method === 'requests/get').length, getCountBeforeMore, 'loading page 2 issues zero per-card requests/get calls');
+    await b.press('taskBack'); await b.flush();
+    assert.equal(b.document.querySelectorAll('[data-project-request]').length, 10, 'returning home clears retained page 2 cards');
+    assert.equal(b.requestElement('page-goal-11'), null);
+  } finally { await b.dispose(); }
+});
+
+test('off-page summaryFailed cards still render retrySummary from work preview and RailQuestion displays ifUnanswered while deduplicating submissions', async () => {
+  const card = taskCard('offpage-fail', 'Off-page failure', 'summaryFailed');
+  card.workPreview = [{
+    workstreamId: 'offpage-work', delegationRef: 'offpage-ref', workerSessionId: 'offpage-worker',
+    title: 'Off-page task', status: 'summaryFailed', current: true,
+    summaryFailure: { delegationRef: 'offpage-ref', runId: 'run-off', error: { code: 'MODEL_ERROR', message: 'Temporary failure' } },
+  }];
+  card.work = card.workPreview;
+  card.stage = { ask: { id: 'ask-1', question: 'Confirm rollout?', options: ['Proceed'], ifUnanswered: 'Wait for confirmation' } };
+  let resolveSend;
+  const b = bench({ cards: [card], detail: { workstreams: [], workers: [] } });
+  const originalScope = b.face().sendUserRequest;
+  assert.ok(originalScope);
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const element = b.requestElement(card.id);
+    assert.ok(element);
+    assert.ok([...element.querySelectorAll('button')].some(btn => btn.textContent === 'retrySummary'), 'off-page summaryFailed retains retrySummary');
+    assert.match(element.textContent, /askIfUnanswered/);
+    await b.press('Proceed');
+    assert.equal(b.sent.length, 1);
+    assert.match(element.textContent, /askSent/);
+    assert.equal(b.button('Proceed'), undefined, 'answered question locks into sent state preventing duplicate submissions');
+  } finally { if (resolveSend) resolveSend(); await b.dispose(); }
+});
+
+test('rail footer Stop All requires modal confirmation and header surfaces needsYou and project diagnostics', async () => {
+  const detail = workDetail();
+  detail.activity = { running: 1, blocked: 0, queued: 0, needsYou: 2, state: 'running' };
+  const b = bench({ detail, cards: [taskCard('active-goal', 'Active goal')] });
+  b.project.diagnostics = ['Catalog backup recovered from previous run'];
+  try {
+    await b.flush(); await b.adopt(); await b.mount();
+    const header = b.document.querySelector('.dsh-project-header');
+    assert.equal(header.dataset.needsYou, '2');
+    assert.ok(b.document.querySelector('.dsh-project-rail-needs-you'));
+    await b.openObserver();
+    const diag = b.panel().querySelector('[data-project-diagnostics]');
+    assert.ok(diag && diag.getAttribute('role') === 'alert');
+    assert.match(diag.textContent, /Catalog backup recovered/);
+    await b.press('stop');
+    assert.equal(b.requests.some(row => row.method === 'stop'), false, 'rail Stop All waits for explicit confirmation');
+    assert.ok(b.document.querySelector('[role=dialog][aria-label=stopAllTitle]'));
+    await b.press('cancel');
+    assert.equal(b.requests.some(row => row.method === 'stop'), false);
+    await b.press('stop');
+    await b.press('stopAllConfirm');
+    assert.equal(b.requests.filter(row => row.method === 'stop').length, 1);
+  } finally { await b.dispose(); }
+});
+
+test('nested grandchild members get composer takeover with on-demand stop control and slice process records by direct parent', async () => {
+  const detail = workDetail();
+  detail.workstreams.push({
+    id: 'grandchild-work', title: 'Grandchild work', workerSessionId: 'grandchild-session', parentSessionId: 'worker-one',
+    status: 'running', currentDelegationRef: 'grand-ref-1',
+    delegations: [{ ref: 'grand-ref-1', messageId: 'grand-msg-1', runId: 'grand-run-1', createdAt: 10, phase: 'running' }],
+  });
+  detail.workers.push({ sessionId: 'grandchild-session', workstreamId: 'grandchild-work', parentSessionId: 'worker-one', phase: 'running', activeRunId: 'grand-run-1', stopped: false });
+  const b = bench({
+    detail,
+    memberSessions: { 'grandchild-session': 'worker-one' },
+    runtimeSessions: { 'worker-one': { id: 'worker-one', parentSessionId: 'coordinator-existing' } },
+  });
+  const event = (seq, type, data) => ({ type: 'event', event: { seq, time: seq, type, data } });
+  b.eventSource.set({
+    hasMore: false, revision: 1,
+    entries: [
+      event(1, 'turn/start', { turn: 1 }),
+      event(2, 'user/message', { id: 'grand-msg-1', source: { kind: 'agent-message', senderSessionId: 'worker-one', messageId: 'grand-msg-1' }, content: [{ type: 'text', text: 'First nested task' }] }),
+      event(3, 'assistant/message', { turn: 1, message: { content: [{ type: 'text', text: 'First nested output' }] } }),
+      event(4, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      event(5, 'turn/start', { turn: 2 }),
+      event(6, 'user/message', { id: 'grand-msg-2', source: { kind: 'agent-message', senderSessionId: 'worker-one', messageId: 'grand-msg-2' }, content: [{ type: 'text', text: 'Second nested task' }] }),
+      event(7, 'assistant/message', { turn: 2, message: { content: [{ type: 'text', text: 'Second nested output' }] } }),
+      event(8, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ],
+  });
+  try {
+    await b.flush(); await b.adopt(); await b.mount();
+    // Do not pre-call readDetail: grandchild composer takeover must resolve through ancestor chain and fetch worker on demand.
+    await b.mountSession('grandchild-session'); await b.flush();
+    assert.ok(b.document.querySelector('.dsh-project-composer-notice'), 'grandchild member triggers composer takeover');
+    assert.ok(b.button('backToLead'));
+    assert.ok(b.button('stopWork'), 'grandchild member loads stop control via workstreams/get');
+    await act(async () => { b.face().showProcess('project-one', 'grandchild-work', false, { delegationRef: 'grand-ref-1' }); });
+    await b.flush();
+    const dialog = b.dialog();
+    assert.ok(dialog);
+    assert.match(dialog.textContent, /First nested output/);
+    assert.doesNotMatch(dialog.textContent, /Second nested output/, 'assignmentPageEnd slices by direct parentSessionId');
+  } finally { await b.dispose(); }
+});
+
+test('Windows paths compare case-insensitively across Hero option and diff directory labels', async () => {
+  const b = bench({ runtimeSessions: { 'blank-session': { id: 'blank-session', cwd: 'c:\\workspace\\real' } } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('blank-session'); await b.flush();
+    const hero = b.document.querySelector('.dsh-project-hero-option');
+    assert.ok(hero);
+    assert.equal(hero.title, 'heroOpenHint', 'case-folded Windows cwd matches existing Project');
   } finally { await b.dispose(); }
 });

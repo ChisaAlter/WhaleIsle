@@ -9,8 +9,8 @@ const test = gateTests(nodeTest, HARNESS);
 let schema;
 if (HARNESS.ok) {
   await import('./harness-runtime.mjs');
-  const { projectDomain } = await import('../lib/domain.js');
-  schema = projectDomain.tables.state.valueSchema;
+  const { catalogSchema } = await import('../lib/domain.js');
+  schema = catalogSchema;
 }
 function catalog() {
   const project = { id: 'project', title: 'Saved project', canonicalWorkingDirectory: '/repository', directoryIdentity: 'directory',

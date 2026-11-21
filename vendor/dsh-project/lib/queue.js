@@ -38,8 +38,8 @@ export class ProjectQueue {
     row.queue = { state: stateName, order };
   }
   async change(projectId, args) {
-    const service = this.service, { requestId, requestRevision, action, beforeRequestId } = args;
-    if (!['enqueue', 'move', 'cancel', 'resume'].includes(action)) fail('queue_action', 'Choose enqueue, move, cancel or resume.');
+    const service = this.service, { requestId, requestRevision, action } = args;
+    if (!['enqueue', 'cancel', 'resume'].includes(action)) fail('queue_action', 'Choose enqueue, cancel or resume.');
     if (!Number.isInteger(requestRevision)) fail('request_changed', 'Read the current requirement revision before changing its queue.');
     let cancelWork = [];
     await service.serial(async () => {
@@ -47,28 +47,19 @@ export class ProjectQueue {
       if (service.closing || service.archiving.has(projectId) || project.lifecycle !== 'ready') fail('unavailable', 'Restore this Project before changing its queue.');
       if (!this.unfinished(row)) fail('request_completed', 'A completed requirement remains in its delivery history. Revise it to request new development.');
       const stateName = this.state(row), released = row.queue?.released === true;
-      if (action === 'move' && stateName !== 'queued') fail('queue_active', 'Only a queued requirement can be reordered.');
       if (action === 'enqueue' && !released && !['discussing', 'cancelled', 'queued'].includes(stateName)) fail('queue_active', 'The requirement is already active.');
       const resumeHead = action === 'resume' && !released && stateName === 'queued';
       const resumeCurrent = action === 'resume' && !released && stateName === 'active';
       if (action === 'resume' && !resumeCurrent && !resumeHead) fail('request_not_active', 'Resume an accepted active or queued requirement. Rejoin cancelled or historical requirements with enqueue.');
-      let ordered = this.pending(projectId).filter(item => item.id !== row.id);
-      if (resumeHead) ordered.unshift(row);
-      if (action === 'move' || action === 'enqueue') {
-        const before = beforeRequestId === undefined ? ordered.length : ordered.findIndex(item => item.id === beforeRequestId);
-        if (before < 0 || beforeRequestId === row.id) fail('queue_order', 'The requested preceding requirement is no longer queued. Refresh the queue.');
-        ordered.splice(before, 0, row);
-      }
       if (action === 'cancel') cancelWork = service.state().workstreams.filter(work => work.projectId === projectId && latest(work).source.requestId === row.id).map(work => work.id);
       await service.write(state => {
-        const item = state.requests.find(item => item.id === row.id), now = Date.now();
+        const item = state.requests.find(entry => entry.id === row.id), now = Date.now();
         if (action === 'cancel') { item.queue = { state: 'cancelled' }; delete item.ask; }
-        else if (action !== 'move') { item.queue = { ...item.queue, state: 'active', resumeRequested: true, suspended: action !== 'resume' && project.paused }; delete item.queue.activation; delete item.queue.released; }
+        else { item.queue = { ...item.queue, state: 'active', resumeRequested: true, suspended: action !== 'resume' && project.paused }; delete item.queue.activation; delete item.queue.released; }
         if (action === 'resume') item.queue.resumeRequested = true;
         if (action === 'enqueue' && (stateName === 'cancelled' || released)) item.queue.resumeRequested = true;
-        for (let i = 0; i < ordered.length; i++) { if (ordered[i].id === row.id && action !== 'move') continue; const next = state.requests.find(item => item.id === ordered[i].id); next.queue = { ...next.queue, state: 'queued', order: i }; next.updatedAt = now; }
         item.updatedAt = now;
-        if (action === 'resume') { state.projects.find(item => item.id === projectId).paused = false; state.projects.find(item => item.id === projectId).holdSourceMessageId = ''; }
+        if (action === 'resume') { state.projects.find(entry => entry.id === projectId).paused = false; state.projects.find(entry => entry.id === projectId).holdSourceMessageId = ''; }
       });
       if (action === 'resume') service.projectHolds.delete(projectId);
     });
@@ -93,9 +84,10 @@ export class ProjectQueue {
   }
   async doPump(projectId, wake) {
     const service = this.service, messages = [];
+    if (!service.admissionOpen()) return;
     await service.serial(async () => {
       const project = service.project(projectId);
-      if (service.closing || service.recovering || project.paused || project.lifecycle !== 'ready' || service.archiving.has(projectId) || service.projectHolds.has(projectId)) return;
+      if (!service.admissionOpen() || service.closing || service.recovering || project.paused || project.lifecycle !== 'ready' || service.archiving.has(projectId) || service.projectHolds.has(projectId)) return;
       for (let row of this.rows(projectId)) {
         // Legacy waiting requirements remain inert after recovery until the user resumes them.
         if (!this.accepts(row) || !wake || row.queue?.activation) continue;

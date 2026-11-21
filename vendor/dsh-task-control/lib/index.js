@@ -68,14 +68,19 @@ export function apply(ctx) {
         handler: createControlHandler(ctx, state, {
           token,
           onUnlock() {
-            // Refused schedule deliveries stay armed; re-drive the runtime so
-            // an unlocked Host dispatches them at the next window instead of
-            // waiting for the next registration-side trigger.
+            // Refused schedule deliveries and Project queues stay armed; re-drive both
+            // so an unlocked Host dispatches them immediately instead of stalling.
             const schedule = ctx.get('schedule');
             try {
               schedule?.runtime?.requestDrive?.();
             } catch (error) {
               ctx.logger?.warn?.(`task-control: schedule re-drive failed: ${String(error)}`);
+            }
+            const projects = ctx.get('projects');
+            try {
+              projects?.schedule?.();
+            } catch (error) {
+              ctx.logger?.warn?.(`task-control: project schedule re-drive failed: ${String(error)}`);
             }
           },
         }),

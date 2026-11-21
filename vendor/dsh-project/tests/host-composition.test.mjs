@@ -76,7 +76,7 @@ class ScriptedModel extends LlmAdapter {
         else yield* blocks('The old request is stopped.'); return;
       }
       const pathWork = this.state()?.workstreams.find(item => item.title === 'Path work');
-      if (text.includes('MAKE_PATH_HOLD') && stage === 1) { yield* delegate(`expand-${++this.counter}`, { workstreamId: pathWork.id, brief: 'Unauthorized path expansion', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] }); return; }
+      if (input?.source.kind === 'user' && text.includes('MAKE_PATH_HOLD') && stage === 1) { yield* delegate(`expand-${++this.counter}`, { workstreamId: pathWork.id, brief: 'Unauthorized path expansion', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] }); return; }
       if (input?.source.kind === 'subagent-settled') {
         const appendix = input.content.find(block => block.type === 'text' && block.text.startsWith('Project recorded outcome for this native settlement'));
         assert.ok(appendix, 'the real native notice must carry the persisted Project outcome even with no closing prose');
@@ -743,7 +743,7 @@ test('native requirements keep discussion separate, preserve edits and schedule 
     assert.deepEqual(request('A'), a, 'other goals never revise A authority');
     await prompt([{ type: 'revise', title: 'B', goal: 'Develop revised B while preserving seed.txt.', disposition: 'queued' }, { type: 'delegate', title: 'B' }]);
     assert.equal(request('B').revision, 2); assert.equal(work('B').delegations.at(-1).phase, 'queued');
-    await assert.rejects(host.command('requests/queue', { projectId: project.id, requestId: request('C').id, requestRevision: 1, action: 'move', beforeRequestId: request('B').id }), { code: 'queue_active' });
+    await assert.rejects(host.command('requests/queue', { projectId: project.id, requestId: request('C').id, requestRevision: 1, action: 'move', beforeRequestId: request('B').id }), { code: 'queue_action' });
     await prompt([{ type: 'queue', title: 'D', action: 'cancel' }]);
     assert.equal(request('D').queue.state, 'cancelled');
     model.gate('worker:A').release();
@@ -995,6 +995,7 @@ test('both shipped catalogs migrate before admission while durable authority, hi
   const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
   const catalogFile = join(home, 'storages', 'whale_project_local.json');
+  const perRecordDir = join(home, 'storages', 'whale_project_local');
   try {
     ctx = await bootHost(home, model); const host = ctx.projects;
     const { project } = await host.command('create', { requestId: 'catalog-original-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
@@ -1005,8 +1006,9 @@ test('both shipped catalogs migrate before admission while durable authority, hi
     await lead.whenIdle(); await host.tail;
     assert.deepEqual(model.failures, []); assert.equal(await ctx.sessions.flush(lead.session), true);
     const events = structuredClone(lead.session.snapshotEvents());
+    const original = structuredClone(host.state());
     await disposeProfileApplication(ctx); ctx = undefined;
-    const envelope = JSON.parse(await readFile(catalogFile, 'utf8')), original = structuredClone(envelope.tables.state.catalog);
+    const envelope = { unit: { name: 'whale_project_local', version: 1 }, global: null, tables: { state: { catalog: original } } };
     const inputs = source => (source.messageIds ?? [source.messageId]).map(messageId => {
       const event = events.find(event => event.type === 'user/message' && event.data.id === messageId && event.data.source.kind === 'user'); assert.ok(event);
       return { messageId, text: messageText(event.data) };
@@ -1038,7 +1040,11 @@ test('both shipped catalogs migrate before admission while durable authority, hi
       });
       return catalog;
     };
-    const writeCatalog = async catalog => { const document = structuredClone(envelope); document.tables.state.catalog = catalog; await writeFile(catalogFile, `${JSON.stringify(document, null, 2)}\n`); };
+    const writeCatalog = async catalog => {
+      await rm(perRecordDir, { recursive: true, force: true });
+      const document = structuredClone(envelope); document.tables.state.catalog = catalog;
+      await writeFile(catalogFile, `${JSON.stringify(document, null, 2)}\n`);
+    };
     const emptyIdentity = () => {
       const saved = structuredClone(original), id = saved.requests[0].id;
       saved.projects.forEach(project => { project.paused = true; });
@@ -1062,8 +1068,8 @@ test('both shipped catalogs migrate before admission while durable authority, hi
       assert.deepEqual(restored.deliveries, original.deliveries);
       assert.ok(restored.projects.every(project => project.paused)); assert.equal(restarted.requests.length, 0);
       assert.equal((await ctx.projects.command('list')).available, true);
-      const disk = JSON.parse(await readFile(catalogFile, 'utf8')).tables.state.catalog;
-      assert.deepEqual(disk.requests[0], row, 'normal recovery commits the restored identity through the real storage domain');
+      const diskHot = JSON.parse(await readFile(join(perRecordDir, 'hot', `${project.id}.json`), 'utf8')).record;
+      assert.deepEqual(diskHot.requests[0], row, 'normal recovery commits the restored identity through the real per-record storage domain');
       await disposeProfileApplication(ctx); ctx = undefined;
       restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
       assert.deepEqual(ctx.projects.state().requests[0], row); assert.equal(restarted.requests.length, 0);
@@ -1076,11 +1082,14 @@ test('both shipped catalogs migrate before admission while durable authority, hi
     await t.test('ambiguous-empty-v2-reference-remains-unavailable-with-the-original-catalog-intact', async () => {
       const saved = emptyIdentity(); saved.workstreams[0].delegations[0].source.authorizationCallId = 'unrelated-original-authorization';
       await writeCatalog(saved); const bytes = await readFile(catalogFile, 'utf8'), restarted = new RequirementModel();
-      ctx = await bootHost(home, restarted, undefined, true);
-      assert.equal(ctx.projects.error, 'Project catalog needs review: An empty requirement reference cannot be matched to its original version and authorization. Original records were not changed.');
-      const listing = await ctx.projects.command('list'); assert.equal(listing.available, false); assert.equal(listing.error, ctx.projects.error);
-      assert.equal(restarted.requests.length, 0); assert.equal(await readFile(catalogFile, 'utf8'), bytes);
-      await disposeProfileApplication(ctx); ctx = undefined;
+      try {
+        ctx = await bootHost(home, restarted, undefined, true);
+        assert.equal(ctx.projects.error, 'Project catalog needs review: An empty requirement reference cannot be matched to its original version and authorization. Original records were not changed.');
+        const listing = await ctx.projects.command('list'); assert.equal(listing.available, false); assert.equal(listing.error, ctx.projects.error);
+        assert.equal(restarted.requests.length, 0); assert.equal(await readFile(catalogFile, 'utf8'), bytes);
+      } finally {
+        if (ctx) { await disposeProfileApplication(ctx); ctx = undefined; }
+      }
     });
     for (const kind of ['final-v1', 'published-v1', 'missing-declaration', 'mismatched-call-id', 'missing-authority']) await t.test(kind, async () => {
       const saved = kind === 'final-v1' ? { ...structuredClone(original), version: 1 } : published();
@@ -1111,7 +1120,7 @@ test('both shipped catalogs migrate before admission while durable authority, hi
       const handle = await ctx.sessionPersistence.open(lead.id, 'read');
       try { assert.deepEqual((await handle.read()).events.slice(0, events.length), events, 'the native conversation prefix is never rewritten by catalog migration'); }
       finally { await handle.close(); }
-      const disk = JSON.parse(await readFile(catalogFile, 'utf8')); assert.equal(disk.unit.version, 1); assert.equal(disk.tables.state.catalog.version, 2);
+      const diskMeta = JSON.parse(await readFile(join(perRecordDir, 'meta', 'catalog.json'), 'utf8')); assert.equal(diskMeta.version, 1); assert.equal(diskMeta.record.version, 2);
       await disposeProfileApplication(ctx); ctx = undefined;
     });
     const invalid = published(); invalid.workstreams[0].delegations[0].requestId = 'foreign-request'; await writeCatalog(invalid);
@@ -1997,8 +2006,8 @@ test('a failed native Lead summary preserves its report and ordinary user summar
     const projection = await host.command('detail', { projectId: project.id });
     assert.equal(projection.project.activity.summaryFailed, 1); assert.equal(projection.project.activity.pendingSummary, 0);
     assert.equal(projection.project.activity.state, 'summaryFailed'); assert.deepEqual(projection.workstreams[0].summaryFailure, failure);
-    const disk = JSON.parse(await readFile(join(home, 'storages', 'whale_project_local.json'), 'utf8'));
-    assert.deepEqual(disk.tables.state.catalog.workstreams[0].summaryFailure, failure, 'the actual storage schema preserves the failure');
+    const disk = JSON.parse(await readFile(join(home, 'storages', 'whale_project_local', 'hot', `${project.id}.json`), 'utf8'));
+    assert.deepEqual(disk.record.workstreams[0].summaryFailure, failure, 'the actual storage schema preserves the failure');
     const workerRequests = model.requests.filter(options => options.tools?.some(tool => tool.name === 'project_report')).length;
     const workerId = work.workerSessionId, refs = host.stream(work.id).delegations.map(item => item.ref);
     await prompt('READ_PENDING', 'human-retry-summary'); await lead.whenIdle(); await host.tail;
@@ -2304,7 +2313,7 @@ class SuperAgentModel extends LlmAdapter {
         if (!stage) { yield* emit('project_request', { title: text, goal: text, constraints: ['Keep normal conversation available'], conditions: ['Produce and inspect the assigned result'], scopeCeiling: text.includes('DOC') ? 'docs' : 'readonly', writePaths: text.includes('DOC') ? [text.includes('CONFLICT') ? 'SUPER_DOC_HOLD_A.md' : `${text}.md`] : [] }); return; }
         if (stage === 1) {
           const row = state.requests.findLast(row => row.title === text);
-          if (text === 'SUPER_NATIVE' || text === 'SUPER_FORK' || text.startsWith('SUPER_NESTED')) yield* emit(text === 'SUPER_FORK' ? 'subagent_fork' : 'subagent', { description: text, name: text.toLowerCase().replaceAll('_','-'), prompt: text });
+          if (text === 'SUPER_NATIVE' || text === 'SUPER_FORK' || text.startsWith('SUPER_NESTED')) yield* emit('subagent', { description: text, name: text.toLowerCase().replaceAll('_', '-'), prompt: text });
           else yield* emit('project_delegate', { requestId: row.id, requestRevision: row.revision, title: text, brief: text, scope: text.includes('DOC') ? 'docs' : 'readonly', writePaths: text.includes('DOC') ? [text.includes('CONFLICT') ? 'SUPER_DOC_HOLD_A.md' : `${text}.md`] : [], ...(text === 'SUPER_DEPENDENT' ? { blockedBy: [state.workstreams[0].id] } : {}) });
           return;
         }
@@ -2324,9 +2333,13 @@ class SuperAgentModel extends LlmAdapter {
     }
     const own = state.workers.find(worker => worker.sessionId === options.sessionId), work = own && state.workstreams.find(work => work.id === own.workstreamId), receipt = work?.delegations.at(-1);
     assert.ok(receipt, 'native child retains its Project work identity');
-    if (receipt.brief.startsWith('SUPER_NESTED')) {
+    if (receipt.brief.startsWith('SUPER_NESTED') || receipt.brief === 'SUPER_FORK') {
       const child = state.workers.find(worker => worker.parentSessionId === own.sessionId);
-      if (!child) { yield* emit('subagent', { description: 'Nested evidence', prompt: receipt.brief.includes('HOLD') ? 'Nested evidence HOLD' : 'Nested evidence', name: 'evidence' }); return; }
+      if (!child) {
+        const toolName = receipt.brief === 'SUPER_FORK' ? 'subagent_fork' : 'subagent';
+        yield* emit(toolName, { description: 'Nested evidence', prompt: receipt.brief.includes('HOLD') ? 'Nested evidence HOLD' : 'Nested evidence', name: 'evidence' });
+        return;
+      }
       if (state.workstreams.find(work => work.id === child.workstreamId).status !== 'done') { yield* emit('wait_agent', { timeout_ms: 60000 }); return; }
     }
     if (receipt.brief.includes('HOLD')) {
@@ -2352,15 +2365,27 @@ async function superFixture(t) {
 
 test('Super Agent native spawn and fork use one task board and deliver only after review', { timeout: 120000 }, async t => {
   const f = await superFixture(t);
-  for (const name of ['SUPER_NATIVE','SUPER_FORK']) {
+  for (const name of ['SUPER_NATIVE', 'SUPER_FORK']) {
     await f.prompt(name);
     await waitFor(() => f.ctx.projects.state().deliveries?.find(item => item.title === name && item.status === 'delivered'), name + ' accepted delivery');
   }
   assert.deepEqual(f.model.failures, []);
-  const state = f.ctx.projects.state(); assert.equal(state.workstreams.length, 2);
-  assert.equal(f.ctx.agentTeams.listTasks(f.lead).length, 2);
-  assert.ok(state.workstreams.every(work => work.nativeTaskId && work.delegations.at(-1).review.decision === 'accepted'));
-  assert.ok(state.workstreams.some(work => work.delegations[0].provider === 'fork'));
+  const state = f.ctx.projects.state();
+  const topLevel = state.workstreams.filter(work => !state.workers.find(w => w.sessionId === work.workerSessionId)?.parentSessionId);
+  assert.equal(topLevel.length, 2);
+  assert.equal(state.workstreams.length, 3);
+  assert.equal(f.ctx.agentTeams.listTasks(f.lead).length, 3);
+  assert.ok(topLevel.every(work => work.nativeTaskId && work.delegations.at(-1).review.decision === 'accepted'));
+  const forked = state.workstreams.find(work => work.delegations[0].provider === 'fork');
+  assert.ok(forked, 'worker-level subagent_fork runs on the shared task board');
+  const forkedWorker = state.workers.find(w => w.workstreamId === forked.id);
+  const parentInspection = await f.ctx.sessionController.inspect(forkedWorker.parentSessionId);
+  const forkedInspection = await f.ctx.sessionController.inspect(forkedWorker.sessionId);
+  assert.equal(forkedInspection.meta.agentPreset, parentInspection.meta.agentPreset, 'subagent_fork preserves parent preset without cache-breaking override');
+  const leadTools = f.model.requests.find(req => req.sessionId === f.lead.id)?.tools?.map(tool => tool.name) ?? [];
+  assert.equal(leadTools.includes('project_write_document'), false, 'coordinator does not expose project_write_document');
+  assert.equal(leadTools.includes('wait_agent'), false, 'coordinator does not expose wait_agent');
+  assert.equal(leadTools.includes('subagent_fork'), false, 'coordinator does not expose subagent_fork');
   assert.match(f.ctx.projects.guard({ agent: f.lead, name: 'pwsh' }), /coordinator/);
   assert.equal(f.ctx.projects.guard({ agent: f.lead, name: 'project_read' }), undefined);
 });

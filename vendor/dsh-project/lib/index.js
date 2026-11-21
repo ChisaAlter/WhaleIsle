@@ -2,12 +2,11 @@ import { internalSecret } from './internal-secret.mjs';
 import TeamService from '@deepseek-ai/dsh-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
-import { projectDomain, initialState } from './domain.js';
-import { migrateCatalog } from './catalog-migration.js';
+import { CatalogStore } from './catalog-store.js';
 import { acquireWriter } from './files.js';
 import { ProjectService } from './service.js';
 import { registerProjectTransport } from './transport.js';
-import { registerProjectPresets } from './presets.js';
+import { ALL_WORKER_PRESETS, registerProjectPresets } from './presets.js';
 export const name = 'whale-project';
 export const inject = ['loader', 'storageDomain', 'sessionController', 'sessionPersistence', 'sessions', 'sessionProjections', 'agents', 'subagents', 'agentPresets', 'tools', 'workspaceRegistry'];
 export const Config = z.object({});
@@ -25,29 +24,24 @@ export async function apply(ctx) {
 
 /** Optional Project failure must leave ordinary conversations available. */
 async function mountProject(ctx) {
-  let releaseWriter, domain, service;
+  let releaseWriter, store, service;
   ctx.effect(() => async () => {
     try { await service?.dispose?.({ persist: false }); }
-    finally { try { await domain?.close(); } finally { await releaseWriter?.(); } }
+    finally { try { await store?.close(); } finally { await releaseWriter?.(); } }
   });
   try {
     const teams = ctx.agentTeams;
     const home = process.env.DSH_HOME || process.env.DSHD_HOME;
     if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
     releaseWriter = await acquireWriter(home, randomUUID());
-    domain = await ctx.storageDomain.open(projectDomain);
-    const table = domain.table('state'); if (!table.get('catalog')) await table.put('catalog', structuredClone(initialState));
-    if (table.get('catalog').version !== 2) {
-      const migrated = await migrateCatalog(table.get('catalog'), ctx.sessionPersistence);
-      await table.update('catalog', () => migrated);
-    }
+    store = await CatalogStore.open(ctx, home, ctx.sessionPersistence);
     const desktop = async (action, payload) => {
       const base = process.env.DSH_DESKTOP_INSTALL_URL, token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN');
       if (!base || !token) throw new Error('Project desktop bridge is unavailable.');
       const response = await fetch(new URL('/desktop/project', base), { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ action, ...payload }) });
       const result = await response.json(); if (!response.ok || result.ok === false) throw new Error(result.error || `Project desktop request failed (${response.status}).`); return result;
     };
-    service = new ProjectService(ctx, table, { home, desktop, teams });
+    service = new ProjectService(ctx, store, { home, desktop, teams });
     // Dynamic role tool lookup works during recovery without an inject cycle.
     ctx.provide('projects', service);
     ctx.on('subagent/delegate', async (request, exec) => {
@@ -59,16 +53,26 @@ async function mountProject(ctx) {
       return service.available ? service.guard(exec) : 'Project Host is unavailable.';
     });
     ctx.on('agent-preset/before-select', ({ agent, agentPreset }) => {
-      const role = service.state().projects.some(item => item.coordinatorSessionId === agent.id) ? 'project-coordinator'
-        : service.state().workers.some(item => item.sessionId === agent.id) ? 'project-worker' : undefined;
-      if (role && agentPreset !== role) throw new Error('Project session roles cannot be changed by preset selection.');
+      if (service.state().projects.some(item => item.coordinatorSessionId === agent.id)) {
+        if (agentPreset !== 'project-coordinator') throw new Error('Project session roles cannot be changed by preset selection.');
+        return;
+      }
+      const worker = service.state().workers.find(item => item.sessionId === agent.id);
+      if (worker && !ALL_WORKER_PRESETS.has(agentPreset)) {
+        throw new Error('Project session roles cannot be changed by preset selection.');
+      }
     });
     await registerProjectPresets(ctx);
     ctx.on('agent/created', async ({ agent }) => {
       const project = service.state().projects.find(item => item.coordinatorSessionId === agent.id);
       const worker = service.state().workers.find(item => item.sessionId === agent.id);
       if (project) agent.session.append('session/presentation', { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory });
-      else if (worker) agent.session.append('session/presentation', { owner: 'project', title: service.stream(worker.workstreamId).title, composer: 'managed' });
+      else if (worker) {
+        if (worker.preset && ctx.agentPresets?.composedPreset?.(agent.ctx) !== worker.preset) {
+          await ctx.agentPresets.mount(agent.ctx, worker.preset);
+        }
+        agent.session.append('session/presentation', { owner: 'project', title: service.stream(worker.workstreamId).title, composer: 'managed' });
+      }
       service.approvals.created(agent);
     });
     ctx.on('subagent/start', info => { service.track(service.runStarted(info), 'Project start accounting failed'); });
@@ -78,7 +82,8 @@ async function mountProject(ctx) {
     ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { service.track(service.jobChanged(event), 'Project job observation failed'); })));
     await service.recover();
   } catch (error) {
-    const message = error.cause?.issues?.find(issue => issue.code === 'custom')?.message ?? error.message;
+    const issues = error.cause?.issues ?? error.issues;
+    const message = issues?.find(issue => issue.code === 'custom')?.message ?? error.message;
     ctx.logger.warn('Project unavailable: %s', message);
     if (service) { service.available = false; service.error = message; }
     else { service = { available: false, error: message, async command(endpoint) { if (endpoint === 'list') return { projects: [], available: false, error: this.error }; throw new Error(this.error); } }; ctx.provide('projects', service); }

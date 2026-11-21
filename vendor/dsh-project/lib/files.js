@@ -1,8 +1,8 @@
 /** Project-owned knowledge and exports never widen access through a filesystem link. */
 import fs from 'node:fs/promises';
+import { createReadStream, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 
 export function identifier(value) {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value)) throw new Error('Invalid Project resource identity.');
@@ -13,9 +13,58 @@ export function within(root, target) {
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
 }
 const identity = path => process.platform === 'win32' ? path.toLowerCase() : path;
+/** Canonical lexical comparison key that treats Windows drive/path casing and slash styles as identical. */
+export function comparablePath(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return identity(resolve(trimmed));
+}
 /** Windows paths are case-insensitive; realpath may return a different case than the declared path. */
-export const samePath = (a, b) => identity(a) === identity(b);
+export function samePath(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (!a.trim() || !b.trim()) return a.trim() === b.trim();
+  return comparablePath(a) === comparablePath(b);
+}
 const gitMetadata = relativePath => relativePath.split(/[\\/]+/).some(part => part.toLowerCase() === '.git');
+
+/**
+ * Synchronously read a plain file directly inside a Project store directory,
+ * refusing symlinks, realpath escapes, non-files and oversized files.
+ * Returns null when the root or file is absent (ENOENT).
+ */
+export function safeReadStoreFileSync(root, filename, maxBytes = 64 * 1024) {
+  if (typeof root !== 'string' || !root.trim()) return null;
+  const declaredRoot = resolve(root);
+  let canonicalRoot;
+  try {
+    const rootInfo = lstatSync(declaredRoot);
+    if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) throw new Error('Project store directory was replaced with a link or non-directory.');
+    canonicalRoot = realpathSync(declaredRoot);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  if (!samePath(canonicalRoot, declaredRoot)) throw new Error('Project store directory points outside its registered identity.');
+  const target = join(canonicalRoot, filename);
+  if (!within(canonicalRoot, target) || gitMetadata(relative(canonicalRoot, target))) {
+    throw new Error(`Project store file "${filename}" escapes its authorized directory.`);
+  }
+  let info;
+  try { info = lstatSync(target); }
+  catch (error) { if (error?.code === 'ENOENT') return null; throw error; }
+  if (info.isSymbolicLink() || !info.isFile()) {
+    throw new Error(`Project store file "${filename}" was replaced with a link or non-file.`);
+  }
+  const actual = realpathSync(target);
+  if (!samePath(actual, target) || !within(canonicalRoot, actual)) {
+    throw new Error(`Project store file "${filename}" resolves outside its authorized directory.`);
+  }
+  if (info.size > maxBytes) {
+    throw new Error(`Project store file "${filename}" exceeds the ${maxBytes}-byte limit.`);
+  }
+  return readFileSync(actual, 'utf8');
+}
 
 /** References in domain records are already canonical; a replacement root cannot widen them. */
 export async function checkedRoot(root) {

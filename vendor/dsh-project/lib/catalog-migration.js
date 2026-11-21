@@ -1,6 +1,6 @@
 /** One-time conversion of the two shipped v1 catalogs, before any runtime admission. */
 import { isAbsolute } from 'node:path';
-import { projectDomain, publishedCatalog } from './domain.js';
+import { catalogSchema, publishedCatalog } from './domain.js';
 
 const text = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
 const fail = message => { throw Object.assign(new Error(`Project catalog migration: ${message}`), { code: 'catalog_migration' }); };
@@ -10,7 +10,7 @@ const safePaths = paths => paths.every(path => path && !isAbsolute(path) && !pat
 export async function migrateCatalog(before, persistence) {
   if (before.version === 2) return before;
   const next = structuredClone(before); next.version = 2; next.revision++;
-  if (!publishedCatalog(before)) return projectDomain.tables.state.valueSchema.parse(next);
+  if (!publishedCatalog(before)) return catalogSchema.parse(next);
   const projects = new Map(next.projects.map(project => [project.id, project]));
   const prefixes = new Map();
   for (const project of next.projects) {
@@ -107,5 +107,5 @@ export async function migrateCatalog(before, persistence) {
     } else if (!row.supersededBy) delivery.error = prefix?.error ?? 'This saved handover lacks matching persistent declaration acceptance, final reply or exact settled evidence. Its original record is preserved as history; request a new summary in the original conversation.';
     return delivery;
   });
-  return projectDomain.tables.state.valueSchema.parse(next);
+  return catalogSchema.parse(next);
 }

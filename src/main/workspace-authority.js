@@ -369,21 +369,41 @@ function readProjectExecutionPaths(homeDir = dshHome()) {
   return paths;
 }
 
+function verifiedProjectPaths(projects) {
+  if (!Array.isArray(projects)) return [];
+  return projects.flatMap(project => {
+    if (!project || !['ready', 'archived'].includes(project.lifecycle) || typeof project.canonicalWorkingDirectory !== 'string') return [];
+    try {
+      const real = fs.realpathSync.native(project.canonicalWorkingDirectory);
+      return identityKey(real) === project.directoryIdentity && identityKey(real) === identityKey(project.canonicalWorkingDirectory) ? [real] : [];
+    } catch { return []; }
+  });
+}
+
+function readPerRecordProjects(homeDir) {
+  const dir = path.join(homeDir, 'storages', 'whale_project_local', 'projects');
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return null; }
+  const projects = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    try {
+      const doc = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+      if (doc?.version === 1 && doc.record && typeof doc.record === 'object') projects.push(doc.record);
+    } catch { /* One malformed record file never disables other registered projects. */ }
+  }
+  return projects;
+}
+
 /** Project selections are registered roots without creating ordinary Workspace rows. */
 function readProjectRegisteredPaths(homeDir = dshHome()) {
+  const perRecord = readPerRecordProjects(homeDir);
+  if (perRecord !== null) return verifiedProjectPaths(perRecord);
   try {
     const file = path.join(homeDir, 'storages', 'whale_project_local.json');
     const document = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (document.unit?.name !== 'whale_project_local') return [];
-    const projects = document.tables?.state?.catalog?.projects;
-    if (!Array.isArray(projects)) return [];
-    return projects.flatMap(project => {
-      if (!['ready', 'archived'].includes(project.lifecycle) || typeof project.canonicalWorkingDirectory !== 'string') return [];
-      try {
-        const real = fs.realpathSync.native(project.canonicalWorkingDirectory);
-        return identityKey(real) === project.directoryIdentity && identityKey(real) === identityKey(project.canonicalWorkingDirectory) ? [real] : [];
-      } catch { return []; }
-    });
+    return verifiedProjectPaths(document.tables?.state?.catalog?.projects);
   } catch { return []; }
 }
 

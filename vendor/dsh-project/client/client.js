@@ -1,7 +1,7 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
-  const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
+  const { createElement: h, useState, useEffect, useLayoutEffect, useRef, Fragment } = require('react');
   const { createPortal, flushSync } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, StateDot, Tag, MarkdownText, Toast, Tooltip, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, StateDot, Tag, MarkdownText, Toast, Tooltip, IconFolderCloseRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconChecklistOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { subagentChatAddress } = require('@deepseek-ai/dsh-client-ui-subagent');
   const NS = 'dsh-project';
@@ -119,6 +119,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     revertAsk: '交给协调者处理', revertAskPrompt: '请撤销需求「{title}」带来的改动。自动撤销遇到冲突（文件在交付后被修改过），请检查冲突文件，只还原这条需求的改动，保留之后的其他修改。',
     statusReverted: '已撤销改动', nextReverted: '如需重新实现，在对话里说一声', requestDiffIsolated: '部分开发在独立工作目录中进行，那些改动不在此列，也不能从这里撤销。', requestDiffScope: '这条需求从开始开发到交付的改动。', requestDiffLive: '这条需求从开始开发至今的改动，尚未交付。', requestDiffReverted: '这些改动已被撤销。',
     decisionLog: '决策日志', decisionLogEmpty: '交付后，协调者的关键决策会自动记录在这里。',
+    dirUnsafePath: '这个路径包含不受支持的网络共享、设备前缀或特殊尾缀。',
+    waitingConflict: '等待写入冲突释放',
+    stopAllTitle: '停止全部后台工作？',
+    stopAllBody: '所有正在运行或排队中的成员工作都会停止，已保存的成果和对话记录会保留。',
+    stopAllConfirm: '确认停止',
+    diagnosticsTitle: '项目诊断提示',
   });
   Object.assign(en, {
     preferences: 'Preferences', preferencesHint: 'Soft habits and preferences, such as reply style or common commands. Put anything that must always be followed in Project rules.',
@@ -143,6 +149,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     revertAsk: 'Ask the coordinator', revertAskPrompt: 'Please revert the changes from the requirement “{title}”. The automatic revert hit a conflict because the files changed after delivery; inspect the conflicting files and restore only this requirement’s changes while keeping later edits.',
     statusReverted: 'Changes reverted', nextReverted: 'Say so in the conversation if you want it implemented again', requestDiffIsolated: 'Part of this work ran in an isolated worktree; those changes are not listed here and cannot be reverted from here.', requestDiffScope: 'Changes made by this requirement from the start of development to delivery.', requestDiffLive: 'Changes made by this requirement since development started; not delivered yet.', requestDiffReverted: 'These changes have been reverted.',
     decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
+    dirUnsafePath: 'This path uses an unsupported network share, device prefix, or unsafe segment.',
+    waitingConflict: 'Waiting for conflicting write path to clear',
+    stopAllTitle: 'Stop all background work?',
+    stopAllBody: 'All running and queued member work will stop. Saved results and conversation history are retained.',
+    stopAllConfirm: 'Stop all',
+    diagnosticsTitle: 'Project diagnostics',
   });
   const CSS = `
     [data-project-rail="true"][data-project-rail-compact="false"]>[data-conversation-content]{margin-right:336px}
@@ -167,6 +179,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-rail-details p{margin:0 0 10px}.dsh-project-rail-details ul{padding-left:18px}.dsh-project-rail-details .dsh-project-actions{margin-top:12px}
     .dsh-project-rail-empty{padding:18px 4px;color:var(--dsw-alias-label-secondary)}
     .dsh-project-rail-count{display:inline-block;min-width:3ch;text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-rail-needs-you{margin-left:4px;padding:0 6px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent);color:var(--dsw-alias-state-warn-primary);font-size:11px;line-height:18px;font-weight:500}
+    .dsh-project-diagnostics{border-left:3px solid var(--dsw-alias-state-warn-primary);padding-left:10px}
+    .dsh-project-diagnostics>strong{display:block;margin-bottom:4px;font-size:12px}
+    .dsh-project-diagnostics>ul{margin:0;padding-left:16px;font-size:12px;color:var(--dsw-alias-label-secondary)}
     .dsh-project-rail-card button:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:3px;border-radius:4px}
 
     .dsh-project-hero-option-wrap{display:inline-flex;border-radius:var(--dsw-radius-sm)}
@@ -277,59 +293,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-visual-page{min-width:0;max-width:100%;overflow:hidden}
     .dsh-project-result-checks{padding:8px 0}
     .dsh-project-result-heading{align-items:flex-start;flex-wrap:wrap;line-height:24px}
-    @keyframes dsh-project-ticker{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(var(--project-ticker-end))}}
-    .dsh-project-header-panel{position:relative;flex:none;min-width:28px}
-    .dsh-project-header-trigger{display:inline-flex;align-items:center;gap:5px;min-height:28px;min-width:28px;max-width:100%;padding:3px 7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
-    .dsh-project-header-trigger svg{flex:none}.dsh-project-header-trigger:hover,.dsh-project-header-trigger:focus-visible,.dsh-project-header-trigger[aria-expanded=true]{color:var(--dsw-alias-label-primary)}
-    .dsh-project-header-trigger-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-header-badge{min-width:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
-    .dsh-project-header-badge[data-tone=info]{color:var(--dsw-alias-label-primary)}.dsh-project-header-badge[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
-    @container (max-width:560px){.dsh-project-header-trigger-label{display:none}.dsh-project-header-trigger{padding:0 4px;justify-content:center}}
-    .dsh-project-header-surface{position:fixed;z-index:100;display:flex;flex-direction:column;box-sizing:border-box;width:min(460px,100vw - 32px);max-height:min(680px,calc(100vh - 32px));padding:8px 2px 0;overflow:hidden;border-radius:12px;--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-14);outline:none}
-    .dsh-project-header-surface[hidden]{display:none}.dsh-project-header-surface::before{content:'';position:absolute;z-index:-1;inset:0;border-radius:12px;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter)}
-    .dsh-project-panel-body{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;min-width:0;padding:0 9px 16px 14px;overflow-y:auto;scrollbar-gutter:stable}
-    .dsh-project-requests-toolbar{display:flex;align-items:center;gap:4px;min-width:0;min-height:32px;flex:none}
-    .dsh-project-requests-toolbar>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--dsw-font-xxs-strong-12)}.dsh-project-requests-toolbar button{flex:none}
-    .dsh-project-requests-current,.dsh-project-requests-list{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .dsh-project-requests-empty{padding:16px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;font:var(--dsw-font-s-14)}.dsh-project-requests-empty p{margin:8px 0 0;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-task-card{position:relative;isolation:isolate;min-width:0;border-radius:14px;color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-surface{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2)}
-    .dsh-project-task-card:not([data-project-request-mode=strip]){padding:14px 16px 8px}.dsh-project-task-card[data-project-request-mode=strip]{height:44px;min-height:44px}
-    .dsh-project-task-strip{display:flex;align-items:center;gap:0;height:44px;padding:0 4px;min-width:0}.dsh-project-task-strip-open{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1;min-width:0;height:44px;padding:0 8px;font:var(--dsw-font-xxs-12)}
-    .dsh-project-task-strip-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}.dsh-project-task-strip-open>small{max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:var(--dsw-alias-label-secondary)}.dsh-project-task-strip-open>svg,.dsh-project-task-strip>.dsh-project-task-queue-actions{flex:none}
-    .dsh-project-task-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}.dsh-project-task-title{display:block;flex:1;min-width:0;font:var(--dsw-font-base-strong-16);font-weight:600;line-height:24px;overflow-wrap:anywhere}
-    .dsh-project-task-queue-actions{display:flex;align-items:center;gap:0;flex:none}.dsh-project-task-queue-actions>button{height:28px;min-height:28px;padding:0 6px}
-    .dsh-project-task-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;min-width:0;padding:8px 0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}.dsh-project-task-meta>span{min-width:0;overflow-wrap:anywhere}.dsh-project-task-meta>span:last-child{text-align:right;max-width:65%}.dsh-project-task-state{color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-summary{min-width:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}.dsh-project-task-summary>p{margin:0 0 8px;overflow-wrap:anywhere;font:var(--dsw-font-xxs-12)}
-    .dsh-project-task-state-dot{display:block;flex:none;width:6px;height:6px;margin:6px 4px 0;border-radius:50%;background:var(--dsw-alias-label-secondary)}.dsh-project-task-strip .dsh-project-task-state-dot{margin-top:0}.dsh-project-task-state-dot[data-state=running]{background:var(--dsw-alias-state-business-primary)}.dsh-project-task-state-dot[data-state=blocked]{background:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-task-waiting{color:var(--dsw-alias-label-secondary)}.dsh-project-task-outcome{color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-    .dsh-project-task-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding-top:8px}.dsh-project-task-footer button{height:28px;min-height:28px;padding:0 8px;font:var(--dsw-font-xxs-12)}
     .dsh-project-observer-section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;font:var(--dsw-font-xxs-strong-12)}.dsh-project-observer-section-heading>span{color:var(--dsw-alias-label-secondary);font-weight:400}
-    .dsh-project-observer-blocker,.dsh-project-observer-request-info{font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}.dsh-project-observer-blocker{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box;height:32px;min-height:32px}
-    .dsh-project-requests-list>.dsh-project-task-group-title{padding:8px 4px 0;font:var(--dsw-font-xxs-12)}
-    .dsh-project-tone-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-idle-primary)}
-    .dsh-project-tone-dot[data-tone=info],.dsh-project-task-state-dot[data-tone=info]{background:var(--dsw-alias-state-business-primary)}
-    .dsh-project-tone-dot[data-tone=warning],.dsh-project-task-state-dot[data-tone=warning]{background:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-tone-dot[data-tone=success],.dsh-project-task-state-dot[data-tone=success]{background:var(--dsw-alias-state-success-primary)}
-    .dsh-project-tone-dot[data-tone=danger],.dsh-project-task-state-dot[data-tone=danger]{background:var(--dsw-alias-state-error-primary)}
-    .dsh-project-task-state-dot[data-tone=neutral],.dsh-project-task-state-dot[data-tone=outline]{background:var(--dsw-alias-label-tertiary)}
-    .dsh-project-task-status{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}
-    .dsh-project-task-status-row{display:flex;align-items:center;gap:8px;min-width:0}
-    .dsh-project-task-status-row>.dsh-project-task-state{flex:none;display:inline-flex}
-    .dsh-project-task-status-row>span:last-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-    .dsh-project-task-next{display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
-  /* The one thing a requirement waits on the user for: a question with its answers, or the action that unblocks it. */
-  .dsh-project-ask{display:flex;flex-direction:column;gap:8px;min-width:0;margin:0 0 8px;padding:10px 12px;border-radius:8px;border-left:3px solid var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-interactive-bg-hover)}
-  .dsh-project-ask-question{margin:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
-  .dsh-project-ask-options{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
-  .dsh-project-ask-form{display:flex;align-items:center;gap:6px;min-width:0}.dsh-project-ask-form>*:first-child{flex:1;min-width:0}
-  .dsh-project-ask-note{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
-    .dsh-project-task-next[data-tone=warning]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 8%,transparent)}
-    .dsh-project-task-next[data-tone=info]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 6%,transparent)}
-    .dsh-project-task-next>span:first-child:not(:last-child){color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-next strong{font-weight:500;color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-footer-actions{display:flex;align-items:center;gap:4px;min-width:0}
+    .dsh-project-ask-note{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
     .dsh-project-charter-intro{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
     .dsh-project-charter-intro>strong{font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary)}
     .dsh-project-charter-intro>p{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
@@ -367,82 +332,16 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-task-changes{display:inline-flex;align-items:baseline;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
     .dsh-project-task-delivery-actions>.dsh-project-task-changes{margin-right:auto;padding-left:8px}
     .dsh-project-confirm-detail{margin:0;padding:8px 12px;max-height:160px;overflow:auto;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);font:12px/18px var(--ds-font-family-code);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
-
-
-    .dsh-project-activity-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-task-checklist{display:flex;flex-direction:column;margin:0;padding:0;list-style:none;min-width:0}
-    .dsh-project-task-step{display:flex;flex-direction:column;min-width:0}.dsh-project-task-step-actions{display:flex;flex-wrap:wrap;gap:2px 4px;padding:0 4px 4px 22px}.dsh-project-task-step-actions button{min-height:24px;height:24px;padding:0 6px;font:var(--dsw-font-xxs-12)}.dsh-project-task-step-failure{display:flex;flex-direction:column;gap:6px;padding:0 4px 6px 22px}.dsh-project-task-step-note{margin:0;padding:0 4px 6px 22px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}.dsh-project-task-step-reason{margin:0;padding:0 4px 6px 22px;color:var(--dsw-alias-state-error-primary);font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}
-    .dsh-project-task-step-open{display:flex;width:100%;box-sizing:border-box;align-items:flex-start;gap:8px;min-width:0;padding:6px 4px;border:0;border-radius:6px;background:transparent;color:inherit;font:var(--dsw-font-xxs-12);text-align:left}
-    button.dsh-project-task-step-open{cursor:pointer}button.dsh-project-task-step-open:hover,button.dsh-project-task-step-open:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-task-step-title{flex:1;min-width:0;overflow-wrap:anywhere}.dsh-project-task-step[data-state=completed] .dsh-project-task-step-title{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-task-step-open>small{flex:none;max-width:40%;min-width:0;text-align:right;color:var(--dsw-alias-label-secondary);font:inherit;overflow-wrap:anywhere}
-    .dsh-project-task-check{flex:none;margin-top:2px;color:var(--dsw-alias-state-success-primary)}
-    .dsh-project-header-directory{width:28px;height:28px;min-width:28px;padding:0;flex:none}
-    .dsh-project-header-trigger{height:28px;width:184px;box-sizing:border-box;flex:none;overflow:hidden}
-    .dsh-project-header-trigger-label{flex:none}
-    .dsh-project-header-badge{width:28px;min-width:28px;flex:none;padding:0 2px}
-    .dsh-project-header-state{width:72px;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left;font-variant-numeric:tabular-nums}
-    .dsh-project-header-state[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-header-state[data-tone=success]{color:var(--dsw-alias-state-success-primary)}
-    .dsh-project-header-surface{height:min(620px,calc(100dvh - 32px));max-height:calc(100dvh - 32px);background:var(--dsw-alias-bg-panel-solid)}
-    .dsh-project-requests-toolbar{position:sticky;top:0;z-index:1;background:var(--dsw-alias-bg-panel-solid);padding-bottom:6px}
-    .dsh-project-request-tabs{margin:8px 0;flex:none}
-    [data-project-request-tab][hidden]{display:none}
-    [data-project-request-tab]{min-width:0}
-    .dsh-project-native-plan{padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font:var(--dsw-font-xxs-12)}
-    .dsh-project-native-plan>li{display:flex;align-items:flex-start;gap:8px;overflow-wrap:anywhere}
-    .dsh-project-native-plan>li[data-state=completed]{color:var(--dsw-alias-label-tertiary);text-decoration:line-through}
     .dsh-project-stop{width:28px;min-width:28px;height:28px;padding:0;flex:none;position:relative}
     .dsh-project-stop[data-error=true]{color:var(--dsw-alias-state-error-primary)}
     .dsh-project-stop[data-error=true]::after{content:'';position:absolute;right:3px;top:3px;width:4px;height:4px;border-radius:50%;background:currentColor}
     .dsh-project-materials-footer button{min-width:76px}
-    .dsh-project-request-refresh{width:28px;min-width:28px;padding:0;font-size:18px}
     [data-composer-seat]:has([data-project-composer-takeover]) [data-chain-overlay-fallback='conversation.composer']{display:block!important;position:absolute;inset:0 0 auto;visibility:hidden;pointer-events:none}
     .dsh-project-composer-frame{display:flex;align-items:center;flex-direction:column;padding:var(--project-composer-top,0px) var(--dsh-composer-side-clearance,16px) var(--project-composer-bottom,32px);min-width:0}
     .dsh-project-composer-frame>.dsh-project-archive-notice{box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;gap:8px;width:var(--project-composer-width,100%);max-width:100%;height:var(--project-composer-height,128px);min-height:0;margin:0;overflow:auto;border-radius:var(--dsw-radius-md);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);padding:12px}
     .dsh-project-composer-frame p{margin:0;font-size:12px;overflow-wrap:anywhere}
     .dsh-project-composer-frame button{flex:none;min-height:28px;align-self:flex-start}
-    .dsh-project-requests [data-error=true],.dsh-project-materials [data-error=true]{color:var(--dsw-alias-state-error-primary)}
-    @container (max-width:560px){.dsh-project-header-trigger{width:124px;gap:4px}.dsh-project-header-state{width:62px}.dsh-project-requests-toolbar>strong{display:none}}
-    @media (max-width:480px){.dsh-project-task-card:not([data-project-request-mode=strip]){padding:10px 12px 8px}.dsh-project-requests-toolbar{gap:2px}}
-    /* Execution motion: transform and opacity only, so a long conversation's layout is never invalidated. Reduced motion stops all of it. */
-    @keyframes dsh-project-halo{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.6);opacity:0}}
-    @keyframes dsh-project-halo-soft{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.5);opacity:0}}
-    @keyframes dsh-project-flow{0%{background-position:200% 0}100%{background-position:-200% 0}}
-    @keyframes dsh-project-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-    @keyframes dsh-project-pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.25);opacity:1}100%{transform:scale(1);opacity:1}}
-    @keyframes dsh-project-bump{0%{transform:scale(1)}40%{transform:scale(1.3)}100%{transform:scale(1)}}
-    .dsh-project-task-state-dot[data-state=running],.dsh-project-task-state-dot[data-tone=info]{position:relative}
-    .dsh-project-task-state-dot[data-state=running]::after,.dsh-project-task-state-dot[data-tone=info]::after{content:'';position:absolute;inset:0;border-radius:50%;background:inherit;pointer-events:none;animation:dsh-project-halo 1.8s ease-out infinite}
-    .dsh-project-header-badge{position:relative}
-    .dsh-project-header-badge[data-live=true]::after{content:'';position:absolute;inset:0;box-sizing:border-box;border-radius:inherit;border:1.5px solid var(--dsw-alias-state-business-primary);pointer-events:none;animation:dsh-project-halo-soft 1.8s ease-out infinite}
-    .dsh-project-header-badge[data-bump=true]{animation:dsh-project-bump calc(var(--ds-transition-duration,200ms)*1.6) ease-out}
-    .dsh-project-stage-rail{--stage-color:var(--dsw-alias-label-tertiary);display:flex;margin:0;padding:6px 0 4px;list-style:none}
-    .dsh-project-stage-rail[data-tone=info]{--stage-color:var(--dsw-alias-state-business-primary)}
-    .dsh-project-stage-rail[data-tone=warning]{--stage-color:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-stage-rail[data-tone=success]{--stage-color:var(--dsw-alias-state-success-primary)}
-    .dsh-project-stage{position:relative;display:flex;flex:1 1 0;flex-direction:column;align-items:center;gap:6px;min-width:0;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}
-    .dsh-project-stage[data-stage=done]{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-stage[data-stage=current]{color:var(--dsw-alias-label-primary)}
-    .dsh-project-stage-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-stage-dot{position:relative;z-index:1;box-sizing:border-box;width:12px;height:12px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid);transition:background-color var(--ds-transition-duration,200ms),border-color var(--ds-transition-duration,200ms)}
-    .dsh-project-stage[data-stage=done] .dsh-project-stage-dot,.dsh-project-stage[data-stage=current] .dsh-project-stage-dot{border-color:var(--stage-color);background:var(--stage-color)}
-    .dsh-project-stage[data-stage=current] .dsh-project-stage-dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--stage-color) 18%,transparent)}
-    .dsh-project-stage-rail[data-tone=info] .dsh-project-stage[data-stage=current] .dsh-project-stage-dot::after{content:'';position:absolute;inset:-2px;border-radius:50%;border:2px solid var(--stage-color);pointer-events:none;animation:dsh-project-halo-soft 1.8s ease-out infinite}
-    .dsh-project-stage::before,.dsh-project-stage::after{content:'';position:absolute;top:5px;left:calc(-50% + 9px);right:calc(50% + 9px);height:2px;border-radius:1px}
-    .dsh-project-stage:first-child::before,.dsh-project-stage:first-child::after{display:none}
-    .dsh-project-stage::before{background:var(--dsw-alias-border-l2)}
-    .dsh-project-stage::after{background:var(--stage-color);transform:scaleX(0);transform-origin:left center;transition:transform calc(var(--ds-transition-duration,200ms)*2) ease-out}
-    .dsh-project-stage[data-stage=done]::after,.dsh-project-stage[data-stage=current]::after{transform:scaleX(1)}
-    .dsh-project-stage-rail[data-tone=info] .dsh-project-stage[data-stage=current]+.dsh-project-stage::before{background:linear-gradient(90deg,var(--dsw-alias-border-l2) 0,var(--stage-color) 50%,var(--dsw-alias-border-l2) 100%);background-size:200% 100%;animation:dsh-project-flow 1.6s linear infinite}
-    .dsh-project-task-step[data-enter=true]{animation:dsh-project-enter calc(var(--ds-transition-duration,200ms)*1.2) ease-out both}
-    .dsh-project-task-check.is-fresh{animation:dsh-project-pop .45s cubic-bezier(.2,1.2,.4,1)}
-    .dsh-project-elapsed{font-variant-numeric:tabular-nums}
-    .dsh-project-lead-plan{margin-top:4px}
-    .dsh-project-section-tabs{position:sticky;top:38px;z-index:1;flex:none;background:var(--dsw-alias-bg-panel-solid)}
-    .dsh-project-section-page{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .dsh-project-section-page[hidden]{display:none}
-    @media (prefers-reduced-motion:reduce){.dsh-project-task-state-dot::after,.dsh-project-header-badge,.dsh-project-header-badge::after,.dsh-project-stage-dot::after,.dsh-project-stage::before,.dsh-project-stage::after,.dsh-project-task-step,.dsh-project-task-check{animation:none!important;transition:none!important}}
+    .dsh-project-materials [data-error=true]{color:var(--dsw-alias-state-error-primary)}
   `;
   const requestId = () => globalThis.crypto.randomUUID();
   const button = (label, onClick, disabled = false) => h(Button, { variant: 'outline', onClick, disabled }, label);
@@ -453,7 +352,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
   const markdown = (t, text) => h(MarkdownText, { text, labels: { code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('footnotes') } });
   const stateLabel = (t, state) => Object.hasOwn(zh, state) ? t(state) : String(state ?? '');
-  const waitingLabel = (t, waiting) => waiting ? `${t({ dependencies: 'waitingDependencies', directory: 'waitingDirectory', capacity: 'waitingCapacity' }[waiting.kind])}${waiting.workTitles?.length ? ` · ${waiting.workTitles.join('、')}` : ''}` : '';
+  const waitingLabel = (t, waiting) => waiting ? `${t({ dependencies: 'waitingDependencies', directory: 'waitingDirectory', capacity: 'waitingCapacity', conflict: 'waitingConflict' }[waiting.kind] ?? 'waitingDirectory')}${waiting.workTitles?.length ? ` · ${waiting.workTitles.join('、')}` : ''}` : '';
   const workBlockedLabel = (t, reason) => reason === 'Application restarted; waiting for explicit continuation.' ? t('requestRestarted') : reason;
   const errorText = failure => failure?.message ?? String(failure);
   const messageText = message => (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -481,8 +380,13 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const isLive = worker => Boolean(worker.activeRunId || worker.jobs?.length || worker.phase === 'stopping');
   const fileName = path => path.split(/[\\/]/).at(-1);
   // Why the desktop refuses a folder (see the desktop directory check), as locale keys.
-  const DIRECTORY_REFUSALS = { missing: 'dirMissing', 'not-directory': 'dirNotDirectory', root: 'dirRoot', home: 'dirHome', 'system-data': 'dirSystemData', 'app-data': 'dirAppData' };
-  const comparablePath = path => path.replaceAll('\\', '/').replace(/\/$/, '');
+  const DIRECTORY_REFUSALS = { missing: 'dirMissing', 'not-directory': 'dirNotDirectory', root: 'dirRoot', home: 'dirHome', 'system-data': 'dirSystemData', 'app-data': 'dirAppData', 'unsafe-path': 'dirUnsafePath' };
+  const isWindowsPath = path => /^[a-zA-Z]:[\\/]/.test(String(path ?? '')) || String(path ?? '').includes('\\');
+  const comparablePath = path => {
+    const raw = String(path ?? '');
+    const normalized = raw.replaceAll('\\', '/').replace(/\/+$/, '');
+    return isWindowsPath(raw) ? normalized.toLowerCase() : normalized;
+  };
   const directoryParts = project => project.canonicalWorkingDirectory.replaceAll('\\', '/').replace(/\/$/, '').split('/').filter(Boolean);
   function Artifact({ file, open, busy, t }) {
     const [menu, setMenu] = useState(false), [locationOpen, setLocationOpen] = useState(false);
@@ -540,11 +444,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   function ProjectHeroOption({ sessionId, openWithDraft, startProject, checkDirectory, useProjects, useProjectSessions, useWorkspaceList, useDirectoryChecks, t }) {
     const available = useProjects(value => value.available), cwd = useProjectSessions(value => value.byId[sessionId]?.cwd);
     const scratch = useWorkspaceList(value => value.scratchCwd);
+    const isScratch = Boolean(cwd && scratch && comparablePath(cwd) === comparablePath(scratch));
     const existing = useProjects(value => Boolean(cwd) && value.projects.some(project => project.lifecycle !== 'archived' && comparablePath(project.canonicalWorkingDirectory) === comparablePath(cwd)));
     const refusal = useDirectoryChecks(value => cwd ? value[comparablePath(cwd)]?.reason : undefined);
     const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    useEffect(() => { if (available && cwd && cwd !== scratch) checkDirectory(cwd); }, [available, cwd, scratch]);
-    if (!available || !cwd || cwd === scratch) return null;
+    useEffect(() => { if (available && cwd && !isScratch) checkDirectory(cwd); }, [available, cwd, isScratch]);
+    if (!available || !cwd || isScratch) return null;
     const start = async () => { setBusy(true); setError(''); try { await startProject(cwd, openWithDraft); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
     const reason = refusal ? t(DIRECTORY_REFUSALS[refusal] ?? 'unavailable') : '';
     const option = h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-hero-option', title: reason ? undefined : t(existing ? 'heroOpenHint' : 'heroHint'), 'aria-busy': busy || undefined, 'aria-description': reason || undefined, disabled: busy || Boolean(reason), onClick: () => { void start(); } },
@@ -553,61 +458,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       // A disabled button receives no pointer events, so the reason's tooltip anchors on a focusable wrapper.
       reason ? h(Tooltip, { label: reason, side: 'bottom', align: 'end', portal: true, maxWidth: 280 }, h('span', { className: 'dsh-project-hero-option-wrap', tabIndex: 0 }, option)) : option,
       error ? h(Toast, { text: error, holdMs: 6000, onDone: () => setError('') }) : null);
-  }
-
-  // Project panels open only by explicit click and keep their contents mounted while closed.
-  const LIVE_HEADER_STATES = ['running', 'pendingSummary', 'pendingDelivery'];
-  // Counts the changes after the first paint, so the badge can acknowledge each one without animating on mount.
-  function useBump(value) {
-    const previous = useRef(value), count = useRef(0);
-    if (previous.current !== value) { previous.current = value; count.current += 1; }
-    return count.current;
-  }
-  function HeaderPanel({ id, icon, label, badge, tone, status, state, needs = 0, useDismissals, useRequestPanels, sessionId, setRequestPanel, pinRequests, children }) {
-    const local = useRequestPanels(value => value[sessionId]), open = local?.open ?? false;
-    const [visited, setVisited] = useState(false), rootRef = useRef(null), triggerRef = useRef(null), panelRef = useRef(null);
-    const dismissals = useDismissals(value => value);
-    const bump = useBump(badge);
-    const position = useAnchoredPosition({ open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16 });
-    const change = next => {
-      if (next) setVisited(true);
-      if (next && local?.observing) { pinRequests(sessionId); return; }
-      setRequestPanel(sessionId, { open: next });
-    };
-    useEffect(() => { change(false); }, [dismissals]);
-    useEffect(() => () => setRequestPanel(sessionId, { open: false }), [sessionId]);
-    useLayoutEffect(() => { if (open && position) { setVisited(true); panelRef.current?.focus(); } }, [open, Boolean(position)]);
-    useEffect(() => {
-      if (!open) return;
-      const close = () => { const inside = panelRef.current?.contains(document.activeElement); change(false); if (inside) triggerRef.current?.focus(); };
-      const outside = event => {
-        const target = event.target;
-        if (!target || rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-        if (target.closest?.('[role="menu"], [role="dialog"][aria-modal="true"]')) return;
-        close();
-      };
-      const escape = event => {
-        if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('[role="menu"], [role="dialog"][aria-modal="true"]')) return;
-        event.preventDefault(); close();
-      };
-      document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape);
-      return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
-    }, [open]);
-    return h('div', { ref: rootRef, className: 'dsh-project-header-panel', 'data-project-header-panel': id, 'data-state': state, 'data-needs-you': needs || undefined },
-      h(Tooltip, { label: `${label} · ${status}`, side: 'bottom', disabled: open }, h('button', { type: 'button', ref: triggerRef, className: 'dsh-project-header-trigger', 'aria-label': `${label} · ${status}`, 'aria-haspopup': 'dialog', 'aria-expanded': open,
-        onClick: () => change(!open) }, icon, h('span', { className: 'dsh-project-header-trigger-label' }, label),
-        h('span', { key: bump, className: 'dsh-project-header-badge', 'data-tone': tone, 'data-live': !needs && LIVE_HEADER_STATES.includes(state), 'data-bump': bump > 0 }, badge), h('span', { className: 'dsh-project-header-state', 'data-tone': tone }, status))),
-      // Retain the same tree while hidden: refreshes and closing do not reset tabs or reading position.
-      visited || open ? createPortal(h('div', { ref: panelRef, className: 'dsh-project-header-surface', 'data-project-panel': id, role: 'dialog', tabIndex: -1, 'aria-label': label, hidden: !open,
-        style: position ?? { visibility: 'hidden', left: 0, top: 0 } }, children), document.body) : null);
-  }
-
-  function useProjectLive({ useProjects, useProjectSessions, useProjectSessionStatus }, sessionId, project) {
-    const detail = useProjects(value => project ? value.details[project.id] : undefined);
-    const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.projectTeam);
-    const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
-    const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
-    return { detail, team, sessions };
   }
 
   const projectHeaderState = (project, current, t) => {
@@ -637,66 +487,29 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     if (!project) return null;
     const count = (project.queue?.activeRequests?.length ?? (project.queue?.active ? 1 : 0)) + (project.queue?.queued?.length ?? 0);
     const headerState = projectHeaderState(project, current, t), unknown = ['unknown', 'loading'].includes(headerState.state);
+    const needsYou = !unknown ? (project.activity?.needsYou ?? 0) : 0;
+    const diagnostics = Array.isArray(project.diagnostics) ? project.diagnostics.filter(Boolean) : [];
     const close = () => { props.setRequestPanel(sessionId, { open: false }); anchor.current?.focus(); };
-    return h('div', { className: 'dsh-project-header', 'data-state': headerState.state },
+    return h('div', { className: 'dsh-project-header', 'data-state': headerState.state, 'data-needs-you': needsYou || undefined },
       h(Button, { variant: 'ghost', size: 'sm', onClick: () => void read(project.id, 'open').catch(failure => setError(before => ({ id: (before?.id ?? 0) + 1, text: t('openDirectory') + ': ' + errorText(failure) }))), title: project.canonicalWorkingDirectory, 'aria-label': t('openDirectory') }, h(IconFolderCloseRegular, { size: 16 })),
-      h(Button, { ref: anchor, variant: 'ghost', size: 'sm', title: headerState.label, 'aria-expanded': open, 'aria-controls': 'project-rail-' + project.id, onClick: () => props.setRequestPanel(sessionId, { open: !open }), className: 'dsh-project-rail-toggle' }, h(IconChecklistOutlineRegular, { size: 16 }), t('taskList'), h('span', { className: 'dsh-project-rail-count' }, unknown ? '?' : count > 99 ? '99+' : count)),
+      h(Button, { ref: anchor, variant: 'ghost', size: 'sm', title: needsYou ? `${headerState.label} · ${t('statusNeedsYou').replace('{count}', needsYou)}` : headerState.label, 'aria-expanded': open, 'aria-controls': 'project-rail-' + project.id, onClick: () => props.setRequestPanel(sessionId, { open: !open }), className: 'dsh-project-rail-toggle' },
+        h(IconChecklistOutlineRegular, { size: 16 }), t('taskList'),
+        h('span', { className: 'dsh-project-rail-count' }, unknown ? '?' : count > 99 ? '99+' : count),
+        needsYou ? h('span', { className: 'dsh-project-rail-needs-you', 'data-needs-you': needsYou }, t('statusNeedsYou').replace('{count}', needsYou)) : null),
       host && open ? createPortal(h('aside', { id: 'project-rail-' + project.id, className: 'dsh-project-task-rail', 'aria-label': t('taskList'), onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } } },
         h('div', { className: 'dsh-project-rail-heading' }, h('strong', null, t('taskList')), h(Button, { variant: 'ghost', size: 'sm', onClick: close, 'aria-label': t('close') }, h(IconChevronRightOutlineRegular, { size: 16 }))),
         current.error || !current.available ? h('div', { className: 'dsh-project-rail-details', role: 'alert' }, h('p', null, t('retainedStatus')), h('p', null, current.error || t('unavailable')), h(Button, { variant: 'ghost', size: 'sm', onClick: props.refresh }, t('retryRead'))) : null,
+        diagnostics.length ? h('div', { className: 'dsh-project-rail-details dsh-project-diagnostics', role: 'alert', 'data-project-diagnostics': diagnostics.length },
+          h('strong', null, t('diagnosticsTitle')),
+          h('ul', null, diagnostics.map((item, index) => h('li', { key: index }, typeof item === 'string' ? item : item?.message ?? String(item))))) : null,
         h(ProjectRequirements, { ...props, project }),
-        h('footer', { className: 'dsh-project-rail-footer' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => props.showMaterials(project.id) }, t('taskMaterials')), h(ProjectStop, { ...props, compact: false }))), host) : null,
+        h('footer', { className: 'dsh-project-rail-footer' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => props.showMaterials(project.id) }, t('taskMaterials')), h(ProjectStop, { ...props, compact: false, confirm: true }))), host) : null,
       error ? h(OperationToast, { key: error.id, text: error.text }) : null);
   }
 
   const requestStateLabel = (t, card, position = true) => card.status === 'completed' ? t('completed')
     : card.queue?.state === 'queued' ? `${t('requestQueued')}${position && card.queue.position ? ` · ${t('requestQueuePosition').replace('{position}', card.queue.position)}` : ''}`
     : card.queue?.state === 'discussing' ? t('requestDiscussing') : card.queue?.state === 'cancelled' ? t('requestCancelled') : stateLabel(t, card.status);
-  const requestQueueNote = (t, card, queue) => card.status === 'completed' ? ''
-    : card.queue?.state === 'queued' ? t(queue?.paused ? 'requestQueuePaused' : !queue?.active && card.queue.position === 1 ? 'requestQueueReady' : 'requestQueueWaiting')
-    : card.queue?.state === 'discussing' ? t('requestDiscussingHint') : card.queue?.state === 'cancelled' ? t('requestCancelledHint') : '';
-  const requestQueueItems = (card, queue, busy, t) => {
-    if (!card.queue || card.status === 'completed' || card.archivedAt) return [];
-    const state = card.queue.state, index = queue?.queued?.findIndex(item => item.id === card.id) ?? -1;
-    return [
-      ...(state === 'discussing' ? [{ id: 'enqueue', label: t('requestEnqueue'), disabled: busy }] : []),
-      ...(state === 'cancelled' || card.queue.released ? [{ id: 'enqueue', label: t('requestRejoin'), disabled: busy }] : []),
-      ...(card.id === queue?.active?.id && !card.queue.released && (queue.paused || card.status === 'paused') ? [{ id: 'resume', label: t('requestResume'), disabled: busy }] : []),
-      ...(state === 'queued' && queue?.paused && !queue.active && index === 0 ? [{ id: 'resume', label: t('requestResumeQueue'), disabled: busy }] : []),
-      ...(state === 'queued' ? [{ id: 'moveUp', label: t('requestMoveUp'), disabled: busy || index <= 0 },
-        { id: 'moveDown', label: t('requestMoveDown'), disabled: busy || index < 0 || index >= queue.queued.length - 1 }] : []),
-      ...(['discussing', 'queued', 'active'].includes(state) ? [{ id: 'cancel', label: t('requestCancel'), danger: true, disabled: busy }] : []),
-    ];
-  };
-  const humanNextKeys = { dependencies: 'nextDependencies', directory: 'nextDirectory', capacity: 'nextCapacity' };
-  // One plain-language status per requirement: tone for the badge, an optional reason and the user's next step.
-  const requestHumanStatus = (project, card, state, steps, queue, t) => {
-    const status = (tone, label, next, reason) => ({ tone, label: t(label), ...(next ? { next: t(next) } : {}), ...(reason ? { reason } : {}) });
-    const waiting = steps.find(item => item.waitingReason || item.blockedReason);
-    if (card.archivedAt) return status('neutral', 'statusArchived');
-    if (card.queue?.state === 'cancelled') return status('neutral', 'statusCancelled', 'nextCancelled');
-    if (card.status === 'completed' && card.changes?.revertedAt) return status('neutral', 'statusReverted', 'nextReverted');
-    if (card.status === 'completed') return status('success', 'statusDelivered');
-    if (card.stage?.id === 'awaitingAnswer') return status('warning', 'stageAwaitingAnswer');
-    if (card.status === 'needsReview') return status('warning', 'statusNeedsReview', 'nextNeedsReview');
-    if (card.queue?.state === 'discussing') return status('neutral', 'statusDiscussing', 'nextDiscussing');
-    if (card.queue?.state === 'queued') return { ...status('outline', 'statusQueued', queue?.paused ? 'nextQueuedPaused' : steps.some(item => item.status === 'running') ? 'nextQueuedPreparing' : 'nextQueued'),
-      label: card.queue.position ? `${t('statusQueued')} · ${t('statusQueuePosition').replace('{position}', card.queue.position)}` : t('statusQueued') };
-    if (card.status === 'stopping' || project.activity?.state === 'stopping') return status('neutral', 'statusStopping');
-    if (card.status === 'paused' || project.paused) return status('warning', 'statusPaused', 'nextPaused');
-    if (card.authorityError) return status('warning', 'statusBlocked', 'nextAuthority', t('authorityErrorHint'));
-    if (card.stage?.retry) return status('info', 'statusSummaryRetrying', '', t('summaryRetrying').replace('{attempt}', card.stage.retry.attempt).replace('{of}', card.stage.retry.of));
-    if (card.status === 'summaryFailed' || card.handoverError) return status('warning', 'statusBlocked', 'nextSummary', t('summaryFailed'));
-    if (card.status === 'blocked' && card.delivery?.outcome === 'partial') return status('warning', 'statusPartial', 'nextPartial');
-    if (waiting?.waitingReason) return card.status === 'blocked'
-      ? status('warning', 'statusBlocked', humanNextKeys[waiting.waitingReason.kind], waitingLabel(t, waiting.waitingReason))
-      : status('info', 'statusActive', humanNextKeys[waiting.waitingReason.kind], waitingLabel(t, waiting.waitingReason));
-    if (card.status === 'blocked' || card.status === 'failed') return status('warning', 'statusBlocked', 'nextFailure', waiting?.blockedReason ? workBlockedLabel(t, waiting.blockedReason) : '');
-    if (state === 'requestArranging') return status('info', 'statusArranging', '', t('requestArrangingHint'));
-    if (card.status === 'pendingDelivery' || state === 'requestHandover') return status('info', 'statusHandover');
-    if (card.status === 'pendingSummary') return status('info', 'statusSummarizing');
-    return status('info', 'statusActive');
-  };
   // Delivered files, the requirement's own changes, revert and its result page, shown on the task card itself.
   function ProjectTaskDelivery({ project, card, controls, read, openResults, t }) {
     const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [confirm, setConfirm] = useState(null);
@@ -713,8 +526,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const revert = async () => {
       setBusy(true);
       try { await controls.revert(card); setConfirm(null); setMessage(t('revertDone')); }
-      catch (failure) { setConfirm(failure.code === 'revert_conflict' ? { conflict: errorText(failure) } : null); if (failure.code !== 'revert_conflict') setMessage(errorText(failure)); }
-      finally { setBusy(false); }
+      catch (failure) {
+        const isConflict = failure?.code === 'project/revert_conflict';
+        setConfirm(isConflict ? { conflict: errorText(failure) } : null);
+        if (!isConflict) setMessage(errorText(failure));
+      } finally { setBusy(false); }
     };
     const ask = async () => { setConfirm(null); try { await controls.ask(t('revertAskPrompt').replace('{title}', card.title)); } catch (failure) { setMessage(errorText(failure)); } };
     return h('section', { className: 'dsh-project-task-delivery', 'aria-label': t('deliveryFiles') },
@@ -739,235 +555,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         h('p', null, t(confirm.conflict ? 'revertConflictBody' : 'revertBody')), confirm.conflict ? h('pre', { className: 'dsh-project-confirm-detail' }, confirm.conflict) : null) : null,
       message ? h(Toast, { text: message, onDone: () => setMessage('') }) : null);
   }
-  // One requirement: a one-line strip, or its checklist, delivery and actions.
-  // Each work item opens its member's live conversation beside this one.
-  // Stages of one requirement, left to right: arranged by the Lead, executed by members, summarized, delivered.
-  const REQUEST_STAGES = ['stageArranging', 'stageExecuting', 'stageSummarizing', 'stageDelivered'];
-  const requestStageIndex = (card, state, steps) => card.status === 'completed' ? 3
-    : state === 'requestArranging' ? 0
-    : state === 'requestHandover' || ['pendingSummary', 'pendingDelivery', 'summaryFailed', 'needsReview'].includes(card.status) || card.handoverError ? 2
-    : steps.length ? 1 : 0;
-  // The rail moves only transform and opacity, so a running requirement never invalidates the page layout.
-  function StageRail({ index, tone, t }) {
-    return h('ol', { className: 'dsh-project-stage-rail', 'data-tone': tone, 'aria-label': t('stageRail') },
-      REQUEST_STAGES.map((key, position) => h('li', { key, className: 'dsh-project-stage', 'data-stage': index === 3 || position < index ? 'done' : position === index ? 'current' : 'todo', 'aria-current': position === index && index < 3 ? 'step' : undefined },
-        h('span', { className: 'dsh-project-stage-dot', 'aria-hidden': true }), h('span', { className: 'dsh-project-stage-label' }, t(key)))));
-  }
-  const elapsedLabel = ms => {
-    const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60), pad = value => String(value).padStart(2, '0');
-    return minutes >= 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}:${pad(seconds % 60)}` : `${minutes}:${pad(seconds % 60)}`;
-  };
-  // Ticks only while its row is on screen; the span keeps its place, so the row never reflows.
-  function Elapsed({ since }) {
-    const [now, setNow] = useState(Date.now), ref = useRef(null);
-    useEffect(() => {
-      const timer = setInterval(() => { if (!document.hidden && ref.current?.offsetParent) setNow(Date.now()); }, 1000);
-      return () => clearInterval(timer);
-    }, []);
-    const age = now - since;
-    return h('span', { ref, className: 'dsh-project-elapsed' }, Number.isFinite(age) && age >= 0 && age < 48 * 3600000 ? ` · ${elapsedLabel(age)}` : '');
-  }
-  // A running member shows a breathing dot; when it finishes the dot becomes a check that pops in once.
-  function StepMark({ status }) {
-    const before = useRef(status), [fresh, setFresh] = useState(false);
-    useEffect(() => {
-      const arrived = before.current !== status && status === 'completed'; before.current = status;
-      if (!arrived) return undefined;
-      setFresh(true); const timer = setTimeout(() => setFresh(false), 700);
-      return () => clearTimeout(timer);
-    }, [status]);
-    return status === 'completed' ? h(IconCheckOutlineRegular, { size: 14, className: `dsh-project-task-check${fresh ? ' is-fresh' : ''}` })
-      : h('span', { className: 'dsh-project-task-state-dot', 'data-state': status, 'aria-hidden': true });
-  }
-
-  // The one question a requirement waits on. The answer is an ordinary message to the Lead; the host clears the question when
-  // that message enters the Lead's next step, so until then this block only remembers that the answer went out.
-  function ProjectAsk({ card, controls, t }) {
-    const ask = card.stage.ask, [text, setText] = useState(''), [sent, setSent] = useState(false);
-    useEffect(() => { setSent(false); setText(''); }, [ask.id]);
-    const send = async answer => {
-      const value = answer.trim();
-      if (!value || controls.busy || sent) return;
-      setSent(true);
-      if (!await controls.say(card, t('askAnswer').replace('{title}', card.title).replace('{answer}', value))) setSent(false);
-    };
-    return h('div', { className: 'dsh-project-ask', 'data-project-ask': ask.id, role: 'group', 'aria-label': t(ask.by === 'member' ? 'askFromMember' : 'stageAwaitingAnswer') },
-      h('p', { className: 'dsh-project-ask-question' }, ask.question),
-      sent ? h('p', { role: 'status', className: 'dsh-project-ask-note' }, t('askSent')) : h(Fragment, null,
-        ask.options?.length ? h('div', { className: 'dsh-project-ask-options' }, ask.options.map(option => h(Button, { key: option, variant: 'outline', size: 'sm', disabled: controls.busy, onClick: () => { void send(option); } }, option))) : null,
-        h('div', { className: 'dsh-project-ask-form' },
-          h(Input, { value: text, maxLength: 500, 'aria-label': t('askPlaceholder'), placeholder: t('askPlaceholder'), onChange: event => setText(event.target.value), onKeyDown: event => { if (event.key === 'Enter' && !event.nativeEvent?.isComposing) { event.preventDefault(); void send(text); } } }),
-          h(Button, { variant: 'primary', size: 'sm', disabled: controls.busy || !text.trim(), onClick: () => { void send(text); } }, t('askSend'))),
-        ask.ifUnanswered ? h('p', { className: 'dsh-project-ask-note' }, t('askIfUnanswered').replace('{text}', ask.ifUnanswered)) : null));
-  }
-  // Inline actions for the rest of "needs you": retry what is blocked, re-summarize, or look at what was delivered.
-  function ProjectAttention({ card, controls, retryHandover, setTab, t }) {
-    const stage = card.stage;
-    if (stage.id === 'awaitingAnswer') return h(ProjectAsk, { card, controls, t });
-    const action = stage.id === 'blocked' && stage.reason === 'work' ? { label: t('blockedRetry'), run: () => { void controls.say(card, t('blockedRetryPrompt').replace('{title}', card.title).replace('{reason}', stage.detail || '')); } }
-      : stage.id === 'awaitingDecision' && stage.reason === 'summaryFailed' ? { label: t('retrySummary'), run: () => { void retryHandover(card); } }
-      : stage.id === 'awaitingDecision' ? { label: t('viewResults'), run: () => setTab('results') } : null;
-    if (!action && !stage.detail) return null;
-    return h('div', { className: 'dsh-project-ask', 'data-project-attention-actions': stage.id },
-      stage.detail ? h('p', { className: 'dsh-project-ask-question' }, stage.detail) : null,
-      action ? h('div', { className: 'dsh-project-ask-options' }, h(Button, { variant: 'outline', size: 'sm', disabled: controls.busy, onClick: action.run }, action.label)) : null);
-  }
-
-  function ProjectTaskCard({ card: preview, project, resourceRevision, mode, setMode, tab, setTab, read, team, sessions, controls, queue, changeQueue, archive, retryHandover, openMember, workstreams, todos, renderFactorySlot, t }) {
-    const [saved, setSaved] = useState(null), [error, setError] = useState(''), [menu, setMenu] = useState(false), [readKey, setReadKey] = useState(0);
-    const expanded = mode !== 'strip';
-    // Rows that appear after the card is on screen slide in; the ones present at first paint stay still.
-    const armed = useRef(false), seen = useRef(new Map());
-    useEffect(() => { armed.current = true; }, []);
-    useEffect(() => {
-      if (!expanded) return;
-      let live = true;
-      void read(project.id, 'requests/get', { requestId: preview.id }).then(value => { if (live) { setSaved(value.card); setError(''); } })
-        .catch(failure => { if (live) setError(errorText(failure)); });
-      return () => { live = false; };
-    }, [project.id, preview.id, preview.revision, resourceRevision, expanded, readKey]);
-    const card = saved?.revision === preview.revision && saved?.status === preview.status ? saved : preview;
-    const done = card.status === 'completed', steps = projectRequestSteps(card, team, t, sessions);
-    const executor = projectRequestExecutor(project, card, team, t, sessions), state = projectRequestStage(project, card, steps);
-    const label = ['requestArranging', 'requestHandover'].includes(state) ? t(state) : requestStateLabel(t, card);
-    const human = requestHumanStatus(project, card, state, steps, queue, t);
-    const queueItems = project.lifecycle === 'ready' && !project.archiving ? requestQueueItems(card, queue, controls.busy, t) : [];
-    const primary = queueItems.find(item => ['enqueue', 'resume'].includes(item.id));
-    const archiveItems = project.lifecycle === 'ready' && !project.archiving && (done || card.archivedAt)
-      ? [{ id: 'archive', label: t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction'), disabled: controls.busy }] : [];
-    const more = h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, align: 'end',
-      items: [...queueItems, ...archiveItems], onSelect: action => { setMenu(false); if (action === 'archive') archive(card); else changeQueue(card, action); },
-      anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, title: controls.actionError('archive', card.id), 'data-error': Boolean(controls.actionError('archive', card.id)), onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) });
-    const finished = card.counts?.completed ?? steps.filter(item => item.status === 'completed').length, total = card.counts?.total ?? steps.length;
-    const delivery = card.delivery;
-    const sections = ['progress', 'results'].map(value => ({ value, label: t({ progress: 'requestProgress', results: 'requestResults' }[value]), id: `${card.id}-tab-${value}`, panelId: `${card.id}-panel-${value}` }));
-    const pane = value => ({ role: 'tabpanel', id: `${card.id}-panel-${value}`, 'aria-labelledby': `${card.id}-tab-${value}`, 'data-project-request-tab': value, hidden: tab !== value });
-    const stageIndex = requestStageIndex(card, state, steps);
-    const stageShown = !card.archivedAt && !card.queue?.released && !['discussing', 'queued', 'cancelled'].includes(card.queue?.state);
-    const planItems = queue?.active?.id === card.id && todos?.length ? todos : null;
-    return h('article', { className: 'dsh-project-task-card', 'data-project-request-id': card.id, 'data-project-request-mode': expanded ? 'card' : 'strip', 'data-project-request-status': state },
-      h('div', { className: 'dsh-project-task-surface', 'aria-hidden': true }),
-      !expanded ? h('div', { className: 'dsh-project-task-strip' },
-        h(Button, { variant: 'ghost', className: 'dsh-project-task-strip-open', 'aria-label': `${card.title} · ${label}`, 'aria-expanded': false, onClick: () => setMode('card'), title: `${card.title} · ${label} · ${executor.name}` },
-          done ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': state, 'data-tone': human.tone, 'aria-hidden': true }),
-          h('span', { className: 'dsh-project-task-strip-title' }, card.title), h('small', null, card.queue?.state === 'queued' ? human.label : done && (delivery?.artifactCount ?? delivery?.artifacts?.length) ? `${human.label} · ${t('stripFileCount').replace('{count}', delivery.artifactCount ?? delivery.artifacts.length)}` : total ? `${human.label} · ${finished}/${total}` : human.label),
-          h(IconChevronDownOutlineRegular, { size: 14 })), queueItems.length || archiveItems.length ? more : null) : h(Fragment, null,
-        h('div', { className: 'dsh-project-task-card-heading' }, h('strong', { className: 'dsh-project-task-title' }, card.title),
-          h('div', { className: 'dsh-project-task-queue-actions' }, queueItems.length || archiveItems.length ? more : null,
-            h(Button, { variant: 'ghost', size: 'sm', 'data-error': Boolean(error), title: error || undefined, 'aria-label': `${card.title} · ${t(error ? 'retryRead' : 'observerStrip')}`, onClick: () => error ? setReadKey(value => value + 1) : setMode('strip') }, h(IconChevronUpOutlineRegular, { size: 14 })))),
-        h('div', { className: 'dsh-project-task-status' }, h('div', { className: 'dsh-project-task-status-row' }, h('span', { role: 'status', className: 'dsh-project-task-state' }, h(Tag, { tone: human.tone }, human.label)),
-          total ? h('span', null, `${finished} / ${total}`) : null),
-          human.reason || human.next ? h('div', { className: 'dsh-project-task-next', 'data-tone': human.tone },
-            human.reason ? h('span', null, human.reason) : null, human.next ? h('span', null, h('strong', null, t('nextStep')), human.next) : null) : null),
-        card.stage?.needsYou ? h(ProjectAttention, { card, controls, retryHandover, setTab, t }) : null,
-        h(SegmentedTabs, { className: 'dsh-project-request-tabs', items: sections, value: tab, onChange: setTab, label: t('requestSections') }),
-        h('div', pane('progress'),
-        card.authorityError ? h(RequestAuthority, { request: card, t }) : null,
-        card.handoverError && !card.authorityError ? h('div', { className: 'dsh-project-task-next', 'data-tone': 'warning' },
-          h('span', null, t('handoverErrorHint')), h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('handover', card.id), 'data-error': Boolean(controls.actionError('handover', card.id)), onClick: () => retryHandover(card) }, t('retrySummary')),
-          h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, card.handoverError))) : null,
-        stageShown ? h(StageRail, { index: stageIndex, tone: human.tone, t }) : null,
-        !Array.isArray(card.work) && total > steps.length ? h('p', { className: 'dsh-project-muted' }, t('workPreviewHint')) : null,
-        steps.length ? h('ul', { className: 'dsh-project-task-checklist', 'aria-label': t('observerTaskProgress') }, steps.map(item => {
-          const live = item.status === 'running', canOpen = Boolean(item.workerSessionId);
-          const rowKey = `${item.workstreamId}:${item.delegationRef}`;
-          if (!seen.current.has(rowKey)) seen.current.set(rowKey, armed.current);
-          // Current work opens the member's live conversation; an earlier round opens its exact recorded assignment.
-          const open = () => item.current === false ? controls.showProcess(project.id, item.workstreamId, false, { delegationRef: item.delegationRef }) : openMember(item.workerSessionId);
-          const row = h(Fragment, null,
-            h(StepMark, { status: item.status }),
-            h('span', { className: 'dsh-project-task-step-title' }, item.title),
-            h('small', null, item.waitingReason ? waitingLabel(t, item.waitingReason) : `${item.executor} · ${stateLabel(t, item.status)}`, live && !item.waitingReason ? h(Elapsed, { since: item.assignmentAt }) : null));
-          const stream = workstreams?.find(work => work.id === item.workstreamId);
-          const failure = item.status === 'summaryFailed' && stream?.summaryFailure?.delegationRef === item.delegationRef ? stream.summaryFailure : null;
-          // A delivered requirement shows its own changes once, in the delivery; work in progress shows its directory.
-          const changes = !done && item.current !== false && Boolean(item.memberRole) && !['readonly', 'research'].includes(item.memberRole);
-          const stoppable = item.current !== false && !controls.paused && (live || ['queued', 'preparing', 'provisioning', 'stopping'].includes(item.status));
-          return h('li', { key: rowKey, className: 'dsh-project-task-step', 'data-state': item.status, 'data-enter': seen.current.get(rowKey) },
-            canOpen ? h('button', { type: 'button', className: 'dsh-project-task-step-open', title: t('viewProcess'), onClick: open }, row) : h('div', { className: 'dsh-project-task-step-open' }, row),
-            item.reportId || stoppable || changes ? h('div', { className: 'dsh-project-task-step-actions' },
-              item.reportId ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('viewResult')}`, onClick: () => controls.showMaterials(project.id, item.workstreamId, { delegationRef: item.delegationRef }) }, t('viewResult')) : null,
-              changes ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('viewChanges')}`, onClick: () => controls.showDiff(project.id, item.workstreamId) }, t('viewChanges')) : null,
-              stoppable ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('stopWork')}`, title: controls.actionError('stop', item.workstreamId) || t('stopWork'), 'data-error': Boolean(controls.actionError('stop', item.workstreamId)), disabled: controls.busy || item.status === 'stopping', onClick: () => controls.act('stop', { workstreamId: item.workstreamId }) }, t('stopWork')) : null) : null,
-            ['blocked', 'failed'].includes(item.status) && item.blockedReason && item.blockedReason !== 'stopped' && !item.waitingReason ? h('p', { className: 'dsh-project-task-step-reason', role: 'alert' }, workBlockedLabel(t, item.blockedReason)) : null,
-            stream?.prerequisitesChanged && item.current !== false ? h('p', { className: 'dsh-project-task-step-note', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
-            failure ? h('div', { className: 'dsh-project-task-step-failure' }, h(SummaryFailure, { failure, autoRetry: stream?.autoRetry, openModelSettings: controls.openModelSettings, t }),
-              !card.authorityError ? h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('summary', item.workstreamId), 'data-error': Boolean(controls.actionError('summary', item.workstreamId)), onClick: () => controls.retrySummary({ id: item.workstreamId, summaryFailure: failure }) }, t('retrySummary')) : null) : null);
-        })) : h('p', { className: 'dsh-project-task-waiting' }, t('observerNoTodo')),
-        planItems ? h('details', { className: 'dsh-project-result-disclosure dsh-project-lead-plan', open: !steps.length },
-          h('summary', null, t('leadPlan'), ` · ${planItems.filter(todo => todo.status === 'completed').length}/${planItems.length}`),
-          h('ul', { className: 'dsh-project-native-plan' }, planItems.map((todo, index) => h('li', { key: index, 'data-state': todo.status },
-            h(StateDot, { state: todo.status === 'completed' ? 'done' : todo.status === 'in_progress' ? 'ongoing' : 'idle' }), h('span', null, todo.content))))) : null,
-        h('details', { className: 'dsh-project-result-disclosure dsh-project-observer-request-info', open: !steps.length && !planItems }, h('summary', null, t('workRequest')),
-          markdown(t, card.goal),
-          card.conditions?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementConditions')), h('ul', null, card.conditions.map((item, index) => h('li', { key: index }, item)))) : null,
-          card.constraints?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementConstraints')), h('ul', null, card.constraints.map((item, index) => h('li', { key: index }, item)))) : null,
-          card.versions?.length > 1 ? card.versions.toReversed().map(version => h('details', { key: version.revision, className: 'dsh-project-task-version dsh-project-result-disclosure' },
-            h('summary', null, recordedTime(version.at), h('strong', null, `${t('requestVersion')} ${version.revision}`)),
-            h('div', { className: 'dsh-project-result-details' },
-              h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementGoal')), markdown(t, version.goal)),
-              ...[['constraints', 'requirementConstraints', 'noRequirementConstraints'], ['conditions', 'requirementConditions', 'noRequirementConditions']].map(([field, label, empty]) =>
-                h('div', { key: field, className: 'dsh-project-task-section' }, h('strong', null, t(label)), version[field]?.length
-                  ? h('ul', null, version[field].map((text, index) => h('li', { key: index }, markdown(t, text))))
-                  : h('p', { className: 'dsh-project-muted' }, t(empty))))))) : null,
-          h('div', { className: 'dsh-project-task-meta' }, recordedTime(card.updatedAt), h('span', null, `${t('requestVersion')} ${card.revision}`)))),
-        h('div', pane('results'), delivery ? h(Fragment, null,
-          h('p', { className: 'dsh-project-task-outcome' }, summaryPreview(delivery.summary ?? delivery.summaryPreview)),
-          h(ProjectVisualResults, { pages: delivery.pages, renderFactorySlot, t }),
-          h(ProjectTaskDelivery, { project, card, controls, read, openResults: () => controls.showMaterials(project.id), t }),
-          delivery.remainingIssues?.length ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('remainingIssues')),
-            h('ul', null, delivery.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null) : h('p', { className: 'dsh-project-muted' }, t('taskNoResults'))),
-        primary || ['discussing', 'queued'].includes(card.queue?.state) && queueItems.some(item => item.id === 'cancel') ? h('div', { className: 'dsh-project-task-footer' }, h('div', { className: 'dsh-project-task-footer-actions' },
-          primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : null,
-          ['discussing', 'queued'].includes(card.queue?.state) && queueItems.some(item => item.id === 'cancel') ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, 'cancel') }, t('requestUndo')) : null)) : null),
-      error ? h(OperationToast, { text: error }) : null);
-  }
-  function projectMemberDisplayName(member, work, t) {
-    if (member.role === 'lead') return t('teamLead');
-    const name = member.name?.trim();
-    const internalName = name === `member-${member.id?.replace(/^session-/, '')}`
-      || /^member-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name ?? '');
-    return name && !internalName ? name : work?.title || work?.subject || member.description || t('teamMember');
-  }
-
-  function projectRequestSteps(card, team, t, sessions = {}) {
-    return (card?.work ?? card?.workPreview ?? []).map(work => {
-      const historical = card.status === 'completed' || card.queue?.released || work.current === false;
-      const task = historical ? undefined : team?.tasks?.find(item => item.id === work.workstreamId);
-      const member = historical ? undefined : team?.members?.find(item => task?.ownerName ? item.name === task.ownerName : item.id === work.workerSessionId);
-      const title = task?.subject || work.title, name = projectMemberDisplayName(member ?? { name: work.memberName }, work, t);
-      const roleKey = { development: 'requestRoleDevelopment', readonly: 'requestRoleReview', research: 'requestRoleResearch', docs: 'requestRoleDocs' }[work.memberRole];
-      const executorName = name === title || name === work.title ? t('teamMember') : name;
-      const executor = roleKey ? executorName === t('teamMember') ? t(roleKey) : `${t(roleKey)} · ${executorName}` : executorName;
-      const blocked = task?.blockedBy?.filter(id => team.tasks.find(item => item.id === id)?.status !== 'completed') ?? [];
-      const dependencyBlocked = blocked.length > 0 || task?.status === 'pending' && task.ready === false;
-      const running = sessions[member?.id ?? work.workerSessionId]?.running || work.runningJob === true;
-      // Project-owned states (a failed summary, a stop in progress, a hold) outrank the Team task's view.
-      const status = ['summaryFailed', 'stopping', 'paused', 'failed', 'blocked'].includes(work.status) ? work.status
-        : !historical && running === true ? 'running'
-        : task ? task.status === 'completed' ? 'completed' : task.status === 'deleted' ? 'deleted' : dependencyBlocked ? 'blocked'
-        : task.status === 'in_progress' ? 'teamAssigned' : 'queued' : work.status;
-      return { ...work, title, status, executor,
-        ...(dependencyBlocked ? { waitingReason: { kind: 'dependencies', workTitles: blocked.map(id => team.tasks.find(item => item.id === id)?.subject).filter(Boolean) } } : {}) };
-    });
-  }
-
-  function projectRequestStage(project, card, steps) {
-    return card?.queue?.state === 'active' && !card.queue.released && !project.paused && !steps.length && !card.delivery && !card.handoverError && !card.authorityError
-      ? 'requestArranging' : card?.status === 'pendingDelivery' && steps.length && steps.every(item => item.status === 'completed') ? 'requestHandover' : card?.status ?? project.activity?.state ?? 'idle';
-  }
-
-  function projectRequestExecutor(project, card, team, t, sessions) {
-    if (card?.status === 'completed') return { name: t('teamLead'), stage: t('completed') };
-    if (project.archiving || project.activity?.state === 'stopping') return { name: t('teamLead'), stage: t('stopping') };
-    const steps = projectRequestSteps(card, team, t, sessions);
-    if (projectRequestStage(project, card, steps) === 'requestArranging') return { name: t('teamLead'), stage: t('requestArranging') };
-    if (card?.queue && (card.queue.state !== 'active' || card.queue.released)) return { name: t('teamLead'), stage: requestStateLabel(t, card, false) };
-    const work = steps.find(item => item.status === 'running');
-    if (work) return { name: work.executor, stage: stateLabel(t, work.status), title: work.title, sessionId: work.workerSessionId };
-    if (project.activity?.coordinatorRunning) return { name: t('teamLead'), stage: stateLabel(t, project.activity.pendingSummary ? 'pendingSummary' : 'running'), sessionId: project.coordinatorSessionId };
-    return { name: t('teamLead'), stage: stateLabel(t, card?.status ?? 'observerIdle') };
-  }
 
   function ProjectReportView({ projectId, reference, read, showProcess, t }) {
     const [result, setResult] = useState(null), [error, setError] = useState('');
@@ -988,9 +575,28 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
 
   function RailQuestion({ project, ask, sendUserRequest, t }) {
-    const [answer, setAnswer] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
-    const send = async text => { if (!text.trim()) return; setBusy(true); try { await sendUserRequest(project.id, ask.question + '\n' + text); setAnswer(''); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h('div', { className: 'dsh-project-rail-details' }, h('p', null, ask.question), h('div', { className: 'dsh-project-actions' }, ask.options?.map(option => h(Button, { key: option, variant: 'outline', size: 'sm', disabled: busy, onClick: () => send(option) }, option))), h('form', { onSubmit: event => { event.preventDefault(); void send(answer); } }, h(Input, { 'aria-label': ask.question, value: answer, onChange: event => setAnswer(event.target.value), disabled: busy }), h(Button, { type: 'submit', variant: 'ghost', size: 'sm', disabled: busy || !answer.trim() }, t('askSend'))), error ? h('p', { role: 'alert' }, error) : null);
+    const [answer, setAnswer] = useState(''), [busy, setBusy] = useState(false), [sent, setSent] = useState(false), [error, setError] = useState('');
+    const submitting = useRef(false);
+    useEffect(() => { setAnswer(''); setSent(false); setError(''); submitting.current = false; }, [ask.id, ask.question]);
+    const send = async text => {
+      const value = String(text ?? '').trim();
+      if (!value || busy || sent || submitting.current) return;
+      submitting.current = true; setBusy(true); setError('');
+      try {
+        await sendUserRequest(project.id, ask.question + '\n' + value);
+        setAnswer(''); setSent(true);
+      } catch (failure) { setError(errorText(failure)); }
+      finally { submitting.current = false; setBusy(false); }
+    };
+    return h('div', { className: 'dsh-project-rail-details', 'data-project-ask': ask.id ?? true },
+      h('p', null, ask.question),
+      sent ? h('p', { role: 'status', className: 'dsh-project-ask-note' }, t('askSent')) : h(Fragment, null,
+        ask.options?.length ? h('div', { className: 'dsh-project-actions' }, ask.options.map(option => h(Button, { key: option, variant: 'outline', size: 'sm', disabled: busy, onClick: () => { void send(option); } }, option))) : null,
+        h('form', { onSubmit: event => { event.preventDefault(); void send(answer); } },
+          h(Input, { 'aria-label': ask.question, value: answer, onChange: event => setAnswer(event.target.value), disabled: busy }),
+          h(Button, { type: 'submit', variant: 'ghost', size: 'sm', disabled: busy || !answer.trim() }, t('askSend'))),
+        ask.ifUnanswered ? h('p', { className: 'dsh-project-ask-note' }, t('askIfUnanswered').replace('{text}', ask.ifUnanswered)) : null),
+      error ? h('p', { role: 'alert' }, error) : null);
   }
   function RailFailure({ project, card, work, read, sendUserRequest, openModelSettings, t }) {
     const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -1027,6 +633,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const action = async name => { setBusy(true); setError(''); try { await props.command(project.id, 'requests/queue', { requestId: card.id, requestRevision: card.revision, action: name }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
     const current = full?.card ?? full?.request ?? full ?? card, work = expanded && full ? current.work ?? card.workPreview ?? [] : card.workPreview ?? [];
     const toggle = () => { setExpanded(value => !value); props.rememberExpanded?.(card.id, !expanded); };
+    const allWork = current.work ?? work;
+    const diffWork = allWork.find(item => item.memberRole && !['readonly', 'research'].includes(item.memberRole));
+    const hasRequestDiff = Boolean(current.changes?.isGit && current.changes.fileCount !== undefined);
+    const deliveryRendered = Boolean(current.delivery && Array.isArray(current.delivery.artifacts)
+      && (current.status === 'completed' || current.delivery.outcome === 'partial')
+      && (current.delivery.artifacts.length || current.delivery.pages?.length || diffWork || hasRequestDiff));
+    const showFooterDiff = !deliveryRendered && (Boolean(current.changes?.isGit) || (current.changes?.isGit !== false && Boolean(diffWork)));
+    const canResume = card.status !== 'completed' && !card.queue?.released && (project.paused || card.queue?.suspended || card.status === 'paused') && ['active', 'queued'].includes(card.queue?.state);
     return h('article', { className: 'dsh-project-rail-card', 'data-project-request': card.id },
       h('button', { type: 'button', className: 'dsh-project-rail-card-title', 'aria-expanded': expanded, onClick: toggle }, h('strong', null, card.title), h(IconChevronDownOutlineRegular, { size: 14, style: { transform: expanded ? 'rotate(180deg)' : undefined } })),
       h('div', { className: 'dsh-project-rail-status', 'data-status': card.status }, h(StateDot, { tone: ['blocked', 'failed', 'summaryFailed'].includes(card.status) ? 'warning' : card.status === 'completed' ? 'success' : 'neutral' }), requestStateLabel(t, card)),
@@ -1035,19 +649,25 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       card.stage?.ask ? h(RailQuestion, { ...props, ask: card.stage.ask }) : null,
       current.authorityError ? h('p', { role: 'alert', className: 'dsh-project-rail-details' }, t('authorityErrorHint')) : current.handoverError ? h(RailFailure, { ...props, card: current }) : null,
       work.filter(item => item.status === 'summaryFailed' && !current.authorityError).map(item => {
-        const stream = props.workstreams?.find(work => work.id === item.workstreamId);
-        return stream?.summaryFailure ? h(RailFailure, { ...props, key: item.workstreamId, work: stream }) : null;
+        const stream = props.workstreams?.find(row => row.id === item.workstreamId);
+        const failureWork = stream?.summaryFailure ? stream : item.summaryFailure ? { id: item.workstreamId, summaryFailure: item.summaryFailure, autoRetry: item.autoRetry } : null;
+        return failureWork ? h(RailFailure, { ...props, key: item.workstreamId, work: failureWork }) : null;
       }),
       expanded ? h('div', { className: 'dsh-project-rail-details' }, full ? h(Fragment, null,
-        h('p', null, current.goal), h(ProjectTaskDelivery, { project, card: current, read: props.read, openResults: () => props.showMaterials(project.id), controls: { busy, revert: card => props.command(project.id, 'requests/revert', { requestId: card.id, requestRevision: card.revision }), ask: text => props.sendUserRequest(project.id, text), showRequestDiff: requestId => props.showRequestDiff(project.id, requestId), showDiff: props.showDiff }, t }), h(ProjectVisualResults, { pages: current.delivery?.pages, renderFactorySlot: props.renderFactorySlot, t }), current.delivery ? h('section', null, h('strong', null, t('viewResult')), h('p', null, current.delivery.summary), current.delivery.evidence?.map((text,index) => h('p', { key: index }, text)), current.delivery.remainingIssues?.map((text,index) => h('p', { key: index }, text)), current.delivery.artifacts?.map(file => h(Button, { key: file.path, variant: 'ghost', size: 'sm', onClick: () => void props.read(project.id, 'open', { workstreamId: file.workstreamId, delegationRef: file.delegationRef, path: file.path }).catch(failure => setError(errorText(failure))) }, file.path.split(/[\\/]/).at(-1)))) : null, current.constraints?.length ? h('ul', null, current.constraints.map((text, index) => h('li', { key: index }, text))) : null,
-        current.versions?.length > 1 ? h('details', null, h('summary', null, t('requestVersion')), current.versions.map(version => h('section', { key: version.revision }, h('strong', null, version.title), h('p', null, version.goal), h('ul', null, [...(version.constraints ?? []), ...(version.conditions ?? [])].map((text,index) => h('li', { key:index },text)))))) : null, current.conditions?.length ? h('details', null, h('summary', null, t('requirementConditions')), h('ul', null, current.conditions.map((text, index) => h('li', { key: index }, text)))) : null,
+        h('p', null, current.goal),
+        h(ProjectTaskDelivery, { project, card: current, read: props.read, openResults: () => props.showMaterials(project.id), controls: { busy, revert: card => props.command(project.id, 'requests/revert', { requestId: card.id, requestRevision: card.revision }), ask: text => props.sendUserRequest(project.id, text), showRequestDiff: requestId => props.showRequestDiff(project.id, requestId), showDiff: props.showDiff }, t }),
+        h(ProjectVisualResults, { pages: current.delivery?.pages, renderFactorySlot: props.renderFactorySlot, t }),
+        current.delivery ? h('section', null, h('strong', null, t('viewResult')), h('p', null, current.delivery.summary), current.delivery.evidence?.map((text, index) => h('p', { key: index }, text)), current.delivery.remainingIssues?.map((text, index) => h('p', { key: index }, text))) : null,
+        current.constraints?.length ? h('ul', null, current.constraints.map((text, index) => h('li', { key: index }, text))) : null,
+        current.versions?.length > 1 ? h('details', null, h('summary', null, t('requestVersion')), current.versions.map(version => h('section', { key: version.revision }, h('strong', null, version.title), h('p', null, version.goal), h('ul', null, [...(version.constraints ?? []), ...(version.conditions ?? [])].map((text, index) => h('li', { key: index }, text)))))) : null,
+        current.conditions?.length ? h('details', null, h('summary', null, t('requirementConditions')), h('ul', null, current.conditions.map((text, index) => h('li', { key: index }, text)))) : null,
         (current.work ?? current.requiredWork ?? []).map(item => item.reportId ? h(Button, { key: item.workstreamId + item.delegationRef, variant: 'ghost', size: 'sm', 'aria-label': t('viewResult'), onClick: () => props.showReport(project.id, item.workstreamId, { delegationRef: item.delegationRef }) }, item.title ?? t('viewResult')) : null)) : h('p', { role: 'status' }, t('loading')),
         h('div', { className: 'dsh-project-actions' },
           ['discussing', 'cancelled'].includes(card.queue?.state) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('enqueue') }, t('requestEnqueue')) : null,
-          (project.paused || card.queue?.suspended || card.status === 'paused') && ['active','queued'].includes(card.queue?.state) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('resume') }, t('requestResume')) : null,
+          canResume ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('resume') }, t('requestResume')) : null,
           !['completed', 'cancelled'].includes(card.status) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('cancel') }, t('requestCancel')) : null,
           (card.status === 'completed' || card.archivedAt) && project.lifecycle === 'ready' && !project.archiving ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: async () => { setBusy(true); setError(''); try { await props.command(project.id, card.archivedAt ? 'requests/restore' : 'requests/archive', { requestId: card.id }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } } }, t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction')) : null,
-          h(Button, { variant: 'ghost', size: 'sm', onClick: () => props.showRequestDiff(project.id, card.id) }, t('viewChanges')))) : null,
+          showFooterDiff ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => current.changes?.isGit ? props.showRequestDiff(project.id, card.id) : props.showDiff(project.id, diffWork.workstreamId) }, t('viewChanges')) : null)) : null,
       error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
@@ -1055,19 +675,28 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   function ProjectRequirements(props) {
     const { project, sessionId, t } = props, detail = props.useProjects(value => value.details[project.id]);
     const saved = props.useRequestPanels(value => value[sessionId]?.rail), [history, setHistory] = useState(saved?.history ?? 'current'), [page, setPage] = useState({ items: [] }), [cursor, setCursor] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0), [expandedCards, setExpandedCards] = useState(saved?.expandedCards ?? {});
-    const list = useRef(null), order = useRef([]), retained = useRef(new Map()), group = useRef(history), position = useRef(saved?.scrollTop ?? 0);
+    const list = useRef(null), order = useRef([]), retained = useRef(new Map()), firstPageIds = useRef(new Set()), group = useRef(history), position = useRef(saved?.scrollTop ?? 0), resetOnHome = useRef(false);
     useEffect(() => {
       let live = true; setLoading(true);
-      if (group.current !== history) { retained.current.clear(); order.current = []; group.current = history; }
+      if (group.current !== history || resetOnHome.current) {
+        retained.current.clear(); order.current = []; firstPageIds.current.clear();
+        group.current = history; resetOnHome.current = false;
+      }
       void (async () => {
         const value = await props.read(project.id, 'requests/list', { kind: history, ...(cursor ? { cursor } : {}) });
         if (!live) return;
-        // A completed card stays at its reading position until the user changes
-        // the group or closes the rail. Refresh its facts by exact identity.
-        const present = new Set(value.items.map(item => item.id));
-        const missing = [...retained.current.keys()].filter(id => !present.has(id));
-        const updates = await Promise.all(missing.map(requestId => props.read(project.id, 'requests/get', { requestId })));
-        if (!live) return;
+        let updates = [];
+        if (!cursor) {
+          // A completed card from the first page stays at its reading position until the user changes
+          // the group, returns to page 1, or closes the rail. Never fan out requests/get for older pages.
+          const present = new Set(value.items.map(item => item.id));
+          const missing = [...firstPageIds.current].filter(id => retained.current.has(id) && !present.has(id));
+          if (missing.length) {
+            updates = await Promise.all(missing.map(requestId => props.read(project.id, 'requests/get', { requestId })));
+            if (!live) return;
+          }
+          for (const item of value.items) firstPageIds.current.add(item.id);
+        }
         for (const item of [...value.items, ...updates.map(item => item.card)]) {
           if (!order.current.includes(item.id)) order.current.push(item.id);
           retained.current.set(item.id, item);
@@ -1078,26 +707,21 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     }, [project.id, detail?.revision, project.updatedAt, history, cursor, refresh]);
     useLayoutEffect(() => { if (list.current) list.current.scrollTop = position.current; }, [Boolean(page.items.length)]);
     useEffect(() => { props.setRequestPanel(sessionId, { rail: { history, expandedCards, scrollTop: position.current } }); }, [history, expandedCards, sessionId]);
-    const cards = [...page.items].sort((a,b) => order.current.indexOf(a.id) - order.current.indexOf(b.id));
+    const cards = [...page.items].sort((a, b) => order.current.indexOf(a.id) - order.current.indexOf(b.id));
+    const returnHome = () => {
+      retained.current.clear(); order.current = []; firstPageIds.current.clear();
+      position.current = 0; resetOnHome.current = true;
+      if (list.current) list.current.scrollTop = 0;
+      setCursor(null);
+    };
     return h('div', { className: 'dsh-project-rail-body', ref: list, onScroll: event => { position.current = event.currentTarget.scrollTop; props.setRequestPanel(sessionId, { rail: { history, expandedCards, scrollTop: position.current } }); } },
-      h('div', { className: 'dsh-project-rail-tools' }, h('select', { 'aria-label': t('taskList'), value: history, onChange: event => { setHistory(event.target.value); setCursor(null); order.current = []; position.current = 0; } }, ['current','completed','cancelled','archived'].map(kind => h('option', { value: kind, key: kind }, t({ current: 'groupActive', completed: 'taskCompleted', cancelled: 'taskCancelled', archived: 'taskArchive' }[kind])))), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setRefresh(value => value + 1) }, t('refresh'))),
+      h('div', { className: 'dsh-project-rail-tools' }, h('select', { 'aria-label': t('taskList'), value: history, onChange: event => { setHistory(event.target.value); setCursor(null); order.current = []; retained.current.clear(); firstPageIds.current.clear(); position.current = 0; } }, ['current', 'completed', 'cancelled', 'archived'].map(kind => h('option', { value: kind, key: kind }, t({ current: 'groupActive', completed: 'taskCompleted', cancelled: 'taskCancelled', archived: 'taskArchive' }[kind])))), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setRefresh(value => value + 1) }, t('refresh'))),
       error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
       loading && !cards.length ? h('p', { role: 'status' }, t('loading')) : null,
       !loading && !error && !cards.length ? h('div', { className: 'dsh-project-rail-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
       cards.map(card => h(RailCard, { ...props, workstreams: detail?.workstreams, card, key: card.id, expandedCards, rememberExpanded: (id, value) => setExpandedCards(before => ({ ...before, [id]: value })) })),
       page.nextCursor ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => setCursor(page.nextCursor) }, t('more')) : null,
-      cursor ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => setCursor(null) }, t('taskBack')) : null);
-  }
-
-  function ProjectRequestSidebar(props) {
-    const project = props.useProjects(value => value.projects.find(item => item.coordinatorSessionId === props.sessionId));
-    const { tab, panel } = props.useTabInfo();
-    if (!project) return null;
-    return h(ProjectRequirements, { ...props, project, returnFloat: () => {
-      tab.actions.close();
-      if (panel.host === 'dock') props.collapseEmptyObserver(props.sessionId);
-      props.setRequestPanel(props.sessionId, { open: true, observing: false });
-    } });
+      cursor ? h(Button, { variant: 'ghost', size: 'sm', onClick: returnHome }, t('taskBack')) : null);
   }
 
   function ProjectComposerFrame({ children, label }) {
@@ -1125,10 +749,20 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
 
   // A member's conversation is read for its progress; work reaches it through the Lead.
-  function ProjectMemberComposer({ matched, useProjects, command, openLead, t }) {
+  function ProjectMemberComposer({ matched, useProjects, read, command, openLead, t }) {
     const project = useProjects(value => value.projects.find(item => item.id === matched.projectId));
-    const worker = useProjects(value => value.details[matched.projectId]?.workers?.find(item => item.sessionId === matched.workerSessionId));
+    const cachedWorker = useProjects(value => value.details[matched.projectId]?.workers?.find(item => item.sessionId === matched.workerSessionId));
+    const [fetchedWorker, setFetchedWorker] = useState(null);
     const [busy, setBusy] = useState(false), [error, setError] = useState('');
+    useEffect(() => {
+      if (cachedWorker || !matched.projectId || !matched.workerSessionId || typeof read !== 'function') { setFetchedWorker(null); return; }
+      let live = true;
+      void read(matched.projectId, 'workstreams/get', { workerSessionId: matched.workerSessionId })
+        .then(value => { if (live) setFetchedWorker(value?.worker ?? null); })
+        .catch(() => { /* keep member notice usable even if workstream detail is unavailable */ });
+      return () => { live = false; };
+    }, [matched.projectId, matched.workerSessionId, Boolean(cachedWorker)]);
+    const worker = cachedWorker ?? fetchedWorker;
     const stop = async () => { setBusy(true); setError(''); try { await command(matched.projectId, 'stop', { workstreamId: worker.workstreamId }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
     const back = event => { try { openLead(project.coordinatorSessionId, event.currentTarget); } catch (failure) { setError(errorText(failure)); } };
     return h(ProjectComposerFrame, { label: t('memberRecordTitle') },
@@ -1155,13 +789,23 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, request.authorityError)));
   }
 
-  function ProjectStop({ sessionId, useProjects, command, t, compact = true }) {
+  function ProjectStop({ sessionId, useProjects, command, t, compact = true, confirm = false }) {
     const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
+    const [busy, setBusy] = useState(false), [error, setError] = useState(''), [confirmOpen, setConfirmOpen] = useState(false);
     if (!project || project.lifecycle !== 'ready' || project.archiving) return null;
     const active = Boolean(project.activity?.running || project.activity?.queued || project.activity?.provisioning || project.activity?.coordinatorRunning || project.activity?.state === 'stopping');
-    const stop = async () => { setBusy(true); setError(''); try { await command(project.id, 'stop'); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h(Fragment, null, h(Button, { variant: 'ghost', size: 'sm', className: compact ? 'dsh-project-stop' : undefined, loading: busy, 'data-error': Boolean(error), 'aria-label': t('stop'), title: error || t('stop'), disabled: busy || !active && !error || project.activity?.state === 'stopping', onClick: stop }, compact ? h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true }, h('rect', { x: 3, y: 3, width: 10, height: 10, rx: 2, fill: 'currentColor' })) : t('stop')),
+    const stop = async () => {
+      setBusy(true); setError('');
+      try { await command(project.id, 'stop'); setConfirmOpen(false); }
+      catch (failure) { setError(errorText(failure)); setConfirmOpen(false); }
+      finally { setBusy(false); }
+    };
+    const trigger = () => { if (confirm) setConfirmOpen(true); else void stop(); };
+    return h(Fragment, null,
+      h(Button, { variant: 'ghost', size: 'sm', className: compact ? 'dsh-project-stop' : undefined, loading: busy, 'data-error': Boolean(error), 'aria-label': t('stop'), title: error || t('stop'), disabled: busy || !active && !error || project.activity?.state === 'stopping', onClick: trigger }, compact ? h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true }, h('rect', { x: 3, y: 3, width: 10, height: 10, rx: 2, fill: 'currentColor' })) : t('stop')),
+      confirmOpen ? h(Modal, { open: true, onClose: () => { if (!busy) setConfirmOpen(false); }, closeLabel: t('cancel'), className: 'dsh-project-confirm', title: t('stopAllTitle'),
+        footer: h('div', { className: 'dsh-project-actions' }, button(t('cancel'), () => setConfirmOpen(false), busy), h(Button, { variant: 'primary', loading: busy, disabled: busy, onClick: () => { void stop(); } }, t('stopAllConfirm'))) },
+        h('p', null, t('stopAllBody'))) : null,
       error ? h(OperationToast, { text: error }) : null);
   }
 
@@ -1419,7 +1063,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           const target = assignmentIndex(items, delegation.messageId);
           if (target >= 0) {
             const boundary = assignmentPageStart(items, target);
-            setPageStart(boundary); setPageEnd(Math.min(assignmentPageEnd(items, target, project.coordinatorSessionId), boundary + 50)); setLocatedRef(delegation.ref); return;
+            setPageStart(boundary); setPageEnd(Math.min(assignmentPageEnd(items, target, work.parentSessionId ?? project.coordinatorSessionId), boundary + 50)); setLocatedRef(delegation.ref); return;
           }
           if (!snapshot.hasMore) throw new Error(t('runRecordsMissing'));
           const firstSeq = snapshot.entries.find(entry => entry.type === 'event')?.event.seq;
@@ -1489,10 +1133,16 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   function diffDirectoryLabel(directory, directories) {
     const parts = directoryParts({ canonicalWorkingDirectory: directory });
     if (!parts.length || /^[a-z]:[\\/]*$/i.test(directory)) return directory;
-    const peers = directories.filter(other => other !== directory).map(other => directoryParts({ canonicalWorkingDirectory: other }));
+    const selfKey = comparablePath(directory);
+    const fold = isWindowsPath(directory);
+    const peers = directories.filter(other => comparablePath(other) !== selfKey).map(other => directoryParts({ canonicalWorkingDirectory: other }));
     for (let count = 1; count < parts.length; count++) {
       const label = parts.slice(-count).join('/');
-      if (peers.every(other => other.slice(-count).join('/') !== label)) return `…/${label}`;
+      const target = fold ? label.toLowerCase() : label;
+      if (peers.every(other => {
+        const candidate = other.slice(-count).join('/');
+        return (fold ? candidate.toLowerCase() : candidate) !== target;
+      })) return `…/${label}`;
     }
     return directory;
   }
@@ -1639,25 +1289,13 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-project: locale');
       const snapshot = createSnapshotStore({ projects: [], details: {}, available: false, loading: true, error: '' });
-      const requestModes = createSnapshotStore({}, { persist: { name: 'dsh-project.request-modes' } });
       const requestPanels = createSnapshotStore({});
       const setRequestPanel = (sessionId, next) => requestPanels.set({ ...requestPanels.getSnapshot(), [sessionId]: { ...requestPanels.getSnapshot()[sessionId], ...next } });
-      let sidebar, teamScopes;
+      let sidebar;
       ctx.inject(['sidebarRight'], scope => {
         sidebar = scope.sidebarRight;
-        scope.effect(() => sidebar.openTabs.subscribe(() => {
-          const tabs = sidebar.openTabs.getSnapshot(), before = requestPanels.getSnapshot();
-          let next = before;
-          for (const [id, value] of Object.entries(before)) if (value.observing && !tabs.some(tab => tab.sessionId === id && tab.kind === 'project-requests')) next = { ...next, [id]: { ...value, observing: false } };
-          if (next !== before) requestPanels.set(next);
-        }), 'dsh-project: Request observer closes');
         scope.effect(() => () => { sidebar = undefined; }, 'dsh-project: Sidebar');
       });
-      const pinRequests = sessionId => {
-        if (!sidebar) throw new Error(t('unavailable'));
-        if (!sidebar.openTabIn(sessionId, 'project-requests')) throw new Error(t('unavailable'));
-        setRequestPanel(sessionId, { open: false, observing: true });
-      };
       const collapseEmptyObserver = sessionId => {
         if (sidebar?.mounted.getSnapshot() === sessionId && sidebar.isExpanded()
           && !sidebar.openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.kind !== 'guide')) sidebar.toggleExpanded();
@@ -1684,10 +1322,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       // A member's live conversation opens beside the Lead instead of replacing it.
       const openMember = (project, workerSessionId, parentSessionId = project.coordinatorSessionId) => sidebar?.openResource(subagentChatAddress({
         parentSessionId, childSessionId: workerSessionId, mode: 'continuable' }), { kind: 'subagentchat' });
-      const openTeamMember = (leadSessionId, childSessionId) => {
-        if (childSessionId === leadSessionId || (ctx.sessions.retainInfo(leadSessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return;
-        ctx.uiWorkspace.openSession({ parentSessionId: leadSessionId, childSessionId, mode: 'continuable' });
-      };
       // Desktop verdicts on whether a folder may host a Project, keyed by comparable path.
       const directoryChecks = createSnapshotStore({});
       const checkDirectory = path => {
@@ -1703,9 +1337,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           // An unavailable check leaves the entry; creation still enforces the rule.
           () => directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: {} }));
       };
-      // Bumped to close the header panels when a native file preview takes over.
-      const dismissals = createSnapshotStore(0);
-      const dismissPanels = () => dismissals.set(dismissals.getSnapshot() + 1);
       const archiveRequests = new Set();
       const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, modalDirty: false, pendingModal: null, modalRevision: 0, materialsPreview: false, lifecycle: null }), actions: {
         selectProject: (draft, id) => { draft.selected = id; },
@@ -1748,7 +1379,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
           await ctx.workspaces.openPath(value.canonicalPath, { sessionId: project.coordinatorSessionId, workingDirectory: value.root, presentation: 'mini' });
           if (isCurrent && !isCurrent()) return value;
-          dismissPanels();
           // Only Materials can be suspended and returned to; other dialogs give way to the preview.
           if (originalView.modal && originalView.modal.kind !== 'materials' && viewInstance.getSnapshot().modalRevision === originalView.modalRevision) viewInstance.actions.setModal(null);
           const currentView = viewInstance.getSnapshot();
@@ -1855,32 +1485,43 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         if (!scope) throw new Error(t('unavailable'));
         await scope.get('conversation').send(text);
       };
-      const setRequestMode = (sessionId, id, mode, completed = false) => {
-        const before = requestModes.getSnapshot();
-        requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: { ...before[sessionId]?.requests, [id]: { ...before[sessionId]?.requests?.[id], mode, completed } } } });
+      const resolveMemberProject = owner => {
+        const state = snapshot.getSnapshot();
+        for (const project of state.projects) {
+          const workers = state.details[project.id]?.workers;
+          if (workers?.some(worker => worker.sessionId === owner.sessionId)) {
+            return { projectId: project.id, workerSessionId: owner.sessionId };
+          }
+        }
+        const byId = ctx.sessions.list.getSnapshot()?.byId ?? {};
+        const parentOf = id => {
+          const info = byId[id];
+          return info?.parentSessionId ?? info?.subagent?.address?.parentSessionId ?? null;
+        };
+        const visited = new Set([owner.sessionId]);
+        let current = owner.session?.subagent?.address?.parentSessionId ?? parentOf(owner.sessionId);
+        while (current && !visited.has(current)) {
+          visited.add(current);
+          const direct = state.projects.find(item => item.coordinatorSessionId === current);
+          if (direct) return { projectId: direct.id, workerSessionId: owner.sessionId };
+          for (const project of state.projects) {
+            const workers = state.details[project.id]?.workers;
+            if (workers?.some(worker => worker.sessionId === current)) {
+              return { projectId: project.id, workerSessionId: owner.sessionId };
+            }
+          }
+          current = parentOf(current);
+        }
+        return null;
       };
-      const setRequestTab = (sessionId, id, tab) => {
-        const before = requestModes.getSnapshot();
-        requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: { ...before[sessionId]?.requests, [id]: { ...before[sessionId]?.requests?.[id], tab } } } });
-      };
-      const rememberRequestModes = (sessionId, cards) => {
-        const before = requestModes.getSnapshot(), rows = { ...before[sessionId]?.requests };
-        let changed = false;
-        for (const card of cards) if (!rows[card.id]) { rows[card.id] = { mode: card.id === snapshot.getSnapshot().projects.find(project => project.coordinatorSessionId === sessionId)?.queue?.active?.id ? 'card' : 'strip' }; changed = true; }
-        if (changed) requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: rows } });
-      };
-      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, requestPanels, dismissals, ...(teamScopes ? { teamTaskScopes: teamScopes.source, teamActivity: teamScopes.activitySource } : {}) }, ...(teamScopes ? { teamT: (key, params) => ctx.locale.bind('project-team')(key, params) } : {}), read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember, openTeamMember,
-        setRequestMode, setRequestTab, rememberRequestModes, setRequestPanel, pinRequests, collapseEmptyObserver,
+      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestPanels }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember,
+        setRequestPanel, collapseEmptyObserver,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),
         showMaterials: (projectId, workstreamId, context) => { const view = viewInstance.getSnapshot(); if (!workstreamId && view.materialsPreview && view.modal?.projectId === projectId) viewInstance.actions.returnMaterials(projectId); else show('materials', projectId, workstreamId, context); }, showProcess: (projectId, workstreamId, member = false, context = {}) => { viewInstance.actions.setModal({ kind: 'process', projectId, ...(member ? { workerSessionId: workstreamId } : { workstreamId }), ...context }); }, showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
         showReport: (projectId, workstreamId, context) => show('report', projectId, workstreamId, context), showRequestDiff: (projectId, requestId) => show('requestDiff', projectId, undefined, { requestId }),
         trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: work.parentSessionId ?? project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
-      });
-      ctx.inject(['sidebarRight', 'sidebarRightTabs'], scope => {
-        scope.effect(() => scope.sidebarRightTabs.register({ id: 'dsh-project-requests', kind: 'project-requests', priority: 'extension', title: () => t('requirements') }), 'dsh-project: Request observer');
-        scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({ name: 'sidebar.right.pane.tab', key: 'dsh-project-requests', locale: NS, inject: face }, ProjectRequestSidebar));
       });
       ctx.slots.inject('conversation.hero.options', () => ctx.slots.register({ name: 'conversation.hero.options', id: NS, locale: NS, inject: face }, ProjectHeroOption));
       ctx.slots.inject('sidebar.session.row.badge', () => ctx.slots.register({ name: 'sidebar.session.row.badge', id: NS, locale: NS, inject: face }, ProjectRowBadge));
@@ -1896,11 +1537,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       });
       ctx.slots.inject('conversation.composer', () => ctx.slots.register({ name: 'conversation.composer', id: NS + '-member', priority: 90, locale: NS,
         inject: () => ({ ...face(), openLead }),
-        select: owner => {
-          const parent = owner.session?.subagent?.address.parentSessionId;
-          const project = parent && snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === parent);
-          return project ? { projectId: project.id, workerSessionId: owner.sessionId } : null;
-        } }, ProjectMemberComposer));
+        select: resolveMemberProject }, ProjectMemberComposer));
       ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({ name: 'conversation.session.header.actions', id: NS, order: -20, locale: NS, inject: face }, ProjectHeader));
       ctx.slots.inject('conversation.approval.actions', () => ctx.slots.register({ name: 'conversation.approval.actions', id: NS, locale: NS, inject: face }, ProjectApprovalStop));
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS, locale: NS, store: viewStore, inject: face }, ProjectOverlay));

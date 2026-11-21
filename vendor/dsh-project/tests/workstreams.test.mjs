@@ -425,6 +425,7 @@ test('native peer messages cannot grant a stale worker replacement execution aut
   const f = setup(), item = f.add('Continuing sender', true, 1), agent = { id: item.worker.sessionId };
   f.service.ctx.agents.set(agent.id, agent); f.service.recovering = false;
   item.worker.consumedDelegationRef = item.receipt.ref;
+  item.worker.activeRunId = 'run-next';
   const next = { ...item.receipt, ref: 'next-assignment', phase: 'preparing', messageId: '', runId: '' };
   item.work.delegations.push(next); item.work.currentDelegationRef = next.ref;
   assert.match(f.service.guard({ agent, name: 'send_message' }), /not been consumed/);
@@ -517,7 +518,7 @@ test('the native launch boundary cannot execute discussed, suspended, cancelled 
 
 test('research adds only web search and fetch to the read-only tools; every call is recorded and a Project may limit the sites', async () => {
   const f = setup(), item = f.add('Research work', true, 1), agent = { id: item.worker.sessionId };
-  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.stopped = false;
+  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.activeRunId = 'run-research'; item.worker.stopped = false;
   const call = (name, args = {}) => f.service.guard({ name, arguments: args, agent });
   const flush = () => f.service.serial(async () => {});
   const sources = () => f.service.stream(item.work.id).delegations[0].sources ?? [];
@@ -562,7 +563,7 @@ test('the research sites list is an ordinary editable material that the guard re
   try {
     const storage = await projectDirectory(root, f.project.id);
     f.service.home = root; f.service.project(f.project.id).storageRoot = storage; await fs.mkdir(join(storage, 'docs'));
-    f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.role = 'research';
+    f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.activeRunId = 'run-research'; item.worker.role = 'research';
     const read = () => f.service.command('store/read', { projectId: f.project.id, path: 'research-hosts.txt' });
     assert.deepEqual(await read(), { path: 'research-hosts.txt', text: '' }, 'it exists, empty, the first time it is opened');
     assert.equal(f.service.guard({ name: 'web_fetch', arguments: { url: 'https://anywhere.test/' }, agent }), undefined);
@@ -579,7 +580,7 @@ test('an unreadable research sites policy blocks fetch instead of removing the r
   const f = setup(), item = f.add('Research work', true, 1), agent = { id: item.worker.sessionId };
   const root = await fs.mkdtemp(join(tmpdir(), 'whale-project-hosts-error-'));
   f.service.project(f.project.id).storageRoot = root;
-  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.role = 'research';
+  f.service.ctx.agents.set(agent.id, agent); item.worker.consumedDelegationRef = item.receipt.ref; item.worker.phase = 'active'; item.worker.activeRunId = 'run-research'; item.worker.role = 'research';
   try {
     // A directory where the policy file belongs produces a real read error on Windows and Linux.
     await fs.mkdir(join(root, 'research-hosts.txt'));

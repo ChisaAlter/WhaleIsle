@@ -7,10 +7,17 @@ const os = require('node:os');
 const { getDesktopDshHome } = require('../shared/dsh-home');
 const { atomicWriteFileSync } = require('../shared/fs-safe');
 const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside, workspaceRootRefusal } = require('./workspace-authority');
-const { run, runGit, safeRefName, gitFailureMessage, GH_TIMEOUT_MS } = require('./git-exec');
+const { runGit, safeRefName, gitFailureMessage } = require('./git-exec');
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/;
 const SHA = /^[a-f0-9]{40,64}$/i;
+const SNAPSHOT_REF_PREFIX = 'refs/whale-project/snapshots/';
+const SNAPSHOT_AUTHOR_ENV = {
+  GIT_AUTHOR_NAME: 'WhaleIsle Project',
+  GIT_AUTHOR_EMAIL: 'project@whaleisle.local',
+  GIT_COMMITTER_NAME: 'WhaleIsle Project',
+  GIT_COMMITTER_EMAIL: 'project@whaleisle.local',
+};
 const identifier = (value, label) => {
   if (typeof value !== 'string' || !ID.test(value)) throw new Error(`无效的 ${label}`);
   return value;
@@ -22,11 +29,26 @@ const digest = value => crypto.createHash('sha256').update(value).digest('hex');
 const DIRECTORY_REFUSALS = {
   missing: '找不到这个目录。',
   'not-directory': '这个路径不是文件夹。',
+  'unsafe-path': '不支持网络共享路径、设备路径或含保留/异常字符的目录路径，请选择本机普通文件夹。',
   root: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。',
   home: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。',
   'system-data': '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。',
   'app-data': '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。',
 };
+
+function hasUnsafeDirectorySyntax(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return true;
+  if (/[\0\r\n]/.test(raw)) return true;
+  // Refuse UNC network shares and Windows device/extended-length prefixes (\\?\, \\.\, \\server\share, //server/share).
+  if (/^(?:\\\\|\/\/)/.test(raw)) return true;
+  if (process.platform === 'win32') {
+    const afterDrive = raw.replace(/^[A-Za-z]:/, '');
+    if (afterDrive.includes(':')) return true;
+    const segments = afterDrive.split(/[\\/]+/).filter(Boolean);
+    if (segments.some(segment => segment !== '.' && segment !== '..' && /[. ]$/.test(segment))) return true;
+  }
+  return false;
+}
 
 function redact(value) {
   return String(value || '').replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[redacted]@')
@@ -110,7 +132,7 @@ function createProjectEnvironment(options = {}) {
     if (binding.state !== 'ready') throw new Error('后台工作目录尚未准备完成或已清理');
     const cwd = fs.realpathSync.native(binding.canonicalPath);
     if (!fs.statSync(cwd).isDirectory() || identity(cwd) !== binding.directoryIdentity) throw new Error('后台工作目录身份已变化');
-    if (expected && (expected.canonicalPath !== binding.canonicalPath || expected.receipt !== binding.receipt)) {
+    if (expected && (identity(String(expected.canonicalPath || '')) !== identity(binding.canonicalPath) || expected.receipt !== binding.receipt)) {
       throw new Error('后台工作目录与创建回执不一致');
     }
     if (binding.ownership === 'project') {
@@ -118,12 +140,18 @@ function createProjectEnvironment(options = {}) {
     } else if (binding.ownership === 'user') canonicalize(cwd);
     else throw new Error('后台工作目录所有权无效');
     const current = await repositoryAt(cwd, readStatus);
-    if (current.repoIdentity !== binding.repoIdentity || current.branch !== binding.branch) throw new Error('工作目录的仓库或分支已变化；请先核对续接条件');
+    if (current.repoIdentity !== binding.repoIdentity) throw new Error('工作目录的仓库身份已变化；请先核对续接条件');
     if (binding.ownership === 'project') {
+      if (current.branch !== binding.branch) throw new Error('独立 worktree 的分支已变化；请先核对续接条件');
       const registered = await worktreeRegistration(binding.repositoryRoot, cwd);
       if (!registered || registered.branch !== `refs/heads/${binding.branch}`) throw new Error('Git worktree 登记已变化');
     }
-    return { ok: true, ...binding, headCommit: current.headCommit, dirty: current.dirty, valid: true };
+    const branchChanged = current.branch !== binding.branch;
+    return {
+      ok: true, ...binding, branch: current.branch,
+      ...(branchChanged ? { previousBranch: binding.branch, branchChanged: true } : {}),
+      headCommit: current.headCommit, dirty: current.dirty, valid: true,
+    };
   }
   async function prepareWorkspace(payload) {
     const projectId = identifier(payload.projectId, 'projectId'), workstreamId = identifier(payload.workstreamId, 'workstreamId');
@@ -225,27 +253,8 @@ function createProjectEnvironment(options = {}) {
     const error = await open(canonicalPath); if (error) throw new Error(String(error));
     return { ok: true, canonicalPath };
   }
-  async function pullRequest(payload) {
-    const cwd = payload.workstreamId ? (await checkWorkspace(payload.projectId, payload.workstreamId, payload.workspace)).canonicalPath : canonicalize(payload.workingDirectory).canonicalPath;
-    if (typeof payload.repository !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(payload.repository)
-      || ['.', '..'].includes(payload.repository.split('/')[1]) || !Number.isSafeInteger(payload.number) || payload.number < 1) throw new Error('无效的 GitHub PR 身份');
-    let executable = 'gh';
-    const installed = path.join(process.env.ProgramFiles || '', 'GitHub CLI', 'gh.exe');
-    if (process.platform === 'win32' && fs.existsSync(installed)) executable = installed;
-    const token = options.getGithubToken?.();
-    const response = await (options.run || run)(executable, ['pr', 'view', String(payload.number), '--repo', payload.repository,
-      '--json', 'number,title,url,state,isDraft,headRefOid,reviewDecision,statusCheckRollup,mergedAt,closedAt,updatedAt'], cwd,
-    { timeoutMs: GH_TIMEOUT_MS, ...(token ? { env: { GH_TOKEN: token } } : {}) });
-    if (response.code !== 0 || response.truncated) throw new Error(redact(gitFailureMessage(response, 'PR 状态暂不可用')));
-    const value = JSON.parse(response.stdout);
-    if (value.number !== payload.number || !SHA.test(value.headRefOid)) throw new Error('GitHub 返回的 PR 身份无效');
-    return { ok: true, repository: payload.repository, number: value.number, title: value.title, url: value.url,
-      state: String(value.state).toLowerCase(), isDraft: Boolean(value.isDraft), headCommit: value.headRefOid,
-      reviewDecision: value.reviewDecision || null, checks: value.statusCheckRollup || [],
-      mergedAt: value.mergedAt, closedAt: value.closedAt, updatedAt: value.updatedAt };
-  }
-  // Requirement change tracking. A private temporary index records the working tree as a Git tree object;
-  // the user's index, refs and files are never modified, only unreferenced objects are added.
+  // Requirement change tracking. A private temporary index writes a tree pinned under a controlled
+  // internal ref (`refs/whale-project/snapshots/...`) so `git gc --auto` never prunes active snapshots.
   async function changeScope(payload) {
     const current = payload.workstreamId
       ? await repositoryAt((await checkWorkspace(payload.projectId, payload.workstreamId, payload.workspace, false)).canonicalPath, false)
@@ -307,7 +316,17 @@ function createProjectEnvironment(options = {}) {
       }
     }
   }
-  async function captureTree(root, pathspec, workingDirectory) {
+  function snapshotRefName(projectId, tree) {
+    const scope = projectId ? identifier(projectId, 'projectId') : 'default';
+    return `${SNAPSHOT_REF_PREFIX}${scope}/${tree}`;
+  }
+  async function pinSnapshotTree(root, tree, projectId) {
+    const ref = snapshotRefName(projectId, tree);
+    const commit = await command(root, ['commit-tree', tree, '-m', 'WhaleIsle Project snapshot'], { env: SNAPSHOT_AUTHOR_ENV });
+    await command(root, ['update-ref', ref, commit]);
+    return ref;
+  }
+  async function captureTree(root, pathspec, workingDirectory, projectId) {
     const indexPath = path.resolve(root, await command(root, ['rev-parse', '--git-path', 'index']));
     const temporary = path.join(os.tmpdir(), `whale-project-index-${crypto.randomUUID()}`);
     try {
@@ -320,8 +339,25 @@ function createProjectEnvironment(options = {}) {
       authorizeChangePaths(root, workingDirectory, candidates.stdout);
       await authorizeUntrackedPaths(root, workingDirectory, limits);
       await command(root, ['add', '--all', '--', pathspec], limits);
-      return await command(root, ['write-tree'], limits);
+      const tree = await command(root, ['write-tree'], limits);
+      const ref = await pinSnapshotTree(root, tree, projectId);
+      return { tree, ref };
     } finally { fs.rmSync(temporary, { force: true }); }
+  }
+  async function releaseSnapshots(payload) {
+    const { current, root } = await changeScope(payload);
+    if (!current.isGit) return { ok: true, released: 0 };
+    const refs = Array.isArray(payload.refs) ? payload.refs : [];
+    const expectedPrefix = payload.projectId ? `${SNAPSHOT_REF_PREFIX}${identifier(payload.projectId, 'projectId')}/` : SNAPSHOT_REF_PREFIX;
+    let released = 0;
+    for (const ref of refs) {
+      if (typeof ref !== 'string' || !ref.startsWith(expectedPrefix) || !safeRefName(ref) || ref.includes('..')) {
+        throw new Error(`不允许清理非受控快照引用：${String(ref)}`);
+      }
+      const deleted = await git(root, ['update-ref', '-d', ref]);
+      if (deleted.code === 0) released++;
+    }
+    return { ok: true, released };
   }
   const treeId = value => { if (typeof value !== 'string' || !SHA.test(value)) throw new Error('无效的改动记录'); return value; };
   function changeRows(numstat, nameStatus) {
@@ -334,21 +370,25 @@ function createProjectEnvironment(options = {}) {
   async function baseline(payload) {
     const { current, root, pathspec } = await changeScope(payload);
     if (!current.isGit) return { ok: true, isGit: false };
-    return { ok: true, isGit: true, tree: await captureTree(root, pathspec, current.canonicalPath), headCommit: current.headCommit };
+    const captured = await captureTree(root, pathspec, current.canonicalPath, payload.projectId);
+    return { ok: true, isGit: true, tree: captured.tree, ref: captured.ref, headCommit: current.headCommit };
   }
   async function changes(payload) {
     const { current, root, pathspec } = await changeScope(payload);
     if (!current.isGit) throw new Error('该目录不是 Git 仓库，无法读取需求改动');
-    const base = treeId(payload.base), end = payload.end ? treeId(payload.end) : await captureTree(root, pathspec, current.canonicalPath);
+    const base = treeId(payload.base);
+    const capturedEnd = payload.end ? null : await captureTree(root, pathspec, current.canonicalPath, payload.projectId);
+    const end = payload.end ? treeId(payload.end) : capturedEnd.tree;
     const args = ['-c', 'core.quotepath=off', 'diff', '--no-renames', base, end];
     const targets = await git(root, [...args, '--name-only', '-z', '--', pathspec]);
     if (targets.code !== 0 || targets.truncated) throw new Error(gitFailureMessage(targets, '读取需求改动路径失败'));
     authorizeDiffPaths(root, current.canonicalPath, targets.stdout);
     const files = changeRows(await command(root, [...args, '--numstat', '--', pathspec]), await command(root, [...args, '--name-status', '--', pathspec]));
-    if (!payload.diff) return { ok: true, files, end };
+    const refField = capturedEnd ? { endRef: capturedEnd.ref } : {};
+    if (!payload.diff) return { ok: true, files, end, ...refField };
     const diff = await git(root, [...args, '--', pathspec], { maxBytes: 1024 * 1024 });
     if (diff.code !== 0) throw new Error(gitFailureMessage(diff, '读取需求改动失败'));
-    return { ok: true, files, end, diff: diff.stdout, truncated: Boolean(diff.truncated) };
+    return { ok: true, files, end, ...refField, diff: diff.stdout, truncated: Boolean(diff.truncated) };
   }
   // Revert applies the delivered-to-baseline patch only when it applies cleanly; otherwise nothing is changed.
   async function revert(payload) {
@@ -371,49 +411,52 @@ function createProjectEnvironment(options = {}) {
       return { ok: true, applied: true };
     } finally { fs.rmSync(file, { force: true }); }
   }
-  async function dispatch(payload = {}) {
-    switch (payload.action) {
-      // Only the authenticated Project creation command uses this selection
-      // boundary. Later file/Git operations still require a persisted root.
-      case 'select-directory': {
-        if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) throw new Error('请选择本机绝对目录');
-        const refusal = workspaceRootRefusal(payload.workingDirectory);
-        if (refusal) throw Object.assign(new Error(DIRECTORY_REFUSALS[refusal]), { code: `project/directory-${refusal}` });
-        const canonicalPath = fs.realpathSync.native(payload.workingDirectory);
-        return { ok: true, canonicalPath, identity: identity(canonicalPath) };
-      }
-      // Read-only preflight for the Project entries: why a folder cannot host
-      // a Project, without creating anything.
-      case 'check-directory': {
-        if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'missing' };
-        const refusal = workspaceRootRefusal(payload.workingDirectory);
-        return refusal ? { ok: true, allowed: false, reason: refusal } : { ok: true, allowed: true };
-      }
-      case 'canonicalize': return canonicalize(payload.workingDirectory);
-      case 'repository': return repository(payload.workingDirectory);
-      case 'prepare-workspace': {
-        const key = `${identifier(payload.projectId, 'projectId')}/${identifier(payload.workstreamId, 'workstreamId')}`;
-        const signature = digest(JSON.stringify([payload.workingDirectory, payload.mode || 'existing', payload.baseCommit]));
-        if (pending.has(key)) {
-          const prior = pending.get(key); if (prior.signature !== signature) throw new Error('该工作流正在准备另一执行目录');
-          return prior.operation;
-        }
-        const operation = prepareWorkspace(payload).finally(() => pending.delete(key));
-        pending.set(key, { signature, operation }); return operation;
-      }
-      case 'check-workspace': return checkWorkspace(payload.projectId, payload.workstreamId, payload.workspace);
-      case 'snapshot': return snapshot(payload);
-      case 'cleanup-workspace': return cleanupWorkspace(payload.projectId, payload.workstreamId, payload.workspace);
-      case 'open-path': return openPath(payload);
-      case 'resolve-path': return openPath(payload);
-      case 'pull-request': return pullRequest(payload);
-      case 'baseline': return baseline(payload);
-      case 'changes': return changes(payload);
-      case 'revert': return revert(payload);
-      default: throw new Error(`不支持的 Project 操作：${String(payload.action || '')}`);
-    }
+  function selectDirectoryAction(payload) {
+    if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) throw new Error('请选择本机绝对目录');
+    if (hasUnsafeDirectorySyntax(payload.workingDirectory)) throw Object.assign(new Error(DIRECTORY_REFUSALS['unsafe-path']), { code: 'project/directory-unsafe-path' });
+    const refusal = workspaceRootRefusal(payload.workingDirectory);
+    if (refusal) throw Object.assign(new Error(DIRECTORY_REFUSALS[refusal]), { code: `project/directory-${refusal}` });
+    const canonicalPath = fs.realpathSync.native(payload.workingDirectory);
+    return { ok: true, canonicalPath, identity: identity(canonicalPath) };
   }
-  return { dispatch, canonicalize, repository, prepareWorkspace, checkWorkspace, snapshot, cleanupWorkspace, openPath, baseline, changes, revert };
+  function checkDirectoryAction(payload) {
+    if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'missing' };
+    if (hasUnsafeDirectorySyntax(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'unsafe-path' };
+    const refusal = workspaceRootRefusal(payload.workingDirectory);
+    return refusal ? { ok: true, allowed: false, reason: refusal } : { ok: true, allowed: true };
+  }
+  function deduplicatedPrepareWorkspace(payload) {
+    const key = `${identifier(payload.projectId, 'projectId')}/${identifier(payload.workstreamId, 'workstreamId')}`;
+    const signature = digest(JSON.stringify([payload.workingDirectory, payload.mode || 'existing', payload.baseCommit]));
+    if (pending.has(key)) {
+      const prior = pending.get(key); if (prior.signature !== signature) throw new Error('该工作流正在准备另一执行目录');
+      return prior.operation;
+    }
+    const operation = prepareWorkspace(payload).finally(() => pending.delete(key));
+    pending.set(key, { signature, operation });
+    return operation;
+  }
+  const actions = {
+    'select-directory': selectDirectoryAction,
+    'check-directory': checkDirectoryAction,
+    canonicalize: payload => canonicalize(payload.workingDirectory),
+    repository: payload => repository(payload.workingDirectory),
+    'prepare-workspace': deduplicatedPrepareWorkspace,
+    'check-workspace': payload => checkWorkspace(payload.projectId, payload.workstreamId, payload.workspace),
+    snapshot: payload => snapshot(payload),
+    'cleanup-workspace': payload => cleanupWorkspace(payload.projectId, payload.workstreamId, payload.workspace),
+    'open-path': payload => openPath(payload),
+    'resolve-path': payload => openPath(payload),
+    baseline: payload => baseline(payload),
+    changes: payload => changes(payload),
+    revert: payload => revert(payload),
+    'release-snapshots': payload => releaseSnapshots(payload),
+  };
+  async function dispatch(payload = {}) {
+    if (Object.hasOwn(actions, payload.action)) return actions[payload.action](payload);
+    throw new Error(`不支持的 Project 操作：${String(payload.action || '')}`);
+  }
+  return { dispatch, canonicalize, repository, prepareWorkspace, checkWorkspace, snapshot, cleanupWorkspace, openPath, baseline, changes, revert, releaseSnapshots };
 }
 
 module.exports = { createProjectEnvironment };

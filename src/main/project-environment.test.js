@@ -180,7 +180,7 @@ test('directory aliases share identity, while linked Project roots cannot create
   assert.deepEqual(fs.readdirSync(outside), ['sentinel']); assert.deepEqual(readProjectExecutionPaths(home), []);
 });
 
-test('recovered bindings reject changed branch or receipt and keep user directories intact', async t => {
+test('recovered existing bindings allow user branch switches while project worktrees still reject branch drift and receipt mismatch', async t => {
   const { source, home, git, authority, environment } = await fixture(t);
   const payload = { projectId: 'existing-project', workstreamId: 'stream', workingDirectory: source };
   const workspace = await environment.prepareWorkspace(payload);
@@ -188,10 +188,19 @@ test('recovered bindings reject changed branch or receipt and keep user director
   assert.equal((await recovered.checkWorkspace(payload.projectId, payload.workstreamId, workspace)).receipt, workspace.receipt);
   await assert.rejects(recovered.checkWorkspace(payload.projectId, payload.workstreamId, { ...workspace, receipt: 'wrong' }), /回执不一致/);
   await git(source, ['checkout', '-b', 'user-changed']);
-  await assert.rejects(recovered.checkWorkspace(payload.projectId, payload.workstreamId), /分支已变化/);
-  await assert.rejects(recovered.prepareWorkspace(payload), /分支已变化/);
-  assert.equal(await git(source, ['branch', '--show-current']), 'user-changed');
+  const afterSwitch = await recovered.checkWorkspace(payload.projectId, payload.workstreamId, workspace);
+  assert.equal(afterSwitch.valid, true);
+  assert.equal(afterSwitch.branch, 'user-changed');
+  assert.equal(afterSwitch.branchChanged, true);
+  const preparedAgain = await recovered.prepareWorkspace(payload);
+  assert.equal(preparedAgain.branch, 'user-changed');
   assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'baseline\n');
+
+  // Project-owned isolated worktrees still enforce their exact branch.
+  const wtPayload = { projectId: 'existing-project', workstreamId: 'isolated-stream', workingDirectory: source, mode: 'worktree' };
+  const wt = await environment.prepareWorkspace(wtPayload);
+  await git(wt.canonicalPath, ['checkout', '-b', 'drifted-worktree-branch']);
+  await assert.rejects(recovered.checkWorkspace(wtPayload.projectId, wtPayload.workstreamId, wt), /分支已变化/);
 });
 
 test('open-path authorizes only docs or a bound working directory and rejects internal files and junction escapes', async t => {
@@ -214,16 +223,60 @@ test('open-path authorizes only docs or a bound working directory and rejects in
   assert.equal(opened.length, 2);
 });
 
-test('optional exact PR observations preserve closed state and checks on the actual head', async t => {
-  const { source, home, authority } = await fixture(t);
-  const sha = 'b'.repeat(40); let requested;
-  const environment = createProjectEnvironment({ home, authority, run: async (_command, args) => {
-    requested = args; return { code: 0, stdout: JSON.stringify({ number: 7, url: 'https://github.com/example/project/pull/7', state: 'CLOSED', isDraft: false, headRefOid: sha, reviewDecision: 'CHANGES_REQUESTED', statusCheckRollup: [{ name: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED' }] }) };
-  } });
-  const result = await environment.dispatch({ action: 'pull-request', workingDirectory: source, repository: 'example/project', number: 7 });
-  assert.equal(result.state, 'closed'); assert.equal(result.headCommit, sha); assert.equal(result.checks[0].conclusion, 'CANCELLED');
-  assert.deepEqual(requested.slice(0, 5), ['pr', 'view', '7', '--repo', 'example/project']);
-  await assert.rejects(environment.dispatch({ action: 'pull-request', workingDirectory: source, repository: '../elsewhere', number: 7 }), /PR 身份/);
+test('retired orphan pull-request endpoint is rejected cleanly', async t => {
+  const { source, environment } = await fixture(t);
+  await assert.rejects(environment.dispatch({ action: 'pull-request', workingDirectory: source, repository: 'example/project', number: 7 }), /不支持的 Project 操作/);
+});
+
+test('controlled snapshot refs survive aggressive git gc --prune=now and release-snapshots cleans only owned snapshot refs', async t => {
+  const { source, git, environment } = await fixture(t);
+  const start = await environment.dispatch({ action: 'baseline', projectId: 'gc-project', workingDirectory: source });
+  assert.match(start.ref, /^refs\/whale-project\/snapshots\/gc-project\/[a-f0-9]{40,64}$/);
+  fs.writeFileSync(path.join(source, 'file.txt'), 'change surviving gc\n');
+  const delivered = await environment.dispatch({ action: 'changes', projectId: 'gc-project', workingDirectory: source, base: start.tree, diff: true });
+  assert.match(delivered.endRef, /^refs\/whale-project\/snapshots\/gc-project\/[a-f0-9]{40,64}$/);
+  await git(source, ['gc', '--prune=now']);
+  const afterGc = await environment.dispatch({ action: 'changes', projectId: 'gc-project', workingDirectory: source, base: start.tree, end: delivered.end, diff: true });
+  assert.match(afterGc.diff, /\+change surviving gc/);
+  const reverted = await environment.dispatch({ action: 'revert', projectId: 'gc-project', workingDirectory: source, base: start.tree, end: delivered.end });
+  assert.equal(reverted.applied, true);
+  assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'baseline\n');
+  await assert.rejects(environment.dispatch({ action: 'release-snapshots', projectId: 'gc-project', workingDirectory: source, refs: ['refs/heads/main'] }), /非受控快照引用/);
+  await assert.rejects(environment.dispatch({ action: 'release-snapshots', projectId: 'gc-project', workingDirectory: source, refs: ['refs/whale-project/snapshots/other-project/abc'] }), /非受控快照引用/);
+  const released = await environment.dispatch({ action: 'release-snapshots', projectId: 'gc-project', workingDirectory: source, refs: [start.ref, delivered.endRef] });
+  assert.equal(released.released, 2);
+  const remainingRefs = await git(source, ['for-each-ref', 'refs/whale-project/snapshots/gc-project']);
+  assert.equal(remainingRefs, '');
+  assert.equal(await git(source, ['branch', '--show-current']), 'main');
+});
+
+test('directory validation refuses UNC shares, device prefixes, Windows ADS and trailing dot/space segments', async t => {
+  const { home } = await fixture(t, false);
+  const environment = createProjectEnvironment({ home, authority: createWorkspaceAuthority({ workspace: '' }) });
+  const badPaths = ['\\\\server\\share\\repo', '//server/share/repo', '\\\\?\\C:\\repo', '\\\\.\\PhysicalDrive0'];
+  if (process.platform === 'win32') badPaths.push('C:\\repo\\stream:ads', 'C:\\repo\\trailing-space ', 'C:\\repo\\trailing-dot.');
+  for (const candidate of badPaths) {
+    assert.deepEqual(await environment.dispatch({ action: 'check-directory', workingDirectory: candidate }), { ok: true, allowed: false, reason: 'unsafe-path' }, candidate);
+    await assert.rejects(environment.dispatch({ action: 'select-directory', workingDirectory: candidate }), error => error.code === 'project/directory-unsafe-path', candidate);
+  }
+});
+
+test('readProjectRegisteredPaths supports per-record project files as well as legacy single-file fallback', async t => {
+  const { directory, home } = await fixture(t, false);
+  const selected = path.join(directory, 'per-record-project'); fs.mkdirSync(selected);
+  const real = fs.realpathSync.native(selected);
+  const dir = path.join(home, 'storages', 'whale_project_local', 'projects');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'project-per-record.json'), JSON.stringify({
+    version: 1,
+    record: {
+      id: 'project-per-record',
+      lifecycle: 'ready',
+      canonicalWorkingDirectory: real,
+      directoryIdentity: process.platform === 'win32' ? real.toLowerCase() : real,
+    },
+  }));
+  assert.deepEqual(readProjectRegisteredPaths(home), [real]);
 });
 
 test('requirement changes use a private index, exclude earlier edits, revert cleanly and refuse conflicting reverts', async t => {

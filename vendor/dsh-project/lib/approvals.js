@@ -7,10 +7,34 @@ export class ProjectApprovals {
   }
   get native() { return this.service.ctx.get('approval'); }
 
+  /** Walk the worker ancestor chain to the owning Project coordinator so nested (depth >= 2) workers can inherit ask-mode approval. */
+  coordinatorAgentFor(actor) {
+    const project = actor?.project;
+    if (!project) return actor?.agent;
+    if (actor.role === 'coordinator' || actor.agent?.id === project.coordinatorSessionId) return actor.agent;
+    if (!this.hasAuthorizedLineage(project, actor.agent?.id)) return undefined;
+    return this.service.ctx?.agents?.get?.(project.coordinatorSessionId);
+  }
+  hasAuthorizedLineage(project, startId) {
+    const workers = this.service.state?.().workers ?? [];
+    const seen = new Set();
+    let currentId = startId;
+    while (currentId && currentId !== project.coordinatorSessionId) {
+      if (seen.has(currentId)) return false;
+      seen.add(currentId);
+      const member = workers.find(item => item.sessionId === currentId && item.projectId === project.id);
+      if (!member || member.stopped || member.role !== 'worker') return false;
+      currentId = member.parentSessionId ?? project.coordinatorSessionId;
+    }
+    return currentId === project.coordinatorSessionId;
+  }
+
   /** A live requirement retains the ability to ask; native Approval owns every decision. */
   requested(actor, source, scope) {
-    if (scope !== 'worker' || this.native?.policyOf(actor.agent.session) !== 'ask') return false;
-    const events = actor.agent.session.snapshotEvents();
+    if (scope !== 'worker') return false;
+    const coordinator = this.coordinatorAgentFor(actor);
+    if (!coordinator || this.native?.policyOf(coordinator.session) !== 'ask') return false;
+    const events = coordinator.session.snapshotEvents();
     const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === (source.authorizationCallId ?? source.callId));
     const start = call && events.findLast(event => event.type === 'turn/start' && event.data.turn === call.data.turn);
     return Boolean(call && start && events.some(event => event.type === 'user/message' && event.seq > start.seq && event.seq < call.seq

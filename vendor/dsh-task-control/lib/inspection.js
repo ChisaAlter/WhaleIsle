@@ -160,6 +160,39 @@ function collectSockets(webServer, activeWork) {
 }
 
 /**
+ * @param {any} projects
+ * @param {any[]} activeWork
+ * @param {Record<string, string>} coverage
+ */
+function collectProjects(projects, activeWork, coverage) {
+  if (!projects) return;
+  if (!projects.available || typeof projects.inspect !== 'function') {
+    coverage.projects = 'unavailable';
+    return;
+  }
+  let report;
+  try {
+    report = projects.inspect();
+  } catch {
+    coverage.projects = 'unavailable';
+    return;
+  }
+  if (!report || !Array.isArray(report.details)) {
+    coverage.projects = 'unavailable';
+    return;
+  }
+  coverage.projects = 'ok';
+  for (const item of report.details) {
+    activeWork.push({
+      kind: 'project',
+      id: `${String(item.projectId)}:${String(item.id)}`,
+      projectId: String(item.projectId),
+      detail: String(item.kind),
+    });
+  }
+}
+
+/**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {ReturnType<import('./state.js').createControlState>} state
  * @param {{ now?: () => number }} [options]
@@ -179,6 +212,7 @@ export async function collectInspection(ctx, state, options = {}) {
     activeWork.push({ kind: 'request', id: 'pending-requests', count: state.pending.size });
   }
   await collectSchedule(ctx, scheduledWork, coverage);
+  collectProjects(ctx.get('projects'), activeWork, coverage);
   const whaleTasks = ctx.get('whaleTasks');
   if (whaleTasks) {
     coverage.whaleTasks = whaleTasks.available ? 'ok' : 'unavailable';

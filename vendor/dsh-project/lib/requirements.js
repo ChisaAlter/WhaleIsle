@@ -67,8 +67,8 @@ export class ProjectRequirements {
     const last = input.human.at(-1), ceiling = scope(args.scopeCeiling ?? args.scope), paths = strings(args.writePaths);
     if (!ceiling || paths.some(path => !path || isAbsolute(path) || path.split(/[\\/]/).some(part => part === '..' || part.toLowerCase() === '.git')) || ceiling === 'docs' && paths.some(path => !/\.(md|mdx|txt|rst|adoc)$/i.test(path))) fail('invalid_scope', 'Declare the original scope ceiling and exact relative document paths.');
     const goal = string(args.goal, 'goal'), title = string(args.title ?? goal.slice(0, 100), 'title', 240);
-    const disposition = args.disposition ?? 'queued';
-    if (!['discussing', 'queued'].includes(disposition)) fail('queue_state', 'A requirement is either being discussed or approved for the development queue.');
+    const disposition = args.disposition ?? 'active';
+    if (!['discussing', 'active', 'queued'].includes(disposition)) fail('queue_state', 'A requirement is either being discussed or approved for execution.');
     const providedId = optionalRequestId(args.requestId), id = providedId ?? requestIdForCall(actor.agent.id, exec.callId);
     await service.serial(async () => {
       const project = service.project(actor.project.id);
@@ -203,6 +203,60 @@ export class ProjectRequirements {
     if (!receipt || receipt.runId !== reference.runId || !work.settlements.some(item => item.runId === reference.runId && item.delegationRefs.includes(receipt.ref))) fail('result_unsettled', 'Reference the exact recorded native run and assignment.');
     return { workstreamId: work.id, delegationRef: receipt.ref, runId: receipt.runId };
   }
+  isNestedWork(projectId, workstreamId) {
+    const project = this.service.project(projectId);
+    const work = this.service.stream(workstreamId, projectId);
+    const worker = this.service.worker(work.workerSessionId);
+    return Boolean(worker?.parentSessionId && worker.parentSessionId !== project.coordinatorSessionId);
+  }
+  hasCoveredAncestor(projectId, workstreamId, referencedWorkIds) {
+    const project = this.service.project(projectId);
+    const workers = this.service.state().workers.filter(item => item.projectId === projectId);
+    const bySession = new Map(workers.map(item => [item.sessionId, item]));
+    let current = bySession.get(this.service.stream(workstreamId, projectId).workerSessionId);
+    const seen = new Set();
+    while (current?.parentSessionId && current.parentSessionId !== project.coordinatorSessionId) {
+      if (seen.has(current.parentSessionId)) return false;
+      seen.add(current.parentSessionId);
+      const parent = bySession.get(current.parentSessionId);
+      if (!parent) return false;
+      if (referencedWorkIds.has(parent.workstreamId)) return true;
+      current = parent;
+    }
+    return false;
+  }
+  autoReportRefs(row, completed) {
+    const refs = [];
+    for (const reference of this.manifest(row)) {
+      if (this.isNestedWork(row.projectId, reference.workstreamId)) continue;
+      const work = this.service.stream(reference.workstreamId, row.projectId);
+      const receipt = work.delegations.find(item => item.ref === reference.delegationRef);
+      const report = receipt?.report;
+      const terminal = receipt && work.settlements.find(item => item.runId === receipt.runId && item.delegationRefs.includes(receipt.ref));
+      if (!report || !terminal) continue;
+      if (completed && (terminal.stopReason !== 'completed' || report.outcome !== 'completed')) continue;
+      refs.push({ workstreamId: work.id, delegationRef: receipt.ref, reportId: report.callId });
+    }
+    return refs;
+  }
+  validateCompletedObligation(row, draft, reference, referencedWorkIds) {
+    const service = this.service;
+    const work = service.stream(reference.workstreamId), worker = service.worker(work.workerSessionId);
+    const receipt = work.delegations.find(item => item.ref === reference.delegationRef);
+    const currentAssignment = work.currentDelegationRef === reference.delegationRef;
+    const stillActive = (worker.activeRunId && worker.activeRunId === reference.runId)
+      || (currentAssignment && (worker.directoryHeld || service.jobs(worker.sessionId).length))
+      || ['queued', 'preparing', 'failed', 'stopped'].includes(receipt.phase);
+    if (stillActive) fail('work_pending', 'Required work is still active or has not completed.');
+    const directlyListed = draft.reportRefs.some(item => item.workstreamId === work.id && item.delegationRef === reference.delegationRef);
+    const nestedCovered = !directlyListed && this.isNestedWork(row.projectId, work.id) && this.hasCoveredAncestor(row.projectId, work.id, referencedWorkIds);
+    if (!directlyListed && !nestedCovered) fail('result_missing', 'Include each required stage result in the handover.');
+    if (directlyListed) { this.validReport(row.projectId, reference, true); return; }
+    const terminal = work.settlements.find(item => item.runId === receipt.runId && item.delegationRefs.includes(receipt.ref));
+    if (!terminal || terminal.stopReason !== 'completed' || (receipt.report && receipt.report.outcome !== 'completed')) {
+      fail('result_unsettled', 'A complete delivery requires nested descendant work to have settled cleanly.');
+    }
+  }
   validate(draft) {
     const row = this.get(draft.projectId, draft.requestId, draft.requestRevision), service = this.service, current = this.manifest(row);
     if (this.version(row).authorityError || !this.version(row).source) fail('request_authority', 'The saved requirement needs a new actual user revision before delivery can be confirmed.');
@@ -211,12 +265,9 @@ export class ProjectRequirements {
     if (JSON.stringify(current) !== JSON.stringify(draft.requiredDelegations)) fail('request_changed', 'Required work changed after this handover was declared.');
     for (const reference of draft.reportRefs) this.validReport(row.projectId, reference, draft.outcome === 'completed');
     for (const reference of draft.terminalRefs ?? []) this.validTerminal(row.projectId, reference);
-    if (draft.outcome === 'completed') for (const reference of current) {
-      const work = service.stream(reference.workstreamId), worker = service.worker(work.workerSessionId), receipt = work.delegations.find(item => item.ref === reference.delegationRef);
-      const currentAssignment = work.currentDelegationRef === reference.delegationRef;
-      if ((worker.activeRunId && worker.activeRunId === reference.runId) || (currentAssignment && (worker.directoryHeld || service.jobs(worker.sessionId).length)) || ['queued', 'preparing', 'failed', 'stopped'].includes(receipt.phase)) fail('work_pending', 'Required work is still active or has not completed.');
-      if (!draft.reportRefs.some(item => item.workstreamId === work.id && item.delegationRef === reference.delegationRef)) fail('result_missing', 'Include each required stage result in the handover.');
-      this.validReport(row.projectId, reference, true);
+    if (draft.outcome === 'completed') {
+      const referencedWorkIds = new Set(draft.reportRefs.map(item => item.workstreamId));
+      for (const reference of current) this.validateCompletedObligation(row, draft, reference, referencedWorkIds);
     }
     return row;
   }
@@ -230,11 +281,12 @@ export class ProjectRequirements {
     // Two mistakes, two messages: told only about "partial", a model swaps the outcome and invents an unmet condition.
     if (args.outcome === 'completed' && remainingIssues.length) fail('invalid_delivery', 'A completed handover leaves nothing unmet, so remainingIssues must be empty. Put remarks that do not block the goal in the summary; choose partial only when required work or a condition is really unmet.');
     if (args.outcome === 'partial' && !remainingIssues.length) fail('invalid_delivery', 'A partial handover must preserve its unmet conditions in remainingIssues.');
-    if (!Array.isArray(args.reportRefs ?? []) || (args.reportRefs ?? []).length > 64) fail('invalid_delivery', 'Supply exact report references.');
+    const suppliedReportRefs = args.reportRefs === undefined ? this.autoReportRefs(row, args.outcome === 'completed') : args.reportRefs;
+    if (!Array.isArray(suppliedReportRefs) || suppliedReportRefs.length > 64) fail('invalid_delivery', 'Supply exact report references.');
     if (!Array.isArray(args.terminalRefs ?? []) || (args.terminalRefs ?? []).length > 64) fail('invalid_delivery', 'Supply exact terminal references.');
     const draft = { id: stableId('delivery', `${actor.agent.id}:${exec.callId}`), projectId: row.projectId, requestId: row.id, requestRevision: row.revision,
       title: row.title, summary: string(args.summary, 'delivery summary', 16000), outcome: args.outcome, evidence, remainingIssues,
-      reportRefs: (args.reportRefs ?? []).map(reference => this.validReport(row.projectId, reference, args.outcome === 'completed')),
+      reportRefs: suppliedReportRefs.map(reference => this.validReport(row.projectId, reference, args.outcome === 'completed')),
       terminalRefs: (args.terminalRefs ?? []).map(reference => this.validTerminal(row.projectId, reference)),
       requiredDelegations: this.manifest(row), declaredCallId: exec.rootCallId ?? exec.callId, sessionId: actor.agent.id, turn: input.call.data.turn, status: 'draft', at: Date.now(),
       ...(typeof args.decision === 'string' && args.decision.trim() ? { decision: args.decision.trim().slice(0, 2000) } : {}) };
@@ -311,33 +363,55 @@ export class ProjectRequirements {
       // Finish the end trees before the delivery becomes complete or released.
       await this.service.captureDeliveryChanges(stored);
       if (!reconciling && (this.service.project(project.id).paused && !humanSummary || this.service.projectHolds.has(project.id) || this.service.archiving.has(project.id))) return;
-      await this.service.write(state => {
-        const item = state.deliveries.find(item => item.id === draft.id); item.status = 'delivered'; item.replyMessageId = reply.data.message.id; delete item.error;
-        if (item.outcome === 'completed') { const request = state.requests.find(row => row.id === item.requestId); request.queue = { ...(request.queue ?? { state: 'active' }), released: true }; }
-        item.pages = (item.pages ?? []).filter(page => JSON.stringify(publications.get(page.callId)) === JSON.stringify(page));
-        for (const reference of item.reportRefs) {
-          const work = state.workstreams.find(work => work.id === reference.workstreamId), receipt = work.delegations.find(receipt => receipt.ref === reference.delegationRef);
-          receipt.report.summarizedBy = item.replyMessageId;
-          // A durable complete handover is also explicit final acceptance. Partial
-          // summaries and failed/unpersisted declarations never release dependencies.
-          if (item.outcome === 'completed' && receipt.review?.decision !== 'accepted') receipt.review = {
-            reportId: receipt.report.callId, decision: 'accepted', reason: item.summary, evidence: item.evidence, at: Date.now() };
-          for (const terminal of work.settlements.filter(terminal => terminal.runId === receipt.runId && terminal.delegationRefs.includes(receipt.ref))) terminal.summarizedBy = item.replyMessageId;
-          work.pendingSummary = work.delegations.some(receipt => receipt.report && !receipt.report.summarizedBy) || work.settlements.some(terminal => !terminal.summarizedBy);
-          if (work.summaryFailure?.delegationRef === reference.delegationRef) delete work.summaryFailure;
-        }
-        for (const reference of item.terminalRefs ?? []) {
-          const work = state.workstreams.find(work => work.id === reference.workstreamId);
-          work.settlements.find(terminal => terminal.runId === reference.runId && terminal.delegationRefs.includes(reference.delegationRef)).summarizedBy = item.replyMessageId;
-          work.pendingSummary = work.delegations.some(receipt => receipt.report && !receipt.report.summarizedBy) || work.settlements.some(terminal => !terminal.summarizedBy);
-          if (work.summaryFailure?.delegationRef === reference.delegationRef) delete work.summaryFailure;
-        }
-      });
+      await this.service.write(state => this.applyCommittedDelivery(state, project, draft, reply.data.message.id, publications));
       committed = true;
       await this.service.notes(project.id);
     });
     if (committed) await this.service.deliveryDecision(draft);
     if (!reconciling) await this.service.queue.pump(draft.projectId);
+  }
+  markWorkSummarized(work, delegationRef) {
+    work.pendingSummary = work.delegations.some(entry => entry.report && !entry.report.summarizedBy)
+      || work.settlements.some(terminal => terminal.delegationRefs.length > 0 && !terminal.summarizedBy);
+    if (work.summaryFailure?.delegationRef === delegationRef) delete work.summaryFailure;
+  }
+  applyCommittedDelivery(state, project, draft, replyMessageId, publications) {
+    const item = state.deliveries.find(entry => entry.id === draft.id);
+    item.status = 'delivered'; item.replyMessageId = replyMessageId; delete item.error;
+    if (item.outcome === 'completed') {
+      const request = state.requests.find(row => row.id === item.requestId);
+      request.queue = { ...(request.queue ?? { state: 'active' }), released: true };
+    }
+    item.pages = (item.pages ?? []).filter(page => JSON.stringify(publications.get(page.callId)) === JSON.stringify(page));
+    for (const reference of item.reportRefs) {
+      const work = state.workstreams.find(entry => entry.id === reference.workstreamId);
+      const receipt = work.delegations.find(entry => entry.ref === reference.delegationRef);
+      receipt.report.summarizedBy = replyMessageId;
+      if (item.outcome === 'completed' && receipt.review?.decision !== 'accepted') {
+        receipt.review = { reportId: receipt.report.callId, decision: 'accepted', reason: item.summary, evidence: item.evidence, at: Date.now() };
+      }
+      for (const terminal of work.settlements.filter(entry => entry.runId === receipt.runId && entry.delegationRefs.includes(receipt.ref))) terminal.summarizedBy = replyMessageId;
+      this.markWorkSummarized(work, reference.delegationRef);
+    }
+    this.summarizeCoveredDescendants(state, project, item, replyMessageId);
+    for (const reference of item.terminalRefs ?? []) {
+      const work = state.workstreams.find(entry => entry.id === reference.workstreamId);
+      work.settlements.find(terminal => terminal.runId === reference.runId && terminal.delegationRefs.includes(reference.delegationRef)).summarizedBy = replyMessageId;
+      this.markWorkSummarized(work, reference.delegationRef);
+    }
+  }
+  summarizeCoveredDescendants(state, project, item, replyMessageId) {
+    const referencedWorkIds = new Set(item.reportRefs.map(reference => reference.workstreamId));
+    for (const reference of item.requiredDelegations ?? []) {
+      if (referencedWorkIds.has(reference.workstreamId)) continue;
+      const work = state.workstreams.find(entry => entry.id === reference.workstreamId);
+      const worker = work && state.workers.find(entry => entry.sessionId === work.workerSessionId);
+      if (!work || !worker?.parentSessionId || worker.parentSessionId === project.coordinatorSessionId) continue;
+      const receipt = work.delegations.find(entry => entry.ref === reference.delegationRef);
+      if (receipt?.report && !receipt.report.summarizedBy) receipt.report.summarizedBy = replyMessageId;
+      for (const terminal of work.settlements.filter(entry => entry.runId === receipt?.runId && entry.delegationRefs.includes(receipt.ref))) terminal.summarizedBy = replyMessageId;
+      this.markWorkSummarized(work, reference.delegationRef);
+    }
   }
   applicable(delivery) {
     if (delivery.status !== 'delivered') return false;
@@ -471,32 +545,58 @@ export class ProjectRequirements {
   }
   listAttention(projectId) { const items = this.attention(projectId); return { items: items.slice(0, 50), total: items.length }; }
 
+  receiptBlocked(receipt, terminal) {
+    if (receipt.phase === 'failed' || receipt.review?.decision === 'returned') return true;
+    if (receipt.report && receipt.report.outcome !== 'completed') return true;
+    return Boolean(terminal && (terminal.stopReason !== 'completed' || !receipt.report));
+  }
+  cardWorkStatus({ item, receipt, worker, terminal, current, running, completed, project }) {
+    if (current && !completed && item.summaryFailure?.delegationRef === receipt.ref) return 'summaryFailed';
+    if (current && worker.phase === 'stopping') return 'stopping';
+    if (running) return 'running';
+    if (this.receiptBlocked(receipt, terminal)) return 'blocked';
+    if (receipt.phase === 'queued' || receipt.phase === 'preparing') return 'queued';
+    if (receipt.report?.outcome === 'completed' && terminal?.stopReason === 'completed') return this.service.acceptedWork(item) ? 'completed' : 'needsReview';
+    if (worker.stopped || project.paused) return 'paused';
+    return receipt.report || terminal ? 'pendingDelivery' : 'blocked';
+  }
+  cardWorkReportMeta(receipt, status, full) {
+    if (!receipt.report) return {};
+    return {
+      reportId: receipt.report.callId, outcome: receipt.report.outcome, reportAt: receipt.report.at,
+      ...(full ? { summary: receipt.report.summary } : {}),
+      ...(status === 'blocked' ? { reportSummary: receipt.report.summary.slice(0, 300) } : {}),
+    };
+  }
+  cardWorkEntry(projectId, project, reference, byWork, completed, full) {
+    const service = this.service;
+    const record = byWork.get(reference.workstreamId), item = record?.work ?? service.stream(reference.workstreamId, projectId);
+    const receipt = item.delegations.find(entry => entry.ref === reference.delegationRef);
+    const worker = record?.worker ?? service.worker(item.workerSessionId);
+    const terminal = item.settlements.find(entry => entry.runId === reference.runId && entry.delegationRefs.includes(reference.delegationRef));
+    const current = item.currentDelegationRef === reference.delegationRef;
+    const runningJob = current && Boolean(record?.jobs.length ?? service.jobs(worker.sessionId).length);
+    const status = this.cardWorkStatus({ item, receipt, worker, terminal, current, running: current && (worker.activeRunId === reference.runId || Boolean(record?.jobs.length)), completed, project });
+    const hasFailure = current && item.summaryFailure?.delegationRef === reference.delegationRef;
+    const autoRetry = hasFailure ? service.autoRetry(item) : undefined;
+    return {
+      workstreamId: item.id, delegationRef: receipt.ref, runId: reference.runId, title: item.title,
+      workerSessionId: worker.sessionId, parentSessionId: worker.parentSessionId ?? project.coordinatorSessionId,
+      memberName: service.memberName(worker), memberRole: worker.role, memberPhase: worker.phase,
+      status, current, runningJob, phase: receipt.phase,
+      ...(receipt.waitingReason ? { waitingReason: receipt.waitingReason } : {}),
+      ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
+      ...(hasFailure ? { summaryFailure: item.summaryFailure } : {}),
+      ...(autoRetry ? { autoRetry } : {}),
+      createdAt: item.createdAt, updatedAt: item.updatedAt, assignmentAt: receipt.createdAt,
+      ...this.cardWorkReportMeta(receipt, status, full),
+      ...(terminal ? { terminalStopReason: terminal.stopReason, terminalAt: terminal.at } : {}),
+    };
+  }
   card(projectId, row, byWork, full = false) {
     const service = this.service, project = service.project(projectId), version = this.version(row);
     const { latestAttempt, delivered, applicable, completed } = this.handover(row);
-    const work = this.manifest(row).map(reference => {
-      const record = byWork.get(reference.workstreamId), item = record?.work ?? service.stream(reference.workstreamId, projectId);
-      const receipt = item.delegations.find(entry => entry.ref === reference.delegationRef);
-      const worker = record?.worker ?? service.worker(item.workerSessionId);
-      const terminal = item.settlements.find(entry => entry.runId === reference.runId && entry.delegationRefs.includes(reference.delegationRef));
-      const current = item.currentDelegationRef === reference.delegationRef;
-      const running = current && (worker.activeRunId === reference.runId || Boolean(record?.jobs.length));
-      const status = current && !completed && item.summaryFailure?.delegationRef === reference.delegationRef ? 'summaryFailed'
-        : current && worker.phase === 'stopping' ? 'stopping' : running ? 'running'
-        : receipt.phase === 'failed' || receipt.report && receipt.report.outcome !== 'completed'
-          || terminal && (terminal.stopReason !== 'completed' || !receipt.report) ? 'blocked'
-        : receipt.phase === 'queued' || receipt.phase === 'preparing' ? 'queued'
-        : receipt.review?.decision === 'returned' ? 'blocked'
-        : receipt.report?.outcome === 'completed' && terminal?.stopReason === 'completed' ? (service.acceptedWork(item) ? 'completed' : 'needsReview')
-        : worker.stopped || project.paused ? 'paused' : receipt.report || terminal ? 'pendingDelivery' : 'blocked';
-      return { workstreamId: item.id, delegationRef: receipt.ref, runId: reference.runId, title: item.title,
-        workerSessionId: worker.sessionId, parentSessionId: worker.parentSessionId ?? project.coordinatorSessionId, memberName: service.memberName(worker), memberRole: worker.role, memberPhase: worker.phase,
-        status, current, runningJob: current && Boolean(record?.jobs.length ?? service.jobs(worker.sessionId).length), phase: receipt.phase, ...(receipt.waitingReason ? { waitingReason: receipt.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
-        createdAt: item.createdAt, updatedAt: item.updatedAt, assignmentAt: receipt.createdAt,
-        ...(receipt.report ? { reportId: receipt.report.callId, outcome: receipt.report.outcome, reportAt: receipt.report.at,
-          ...(full ? { summary: receipt.report.summary } : {}), ...(status === 'blocked' ? { reportSummary: receipt.report.summary.slice(0, 300) } : {}) } : {}),
-        ...(terminal ? { terminalStopReason: terminal.stopReason, terminalAt: terminal.at } : {}) };
-    }).sort((a, b) => {
+    const work = this.manifest(row).map(reference => this.cardWorkEntry(projectId, project, reference, byWork, completed, full)).sort((a, b) => {
       const priority = { blocked: 0, summaryFailed: 0, stopping: 1, running: 2, queued: 3, paused: 4, needsReview: 5, pendingDelivery: 5, completed: 6 };
       return priority[a.status] - priority[b.status] || b.updatedAt - a.updatedAt || a.workstreamId.localeCompare(b.workstreamId);
     });
@@ -534,8 +634,10 @@ export class ProjectRequirements {
         ...(row.changes.revertedAt ? { revertedAt: row.changes.revertedAt } : {}), ...(full && row.changes.files ? { files: row.changes.files.slice(0, 50) } : {}) } } : {}) };
     if (!full) return { ...base, goalPreview: version.goal.slice(0, 180), members: members.slice(0, 3), memberTotal: members.length,
       workPreview: work.slice(0, 3).map(item => ({ workstreamId: item.workstreamId, delegationRef: item.delegationRef,
-        title: item.title, status: item.status, memberName: item.memberName, workerSessionId: item.workerSessionId,
-        ...(item.waitingReason ? { waitingReason: item.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}) })),
+        title: item.title, status: item.status, memberName: item.memberName, memberRole: item.memberRole, workerSessionId: item.workerSessionId,
+        parentSessionId: item.parentSessionId,
+        ...(item.waitingReason ? { waitingReason: item.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
+        ...(item.summaryFailure ? { summaryFailure: item.summaryFailure } : {}), ...(item.autoRetry ? { autoRetry: item.autoRetry } : {}) })),
       delivery: delivered && { id: delivered.id, outcome: delivered.outcome,
         summaryPreview: delivered.summary.slice(0, 240), at: delivered.at, applicable,
         artifactCount: delivered.reportRefs.reduce((count, reference) => {
@@ -607,6 +709,9 @@ export class ProjectRequirements {
         if (archived) item.archivedAt = archivedAt;
         else delete item.archivedAt;
       });
+      if (archived) {
+        await service.onRequestArchived?.(projectId, row).catch(error => service.ctx?.logger?.warn?.('Request archive cleanup skipped: %s', error.message));
+      }
       return { requestId, archivedAt };
     });
   }
