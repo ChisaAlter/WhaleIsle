@@ -14,17 +14,42 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 
 enum class Route { Connect, Permission, Scan, Chat }
+
+private fun parseExtraIceServers(store: DeviceStore): List<IceServerConfig> =
+    try { IceServerConfigCodec.parseUserInput(store.iceConfigJson) } catch (_: Exception) { emptyList() }
+
 class DshViewModel(
     private val store: DeviceStore,
     private val createClient: (Offer, SavedComputer?, String, (SavedComputer) -> Unit, (JsonObject) -> Unit, (String) -> Unit) -> RelayClient =
-        { offer, saved, device, persist, mux, name -> RelayClient(offer, saved, device, persist, mux, name) },
+        { offer, saved, device, persist, mux, name ->
+            RelayClient(offer, saved, device, persist, mux, name, extraIceServers = parseExtraIceServers(store))
+        },
 ) : ViewModel() {
+    constructor(deviceStore: DeviceStore, webRtcPeerFactory: WebRtcPeerFactory?) : this(
+        store = deviceStore,
+        createClient = { offer, saved, device, persist, mux, name ->
+            RelayClient(
+                offer = offer,
+                saved = saved,
+                deviceName = device,
+                persist = persist,
+                onMux = mux,
+                onComputerName = name,
+                webRtcPeerFactory = webRtcPeerFactory,
+                extraIceServers = parseExtraIceServers(deviceStore),
+            )
+        },
+    )
     var route by mutableStateOf(Route.Connect)
     var paste by mutableStateOf("")
     var error by mutableStateOf("")
     var connecting by mutableStateOf(false)
         private set
     var connectionStatus by mutableStateOf("")
+        private set
+    var transportMode by mutableStateOf<TransportMode?>(null)
+        private set
+    var iceConfigJson by mutableStateOf(store.iceConfigJson)
         private set
     val canRetryConnection get() = route == Route.Connect && !connecting && lastConnectionOffer != null && !authenticationRejected
     val selectedComputerId get() = selectedServer
@@ -183,7 +208,7 @@ class DshViewModel(
         saveImageDraft()
         cancelGitReview()
         generation++; uiOwnerEpoch = generation.toString(); reconnectEnabled = false; catalogReady = false
-        startupHandled = true; connecting = false; connectionStatus = ""; lastConnectionOffer = null; catalogSyncEpoch = null
+        startupHandled = true; connecting = false; connectionStatus = ""; transportMode = null; lastConnectionOffer = null; catalogSyncEpoch = null
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         workspaces = emptyList(); allSessions = emptyList(); history = emptyList(); beforeSeq = null
         liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); refreshingHistory = false; historyDirty = false; recentMuxActivity = false
@@ -225,7 +250,7 @@ class DshViewModel(
         chat = NativeChatState(epoch = generation.toString(), route = "chat", offline = true, loading = true, connLabel = "正在连接电脑…", hostName = saved?.computerName.orEmpty(),
             sessionId = restoredSession, sessions = if (keepTasks) chat.sessions else emptyList(), draft = draftData.string(draftKey(restoredSession)), attachments = imageDrafts[draftKey(restoredSession)].orEmpty(),
             modelOptions = seededModels, slashCommands = seededCommands)
-        error = ""; connecting = !keepTasks; connectionStatus = "正在连接电脑…"
+        error = ""; connecting = !keepTasks; connectionStatus = "正在连接电脑…"; transportMode = null
         route = if (keepTasks) Route.Chat else Route.Connect
         connectionJob = viewModelScope.launch {
             var nextOffer = offer
@@ -235,9 +260,14 @@ class DshViewModel(
             while (isActive) {
                 val epoch = generation
                 val connection = try {
-                    createClient(nextOffer, nextSaved, "${Build.MANUFACTURER} ${Build.MODEL}", { record -> if (epoch == generation) persist(record) },
+                    createClient(
+                        nextOffer,
+                        nextSaved,
+                        "${Build.MANUFACTURER} ${Build.MODEL}",
+                        { record -> if (epoch == generation) persist(record) },
                         { payload -> viewModelScope.launch { if (epoch == generation) onMux(payload) } },
-                        { name -> viewModelScope.launch { if (epoch == generation) update { copy(hostName = name) } } })
+                        { name -> viewModelScope.launch { if (epoch == generation) update { copy(hostName = name) } } },
+                    )
                 } catch (failure: Exception) {
                     if (epoch == generation) {
                         val message = failure.message ?: "无效的配对数据"
@@ -247,12 +277,24 @@ class DshViewModel(
                     return@launch
                 }
                 client = connection
-                val observer = launch { connection.status.collect { status ->
-                    if (epoch == generation) {
-                        if (connecting && !connection.connected) connectionStatus = status
-                        update { copy(connLabel = status, offline = !connection.connected) }
+                val observer = launch {
+                    launch {
+                        connection.status.collect { status ->
+                            if (epoch == generation) {
+                                if (connecting && !connection.connected) connectionStatus = status
+                                update { copy(connLabel = status, offline = !connection.connected) }
+                            }
+                        }
                     }
-                } }
+                    launch {
+                        connection.transportMode.collect { mode ->
+                            if (epoch == generation) {
+                                transportMode = mode
+                                update { copy(transportLabel = mode?.displayLabel.orEmpty()) }
+                            }
+                        }
+                    }
+                }
                 observerJob = observer
                 val failure = try {
                     connection.connect()
@@ -281,15 +323,16 @@ class DshViewModel(
                 }
                 if (epoch != generation) return@launch
                 pollJob?.cancel()
+                transportMode = null
                 val message = failure.message ?: "连接失败"
                 if (failure is RelayAuthenticationException) { reconnectEnabled = false; authenticationRejected = true }
                 if (route != Route.Chat) {
                     generation++; reconnectEnabled = false; catalogReady = false; client = null
                     connecting = false; connectionStatus = "连接失败"; error = message; route = Route.Connect
-                    update { copy(connected = false, offline = true, loading = false, error = "", connLabel = message) }
+                    update { copy(connected = false, offline = true, loading = false, error = "", connLabel = message, transportLabel = "") }
                     return@launch
                 }
-                update { copy(offline = true, connLabel = message, error = message) }
+                update { copy(offline = true, connLabel = message, error = message, transportLabel = "") }
                 val credential = readComputers().find { it.serverId == selectedServer }
                 if (!reconnectEnabled || credential == null) return@launch
                 // Retire callbacks before waiting; every retry uses the persisted secret.
@@ -1022,6 +1065,17 @@ class DshViewModel(
         }
     }
     fun persistScheme(value: String) { scheme = value; store.scheme = value }
+    fun saveIceConfig(raw: String): String? {
+        return try {
+            val parsed = IceServerConfigCodec.parseUserInput(raw)
+            val encoded = IceServerConfigCodec.encodeJson(parsed)
+            store.iceConfigJson = encoded
+            iceConfigJson = encoded
+            null
+        } catch (e: IllegalArgumentException) {
+            e.message ?: "STUN/TURN 配置格式无效"
+        }
+    }
     internal fun importLegacy(raw: String) {
         val data = Json.parseToJsonElement(raw).objectValue()
         val legacy = Json.parseToJsonElement(data.string("computers").ifBlank { "{}" }).objectValue()

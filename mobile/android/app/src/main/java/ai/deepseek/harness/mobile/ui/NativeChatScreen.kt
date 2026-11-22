@@ -185,7 +185,9 @@ internal fun NativeChatScreen(
                     Column(Modifier.weight(1f).padding(4.dp)) {
                         Text(state.title, color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp,
                             fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (!tightIme && state.hostName.isNotBlank()) Text(state.hostName, color = colors.labelTertiary,
+                        if (!tightIme && state.hostName.isNotBlank()) Text(
+                            if (!state.offline && state.transportLabel.isNotBlank()) "${state.hostName} · ${state.transportLabel}" else state.hostName,
+                            color = colors.labelTertiary,
                             fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     NativeIconButton(NativeGlyph.More, "会话与工作区操作", { keyboard?.hide(); onPanel("work") })
@@ -331,6 +333,7 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
                     Text(state.hostName.ifBlank { "我的电脑" } + " · " + when {
                         state.offline -> "连接已断开"
                         state.loading -> "正在同步"
+                        state.transportLabel.isNotBlank() -> "已连接 · ${state.transportLabel}"
                         else -> "已连接"
                     }, color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
