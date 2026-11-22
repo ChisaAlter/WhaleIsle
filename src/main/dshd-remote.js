@@ -21,6 +21,7 @@ const {
   publicUrl,
 } = require('../shared/lan');
 const { createMobileWebServer, listenMobileWebServer, MOBILE_WEB_PORT } = require('./mobile-web-server');
+const { normalizeRemoteIceServers } = require('./remote-patch');
 const { startGitTunnelServer } = require('./dshd-git-tunnel');
 const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
 const { passSecretToChild } = require('../shared/secret');
@@ -185,6 +186,56 @@ function resolvedAppBaseUrl(config) {
 
 function mobileBindAddress(config = {}) {
   return config.remoteBindAddress || '127.0.0.1';
+}
+
+const TRANSPORT_MODE_RANK = { lan: 3, p2p: 2, turn: 1, relay: 0 };
+
+/**
+ * Ranked `host:port` endpoints for zero-external-server LAN pairing offers.
+ * @param {object} config
+ * @returns {string[]}
+ */
+function lanPairingEndpoints(config = {}) {
+  if (modeIsAway(config)) {
+    return [];
+  }
+  const bind = mobileBindAddress(config);
+  if (bind !== '0.0.0.0') {
+    return [`${bind}:${MOBILE_WEB_PORT}`];
+  }
+  const ordered = [];
+  const seen = new Set();
+  const pushIp = (ip) => {
+    const clean = typeof ip === 'string' ? ip.trim() : '';
+    if (!clean || seen.has(clean)) return;
+    seen.add(clean);
+    ordered.push(`${clean}:${MOBILE_WEB_PORT}`);
+  };
+  pushIp(preferredLanIp());
+  for (const addr of listLanAddresses()) {
+    pushIp(addr);
+  }
+  if (ordered.length === 0) {
+    ordered.push(`127.0.0.1:${MOBILE_WEB_PORT}`);
+  }
+  return ordered;
+}
+
+function iceServersFromConfig(config = {}) {
+  return normalizeRemoteIceServers(config.remoteIceServers, { strict: false });
+}
+
+function bestActiveTransportMode(modesMap) {
+  let best = '';
+  let bestRank = -1;
+  for (const mode of modesMap.values()) {
+    const rank = TRANSPORT_MODE_RANK[mode] ?? -1;
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = mode;
+    }
+  }
+  return best;
 }
 
 /** The unauthenticated daemon stays loopback; the visible port control owns its port. */
@@ -463,6 +514,7 @@ class DshdRemote extends EventEmitter {
     this.pairing = { relayEnabled: false, url: null, qr: null };
     this.pairingOperation = null;
     this.relayState = { connected: false, lastError: '' };
+    this.clientTransportModes = new Map();
     this.error = '';
     this.starting = null;
     this.startGeneration = 0;
@@ -546,7 +598,11 @@ class DshdRemote extends EventEmitter {
       return;
     }
     const bind = mobileBindAddress(config);
-    const server = createMobileWebServer({ bindAddress: bind, port: MOBILE_WEB_PORT });
+    const server = createMobileWebServer({
+      bindAddress: bind,
+      port: MOBILE_WEB_PORT,
+      lanWsTarget: () => (this.daemon ? `ws://${daemonListen(this.getConfig() || {})}/lan-ws` : ''),
+    });
     const listening = listenMobileWebServer(server, bind, MOBILE_WEB_PORT);
     this.mobileWebStarting = listening;
     try {
@@ -609,6 +665,11 @@ class DshdRemote extends EventEmitter {
       }
     }
 
+    const lanReady = !away && listening && Boolean(this.mobileWebServer);
+    const iceServers = iceServersFromConfig(config);
+    const activeTransportModes = Array.from(this.clientTransportModes.values());
+    const activeTransportMode = bestActiveTransportMode(this.clientTransportModes);
+
     return {
       available: true,
       protocol: 'chisacode-v2',
@@ -618,10 +679,14 @@ class DshdRemote extends EventEmitter {
       port: Number(daemonListen(config).split(':').pop()),
       token: '',
       mode: away ? 'relay' : 'lan',
+      lanReady,
       bindAddress: this.mobileWebServer?.address()?.address || mobileBindAddress(config),
       lanTls: false,
       tlsFingerprint: '',
       addresses,
+      iceServers,
+      activeTransportMode,
+      activeTransportModes,
       relayUrl: relayEndpoint,
       defaultRelayUrl: defaults.relayEndpoint,
       relayTokenSet: true,
@@ -674,9 +739,12 @@ class DshdRemote extends EventEmitter {
     assertCurrent();
     const config = this.getConfig() || {};
     const defaults = readDefaults();
+    const away = modeIsAway(config);
     const relayEndpoint = (config.remoteRelayEndpoint || config.remoteRelayUrl || defaults.relayEndpoint || '').trim();
     const useTls = relayUseTls(config, relayEndpoint);
     const appBaseUrl = this.pairingAppBaseUrl();
+    const lanEndpoints = away ? [] : lanPairingEndpoints(config);
+    const iceServers = iceServersFromConfig(config);
     if (revokeLink) {
       new api.RelayPairingLinkStore(this.homeDir()).revoke();
       // Never publish a revoked link if creating its replacement fails.
@@ -685,11 +753,15 @@ class DshdRemote extends EventEmitter {
 
     const pairing = await api.generateLocalPairingOffer({
       chisacodeHome: this.homeDir(),
-      relayEnabled: true,
-      relayEndpoint,
-      relayPublicEndpoint: relayEndpoint,
-      relayUseTls: useTls,
-      relayPublicUseTls: useTls,
+      relayEnabled: away,
+      ...(away ? {
+        relayEndpoint,
+        relayPublicEndpoint: relayEndpoint,
+        relayUseTls: useTls,
+        relayPublicUseTls: useTls,
+      } : {}),
+      ...(lanEndpoints.length > 0 ? { lanEndpoints, lanUseTls: false } : {}),
+      ...(iceServers.length > 0 ? { iceServers } : {}),
       appBaseUrl,
       includeQr: false,
       includePersistentLink: true,
@@ -783,31 +855,38 @@ class DshdRemote extends EventEmitter {
       const agentStoragePath = path.join(home, 'agents');
       fs.mkdirSync(agentStoragePath, { recursive: true });
 
-      if (modeIsAway(config)) {
+      const away = modeIsAway(config);
+      const iceServers = iceServersFromConfig(config);
+      if (away) {
         await this.stopMobileWebServer();
       } else {
         await this.ensureMobileWebServer(config);
       }
       assertCurrent();
       this.relayState = { connected: false, lastError: '' };
+      this.clientTransportModes.clear();
 
       const daemonConfig = {
         listen,
         chisacodeHome: home,
         // The daemon has no password on loopback, so a browser page from any
         // other site must not reach it. Phones and the pairing page use the
-        // encrypted relay; the daemon itself still admits its own loopback
-        // origins and Origin-less local clients.
+        // encrypted relay (or loopback /lan-ws E2EE bridge in pure LAN mode);
+        // the daemon itself still admits its own loopback origins and Origin-less local clients.
         corsAllowedOrigins: [],
         staticDir: fs.existsSync(staticDir) ? staticDir : home,
         mcpDebug: false,
         agentClients: {},
         agentStoragePath,
-        relayEnabled: true,
-        relayEndpoint,
-        relayPublicEndpoint: relayEndpoint,
-        relayUseTls: useTls,
-        relayPublicUseTls: useTls,
+        relayEnabled: away,
+        lanE2eeEnabled: true,
+        ...(away ? {
+          relayEndpoint,
+          relayPublicEndpoint: relayEndpoint,
+          relayUseTls: useTls,
+          relayPublicUseTls: useTls,
+        } : {}),
+        ...(iceServers.length > 0 ? { iceServers } : {}),
         appBaseUrl: this.pairingAppBaseUrl(),
         // Loopback listen: empty auth is allowed. Non-loopback requires a password
         // or CHISACODE_ALLOW_WILDCARD_NO_AUTH=1 (see ChisaCode assertWildcardAuth).
@@ -973,14 +1052,36 @@ class DshdRemote extends EventEmitter {
       this.setRelayState(status);
     }
     const msg = typeof record.msg === 'string' ? record.msg : '';
+    const isCurrentChild = !handle.stopping && (this.daemon === handle || this.pendingDaemon === handle);
+    if (isCurrentChild && msg === 'remote_client_transport_mode') {
+      const connectionId = typeof record.connectionId === 'string' ? record.connectionId : '';
+      const mode = typeof record.mode === 'string' ? record.mode : '';
+      if (connectionId && Object.prototype.hasOwnProperty.call(TRANSPORT_MODE_RANK, mode)) {
+        if (this.clientTransportModes.get(connectionId) !== mode) {
+          this.clientTransportModes.set(connectionId, mode);
+          this.emit('listening', this.snapshot());
+        }
+      }
+    } else if (isCurrentChild && msg === 'remote_client_disconnected') {
+      const connectionId = typeof record.connectionId === 'string' ? record.connectionId : '';
+      if (connectionId && this.clientTransportModes.delete(connectionId)) {
+        this.emit('listening', this.snapshot());
+      }
+    }
     if (msg === 'dshd_daemon_ready') {
       handle.readyResolve();
     } else if (msg === 'dshd_daemon_start_failed') {
       handle.readyReject(new Error(`远程守护进程启动失败：${record.error || 'unknown'}`));
     }
-    // Info-level daemon chatter stays out of the dsh log; lifecycle lines and
-    // warn+ records are the operator-relevant slice.
-    if (msg.startsWith('dshd_daemon_') || (typeof record.level === 'number' && record.level >= 40)) {
+    // Info-level daemon chatter stays out of the dsh log; lifecycle lines,
+    // transport upgrades, and warn+ records are the operator-relevant slice.
+    if (
+      msg.startsWith('dshd_daemon_')
+      || msg === 'remote_client_transport_mode'
+      || msg === 'webrtc_upgrade_activated'
+      || msg === 'lan_e2ee_transport_ready'
+      || (typeof record.level === 'number' && record.level >= 40)
+    ) {
       this.log?.(`[dshd-daemon] ${line}`);
     }
   }
@@ -1000,6 +1101,7 @@ class DshdRemote extends EventEmitter {
     }
     this.daemon = null;
     this.runtimeKey = '';
+    this.clientTransportModes.clear();
     if (!handle.stopping) {
       this.error = `远程守护进程异常退出（${signal || `code ${code}`}），点「开启」重试`;
       this.relayState = { connected: false, lastError: this.error };
@@ -1104,6 +1206,7 @@ class DshdRemote extends EventEmitter {
       if (this.pendingDaemon === handle) this.pendingDaemon = null;
     }
     this.relayState = { connected: false, lastError: '' };
+    this.clientTransportModes.clear();
     this.error = '';
     this.runtimeKey = '';
     this.pairing = { relayEnabled: false, url: null, qr: null };
@@ -1179,6 +1282,7 @@ class DshdRemote extends EventEmitter {
       mobileBind: mobileBindAddress(config),
       mode: modeIsAway(config) ? 'relay' : 'lan',
       appBaseUrl: resolvedAppBaseUrl(config),
+      iceServers: iceServersFromConfig(config),
     });
   }
 }

@@ -19,6 +19,90 @@ function isBindableIpv4(value) {
   return value.split('.').every((part) => Number(part) >= 0 && Number(part) <= 255);
 }
 
+const ICE_SERVER_URL_RE = /^(?:stuns?|turns?):[^\s\r\n\0]{1,512}$/i;
+const MAX_ICE_SERVERS = 16;
+const MAX_URLS_PER_ICE_SERVER = 8;
+
+/**
+ * Validate and normalize an array of STUN/TURN ICE server configs.
+ * Throws TypeError when `strict` is true and any entry is invalid; otherwise
+ * drops invalid entries safely (for disk config normalization).
+ * @param {unknown} value
+ * @param {{ strict?: boolean }} [options]
+ * @returns {Array<{ urls: string | string[], username?: string, credential?: string }>}
+ */
+function normalizeRemoteIceServers(value, options = {}) {
+  const strict = options.strict === true;
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    if (strict) {
+      throw new TypeError('remoteIceServers must be an array');
+    }
+    return [];
+  }
+  if (value.length > MAX_ICE_SERVERS) {
+    if (strict) {
+      throw new TypeError(`remoteIceServers supports at most ${MAX_ICE_SERVERS} entries`);
+    }
+  }
+  const out = [];
+  const limit = Math.min(value.length, MAX_ICE_SERVERS);
+  for (let i = 0; i < limit; i += 1) {
+    const entry = value[i];
+    if (!isPlainObject(entry)) {
+      if (strict) throw new TypeError('Each remoteIceServers entry must be an object');
+      continue;
+    }
+    const rawUrls = entry.urls;
+    let normalizedUrls;
+    if (typeof rawUrls === 'string') {
+      const trimmed = rawUrls.trim();
+      if (!ICE_SERVER_URL_RE.test(trimmed)) {
+        if (strict) throw new TypeError(`Invalid STUN/TURN URL: ${rawUrls}`);
+        continue;
+      }
+      normalizedUrls = trimmed;
+    } else if (Array.isArray(rawUrls) && rawUrls.length > 0 && rawUrls.length <= MAX_URLS_PER_ICE_SERVER) {
+      const list = [];
+      let bad = false;
+      for (const u of rawUrls) {
+        if (typeof u !== 'string' || !ICE_SERVER_URL_RE.test(u.trim())) {
+          bad = true;
+          if (strict) throw new TypeError(`Invalid STUN/TURN URL in array: ${String(u)}`);
+          break;
+        }
+        list.push(u.trim());
+      }
+      if (bad || list.length === 0) continue;
+      normalizedUrls = list;
+    } else {
+      if (strict) throw new TypeError('remoteIceServers entry urls must be a STUN/TURN URL string or non-empty array');
+      continue;
+    }
+
+    /** @type {{ urls: string | string[], username?: string, credential?: string }} */
+    const cleaned = { urls: normalizedUrls };
+    if (entry.username !== undefined) {
+      if (typeof entry.username !== 'string' || entry.username.length > 256 || /[\r\n\0]/.test(entry.username)) {
+        if (strict) throw new TypeError('remoteIceServers username must be a valid string');
+        continue;
+      }
+      if (entry.username.length > 0) cleaned.username = entry.username;
+    }
+    if (entry.credential !== undefined) {
+      if (typeof entry.credential !== 'string' || entry.credential.length > 512 || /[\r\n\0]/.test(entry.credential)) {
+        if (strict) throw new TypeError('remoteIceServers credential must be a valid string');
+        continue;
+      }
+      if (entry.credential.length > 0) cleaned.credential = entry.credential;
+    }
+    out.push(cleaned);
+  }
+  return out;
+}
+
 /**
  * Accept only RemotePatch fields from the harness renderer.
  * Unknown keys fail closed so credentials and workspace cannot ride along.
@@ -32,6 +116,7 @@ function isBindableIpv4(value) {
  *   remoteRelayUrl?: string,
  *   remoteRelayUseTls?: boolean,
  *   remoteRelayToken?: string,
+ *   remoteIceServers?: Array<{ urls: string | string[], username?: string, credential?: string }>,
  * }}
  */
 function normalizeRemotePatch(patch) {
@@ -40,7 +125,8 @@ function normalizeRemotePatch(patch) {
   }
   /** @type {{ remoteEnabled?: boolean, remotePort?: number, remoteMode?: 'lan' | 'relay',
    *           remoteBindAddress?: string, remoteLanTls?: boolean, remoteRelayUrl?: string,
-   *           remoteRelayUseTls?: boolean, remoteRelayToken?: string }} */
+   *           remoteRelayUseTls?: boolean, remoteRelayToken?: string,
+   *           remoteIceServers?: Array<{ urls: string | string[], username?: string, credential?: string }> }} */
   const next = {};
   for (const [key, value] of Object.entries(/** @type {Record<string, unknown>} */ (patch))) {
     if (key === 'remoteEnabled') {
@@ -100,9 +186,13 @@ function normalizeRemotePatch(patch) {
       next.remoteRelayToken = value.trim();
       continue;
     }
+    if (key === 'remoteIceServers') {
+      next.remoteIceServers = normalizeRemoteIceServers(value, { strict: true });
+      continue;
+    }
     throw new Error(`Config field is not renderer-writable: ${key}`);
   }
   return next;
 }
 
-module.exports = { normalizeRemotePatch };
+module.exports = { normalizeRemotePatch, normalizeRemoteIceServers };

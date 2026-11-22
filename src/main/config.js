@@ -5,7 +5,7 @@ const { app, safeStorage } = require('electron');
 const { projectRoot } = require('./paths');
 const { DEFAULT_CLOSE_TO_TRAY } = require('./close-behavior');
 const { normalizeRelayHostToken } = require('../shared/relay-auth');
-const { normalizeRemotePatch } = require('./remote-patch');
+const { normalizeRemotePatch, normalizeRemoteIceServers } = require('./remote-patch');
 const { normalizeGrowthState } = require('./pet-growth');
 const { normalizeStats } = require('./pet-stats');
 const petSettings = require('./pet-settings');
@@ -41,6 +41,7 @@ const DEFAULTS = {
   remoteRelayUseTls: false,
   remoteAppBaseUrl: '',
   remoteRelayToken: '',
+  remoteIceServers: [],
   harnessAutoRestart: true,
   harnessRestartMaxAttempts: 3,
   harnessRestartBaseDelayMs: 1000,
@@ -259,6 +260,7 @@ function normalizeRemoteConfig(config) {
     : DEFAULTS.remotePort;
   next.remoteBindAddress = normalizeRemoteBindAddress(next.remoteBindAddress);
   next.remoteLanTls = next.remoteLanTls === true;
+  next.remoteIceServers = normalizeRemoteIceServers(next.remoteIceServers, { strict: false });
   return next;
 }
 

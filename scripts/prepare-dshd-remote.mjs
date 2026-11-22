@@ -153,6 +153,49 @@ function pruneNodePtyRuntime() {
   }
 }
 
+function pruneFilesByExtension(dir, extensions) {
+  if (!fs.existsSync(dir)) return;
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(absolute);
+      } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
+        fs.rmSync(absolute, { force: true });
+      }
+    }
+  }
+}
+
+function pruneWeriftRuntime() {
+  const weriftRoot = path.join(runtimeNodeModules, 'werift');
+  if (fs.existsSync(weriftRoot)) {
+    // @chisacode/server is pure ESM and resolves werift to ./lib/index.mjs (0.89 MiB).
+    // Prune unused CJS subtrees, polyfills, type declarations, and source maps.
+    const libRoot = path.join(weriftRoot, 'lib');
+    if (fs.existsSync(path.join(libRoot, 'index.mjs'))) {
+      for (const entry of fs.readdirSync(libRoot, { withFileTypes: true })) {
+        if (entry.name !== 'index.mjs') {
+          fs.rmSync(path.join(libRoot, entry.name), { recursive: true, force: true });
+        }
+      }
+    } else {
+      pruneFilesByExtension(weriftRoot, ['.map', '.d.ts', '.d.mts', '.d.cts']);
+    }
+    fs.rmSync(path.join(weriftRoot, 'README.md'), { force: true });
+  }
+  const mediabunnyRoot = path.join(runtimeNodeModules, 'mediabunny');
+  if (fs.existsSync(mediabunnyRoot)) {
+    // Node ESM resolves mediabunny to ./dist/modules/src/index.js; CJS/browser bundles and TS sources are unused.
+    fs.rmSync(path.join(mediabunnyRoot, 'src'), { recursive: true, force: true });
+    fs.rmSync(path.join(mediabunnyRoot, 'dist', 'bundles'), { recursive: true, force: true });
+    fs.rmSync(path.join(mediabunnyRoot, 'README.md'), { force: true });
+    pruneFilesByExtension(mediabunnyRoot, ['.map', '.d.ts', '.d.mts', '.d.cts']);
+  }
+}
+
 // With `--force` both builds run unconditionally, so the freshness scans are
 // never read. Skip them entirely instead of paying for results no caller wants.
 const sourceScans = force
@@ -418,6 +461,7 @@ if (buildRuntime) {
     `${JSON.stringify({ name: 'whale-isle-dshd-desktop-runtime', private: true, dependencies }, null, 2)}\n`,
   );
   pruneNodePtyRuntime();
+  pruneWeriftRuntime();
   prepareElectronSqliteRuntime();
   assertTrimmedRuntime();
   await probeDshdDaemonRuntime();

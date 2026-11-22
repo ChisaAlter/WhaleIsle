@@ -831,4 +831,21 @@ describe('RemoteSection', () => {
       vi.useRealTimers()
     }
   })
+
+  it('shows QR immediately in pure LAN mode when listening and lanReady without waiting for relayConnected', async () => {
+    renderRemote({
+      getRemote: vi.fn(async () => snap({
+        mode: 'lan',
+        listening: true,
+        lanReady: true,
+        relayConnected: false,
+        relayError: '',
+      })),
+    })
+    fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+    await screen.findByRole('dialog', { name: en.heading })
+    expect(screen.getByRole('img', { name: en.qr })).toBeTruthy()
+    expect(screen.queryByRole('status', { name: en.relayConnectingHint })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })

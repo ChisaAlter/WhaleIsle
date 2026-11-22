@@ -303,6 +303,8 @@ import { createConnectionOfferV2, encodeOfferToFragmentUrl } from "./connection-
 import { RelayDeviceCredentialStore } from "./relay-device-credential-store.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { startRelayTransport, type RelayTransportController } from "./relay-transport.js";
+import { startLanE2eeTransport, type LanE2eeTransportController } from "./lan-e2ee-transport.js";
+import type { IceServerConfig } from "@chisacode/protocol/connection-offer";
 import type { PushNotificationSender } from "./push/notifications.js";
 import { getOrCreateServerId } from "./server-id.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
@@ -464,6 +466,8 @@ export interface ChisaCodeDaemonConfig {
   relayPublicEndpoint?: string;
   relayUseTls?: boolean;
   relayPublicUseTls?: boolean;
+  lanE2eeEnabled?: boolean;
+  iceServers?: IceServerConfig[];
   appBaseUrl?: string;
   auth?: DaemonAuthConfig;
   openai?: ChisaCodeOpenAIConfig;
@@ -598,6 +602,7 @@ export async function createChisaCodeDaemon(
   const serverId = getOrCreateServerId(config.chisacodeHome, { logger });
   const daemonKeyPair = await loadOrCreateDaemonKeyPair(config.chisacodeHome, logger);
   let relayTransport: RelayTransportController | null = null;
+  let lanE2eeTransport: LanE2eeTransportController | null = null;
 
   const staticDir = config.staticDir;
   const downloadTokenTtlMs = config.downloadTokenTtlMs ?? 60000;
@@ -1536,6 +1541,26 @@ export async function createChisaCodeDaemon(
             usageStore,
           );
 
+          if (config.lanE2eeEnabled !== false) {
+            lanE2eeTransport?.stop().catch(() => undefined);
+            lanE2eeTransport = startLanE2eeTransport({
+              httpServer,
+              logger,
+              attachSocket: (ws, metadata) => {
+                if (!wsServer) {
+                  throw new Error("WebSocket server not initialized");
+                }
+                return wsServer.attachExternalSocket(ws, metadata);
+              },
+              serverId,
+              daemonKeyPair: daemonKeyPair.keyPair,
+              chisacodeHome: config.chisacodeHome,
+              daemonPublicKeyB64: daemonKeyPair.publicKeyB64,
+              requireDeviceAuth: true,
+              iceServers: config.iceServers,
+            });
+          }
+
           if (relayEnabled) {
             const deviceStore = new RelayDeviceCredentialStore(config.chisacodeHome);
             const pairingBootstrap = deviceStore.issuePairingToken(10 * 60_000);
@@ -1552,6 +1577,9 @@ export async function createChisaCodeDaemon(
                 endpoint: relayPublicEndpoint,
                 useTls: relayPublicUseTls,
               },
+              ...(config.iceServers && config.iceServers.length > 0
+                ? { iceServers: config.iceServers }
+                : {}),
             });
 
             encodeOfferToFragmentUrl({ offer, appBaseUrl });
@@ -1582,6 +1610,7 @@ export async function createChisaCodeDaemon(
               daemonPublicKeyB64: daemonKeyPair.publicKeyB64,
               // COMPAT(relayUnauthenticatedRecovery): emergency downgrade; remove after 2026-11-10.
               requireDeviceAuth: !allowUnauthenticatedRelayRecovery,
+              iceServers: config.iceServers,
             });
           }
         };
@@ -1620,6 +1649,7 @@ export async function createChisaCodeDaemon(
     terminalManager.killAll();
     speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    await lanE2eeTransport?.stop().catch(() => undefined);
     await relayTransport?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();

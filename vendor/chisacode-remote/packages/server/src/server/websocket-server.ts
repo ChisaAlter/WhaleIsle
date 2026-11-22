@@ -82,6 +82,8 @@ export interface ExternalSocketMetadata {
   serverId?: string;
   relayClientPublicKeyB64?: string;
   relayAuthChallenge?: string;
+  /** Invoked once device auth in `hello` succeeds (enables in-band WebRTC upgrade). */
+  onAuthenticated?: (deviceId: string | null) => void;
 }
 
 interface PendingConnection {
@@ -94,6 +96,7 @@ interface PendingConnection {
   serverId?: string;
   relayClientPublicKeyB64?: string;
   relayAuthChallenge?: string;
+  onAuthenticated?: (deviceId: string | null) => void;
   /**
    * Device id proven for this connection (relay auth). Used to gate session resume.
    */
@@ -884,6 +887,7 @@ export class VoiceAssistantWebSocketServer {
       serverId: metadata?.serverId,
       relayClientPublicKeyB64: metadata?.relayClientPublicKeyB64,
       relayAuthChallenge: metadata?.relayAuthChallenge,
+      onAuthenticated: metadata?.onAuthenticated,
     };
     const timeout = setTimeout(() => {
       if (this.pendingConnections.get(ws) !== pending) {
@@ -1234,6 +1238,7 @@ export class VoiceAssistantWebSocketServer {
     }
 
     const authenticatedDeviceId = pending.authenticatedDeviceId ?? null;
+    pending.onAuthenticated?.(authenticatedDeviceId);
     const transport = pending.transport;
     this.clearPendingConnection(ws);
     const existing = this.externalSessionsByKey.get(

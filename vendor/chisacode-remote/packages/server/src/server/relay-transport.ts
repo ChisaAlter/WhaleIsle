@@ -13,8 +13,17 @@ import {
   signRelayServerAuth,
 } from "@chisacode/relay/e2ee";
 import { buildRelayWebSocketUrl } from "@chisacode/protocol/daemon-endpoints";
+import type { IceServerConfig } from "@chisacode/protocol/connection-offer";
+import {
+  isRtcUpgradeMessageType,
+  type TransportMode,
+} from "@chisacode/protocol/webrtc-signaling";
 import type { ExternalSocketMetadata } from "./websocket-server.js";
 import { WEBSOCKET_MAX_PAYLOAD_BYTES } from "./websocket-limits.js";
+import {
+  WebRtcHostSessionController,
+  type DetectedHostCandidates,
+} from "./webrtc-host.js";
 
 interface RelayTransportOptions {
   logger: pino.Logger;
@@ -31,18 +40,30 @@ interface RelayTransportOptions {
    * When true, reject relay hellos without device auth. Defaults true.
    */
   requireDeviceAuth?: boolean;
+  iceServers?: readonly IceServerConfig[];
+  enableWebRtcUpgrade?: boolean;
+  onTransportModeChange?: (info: { connectionId: string; mode: TransportMode }) => void;
 }
 
 export interface RelayTransportController {
   stop: () => Promise<void>;
 }
 
-interface RelaySocketLike {
+export interface RelaySocketLike {
   readyState: number;
   send: (data: string | Uint8Array | ArrayBuffer) => void;
   close: (code?: number, reason?: string) => void;
   on: (event: "message" | "close" | "error", listener: (...args: unknown[]) => void) => void;
   once: (event: "close" | "error", listener: (...args: unknown[]) => void) => void;
+}
+
+export interface AttachEncryptedSocketOptions {
+  connectionId?: string;
+  initialMode?: TransportMode;
+  iceServers?: readonly IceServerConfig[];
+  enableWebRtcUpgrade?: boolean;
+  onTransportModeChange?: (mode: TransportMode) => void;
+  detectHostCandidates?: () => Promise<DetectedHostCandidates>;
 }
 
 interface RelayWebSocketLike extends RelaySocketLike {
@@ -211,6 +232,9 @@ export function startRelayTransport({
   chisacodeHome,
   daemonPublicKeyB64,
   requireDeviceAuth = true,
+  iceServers,
+  enableWebRtcUpgrade = true,
+  onTransportModeChange,
 }: RelayTransportOptions): RelayTransportController {
   const relayLogger = logger.child({ module: "relay-transport" });
 
@@ -513,12 +537,25 @@ export function startRelayTransport({
         serverId,
       };
       if (daemonKeyPair) {
+        const connLogger = relayLogger.child({ connectionId });
+        connLogger.info({ connectionId, mode: "relay" }, "remote_client_transport_mode");
+        onTransportModeChange?.({ connectionId, mode: "relay" });
         void attachEncryptedSocket(
           socket,
           daemonKeyPair,
-          relayLogger.child({ connectionId }),
+          connLogger,
           attachSocket,
           externalMetadata,
+          {
+            connectionId,
+            initialMode: "relay",
+            iceServers,
+            enableWebRtcUpgrade,
+            onTransportModeChange: (mode) => {
+              connLogger.info({ connectionId, mode }, "remote_client_transport_mode");
+              onTransportModeChange?.({ connectionId, mode });
+            },
+          },
         );
       } else {
         void attachSocket(socket, externalMetadata);
@@ -574,19 +611,57 @@ function createRelayAuthQuery(params: {
   };
 }
 
-async function attachEncryptedSocket(
+function tryExtractRtcUpgradeSignaling(data: string | ArrayBuffer): Record<string, unknown> | null {
+  if (typeof data !== "string") return null;
+  if (!data.includes("rtc_upgrade_")) return null;
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (isRecord(parsed) && isRtcUpgradeMessageType(parsed.type)) {
+      return parsed;
+    }
+  } catch {
+    // Not valid JSON; let normal handler deal with it.
+  }
+  return null;
+}
+
+function isPositiveRelayDeviceAuthResult(data: string | ArrayBuffer): boolean {
+  if (typeof data !== "string" || !data.includes("relay_device_auth_result")) {
+    return false;
+  }
+  try {
+    const parsed: unknown = JSON.parse(data);
+    return (
+      isRecord(parsed) &&
+      parsed.type === "relay_device_auth_result" &&
+      parsed.ok === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function attachEncryptedSocket(
   socket: RelayWebSocketLike,
   daemonKeyPair: KeyPair,
   logger: pino.Logger,
   attachSocket: (ws: RelaySocketLike, metadata?: ExternalSocketMetadata) => Promise<void>,
   metadata?: ExternalSocketMetadata,
+  upgradeOptions?: AttachEncryptedSocketOptions,
 ): Promise<void> {
+  let rtcController: WebRtcHostSessionController | null = null;
+  const connectionId = upgradeOptions?.connectionId;
   try {
     const relayTransport = createRelayTransportAdapter(socket, logger);
     const emitter = new EventEmitter();
     const pendingMessages: Array<string | ArrayBuffer> = [];
     let attached = false;
     const emitMessage = (data: string | ArrayBuffer) => {
+      const signaling = tryExtractRtcUpgradeSignaling(data);
+      if (signaling && rtcController) {
+        rtcController.handleSignalingMessage(signaling);
+        return;
+      }
       if (attached) {
         emitter.emit("message", data);
         return;
@@ -595,15 +670,33 @@ async function attachEncryptedSocket(
     };
     const channel = await createDaemonChannel(relayTransport, daemonKeyPair, {
       onmessage: emitMessage,
-      onclose: (code, reason) => emitter.emit("close", code, reason),
+      onclose: (code, reason) => {
+        rtcController?.dispose();
+        rtcController = null;
+        if (connectionId) {
+          logger.info({ connectionId, code, reason }, "remote_client_disconnected");
+        }
+        emitter.emit("close", code, reason);
+      },
       onerror: (error) => {
         logger.warn({ err: error }, "relay_e2ee_error");
         emitter.emit("error", error);
       },
     });
-    const encryptedSocket = createEncryptedSocket(channel, emitter);
+    if (upgradeOptions?.enableWebRtcUpgrade !== false) {
+      rtcController = new WebRtcHostSessionController({
+        channel,
+        logger,
+        iceServers: upgradeOptions?.iceServers,
+        onTransportModeChange: upgradeOptions?.onTransportModeChange,
+        detectHostCandidates: upgradeOptions?.detectHostCandidates,
+      });
+    }
+    const encryptedSocket = createEncryptedSocket(channel, emitter, () => {
+      rtcController?.markAuthenticated();
+    });
     const securityContext = channel.getSecurityContext();
-    const boundMetadata = metadata
+    const boundMetadata: ExternalSocketMetadata | undefined = metadata
       ? {
           ...metadata,
           ...(securityContext
@@ -612,15 +705,26 @@ async function attachEncryptedSocket(
                 relayAuthChallenge: securityContext.authChallenge,
               }
             : {}),
+          onAuthenticated: (deviceId) => {
+            rtcController?.markAuthenticated();
+            metadata.onAuthenticated?.(deviceId);
+          },
         }
       : undefined;
     await attachSocket(encryptedSocket, boundMetadata);
     attached = true;
     for (const message of pendingMessages) {
+      const signaling = tryExtractRtcUpgradeSignaling(message);
+      if (signaling && rtcController) {
+        rtcController.handleSignalingMessage(signaling);
+        continue;
+      }
       emitter.emit("message", message);
     }
     pendingMessages.length = 0;
   } catch (error) {
+    rtcController?.dispose();
+    rtcController = null;
     logger.warn({ err: error }, "relay_e2ee_handshake_failed");
     try {
       socket.close(1011, "E2EE handshake failed");
@@ -665,7 +769,11 @@ function createRelayTransportAdapter(
   return relayTransport;
 }
 
-function createEncryptedSocket(channel: EncryptedChannel, emitter: EventEmitter): RelaySocketLike {
+function createEncryptedSocket(
+  channel: EncryptedChannel,
+  emitter: EventEmitter,
+  onAuthResultSent?: () => void,
+): RelaySocketLike {
   let readyState = 1;
 
   channel.setState("open");
@@ -687,6 +795,9 @@ function createEncryptedSocket(channel: EncryptedChannel, emitter: EventEmitter)
     },
     send: (data) => {
       const outbound = normalizeRelaySendPayload(data);
+      if (onAuthResultSent && isPositiveRelayDeviceAuthResult(outbound)) {
+        onAuthResultSent();
+      }
       void channel.send(outbound).catch((error) => {
         emitter.emit("error", error);
       });

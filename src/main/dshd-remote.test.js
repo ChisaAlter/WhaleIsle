@@ -77,6 +77,7 @@ test('desktop start and packaging prepare and ship the trimmed DSHD remote runti
   assert.match(prepareScript, /packWorkspacePackage\(pkg, runtimeNodeModules\)/);
   assert.match(prepareScript, /runtimeBudgetBytes = 96 \* 1024 \* 1024/);
   assert.match(prepareScript, /function pruneNodePtyRuntime/);
+  assert.match(prepareScript, /function pruneWeriftRuntime/);
   assert.match(prepareScript, /daemon start\/stop probe passed/);
   assert.doesNotMatch(prepareScript, /'@chisacode\/client': 'file:/);
   assert.match(prepareScript, /@electron['"], 'rebuild'/);
@@ -326,13 +327,14 @@ test('relay TLS follows the persisted endpoint transport setting', () => {
   assert.equal(relayUseTls({}, 'relay.example.com:8411'), false);
 });
 
-test('refreshPairing passes LAN appBaseUrl and includeQr false', async () => {
+test('refreshPairing passes LAN appBaseUrl, lanEndpoints, relayEnabled false, and includeQr false', async () => {
   const home = tempDir('dsh-cc-');
   const calls = [];
   const remote = new DshdRemote({
     getConfig: () => ({
       remoteEnabled: true,
       remoteMode: 'lan',
+      remoteBindAddress: '127.0.0.1',
       remoteRelayEndpoint: 'ayase.cn:443',
       remoteRelayUseTls: true,
     }),
@@ -341,15 +343,17 @@ test('refreshPairing passes LAN appBaseUrl and includeQr false', async () => {
   remote.serverApi = {
     async generateLocalPairingOffer(args) {
       calls.push(args);
-      return { relayEnabled: true, url: `${args.appBaseUrl}/#offer=x`, qr: null };
+      return { relayEnabled: false, lanEnabled: true, url: `${args.appBaseUrl}/#offer=x`, qr: null };
     },
   };
   await remote.refreshPairing();
   assert.equal(calls.length, 1);
   assert.equal(calls[0].includeQr, false);
+  assert.equal(calls[0].relayEnabled, false);
+  assert.equal(calls[0].relayEndpoint, undefined);
+  assert.deepEqual(calls[0].lanEndpoints, ['127.0.0.1:3180']);
   assert.match(calls[0].appBaseUrl, /:3180$/);
   assert.doesNotMatch(calls[0].appBaseUrl, /ayase\.cn/);
-  assert.equal(calls[0].relayUseTls, true);
 });
 
 test('refreshPairing in away mode passes public SPA appBaseUrl', async () => {
@@ -1391,4 +1395,154 @@ test('startDaemon failure closes an opened gitTunnel before rejecting', async ()
   assert.equal(tunnelClosed, 1, 'gitTunnel must be closed when startDaemon fails after spawning');
   assert.equal(remote.gitTunnel, null);
   assert.equal(killedHandle, true);
+});
+
+test('LAN mode disables external relay, marks lanReady, and mints LAN-only Offer v2', async () => {
+  const home = tempDir('dsh-lan-zero-relay-');
+  let capturedDaemonConfig = null;
+  let capturedOfferArgs = null;
+  const fakeChild = { pid: 999999, exitCode: 0, stdin: { write() {} }, on() {} };
+  const remote = new DshdRemote({
+    getConfig: () => ({
+      remoteEnabled: true,
+      remoteMode: 'lan',
+      remoteBindAddress: '127.0.0.1',
+      remotePort: 6767,
+      remoteIceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+    }),
+    getHomeDir: () => home,
+  });
+  remote.serverApi = {
+    DSH_VENDOR_PACKAGES,
+    async generateLocalPairingOffer(args) {
+      capturedOfferArgs = args;
+      const payload = {
+        v: 2,
+        serverId: 'srv_lan_only',
+        daemonPublicKeyB64: 'pk',
+        lan: { endpoints: args.lanEndpoints, useTls: false },
+        iceServers: args.iceServers,
+      };
+      const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+      return {
+        relayEnabled: false,
+        lanEnabled: true,
+        url: `${args.appBaseUrl}/#offer=${encoded}`,
+        qr: null,
+      };
+    },
+  };
+  remote.ensureMobileWebServer = async () => {
+    remote.mobileWebServer = {
+      address: () => ({ address: '127.0.0.1', port: 3180 }),
+      close: (cb) => cb?.(),
+    };
+  };
+  remote.spawnDaemonProcess = async ({ daemonConfig }) => {
+    capturedDaemonConfig = daemonConfig;
+    return { child: fakeChild, stopping: false };
+  };
+  remote.pushHarnessOrigin = () => {};
+
+  await remote.startDaemon();
+  assert.equal(capturedDaemonConfig.relayEnabled, false);
+  assert.equal(capturedDaemonConfig.lanE2eeEnabled, true);
+  assert.deepEqual(capturedDaemonConfig.iceServers, [{ urls: 'stun:stun.cloudflare.com:3478' }]);
+  assert.equal(capturedOfferArgs.relayEnabled, false);
+  assert.deepEqual(capturedOfferArgs.lanEndpoints, ['127.0.0.1:3180']);
+  assert.deepEqual(capturedOfferArgs.iceServers, [{ urls: 'stun:stun.cloudflare.com:3478' }]);
+
+  const snap = remote.snapshot();
+  assert.equal(snap.mode, 'lan');
+  assert.equal(snap.listening, true);
+  assert.equal(snap.lanReady, true);
+  assert.equal(snap.relayConnected, false);
+  assert.deepEqual(snap.iceServers, [{ urls: 'stun:stun.cloudflare.com:3478' }]);
+  assert.match(snap.urls[0].pairingUrl, /^http:\/\/127\.0\.0\.1:3180\/#offer=/);
+
+  await remote.stopDaemon();
+});
+
+test('mobile-web-server bridges /ws Upgrade 1:1 to loopback /lan-ws and rejects invalid paths/hosts', async () => {
+  const { WebSocket, WebSocketServer } = require('ws');
+  const { createMobileWebServer, listenMobileWebServer } = require('./mobile-web-server');
+
+  const daemonMock = new WebSocketServer({ host: '127.0.0.1', port: 0, path: '/lan-ws' });
+  await new Promise((resolve) => daemonMock.once('listening', resolve));
+  const daemonPort = daemonMock.address().port;
+
+  let seenQuery = '';
+  daemonMock.on('connection', (ws, req) => {
+    seenQuery = req.url || '';
+    ws.on('message', (data, isBinary) => {
+      ws.send(isBinary ? data : `echo:${data.toString('utf8')}`, { binary: isBinary });
+    });
+  });
+
+  const mobileRoot = path.join(__dirname, '..', '..', 'mobile', 'web');
+  const server = createMobileWebServer({
+    root: mobileRoot,
+    lanWsTarget: `ws://127.0.0.1:${daemonPort}/lan-ws`,
+  });
+  await listenMobileWebServer(server, '127.0.0.1', 0);
+  const webPort = server.address().port;
+
+  try {
+    // Valid /ws upgrade bridges cleanly
+    const client = new WebSocket(`ws://127.0.0.1:${webPort}/ws?serverId=srv1&role=client&v=2`);
+    await new Promise((resolve, reject) => {
+      client.once('open', resolve);
+      client.once('error', reject);
+    });
+    client.send('hello-lan-e2ee');
+    const reply = await new Promise((resolve) => {
+      client.once('message', (data) => resolve(data.toString('utf8')));
+    });
+    assert.equal(reply, 'echo:hello-lan-e2ee');
+    assert.match(seenQuery, /serverId=srv1/);
+    assert.match(seenQuery, /role=client/);
+    client.close();
+
+    // Non-/ws path upgrade must be rejected cleanly with 404
+    const badPathStatus = await new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${webPort}/api/status`);
+      ws.once('unexpected-response', (_req, res) => resolve(res.statusCode));
+      ws.once('error', () => {});
+    });
+    assert.equal(badPathStatus, 404);
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    await new Promise((resolve) => {
+      for (const c of daemonMock.clients) c.terminate();
+      daemonMock.close(() => resolve());
+    });
+  }
+});
+
+test('remote-patch validates remoteIceServers and DshdRemote tracks active client transport modes', () => {
+  const { normalizeRemotePatch } = require('./remote-patch');
+  const normalized = normalizeRemotePatch({
+    remoteIceServers: [
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: ['turn:turn.example.com:3478?transport=tcp'], username: 'u', credential: 'p' },
+    ],
+  });
+  assert.deepEqual(normalized.remoteIceServers, [
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: ['turn:turn.example.com:3478?transport=tcp'], username: 'u', credential: 'p' },
+  ]);
+  assert.throws(() => normalizeRemotePatch({ remoteIceServers: [{ urls: 'http://evil.invalid' }] }), TypeError);
+  assert.throws(() => normalizeRemotePatch({ remoteIceServers: 'not-array' }), TypeError);
+
+  const remote = new DshdRemote({ getConfig: () => ({ remoteEnabled: true, remoteMode: 'relay' }) });
+  const handle = { stopping: false, readyResolve() {}, readyReject() {} };
+  remote.daemon = handle;
+  remote.handleDaemonLogLine(handle, JSON.stringify({ msg: 'remote_client_transport_mode', connectionId: 'c1', mode: 'relay' }));
+  assert.equal(remote.snapshot().activeTransportMode, 'relay');
+  remote.handleDaemonLogLine(handle, JSON.stringify({ msg: 'remote_client_transport_mode', connectionId: 'c1', mode: 'p2p' }));
+  assert.equal(remote.snapshot().activeTransportMode, 'p2p');
+  assert.deepEqual(remote.snapshot().activeTransportModes, ['p2p']);
+  remote.handleDaemonLogLine(handle, JSON.stringify({ msg: 'remote_client_disconnected', connectionId: 'c1' }));
+  assert.equal(remote.snapshot().activeTransportMode, '');
+  assert.deepEqual(remote.snapshot().activeTransportModes, []);
 });

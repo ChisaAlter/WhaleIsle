@@ -283,16 +283,20 @@ export function RemoteSection({
   const enabled = Boolean(snap?.enabled) || enabling || daemonStarting
   const listening = Boolean(snap?.listening)
   const devices = snap?.devices ?? []
+  const isLanMode = snap?.mode === 'lan'
+  const isLanDirect = isLanMode && snap?.lanReady === true
   const relayConnected = Boolean(snap?.relayConnected)
-  const relayError = typeof snap?.relayError === 'string' ? snap.relayError : ''
+  const transportReady = isLanDirect ? listening : relayConnected
+  const relayError = !isLanDirect && typeof snap?.relayError === 'string' ? snap.relayError : ''
   const healEligible = open && Boolean(snap?.enabled) && !busy && !daemonStarting
     && !error && !relayError && !healFired && (!listening || !pairingUrl)
   const startupPending = enabling || daemonStarting || healEligible
   const snapshotError = snap?.error || ''
   const qrLoadingText = error ? null
     : startupPending ? t(listening && !enabling && !daemonStarting ? 'mintingHint' : 'startingHint')
-      : enabled && listening && !snapshotError && !relayConnected && !relayError ? t('relayConnectingHint') : null
-  const pairingReady = enabled && !qrLoadingText && !error && !snapshotError && listening && relayConnected && Boolean(qr)
+      : isLanMode && snap?.lanReady === false && enabled && listening && !snapshotError ? t('startingHint')
+        : !isLanDirect && enabled && listening && !snapshotError && !relayConnected && !relayError ? t('relayConnectingHint') : null
+  const pairingReady = enabled && !qrLoadingText && !error && !snapshotError && listening && transportReady && Boolean(qr)
 
   useEffect(() => {
     if (!healEligible || healAttemptedRef.current) return
@@ -307,12 +311,12 @@ export function RemoteSection({
   } else if (!startupPending) {
     if (snapshotError) statusText = remoteErrorText(snapshotError, t)
     else if (enabled && !listening) statusText = t('notListening')
-    else if (enabled && !relayConnected && relayError) {
+    else if (!isLanDirect && enabled && !relayConnected && relayError) {
       const relayKind = humanizeRelayError(relayError)
       if (relayKind === 'disconnected') statusText = t('relayDownDisconnected')
       else if (relayKind === 'unavailable') statusText = t('relayUnavailable')
       else statusText = t('relayDown')
-    } else if (enabled && relayConnected && !qr) statusText = t('noQr')
+    } else if (enabled && transportReady && !qr) statusText = t('noQr')
   }
   const visibleStatusNotice = statusNotice === statusText ? statusNotice : null
 

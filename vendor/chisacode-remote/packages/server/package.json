@@ -82,6 +82,7 @@
     "rotating-file-stream": "^3.2.9",
     "sherpa-onnx-node": "1.12.28",
     "strip-ansi": "^7.1.2",
+    "werift": "0.26.0",
     "which": "^5.0.0",
     "ws": "8.21.0",
     "zod": "^4.3.6",
