@@ -1,6 +1,7 @@
 import equal from "fast-deep-equal";
 import { WebSocket, WebSocketServer } from "ws";
-import type { IncomingMessage, Server as HTTPServer } from "http";
+import { Server as HttpServer, type IncomingMessage, type Server as HTTPServer } from "http";
+import type { Duplex } from "node:stream";
 import { basename, join } from "path";
 import { hostname as getHostname } from "node:os";
 import type { AgentManager } from "./agent/agent-manager.js";
@@ -581,8 +582,9 @@ export class VoiceAssistantWebSocketServer {
   ): WebSocketServer {
     const { allowedOrigins, hostnames, allowUpgradeRequest } = wsConfig;
     const password = auth?.password;
+    const isRealHttpServer = server instanceof HttpServer;
     const wss = new WebSocketServer({
-      server,
+      ...(isRealHttpServer ? { noServer: true } : { server }),
       path: "/ws",
       handleProtocols: (protocols) => selectWebSocketProtocol(protocols, password),
       verifyClient: ({ req }, callback) => {
@@ -590,6 +592,26 @@ export class VoiceAssistantWebSocketServer {
       },
       maxPayload: WEBSOCKET_MAX_PAYLOAD_BYTES,
     });
+    if (isRealHttpServer) {
+      const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+        const rawUrl = req.url ?? "/";
+        const queryIndex = rawUrl.indexOf("?");
+        const pathname = queryIndex !== -1 ? rawUrl.slice(0, queryIndex) : rawUrl;
+        if (pathname === "/lan-ws") {
+          // Delegated to loopback-only LAN E2EE transport sharing this HTTP server.
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          wss.emit("connection", ws, req);
+        });
+      };
+      server.on("upgrade", handleUpgrade);
+      if (typeof wss.once === "function") {
+        wss.once("close", () => {
+          server.off("upgrade", handleUpgrade);
+        });
+      }
+    }
     wss.on("connection", (ws, request) => {
       void this.attachAuthenticatedSocket(ws, request, password);
     });

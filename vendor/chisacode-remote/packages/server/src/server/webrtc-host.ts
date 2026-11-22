@@ -854,7 +854,7 @@ export class WebRtcHostSessionController {
       current.unsubPeerCallbacks.push(() => unsubDc.unSubscribe());
 
       const unsubIce = pc.onIceCandidate.subscribe((candidate) => {
-        if (current.disposed || this.disposed) return;
+        if (current.disposed || current.activated || this.disposed) return;
         if (!candidate) {
           this.sendSignaling({
             type: "rtc_upgrade_ice",
@@ -981,6 +981,14 @@ export class WebRtcHostSessionController {
         clearTimeout(attempt.ttlTimer);
         attempt.ttlTimer = null;
       }
+      for (const unsub of attempt.unsubPeerCallbacks) {
+        try {
+          unsub();
+        } catch {
+          // ignore
+        }
+      }
+      attempt.unsubPeerCallbacks.length = 0;
       this.activePc = attempt.pc;
       this.currentAttempt = null;
 

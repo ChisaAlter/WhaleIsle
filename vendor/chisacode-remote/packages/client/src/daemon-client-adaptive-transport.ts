@@ -29,6 +29,8 @@ import {
   DEFAULT_STUN_ICE_SERVERS,
   RTC_CHUNK_MAX_MESSAGE_BYTES,
   RtcChunkReassembler,
+  SERIAL_SEND_MAX_QUEUED_BYTES,
+  SERIAL_SEND_MAX_QUEUED_FRAMES,
   SequencedCiphertextReorderBuffer,
   SerialSend,
   chunkRtcPayload,
@@ -243,6 +245,8 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
   let recvSalt: Uint8Array | null = null;
   let recvSeq: bigint | null = null;
   let pendingSends: Array<string | ArrayBuffer> = [];
+  let activatingSends: Array<string | ArrayBuffer> = [];
+  let activatingBytes = 0;
 
   // Serialized outbound queue & active send leg
   const serialSend = new SerialSend();
@@ -403,6 +407,8 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
     clearHandshakeRetry();
     clearUpgradeTimers();
     clearDrainTimer();
+    activatingSends = [];
+    activatingBytes = 0;
     reorderBuffer.dispose();
     closeRtcResources();
     detachWsHandlers();
@@ -465,6 +471,34 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
     wsTransport.send(bytesToBase64(new Uint8Array(bundleBuffer)));
   };
 
+  const queueActivatingSend = (payload: string | ArrayBuffer): void => {
+    const byteLength =
+      typeof payload === "string" ? payload.length * 2 : payload.byteLength;
+    if (
+      activatingSends.length + 1 > SERIAL_SEND_MAX_QUEUED_FRAMES ||
+      activatingBytes + byteLength > SERIAL_SEND_MAX_QUEUED_BYTES
+    ) {
+      throw new Error(
+        `WebRTC activating send queue limit exceeded (${SERIAL_SEND_MAX_QUEUED_FRAMES} frames / ${SERIAL_SEND_MAX_QUEUED_BYTES} bytes)`,
+      );
+    }
+    activatingSends.push(payload);
+    activatingBytes += byteLength;
+  };
+
+  const flushActivatingSends = (leg: "ws" | "webrtc"): void => {
+    if (activatingSends.length === 0) return;
+    const queued = activatingSends;
+    activatingSends = [];
+    activatingBytes = 0;
+    for (const item of queued) {
+      void enqueueEncryptedSend(item, leg).catch((error) => {
+        logger.warn({ err: normalizeError(error) }, "rtc_activating_flush_send_failed");
+        emitError(error);
+      });
+    }
+  };
+
   const enqueueEncryptedSend = (
     payload: string | ArrayBuffer,
     forceLeg?: "ws" | "webrtc",
@@ -472,6 +506,10 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
     const byteLength =
       typeof payload === "string" ? payload.length * 2 : payload.byteLength;
     return serialSend.enqueue(byteLength, () => {
+      if (!forceLeg && upgradeState === "activating") {
+        queueActivatingSend(payload);
+        return;
+      }
       sendEncryptedImmediate(payload, forceLeg);
     });
   };
@@ -523,6 +561,7 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
     if (opts.sendAbort && attemptId && wsTransport && !relayDrained && channelState === "open") {
       sendSignalingControl({ type: "rtc_upgrade_abort", attemptId, reason });
     }
+    flushActivatingSends("ws");
     setTransportMode("relay");
   };
 
@@ -556,7 +595,8 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
           clientPreviousLegEndSeq,
         });
         sendEncryptedImmediate(activateMsg, "ws");
-        activeSendLeg = "webrtc";
+        // Hold outbound app frames until Host confirms rtc_upgrade_activated (or aborts)
+        // so no seq is consumed on DataChannel if Host aborts during activating.
         upgradeState = "activating";
       })
       .catch((error) => {
@@ -623,7 +663,7 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
       unrefTimer(attemptTtlTimer);
 
       peer.onicecandidate = (event) => {
-        if (closed || currentAttemptId !== attemptId || upgradeState === "aborted") return;
+        if (closed || currentAttemptId !== attemptId || upgradeState !== "negotiating") return;
         const normalized = normalizeCandidate(event?.candidate ?? null);
         if (offerSent) {
           sendSignalingControl({
@@ -859,6 +899,7 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
       upgradeState = "active";
       activeSendLeg = "webrtc";
       hostPreviousLegEndSeq = BigInt(endSeq);
+      flushActivatingSends("webrtc");
       setTransportMode(mode);
       checkRelayDrain();
       if (!relayDrained) {
@@ -923,6 +964,11 @@ export function createAdaptiveTransport(input: CreateAdaptiveTransportInput): Da
           if (parsed.ok === true) {
             startWebRtcUpgrade();
           }
+          return;
+        }
+        if (isServerInfoMessage(parsed)) {
+          emitMessage(plaintext);
+          startWebRtcUpgrade();
           return;
         }
       }
@@ -1376,6 +1422,26 @@ function resolveServerId(explicitServerId: string | undefined, relayUrl: string)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isServerInfoMessage(value: Record<string, unknown>): boolean {
+  if (
+    value.type === "status" &&
+    isRecord(value.payload) &&
+    value.payload.status === "server_info"
+  ) {
+    return true;
+  }
+  if (
+    value.type === "session" &&
+    isRecord(value.message) &&
+    value.message.type === "status" &&
+    isRecord(value.message.payload) &&
+    value.message.payload.status === "server_info"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function isE2EEHelloMessage(value: unknown): value is { type: "e2ee_hello"; key: string } {

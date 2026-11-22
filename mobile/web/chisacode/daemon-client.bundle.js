@@ -40,9 +40,9 @@ var require_crypto = __commonJS({
   }
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js
+// vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js
 var require_nacl_fast = __commonJS({
-  "../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js"(exports, module) {
+  "vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js"(exports, module) {
     (function(nacl3) {
       "use strict";
       var gf = function(init) {
@@ -2264,9 +2264,9 @@ var require_nacl_fast = __commonJS({
   }
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/base64-js/index.js
+// vendor/chisacode-remote/node_modules/base64-js/index.js
 var require_base64_js = __commonJS({
-  "../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/base64-js/index.js"(exports) {
+  "vendor/chisacode-remote/node_modules/base64-js/index.js"(exports) {
     "use strict";
     exports.byteLength = byteLength;
     exports.toByteArray = toByteArray3;
@@ -2365,7 +2365,7 @@ var require_base64_js = __commonJS({
   }
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/external.js
+// vendor/chisacode-remote/node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -2477,7 +2477,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/helpers/util.js
+// vendor/chisacode-remote/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -2611,7 +2611,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/ZodError.js
+// vendor/chisacode-remote/node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -2729,7 +2729,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/locales/en.js
+// vendor/chisacode-remote/node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -2832,7 +2832,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/errors.js
+// vendor/chisacode-remote/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -2841,7 +2841,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/helpers/parseUtil.js
+// vendor/chisacode-remote/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -2951,14 +2951,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/helpers/errorUtil.js
+// vendor/chisacode-remote/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/node_modules/zod/v3/types.js
+// vendor/chisacode-remote/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -6406,7 +6406,7 @@ var coerce = {
 };
 var NEVER = INVALID;
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/client-capabilities.js
+// vendor/chisacode-remote/packages/protocol/dist/client-capabilities.js
 var CLIENT_CAPS = {
   reasoningMergeEnum: "reasoning_merge_enum",
   // COMPAT(customModeIcons): added in v0.1.84. Old clients pin AgentModeIcon to
@@ -6420,7 +6420,7 @@ var CLIENT_CAPS = {
   cindyModules: "cindy_modules"
 };
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/provider-manifest.js
+// vendor/chisacode-remote/packages/protocol/dist/provider-manifest.js
 var CLAUDE_MODES = [
   {
     id: "default",
@@ -6619,7 +6619,7 @@ var DEV_AGENT_PROVIDER_DEFINITIONS = [
 var BUILTIN_PROVIDER_IDS = AGENT_PROVIDER_DEFINITIONS.map((d) => d.id);
 var AgentProviderSchema = external_exports.string();
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/provider-config.js
+// vendor/chisacode-remote/packages/protocol/dist/provider-config.js
 var ProviderCommandDefaultSchema = external_exports.object({
   mode: external_exports.literal("default")
 }).strict();
@@ -6856,7 +6856,7 @@ var AgentProviderRuntimeSettingsMapSchema = external_exports.record(ProviderRunt
   }
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/chat/types.js
+// vendor/chisacode-remote/packages/protocol/dist/chat/types.js
 var ChatRoomSchema = external_exports.object({
   id: external_exports.string(),
   name: external_exports.string(),
@@ -6878,7 +6878,7 @@ var ChatRoomDetailSchema = ChatRoomSchema.extend({
   lastMessageAt: external_exports.string().nullable()
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/chat/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/chat/rpc-schemas.js
 var CHAT_WAIT_MAX_TIMEOUT_MS = 5 * 60 * 1e3;
 var ChatCreateRequestSchema = external_exports.object({
   type: external_exports.literal("chat/create"),
@@ -6981,7 +6981,7 @@ var ChatWaitResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/loop/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/loop/rpc-schemas.js
 var LoopLogEntrySchema = external_exports.object({
   seq: external_exports.number().int().positive(),
   timestamp: external_exports.string(),
@@ -7143,7 +7143,7 @@ var LoopStopResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/schedule/types.js
+// vendor/chisacode-remote/packages/protocol/dist/schedule/types.js
 var ScheduleStatusSchema = external_exports.enum(["active", "paused", "completed"]);
 var ScheduleCadenceSchema = external_exports.discriminatedUnion("type", [
   external_exports.object({
@@ -7213,7 +7213,7 @@ var ScheduleSummarySchema = StoredScheduleSchema.omit({
   runs: true
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/schedule/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/schedule/rpc-schemas.js
 var ScheduleCreateTargetSchema = external_exports.discriminatedUnion("type", [
   external_exports.object({
     type: external_exports.literal("self"),
@@ -7364,7 +7364,7 @@ var ScheduleUpdateResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/automation/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/automation/messages.js
 var AutomationInboundMessageSchemas = [
   ChatCreateRequestSchema,
   ChatListRequestSchema,
@@ -7412,7 +7412,7 @@ var AutomationOutboundMessageSchemas = [
   LoopStopResponseSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/generative-ui/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/generative-ui/rpc-schemas.js
 var GenerativeUiActionRequestPayloadShape = {
   requestId: external_exports.string(),
   /** Target agent session */
@@ -7443,7 +7443,7 @@ var GenerativeUiActionResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/terminal/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/terminal/messages.js
 var ListTerminalsRequestSchema = external_exports.object({
   type: external_exports.literal("list_terminals_request"),
   cwd: external_exports.string().optional(),
@@ -7651,7 +7651,7 @@ var TerminalOutboundMessageSchemas = [
   TerminalStreamExitSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/checkout/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/checkout/messages.js
 var CheckoutErrorCodeSchema = external_exports.enum([
   "NOT_GIT_REPO",
   "NOT_ALLOWED",
@@ -8280,7 +8280,7 @@ var CheckoutOutboundMessageSchemas = [
   GitHubSearchResponseSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent/attachments.js
+// vendor/chisacode-remote/packages/protocol/dist/agent/attachments.js
 var GitHubPrAttachmentSchema = external_exports.object({
   type: external_exports.literal("github_pr"),
   mimeType: external_exports.literal("application/github-pr"),
@@ -8353,7 +8353,7 @@ function normalizeAgentAttachments(input) {
 }
 var AgentAttachmentsSchema = external_exports.unknown().transform(normalizeAgentAttachments).optional();
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/workspace/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/workspace/messages.js
 var WorktreeSetupCommandSnapshotSchema = external_exports.object({
   index: external_exports.number().int().positive(),
   command: external_exports.string(),
@@ -8901,7 +8901,7 @@ var WorkspaceOutboundMessageSchemas = [
   FileDownloadTokenResponseSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent-types.js
+// vendor/chisacode-remote/packages/protocol/dist/agent-types.js
 function normalizeAgentModelDefinition(model) {
   const defaultThinkingOptionId = model.defaultThinkingOptionId ?? model.thinkingOptions?.find((option) => option.isDefault)?.id;
   if (!defaultThinkingOptionId || defaultThinkingOptionId === model.defaultThinkingOptionId) {
@@ -8921,7 +8921,7 @@ var TOOL_CALL_ICON_NAMES = [
   "mic_vocal"
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/provider/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/provider/messages.js
 var AgentModeSchema = external_exports.object({
   id: external_exports.string(),
   label: external_exports.string(),
@@ -9293,7 +9293,7 @@ var ProviderOutboundMessageSchemas = [
   ProviderToolingActionResponseMessageSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent/extensions.js
+// vendor/chisacode-remote/packages/protocol/dist/agent/extensions.js
 var McpStdioServerConfigSchema = external_exports.object({
   type: external_exports.literal("stdio"),
   command: external_exports.string(),
@@ -9628,7 +9628,7 @@ var AgentExtensionOutboundMessageSchemas = [
   AgentMcpServersDeleteResponseSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/chisacode-config-schema.js
+// vendor/chisacode-remote/packages/protocol/dist/chisacode-config-schema.js
 function normalizeLifecycleCommands(commands) {
   if (typeof commands === "string") {
     return commands.trim().length > 0 ? [commands] : [];
@@ -9689,7 +9689,7 @@ var ProjectConfigRpcErrorSchema = external_exports.discriminatedUnion("code", [
   external_exports.object({ code: external_exports.literal("write_failed") })
 ]);
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/daemon/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/daemon/messages.js
 var MutableDaemonProviderModelSchema = external_exports.object({
   id: external_exports.string().min(1),
   label: external_exports.string().min(1),
@@ -9911,7 +9911,7 @@ var DaemonStatusPayloadSchemas = [
   DaemonConfigChangedStatusPayloadSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/usage/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/usage/messages.js
 var UsageRangeDaysSchema = external_exports.union([external_exports.literal(7), external_exports.literal(30), external_exports.literal(180)]);
 var UsageExportFormatSchema = external_exports.enum(["json", "csv"]);
 var UsageSummaryGetRequestMessageSchema = external_exports.object({
@@ -9996,7 +9996,7 @@ var UsageOutboundMessageSchemas = [
   UsageClearResponseMessageSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/goal/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/goal/rpc-schemas.js
 var GoalStatusSchema = external_exports.enum([
   "active",
   "paused",
@@ -10089,7 +10089,7 @@ var GoalListResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/team/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/team/rpc-schemas.js
 var WorkerStatusSchema = external_exports.enum(["idle", "running", "done", "error", "archived"]);
 var TeamStatusSchema = external_exports.enum(["active", "completed", "cancelled"]);
 var WorkerRecordSchema = external_exports.object({
@@ -10255,7 +10255,7 @@ var TeamWorkerStatusResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/project-context/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/project-context/rpc-schemas.js
 var DiscoveredModuleSchema = external_exports.object({
   dir: external_exports.string(),
   name: external_exports.string(),
@@ -10308,7 +10308,7 @@ var ContextInvalidateResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/snapshot/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/snapshot/rpc-schemas.js
 var SnapshotKindSchema = external_exports.enum([
   "before-edit",
   "after-edit",
@@ -10388,7 +10388,7 @@ var SnapshotStatusResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/migration/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/migration/rpc-schemas.js
 var MigrationItemSchema = external_exports.object({
   kind: external_exports.enum(["agents-md"]),
   direction: external_exports.enum(["to-claude", "to-codex"]),
@@ -10437,7 +10437,7 @@ var MigrationAvailableNotificationSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/learn/rpc-schemas.js
+// vendor/chisacode-remote/packages/protocol/dist/learn/rpc-schemas.js
 var LearnRunStatusSchema = external_exports.enum([
   "collecting",
   "distilling",
@@ -10559,7 +10559,7 @@ var LearnCancelResponseSchema = external_exports.object({
   })
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/cindy/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/cindy/messages.js
 var CindyInboundMessageSchemas = [
   // Goal
   GoalSetRequestSchema,
@@ -10636,7 +10636,7 @@ var CindyOutboundMessageSchemas = [
   LearnCancelResponseSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/voice/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/voice/messages.js
 var VoiceAudioChunkMessageSchema = external_exports.object({
   type: external_exports.literal("voice_audio_chunk"),
   audio: external_exports.string(),
@@ -10796,11 +10796,11 @@ var VoiceOutboundMessageSchemas = [
   SetVoiceModeResponseMessageSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent-labels.js
+// vendor/chisacode-remote/packages/protocol/dist/agent-labels.js
 var AGENT_RELATION_KINDS = ["subagent", "detached", "handoff", "team-slot"];
 var AGENT_RELATION_SOURCES = ["mcp", "user", "system"];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent-presets.js
+// vendor/chisacode-remote/packages/protocol/dist/agent-presets.js
 var AgentPresetSchema = external_exports.object({
   id: external_exports.string().min(1),
   label: external_exports.string().min(1),
@@ -10817,10 +10817,10 @@ var AgentPresetsPayloadSchema = external_exports.object({
   presets: external_exports.array(AgentPresetSchema)
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent-title-limits.js
+// vendor/chisacode-remote/packages/protocol/dist/agent-title-limits.js
 var MAX_EXPLICIT_AGENT_TITLE_CHARS = 200;
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent-lifecycle.js
+// vendor/chisacode-remote/packages/protocol/dist/agent-lifecycle.js
 var AGENT_LIFECYCLE_STATUSES = [
   "initializing",
   "idle",
@@ -10829,7 +10829,7 @@ var AGENT_LIFECYCLE_STATUSES = [
   "closed"
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent/state.js
+// vendor/chisacode-remote/packages/protocol/dist/agent/state.js
 var AgentStatusSchema = external_exports.enum(AGENT_LIFECYCLE_STATUSES);
 var AgentCapabilityFlagsSchema = external_exports.object({
   supportsStreaming: external_exports.boolean(),
@@ -11216,7 +11216,7 @@ var AgentListItemPayloadSchema = external_exports.object({
   providerUnavailable: external_exports.boolean().optional()
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/agent/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/agent/messages.js
 var AgentSessionConfigSchema = external_exports.object({
   provider: AgentProviderSchema,
   runtimeProvider: AgentProviderSchema.optional(),
@@ -11814,7 +11814,7 @@ var AgentOutboundMessageSchemas = [
   ListCommandsResponseSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/dshd-desktop-rpc.js
+// vendor/chisacode-remote/packages/protocol/dist/dshd-desktop-rpc.js
 var DshdHostRpcRequestSchema = external_exports.object({
   type: external_exports.literal("dshd.host.rpc.request"),
   requestId: external_exports.string().min(1),
@@ -11873,7 +11873,7 @@ var DshdOutboundMessageSchemas = [
   DshdHostMuxFrameSchema
 ];
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/messages.js
+// vendor/chisacode-remote/packages/protocol/dist/messages.js
 var AbortRequestMessageSchema = external_exports.object({
   type: external_exports.literal("abort_request")
 });
@@ -14007,7 +14007,7 @@ function getTopHandlerTimings(map, limit) {
   return rows.slice(0, limit);
 }
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/binary-frames/terminal.js
+// vendor/chisacode-remote/packages/protocol/dist/binary-frames/terminal.js
 var TerminalStreamResizeSchema = external_exports.object({
   rows: external_exports.number().int().positive(),
   cols: external_exports.number().int().positive()
@@ -14092,7 +14092,7 @@ function decodeJsonPayload(bytes) {
   }
 }
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/binary-frames/file-transfer.js
+// vendor/chisacode-remote/packages/protocol/dist/binary-frames/file-transfer.js
 var MAX_FILE_TRANSFER_BYTES = 64 * 1024 * 1024;
 var FileTransferOpcode = {
   FileBegin: 16,
@@ -15387,7 +15387,7 @@ var DaemonRequestCoordinator = class {
   }
 };
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/daemon-endpoints.js
+// vendor/chisacode-remote/packages/protocol/dist/daemon-endpoints.js
 var CURRENT_RELAY_PROTOCOL_VERSION = "2";
 function normalizeRelayProtocolVersion(value, fallback = CURRENT_RELAY_PROTOCOL_VERSION) {
   if (value == null) {
@@ -15474,7 +15474,7 @@ function isRelayClientWebSocketUrl(url) {
   }
 }
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/relay/src/crypto.ts
+// vendor/chisacode-remote/packages/relay/src/crypto.ts
 var import_tweetnacl = __toESM(require_nacl_fast(), 1);
 var import_base64_js = __toESM(require_base64_js(), 1);
 var NONCE_LENGTH = import_tweetnacl.default.box.nonceLength;
@@ -15512,7 +15512,13 @@ function decodeBase64(base64) {
   return (0, import_base64_js.toByteArray)(base64);
 }
 function toUint8(data) {
-  return typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+  if (typeof data === "string") {
+    return new TextEncoder().encode(data);
+  }
+  if (data instanceof Uint8Array) {
+    return data;
+  }
+  return new Uint8Array(data);
 }
 function toArrayBuffer(bytes) {
   const out = new Uint8Array(bytes.byteLength);
@@ -15567,7 +15573,7 @@ function buildNonce(salt, seq) {
   nonce.set(seqToLEBytes(seq), SALT_LENGTH);
   return nonce;
 }
-function encrypt(sharedKey, data, seq, salt) {
+function encryptToBytes(sharedKey, data, seq, salt) {
   if (!(salt instanceof Uint8Array) || salt.byteLength !== SALT_LENGTH) {
     throw new Error(`Invalid salt length (expected ${SALT_LENGTH})`);
   }
@@ -15581,10 +15587,13 @@ function encrypt(sharedKey, data, seq, salt) {
   const out = new Uint8Array(nonce.byteLength + ciphertext.byteLength);
   out.set(nonce, 0);
   out.set(ciphertext, nonce.byteLength);
-  return toArrayBuffer(out);
+  return out;
 }
-function decrypt(sharedKey, data) {
-  const bytes = new Uint8Array(data);
+function encrypt(sharedKey, data, seq, salt) {
+  return toArrayBuffer(encryptToBytes(sharedKey, data, seq, salt));
+}
+function decryptFromBytes(sharedKey, data) {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   if (bytes.byteLength < NONCE_LENGTH) {
     throw new Error("Ciphertext bundle too short");
   }
@@ -15605,14 +15614,26 @@ function decrypt(sharedKey, data) {
   }
   return { plaintext, seq, salt };
 }
+function decrypt(sharedKey, data) {
+  return decryptFromBytes(sharedKey, data);
+}
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/relay/src/encrypted-channel.ts
+// vendor/chisacode-remote/packages/relay/src/encrypted-channel.ts
 var import_tweetnacl2 = __toESM(require_nacl_fast(), 1);
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/relay/src/base64.ts
+// vendor/chisacode-remote/packages/relay/src/base64.ts
 var import_base64_js2 = __toESM(require_base64_js(), 1);
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/relay-device-auth.js
+// vendor/chisacode-remote/packages/relay/src/rtc-leg.ts
+var DSHU_MAGIC = new Uint8Array([68, 83, 72, 85]);
+var E2EE_MIN_BUNDLE_BYTES = SALT_LENGTH + SEQ_LENGTH + 16;
+var RTCH_MAGIC = new Uint8Array([82, 84, 67, 72]);
+var RTC_CHUNK_PAYLOAD_BYTES = 8 * 1024;
+var RTC_CHUNK_MAX_MESSAGE_BYTES = 4 * 1024 * 1024;
+var RTC_CHUNK_MAX_TOTAL = RTC_CHUNK_MAX_MESSAGE_BYTES / RTC_CHUNK_PAYLOAD_BYTES;
+var REORDER_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+
+// vendor/chisacode-remote/packages/protocol/dist/relay-device-auth.js
 var RELAY_DEVICE_AUTH_VERSION = 1;
 var RelayAuthBootstrapSchema = external_exports.object({
   version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION),
@@ -15659,7 +15680,20 @@ var RelayDeviceAuthResultSchema = external_exports.object({
   securityLevel: external_exports.enum(["v2", "legacy"]).optional()
 });
 
-// ../../../../../../../AI/Deepseek-Harness-Desktop/vendor/chisacode-remote/packages/protocol/dist/connection-offer.js
+// vendor/chisacode-remote/packages/protocol/dist/connection-offer.js
+var IceServerConfigSchema = external_exports.object({
+  urls: external_exports.union([external_exports.string().min(1), external_exports.array(external_exports.string().min(1)).min(1)]),
+  username: external_exports.string().optional(),
+  credential: external_exports.string().optional()
+});
+var ConnectionOfferLanSchema = external_exports.object({
+  endpoints: external_exports.array(external_exports.string().min(1)).min(1),
+  useTls: external_exports.boolean().optional()
+});
+var ConnectionOfferRelaySchema = external_exports.object({
+  endpoint: external_exports.string().min(1),
+  useTls: external_exports.boolean().optional()
+});
 var ConnectionOfferV2Schema = external_exports.object({
   v: external_exports.literal(2),
   serverId: external_exports.string().min(1),
@@ -15670,10 +15704,11 @@ var ConnectionOfferV2Schema = external_exports.object({
    * field (optional missing keys remain valid; unknown keys are stripped).
    */
   authBootstrap: RelayAuthBootstrapSchema.optional(),
-  relay: external_exports.object({
-    endpoint: external_exports.string().min(1),
-    useTls: external_exports.boolean().optional()
-  })
+  relay: ConnectionOfferRelaySchema.optional(),
+  lan: ConnectionOfferLanSchema.optional(),
+  iceServers: external_exports.array(IceServerConfigSchema).optional()
+}).refine((offer) => Boolean(offer.relay?.endpoint) || (offer.lan?.endpoints?.length ?? 0) > 0, {
+  message: "Connection offer must provide either relay.endpoint or at least one lan.endpoints entry"
 });
 var ConnectionOfferSchema = ConnectionOfferV2Schema;
 function decodeBase64UrlToUtf8(input) {
@@ -15691,12 +15726,12 @@ function decodeOfferFragmentPayload(encoded) {
 // vendor/chisacode-remote/packages/client/dist/rtc-chunking.js
 var RTC_CHUNK_MAGIC = new Uint8Array([82, 84, 67, 72]);
 var RTC_CHUNK_HEADER_BYTES = 12;
-var RTC_CHUNK_PAYLOAD_BYTES = 8 * 1024;
-var RTC_CHUNK_MAX_MESSAGE_BYTES = 4 * 1024 * 1024;
+var RTC_CHUNK_PAYLOAD_BYTES2 = 8 * 1024;
+var RTC_CHUNK_MAX_MESSAGE_BYTES2 = 4 * 1024 * 1024;
 var RTC_CHUNK_MAX_CHUNKS = 512;
 var RTC_CHUNK_MAX_IN_FLIGHT = 8;
 var RTC_CHUNK_MAX_ASSEMBLY_AGE_MS = 3e4;
-var DSHU_MAGIC = new Uint8Array([68, 83, 72, 85]);
+var DSHU_MAGIC2 = new Uint8Array([68, 83, 72, 85]);
 var DSHU_HEADER_BYTES = 12;
 var NACL_SALT_BYTES = 16;
 var NACL_SEQ_BYTES = 8;
@@ -15704,7 +15739,7 @@ var NACL_NONCE_BYTES = NACL_SALT_BYTES + NACL_SEQ_BYTES;
 var NACL_MAC_BYTES = 16;
 var NACL_MIN_BUNDLE_BYTES = NACL_NONCE_BYTES + NACL_MAC_BYTES;
 var REORDER_MAX_BUFFERED_FRAMES = 256;
-var REORDER_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+var REORDER_MAX_BUFFERED_BYTES2 = 4 * 1024 * 1024;
 var REORDER_GAP_TIMEOUT_MS = 5e3;
 var SERIAL_SEND_MAX_QUEUED_BYTES = 8 * 1024 * 1024;
 var SERIAL_SEND_MAX_QUEUED_FRAMES = 256;
@@ -15745,7 +15780,7 @@ function readBundleSeqLE(bundle) {
   return readUint64LE(bundle, NACL_SALT_BYTES);
 }
 function isDshuFrame(frame) {
-  return frame.byteLength >= 4 && frame[0] === DSHU_MAGIC[0] && frame[1] === DSHU_MAGIC[1] && frame[2] === DSHU_MAGIC[2] && frame[3] === DSHU_MAGIC[3];
+  return frame.byteLength >= 4 && frame[0] === DSHU_MAGIC2[0] && frame[1] === DSHU_MAGIC2[1] && frame[2] === DSHU_MAGIC2[2] && frame[3] === DSHU_MAGIC2[3];
 }
 function wrapDshuFrame(seq, bundle) {
   if (seq < 0n) {
@@ -15756,7 +15791,7 @@ function wrapDshuFrame(seq, bundle) {
     throw new Error(`DSHU sequence mismatch (header=${seq.toString()}, bundle=${bundleSeq.toString()})`);
   }
   const out = new Uint8Array(DSHU_HEADER_BYTES + bundle.byteLength);
-  out.set(DSHU_MAGIC, 0);
+  out.set(DSHU_MAGIC2, 0);
   writeUint64BE(out, 4, seq);
   out.set(bundle, DSHU_HEADER_BYTES);
   return out;
@@ -15790,16 +15825,16 @@ function createRtcMessageIdGenerator(initial = 1) {
   };
 }
 function chunkRtcPayload(payload, nextMessageId) {
-  if (payload.byteLength > RTC_CHUNK_MAX_MESSAGE_BYTES) {
-    throw new Error(`RTC payload exceeds max message size (${payload.byteLength} > ${RTC_CHUNK_MAX_MESSAGE_BYTES})`);
+  if (payload.byteLength > RTC_CHUNK_MAX_MESSAGE_BYTES2) {
+    throw new Error(`RTC payload exceeds max message size (${payload.byteLength} > ${RTC_CHUNK_MAX_MESSAGE_BYTES2})`);
   }
-  if (payload.byteLength <= RTC_CHUNK_PAYLOAD_BYTES) {
+  if (payload.byteLength <= RTC_CHUNK_PAYLOAD_BYTES2) {
     if (isRtchFrame(payload)) {
       throw new Error("Unchunked RTC payload must not start with RTCH magic");
     }
     return [payload];
   }
-  const total = Math.ceil(payload.byteLength / RTC_CHUNK_PAYLOAD_BYTES);
+  const total = Math.ceil(payload.byteLength / RTC_CHUNK_PAYLOAD_BYTES2);
   if (total < 2 || total > RTC_CHUNK_MAX_CHUNKS) {
     throw new Error(`Invalid RTC chunk count (${total})`);
   }
@@ -15809,8 +15844,8 @@ function chunkRtcPayload(payload, nextMessageId) {
   }
   const chunks = [];
   for (let index = 0; index < total; index += 1) {
-    const start = index * RTC_CHUNK_PAYLOAD_BYTES;
-    const end = Math.min(payload.byteLength, start + RTC_CHUNK_PAYLOAD_BYTES);
+    const start = index * RTC_CHUNK_PAYLOAD_BYTES2;
+    const end = Math.min(payload.byteLength, start + RTC_CHUNK_PAYLOAD_BYTES2);
     const slice = payload.subarray(start, end);
     const chunk = new Uint8Array(RTC_CHUNK_HEADER_BYTES + slice.byteLength);
     chunk.set(RTC_CHUNK_MAGIC, 0);
@@ -15826,7 +15861,7 @@ function chunkRtcPayload(payload, nextMessageId) {
 var RtcChunkReassembler = class {
   constructor(options = {}) {
     this.inFlight = /* @__PURE__ */ new Map();
-    this.maxMessageBytes = options.maxMessageBytes ?? RTC_CHUNK_MAX_MESSAGE_BYTES;
+    this.maxMessageBytes = options.maxMessageBytes ?? RTC_CHUNK_MAX_MESSAGE_BYTES2;
     this.maxChunks = options.maxChunks ?? RTC_CHUNK_MAX_CHUNKS;
     this.maxInFlight = options.maxInFlight ?? RTC_CHUNK_MAX_IN_FLIGHT;
     this.maxAssemblyAgeMs = options.maxAssemblyAgeMs ?? RTC_CHUNK_MAX_ASSEMBLY_AGE_MS;
@@ -15857,10 +15892,10 @@ var RtcChunkReassembler = class {
       throw new Error(`RTCH chunk index out of bounds (${index} >= ${total})`);
     }
     const isLast = index === total - 1;
-    if (!isLast && chunkPayload.byteLength !== RTC_CHUNK_PAYLOAD_BYTES) {
-      throw new Error(`RTCH non-final chunk must be ${RTC_CHUNK_PAYLOAD_BYTES} bytes (got ${chunkPayload.byteLength})`);
+    if (!isLast && chunkPayload.byteLength !== RTC_CHUNK_PAYLOAD_BYTES2) {
+      throw new Error(`RTCH non-final chunk must be ${RTC_CHUNK_PAYLOAD_BYTES2} bytes (got ${chunkPayload.byteLength})`);
     }
-    if (isLast && (chunkPayload.byteLength < 1 || chunkPayload.byteLength > RTC_CHUNK_PAYLOAD_BYTES)) {
+    if (isLast && (chunkPayload.byteLength < 1 || chunkPayload.byteLength > RTC_CHUNK_PAYLOAD_BYTES2)) {
       throw new Error(`RTCH final chunk size invalid (${chunkPayload.byteLength} bytes)`);
     }
     let assembly = this.inFlight.get(messageId);
@@ -15933,7 +15968,7 @@ var SequencedCiphertextReorderBuffer = class {
     this.gapTimer = null;
     this.disposed = false;
     this.maxFrames = options.maxFrames ?? REORDER_MAX_BUFFERED_FRAMES;
-    this.maxBytes = options.maxBytes ?? REORDER_MAX_BUFFERED_BYTES;
+    this.maxBytes = options.maxBytes ?? REORDER_MAX_BUFFERED_BYTES2;
     this.gapTimeoutMs = options.gapTimeoutMs ?? REORDER_GAP_TIMEOUT_MS;
     this.onGapTimeout = options.onGapTimeout;
   }
@@ -16161,7 +16196,7 @@ function mergeIceServers(offerServers, customServers, options = {}) {
   }
   return orderIceServers(combined);
 }
-var IceServerConfigSchema = external_exports.object({
+var IceServerConfigSchema2 = external_exports.object({
   urls: external_exports.union([external_exports.string().min(1), external_exports.array(external_exports.string().min(1)).min(1)]),
   username: external_exports.string().optional(),
   credential: external_exports.string().optional()
@@ -16180,7 +16215,7 @@ var AdaptiveConnectionOfferV2Schema = external_exports.object({
     endpoints: external_exports.array(external_exports.string().min(1)).min(1),
     useTls: external_exports.boolean().optional()
   }).optional(),
-  iceServers: external_exports.array(IceServerConfigSchema).optional()
+  iceServers: external_exports.array(IceServerConfigSchema2).optional()
 }).refine((offer) => Boolean(offer.relay?.endpoint) || Boolean(offer.lan && offer.lan.endpoints.length > 0), { message: "Connection offer requires relay.endpoint or non-empty lan.endpoints" });
 var OFFER_FRAGMENT_PREFIX = "#offer=";
 function parseConnectionOfferV2FromUrl(input) {
@@ -16209,7 +16244,7 @@ var RTC_NEGOTIATE_TIMEOUT_MS = 8e3;
 var RTC_NEGOTIATE_HOST_ONLY_TIMEOUT_MS = 4e3;
 var RTC_ACTIVATE_TIMEOUT_MS = 6e3;
 var RTC_ATTEMPT_TTL_MS = 2e4;
-var RTC_DRAIN_TIMEOUT_MS = 3e3;
+var RTC_DRAIN_TIMEOUT_MS2 = 3e3;
 var RTC_MAX_SDP_BYTES = 128 * 1024;
 var RTC_DATA_CHANNEL_LABEL = "dsh";
 var MAX_PENDING_SENDS = 200;
@@ -16308,7 +16343,7 @@ function createAdaptiveTransport(input) {
   const lanConnectTimeoutMs = input.lanConnectTimeoutMs ?? LAN_CONNECT_TIMEOUT_MS;
   const activateTimeoutMs = input.activateTimeoutMs ?? RTC_ACTIVATE_TIMEOUT_MS;
   const attemptTtlMs = input.attemptTtlMs ?? RTC_ATTEMPT_TTL_MS;
-  const drainTimeoutMs = input.drainTimeoutMs ?? RTC_DRAIN_TIMEOUT_MS;
+  const drainTimeoutMs = input.drainTimeoutMs ?? RTC_DRAIN_TIMEOUT_MS2;
   const openHandlers = /* @__PURE__ */ new Set();
   const closeHandlers = /* @__PURE__ */ new Set();
   const errorHandlers = /* @__PURE__ */ new Set();
@@ -16334,6 +16369,8 @@ function createAdaptiveTransport(input) {
   let recvSalt = null;
   let recvSeq = null;
   let pendingSends = [];
+  let activatingSends = [];
+  let activatingBytes = 0;
   const serialSend = new SerialSend();
   let activeSendLeg = "ws";
   const nextRtcMessageId = createRtcMessageIdGenerator(1);
@@ -16475,6 +16512,8 @@ function createAdaptiveTransport(input) {
     clearHandshakeRetry();
     clearUpgradeTimers();
     clearDrainTimer();
+    activatingSends = [];
+    activatingBytes = 0;
     reorderBuffer.dispose();
     closeRtcResources();
     detachWsHandlers();
@@ -16527,9 +16566,34 @@ function createAdaptiveTransport(input) {
     }
     wsTransport.send(bytesToBase64(new Uint8Array(bundleBuffer)));
   };
+  const queueActivatingSend = (payload) => {
+    const byteLength = typeof payload === "string" ? payload.length * 2 : payload.byteLength;
+    if (activatingSends.length + 1 > SERIAL_SEND_MAX_QUEUED_FRAMES || activatingBytes + byteLength > SERIAL_SEND_MAX_QUEUED_BYTES) {
+      throw new Error(`WebRTC activating send queue limit exceeded (${SERIAL_SEND_MAX_QUEUED_FRAMES} frames / ${SERIAL_SEND_MAX_QUEUED_BYTES} bytes)`);
+    }
+    activatingSends.push(payload);
+    activatingBytes += byteLength;
+  };
+  const flushActivatingSends = (leg) => {
+    if (activatingSends.length === 0)
+      return;
+    const queued = activatingSends;
+    activatingSends = [];
+    activatingBytes = 0;
+    for (const item of queued) {
+      void enqueueEncryptedSend(item, leg).catch((error) => {
+        logger.warn({ err: normalizeError(error) }, "rtc_activating_flush_send_failed");
+        emitError(error);
+      });
+    }
+  };
   const enqueueEncryptedSend = (payload, forceLeg) => {
     const byteLength = typeof payload === "string" ? payload.length * 2 : payload.byteLength;
     return serialSend.enqueue(byteLength, () => {
+      if (!forceLeg && upgradeState === "activating") {
+        queueActivatingSend(payload);
+        return;
+      }
       sendEncryptedImmediate(payload, forceLeg);
     });
   };
@@ -16578,6 +16642,7 @@ function createAdaptiveTransport(input) {
     if (opts.sendAbort && attemptId && wsTransport && !relayDrained && channelState === "open") {
       sendSignalingControl({ type: "rtc_upgrade_abort", attemptId, reason });
     }
+    flushActivatingSends("ws");
     setTransportMode("relay");
   };
   const handleActiveDataChannelClosed = (reason) => {
@@ -16601,7 +16666,6 @@ function createAdaptiveTransport(input) {
         clientPreviousLegEndSeq
       });
       sendEncryptedImmediate(activateMsg, "ws");
-      activeSendLeg = "webrtc";
       upgradeState = "activating";
     }).catch((error) => {
       logger.warn({ err: normalizeError(error) }, "rtc_upgrade_activate_failed");
@@ -16645,7 +16709,7 @@ function createAdaptiveTransport(input) {
       }, attemptTtlMs);
       unrefTimer2(attemptTtlTimer);
       peer.onicecandidate = (event) => {
-        if (closed || currentAttemptId !== attemptId || upgradeState === "aborted")
+        if (closed || currentAttemptId !== attemptId || upgradeState !== "negotiating")
           return;
         const normalized = normalizeCandidate(event?.candidate ?? null);
         if (offerSent) {
@@ -16750,7 +16814,7 @@ function createAdaptiveTransport(input) {
     try {
       if (closed)
         return;
-      if (bytes.byteLength > RTC_CHUNK_MAX_MESSAGE_BYTES + 12) {
+      if (bytes.byteLength > RTC_CHUNK_MAX_MESSAGE_BYTES2 + 12) {
         throw new Error(`DataChannel frame too large (${bytes.byteLength} bytes)`);
       }
       const assembled = rtchReassembler.push(bytes);
@@ -16852,6 +16916,7 @@ function createAdaptiveTransport(input) {
       upgradeState = "active";
       activeSendLeg = "webrtc";
       hostPreviousLegEndSeq = BigInt(endSeq);
+      flushActivatingSends("webrtc");
       setTransportMode(mode);
       checkRelayDrain();
       if (!relayDrained) {
@@ -16912,6 +16977,11 @@ function createAdaptiveTransport(input) {
           if (parsed.ok === true) {
             startWebRtcUpgrade();
           }
+          return;
+        }
+        if (isServerInfoMessage(parsed)) {
+          emitMessage(plaintext);
+          startWebRtcUpgrade();
           return;
         }
       }
@@ -17314,6 +17384,15 @@ function resolveServerId(explicitServerId, relayUrl) {
 }
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isServerInfoMessage(value) {
+  if (value.type === "status" && isRecord(value.payload) && value.payload.status === "server_info") {
+    return true;
+  }
+  if (value.type === "session" && isRecord(value.message) && value.message.type === "status" && isRecord(value.message.payload) && value.message.payload.status === "server_info") {
+    return true;
+  }
+  return false;
 }
 function isE2EEHelloMessage(value) {
   return isRecord(value) && value.type === "e2ee_hello" && typeof value.key === "string" && value.key.trim().length > 0;

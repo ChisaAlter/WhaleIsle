@@ -375,16 +375,20 @@ open class RelayClient(
         rpc("dshd.git.rpc.request", obj("action" to action, "cwd" to cwd, "payload" to payload), 120_000)
     open fun subscribe() = sendSession(obj("type" to "dshd.host.mux.subscribe", "requestId" to UUID.randomUUID().toString()))
     open suspend fun awaitDisconnect(): Throwable = ended.await()
+    private fun isRetiredOrUpgradedRelaySocket(webSocket: WebSocket): Boolean =
+        (retiredRelaySocket != null && webSocket === retiredRelaySocket) ||
+            upgradeController?.state == AdaptiveUpgradeController.State.ACTIVE
+
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        if (retiredRelaySocket != null && webSocket === retiredRelaySocket) return
+        if (isRetiredOrUpgradedRelaySocket(webSocket)) return
         fail(t)
     }
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        if (retiredRelaySocket != null && webSocket === retiredRelaySocket) return
+        if (isRetiredOrUpgradedRelaySocket(webSocket)) return
         fail(closeError(code, reason))
     }
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-        if (retiredRelaySocket != null && webSocket === retiredRelaySocket) {
+        if (isRetiredOrUpgradedRelaySocket(webSocket)) {
             webSocket.close(code, reason)
             return
         }

@@ -463,22 +463,18 @@ describe("AdaptiveDaemonTransport", () => {
 
     const wsCountBeforeAppSend = peer.wsReceived.length;
 
-    // 7. Client sends a large >64 KiB payload -> MUST go over DataChannel chunked with RTCH + DSHU!
+    // 7. Client queues a large >64 KiB payload during activating (held safely until rtc_upgrade_activated)
+    //    and any late local ICE candidate fired during activating MUST NOT be sent over Relay WS!
     const largePayload = JSON.stringify({ type: "session", blob: "A".repeat(70_000) });
     transport.send(largePayload);
+    createdPc.onicecandidate?.({
+      candidate: { candidate: "candidate:late 1 UDP 1 1.2.3.4 9999 typ host", sdpMid: "0", sdpMLineIndex: 0 },
+    });
 
     // Relay WS must receive ZERO further frames after rtc_upgrade_activate!
     expect(peer.wsReceived.length).toBe(wsCountBeforeAppSend);
-    // DataChannel must have sent multiple RTCH chunks <= 8192 + 12 bytes
-    expect(createdPc.channel!.sentFrames.length).toBeGreaterThan(8);
-    for (const f of createdPc.channel!.sentFrames) {
-      const bytes = new Uint8Array(f as ArrayBuffer);
-      expect(isRtchFrame(bytes)).toBe(true);
-      expect(bytes.byteLength).toBeLessThanOrEqual(8192 + 12);
-    }
-    expect(peer.dcReceived).toHaveLength(1);
-    expect(peer.dcReceived[0].plaintext).toBe(largePayload);
-    expect(peer.dcReceived[0].seq).toBe(activateEntry.seq + 1n);
+    // Outbound app frame is buffered until Host confirms rtc_upgrade_activated
+    expect(peer.dcReceived).toHaveLength(0);
 
     // 8. Test cross-leg reorder & Relay drain:
     //    Host prepares seq=N (rtc_upgrade_activated on Relay) and seq=N+1 (70 KiB payload on DC),
@@ -512,6 +508,18 @@ describe("AdaptiveDaemonTransport", () => {
       peer.sendSalt,
     );
     relaySock.emitMessage(Buffer.from(activatedBundle).toString("base64"));
+
+    // Verify buffered largePayload flushed onto DataChannel chunked with RTCH + DSHU (ZERO frames on Relay WS)
+    expect(peer.wsReceived.length).toBe(wsCountBeforeAppSend);
+    expect(createdPc.channel!.sentFrames.length).toBeGreaterThan(8);
+    for (const f of createdPc.channel!.sentFrames) {
+      const bytes = new Uint8Array(f as ArrayBuffer);
+      expect(isRtchFrame(bytes)).toBe(true);
+      expect(bytes.byteLength).toBeLessThanOrEqual(8192 + 12);
+    }
+    expect(peer.dcReceived).toHaveLength(1);
+    expect(peer.dcReceived[0].plaintext).toBe(largePayload);
+    expect(peer.dcReceived[0].seq).toBe(activateEntry.seq + 1n);
 
     // Verify mode updated to authoritative "p2p", buffered 70 KiB DC reply flushed,
     // and Relay WS closed cleanly with (1000, "upgraded_to_webrtc") WITHOUT upper disconnect!
@@ -734,5 +742,109 @@ describe("AdaptiveDaemonTransport", () => {
 
     await client.close();
     expect(client.getTransportMode()).toBeNull();
+  });
+
+  test("saved-secret reconnect triggers WebRTC upgrade on server_info without relay_device_auth_result", async () => {
+    const peer = new MockDaemonPeer();
+    let relaySock!: MockSocketTransport;
+    let createdPc: MockPeerConnection | null = null;
+
+    const transport = createAdaptiveTransport({
+      baseFactory: ({ url }) => {
+        relaySock = new MockSocketTransport(url);
+        peer.attachSocket(relaySock);
+        return relaySock;
+      },
+      daemonPublicKeyB64: peer.publicKeyB64,
+      logger: { warn: vi.fn() },
+      relayUrl: "wss://ayase.cn:443/ws?serverId=srv_reconnect&role=client&v=2",
+      rtcPeerConnectionFactory: (config) => {
+        createdPc = new MockPeerConnection(config);
+        return createdPc;
+      },
+    });
+
+    relaySock.emitOpen();
+    peer.sendOverWs(
+      relaySock,
+      JSON.stringify({
+        type: "session",
+        message: {
+          type: "status",
+          payload: { status: "server_info", serverId: "srv_reconnect", hostname: "Host", version: "1.0.0" },
+        },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(createdPc).not.toBeNull();
+      expect(peer.wsReceived.length).toBeGreaterThanOrEqual(1);
+    });
+    const offerMsg = JSON.parse(peer.wsReceived[0].plaintext as string) as { type: string };
+    expect(offerMsg.type).toBe("rtc_upgrade_offer");
+    transport.close();
+  });
+
+  test("abort during activating flushes queued outbound app frames back to Relay WS with continuous seq", async () => {
+    const peer = new MockDaemonPeer();
+    let relaySock!: MockSocketTransport;
+    let createdPc!: MockPeerConnection;
+
+    const transport = createAdaptiveTransport({
+      baseFactory: ({ url }) => {
+        relaySock = new MockSocketTransport(url);
+        peer.attachSocket(relaySock);
+        return relaySock;
+      },
+      daemonPublicKeyB64: peer.publicKeyB64,
+      logger: { warn: vi.fn() },
+      relayUrl: "wss://ayase.cn:443/ws?serverId=srv_act_abort&role=client&v=2",
+      rtcPeerConnectionFactory: (config) => {
+        createdPc = new MockPeerConnection(config);
+        return createdPc;
+      },
+    });
+
+    relaySock.emitOpen();
+    peer.sendOverWs(relaySock, JSON.stringify({ type: "relay_device_auth_result", ok: true }));
+    await vi.waitFor(() => {
+      expect(peer.wsReceived.length).toBeGreaterThanOrEqual(1);
+    });
+    const offerMsg = JSON.parse(peer.wsReceived[0].plaintext as string) as { attemptId: string };
+    peer.sendOverWs(
+      relaySock,
+      JSON.stringify({
+        type: "rtc_upgrade_answer",
+        attemptId: offerMsg.attemptId,
+        sdp: "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n",
+      }),
+    );
+    createdPc.channel!.simulateOpen();
+
+    const activateEntry = peer.wsReceived[peer.wsReceived.length - 1];
+    const activateMsg = JSON.parse(activateEntry.plaintext as string) as {
+      type: string;
+      clientPreviousLegEndSeq: number;
+    };
+    expect(activateMsg.type).toBe("rtc_upgrade_activate");
+
+    // Queue app frames during activating before Host responds
+    transport.send(JSON.stringify({ type: "app_msg", idx: 1 }));
+    transport.send(JSON.stringify({ type: "app_msg", idx: 2 }));
+    expect(peer.wsReceived.length).toBe(2); // offer + activate only
+
+    // Host aborts activation -> queued frames must flush over Relay WS with exact continuous seq
+    peer.sendOverWs(
+      relaySock,
+      JSON.stringify({ type: "rtc_upgrade_abort", attemptId: offerMsg.attemptId, reason: "dc_timeout" }),
+    );
+
+    expect(peer.wsReceived.length).toBe(4);
+    expect(peer.wsReceived[2].seq).toBe(activateEntry.seq + 1n);
+    expect(JSON.parse(peer.wsReceived[2].plaintext as string)).toEqual({ type: "app_msg", idx: 1 });
+    expect(peer.wsReceived[3].seq).toBe(activateEntry.seq + 2n);
+    expect(JSON.parse(peer.wsReceived[3].plaintext as string)).toEqual({ type: "app_msg", idx: 2 });
+    expect(transport.getTransportMode()).toBe("relay");
+    transport.close();
   });
 });
