@@ -34,7 +34,7 @@ import {
 } from '@deepseek-ai/node-addon-system/landlock-run'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SandboxPreparationError, SandboxProvider, SandboxUnavailableError, canonicalPath } from '@deepseek-ai/dsh-sandbox'
+import { SandboxPreparationError, SandboxProvider, SandboxUnavailableError, canonicalPath, workspaceWritableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { AclWriteGrant, isTempRootInsideWorkspace, registerAclDiagnosisSkill, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
@@ -81,6 +81,12 @@ export interface Config {
   runnerFailureSignatures?: string[]
   /** Positive timeout for each functional probe; zero would mean unbounded to Node. */
   probeTimeoutMs?: number
+  /**
+   * Revoke standing Windows workspace and extra-directory capability ACEs (and
+   * their ambient-delete deny ACEs and Low labels) on provider dispose instead
+   * of retaining them as a cross-session reuse cache (default false).
+   */
+  revokeWorkspaceAclOnDispose?: boolean
 }
 
 /** Probe whether `bwrap` can create the profile; the provider caches the bounded result. */
@@ -273,6 +279,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     runnerCommand: z.array(z.string()).default([]),
     runnerFailureSignatures: z.array(z.string()).default([]),
     probeTimeoutMs: z.natural().default(5_000),
+    revokeWorkspaceAclOnDispose: z.boolean().default(false),
   })
 
   /** Test hook (mirrors the bash executors' `internals`). */
@@ -281,6 +288,7 @@ export class LocalSandboxProvider extends SandboxProvider {
   private readonly runnerCommand: string[] | undefined
   private readonly configuredRunnerFailureSignatures: string[]
   private readonly probeTimeoutMs: number
+  private readonly revokeWorkspaceAclOnDispose: boolean
   /** Cached chain verdict; undefined until the first confined wrap needs it. */
   private selectedRunner: SelectedRunner | 'unavailable' | undefined
   /**
@@ -313,6 +321,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     this.configuredRunnerFailureSignatures = runnerFailureSignatures
     this.probeTimeoutMs = config.probeTimeoutMs as number
     assertPositiveFinite('probeTimeoutMs', this.probeTimeoutMs)
+    this.revokeWorkspaceAclOnDispose = config.revokeWorkspaceAclOnDispose ?? false
     // An operator-supplied runner does not use the ACL backend. The registry
     // remains optional and may be mounted after this provider.
     /* v8 ignore next 3 -- Windows-only registration; the Linux coverage lane cannot take this branch */
@@ -375,20 +384,18 @@ export class LocalSandboxProvider extends SandboxProvider {
   /**
    * The windows-acl runner argv for one policy. With a calling session (the
    * policy's `sessionId`) under workspace-write, the grants are materialized
-   * once per provider lifetime — the standing workspace-root grant per
-   * workspace and a revocable, RANDOM private-temp capability per live
-   * session/workspace pair. The runner receives `--write-sid` plus
-   * `--temp-write-sid` and grants nothing itself. Agentless workspace-write
-   * calls pass the ambient temp ROOT and no SID flags: the runner creates and
-   * removes a random private child directory for that one invocation.
-   * Additional directory grants apply only to harness filesystem operations
-   * on Windows; process confinement keeps the workspace and private temp grants.
+   * once per provider lifetime — the workspace-root grant, per-extra-root
+   * capability grants (from validated {@link SandboxPolicy.additionalWritableRoots}),
+   * and a revocable, RANDOM private-temp capability per live session/workspace
+   * pair. The runner receives `--write-sid`, `--temp-write-sid`, and paired
+   * `--extra-dir` / `--extra-sid` flags and grants nothing itself. Agentless
+   * workspace-write calls pass validated `--extra-dir` flags and the ambient
+   * temp ROOT without SID flags. Under read-only, extra writable roots are ignored.
    * @param policy - the resolved per-call policy.
    * @returns the runner invocation.
    */
   private windowsAclRunnerArgv(policy: SandboxPolicy): string[] {
-    const sessionId = policy.sessionId
-    if (sessionId === undefined || policy.mode === 'read-only') {
+    if (policy.mode === 'read-only') {
       return [
         ...this.windowsAclRunnerInvocation(),
         '--workspace', policy.workspaceRoot,
@@ -396,7 +403,21 @@ export class LocalSandboxProvider extends SandboxProvider {
         '--mode', policy.mode,
       ]
     }
-    const temp = this.materializeAclGrant(sessionId, policy.workspaceRoot)
+    const extraRoots = workspaceWritableRoots(policy).slice(1)
+    for (const extraRoot of extraRoots) {
+      this.assertExtraRootOutsideTemp(extraRoot, tmpdir())
+    }
+    const sessionId = policy.sessionId
+    if (sessionId === undefined) {
+      return [
+        ...this.windowsAclRunnerInvocation(),
+        '--workspace', policy.workspaceRoot,
+        '--temp', tmpdir(),
+        '--mode', policy.mode,
+        ...extraRoots.flatMap(dir => ['--extra-dir', dir]),
+      ]
+    }
+    const { temp, extraGrants } = this.materializeAclGrant(sessionId, policy.workspaceRoot, extraRoots)
     return [
       ...this.windowsAclRunnerInvocation(),
       '--workspace', policy.workspaceRoot,
@@ -404,26 +425,93 @@ export class LocalSandboxProvider extends SandboxProvider {
       '--mode', policy.mode,
       '--write-sid', workspaceWriteSid(policy.workspaceRoot),
       '--temp-write-sid', temp.writeSid,
+      ...extraGrants.flatMap(({ dir, writeSid }) => ['--extra-dir', dir, '--extra-sid', writeSid]),
     ]
+  }
+
+  /** Reject an extra writable root that contains or equals the ambient temp root. */
+  private assertExtraRootOutsideTemp(extraRoot: string, tempRoot: string): void {
+    let overlapsTemp: boolean
+    try {
+      overlapsTemp = isTempRootInsideWorkspace(extraRoot, tempRoot)
+    } catch (error) {
+      throw aclPreparationFailure('extra directory and temp directory resolution', error)
+    }
+    if (overlapsTemp) {
+      throw new SandboxPreparationError(
+        `sandbox-local: windows-acl temp root must be outside extra writable root: extra=${extraRoot}; temp=${tempRoot}. `
+        + 'A private temp directory there would inherit the extra root grant, so the command did not run.',
+        'SANDBOX_INVALID_TEMP_ROOT',
+      )
+    }
+  }
+
+  /** Reject any overlap between a validated extra root and a session's private temp directory. */
+  private assertExtraRootDisjointFromPrivateTemp(extraRoot: string, privateTempDir: string): void {
+    let overlapsTemp: boolean
+    try {
+      overlapsTemp = isTempRootInsideWorkspace(extraRoot, privateTempDir)
+        || isTempRootInsideWorkspace(privateTempDir, extraRoot)
+    } catch (error) {
+      throw aclPreparationFailure('extra directory and private temp resolution', error)
+    }
+    if (overlapsTemp) {
+      throw new SandboxPreparationError(
+        `sandbox-local: windows-acl extra writable root must not overlap private temp: extra=${extraRoot}; temp=${privateTempDir}.`,
+        'SANDBOX_INVALID_TEMP_ROOT',
+      )
+    }
+  }
+
+  /** Create or reuse one capability SID and standing/revocable ACL grant for a workspace or extra root. */
+  private materializeWorkspaceGrant(root: string, stepLabel: string): string {
+    const writeSid = workspaceWriteSid(root)
+    if (!this.workspaceGrants.has(root)) {
+      let grant: AclWriteGrant
+      try {
+        grant = AclWriteGrant.create(writeSid)
+      } catch (error) {
+        throw aclPreparationFailure(stepLabel, error)
+      }
+      try {
+        grant.add(root, !this.revokeWorkspaceAclOnDispose)
+      } catch (error) {
+        // Free the SID (and revoke when revokeWorkspaceAclOnDispose makes the grant non-standing).
+        try {
+          grant.dispose()
+        } catch (cleanupError) {
+          throw aclPreparationFailure(stepLabel, error, [cleanupError])
+        }
+        throw aclPreparationFailure(stepLabel, error)
+      }
+      this.workspaceGrants.set(root, grant)
+    }
+    return writeSid
   }
 
   /**
    * Materialize one workspace-write policy's ACEs once per provider
-   * lifetime. The workspace SID and standing root grant are shared by the
-   * workspace. The temp directory is random and carries a distinct SID, so
+   * lifetime. The workspace and extra-root SIDs and standing grants are
+   * cached per canonical directory (unless `revokeWorkspaceAclOnDispose` is
+   * enabled). The temp directory is random and carries a distinct SID, so
    * another session on the same workspace cannot use the shared workspace
    * SID to enter it. A fresh provider always chooses a new path; crash
    * residue therefore cannot collide with or authorize a resumed session.
    * Fail-closed: a half-materialized temp grant is revoked and its directory
-   * removed before the error propagates. A temp root inside the workspace
-   * throws `SandboxPreparationError` `SANDBOX_INVALID_TEMP_ROOT` before any ACL
-   * change; any other failure throws `SANDBOX_PREPARATION_FAILED` with the
-   * platform error as `cause`.
+   * removed before the error propagates. A temp root inside the workspace or
+   * overlapping an extra root throws `SandboxPreparationError`
+   * `SANDBOX_INVALID_TEMP_ROOT` before any ACL change; any other failure
+   * throws `SANDBOX_PREPARATION_FAILED` with the platform error as `cause`.
    * @param sessionId - the policy's calling-session identity.
    * @param workspaceRoot - the resolved policy root.
-   * @returns the pair's private temp directory and write capability.
+   * @param extraRoots - validated canonical extra writable roots.
+   * @returns the pair's private temp directory capability plus paired extra grants.
    */
-  private materializeAclGrant(sessionId: SessionId, workspaceRoot: string): AclTempCapability {
+  private materializeAclGrant(
+    sessionId: SessionId,
+    workspaceRoot: string,
+    extraRoots: readonly string[],
+  ): { temp: AclTempCapability; extraGrants: Array<{ dir: string; writeSid: string }> } {
     let tempInsideWorkspace: boolean
     try {
       tempInsideWorkspace = isTempRootInsideWorkspace(workspaceRoot, tmpdir())
@@ -438,32 +526,19 @@ export class LocalSandboxProvider extends SandboxProvider {
         'SANDBOX_INVALID_TEMP_ROOT',
       )
     }
-    const writeSid = workspaceWriteSid(workspaceRoot)
-    if (!this.workspaceGrants.has(workspaceRoot)) {
-      let grant: AclWriteGrant
-      try {
-        grant = AclWriteGrant.create(writeSid)
-      } catch (error) {
-        throw aclPreparationFailure('workspace grant', error)
-      }
-      try {
-        grant.add(workspaceRoot, true)
-      } catch (error) {
-        // Free the SID; a standing ACE (if the apply succeeded before a
-        // post-apply throw) is the intended end state, not an error
-        // artifact — nothing to revoke.
-        try {
-          grant.dispose()
-        } catch (cleanupError) {
-          throw aclPreparationFailure('workspace grant', error, [cleanupError])
-        }
-        throw aclPreparationFailure('workspace grant', error)
-      }
-      this.workspaceGrants.set(workspaceRoot, grant)
-    }
     const key = JSON.stringify([String(sessionId), workspaceRoot])
     const existing = this.tempCapabilities.get(key)
-    if (existing !== undefined) return existing
+    if (existing !== undefined) {
+      for (const extraRoot of extraRoots) {
+        this.assertExtraRootDisjointFromPrivateTemp(extraRoot, existing.dir)
+      }
+    }
+    this.materializeWorkspaceGrant(workspaceRoot, 'workspace grant')
+    const extraGrants = extraRoots.map(dir => ({
+      dir,
+      writeSid: this.materializeWorkspaceGrant(dir, 'extra directory grant'),
+    }))
+    if (existing !== undefined) return { temp: existing, extraGrants }
     let tempDir: string
     try {
       tempDir = mkdtempSync(join(tmpdir(), 'dsh-'))
@@ -493,7 +568,7 @@ export class LocalSandboxProvider extends SandboxProvider {
     }
     const capability = { dir: tempDir, writeSid: tempSid, grant }
     this.tempCapabilities.set(key, capability)
-    return capability
+    return { temp: capability, extraGrants }
   }
 
   /**

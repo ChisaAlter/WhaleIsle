@@ -184,7 +184,8 @@ function isReadMethod(req) {
  * @param {boolean} [upgrade]
  */
 function wrapRouteEntry(state, guard, route, upgrade = false) {
-  if (route === undefined || route[WRAPPED] || (!upgrade && exempt(route.path))) return;
+  if (!route || route[WRAPPED] || (!upgrade && (exempt(route.path) || 'resource' in route))) return;
+  if (typeof route.handler !== 'function') return;
   const gate = upgrade ? gateUpgradeHandler : gateHttpHandler;
   replaceOwnedProperty(guard, route, 'handler', gate(state, guard, route.path, route.handler));
   replaceOwnedProperty(guard, route, WRAPPED, guard);

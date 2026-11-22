@@ -87,7 +87,11 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       await writeFile(join(dir, 'packages', 'core', 'src', 'nested', 'other.ts'), '')
       await mkdir(join(dir, 'packages', 'src', 'core'), { recursive: true })
       await writeFile(join(dir, 'packages', 'src', 'core', 'other.ts'), '')
-      await writeFile(join(dir, '.gitignore'), 'packages/\n')
+      await writeFile(join(dir, '.gitignore'), 'packages/\nnode_modules/\ndist/\n')
+      await mkdir(join(dir, 'node_modules', 'pkg'), { recursive: true })
+      await writeFile(join(dir, 'node_modules', 'pkg', 'index.js'), '')
+      await mkdir(join(dir, 'dist'), { recursive: true })
+      await writeFile(join(dir, 'dist', 'bundle.js'), '')
       await utimes(join(dir, 'packages', 'core', 'src', 'old.ts'), new Date(2000, 0, 1), new Date(2000, 0, 1))
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
       const ensure = vi.spyOn(ctx.workingDirectory, 'ensure')
@@ -97,6 +101,16 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       expect(ignoredByDefault.isError).toBe(false)
       expect(text(ignoredByDefault)).toBe('No files found')
 
+      for (const catchAll of ['**/*', '**'] as const) {
+        const catchAllResult = await call('glob', { pattern: catchAll }, agent())
+        expect(catchAllResult.isError).toBe(false)
+        const catchAllPaths = text(catchAllResult).split('\n')
+        expect(catchAllPaths).toContain(join('src', 'alpha.ts'))
+        expect(catchAllPaths).not.toContain(join('packages', 'core', 'src', 'old.ts'))
+        expect(catchAllPaths).not.toContain(join('node_modules', 'pkg', 'index.js'))
+        expect(catchAllPaths).not.toContain(join('dist', 'bundle.js'))
+      }
+
       const result = await call('glob', { pattern: 'packages/core/src/*.ts', noIgnore: true }, agent())
       expect(result.isError).toBe(false)
       if (result.isError) throw new Error('expected glob success')
@@ -104,10 +118,11 @@ describe('search tools over the real subprocess service + the packaged rg', () =
         join('packages', 'core', 'src', 'old.ts'),
         join('packages', 'core', 'src', '.hidden.ts'),
       ] })
-      expect(spawn.mock.calls[1]?.[0].argv.slice(3, 6)).toEqual([
+      const noIgnoreCall = spawn.mock.calls.at(-1)?.[0]
+      expect(noIgnoreCall?.argv.slice(3, 6)).toEqual([
         '--glob=!**', '--glob={packages,core,src}/', '--glob=packages/core/src/*.ts',
       ])
-      expect(spawn.mock.calls[1]?.[0].argv).not.toContain('--')
+      expect(noIgnoreCall?.argv).not.toContain('--')
     })
 
     it.each(['*.ts', '**/*.ts', 'src/**/*.ts', '!src/*.ts', './src/*.ts', 'src/../src/*.ts', '.git/*.ts'])(
@@ -240,6 +255,36 @@ describe('search tools over the real subprocess service + the packaged rg', () =
         expect(unignoredResult.isError).toBe(false)
         const paths = text(unignoredResult).split('\n').sort()
         expect(paths).toEqual([join('ignored-dir', 'nested.ts'), 'kept.ts'])
+      })
+
+      it('honors .gitignore for catch-all pattern "**/*" and "**" in a bare directory without .git unless noIgnore is true', async () => {
+        const bareDir = mkdtempSync(join(tmpdir(), 'dsh-search-bare-all-'))
+        bareDirs.push(bareDir)
+        await writeFile(join(bareDir, '.gitignore'), 'node_modules/\ndist/\n')
+        await mkdir(join(bareDir, 'src'), { recursive: true })
+        await mkdir(join(bareDir, 'node_modules', 'dep'), { recursive: true })
+        await mkdir(join(bareDir, 'dist'), { recursive: true })
+        await writeFile(join(bareDir, 'src', 'app.js'), 'console.log(1)\n')
+        await writeFile(join(bareDir, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+        await writeFile(join(bareDir, 'dist', 'out.js'), '/* built */\n')
+        const bareAgent = () => ({ session: { header: { id: 'session-bare-all', cwd: bareDir } } })
+
+        for (const pattern of ['**/*', '**'] as const) {
+          const defaultResult = await call('glob', { pattern }, bareAgent())
+          expect(defaultResult.isError).toBe(false)
+          const found = text(defaultResult).split('\n').sort()
+          expect(found).toEqual(['.gitignore', join('src', 'app.js')])
+        }
+
+        const unignoredResult = await call('glob', { pattern: '**/*', noIgnore: true }, bareAgent())
+        expect(unignoredResult.isError).toBe(false)
+        const allPaths = text(unignoredResult).split('\n').sort()
+        expect(allPaths).toEqual([
+          '.gitignore',
+          join('dist', 'out.js'),
+          join('node_modules', 'dep', 'index.js'),
+          join('src', 'app.js'),
+        ])
       })
     })
   })

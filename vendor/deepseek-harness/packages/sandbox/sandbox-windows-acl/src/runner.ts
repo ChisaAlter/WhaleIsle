@@ -10,8 +10,10 @@
  * keep the same contract):
  *   [node, runner.js, '--workspace', <dir>, '--temp', <dir>,
  *    '--mode', <read-only|workspace-write>,
+ *    ['--extra-dir', <dir>, ...],
  *    ['--write-sid', <S-1-4-…>,
- *     '--temp-write-sid', <S-1-4-…>], '--', <argv...>]
+ *     '--temp-write-sid', <S-1-4-…>,
+ *     ['--extra-sid', <S-1-4-…>, ...]], '--', <argv...>]
  *
  * Modes:
  *  - workspace-write: the workspace and temp directories carry distinct
@@ -45,7 +47,7 @@
  */
 
 import { SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_FD } from '@deepseek-ai/dsh-subprocess/control'
-import { closeSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { win32 } from './ffi.ts'
@@ -69,6 +71,8 @@ interface ParsedArgs {
   mode: 'read-only' | 'workspace-write'
   writeSid: string | undefined
   tempWriteSid: string | undefined
+  extraDirs: string[]
+  extraSids: string[]
   command: string
   args: string[]
 }
@@ -79,6 +83,8 @@ function parseArgs(raw: string[]): ParsedArgs {
   let mode: string | undefined
   let writeSid: string | undefined
   let parsedTempWriteSid: string | undefined
+  const extraDirs: string[] = []
+  const extraSids: string[] = []
   let index = 0
   for (; index < raw.length; index++) {
     const token = raw[index]
@@ -95,6 +101,8 @@ function parseArgs(raw: string[]): ParsedArgs {
       case '--mode': mode = value; break
       case '--write-sid': writeSid = value; break
       case '--temp-write-sid': parsedTempWriteSid = value; break
+      case '--extra-dir': extraDirs.push(value); break
+      case '--extra-sid': extraSids.push(value); break
       default: fail(`unknown argument: ${token}`)
     }
   }
@@ -104,12 +112,44 @@ function parseArgs(raw: string[]): ParsedArgs {
   const argv = raw.slice(index)
   const command = argv[0]
   if (command === undefined) fail('missing command after --')
-  return { workspace, temp, mode, writeSid, tempWriteSid: parsedTempWriteSid, command, args: argv.slice(1) }
+  return {
+    workspace,
+    temp,
+    mode,
+    writeSid,
+    tempWriteSid: parsedTempWriteSid,
+    extraDirs,
+    extraSids,
+    command,
+    args: argv.slice(1),
+  }
 }
 
 function requireDirectory(label: string, path: string): void {
   if (!existsSync(path) || !statSync(path).isDirectory()) {
     fail(`${label} is not an existing directory: ${path}`)
+  }
+}
+
+function requireExtraDirectory(path: string): string {
+  let lstat: ReturnType<typeof lstatSync>
+  try {
+    lstat = lstatSync(path)
+  } catch {
+    // Missing or unreadable extra directory must fail loudly at the runner boundary.
+    fail(`--extra-dir is not an existing directory: ${path}`)
+  }
+  if (lstat.isSymbolicLink()) {
+    fail(`--extra-dir must not be a symbolic link: ${path}`)
+  }
+  if (!lstat.isDirectory()) {
+    fail(`--extra-dir is not an existing directory: ${path}`)
+  }
+  try {
+    return realpathSync.native(path)
+  } catch {
+    // Keep original validated directory path if canonical resolution is unavailable.
+    return path
   }
 }
 
@@ -119,16 +159,29 @@ async function main(): Promise<number> {
   // a bogus root must fail loudly at the runner boundary, never mid-child.
   requireDirectory('--workspace', parsed.workspace)
   requireDirectory('--temp', parsed.temp)
+  const extraDirs = parsed.extraDirs.map(requireExtraDirectory)
 
   const seamManaged = parsed.writeSid !== undefined || parsed.tempWriteSid !== undefined
   if (parsed.mode === 'read-only' && seamManaged) {
     fail('read-only does not accept --write-sid or --temp-write-sid')
   }
+  if (parsed.mode === 'read-only' && parsed.extraSids.length > 0) {
+    fail('read-only does not accept --extra-sid')
+  }
   if (parsed.mode === 'workspace-write' && (parsed.writeSid === undefined) !== (parsed.tempWriteSid === undefined)) {
     fail('workspace-write requires --write-sid and --temp-write-sid together')
   }
+  if (parsed.mode === 'workspace-write' && !seamManaged && parsed.extraSids.length > 0) {
+    fail('--extra-sid requires --write-sid and --temp-write-sid')
+  }
+  if (parsed.mode === 'workspace-write' && seamManaged && parsed.extraSids.length !== extraDirs.length) {
+    fail('--extra-sid count must match --extra-dir count')
+  }
   if (parsed.mode === 'workspace-write') {
     assertTempRootOutsideWorkspace(parsed.workspace, parsed.temp)
+    for (const extraDir of extraDirs) {
+      assertTempRootOutsideWorkspace(extraDir, parsed.temp)
+    }
   }
 
   const api = await win32()
@@ -150,6 +203,11 @@ async function main(): Promise<number> {
       writeSid = workspaceWriteSid(parsed.workspace)
       if (seamManaged) {
         if (parsed.writeSid !== writeSid) fail('--write-sid does not match --workspace')
+        for (const [index, extraDir] of extraDirs.entries()) {
+          if (parsed.extraSids[index] !== workspaceWriteSid(extraDir)) {
+            fail(`--extra-sid #${index + 1} does not match --extra-dir`)
+          }
+        }
         privateTempDir = parsed.temp
         privateTempSid = tempWriteSid(privateTempDir)
         if (parsed.tempWriteSid !== privateTempSid) fail('--temp-write-sid does not match --temp')
@@ -161,10 +219,12 @@ async function main(): Promise<number> {
     }
     sandbox = new AclSandbox({
       writableDirs: parsed.mode === 'workspace-write' ? [parsed.workspace] : [],
+      extraDirs: parsed.mode === 'workspace-write' ? extraDirs : [],
       tempDir: privateTempDir,
       mode: parsed.mode,
       ...writeSid === undefined ? {} : { writeSid },
       ...privateTempSid === undefined ? {} : { tempWriteSid: privateTempSid },
+      ...parsed.mode === 'workspace-write' && parsed.extraSids.length > 0 ? { extraWriteSids: parsed.extraSids } : {},
       manageDacls: !seamManaged,
     })
     await sandbox.init()

@@ -89,12 +89,14 @@ export class LspConnection {
    * @param spawner - the subprocess seam's spawn (the provider passes `ctx.subprocess.spawn`).
    * @param onServerRequest - answers a server→client request; rejects to send an error response.
    * @param writer - message writer; tests inject callback failures without relying on OS pipe races.
+   * @param onNotification - optional listener for inbound server→client notifications.
    */
   constructor(
     spec: ConnectionSpec,
     spawner: ConnectionSpawner,
     private readonly onServerRequest: (method: string, params: unknown) => Promise<unknown>,
     private readonly writer: ConnectionWriter = writeConnectionMessage,
+    private readonly onNotification?: (method: string, params: unknown) => void,
   ) {
     this.decoder = new MessageDecoder(spec.maxMessageBytes)
     // stdin/stdout are piped protocol streams this endpoint frames itself;
@@ -153,6 +155,11 @@ export class LspConnection {
   /** Whether the transport has failed even if the child close event has not arrived yet. */
   get failed(): boolean {
     return this.closeReason !== undefined
+  }
+
+  /** Retained fatal transport cause when the connection has closed or failed, if any. */
+  get failure(): Error | undefined {
+    return this.closeReason
   }
 
   /**
@@ -269,7 +276,13 @@ export class LspConnection {
       return
     }
     if (typeof method === 'string') {
-      // A server→client notification (e.g. diagnostics, logs): ignored by this MVP host.
+      if (this.onNotification !== undefined) {
+        try {
+          this.onNotification(method, frame.params)
+        } catch {
+          // Notification observers are best-effort; a listener defect must not disrupt JSON-RPC framing.
+        }
+      }
       return
     }
     if (typeof id === 'number') this.handleResponse(id, frame)

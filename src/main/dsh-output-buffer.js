@@ -11,6 +11,9 @@ function createLineBuffer(onLine) {
   const decoder = new StringDecoder('utf8');
   let pending = '';
 
+  /**
+   * @param {string} text
+   */
   const drain = (text) => {
     if (!text) return;
     pending += text;
@@ -22,6 +25,9 @@ function createLineBuffer(onLine) {
   };
 
   return {
+    /**
+     * @param {string | Buffer | Uint8Array | null | undefined} chunk
+     */
     push(chunk) {
       if (chunk === undefined || chunk === null) return;
       const text = typeof chunk === 'string'

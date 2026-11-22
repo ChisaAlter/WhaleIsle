@@ -254,7 +254,7 @@ describe('dsh-tool-team', () => {
     expect(leadPrompt).toContain('Agent Teams is available in this session\n\n')
     expect(leadPrompt).toContain('FS_STALE_VERSION')
     expect(leadPrompt).toContain('Bash, formatters, code generators, and scripts are not fully protected')
-    expect(leadPrompt).toContain('Task readiness never starts an owner')
+    expect(leadPrompt).toContain('Task board changes (ready task creation, reassignment, unblocking, and completion) notify and wake relevant inactive members')
     expect(leadPrompt).toContain('returns noProgress immediately')
     expect(leadPrompt).not.toContain('Your Team role')
     expect(renderContextSnapshot(leadAssembly)).toContain('You are the Team Lead named "lead".')
@@ -777,5 +777,305 @@ describe('dsh-tool-team', () => {
     const childId = spawnedChildId(ctx, lead, result)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
     expect(ctx.projectTeams.listMembers(lead)[1]).toMatchObject({ provider: 'team-fresh' })
+  })
+
+  it('wakes inactive teammates when a ready shared task is created', { timeout: 15_000 }, async () => {
+    const secondTurnGate = Promise.withResolvers<undefined>()
+    const { ctx, lead, adapter } = await setup([
+      textResponse('worker initial turn complete'),
+      textResponse('worker claimed new task'),
+    ])
+    let workerId: ReturnType<typeof spawnedChildId> | undefined
+    let holdOnSecondStart = false
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      if (workerId !== undefined && subject.id === workerId && holdOnSecondStart) {
+        await secondTurnGate.promise
+      }
+      return next()
+    })
+    let woken!: Agent
+    try {
+      const spawned = await execute(ctx, lead, 'spawn_teammate', {
+        name: 'idle-worker',
+        description: 'idle worker',
+        prompt: 'wait for board work',
+      })
+      expect(spawned.isError).toBe(false)
+      workerId = spawnedChildId(ctx, lead, spawned)
+      await waitNoAgent(ctx, workerId)
+      expect(ctx.projectTeams.listMembers(lead).find(m => m.name === 'idle-worker')?.status).toBe('inactive')
+
+      holdOnSecondStart = true
+      const created = await execute(ctx, lead, 'team_task_create', {
+        subject: 'handle new event',
+        description: 'pick up newly created task',
+      })
+      expect(created.isError).toBe(false)
+      const task = JSON.parse(text(created)) as { id: string }
+
+      // Creating a ready task cold-resumes the inactive teammate instead of leaving it idle.
+      woken = await waitRunning(ctx, workerId)
+      expect(ctx.projectTeams.listMembers(lead).find(m => m.name === 'idle-worker')?.status).toBe('running')
+      secondTurnGate.resolve(undefined)
+      await waitNoAgent(ctx, workerId)
+
+      const userTexts = woken.session.snapshotEvents()
+        .filter(event => event.type === 'user/message')
+        .map(event => event.data.content.map(b => b.type === 'text' ? b.text : '').join(''))
+      expect(userTexts.some(msg => msg.includes(task.id) && msg.includes('handle new event'))).toBe(true)
+    } finally {
+      secondTurnGate.resolve(undefined)
+    }
+    const workerRequests = adapter.requests.filter(req =>
+      req.messages.some(msg => msg.role === 'user'
+        && msg.content.some(block => block.type === 'text' && block.text.includes('You are teammate "idle-worker".'))))
+    expect(workerRequests).toHaveLength(2)
+  })
+
+  it('wakes only the targeted inactive assignee on task reassignment', { timeout: 15_000 }, async () => {
+    const releaseAssigned = Promise.withResolvers<undefined>()
+    const { ctx, lead, adapter } = await setup([
+      'hang',
+      'hang',
+      textResponse('assignee woke up'),
+    ])
+    let assigneeId: ReturnType<typeof spawnedChildId> | undefined
+    let holdAssigned = false
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      if (assigneeId !== undefined && subject.id === assigneeId && holdAssigned) await releaseAssigned.promise
+      return next()
+    })
+    try {
+      const assigneeSpawn = await execute(ctx, lead, 'spawn_teammate', {
+        name: 'assignee',
+        description: 'target worker',
+        prompt: 'prepare',
+      })
+      const bystanderSpawn = await execute(ctx, lead, 'spawn_teammate', {
+        name: 'bystander',
+        description: 'other worker',
+        prompt: 'prepare',
+      })
+      assigneeId = spawnedChildId(ctx, lead, assigneeSpawn)
+      const bystanderId = spawnedChildId(ctx, lead, bystanderSpawn)
+      await waitRunning(ctx, assigneeId)
+      await waitRunning(ctx, bystanderId)
+
+      // Create the ready task while both teammates are still running so creation does not wake either.
+      const created = await execute(ctx, lead, 'team_task_create', {
+        subject: 'assigned task',
+        description: 'wait for assignment',
+      })
+      expect(created.isError).toBe(false)
+      const task = JSON.parse(text(created)) as { id: string; revision: number }
+
+      // Park both teammates into inactive status before reassigning to assignee.
+      await execute(ctx, lead, 'interrupt_agent', { target: 'assignee' })
+      await execute(ctx, lead, 'interrupt_agent', { target: 'bystander' })
+      await waitNoAgent(ctx, assigneeId)
+      await waitNoAgent(ctx, bystanderId)
+      expect(ctx.projectTeams.listMembers(lead).find(m => m.name === 'assignee')?.status).toBe('inactive')
+      expect(ctx.projectTeams.listMembers(lead).find(m => m.name === 'bystander')?.status).toBe('inactive')
+
+      holdAssigned = true
+      const reassigned = await execute(ctx, lead, 'team_task_update', {
+        task_id: task.id,
+        expected_revision: task.revision,
+        action: 'reassign',
+        owner: 'assignee',
+      })
+      expect(reassigned.isError, text(reassigned)).toBe(false)
+
+      // Assigned inactive teammate wakes up; uninvolved bystander stays inactive.
+      const wokenAssignee = await waitRunning(ctx, assigneeId)
+      expect(ctx.projectTeams.listMembers(lead).find(m => m.name === 'assignee')?.status).toBe('running')
+      expect(ctx.projectTeams.listMembers(lead).find(m => m.name === 'bystander')?.status).toBe('inactive')
+
+      releaseAssigned.resolve(undefined)
+      await waitNoAgent(ctx, assigneeId)
+      const userTexts = wokenAssignee.session.snapshotEvents()
+        .filter(event => event.type === 'user/message')
+        .map(event => event.data.content.map(b => b.type === 'text' ? b.text : '').join(''))
+      expect(userTexts.some(msg => msg.includes(task.id) && msg.includes('assigned to you'))).toBe(true)
+    } finally {
+      releaseAssigned.resolve(undefined)
+    }
+    const assigneeRequests = adapter.requests.filter(req =>
+      req.messages.some(msg => msg.role === 'user'
+        && msg.content.some(block => block.type === 'text' && block.text.includes('You are teammate "assignee".'))))
+    const bystanderRequests = adapter.requests.filter(req =>
+      req.messages.some(msg => msg.role === 'user'
+        && msg.content.some(block => block.type === 'text' && block.text.includes('You are teammate "bystander".'))))
+    expect(assigneeRequests).toHaveLength(2)
+    expect(bystanderRequests).toHaveLength(1)
+  })
+
+  it('wakes inactive teammate when completing a blocker unblocks a dependent task', { timeout: 15_000 }, async () => {
+    const releaseUnblocked = Promise.withResolvers<undefined>()
+    const { ctx, lead } = await setup([
+      'hang',
+      textResponse('downstream idle'),
+      textResponse('downstream ran after unblock'),
+    ])
+    let blockerId: ReturnType<typeof spawnedChildId> | undefined
+    let downstreamId: ReturnType<typeof spawnedChildId> | undefined
+    let holdDownstream = false
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      if (downstreamId !== undefined && subject.id === downstreamId && holdDownstream) await releaseUnblocked.promise
+      return next()
+    })
+    try {
+      const blockerSpawn = await execute(ctx, lead, 'spawn_teammate', {
+        name: 'blocker-worker',
+        description: 'blocker worker',
+        prompt: 'run first task',
+      })
+      blockerId = spawnedChildId(ctx, lead, blockerSpawn)
+      const blockerAgent = await waitRunning(ctx, blockerId)
+
+      // Create task A and dependent task B before downstream-worker becomes inactive.
+      const taskARes = await execute(ctx, lead, 'team_task_create', {
+        subject: 'step A',
+        description: 'prerequisite task',
+      })
+      const taskA = JSON.parse(text(taskARes)) as { id: string; revision: number }
+      const taskBRes = await execute(ctx, lead, 'team_task_create', {
+        subject: 'step B',
+        description: 'blocked by step A',
+        blocked_by: [taskA.id],
+      })
+      const taskB = JSON.parse(text(taskBRes)) as { id: string; revision: number }
+
+      const downstreamSpawn = await execute(ctx, lead, 'spawn_teammate', {
+        name: 'downstream-worker',
+        description: 'downstream worker',
+        prompt: 'wait until step B unblocks',
+      })
+      downstreamId = spawnedChildId(ctx, lead, downstreamSpawn)
+      await waitNoAgent(ctx, downstreamId)
+
+      const claimedA = await execute(ctx, blockerAgent, 'team_task_update', {
+        task_id: taskA.id,
+        expected_revision: taskA.revision,
+        action: 'claim',
+      })
+      const claimedRevision = (JSON.parse(text(claimedA)) as { revision: number }).revision
+
+      // Keep Lead waiting in wait_agent while blocker-worker completes step A so we verify wait wakeup too.
+      holdDownstream = true
+      const waitCall = execute(ctx, lead, 'wait_agent', { timeout_ms: 10_000 })
+      const completedA = await execute(ctx, blockerAgent, 'team_task_update', {
+        task_id: taskA.id,
+        expected_revision: claimedRevision,
+        action: 'complete',
+      })
+      expect(completedA.isError).toBe(false)
+
+      // 1. Lead waiting in wait_agent wakes immediately instead of deadlocking.
+      const waitResult = await waitCall
+      expect(waitResult.isError).toBe(false)
+      expect(JSON.parse(text(waitResult))).toEqual({ timedOut: false })
+
+      // 2. Inactive downstream-worker wakes up automatically because step B became ready.
+      const wokenDownstream = await waitRunning(ctx, downstreamId)
+      releaseUnblocked.resolve(undefined)
+      await waitNoAgent(ctx, downstreamId)
+      const wokenTexts = wokenDownstream.session.snapshotEvents()
+        .filter(event => event.type === 'user/message')
+        .map(event => event.data.content.map(b => b.type === 'text' ? b.text : '').join(''))
+      expect(wokenTexts.some(msg => msg.includes(taskB.id) && msg.includes('unblocked'))).toBe(true)
+    } finally {
+      releaseUnblocked.resolve(undefined)
+    }
+    if (blockerId !== undefined) {
+      await execute(ctx, lead, 'interrupt_agent', { target: 'blocker-worker' })
+      await waitNoAgent(ctx, blockerId)
+    }
+  })
+
+  it('delivers unread board completions to subsequent wait_agent and wakes idle Lead when not waiting', { timeout: 15_000 }, async () => {
+    // 1. Worker completes task while Lead is running, then worker goes inactive BEFORE Lead calls wait_agent.
+    const setupUnread = await setup(['hang'])
+    const workerSpawn = await execute(setupUnread.ctx, setupUnread.lead, 'spawn_teammate', {
+      name: 'fast-worker',
+      description: 'completes fast',
+      prompt: 'work',
+    })
+    const workerId = spawnedChildId(setupUnread.ctx, setupUnread.lead, workerSpawn)
+    const worker = await waitRunning(setupUnread.ctx, workerId)
+    const created = await execute(setupUnread.ctx, setupUnread.lead, 'team_task_create', {
+      subject: 'quick task',
+      description: 'complete and stop',
+    })
+    const task = JSON.parse(text(created)) as { id: string; revision: number }
+    const claimed = await execute(setupUnread.ctx, worker, 'team_task_update', {
+      task_id: task.id,
+      expected_revision: task.revision,
+      action: 'claim',
+    })
+    const rev = (JSON.parse(text(claimed)) as { revision: number }).revision
+
+    // Mark Lead running so worker completion queues an unread board event for Lead instead of cold-starting Lead.
+    const originalStatus = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(setupUnread.lead), 'status')
+    vi.spyOn(setupUnread.lead, 'status', 'get').mockReturnValue('running')
+    await execute(setupUnread.ctx, worker, 'team_task_update', {
+      task_id: task.id,
+      expected_revision: rev,
+      action: 'complete',
+    })
+    vi.restoreAllMocks()
+    if (originalStatus) {
+      // Ensure original prototype descriptor stays intact after restore.
+      expect(setupUnread.lead.status).toBe('idle')
+    }
+
+    // Worker goes inactive before Lead calls wait_agent.
+    await execute(setupUnread.ctx, setupUnread.lead, 'interrupt_agent', { target: 'fast-worker' })
+    await waitNoAgent(setupUnread.ctx, workerId)
+
+    // First wait_agent consumes unread completion event instead of deadlocking / returning noProgress.
+    const firstWait = await execute(setupUnread.ctx, setupUnread.lead, 'wait_agent', { timeout_ms: 10_000 })
+    expect(firstWait.isError).toBe(false)
+    expect(JSON.parse(text(firstWait))).toEqual({ timedOut: false })
+
+    // Subsequent wait_agent with no unread events and no active peer still reports noProgress.
+    const secondWait = await execute(setupUnread.ctx, setupUnread.lead, 'wait_agent', { timeout_ms: 10_000 })
+    expect(secondWait.isError).toBe(false)
+    expect(JSON.parse(text(secondWait))).toMatchObject({ noProgress: { reason: 'no-active-peer' } })
+
+    // 2. When Lead IS inactive (not running and not waiting), teammate completion wakes Lead with a board notification.
+    const setupWakeLead = await setup(['hang', textResponse('lead woke for completion')])
+    const worker2Spawn = await execute(setupWakeLead.ctx, setupWakeLead.lead, 'spawn_teammate', {
+      name: 'notifier-worker',
+      description: 'wakes idle lead',
+      prompt: 'finish task',
+    })
+    const worker2Id = spawnedChildId(setupWakeLead.ctx, setupWakeLead.lead, worker2Spawn)
+    const worker2 = await waitRunning(setupWakeLead.ctx, worker2Id)
+    const created2 = await execute(setupWakeLead.ctx, setupWakeLead.lead, 'team_task_create', {
+      subject: 'notify lead task',
+      description: 'complete while lead inactive',
+    })
+    const task2 = JSON.parse(text(created2)) as { id: string; revision: number }
+    const claimed2 = await execute(setupWakeLead.ctx, worker2, 'team_task_update', {
+      task_id: task2.id,
+      expected_revision: task2.revision,
+      action: 'claim',
+    })
+    const rev2 = (JSON.parse(text(claimed2)) as { revision: number }).revision
+    await execute(setupWakeLead.ctx, worker2, 'team_task_update', {
+      task_id: task2.id,
+      expected_revision: rev2,
+      action: 'complete',
+    })
+    await setupWakeLead.lead.whenIdle()
+
+    const leadUserMsgs = setupWakeLead.lead.session.snapshotEvents()
+      .filter(event => event.type === 'user/message')
+      .map(event => event.data.content.map(b => b.type === 'text' ? b.text : '').join(''))
+    expect(leadUserMsgs.some(msg => msg.includes('completed task') && msg.includes(task2.id))).toBe(true)
+
+    await execute(setupWakeLead.ctx, setupWakeLead.lead, 'interrupt_agent', { target: 'notifier-worker' })
+    await waitNoAgent(setupWakeLead.ctx, worker2Id)
   })
 })

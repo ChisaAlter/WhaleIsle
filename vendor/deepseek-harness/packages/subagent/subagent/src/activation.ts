@@ -9,7 +9,7 @@ import { finalAssistantOutput } from './assistant-output.ts'
 import { epochStopReason } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
 import type { StructuredAttachment } from './structured.ts'
-import type { SubagentResult, SubagentRun, SubagentRunId } from './types.ts'
+import type { SubagentResult, SubagentRun, SubagentRunId, SubagentWorktreeSpec } from './types.ts'
 
 /** Process-local capacity shared by every member of a subagent tree. */
 export class ActivationPool {
@@ -55,6 +55,7 @@ interface ActivationBase {
   /** Slash-separated names from the root; undefined when this child or a creator below the root has no name. */
   readonly path: string | undefined
   readonly delivery: 'parent' | 'caller'
+  readonly worktree?: SubagentWorktreeSpec | undefined
   readonly result: PromiseWithResolvers<SubagentResult>
   /** Published synchronously before teardown; subsequent callers share this transaction. */
   closing: Promise<void> | undefined

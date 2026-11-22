@@ -9,7 +9,7 @@ const tickerCountEl = document.getElementById('ticker-count');
 const drawerEl = document.getElementById('logdrawer');
 const logCountEl = document.getElementById('log-count');
 const logCloseEl = document.getElementById('log-close');
-const retryEl = document.getElementById('retry');
+const retryEl = /** @type {HTMLButtonElement | null} */ (document.getElementById('retry'));
 const cancelRestartEl = document.getElementById('cancel-restart');
 const openLauncherEl = document.getElementById('open-launcher');
 const saveLogEl = document.getElementById('save-log');
@@ -235,6 +235,18 @@ function failureText(failure, snapshot) {
   return '启动失败，请下载日志后回启动器排查。';
 }
 
+/**
+ * @param {boolean} runtimeFailure
+ * @param {boolean} recoveryBusy
+ */
+function updateRetryButton(runtimeFailure, recoveryBusy) {
+  if (!retryEl) return;
+  retryEl.textContent = globalThis.BootRecovery?.retryActionLabel
+    ? globalThis.BootRecovery.retryActionLabel(runtimeFailure)
+    : (runtimeFailure ? '立即重启' : '重试');
+  retryEl.disabled = recoveryBusy;
+}
+
 function renderState(snapshot) {
   latestSnapshot = snapshot;
   const state = snapshot?.state || 'starting';
@@ -269,10 +281,7 @@ function renderState(snapshot) {
   manageCountdown(snapshot);
 
   actionsEl.hidden = !canAct;
-  retryEl.textContent = globalThis.BootRecovery?.retryActionLabel
-    ? globalThis.BootRecovery.retryActionLabel(runtimeFailure)
-    : (runtimeFailure ? '立即重启' : '重试');
-  retryEl.disabled = recoveryBusy;
+  updateRetryButton(runtimeFailure, recoveryBusy);
   saveLogEl.textContent = globalThis.BootRecovery?.downloadLogLabel
     ? globalThis.BootRecovery.downloadLogLabel()
     : '下载日志';
@@ -346,40 +355,43 @@ function appendLog(line) {
   updateLogCount();
 }
 
-retryEl.addEventListener('click', () => {
-  actionNotice = '';
-  retryEl.disabled = true;
-  cancelRestartEl.hidden = true;
-  renderState({ state: 'starting', recovery: { status: 'inactive' } });
-  invoke('restart')
-    .then((snapshot) => {
-      if (snapshot && snapshot.state && snapshot.ok !== false) {
-        renderState(snapshot);
-        return;
-      }
-      const message = snapshot && snapshot.error ? String(snapshot.error) : '重启请求被拒绝，请重试';
-      retryEl.disabled = false;
-      renderState({
-        state: 'error',
-        error: message,
-        failure: {
-          phase: 'startup',
-          message,
-        },
+if (retryEl) {
+  const retryButton = retryEl;
+  retryButton.addEventListener('click', () => {
+    actionNotice = '';
+    retryButton.disabled = true;
+    cancelRestartEl.hidden = true;
+    renderState({ state: 'starting', recovery: { status: 'inactive' } });
+    invoke('restart')
+      .then((snapshot) => {
+        if (snapshot && snapshot.state && snapshot.ok !== false) {
+          renderState(snapshot);
+          return;
+        }
+        const message = snapshot && snapshot.error ? String(snapshot.error) : '重启请求被拒绝，请重试';
+        retryButton.disabled = false;
+        renderState({
+          state: 'error',
+          error: message,
+          failure: {
+            phase: 'startup',
+            message,
+          },
+        });
+      })
+      .catch((error) => {
+        retryButton.disabled = false;
+        renderState({
+          state: 'error',
+          error: error.message || String(error),
+          failure: {
+            phase: 'startup',
+            message: error.message || String(error),
+          },
+        });
       });
-    })
-    .catch((error) => {
-      retryEl.disabled = false;
-      renderState({
-        state: 'error',
-        error: error.message || String(error),
-        failure: {
-          phase: 'startup',
-          message: error.message || String(error),
-        },
-      });
-    });
-});
+  });
+}
 
 cancelRestartEl.addEventListener('click', async () => {
   if (cancelRestartEl.getAttribute('aria-busy') === 'true') return;

@@ -23,11 +23,20 @@ export function controlConfig() {
   return url && token ? { url, token } : null;
 }
 
+/**
+ * @param {number} status
+ * @param {any} data
+ * @returns {string}
+ */
 function httpErrorMessage(status, data) {
   const detail = data !== null && typeof data === 'object' && typeof data.error === 'string' ? data.error : '';
   return detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`;
 }
 
+/**
+ * @param {Response} response
+ * @param {any} data
+ */
 function classifyConfirmPayload(response, data) {
   if (!response.ok) {
     return {
@@ -85,6 +94,8 @@ async function post(control, pathname, body) {
 /**
  * Format a concise diagnostic message for failed confirmations while preserving
  * strict refusal wording when the user explicitly declined.
+ * @param {{ ok?: boolean, declined?: boolean, reason?: string, error?: string, status?: number } | null | undefined} confirmation
+ * @returns {string}
  */
 export function confirmFailureMessage(confirmation) {
   if (confirmation?.reason === 'declined' || confirmation?.declined === true) {

@@ -43,17 +43,18 @@
  * @module @deepseek-ai/dsh-sandbox-windows-acl
  */
 
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 import { grantWrite, revokeWrite } from './acl.ts'
-import { allocPtrSlot, decodePtr, isNullPtr, throwLastError, win32 } from './ffi.ts'
+import { allocPtrSlot, decodePtr, isNullPtr, throwLastError, win32, win32Sync } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { assertPrivateTempDisjoint } from './path-boundary.ts'
 import { drainPipe, spawnSandboxed, spawnSandboxedInherited, waitForExit } from './spawn.ts'
 import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, restrictTokenIntegrity, setTokenDefaultDaclGrant } from './token.ts'
 import * as abi from './win32-abi.ts'
+import { workspaceWriteSid } from './workspace-sid.ts'
 
 export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace, isTempRootInsideWorkspace } from './path-boundary.ts'
@@ -63,6 +64,13 @@ export { ACL_DIAGNOSIS_SKILL, registerAclDiagnosisSkill } from './acl-skill.ts'
 export interface AclSandboxOptions {
   /** Directories the confined child may write into (must exist and be caller-owned). */
   writableDirs: readonly string[]
+  /** Additional writable directories (--add-dir); must exist and must not be symlinks. */
+  extraDirs?: readonly string[]
+  /**
+   * Explicit capability write SIDs paired 1:1 with {@link extraDirs}. Under
+   * workspace-write, omitting this derives per-directory SIDs via {@link workspaceWriteSid}.
+   */
+  extraWriteSids?: readonly string[]
   /**
    * Existing private temp directory to grant. Workspace-write callers must
    * pass it explicitly or pass null to disable temp writes; the ambient temp
@@ -99,6 +107,13 @@ export interface AclSandboxOptions {
    * the caller holds the grants for its own lifetime and revokes them.
    */
   manageDacls?: boolean
+  /**
+   * Whether dispose() (and fail-closed init() cleanup) revokes workspace and
+   * extra-dir capability ACEs alongside the ambient-delete deny ACE and Low
+   * label instead of leaving standing cache ACEs (default false). Ignored
+   * when {@link manageDacls} is false.
+   */
+  revokeWorkspaceAclOnDispose?: boolean
 }
 
 /** Per-spawn options: the program, its argv/cwd, and the stdio shape. */
@@ -135,6 +150,27 @@ export interface AclSandboxChild {
   wait(): Promise<AclSandboxChildResult>
 }
 
+/** Parse one SDDL SID string into a LocalAlloc'd SID pointer. */
+function parseStringSid(api: Win32Bindings, sid: string): NativePtr {
+  const sidSlot = allocPtrSlot()
+  if (api.convertStringSidToSidW(sid, sidSlot) === 0) {
+    throwLastError(api, 'ConvertStringSidToSidW', sid)
+  }
+  const parsedSid = decodePtr(sidSlot)
+  if (parsedSid === null) throw new Win32Error('ConvertStringSidToSidW', api.getLastError(), sid)
+  return parsedSid
+}
+
+/** Resolve canonical path for deterministic SID derivation, falling back to `resolvedDir` when missing. */
+function canonicalPathOrFallback(resolvedDir: string): string {
+  try {
+    return realpathSync.native(resolvedDir)
+  } catch {
+    // Missing or virtual path (e.g. mocked unit tests): keep resolved spelling.
+    return resolvedDir
+  }
+}
+
 /** Free one optional SID while retaining a failure for best-effort sibling cleanup. */
 function freeSidBestEffort(
   api: Win32Bindings,
@@ -151,31 +187,97 @@ function freeSidBestEffort(
   }
 }
 
+/** Free world + workspace capability SIDs best-effort and return any cleanup failures. */
+function freeWorkspaceGrantSids(
+  bindings: Win32Bindings,
+  worldSidPtr: NativePtr | undefined,
+  sidPtr: NativePtr,
+): unknown[] {
+  const cleanupFailures: unknown[] = []
+  freeSidBestEffort(bindings, worldSidPtr, 'world SID', cleanupFailures)
+  freeSidBestEffort(bindings, sidPtr, 'workspace write SID', cleanupFailures)
+  return cleanupFailures
+}
+
+/**
+ * Explicitly revoke one directory's workspace capability ACE, plus the ambient-delete
+ * deny ACE and Low mandatory label when no other capability grant remains on it.
+ * @param workspaceDir - directory whose workspace capability grant should be revoked.
+ * @param writeSid - capability write SID string; defaults to {@link workspaceWriteSid} for the canonical path.
+ * @param api - optional already-resolved binding table (tests).
+ * @returns whether a DACL revocation merge was attempted (false when the directory has no explicit DACL).
+ */
+export function revokeWorkspaceGrant(
+  workspaceDir: string,
+  writeSid?: string,
+  api?: Win32Bindings,
+): boolean {
+  const resolvedDir = resolve(workspaceDir)
+  const canonicalDir = canonicalPathOrFallback(resolvedDir)
+  const effectiveSid = writeSid ?? workspaceWriteSid(canonicalDir)
+  const bindings = api ?? win32Sync()
+  const sidPtr = parseStringSid(bindings, effectiveSid)
+  let worldSidPtr: NativePtr | undefined
+  let revoked = false
+  try {
+    worldSidPtr = makeWellKnownSid(bindings, abi.WinWorldSid)
+    revoked = revokeWrite(bindings, resolvedDir, sidPtr, worldSidPtr)
+  } catch (error) {
+    const cleanupFailures = freeWorkspaceGrantSids(bindings, worldSidPtr, sidPtr)
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupFailures],
+        `revokeWorkspaceGrant(${resolvedDir}) failed and ${cleanupFailures.length} cleanup operation(s) also failed`,
+      )
+    }
+    throw error
+  }
+  const cleanupFailures = freeWorkspaceGrantSids(bindings, worldSidPtr, sidPtr)
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(
+      cleanupFailures,
+      `revokeWorkspaceGrant(${resolvedDir}) completed with ${cleanupFailures.length} cleanup failure(s)`,
+    )
+  }
+  return revoked
+}
+
 /**
  * One write-restricted sandbox instance: token + write-SID grants + spawn.
- * `init()` is fail-closed — any Win32 failure revokes the revocable (temp)
- * grants and throws; `dispose()` revokes the temp grants, leaves the
- * standing workspace ACEs in place (the cross-instance reuse cache), frees
- * every allocation, and reports every cleanup failure. With
- * `manageDacls: false` the caller owns the grants (the sandbox seam's grant
- * reuse): init() applies none and dispose() revokes none.
+ * `init()` is fail-closed — any Win32 failure revokes the revocable (temp,
+ * and workspace when `revokeWorkspaceAclOnDispose` is set) grants and throws;
+ * `dispose()` revokes the temp grants, leaves standing workspace ACEs in place
+ * unless `revokeWorkspaceAclOnDispose` is true, frees every allocation, and
+ * reports every cleanup failure. With `manageDacls: false` the caller owns the
+ * grants (the sandbox seam's grant reuse): init() applies none and dispose()
+ * revokes none.
  */
 export class AclSandbox {
-  /** Absolute writable directories (constructor-validated). */
+  /** Absolute writable directories (base workspace dirs plus validated {@link extraDirs}). */
   readonly writableDirs: string[]
+  /** Additional non-symlink writable directories (`--add-dir`). */
+  readonly extraDirs: string[]
   /** The workspace SID string whose ACEs form the workspace allowlist. */
   readonly writeSid: string | undefined
+  /** Capability write SIDs paired 1:1 with {@link extraDirs}. */
+  readonly extraWriteSids: string[]
+  /** Deduplicated workspace/extra capability write SIDs included on the restricted token. */
+  readonly writeSids: string[]
   /** The private temp directory's write SID (workspace-write with temp only). */
   readonly tempWriteSid: string | undefined
   /** The file-effect mode — the restricted token's restricting-SID list selection. */
   readonly mode: 'read-only' | 'workspace-write'
+  private readonly baseWritableDirs: string[]
   private readonly tempDirOption: string | null | undefined
   private readonly manageDacls: boolean
+  private readonly revokeWorkspaceAclOnDispose: boolean
   private tempDirResolved: string | null | undefined
   private api: Win32Bindings | undefined
   private token: NativePtr | undefined
   private writeSidPtr: NativePtr | undefined
   private tempWriteSidPtr: NativePtr | undefined
+  private worldSidPtr: NativePtr | undefined
+  private extraWriteSidPtrs: Array<{ label: string; ptr: NativePtr }> = []
   /** The well-known/logon SID allocations init() makes; freed by dispose() alongside the write SIDs. */
   private sidAllocations: NativePtr[] = []
   private grantedPaths: Array<{ path: string; sidPtr: NativePtr }> = []
@@ -183,13 +285,32 @@ export class AclSandbox {
   constructor(options: AclSandboxOptions) {
     this.mode = options.mode
     this.manageDacls = options.manageDacls ?? true
-    this.writableDirs = options.writableDirs.map((directory) => {
+    this.revokeWorkspaceAclOnDispose = options.revokeWorkspaceAclOnDispose ?? false
+    this.baseWritableDirs = options.writableDirs.map((directory) => {
       const absolute = resolve(directory)
       if (!existsSync(absolute) || !statSync(absolute).isDirectory()) {
         throw new Error(`AclSandbox writable dir does not exist or is not a directory: ${absolute}`)
       }
       return absolute
     })
+    this.extraDirs = (options.extraDirs ?? []).map((directory) => {
+      const absolute = resolve(directory)
+      let lstat: ReturnType<typeof lstatSync>
+      try {
+        lstat = lstatSync(absolute)
+      } catch {
+        // Missing or unreadable extra directory fails constructor validation before any Win32 call.
+        throw new Error(`AclSandbox extra dir does not exist or is not a directory: ${absolute}`)
+      }
+      if (lstat.isSymbolicLink()) {
+        throw new Error(`AclSandbox extra dir must not be a symbolic link: ${absolute}`)
+      }
+      if (!lstat.isDirectory()) {
+        throw new Error(`AclSandbox extra dir does not exist or is not a directory: ${absolute}`)
+      }
+      return absolute
+    })
+    this.writableDirs = [...this.baseWritableDirs, ...this.extraDirs]
     this.tempDirOption = options.tempDir
     this.writeSid = options.writeSid
     this.tempWriteSid = options.tempWriteSid
@@ -205,6 +326,12 @@ export class AclSandbox {
     if (this.mode === 'read-only' && (this.writeSid !== undefined || this.tempWriteSid !== undefined)) {
       throw new Error('AclSandbox read-only does not accept write SIDs')
     }
+    if (this.mode === 'read-only' && options.extraWriteSids !== undefined && options.extraWriteSids.length > 0) {
+      throw new Error('AclSandbox read-only does not accept write SIDs')
+    }
+    if (options.extraWriteSids !== undefined && options.extraWriteSids.length !== this.extraDirs.length) {
+      throw new Error('AclSandbox extraWriteSids length must match extraDirs length')
+    }
     if (this.mode === 'workspace-write' && this.tempDirOption !== null && this.tempWriteSid === undefined) {
       throw new Error('AclSandbox workspace-write with temp requires a temp write SID — derive it via tempWriteSid()')
     }
@@ -213,6 +340,18 @@ export class AclSandbox {
     }
     if (this.writeSid !== undefined && this.tempWriteSid === this.writeSid) {
       throw new Error('AclSandbox workspace and temp write SIDs must be distinct')
+    }
+    if (this.mode === 'read-only' || this.writeSid === undefined) {
+      this.extraWriteSids = []
+      this.writeSids = []
+    } else {
+      this.extraWriteSids = options.extraWriteSids !== undefined
+        ? [...options.extraWriteSids]
+        : this.extraDirs.map(dir => workspaceWriteSid(canonicalPathOrFallback(dir)))
+      if (this.tempWriteSid !== undefined && this.extraWriteSids.includes(this.tempWriteSid)) {
+        throw new Error('AclSandbox extra and temp write SIDs must be distinct')
+      }
+      this.writeSids = [...new Set([this.writeSid, ...this.extraWriteSids])]
     }
   }
 
@@ -229,17 +368,19 @@ export class AclSandbox {
     let currentTokenOpen = true
     let restrictedToken: NativePtr | undefined
     try {
-      const parseSid = (sid: string): NativePtr => {
-        const sidSlot = allocPtrSlot()
-        if (api.convertStringSidToSidW(sid, sidSlot) === 0) {
-          throwLastError(api, 'ConvertStringSidToSidW', sid)
-        }
-        const parsedSid = decodePtr(sidSlot)
-        if (parsedSid === null) throw new Win32Error('ConvertStringSidToSidW', api.getLastError(), sid)
-        return parsedSid
+      const sidPtrByString = new Map<string, NativePtr>()
+      if (this.writeSid !== undefined) {
+        this.writeSidPtr = parseStringSid(api, this.writeSid)
+        sidPtrByString.set(this.writeSid, this.writeSidPtr)
       }
-      this.writeSidPtr = this.writeSid === undefined ? undefined : parseSid(this.writeSid)
-      this.tempWriteSidPtr = this.tempWriteSid === undefined ? undefined : parseSid(this.tempWriteSid)
+      this.tempWriteSidPtr = this.tempWriteSid === undefined ? undefined : parseStringSid(api, this.tempWriteSid)
+      for (const [index, extraSid] of this.extraWriteSids.entries()) {
+        if (!sidPtrByString.has(extraSid)) {
+          const parsedExtraSid = parseStringSid(api, extraSid)
+          sidPtrByString.set(extraSid, parsedExtraSid)
+          this.extraWriteSidPtrs.push({ label: `extra write SID #${index}`, ptr: parsedExtraSid })
+        }
+      }
 
       const tempDir = this.mode === 'read-only' || this.tempDirOption === null ? null : this.tempDirOption
       /* v8 ignore next -- constructor validation requires workspace-write to supply
@@ -255,20 +396,30 @@ export class AclSandbox {
 
       // manageDacls: false — the caller (the sandbox seam's grant) already
       // materialized the ACEs; this instance must neither add nor remove any.
-      // When this instance owns the DACLs, writableDir ACEs are STANDING (the
-      // per-workspace reuse cache — dispose() never revokes them, or the next
-      // provision would re-propagate the whole tree) and the temp ACE is
+      // When this instance owns the DACLs, writableDir/extraDir ACEs are
+      // STANDING by default (the per-workspace reuse cache — dispose() keeps
+      // them unless revokeWorkspaceAclOnDispose is true) and the temp ACE is
       // REVOCABLE (dispose() removes it before the private directory is
       // deleted; the ambient temp root is never granted).
       // The Low label SID and the world SID the grants deny and label with.
       const lowLabelSid = makeWellKnownSid(api, abi.WinLowLabelSid)
+      this.sidAllocations.push(lowLabelSid)
       const worldSid = makeWellKnownSid(api, abi.WinWorldSid)
-      this.sidAllocations.push(lowLabelSid, worldSid)
+      this.worldSidPtr = worldSid
 
       if (this.manageDacls) {
         if (this.writeSidPtr !== undefined) {
-          for (const path of this.writableDirs) {
+          for (const path of this.baseWritableDirs) {
+            if (this.revokeWorkspaceAclOnDispose) this.grantedPaths.push({ path, sidPtr: this.writeSidPtr })
             grantWrite(api, path, this.writeSidPtr, lowLabelSid, worldSid)
+          }
+          for (const [index, extraDir] of this.extraDirs.entries()) {
+            const extraSid = this.extraWriteSids[index]
+            const extraSidPtr = extraSid === undefined ? undefined : sidPtrByString.get(extraSid)
+            if (extraSidPtr !== undefined) {
+              if (this.revokeWorkspaceAclOnDispose) this.grantedPaths.push({ path: extraDir, sidPtr: extraSidPtr })
+              grantWrite(api, extraDir, extraSidPtr, lowLabelSid, worldSid)
+            }
           }
           if (tempDir !== null && this.tempWriteSidPtr !== undefined) {
             // Record BEFORE granting: grantWrite can throw after a successful
@@ -281,7 +432,7 @@ export class AclSandbox {
       }
       const logonSid = findLogonSid(api, currentToken)
       this.sidAllocations.push(logonSid)
-      const writeSids = [this.writeSidPtr, this.tempWriteSidPtr].filter((sid): sid is NativePtr => sid !== undefined)
+      const writeSids = [...sidPtrByString.values(), this.tempWriteSidPtr].filter((sid): sid is NativePtr => sid !== undefined)
       restrictedToken = createRestrictedToken(
         api, currentToken, logonSid, writeSids,
         { world: worldSid },
@@ -306,10 +457,9 @@ export class AclSandbox {
       currentTokenOpen = false
       this.api = api
     } catch (error) {
-      // Fail-closed cleanup: never leave a revocable (temp) grant or SID
-      // allocation behind a failed init. Standing workspace ACEs are NOT
-      // revoked — they are the intended end state (the reuse cache), not an
-      // error artifact.
+      // Fail-closed cleanup: never leave a revocable grant or SID allocation
+      // behind a failed init. Standing workspace ACEs are NOT revoked unless
+      // revokeWorkspaceAclOnDispose recorded them in grantedPaths.
       const cleanupFailures: unknown[] = []
       if (currentTokenOpen && api.closeHandle(currentToken) === 0) {
         cleanupFailures.push(new Win32Error('CloseHandle', api.getLastError(), 'current process token after init failure'))
@@ -319,20 +469,27 @@ export class AclSandbox {
       }
       for (const grant of this.grantedPaths) {
         try {
-          revokeWrite(api, grant.path, grant.sidPtr)
+          revokeWrite(api, grant.path, grant.sidPtr, this.worldSidPtr)
         } catch (cleanupError) {
           cleanupFailures.push(cleanupError)
         }
       }
-      for (const [label, sidPtr] of [['workspace write SID', this.writeSidPtr], ['temp write SID', this.tempWriteSidPtr]] as const) {
+      for (const [label, sidPtr] of [
+        ['workspace write SID', this.writeSidPtr],
+        ['temp write SID', this.tempWriteSidPtr],
+        ...this.extraWriteSidPtrs.map(({ label, ptr }): readonly [string, NativePtr] => [label, ptr]),
+      ] as const) {
         freeSidBestEffort(api, sidPtr, label, cleanupFailures)
       }
       for (const sidPtr of this.sidAllocations.splice(0)) {
         freeSidBestEffort(api, sidPtr, 'init SID allocation', cleanupFailures)
       }
+      freeSidBestEffort(api, this.worldSidPtr, 'world SID', cleanupFailures)
       this.token = undefined
       this.writeSidPtr = undefined
       this.tempWriteSidPtr = undefined
+      this.worldSidPtr = undefined
+      this.extraWriteSidPtrs = []
       this.tempDirResolved = undefined
       this.grantedPaths = []
       if (cleanupFailures.length > 0) {
@@ -402,9 +559,10 @@ export class AclSandbox {
   }
 
   /**
-   * Revoke the revocable (temp) grants, free the SID, close the token; the
-   * standing workspace ACEs stay (the reuse cache). Reports every cleanup
-   * failure.
+   * Revoke the revocable grants (temp grants, plus workspace/extra grants when
+   * `revokeWorkspaceAclOnDispose` is enabled), free the SIDs, and close the
+   * token; standing workspace ACEs stay when `revokeWorkspaceAclOnDispose` is
+   * false (the reuse cache). Reports every cleanup failure.
    */
   dispose(): void {
     const api = this.api
@@ -413,13 +571,17 @@ export class AclSandbox {
     if (this.manageDacls) {
       for (const grant of this.grantedPaths) {
         try {
-          revokeWrite(api, grant.path, grant.sidPtr)
+          revokeWrite(api, grant.path, grant.sidPtr, this.worldSidPtr)
         } catch (error) {
           failures.push(error)
         }
       }
     }
-    for (const [label, sidPtr] of [['workspace write SID', this.writeSidPtr], ['temp write SID', this.tempWriteSidPtr]] as const) {
+    for (const [label, sidPtr] of [
+      ['workspace write SID', this.writeSidPtr],
+      ['temp write SID', this.tempWriteSidPtr],
+      ...this.extraWriteSidPtrs.map(({ label, ptr }): readonly [string, NativePtr] => [label, ptr]),
+    ] as const) {
       freeSidBestEffort(api, sidPtr, label, failures)
     }
     const token = this.token
@@ -435,10 +597,13 @@ export class AclSandbox {
     for (const sidPtr of this.sidAllocations.splice(0)) {
       freeSidBestEffort(api, sidPtr, 'init SID allocation', failures)
     }
+    freeSidBestEffort(api, this.worldSidPtr, 'world SID', failures)
     this.api = undefined
     this.token = undefined
     this.writeSidPtr = undefined
     this.tempWriteSidPtr = undefined
+    this.worldSidPtr = undefined
+    this.extraWriteSidPtrs = []
     this.grantedPaths = []
     if (failures.length > 0) {
       throw new AggregateError(failures, `AclSandbox dispose completed with ${failures.length} cleanup failure(s)`)

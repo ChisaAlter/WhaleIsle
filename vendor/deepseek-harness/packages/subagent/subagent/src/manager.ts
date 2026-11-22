@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { isAbsolute, resolve } from 'node:path'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
@@ -39,9 +40,11 @@ import type { SubagentCatalogEntry, SubagentIdentityProjection } from './project
 import { SubagentRunId } from './types.ts'
 import type {
   ContinuationAdmission, ContinuableCreateRequest, ContinuableCreateSpec, SubagentInterruptAuthority,
-  SubagentActivationSpec, SubagentActivation, SubagentMemberNames, SubagentStartRequest, SubagentRun,
-  SubagentSendMessageOptions, SubagentResult, SubagentRunInfo, ResolvedSubagentStartRequest,
+  SubagentInterruptOptions, SubagentActivationSpec, SubagentActivation, SubagentMemberNames,
+  SubagentStartRequest, SubagentRun, SubagentSendMessageOptions, SubagentResult, SubagentRunInfo,
+  ResolvedSubagentStartRequest, SubagentWorktreeSpec,
 } from './types.ts'
+import { finalizeIsolatedSubagentWorktree, rollbackIsolatedSubagentWorktree } from './worktree.ts'
 import { attachStructuredRuntime } from './structured.ts'
 import type { StructuredAttachment } from './structured.ts'
 import type { SubagentDelivery } from './control-types.ts'
@@ -79,6 +82,7 @@ interface MaterializeBase {
   path: string | undefined
   signal: AbortSignal
   delivery?: 'parent' | 'caller' | undefined
+  worktree?: SubagentWorktreeSpec | undefined
 }
 
 /** Creation inputs for a local residency or one external backend execution. */
@@ -121,6 +125,7 @@ interface Materialization {
   readonly root: Agent
   readonly settled: Promise<void>
   readonly controller: AbortController
+  ancestors?: readonly SessionId[] | undefined
 }
 
 /** Residency state observed by the natural-settlement watcher. */
@@ -144,6 +149,8 @@ export class SubagentManager {
   private readonly rootPools = new WeakMap<Agent, ActivationPool>()
   /** Materializations admitted before drain, tracked through publication or rollback. */
   private readonly materializations = new Set<Materialization>()
+  /** Activations currently inside a synchronous interrupt pass, guarding reentrant cycles. */
+  private readonly interrupting = new WeakSet<Activation>()
   /** Per-child serializer shared by delivery, release, and disposal. */
   private readonly locks = new ChildLock()
   /** Structural Cordis owner of every Activation handle. */
@@ -189,12 +196,16 @@ export class SubagentManager {
 
   /**
    * Interrupt one live continuable child's current turn under the supplied authority.
+   * When `cascade` is enabled (the default), live resident descendants and matching
+   * in-flight child materializations under the target are interrupted leaf-to-root first.
    * @param targetSessionId - the durable child session id to interrupt.
    * @param authority - a trusted user operation or exact live ancestor Agent.
+   * @param options - cascade control; defaults to `{ cascade: true }`.
    */
   interrupt(
     targetSessionId: SessionId,
     authority: SubagentInterruptAuthority,
+    options?: SubagentInterruptOptions,
   ): void {
     if (authority.kind === 'ancestor') {
       const caller = authority.agent
@@ -220,16 +231,55 @@ export class SubagentManager {
         'UNAUTHORIZED',
       )
     }
-    // Disposal already stopped the target with a whole-Activation teardown;
-    // a second cancel would be a redundant signal on a closing handle.
-    if (activation.closing !== undefined) return
+
+    const cascade = options?.cascade ?? true
+    if (cascade) {
+      // Abort pending child materializations descending from the target before signalling leaves.
+      for (const pending of this.materializations) {
+        if (pending.root === activation.root && pending.ancestors?.includes(activation.childId) === true) {
+          pending.controller.abort({ kind: authority.kind === 'user' ? 'user' : 'parent' })
+        }
+      }
+    }
+
+    const targets: Activation[] = cascade
+      ? [...this.resident.values()]
+        .filter(item =>
+          item === activation
+          || (item.root === activation.root && item.ancestors.includes(activation.childId)))
+        // Leaf-to-root order: deepest descendants first, target root last.
+        .sort((left, right) => right.ancestors.length - left.ancestors.length)
+      : [activation]
+
+    const scheduled: Activation[] = []
+    for (const item of targets) {
+      // Disposal already stopped a closing handle, and interrupting already tracks active stack frames.
+      if (this.resident.get(item.childId) !== item || item.closing !== undefined || this.interrupting.has(item)) {
+        continue
+      }
+      this.interrupting.add(item)
+      scheduled.push(item)
+    }
+
     const kind = authority.kind === 'user' ? 'user' : 'parent'
-    if (activation.kind === 'local') {
-      activation.handle.agent.cancel({ kind }, { keepInbox: true })
-    } else {
-      activation.controller.abort({ kind })
-      // The settlement observer reports teardown failures.
-      void this.dispose(activation).catch(() => undefined)
+    try {
+      for (const item of scheduled) {
+        // Re-check in case an earlier leaf cancel synchronously removed or began closing an ancestor.
+        if (this.resident.get(item.childId) !== item || item.closing !== undefined) {
+          continue
+        }
+        if (item.kind === 'local') {
+          item.handle.agent.cancel({ kind }, { keepInbox: true })
+        } else {
+          item.controller.abort({ kind })
+          // The settlement observer reports teardown failures.
+          void this.dispose(item).catch(() => undefined)
+        }
+      }
+    } finally {
+      for (const item of scheduled) {
+        this.interrupting.delete(item)
+      }
     }
   }
 
@@ -422,6 +472,7 @@ export class SubagentManager {
           signal,
           delivery: spec.delivery,
           outputSchema: spec.outputSchema,
+          ...(spec.worktree === undefined ? {} : { worktree: spec.worktree }),
         })
         established = activation
         const child = requireLocalActivation(activation).handle.agent
@@ -440,7 +491,7 @@ export class SubagentManager {
         )
       })
       return { ...this.receipt(established), childId, messageId }
-    })
+    }, ancestry.ancestors)
   }
 
   /**
@@ -490,6 +541,7 @@ export class SubagentManager {
           path,
           signal,
           delivery,
+          ...(spec.worktree === undefined ? {} : { worktree: spec.worktree }),
           start: signal => start({
             ...request, cwd, signal,
           }),
@@ -511,7 +563,7 @@ export class SubagentManager {
         }
         throw error
       }
-    })
+    }, ancestry.ancestors)
   }
 
   /** Capture the explicit or inherited directory while the parent still owns startup. */
@@ -746,14 +798,27 @@ export class SubagentManager {
   }
 
   /** Keep subagent tree shutdown and host waits joined to preparation, publication, and rollback. */
-  private trackStartup<T>(root: Agent, signal: AbortSignal, start: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  private trackStartup<T>(
+    root: Agent,
+    signal: AbortSignal,
+    start: (signal: AbortSignal, bindAncestors: (ancestors: readonly SessionId[]) => void) => Promise<T>,
+    ancestors?: readonly SessionId[],
+  ): Promise<T> {
     this.assertAdmitting(root)
     signal.throwIfAborted()
     const settled = Promise.withResolvers<void>()
     const controller = new AbortController()
-    const materialization: Materialization = { root, settled: settled.promise, controller }
+    const materialization: Materialization = {
+      root,
+      settled: settled.promise,
+      controller,
+      ...(ancestors === undefined ? {} : { ancestors }),
+    }
     this.materializations.add(materialization)
-    return start(AbortSignal.any([signal, controller.signal])).catch((error: unknown) => {
+    const bindAncestors = (resolved: readonly SessionId[]): void => {
+      materialization.ancestors = resolved
+    }
+    return start(AbortSignal.any([signal, controller.signal]), bindAncestors).catch((error: unknown) => {
       if (error instanceof Error && error.name === 'AbortError') this.assertAdmitting(root)
       throw error
     }).finally(() => {
@@ -861,6 +926,16 @@ export class SubagentManager {
           const workingDirectory = childCtx.get('workingDirectory')
           if (workingDirectory === undefined) throw new Error('local subagents require the working-directory service')
           await workingDirectory.set(child, create.cwd, inputs.signal)
+          if (inputs.worktree !== undefined) {
+            const sandboxPolicy = childCtx.get('sandboxPolicy')
+            if (sandboxPolicy !== undefined) {
+              const worktreePath = inputs.worktree.path
+              childCtx.effect(
+                () => sandboxPolicy.registerWritableRoot(child.session, worktreePath),
+                'subagent.worktree.writableRoot()',
+              )
+            }
+          }
         }
         if (inputs.composition.agentPreset === undefined) await applyChildComposition(childCtx, create?.parent, inputs.composition)
         if (inputs.outputSchema !== undefined) {
@@ -911,6 +986,7 @@ export class SubagentManager {
       ancestors: inputs.ancestors,
       path: inputs.path,
       delivery: inputs.delivery ?? 'parent',
+      ...(inputs.worktree === undefined ? {} : { worktree: inputs.worktree }),
       result: Promise.withResolvers<SubagentResult>(),
       closing: undefined,
       accepted: false,
@@ -977,6 +1053,9 @@ export class SubagentManager {
     return this.close(activation, async () => {
       try {
         await (activation.kind === 'local' ? activation.handle.dispose() : activation.run.dispose())
+        if (activation.worktree !== undefined) {
+          await rollbackIsolatedSubagentWorktree(activation.worktree)
+        }
       } finally {
         this.resident.delete(activation.childId)
         activation.releaseSlot()
@@ -1110,6 +1189,11 @@ export class SubagentManager {
       ))
     }
 
+    if (activation.worktree !== undefined) {
+      const worktreeOutcome = await finalizeIsolatedSubagentWorktree(activation.worktree)
+      result = { ...result, worktree: worktreeOutcome }
+    }
+
     let failure: SubagentError | undefined
     if (failures.length === 1) {
       failure = failures[0]
@@ -1127,7 +1211,9 @@ export class SubagentManager {
     }
     this.resident.delete(childId)
     activation.releaseSlot()
-    const terminal: SubagentResult = failure === undefined ? result : { output: [], stopReason: 'error' }
+    const terminal: SubagentResult = failure === undefined
+      ? result
+      : { output: [], stopReason: 'error', ...result.worktree === undefined ? {} : { worktree: result.worktree } }
     await this.notifySettlement(activation, result)
     // The sole end publication follows resource release and parent notification,
     // before result delivery.
@@ -1268,7 +1354,7 @@ export class SubagentManager {
 
   /** Reconstruct only the target under its subagent tree root; the caller owns acceptance or rollback. */
   private async restoreTarget(root: Agent, childId: SessionId, signal: AbortSignal): Promise<Activation> {
-    return this.trackStartup(root, signal, async (signal) => {
+    return this.trackStartup(root, signal, async (signal, bindAncestors) => {
       using source = await this.observeContinuation(childId, signal)
       this.assertAdmitting(root)
       const ownEvents = source.events.slice(source.inheritedEventCount)
@@ -1280,6 +1366,8 @@ export class SubagentManager {
         )
       }
       const { ancestors, path } = await this.resolveCreationAncestry(source, signal, root)
+      bindAncestors(ancestors)
+      signal.throwIfAborted()
       let activation: Activation
       try {
         const projectedPreset = source.projections?.values.agentPreset

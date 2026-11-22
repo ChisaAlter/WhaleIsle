@@ -1050,7 +1050,7 @@ class DshManager extends EventEmitter {
     this.preparationAbort = preparationAbort;
     let preparedHarnessRoot;
     try {
-      preparedHarnessRoot = await this._ensurePackagedHarness((line) => { if (isCurrent()) this.log(line); }, { signal: preparationAbort.signal });
+      preparedHarnessRoot = await this._ensurePackagedHarness((/** @type {string} */ line) => { if (isCurrent()) this.log(line); }, { signal: preparationAbort.signal });
       if (!isCurrent()) {
         throw cancelledError();
       }
@@ -1330,6 +1330,7 @@ class DshManager extends EventEmitter {
     return this._deps.readPidFile();
   }
 
+  /** @param {boolean} [shell] */
   _writePidFile(pid, port, startTime, shell) {
     return this._deps.writePidFile(pid, port, startTime, shell);
   }
@@ -1342,6 +1343,7 @@ class DshManager extends EventEmitter {
     return this._deps.clearPidFile();
   }
 
+  /** @param {import('./dsh-win-process').WindowsShellContext} [context] */
   _killTree(pid, context) {
     return this._deps.killTree(pid, context);
   }

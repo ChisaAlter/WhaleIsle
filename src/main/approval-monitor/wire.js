@@ -396,6 +396,7 @@ function muxUrlForOrigin(origin) {
  * @param {typeof fetch} [options.fetchImpl]
  * @param {number} [options.reconcileDelayMs]
  * @param {() => number} [options.nowImpl]
+ * @param {number} [options.settleTimeoutMs]
  */
 function createApprovalWireClient(options = {}) {
   const WebSocketCtor = options.WebSocketImpl || WebSocket;

@@ -23,9 +23,20 @@ function rpcEndpoint(baseUrl, method) {
 /** Default per-RPC timeout when callers do not supply an explicit signal/timeout. */
 const DEFAULT_RPC_TIMEOUT_MS = 15_000;
 
+/**
+ * @template T
+ * @param {Promise<T>} fetchPromise
+ * @param {string} method
+ * @param {number} timeoutMs
+ * @param {AbortController} controller
+ * @param {AbortSignal} [externalSignal]
+ * @returns {Promise<T>}
+ */
 function raceRpcTimeout(fetchPromise, method, timeoutMs, controller, externalSignal) {
+  /** @type {ReturnType<typeof setTimeout> | null} */
   let timer = null;
   let timedOut = false;
+  /** @type {(() => void) | null} */
   let onExternalAbort = null;
   const timeoutError = Object.assign(new Error(`RPC ${method} 超时（${timeoutMs}ms）`), { code: 'ETIMEDOUT' });
   const timeoutPromise = new Promise((_, reject) => {
@@ -45,7 +56,7 @@ function raceRpcTimeout(fetchPromise, method, timeoutMs, controller, externalSig
     }
   });
   return Promise.race([
-    fetchPromise.catch((err) => {
+    fetchPromise.catch((/** @type {unknown} */ err) => {
       throw timedOut ? timeoutError : err;
     }),
     timeoutPromise,

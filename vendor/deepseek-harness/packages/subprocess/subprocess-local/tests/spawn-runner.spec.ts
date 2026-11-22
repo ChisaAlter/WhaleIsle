@@ -749,10 +749,10 @@ describe('Windows Job runner protocol owner', () => {
 
   it.each([undefined, 'pipe'] as const)('closes every target carrier with control %s before the first Windows poll', async (control) => {
     const events: string[] = []
-    const interval = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback: () => void) => {
-      events.push('interval')
+    const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: () => void) => {
+      events.push('timeout')
       queueMicrotask(callback)
-      return 1 as unknown as ReturnType<typeof setInterval>
+      return 1 as unknown as ReturnType<typeof setTimeout>
     })
     try {
       const host = new FakeRunnerHost()
@@ -764,11 +764,11 @@ describe('Windows Job runner protocol owner', () => {
         }),
       })
       await runWindows(host, native, { type: 'start', cwd: 'C:\\target', env: {}, ...control === undefined ? {} : { control } })
-      expect(events).toEqual(['close:4', 'close:5', 'close:6', ...control === 'pipe' ? ['close:7'] : [], 'interval', 'poll'])
+      expect(events).toEqual(['close:4', 'close:5', 'close:6', ...control === 'pipe' ? ['close:7'] : [], 'timeout', 'poll'])
       expect(host.sent).toEqual([{ type: 'target-exit', exitCode: 0 }])
       expect(host.exitCode).toBe(0)
     } finally {
-      interval.mockRestore()
+      timeout.mockRestore()
     }
   })
 
@@ -917,10 +917,11 @@ describe('Windows Job runner protocol owner', () => {
     expect(failedHost.sent).toMatchObject([{ type: 'error', error: { message: 'poll failed' } }])
 
     let tick: (() => void) | undefined
-    const interval = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback: () => void) => {
+    const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: () => void) => {
       tick = callback
-      return 1 as unknown as ReturnType<typeof setInterval>
+      return 1 as unknown as ReturnType<typeof setTimeout>
     })
+    const cleared = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => undefined)
     try {
       const host = new FakeRunnerHost()
       const native = internals({ pollProcessExit: vi.fn(() => undefined), isJobEmpty: vi.fn(() => false) })
@@ -935,18 +936,21 @@ describe('Windows Job runner protocol owner', () => {
       tick?.()
       host.disconnect()
       await running
+      expect(cleared).toHaveBeenCalled()
       tick?.()
     } finally {
-      interval.mockRestore()
+      cleared.mockRestore()
+      timeout.mockRestore()
     }
   })
 
   it('cleans a direct handle after the Job identity was already cleared', async () => {
     let tick: (() => void) | undefined
-    const interval = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback: () => void) => {
+    const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: () => void) => {
       tick = callback
-      return 1 as unknown as ReturnType<typeof setInterval>
+      return 1 as unknown as ReturnType<typeof setTimeout>
     })
+    const cleared = vi.spyOn(globalThis, 'clearTimeout').mockImplementation(() => undefined)
     try {
       const host = new FakeRunnerHost()
       const native = internals({ pollProcessExit: vi.fn(() => undefined), isJobEmpty: vi.fn(() => true) })
@@ -962,11 +966,68 @@ describe('Windows Job runner protocol owner', () => {
       host.emit('message', { type: 'terminate' })
       host.disconnect()
       await running
+      expect(cleared).toHaveBeenCalled()
       expect(native.closeHandleChecked).toHaveBeenCalledWith(
         expect.anything(), 10n, 'ordinary direct process cleanup',
       )
     } finally {
-      interval.mockRestore()
+      cleared.mockRestore()
+      timeout.mockRestore()
+    }
+  })
+
+  it('uses adaptive backoff (2 -> 5 -> 10 -> 25 -> 50 ms cap), resets on terminate/exit, and clears timers immediately', async () => {
+    const delays: number[] = []
+    let nextTick: (() => void) | undefined
+    let nextTimerId = 100
+    const clearedIds: unknown[] = []
+    const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: () => void, ms?: number) => {
+      delays.push(ms ?? 0)
+      nextTick = callback
+      nextTimerId += 1
+      return nextTimerId as never
+    })
+    const cleared = vi.spyOn(globalThis, 'clearTimeout').mockImplementation((id) => {
+      clearedIds.push(id)
+    })
+    try {
+      const host = new FakeRunnerHost()
+      const pollState: { exitCode: number | undefined; jobEmpty: boolean } = { exitCode: undefined, jobEmpty: false }
+      const native = internals({
+        pollProcessExit: vi.fn(() => pollState.exitCode),
+        isJobEmpty: vi.fn(() => pollState.jobEmpty),
+      })
+      const running = runSpawnRunner(
+        WINDOWS_RUNNER_SELECTION,
+        ['--', 'tool.exe'],
+        hostArgument(host),
+        native,
+      )
+      host.emit('message', { type: 'start', cwd: 'C:\\target', env: {} })
+      await new Promise<void>((resolveImmediate) => { setImmediate(resolveImmediate) })
+      // Backoff progresses 2 -> 5 -> 10 -> 25 -> 50 -> 50 across idle polls.
+      for (let i = 0; i < 6; i++) nextTick?.()
+      expect(delays).toEqual([2, 5, 10, 25, 50, 50, 50])
+
+      // Termination clears the pending 50 ms timer immediately and resets backoff to 2 ms.
+      host.emit('message', { type: 'terminate' })
+      expect(clearedIds.at(-1)).toBe(107)
+      expect(delays.at(-1)).toBe(2)
+
+      // Direct process exit while Job stays alive resets backoff to 2 ms, then completes with zero extra timers once Job empties.
+      pollState.exitCode = 0
+      nextTick?.()
+      expect(delays.at(-1)).toBe(2)
+      await Promise.resolve()
+      pollState.jobEmpty = true
+      nextTick?.()
+      await running
+      expect(host.sent).toEqual([{ type: 'target-exit', exitCode: 0 }])
+      expect(host.exitCode).toBe(0)
+      expect(delays).toHaveLength(9)
+    } finally {
+      cleared.mockRestore()
+      timeout.mockRestore()
     }
   })
 

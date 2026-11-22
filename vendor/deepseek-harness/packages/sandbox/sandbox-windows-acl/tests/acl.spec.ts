@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
 import { buildExplicitAccess, grantWrite, lockFilePath, revokeWrite, withPathLock } from '../src/acl.ts'
-import { AclSandbox } from '../src/index.ts'
+import { AclSandbox, revokeWorkspaceGrant, workspaceWriteSid } from '../src/index.ts'
 import { createRestrictedToken, makeWellKnownSid } from '../src/token.ts'
 import { allocOverlapped, allocPtrSlot, decodePtr, isInvalidHandle, isNullPtr, win32 } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
@@ -42,8 +42,9 @@ interface SidLayout {
   subAuthority: number[]
 }
 
-/** One direct (explicit, non-inherited) allow ACE of a directory DACL. */
+/** One direct (explicit, non-inherited) ACE of a directory DACL. */
 interface DirectAce {
+  type: number
   sid: string
   mask: number
 }
@@ -91,10 +92,15 @@ function readDirectAces(api: Win32Bindings, path: string): DirectAce[] {
     const aclSize = koffi.decode(acl, 2, 'uint16') as number
     const aces: DirectAce[] = []
     for (let offset = 8; offset + 8 <= aclSize;) {
+      const type = koffi.decode(acl, offset, 'uint8') as number
       const flags = koffi.decode(acl, offset + 1, 'uint8') as number
       const aceSize = koffi.decode(acl, offset + 2, 'uint16') as number
       if ((flags & abi.INHERITED_ACE) === 0) {
-        aces.push({ sid: sidString(koffi.decode(acl, offset + 8, SID_STRUCT) as SidLayout), mask: koffi.decode(acl, offset + 4, 'uint32') as number })
+        aces.push({
+          type,
+          sid: sidString(koffi.decode(acl, offset + 8, SID_STRUCT) as SidLayout),
+          mask: koffi.decode(acl, offset + 4, 'uint32') as number,
+        })
       }
       offset += aceSize
     }
@@ -325,7 +331,7 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       // The ambient delete route inside another granted root is what the deny
       // removes; the capability ACE stays the only delete authority there.
       const denied = readDirectAces(api, dir).filter(ace => ace.sid === 'S-1-1-0')
-      expect(denied).toEqual([{ sid: 'S-1-1-0', mask: abi.FILE_DELETE_CHILD }])
+      expect(denied).toEqual([{ type: abi.ACCESS_DENIED_ACE_TYPE, sid: 'S-1-1-0', mask: abi.FILE_DELETE_CHILD }])
       revokeWrite(api, dir, capabilitySid)
       expect(readLabelAces(api, dir)).toEqual([])
       expect(readDirectAces(api, dir).some(ace => ace.sid === 'S-1-4-4242-9')).toBe(false)
@@ -511,5 +517,51 @@ describe.skipIf(!isWin32)('ACL editing', () => {
     } finally {
       sandbox.dispose()
     }
+  })
+
+  it('revokeWorkspaceAclOnDispose removes both capability and ambient-delete deny ACEs while revokeWorkspaceGrant handles standing caches', async () => {
+    const api = await win32()
+    const ws = scratch()
+    const extra = scratch()
+    const wsSid = workspaceWriteSid(ws)
+    const extraSid = workspaceWriteSid(extra)
+
+    // Default false preserves standing cache ACEs across dispose.
+    const cached = new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      tempDir: null,
+      writeSid: wsSid,
+      mode: 'workspace-write',
+    })
+    await cached.init()
+    cached.dispose()
+    expect(readDirectAces(api, ws).some(ace => ace.sid === wsSid)).toBe(true)
+    expect(readDirectAces(api, ws).some(ace => ace.sid === 'S-1-1-0' && ace.type === abi.ACCESS_DENIED_ACE_TYPE)).toBe(true)
+    expect(readDirectAces(api, extra).some(ace => ace.sid === extraSid)).toBe(true)
+
+    expect(revokeWorkspaceGrant(ws)).toBe(true)
+    expect(revokeWorkspaceGrant(extra, extraSid)).toBe(true)
+    expect(readDirectAces(api, ws).some(ace => ace.sid === wsSid)).toBe(false)
+    expect(readDirectAces(api, ws).some(ace => ace.sid === 'S-1-1-0' && ace.type === abi.ACCESS_DENIED_ACE_TYPE)).toBe(false)
+    expect(readDirectAces(api, extra).some(ace => ace.sid === extraSid)).toBe(false)
+
+    // revokeWorkspaceAclOnDispose: true removes capability + ambient-delete deny on dispose.
+    const transient = new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      tempDir: null,
+      writeSid: wsSid,
+      revokeWorkspaceAclOnDispose: true,
+      mode: 'workspace-write',
+    })
+    await transient.init()
+    expect(readDirectAces(api, ws).some(ace => ace.sid === wsSid)).toBe(true)
+    expect(readDirectAces(api, extra).some(ace => ace.sid === extraSid)).toBe(true)
+    transient.dispose()
+    expect(readDirectAces(api, ws).some(ace => ace.sid === wsSid)).toBe(false)
+    expect(readDirectAces(api, ws).some(ace => ace.sid === 'S-1-1-0' && ace.type === abi.ACCESS_DENIED_ACE_TYPE)).toBe(false)
+    expect(readDirectAces(api, extra).some(ace => ace.sid === extraSid)).toBe(false)
+    expect(readDirectAces(api, extra).some(ace => ace.sid === 'S-1-1-0' && ace.type === abi.ACCESS_DENIED_ACE_TYPE)).toBe(false)
   })
 })

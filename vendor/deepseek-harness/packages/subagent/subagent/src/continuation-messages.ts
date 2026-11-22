@@ -9,6 +9,7 @@ import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRunId } from './types.ts'
+import { formatWorktreeOutcomeNotice } from './worktree.ts'
 
 /** Durable attribution for one model-authored message between Agents. */
 export interface AgentMessageSource {
@@ -164,6 +165,8 @@ export function createSettlementMessage(
           : [{ type: 'text' as const, text: 'Its closing message:' }, ...closingText],
       ...terminal.structured !== undefined
         ? [{ type: 'text' as const, text: `Structured result: ${JSON.stringify(terminal.structured)}` }] : [],
+      ...terminal.worktree !== undefined
+        ? [{ type: 'text' as const, text: formatWorktreeOutcomeNotice(terminal.worktree) }] : [],
       ...terminal.diagnostic !== undefined
         ? [{ type: 'text' as const, text: terminal.diagnostic }] : [],
     ],

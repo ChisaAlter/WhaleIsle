@@ -26,6 +26,7 @@ function connect(
   env: Record<string, string>,
   onServerRequest: (method: string, params: unknown) => Promise<unknown> = () => Promise.resolve(null),
   seen?: SeenRequest[],
+  onNotification?: (method: string, params: unknown) => void,
 ): LspConnection {
   const conn = new LspConnection({
     command: process.execPath,
@@ -39,7 +40,7 @@ function connect(
   }, spawnSubprocess, (method, params) => {
     seen?.push({ method, params })
     return onServerRequest(method, params)
-  })
+  }, undefined, onNotification)
   open.push(conn)
   return conn
 }
@@ -100,6 +101,36 @@ describe('LspConnection', () => {
     await conn.request('initialize', { capabilities: {} })
     await conn.notify('textDocument/didOpen', { textDocument: { uri: 'file:///x', languageId: 'ts', version: 1, text: '' } })
     // No throw and the connection stays usable.
+    await expect(conn.request('textDocument/hover', {})).resolves.toBeDefined()
+  })
+
+  it('forwards server→client notifications to onNotification without corrupting the connection', async () => {
+    const notifications: SeenRequest[] = []
+    const conn = connect(
+      { LSP_FAKE_ON_OPEN: 'notification' },
+      undefined,
+      undefined,
+      (method, params) => { notifications.push({ method, params }) },
+    )
+    await conn.request('initialize', { capabilities: {} })
+    await conn.notify('textDocument/didOpen', { textDocument: { uri: 'file:///x', languageId: 'ts', version: 1, text: '' } })
+    await waitFor(() => notifications.some(n => n.method === 'window/logMessage'))
+    expect(notifications).toContainEqual({
+      method: 'window/logMessage',
+      params: { type: 3, message: 'hello' },
+    })
+    await expect(conn.request('textDocument/hover', {})).resolves.toBeDefined()
+  })
+
+  it('contains exceptions thrown by onNotification observers', async () => {
+    const conn = connect(
+      { LSP_FAKE_ON_OPEN: 'notification' },
+      undefined,
+      undefined,
+      () => { throw new Error('observer boom') },
+    )
+    await conn.request('initialize', { capabilities: {} })
+    await conn.notify('textDocument/didOpen', { textDocument: { uri: 'file:///x', languageId: 'ts', version: 1, text: '' } })
     await expect(conn.request('textDocument/hover', {})).resolves.toBeDefined()
   })
 

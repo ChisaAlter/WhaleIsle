@@ -16,6 +16,7 @@ import {
   DeepSeekHarness,
   type DeepSeekHarnessOptions,
   JsonRpcResponseError,
+  RequestTimeoutError,
   SdkProtocolError,
   TransportClosedError,
   validatedSessionEvent,
@@ -61,6 +62,8 @@ export interface SdkRunSpec {
   disposeEofGraceMs: number
   /** Termination confirmation window (ms), including forced exit on every platform. */
   disposeGraceMs: number
+  /** Bound (ms) on the wire-protocol `session/cancel` RPC before closing the child transport. */
+  cancelTimeoutMs?: number
   /**
    * Host sink for startup, published-run, or shutdown failures. Model-visible
    * text uses fixed safe facts, while this callback retains the original Error.
@@ -77,6 +80,9 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 /** Default bound on the protocol `shutdown` exchange during dispose. */
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 1_000
+
+/** Default bound on the wire-protocol `session/cancel` RPC sent before tearing down an active SDK child. */
+export const DEFAULT_CANCEL_TIMEOUT_MS = 2_000
 
 type SdkFailureStage = 'initialize' | 'session-run' | 'shutdown'
 
@@ -255,11 +261,12 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
   const flags = { cancelled: false }
   let signalCancelSettled!: () => void
   const cancelSettled = new Promise<void>((resolve) => { signalCancelSettled = resolve })
-  const requestCancel = (): void => {
+  let handleCancel: () => void = () => {
     if (flags.cancelled) return
     flags.cancelled = true
     signalCancelSettled()
   }
+  const requestCancel = (): void => { handleCancel() }
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
   const cancelledStartup = new Error('subagent cancelled before the SDK child initialized')
@@ -294,6 +301,43 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
   }
 
   const childSessionId = `session-${randomUUID().replaceAll('-', '')}`
+  let sessionSettled = false
+  let cancelPromise: Promise<void> | undefined
+  const sendWireCancel = (): Promise<void> => {
+    if (cancelPromise !== undefined) return cancelPromise
+    if (sessionSettled) {
+      cancelPromise = Promise.resolve()
+      return cancelPromise
+    }
+    const timeoutMs = spec.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS
+    cancelPromise = harness.client
+      .request('session/cancel', { sessionId: childSessionId }, timeoutMs)
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          // Expected when the child already exited, closed stdio, timed out, or runs a server without session/cancel.
+          if (
+            error instanceof RequestTimeoutError
+            || error instanceof TransportClosedError
+            || error instanceof JsonRpcResponseError
+            || error instanceof SdkProtocolError
+          ) {
+            return
+          }
+          reportFailure(spec, error)
+        },
+      )
+    return cancelPromise
+  }
+  const triggerSessionCancel = (): void => {
+    if (flags.cancelled) return
+    flags.cancelled = true
+    if (!sessionSettled) {
+      void sendWireCancel()
+    }
+    signalCancelSettled()
+  }
+  handleCancel = triggerSessionCancel
   // The child's final answer under the seam's canonical selection rule
   // (`AssistantOutputFold`); a partial answer survives cancel and error paths.
   const fold = new AssistantOutputFold()
@@ -311,6 +355,10 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
   const collectOutput = (): readonly ContentBlock[] => fold.collect() ?? []
   const teardown = async (): Promise<void> => {
     try {
+      // Allow the bounded session/cancel RPC to flush child state before tearing down the transport.
+      if (cancelPromise !== undefined) {
+        await cancelPromise
+      }
       await harness.close()
     } catch (error: unknown) {
       reportFailure(spec, error)
@@ -341,6 +389,7 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
           // Cancellation and transport failure retain every event already received.
           if (accepted) drainNotifications()
         }
+        sessionSettled = true
         if (flags.cancelled) return { output: collectOutput(), stopReason: 'aborted' }
         const outcome = sdkChildOutcome(lastEnd)
         diagnostic = outcome.diagnostic
@@ -349,6 +398,7 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
           ...outcome,
         }
       } catch (error: unknown) {
+        sessionSettled = true
         diagnostic = failureDiagnostic(sdkFailure(error, 'session-run').facts)
         throw error
       } finally {
@@ -363,8 +413,8 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     onAbort,
   })
 
-  // There is no wire-level prompt cancel: dispose settles the result locally,
-  // then the bounded shutdown request + dispose ladder tears the child down.
+  // Send one bounded session/cancel RPC before harness.close() so compliant SDK
+  // runtimes flush cancelled session state prior to the shutdown ladder.
   return subprocessRunHandle({
     id,
     result,

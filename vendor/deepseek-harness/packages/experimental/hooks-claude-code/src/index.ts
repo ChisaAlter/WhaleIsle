@@ -35,6 +35,7 @@ import {
   selectHookGroups,
   type HookOutput,
   type MergedHookOutcome,
+  type RunHookOptions,
 } from '@deepseek-ai/dsh-hook-protocol'
 // Pulls in the declaration-merged subagent events and the identity pairing their
 // start/end edges.
@@ -46,6 +47,18 @@ export const name = 'hooks-claude-code'
 // `shell` runs hooks and `agents` supplies turn numbers; the rest
 // are read opportunistically via ctx.get so a deployment can omit them.
 export const inject = ['shell', 'agents', 'workingDirectory']
+
+type HookSandboxPolicy = NonNullable<RunHookOptions['sandboxPolicy']>
+
+interface OptionalSandboxPolicyService {
+  resolve(request?: { session?: Agent['session'] }): HookSandboxPolicy
+}
+
+/** Resolve optional `sandboxPolicy` service without forcing a required Cordis injection. */
+function resolveHookSandboxPolicy(ctx: Context, agent: Agent | undefined): HookSandboxPolicy | undefined {
+  const service = ctx.get('sandboxPolicy') as OptionalSandboxPolicyService | undefined
+  return service?.resolve(agent === undefined ? {} : { session: agent.session })
+}
 
 /** Plugin config: optional global CC hook config path, per-session discovery, and substitution roots. */
 export interface Config {
@@ -191,11 +204,13 @@ export function apply(ctx: Context, config: Config): void {
             matcher: group.matcher,
           })
         }
+        const sandboxPolicy = resolveHookSandboxPolicy(ctx, opts.agent)
         const { output, durationMs } = await runHook(ctx.shell, hook, {
           payload: { ...payload, cwd: workdir ?? process.cwd() },
           defaultTimeoutMs,
           ...hookEnv ? { env: hookEnv } : {},
           ...workdir !== undefined ? { cwd: workdir } : {},
+          ...sandboxPolicy !== undefined ? { sandboxPolicy } : {},
           signal: opts.signal,
           trailingNewline: true,
           // Discard a `hookSpecificOutput` block whose `hookEventName` names a

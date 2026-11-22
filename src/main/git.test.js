@@ -20,7 +20,7 @@ childProcess.spawn = function countingSpawn(command, args, options) {
 
 const { createWorkspaceAuthority } = require('./workspace-authority');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
-const { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, GH_TIMEOUT_MS, commitArgs, gitBranchList, gitCheckLargeFiles, gitChildEnv, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFailureMessage, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, inferHookName, isGitAdviceLine, isNtfsReservedGitPath, matchesBranchHeadContext, normalizeGitRemoteUrl, parseCustomCommitMessage, parseGhPullRequestRow, parseGitHubRepositoryNameWithOwner, parsePorcelainZ, parseUnifiedDiff, providerFromRemoteUrl, readPrTemplate, readRangeContext, rememberLastKnownPr, resetFetchCooldowns, resetGitExecutableProbe, resetLastKnownPrCache, resolveBaseBranchForNoUpstream, resolveBranchHeadContext, resolveLastKnownPr, resolvePrBaseBranch, resolvePreferredHeadSelector, run, sanitizeProgressText, setGhDefaultBranchResolver, setLookupOpenPullRequest, setWorkspaceAuthority, summarizeCommitMessage } = require('./git.js');
+const { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, GH_TIMEOUT_MS, commitArgs, gitBranchList, gitCheckLargeFiles, gitChildEnv, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFailureMessage, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStagePatch, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, gitUnstagePatch, inferHookName, isGitAdviceLine, isNtfsReservedGitPath, matchesBranchHeadContext, normalizeGitRemoteUrl, parseCustomCommitMessage, parseGhPullRequestRow, parseGitHubRepositoryNameWithOwner, parsePorcelainZ, parseUnifiedDiff, providerFromRemoteUrl, readPrTemplate, readRangeContext, rememberLastKnownPr, resetFetchCooldowns, resetGitExecutableProbe, resetLastKnownPrCache, resolveBaseBranchForNoUpstream, resolveBranchHeadContext, resolveLastKnownPr, resolvePrBaseBranch, resolvePreferredHeadSelector, run, sanitizeProgressText, setGhDefaultBranchResolver, setLookupOpenPullRequest, setWorkspaceAuthority, summarizeCommitMessage } = require('./git.js');
 const { resetReadContexts } = require('./git-read-context.js');
 const { fetchForStatus } = require('./git-fetch.js');
 const { parseRepositoryNameWithOwnerFromNormalized } = require('./git-pullrequest');
@@ -2600,6 +2600,209 @@ test('gitCheckLargeFiles refuses an unauthorized cwd', async () => {
   } finally {
     setWorkspaceAuthority(null);
     fs.rmSync(boot, { recursive: true, force: true });
+    fs.rmSync(outsider, { recursive: true, force: true });
+  }
+});
+
+test('gitStagePatch stages only the selected hunk while preserving other hunks and working tree', async () => {
+  const cwd = makeTempDir();
+  try {
+    git(cwd, ['init']);
+    git(cwd, ['config', 'user.email', 'git-test@example.com']);
+    git(cwd, ['config', 'user.name', 'Git Test']);
+    const file = path.join(cwd, 'notes.txt');
+    const initial = [
+      'header-1',
+      'line-2',
+      'line-3',
+      'line-4',
+      'line-5',
+      'line-6',
+      'line-7',
+      'line-8',
+      'line-9',
+      'footer-10',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, initial, 'utf8');
+    git(cwd, ['add', 'notes.txt']);
+    git(cwd, ['commit', '-m', 'Initial notes']);
+
+    const modified = [
+      'header-1-edited-中文',
+      'line-2',
+      'line-3',
+      'line-4',
+      'line-5',
+      'line-6',
+      'line-7',
+      'line-8',
+      'line-9',
+      'footer-10-edited',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, modified, 'utf8');
+
+    // Stage only the top hunk using --unidiff-zero semantics (0 context lines).
+    const firstHunkPatch = [
+      'diff --git a/notes.txt b/notes.txt',
+      '--- a/notes.txt',
+      '+++ b/notes.txt',
+      '@@ -1 +1 @@',
+      '-header-1',
+      '+header-1-edited-中文',
+    ].join('\n');
+    const staged = await gitStagePatch(cwd, firstHunkPatch);
+    assert.equal(staged.ok, true, staged.message);
+
+    const stagedDiff = git(cwd, ['diff', '--cached', '--unified=0']);
+    assert.match(stagedDiff, /\+header-1-edited-中文/);
+    assert.doesNotMatch(stagedDiff, /footer-10-edited/);
+
+    const unstagedDiff = git(cwd, ['diff', '--unified=0']);
+    assert.match(unstagedDiff, /\+footer-10-edited/);
+    assert.doesNotMatch(unstagedDiff, /header-1-edited-中文/);
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), modified);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('gitUnstagePatch unstages one hunk without dropping other staged hunks or working tree edits', async () => {
+  const cwd = makeTempDir();
+  try {
+    git(cwd, ['init']);
+    git(cwd, ['config', 'user.email', 'git-test@example.com']);
+    git(cwd, ['config', 'user.name', 'Git Test']);
+    const file = path.join(cwd, 'spaced file.txt');
+    const initial = [
+      'alpha',
+      'm1',
+      'm2',
+      'm3',
+      'm4',
+      'm5',
+      'm6',
+      'm7',
+      'omega',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, initial, 'utf8');
+    git(cwd, ['add', 'spaced file.txt']);
+    git(cwd, ['commit', '-m', 'Add spaced file']);
+
+    const modified = [
+      'alpha-staged',
+      'm1',
+      'm2',
+      'm3',
+      'm4',
+      'm5',
+      'm6',
+      'm7',
+      'omega-unstaged',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, modified, 'utf8');
+    git(cwd, ['add', 'spaced file.txt']);
+
+    const secondHunkPatch = [
+      'diff --git a/spaced file.txt b/spaced file.txt',
+      '--- a/spaced file.txt',
+      '+++ b/spaced file.txt',
+      '@@ -9 +9 @@',
+      '-omega',
+      '+omega-unstaged',
+      '',
+    ].join('\n');
+    const unstaged = await gitUnstagePatch(cwd, secondHunkPatch);
+    assert.equal(unstaged.ok, true, unstaged.message);
+
+    const stagedDiff = git(cwd, ['diff', '--cached', '--unified=0']);
+    assert.match(stagedDiff, /\+alpha-staged/);
+    assert.doesNotMatch(stagedDiff, /omega-unstaged/);
+
+    const unstagedDiff = git(cwd, ['diff', '--unified=0']);
+    assert.match(unstagedDiff, /\+omega-unstaged/);
+    assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), modified);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('gitStagePatch and gitUnstagePatch reject invalid inputs, unsafe paths, unauthorized cwd, and bad patches', async () => {
+  const cwd = makeTempDir();
+  const outsider = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-git-patch-out-'));
+  try {
+    git(cwd, ['init']);
+    git(cwd, ['config', 'user.email', 'git-test@example.com']);
+    git(cwd, ['config', 'user.name', 'Git Test']);
+    fs.writeFileSync(path.join(cwd, 'a.txt'), 'one\n', 'utf8');
+    git(cwd, ['add', 'a.txt']);
+    git(cwd, ['commit', '-m', 'Add a']);
+    fs.writeFileSync(path.join(cwd, 'a.txt'), 'two\n', 'utf8');
+
+    for (const invalid of ['', '   ', null, 123, 'diff --git a/a.txt b/a.txt\0']) {
+      assert.equal((await gitStagePatch(cwd, invalid)).ok, false);
+      assert.equal((await gitUnstagePatch(cwd, invalid)).ok, false);
+    }
+
+    assert.equal((await gitStagePatch(cwd, 'just random text without headers')).ok, false);
+
+    const traversalPatch = [
+      'diff --git a/../outside.txt b/../outside.txt',
+      '--- a/../outside.txt',
+      '+++ b/../outside.txt',
+      '@@ -0,0 +1 @@',
+      '+evil',
+    ].join('\n');
+    assert.equal((await gitStagePatch(cwd, traversalPatch)).ok, false);
+
+    const gitMetaPatch = [
+      'diff --git a/.git/hooks/pre-commit b/.git/hooks/pre-commit',
+      '--- /dev/null',
+      '+++ b/.git/hooks/pre-commit',
+      '@@ -0,0 +1 @@',
+      '+echo bad',
+    ].join('\n');
+    assert.equal((await gitStagePatch(cwd, gitMetaPatch)).ok, false);
+
+    const ntfsPatch = [
+      'diff --git a/NUL.txt b/NUL.txt',
+      '--- /dev/null',
+      '+++ b/NUL.txt',
+      '@@ -0,0 +1 @@',
+      '+bad',
+    ].join('\n');
+    assert.equal((await gitStagePatch(cwd, ntfsPatch)).ok, false);
+
+    const mismatchedContext = [
+      'diff --git a/a.txt b/a.txt',
+      '--- a/a.txt',
+      '+++ b/a.txt',
+      '@@ -1 +1 @@',
+      '-nonexistent-line',
+      '+two',
+    ].join('\n');
+    const failed = await gitStagePatch(cwd, mismatchedContext);
+    assert.equal(failed.ok, false);
+    assert.ok(failed.message && failed.message.length > 0);
+
+    const unauth = await gitStagePatch(outsider, [
+      'diff --git a/a.txt b/a.txt',
+      '--- a/a.txt',
+      '+++ b/a.txt',
+      '@@ -1 +1 @@',
+      '-one',
+      '+two',
+    ].join('\n'));
+    assert.equal(unauth.ok, false);
+    assert.equal(unauth.message, 'Git status is unavailable.');
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
     fs.rmSync(outsider, { recursive: true, force: true });
   }
 });

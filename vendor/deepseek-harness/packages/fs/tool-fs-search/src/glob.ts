@@ -109,10 +109,13 @@ export function buildGlobCommand(input: GlobInput): string[] {
       pruning.push('--glob=!**', directoryGlob)
     }
   }
+  // Skip a catch-all positive --glob=**/* or --glob=** when ignoring is enabled: in ripgrep,
+  // an explicit positive glob overrides directory .gitignore rules and surfaces ignored subtrees.
+  const omitCatchAllGlob = input.noIgnore !== true && (input.pattern === '**/*' || input.pattern === '**')
   const parts = [
     '--files',
     ...pruning,
-    `--glob=${input.pattern}`,
+    ...omitCatchAllGlob ? [] : [`--glob=${input.pattern}`],
     '--sort=modified',
     // Honor .gitignore even when the workspace is a bare directory with no .git/ root.
     ...input.noIgnore === true ? ['--no-ignore'] : ['--no-require-git'],

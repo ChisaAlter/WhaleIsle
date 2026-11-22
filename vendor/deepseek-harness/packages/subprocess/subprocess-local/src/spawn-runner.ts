@@ -220,11 +220,14 @@ function sendMessage(host: RunnerHost, result: WindowsRunnerResult): Promise<voi
   })
 }
 
+const POLL_BACKOFF_MS = [2, 5, 10, 25, 50] as const
+
 class WindowsJobRunner {
   private api: CurrentTokenProcessBindings | undefined
   private processHandle: NativePtr | undefined
   private jobHandle: NativePtr | undefined
-  private pollTimer: ReturnType<typeof setInterval> | undefined
+  private pollTimer: ReturnType<typeof setTimeout> | undefined
+  private pollDelayIndex = 0
   private startSeen = false
   private terminateRequested = false
   private resultStarted = false
@@ -318,7 +321,7 @@ class WindowsJobRunner {
       for (const fileDescriptor of request.control === 'pipe' ? [4, 5, 6, SUBPROCESS_CONTROL_FD] : [4, 5, 6]) {
         this.internals.closeFileDescriptor(fileDescriptor)
       }
-      this.pollTimer = setInterval(() => { this.poll() }, 10)
+      this.schedulePoll(true)
     } catch (error) {
       if (this.jobHandle === undefined && error instanceof Win32Error && error.api === 'CreateProcessW') {
         await this.publishTerminalResult({
@@ -331,11 +334,32 @@ class WindowsJobRunner {
     }
   }
 
+  private clearPollTimer(): void {
+    if (this.pollTimer !== undefined) {
+      clearTimeout(this.pollTimer)
+      this.pollTimer = undefined
+    }
+  }
+
+  private schedulePoll(resetBackoff = false): void {
+    this.clearPollTimer()
+    if (this.finished) return
+    if (this.processHandle === undefined && this.jobHandle === undefined) return
+    if (resetBackoff) this.pollDelayIndex = 0
+    const delayMs = POLL_BACKOFF_MS[this.pollDelayIndex] ?? 50
+    if (this.pollDelayIndex < POLL_BACKOFF_MS.length - 1) this.pollDelayIndex += 1
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = undefined
+      this.poll()
+    }, delayMs)
+  }
+
   private requestTermination(): void {
     if (this.terminateRequested) return
     this.terminateRequested = true
     try {
       this.terminateOwnedJob()
+      this.schedulePoll(true)
     } catch (error) {
       void this.runnerFailure(error)
     }
@@ -355,18 +379,26 @@ class WindowsJobRunner {
     /* v8 ignore next -- poll is installed only after start() stores the bindings; retained as a defensive invariant guard. */
     if (this.api === undefined) return
     try {
+      let directExited = false
       if (this.processHandle !== undefined) {
         const exitCode = this.internals.pollProcessExit(this.api, this.processHandle)
         if (exitCode !== undefined) {
           this.internals.closeHandleChecked(this.api, this.processHandle, 'ordinary direct process')
           this.processHandle = undefined
+          directExited = true
           void this.publishTerminalResult({ type: 'target-exit', exitCode })
         }
       }
       if (this.jobHandle !== undefined && this.internals.isJobEmpty(this.api, this.jobHandle)) {
         this.internals.closeHandleChecked(this.api, this.jobHandle, 'ordinary process Job')
         this.jobHandle = undefined
-        if (this.resultDelivered) this.finish(0)
+        if (this.resultDelivered) {
+          this.finish(0)
+          return
+        }
+      }
+      if (this.processHandle !== undefined || this.jobHandle !== undefined) {
+        this.schedulePoll(directExited)
       }
     } catch (error) {
       void this.runnerFailure(error)
@@ -409,8 +441,7 @@ class WindowsJobRunner {
   }
 
   private releaseOwnedJob(): void {
-    if (this.pollTimer !== undefined) clearInterval(this.pollTimer)
-    this.pollTimer = undefined
+    this.clearPollTimer()
     const api = this.api
     if (api === undefined) return
     if (this.jobHandle !== undefined) {
@@ -427,8 +458,7 @@ class WindowsJobRunner {
   private finish(exitCode: number, disconnect = true): void {
     if (this.finished) return
     this.finished = true
-    if (this.pollTimer !== undefined) clearInterval(this.pollTimer)
-    this.pollTimer = undefined
+    this.clearPollTimer()
     this.host.off('message', this.onMessage)
     this.host.off('disconnect', this.onDisconnect)
     this.host.exitCode = exitCode

@@ -59,6 +59,38 @@ export interface SubagentActivationSpec extends Omit<SubagentStartRequest, 'labe
   readonly signal: AbortSignal
   /** Parent delivery notifies the model; caller delivery only returns the result. Local children always enter the parent catalog. */
   readonly delivery: 'parent' | 'caller'
+  /** Optional isolated Git worktree owned by this activation and settled on teardown. */
+  readonly worktree?: SubagentWorktreeSpec
+}
+
+/** Isolated Git worktree provisioned for a single subagent execution. */
+export interface SubagentWorktreeSpec {
+  /** Absolute path to the isolated Git worktree root. */
+  readonly path: string
+  /** Exclusive branch checked out inside the isolated worktree. */
+  readonly branch: string
+  /** Commit hash the worktree branch was created from (`HEAD` at delegation). */
+  readonly baseCommit: string
+  /** Absolute path to the repository root owning the worktree pool. */
+  readonly repoRoot: string
+  /** Absolute path to the shared Git common directory. */
+  readonly gitCommonDir: string
+  /** Initial working directory inside the worktree for the child agent. */
+  readonly childCwd?: string
+}
+
+/** Final disposition of a subagent's isolated Git worktree after teardown. */
+export interface SubagentWorktreeOutcome {
+  /** Absolute path to the isolated Git worktree root. */
+  readonly worktreePath: string
+  /** Exclusive branch created for the subagent execution. */
+  readonly branch: string
+  /** Whether the clean unchanged worktree was removed or retained with work. */
+  readonly status: 'cleaned' | 'retained'
+  /** Why the worktree was retained, when `status === 'retained'`. */
+  readonly reason?: 'uncommitted-changes' | 'new-commits' | 'cleanup-failed'
+  /** Human-readable detail, e.g. cleanup error message when cleanup failed. */
+  readonly detail?: string
 }
 
 /** A managed execution; disposal addresses this exact activation, never a later resume. */
@@ -97,6 +129,15 @@ export interface SubagentMemberNames {
 export type SubagentInterruptAuthority =
   | { readonly kind: 'user' }
   | { readonly kind: 'ancestor'; readonly agent: Agent }
+
+/** Options controlling how an interrupt propagates through a subagent subtree. */
+export interface SubagentInterruptOptions {
+  /**
+   * Whether to also interrupt live descendants of the target subagent, from
+   * deepest leaves back up to the target. Defaults to `true`.
+   */
+  readonly cascade?: boolean
+}
 
 /** Options for one model-authored message within a subagent tree. */
 export interface SubagentSendMessageOptions {
@@ -299,6 +340,8 @@ export interface SubagentResult {
   readonly diagnostic?: string
   /** Why the run ended. A non-`completed` reason means `output` may be partial. */
   readonly stopReason: SubagentStopReason
+  /** Disposition of the isolated Git worktree provisioned for this execution, if any. */
+  readonly worktree?: SubagentWorktreeOutcome
 }
 
 /**

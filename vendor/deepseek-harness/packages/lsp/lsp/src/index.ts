@@ -23,6 +23,8 @@ import type {
 
 export { LspProviderId } from './brand.ts'
 export type {
+  LspDiagnostic,
+  LspDiagnosticSeverity,
   LspHover,
   LspLocation,
   LspOperation,
@@ -151,12 +153,23 @@ export class Lsp extends Service implements LspService {
     return () => void dispose()
   }
 
+  supportsFile(filePath: string): boolean {
+    return this.routes.has(finalExtension(filePath))
+  }
+
   async query(request: LspQueryRequest, signal?: AbortSignal): Promise<LspQueryResult> {
+    if (request.operation !== 'diagnostics' && request.position === undefined) {
+      throw new LspError(`LSP operation "${request.operation}" requires a cursor position`, 'LSP_INVALID_REQUEST')
+    }
     const route = this.routes.get(finalExtension(request.filePath))
     if (route === undefined) {
       throw new LspError(`no LSP provider handles "${request.filePath}"`, 'LSP_UNAVAILABLE')
     }
-    return route.provider.query({ ...request, languageId: route.languageId }, signal)
+    return route.provider.query({
+      ...request,
+      position: request.position ?? { line: 0, character: 0 },
+      languageId: route.languageId,
+    }, signal)
   }
 }
 

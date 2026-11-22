@@ -117,7 +117,7 @@ export class AclWriteGrant {
     const failures: unknown[] = []
     for (const path of this.revocablePaths) {
       try {
-        revokeWrite(this.api, path, this.sidPtr)
+        revokeWrite(this.api, path, this.sidPtr, this.worldSidPtr)
       } catch (error) {
         failures.push(error)
       }

@@ -29,6 +29,7 @@ interface RecordedShellCall {
   readonly command: string
   readonly workdir: string
   readonly stdin?: string
+  readonly sandboxPolicy?: ShellExecSpec['sandboxPolicy']
 }
 
 type MockShellHandler = (spec: ShellExecSpec) => { exitCode: number; stdout?: string; stderr?: string }
@@ -60,6 +61,7 @@ class MockShellExecutor extends ShellExecutor {
       command: spec.command,
       workdir: spec.workdir,
       ...spec.stdin !== undefined ? { stdin: spec.stdin } : {},
+      ...spec.sandboxPolicy !== undefined ? { sandboxPolicy: spec.sandboxPolicy } : {},
     })
     const out = this.handler(spec)
     const runResult: ShellRunResult = {
@@ -283,5 +285,49 @@ describe('hooks-codex project hook discovery & caching', () => {
     } finally {
       ensureSpy.mockRestore()
     }
+  })
+
+  it('forwards optional ctx.get("sandboxPolicy") resolution to runHook and keeps zero fallback when absent', async () => {
+    const projectDir = newTempDir('dsh-hcodex-policy-')
+    writeJson(join(projectDir, '.codex', 'hooks.json'), {
+      hooks: {
+        PreToolUse: [{ matcher: 'inspect', hooks: [{ type: 'command', command: 'codex-policy' }] }],
+      },
+    })
+
+    const withPolicy = await mountTestHarness({})
+    const expectedPolicy: NonNullable<ShellExecSpec['sandboxPolicy']> = {
+      mode: 'workspace-write',
+      workspaceRoot: projectDir,
+    }
+    const resolvePolicy = vi.fn(() => expectedPolicy)
+    const originalGet = withPolicy.ctx.get.bind(withPolicy.ctx) as (service: string) => object | undefined
+    vi.spyOn(withPolicy.ctx, 'get').mockImplementation(((service: string) => {
+      return service === 'sandboxPolicy' ? { resolve: resolvePolicy } : originalGet(service)
+    }) as typeof withPolicy.ctx.get)
+
+    const agent = await withPolicy.ctx.agentLoop.create(SessionId('cx-policy-sess'), { provider: 'mock', model: 'mock' }, { cwd: projectDir })
+    await executeToolFixture(withPolicy.ctx, {
+      name: 'inspect',
+      callId: ToolCallId('cx-call-policy'),
+      arguments: {},
+      agent,
+      signal: new AbortController().signal,
+    })
+    expect(resolvePolicy).toHaveBeenCalledWith({ session: agent.session })
+    expect(withPolicy.shell.calls[0]?.sandboxPolicy).toEqual(expectedPolicy)
+
+    // Without sandboxPolicy service mounted, hooks continue running with undefined policy.
+    const withoutPolicy = await mountTestHarness({})
+    const plainAgent = await withoutPolicy.ctx.agentLoop.create(SessionId('cx-plain-sess'), { provider: 'mock', model: 'mock' }, { cwd: projectDir })
+    await executeToolFixture(withoutPolicy.ctx, {
+      name: 'inspect',
+      callId: ToolCallId('cx-call-plain'),
+      arguments: {},
+      agent: plainAgent,
+      signal: new AbortController().signal,
+    })
+    expect(withoutPolicy.shell.calls).toHaveLength(1)
+    expect(withoutPolicy.shell.calls[0]?.sandboxPolicy).toBeUndefined()
   })
 })

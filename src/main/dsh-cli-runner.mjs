@@ -29,6 +29,7 @@ const { collectInternalSecrets, INTERNAL_SECRETS_ENV } = require('../shared/secr
 const [cli, pnpm, ...args] = process.argv.slice(2)
 if (!cli || !pnpm) throw new Error('Desktop CLI requires the dsh and pnpm entry paths')
 
+/** @param {boolean} exitProcess */
 const stopOwnedTreeOnParentLoss = (exitProcess) => {
   process.on('SIGTERM', () => {})
   const killed = signalProcessTree(process.pid, { signal: 'SIGTERM' })

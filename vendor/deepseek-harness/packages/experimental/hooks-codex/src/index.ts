@@ -38,6 +38,7 @@ import {
   selectHookGroups,
   type HookOutput,
   type MergedHookOutcome,
+  type RunHookOptions,
 } from '@deepseek-ai/dsh-hook-protocol'
 import { parseCodexConfig, type CodexHookConfig } from './config.ts'
 import { createCodexProjectHookResolver } from './project-hooks.ts'
@@ -45,6 +46,20 @@ import { createCodexProjectHookResolver } from './project-hooks.ts'
 
 export const name = 'hooks-codex'
 export const inject = ['shell', 'agents', 'workingDirectory']
+
+/* jscpd:ignore-start */
+type HookSandboxPolicy = NonNullable<RunHookOptions['sandboxPolicy']>
+
+interface OptionalSandboxPolicyService {
+  resolve(request?: { session?: Agent['session'] }): HookSandboxPolicy
+}
+
+/** Resolve optional `sandboxPolicy` service without forcing a required Cordis injection. */
+function resolveHookSandboxPolicy(ctx: Context, agent: Agent | undefined): HookSandboxPolicy | undefined {
+  const service = ctx.get('sandboxPolicy') as OptionalSandboxPolicyService | undefined
+  return service?.resolve(agent === undefined ? {} : { session: agent.session })
+}
+/* jscpd:ignore-end */
 
 /** Plugin config: optional global Codex hooks.json path, per-session discovery, and model name. */
 export interface Config {
@@ -167,10 +182,12 @@ export function apply(ctx: Context, config: Config): void {
             matcher: group.matcher,
           })
         }
+        const sandboxPolicy = resolveHookSandboxPolicy(ctx, opts.agent)
         const { output, durationMs } = await runHook(ctx.shell, hook, {
           payload: { ...payload, cwd: workdir ?? process.cwd() },
           defaultTimeoutMs,
           ...workdir !== undefined ? { cwd: workdir } : {},
+          ...sandboxPolicy !== undefined ? { sandboxPolicy } : {},
           signal: opts.signal,
           trailingNewline: false, // Codex writes stdin without a trailing newline.
           // Discard a `hookSpecificOutput` block naming a different event.

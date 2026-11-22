@@ -369,6 +369,24 @@ describe('command construction (plain argv)', () => {
     expect(defaultArgv).toContain('--no-require-git')
   })
 
+  it('glob: omits redundant catch-all --glob=**/* and --glob=** when ignoring is enabled so .gitignore directory rules apply', () => {
+    for (const pattern of ['**/*', '**'] as const) {
+      const defaultArgv = buildGlobCommand({ pattern })
+      expect(defaultArgv).not.toContain(`--glob=${pattern}`)
+      expect(defaultArgv).toContain('--no-require-git')
+      expect(defaultArgv).not.toContain('--no-ignore')
+
+      const explicitFalseArgv = buildGlobCommand({ pattern, noIgnore: false })
+      expect(explicitFalseArgv).not.toContain(`--glob=${pattern}`)
+      expect(explicitFalseArgv).toContain('--no-require-git')
+
+      const noIgnoreArgv = buildGlobCommand({ pattern, noIgnore: true })
+      expect(noIgnoreArgv).toContain(`--glob=${pattern}`)
+      expect(noIgnoreArgv).toContain('--no-ignore')
+      expect(noIgnoreArgv).not.toContain('--no-require-git')
+    }
+  })
+
   it('glob: the search root rides behind -- as a plain element', () => {
     expect(buildGlobCommand({ pattern: '*.md', path: 'docs dir' })).toEqual(['--files', '--glob=*.md', '--sort=modified', '--no-require-git', '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',

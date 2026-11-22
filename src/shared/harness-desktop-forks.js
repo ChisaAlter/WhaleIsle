@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { WAVE1_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave1');
 const { WAVE2_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave2');
+const { WAVE3_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave3');
 
 const DESKTOP_PACKAGES = [
   { dir: 'packages/experimental/agent-team-profile', name: '@deepseek-ai/dsh-experimental-agent-team-profile' },
@@ -56,6 +57,7 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // Desktop content inside upstream-owned files. The whole-package registry above
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
+/** @type {Array<{ file: string, includes?: string[], excludes?: string[] }>} */
 const FORK_FILE_MARKERS = [
   // Reversible rendering policy and bounded desktop startup recommendation.
   { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['minimalMode', 'minimalModeSuggestions', 'minimalModeSnoozedUntil'] },
@@ -578,6 +580,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/llm/token-meter/tests/token-usage-projection.spec.ts', includes: ['does not display zero occupancy when the provider rejects the request as too long'] },
   ...WAVE1_FORK_FILE_MARKERS,
   ...WAVE2_FORK_FILE_MARKERS,
+  ...WAVE3_FORK_FILE_MARKERS,
 ];
 
 /**
