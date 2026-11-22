@@ -16,9 +16,8 @@ import {
   useBotsState,
 } from '../store/bots-store';
 import type { BotChatRow, BotRecord, BotWorkerRow } from '../store/rpc';
+import { BotChevron, BotDisclosure } from './BotDisclosure';
 import {
-  IconChevronDown,
-  IconChevronRight,
   IconGlobe,
   IconHome,
   IconMessageSquare,
@@ -198,6 +197,10 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
             || (isHome && !activeSessionId));
         const timeText = formatRelativeTime(chat.lastActiveAt, now, locale);
         const foldText = folded && foldCounts ? chatFoldSummary(tr, foldCounts) : '';
+        const toggleWorkers = (e: MouseEvent) => {
+          e.stopPropagation();
+          botsStore.setChatFold(foldKey, folded ? 'open' : 'folded');
+        };
 
         return (
           <div key={chat.chatId}>
@@ -214,7 +217,14 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
               </span>
               <span className="dsh-bots-subrow-title">{label}</span>
               {foldText ? (
-                <span className="dsh-bots-subrow-meta">{foldText}</span>
+                <button
+                  type="button"
+                  className="dsh-bots-subrow-fold-meta"
+                  aria-expanded={!folded}
+                  onClick={toggleWorkers}
+                >
+                  {foldText}
+                </button>
               ) : timeText ? (
                 <span className="dsh-bots-subrow-meta">{timeText}</span>
               ) : null}
@@ -222,23 +232,21 @@ export function BotSubChatList({ bot, now, hideSleepingWorkers }: BotSubChatList
                 <button
                   type="button"
                   className="dsh-bots-icon-btn dsh-bots-icon-btn-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    botsStore.setChatFold(foldKey, folded ? 'open' : 'folded');
-                  }}
+                  aria-expanded={!folded}
+                  onClick={toggleWorkers}
                   aria-label={folded ? 'Expand workers' : 'Collapse workers'}
                 >
-                  {folded ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+                  <BotChevron open={!folded} size={12} />
                 </button>
               )}
             </div>
-            {hasWorkers && !folded && (
+            <BotDisclosure open={hasWorkers && !folded} className="dsh-bots-workers-disclosure">
               <BotChatWorkerRows
                 botId={bot.id}
                 chat={chat}
                 hideSleepingWorkers={hideSleepingWorkers}
               />
-            )}
+            </BotDisclosure>
           </div>
         );
       })}

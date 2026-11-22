@@ -28,13 +28,12 @@ import {
 import { botsStore, useBotsLocale, useBotsState, useNow } from '../store/bots-store';
 import type { BotGroupRecord, BotRecord, BotSidebarSort, BotSidebarView } from '../store/rpc';
 import { BotAvatar } from './BotAvatar';
+import { BotChevron, BotDisclosure, useBotsPresence } from './BotDisclosure';
 import { BotGroupSidebarCard } from './BotGroupSidebarCard';
 import { BotSidebarCard, type BotCardSearchMatch } from './BotSidebarCard';
 import {
   IconBot,
   IconCheck,
-  IconChevronDown,
-  IconChevronRight,
   IconChevronsUpDown,
   IconDownload,
   IconLink,
@@ -68,18 +67,22 @@ function useAnchoredPopoverClose(open: boolean, ref: RefObject<HTMLDivElement | 
 
 function OptionsPopover({
   anchorRect,
+  open,
+  motionState,
   view,
   projectsFirst,
   onClose,
 }: {
   anchorRect: DOMRect;
+  open: boolean;
+  motionState: 'open' | 'closed';
   view: BotSidebarView;
   projectsFirst: boolean;
   onClose: () => void;
 }) {
   const { locale, tr } = useBotsLocale();
   const ref = useRef<HTMLDivElement | null>(null);
-  useAnchoredPopoverClose(true, ref, onClose);
+  useAnchoredPopoverClose(open, ref, onClose);
   if (typeof document === 'undefined') return null;
 
   const sortLabels: Record<BotSidebarSort, { title: string; desc?: string }> = {
@@ -92,7 +95,14 @@ function OptionsPopover({
   const top = Math.min(anchorRect.bottom + 6, window.innerHeight - 340);
 
   return createPortal(
-    <div ref={ref} className="dsh-bots-popover" style={{ left, top, width: 244 }}>
+    <div
+      ref={ref}
+      className="dsh-bots-popover"
+      data-motion="presence"
+      data-state={motionState}
+      aria-hidden={open ? undefined : true}
+      style={{ left, top, width: 244 }}
+    >
       <div className="dsh-bots-menu-section">{tr('bots.options.sortBy', 'Sort by')}</div>
       {BOT_SIDEBAR_SORT_CHOICES.map((choice) => {
         const id = choice.id as BotSidebarSort;
@@ -145,10 +155,22 @@ function OptionsPopover({
   );
 }
 
-function CreateMenuPopover({ anchorRect, botCount, onClose }: { anchorRect: DOMRect; botCount: number; onClose: () => void }) {
+function CreateMenuPopover({
+  anchorRect,
+  open,
+  motionState,
+  botCount,
+  onClose,
+}: {
+  anchorRect: DOMRect;
+  open: boolean;
+  motionState: 'open' | 'closed';
+  botCount: number;
+  onClose: () => void;
+}) {
   const { tr } = useBotsLocale();
   const ref = useRef<HTMLDivElement | null>(null);
-  useAnchoredPopoverClose(true, ref, onClose);
+  useAnchoredPopoverClose(open, ref, onClose);
   if (typeof document === 'undefined') return null;
 
   const left = Math.min(anchorRect.left, window.innerWidth - 224);
@@ -156,7 +178,14 @@ function CreateMenuPopover({ anchorRect, botCount, onClose }: { anchorRect: DOMR
   const openAndClose = (modal: Parameters<typeof botsStore.openModal>[0]) => { onClose(); botsStore.openModal(modal); };
 
   return createPortal(
-    <div ref={ref} className="dsh-bots-popover" style={{ left, top, width: 216 }}>
+    <div
+      ref={ref}
+      className="dsh-bots-popover"
+      data-motion="presence"
+      data-state={motionState}
+      aria-hidden={open ? undefined : true}
+      style={{ left, top, width: 216 }}
+    >
       <button type="button" className="dsh-bots-menu-item" onClick={() => openAndClose({ kind: 'new-bot' })}>
         <IconPlus size={14} /><span>{tr('bots.section.startFromScratch', 'Start from scratch')}</span>
       </button>
@@ -283,16 +312,27 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const lastOptionsAnchorRef = useRef<DOMRect | null>(null);
+  const lastCreateAnchorRef = useRef<DOMRect | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchPresent, setSearchPresent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [optionsAnchor, setOptionsAnchor] = useState<DOMRect | null>(null);
   const [createAnchor, setCreateAnchor] = useState<DOMRect | null>(null);
+  const [sectionBodyPresent, setSectionBodyPresent] = useState(!sectionCollapsed);
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const [draggingBotId, setDraggingBotId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ botId: string; position: 'before' | 'after' } | null>(null);
 
+  if (optionsAnchor) lastOptionsAnchorRef.current = optionsAnchor;
+  if (createAnchor) lastCreateAnchorRef.current = createAnchor;
+
+  const previewPresence = useBotsPresence(sectionCollapsed && bots.length > 0, 180);
+  const optionsPresence = useBotsPresence(Boolean(optionsAnchor), 180);
+  const createPresence = useBotsPresence(Boolean(createAnchor), 180);
+
   useEffect(() => { botsStore.start(); }, []);
-  useEffect(() => { if (searchOpen) searchInputRef.current?.focus(); }, [searchOpen]);
+  useEffect(() => { if (searchOpen && searchPresent) searchInputRef.current?.focus(); }, [searchOpen, searchPresent]);
 
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const collapsedSet = useMemo(() => new Set(collapsedBotIds), [collapsedBotIds]);
@@ -402,7 +442,10 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
   const allHiddenPaused = !searchResult && bots.length > 0 && visibleRows.length === 0 && view.hidePausedBots;
   const showPaused = () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, hidePausedBots: false } });
 
-  const hasResizeHandle = !sectionCollapsed && (bots.length > 0 || groups.length > 0);
+  const hasResizeHandle = sectionBodyPresent && (bots.length > 0 || groups.length > 0);
+  const showExpandAll = !sectionCollapsed && hasExpandableBots;
+  const activeOptionsAnchor = optionsAnchor ?? lastOptionsAnchorRef.current;
+  const activeCreateAnchor = createAnchor ?? lastCreateAnchorRef.current;
 
   return (
     <section
@@ -418,25 +461,40 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
           aria-expanded={!sectionCollapsed}
           title={sectionCollapsed ? tr('bots.section.expand', 'Expand bots') : tr('bots.section.collapse', 'Collapse bots')}
         >
-          {sectionCollapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
+          <BotChevron open={!sectionCollapsed} size={14} />
           <span>{tr('bots.section.title', '大肥鱼队友')}</span>
         </button>
 
         <div className="dsh-bots-header-spacer">
-          {sectionCollapsed && bots.length > 0 ? <CollapsedPreviewStrip bots={bots} needsYou={needsYou} activeBotId={activeBotId} /> : null}
+          {previewPresence.present ? (
+            <div
+              className="dsh-bots-preview-wrap"
+              data-state={previewPresence.state}
+              aria-hidden={!sectionCollapsed ? true : undefined}
+            >
+              <CollapsedPreviewStrip bots={bots} needsYou={needsYou} activeBotId={activeBotId} />
+            </div>
+          ) : null}
         </div>
 
         <div className="dsh-bots-header-actions">
-          {!sectionCollapsed && hasExpandableBots && (
-            <button
-              type="button"
-              className="dsh-bots-icon-btn"
-              title={allCollapsed ? tr('bots.section.expandAll', 'Expand all bots') : tr('bots.section.collapseAll', 'Collapse all bots')}
-              onClick={() => botsStore.setAllBotsCollapsed(!allCollapsed)}
-            >
-              <IconChevronsUpDown size={15} />
-            </button>
-          )}
+          <div
+            className="dsh-bots-header-action-slot"
+            data-open={showExpandAll ? 'true' : 'false'}
+            aria-hidden={showExpandAll ? undefined : true}
+          >
+            <div className="dsh-bots-header-action-slot-inner">
+              <button
+                type="button"
+                className="dsh-bots-icon-btn"
+                tabIndex={showExpandAll ? 0 : -1}
+                title={allCollapsed ? tr('bots.section.expandAll', 'Expand all bots') : tr('bots.section.collapseAll', 'Collapse all bots')}
+                onClick={() => botsStore.setAllBotsCollapsed(!allCollapsed)}
+              >
+                <IconChevronsUpDown size={15} />
+              </button>
+            </div>
+          </div>
           <button
             type="button"
             className="dsh-bots-icon-btn"
@@ -471,96 +529,119 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
         </div>
       </div>
 
-      {!sectionCollapsed && (
-        <>
-          {searchOpen && (
-            <div className="dsh-bots-search-box">
-              <IconSearch size={14} />
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="dsh-bots-search-input"
-                value={searchQuery}
-                placeholder={tr('bots.search.label', 'Search bots')}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') { setSearchQuery(''); setSearchOpen(false); } }}
-              />
-              {searchQuery && (
-                <button type="button" className="dsh-bots-icon-btn dsh-bots-icon-btn-sm" aria-label={tr('bots.search.clear', 'Clear search')} onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}>
-                  <IconX size={13} />
-                </button>
-              )}
-            </div>
-          )}
+      <BotDisclosure
+        open={!sectionCollapsed}
+        className="dsh-bots-section-disclosure"
+        onPresenceChange={setSectionBodyPresent}
+      >
+        <BotDisclosure
+          open={searchOpen}
+          className="dsh-bots-search-disclosure"
+          onPresenceChange={setSearchPresent}
+        >
+          <div className="dsh-bots-search-box">
+            <IconSearch size={14} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="dsh-bots-search-input"
+              value={searchQuery}
+              placeholder={tr('bots.search.label', 'Search bots')}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setSearchQuery(''); setSearchOpen(false); } }}
+            />
+            {searchQuery && (
+              <button type="button" className="dsh-bots-icon-btn dsh-bots-icon-btn-sm" aria-label={tr('bots.search.clear', 'Clear search')} onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}>
+                <IconX size={13} />
+              </button>
+            )}
+          </div>
+        </BotDisclosure>
 
-          {bots.length === 0 && groups.length === 0 ? (
-            <EmptyBotsCard />
-          ) : (
-            <>
-              {searchResult && searchResult.hiddenPausedMatches > 0 && (
-                <div className="dsh-bots-search-banner">
-                  <span>{tr('bots.search.pausedMatches', '{{count}} paused matches', { count: searchResult.hiddenPausedMatches })}</span>
-                  <button type="button" className="dsh-bots-link-btn" onClick={showPaused}>{tr('bots.search.show', 'Show')}</button>
-                </div>
-              )}
+        {bots.length === 0 && groups.length === 0 ? (
+          <EmptyBotsCard />
+        ) : (
+          <>
+            {searchResult && searchResult.hiddenPausedMatches > 0 && (
+              <div className="dsh-bots-search-banner">
+                <span>{tr('bots.search.pausedMatches', '{{count}} paused matches', { count: searchResult.hiddenPausedMatches })}</span>
+                <button type="button" className="dsh-bots-link-btn" onClick={showPaused}>{tr('bots.search.show', 'Show')}</button>
+              </div>
+            )}
 
-              {allHiddenPaused ? (
-                <div className="dsh-bots-search-banner">
-                  <span>{tr('bots.options.allHidden', 'All bots are paused and hidden.')}</span>
-                  <button type="button" className="dsh-bots-link-btn" onClick={showPaused}>{tr('bots.search.show', 'Show')}</button>
-                </div>
-              ) : searchResult && visibleRows.length === 0 ? (
-                <div className="dsh-bots-search-empty">
-                  {tr('bots.search.noMatches', 'No matches')}
-                </div>
-              ) : (
-                <div
-                  ref={listRef}
-                  className="dsh-bots-list"
-                  data-sidebar-nested-scroller=""
-                  style={{ maxHeight: effectiveMaxHeight ? `${effectiveMaxHeight}px` : '40vh' }}
-                >
-                  {visibleRows.map(({ entry, match }) =>
-                    entry.kind === 'group' ? (
-                      <BotGroupSidebarCard key={`group:${entry.group.id}`} group={entry.group} botsById={botsById} now={now} nameSegments={match?.nameSegments ?? null} />
-                    ) : (
-                      <BotSidebarCard
-                        key={`bot:${entry.bot.id}`}
-                        bot={entry.bot}
-                        now={now}
-                        collapsed={collapsedSet.has(entry.bot.id)}
-                        hideSleepingWorkers={view.hideSleepingWorkers}
-                        manualSort={view.sortBy === 'manual' && !searchResult}
-                        searchMatch={match}
-                        dragging={draggingBotId === entry.bot.id}
-                        dropPosition={dropTarget?.botId === entry.bot.id ? dropTarget.position : null}
-                        onDragStart={setDraggingBotId}
-                        onDragOverCard={handleDragOverBot}
-                        onDropCard={handleDropBot}
-                        onDragEnd={() => { setDraggingBotId(null); setDropTarget(null); }}
-                      />
-                    ),
-                  )}
-                </div>
-              )}
-
+            {allHiddenPaused ? (
+              <div className="dsh-bots-search-banner">
+                <span>{tr('bots.options.allHidden', 'All bots are paused and hidden.')}</span>
+                <button type="button" className="dsh-bots-link-btn" onClick={showPaused}>{tr('bots.search.show', 'Show')}</button>
+              </div>
+            ) : searchResult && visibleRows.length === 0 ? (
+              <div className="dsh-bots-search-empty">
+                {tr('bots.search.noMatches', 'No matches')}
+              </div>
+            ) : (
               <div
-                role="separator"
-                aria-orientation="horizontal"
-                aria-label="Resize bots section"
-                tabIndex={0}
-                className="dsh-bots-resize-handle"
-                data-dragging={dragHeight !== null ? 'true' : 'false'}
-                onPointerDown={handleResizePointerDown}
-                onKeyDown={handleResizeKeyDown}
-              />
-            </>
-          )}
-        </>
-      )}
+                ref={listRef}
+                className="dsh-bots-list"
+                data-sidebar-nested-scroller=""
+                style={{ maxHeight: effectiveMaxHeight ? `${effectiveMaxHeight}px` : '40vh' }}
+              >
+                {visibleRows.map(({ entry, match }) =>
+                  entry.kind === 'group' ? (
+                    <BotGroupSidebarCard key={`group:${entry.group.id}`} group={entry.group} botsById={botsById} now={now} nameSegments={match?.nameSegments ?? null} />
+                  ) : (
+                    <BotSidebarCard
+                      key={`bot:${entry.bot.id}`}
+                      bot={entry.bot}
+                      now={now}
+                      collapsed={collapsedSet.has(entry.bot.id)}
+                      hideSleepingWorkers={view.hideSleepingWorkers}
+                      manualSort={view.sortBy === 'manual' && !searchResult}
+                      searchMatch={match}
+                      dragging={draggingBotId === entry.bot.id}
+                      dropPosition={dropTarget?.botId === entry.bot.id ? dropTarget.position : null}
+                      onDragStart={setDraggingBotId}
+                      onDragOverCard={handleDragOverBot}
+                      onDropCard={handleDropBot}
+                      onDragEnd={() => { setDraggingBotId(null); setDropTarget(null); }}
+                    />
+                  ),
+                )}
+              </div>
+            )}
 
-      {optionsAnchor && <OptionsPopover anchorRect={optionsAnchor} view={view} projectsFirst={projectsFirst} onClose={() => setOptionsAnchor(null)} />}
-      {createAnchor && <CreateMenuPopover anchorRect={createAnchor} botCount={bots.length} onClose={() => setCreateAnchor(null)} />}
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize bots section"
+              tabIndex={0}
+              className="dsh-bots-resize-handle"
+              data-dragging={dragHeight !== null ? 'true' : 'false'}
+              onPointerDown={handleResizePointerDown}
+              onKeyDown={handleResizeKeyDown}
+            />
+          </>
+        )}
+      </BotDisclosure>
+
+      {optionsPresence.present && activeOptionsAnchor && (
+        <OptionsPopover
+          anchorRect={activeOptionsAnchor}
+          open={Boolean(optionsAnchor)}
+          motionState={optionsPresence.state}
+          view={view}
+          projectsFirst={projectsFirst}
+          onClose={() => setOptionsAnchor(null)}
+        />
+      )}
+      {createPresence.present && activeCreateAnchor && (
+        <CreateMenuPopover
+          anchorRect={activeCreateAnchor}
+          open={Boolean(createAnchor)}
+          motionState={createPresence.state}
+          botCount={bots.length}
+          onClose={() => setCreateAnchor(null)}
+        />
+      )}
     </section>
   );
 }

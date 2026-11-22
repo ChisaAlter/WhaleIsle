@@ -40,7 +40,7 @@ if (typeof document !== "undefined") {
   __style = __existing || (typeof document.createElement === "function" ? document.createElement("style") : null);
   if (__style) {
     if (typeof __style.setAttribute === "function") __style.setAttribute("data-dsh-whale-style", __id);
-    __style.textContent = "/* WhaleIsle Bots shared styles \u2014 strictly driven by DSHD design-language & motion tokens.\n * Zero theme branches, zero hardcoded hex/rgb colors, zero custom scrollbar rules, zero ms literals. */\n\n/* ---- Animations & Motion (prefers-reduced-motion zeroes --ds-transition-duration* in base.css) ---- */\n@keyframes dsh-bots-spin {\n  from { transform: rotate(0deg); }\n  to { transform: rotate(360deg); }\n}\n\n@keyframes dsh-bots-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.45; transform: scale(0.86); }\n}\n\n@keyframes dsh-bots-popover-in {\n  from { transform: translateY(var(--ds-motion-distance-popover, 4px)); }\n  to { transform: none; }\n}\n\n@keyframes dsh-bots-overlay-in {\n  from { transform: translateY(var(--ds-motion-distance-overlay, 8px)) scale(var(--ds-motion-scale-overlay, 0.96)); }\n  to { transform: none; }\n}\n\n@keyframes dsh-bots-mask-in {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}\n\n@keyframes dsh-bots-toast-in {\n  from { opacity: 0; transform: translateY(var(--ds-motion-distance-popover, 4px)); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes dsh-bots-check-pop {\n  from { opacity: 0; transform: scale(0.5); }\n  to { opacity: 1; transform: scale(1); }\n}\n\n.dsh-bots-spin {\n  animation: dsh-bots-spin calc(var(--ds-transition-duration-slow) * 3) linear infinite;\n}\n\n.dsh-bots-pulse {\n  animation: dsh-bots-pulse calc(var(--ds-transition-duration-slow) * 5) var(--ds-ease-in-out) infinite;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dsh-bots-spin,\n  .dsh-bots-pulse,\n  .dsh-bots-backdrop,\n  .dsh-bots-modal,\n  .dsh-bots-popover,\n  .dsh-bots-hovercard,\n  .dsh-bots-toast,\n  .dsh-bots-check-badge {\n    animation: none;\n  }\n\n  .dsh-bots-carousel-slide,\n  .dsh-bots-icon-btn,\n  .dsh-bots-card,\n  .dsh-bots-subrow,\n  .dsh-bots-btn,\n  .dsh-bots-resize-handle::after {\n    transition: none;\n  }\n}\n\n/* ---- Sidebar Section & Header (pixel-aligned with WorkspaceBrowser 36px toolbar) ---- */\n.dsh-bots-section {\n  display: flex;\n  flex-direction: column;\n  width: 100%;\n  box-sizing: border-box;\n  padding: 0 0 4px;\n  margin-bottom: 2px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  font-family: var(--dsw-font-family);\n  color: var(--dsw-alias-label-primary);\n  user-select: none;\n  flex-shrink: 0;\n}\n\n.dsh-bots-section[data-has-resize='true'] {\n  padding-bottom: 0;\n  border-bottom: none;\n}\n\n.dsh-bots-rail-btn {\n  position: relative;\n  width: 36px;\n  height: 36px;\n  margin: 0 0 12px;\n  padding: 0;\n  border: 0;\n  border-radius: var(--dsw-radius-md);\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-rail-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-rail-btn:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: -2px;\n}\n\n.dsh-bots-rail-badge {\n  position: absolute;\n  top: 4px;\n  right: 4px;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 999px;\n  background: var(--dsw-alias-state-warn-primary);\n  color: var(--dsw-alias-label-on-color);\n  font-size: 10px;\n  font-weight: 600;\n  line-height: 14px;\n  text-align: center;\n  font-variant-numeric: tabular-nums;\n}\n\n.dsh-bots-header {\n  flex: none;\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  height: 36px;\n  padding-left: var(--dsh-sidebar-row-padding, 12px);\n  padding-right: 1px;\n  margin-right: -4px;\n  box-sizing: border-box;\n  min-width: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dsh-bots-header-toggle {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  height: 28px;\n  padding: 0 6px 0 4px;\n  margin-left: -4px;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 500;\n  cursor: pointer;\n  flex-shrink: 0;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-header-toggle:hover {\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-header-toggle:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: -2px;\n}\n\n.dsh-bots-header-spacer {\n  flex: 1 1 auto;\n  min-width: 4px;\n  display: flex;\n  align-items: center;\n  overflow: hidden;\n}\n\n.dsh-bots-header-actions {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  flex-shrink: 0;\n}\n\n.dsh-bots-icon-btn {\n  position: relative;\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  flex-shrink: 0;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-icon-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-icon-btn[data-active='true'] {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-icon-btn:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: -2px;\n}\n\n.dsh-bots-icon-btn-sm {\n  width: 22px;\n  height: 22px;\n}\n\n.dsh-bots-filter-badge {\n  position: absolute;\n  top: 4px;\n  right: 4px;\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: var(--dsw-alias-state-business-primary);\n}\n\n/* ---- Collapsed Preview Strip ---- */\n.dsh-bots-preview-strip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  height: 24px;\n  padding: 0 4px;\n  min-width: 0;\n  flex: 1 1 auto;\n  overflow: hidden;\n}\n\n.dsh-bots-preview-item {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  cursor: pointer;\n  flex-shrink: 0;\n  border-radius: var(--dsw-radius-xs);\n}\n\n.dsh-bots-preview-item[data-paused='true'] {\n  opacity: 0.45;\n}\n\n.dsh-bots-preview-more {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 20px;\n  height: 20px;\n  padding: 0 4px;\n  border-radius: var(--dsw-radius-xs);\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  line-height: 14px;\n  font-weight: 500;\n  flex-shrink: 0;\n}\n\n/* ---- Inline Search Bar ---- */\n.dsh-bots-search-box {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  height: 32px;\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\n  padding: 0 8px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-sm);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-tertiary);\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-search-box:focus-within {\n  border-color: var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-search-input {\n  flex: 1 1 auto;\n  min-width: 0;\n  border: 0;\n  outline: none;\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  line-height: 20px;\n  font-family: inherit;\n}\n\n.dsh-bots-search-input::placeholder {\n  color: var(--dsw-alias-label-placeholder);\n}\n\n.dsh-bots-mark {\n  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 26%, transparent);\n  color: inherit;\n  border-radius: 2px;\n  padding: 0 1px;\n}\n\n.dsh-bots-search-banner {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-interactive-bg-hover);\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-search-empty {\n  padding: 12px 8px;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  text-align: center;\n}\n\n.dsh-bots-link-btn {\n  border: 0;\n  padding: 0;\n  background: transparent;\n  color: var(--dsw-alias-link);\n  font-size: inherit;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.dsh-bots-link-btn:hover {\n  text-decoration: underline;\n}\n\n/* ---- List Scroller, Resize Handle & Empty State ---- */\n.dsh-bots-list {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 2px 0 4px;\n}\n\n.dsh-bots-resize-handle {\n  position: relative;\n  height: 8px;\n  margin: 0;\n  cursor: row-resize;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  outline: none;\n}\n\n.dsh-bots-resize-handle::after {\n  content: '';\n  width: 100%;\n  height: 1px;\n  background: var(--dsw-alias-border-l1);\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-resize-handle:hover::after,\n.dsh-bots-resize-handle:focus-visible::after,\n.dsh-bots-resize-handle[data-dragging='true']::after {\n  height: 1px;\n  background: var(--dsw-alias-border-l3);\n}\n\n.dsh-bots-empty-card {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 8px;\n  padding: 14px 12px;\n  margin: 4px var(--dsh-sidebar-paint-inset, 3px) 6px;\n  border-radius: var(--dsw-radius-md);\n  border: 0.5px solid var(--dsw-alias-border-l1);\n  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 60%, transparent);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  text-align: center;\n}\n\n.dsh-bots-empty-stack {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  height: 32px;\n  margin-bottom: 2px;\n}\n\n.dsh-bots-empty-stack-item {\n  border-radius: var(--dsw-radius-sm);\n  border: 1.5px solid var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-shadow-lv1);\n  overflow: hidden;\n  display: inline-flex;\n  flex: none;\n}\n\n.dsh-bots-empty-stack-item:nth-child(1) {\n  transform: rotate(-6deg) translateX(6px);\n}\n\n.dsh-bots-empty-stack-item:nth-child(2) {\n  z-index: 2;\n  transform: translateY(-2px);\n}\n\n.dsh-bots-empty-stack-item:nth-child(3) {\n  transform: rotate(6deg) translateX(-6px);\n}\n\n.dsh-bots-empty-title {\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-empty-subtitle {\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 400;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-empty-actions {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n/* ---- Bot Card & Sub-Chats ---- */\n.dsh-bots-card-wrap {\n  display: flex;\n  flex-direction: column;\n}\n\n.dsh-bots-card-wrap[data-dragging='true'] {\n  opacity: 0.55;\n}\n\n.dsh-bots-card-wrap[data-drop-position='before'] {\n  box-shadow: inset 0 2px 0 0 var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-card-wrap[data-drop-position='after'] {\n  box-shadow: inset 0 -2px 0 0 var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-card {\n  position: relative;\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  text-align: left;\n  width: 100%;\n  box-sizing: border-box;\n  gap: 8px;\n  padding: 6px 8px;\n  border: 0;\n  border-inline: var(--dsh-sidebar-paint-inset, 3px) solid transparent;\n  background-clip: padding-box;\n  border-radius: var(--dsw-radius-inset);\n  background-color: transparent;\n  cursor: pointer;\n  min-width: 0;\n  overflow: hidden;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-card:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-card[data-active='true'] {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\n}\n\n.dsh-bots-card[data-dimmed='true'] {\n  opacity: 0.6;\n}\n\n.dsh-bots-card-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  text-align: left;\n  gap: 1px;\n}\n\n.dsh-bots-card-top {\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  justify-content: space-between;\n  gap: 6px;\n  min-width: 0;\n}\n\n.dsh-bots-card-name {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  text-align: left;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-card[data-unread='true'] .dsh-bots-card-name,\n.dsh-bots-card[data-has-active-child='true'] .dsh-bots-card-name {\n  font-weight: 600;\n}\n\n.dsh-bots-card-time {\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  flex-shrink: 0;\n  font-variant-numeric: tabular-nums;\n}\n\n.dsh-bots-card-sub {\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  gap: 4px;\n  min-width: 0;\n}\n\n.dsh-bots-card-line {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  text-align: left;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-card-line[data-tone='attention'] {\n  color: var(--dsw-alias-state-warn-label);\n  font-weight: 500;\n}\n\n.dsh-bots-card-line[data-tone='working'] {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-upnext-pill {\n  border: 0;\n  border-radius: 999px;\n  padding: 1px 6px;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  line-height: 14px;\n  font-weight: 600;\n  cursor: pointer;\n  flex-shrink: 0;\n}\n\n.dsh-bots-upnext-pill:hover {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-card-fold-btn {\n  position: relative;\n  width: 24px;\n  height: 24px;\n  padding: 0;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  flex-shrink: 0;\n  opacity: 0;\n  transition:\n    opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-card:hover .dsh-bots-card-fold-btn,\n.dsh-bots-card:focus-within .dsh-bots-card-fold-btn,\n.dsh-bots-card-fold-btn[data-has-signal='true'],\n.dsh-bots-card-fold-btn[data-collapsed='true'] {\n  opacity: 1;\n}\n\n.dsh-bots-card-fold-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-fold-dot {\n  position: absolute;\n  top: 3px;\n  right: 3px;\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n}\n\n.dsh-bots-fold-dot[data-signal='permission'] {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.dsh-bots-fold-dot[data-signal='failed'] {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-fold-dot[data-signal='working'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-inline-rename {\n  width: 100%;\n  height: 24px;\n  padding: 0 6px;\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  line-height: 20px;\n  font-family: inherit;\n  outline: none;\n}\n\n/* ---- Sub-chat Rows & Workers ---- */\n.dsh-bots-sublist {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  margin-left: 20px;\n  padding-left: 10px;\n  border-left: 1px solid var(--dsw-alias-border-l1);\n  padding-right: var(--dsh-sidebar-paint-inset, 3px);\n  padding-bottom: 4px;\n}\n\n.dsh-bots-sublist[data-paused='true'] {\n  opacity: 0.6;\n}\n\n.dsh-bots-subrow {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  height: 30px;\n  padding: 0 8px;\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  color: var(--dsw-alias-label-secondary);\n  font-size: 12px;\n  line-height: 18px;\n  min-width: 0;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-subrow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-subrow[data-active='true'] {\n  background: var(--dsw-alias-interactive-bg-active);\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 500;\n}\n\n.dsh-bots-subrow-icon {\n  position: relative;\n  width: 16px;\n  height: 16px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dsh-bots-subrow-badge {\n  position: absolute;\n  right: -2px;\n  bottom: -2px;\n  width: 7px;\n  height: 7px;\n  border-radius: 999px;\n  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-base);\n}\n\n.dsh-bots-subrow-badge[data-live='replying'] {\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-state-warn-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dsh-bots-subrow-badge[data-live='attention'] {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.dsh-bots-subrow-badge[data-live='working'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-subrow-title {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dsh-bots-subrow[data-unread='true'] .dsh-bots-subrow-title {\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n}\n\n.dsh-bots-subrow-meta {\n  font-size: 11px;\n  line-height: 14px;\n  color: var(--dsw-alias-label-tertiary);\n  flex-shrink: 0;\n  font-variant-numeric: tabular-nums;\n}\n\n.dsh-bots-worker-list {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding-left: 14px;\n  margin-left: 8px;\n  border-left: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-worker-row {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  height: 26px;\n  padding: 0 8px;\n  border-radius: var(--dsw-radius-sm);\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-worker-row:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-worker-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  flex-shrink: 0;\n  background: var(--dsw-alias-state-idle-primary);\n}\n\n.dsh-bots-worker-dot[data-state='needs-you'] {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.dsh-bots-worker-dot[data-state='failed'],\n.dsh-bots-worker-dot[data-state='unreachable'] {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-worker-dot[data-state='running'],\n.dsh-bots-worker-dot[data-state='working'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-worker-dot[data-state='done'] {\n  background: var(--dsw-alias-state-success-primary);\n}\n\n.dsh-bots-worker-more {\n  border: 0;\n  background: transparent;\n  padding: 4px 8px;\n  text-align: left;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n}\n\n.dsh-bots-worker-more:hover {\n  color: var(--dsw-alias-label-primary);\n}\n\n/* ---- Avatar & Cutout Status Dot ---- */\n.dsh-bots-avatar-wrap {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n}\n\n.dsh-bots-avatar-img {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.dsh-bots-avatar-fallback {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-weight: 600;\n  color: var(--dsw-static-neutral-bluish-1000);\n  user-select: none;\n}\n\n.dsh-bots-avatar-dot {\n  position: absolute;\n  right: -1px;\n  bottom: -1px;\n  border-radius: 999px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  pointer-events: none;\n}\n\n.dsh-bots-avatar-dot[data-state='attention'],\n.dsh-bots-avatar-dot[data-state='permission'],\n.dsh-bots-avatar-dot[data-state='unconfirmed'] {\n  background: var(--dsw-alias-state-warn-primary);\n  color: var(--dsw-alias-label-on-color);\n}\n\n.dsh-bots-avatar-dot[data-state='working'],\n.dsh-bots-avatar-dot[data-state='monitoring'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-avatar-dot[data-state='unread'] {\n  background: var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-avatar-dot[data-state='failed'] {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-avatar-dot[data-state='paused'],\n.dsh-bots-avatar-dot[data-state='disconnected'] {\n  background: var(--dsw-alias-state-idle-primary);\n}\n\n.dsh-bots-group-collage {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  grid-template-rows: repeat(2, 1fr);\n  gap: 2px;\n  padding: 2px;\n  box-sizing: border-box;\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-radius: var(--dsw-radius-inset);\n  overflow: hidden;\n  flex-shrink: 0;\n}\n\n.dsh-bots-group-collage-more {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 10px;\n  line-height: 12px;\n  font-weight: 600;\n  border-radius: var(--dsw-radius-xs);\n}\n\n/* ---- Popovers, Context Menu & Hover Card (DSHD Glass Menu Material) ---- */\n.dsh-bots-popover {\n  position: fixed;\n  z-index: 1400;\n  min-width: 196px;\n  padding: 4px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-md);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-specific-menu);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  box-shadow: var(--dsw-shadow-lv3);\n  color: var(--dsw-alias-label-primary);\n  font-family: var(--dsw-font-family);\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n.dsh-bots-menu-section {\n  padding: 6px 8px 4px;\n  font-size: 11px;\n  line-height: 14px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dsh-bots-menu-item {\n  width: 100%;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-height: 32px;\n  padding: 6px 8px;\n  box-sizing: border-box;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 20px;\n  text-align: left;\n  cursor: pointer;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-menu-item:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-menu-item:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dsh-bots-menu-item[data-danger='true'] {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-menu-item[data-danger='true']:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover-danger);\n}\n\n.dsh-bots-menu-item-desc {\n  display: block;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  margin-top: 2px;\n}\n\n.dsh-bots-menu-sep {\n  height: 1px;\n  margin: 4px 8px;\n  background: var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-hovercard {\n  position: fixed;\n  z-index: 1180;\n  width: 288px;\n  padding: 12px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-md);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-specific-menu);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  box-shadow: var(--dsw-shadow-lv3);\n  color: var(--dsw-alias-label-primary);\n  font-family: var(--dsw-font-family);\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n/* ---- Avatar Picker (Group Switcher + 3D Carousel + Swatches) ---- */\n/* border-box + 100% keeps 12px padding inside the 352px popover (0px right overflow). */\n.dsh-bots-picker {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  box-sizing: border-box;\n  width: 100%;\n  min-width: 0;\n  padding: 12px;\n  border-radius: var(--dsw-radius-md);\n}\n\n.dsh-bots-picker[data-drag-file='true'] {\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\n  outline-offset: -2px;\n}\n\n.dsh-bots-picker *,\n.dsh-bots-picker *::before,\n.dsh-bots-picker *::after {\n  box-sizing: border-box;\n}\n\n.dsh-bots-picker-head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n}\n\n.dsh-bots-picker-seg {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  padding: 2px;\n  border-radius: var(--dsw-radius-inset);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-picker-seg-btn {\n  height: 24px;\n  padding: 0 10px;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font-family: inherit;\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 400;\n  cursor: pointer;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-picker-seg-btn:hover {\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-picker-seg-btn[aria-pressed='true'] {\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 500;\n  box-shadow: var(--dsw-shadow-lv1);\n}\n\n.dsh-bots-picker-caption {\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dsh-bots-carousel {\n  position: relative;\n  width: 100%;\n  height: 120px;\n  overflow: hidden;\n  border-radius: var(--dsw-radius-md);\n}\n\n/* Slides are anchored to exact horizontal/vertical center; JS only adds translateX(offset). */\n.dsh-bots-carousel-slide {\n  position: absolute;\n  left: 50%;\n  top: 50%;\n  width: 112px;\n  height: 112px;\n  margin: -56px 0 0 -56px;\n  border-radius: var(--dsw-radius-lg);\n  overflow: hidden;\n  cursor: pointer;\n  transition:\n    transform var(--ds-transition-duration) var(--ds-ease-in-out),\n    opacity var(--ds-transition-duration) var(--ds-ease-in-out);\n  box-shadow: var(--dsw-shadow-lv2);\n}\n\n.dsh-bots-carousel-nav {\n  position: absolute;\n  top: 50%;\n  transform: translateY(-50%);\n  z-index: 10;\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border-radius: 999px;\n  corner-shape: round;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-2);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  color: var(--dsw-alias-label-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  box-shadow: var(--dsw-shadow-lv1);\n  opacity: 1;\n  visibility: visible;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-carousel-nav[data-dir='prev'] {\n  left: 6px;\n  right: auto;\n}\n\n.dsh-bots-carousel-nav[data-dir='next'] {\n  right: 6px;\n  left: auto;\n}\n\n.dsh-bots-carousel-nav:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-swatches {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  justify-content: space-between;\n  gap: 5px;\n  width: 100%;\n}\n\n.dsh-bots-swatch {\n  flex: none;\n  width: 22px;\n  height: 22px;\n  border-radius: 999px;\n  corner-shape: round;\n  border: 1px solid var(--dsw-alias-border-l2);\n  cursor: pointer;\n  padding: 0;\n  position: relative;\n}\n\n.dsh-bots-swatch[data-selected='true'] {\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3.5px var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-swatch-wheel {\n  background: conic-gradient(\n    from 0deg,\n    var(--dsw-static-red-400),\n    var(--dsw-static-amber-400),\n    var(--dsw-static-green-400),\n    var(--dsw-static-blue-400),\n    var(--dsw-static-violet-400),\n    var(--dsw-static-red-400)\n  );\n  overflow: hidden;\n}\n\n/* ---- Buttons, Inputs, Modals & Toasts (DSHD Capsules & Dialog Material) ---- */\n.dsh-bots-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 36px;\n  padding: 0 16px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-button);\n  corner-shape: round;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 14px;\n  line-height: 22px;\n  font-weight: 500;\n  font-family: inherit;\n  cursor: pointer;\n  white-space: nowrap;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-btn:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-btn:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dsh-bots-btn:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: 2px;\n}\n\n.dsh-bots-btn[data-variant='primary'] {\n  background: var(--dsw-alias-button-primary-fill);\n  border-color: transparent;\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dsh-bots-btn[data-variant='primary']:hover:not(:disabled) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dsh-bots-btn[data-variant='danger'] {\n  background: var(--dsw-alias-state-error-primary);\n  border-color: transparent;\n  color: var(--dsw-alias-label-on-color);\n}\n\n.dsh-bots-btn[data-variant='danger']:hover:not(:disabled) {\n  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, var(--dsw-static-neutral-1000));\n}\n\n.dsh-bots-btn[data-variant='ghost'] {\n  background: transparent;\n  border-color: transparent;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-btn[data-variant='ghost']:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-btn[data-size='sm'] {\n  height: 28px;\n  border-radius: var(--dsw-radius-button-sm);\n  padding: 0 12px;\n  font-size: 12px;\n  line-height: 18px;\n}\n\n.dsh-bots-input,\n.dsh-bots-textarea,\n.dsh-bots-select {\n  width: 100%;\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  font-family: inherit;\n  font-size: 14px;\n  line-height: 22px;\n  padding: 7px 12px;\n  outline: none;\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-input:focus,\n.dsh-bots-textarea:focus,\n.dsh-bots-select:focus {\n  border-color: var(--dsw-alias-state-business-primary);\n  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);\n}\n\n.dsh-bots-select option {\n  background: var(--dsw-alias-bg-panel-solid);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-backdrop {\n  position: fixed;\n  inset: 0;\n  z-index: 1300;\n  background: var(--dsw-alias-bg-mask-1);\n  backdrop-filter: var(--dsw-mask-blur, blur(2px));\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  animation: dsh-bots-mask-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\n}\n\n.dsh-bots-modal {\n  position: relative;\n  width: 100%;\n  max-width: 480px;\n  max-height: calc(100vh - 48px);\n  display: flex;\n  flex-direction: column;\n  border-radius: var(--dsw-radius-dialog);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-2);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  color: var(--dsw-alias-label-primary);\n  box-shadow: var(--dsw-shadow-lv3);\n  font-family: var(--dsw-font-family);\n  overflow: hidden;\n  animation: dsh-bots-overlay-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\n}\n\n.dsh-bots-modal[data-drag-file='true'] {\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\n  outline-offset: -2px;\n}\n\n.dsh-bots-modal-sm {\n  max-width: 420px;\n}\n\n.dsh-bots-modal-lg {\n  max-width: 640px;\n}\n\n.dsh-bots-modal-templates {\n  width: min(1040px, calc(100vw - 48px));\n  max-width: 1040px;\n  height: min(760px, calc(100vh - 48px));\n}\n\n.dsh-bots-modal-band {\n  height: 80px;\n  flex-shrink: 0;\n  opacity: 0.36;\n  background: linear-gradient(180deg, var(--new-bot-band, var(--dsw-static-deepseek-200)) 0%, transparent 100%);\n}\n\n.dsh-bots-modal-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 18px 16px 14px 24px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-modal-title {\n  font-size: 16px;\n  line-height: 24px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-modal-body {\n  flex: 1 1 auto;\n  overflow-y: auto;\n  padding: 16px 24px;\n}\n\n.dsh-bots-modal-footer {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 14px 24px 18px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-modal-card {\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-layer-1);\n  padding: 12px;\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n\n.dsh-bots-modal-row-btn {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  width: 100%;\n  padding: 8px 10px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-inset);\n  border: 1px solid transparent;\n  background: transparent;\n  text-align: left;\n  cursor: pointer;\n  color: var(--dsw-alias-label-primary);\n  font-family: inherit;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-modal-row-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-modal-row-btn[data-active='true'] {\n  background: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-border-l2);\n}\n\n.dsh-bots-check-badge {\n  position: absolute;\n  right: -3px;\n  bottom: -3px;\n  width: 16px;\n  height: 16px;\n  border-radius: 999px;\n  background: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-label-on-color);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-panel-solid);\n  animation: dsh-bots-check-pop var(--ds-transition-duration) var(--ds-ease-in-out);\n}\n\n.dsh-bots-field-label {\n  display: block;\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  margin-bottom: 4px;\n}\n\n.dsh-bots-error-text {\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-state-error-primary);\n}\n\n/* ---- Toasts (DSHD dark pill, auto-fade, no close button, zero layout shift) ---- */\n.dsh-bots-toasts {\n  position: fixed;\n  right: 20px;\n  bottom: 20px;\n  z-index: 1500;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-end;\n  gap: 8px;\n  pointer-events: none;\n}\n\n.dsh-bots-toast {\n  pointer-events: auto;\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  max-width: 380px;\n  padding: 10px 16px;\n  border-radius: var(--dsw-radius-md);\n  border: none;\n  background: var(--dsw-alias-toast-bg);\n  color: var(--dsw-alias-toast-label);\n  box-shadow: var(--dsw-shadow-lv2);\n  font-size: 13px;\n  line-height: 20px;\n  font-family: var(--dsw-font-family);\n  animation: dsh-bots-toast-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n.dsh-bots-toast[data-tone='error'] {\n  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, transparent), var(--dsw-shadow-lv2);\n}\n\n.dsh-bots-toast-action {\n  border: 0;\n  padding: 0;\n  background: transparent;\n  color: var(--dsw-alias-toast-action);\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.dsh-bots-toast-action:hover {\n  opacity: 0.85;\n}\n";
+    __style.textContent = "/* WhaleIsle Bots shared styles \u2014 strictly driven by DSHD design-language & motion tokens.\n * Zero theme branches, zero hardcoded hex/rgb colors, zero custom scrollbar rules, zero ms literals. */\n\n/* ---- Animations & Motion (prefers-reduced-motion zeroes --ds-transition-duration* in base.css) ---- */\n@keyframes dsh-bots-spin {\n  from { transform: rotate(0deg); }\n  to { transform: rotate(360deg); }\n}\n\n@keyframes dsh-bots-pulse {\n  0%, 100% { opacity: 1; transform: scale(1); }\n  50% { opacity: 0.45; transform: scale(0.86); }\n}\n\n@keyframes dsh-bots-popover-in {\n  from {\n    opacity: 0;\n    transform: translateY(var(--ds-motion-distance-popover, 4px)) scale(0.98);\n  }\n  to {\n    opacity: 1;\n    transform: none;\n  }\n}\n\n@keyframes dsh-bots-overlay-in {\n  from { transform: translateY(var(--ds-motion-distance-overlay, 8px)) scale(var(--ds-motion-scale-overlay, 0.96)); }\n  to { transform: none; }\n}\n\n@keyframes dsh-bots-mask-in {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}\n\n@keyframes dsh-bots-toast-in {\n  from { opacity: 0; transform: translateY(var(--ds-motion-distance-popover, 4px)); }\n  to { opacity: 1; transform: none; }\n}\n\n@keyframes dsh-bots-check-pop {\n  from { opacity: 0; transform: scale(0.5); }\n  to { opacity: 1; transform: scale(1); }\n}\n\n.dsh-bots-spin {\n  animation: dsh-bots-spin calc(var(--ds-transition-duration-slow) * 3) linear infinite;\n}\n\n.dsh-bots-pulse {\n  animation: dsh-bots-pulse calc(var(--ds-transition-duration-slow) * 5) var(--ds-ease-in-out) infinite;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .dsh-bots-spin,\n  .dsh-bots-pulse,\n  .dsh-bots-backdrop,\n  .dsh-bots-modal,\n  .dsh-bots-popover,\n  .dsh-bots-hovercard,\n  .dsh-bots-toast,\n  .dsh-bots-check-badge {\n    animation: none;\n  }\n\n  .dsh-bots-carousel-slide,\n  .dsh-bots-icon-btn,\n  .dsh-bots-card,\n  .dsh-bots-subrow,\n  .dsh-bots-subrow-fold-meta,\n  .dsh-bots-btn,\n  .dsh-bots-section,\n  .dsh-bots-chevron,\n  .dsh-bots-disclosure,\n  .dsh-bots-disclosure-inner,\n  .dsh-bots-preview-wrap,\n  .dsh-bots-header-action-slot,\n  .dsh-bots-popover[data-motion='presence'],\n  .dsh-bots-resize-handle::after {\n    transition: none;\n  }\n}\n\n:root[data-dsh-minimal] .dsh-bots-spin,\n:root[data-dsh-minimal] .dsh-bots-pulse,\n:root[data-dsh-minimal] .dsh-bots-backdrop,\n:root[data-dsh-minimal] .dsh-bots-modal,\n:root[data-dsh-minimal] .dsh-bots-popover,\n:root[data-dsh-minimal] .dsh-bots-hovercard,\n:root[data-dsh-minimal] .dsh-bots-toast,\n:root[data-dsh-minimal] .dsh-bots-check-badge {\n  animation: none;\n}\n\n:root[data-dsh-minimal] .dsh-bots-carousel-slide,\n:root[data-dsh-minimal] .dsh-bots-icon-btn,\n:root[data-dsh-minimal] .dsh-bots-card,\n:root[data-dsh-minimal] .dsh-bots-subrow,\n:root[data-dsh-minimal] .dsh-bots-subrow-fold-meta,\n:root[data-dsh-minimal] .dsh-bots-btn,\n:root[data-dsh-minimal] .dsh-bots-section,\n:root[data-dsh-minimal] .dsh-bots-chevron,\n:root[data-dsh-minimal] .dsh-bots-disclosure,\n:root[data-dsh-minimal] .dsh-bots-disclosure-inner,\n:root[data-dsh-minimal] .dsh-bots-preview-wrap,\n:root[data-dsh-minimal] .dsh-bots-header-action-slot,\n:root[data-dsh-minimal] .dsh-bots-popover[data-motion='presence'],\n:root[data-dsh-minimal] .dsh-bots-resize-handle::after {\n  transition: none;\n}\n\n/* ---- Smooth Disclosure Tracks & Rotating Chevrons (docs/motion.md GroupSessionRun pattern) ---- */\n.dsh-bots-chevron {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  transform: rotate(0deg);\n  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);\n}\n\n.dsh-bots-chevron[data-open='true'] {\n  transform: rotate(90deg);\n}\n\n.dsh-bots-disclosure {\n  display: grid;\n  grid-template-rows: 1fr;\n  opacity: 1;\n  transition:\n    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out);\n}\n\n.dsh-bots-disclosure[data-state='closed'] {\n  grid-template-rows: 0fr;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.dsh-bots-disclosure-inner {\n  min-height: 0;\n  overflow: hidden;\n  display: flex;\n  flex-direction: column;\n  transform: translateY(0);\n  transition: transform var(--ds-transition-duration) var(--ds-ease-in-out);\n}\n\n.dsh-bots-disclosure[data-state='closed'] > .dsh-bots-disclosure-inner {\n  transform: translateY(-3px);\n}\n\n.dsh-bots-preview-wrap {\n  display: flex;\n  align-items: center;\n  min-width: 0;\n  flex: 1 1 auto;\n  opacity: 1;\n  transform: translateX(0);\n  transition:\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out),\n    transform var(--ds-transition-duration) var(--ds-ease-in-out);\n}\n\n.dsh-bots-preview-wrap[data-state='closed'] {\n  opacity: 0;\n  transform: translateX(-4px);\n  pointer-events: none;\n}\n\n.dsh-bots-header-action-slot {\n  display: grid;\n  grid-template-columns: 1fr;\n  opacity: 1;\n  transition:\n    grid-template-columns var(--ds-transition-duration) var(--ds-ease-in-out),\n    opacity var(--ds-motion-duration-swap) var(--ds-ease-in-out);\n}\n\n.dsh-bots-header-action-slot[data-open='false'] {\n  grid-template-columns: 0fr;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.dsh-bots-header-action-slot-inner {\n  min-width: 0;\n  overflow: hidden;\n  display: inline-flex;\n  align-items: center;\n}\n\n/* ---- Sidebar Section & Header (pixel-aligned with WorkspaceBrowser 36px toolbar) ---- */\n.dsh-bots-section {\n  display: flex;\n  flex-direction: column;\n  width: 100%;\n  box-sizing: border-box;\n  padding: 0;\n  margin-bottom: 2px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n  font-family: var(--dsw-font-family);\n  color: var(--dsw-alias-label-primary);\n  user-select: none;\n  flex-shrink: 0;\n  transition: border-bottom-color var(--ds-transition-duration) var(--ds-ease-in-out);\n}\n\n.dsh-bots-section[data-has-resize='true'] {\n  border-bottom-color: transparent;\n}\n\n.dsh-bots-rail-btn {\n  position: relative;\n  width: 36px;\n  height: 36px;\n  margin: 0 0 12px;\n  padding: 0;\n  border: 0;\n  border-radius: var(--dsw-radius-md);\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-rail-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-rail-btn:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: -2px;\n}\n\n.dsh-bots-rail-badge {\n  position: absolute;\n  top: 4px;\n  right: 4px;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 4px;\n  box-sizing: border-box;\n  border-radius: 999px;\n  background: var(--dsw-alias-state-warn-primary);\n  color: var(--dsw-alias-label-on-color);\n  font-size: 10px;\n  font-weight: 600;\n  line-height: 14px;\n  text-align: center;\n  font-variant-numeric: tabular-nums;\n}\n\n.dsh-bots-header {\n  flex: none;\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  height: 36px;\n  padding-left: var(--dsh-sidebar-row-padding, 12px);\n  padding-right: 1px;\n  margin-right: -4px;\n  box-sizing: border-box;\n  min-width: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dsh-bots-header-toggle {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  height: 28px;\n  padding: 0 6px 0 4px;\n  margin-left: -4px;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 500;\n  cursor: pointer;\n  flex-shrink: 0;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-header-toggle:hover {\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-header-toggle:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: -2px;\n}\n\n.dsh-bots-header-spacer {\n  flex: 1 1 auto;\n  min-width: 4px;\n  display: flex;\n  align-items: center;\n  overflow: hidden;\n}\n\n.dsh-bots-header-actions {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  flex-shrink: 0;\n}\n\n.dsh-bots-icon-btn {\n  position: relative;\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  flex-shrink: 0;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-icon-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-icon-btn[data-active='true'] {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-icon-btn:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: -2px;\n}\n\n.dsh-bots-icon-btn-sm {\n  width: 22px;\n  height: 22px;\n}\n\n.dsh-bots-filter-badge {\n  position: absolute;\n  top: 4px;\n  right: 4px;\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: var(--dsw-alias-state-business-primary);\n}\n\n/* ---- Collapsed Preview Strip ---- */\n.dsh-bots-preview-strip {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  height: 24px;\n  padding: 0 4px;\n  min-width: 0;\n  flex: 1 1 auto;\n  overflow: hidden;\n}\n\n.dsh-bots-preview-item {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  cursor: pointer;\n  flex-shrink: 0;\n  border-radius: var(--dsw-radius-xs);\n}\n\n.dsh-bots-preview-item[data-paused='true'] {\n  opacity: 0.45;\n}\n\n.dsh-bots-preview-more {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 20px;\n  height: 20px;\n  padding: 0 4px;\n  border-radius: var(--dsw-radius-xs);\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  line-height: 14px;\n  font-weight: 500;\n  flex-shrink: 0;\n}\n\n/* ---- Inline Search Bar ---- */\n.dsh-bots-search-box {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  height: 32px;\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\n  padding: 0 8px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-sm);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-tertiary);\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-search-box:focus-within {\n  border-color: var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-search-input {\n  flex: 1 1 auto;\n  min-width: 0;\n  border: 0;\n  outline: none;\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  line-height: 20px;\n  font-family: inherit;\n}\n\n.dsh-bots-search-input::placeholder {\n  color: var(--dsw-alias-label-placeholder);\n}\n\n.dsh-bots-mark {\n  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 26%, transparent);\n  color: inherit;\n  border-radius: 2px;\n  padding: 0 1px;\n}\n\n.dsh-bots-search-banner {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  margin: 2px var(--dsh-sidebar-paint-inset, 3px) 6px;\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-interactive-bg-hover);\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-search-empty {\n  padding: 12px 8px;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  text-align: center;\n}\n\n.dsh-bots-link-btn {\n  border: 0;\n  padding: 0;\n  background: transparent;\n  color: var(--dsw-alias-link);\n  font-size: inherit;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.dsh-bots-link-btn:hover {\n  text-decoration: underline;\n}\n\n/* ---- List Scroller, Resize Handle & Empty State ---- */\n.dsh-bots-list {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 2px 0 4px;\n}\n\n.dsh-bots-resize-handle {\n  position: relative;\n  height: 8px;\n  margin: 0;\n  cursor: row-resize;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  outline: none;\n}\n\n.dsh-bots-resize-handle::after {\n  content: '';\n  width: 100%;\n  height: 1px;\n  background: var(--dsw-alias-border-l1);\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-resize-handle:hover::after,\n.dsh-bots-resize-handle:focus-visible::after,\n.dsh-bots-resize-handle[data-dragging='true']::after {\n  height: 1px;\n  background: var(--dsw-alias-border-l3);\n}\n\n.dsh-bots-empty-card {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 8px;\n  padding: 14px 12px;\n  margin: 4px var(--dsh-sidebar-paint-inset, 3px) 6px;\n  border-radius: var(--dsw-radius-md);\n  border: 0.5px solid var(--dsw-alias-border-l1);\n  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 60%, transparent);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  text-align: center;\n}\n\n.dsh-bots-empty-stack {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  height: 32px;\n  margin-bottom: 2px;\n}\n\n.dsh-bots-empty-stack-item {\n  border-radius: var(--dsw-radius-sm);\n  border: 1.5px solid var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-shadow-lv1);\n  overflow: hidden;\n  display: inline-flex;\n  flex: none;\n}\n\n.dsh-bots-empty-stack-item:nth-child(1) {\n  transform: rotate(-6deg) translateX(6px);\n}\n\n.dsh-bots-empty-stack-item:nth-child(2) {\n  z-index: 2;\n  transform: translateY(-2px);\n}\n\n.dsh-bots-empty-stack-item:nth-child(3) {\n  transform: rotate(6deg) translateX(-6px);\n}\n\n.dsh-bots-empty-title {\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-empty-subtitle {\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 400;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-empty-actions {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n/* ---- Bot Card & Sub-Chats ---- */\n.dsh-bots-card-wrap {\n  display: flex;\n  flex-direction: column;\n}\n\n.dsh-bots-card-wrap[data-dragging='true'] {\n  opacity: 0.55;\n}\n\n.dsh-bots-card-wrap[data-drop-position='before'] {\n  box-shadow: inset 0 2px 0 0 var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-card-wrap[data-drop-position='after'] {\n  box-shadow: inset 0 -2px 0 0 var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-card {\n  position: relative;\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  text-align: left;\n  width: 100%;\n  box-sizing: border-box;\n  gap: 8px;\n  padding: 6px 8px;\n  border: 0;\n  border-inline: var(--dsh-sidebar-paint-inset, 3px) solid transparent;\n  background-clip: padding-box;\n  border-radius: var(--dsw-radius-inset);\n  background-color: transparent;\n  cursor: pointer;\n  min-width: 0;\n  overflow: hidden;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-card:hover {\n  background-color: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-card[data-active='true'] {\n  background-color: var(--dsw-alias-interactive-bg-active);\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\n}\n\n.dsh-bots-card[data-dimmed='true'] {\n  opacity: 0.6;\n}\n\n.dsh-bots-card-body {\n  flex: 1 1 auto;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  text-align: left;\n  gap: 1px;\n}\n\n.dsh-bots-card-top {\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  justify-content: space-between;\n  gap: 6px;\n  min-width: 0;\n}\n\n.dsh-bots-card-name {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  text-align: left;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-card[data-unread='true'] .dsh-bots-card-name,\n.dsh-bots-card[data-has-active-child='true'] .dsh-bots-card-name {\n  font-weight: 600;\n}\n\n.dsh-bots-card-time {\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  flex-shrink: 0;\n  font-variant-numeric: tabular-nums;\n}\n\n.dsh-bots-card-sub {\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  gap: 4px;\n  min-width: 0;\n}\n\n.dsh-bots-card-line {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  text-align: left;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-card-line[data-tone='attention'] {\n  color: var(--dsw-alias-state-warn-label);\n  font-weight: 500;\n}\n\n.dsh-bots-card-line[data-tone='working'] {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-upnext-pill {\n  border: 0;\n  border-radius: 999px;\n  padding: 1px 6px;\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 11px;\n  line-height: 14px;\n  font-weight: 600;\n  cursor: pointer;\n  flex-shrink: 0;\n}\n\n.dsh-bots-upnext-pill:hover {\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-card-fold-btn {\n  position: relative;\n  width: 24px;\n  height: 24px;\n  padding: 0;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-tertiary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  flex-shrink: 0;\n  opacity: 0;\n  transition:\n    opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-card:hover .dsh-bots-card-fold-btn,\n.dsh-bots-card:focus-within .dsh-bots-card-fold-btn,\n.dsh-bots-card-fold-btn[data-has-signal='true'],\n.dsh-bots-card-fold-btn[data-collapsed='true'] {\n  opacity: 1;\n}\n\n.dsh-bots-card-fold-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-fold-dot {\n  position: absolute;\n  top: 3px;\n  right: 3px;\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n}\n\n.dsh-bots-fold-dot[data-signal='permission'] {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.dsh-bots-fold-dot[data-signal='failed'] {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-fold-dot[data-signal='working'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-inline-rename {\n  width: 100%;\n  height: 24px;\n  padding: 0 6px;\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  font-size: 13px;\n  line-height: 20px;\n  font-family: inherit;\n  outline: none;\n}\n\n/* ---- Sub-chat Rows & Workers ---- */\n.dsh-bots-sublist {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  margin-left: 20px;\n  padding-left: 10px;\n  border-left: 1px solid var(--dsw-alias-border-l1);\n  padding-right: var(--dsh-sidebar-paint-inset, 3px);\n  padding-bottom: 4px;\n}\n\n.dsh-bots-sublist[data-paused='true'] {\n  opacity: 0.6;\n}\n\n.dsh-bots-subrow {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  height: 30px;\n  padding: 0 8px;\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  color: var(--dsw-alias-label-secondary);\n  font-size: 12px;\n  line-height: 18px;\n  min-width: 0;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-subrow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-subrow[data-active='true'] {\n  background: var(--dsw-alias-interactive-bg-active);\n  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 500;\n}\n\n.dsh-bots-subrow-icon {\n  position: relative;\n  width: 16px;\n  height: 16px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dsh-bots-subrow-badge {\n  position: absolute;\n  right: -2px;\n  bottom: -2px;\n  width: 7px;\n  height: 7px;\n  border-radius: 999px;\n  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-base);\n}\n\n.dsh-bots-subrow-badge[data-live='replying'] {\n  background: var(--dsw-alias-bg-base);\n  color: var(--dsw-alias-state-warn-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.dsh-bots-subrow-badge[data-live='attention'] {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.dsh-bots-subrow-badge[data-live='working'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-subrow-title {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dsh-bots-subrow[data-unread='true'] .dsh-bots-subrow-title {\n  color: var(--dsw-alias-label-primary);\n  font-weight: 600;\n}\n\n.dsh-bots-subrow-meta {\n  font-size: 11px;\n  line-height: 14px;\n  color: var(--dsw-alias-label-tertiary);\n  flex-shrink: 0;\n  font-variant-numeric: tabular-nums;\n}\n\n.dsh-bots-subrow-fold-meta {\n  border: 0;\n  background: transparent;\n  padding: 2px 4px;\n  border-radius: var(--dsw-radius-xs);\n  font-family: inherit;\n  font-size: 11px;\n  line-height: 14px;\n  color: var(--dsw-alias-label-tertiary);\n  flex-shrink: 0;\n  font-variant-numeric: tabular-nums;\n  cursor: pointer;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-subrow-fold-meta:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-worker-list {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding-left: 14px;\n  margin-left: 8px;\n  border-left: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-worker-row {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  height: 26px;\n  padding: 0 8px;\n  border-radius: var(--dsw-radius-sm);\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-worker-row:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-worker-dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  flex-shrink: 0;\n  background: var(--dsw-alias-state-idle-primary);\n}\n\n.dsh-bots-worker-dot[data-state='needs-you'] {\n  background: var(--dsw-alias-state-warn-primary);\n}\n\n.dsh-bots-worker-dot[data-state='failed'],\n.dsh-bots-worker-dot[data-state='unreachable'] {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-worker-dot[data-state='running'],\n.dsh-bots-worker-dot[data-state='working'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-worker-dot[data-state='done'] {\n  background: var(--dsw-alias-state-success-primary);\n}\n\n.dsh-bots-worker-more {\n  border: 0;\n  background: transparent;\n  padding: 4px 8px;\n  text-align: left;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  cursor: pointer;\n}\n\n.dsh-bots-worker-more:hover {\n  color: var(--dsw-alias-label-primary);\n}\n\n/* ---- Avatar & Cutout Status Dot ---- */\n.dsh-bots-avatar-wrap {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n}\n\n.dsh-bots-avatar-img {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n}\n\n.dsh-bots-avatar-fallback {\n  width: 100%;\n  height: 100%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-weight: 600;\n  color: var(--dsw-static-neutral-bluish-1000);\n  user-select: none;\n}\n\n.dsh-bots-avatar-dot {\n  position: absolute;\n  right: -1px;\n  bottom: -1px;\n  border-radius: 999px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  pointer-events: none;\n}\n\n.dsh-bots-avatar-dot[data-state='attention'],\n.dsh-bots-avatar-dot[data-state='permission'],\n.dsh-bots-avatar-dot[data-state='unconfirmed'] {\n  background: var(--dsw-alias-state-warn-primary);\n  color: var(--dsw-alias-label-on-color);\n}\n\n.dsh-bots-avatar-dot[data-state='working'],\n.dsh-bots-avatar-dot[data-state='monitoring'] {\n  background: var(--dsw-alias-state-warn-secondary);\n}\n\n.dsh-bots-avatar-dot[data-state='unread'] {\n  background: var(--dsw-alias-state-business-primary);\n}\n\n.dsh-bots-avatar-dot[data-state='failed'] {\n  background: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-avatar-dot[data-state='paused'],\n.dsh-bots-avatar-dot[data-state='disconnected'] {\n  background: var(--dsw-alias-state-idle-primary);\n}\n\n.dsh-bots-group-collage {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  grid-template-rows: repeat(2, 1fr);\n  gap: 2px;\n  padding: 2px;\n  box-sizing: border-box;\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-radius: var(--dsw-radius-inset);\n  overflow: hidden;\n  flex-shrink: 0;\n}\n\n.dsh-bots-group-collage-more {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: var(--dsw-alias-interactive-bg-active);\n  color: var(--dsw-alias-label-secondary);\n  font-size: 10px;\n  line-height: 12px;\n  font-weight: 600;\n  border-radius: var(--dsw-radius-xs);\n}\n\n/* ---- Popovers, Context Menu & Hover Card (DSHD Glass Menu Material) ---- */\n.dsh-bots-popover {\n  position: fixed;\n  z-index: 1400;\n  min-width: 196px;\n  padding: 4px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-md);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-specific-menu);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  box-shadow: var(--dsw-shadow-lv3);\n  color: var(--dsw-alias-label-primary);\n  font-family: var(--dsw-font-family);\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n.dsh-bots-popover[data-motion='presence'] {\n  animation: none;\n  opacity: 1;\n  transform: none;\n  transform-origin: top center;\n  transition:\n    opacity var(--ds-motion-duration-popover) var(--ds-ease-in-out),\n    transform var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n.dsh-bots-popover[data-motion='presence'][data-state='closed'] {\n  opacity: 0;\n  transform: translateY(var(--ds-motion-distance-popover, 4px)) scale(0.98);\n  pointer-events: none;\n}\n\n.dsh-bots-menu-section {\n  padding: 6px 8px 4px;\n  font-size: 11px;\n  line-height: 14px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-tertiary);\n}\n\n.dsh-bots-menu-item {\n  width: 100%;\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  min-height: 32px;\n  padding: 6px 8px;\n  box-sizing: border-box;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 20px;\n  text-align: left;\n  cursor: pointer;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-menu-item:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-menu-item:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dsh-bots-menu-item[data-danger='true'] {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.dsh-bots-menu-item[data-danger='true']:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover-danger);\n}\n\n.dsh-bots-menu-item-desc {\n  display: block;\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-label-tertiary);\n  margin-top: 2px;\n}\n\n.dsh-bots-menu-sep {\n  height: 1px;\n  margin: 4px 8px;\n  background: var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-hovercard {\n  position: fixed;\n  z-index: 1180;\n  width: 288px;\n  padding: 12px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-md);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-specific-menu);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  box-shadow: var(--dsw-shadow-lv3);\n  color: var(--dsw-alias-label-primary);\n  font-family: var(--dsw-font-family);\n  animation: dsh-bots-popover-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n/* ---- Avatar Picker (Group Switcher + 3D Carousel + Swatches) ---- */\n/* border-box + 100% keeps 12px padding inside the 352px popover (0px right overflow). */\n.dsh-bots-picker {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n  box-sizing: border-box;\n  width: 100%;\n  min-width: 0;\n  padding: 12px;\n  border-radius: var(--dsw-radius-md);\n}\n\n.dsh-bots-picker[data-drag-file='true'] {\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\n  outline-offset: -2px;\n}\n\n.dsh-bots-picker *,\n.dsh-bots-picker *::before,\n.dsh-bots-picker *::after {\n  box-sizing: border-box;\n}\n\n.dsh-bots-picker-head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n}\n\n.dsh-bots-picker-seg {\n  display: inline-flex;\n  align-items: center;\n  gap: 2px;\n  padding: 2px;\n  border-radius: var(--dsw-radius-inset);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-picker-seg-btn {\n  height: 24px;\n  padding: 0 10px;\n  border: 0;\n  border-radius: var(--dsw-radius-sm);\n  background: transparent;\n  color: var(--dsw-alias-label-secondary);\n  font-family: inherit;\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 400;\n  cursor: pointer;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-picker-seg-btn:hover {\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-picker-seg-btn[aria-pressed='true'] {\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-primary);\n  font-weight: 500;\n  box-shadow: var(--dsw-shadow-lv1);\n}\n\n.dsh-bots-picker-caption {\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.dsh-bots-carousel {\n  position: relative;\n  width: 100%;\n  height: 120px;\n  overflow: hidden;\n  border-radius: var(--dsw-radius-md);\n}\n\n/* Slides are anchored to exact horizontal/vertical center; JS only adds translateX(offset). */\n.dsh-bots-carousel-slide {\n  position: absolute;\n  left: 50%;\n  top: 50%;\n  width: 112px;\n  height: 112px;\n  margin: -56px 0 0 -56px;\n  border-radius: var(--dsw-radius-lg);\n  overflow: hidden;\n  cursor: pointer;\n  transition:\n    transform var(--ds-transition-duration) var(--ds-ease-in-out),\n    opacity var(--ds-transition-duration) var(--ds-ease-in-out);\n  box-shadow: var(--dsw-shadow-lv2);\n}\n\n.dsh-bots-carousel-nav {\n  position: absolute;\n  top: 50%;\n  transform: translateY(-50%);\n  z-index: 10;\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border-radius: 999px;\n  corner-shape: round;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-2);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  color: var(--dsw-alias-label-primary);\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  box-shadow: var(--dsw-shadow-lv1);\n  opacity: 1;\n  visibility: visible;\n  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-carousel-nav[data-dir='prev'] {\n  left: 6px;\n  right: auto;\n}\n\n.dsh-bots-carousel-nav[data-dir='next'] {\n  right: 6px;\n  left: auto;\n}\n\n.dsh-bots-carousel-nav:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-swatches {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  justify-content: space-between;\n  gap: 5px;\n  width: 100%;\n}\n\n.dsh-bots-swatch {\n  flex: none;\n  width: 22px;\n  height: 22px;\n  border-radius: 999px;\n  corner-shape: round;\n  border: 1px solid var(--dsw-alias-border-l2);\n  cursor: pointer;\n  padding: 0;\n  position: relative;\n}\n\n.dsh-bots-swatch[data-selected='true'] {\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 3.5px var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-swatch-wheel {\n  background: conic-gradient(\n    from 0deg,\n    var(--dsw-static-red-400),\n    var(--dsw-static-amber-400),\n    var(--dsw-static-green-400),\n    var(--dsw-static-blue-400),\n    var(--dsw-static-violet-400),\n    var(--dsw-static-red-400)\n  );\n  overflow: hidden;\n}\n\n/* ---- Buttons, Inputs, Modals & Toasts (DSHD Capsules & Dialog Material) ---- */\n.dsh-bots-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  height: 36px;\n  padding: 0 16px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-button);\n  corner-shape: round;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: transparent;\n  color: var(--dsw-alias-label-primary);\n  font-size: 14px;\n  line-height: 22px;\n  font-weight: 500;\n  font-family: inherit;\n  cursor: pointer;\n  white-space: nowrap;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-btn:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-btn:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n.dsh-bots-btn:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));\n  outline-offset: 2px;\n}\n\n.dsh-bots-btn[data-variant='primary'] {\n  background: var(--dsw-alias-button-primary-fill);\n  border-color: transparent;\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.dsh-bots-btn[data-variant='primary']:hover:not(:disabled) {\n  background: var(--dsw-alias-button-primary-hover);\n}\n\n.dsh-bots-btn[data-variant='danger'] {\n  background: var(--dsw-alias-state-error-primary);\n  border-color: transparent;\n  color: var(--dsw-alias-label-on-color);\n}\n\n.dsh-bots-btn[data-variant='danger']:hover:not(:disabled) {\n  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, var(--dsw-static-neutral-1000));\n}\n\n.dsh-bots-btn[data-variant='ghost'] {\n  background: transparent;\n  border-color: transparent;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.dsh-bots-btn[data-variant='ghost']:hover:not(:disabled) {\n  background: var(--dsw-alias-interactive-bg-hover);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-btn[data-size='sm'] {\n  height: 28px;\n  border-radius: var(--dsw-radius-button-sm);\n  padding: 0 12px;\n  font-size: 12px;\n  line-height: 18px;\n}\n\n.dsh-bots-input,\n.dsh-bots-textarea,\n.dsh-bots-select {\n  width: 100%;\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-1);\n  color: var(--dsw-alias-label-primary);\n  font-family: inherit;\n  font-size: 14px;\n  line-height: 22px;\n  padding: 7px 12px;\n  outline: none;\n  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-input:focus,\n.dsh-bots-textarea:focus,\n.dsh-bots-select:focus {\n  border-color: var(--dsw-alias-state-business-primary);\n  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);\n}\n\n.dsh-bots-select option {\n  background: var(--dsw-alias-bg-panel-solid);\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-backdrop {\n  position: fixed;\n  inset: 0;\n  z-index: 1300;\n  background: var(--dsw-alias-bg-mask-1);\n  backdrop-filter: var(--dsw-mask-blur, blur(2px));\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  animation: dsh-bots-mask-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\n}\n\n.dsh-bots-modal {\n  position: relative;\n  width: 100%;\n  max-width: 480px;\n  max-height: calc(100vh - 48px);\n  display: flex;\n  flex-direction: column;\n  border-radius: var(--dsw-radius-dialog);\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-2);\n  backdrop-filter: var(--dsw-menu-backdrop-filter);\n  color: var(--dsw-alias-label-primary);\n  box-shadow: var(--dsw-shadow-lv3);\n  font-family: var(--dsw-font-family);\n  overflow: hidden;\n  animation: dsh-bots-overlay-in var(--ds-motion-duration-overlay) var(--ds-ease-in-out);\n}\n\n.dsh-bots-modal[data-drag-file='true'] {\n  outline: 2px dashed var(--dsw-alias-state-business-primary);\n  outline-offset: -2px;\n}\n\n.dsh-bots-modal-sm {\n  max-width: 420px;\n}\n\n.dsh-bots-modal-lg {\n  max-width: 640px;\n}\n\n.dsh-bots-modal-templates {\n  width: min(1040px, calc(100vw - 48px));\n  max-width: 1040px;\n  height: min(760px, calc(100vh - 48px));\n}\n\n.dsh-bots-modal-band {\n  height: 80px;\n  flex-shrink: 0;\n  opacity: 0.36;\n  background: linear-gradient(180deg, var(--new-bot-band, var(--dsw-static-deepseek-200)) 0%, transparent 100%);\n}\n\n.dsh-bots-modal-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 18px 16px 14px 24px;\n  border-bottom: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-modal-title {\n  font-size: 16px;\n  line-height: 24px;\n  font-weight: 600;\n  color: var(--dsw-alias-label-primary);\n}\n\n.dsh-bots-modal-body {\n  flex: 1 1 auto;\n  overflow-y: auto;\n  padding: 16px 24px;\n}\n\n.dsh-bots-modal-footer {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 14px 24px 18px;\n  border-top: 1px solid var(--dsw-alias-border-l1);\n}\n\n.dsh-bots-modal-card {\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-layer-1);\n  padding: 12px;\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n}\n\n.dsh-bots-modal-row-btn {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  width: 100%;\n  padding: 8px 10px;\n  box-sizing: border-box;\n  border-radius: var(--dsw-radius-inset);\n  border: 1px solid transparent;\n  background: transparent;\n  text-align: left;\n  cursor: pointer;\n  color: var(--dsw-alias-label-primary);\n  font-family: inherit;\n  transition:\n    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),\n    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);\n}\n\n.dsh-bots-modal-row-btn:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.dsh-bots-modal-row-btn[data-active='true'] {\n  background: var(--dsw-alias-interactive-bg-active);\n  border-color: var(--dsw-alias-border-l2);\n}\n\n.dsh-bots-check-badge {\n  position: absolute;\n  right: -3px;\n  bottom: -3px;\n  width: 16px;\n  height: 16px;\n  border-radius: 999px;\n  background: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-label-on-color);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-shadow: 0 0 0 2px var(--dsw-alias-bg-panel-solid);\n  animation: dsh-bots-check-pop var(--ds-transition-duration) var(--ds-ease-in-out);\n}\n\n.dsh-bots-field-label {\n  display: block;\n  font-size: 12px;\n  line-height: 18px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-secondary);\n  margin-bottom: 4px;\n}\n\n.dsh-bots-error-text {\n  font-size: 12px;\n  line-height: 18px;\n  color: var(--dsw-alias-state-error-primary);\n}\n\n/* ---- Toasts (DSHD dark pill, auto-fade, no close button, zero layout shift) ---- */\n.dsh-bots-toasts {\n  position: fixed;\n  right: 20px;\n  bottom: 20px;\n  z-index: 1500;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-end;\n  gap: 8px;\n  pointer-events: none;\n}\n\n.dsh-bots-toast {\n  pointer-events: auto;\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  max-width: 380px;\n  padding: 10px 16px;\n  border-radius: var(--dsw-radius-md);\n  border: none;\n  background: var(--dsw-alias-toast-bg);\n  color: var(--dsw-alias-toast-label);\n  box-shadow: var(--dsw-shadow-lv2);\n  font-size: 13px;\n  line-height: 20px;\n  font-family: var(--dsw-font-family);\n  animation: dsh-bots-toast-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);\n}\n\n.dsh-bots-toast[data-tone='error'] {\n  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-error-primary) 55%, transparent), var(--dsw-shadow-lv2);\n}\n\n.dsh-bots-toast-action {\n  border: 0;\n  padding: 0;\n  background: transparent;\n  color: var(--dsw-alias-toast-action);\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 500;\n  cursor: pointer;\n}\n\n.dsh-bots-toast-action:hover {\n  opacity: 0.85;\n}\n";
     if (!__existing && __head && typeof __head.appendChild === "function") __head.appendChild(__style);
   }
 }
@@ -67,7 +67,7 @@ var __existing2;
 var __style2;
 
 // vendor/dsh-whale/src/client/index.tsx
-var import_react30 = require("react");
+var import_react31 = require("react");
 
 // vendor/dsh-whale/src/shared/locales.js
 var SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"]);
@@ -13435,13 +13435,109 @@ function GlobalBotsSettings({ closeSettings }) {
 }
 
 // vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
-var import_react29 = require("react");
+var import_react30 = require("react");
 var import_react_dom11 = require("react-dom");
 
-// vendor/dsh-whale/src/client/components/BotGroupSidebarCard.tsx
+// vendor/dsh-whale/src/client/components/BotDisclosure.tsx
 var import_react25 = require("react");
-var import_react_dom8 = require("react-dom");
 var import_jsx_runtime26 = require("react/jsx-runtime");
+function prefersInstantMotion() {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    return true;
+  }
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+    return true;
+  }
+  if (typeof document !== "undefined" && document.documentElement?.hasAttribute?.("data-dsh-minimal")) {
+    return true;
+  }
+  return false;
+}
+function useBotsPresence(open, exitMs = 220) {
+  const [mounted, setMounted] = (0, import_react25.useState)(open);
+  const [entered, setEntered] = (0, import_react25.useState)(open);
+  const mountedRef = (0, import_react25.useRef)(mounted);
+  mountedRef.current = mounted;
+  (0, import_react25.useEffect)(() => {
+    const instant = prefersInstantMotion();
+    if (open) {
+      if (instant) {
+        setMounted(true);
+        setEntered(true);
+        return void 0;
+      }
+      setMounted(true);
+      let raf2 = 0;
+      const raf1 = window.requestAnimationFrame(() => {
+        raf2 = window.requestAnimationFrame(() => {
+          setEntered(true);
+        });
+      });
+      return () => {
+        window.cancelAnimationFrame(raf1);
+        if (raf2) window.cancelAnimationFrame(raf2);
+      };
+    }
+    setEntered(false);
+    if (!mountedRef.current) {
+      return void 0;
+    }
+    if (instant) {
+      setMounted(false);
+      return void 0;
+    }
+    const timer = window.setTimeout(() => {
+      setMounted(false);
+    }, exitMs);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [exitMs, open]);
+  return {
+    present: mounted,
+    state: open && entered ? "open" : "closed"
+  };
+}
+function BotDisclosure({
+  open,
+  className,
+  exitMs = 220,
+  onPresenceChange,
+  children
+}) {
+  const { present, state } = useBotsPresence(open, exitMs);
+  (0, import_react25.useEffect)(() => {
+    onPresenceChange?.(present);
+  }, [onPresenceChange, present]);
+  if (!present) {
+    return null;
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+    "div",
+    {
+      className: className ? `dsh-bots-disclosure ${className}` : "dsh-bots-disclosure",
+      "data-state": state,
+      "aria-hidden": open ? void 0 : true,
+      children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "dsh-bots-disclosure-inner", children })
+    }
+  );
+}
+function BotChevron({ open, size = 14, className }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+    "span",
+    {
+      className: className ? `dsh-bots-chevron ${className}` : "dsh-bots-chevron",
+      "data-open": open ? "true" : "false",
+      "aria-hidden": "true",
+      children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconChevronRight, { size })
+    }
+  );
+}
+
+// vendor/dsh-whale/src/client/components/BotGroupSidebarCard.tsx
+var import_react26 = require("react");
+var import_react_dom8 = require("react-dom");
+var import_jsx_runtime27 = require("react/jsx-runtime");
 function GroupContextMenu({
   group,
   position,
@@ -13449,8 +13545,8 @@ function GroupContextMenu({
   onStartRename
 }) {
   const { tr } = useBotsLocale();
-  const menuRef = (0, import_react25.useRef)(null);
-  (0, import_react25.useEffect)(() => {
+  const menuRef = (0, import_react26.useRef)(null);
+  (0, import_react26.useEffect)(() => {
     const handleDown = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
@@ -13474,8 +13570,8 @@ function GroupContextMenu({
   const left = Math.min(position.x, window.innerWidth - 205);
   const top = Math.min(position.y, window.innerHeight - 200);
   return (0, import_react_dom8.createPortal)(
-    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
         "button",
         {
           type: "button",
@@ -13485,12 +13581,12 @@ function GroupContextMenu({
             onStartRename();
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconEdit, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: tr("bots.row.rename", "Rename") })
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconEdit, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: tr("bots.row.rename", "Rename") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
         "button",
         {
           type: "button",
@@ -13500,12 +13596,12 @@ function GroupContextMenu({
             botsStore.openModal({ kind: "group", groupId: group.id });
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconUsers, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: tr("bots.groups.manageMembers", "Manage members\u2026") })
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconUsers, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: tr("bots.groups.manageMembers", "Manage members\u2026") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
         "button",
         {
           type: "button",
@@ -13515,13 +13611,13 @@ function GroupContextMenu({
             void botsStore.updateGroup(group.id, { unread: !group.unread });
           },
           children: [
-            group.unread ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconEye, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconEyeOff, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: group.unread ? tr("bots.row.markRead", "Mark Read") : tr("bots.row.markUnread", "Mark Unread") })
+            group.unread ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconEye, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconEyeOff, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: group.unread ? tr("bots.row.markRead", "Mark Read") : tr("bots.row.markUnread", "Mark Unread") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "dsh-bots-menu-sep" }),
-      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { className: "dsh-bots-menu-sep" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
         "button",
         {
           type: "button",
@@ -13532,8 +13628,8 @@ function GroupContextMenu({
             botsStore.openModal({ kind: "confirm-delete-group", groupId: group.id });
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(IconTrash, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: tr("bots.groups.delete", "Delete group\u2026") })
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconTrash, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: tr("bots.groups.delete", "Delete group\u2026") })
           ]
         }
       )
@@ -13549,17 +13645,17 @@ function BotGroupSidebarCard({
 }) {
   const { locale } = useBotsLocale();
   const activeGroupId = useBotsState((state) => state.activeGroupId);
-  const [renaming, setRenaming] = (0, import_react25.useState)(false);
-  const [renameText, setRenameText] = (0, import_react25.useState)(group.name);
-  const [menuPos, setMenuPos] = (0, import_react25.useState)(null);
-  (0, import_react25.useEffect)(() => {
+  const [renaming, setRenaming] = (0, import_react26.useState)(false);
+  const [renameText, setRenameText] = (0, import_react26.useState)(group.name);
+  const [menuPos, setMenuPos] = (0, import_react26.useState)(null);
+  (0, import_react26.useEffect)(() => {
     setRenameText(group.name);
   }, [group.name]);
-  const memberBots = (0, import_react25.useMemo)(
+  const memberBots = (0, import_react26.useMemo)(
     () => (group.members ?? []).map((m) => botsById.get(m.botId)).filter(Boolean),
     [botsById, group.members]
   );
-  const subtitle = (0, import_react25.useMemo)(() => {
+  const subtitle = (0, import_react26.useMemo)(() => {
     if (group.lastMessageText) {
       return group.lastMessageAuthor ? `${group.lastMessageAuthor}: ${group.lastMessageText}` : group.lastMessageText;
     }
@@ -13581,8 +13677,8 @@ function BotGroupSidebarCard({
   };
   const timeText = formatRelativeTime(group.lastActiveAt ?? group.updatedAt ?? group.createdAt, now, locale);
   const isActive = activeGroupId === group.id;
-  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "dsh-bots-card-wrap", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "dsh-bots-card-wrap", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
       "div",
       {
         className: "dsh-bots-card",
@@ -13595,10 +13691,10 @@ function BotGroupSidebarCard({
         },
         onContextMenu: handleContextMenu,
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(BotGroupAvatar, { members: memberBots, size: 28, unread: group.unread }),
-          /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "dsh-bots-card-body", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "dsh-bots-card-top", children: [
-              renaming ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(BotGroupAvatar, { members: memberBots, size: 28, unread: group.unread }),
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "dsh-bots-card-body", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "dsh-bots-card-top", children: [
+              renaming ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
                 "input",
                 {
                   type: "text",
@@ -13620,17 +13716,17 @@ function BotGroupSidebarCard({
                     }
                   }
                 }
-              ) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "dsh-bots-card-name", children: nameSegments ? nameSegments.map(
-                (seg, idx) => seg.marked ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("mark", { className: "dsh-bots-mark", children: seg.text }, idx) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { children: seg.text }, idx)
+              ) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "dsh-bots-card-name", children: nameSegments ? nameSegments.map(
+                (seg, idx) => seg.marked ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("mark", { className: "dsh-bots-mark", children: seg.text }, idx) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: seg.text }, idx)
               ) : group.name }),
-              !renaming && timeText && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "dsh-bots-card-time", children: timeText })
+              !renaming && timeText && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "dsh-bots-card-time", children: timeText })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "dsh-bots-card-sub", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "dsh-bots-card-line", children: subtitle }) })
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { className: "dsh-bots-card-sub", children: /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "dsh-bots-card-line", children: subtitle }) })
           ] })
         ]
       }
     ),
-    menuPos && /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(
+    menuPos && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
       GroupContextMenu,
       {
         group,
@@ -13643,13 +13739,13 @@ function BotGroupSidebarCard({
 }
 
 // vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
-var import_react28 = require("react");
+var import_react29 = require("react");
 var import_react_dom10 = require("react-dom");
 
 // vendor/dsh-whale/src/client/components/BotHoverCard.tsx
-var import_react26 = require("react");
+var import_react27 = require("react");
 var import_react_dom9 = require("react-dom");
-var import_jsx_runtime27 = require("react/jsx-runtime");
+var import_jsx_runtime28 = require("react/jsx-runtime");
 var activityCache = /* @__PURE__ */ new Map();
 var CACHE_TTL_MS = 1e4;
 function BotHoverCard({
@@ -13662,11 +13758,11 @@ function BotHoverCard({
   onClose
 }) {
   const { locale, tr } = useBotsLocale();
-  const [snapshot, setSnapshot] = (0, import_react26.useState)(() => {
+  const [snapshot, setSnapshot] = (0, import_react27.useState)(() => {
     const cached = activityCache.get(bot.id);
     return cached && Date.now() - cached.at < CACHE_TTL_MS ? cached.data : null;
   });
-  (0, import_react26.useEffect)(() => {
+  (0, import_react27.useEffect)(() => {
     const cached = activityCache.get(bot.id);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       setSnapshot(cached.data);
@@ -13696,7 +13792,7 @@ function BotHoverCard({
   const recentLines = (snapshot?.recent ?? []).slice(0, 3);
   const purpose = bot.purpose ?? bot.description ?? "";
   return (0, import_react_dom9.createPortal)(
-    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
       "div",
       {
         className: "dsh-bots-hovercard",
@@ -13704,8 +13800,8 @@ function BotHoverCard({
         onMouseEnter,
         onMouseLeave,
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", gap: 12, alignItems: "flex-start" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", gap: 12, alignItems: "flex-start" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
               BotAvatar,
               {
                 botId: bot.id,
@@ -13720,9 +13816,9 @@ function BotHoverCard({
                 usageLimit: Boolean(bot.usageLimit)
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { flex: "1 1 auto", minWidth: 0 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { flex: "1 1 auto", minWidth: 0 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
                   "div",
                   {
                     style: {
@@ -13736,7 +13832,7 @@ function BotHoverCard({
                     children: bot.name
                   }
                 ),
-                /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+                /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
                   "button",
                   {
                     type: "button",
@@ -13747,14 +13843,14 @@ function BotHoverCard({
                       onClose();
                     },
                     children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconHome, { size: 13 }),
-                      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: locale === "zh-CN" ? "\u6253\u5F00" : "Open" })
+                      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconHome, { size: 13 }),
+                      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { children: locale === "zh-CN" ? "\u6253\u5F00" : "Open" })
                     ]
                   }
                 )
               ] }),
-              statusLine && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: 12, lineHeight: "18px", color: "var(--dsw-alias-label-secondary)", marginTop: 2 }, children: statusLine }),
-              purpose && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+              statusLine && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { fontSize: 12, lineHeight: "18px", color: "var(--dsw-alias-label-secondary)", marginTop: 2 }, children: statusLine }),
+              purpose && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
                 "div",
                 {
                   style: {
@@ -13772,14 +13868,14 @@ function BotHoverCard({
               )
             ] })
           ] }),
-          needsYouItems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { fontSize: 12, lineHeight: "18px", fontWeight: 600, color: "var(--dsw-alias-state-warn-label)", marginBottom: 6 }, children: [
+          needsYouItems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { fontSize: 12, lineHeight: "18px", fontWeight: 600, color: "var(--dsw-alias-state-warn-label)", marginBottom: 6 }, children: [
               tr("bots.items.needsYou", "Needs you"),
               " (",
               needsYouItems.length,
               ")"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 4 }, children: needsYouItems.map((item) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 4 }, children: needsYouItems.map((item) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
               "div",
               {
                 style: {
@@ -13791,8 +13887,8 @@ function BotHoverCard({
                   lineHeight: "18px"
                 },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: item.title }),
-                  /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: item.title }),
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
                     "button",
                     {
                       type: "button",
@@ -13805,8 +13901,8 @@ function BotHoverCard({
                         onClose();
                       },
                       children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: locale === "zh-CN" ? "\u67E5\u770B" : "View" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(IconArrowRight, { size: 12 })
+                        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { children: locale === "zh-CN" ? "\u67E5\u770B" : "View" }),
+                        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconArrowRight, { size: 12 })
                       ]
                     }
                   )
@@ -13815,14 +13911,14 @@ function BotHoverCard({
               item.id
             )) })
           ] }),
-          recentLines.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { style: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { fontSize: 12, lineHeight: "18px", fontWeight: 600, color: "var(--dsw-alias-label-tertiary)", marginBottom: 4 }, children: tr("bots.activity.tab", "Activity") }),
-            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 4 }, children: recentLines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+          recentLines.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { style: { marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dsw-alias-border-l1)" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { fontSize: 12, lineHeight: "18px", fontWeight: 600, color: "var(--dsw-alias-label-tertiary)", marginBottom: 4 }, children: tr("bots.activity.tab", "Activity") }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 4 }, children: recentLines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
               "div",
               {
                 style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, lineHeight: "18px" },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+                  /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
                     "span",
                     {
                       style: {
@@ -13834,7 +13930,7 @@ function BotHoverCard({
                       children: line.place ? `${line.place} \xB7 ${line.text}` : line.text
                     }
                   ),
-                  line.at ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { style: { color: "var(--dsw-alias-label-tertiary)", fontSize: 11, lineHeight: "14px", flexShrink: 0 }, children: formatRelativeTime(line.at, now, locale) }) : null
+                  line.at ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { style: { color: "var(--dsw-alias-label-tertiary)", fontSize: 11, lineHeight: "14px", flexShrink: 0 }, children: formatRelativeTime(line.at, now, locale) }) : null
                 ]
               },
               line.id ?? `${bot.id}-act-${index}`
@@ -13848,29 +13944,29 @@ function BotHoverCard({
 }
 
 // vendor/dsh-whale/src/client/components/BotSubChatList.tsx
-var import_react27 = require("react");
-var import_jsx_runtime28 = require("react/jsx-runtime");
+var import_react28 = require("react");
+var import_jsx_runtime29 = require("react/jsx-runtime");
 function ChatOriginIcon({ origin }) {
   if (origin === "home") {
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconHome, { size: 14 });
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconHome, { size: 14 });
   }
   if (origin === "automation") {
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconZap, { size: 14 });
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconZap, { size: 14 });
   }
   if (origin === "side") {
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconMessageSquare, { size: 14 });
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconMessageSquare, { size: 14 });
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconGlobe, { size: 14 });
+  return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconGlobe, { size: 14 });
 }
 function ChatLiveBadge({ live }) {
   if (!live || live === "idle") {
     return null;
   }
   if (live === "replying") {
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-subrow-badge", "data-live": "replying", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconSpinner, { size: 8, strokeWidth: 2.5 }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-subrow-badge", "data-live": "replying", children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconSpinner, { size: 8, strokeWidth: 2.5 }) });
   }
   const tone = live === "needs-you" || live === "usage-limit" ? "attention" : "working";
-  return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-subrow-badge", "data-live": tone });
+  return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-subrow-badge", "data-live": tone });
 }
 function BotChatWorkerRows({
   botId,
@@ -13878,12 +13974,12 @@ function BotChatWorkerRows({
   hideSleepingWorkers
 }) {
   const { tr } = useBotsLocale();
-  const [extraShown, setExtraShown] = (0, import_react27.useState)(0);
-  const running = (0, import_react27.useMemo)(
+  const [extraShown, setExtraShown] = (0, import_react28.useState)(0);
+  const running = (0, import_react28.useMemo)(
     () => (chat.running ?? []).filter((w) => !hideSleepingWorkers || w.state !== "sleeping"),
     [chat.running, hideSleepingWorkers]
   );
-  const finished = (0, import_react27.useMemo)(
+  const finished = (0, import_react28.useMemo)(
     () => (chat.finished ?? []).filter((w) => !hideSleepingWorkers || w.state !== "sleeping"),
     [chat.finished, hideSleepingWorkers]
   );
@@ -13895,11 +13991,11 @@ function BotChatWorkerRows({
   if (shownRunning.length === 0 && shownFinished.length === 0) {
     return null;
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "dsh-bots-worker-list", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "dsh-bots-worker-list", children: [
     [...shownRunning, ...shownFinished].map((worker, idx) => {
       const key = worker.id ?? worker.sessionId ?? worker.workspaceId ?? `${chat.chatId}-w-${idx}`;
       const label = worker.title ?? worker.label ?? worker.statusText ?? "Worker";
-      return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
+      return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
         "div",
         {
           className: "dsh-bots-worker-row",
@@ -13911,14 +14007,14 @@ function BotChatWorkerRows({
           },
           title: worker.statusText || label,
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-worker-dot", "data-state": worker.state }),
-            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-subrow-title", children: label })
+            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-worker-dot", "data-state": worker.state }),
+            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-subrow-title", children: label })
           ]
         },
         key
       );
     }),
-    remaining > 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+    remaining > 0 ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
       "button",
       {
         type: "button",
@@ -13931,7 +14027,7 @@ function BotChatWorkerRows({
           count: Math.min(remaining, CHAT_TREE_CAPS.step)
         })
       }
-    ) : extraShown > 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+    ) : extraShown > 0 ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
       "button",
       {
         type: "button",
@@ -13951,7 +14047,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
   const activeSessionId = useBotsState((state) => state.activeSessionId);
   const activeBotId = useBotsState((state) => state.activeBotId);
   const chatFolds = useBotsState((state) => state.chatFolds);
-  const orderedChats = (0, import_react27.useMemo)(() => {
+  const orderedChats = (0, import_react28.useMemo)(() => {
     const owned = rawTree ? botOwnChatTree(rawTree) : null;
     const base = owned?.chats ? [...owned.chats] : [];
     const hasHome = base.some((chat) => chat.origin === "home" && !chat.closed);
@@ -13977,7 +14073,7 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
       botsStore.openBotChat(bot.id, chat.sessionId || chat.chatId);
     }
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "dsh-bots-sublist", "data-paused": bot.paused ? "true" : "false", children: orderedChats.map((chat) => {
+  return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { className: "dsh-bots-sublist", "data-paused": bot.paused ? "true" : "false", children: orderedChats.map((chat) => {
     const isHome = chat.origin === "home" && !chat.closed;
     const label = isHome ? tr("bots.chats.home", "Home Chat") : chat.title || (chat.origin === "automation" ? tr("bots.chats.kindAutomation", "Automation") : tr("bots.chats.kindSide", "Side chat"));
     const foldKey = botChatFoldKey("local", bot.id, chat.chatId);
@@ -13987,8 +14083,12 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
     const isActive = activeBotId === bot.id && (activeSessionId === chat.sessionId || activeSessionId === chat.chatId || isHome && !activeSessionId);
     const timeText = formatRelativeTime(chat.lastActiveAt, now, locale);
     const foldText = folded && foldCounts ? chatFoldSummary(tr, foldCounts) : "";
-    return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(
+    const toggleWorkers = (e) => {
+      e.stopPropagation();
+      botsStore.setChatFold(foldKey, folded ? "open" : "folded");
+    };
+    return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
         "div",
         {
           className: "dsh-bots-subrow",
@@ -13997,45 +14097,52 @@ function BotSubChatList({ bot, now, hideSleepingWorkers }) {
           title: isHome ? tr("bots.chats.homeTooltip", "Home: the bot's main chat.") : label,
           onClick: (e) => handleChatClick(chat, e),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { className: "dsh-bots-subrow-icon", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ChatOriginIcon, { origin: chat.origin }),
-              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ChatLiveBadge, { live: chat.live })
+            /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("span", { className: "dsh-bots-subrow-icon", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ChatOriginIcon, { origin: chat.origin }),
+              /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ChatLiveBadge, { live: chat.live })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-subrow-title", children: label }),
-            foldText ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-subrow-meta", children: foldText }) : timeText ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: "dsh-bots-subrow-meta", children: timeText }) : null,
-            hasWorkers && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-subrow-title", children: label }),
+            foldText ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-bots-subrow-fold-meta",
+                "aria-expanded": !folded,
+                onClick: toggleWorkers,
+                children: foldText
+              }
+            ) : timeText ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-subrow-meta", children: timeText }) : null,
+            hasWorkers && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
               "button",
               {
                 type: "button",
                 className: "dsh-bots-icon-btn dsh-bots-icon-btn-sm",
-                onClick: (e) => {
-                  e.stopPropagation();
-                  botsStore.setChatFold(foldKey, folded ? "open" : "folded");
-                },
+                "aria-expanded": !folded,
+                onClick: toggleWorkers,
                 "aria-label": folded ? "Expand workers" : "Collapse workers",
-                children: folded ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconChevronRight, { size: 12 }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(IconChevronDown, { size: 12 })
+                children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(BotChevron, { open: !folded, size: 12 })
               }
             )
           ]
         }
       ),
-      hasWorkers && !folded && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(BotDisclosure, { open: hasWorkers && !folded, className: "dsh-bots-workers-disclosure", children: /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
         BotChatWorkerRows,
         {
           botId: bot.id,
           chat,
           hideSleepingWorkers
         }
-      )
+      ) })
     ] }, chat.chatId);
   }) });
 }
 
 // vendor/dsh-whale/src/client/components/BotSidebarCard.tsx
-var import_jsx_runtime29 = require("react/jsx-runtime");
+var import_jsx_runtime30 = require("react/jsx-runtime");
 function HighlightedSegments({ segments }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(import_jsx_runtime29.Fragment, { children: segments.map(
-    (seg, idx) => seg.marked ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("mark", { className: "dsh-bots-mark", children: seg.text }, idx) : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: seg.text }, idx)
+  return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(import_jsx_runtime30.Fragment, { children: segments.map(
+    (seg, idx) => seg.marked ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("mark", { className: "dsh-bots-mark", children: seg.text }, idx) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: seg.text }, idx)
   ) });
 }
 function BotContextMenu({
@@ -14045,8 +14152,8 @@ function BotContextMenu({
   onStartRename
 }) {
   const { locale, tr } = useBotsLocale();
-  const menuRef = (0, import_react28.useRef)(null);
-  (0, import_react28.useEffect)(() => {
+  const menuRef = (0, import_react29.useRef)(null);
+  (0, import_react29.useEffect)(() => {
     const handleDown = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         onClose();
@@ -14070,8 +14177,8 @@ function BotContextMenu({
   const left = Math.min(position.x, window.innerWidth - 210);
   const top = Math.min(position.y, window.innerHeight - 280);
   return (0, import_react_dom10.createPortal)(
-    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { ref: menuRef, className: "dsh-bots-popover", style: { left, top }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
         "button",
         {
           type: "button",
@@ -14081,12 +14188,12 @@ function BotContextMenu({
             onStartRename();
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconEdit, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: tr("bots.row.rename", "Rename") })
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconEdit, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.row.rename", "Rename") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
         "button",
         {
           type: "button",
@@ -14096,12 +14203,12 @@ function BotContextMenu({
             botsStore.openBotSettings(bot.id, { host: "page" });
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconSettings, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: tr("bots.row.settings", "Bot settings\u2026") })
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconSettings, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.row.settings", "Bot settings\u2026") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
         "button",
         {
           type: "button",
@@ -14111,13 +14218,13 @@ function BotContextMenu({
             void botsStore.updateBot(bot.id, { paused: !bot.paused });
           },
           children: [
-            bot.paused ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconPlay, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconPause, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: bot.paused ? tr("bots.row.resume", "Resume bot") : tr("bots.row.pause", "Pause bot") })
+            bot.paused ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconPlay, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconPause, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: bot.paused ? tr("bots.row.resume", "Resume bot") : tr("bots.row.pause", "Pause bot") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { className: "dsh-bots-menu-sep" }),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-sep" }),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
         "button",
         {
           type: "button",
@@ -14137,12 +14244,12 @@ function BotContextMenu({
             }
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconCopy, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: tr("bots.row.copyPath", "Copy Path") })
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconCopy, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.row.copyPath", "Copy Path") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
         "button",
         {
           type: "button",
@@ -14156,13 +14263,13 @@ function BotContextMenu({
             );
           },
           children: [
-            bot.unread ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconEye, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconEyeOff, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: bot.unread ? tr("bots.row.markRead", "Mark Read") : tr("bots.row.markUnread", "Mark Unread") })
+            bot.unread ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconEye, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconEyeOff, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: bot.unread ? tr("bots.row.markRead", "Mark Read") : tr("bots.row.markUnread", "Mark Unread") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("div", { className: "dsh-bots-menu-sep" }),
-      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-sep" }),
+      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
         "button",
         {
           type: "button",
@@ -14173,8 +14280,8 @@ function BotContextMenu({
             botsStore.openModal({ kind: "confirm-delete-bot", botId: bot.id });
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconTrash, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { children: tr("bots.row.delete", "Delete bot") })
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconTrash, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.row.delete", "Delete bot") })
           ]
         }
       )
@@ -14202,17 +14309,17 @@ function BotSidebarCard({
   const needsYouCount = useBotsState((state) => state.needsYou[bot.id] ?? bot.needsYouCount ?? 0);
   const startingSessionIds = useBotsState((state) => state.startingSessionIds);
   const chatTree = useBotsState((state) => state.chatsByBot[bot.id]);
-  const cardRef = (0, import_react28.useRef)(null);
-  const openHoverTimer = (0, import_react28.useRef)(null);
-  const closeHoverTimer = (0, import_react28.useRef)(null);
-  const [renaming, setRenaming] = (0, import_react28.useState)(false);
-  const [renameText, setRenameText] = (0, import_react28.useState)(bot.name);
-  const [menuPos, setMenuPos] = (0, import_react28.useState)(null);
-  const [hoverRect, setHoverRect] = (0, import_react28.useState)(null);
-  (0, import_react28.useEffect)(() => {
+  const cardRef = (0, import_react29.useRef)(null);
+  const openHoverTimer = (0, import_react29.useRef)(null);
+  const closeHoverTimer = (0, import_react29.useRef)(null);
+  const [renaming, setRenaming] = (0, import_react29.useState)(false);
+  const [renameText, setRenameText] = (0, import_react29.useState)(bot.name);
+  const [menuPos, setMenuPos] = (0, import_react29.useState)(null);
+  const [hoverRect, setHoverRect] = (0, import_react29.useState)(null);
+  (0, import_react29.useEffect)(() => {
     setRenameText(bot.name);
   }, [bot.name]);
-  const clearHoverTimers = (0, import_react28.useCallback)(() => {
+  const clearHoverTimers = (0, import_react29.useCallback)(() => {
     if (openHoverTimer.current !== null) {
       window.clearTimeout(openHoverTimer.current);
       openHoverTimer.current = null;
@@ -14222,7 +14329,7 @@ function BotSidebarCard({
       closeHoverTimer.current = null;
     }
   }, []);
-  (0, import_react28.useEffect)(() => clearHoverTimers, [clearHoverTimers]);
+  (0, import_react29.useEffect)(() => clearHoverTimers, [clearHoverTimers]);
   const scheduleHoverOpen = () => {
     if (renaming || menuPos) {
       return;
@@ -14240,7 +14347,7 @@ function BotSidebarCard({
       setHoverRect(null);
     }, 120);
   };
-  const { lineText, lineTone } = (0, import_react28.useMemo)(() => {
+  const { lineText, lineTone } = (0, import_react29.useMemo)(() => {
     if (typeof bot.activityLine === "string" && bot.activityLine.trim()) {
       const tone2 = needsYouCount > 0 || bot.dotState === "permission" ? "attention" : bot.dotState === "working" ? "working" : "default";
       return { lineText: bot.activityLine, lineTone: tone2 };
@@ -14267,7 +14374,7 @@ function BotSidebarCard({
     const tone = kind === "needYouElsewhere" || kind === "usageLimit" || needsYouCount > 0 ? "attention" : kind === "workingElsewhere" || kind === "replying" || kind === "reading" ? "working" : "default";
     return { lineText: text, lineTone: tone };
   }, [bot, locale, needsYouCount, now, startingSessionIds, tr]);
-  const foldSignal = (0, import_react28.useMemo)(() => {
+  const foldSignal = (0, import_react29.useMemo)(() => {
     if (!collapsed) {
       return null;
     }
@@ -14308,7 +14415,7 @@ function BotSidebarCard({
     setMenuPos({ x: event.clientX, y: event.clientY });
   };
   const isActive = activeBotId === bot.id && !activeGroupId;
-  const hasSubChats = (0, import_react28.useMemo)(
+  const hasSubChats = (0, import_react29.useMemo)(
     () => botHasSubChats(chatTree, hideSleepingWorkers),
     [chatTree, hideSleepingWorkers]
   );
@@ -14317,7 +14424,7 @@ function BotSidebarCard({
   const hasActiveChild = isActive && showExpandedTree;
   const timeText = formatRelativeTime(bot.lastActiveAt ?? bot.updatedAt ?? bot.createdAt, now, locale);
   const avatarStatus = needsYouCount > 0 ? "attention" : bot.dotState ?? void 0;
-  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
     "div",
     {
       className: "dsh-bots-card-wrap",
@@ -14329,7 +14436,7 @@ function BotSidebarCard({
       onDrop: (e) => onDropCard?.(bot.id, e),
       onDragEnd,
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
           "div",
           {
             ref: cardRef,
@@ -14347,7 +14454,7 @@ function BotSidebarCard({
             onMouseEnter: scheduleHoverOpen,
             onMouseLeave: scheduleHoverClose,
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
                 BotAvatar,
                 {
                   botId: bot.id,
@@ -14362,9 +14469,9 @@ function BotSidebarCard({
                   usageLimit: Boolean(bot.usageLimit)
                 }
               ),
-              /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "dsh-bots-card-body", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "dsh-bots-card-top", children: [
-                  renaming ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+              /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-card-body", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-card-top", children: [
+                  renaming ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
                     "input",
                     {
                       type: "text",
@@ -14386,12 +14493,12 @@ function BotSidebarCard({
                         }
                       }
                     }
-                  ) : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-card-name", children: searchMatch?.matchedBy === "name" ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(HighlightedSegments, { segments: searchMatch.nameSegments }) : bot.name }),
-                  !renaming && timeText && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-card-time", children: timeText })
+                  ) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-card-name", children: searchMatch?.matchedBy === "name" ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(HighlightedSegments, { segments: searchMatch.nameSegments }) : bot.name }),
+                  !renaming && timeText && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-card-time", children: timeText })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "dsh-bots-card-sub", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-card-line", "data-tone": lineTone, children: searchMatch?.matchedBy === "purpose" && searchMatch.purpose ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(HighlightedSegments, { segments: searchMatch.purpose.segments }) : lineText }),
-                  (bot.upNextCount ?? 0) > 0 && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-card-sub", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-card-line", "data-tone": lineTone, children: searchMatch?.matchedBy === "purpose" && searchMatch.purpose ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(HighlightedSegments, { segments: searchMatch.purpose.segments }) : lineText }),
+                  (bot.upNextCount ?? 0) > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
                     "button",
                     {
                       type: "button",
@@ -14407,36 +14514,37 @@ function BotSidebarCard({
                   )
                 ] })
               ] }),
-              hasSubChats && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)(
+              hasSubChats && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
                 "button",
                 {
                   type: "button",
                   className: "dsh-bots-card-fold-btn",
                   "data-collapsed": collapsed ? "true" : "false",
                   "data-has-signal": foldSignal ? "true" : "false",
+                  "aria-expanded": !collapsed,
                   "aria-label": collapsed ? "Expand chats" : "Collapse chats",
                   onClick: (e) => {
                     e.stopPropagation();
                     botsStore.toggleBotCollapsed(bot.id);
                   },
                   children: [
-                    collapsed ? /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconChevronRight, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(IconChevronDown, { size: 14 }),
-                    foldSignal && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "dsh-bots-fold-dot", "data-signal": foldSignal })
+                    /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(BotChevron, { open: !collapsed, size: 14 }),
+                    foldSignal && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-fold-dot", "data-signal": foldSignal })
                   ]
                 }
               )
             ]
           }
         ),
-        showExpandedTree && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(BotDisclosure, { open: showExpandedTree, className: "dsh-bots-sublist-disclosure", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
           BotSubChatList,
           {
             bot,
             now,
             hideSleepingWorkers
           }
-        ),
-        menuPos && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+        ) }),
+        menuPos && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
           BotContextMenu,
           {
             bot,
@@ -14445,7 +14553,7 @@ function BotSidebarCard({
             onStartRename: () => setRenaming(true)
           }
         ),
-        hoverRect && !menuPos && !renaming && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(
+        hoverRect && !menuPos && !renaming && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
           BotHoverCard,
           {
             bot,
@@ -14463,9 +14571,9 @@ function BotSidebarCard({
 }
 
 // vendor/dsh-whale/src/client/components/SidebarBotsSection.tsx
-var import_jsx_runtime30 = require("react/jsx-runtime");
+var import_jsx_runtime31 = require("react/jsx-runtime");
 function useAnchoredPopoverClose(open, ref, onClose) {
-  (0, import_react29.useEffect)(() => {
+  (0, import_react30.useEffect)(() => {
     if (!open) return void 0;
     const handleDown = (e) => {
       if (ref.current && !ref.current.contains(e.target)) onClose();
@@ -14483,13 +14591,15 @@ function useAnchoredPopoverClose(open, ref, onClose) {
 }
 function OptionsPopover({
   anchorRect,
+  open,
+  motionState,
   view,
   projectsFirst,
   onClose
 }) {
   const { locale, tr } = useBotsLocale();
-  const ref = (0, import_react29.useRef)(null);
-  useAnchoredPopoverClose(true, ref, onClose);
+  const ref = (0, import_react30.useRef)(null);
+  useAnchoredPopoverClose(open, ref, onClose);
   if (typeof document === "undefined") return null;
   const sortLabels = {
     manual: { title: tr("bots.options.sortManual", "Manual"), desc: tr("bots.options.sortManualDescription", "Drag bots to arrange them. New bots go on top.") },
@@ -14500,76 +14610,93 @@ function OptionsPopover({
   const left = Math.min(anchorRect.left, window.innerWidth - 252);
   const top = Math.min(anchorRect.bottom + 6, window.innerHeight - 340);
   return (0, import_react_dom11.createPortal)(
-    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { ref, className: "dsh-bots-popover", style: { left, top, width: 244 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-section", children: tr("bots.options.sortBy", "Sort by") }),
-      BOT_SIDEBAR_SORT_CHOICES.map((choice) => {
-        const id = choice.id;
-        const meta = sortLabels[id];
-        return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
-          "button",
-          {
-            type: "button",
-            className: "dsh-bots-menu-item",
-            style: { alignItems: "flex-start" },
-            onClick: () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, sortBy: id } }),
-            children: [
-              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { style: { width: 14, marginTop: 2, flexShrink: 0 }, children: view.sortBy === id ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconCheck, { size: 13 }) : null }),
-              /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { style: { flex: "1 1 auto" }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: meta.title }),
-                meta.desc && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-menu-item-desc", children: meta.desc })
-              ] })
-            ]
-          },
-          id
-        );
-      }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-sep" }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-section", children: tr("bots.options.filters", "Filters") }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
-        "button",
-        {
-          type: "button",
-          className: "dsh-bots-menu-item",
-          onClick: () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, hidePausedBots: !view.hidePausedBots } }),
-          children: [
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { style: { width: 14 }, children: view.hidePausedBots ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconCheck, { size: 13 }) : null }),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.options.hidePaused", "Hide paused bots") })
-          ]
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
-        "button",
-        {
-          type: "button",
-          className: "dsh-bots-menu-item",
-          onClick: () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, hideSleepingWorkers: !view.hideSleepingWorkers } }),
-          children: [
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { style: { width: 14 }, children: view.hideSleepingWorkers ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconCheck, { size: 13 }) : null }),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.options.hideSleepingWorkers", "Hide sleeping workers") })
-          ]
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-sep" }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
-        "button",
-        {
-          type: "button",
-          className: "dsh-bots-menu-item",
-          onClick: () => void botsStore.updateGlobalSettings({ sidebarProjectsFirst: !projectsFirst }),
-          children: [
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { style: { width: 14 }, children: projectsFirst ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconCheck, { size: 13 }) : null }),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: locale === "zh-CN" ? "\u5DE5\u4F5C\u533A\u7F6E\u9876" : "Show projects first" })
-          ]
-        }
-      )
-    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+      "div",
+      {
+        ref,
+        className: "dsh-bots-popover",
+        "data-motion": "presence",
+        "data-state": motionState,
+        "aria-hidden": open ? void 0 : true,
+        style: { left, top, width: 244 },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-menu-section", children: tr("bots.options.sortBy", "Sort by") }),
+          BOT_SIDEBAR_SORT_CHOICES.map((choice) => {
+            const id = choice.id;
+            const meta = sortLabels[id];
+            return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+              "button",
+              {
+                type: "button",
+                className: "dsh-bots-menu-item",
+                style: { alignItems: "flex-start" },
+                onClick: () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, sortBy: id } }),
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { style: { width: 14, marginTop: 2, flexShrink: 0 }, children: view.sortBy === id ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconCheck, { size: 13 }) : null }),
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("span", { style: { flex: "1 1 auto" }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: meta.title }),
+                    meta.desc && /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { className: "dsh-bots-menu-item-desc", children: meta.desc })
+                  ] })
+                ]
+              },
+              id
+            );
+          }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-menu-sep" }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-menu-section", children: tr("bots.options.filters", "Filters") }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+            "button",
+            {
+              type: "button",
+              className: "dsh-bots-menu-item",
+              onClick: () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, hidePausedBots: !view.hidePausedBots } }),
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { style: { width: 14 }, children: view.hidePausedBots ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconCheck, { size: 13 }) : null }),
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.options.hidePaused", "Hide paused bots") })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+            "button",
+            {
+              type: "button",
+              className: "dsh-bots-menu-item",
+              onClick: () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, hideSleepingWorkers: !view.hideSleepingWorkers } }),
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { style: { width: 14 }, children: view.hideSleepingWorkers ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconCheck, { size: 13 }) : null }),
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.options.hideSleepingWorkers", "Hide sleeping workers") })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-menu-sep" }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+            "button",
+            {
+              type: "button",
+              className: "dsh-bots-menu-item",
+              onClick: () => void botsStore.updateGlobalSettings({ sidebarProjectsFirst: !projectsFirst }),
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { style: { width: 14 }, children: projectsFirst ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconCheck, { size: 13 }) : null }),
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: locale === "zh-CN" ? "\u5DE5\u4F5C\u533A\u7F6E\u9876" : "Show projects first" })
+              ]
+            }
+          )
+        ]
+      }
+    ),
     document.body
   );
 }
-function CreateMenuPopover({ anchorRect, botCount, onClose }) {
+function CreateMenuPopover({
+  anchorRect,
+  open,
+  motionState,
+  botCount,
+  onClose
+}) {
   const { tr } = useBotsLocale();
-  const ref = (0, import_react29.useRef)(null);
-  useAnchoredPopoverClose(true, ref, onClose);
+  const ref = (0, import_react30.useRef)(null);
+  useAnchoredPopoverClose(open, ref, onClose);
   if (typeof document === "undefined") return null;
   const left = Math.min(anchorRect.left, window.innerWidth - 224);
   const top = Math.min(anchorRect.bottom + 6, window.innerHeight - 230);
@@ -14578,43 +14705,54 @@ function CreateMenuPopover({ anchorRect, botCount, onClose }) {
     botsStore.openModal(modal);
   };
   return (0, import_react_dom11.createPortal)(
-    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { ref, className: "dsh-bots-popover", style: { left, top, width: 216 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "new-bot" }), children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconPlus, { size: 14 }),
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.startFromScratch", "Start from scratch") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "templates" }), children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconSparkles, { size: 14 }),
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.browseTemplates", "Browse templates") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "share", mode: "import" }), children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconLink, { size: 14 }),
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.importFromLink", "Import from link\u2026") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "import", initialTab: "apps" }), children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconDownload, { size: 14 }),
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.importFromApp", "Import from another app\u2026") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-menu-sep" }),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", disabled: botCount < 2, onClick: () => openAndClose({ kind: "group" }), children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconUsers, { size: 14 }),
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.newGroup", "New group") })
-      ] })
-    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+      "div",
+      {
+        ref,
+        className: "dsh-bots-popover",
+        "data-motion": "presence",
+        "data-state": motionState,
+        "aria-hidden": open ? void 0 : true,
+        style: { left, top, width: 216 },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "new-bot" }), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconPlus, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.startFromScratch", "Start from scratch") })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "templates" }), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconSparkles, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.browseTemplates", "Browse templates") })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "share", mode: "import" }), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconLink, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.importFromLink", "Import from link\u2026") })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", onClick: () => openAndClose({ kind: "import", initialTab: "apps" }), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconDownload, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.importFromApp", "Import from another app\u2026") })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-menu-sep" }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("button", { type: "button", className: "dsh-bots-menu-item", disabled: botCount < 2, onClick: () => openAndClose({ kind: "group" }), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconUsers, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.newGroup", "New group") })
+          ] })
+        ]
+      }
+    ),
     document.body
   );
 }
 function CollapsedPreviewStrip({ bots, needsYou, activeBotId }) {
-  const stripRef = (0, import_react29.useRef)(null);
-  const [stripWidth, setStripWidth] = (0, import_react29.useState)(120);
-  (0, import_react29.useEffect)(() => {
+  const stripRef = (0, import_react30.useRef)(null);
+  const [stripWidth, setStripWidth] = (0, import_react30.useState)(120);
+  (0, import_react30.useEffect)(() => {
     const el = stripRef.current;
     if (!el || typeof ResizeObserver === "undefined") return void 0;
     const observer = new ResizeObserver((entries) => setStripWidth(entries[0]?.contentRect.width ?? 120));
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const preview = (0, import_react29.useMemo)(() => {
+  const preview = (0, import_react30.useMemo)(() => {
     const items = bots.map((bot) => ({
       bot,
       status: bot.dotState ?? bot.status ?? "idle",
@@ -14626,8 +14764,8 @@ function CollapsedPreviewStrip({ bots, needsYou, activeBotId }) {
     const selectPreview = selectCollapsedPreviewBots;
     return selectPreview(items, botPreviewCapacity(stripWidth, items.length), current);
   }, [activeBotId, bots, needsYou, stripWidth]);
-  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { ref: stripRef, className: "dsh-bots-preview-strip", children: [
-    preview.shown.map((item) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { ref: stripRef, className: "dsh-bots-preview-strip", children: [
+    preview.shown.map((item) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
       "button",
       {
         type: "button",
@@ -14639,7 +14777,7 @@ function CollapsedPreviewStrip({ bots, needsYou, activeBotId }) {
           botsStore.setSectionCollapsed(false);
           void botsStore.openBotHome(item.bot.id);
         },
-        children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+        children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
           BotAvatar,
           {
             botId: item.bot.id,
@@ -14654,7 +14792,7 @@ function CollapsedPreviewStrip({ bots, needsYou, activeBotId }) {
       },
       item.bot.id
     )),
-    preview.hidden.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("span", { className: "dsh-bots-preview-more", children: [
+    preview.hidden.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("span", { className: "dsh-bots-preview-more", children: [
       "+",
       preview.hidden.length
     ] })
@@ -14662,12 +14800,12 @@ function CollapsedPreviewStrip({ bots, needsYou, activeBotId }) {
 }
 function EmptyBotsCard() {
   const { tr } = useBotsLocale();
-  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-empty-card", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-empty-stack", children: EMPTY_CARD_MASCOT_IDS.map((mascotId) => /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-empty-stack-item", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(BotAvatar, { avatar: mascotAvatar(mascotId), size: 28, radius: 8 }) }, mascotId)) }),
-    /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-empty-title", children: tr("bots.section.emptyCardTitle", "\u4F60\u7684\u5927\u80A5\u9C7C\u961F\u53CB") }),
-    /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-empty-subtitle", children: tr("bots.section.emptyCardSubtitle", "\u5E38\u9A7B\u534F\u4F5C\u3001\u81EA\u4E3B\u5DE1\u89C6\u4E0E\u591A\u9C7C\u8054\u52A8") }),
-    /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-empty-actions", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-empty-card", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-empty-stack", children: EMPTY_CARD_MASCOT_IDS.map((mascotId) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { className: "dsh-bots-empty-stack-item", children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotAvatar, { avatar: mascotAvatar(mascotId), size: 28, radius: 8 }) }, mascotId)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-empty-title", children: tr("bots.section.emptyCardTitle", "\u4F60\u7684\u5927\u80A5\u9C7C\u961F\u53CB") }),
+    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-empty-subtitle", children: tr("bots.section.emptyCardSubtitle", "\u5E38\u9A7B\u534F\u4F5C\u3001\u81EA\u4E3B\u5DE1\u89C6\u4E0E\u591A\u9C7C\u8054\u52A8") }),
+    /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-empty-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
         "button",
         {
           type: "button",
@@ -14676,19 +14814,19 @@ function EmptyBotsCard() {
           "data-size": "sm",
           onClick: () => botsStore.openModal({ kind: "new-bot" }),
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconPlus, { size: 13 }),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.newBot", "\u65B0\u5EFA\u961F\u53CB") })
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconPlus, { size: 13 }),
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.newBot", "\u65B0\u5EFA\u961F\u53CB") })
           ]
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
         "button",
         {
           type: "button",
           className: "dsh-bots-btn",
           "data-size": "sm",
           onClick: () => botsStore.openModal({ kind: "templates" }),
-          children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.templates", "\u6A21\u677F\u5E93") })
+          children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.templates", "\u6A21\u677F\u5E93") })
         }
       )
     ] })
@@ -14699,35 +14837,44 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
   const now = useNow(6e4);
   const state = useBotsState((s) => s);
   const { botsEnabled, bots, groups, needsYou, botSidebarView: view, sectionCollapsed, collapsedBotIds, activeBotId, sidebarBotsHeight: storedHeight, sidebarProjectsFirst: projectsFirst } = state;
-  const listRef = (0, import_react29.useRef)(null);
-  const searchInputRef = (0, import_react29.useRef)(null);
-  const [searchOpen, setSearchOpen] = (0, import_react29.useState)(false);
-  const [searchQuery, setSearchQuery] = (0, import_react29.useState)("");
-  const [optionsAnchor, setOptionsAnchor] = (0, import_react29.useState)(null);
-  const [createAnchor, setCreateAnchor] = (0, import_react29.useState)(null);
-  const [dragHeight, setDragHeight] = (0, import_react29.useState)(null);
-  const [draggingBotId, setDraggingBotId] = (0, import_react29.useState)(null);
-  const [dropTarget, setDropTarget] = (0, import_react29.useState)(null);
-  (0, import_react29.useEffect)(() => {
+  const listRef = (0, import_react30.useRef)(null);
+  const searchInputRef = (0, import_react30.useRef)(null);
+  const lastOptionsAnchorRef = (0, import_react30.useRef)(null);
+  const lastCreateAnchorRef = (0, import_react30.useRef)(null);
+  const [searchOpen, setSearchOpen] = (0, import_react30.useState)(false);
+  const [searchPresent, setSearchPresent] = (0, import_react30.useState)(false);
+  const [searchQuery, setSearchQuery] = (0, import_react30.useState)("");
+  const [optionsAnchor, setOptionsAnchor] = (0, import_react30.useState)(null);
+  const [createAnchor, setCreateAnchor] = (0, import_react30.useState)(null);
+  const [sectionBodyPresent, setSectionBodyPresent] = (0, import_react30.useState)(!sectionCollapsed);
+  const [dragHeight, setDragHeight] = (0, import_react30.useState)(null);
+  const [draggingBotId, setDraggingBotId] = (0, import_react30.useState)(null);
+  const [dropTarget, setDropTarget] = (0, import_react30.useState)(null);
+  if (optionsAnchor) lastOptionsAnchorRef.current = optionsAnchor;
+  if (createAnchor) lastCreateAnchorRef.current = createAnchor;
+  const previewPresence = useBotsPresence(sectionCollapsed && bots.length > 0, 180);
+  const optionsPresence = useBotsPresence(Boolean(optionsAnchor), 180);
+  const createPresence = useBotsPresence(Boolean(createAnchor), 180);
+  (0, import_react30.useEffect)(() => {
     botsStore.start();
   }, []);
-  (0, import_react29.useEffect)(() => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
-  const botsById = (0, import_react29.useMemo)(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
-  const collapsedSet = (0, import_react29.useMemo)(() => new Set(collapsedBotIds), [collapsedBotIds]);
+  (0, import_react30.useEffect)(() => {
+    if (searchOpen && searchPresent) searchInputRef.current?.focus();
+  }, [searchOpen, searchPresent]);
+  const botsById = (0, import_react30.useMemo)(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
+  const collapsedSet = (0, import_react30.useMemo)(() => new Set(collapsedBotIds), [collapsedBotIds]);
   const allCollapsed = bots.length > 0 && bots.every((bot) => collapsedSet.has(bot.id));
-  const hasExpandableBots = (0, import_react29.useMemo)(
+  const hasExpandableBots = (0, import_react30.useMemo)(
     () => collapsedSet.size > 0 || bots.some((bot) => botHasSubChats(state.chatsByBot[bot.id], view.hideSleepingWorkers)),
     [bots, collapsedSet.size, state.chatsByBot, view.hideSleepingWorkers]
   );
   const activeFilterCount = countActiveBotSidebarFilters(view);
-  const totalNeedsYou = (0, import_react29.useMemo)(() => bots.reduce((sum, b) => sum + (needsYou[b.id] ?? b.needsYouCount ?? 0), 0), [bots, needsYou]);
-  const allEntries = (0, import_react29.useMemo)(() => [
+  const totalNeedsYou = (0, import_react30.useMemo)(() => bots.reduce((sum, b) => sum + (needsYou[b.id] ?? b.needsYouCount ?? 0), 0), [bots, needsYou]);
+  const allEntries = (0, import_react30.useMemo)(() => [
     ...groups.map((group) => ({ kind: "group", id: group.id, group })),
     ...bots.map((bot) => ({ kind: "bot", id: bot.id, bot }))
   ], [bots, groups]);
-  const arrangedEntries = (0, import_react29.useMemo)(() => {
+  const arrangedEntries = (0, import_react30.useMemo)(() => {
     const arrange = sortAndFilterBots;
     return arrange(allEntries, view, (entry) => {
       if (entry.kind === "group") {
@@ -14737,7 +14884,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
       return { needsYou: need, activityAt: entry.bot.lastActiveAt ?? entry.bot.updatedAt ?? entry.bot.createdAt ?? 0 };
     });
   }, [allEntries, needsYou, view]);
-  const searchResult = (0, import_react29.useMemo)(() => {
+  const searchResult = (0, import_react30.useMemo)(() => {
     const trimmed = searchQuery.trim();
     if (!searchOpen || !trimmed) return null;
     return searchBots(arrangedEntries, trimmed, {
@@ -14745,7 +14892,7 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
       purposeOf: (entry) => entry.kind === "bot" ? entry.bot.purpose ?? entry.bot.description ?? null : null
     });
   }, [allEntries, arrangedEntries, searchOpen, searchQuery]);
-  const handleResizePointerDown = (0, import_react29.useCallback)((event) => {
+  const handleResizePointerDown = (0, import_react30.useCallback)((event) => {
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = listRef.current?.getBoundingClientRect().height ?? storedHeight ?? 240;
@@ -14792,25 +14939,28 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
   };
   if (!botsEnabled) return null;
   if (!wide) {
-    return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("button", { type: "button", className: "dsh-bots-rail-btn", title: tr("bots.section.title", "Bots"), onClick: () => expandSidebar?.(), children: [
-      /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconBot, { size: 18 }),
-      totalNeedsYou > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-rail-badge", children: totalNeedsYou > 9 ? "9+" : totalNeedsYou })
+    return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("button", { type: "button", className: "dsh-bots-rail-btn", title: tr("bots.section.title", "Bots"), onClick: () => expandSidebar?.(), children: [
+      /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconBot, { size: 18 }),
+      totalNeedsYou > 0 && /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { className: "dsh-bots-rail-badge", children: totalNeedsYou > 9 ? "9+" : totalNeedsYou })
     ] });
   }
   const effectiveMaxHeight = dragHeight ?? storedHeight;
   const visibleRows = searchResult ? searchResult.matches.map((m) => ({ entry: m.entry, match: { matchedBy: m.matchedBy, nameSegments: m.nameSegments, purpose: m.purpose } })) : arrangedEntries.map((entry) => ({ entry, match: null }));
   const allHiddenPaused = !searchResult && bots.length > 0 && visibleRows.length === 0 && view.hidePausedBots;
   const showPaused = () => void botsStore.updateGlobalSettings({ botSidebarView: { ...view, hidePausedBots: false } });
-  const hasResizeHandle = !sectionCollapsed && (bots.length > 0 || groups.length > 0);
-  return /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+  const hasResizeHandle = sectionBodyPresent && (bots.length > 0 || groups.length > 0);
+  const showExpandAll = !sectionCollapsed && hasExpandableBots;
+  const activeOptionsAnchor = optionsAnchor ?? lastOptionsAnchorRef.current;
+  const activeCreateAnchor = createAnchor ?? lastCreateAnchorRef.current;
+  return /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
     "section",
     {
       className: "dsh-bots-section",
       "data-has-resize": hasResizeHandle ? "true" : "false",
       "aria-label": tr("bots.section.title", "\u5927\u80A5\u9C7C\u961F\u53CB"),
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-header", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-header", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
             "button",
             {
               type: "button",
@@ -14819,24 +14969,41 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
               "aria-expanded": !sectionCollapsed,
               title: sectionCollapsed ? tr("bots.section.expand", "Expand bots") : tr("bots.section.collapse", "Collapse bots"),
               children: [
-                sectionCollapsed ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconChevronRight, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconChevronDown, { size: 14 }),
-                /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.section.title", "\u5927\u80A5\u9C7C\u961F\u53CB") })
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotChevron, { open: !sectionCollapsed, size: 14 }),
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.section.title", "\u5927\u80A5\u9C7C\u961F\u53CB") })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-header-spacer", children: sectionCollapsed && bots.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(CollapsedPreviewStrip, { bots, needsYou, activeBotId }) : null }),
-          /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-header-actions", children: [
-            !sectionCollapsed && hasExpandableBots && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
-              "button",
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-header-spacer", children: previewPresence.present ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+            "div",
+            {
+              className: "dsh-bots-preview-wrap",
+              "data-state": previewPresence.state,
+              "aria-hidden": !sectionCollapsed ? true : void 0,
+              children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(CollapsedPreviewStrip, { bots, needsYou, activeBotId })
+            }
+          ) : null }),
+          /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-header-actions", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+              "div",
               {
-                type: "button",
-                className: "dsh-bots-icon-btn",
-                title: allCollapsed ? tr("bots.section.expandAll", "Expand all bots") : tr("bots.section.collapseAll", "Collapse all bots"),
-                onClick: () => botsStore.setAllBotsCollapsed(!allCollapsed),
-                children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconChevronsUpDown, { size: 15 })
+                className: "dsh-bots-header-action-slot",
+                "data-open": showExpandAll ? "true" : "false",
+                "aria-hidden": showExpandAll ? void 0 : true,
+                children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-header-action-slot-inner", children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+                  "button",
+                  {
+                    type: "button",
+                    className: "dsh-bots-icon-btn",
+                    tabIndex: showExpandAll ? 0 : -1,
+                    title: allCollapsed ? tr("bots.section.expandAll", "Expand all bots") : tr("bots.section.collapseAll", "Collapse all bots"),
+                    onClick: () => botsStore.setAllBotsCollapsed(!allCollapsed),
+                    children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconChevronsUpDown, { size: 15 })
+                  }
+                ) })
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
               "button",
               {
                 type: "button",
@@ -14852,10 +15019,10 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
                     setSearchOpen(true);
                   }
                 },
-                children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconSearch, { size: 15 })
+                children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconSearch, { size: 15 })
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
               "button",
               {
                 type: "button",
@@ -14868,12 +15035,12 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
                   setOptionsAnchor((prev) => prev ? null : rect);
                 },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconSliders, { size: 15 }),
-                  activeFilterCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { className: "dsh-bots-filter-badge" })
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconSliders, { size: 15 }),
+                  activeFilterCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { className: "dsh-bots-filter-badge" })
                 ]
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
               "button",
               {
                 type: "button",
@@ -14885,100 +15052,135 @@ function SidebarBotsSection({ wide = true, expandSidebar }) {
                   setOptionsAnchor(null);
                   setCreateAnchor((prev) => prev ? null : rect);
                 },
-                children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconPlus, { size: 16 })
+                children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconPlus, { size: 16 })
               }
             )
           ] })
         ] }),
-        !sectionCollapsed && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
-          searchOpen && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-search-box", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconSearch, { size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
-              "input",
-              {
-                ref: searchInputRef,
-                type: "text",
-                className: "dsh-bots-search-input",
-                value: searchQuery,
-                placeholder: tr("bots.search.label", "Search bots"),
-                onChange: (e) => setSearchQuery(e.target.value),
-                onKeyDown: (e) => {
-                  if (e.key === "Escape") {
-                    setSearchQuery("");
-                    setSearchOpen(false);
-                  }
-                }
-              }
-            ),
-            searchQuery && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "dsh-bots-icon-btn dsh-bots-icon-btn-sm", "aria-label": tr("bots.search.clear", "Clear search"), onClick: () => {
-              setSearchQuery("");
-              searchInputRef.current?.focus();
-            }, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(IconX, { size: 13 }) })
-          ] }),
-          bots.length === 0 && groups.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(EmptyBotsCard, {}) : /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)(import_jsx_runtime30.Fragment, { children: [
-            searchResult && searchResult.hiddenPausedMatches > 0 && /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-search-banner", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.search.pausedMatches", "{{count}} paused matches", { count: searchResult.hiddenPausedMatches }) }),
-              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "dsh-bots-link-btn", onClick: showPaused, children: tr("bots.search.show", "Show") })
-            ] }),
-            allHiddenPaused ? /* @__PURE__ */ (0, import_jsx_runtime30.jsxs)("div", { className: "dsh-bots-search-banner", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("span", { children: tr("bots.options.allHidden", "All bots are paused and hidden.") }),
-              /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("button", { type: "button", className: "dsh-bots-link-btn", onClick: showPaused, children: tr("bots.search.show", "Show") })
-            ] }) : searchResult && visibleRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "dsh-bots-search-empty", children: tr("bots.search.noMatches", "No matches") }) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
-              "div",
-              {
-                ref: listRef,
-                className: "dsh-bots-list",
-                "data-sidebar-nested-scroller": "",
-                style: { maxHeight: effectiveMaxHeight ? `${effectiveMaxHeight}px` : "40vh" },
-                children: visibleRows.map(
-                  ({ entry, match }) => entry.kind === "group" ? /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(BotGroupSidebarCard, { group: entry.group, botsById, now, nameSegments: match?.nameSegments ?? null }, `group:${entry.group.id}`) : /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
-                    BotSidebarCard,
-                    {
-                      bot: entry.bot,
-                      now,
-                      collapsed: collapsedSet.has(entry.bot.id),
-                      hideSleepingWorkers: view.hideSleepingWorkers,
-                      manualSort: view.sortBy === "manual" && !searchResult,
-                      searchMatch: match,
-                      dragging: draggingBotId === entry.bot.id,
-                      dropPosition: dropTarget?.botId === entry.bot.id ? dropTarget.position : null,
-                      onDragStart: setDraggingBotId,
-                      onDragOverCard: handleDragOverBot,
-                      onDropCard: handleDropBot,
-                      onDragEnd: () => {
-                        setDraggingBotId(null);
-                        setDropTarget(null);
+        /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(
+          BotDisclosure,
+          {
+            open: !sectionCollapsed,
+            className: "dsh-bots-section-disclosure",
+            onPresenceChange: setSectionBodyPresent,
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+                BotDisclosure,
+                {
+                  open: searchOpen,
+                  className: "dsh-bots-search-disclosure",
+                  onPresenceChange: setSearchPresent,
+                  children: /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-search-box", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconSearch, { size: 14 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+                      "input",
+                      {
+                        ref: searchInputRef,
+                        type: "text",
+                        className: "dsh-bots-search-input",
+                        value: searchQuery,
+                        placeholder: tr("bots.search.label", "Search bots"),
+                        onChange: (e) => setSearchQuery(e.target.value),
+                        onKeyDown: (e) => {
+                          if (e.key === "Escape") {
+                            setSearchQuery("");
+                            setSearchOpen(false);
+                          }
+                        }
                       }
-                    },
-                    `bot:${entry.bot.id}`
-                  )
+                    ),
+                    searchQuery && /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("button", { type: "button", className: "dsh-bots-icon-btn dsh-bots-icon-btn-sm", "aria-label": tr("bots.search.clear", "Clear search"), onClick: () => {
+                      setSearchQuery("");
+                      searchInputRef.current?.focus();
+                    }, children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(IconX, { size: 13 }) })
+                  ] })
+                }
+              ),
+              bots.length === 0 && groups.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(EmptyBotsCard, {}) : /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)(import_jsx_runtime31.Fragment, { children: [
+                searchResult && searchResult.hiddenPausedMatches > 0 && /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-search-banner", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.search.pausedMatches", "{{count}} paused matches", { count: searchResult.hiddenPausedMatches }) }),
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("button", { type: "button", className: "dsh-bots-link-btn", onClick: showPaused, children: tr("bots.search.show", "Show") })
+                ] }),
+                allHiddenPaused ? /* @__PURE__ */ (0, import_jsx_runtime31.jsxs)("div", { className: "dsh-bots-search-banner", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("span", { children: tr("bots.options.allHidden", "All bots are paused and hidden.") }),
+                  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("button", { type: "button", className: "dsh-bots-link-btn", onClick: showPaused, children: tr("bots.search.show", "Show") })
+                ] }) : searchResult && visibleRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { className: "dsh-bots-search-empty", children: tr("bots.search.noMatches", "No matches") }) : /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+                  "div",
+                  {
+                    ref: listRef,
+                    className: "dsh-bots-list",
+                    "data-sidebar-nested-scroller": "",
+                    style: { maxHeight: effectiveMaxHeight ? `${effectiveMaxHeight}px` : "40vh" },
+                    children: visibleRows.map(
+                      ({ entry, match }) => entry.kind === "group" ? /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotGroupSidebarCard, { group: entry.group, botsById, now, nameSegments: match?.nameSegments ?? null }, `group:${entry.group.id}`) : /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+                        BotSidebarCard,
+                        {
+                          bot: entry.bot,
+                          now,
+                          collapsed: collapsedSet.has(entry.bot.id),
+                          hideSleepingWorkers: view.hideSleepingWorkers,
+                          manualSort: view.sortBy === "manual" && !searchResult,
+                          searchMatch: match,
+                          dragging: draggingBotId === entry.bot.id,
+                          dropPosition: dropTarget?.botId === entry.bot.id ? dropTarget.position : null,
+                          onDragStart: setDraggingBotId,
+                          onDragOverCard: handleDragOverBot,
+                          onDropCard: handleDropBot,
+                          onDragEnd: () => {
+                            setDraggingBotId(null);
+                            setDropTarget(null);
+                          }
+                        },
+                        `bot:${entry.bot.id}`
+                      )
+                    )
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+                  "div",
+                  {
+                    role: "separator",
+                    "aria-orientation": "horizontal",
+                    "aria-label": "Resize bots section",
+                    tabIndex: 0,
+                    className: "dsh-bots-resize-handle",
+                    "data-dragging": dragHeight !== null ? "true" : "false",
+                    onPointerDown: handleResizePointerDown,
+                    onKeyDown: handleResizeKeyDown
+                  }
                 )
-              }
-            ),
-            /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(
-              "div",
-              {
-                role: "separator",
-                "aria-orientation": "horizontal",
-                "aria-label": "Resize bots section",
-                tabIndex: 0,
-                className: "dsh-bots-resize-handle",
-                "data-dragging": dragHeight !== null ? "true" : "false",
-                onPointerDown: handleResizePointerDown,
-                onKeyDown: handleResizeKeyDown
-              }
-            )
-          ] })
-        ] }),
-        optionsAnchor && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(OptionsPopover, { anchorRect: optionsAnchor, view, projectsFirst, onClose: () => setOptionsAnchor(null) }),
-        createAnchor && /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(CreateMenuPopover, { anchorRect: createAnchor, botCount: bots.length, onClose: () => setCreateAnchor(null) })
+              ] })
+            ]
+          }
+        ),
+        optionsPresence.present && activeOptionsAnchor && /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+          OptionsPopover,
+          {
+            anchorRect: activeOptionsAnchor,
+            open: Boolean(optionsAnchor),
+            motionState: optionsPresence.state,
+            view,
+            projectsFirst,
+            onClose: () => setOptionsAnchor(null)
+          }
+        ),
+        createPresence.present && activeCreateAnchor && /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+          CreateMenuPopover,
+          {
+            anchorRect: activeCreateAnchor,
+            open: Boolean(createAnchor),
+            motionState: createPresence.state,
+            botCount: bots.length,
+            onClose: () => setCreateAnchor(null)
+          }
+        )
       ]
     }
   );
 }
 
 // vendor/dsh-whale/src/client/index.tsx
-var import_jsx_runtime31 = require("react/jsx-runtime");
+var import_jsx_runtime32 = require("react/jsx-runtime");
 var NS = "dsh-whale";
 var BOTS_RIGHT_TAB_ID = "dsh-whale:bots-panel";
 var BOTS_RIGHT_TAB_KIND = "dsh-bots";
@@ -15083,20 +15285,20 @@ function registerSlotWhenDeclared(ctx, slotName, register, label) {
   }, label);
 }
 function BotConversationFrameSeat(props) {
-  return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(
     BotConversationFrame,
     {
       useSessions: props.useSessions,
-      renderFirstScreen: (bot, onDismiss) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)("div", { style: { width: "100%", maxWidth: 460 }, children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotFirstScreen, { bot, onDismiss }) }),
+      renderFirstScreen: (bot, onDismiss) => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)("div", { style: { width: "100%", maxWidth: 460 }, children: /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(BotFirstScreen, { bot, onDismiss }) }),
       children: props.children
     }
   );
 }
 function BotSettingsPageSeat({ closePanel }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotSettingsView, { host: "page", onClosePage: closePanel });
+  return /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(BotSettingsView, { host: "page", onClosePage: closePanel });
 }
 function LegacyWhaleRedirect({ openDefaultBot }) {
-  (0, import_react30.useEffect)(() => {
+  (0, import_react31.useEffect)(() => {
     void openDefaultBot();
   }, [openDefaultBot]);
   return null;
@@ -15174,7 +15376,7 @@ function registerNativeRightSidebarTab(ctx, onRightbarChange) {
       "sidebar.right.pane.tab",
       () => scoped.slots.register(
         { name: "sidebar.right.pane.tab", key: BOTS_RIGHT_TAB_ID, locale: NS },
-        (props) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotRightPanel, { sessionId: props.sessionId, botId: props.botId })
+        (props) => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(BotRightPanel, { sessionId: props.sessionId, botId: props.botId })
       ),
       "dsh-whale: sidebarRight tab body"
     );
@@ -15295,7 +15497,7 @@ function apply(ctx) {
     "conversation.session.header.leading",
     () => ctx.slots.register(
       { name: "conversation.session.header.leading", locale: NS },
-      (props) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotConversationLeading, { sessionId: props.sessionId })
+      (props) => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(BotConversationLeading, { sessionId: props.sessionId })
     ),
     "dsh-whale: conversation header leading"
   );
@@ -15304,7 +15506,7 @@ function apply(ctx) {
     "conversation.session.header.actions",
     () => ctx.slots.register(
       { name: "conversation.session.header.actions", id: "dsh-bots-actions", order: 30, locale: NS },
-      (props) => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(BotConversationActions, { sessionId: props.sessionId })
+      (props) => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(BotConversationActions, { sessionId: props.sessionId })
     ),
     "dsh-whale: conversation header actions"
   );
@@ -15331,7 +15533,7 @@ function apply(ctx) {
     "main",
     () => ctx.slots.register(
       { name: "main", key: SETTINGS_PANEL_ID, locale: NS },
-      () => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+      () => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(
         BotSettingsPageSeat,
         {
           closePanel: () => {
@@ -15352,7 +15554,7 @@ function apply(ctx) {
     "main",
     () => ctx.slots.register(
       { name: "main", key: LEGACY_WHALE_PANEL_ID, locale: NS },
-      () => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(LegacyWhaleRedirect, { openDefaultBot })
+      () => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(LegacyWhaleRedirect, { openDefaultBot })
     ),
     "dsh-whale: legacy whale redirect panel"
   );
@@ -15364,7 +15566,7 @@ function apply(ctx) {
     "settings.pet.item",
     () => ctx.slots.register(
       { name: "settings.pet.item", id: "whale", order: 0, locale: NS },
-      () => /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(
+      () => /* @__PURE__ */ (0, import_jsx_runtime32.jsx)(
         GlobalBotsSettings,
         {
           closeSettings: () => {

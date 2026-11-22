@@ -146,7 +146,14 @@ function defaultBotFixtures() {
         botId: 'bot-whale',
         chats: [
           { chatId: 'sess-whale-home', sessionId: 'sess-whale-home', origin: 'home', title: 'Home Chat' },
-          { chatId: 'sess-whale-side', sessionId: 'sess-whale-side', origin: 'side', title: '支线讨论' },
+          {
+            chatId: 'sess-whale-side',
+            sessionId: 'sess-whale-side',
+            origin: 'side',
+            title: '支线讨论',
+            runningTotal: 1,
+            running: [{ id: 'w-side-1', title: '调研小弟', state: 'running', sessionId: 'sess-w-side-1' }],
+          },
         ],
       },
       'bot-paused': {
@@ -657,6 +664,60 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
   assert.equal(whaleCard.card.getAttribute('data-has-active-child'), 'true');
   assert.ok(whaleCard.sublist.querySelector('.dsh-bots-subrow[data-active="true"]'));
 
+  const waitFrames = async (ms = 60) => {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+    await flush();
+  };
+
+  // Smooth disclosure checks: section header, bot sublist card, and sub-chat workers rotate a single chevron and animate 0fr <-> 1fr.
+  const workerDisclosure = whaleCard.sublist.querySelector('.dsh-bots-workers-disclosure');
+  const workerChevron = whaleCard.sublist.querySelector('.dsh-bots-subrow .dsh-bots-icon-btn-sm .dsh-bots-chevron');
+  const workerFoldBtn = whaleCard.sublist.querySelector('.dsh-bots-subrow .dsh-bots-icon-btn-sm');
+  assert.ok(workerDisclosure && workerChevron && workerFoldBtn);
+  assert.equal(workerDisclosure.getAttribute('data-state'), 'open');
+  assert.equal(workerChevron.getAttribute('data-open'), 'true');
+  await act(async () => { workerFoldBtn.click(); });
+  await flush();
+  assert.equal(workerChevron.getAttribute('data-open'), 'false');
+  assert.equal(workerDisclosure.getAttribute('data-state'), 'closed');
+  const workerFoldMetaBtn = whaleCard.sublist.querySelector('.dsh-bots-subrow-fold-meta');
+  assert.ok(workerFoldMetaBtn, 'folded worker summary must render clickable .dsh-bots-subrow-fold-meta button');
+  await act(async () => { workerFoldMetaBtn.click(); });
+  await waitFrames();
+  assert.equal(workerChevron.getAttribute('data-open'), 'true');
+  assert.equal(whaleCard.sublist.querySelector('.dsh-bots-workers-disclosure')?.getAttribute('data-state'), 'open');
+
+  const botChevron = whaleCard.foldBtn.querySelector('.dsh-bots-chevron');
+  const botDisclosure = whaleCard.foldBtn.closest('.dsh-bots-card-wrap')?.querySelector('.dsh-bots-sublist-disclosure');
+  assert.ok(botChevron && botDisclosure);
+  assert.equal(botChevron.getAttribute('data-open'), 'true');
+  assert.equal(botDisclosure.getAttribute('data-state'), 'open');
+  await act(async () => { whaleCard.foldBtn.click(); });
+  await flush();
+  assert.equal(botChevron.getAttribute('data-open'), 'false');
+  assert.equal(botDisclosure.getAttribute('data-state'), 'closed');
+  await act(async () => { whaleCard.foldBtn.click(); });
+  await waitFrames();
+  assert.equal(botChevron.getAttribute('data-open'), 'true');
+  assert.equal(whaleCard.foldBtn.closest('.dsh-bots-card-wrap')?.querySelector('.dsh-bots-sublist-disclosure')?.getAttribute('data-state'), 'open');
+
+  const sectionToggle = dom.window.document.querySelector('.dsh-bots-header-toggle');
+  const sectionChevron = sectionToggle?.querySelector('.dsh-bots-chevron');
+  const sectionDisclosure = dom.window.document.querySelector('.dsh-bots-section-disclosure');
+  assert.ok(sectionToggle && sectionChevron && sectionDisclosure);
+  assert.equal(sectionChevron.getAttribute('data-open'), 'true');
+  assert.equal(sectionDisclosure.getAttribute('data-state'), 'open');
+  await act(async () => { sectionToggle.click(); });
+  await flush();
+  assert.equal(sectionChevron.getAttribute('data-open'), 'false');
+  assert.equal(sectionDisclosure.getAttribute('data-state'), 'closed');
+  await waitFrames(40);
+  assert.ok(dom.window.document.querySelector('.dsh-bots-preview-wrap .dsh-bots-preview-strip'), 'collapsed preview strip renders while section is collapsed');
+  await act(async () => { sectionToggle.click(); });
+  await waitFrames();
+  assert.equal(sectionChevron.getAttribute('data-open'), 'true');
+  assert.equal(dom.window.document.querySelector('.dsh-bots-section-disclosure')?.getAttribute('data-state'), 'open');
+
   // Leading header pill renders compact chat switcher dropdown & smooth-reveal labels.
   const leadingEl = dom.window.document.querySelector('#bot-header [data-dsh-bots-conv-leading="bot-whale"]');
   assert.ok(leadingEl);
@@ -687,11 +748,16 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
   // Tokenized translucent styling contract: zero solid active gray, zero raw hex/rgb/ms/theme branches.
   const inlineCssText = [...styleTags].map((el) => el.textContent).join('\n');
   assert.doesNotMatch(inlineCssText, /--dsw-specific-sidebar-nav-item-active/);
-  assert.doesNotMatch(inlineCssText, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|data-ds-dark-theme|prefers-color-scheme|webkit-scrollbar/);
+  assert.doesNotMatch(inlineCssText, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\b\d+ms\b|data-ds-dark-theme|prefers-color-scheme|webkit-scrollbar/);
   assert.match(inlineCssText, /\.dsh-bots-conv-pill\b/);
   assert.match(inlineCssText, /\.dsh-bots-conv-toolbar\b/);
   assert.match(inlineCssText, /\.dsh-bots-reveal-slot\b/);
   assert.match(inlineCssText, /grid-template-columns:\s*0fr/);
+  assert.match(inlineCssText, /\.dsh-bots-disclosure\b[\s\S]*grid-template-rows:\s*1fr/);
+  assert.match(inlineCssText, /\.dsh-bots-disclosure\[data-state=['"]closed['"]\][\s\S]*grid-template-rows:\s*0fr/);
+  assert.match(inlineCssText, /\.dsh-bots-chevron\[data-open=['"]true['"]\][\s\S]*rotate\(90deg\)/);
+  assert.match(inlineCssText, /\.dsh-bots-popover\[data-motion=['"]presence['"]\]/);
+  assert.match(inlineCssText, /:root\[data-dsh-minimal\]/);
   assert.match(inlineCssText, /var\(--ds-transition-duration\)/);
   assert.match(inlineCssText, /\.dsh-bots-panel-tab\[aria-selected=['"]true['"]\]::after/);
 

@@ -27,11 +27,10 @@ import {
 } from '../store/bots-store';
 import type { BotRecord } from '../store/rpc';
 import { BotAvatar } from './BotAvatar';
+import { BotChevron, BotDisclosure } from './BotDisclosure';
 import { BotHoverCard } from './BotHoverCard';
 import { BotSubChatList } from './BotSubChatList';
 import {
-  IconChevronDown,
-  IconChevronRight,
   IconCopy,
   IconEdit,
   IconEye,
@@ -479,13 +478,14 @@ export function BotSidebarCard({
             className="dsh-bots-card-fold-btn"
             data-collapsed={collapsed ? 'true' : 'false'}
             data-has-signal={foldSignal ? 'true' : 'false'}
+            aria-expanded={!collapsed}
             aria-label={collapsed ? 'Expand chats' : 'Collapse chats'}
             onClick={(e) => {
               e.stopPropagation();
               botsStore.toggleBotCollapsed(bot.id);
             }}
           >
-            {collapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
+            <BotChevron open={!collapsed} size={14} />
             {foldSignal && (
               <span className="dsh-bots-fold-dot" data-signal={foldSignal} />
             )}
@@ -493,13 +493,13 @@ export function BotSidebarCard({
         )}
       </div>
 
-      {showExpandedTree && (
+      <BotDisclosure open={showExpandedTree} className="dsh-bots-sublist-disclosure">
         <BotSubChatList
           bot={bot}
           now={now}
           hideSleepingWorkers={hideSleepingWorkers}
         />
-      )}
+      </BotDisclosure>
 
       {menuPos && (
         <BotContextMenu
