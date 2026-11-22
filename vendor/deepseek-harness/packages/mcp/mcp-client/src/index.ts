@@ -36,10 +36,24 @@ export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 export { mcpClientStatus, reportMcpClientStatus } from './status.ts'
 export type { McpClientStatus, McpConnectionHealth } from './status.ts'
 export type { McpConnectionStatusHandle } from './status.ts'
+import type { McpConnectionStatus } from './types.ts'
 export type * from './types.ts'
 export { probeServer } from './probe.ts'
 export { assertTemplateSyntax } from './templates.ts'
 export type { McpProbeOptions } from './probe.ts'
+
+function statusLastError(current: McpConnectionStatus): string | undefined {
+  switch (current.state) {
+    case 'waiting-credentials':
+    case 'reconnecting':
+    case 'failed':
+      return current.lastError
+    case 'closed':
+    case 'connecting':
+    case 'connected':
+      return undefined
+  }
+}
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-client'
@@ -277,10 +291,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const publishDesktopStatus = (): void => {
     const current = status.current()
+    const lastError = statusLastError(current)
     reportMcpClientStatus(ctx.root, config.serverName, {
       health: current.state === 'connected' ? 'connected' : current.state === 'connecting' ? 'connecting' : current.state === 'reconnecting' ? 'reconnecting' : 'failed',
       ...current.state === 'connected' ? { tools: [...ctx.tools.definitions()].map(tool => tool.name).filter(name => name.startsWith(`mcp__${config.serverName}__`)) } : {},
-      ...('lastError' in current && current.lastError !== undefined) ? { lastError: current.lastError } : {},
+      ...lastError !== undefined ? { lastError } : {},
     })
   }
   publishDesktopStatus()

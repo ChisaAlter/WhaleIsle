@@ -1,0 +1,172 @@
+.surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.findBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--dsw-alias-bg-panel-solid);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.findInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.findCount {
+  flex: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.findActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.findButton {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.editorArea {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.gutter {
+  box-sizing: border-box;
+  flex: none;
+  min-width: calc(var(--code-gutter-digits, 2) * 1ch + 20px);
+  padding: 12px 0;
+  overflow: hidden;
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  font: var(--dsw-font-markdown-code-block);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.gutterLine {
+  box-sizing: border-box;
+  min-height: 1lh;
+  padding: 0 10px 0 8px;
+}
+
+.gutterLineActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.codeStage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.highlight,
+.textarea {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px 16px;
+  border: none;
+  font: var(--dsw-font-markdown-code-block);
+  letter-spacing: normal;
+  word-spacing: normal;
+  tab-size: 2;
+  font-variant-ligatures: none;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  z-index: 0;
+}
+
+.highlightLine {
+  min-height: 1lh;
+}
+
+.highlightLine:empty::after {
+  content: '\200b';
+}
+
+.findMatch {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 28%, transparent);
+  border-radius: var(--dsw-radius-xs);
+  color: inherit;
+}
+
+.findMatchActive {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, transparent);
+  outline: 1px solid var(--dsw-alias-state-warn-primary);
+}
+
+.textarea {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--dsw-alias-label-primary);
+  overflow: auto;
+  resize: none;
+  z-index: 1;
+}
+
+.textarea:focus {
+  outline: none;
+}
+
+.textarea::selection {
+  background: var(--dsw-alias-bg-document-selection);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.textarea.wrap {
+  overflow-x: hidden;
+  overflow-y: auto;
+}

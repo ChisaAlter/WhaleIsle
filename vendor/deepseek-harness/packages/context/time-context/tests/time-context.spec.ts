@@ -633,6 +633,149 @@ describe('real agent-loop request history', () => {
   })
 })
 
+describe('injectionPolicy KV-cache scheduling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(BASE)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('rejects invalid injectionPolicy values at plugin load', async () => {
+    await expect(
+      mount({ injectionPolicy: 'invalid-policy' as NonNullable<Config['injectionPolicy']> }),
+    ).rejects.toThrow()
+
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentRegistry)
+    await expect(
+      timeContext.apply(ctx, { injectionPolicy: 'bogus' as NonNullable<Config['injectionPolicy']> }),
+    ).rejects.toThrow('time-context: injectionPolicy must be one of periodic, turn-start, session-start')
+  })
+
+  it('keeps periodic scheduling as default and respects refreshIntervalMs', async () => {
+    const adapter = new ScriptedAdapter([toolCallResponse(), textResponse('done')])
+    const ctx = await loopHarness(adapter, { refreshIntervalMs: 1_000 })
+    ctx.tools.register(defineContentToolFixture({
+      name: 'tick',
+      description: 'advance fake time',
+      parameters: {},
+      async execute() {
+        vi.setSystemTime(BASE + 1_500)
+        return [{ type: 'text' as const, text: 'advanced' }]
+      },
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('periodic-default'), { provider: 'mock', model: 'mock' })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'start' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(2)
+    expect(contextTexts(agent.session)).toHaveLength(2)
+    await ctx.fiber.dispose()
+  })
+
+  it('turn-start injects once per turn and skips later steps in multi-step tool loops even past refreshIntervalMs', async () => {
+    const adapter = new ScriptedAdapter([
+      toolCallResponse(),
+      textResponse('turn 1 done'),
+      toolCallResponse(),
+      textResponse('turn 2 done'),
+    ])
+    const ctx = await loopHarness(adapter, { injectionPolicy: 'turn-start', refreshIntervalMs: 1_000 })
+    let now = BASE
+    ctx.tools.register(defineContentToolFixture({
+      name: 'tick',
+      description: 'advance fake time',
+      parameters: {},
+      async execute() {
+        now += 61_000
+        vi.setSystemTime(now)
+        return [{ type: 'text' as const, text: 'advanced' }]
+      },
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('turn-start-loop'), { provider: 'mock', model: 'mock' })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'turn 1' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    // Advance slightly inside refreshIntervalMs to confirm turn-start still injects at the new turn start.
+    now += 100
+    vi.setSystemTime(now)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'turn 2' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(4)
+    const texts = contextTexts(agent.session)
+    expect(texts).toHaveLength(2)
+    expect(texts[0]).toContain('Time sampled while preparing turn 1, step 1:')
+    expect(texts[1]).toContain('Time sampled while preparing turn 2, step 1:')
+    await ctx.fiber.dispose()
+  })
+
+  it('turn-start injects on first eligible step of a turn if step 1 had no injection, then skips later steps', async () => {
+    const { ctx } = await mount({ injectionPolicy: 'turn-start', refreshIntervalMs: 0 })
+    const session = Session.create(SessionId('turn-start-mid'))
+    openMessageTurn(session, 1)
+
+    await fire(ctx, sessionAgent(session), 1, 2)
+    await fire(ctx, sessionAgent(session), 1, 3)
+
+    const texts = contextTexts(session)
+    expect(texts).toHaveLength(1)
+    expect(texts[0]).toContain('Time sampled while preparing turn 1, step 2:')
+  })
+
+  it('session-start injects only once across multiple steps, turns, and resumed contexts', async () => {
+    const adapter = new ScriptedAdapter([
+      toolCallResponse(),
+      textResponse('turn 1 done'),
+      toolCallResponse(),
+      textResponse('turn 2 done'),
+    ])
+    const ctx = await loopHarness(adapter, { injectionPolicy: 'session-start', refreshIntervalMs: 0 })
+    let now = BASE
+    ctx.tools.register(defineContentToolFixture({
+      name: 'tick',
+      description: 'advance fake time',
+      parameters: {},
+      async execute() {
+        now += 61_000
+        vi.setSystemTime(now)
+        return [{ type: 'text' as const, text: 'advanced' }]
+      },
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('session-start-loop'), { provider: 'mock', model: 'mock' })
+
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'turn 1' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    now += 600_000
+    vi.setSystemTime(now)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'turn 2' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(4)
+    const texts = contextTexts(agent.session)
+    expect(texts).toHaveLength(1)
+    expect(texts[0]).toContain('Time sampled while preparing turn 1, step 1:')
+    await ctx.fiber.dispose()
+
+    // Replaying existing history in a fresh plugin instance still suppresses duplicate injection.
+    const { ctx: firstCtx } = await mount({ injectionPolicy: 'session-start', refreshIntervalMs: 0 })
+    const resumed = Session.create(SessionId('session-start-resumed'))
+    openMessageTurn(resumed, 1)
+    await fire(firstCtx, sessionAgent(resumed), 1, 1)
+    expect(contextTexts(resumed)).toHaveLength(1)
+
+    const { ctx: secondCtx } = await mount({ injectionPolicy: 'session-start', refreshIntervalMs: 0 })
+    openMessageTurn(resumed, 2)
+    await fire(secondCtx, sessionAgent(resumed), 2, 1)
+    expect(contextTexts(resumed)).toHaveLength(1)
+  })
+})
+
 describe('real Loader export path', () => {
   it('keeps namespace metadata and boots the agent listener through unwrapExports', async () => {
     expect('default' in timeContext).toBe(false)

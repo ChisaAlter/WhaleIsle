@@ -15,6 +15,7 @@ const {
 const { WAVE1_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave1');
 const { WAVE2_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave2');
 const { WAVE3_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave3');
+const { WAVE4_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave4');
 
 function writeFile(root, rel, content) {
   const full = path.join(root, ...rel.split('/'));
@@ -87,7 +88,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   ].join('\n'));
   const written = new Set();
   const extraByFile = new Map();
-  for (const entry of [...WAVE1_FORK_FILE_MARKERS, ...WAVE2_FORK_FILE_MARKERS, ...WAVE3_FORK_FILE_MARKERS]) {
+  for (const entry of [...WAVE1_FORK_FILE_MARKERS, ...WAVE2_FORK_FILE_MARKERS, ...WAVE3_FORK_FILE_MARKERS, ...WAVE4_FORK_FILE_MARKERS]) {
     const extra = (entry.includes || []).join('\n');
     if (extra) extraByFile.set(entry.file, `${extraByFile.get(entry.file) || ''}${extra}\n`);
   }
@@ -591,4 +592,11 @@ test('assertDesktopForks throws when a Wave 3 fork marker regresses', (t) => {
   const aclPath = path.join(root, ...'packages/sandbox/sandbox-windows-acl/src/acl.ts'.split('/'));
   fs.writeFileSync(aclPath, 'export function grantWrite() {}\n');
   assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /refusing to modify directory with NULL DACL/);
+});
+
+test('assertDesktopForks throws when a Wave 4 fork marker regresses', (t) => {
+  const root = makeFixture(t);
+  const spillPath = path.join(root, ...'packages/spill/spill-policy/src/index.ts'.split('/'));
+  fs.writeFileSync(spillPath, 'export const DEFAULT_IMAGE_TOKENS = 1600\n');
+  assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /maxReadInlineTokens/);
 });

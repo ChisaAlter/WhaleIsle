@@ -207,9 +207,7 @@ module.exports = {
   pidFileShellContext,
   trackManagedShell,
   managedShellStopContext,
-  readWindowsStartTimeNative,
   windowsProcessStartTime,
-  processCommandLine,
   isOwnedHarnessCommandLine,
   isSafeWindowsShell,
 };

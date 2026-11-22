@@ -2806,3 +2806,103 @@ test('gitStagePatch and gitUnstagePatch reject invalid inputs, unsafe paths, una
     fs.rmSync(outsider, { recursive: true, force: true });
   }
 });
+
+test('gitDiff supports single-file options.path and options.staged filtering', async () => {
+  const cwd = makeTempDir();
+  try {
+    initRepoWithBase(cwd);
+    const notesPath = path.join(cwd, 'notes.txt');
+    const otherPath = path.join(cwd, 'other.txt');
+    const dotPath = path.join(cwd, '..notes');
+    const lines = Array.from({ length: 12 }, (_v, idx) => `line-${idx + 1}`);
+    fs.writeFileSync(notesPath, `${lines.join('\n')}\n`, 'utf8');
+    fs.writeFileSync(otherPath, 'other-init\n', 'utf8');
+    fs.writeFileSync(dotPath, 'dot-init\n', 'utf8');
+    git(cwd, ['add', 'notes.txt', 'other.txt', '..notes']);
+    git(cwd, ['commit', '-m', 'Add fixtures']);
+
+    // Stage top hunk of notes.txt, then edit bottom hunk in working tree (MM state).
+    const stagedLines = [...lines];
+    stagedLines[0] = 'line-1-staged';
+    fs.writeFileSync(notesPath, `${stagedLines.join('\n')}\n`, 'utf8');
+    git(cwd, ['add', 'notes.txt']);
+    stagedLines[11] = 'line-12-unstaged';
+    fs.writeFileSync(notesPath, `${stagedLines.join('\n')}\n`, 'utf8');
+    fs.writeFileSync(otherPath, 'other-unstaged\n', 'utf8');
+    fs.writeFileSync(dotPath, 'dot-unstaged\n', 'utf8');
+    fs.writeFileSync(path.join(cwd, 'untracked.txt'), 'brand-new\n', 'utf8');
+
+    const stagedOnly = await gitDiff(cwd, { path: 'notes.txt', staged: true });
+    assert.ok(stagedOnly);
+    assert.deepEqual(stagedOnly.files.map((file) => file.path), ['notes.txt']);
+    const stagedText = stagedOnly.files[0].hunks.flatMap((hunk) => hunk.lines.map((line) => `${line.kind}:${line.text}`));
+    assert.ok(stagedText.includes('add:line-1-staged'));
+    assert.ok(!stagedText.includes('add:line-12-unstaged'));
+
+    const unstagedOnly = await gitDiff(cwd, { path: 'notes.txt', staged: false });
+    assert.ok(unstagedOnly);
+    assert.deepEqual(unstagedOnly.files.map((file) => file.path), ['notes.txt']);
+    const unstagedText = unstagedOnly.files[0].hunks.flatMap((hunk) => hunk.lines.map((line) => `${line.kind}:${line.text}`));
+    assert.ok(unstagedText.includes('add:line-12-unstaged'));
+    assert.ok(!unstagedText.includes('add:line-1-staged'));
+
+    // Untracked file appears only when staged is false or undefined, never when staged is true.
+    const untrackedStaged = await gitDiff(cwd, { path: 'untracked.txt', staged: true });
+    assert.deepEqual(untrackedStaged, { files: [] });
+    const untrackedWorktree = await gitDiff(cwd, { path: 'untracked.txt', staged: false });
+    assert.equal(untrackedWorktree?.files.length, 1);
+    assert.equal(untrackedWorktree?.files[0]?.status, 'added');
+    assert.equal(untrackedWorktree?.files[0]?.hunks[0]?.lines[0]?.text, 'brand-new');
+
+    // Repo-wide staged vs unstaged filtering without path.
+    const allStaged = await gitDiff(cwd, { staged: true });
+    assert.deepEqual(allStaged?.files.map((file) => file.path), ['notes.txt']);
+    const allUnstaged = await gitDiff(cwd, { staged: false });
+    const unstagedPaths = allUnstaged?.files.map((file) => file.path).sort();
+    assert.deepEqual(unstagedPaths, ['..notes', 'notes.txt', 'other.txt', 'untracked.txt']);
+
+    // Dot-dot filenames inside workspace remain readable; unsafe paths and invalid staged flags return null.
+    const dotDiff = await gitDiff(cwd, { path: '..notes', staged: false });
+    assert.deepEqual(dotDiff?.files.map((file) => file.path), ['..notes']);
+    for (const badPath of ['../outside.txt', '/etc/passwd', '.git/config', 'NUL.txt', '', '   ', 123]) {
+      assert.equal(await gitDiff(cwd, { path: badPath }), null);
+    }
+    assert.equal(await gitDiff(cwd, { staged: 'yes' }), null);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('gitDiff supports options.path and options.staged on unborn HEAD and baseRef', async () => {
+  const cwd = makeTempDir();
+  try {
+    git(cwd, ['init', '-b', 'main']);
+    git(cwd, ['config', 'user.email', 'git-test@example.com']);
+    git(cwd, ['config', 'user.name', 'Git Test']);
+    fs.writeFileSync(path.join(cwd, 'staged.txt'), 's1\n', 'utf8');
+    fs.writeFileSync(path.join(cwd, 'fresh.txt'), 'u1\n', 'utf8');
+    git(cwd, ['add', 'staged.txt']);
+
+    const unbornStaged = await gitDiff(cwd, { path: 'staged.txt', staged: true });
+    assert.deepEqual(unbornStaged?.files.map((file) => file.path), ['staged.txt']);
+    assert.deepEqual(await gitDiff(cwd, { path: 'fresh.txt', staged: true }), { files: [] });
+    const unbornUnstaged = await gitDiff(cwd, { path: 'fresh.txt', staged: false });
+    assert.deepEqual(unbornUnstaged?.files.map((file) => file.path), ['fresh.txt']);
+
+    git(cwd, ['add', 'fresh.txt']);
+    git(cwd, ['commit', '-m', 'base']);
+    git(cwd, ['checkout', '-b', 'feat']);
+    fs.writeFileSync(path.join(cwd, 'staged.txt'), 's2\n', 'utf8');
+    fs.writeFileSync(path.join(cwd, 'fresh.txt'), 'u2\n', 'utf8');
+    git(cwd, ['add', 'staged.txt', 'fresh.txt']);
+    git(cwd, ['commit', '-m', 'feat']);
+
+    const branchSingle = await gitDiff(cwd, { baseRef: 'main', path: 'staged.txt' });
+    assert.equal(branchSingle?.baseRef, 'main');
+    assert.deepEqual(branchSingle?.files.map((file) => file.path), ['staged.txt']);
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

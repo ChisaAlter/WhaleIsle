@@ -26,13 +26,21 @@ export type { SpillPolicyExec } from './types.ts'
 export interface Config {
   /** Maximum estimated tokens in a retained result, including image descriptors and omission notices. Omitted disables retention. */
   maxInlineTokens?: number
+  /**
+   * Maximum estimated tokens for `read` results before spilling to disk.
+   * Defaults to `maxInlineTokens * 2`; pass `0` to exempt `read` results explicitly.
+   */
+  maxReadInlineTokens?: number
 }
 
 /** Cordis plugin identity. */
 export const name = 'spill-policy'
 /** Tools own both model-facing results and PTC dispatch logs. */
 export const inject = ['tools']
-export const Config: z<Config> = z.object({ maxInlineTokens: z.number() })
+export const Config: z<Config> = z.object({
+  maxInlineTokens: z.number(),
+  maxReadInlineTokens: z.number(),
+})
 
 /** Narrow the model's ordered content without rewriting unsupported blocks. */
 function retainable(content: readonly ContentBlock[]): content is RetainableBlock[] {
@@ -48,12 +56,17 @@ const DEFAULT_IMAGE_TOKENS = 1600
  * @param config - maximum estimated result tokens; omission disables the plugin.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (config.maxReadInlineTokens !== undefined
+    && (!Number.isSafeInteger(config.maxReadInlineTokens) || config.maxReadInlineTokens < 0)) {
+    throw new Error(`spill-policy: maxReadInlineTokens must be a non-negative integer (got ${config.maxReadInlineTokens})`)
+  }
   const cap = config.maxInlineTokens
   if (cap === undefined) return
   if (!Number.isSafeInteger(cap) || cap < 0) {
     throw new Error(`spill-policy: maxInlineTokens must be a non-negative integer (got ${cap})`)
   }
   const maxTokens = cap
+  const readCap = config.maxReadInlineTokens ?? maxTokens * 2
 
   /** Price actual request images and their accompanying descriptor text. */
   function pricing(exec: ToolExecution, images: ImageBlock[]): (block: RetainableBlock) => number {
@@ -97,10 +110,12 @@ export function apply(ctx: Context, config: Config): void {
     exec: ToolExecution, content: ContentBlock[], toolName: string, callId: ToolCallId, label: 'result' | 'dispatch',
   ): Promise<ContentBlock[] | undefined> {
     if (!retainable(content)) return undefined
+    const limitTokens = toolName === 'read' ? readCap : maxTokens
+    if (toolName === 'read' && limitTokens === 0) return undefined
     try {
       const images = content.filter((block): block is ImageBlock => block.type === 'image')
       const price = pricing(exec, images)
-      if (content.reduce((total, block) => total + price(block), 0) <= maxTokens) return undefined
+      if (content.reduce((total, block) => total + price(block), 0) <= limitTokens) return undefined
       const owner = (exec as SpillPolicyExec).agent?.session.header.id
       if (owner === undefined) throw new Error(`no session owner for ${toolName} ${label}`)
       const spillStore = ctx.get('spillStore')
@@ -115,8 +130,10 @@ export function apply(ctx: Context, config: Config): void {
       })
       const worstNotice = notice(totalBytes, images.length)
       const reserved = price(GAP) + price({ type: 'text', text: `\n\n${worstNotice.text}` })
-      if (price(worstNotice) > maxTokens) throw new Error(`spill notice for ${toolName} exceeds maxInlineTokens`)
-      const retained = retainContent(content, Math.max(0, maxTokens - reserved), price)
+      if (price(worstNotice) > limitTokens) {
+        throw new Error(`spill notice for ${toolName} exceeds ${toolName === 'read' ? 'maxReadInlineTokens' : 'maxInlineTokens'}`)
+      }
+      const retained = retainContent(content, Math.max(0, limitTokens - reserved), price)
       const footer = notice(retained.omittedBytes, retained.omittedImages)
       const result = retained.head.length + retained.tail.length === 0
         ? [footer]
@@ -137,7 +154,9 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
     const decision = await next()
-    if (decision.kind !== 'accept' || Object.hasOwn(decision, 'value') || exec.name === 'read') return decision
+    if (decision.kind !== 'accept' || Object.hasOwn(decision, 'value') || (exec.name === 'read' && readCap === 0)) {
+      return decision
+    }
     const content = decision.content ?? result.content
     const hasImages = content.some(block => block.type === 'image')
     // Text-only PTC bindings retain their asynchronous log-only spill path.

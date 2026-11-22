@@ -5,6 +5,7 @@ const path = require('node:path');
 const { WAVE1_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave1');
 const { WAVE2_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave2');
 const { WAVE3_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave3');
+const { WAVE4_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave4');
 
 const DESKTOP_PACKAGES = [
   { dir: 'packages/experimental/agent-team-profile', name: '@deepseek-ai/dsh-experimental-agent-team-profile' },
@@ -581,6 +582,7 @@ const FORK_FILE_MARKERS = [
   ...WAVE1_FORK_FILE_MARKERS,
   ...WAVE2_FORK_FILE_MARKERS,
   ...WAVE3_FORK_FILE_MARKERS,
+  ...WAVE4_FORK_FILE_MARKERS,
 ];
 
 /**

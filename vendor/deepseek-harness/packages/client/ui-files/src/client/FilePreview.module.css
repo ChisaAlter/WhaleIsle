@@ -82,6 +82,12 @@
 .editorBody {
   display: flex;
   flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.editorBody > .message {
+  margin: 8px 16px 0;
 }
 
 .message {
@@ -189,6 +195,10 @@
 
 :global([data-dockkit-float]) .body {
   padding: 12px;
+}
+
+:global([data-dockkit-float]) .body.editorBody {
+  padding: 0;
 }
 
 :global([data-dockkit-float]) .body:has(> .image) {

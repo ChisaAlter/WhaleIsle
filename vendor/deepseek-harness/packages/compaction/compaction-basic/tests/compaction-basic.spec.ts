@@ -16,7 +16,7 @@ import {
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage, LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
@@ -2973,5 +2973,82 @@ describe('baseline instruction preservation and overflow deadlock recovery', () 
       .rejects.toThrow()
     expect(calls).toBeGreaterThanOrEqual(3)
     expect(controller.signal.aborted).toBe(true)
+  })
+})
+
+describe('pre-step compaction observability', () => {
+  function runPreStep(ctx: Context, owner: Agent, turn: number, step: number) {
+    return agentEvents(ctx, owner).waterfall(
+      'agent/pre-step',
+      { modelSelection: { provider: MODEL, model: MODEL }, messages: [], turn, step, signal: SIGNAL },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+  }
+
+  it('logs structured session, turn, step, target, and errorType context and throttles identical repeats', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    try {
+      const ctx = createContext()
+      const warnings: string[] = []
+      ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+      const compact = new TestCompactionEngine(ctx, {
+        headroomTokens: 0,
+        maxTokens: 8192,
+        thresholdRatio: 0.5,
+        retainTokens: 180,
+      })
+      const session = conversation(4)
+      const owner = agent(session, MODEL)
+
+      const spy = vi.spyOn(compact, 'compactIfNeeded')
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockRejectedValueOnce('raw non-error rejection')
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+
+      // Step 1: emits immediately with structured fields.
+      await expect(runPreStep(ctx, owner, 2, 1)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain(`session=${session.header.id}`)
+      expect(warnings[0]).toContain('turn=2')
+      expect(warnings[0]).toContain('step=1')
+      expect(warnings[0]).toContain(`target=${MODEL}/${MODEL}`)
+      expect(warnings[0]).toContain('errorType=LlmError(RATE_LIMIT)')
+      expect(warnings[0]).toContain('rate limit hit')
+      expect(warnings[0]).toContain('context compaction skipped')
+
+      // Steps 2 & 3 within 60s cooldown with identical failure are throttled.
+      vi.advanceTimersByTime(10_000)
+      await expect(runPreStep(ctx, owner, 2, 2)).resolves.toEqual({ kind: 'enter', messages: [] })
+      await expect(runPreStep(ctx, owner, 2, 3)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(1)
+
+      // Distinct failure emits immediately without waiting for cooldown.
+      await expect(runPreStep(ctx, owner, 2, 4)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(2)
+      expect(warnings[1]).toContain('errorType=non-error')
+      expect(warnings[1]).toContain('raw non-error rejection')
+
+      // Once cooldown expires, same failure emits again and reports suppressed count.
+      vi.advanceTimersByTime(60_000)
+      await expect(runPreStep(ctx, owner, 3, 1)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(3)
+      expect(warnings[2]).toContain('suppressed=2')
+      expect(warnings[2]).toContain('turn=3')
+      expect(warnings[2]).toContain('step=1')
+
+      // A clean pre-step clears failure cooldown so a later regression logs immediately.
+      await expect(runPreStep(ctx, owner, 3, 2)).resolves.toEqual({ kind: 'enter', messages: [] })
+      await expect(runPreStep(ctx, owner, 3, 3)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(4)
+      expect(warnings[3]).not.toContain('suppressed=')
+      expect(spy).toHaveBeenCalledTimes(7)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

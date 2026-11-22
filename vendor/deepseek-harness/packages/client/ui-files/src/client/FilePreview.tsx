@@ -22,6 +22,7 @@ import {
 } from './fileCommentAnnotations.ts'
 import { installFileEditorDismissal } from './fileEditorDismissal.ts'
 import { FloatingPreviewButton } from './FloatingPreviewButton.tsx'
+import { CodeEditorSurface, type CodeEditorSurfaceHandle } from './CodeEditorSurface.tsx'
 import { fileBreadcrumbs } from './filePath.ts'
 import { clampFileLine, resolveCenteredFileLineScrollTop } from './fileLineReveal.ts'
 import { isMarkdownPreviewFile } from './filePreviewMode.ts'
@@ -269,6 +270,8 @@ export function FilePreview({
   const textRef = useRef(seed?.text ?? '')
   const draftRef = useRef(seed?.draft ?? '')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editorSurfaceRef = useRef<CodeEditorSurfaceHandle | null>(null)
+  const findOpenRef = useRef(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const handledRevealRequestIdRef = useRef<number | null>(null)
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null)
@@ -409,6 +412,7 @@ export function FilePreview({
 
   useEffect(() => {
     handledRevealRequestIdRef.current = null
+    findOpenRef.current = false
   }, [relativePath])
 
   useEffect(() => {
@@ -429,6 +433,7 @@ export function FilePreview({
       fileTop: 0,
       estimatedLine: { top: (line - 1) * lineHeight, height: lineHeight },
     })
+    editorSurfaceRef.current?.syncScroll()
     handledRevealRequestIdRef.current = revealRequestId
   }, [ready, draft, revealLine, revealRequestId, showRenderedMarkdown])
 
@@ -559,6 +564,46 @@ export function FilePreview({
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
   }, [active, canSave])
+
+  useEffect(() => {
+    if (!active || !showEditor || showRenderedMarkdown) return
+    const onFindKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.isComposing) return
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      if (event.key.toLowerCase() !== 'f') return
+      const root = rootRef.current
+      const target = event.target instanceof Element ? event.target : document.activeElement
+      const inRoot = root !== null && target instanceof Node && root.contains(target)
+      const inOtherEditable = !inRoot && target instanceof Element
+        && target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]') !== null
+      if (inOtherEditable) return
+      if (!inRoot && document.activeElement !== document.body && document.activeElement !== null) return
+      event.preventDefault()
+      editorSurfaceRef.current?.openFind()
+    }
+    window.addEventListener('keydown', onFindKeyDown)
+    return () => { window.removeEventListener('keydown', onFindKeyDown) }
+  }, [active, showEditor, showRenderedMarkdown])
+
+  useEffect(() => {
+    if (!showEditor || showRenderedMarkdown) {
+      findOpenRef.current = false
+      return
+    }
+    const root = rootRef.current
+    if (root === null) return
+    const onEscapeCapture = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.isComposing || !findOpenRef.current) return
+      const targetInRoot = event.target instanceof Node && root.contains(event.target)
+      const activeInRoot = document.activeElement instanceof Node && root.contains(document.activeElement)
+      if (!targetInRoot && !activeInRoot) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      editorSurfaceRef.current?.closeFind()
+    }
+    document.addEventListener('keydown', onEscapeCapture, true)
+    return () => { document.removeEventListener('keydown', onEscapeCapture, true) }
+  }, [showEditor, showRenderedMarkdown])
 
   useEffect(() => {
     const root = rootRef.current
@@ -709,12 +754,14 @@ export function FilePreview({
                 labels={markdownLabels}
               />
             ) : (
-              <textarea
-                ref={textareaRef}
-                className={clsx(css.editor, wordWrap && css.wrap)}
+              <CodeEditorSurface
                 value={draft}
-                aria-label={relativePath}
-                onChange={(event) => { applyDraft(event.target.value) }}
+                relativePath={relativePath}
+                wordWrap={wordWrap}
+                t={t}
+                textareaRef={textareaRef}
+                surfaceRef={editorSurfaceRef}
+                onChange={applyDraft}
                 onKeyDown={(event) => {
                   if (event.metaKey && event.shiftKey && !event.ctrlKey && !event.altKey
                     && event.key.toLowerCase() === 'z' && !event.nativeEvent.isComposing) {
@@ -725,6 +772,8 @@ export function FilePreview({
                   }
                 }}
                 onSelect={(event) => { syncTextareaSelection(event.currentTarget) }}
+                onSelectionSync={syncTextareaSelection}
+                onFindOpenChange={(open) => { findOpenRef.current = open }}
               />
             )}
           </>

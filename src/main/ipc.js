@@ -36,7 +36,7 @@ const { createLauncherService } = require('../launcher/launcher-service');
 const { withUpdateCenter } = require('./update-center/legacy');
 const { createLauncherConfirm } = require('../launcher/launcher-confirm');
 const { listWallpaperCatalog, downloadWallpaper } = require('./wallpaper-catalog');
-const { gitBranchList, gitCheckLargeFiles, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, openWorkspacePath } = require('./git');
+const { gitBranchList, gitCheckLargeFiles, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStagePatch, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, gitUnstagePatch, openWorkspacePath } = require('./git');
 const { gitIpcNull, guardGitIpc } = require('./git-ipc-guard');
 const { watchWorkspaceRegistrations } = require('./git-workspace-watch');
 const { registerPreviewIpc } = require('./preview');
@@ -478,7 +478,9 @@ function registerIpc({
     openWithSystemDefault({ cwd, relativePath })
   ));
   handle('shell:git-stage', guardGitIpc((_event, cwd, relativePath) => gitStage(cwd, relativePath)));
+  handle('shell:git-stage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => gitStagePatch(cwd, patchText)));
   handle('shell:git-unstage', guardGitIpc((_event, cwd, relativePath) => gitUnstage(cwd, relativePath)));
+  handle('shell:git-unstage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => gitUnstagePatch(cwd, patchText)));
   handle('shell:git-discard', guardGitIpc((_event, cwd, relativePath) => gitDiscard(cwd, relativePath)));
   handle('shell:git-status-entries', guardGitIpc((_event, cwd) => gitStatusEntries(cwd)));
   handle('shell:git-branch-list', guardGitIpc((_event, cwd) => gitBranchList(cwd)));

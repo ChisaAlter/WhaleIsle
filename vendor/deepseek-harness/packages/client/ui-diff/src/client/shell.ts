@@ -57,9 +57,11 @@ export interface GitBranchListResult {
   defaultRef?: string | null
 }
 
-/** Optional three-dot range for `gitDiff`. */
+/** Optional range or single-file filter parameters for `gitDiff`. */
 export interface GitDiffOptions {
   baseRef?: string
+  path?: string | undefined
+  staged?: boolean | undefined
 }
 
 /** Injected git probes. */
@@ -71,6 +73,9 @@ export interface DiffShellInjected {
   gitUnstage: (cwd: string, relativePath: string) => Promise<{ ok: boolean; message?: string }>
   gitDiscard: (cwd: string, relativePath: string) => Promise<{ ok: boolean; message?: string }>
   gitBranchList: (cwd: string) => Promise<GitBranchListResult | null>
+  gitStagePatch?: ((cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>) | undefined
+  gitUnstagePatch?: ((cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>) | undefined
+  appendComposerText?: ((sessionId: string, text: string) => void) | undefined
 }
 
 interface DiffShell {
@@ -81,6 +86,8 @@ interface DiffShell {
   gitUnstage?: (cwd: string, relativePath: string) => Promise<{ ok: boolean; message?: string }>
   gitDiscard?: (cwd: string, relativePath: string) => Promise<{ ok: boolean; message?: string }>
   gitBranchList?: (cwd: string) => Promise<GitBranchListResult | null>
+  gitStagePatch?: (cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>
+  gitUnstagePatch?: (cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>
 }
 
 function missingOp(): Promise<{ ok: boolean; message?: string }> {
@@ -96,6 +103,8 @@ export function readDiffShell(): DiffShellInjected {
   const shell = typeof window === 'undefined'
     ? undefined
     : (window as Window & { shell?: DiffShell }).shell
+  const stagePatch = shell?.gitStagePatch
+  const unstagePatch = shell?.gitUnstagePatch
   return {
     gitStatus: cwd => shell?.gitStatus?.(cwd) ?? Promise.resolve(null),
     gitDiff: (cwd, options) => shell?.gitDiff?.(cwd, options) ?? Promise.resolve(null),
@@ -104,6 +113,12 @@ export function readDiffShell(): DiffShellInjected {
     gitStage: (cwd, relativePath) => shell?.gitStage?.(cwd, relativePath) ?? missingOp(),
     gitUnstage: (cwd, relativePath) => shell?.gitUnstage?.(cwd, relativePath) ?? missingOp(),
     gitDiscard: (cwd, relativePath) => shell?.gitDiscard?.(cwd, relativePath) ?? missingOp(),
+    ...(stagePatch === undefined ? {} : {
+      gitStagePatch: (cwd, patchText) => stagePatch.call(shell, cwd, patchText),
+    }),
+    ...(unstagePatch === undefined ? {} : {
+      gitUnstagePatch: (cwd, patchText) => unstagePatch.call(shell, cwd, patchText),
+    }),
   }
 }
 

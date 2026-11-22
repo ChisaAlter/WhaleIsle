@@ -1024,4 +1024,170 @@ describe('FileSystemSkillProvider', () => {
       }
     }
   })
+
+  it('discovers project and user compatible .claude/skills and .codex/skills below native roots', async () => {
+    const root = await tempDir('compat-roots')
+    const home = join(root, 'home')
+    const project = join(root, 'project')
+    const custom = join(root, 'custom')
+    const bundled = join(root, 'bundled')
+
+    await writeSkill(join(project, '.dsh/skills'), 'shared-project', 'Project DSH wins')
+    await writeSkill(join(project, '.agents/skills'), 'shared-project', 'Project Agents loses')
+    await writeSkill(join(project, '.agents/skills'), 'agents-vs-compat', 'Project Agents wins over Claude/Codex')
+    await writeSkill(join(project, '.claude/skills'), 'agents-vs-compat', 'Project Claude loses to Agents')
+    await writeSkill(join(project, '.claude/skills'), 'claude-vs-codex', 'Project Claude wins over Codex')
+    await writeSkill(join(project, '.codex/skills'), 'claude-vs-codex', 'Project Codex loses to Claude')
+    await writeSkill(join(project, '.claude/skills'), 'project-claude-only', 'Project Claude skill')
+    await writeSkill(join(project, '.codex/skills'), 'project-codex-only', 'Project Codex skill')
+
+    await writeSkill(custom, 'custom-vs-user', 'Custom beats user')
+    await writeSkill(join(home, '.dsh/skills'), 'custom-vs-user', 'User DSH loses to custom')
+    await writeSkill(join(home, '.agents/skills'), 'user-agents-vs-compat', 'User Agents wins over Claude/Codex')
+    await writeSkill(join(home, '.claude/skills'), 'user-agents-vs-compat', 'User Claude loses to Agents')
+    await writeSkill(join(home, '.claude/skills'), 'user-compat-shared', 'User Claude wins over User Codex')
+    await writeSkill(join(home, '.codex/skills'), 'user-compat-shared', 'User Codex loses to User Claude')
+    await writeSkill(join(home, '.claude/skills'), 'user-claude-only', 'User Claude skill')
+    await writeSkill(join(home, '.codex/skills'), 'user-codex-only', 'User Codex skill')
+    await writeSkill(join(home, '.codex/skills/.system'), 'codex-system-hidden', 'Skipped system skill')
+    await writeSkill(bundled, 'user-codex-only', 'Bundled loses to User Codex')
+    await writeSkill(bundled, 'bundled-only', 'Bundled fallback skill')
+
+    const previousDshHome = process.env.DSH_HOME
+    const previousAgentsHome = process.env.DSH_AGENTS_HOME
+    const previousUserProfile = process.env.USERPROFILE
+    const previousHome = process.env.HOME
+    delete process.env.DSH_HOME
+    delete process.env.DSH_AGENTS_HOME
+    process.env.USERPROFILE = home
+    process.env.HOME = home
+
+    try {
+      const ctx = new Context()
+      await ctx.plugin(SkillRegistry)
+      await ctx.plugin(SkillFileSystem, {
+        customSkillDirs: [custom],
+        bundledSkillDir: bundled,
+        watch: false,
+      })
+
+      const listed = await ctx.skills.list({ cwd: project })
+      expect(listed.map(skill => skill.name)).toEqual([
+        'agents-vs-compat',
+        'bundled-only',
+        'claude-vs-codex',
+        'custom-vs-user',
+        'project-claude-only',
+        'project-codex-only',
+        'shared-project',
+        'user-agents-vs-compat',
+        'user-claude-only',
+        'user-codex-only',
+        'user-compat-shared',
+      ])
+
+      expect((await ctx.skills.get('shared-project', { cwd: project }))?.description).toBe('Project DSH wins')
+      expect((await ctx.skills.get('agents-vs-compat', { cwd: project }))?.description).toBe(
+        'Project Agents wins over Claude/Codex',
+      )
+      expect((await ctx.skills.get('claude-vs-codex', { cwd: project }))?.description).toBe(
+        'Project Claude wins over Codex',
+      )
+      expect((await ctx.skills.get('project-claude-only', { cwd: project }))?.source).toBe('project-claude')
+      expect((await ctx.skills.get('project-codex-only', { cwd: project }))?.source).toBe('project-codex')
+      expect((await ctx.skills.get('user-agents-vs-compat', { cwd: project }))?.description).toBe(
+        'User Agents wins over Claude/Codex',
+      )
+      expect((await ctx.skills.get('user-compat-shared', { cwd: project }))?.description).toBe(
+        'User Claude wins over User Codex',
+      )
+      expect((await ctx.skills.get('user-claude-only', { cwd: project }))?.source).toBe('user-claude')
+      expect((await ctx.skills.get('user-codex-only', { cwd: project }))?.description).toBe('User Codex skill')
+      expect((await ctx.skills.get('user-codex-only', { cwd: project }))?.source).toBe('user-codex')
+      expect(await ctx.skills.get('codex-system-hidden', { cwd: project })).toBeUndefined()
+      await ctx.fiber.dispose()
+    } finally {
+      if (previousDshHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousDshHome
+      if (previousAgentsHome === undefined) delete process.env.DSH_AGENTS_HOME
+      else process.env.DSH_AGENTS_HOME = previousAgentsHome
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = previousUserProfile
+      if (previousHome === undefined) delete process.env.HOME
+      else process.env.HOME = previousHome
+    }
+  })
+
+  it('tolerates missing compatible roots and disables compatible discovery via includeCompatibleRoots or includeDefaultRoots', async () => {
+    const root = await tempDir('compat-gates')
+    const home = join(root, 'home')
+    const project = join(root, 'project')
+    const custom = join(root, 'custom')
+
+    await writeSkill(join(project, '.dsh/skills'), 'native-project', 'Native project')
+    await writeSkill(join(project, '.claude/skills'), 'compat-project-claude', 'Compat project Claude')
+    await writeSkill(join(project, '.codex/skills'), 'compat-project-codex', 'Compat project Codex')
+    await writeSkill(join(home, '.dsh/skills'), 'native-user', 'Native user')
+    await writeSkill(join(home, '.claude/skills'), 'compat-user-claude', 'Compat user Claude')
+    await writeSkill(join(home, '.codex/skills'), 'compat-user-codex', 'Compat user Codex')
+    await writeSkill(custom, 'explicit-custom', 'Explicit custom')
+
+    const previousDshHome = process.env.DSH_HOME
+    const previousAgentsHome = process.env.DSH_AGENTS_HOME
+    const previousUserProfile = process.env.USERPROFILE
+    const previousHome = process.env.HOME
+    delete process.env.DSH_HOME
+    delete process.env.DSH_AGENTS_HOME
+    process.env.USERPROFILE = home
+    process.env.HOME = home
+
+    try {
+      // Missing compatible roots in an empty project never fail or degrade completeness.
+      const missingProject = join(root, 'empty-project')
+      const warnings: string[] = []
+      const cleanCtx = new Context()
+      cleanCtx.logger.warn = ((message: string) => void warnings.push(message)) as typeof cleanCtx.logger.warn
+      await cleanCtx.plugin(SkillRegistry)
+      await cleanCtx.plugin(SkillFileSystem, { watch: false })
+      expect((await cleanCtx.skills.list({ cwd: missingProject })).map(skill => skill.name)).toEqual([
+        'compat-user-claude',
+        'compat-user-codex',
+        'native-user',
+      ])
+      expect(warnings).toEqual([])
+      await cleanCtx.fiber.dispose()
+
+      // includeCompatibleRoots: false skips .claude/.codex while retaining native .dsh/.agents.
+      const noCompatCtx = new Context()
+      await noCompatCtx.plugin(SkillRegistry)
+      await noCompatCtx.plugin(SkillFileSystem, { includeCompatibleRoots: false, watch: false })
+      expect((await noCompatCtx.skills.list({ cwd: project })).map(skill => skill.name)).toEqual([
+        'native-project',
+        'native-user',
+      ])
+      await noCompatCtx.fiber.dispose()
+
+      // includeDefaultRoots: false must strictly exclude compatible roots even if includeCompatibleRoots is true.
+      const isolatedCtx = new Context()
+      await isolatedCtx.plugin(SkillRegistry)
+      await isolatedCtx.plugin(SkillFileSystem, {
+        providerName: 'isolated-compat',
+        includeDefaultRoots: false,
+        includeCompatibleRoots: true,
+        customSkillDirs: [custom],
+        watch: false,
+      })
+      expect((await isolatedCtx.skills.list({ cwd: project })).map(skill => skill.name)).toEqual(['explicit-custom'])
+      await isolatedCtx.fiber.dispose()
+    } finally {
+      if (previousDshHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousDshHome
+      if (previousAgentsHome === undefined) delete process.env.DSH_AGENTS_HOME
+      else process.env.DSH_AGENTS_HOME = previousAgentsHome
+      if (previousUserProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = previousUserProfile
+      if (previousHome === undefined) delete process.env.HOME
+      else process.env.HOME = previousHome
+    }
+  })
 })

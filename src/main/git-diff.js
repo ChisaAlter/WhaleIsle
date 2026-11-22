@@ -182,48 +182,135 @@ function untrackedAsDiff(root, rel) {
   };
 }
 
+/**
+ * Validate and normalize a workspace-relative diff path target.
+ * @param {string} root
+ * @param {unknown} rawPath
+ * @returns {string | null}
+ */
+function normalizeSafeDiffPath(root, rawPath) {
+  if (typeof rawPath !== 'string' || rawPath.trim() === '' || rawPath.includes('\0')) {
+    return null;
+  }
+  if (!isSafePatchTarget(root, rawPath)) return null;
+  const target = resolveInsideWorkspace(root, rawPath);
+  if (!target) return null;
+  const rel = path.relative(root, target).replaceAll('\\', '/');
+  if (!rel || !isSafePatchTarget(root, rel)) return null;
+  return rel;
+}
+
+/**
+ * Validate and normalize `gitDiff` options.
+ * @param {string} root
+ * @param {{ baseRef?: unknown, path?: unknown, staged?: unknown } | null | undefined} options
+ * @returns {{ requested: string | null, targetPath: string | null, staged: boolean | undefined } | null}
+ */
+function resolveDiffOptions(root, options) {
+  const rawBase = options?.baseRef;
+  if (rawBase !== undefined && typeof rawBase !== 'string') return null;
+  const requested = typeof rawBase === 'string' ? safeRefName(rawBase) : null;
+  if (typeof rawBase === 'string' && rawBase.trim() !== '' && !requested) {
+    return null;
+  }
+
+  let targetPath = null;
+  if (options?.path !== undefined) {
+    targetPath = normalizeSafeDiffPath(root, options.path);
+    if (!targetPath) return null;
+  }
+
+  const staged = options?.staged;
+  if (staged !== undefined && typeof staged !== 'boolean') return null;
+
+  return { requested, targetPath, staged };
+}
+
+/**
+ * @param {string[]} baseArgs
+ * @param {string | null} targetPath
+ * @returns {string[]}
+ */
+function buildDiffArgs(baseArgs, targetPath) {
+  if (!targetPath) return baseArgs;
+  return ['--literal-pathspecs', ...baseArgs, '--', targetPath];
+}
+
+/**
+ * @param {string} root
+ * @param {Array<{ path: string }>} files
+ * @param {string | null} targetPath
+ */
+async function appendUntrackedDiffs(root, files, targetPath) {
+  const lsArgs = targetPath
+    ? ['--literal-pathspecs', 'ls-files', '--others', '--exclude-standard', '-z', '--', targetPath]
+    : ['ls-files', '--others', '--exclude-standard', '-z'];
+  const untracked = await runGit(root, lsArgs);
+  if (untracked.code !== 0 || !untracked.stdout) return;
+  for (const rel of untracked.stdout.split('\0').filter(Boolean)) {
+    if (targetPath && rel !== targetPath) continue;
+    if (files.some((file) => file.path === rel)) continue;
+    const added = untrackedAsDiff(root, rel);
+    if (added) files.push(added);
+  }
+}
+
 async function gitDiff(cwd, options) {
   const root = asCwd(cwd);
   if (!root) return null;
   const inside = await runGit(root, ['rev-parse', '--is-inside-work-tree']);
   if (inside.missing || inside.code !== 0 || inside.stdout.trim() !== 'true') return null;
 
-  const requested = typeof options?.baseRef === 'string' ? safeRefName(options.baseRef) : null;
-  if (typeof options?.baseRef === 'string' && options.baseRef.trim() !== '' && !requested) {
-    return null;
-  }
+  const resolved = resolveDiffOptions(root, options);
+  if (!resolved) return null;
+  const { requested, targetPath, staged } = resolved;
 
   const files = [];
   let truncated = false;
   if (requested) {
-    const diff = await runGit(root, ['diff', `${requested}...HEAD`, '--no-color', '--no-ext-diff', '--find-renames']);
+    const args = buildDiffArgs(['diff', `${requested}...HEAD`, '--no-color', '--no-ext-diff', '--find-renames'], targetPath);
+    const diff = await runGit(root, args);
     if (diff.missing || diff.code !== 0) return null;
     truncated = Boolean(diff.truncated);
     files.push(...parseUnifiedDiff(diff.stdout));
     return truncated ? { files, truncated: true, baseRef: requested } : { files, baseRef: requested };
   }
+
+  if (staged === true) {
+    const args = buildDiffArgs(['diff', '--cached', '--no-color', '--no-ext-diff', '--find-renames'], targetPath);
+    const diff = await runGit(root, args);
+    if (diff.missing || diff.code !== 0) return null;
+    truncated = Boolean(diff.truncated);
+    files.push(...parseUnifiedDiff(diff.stdout));
+    return truncated ? { files, truncated: true } : { files };
+  }
+
+  if (staged === false) {
+    const args = buildDiffArgs(['diff', '--no-color', '--no-ext-diff', '--find-renames'], targetPath);
+    const diff = await runGit(root, args);
+    if (diff.missing || diff.code !== 0) return null;
+    truncated = Boolean(diff.truncated);
+    files.push(...parseUnifiedDiff(diff.stdout));
+    await appendUntrackedDiffs(root, files, targetPath);
+    return truncated ? { files, truncated: true } : { files };
+  }
+
   const head = await runGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD']);
   if (head.code === 0) {
-    const diff = await runGit(root, ['diff', 'HEAD', '--no-color', '--no-ext-diff', '--find-renames']);
+    const args = buildDiffArgs(['diff', 'HEAD', '--no-color', '--no-ext-diff', '--find-renames'], targetPath);
+    const diff = await runGit(root, args);
     if (diff.missing || diff.code !== 0) return null;
     truncated = Boolean(diff.truncated);
     files.push(...parseUnifiedDiff(diff.stdout));
   } else {
-    const staged = await runGit(root, ['diff', '--cached', '--no-color', '--no-ext-diff']);
-    const unstaged = await runGit(root, ['diff', '--no-color', '--no-ext-diff']);
-    if (staged.missing || unstaged.missing || (staged.code !== 0 && unstaged.code !== 0)) return null;
-    truncated = Boolean(staged.truncated || unstaged.truncated);
-    files.push(...parseUnifiedDiff(staged.stdout), ...parseUnifiedDiff(unstaged.stdout));
+    const stagedDiff = await runGit(root, buildDiffArgs(['diff', '--cached', '--no-color', '--no-ext-diff'], targetPath));
+    const unstagedDiff = await runGit(root, buildDiffArgs(['diff', '--no-color', '--no-ext-diff'], targetPath));
+    if (stagedDiff.missing || unstagedDiff.missing || (stagedDiff.code !== 0 && unstagedDiff.code !== 0)) return null;
+    truncated = Boolean(stagedDiff.truncated || unstagedDiff.truncated);
+    files.push(...parseUnifiedDiff(stagedDiff.stdout), ...parseUnifiedDiff(unstagedDiff.stdout));
   }
 
-  const untracked = await runGit(root, ['ls-files', '--others', '--exclude-standard', '-z']);
-  if (untracked.code === 0 && untracked.stdout) {
-    for (const rel of untracked.stdout.split('\0').filter(Boolean)) {
-      if (files.some((file) => file.path === rel)) continue;
-      const added = untrackedAsDiff(root, rel);
-      if (added) files.push(added);
-    }
-  }
+  await appendUntrackedDiffs(root, files, targetPath);
   return truncated ? { files, truncated: true } : { files };
 }
 

@@ -55,6 +55,8 @@
     "dist:mac": "node scripts/prepare-dsh-feedback-clients.mjs --force && node scripts/prepare-dsh-remote-client.mjs --force && node scripts/prepare-dshd-remote.mjs --force --runtime && node scripts/run-electron-builder.cjs --mac --publish never",
     "dist:launcher": "node scripts/run-electron-builder.cjs --win --publish never -c electron-builder.launcher.yml",
     "test:tools": "node --test \"scripts/**/*.test.mjs\"",
+    "eval:harness": "node scripts/eval-harness.mjs",
+    "test:eval-harness": "node --test scripts/eval-harness.test.mjs",
     "docs:check": "node scripts/verify-md-links.mjs"
   },
   "engines": {

@@ -47,6 +47,12 @@ export const zh = {
   'unsaved.keep': '继续编辑',
   'unsaved.discard': '丢弃',
   'unsaved.save': '保存并关闭',
+  'find.label': '查找',
+  'find.placeholder': '在文件中查找',
+  'find.previous': '上一处匹配',
+  'find.next': '下一处匹配',
+  'find.close': '关闭查找',
+  'find.noResults': '0 匹配',
 } satisfies Record<string, string>
 
 /** The files namespace key union. */
@@ -99,6 +105,12 @@ export const en = {
   'unsaved.keep': 'Keep editing',
   'unsaved.discard': 'Discard',
   'unsaved.save': 'Save and close',
+  'find.label': 'Find',
+  'find.placeholder': 'Find in file',
+  'find.previous': 'Previous match',
+  'find.next': 'Next match',
+  'find.close': 'Close find',
+  'find.noResults': '0 matches',
 } satisfies Record<FilesKey, string>
 
 /** Dictionary namespace owned by this plugin. */
