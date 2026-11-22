@@ -6,7 +6,7 @@ import { callShell, UnauthorizedError } from '../shell/remote-shell.js';
 import { muxPatch } from '../conversation/live.js';
 import { applyHostFrame } from '../host/frames.js';
 import { removeApproval } from '../chisacode/approvals.js';
-import { resyncAfterReconnect, checkForegroundConnection, watchConnection, createDraftStore } from '../chisacode/controller.js';
+import { resyncAfterReconnect, checkForegroundConnection, watchConnection, watchTransportMode, createDraftStore } from '../chisacode/controller.js';
 import { switchDraft } from '../conversation/draft-switch.js';
 import { classifyScan } from '../pair/scan.js';
 import { composerOffline, operationError, renderConnBanner, setToast, showBanner, showError } from './chrome.js?v=20261117-app-split';
@@ -190,6 +190,7 @@ export function forceLogout(message, { forget = true } = {}) {
   state.sessionsOpen = false;
   state.settingsOpen = false;
   state.transport = '';
+  state.transportMode = '';
   state.chisacode = null;
   state.route = 'connect';
   state.sessions = [];
@@ -423,15 +424,22 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
       void runReconnectResync();
     },
   });
+  const disposeTransportMode = watchTransportMode(paired.client, (mode) => {
+    if (state.chisacode !== paired) return;
+    state.transportMode = mode || '';
+    if (state.settingsOpen) renderSettings();
+  });
   paired.dispose = () => {
     disposeEvents();
     disposeWatch();
+    disposeTransportMode();
     stopHistoryPoll();
     stopMux();
   };
   draftStore = createDraftStore(localStorage, paired.serverId);
   state.chisacode = paired;
   state.transport = 'chisacode';
+  state.transportMode = paired.getTransportMode?.() || paired.transportMode || state.transportMode || '';
   state.connected = true;
   state.route = 'chat';
   state.host = { protocol: 'chisacode-v2', serverId: paired.serverId };

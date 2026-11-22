@@ -9,6 +9,44 @@ import { historyQuery } from '../host/history.js';
 const DRAFT_KEY_PREFIX = 'dsh-chisacode-drafts:';
 
 /**
+ * Map a transport mode ('lan' | 'p2p' | 'turn' | 'relay') to its Chinese UI label.
+ * @param {string | null | undefined} mode
+ * @returns {string}
+ */
+function transportModeLabel(mode) {
+  switch (mode) {
+    case 'lan':
+      return '局域网直连 · 端到端加密';
+    case 'p2p':
+      return 'P2P 直连 · 端到端加密';
+    case 'turn':
+      return 'TURN 中继 · 端到端加密';
+    case 'relay':
+      return '服务器中继 · 端到端加密';
+    default:
+      return 'dshd · 端到端加密';
+  }
+}
+
+/**
+ * Observe active transport mode changes on a DaemonClient.
+ * @param {object} client
+ * @param {(mode: string) => void} onChange
+ * @returns {() => void}
+ */
+function watchTransportMode(client, onChange) {
+  if (typeof onChange !== 'function') return () => {};
+  if (typeof client?.subscribeTransportMode === 'function') {
+    return client.subscribeTransportMode((mode) => {
+      onChange(mode || '');
+    });
+  }
+  const initial = typeof client?.getTransportMode === 'function' ? client.getTransportMode() : '';
+  if (initial) onChange(initial);
+  return () => {};
+}
+
+/**
  * Map a DaemonClient ConnectionState to the three UI phases.
  * @param {{ status?: string, reason?: string, attempt?: number }} state
  * @returns {{ phase: 'online'|'connecting'|'offline', label: string }}
@@ -185,6 +223,8 @@ export {
   checkForegroundConnection,
   connectionPhase,
   watchConnection,
+  watchTransportMode,
+  transportModeLabel,
   resyncAfterReconnect,
   createDraftStore,
 };

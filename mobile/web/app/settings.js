@@ -8,9 +8,10 @@ import { buttonBusy, clearButtonBusy } from '../ui/button-busy.js?v=20261021-but
 import { hostCall } from '../host/backend.js';
 import { flattenModels, modelChipLabel, effortsFor, isRoutable } from '../host/models.js';
 import { sessionUsage, formatTokens } from '../host/projections.js?v=20261028-mobile';
-import { applyAppearance, applyComposerPreferences, composerOffline, connectionLabel, operationError, setToast, showBanner, surfaceBusy } from './chrome.js?v=20261117-app-split';
+import { applyAppearance, applyComposerPreferences, connectionLabel, operationError, setToast, showBanner, surfaceBusy } from './chrome.js?v=20261117-app-split';
 import { renderComposer } from './composer.js?v=20261117-app-split';
 import { forceLogout, shell } from './connect.js?v=20261117-app-split';
+import { renderConnectionDetailsPane } from './connection-details.js?v=20261117-app-split';
 import { el, logList, nativeAndroidApp, options, origin, persistPhoneStore, settings, settingsBack, settingsScroll, settingsTitle, state, store } from './context.js?v=20261117-app-split';
 import { renderDialog } from './dialogs.js?v=20261117-app-split';
 import { openFilesPane, renderFilesInto } from './files.js?v=20261117-app-split';
@@ -689,21 +690,7 @@ export function renderSettings() {
     return;
   }
   if (pane === '连接详情') {
-    options.append(sectionNode(
-      null,
-      null,
-      groupNode(
-        hairRow('主机', '', valueNode(state.hostName)),
-        hairRow('通道', '', valueNode(connectionLabel())),
-        hairRow('状态', '', valueNode(composerOffline() ? (state.connLabel || '连接已断开') : '已连接')),
-      ),
-    ));
-    const danger = document.createElement('button');
-    danger.type = 'button';
-    danger.className = 'danger-btn';
-    danger.textContent = '断开这台设备';
-    danger.addEventListener('click', () => logoutDevice());
-    options.append(sectionNode(null, '断开会清除这台手机保存的配对凭据和草稿；电脑上的会话不受影响。', danger));
+    renderConnectionDetailsPane({ onLogout: logoutDevice, onRefresh: renderSettings });
     return;
   }
   if (pane === '权限') {
