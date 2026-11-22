@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import {
-  hunkLineCount, hunkRows, MAX_RENDERED_LINES, renderedHunks, ReviewDiff, splitRows,
+  DEFAULT_PROGRESSIVE_CHUNK_LINES, hunkLineCount, hunkRows, MAX_RENDERED_LINES, renderedHunks, ReviewDiff, splitRows,
 } from '../src/ReviewDiff.tsx'
-import type { ReviewHunk } from '../src/ReviewDiff.tsx'
+import type { ReviewHunk, ReviewLineCommentTarget } from '../src/ReviewDiff.tsx'
 
 afterEach(cleanup)
 
@@ -166,5 +166,133 @@ describe('ReviewDiff', () => {
     const texts = [...container.querySelectorAll('[data-diff-line]')].map(row => row.textContent)
     expect(texts.some(text => text?.includes('let x = 2'))).toBe(true)
     await waitFor(() => { expect(container.querySelector('[data-diff-code]')).not.toBeNull() }, { timeout: 10_000 })
+  })
+
+  it('renders hunk actions in both unified and split views', () => {
+    const hunks: ReviewHunk[] = [
+      HUNK,
+      { oldStart: 30, oldLines: 1, newStart: 31, newLines: 1, lines: ['-foo', '+bar'] },
+    ]
+    const onHunkAction = vi.fn<(oldStart?: number, index?: number) => void>()
+    const renderActions = (hunk: ReviewHunk, index: number) => (
+      <button type="button" data-hunk-action={index} onClick={() => { onHunkAction(hunk.oldStart, index) }}>
+        Stage #{index}
+      </button>
+    )
+
+    const { container, rerender } = render(
+      <ReviewDiff hunks={hunks} split={false} wrap={false} renderHunkActions={renderActions} />,
+    )
+    const unifiedButtons = container.querySelectorAll('[data-diff-hunk-actions] button')
+    expect(unifiedButtons.length).toBe(2)
+    fireEvent.click(unifiedButtons[1]!)
+    expect(onHunkAction).toHaveBeenCalledWith(30, 1)
+
+    rerender(<ReviewDiff hunks={hunks} split wrap={false} renderHunkActions={renderActions} />)
+    const splitButtons = container.querySelectorAll('[data-diff-hunk-actions] button')
+    expect(splitButtons.length).toBe(2)
+    fireEvent.click(splitButtons[0]!)
+    expect(onHunkAction).toHaveBeenCalledWith(10, 0)
+
+    rerender(<ReviewDiff hunks={hunks} split wrap renderHunkActions={renderActions} />)
+    const wrapSplitButtons = container.querySelectorAll('[data-diff-hunk-actions] button')
+    expect(wrapSplitButtons.length).toBe(2)
+    fireEvent.click(wrapSplitButtons[1]!)
+    expect(onHunkAction).toHaveBeenCalledWith(30, 1)
+  })
+
+  it('triggers onLineComment with accurate line metadata in unified and split views', () => {
+    const targets: ReviewLineCommentTarget[] = []
+    const hunk: ReviewHunk = {
+      oldStart: 5,
+      oldLines: 3,
+      newStart: 5,
+      newLines: 3,
+      lines: [' ctx', '-removed', '+added', '\\ No newline at end of file'],
+    }
+    const { container, rerender } = render(
+      <ReviewDiff
+        hunks={[hunk]}
+        split={false}
+        wrap={false}
+        lineCommentLabel="Comment line"
+        onLineComment={(target) => { targets.push(target) }}
+      />,
+    )
+    const unifiedBtns = container.querySelectorAll<HTMLButtonElement>('[data-diff-line-comment]')
+    // 3 real lines (context, del, add); EOF row must not expose a comment button
+    expect(unifiedBtns.length).toBe(3)
+    expect(unifiedBtns[0]?.getAttribute('aria-label')).toBe('Comment line')
+    fireEvent.click(unifiedBtns[0]!)
+    fireEvent.click(unifiedBtns[1]!)
+    fireEvent.click(unifiedBtns[2]!)
+    expect(targets).toEqual([
+      { lineNumber: 5, side: 'new', kind: 'context', text: 'ctx', hunk },
+      { lineNumber: 6, side: 'old', kind: 'del', text: 'removed', hunk },
+      { lineNumber: 6, side: 'new', kind: 'add', text: 'added', hunk },
+    ])
+
+    targets.length = 0
+    rerender(
+      <ReviewDiff
+        hunks={[hunk]}
+        split
+        wrap={false}
+        lineCommentLabel="Comment line"
+        onLineComment={(target) => { targets.push(target) }}
+      />,
+    )
+    const leftDelBtn = container.querySelector<HTMLButtonElement>('[data-diff-side="left"] [data-diff-line="del"] [data-diff-line-comment]')
+    const rightAddBtn = container.querySelector<HTMLButtonElement>('[data-diff-side="right"] [data-diff-line="del"] [data-diff-line-comment]')
+    expect(leftDelBtn).not.toBeNull()
+    expect(rightAddBtn).not.toBeNull()
+    fireEvent.click(leftDelBtn!)
+    fireEvent.click(rightAddBtn!)
+    expect(targets).toEqual([
+      { lineNumber: 6, side: 'old', kind: 'del', text: 'removed', hunk },
+      { lineNumber: 6, side: 'new', kind: 'add', text: 'added', hunk },
+    ])
+  })
+
+  it('progressively reveals large diffs in chunks while keeping MAX_RENDERED_LINES intact', () => {
+    expect(DEFAULT_PROGRESSIVE_CHUNK_LINES).toBe(400)
+    const lines = Array.from({ length: 10 }, (_v, i) => `+line ${i + 1}`)
+    const hunks: ReviewHunk[] = [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 10, lines }]
+    const { container, rerender } = render(
+      <ReviewDiff
+        hunks={hunks}
+        split={false}
+        wrap={false}
+        progressiveChunkLines={4}
+        showMoreLabel={(remaining, next) => `More ${next}/${remaining}`}
+        expandRemainingLabel={remaining => `All ${remaining}`}
+      />,
+    )
+    expect(container.querySelectorAll('[data-diff-line]').length).toBe(4)
+    expect(container.querySelector('[data-diff-show-more]')?.textContent).toBe('More 4/6')
+    expect(container.querySelector('[data-diff-expand-remaining]')?.textContent).toBe('All 6')
+
+    fireEvent.click(container.querySelector('[data-diff-show-more]')!)
+    expect(container.querySelectorAll('[data-diff-line]').length).toBe(8)
+    expect(container.querySelector('[data-diff-show-more]')?.textContent).toBe('More 2/2')
+    // When remaining <= chunkSize, only show-more is needed
+    expect(container.querySelector('[data-diff-expand-remaining]')).toBeNull()
+
+    // Reset back cleanly on new hunks and test expand-remaining
+    const hunks2: ReviewHunk[] = [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 10, lines }]
+    rerender(
+      <ReviewDiff
+        hunks={hunks2}
+        split={false}
+        wrap={false}
+        progressiveChunkLines={4}
+        showMoreLabel={(remaining, next) => `More ${next}/${remaining}`}
+        expandRemainingLabel={remaining => `All ${remaining}`}
+      />,
+    )
+    expect(container.querySelectorAll('[data-diff-line]').length).toBe(4)
+    fireEvent.click(container.querySelector('[data-diff-expand-remaining]')!)
+    expect(container.querySelectorAll('[data-diff-line]').length).toBe(10)
+    expect(container.querySelector('[data-diff-progressive]')).toBeNull()
   })
 })

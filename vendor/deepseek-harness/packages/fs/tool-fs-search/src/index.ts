@@ -48,7 +48,7 @@ export {
   presentGrepCall,
   presentGrepResult,
 } from './grep.ts'
-export type { GrepInput, GrepToolCaps } from './grep.ts'
+export type { GrepFileCount, GrepInput, GrepOutputMode, GrepToolCaps, GrepValue } from './grep.ts'
 export {
   RAW_OUTPUT_MAX_BYTES,
   SEARCH_GRACE_MS,

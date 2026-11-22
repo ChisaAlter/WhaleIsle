@@ -10,7 +10,7 @@ import z from '@deepseek-ai/schemastery'
 import { TRANSCRIPT_VIEW_FIELD } from './chat-settings.ts'
 
 import { ChatSettingsFields } from './chat-settings.ts'
-import { OPENUI_GUIDE } from './openui-guide.ts'
+import { WHALE_UI_COMPACT_GUIDE, whaleUiGuideTool } from './whale-ui-guide.ts'
 
 export {
   CHAT_SETTINGS_NAMESPACE, DEFAULT_TRANSCRIPT_VIEW_MODE, LEGACY_TRANSCRIPT_VIEW_MODE,
@@ -49,16 +49,17 @@ export function apply(ctx: Context): void {
   // Only the desktop declares this renderer; ordinary web/headless profiles
   // retain their existing prompt and do not advertise an unavailable surface.
   if (process.env.DSHD_WHALE_UI_ENABLED === '1') {
-    ctx.inject(['systemPrompt'], child => {
-      child.systemPrompt.section({ name: 'whale-ui', order: 79, text: OPENUI_GUIDE, interpolate: false })
+    ctx.inject(['systemPrompt'], (child) => {
+      child.systemPrompt.section({ name: 'whale-ui', order: 79, text: WHALE_UI_COMPACT_GUIDE, interpolate: false })
     })
-    ctx.inject(['tools'], child => {
+    ctx.inject(['tools'], (child) => {
       child.effect(() => {
         const filename = process.env.DSHD_WHALE_UI_HOST
         if (!filename) throw new Error('The desktop Whale UI validator was not supplied.')
         const runtime: { renderUiTool: ToolDefinition } = createRequire(import.meta.url)(filename)
         return child.tools.register(runtime.renderUiTool)
       })
+      child.effect(() => child.tools.register(whaleUiGuideTool))
     })
   }
 }

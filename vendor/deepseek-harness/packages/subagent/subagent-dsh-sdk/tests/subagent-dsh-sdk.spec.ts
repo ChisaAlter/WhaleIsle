@@ -20,7 +20,10 @@ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import {
   DeepSeekHarness,
   HarnessClient,
+  JsonRpcResponseError,
+  RequestTimeoutError,
   SdkProtocolError,
+  TransportClosedError,
 } from '@deepseek-ai/dsh-sdk-client'
 import { createProcessDeepSeekHarness } from '../../../sdk/client/src/api.ts'
 import type { RuntimeProcessOptions } from '../../../sdk/client/src/launch.ts'
@@ -28,6 +31,7 @@ import type { DeepSeekHarnessOptions } from '@deepseek-ai/dsh-sdk-client'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import * as sdk from '../src/index.ts'
 import {
+  DEFAULT_CANCEL_TIMEOUT_MS,
   DEFAULT_DISPOSE_EOF_GRACE_MS,
   DEFAULT_DISPOSE_GRACE_MS,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
@@ -989,5 +993,153 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     expect(typeof sdk.apply).toBe('function')
     expect(typeof sdk.Config).toBe('function')
     expect((sdk as Record<string, unknown>).default).toBeUndefined()
+  })
+})
+
+describe('wire-protocol session/cancel', () => {
+  function stubSpec(overrides: Partial<SdkRunSpec> = {}): SdkRunSpec {
+    return {
+      profile: 'sdk',
+      patches: [],
+      dshHome: process.cwd(),
+      cwd: process.cwd(),
+      provider: 'p',
+      model: 'm',
+      env: {},
+      shutdownTimeoutMs: 100,
+      disposeEofGraceMs: 100,
+      disposeGraceMs: 100,
+      ...overrides,
+    }
+  }
+
+  function stubHarness(options: {
+    startGate?: Promise<undefined>
+    waitGate?: Promise<undefined>
+    onCancelRequest?: (sessionId: string, timeoutMs: number | undefined) => Promise<unknown>
+    calls: Array<{ event: string; method?: string; sessionId?: string; timeoutMs?: number }>
+  }): DeepSeekHarness {
+    const { calls } = options
+    return {
+      start: async () => {
+        if (options.startGate) await options.startGate
+      },
+      close: async () => {
+        calls.push({ event: 'close' })
+      },
+      session: (_id: string) => ({
+        setWorkingDirectory: async () => undefined,
+      }),
+      client: {
+        subscribe: () => ({
+          tryNext: () => undefined,
+          close: () => undefined,
+        }),
+        prompt: async () => undefined,
+        request: async (method: string, params?: Record<string, unknown>, timeoutMs?: number) => {
+          const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : undefined
+          calls.push({
+            event: 'request',
+            method,
+            ...sessionId === undefined ? {} : { sessionId },
+            ...timeoutMs === undefined ? {} : { timeoutMs },
+          })
+          if (method === 'session/cancel') {
+            if (options.onCancelRequest) return await options.onCancelRequest(sessionId ?? '', timeoutMs)
+            return {}
+          }
+          if (method === 'session/wait') {
+            if (options.waitGate) await options.waitGate
+            return {}
+          }
+          return {}
+        },
+      },
+    } as unknown as DeepSeekHarness
+  }
+
+  it('sends one bounded session/cancel RPC before harness.close() on run.dispose() and deduplicates repeat signals', async () => {
+    const calls: Array<{ event: string; method?: string; sessionId?: string; timeoutMs?: number }> = []
+    const waitGate = Promise.withResolvers<undefined>()
+    runInternals.createHarness = () => stubHarness({
+      waitGate: waitGate.promise,
+      calls,
+      onCancelRequest: async () => {
+        await new Promise(resolve => setTimeout(resolve, 15))
+        return {}
+      },
+    })
+
+    const controller = new AbortController()
+    const run = await startSdkRun(request('work', controller.signal), stubSpec())
+    await vi.waitFor(() => { expect(calls.some(call => call.method === 'session/wait')).toBe(true) })
+
+    // Trigger both abort and dispose; session/cancel must fire once before close().
+    controller.abort(new Error('stop'))
+    await run.dispose()
+    await run.dispose()
+
+    const cancelCalls = calls.filter(call => call.method === 'session/cancel')
+    expect(cancelCalls).toHaveLength(1)
+    expect(cancelCalls[0]!.sessionId).toMatch(/^session-/)
+    expect(cancelCalls[0]!.timeoutMs).toBe(DEFAULT_CANCEL_TIMEOUT_MS)
+
+    const cancelIndex = calls.findIndex(call => call.method === 'session/cancel')
+    const closeIndex = calls.findIndex(call => call.event === 'close')
+    expect(cancelIndex).toBeGreaterThan(-1)
+    expect(closeIndex).toBeGreaterThan(cancelIndex)
+    expect((await run.result).stopReason).toBe('aborted')
+  })
+
+  it.each([
+    { label: 'RequestTimeoutError', buildError: () => new RequestTimeoutError('session/cancel timed out') },
+    { label: 'TransportClosedError', buildError: () => new TransportClosedError('pipe closed') },
+    { label: 'JsonRpcResponseError', buildError: () => new JsonRpcResponseError(-32601, 'Method not found') },
+  ])('tolerates expected $label from session/cancel during teardown', async ({ buildError }) => {
+    const calls: Array<{ event: string; method?: string; sessionId?: string; timeoutMs?: number }> = []
+    const waitGate = Promise.withResolvers<undefined>()
+    const onError = vi.fn()
+    runInternals.createHarness = () => stubHarness({
+      waitGate: waitGate.promise,
+      calls,
+      onCancelRequest: async () => { throw buildError() },
+    })
+
+    const run = await startSdkRun(request('work'), stubSpec({ cancelTimeoutMs: 75, onError }))
+    await vi.waitFor(() => { expect(calls.some(call => call.method === 'session/wait')).toBe(true) })
+
+    await expect(run.dispose()).resolves.toBeUndefined()
+    expect(calls.filter(call => call.method === 'session/cancel')).toEqual([
+      expect.objectContaining({ method: 'session/cancel', timeoutMs: 75 }),
+    ])
+    expect(calls.some(call => call.event === 'close')).toBe(true)
+    expect(onError).not.toHaveBeenCalled()
+    expect((await run.result).stopReason).toBe('aborted')
+  })
+
+  it('skips session/cancel before startup completes and after normal turn settlement', async () => {
+    // 1. Mid-startup abort: harness.start() never completed, so no session/cancel should be dispatched.
+    const initCalls: Array<{ event: string; method?: string }> = []
+    const startGate = Promise.withResolvers<undefined>()
+    runInternals.createHarness = () => stubHarness({
+      startGate: startGate.promise,
+      calls: initCalls,
+    })
+    const initController = new AbortController()
+    const starting = startSdkRun(request('work', initController.signal), stubSpec())
+    initController.abort(new Error('abort init'))
+    startGate.resolve(undefined)
+    await expect(starting).rejects.toThrow('aborted before the SDK child started')
+    expect(initCalls.some(call => call.method === 'session/cancel')).toBe(false)
+    expect(initCalls.some(call => call.event === 'close')).toBe(true)
+
+    // 2. Normal completion: session already settled, so post-run dispose skips session/cancel.
+    const settledCalls: Array<{ event: string; method?: string }> = []
+    runInternals.createHarness = () => stubHarness({ calls: settledCalls })
+    const completedRun = await startSdkRun(request('work'), stubSpec())
+    await completedRun.result
+    await completedRun.dispose()
+    expect(settledCalls.some(call => call.method === 'session/cancel')).toBe(false)
+    expect(settledCalls.some(call => call.event === 'close')).toBe(true)
   })
 })

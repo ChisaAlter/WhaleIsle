@@ -118,6 +118,22 @@ describe('runHook — payload + env + stdin plumbing', () => {
     await runHook(bash, { command: 'h' }, { payload: {}, signal: controller.signal, defaultTimeoutMs: 1000, trailingNewline: true }, clock())
     expect(specs[0]!.signal).toBe(controller.signal)
   })
+
+  it('forwards optional sandboxPolicy to bash.resolve and omits it when absent', async () => {
+    const policy: NonNullable<RunHookOptions['sandboxPolicy']> = {
+      mode: 'workspace-write',
+      workspaceRoot: '/workspace',
+    }
+    const { bash, specs } = recordingBash(async () => result())
+    await runHook(bash, { command: 'h' }, {
+      payload: {}, signal: testSignal(), defaultTimeoutMs: 1000, trailingNewline: true, sandboxPolicy: policy,
+    }, clock())
+    await runHook(bash, { command: 'h' }, {
+      payload: {}, signal: testSignal(), defaultTimeoutMs: 1000, trailingNewline: true,
+    }, clock())
+    expect(specs[0]!.sandboxPolicy).toEqual(policy)
+    expect(specs[1]!.sandboxPolicy).toBeUndefined()
+  })
 })
 
 describe('runHook — outcome decoding + duration', () => {

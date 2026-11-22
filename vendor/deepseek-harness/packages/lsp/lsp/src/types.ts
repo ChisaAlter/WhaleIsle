@@ -10,11 +10,14 @@
 import type { LspProviderId } from './brand.ts'
 
 /**
- * The four semantic queries the seam and model expose. A closed union: adding an operation is a
+ * The semantic queries the seam and model expose. A closed union: adding an operation is a
  * compile-enforced change across the seam, providers, and the tool. Symbols and call hierarchy are
  * not operations here; they need different schemas.
  */
-export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover'
+export type LspOperation = 'goToDefinition' | 'findReferences' | 'goToImplementation' | 'hover' | 'diagnostics'
+
+/** Normalized LSP diagnostic severity level. */
+export type LspDiagnosticSeverity = 'error' | 'warning' | 'information' | 'hint'
 
 /** A zero-based UTF-16 cursor coordinate, matching the LSP wire convention. */
 export interface LspPosition {
@@ -40,8 +43,8 @@ export interface LspQueryRequest {
   readonly operation: LspOperation
   /** The source file to query (relative to `workspaceRoot` or absolute; the provider canonicalizes). */
   readonly filePath: string
-  /** The zero-based UTF-16 cursor position to query at. */
-  readonly position: LspPosition
+  /** The zero-based UTF-16 cursor position to query at (optional for `'diagnostics'`). */
+  readonly position?: LspPosition
   /** The workspace root the provider resolves against and indexes; required, never defaulted. */
   readonly workspaceRoot: string
 }
@@ -49,9 +52,11 @@ export interface LspQueryRequest {
 /**
  * A request as a provider receives it: the caller's {@link LspQueryRequest} plus the `languageId`
  * the seam derived from the provider's extension mapping. The language id only synchronizes the
- * transient document; it does not participate in selection.
+ * document; it does not participate in selection.
  */
-export interface LspProviderQuery extends LspQueryRequest {
+export interface LspProviderQuery extends Omit<LspQueryRequest, 'position'> {
+  /** The zero-based UTF-16 cursor position (`{ line: 0, character: 0 }` when omitted on `'diagnostics'`). */
+  readonly position: LspPosition
   /** The LSP language id for `filePath`, from this provider's extension mapping. */
   readonly languageId: string
 }
@@ -64,6 +69,20 @@ export interface LspLocation {
   readonly range: LspRange
 }
 
+/** One normalized diagnostic reported by a language server for a document. */
+export interface LspDiagnostic {
+  /** The range within the document to which this diagnostic applies. */
+  readonly range: LspRange
+  /** Normalized severity level. */
+  readonly severity: LspDiagnosticSeverity
+  /** Human-readable diagnostic message. */
+  readonly message: string
+  /** Optional diagnostic code supplied by the server. */
+  readonly code?: string | number
+  /** Optional source name (e.g. `'typescript'`, `'eslint'`). */
+  readonly source?: string
+}
+
 /** Normalized hover content, or `null` for no hover at the position. */
 export interface LspHover {
   /** The normalized hover text (markdown or plaintext, provider-joined). */
@@ -74,17 +93,24 @@ export interface LspHover {
 
 /**
  * The closed result union. Navigation operations (`goToDefinition`, `findReferences`,
- * `goToImplementation`) normalize to `locations`; `hover` normalizes to content or `null`.
+ * `goToImplementation`) normalize to `locations`; `hover` normalizes to content or `null`;
+ * `diagnostics` normalizes cached/pushed `publishDiagnostics` entries for the queried document.
  * Consumers `switch` on `kind` to exhaustiveness so a new arm breaks compilation until handled.
  *
- * The `locations` variant carries `resolvedWorkspaceUri`: the provider's canonical `file:` URI for
- * the request's workspace root. A caller that relativizes location URIs MUST use this, not parse the
- * request's possibly symlinked process path with host-platform rules; the execution platform may
- * differ from the caller's.
+ * The `locations` and `diagnostics` variants carry `resolvedWorkspaceUri`: the provider's
+ * canonical `file:` URI for the request's workspace root. A caller that relativizes URIs MUST use
+ * this, not parse the request's possibly symlinked process path with host-platform rules; the
+ * execution platform may differ from the caller's.
  */
 export type LspQueryResult =
   | { readonly kind: 'locations'; readonly locations: readonly LspLocation[]; readonly resolvedWorkspaceUri: string }
   | { readonly kind: 'hover'; readonly hover: LspHover | null }
+  | {
+    readonly kind: 'diagnostics'
+    readonly uri: string
+    readonly diagnostics: readonly LspDiagnostic[]
+    readonly resolvedWorkspaceUri: string
+  }
 
 /**
  * A language-server backend registered on `ctx.lsp`. Each provider owns a stable {@link
@@ -119,6 +145,12 @@ export interface LspService {
    * @returns a synchronous disposer releasing the id and all extension reservations.
    */
   registerProvider(provider: LspProvider): () => void
+  /**
+   * Check whether any registered provider handles `filePath`'s final extension.
+   * @param filePath - the source path to inspect.
+   * @returns `true` when a matching extension route is registered.
+   */
+  supportsFile?(filePath: string): boolean
   /**
    * Select a provider by the file's extension and run one query. Selection is per-query and
    * order-independent; no match throws `LspError` `LSP_UNAVAILABLE`.

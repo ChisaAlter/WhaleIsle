@@ -51,18 +51,23 @@ describe('pi-ai gateway compatibility declarations', () => {
   })
 
   it.each([
-    'supportsMidConvoEffort', 'allowedFallbackModels', 'supportsMidConvoSystemMessages',
-    'supportsMidConvoToolAdditions', 'supportsMidConvoToolChanges', 'sessionAffinityFormat',
+    'supportsMidConvoEffort', 'allowedFallbackModels', 'sessionAffinityFormat', 'zaiToolStream',
   ])('withholds catalog-owned %s', (field) => {
     expect(() => resolved({ [field]: true }, 'anthropic-messages'))
       .toThrow(/which is not configurable here/)
   })
 
-  it('withholds Mistral conversation capabilities', () => {
-    expect(() => resolveProfiles({
-      mistral: { compat: { supportsMidConvoSystemMessages: true } as never },
-    }))
-      .toThrow(/which is not configurable here/)
+  it('offers mid-conversation system and tool switches on matching protocols', () => {
+    expect(resolved({ supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true }, 'openai-completions'))
+      .toMatchObject({ supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true })
+    expect(resolved({ supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true }, 'anthropic-messages'))
+      .toMatchObject({ supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true })
+    expect(resolved({ supportsMidConvoSystemMessages: true, supportsAdditionalTools: true }, 'openai-responses'))
+      .toMatchObject({ supportsMidConvoSystemMessages: true, supportsAdditionalTools: true })
+    const mistral = resolveProfiles({
+      mistral: { compat: { supportsMidConvoSystemMessages: true } },
+    }).get('mistral')?.piProvider?.getModels()[0]?.compat
+    expect(mistral).toMatchObject({ supportsMidConvoSystemMessages: true })
   })
 
   it('keeps generic additions absent unless configured', () => {

@@ -43,6 +43,9 @@ import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import { ApiKeyInput } from './ApiKeyInput.tsx'
+import { CompatEditor } from './CompatEditor.tsx'
+import { ConnectionTestControl } from './ConnectionTestControl.tsx'
+import { HeadersEditor } from './HeadersEditor.tsx'
 import { RetryPolicyEditor, retryPolicyDefaults, retryPolicyFailure } from './RetryPolicyEditor.tsx'
 import styles from './ModelsSection.module.css'
 
@@ -211,6 +214,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { onBusyChange } = props
   useEffect(() => { onBusyChange?.(busy || listBusy) }, [busy, listBusy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const [headersError, setHeadersError] = useState<string | undefined>(undefined)
   const [customizedOpen, setCustomizedOpen] = useState(false)
   // A settings success advances both retry baselines immediately. Keeping the
   // derived fields in the draft prevents a pushed namespace refresh from
@@ -359,6 +363,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       if (failure !== undefined) {
         return `${t('model')} ${String(failure.index + 1)}: ${t(failure.key)}`
       }
+      if (headersError !== undefined) return headersError
     }
     /* v8 ignore next -- apply is only reachable from the rendered card, which required a resolved node */
     if (props.credentialOnly !== true && node !== undefined && settingsPath.length === 0) {
@@ -566,6 +571,17 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               ? null
               : <p className={styles[protocolKeyMissing ? 'advancedHint' : 'error']}>{t(shownKeyFailure)}</p>}
           </div>}
+        {props.credentialOnly === true || family !== 'pi-ai'
+          ? null
+          : (
+            <ConnectionTestControl
+              probe={probe}
+              blockedReason={keyRemoval !== undefined ? 'keyRemovePending' : shownKeyFailure}
+              disabled={disabled}
+              operations={operations}
+              t={t}
+            />
+          )}
         {props.credentialOnly === true ? null : <details
           className={styles['customized']}
           onToggle={(event) => { setCustomizedOpen(event.currentTarget.open) }}
@@ -670,21 +686,47 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 />
               )
               : (
-                <ModelListEditor
-                  {...catalogProps}
-                  // A route with nothing underneath restores an empty list, so
-                  // the reset affordance only exists when reset has a catalog
-                  // to return to.
-                  onReset={inherited.length === 0 ? undefined : catalogProps.onReset}
-                  catalogProvider={props.declared === true ? undefined : props.provider}
-                  reasoningLevels={reasoning.levels}
-                  reasoningLevelsOnly={reasoning.levelsOnly}
-                  defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
-                  probe={probe}
-                  probeBlocked={keyRemoval !== undefined ? 'keyRemovePending' : shownKeyFailure}
-                  operations={operations}
-                  onBusyChange={setListBusy}
-                />
+                <>
+                  <HeadersEditor
+                    headers={schema.getPath(draft, ['headers'])}
+                    t={t}
+                    disabled={disabled}
+                    onChange={(next, error) => {
+                      setHeadersError(error)
+                      setDraft(current => next === undefined
+                        ? schema.deletePath(current, ['headers'])
+                        : schema.setPath(current, ['headers'], next))
+                    }}
+                  />
+                  <CompatEditor
+                    compat={schema.getPath(draft, ['compat'])}
+                    protocol={probeApi}
+                    namespace={namespace}
+                    schema={schema}
+                    t={t}
+                    disabled={disabled}
+                    onChange={(nextCompat) => {
+                      setDraft(current => nextCompat === undefined
+                        ? schema.deletePath(current, ['compat'])
+                        : schema.setPath(current, ['compat'], nextCompat))
+                    }}
+                  />
+                  <ModelListEditor
+                    {...catalogProps}
+                    // A route with nothing underneath restores an empty list, so
+                    // the reset affordance only exists when reset has a catalog
+                    // to return to.
+                    onReset={inherited.length === 0 ? undefined : catalogProps.onReset}
+                    catalogProvider={props.declared === true ? undefined : props.provider}
+                    reasoningLevels={reasoning.levels}
+                    reasoningLevelsOnly={reasoning.levelsOnly}
+                    defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
+                    probe={probe}
+                    probeBlocked={keyRemoval !== undefined ? 'keyRemovePending' : shownKeyFailure}
+                    operations={operations}
+                    onBusyChange={setListBusy}
+                  />
+                </>
               )}
           </div>
         </details>}
@@ -724,6 +766,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         busy={busy}
         submitDisabled={disabled || layout === 'unknown'
           || (props.credentialOnly !== true && modelFailure !== undefined)
+          || (props.credentialOnly !== true && headersError !== undefined)
           || retryFailure !== undefined
           || shownKeyFailure !== undefined
           || (props.credentialRequired === true && keyValue.length === 0)}
@@ -731,8 +774,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         submitBusyLabelKey={props.submitBusyLabelKey ?? 'applying'}
         submitHint={failure ?? (shownKeyFailure !== undefined ? t(shownKeyFailure)
           : props.credentialRequired === true && keyValue.length === 0 ? t('keyRequired')
-            : props.credentialOnly !== true && modelFailure !== undefined
-              ? `${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}` : undefined)}
+            : props.credentialOnly !== true && headersError !== undefined ? headersError
+              : props.credentialOnly !== true && modelFailure !== undefined
+                ? `${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}` : undefined)}
         cancelLabelKey={keyRemoval?.removed === true ? 'close' : props.cancelLabelKey ?? 'cancel'}
         onCancel={() => { props.onClose(false) }}
         onSubmit={() => { props.onSubmitCredential?.(); void apply() }}

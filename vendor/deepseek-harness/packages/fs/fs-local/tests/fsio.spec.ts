@@ -22,6 +22,7 @@ import {
   readWholeText,
   resolveLocalTarget,
   restoreLineEndings,
+  restoreUtf8Bom,
   streamWholeText,
   writeFileAtomic,
 } from '../src/fsio.ts'
@@ -962,6 +963,81 @@ describe('applyLiteralEdit', () => {
   it('matches across normalized line endings', () => {
     expect(applyLiteralEdit('one\ntwo', 'one\ntwo', 'x', false, 'f').replacements).toBe(1)
   })
+
+  it('Pass 2 strips N:, N|, N→ line-number prefixes when all non-empty lines carry them', () => {
+    const content = '  const a = 1\n  const b = 2\n'
+    expect(applyLiteralEdit(content, '1:   const a = 1\n2:   const b = 2', '  const a = 10\n  const b = 20', false, 'f'))
+      .toEqual({ content: '  const a = 10\n  const b = 20\n', replacements: 1 })
+    expect(applyLiteralEdit('alpha\nbeta\n', '1| alpha\n2| beta', 'ALPHA\nBETA', false, 'f'))
+      .toEqual({ content: 'ALPHA\nBETA\n', replacements: 1 })
+    expect(applyLiteralEdit('alpha\n\ngamma\n', '1→alpha\n\n3→gamma', 'ALPHA\n\nGAMMA', false, 'f'))
+      .toEqual({ content: 'ALPHA\n\nGAMMA\n', replacements: 1 })
+    // Rejects when newString itself still carries line prefixes (safety check).
+    expect(() => applyLiteralEdit('alpha\nbeta\n', '1: alpha\n2: beta', '1: ALPHA\n2: BETA', false, 'f'))
+      .toThrow(expect.objectContaining({ code: 'FS_EDIT_NOT_FOUND' }))
+    // Rejects ambiguous match in Pass 2 even when replaceAll=true, without suggesting replace_all.
+    expect(() => applyLiteralEdit('dup\ndup\n', '1: dup', 'X', true, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string',
+      }))
+    expect(() => applyLiteralEdit('dup\ndup\n', '1: dup', 'X', false, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string or set replace_all to true',
+      }))
+  })
+
+  it('Pass 3 matches lines modulo trailing whitespace (trimEnd) and swaps safely', () => {
+    const content = 'fn keep() {  \n  const a = 1   \n  const b = 2\t\n}\n'
+    const res = applyLiteralEdit(content, '  const a = 1\n  const b = 2', '  const a = 42', false, 'f')
+    expect(res).toEqual({ content: 'fn keep() {  \n  const a = 42\n}\n', replacements: 1 })
+    // Does not strip leading indentation.
+    expect(() => applyLiteralEdit('  indented\n', 'indented  ', 'X', false, 'f'))
+      .toThrow(expect.objectContaining({ code: 'FS_EDIT_NOT_FOUND' }))
+    // Rejects ambiguous trimEnd matches with accurate replaceAll guidance.
+    expect(() => applyLiteralEdit('dup  \ndup\t\n', 'dup', 'X', false, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string or set replace_all to true',
+      }))
+    expect(() => applyLiteralEdit('k: dup  \nz\nk: dup\t\nz\n', 'k: dup\nz', 'X', true, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string',
+      }))
+  })
+
+  it('Pass 4 normalizes confusable Unicode punctuation with round-trip safety and ambiguity guard', () => {
+    const content = 'const msg = “hello\u00A0—\u2018world\u2019”\nconsole.log(msg) // 😀\n'
+    const res = applyLiteralEdit(content, 'const msg = "hello -\'world\'"', 'const msg = "hi"', false, 'f')
+    expect(res).toEqual({ content: 'const msg = "hi"\nconsole.log(msg) // 😀\n', replacements: 1 })
+    expect(() => applyLiteralEdit('“x”\n“x”\n', '"x"', '"y"', false, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string or set replace_all to true',
+      }))
+    expect(() => applyLiteralEdit('“x”\n“x”\n', '"x"', '"y"', true, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string',
+      }))
+  })
+
+  it('includes nearest-line preview and newString missHint when all passes fail', () => {
+    const content = 'line one\nfunction computeTotal(items) {\n  return 0\n}\n'
+    let caught: unknown
+    try {
+      applyLiteralEdit(content, 'function computeTotal(list) {\n  return 1\n}', 'return 0', false, 'f.ts')
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
+    const message = (caught as Error).message
+    expect(message).toContain('Nearest match around line 2:')
+    expect(message).toContain('function computeTotal(items)')
+    expect(message).toContain('missHint: new_string is already present in "f.ts"')
+  })
 })
 
 describe('readForEdit + restoreLineEndings', () => {
@@ -970,8 +1046,34 @@ describe('readForEdit + restoreLineEndings', () => {
     await writeFile(file, 'one\r\ntwo\r\n')
     const original = await readForEdit(file, file)
     expect(original.lineEndings).toBe('CRLF')
+    expect(original.hasBom).toBe(false)
     const edited = applyLiteralEdit(original.content, 'two', 'TWO', false, file)
     expect(restoreLineEndings(edited.content, original.lineEndings)).toBe('one\r\nTWO\r\n')
+  })
+
+  it('detects and restores UTF-8 BOM without doubling it', async () => {
+    const file = join(dir, 'bom.txt')
+    await writeFile(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('one\r\ntwo\r\n', 'utf8')]))
+    const original = await readForEdit(file, file)
+    expect(original.hasBom).toBe(true)
+    expect(original.content).toBe('one\ntwo\n')
+    expect(original.lineEndings).toBe('CRLF')
+    const edited = applyLiteralEdit(original.content, 'one', 'ONE', false, file)
+    const restored = restoreUtf8Bom(restoreLineEndings(edited.content, original.lineEndings), original.hasBom)
+    expect(restored).toBe('\uFEFFONE\r\ntwo\r\n')
+    expect(restoreUtf8Bom('\uFEFFalready', true)).toBe('\uFEFFalready')
+  })
+
+  it('samples 65_536 characters for detectLineEndings beyond the old 4096 boundary', async () => {
+    const file = join(dir, 'wide-crlf.txt')
+    const lfHeader = Array.from({ length: 120 }, (_, i) => `// header line ${i}`).join('\n') + '\n'
+    expect(lfHeader.length).toBeGreaterThan(2000)
+    const bigHeader = `${lfHeader}${'// pad\n'.repeat(600)}`
+    expect(bigHeader.length).toBeGreaterThan(4096)
+    const crlfBody = Array.from({ length: 1000 }, (_, i) => `const line${i} = ${i}\r\n`).join('')
+    await writeFile(file, `${bigHeader}${crlfBody}`)
+    const original = await readForEdit(file, file)
+    expect(original.lineEndings).toBe('CRLF')
   })
 
   it('rejects a binary file and invalid UTF-8', async () => {

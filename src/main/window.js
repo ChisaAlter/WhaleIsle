@@ -626,23 +626,26 @@ function watchPluginBoot(view, win) {
         return;
       }
       const settled = Boolean(status.hasApp);
+      const timedOut = !settled && !status.failed && Date.now() > deadline;
+      const error = status.error || (timedOut ? 'Web UI 插件加载超时，应用界面未就绪' : '');
       sendPluginBoot({
         ready: status.ready,
         total: status.total,
-        pending: Boolean(status.pending) && !settled,
-        failed: Boolean(status.failed),
+        pending: Boolean(status.pending) && !settled && !timedOut,
+        failed: Boolean(status.failed) || timedOut,
         settled,
-        error: status.error || '',
+        error,
       });
-      if (status.failed) {
-        finish(reject, new Error(status.error || '插件加载失败'));
+      if (status.failed || timedOut) {
+        finish(reject, new Error(error || '插件加载失败'));
         return;
       }
-      if (settled || Date.now() > deadline) {
+      if (settled) {
         try {
           await revealHarnessView(win);
-        } catch (error) {
-          finish(reject, error);
+        } catch (revealError) {
+          // Reject the boot waiter so the boot page stays visible and shows retry on reveal failure.
+          finish(reject, revealError);
           return;
         }
         if (!isCurrent()) return;

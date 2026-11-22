@@ -1275,3 +1275,39 @@ it('resolves the exact pi-ai image budget for screenshot coordinates', () => {
       messages: [{ role: 'system', content: 'be helpful' }, { role: 'user', content: 'hi' }],
     })
   })
+
+it.each([
+  ['retry-after-ms', '2500', 2500],
+  ['retry-after', '15', 15_000],
+] as const)('extracts %s (%s) onto LlmFailure.providerRetryAfterMs', async (headerName, headerValue, expectedMs) => {
+  const server = await mockServer([{
+    status: 429,
+    headers: { [headerName]: headerValue },
+    body: JSON.stringify({ error: { message: 'rate limited' } }),
+  }])
+  const ctx = await harness(server.url)
+  const result = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+  expect(result.finish).toMatchObject({
+    kind: 'error',
+    failure: {
+      code: 'RATE_LIMIT',
+      providerRetryAfterMs: expectedMs,
+    },
+  })
+})
+
+it('extracts HTTP-date Retry-After onto LlmFailure.providerRetryAfterMs', async () => {
+  const targetIso = new Date(Date.now() + 20_000).toUTCString()
+  const server = await mockServer([{
+    status: 429,
+    headers: { 'retry-after': targetIso },
+    body: JSON.stringify({ error: { message: 'rate limited' } }),
+  }])
+  const ctx = await harness(server.url)
+  const result = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+  expect(result.finish.kind).toBe('error')
+  if (result.finish.kind !== 'error') throw new Error('expected error finish')
+  expect(result.finish.failure.code).toBe('RATE_LIMIT')
+  expect(result.finish.failure.providerRetryAfterMs).toBeGreaterThan(10_000)
+  expect(result.finish.failure.providerRetryAfterMs).toBeLessThanOrEqual(21_000)
+})

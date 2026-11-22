@@ -72,7 +72,7 @@ describe('dsh-sdk-minimal bundle', () => {
     expect(rows.find(row => row.id === 'llm-deepseek')?.config).toEqual({
       apiKeyEnv: 'DEEPSEEK_API_KEY',
       defaultContextWindow: { __jsExpr: 'Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)' },
-      streamIdleTimeoutMs: 172800000,
+      streamIdleTimeoutMs: 300000,
     })
     expect(rows.find(row => row.id === 'system-prompt')?.config).toEqual({
       includeHarnessIdentity: false,

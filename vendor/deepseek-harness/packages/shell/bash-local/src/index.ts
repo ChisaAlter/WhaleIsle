@@ -29,6 +29,11 @@ export const ENV_OVERRIDES = {
   TERM: 'dumb',
   PAGER: 'cat',
   GIT_PAGER: 'cat',
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'never',
+  PIP_NO_INPUT: '1',
+  NPM_CONFIG_YES: 'true',
+  CI: '1',
 } as const
 
 /** Default SIGTERM→SIGKILL grace period (the `graceMs` config; matches OpenCode's 3s). */

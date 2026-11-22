@@ -1,9 +1,10 @@
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import { mkdtempSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -712,5 +713,73 @@ describe('tool-str-replace-editor', () => {
     expect(() => {
       ToolStrReplaceEditor.apply(new Context(), { description: ' ' })
     }).toThrow('description must be non-empty')
+  })
+
+  it('normalizes CRLF to LF for view/str_replace/insert and restores CRLF on write-back', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-tool-str-replace-editor-crlf-'))
+    roots.push(dir)
+    const { ctx, owner } = await setup({}, { root: dir })
+    const file = join(dir, 'crlf.txt')
+    await writeFile(file, 'one\r\ntwo\r\nthree\r\n')
+
+    const viewed = await call(ctx, owner, { command: 'view', path: file })
+    expect(viewed.isError).toBe(false)
+    expect(text(viewed)).toContain('     1  one\n     2  two\n     3  three')
+
+    const writeSpy = vi.spyOn(ctx.fs, 'writeText')
+    const replaced = await call(ctx, owner, {
+      command: 'str_replace',
+      path: file,
+      old_str: 'one\ntwo',
+      new_str: 'ONE\nTWO',
+    })
+    expect(replaced.isError).toBe(false)
+    expect(writeSpy.mock.calls[0]?.[1]).toBe('ONE\r\nTWO\r\nthree\r\n')
+    expect(await readFile(file, 'utf8')).toBe('ONE\r\nTWO\r\nthree\r\n')
+
+    const inserted = await call(ctx, owner, {
+      command: 'insert',
+      path: file,
+      insert_line: 2,
+      new_str: 'between\nmore',
+    })
+    expect(inserted.isError).toBe(false)
+    expect(writeSpy.mock.calls[1]?.[1]).toBe('ONE\r\nTWO\r\nbetween\r\nmore\r\nthree\r\n')
+    expect(await readFile(file, 'utf8')).toBe('ONE\r\nTWO\r\nbetween\r\nmore\r\nthree\r\n')
+  })
+
+  it('rejects files exceeding MAX_EDITABLE_FILE_BYTES before reading text across view, str_replace, and insert', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-tool-str-replace-editor-limit-'))
+    roots.push(dir)
+    const { ctx, owner } = await setup({}, { root: dir })
+    expect(ToolStrReplaceEditor.MAX_EDITABLE_FILE_BYTES).toBe(10 * 1024 * 1024)
+
+    const oversized = join(dir, 'huge.txt')
+    await writeFile(oversized, Buffer.alloc(ToolStrReplaceEditor.MAX_EDITABLE_FILE_BYTES + 1, 0x61))
+    const readSpy = vi.spyOn(ctx.fs, 'readText')
+
+    const viewed = await call(ctx, owner, { command: 'view', path: oversized })
+    expect(viewed.isError).toBe(true)
+    expect(viewed.error?.info).toMatchObject({ code: 'FS_TOO_LARGE' })
+
+    const replaced = await call(ctx, owner, {
+      command: 'str_replace',
+      path: oversized,
+      old_str: 'aaa',
+      new_str: 'bbb',
+    })
+    expect(replaced.isError).toBe(true)
+    expect(replaced.error?.info).toMatchObject({ code: 'FS_TOO_LARGE' })
+
+    const inserted = await call(ctx, owner, {
+      command: 'insert',
+      path: oversized,
+      insert_line: 0,
+      new_str: 'head',
+    })
+    expect(inserted.isError).toBe(true)
+    expect(inserted.error?.info).toMatchObject({ code: 'FS_TOO_LARGE' })
+
+    expect(readSpy).not.toHaveBeenCalled()
   })
 })

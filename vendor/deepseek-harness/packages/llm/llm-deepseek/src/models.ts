@@ -19,5 +19,7 @@ export const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
     name: 'DeepSeek-V4-Pro',
     description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
     contextWindow: OFFICIAL_CONTEXT_WINDOW,
+    systemPromptUpdate: 'in-history',
+    toolUpdate: 'addition-only',
   },
 ]

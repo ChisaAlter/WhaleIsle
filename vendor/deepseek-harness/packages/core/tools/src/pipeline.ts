@@ -10,6 +10,8 @@ import { assertNever, deepFreeze, snapshotJsonValue, type JsonValue } from '@dee
 import { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH, ToolNotFoundError, ToolOutputError } from './contracts.ts'
 import { APPROVAL_CANCELLED, APPROVAL_ERROR_NAME, APPROVAL_REJECTED, APPROVAL_UNAVAILABLE, type ApprovalErrorCode } from './error-codes.ts'
 import { validateJsonSchemaValue } from './json-schema.ts'
+import { malformedJsonViolation } from './malformed-json.ts'
+import { ToolArgsError } from './schema.ts'
 import type { ToolsService } from './index.ts'
 import type { ResolvedToolSet, ToolDefinition, ToolExecutionInput, ToolExecutionMode, ToolExecution, ToolRunContext, ToolExecutionResult, ToolExecutionSuccess, ToolErrorInfo, ToolExecutionToken, PreToolDecision, PostToolDecision } from './contracts.ts'
 
@@ -105,7 +107,7 @@ export class ToolExecutionPipeline {
    */
   executionMode(exec: ToolExecutionInput): ToolExecutionMode {
     const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined, exec.toolSet)
-    if (!tool?.isConcurrencySafe) return { kind: 'exclusive' }
+    if (typeof exec.arguments === 'string' || !tool?.isConcurrencySafe) return { kind: 'exclusive' }
     try {
       const concurrencySafe: unknown = tool.isConcurrencySafe(exec.arguments)
       return concurrencySafe === true ? { kind: 'parallel' } : { kind: 'exclusive' }
@@ -276,6 +278,9 @@ export class ToolExecutionPipeline {
     try {
       const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== undefined, exec.toolSet)
       if (!tool) throw new ToolNotFoundError(exec.name)
+      if (typeof exec.arguments === 'string') {
+        throw new ToolArgsError([malformedJsonViolation(exec.arguments)])
+      }
       state.bodyInvoked = true
       const returned = await tool.execute(exec.arguments, exec)
       const result = this.createSuccessResult(exec, tool, returned)

@@ -5,8 +5,9 @@ import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext, ToolResult } from './contracts.ts'
-import { assertSupportedJsonSchema, isJsonSchemaRecord, isPlainJsonArray, JsonSchemaError, validateJsonSchemaValue } from './json-schema.ts'
+import { assertSupportedJsonSchema, coerceJsonSchemaValue, isJsonSchemaRecord, isPlainJsonArray, JsonSchemaError, validateJsonSchemaValue } from './json-schema.ts'
 import type { JsonSchemaNode, JsonSchemaScalar, ObjectJsonSchema } from './json-schema.ts'
+import { malformedJsonViolation } from './malformed-json.ts'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
 
 /** Annotation keywords shared by every author-facing schema node. */
@@ -577,6 +578,7 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
   }
   const parameters = parameterSchemaSpecToJsonSchema(options.parameters)
   const outputSchema = valueSchemaSpecToJsonSchema(options.output.schema)
+  const coerce = (args: unknown): unknown => coerceJsonSchemaValue(parameters, args)
   const validate = (args: unknown): string[] => validateJsonSchemaValue(parameters, args, '')
   const tool: ToolDefinition = {
     name: options.name,
@@ -585,20 +587,24 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
     output: {
       schema: outputSchema,
       render(args: unknown, value: JsonValue): ContentBlock[] {
-        return userRender(args as InferArgs<S>, value as InferValue<NoInfer<O>>)
+        return userRender(coerce(args) as InferArgs<S>, value as InferValue<NoInfer<O>>)
       },
       ...userPresentationMeta !== undefined ? {
         presentationMeta(args: unknown, value: JsonValue): JsonValue {
-          return userPresentationMeta(args as InferArgs<S>, value as InferValue<NoInfer<O>>)
+          return userPresentationMeta(coerce(args) as InferArgs<S>, value as InferValue<NoInfer<O>>)
         },
       } : {},
     },
     ...(options.deferLoading === true ? { deferLoading: options.deferLoading } : {}),
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     async execute(args: unknown, exec: ToolRunContext): Promise<JsonValue> {
-      const violations = validate(args)
+      if (typeof args === 'string') {
+        throw new ToolArgsError([malformedJsonViolation(args)])
+      }
+      const coerced = coerce(args)
+      const violations = validate(coerced)
       if (violations.length > 0) throw new ToolArgsError(violations)
-      return userExecute(args as InferArgs<S>, exec) as Promise<JsonValue>
+      return userExecute(coerced as InferArgs<S>, exec) as Promise<JsonValue>
     },
   }
   if (userProjectContent) {
@@ -613,20 +619,23 @@ export function defineTool<const S extends ParameterSchemaSpec, const O extends 
   // than the hard `ToolArgsError` the execute path raises.
   if (userPresentCall) {
     tool.presentCall = (args: unknown): ToolCallView | undefined => {
-      if (validate(args).length > 0) return undefined
-      return userPresentCall(args as InferArgs<S>)
+      const coerced = coerce(args)
+      if (validate(coerced).length > 0) return undefined
+      return userPresentCall(coerced as InferArgs<S>)
     }
   }
   if (userPresentResult) {
     tool.presentResult = (args: unknown, result: ToolResult): ToolResultView | undefined => {
-      if (validate(args).length > 0) return undefined
-      return userPresentResult(args as InferArgs<S>, result)
+      const coerced = coerce(args)
+      if (validate(coerced).length > 0) return undefined
+      return userPresentResult(coerced as InferArgs<S>, result)
     }
   }
   if (userIsConcurrencySafe) {
     tool.isConcurrencySafe = (args: unknown): boolean => {
-      if (validate(args).length > 0) return false
-      return userIsConcurrencySafe(args as InferArgs<S>)
+      const coerced = coerce(args)
+      if (validate(coerced).length > 0) return false
+      return userIsConcurrencySafe(coerced as InferArgs<S>)
     }
   }
   return tool

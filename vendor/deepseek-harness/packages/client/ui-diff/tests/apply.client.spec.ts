@@ -91,6 +91,60 @@ describe('ui-diff apply', () => {
     await b.fiber.dispose()
   })
 
+  it('injects appendComposerText onto both diff slots and safely no-ops without conversation', async () => {
+    const b = await boot()
+    const tabInjected = b.registered[0]!.inject('session-diff')
+    const surfaceInjected = b.registered[1]!.inject('session-diff')
+    expect(typeof tabInjected.appendComposerText).toBe('function')
+    expect(typeof surfaceInjected.appendComposerText).toBe('function')
+    // No conversation service registered -> should not throw.
+    expect(() => {
+      tabInjected.appendComposerText?.('session-diff', 'L1 `a.ts`')
+    }).not.toThrow()
+    await b.fiber.dispose()
+
+    let draft = ''
+    const setDraft = vi.fn((next: string) => { draft = next })
+    const ctx = new Context()
+    const tabs = new SidebarRightTabRegistry(ctx)
+    const registered: Recorded[] = []
+    ctx.provide('sidebarRightTabs', tabs as never)
+    ctx.provide('slots', {
+      inject: vi.fn((_name: string, register: () => () => void) => ctx.effect(register)),
+      register: vi.fn((options: Omit<Recorded, 'component'>, component: unknown) => {
+        const entry = { ...options, component }
+        registered.push(entry)
+        return () => {}
+      }),
+    } as never)
+    ctx.provide('locale', {
+      bind: vi.fn(() => (key: string) => key),
+      register: vi.fn(() => () => {}),
+    } as never)
+    ctx.provide('sessions', {
+      list: { getSnapshot: () => ({ byId: { 'session-diff': { cwd: '/tmp/repo' } } }) },
+      scope: vi.fn((id: string) => (id === 'session-diff' ? { sid: id } : undefined)),
+    } as never)
+    ctx.provide('workspaces', { openPath: vi.fn(async () => {}) } as never)
+    ctx.provide('conversation', {
+      input: {
+        for: vi.fn(() => ({
+          setDraft,
+          state: { getSnapshot: () => ({ draft }) },
+        })),
+      },
+    } as never)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    registered[0]!.inject('session-diff').appendComposerText?.('session-diff', 'L1 `a.ts`\n\n```diff\n+a\n```')
+    expect(setDraft).toHaveBeenLastCalledWith('L1 `a.ts`\n\n```diff\n+a\n```')
+    registered[1]!.inject('session-diff').appendComposerText?.('session-diff', 'L2 `b.ts`')
+    expect(setDraft).toHaveBeenLastCalledWith('L1 `a.ts`\n\n```diff\n+a\n``` L2 `b.ts`')
+    registered[1]!.inject('session-diff').appendComposerText?.('session-diff', 'L3 `c.ts`\n\n```diff\n+c\n```')
+    expect(setDraft).toHaveBeenLastCalledWith('L1 `a.ts`\n\n```diff\n+a\n``` L2 `b.ts`\n\nL3 `c.ts`\n\n```diff\n+c\n```')
+    await fiber.dispose()
+  })
+
   it('takes every registration back when the plugin is disposed', async () => {
     const b = await boot()
     await b.fiber.dispose()

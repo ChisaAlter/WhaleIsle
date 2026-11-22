@@ -34,50 +34,92 @@ export interface SessionAssistantSettlementEntry {
 /** Client-only Assistant frame admitted outside durable cursor algebra. */
 export type SessionTransientEventEntry = Extract<SessionEventLikeEntry, { readonly type: 'transient' }>
 
-interface EventWindowLeaf {
-  readonly kind: 'leaf'
-  readonly entries: readonly SessionEventLikeEntry[]
+const APPEND_SEGMENT_SIZE = 256
+
+interface EventWindowBuffer {
+  readonly segments: readonly (readonly SessionEventLikeEntry[])[]
+  readonly tail: SessionEventLikeEntry[]
+  readonly tailLength: number
   readonly length: number
 }
 
-interface EventWindowConcat {
-  readonly kind: 'concat'
-  readonly left: EventWindowNode
-  readonly right: EventWindowNode
-  readonly length: number
+function fromEntries(entries: readonly SessionEventLikeEntry[]): EventWindowBuffer {
+  return {
+    segments: [entries],
+    tail: [],
+    tailLength: 0,
+    length: entries.length,
+  }
 }
 
-type EventWindowNode = EventWindowLeaf | EventWindowConcat
-
-function leaf(entries: readonly SessionEventLikeEntry[]): EventWindowLeaf {
-  return { kind: 'leaf', entries, length: entries.length }
+function sealTail(buffer: EventWindowBuffer): readonly SessionEventLikeEntry[] | undefined {
+  if (buffer.tailLength === 0) return undefined
+  return buffer.tailLength === buffer.tail.length
+    ? buffer.tail
+    : buffer.tail.slice(0, buffer.tailLength)
 }
 
-function concat(left: EventWindowNode, right: EventWindowNode): EventWindowConcat {
-  return { kind: 'concat', left, right, length: left.length + right.length }
-}
-
-function materialize(node: EventWindowNode): readonly SessionEventLikeEntry[] {
-  if (node.kind === 'leaf') return node.entries
-  const entries = new Array<SessionEventLikeEntry>(node.length)
-  const pending: EventWindowNode[] = [node]
-  let index = 0
-  while (pending.length > 0) {
-    const current = pending.pop() as EventWindowNode
-    if (current.kind === 'concat') {
-      pending.push(current.right, current.left)
-      continue
+function appendEntry(buffer: EventWindowBuffer, entry: SessionEventLikeEntry): EventWindowBuffer {
+  const tail = buffer.tail
+  if (buffer.tailLength === tail.length && tail.length < APPEND_SEGMENT_SIZE) {
+    tail.push(entry)
+    return {
+      segments: buffer.segments,
+      tail,
+      tailLength: tail.length,
+      length: buffer.length + 1,
     }
-    for (const entry of current.entries) {
+  }
+  const sealed = sealTail(buffer)
+  const segments = sealed === undefined ? buffer.segments : [...buffer.segments, sealed]
+  return {
+    segments,
+    tail: [entry],
+    tailLength: 1,
+    length: buffer.length + 1,
+  }
+}
+
+function prependEntries(
+  buffer: EventWindowBuffer,
+  entries: readonly SessionEventLikeEntry[],
+): EventWindowBuffer {
+  if (entries.length === 0) return buffer
+  const segments: (readonly SessionEventLikeEntry[])[] = [entries]
+  for (const segment of buffer.segments) {
+    if (segment.length > 0) segments.push(segment)
+  }
+  const sealed = sealTail(buffer)
+  if (sealed !== undefined) segments.push(sealed)
+  return {
+    segments,
+    tail: [],
+    tailLength: 0,
+    length: buffer.length + entries.length,
+  }
+}
+
+function materialize(buffer: EventWindowBuffer): readonly SessionEventLikeEntry[] {
+  if (buffer.tailLength === 0 && buffer.segments.length === 1) {
+    return buffer.segments[0] as readonly SessionEventLikeEntry[]
+  }
+  const entries = new Array<SessionEventLikeEntry>(buffer.length)
+  let index = 0
+  for (const segment of buffer.segments) {
+    for (const entry of segment) {
       entries[index] = entry
       index += 1
     }
+  }
+  for (let i = 0; i < buffer.tailLength; i += 1) {
+    entries[index] = buffer.tail[i] as SessionEventLikeEntry
+    index += 1
   }
   return entries
 }
 
 function windowSnapshot(
-  node: EventWindowNode,
+  buffer: EventWindowBuffer,
   hasMore: boolean,
   revision: number,
   change: SessionEventChange,
@@ -85,7 +127,7 @@ function windowSnapshot(
   let entries: readonly SessionEventLikeEntry[] | undefined
   return {
     get entries() {
-      entries ??= materialize(node)
+      entries ??= materialize(buffer)
       return entries
     },
     hasMore,
@@ -119,7 +161,7 @@ export type SessionEventSource = ObservableSnapshot<SessionEventWindow>
 /** Session-owned event feed; every accepted window mutation publishes synchronously. */
 export class MutableSessionEventSource implements SessionEventSource {
   private readonly listeners = new Set<() => void>()
-  private window: EventWindowNode = leaf([])
+  private window: EventWindowBuffer = fromEntries([])
   private snapshot: SessionEventWindow = windowSnapshot(
     this.window,
     false,
@@ -146,7 +188,7 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param hasMore - whether older history remains.
    */
   replace(entries: readonly SessionEventLikeEntry[], hasMore: boolean): void {
-    this.window = leaf(entries)
+    this.window = fromEntries(entries)
     this.publish(hasMore, { kind: 'replace', entries })
   }
 
@@ -156,7 +198,7 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param hasMore - whether still older history remains.
    */
   prepend(entries: readonly SessionEventLikeEntry[], hasMore: boolean): void {
-    this.window = concat(leaf(entries), this.window)
+    this.window = prependEntries(this.window, entries)
     this.publish(hasMore, { kind: 'prepend', entries })
   }
 
@@ -165,11 +207,10 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param entry - live tail entry.
    */
   append(entry: SessionEventLikeEntry): void {
-    const entries = [entry]
-    this.window = concat(this.window, leaf(entries))
+    this.window = appendEntry(this.window, entry)
     this.publish(this.snapshot.hasMore, {
       kind: 'append',
-      entries,
+      entries: [entry],
     })
   }
 
@@ -187,7 +228,7 @@ export class MutableSessionEventSource implements SessionEventSource {
       if (index < 0) entries.push(entry)
       else entries.splice(index, 0, entry)
     }
-    this.window = leaf(entries)
+    this.window = fromEntries(entries)
     this.publish(this.snapshot.hasMore, {
       kind: 'settle-assistant',
       attemptId,

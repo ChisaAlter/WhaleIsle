@@ -62,6 +62,7 @@ export interface Win32Bindings extends Win32ProcessBindings {
   setEntriesInAclW(count: number, entries: Buffer, oldAcl: NativePtr | null, newAcl: NativePtr): number
   initializeAcl(acl: NativePtr, length: number, revision: number): number
   addMandatoryAce(acl: NativePtr, revision: number, aceFlags: number, policy: number, sid: NativePtr): number
+  deleteAce(acl: NativePtr, aceIndex: number): number
   setNamedSecurityInfoW(
     path: string,
     objectType: number,
@@ -256,6 +257,7 @@ function bindings(): Win32Bindings {
     setEntriesInAclW: bind(advapi32, 'SetEntriesInAclW', 'uint32', ['uint32', PVOID, PVOID, PPVOID]),
     initializeAcl: bind(advapi32, 'InitializeAcl', 'int', [PVOID, 'uint32', 'uint32']),
     addMandatoryAce: bind(advapi32, 'AddMandatoryAce', 'int', [PVOID, 'uint32', 'uint32', 'uint32', PVOID]),
+    deleteAce: bind(advapi32, 'DeleteAce', 'int', [PVOID, 'uint32']),
     setNamedSecurityInfoW: bind(advapi32, 'SetNamedSecurityInfoW', 'uint32', [
       'str16', 'int', 'uint32', PVOID, PVOID, PVOID, PVOID,
     ]),

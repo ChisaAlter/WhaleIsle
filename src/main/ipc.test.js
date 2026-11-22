@@ -90,10 +90,12 @@ function gitStubs() {
     gitPush() {},
     gitReadPullRequest() {},
     gitStage() {},
+    gitStagePatch() {},
     gitStatus() {},
     gitStatusEntries() {},
     gitSwitchBranch() {},
     gitUnstage() {},
+    gitUnstagePatch() {},
     openWorkspacePath() {},
   };
 }
@@ -2947,4 +2949,58 @@ test('launcher delta preserves a declined peer shutdown and releases maintenance
     assert.equal(stops, 1);
     assert.equal(importGuard.isMaintenanceHeld(), false);
   } finally { ipc.restore(); }
+});
+
+test('shell:git-stage-patch and shell:git-unstage-patch authorize harness, guard throws, and forward cwd + patchText', async () => {
+  const stageCalls = [];
+  const unstageCalls = [];
+  const diffCalls = [];
+  const ipc = loadIpc({
+    git: {
+      gitDiff: async (cwd, options) => {
+        diffCalls.push({ cwd, options });
+        return { files: [] };
+      },
+      gitStagePatch: async (cwd, patchText) => {
+        stageCalls.push({ cwd, patchText });
+        if (patchText === 'throw-stage') throw new Error('stage patch crashed');
+        return { ok: true };
+      },
+      gitUnstagePatch: async (cwd, patchText) => {
+        unstageCalls.push({ cwd, patchText });
+        if (patchText === 'throw-unstage') throw new Error('unstage patch crashed');
+        return { ok: true };
+      },
+    },
+  });
+  try {
+    const patch = 'diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-a\n+b\n';
+    assert.deepEqual(await ipc.invoke('shell:git-diff', harnessEvent(), '/repo', { path: 'a.txt', staged: false }), { files: [] });
+    assert.deepEqual(diffCalls, [{ cwd: '/repo', options: { path: 'a.txt', staged: false } }]);
+
+    assert.deepEqual(await ipc.invoke('shell:git-stage-patch', harnessEvent(), '/repo', patch), { ok: true });
+    assert.deepEqual(await ipc.invoke('shell:git-unstage-patch', harnessEvent(), '/repo', patch), { ok: true });
+    assert.deepEqual(stageCalls, [{ cwd: '/repo', patchText: patch }]);
+    assert.deepEqual(unstageCalls, [{ cwd: '/repo', patchText: patch }]);
+
+    assert.deepEqual(
+      await ipc.invoke('shell:git-stage-patch', harnessEvent(), '/repo', 'throw-stage'),
+      { ok: false, message: 'stage patch crashed' },
+    );
+    assert.deepEqual(
+      await ipc.invoke('shell:git-unstage-patch', harnessEvent(), '/repo', 'throw-unstage'),
+      { ok: false, message: 'unstage patch crashed' },
+    );
+
+    for (const channel of ['shell:git-stage-patch', 'shell:git-unstage-patch']) {
+      for (const event of [bootEvent(), launcherEvent()]) {
+        await assert.rejects(
+          () => ipc.invoke(channel, event, '/repo', patch),
+          (error) => error?.code === 'ERR_DSH_IPC_SENDER',
+        );
+      }
+    }
+  } finally {
+    ipc.restore();
+  }
 });

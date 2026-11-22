@@ -1,6 +1,5 @@
 /** Registers the Diff page type in the right Sidebar. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -8,8 +7,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-surfaces/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { DiffPanel, type DiffPanelInjected } from './DiffPanel.tsx'
+import { appendToDraft } from './draft.ts'
 import { en, NS, zh, type DiffKey } from './locales.ts'
-import { readDiffShell } from './shell.ts'
+import { readDiffShell, type DiffShellInjected } from './shell.ts'
 
 export type { DiffPanelInjected, DiffPanelProps } from './DiffPanel.tsx'
 export type { DiffKey } from './locales.ts'
@@ -66,23 +66,30 @@ export function apply(ctx: Context): void {
     }],
   }), 'ui-diff: page type')
 
+  const injectedShell = (): DiffShellInjected => ({
+    ...readDiffShell(),
+    appendComposerText: (targetSessionId, text) => {
+      appendToDraft(ctx, targetSessionId, text)
+    },
+  })
+
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: DIFF_ID,
     locale: NS,
     inject: (sessionId): DiffPanelInjected => ({
-      ...readDiffShell(),
+      ...injectedShell(),
       openFile: async (relativePath) => {
         const workspaces = ctx.get('workspaces') as WorkspacePathOpener | undefined
         const openPath = workspaces?.openPath
         if (openPath === undefined) throw new Error('workspace path opener is unavailable')
-        const cwd = sessionWorkingDirectory(ctx.sessions.list.getSnapshot().byId[sessionId as SessionId])
+        const cwd = sessionWorkingDirectory(ctx.sessions.list.getSnapshot().byId[sessionId])
         await openPath.call(workspaces, resolveWorkspacePath(cwd, relativePath), { sessionId })
       },
     }),
   }, DiffPanel)), 'ui-diff: page body')
 
   ctx.effect(() => ctx.slots.inject('surfaces.diff', () => ctx.slots.register({
-    name: 'surfaces.diff', locale: NS, inject: readDiffShell,
+    name: 'surfaces.diff', locale: NS, inject: injectedShell,
   }, DiffPanel)), 'ui-diff: DSHD surface')
 }

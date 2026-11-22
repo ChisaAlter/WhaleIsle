@@ -35,7 +35,9 @@ import { UserQuestionError, type AskUserQuestionAnswer } from '@deepseek-ai/dsh-
 import type { CommandDefinitionId, CommandId } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition, ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
+import { evaluatePlanModeToolGate } from './execution-gate.ts'
 import type { PlanProjection, PlanUnitState } from './types.ts'
+export { evaluatePlanModeToolGate, isReadOnlyShellCommand, type ShellGateCheck } from './execution-gate.ts'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'plan-mode': { kind: 'plan-mode' } & ContextFormed
@@ -194,15 +196,35 @@ export class PlanModeController extends Service {
 
   protected async [Service.init](): Promise<void> {
     const ctx = this.ctx
-    ctx.systemPrompt.section({
+    // Keep plan policy in append-only runtime context rather than node-0 static
+    // system sections so entering/exiting plan mode never invalidates KV prefix cache.
+    ctx.systemPrompt.context({
       name: 'plan:policy',
       order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY'),
+      required: true,
       text: (context) => {
         if (context.agent === undefined) return ''
-        return this.selectedActive(context.agent.session) ? this.section : ''
+        const active = this.hasOpenStep(context.agent.session)
+          ? this.loggedActive(context.agent.session)
+          : this.selectedActive(context.agent.session)
+        return active ? this.section : ''
       },
     })
     this.planProjectionHandle = await ctx.sessionProjections.register(planProjectionDefinition)
+    ctx.on('tools/pre-execute', async (exec, next) => {
+      if (exec.agent === undefined) return next()
+      if (this.planProjectionHandle === undefined) {
+        return {
+          kind: 'deny',
+          reason: 'Plan mode is initializing; retry after activation completes.',
+          info: { name: 'PlanModeReadOnlyError', code: 'PLAN_MODE_READ_ONLY' },
+        }
+      }
+      if (!this.loggedActive(exec.agent.session)) return next()
+      const decision = evaluatePlanModeToolGate(exec)
+      if (decision.kind === 'deny') return decision
+      return next()
+    }, { prepend: true })
     let disposed = false
     // Pre-step is outside Session.append publication, so it can append the
     // log-only mode event inside an open turn without re-entering the session.
@@ -372,7 +394,7 @@ export class PlanModeController extends Service {
         title: 'Plan review',
         content: result.content,
       }),
-    }), { when: ({ agent }) => this.selectedActive(agent.session) || this.planState(agent.session).entered })
+    }))
   }
 
   private loggedActive(session: Session): boolean {
@@ -386,6 +408,10 @@ export class PlanModeController extends Service {
 
   private hasOpenTurn(session: Session): boolean {
     return this.ctx.agents.turnBoundaryOf(session).openTurnStartSeq !== null
+  }
+
+  private hasOpenStep(session: Session): boolean {
+    return this.ctx.agents.turnBoundaryOf(session).lastStepBoundary?.kind === 'start'
   }
 
   private loggedActiveAtLastHeader(session: Session): boolean | undefined {

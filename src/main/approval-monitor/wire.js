@@ -396,6 +396,7 @@ function muxUrlForOrigin(origin) {
  * @param {typeof fetch} [options.fetchImpl]
  * @param {number} [options.reconcileDelayMs]
  * @param {() => number} [options.nowImpl]
+ * @param {number} [options.settleTimeoutMs]
  */
 function createApprovalWireClient(options = {}) {
   const WebSocketCtor = options.WebSocketImpl || WebSocket;
@@ -669,14 +670,34 @@ function createApprovalWireClient(options = {}) {
     disconnect();
   }
 
+  const SETTLE_TIMEOUT_MS = typeof options.settleTimeoutMs === 'number' ? options.settleTimeoutMs : 15_000;
+
   /** @param {string} eventId @param {ApprovalAction} action */
   async function settle(eventId, action) {
     const recipe = recipes.get(eventId);
     if (!recipe) throw new Error('Approval request is no longer pending');
     if (!activeOrigin || !clientId) throw new Error('Approval stream is not connected');
     const outcome = buildSettlementOutcome(recipe, action);
-    // Gateway parseRemoteEventResultPayload accepts strictly these three keys.
-    await callRpc(activeOrigin, '$events/result', { clientId, eventId, outcome });
+    const controller = new AbortController();
+    let timer = null;
+    try {
+      // Gateway parseRemoteEventResultPayload accepts strictly these three keys.
+      await Promise.race([
+        callRpc(activeOrigin, '$events/result', { clientId, eventId, outcome }, controller.signal),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            const timeoutError = Object.assign(
+              new Error(`Approval settle timed out after ${SETTLE_TIMEOUT_MS}ms`),
+              { code: 'ETIMEDOUT' },
+            );
+            controller.abort(timeoutError);
+            reject(timeoutError);
+          }, SETTLE_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
     recipes.delete(eventId);
     abortEnrichment(eventId);
     return { ok: true };

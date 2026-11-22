@@ -174,3 +174,81 @@ test('a SIGKILLed middle parent still lets the host observe stdin close', posixO
   await waitDead(pids.self);
   await waitDead(pids.leaf);
 });
+
+test('isResidentServiceArgs distinguishes resident web launches from one-shot flags and subcommands', async () => {
+  const { isResidentServiceArgs } = await import('./parent-lifeline.mjs');
+  assert.equal(isResidentServiceArgs(['web']), true);
+  assert.equal(isResidentServiceArgs(['web', '--port', '3080', '--no-open']), true);
+  for (const oneShot of [
+    ['web', '--help'],
+    ['web', '-h'],
+    ['web', '--version'],
+    ['web', '-V'],
+    ['web', '--dump-config'],
+    ['web', '--dump-default-config'],
+    ['web', '--dump-config-schema'],
+    ['web', '--json'],
+    ['plugin', 'list'],
+    ['--help'],
+  ]) {
+    assert.equal(isResidentServiceArgs(oneShot), false, `expected one-shot false for ${oneShot.join(' ')}`);
+  }
+});
+
+test('watchParentPid fires once when parent disappears and stop() cancels polling', async () => {
+  const { watchParentPid } = await import('./parent-lifeline.mjs');
+  let alive = true;
+  const reasons = [];
+  const stop = watchParentPid({
+    parentPid: 999999,
+    intervalMs: 10,
+    isAlive: () => alive,
+    onParentGone: (reason) => reasons.push(reason),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.deepEqual(reasons, []);
+  alive = false;
+  const deadline = Date.now() + 2000;
+  while (reasons.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(reasons.length, 1);
+  stop();
+});
+
+test('Windows dsh-cli-runner exits one-shot commands cleanly and self-terminates resident web when parent dies', { skip: process.platform !== 'win32' }, async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeline-win-runner-'));
+  const runnerPath = path.join(__dirname, 'dsh-cli-runner.mjs');
+  const fakeCli = path.join(dir, 'cli.mjs');
+  const fakePnpm = path.join(dir, 'pnpm.js');
+  fs.writeFileSync(fakePnpm, '');
+  fs.writeFileSync(fakeCli, [
+    'export async function runCli() {',
+    '  const args = process.argv.slice(2);',
+    '  if (args.includes("--help")) { console.log("help-ok"); return; }',
+    '  console.log("resident-started");',
+    '  setInterval(() => {}, 1000);',
+    '}',
+  ].join('\n'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const oneShot = spawn(process.execPath, [runnerPath, fakeCli, fakePnpm, 'web', '--help'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  t.after(() => killProcessTree(oneShot.pid).catch(() => { /* Test cleanup ignores an already-exited one-shot child. */ }));
+  await waitExit(oneShot);
+  assert.equal(oneShot.exitCode, 0, 'one-shot invocation must not hang on open stdin or timer');
+
+  // Spawn a dummy parent process and exit it immediately so DSHD_PARENT_PID is dead.
+  const dummyParent = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
+  await waitExit(dummyParent);
+
+  const resident = spawn(process.execPath, [runnerPath, fakeCli, fakePnpm, 'web'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, DSHD_PARENT_PID: String(dummyParent.pid) },
+  });
+  t.after(() => killProcessTree(resident.pid).catch(() => { /* Test cleanup ignores an already-exited resident child. */ }));
+  await waitExit(resident);
+  assert.notEqual(resident.exitCode, null, 'resident Windows dsh-cli-runner must self-exit once parent PID disappears');
+});

@@ -14,6 +14,77 @@ interface BeforeTarget {
   info: FsInfo | undefined
 }
 
+interface TargetSnapshot {
+  readonly target: FsTarget
+  readonly existed: boolean
+  readonly content: string | undefined
+}
+
+interface CompletedRollback {
+  readonly index: number
+  readonly snapshots: readonly TargetSnapshot[]
+}
+
+async function captureSnapshots(
+  ctx: Context, before: readonly BeforeTarget[], signal: AbortSignal,
+): Promise<TargetSnapshot[]> {
+  const snapshots: TargetSnapshot[] = []
+  for (const entry of before) {
+    if (entry.info === undefined || entry.info.type !== 'file') {
+      snapshots.push({ target: entry.target, existed: false, content: undefined })
+    } else {
+      snapshots.push({
+        target: entry.target,
+        existed: true,
+        content: await ctx.fs.readText(entry.target, signal),
+      })
+    }
+  }
+  return snapshots
+}
+
+async function restoreTarget(
+  ctx: Context, exec: ToolExecution, policy: SandboxExecutionPolicy | undefined, snapshot: TargetSnapshot,
+): Promise<boolean> {
+  try {
+    if (snapshot.existed) {
+      const outcome = await ctx.fs.writeText(snapshot.target, snapshot.content ?? '', undefined, undefined, policy)
+      ctx.emit('fs/observed', snapshot.target, { kind: 'present', version: outcome.version }, exec)
+      return true
+    }
+    await ctx.fs.deleteFile(snapshot.target, undefined, undefined, policy)
+    ctx.emit('fs/observed', snapshot.target, { kind: 'absent' }, exec)
+    return true
+  } catch (error) {
+    if (!(error instanceof FsError)) throw error
+    if (!snapshot.existed && error.code === 'FS_NOT_FOUND') {
+      // Target is already absent on disk; emit accurate absence state.
+      ctx.emit('fs/observed', snapshot.target, { kind: 'absent' }, exec)
+      return true
+    }
+    // Best-effort rollback continues across remaining targets and operations.
+    return false
+  }
+}
+
+async function rollbackCompleted(
+  ctx: Context, exec: ToolExecution, policy: SandboxExecutionPolicy | undefined,
+  completed: readonly CompletedRollback[], outcomes: PatchOperationOutcome[],
+): Promise<void> {
+  for (let i = completed.length - 1; i >= 0; i--) {
+    const item = completed[i]
+    if (item === undefined) continue
+    let restored = true
+    for (const snapshot of item.snapshots) {
+      if (!await restoreTarget(ctx, exec, policy, snapshot)) restored = false
+    }
+    const prior = outcomes[item.index]
+    if (restored && prior !== undefined) {
+      outcomes[item.index] = { status: 'skipped', operation: prior.operation }
+    }
+  }
+}
+
 async function unchanged(ctx: Context, before: readonly BeforeTarget[]): Promise<boolean> {
   try {
     for (const entry of before) {
@@ -29,19 +100,22 @@ async function unchanged(ctx: Context, before: readonly BeforeTarget[]): Promise
 }
 
 /**
- * Commit a fully admitted plan; the first failure stops later operations without rollback.
+ * Commit a fully admitted plan. When a later operation (`index > 0`) fails with
+ * a deterministic (`!uncertain`) error, best-effort rollback reverts prior
+ * completed operations in reverse order and re-emits accurate `fs/observed` state.
  * @param ctx - provider and observation dispatcher.
  * @param sandbox - existing model-facing denial mapper.
  * @param exec - session actor and cancellation signal.
  * @param policy - request's resolved confinement policy.
  * @param operations - operations that all passed preflight.
- * @returns known changes, failed or unknown effects, and skipped successors in patch order.
+ * @returns known changes, failed or unknown effects, and skipped or rolled-back entries.
  */
 export async function commitPatch(
   ctx: Context, sandbox: FsSandboxController, exec: ToolExecution, policy: SandboxExecutionPolicy | undefined,
   operations: readonly PlannedOperation[],
 ): Promise<PatchExecutionReport> {
   const outcomes: PatchOperationOutcome[] = operations.map(operation => ({ status: 'skipped', operation: operation.record }))
+  const completed: CompletedRollback[] = []
   let cancelled = false
   for (const [index, operation] of operations.entries()) {
     if (exec.signal.aborted) { cancelled = true; break }
@@ -53,6 +127,7 @@ export async function commitPatch(
     let outcome: PatchOperationOutcome
     try {
       before = await Promise.all(mutationTargets(operation).map(async target => ({ target, info: await ctx.fs.stat(target, exec.signal) })))
+      const snapshots = index < operations.length - 1 ? await captureSnapshots(ctx, before, exec.signal) : []
       switch (operation.kind) {
         case 'add': {
           const intent = await destinationIntent(ctx, exec, target)
@@ -103,6 +178,9 @@ export async function commitPatch(
         /* v8 ignore next -- Closed parsed-operation union; assertNever checks exhaustiveness at compile time. */
         default: assertNever(operation)
       }
+      if (outcome.status === 'completed' && snapshots.length > 0) {
+        completed.push({ index, snapshots })
+      }
     } catch (error) {
       if (!(error instanceof FsError)) throw error
       const failure = patchFailure(sandbox, policy, error, failurePath)
@@ -112,6 +190,9 @@ export async function commitPatch(
       outcome = uncertain
         ? { status: 'unknown', operation: record, failure: { ...failure, message: `${failure.message} — re-read the affected files before retrying` } }
         : { status: 'failed', operation: record, failure, changes: [] }
+      if (!uncertain && index > 0 && completed.length > 0) {
+        await rollbackCompleted(ctx, exec, policy, completed, outcomes)
+      }
     }
     outcomes[index] = outcome
     if (outcome.status !== 'completed') { cancelled = exec.signal.aborted; break }

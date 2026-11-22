@@ -257,13 +257,52 @@ describe('outer PTC mode failure capture', () => {
   })
 })
 
-describe('read skip', () => {
-  it('never spills the read tool result (avoids a read → spill → read loop)', async () => {
-    const { ctx, spill } = await setup({ maxInlineTokens: 10 })
+describe('read safety cap', () => {
+  it('keeps normal read results within default 2x maxInlineTokens inline', async () => {
+    const { ctx, spill } = await setup({ maxInlineTokens: 100 })
+    // 100 tokens -> readCap = 200 tokens (~800 chars at 4 chars/token); 500 chars stays inline.
+    ctx.tools.register(textTool('read', 'x'.repeat(500)))
+    const result = await executeToolFixture(ctx, exec('read'))
+    expect(textOf(result.content)).toBe('x'.repeat(500))
+    expect(spill?.saves).toHaveLength(0)
+  })
+
+  it('spills oversized single-line read results exceeding 2x maxInlineTokens', async () => {
+    const { ctx, spill } = await setup({ maxInlineTokens: 100 })
+    const huge = 'x'.repeat(4000)
+    ctx.tools.register(textTool('read', huge))
+    const result = await executeToolFixture(ctx, exec('read'))
+    const retained = textOf(result.content)
+    expect(retained.length).toBeLessThan(huge.length)
+    expect(retained).toContain('Full formatted result stored at: /spill/read.txt')
+    expect(spill?.saves).toHaveLength(1)
+    expect(spill?.saves[0]?.content).toBe(huge)
+  })
+
+  it('enforces explicit maxReadInlineTokens separately from maxInlineTokens', async () => {
+    const { ctx, spill } = await setup({ maxInlineTokens: 500, maxReadInlineTokens: 100 })
+    const content = 'y'.repeat(1200)
+    ctx.tools.register(textTool('read', content))
+    const result = await executeToolFixture(ctx, exec('read'))
+    expect(textOf(result.content)).toContain('Full formatted result stored at: /spill/read.txt')
+    expect(spill?.saves).toHaveLength(1)
+  })
+
+  it('exempts read results explicitly when maxReadInlineTokens is 0', async () => {
+    const { ctx, spill } = await setup({ maxInlineTokens: 10, maxReadInlineTokens: 0 })
     ctx.tools.register(textTool('read', 'x'.repeat(1000)))
     const result = await executeToolFixture(ctx, exec('read'))
     expect(textOf(result.content)).toBe('x'.repeat(1000))
     expect(spill?.saves).toHaveLength(0)
+  })
+
+  it('rejects negative or non-integer maxReadInlineTokens', async () => {
+    await expect(setup({ maxInlineTokens: 100, maxReadInlineTokens: -1 })).rejects.toThrow(
+      'spill-policy: maxReadInlineTokens must be a non-negative integer',
+    )
+    await expect(setup({ maxInlineTokens: 100, maxReadInlineTokens: 1.5 })).rejects.toThrow(
+      'spill-policy: maxReadInlineTokens must be a non-negative integer',
+    )
   })
 })
 

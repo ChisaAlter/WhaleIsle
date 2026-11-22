@@ -189,10 +189,11 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
     expect(finalAssistantText(agent)).toBe('recovered from empty')
   })
 
-  it('exposes a clean partial EOF as non-default-retryable STREAM_CLOSED', async () => {
+  it('retries a clean partial EOF (STREAM_CLOSED) by default and completes on the next request', async () => {
     const server = await start(['partial_eof', 'success'], {
       apiKey: 'mock-key',
       partialText: 'discarded clean eof',
+      successText: 'recovered from partial eof',
       chunkSize: 100,
     })
     context = await harness(server.baseURL)
@@ -203,15 +204,19 @@ describe('bounded retry through the real DeepSeek HTTP/SSE adapter', () => {
 
     await sendAndWait(context, agent)
 
-    expect(server.requests).toHaveLength(1)
+    expect(server.requests).toHaveLength(2)
     const attempt = agent.session.snapshotEvents().find(event => event.type === 'assistant/attempt' && event.data.turn === 1)
     expect(attempt?.type === 'assistant/attempt' ? expandAssistantStream(attempt.data.stream) : []).toHaveLength(3)
-    expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
-    expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data.failure.code))
+      .toEqual(['STREAM_CLOSED'])
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
+      .map(event => [event.data.turn, event.data.step]))
+      .toEqual([[1, 1]])
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
-      data: { reason: { kind: 'error', error: { message: 'DeepSeek Messages stream ended before message_stop', code: 'STREAM_CLOSED' } } },
+      data: { reason: { kind: 'completed' } },
     })
+    expect(finalAssistantText(agent)).toBe('recovered from partial eof')
   })
 
   it('turns a stalled body into TIMEOUT and succeeds on the next request', async () => {

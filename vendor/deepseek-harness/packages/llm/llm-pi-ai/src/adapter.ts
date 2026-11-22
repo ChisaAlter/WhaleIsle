@@ -57,7 +57,9 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { deadline, idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import type { IdleWatchdog } from '@deepseek-ai/dsh-timeout'
+import { applyDeepSeekCompletionsSafeCompat } from './catalog.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
@@ -152,13 +154,14 @@ function profileOptions(
   apiKey: string | undefined,
 ): SimpleStreamOptions {
   const enabledReasoning: ThinkingLevel | undefined = reasoning === 'off' ? undefined : reasoning
+  const totalTimeoutMs = profile.timeoutMs
   return {
     ...apiKey === undefined ? {} : { apiKey },
     ...enabledReasoning === undefined ? {} : { reasoning: enabledReasoning },
     ...profile.thinkingBudgets === undefined ? {} : { thinkingBudgets: profile.thinkingBudgets },
     ...profile.cacheRetention === undefined ? {} : { cacheRetention: profile.cacheRetention },
     ...profile.transport === undefined ? {} : { transport: profile.transport },
-    ...profile.timeoutMs === undefined ? {} : { timeoutMs: profile.timeoutMs },
+    ...totalTimeoutMs > 0 ? { timeoutMs: totalTimeoutMs } : {},
     ...profile.websocketConnectTimeoutMs === undefined ? {} : { websocketConnectTimeoutMs: profile.websocketConnectTimeoutMs },
     // The agent recovery layer owns visible attempts; one adapter call is one SDK attempt.
     maxRetries: 0,
@@ -239,7 +242,8 @@ function reasoningInfo(
     reasoning: {
       efforts: levels.map(level => ({
         id: ReasoningEffortId(level),
-        name: THINKING_LEVEL_LABEL[level] ?? `${level.charAt(0).toUpperCase()}${level.slice(1)}`,
+        name: (THINKING_LEVEL_LABEL as Partial<Record<ModelThinkingLevel, string>>)[level]
+          ?? `${level.charAt(0).toUpperCase()}${level.slice(1)}`,
       })),
       ...defaultLevel === undefined ? {} : { defaultEffort: ReasoningEffortId(defaultLevel) },
     },
@@ -254,6 +258,70 @@ function requestHeaderDiagnostic(error: unknown): string {
   return error instanceof Error
     ? error.message
     : 'the contributing plugin threw a non-Error value; throw an Error with a safe diagnostic'
+}
+
+/** Read a header value case-insensitively from either `Headers` or a flat record. */
+function headerValue(headers: Headers | Readonly<Record<string, string>>, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined
+  const lower = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower) return value
+  }
+  return undefined
+}
+
+/** Parse positive millisecond Retry-After duration from `retry-after-ms` or `retry-after`. */
+export function parseRetryAfterMs(
+  headers: Headers | Readonly<Record<string, string>>,
+  nowMs = Date.now(),
+): number | undefined {
+  const retryAfterMs = headerValue(headers, 'retry-after-ms')?.trim()
+  if (retryAfterMs !== undefined && /^\d+(?:\.\d+)?$/.test(retryAfterMs)) {
+    const ms = Number(retryAfterMs)
+    if (Number.isFinite(ms) && ms > 0) return ms
+  }
+  const retryAfter = headerValue(headers, 'retry-after')?.trim()
+  if (retryAfter === undefined || retryAfter.length === 0) return undefined
+  if (/^\d+(?:\.\d+)?$/.test(retryAfter)) {
+    const ms = Number(retryAfter) * 1000
+    return Number.isFinite(ms) && ms > 0 ? ms : undefined
+  }
+  const parsedDateMs = Date.parse(retryAfter)
+  if (!Number.isFinite(parsedDateMs)) return undefined
+  const delayMs = parsedDateMs - nowMs
+  return Number.isFinite(delayMs) && delayMs > 0 ? delayMs : undefined
+}
+
+async function nextWithinDeadline<T>(
+  watchdog: IdleWatchdog,
+  iterator: AsyncIterator<T>,
+  totalSignal: AbortSignal,
+  totalTimeoutMs: number,
+): Promise<IteratorResult<T>> {
+  const alreadyExpired = timeoutOf(totalSignal, 'LLM_REQUEST_TIMEOUT')
+  if (alreadyExpired !== undefined) throw alreadyExpired
+  if (totalTimeoutMs <= 0) return watchdog.next(iterator)
+  const demand = watchdog.next(iterator)
+  const expired = Promise.withResolvers<never>()
+  const onAbort = (): void => {
+    const reason = timeoutOf(totalSignal, 'LLM_REQUEST_TIMEOUT')
+    if (reason !== undefined) expired.reject(reason)
+  }
+  totalSignal.addEventListener('abort', onAbort, { once: true })
+  // If the total wall-clock timer expires first, the abandoned demand may reject during unwinding.
+  demand.catch(() => { /* Handled by total wall-clock timeout cleanup. */ })
+  try {
+    return await Promise.race([
+      demand.finally(() => { totalSignal.removeEventListener('abort', onAbort) }),
+      expired.promise,
+    ])
+  } finally {
+    totalSignal.removeEventListener('abort', onAbort)
+  }
+}
+
+function supportsCustomFetch(api: Api): boolean {
+  return api !== 'google-generative-ai' && api !== 'google-vertex'
 }
 
 /** Prepare request-owned headers without allowing contributors to replace attribution. */
@@ -447,12 +515,13 @@ export class PiAiAdapter extends LlmAdapter {
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
+    const totalTimeoutMs = profile.timeoutMs
+    using totalDeadline = deadline(options.signal, totalTimeoutMs, 'LLM_REQUEST_TIMEOUT')
     const consumer = new AbortController()
-    const upstream = options.signal === undefined
-      ? consumer.signal
-      : AbortSignal.any([options.signal, consumer.signal])
+    const upstream = AbortSignal.any([totalDeadline.signal, consumer.signal])
     const streamIdleTimeoutMs = profile.streamIdleTimeoutMs
     using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
+    let providerRetryAfterMs: number | undefined
 
     try {
       const containsImage = options.messages.some(message => contentHasImage(message.content))
@@ -485,24 +554,58 @@ export class PiAiAdapter extends LlmAdapter {
       const { context, digest } = bindThinkingToPrefix(converted, model.api, prefixDigests, manualThinking, (count) => {
         this.config.onThinkingOmitted?.({ provider: options.provider, model: options.model, count })
       })
-      const events = snapshot.models.streamSimple(model, context, {
+      const recordRetryAfter = (headers: Headers | Readonly<Record<string, string>>): void => {
+        const parsed = parseRetryAfterMs(headers)
+        if (parsed !== undefined) providerRetryAfterMs = parsed
+      }
+      const requestModel = applyDeepSeekCompletionsSafeCompat(model)
+      const events = snapshot.models.streamSimple(requestModel, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+        onResponse: (response) => {
+          recordRetryAfter(response.headers)
+        },
+        ...supportsCustomFetch(model.api) ? {
+          fetch: async (input, init) => {
+            const response = await globalThis.fetch(input, init)
+            recordRetryAfter(response.headers)
+            return response
+          },
+        } : {},
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id, digest)[Symbol.asyncIterator]()
       let exhausted = false
       try {
         while (true) {
-          const result = await watchdog.next(iterator)
+          const result = await nextWithinDeadline(watchdog, iterator, totalDeadline.signal, totalTimeoutMs)
           if (result.done) {
             exhausted = true
             return
           }
-          yield result.value
+          const deadlineReason = timeoutOf(totalDeadline.signal, 'LLM_REQUEST_TIMEOUT')
+          if (deadlineReason !== undefined) throw deadlineReason
+          const chunk = result.value
+          if (chunk.type === 'finish'
+            && chunk.reason.kind === 'error'
+            && providerRetryAfterMs !== undefined
+            && chunk.reason.failure.providerRetryAfterMs === undefined) {
+            yield {
+              ...chunk,
+              reason: {
+                ...chunk.reason,
+                failure: {
+                  ...chunk.reason.failure,
+                  providerRetryAfterMs,
+                },
+              },
+            }
+          } else {
+            yield chunk
+          }
         }
       } finally {
         if (!exhausted) {
@@ -510,15 +613,21 @@ export class PiAiAdapter extends LlmAdapter {
           // A demand the deadline abandoned can stay pending forever, and this
           // generator queues its return behind it; the abort above owns SDK termination.
           /* v8 ignore next -- the detached drain only rejects while unwinding an abandoned stream. */
-          void iterator.return(undefined).catch(() => {})
+          void iterator.return(undefined).catch(() => { /* Ignored while unwinding an abandoned stream. */ })
         }
       }
     } catch (error: unknown) {
+      if (timeoutOf(totalDeadline.signal, 'LLM_REQUEST_TIMEOUT') !== undefined) {
+        throw new LlmError(`pi-ai request timed out after ${totalTimeoutMs}ms`, 'TIMEOUT', { cause: error })
+      }
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
         throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
       }
       if (options.signal?.aborted) {
         throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
+      }
+      if (error instanceof LlmError && providerRetryAfterMs !== undefined && error.failure.providerRetryAfterMs === undefined) {
+        throw LlmError.fromFailure({ ...error.failure, providerRetryAfterMs }, { cause: error })
       }
       throw error
     } finally {

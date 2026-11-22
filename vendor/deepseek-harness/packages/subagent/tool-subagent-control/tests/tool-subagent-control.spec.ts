@@ -516,14 +516,16 @@ describe('dsh-tool-subagent-control', () => {
 })
 
 describe('dsh-tool-subagent-control interrupt_agent', () => {
-  it('registers interrupt_agent with the single agent parameter and current-turn wording', async () => {
+  it('registers interrupt_agent with agent and optional cascade parameters and current-turn wording', async () => {
     const { ctx } = await setup([])
     const schemas = ctx.tools.schemas().filter(schema => schema.name === 'interrupt_agent')
     expect(schemas).toHaveLength(1)
-    const props = (schemas[0]!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props)).toEqual(['agent'])
+    const props = (schemas[0]!.parameters as { properties?: Record<string, { type?: string }> }).properties ?? {}
+    expect(Object.keys(props)).toEqual(['agent', 'cascade'])
+    expect(props.cascade?.type).toBe('boolean')
     expect(schemas[0]!.description).toContain('stop its current work')
     expect(schemas[0]!.description).toContain('send_message')
+    expect(schemas[0]!.description).toContain('cascade')
   })
 
   it('interrupts a running direct child with the parent cause, parking its queue', async () => {
@@ -692,5 +694,118 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const result = await callTool(ctx, 'interrupt_agent', { agent: 'x' })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('requires a calling agent')
+  })
+
+  it('cascades interrupt_agent leaf-to-root across live descendants by default while leaving siblings running', async () => {
+    const releaseBranch = Promise.withResolvers<undefined>()
+    const releaseLeaf = Promise.withResolvers<undefined>()
+    const releaseSibling = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('branch'), gate: releaseBranch.promise },
+      { chunks: textResponse('sibling'), gate: releaseSibling.promise },
+      { chunks: textResponse('leaf'), gate: releaseLeaf.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const branch = await ctx.subagents.startActivation({
+      delivery: 'parent',
+      provider: 'spawn',
+      name: 'branch',
+      label: 'branch',
+      prompt: [{ type: 'text', text: 'branch' }],
+      parent,
+      signal: testToolSignal,
+    })
+    const sibling = await ctx.subagents.startActivation({
+      delivery: 'parent',
+      provider: 'spawn',
+      name: 'sibling',
+      label: 'sibling',
+      prompt: [{ type: 'text', text: 'sibling' }],
+      parent,
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    const branchAgent = ctx.agents.get(branch.childId)!
+    const leaf = await ctx.subagents.startActivation({
+      delivery: 'parent',
+      provider: 'spawn',
+      name: 'leaf',
+      label: 'leaf',
+      prompt: [{ type: 'text', text: 'leaf' }],
+      parent: branchAgent,
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(3) })
+    const leafAgent = ctx.agents.get(leaf.childId)!
+    const siblingAgent = ctx.agents.get(sibling.childId)!
+
+    const order: string[] = []
+    const origBranchCancel = branchAgent.cancel.bind(branchAgent)
+    const origLeafCancel = leafAgent.cancel.bind(leafAgent)
+    vi.spyOn(branchAgent, 'cancel').mockImplementation((reason, options) => {
+      order.push('branch')
+      origBranchCancel(reason, options)
+    })
+    vi.spyOn(leafAgent, 'cancel').mockImplementation((reason, options) => {
+      order.push('leaf')
+      origLeafCancel(reason, options)
+    })
+    const siblingCancel = vi.spyOn(siblingAgent, 'cancel')
+
+    const result = await callTool(ctx, 'interrupt_agent', { agent: 'branch' }, parent)
+    expect(result.isError).toBe(false)
+    expect(order).toEqual(['leaf', 'branch'])
+    expect(siblingCancel).not.toHaveBeenCalled()
+
+    releaseLeaf.resolve(undefined)
+    releaseBranch.resolve(undefined)
+    releaseSibling.resolve(undefined)
+    await waitNoActivation(ctx, leaf.childId)
+    await waitNoActivation(ctx, branch.childId)
+    await waitNoActivation(ctx, sibling.childId)
+  })
+
+  it('honors cascade: false in interrupt_agent so nested descendants keep running', async () => {
+    const releaseBranch = Promise.withResolvers<undefined>()
+    const releaseLeaf = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('branch'), gate: releaseBranch.promise },
+      { chunks: textResponse('leaf'), gate: releaseLeaf.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const branch = await ctx.subagents.startActivation({
+      delivery: 'parent',
+      provider: 'spawn',
+      name: 'branch',
+      label: 'branch',
+      prompt: [{ type: 'text', text: 'branch' }],
+      parent,
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const branchAgent = ctx.agents.get(branch.childId)!
+    const leaf = await ctx.subagents.startActivation({
+      delivery: 'parent',
+      provider: 'spawn',
+      name: 'leaf',
+      label: 'leaf',
+      prompt: [{ type: 'text', text: 'leaf' }],
+      parent: branchAgent,
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    const leafAgent = ctx.agents.get(leaf.childId)!
+    const branchCancel = vi.spyOn(branchAgent, 'cancel')
+    const leafCancel = vi.spyOn(leafAgent, 'cancel')
+
+    const result = await callTool(ctx, 'interrupt_agent', { agent: 'branch', cascade: false }, parent)
+    expect(result.isError).toBe(false)
+    expect(branchCancel).toHaveBeenCalledTimes(1)
+    expect(leafCancel).not.toHaveBeenCalled()
+
+    releaseBranch.resolve(undefined)
+    releaseLeaf.resolve(undefined)
+    await waitNoActivation(ctx, leaf.childId)
+    await waitNoActivation(ctx, branch.childId)
   })
 })

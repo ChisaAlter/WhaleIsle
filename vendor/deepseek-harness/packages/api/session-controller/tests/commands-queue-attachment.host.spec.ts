@@ -296,6 +296,33 @@ describe('Session queue commands', () => {
     await ctx.fiber.dispose()
   })
 
+  it('bounds a hanging session/before-cancel listener to 3000ms so user cancel still fires', async () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, controller, agent, cancel } = await commandHarness()
+      ctx.on('session/before-cancel', () => new Promise(() => {}))
+      const cancellation = controller.cancel({ sessionId: agent.id })
+      await vi.advanceTimersByTimeAsync(2_999)
+      expect(cancel).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await cancellation).toEqual({ accepted: true })
+      expect(cancel).toHaveBeenCalledExactlyOnceWith({ kind: 'user' }, { keepInbox: true })
+      await ctx.fiber.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('isolates a rejecting session/before-cancel listener so ordinary cancel still completes', async () => {
+    const { ctx, controller, agent, cancel } = await commandHarness()
+    ctx.on('session/before-cancel', async () => {
+      throw new Error('plugin hook exploded')
+    })
+    expect(await controller.cancel({ sessionId: agent.id })).toEqual({ accepted: true })
+    expect(cancel).toHaveBeenCalledExactlyOnceWith({ kind: 'user' }, { keepInbox: true })
+    await ctx.fiber.dispose()
+  })
+
   it.each(['continuable', 'seeded-continuable'] as const)(
     'mutates both inbox destinations of a live %s child while its parent is offline',
     async (childMode) => {

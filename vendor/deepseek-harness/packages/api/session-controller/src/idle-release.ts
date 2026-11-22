@@ -107,15 +107,14 @@ export class IdleSessionRelease {
   }
 
   private async release(id: SessionId, handle: AgentHandle): Promise<void> {
-    this.lifecycle.releasingIds.add(id)
-    try {
-      await handle.dispose()
-      this.ctx.logger.info(`session-controller: released idle session "${id}"`)
-    } catch (error: unknown) {
-      this.ctx.logger.warn(`session-controller: idle release of "${id}" failed: ${String(error)}`)
-    } finally {
-      this.lifecycle.releasingIds.delete(id)
-    }
+    await this.lifecycle.trackRelease(id, (async () => {
+      try {
+        await handle.dispose()
+        this.ctx.logger.info(`session-controller: released idle session "${id}"`)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`session-controller: idle release of "${id}" failed: ${String(error)}`)
+      }
+    })())
   }
 
   /** Whether the exact retained Agent is an ordinary, quiescent, unwatched Session. */

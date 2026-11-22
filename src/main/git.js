@@ -63,7 +63,7 @@ const {
   touchReadContext,
   invalidateReadContext,
 } = require('./git-read-context');
-const { parseUnifiedDiff, gitDiff } = require('./git-diff');
+const { parseUnifiedDiff, gitDiff, gitStagePatch, gitUnstagePatch } = require('./git-diff');
 const { readPrTemplate, resolvePrBaseBranch, setGhDefaultBranchResolver } = require('./git-templates');
 
 /**
@@ -1363,8 +1363,8 @@ module.exports = {
   gitCreateChangeRequest,
   gitPublishRepository,
   openWorkspacePath,
-  gitStage,
-  gitUnstage,
+  gitStage, gitStagePatch,
+  gitUnstage, gitUnstagePatch,
   gitDiscard,
   gitStatusEntries,
   gitBranchList,

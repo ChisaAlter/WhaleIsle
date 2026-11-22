@@ -16,7 +16,7 @@ describe('provider retry policy', () => {
     expect(policy).toEqual({
       mode: 'normal',
       maxRetries: 5,
-      retryableCodes: ['EMPTY_RESPONSE', 'MALFORMED_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT'],
+      retryableCodes: ['EMPTY_RESPONSE', 'MALFORMED_RESPONSE', 'RATE_LIMIT', 'SERVER', 'STREAM_CLOSED', 'TIMEOUT', 'TRANSPORT'],
       initialDelayMs: 500,
       maxDelayMs: 10_000,
       jitterRatio: 0.1,
@@ -112,7 +112,7 @@ describe('provider retry policy', () => {
     expect(RetryPolicySchema({ mode: 'normal', retryableCodes: ['X'], backoff: { initialDelayMs: Number.MIN_VALUE } }))
       .toMatchObject({ retryableCodes: ['X'], backoff: { initialDelayMs: Number.MIN_VALUE } })
     expect(RetryPolicySchema({ mode: 'normal' })).toMatchObject({
-      retryableCodes: ['EMPTY_RESPONSE', 'MALFORMED_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT'],
+      retryableCodes: ['EMPTY_RESPONSE', 'MALFORMED_RESPONSE', 'RATE_LIMIT', 'SERVER', 'STREAM_CLOSED', 'TIMEOUT', 'TRANSPORT'],
     })
   })
 
@@ -131,9 +131,9 @@ describe('provider retry policy', () => {
     expect(restored({ mode: 'normal', retryableCodes: ['SERVER', 'Overloaded_529'] }))
       .toMatchObject({ retryableCodes: ['SERVER', 'Overloaded_529'] })
     expect(() => restored({ mode: 'normal', retryableCodes: [''] })).toThrow()
-    // Being a choice does not make a code retried by default.
+    // Default retryable codes include STREAM_CLOSED alongside TRANSPORT/TIMEOUT.
     expect(RETRY_CODE_CHOICES).toContain('STREAM_CLOSED')
     const defaults = resolveRetryPolicy(undefined, 'provider.retryPolicy')
-    expect(defaults.mode === 'normal' ? defaults.retryableCodes : []).not.toContain('STREAM_CLOSED')
+    expect(defaults.mode === 'normal' ? defaults.retryableCodes : []).toContain('STREAM_CLOSED')
   })
 })

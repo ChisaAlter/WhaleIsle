@@ -22,22 +22,22 @@ import * as LspLocal from '@deepseek-ai/dsh-lsp-stdio'
 const serverCommand = process.platform === 'win32'
   ? process.execPath
   : join(
-      fileURLToPath(new URL('..', import.meta.url)),
-      'node_modules',
-      '.bin',
-      'typescript-language-server',
-    )
+    fileURLToPath(new URL('..', import.meta.url)),
+    'node_modules',
+    '.bin',
+    'typescript-language-server',
+  )
 const serverArgs = process.platform === 'win32'
   ? [
-      join(
-        fileURLToPath(new URL('..', import.meta.url)),
-        'node_modules',
-        'typescript-language-server',
-        'lib',
-        'cli.mjs',
-      ),
-      '--stdio',
-    ]
+    join(
+      fileURLToPath(new URL('..', import.meta.url)),
+      'node_modules',
+      'typescript-language-server',
+      'lib',
+      'cli.mjs',
+    ),
+    '--stdio',
+  ]
   : ['--stdio']
 
 let root: string
@@ -79,6 +79,7 @@ beforeAll(async () => {
         command: serverCommand,
         args: serverArgs,
         extensionToLanguage: { '.ts': 'typescript', '.tsx': 'typescriptreact' },
+        diagnosticsWaitMs: 5_000,
       },
     },
   })
@@ -130,6 +131,22 @@ describe('real typescript-language-server', () => {
     if (result.kind === 'hover') {
       expect(result.hover).not.toBeNull()
       expect(result.hover?.contents).toContain('Circle')
+    }
+  }, 60_000)
+
+  it('captures publishDiagnostics for type errors and clears them after didChange fix', async () => {
+    await writeFile(join(ws, 'broken.ts'), 'export const bad: number = "not a number"\n')
+    const initial = await ctx.lsp.query({ operation: 'diagnostics', filePath: 'broken.ts', workspaceRoot: ws })
+    expect(initial.kind).toBe('diagnostics')
+    if (initial.kind === 'diagnostics') {
+      expect(initial.diagnostics.some(d => d.severity === 'error')).toBe(true)
+    }
+
+    await writeFile(join(ws, 'broken.ts'), 'export const bad: number = 42\n')
+    const fixed = await ctx.lsp.query({ operation: 'diagnostics', filePath: 'broken.ts', workspaceRoot: ws })
+    expect(fixed.kind).toBe('diagnostics')
+    if (fixed.kind === 'diagnostics') {
+      expect(fixed.diagnostics).toEqual([])
     }
   }, 60_000)
 })

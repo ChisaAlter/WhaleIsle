@@ -36,13 +36,16 @@ import {
   probeNoFollow,
   readForEdit,
   readByteWindow,
+  readExistingTextFormat,
   readTextForDiff,
   readWholeBytes,
   readWholeText,
   resolveLocalTarget,
   restoreLineEndings,
+  restoreUtf8Bom,
   removeFile,
   streamWholeText,
+  stripLeadingUtf8Bom,
   writeFileAtomic,
 } from './fsio.ts'
 import type { FsIoInternals, PathInfo } from './fsio.ts'
@@ -232,7 +235,13 @@ export class LocalFileSystem extends FileSystem {
       const before = diffable
         ? await readTextForDiff(target.targetKey, this.config.diffBasisMaxBytes, signal)
         : null
-      await writeFileAtomic(target.targetKey, content, existing?.mode, signal, this.internals,
+      const existingFormat = existing !== null
+        ? await readExistingTextFormat(target.targetKey, signal)
+        : undefined
+      const diskContent = existingFormat !== undefined
+        ? restoreUtf8Bom(restoreLineEndings(content, existingFormat.lineEndings), existingFormat.hasBom)
+        : content
+      await writeFileAtomic(target.targetKey, diskContent, existing?.mode, signal, this.internals,
         { displayPath: target.displayPath, createIfAbsent: expected?.kind === 'createIfAbsent' })
       const after = await probe(target.targetKey)
       return {
@@ -242,7 +251,7 @@ export class LocalFileSystem extends FileSystem {
         // LF-normalized to share the diff basis with `before` (also LF): a CRLF
         // overwrite must not read as every line changed. Line-ending restoration
         // is a storage detail the applied-hunk diff ignores.
-        after: normalizeLineEndings(content),
+        after: normalizeLineEndings(existingFormat?.hasBom ? stripLeadingUtf8Bom(content) : content),
       }
     })
   }
@@ -269,7 +278,7 @@ export class LocalFileSystem extends FileSystem {
 
       const original = await readForEdit(target.targetKey, target.displayPath, signal)
       const edited = applyLiteralEdit(original.content, edit.oldString, edit.newString, edit.replaceAll, target.displayPath)
-      const content = restoreLineEndings(edited.content, original.lineEndings)
+      const content = restoreUtf8Bom(restoreLineEndings(edited.content, original.lineEndings), original.hasBom)
       await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals, { displayPath: target.displayPath })
 
       const after = await probe(target.targetKey)
@@ -290,8 +299,14 @@ export class LocalFileSystem extends FileSystem {
       const existing = await this.requireFile(target, expected, 'patch')
       const original = await readForEdit(target.targetKey, target.displayPath, signal)
       const after = this.patchContent(target, original.content, hunks)
-      await writeFileAtomic(target.targetKey, restoreLineEndings(after, original.lineEndings), existing.mode, signal, this.internals,
-        { displayPath: target.displayPath })
+      await writeFileAtomic(
+        target.targetKey,
+        restoreUtf8Bom(restoreLineEndings(after, original.lineEndings), original.hasBom),
+        existing.mode,
+        signal,
+        this.internals,
+        { displayPath: target.displayPath },
+      )
       return { version: this.versionAfterWrite(await probe(target.targetKey), target), before: original.content, after }
     })
   }

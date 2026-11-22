@@ -121,12 +121,19 @@ export function apply(ctx: Context, config: Config = {}): void {
     description:
       'Ask a subagent to stop its current work. This call returns without waiting for it to stop. '
       + 'You can continue a local subagent\'s conversation later with send_message. '
-      + 'External executions stop permanently and cannot receive follow-ups. Subagents it started will keep running.',
+      + 'External executions stop permanently and cannot receive follow-ups. '
+      + 'By default, live descendants started by the target are also interrupted; pass cascade: false to leave them running.',
     parameters: {
       agent: {
         type: 'string',
         required: true,
         description: 'The name of an agent created under you: your direct child or a deeper descendant.',
+      },
+      cascade: {
+        type: 'boolean',
+        description:
+          'Whether to also interrupt live descendants started by the target agent (default true). '
+          + 'Pass false to interrupt only the target agent while leaving its descendants running.',
       },
     },
     output: {
@@ -151,7 +158,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       const targetId = await ctx.subagents.resolveName(caller, args.agent, exec.signal)
       // The service authorizes the exact live caller against the target's
       // recorded lineage; the tool adds no authority of its own.
-      ctx.subagents.interrupt(targetId, { kind: 'ancestor', agent: caller })
+      ctx.subagents.interrupt(
+        targetId,
+        { kind: 'ancestor', agent: caller },
+        args.cascade === undefined ? undefined : { cascade: args.cascade },
+      )
       return { accepted: true }
     },
   }))

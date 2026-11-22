@@ -598,16 +598,16 @@ describe('reconnect supervisor', () => {
     expect(mockConnect).toHaveBeenCalledTimes(1)
   })
 
-  it('reconnect disabled keeps the registered tools and reports manual recovery', async () => {
+  it('reconnect disabled unregisters stale tools immediately and reports manual recovery', async () => {
     const { errors } = captureLogs(ctx)
     await apply(ctx, stdioConfig({ enabled: false }))
     await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
 
     instances[0]!.transport?.onclose?.()
-    await sleep(30)
+    await vi.waitFor(() => {
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+    })
     expect(mockConnect).toHaveBeenCalledTimes(1)
-    // Pre-reconnect contract: the generation stays registered until disposal.
-    expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     expect(errors.some(line => line.includes('connection lost and reconnect is disabled'))).toBe(true)
   })
   it('reconnect disabled after a failed initial connect reports no registered tools', async () => {
@@ -746,6 +746,79 @@ describe('reconnect supervisor', () => {
     const staleHandler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
     staleHandler()
     expect(mockListTools).toHaveBeenCalledTimes(listCalls)
+  })
+
+  it('clears tools immediately upon entering reconnecting state', async () => {
+    await apply(ctx, stdioConfig({ initialDelayMs: 500, maxDelayMs: 500, maxAttempts: 2 }))
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+
+    instances[0]!.transport?.onclose?.()
+    await vi.waitFor(() => {
+      expect(connectionStatusOf(ctx.fiber)?.current()).toMatchObject({ state: 'reconnecting' })
+    })
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+  })
+
+  it('resets closureFailure on explicit reconnect so a prior unclosed generation does not brick recovery', async () => {
+    vi.useFakeTimers()
+    try {
+      const status = new McpStatusCell(() => {})
+      mockConnect.mockRejectedValueOnce(new Error('initialize failed'))
+      mockClose.mockResolvedValueOnce(undefined)
+      const handle = startConnection(ctx, stdioConfig({ initialDelayMs: 2, maxDelayMs: 8, maxAttempts: 2 }), resolveReconnectPolicy(undefined, 'test'), status)
+      await vi.advanceTimersByTimeAsync(5_100)
+      await handle.ready
+      expect(status.current()).toMatchObject({ state: 'failed', reason: 'unclosed-generation' })
+
+      // Restore healthy connect/close behavior and explicitly reconnect.
+      mockConnect.mockResolvedValue(undefined)
+      mockClose.mockImplementation(function (this: { transport?: Transport }) {
+        this.transport?.onclose?.()
+        return Promise.resolve()
+      })
+      await handle.reconnect()
+      expect(status.current()).toMatchObject({ state: 'connected', toolCount: 1 })
+      expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
+      await handle.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('serializes concurrent reconnect calls without starting overlapping generations', async () => {
+    const status = new McpStatusCell(() => {})
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'test'), status)
+    await handle.ready
+    expect(instances).toHaveLength(1)
+
+    const closeGate: PromiseWithResolvers<void> = Promise.withResolvers()
+    mockClose.mockImplementationOnce(function (this: { transport?: Transport }) {
+      return closeGate.promise.then(() => {
+        this.transport?.onclose?.()
+      })
+    })
+    const connectGate: PromiseWithResolvers<void> = Promise.withResolvers()
+    mockConnect.mockImplementationOnce(() => connectGate.promise)
+
+    const p1 = handle.reconnect()
+    const p2 = handle.reconnect()
+    await sleep(10)
+    expect(instances).toHaveLength(1)
+
+    closeGate.resolve()
+    await vi.waitFor(() => { expect(instances).toHaveLength(2) })
+    const p3 = handle.reconnect()
+    expect(instances).toHaveLength(2)
+
+    connectGate.resolve()
+    await Promise.all([p1, p2, p3])
+    expect(instances).toHaveLength(2)
+    expect(status.current()).toMatchObject({ state: 'connected', toolCount: 1 })
+
+    // A subsequent sequential reconnect after settling runs a fresh generation.
+    await handle.reconnect()
+    expect(instances).toHaveLength(3)
+    await handle.dispose()
   })
 })
 

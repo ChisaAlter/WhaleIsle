@@ -412,8 +412,25 @@ describe('provider-routed retry policy', () => {
     expect(accepted.requests).toHaveLength(2)
 
     await context.fiber.dispose()
+    const aboveMaxDelayAccepted = new ScriptedAdapter([
+      new LlmError('wait past local maxDelayMs', 'RATE_LIMIT', { providerRetryAfterMs: 30_000 }),
+      textResponse('done after 30s'),
+    ])
+    ;({ ctx: context } = await harness(aboveMaxDelayAccepted, { mock: normalConfig({
+      backoff: { initialDelayMs: 500, maxDelayMs: 10_000, jitterRatio: 0 },
+    }) }))
+    const midAgent = await context.agentLoop.create(SessionId('retry-after-30s-accepted'), { provider: 'mock', model: 'mock' })
+    const midScheduled = waitForRetry(context, midAgent, 1)
+    midAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    expect((await midScheduled).data.delayMs).toBe(30_000)
+    const midIdle = waitForIdle(context, midAgent)
+    await vi.advanceTimersByTimeAsync(30_000)
+    await midIdle
+    expect(aboveMaxDelayAccepted.requests).toHaveLength(2)
+
+    await context.fiber.dispose()
     const rejected = new ScriptedAdapter([
-      new LlmError('wait too long', 'RATE_LIMIT', { providerRetryAfterMs: 10_001 }),
+      new LlmError('wait too long', 'RATE_LIMIT', { providerRetryAfterMs: 60_001 }),
     ])
     ;({ ctx: context } = await harness(rejected))
     const rejectedAgent = await context.agentLoop.create(SessionId('retry-after-rejected'), { provider: 'mock', model: 'mock' })
@@ -427,7 +444,7 @@ describe('provider-routed retry policy', () => {
   it('uses local jittered backoff when always mode receives an over-cap Retry-After', async () => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
-      new LlmError('wait too long', 'AUTH', { providerRetryAfterMs: 10 }),
+      LlmError.fromFailure({ message: 'wait too long', code: 'PROVIDER_BUSY', providerRetryAfterMs: 10 }),
       textResponse('done'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig({
@@ -492,8 +509,8 @@ describe('provider-routed retry policy', () => {
   it('selects policy by the failed request provider', async () => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
-      new LlmError('mock auth failed', 'AUTH'),
-      new LlmError('other auth failed', 'AUTH'),
+      LlmError.fromFailure({ message: 'mock non-retryable failed', code: 'PROVIDER_BUSY' }),
+      LlmError.fromFailure({ message: 'other non-normal failed', code: 'PROVIDER_BUSY' }),
       textResponse('other recovered'),
     ])
     ;({ ctx: context } = await harness(adapter, {
@@ -531,7 +548,7 @@ describe('provider-routed retry policy', () => {
   it('selects an always policy from the recorded provider', async () => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
-      new LlmError('rerouted auth failed', 'AUTH'),
+      LlmError.fromFailure({ message: 'rerouted non-normal failed', code: 'PROVIDER_BUSY' }),
       textResponse('rerouted recovery'),
     ])
     ;({ ctx: context } = await harness(adapter, {
@@ -615,13 +632,13 @@ describe('provider-routed retry policy', () => {
         entered.resolve(undefined)
         await release.promise
         if (failureKind === 'thrown') {
-          throw new LlmError('old route auth failed', 'AUTH')
+          throw LlmError.fromFailure({ message: 'old route failed', code: 'PROVIDER_BUSY' })
         }
         yield {
           type: 'finish',
           reason: {
             kind: 'error',
-            failure: { message: 'old route auth failed', code: 'AUTH' },
+            failure: { message: 'old route failed', code: 'PROVIDER_BUSY' },
           },
         }
       })()])
@@ -643,7 +660,7 @@ describe('provider-routed retry policy', () => {
 
       mounted.disposeAdapter()
       const replacement = new ScriptedAdapter([
-        new LlmError('replacement failed', 'AUTH'),
+        LlmError.fromFailure({ message: 'replacement failed', code: 'PROVIDER_BUSY' }),
         textResponse('replacement recovered'),
       ])
       replacement.configureRetryPolicies({ mock: alwaysConfig({
@@ -686,10 +703,10 @@ describe('provider-routed retry policy', () => {
   it('keeps always mode unbounded while preserving cancellable jittered backoff', async () => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
-      new LlmError('auth one', 'AUTH'),
-      new LlmError('auth two', 'AUTH'),
-      new LlmError('auth three', 'AUTH'),
-      new LlmError('auth four', 'AUTH'),
+      LlmError.fromFailure({ message: 'busy one', code: 'PROVIDER_BUSY' }),
+      LlmError.fromFailure({ message: 'busy two', code: 'PROVIDER_BUSY' }),
+      LlmError.fromFailure({ message: 'busy three', code: 'PROVIDER_BUSY' }),
+      LlmError.fromFailure({ message: 'busy four', code: 'PROVIDER_BUSY' }),
       textResponse('eventually recovered'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig({
@@ -727,7 +744,7 @@ describe('provider-routed retry policy', () => {
     vi.useFakeTimers()
     const diagnostic = 'private provider diagnostic must not enter context'
     const adapter = new ScriptedAdapter([
-      partialToolFailure(new LlmError(diagnostic, 'AUTH')),
+      partialToolFailure(LlmError.fromFailure({ message: diagnostic, code: 'PROVIDER_BUSY' })),
       textResponse('recovered without leaked context'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig({
@@ -782,7 +799,7 @@ describe('provider-routed retry policy', () => {
   ])('falls back to always retry when downstream recovery throws %s', async (_kind, failDownstream) => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
-      new LlmError('requires fallback', 'AUTH'),
+      LlmError.fromFailure({ message: 'requires fallback', code: 'PROVIDER_BUSY' }),
       textResponse('always recovered'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig({
@@ -984,7 +1001,7 @@ describe('provider-routed retry policy', () => {
   it('lets turn cancellation win during backoff without opening another step', async () => {
     vi.useFakeTimers()
     const adapter = new ScriptedAdapter([
-      new LlmError('permanent', 'AUTH'),
+      LlmError.fromFailure({ message: 'transient stall', code: 'PROVIDER_BUSY' }),
       textResponse('must not run'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig() }))
@@ -1070,5 +1087,98 @@ describe('provider-routed retry policy', () => {
     await expect(async () => {
       await retry.apply(ctx, { retryPolciy: {} } as unknown as retryConfig)
     }).rejects.toThrow(/unknown key "retryPolciy"/)
+  })
+
+  it.each([
+    'AUTH',
+    'INVALID_REQUEST',
+    'QUOTA',
+    'ACCOUNT_QUOTA',
+    'UNSUPPORTED_CONTENT',
+    'CONTEXT_WINDOW_EXCEEDED',
+    'HTTP_400',
+    'HTTP_401',
+    'HTTP_402',
+    'HTTP_403',
+  ] as const)('circuit-breaks fatal %s errors in always mode when downstream does not recover', async (code) => {
+    vi.useFakeTimers()
+    const adapter = new ScriptedAdapter([
+      new LlmError(`fatal ${code}`, code),
+      textResponse('must not retry'),
+    ])
+    ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig({
+      initialDelayMs: 1,
+      maxDelayMs: 1,
+    }) }))
+    const agent = await context.agentLoop.create(SessionId(`retry-always-fatal-${code}`), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const idle = waitForIdle(context, agent)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await idle
+
+    expect(adapter.requests).toHaveLength(1)
+    expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end',
+      data: { reason: { kind: 'error', error: { code } } },
+    })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('circuit-breaks fatal errors in always mode even when downstream throws', async () => {
+    vi.useFakeTimers()
+    const adapter = new ScriptedAdapter([
+      new LlmError('401 bad key', 'AUTH'),
+      textResponse('must not retry'),
+    ])
+    ;({ ctx: context } = await harness(adapter, { mock: alwaysConfig({
+      initialDelayMs: 1,
+      maxDelayMs: 1,
+    }) }))
+    context.on('agent/request-error', async () => {
+      throw new Error('downstream exploded')
+    })
+    const agent = await context.agentLoop.create(SessionId('retry-always-fatal-downstream-error'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const idle = waitForIdle(context, agent)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await idle
+
+    expect(adapter.requests).toHaveLength(1)
+    expect(agent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('honors Retry-After up to custom maxRetryAfterMs in normal mode and delegates beyond it', async () => {
+    vi.useFakeTimers()
+    const accepted = new ScriptedAdapter([
+      new LlmError('wait 25s', 'RATE_LIMIT', { providerRetryAfterMs: 25_000 }),
+      textResponse('recovered'),
+    ])
+    ;({ ctx: context } = await harness(accepted, { mock: normalConfig() }, undefined, { maxRetryAfterMs: 30_000 }))
+    const okAgent = await context.agentLoop.create(SessionId('retry-custom-cap-ok'), { provider: 'mock', model: 'mock' })
+    const scheduled = waitForRetry(context, okAgent, 1)
+    okAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    expect((await scheduled).data.delayMs).toBe(25_000)
+    const okIdle = waitForIdle(context, okAgent)
+    await vi.advanceTimersByTimeAsync(25_000)
+    await okIdle
+    expect(accepted.requests).toHaveLength(2)
+
+    await context.fiber.dispose()
+    const rejected = new ScriptedAdapter([
+      new LlmError('wait 35s', 'RATE_LIMIT', { providerRetryAfterMs: 35_000 }),
+    ])
+    ;({ ctx: context } = await harness(rejected, { mock: normalConfig() }, undefined, { maxRetryAfterMs: 30_000 }))
+    const badAgent = await context.agentLoop.create(SessionId('retry-custom-cap-over'), { provider: 'mock', model: 'mock' })
+    const badIdle = waitForIdle(context, badAgent)
+    badAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await badIdle
+    expect(rejected.requests).toHaveLength(1)
+    expect(badAgent.session.snapshotEvents().some(event => event.type === 'llm/retry')).toBe(false)
   })
 })

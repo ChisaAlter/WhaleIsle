@@ -55,10 +55,30 @@ export interface WireHover {
 /** The legacy enum form of `textDocumentSync` (`0` None, `1` Full, `2` Incremental). */
 export type WireTextDocumentSyncKind = 0 | 1 | 2
 
-/** The options form of `textDocumentSync` (`{ openClose, change }`). */
+/** A `TextDocumentSyncOptions` record (`{ openClose, change }`). */
 export interface WireTextDocumentSyncOptions {
   readonly openClose?: boolean
   readonly change?: WireTextDocumentSyncKind
+  readonly save?: boolean | Record<string, unknown>
+}
+
+/** Numeric LSP `DiagnosticSeverity` (`1` Error .. `4` Hint). */
+export type WireDiagnosticSeverity = 1 | 2 | 3 | 4
+
+/** One wire `Diagnostic` entry inside `textDocument/publishDiagnostics`. */
+export interface WireDiagnostic {
+  readonly range: WireRange
+  readonly severity?: number
+  readonly code?: string | number
+  readonly source?: string
+  readonly message: string
+}
+
+/** The `textDocument/publishDiagnostics` notification payload. */
+export interface WirePublishDiagnosticsParams {
+  readonly uri: string
+  readonly version?: number
+  readonly diagnostics: readonly WireDiagnostic[]
 }
 
 /** A `ServerCapabilities.provider` slot: a boolean or an options object (both mean "supported"). */
@@ -72,4 +92,30 @@ export interface WireServerCapabilities {
   readonly referencesProvider?: WireProviderCapability
   readonly implementationProvider?: WireProviderCapability
   readonly hoverProvider?: WireProviderCapability
+  readonly diagnosticProvider?: WireProviderCapability
 }
+
+/**
+ * The client capabilities advertised at `initialize`: UTF-16 positions, workspace folders and
+ * configuration, `publishDiagnostics` notification support (with version support), markdown/
+ * plaintext hover, and link support for definition/implementation. No dynamic registration; the
+ * server's returned capabilities are authoritative.
+ */
+export const CLIENT_CAPABILITIES = {
+  general: { positionEncodings: ['utf-16'] },
+  workspace: { workspaceFolders: true, configuration: true },
+  textDocument: {
+    synchronization: {
+      dynamicRegistration: false,
+      didSave: true,
+    },
+    publishDiagnostics: {
+      relatedInformation: true,
+      versionSupport: true,
+    },
+    hover: { contentFormat: ['markdown', 'plaintext'] },
+    definition: { linkSupport: true },
+    implementation: { linkSupport: true },
+    references: {},
+  },
+} as const

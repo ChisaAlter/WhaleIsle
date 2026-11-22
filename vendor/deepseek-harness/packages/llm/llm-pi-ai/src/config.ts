@@ -47,6 +47,12 @@ import { buildProvider, supportedProtocols } from './provider.ts'
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /**
+ * Default total wall-clock timeout in milliseconds for one adapter request when
+ * `timeoutMs` is omitted. Explicit `0` disables the total wall-clock deadline.
+ */
+export const DEFAULT_TOTAL_REQUEST_TIMEOUT_MS = 600_000
+
+/**
  * Default request-level bound on base64-encoded image payload. Every image in
  * history is re-encoded into every request body, so an unbounded conversation
  * eventually exceeds a provider or gateway request-size cap and the session
@@ -75,7 +81,7 @@ export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 2048 * 2048
 export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 
 /** Context capacity assumed for a model neither configuration nor the catalog sizes. */
-export const DEFAULT_CONTEXT_WINDOW = 1_000_000
+export const DEFAULT_CONTEXT_WINDOW = 128_000
 
 /** Output capability assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_MAX_TOKENS = 128_000
@@ -171,7 +177,10 @@ export interface PiAiProviderProfile {
   cacheRetention?: CacheRetention
   /** Streaming transport preference. */
   transport?: Transport
-  /** HTTP/provider SDK timeout in milliseconds. */
+  /**
+   * Total wall-clock and HTTP/provider SDK request timeout in milliseconds
+   * (default `600_000`; set `0` to disable).
+   */
   timeoutMs?: number
   /** WebSocket connection timeout in milliseconds. */
   websocketConnectTimeoutMs?: number
@@ -216,6 +225,8 @@ export interface ResolvedPiAiProviderProfile
   displayName: string
   /** Validated credential reference, when one is configured. */
   apiKeyEnv?: CredentialRef
+  /** Resolved total wall-clock/SDK request timeout in ms (`0` disables total timeout). */
+  timeoutMs: number
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
@@ -313,6 +324,10 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
   forceAdaptiveThinking: z.boolean(),
   allowEmptySignature: z.boolean(),
   supportsStrictTools: z.boolean(),
+  supportsMidConvoSystemMessages: z.boolean(),
+  supportsMidConvoToolAdditions: z.boolean(),
+  supportsMidConvoToolChanges: z.boolean(),
+  supportsAdditionalTools: z.boolean(),
 })
 
 /**
@@ -371,7 +386,7 @@ const profile = z.object({
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
   transport: z.union(['sse', 'websocket', 'websocket-cached', 'auto']),
-  timeoutMs: z.natural(),
+  timeoutMs: z.number().step(1).min(0).max(MAX_TIMER_DELAY_MS),
   websocketConnectTimeoutMs: z.natural(),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
@@ -460,6 +475,12 @@ export function resolveProfiles(
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
     assertValidHeaders(provider, source.headers)
+    const timeoutMs = source.timeoutMs ?? DEFAULT_TOTAL_REQUEST_TIMEOUT_MS
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > MAX_TIMER_DELAY_MS) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" timeoutMs must be 0 (disabled) or a positive safe integer no greater than ${MAX_TIMER_DELAY_MS}`,
+      )
+    }
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)
       || streamIdleTimeoutMs <= 0
@@ -535,6 +556,7 @@ export function resolveProfiles(
       provider,
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
+      timeoutMs,
       streamIdleTimeoutMs,
       maxRequestImageBytes,
       maxRequestImages,

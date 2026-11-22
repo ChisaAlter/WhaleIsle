@@ -24,21 +24,34 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { abortable, abortError } from './abort.ts'
 import { canonicalizeWorkspace, readHostSource } from './host.ts'
 import type { HostWorkspace } from './host.ts'
-import { LspInstance } from './instance.ts'
+import {
+  DEFAULT_DIAGNOSTICS_WAIT_MS,
+  DEFAULT_MAX_OPEN_DOCUMENTS,
+  LspInstance,
+} from './instance.ts'
 import type { ConnectionSpawner } from './connection.ts'
 import type { InstanceSpec } from './instance.ts'
 
 export { canonicalizeWorkspace, readHostSource } from './host.ts'
 export { encodeMessage, MessageDecoder } from './framing.ts'
+export { CLIENT_CAPABILITIES } from './protocol.ts'
 export {
+  MAX_DIAGNOSTICS_PER_FILE,
   negotiatePositionEncoding,
+  normalizeDocumentUri,
   normalizeHover,
   normalizeLocations,
+  normalizePublishDiagnostics,
   requestMethod,
+  supportsDocumentChange,
   supportsOperation,
   supportsTransientOpen,
 } from './translate.ts'
-export { LspInstance } from './instance.ts'
+export {
+  DEFAULT_DIAGNOSTICS_WAIT_MS,
+  DEFAULT_MAX_OPEN_DOCUMENTS,
+  LspInstance,
+} from './instance.ts'
 export { LspConnection } from './connection.ts'
 
 /** Cordis plugin name for loader diagnostics. */
@@ -52,6 +65,8 @@ const DEFAULT_MAX_STDERR_BYTES = 1_000_000
 const DEFAULT_MAX_DOCUMENT_BYTES = 4_000_000
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000
 const DEFAULT_KILL_GRACE_MS = 2_000
+/** Default idle eviction timeout for pooled LSP instances (ms). */
+export const DEFAULT_IDLE_TIMEOUT_MS = 300_000
 
 /** One configured local language server and its host bounds. */
 export interface LspLocalServerConfig {
@@ -77,6 +92,14 @@ export interface LspLocalServerConfig {
   shutdownTimeoutMs?: number
   /** Request-cancel and SIGTERM→SIGKILL grace (ms). Default 2000. */
   killGraceMs?: number
+  /** Keep synchronized documents open in an LRU cache across queries. Default `true`. */
+  keepDocumentsOpen?: boolean
+  /** Maximum open documents retained in the per-instance LRU cache. Default 32. */
+  maxOpenDocuments?: number
+  /** Bounded wait (ms) for a fresh `publishDiagnostics` notification after sync. Default 1500. */
+  diagnosticsWaitMs?: number
+  /** Idle duration (ms) before an unused workspace LSP process is disposed. Default 300000. */
+  idleTimeoutMs?: number
 }
 
 /** Plugin configuration: provider id → local language-server configuration. */
@@ -101,6 +124,10 @@ const LspLocalServerConfig: z<LspLocalServerConfig> = z.object({
   maxDocumentBytes: z.number().default(DEFAULT_MAX_DOCUMENT_BYTES),
   shutdownTimeoutMs: z.number().max(MAX_TIMER_DELAY_MS).default(DEFAULT_SHUTDOWN_TIMEOUT_MS),
   killGraceMs: z.number().max(MAX_TIMER_DELAY_MS).default(DEFAULT_KILL_GRACE_MS),
+  keepDocumentsOpen: z.boolean().default(true),
+  maxOpenDocuments: z.number().default(DEFAULT_MAX_OPEN_DOCUMENTS),
+  diagnosticsWaitMs: z.number().max(MAX_TIMER_DELAY_MS).default(DEFAULT_DIAGNOSTICS_WAIT_MS),
+  idleTimeoutMs: z.number().max(MAX_TIMER_DELAY_MS).default(DEFAULT_IDLE_TIMEOUT_MS),
 })
 
 export const Config: z<Config> = z.object({
@@ -219,18 +246,28 @@ function validateServerConfig(providerId: string, resolved: ResolvedServerConfig
   // nonpositive value would let a server that ignores shutdown hang disposal forever. Fail at load.
   assertTimer(providerId, 'shutdownTimeoutMs', resolved.shutdownTimeoutMs)
   assertTimer(providerId, 'killGraceMs', resolved.killGraceMs)
+  assertTimer(providerId, 'idleTimeoutMs', resolved.idleTimeoutMs)
+  assertNonNegativeTimer(providerId, 'diagnosticsWaitMs', resolved.diagnosticsWaitMs)
   // Byte caps must be positive: a nonpositive stderr cap defeats the retained-tail bound
   // (`slice(-0)` keeps everything), `maxMessageBytes: 0` makes every response fatal, and a bad
   // document cap fails later in the read path instead of at load.
   assertPositiveInteger(providerId, 'maxStderrBytes', resolved.maxStderrBytes)
   assertPositiveInteger(providerId, 'maxMessageBytes', resolved.maxMessageBytes)
   assertPositiveInteger(providerId, 'maxDocumentBytes', resolved.maxDocumentBytes)
+  assertPositiveInteger(providerId, 'maxOpenDocuments', resolved.maxOpenDocuments)
 }
 
 /** Reject a timer value Node would clamp instead of scheduling as configured. */
 function assertTimer(providerId: string, name: string, value: number): void {
   if (!Number.isInteger(value) || value < 1 || value > MAX_TIMER_DELAY_MS) {
     throw new Error(`lsp-stdio: servers.${providerId}.${name} must be a positive integer no greater than ${MAX_TIMER_DELAY_MS}`)
+  }
+}
+
+/** Reject a non-integer, negative, or out-of-range wait timeout. */
+function assertNonNegativeTimer(providerId: string, name: string, value: number): void {
+  if (!Number.isInteger(value) || value < 0 || value > MAX_TIMER_DELAY_MS) {
+    throw new Error(`lsp-stdio: servers.${providerId}.${name} must be a non-negative integer no greater than ${MAX_TIMER_DELAY_MS}`)
   }
 }
 
@@ -247,10 +284,14 @@ class LocalLspProvider implements LspProvider {
   readonly extensionToLanguage: Readonly<Record<string, string>>
   /** One live instance per stable canonical workspace identity. */
   private readonly instances = new Map<WorkspaceKey, LspInstance>()
-  /** One complete source-read→open→query→close serialization tail per canonical workspace. */
+  /** One complete source-read→sync→query serialization tail per canonical workspace. */
   private readonly queues = new Map<WorkspaceKey, Promise<void>>()
   /** Workspace canonicalizations that have not entered a provider-owned queue yet. */
   private readonly workspaceLookups = new Set<Promise<void>>()
+  /** Idle eviction timers keyed by canonical workspace; cleared on activity or disposal. */
+  private readonly idleTimers = new Map<WorkspaceKey, ReturnType<typeof setTimeout>>()
+  /** In-flight disposals triggered by idle eviction so `disposeAll()` awaits quiescence. */
+  private readonly idleDisposals = new Set<Promise<void>>()
   private readonly lifetime = new AbortController()
   private disposed = false
 
@@ -341,6 +382,7 @@ class LocalLspProvider implements LspProvider {
 
   /** Serialize one complete query lifecycle for a canonical workspace. */
   private enqueue<T>(workspace: WorkspaceKey, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+    this.clearIdleTimer(workspace)
     const previous = this.queues.get(workspace) ?? Promise.resolve()
     const result = abortable(previous, signal).then(run)
     // The tail follows the actual prior work even when this caller aborts its wait. It never rejects,
@@ -348,9 +390,43 @@ class LocalLspProvider implements LspProvider {
     const tail = previous.then(() => result).then(() => undefined, () => undefined)
     this.queues.set(workspace, tail)
     void tail.then(() => {
-      if (this.queues.get(workspace) === tail) this.queues.delete(workspace)
+      if (this.queues.get(workspace) === tail) {
+        this.queues.delete(workspace)
+        const instance = this.instances.get(workspace)
+        if (!this.disposed && instance !== undefined && !instance.dead) {
+          this.armIdleTimer(workspace, instance)
+        }
+      }
     })
     return result
+  }
+
+  private clearIdleTimer(workspace: WorkspaceKey): void {
+    const existing = this.idleTimers.get(workspace)
+    if (existing !== undefined) {
+      clearTimeout(existing)
+      this.idleTimers.delete(workspace)
+    }
+  }
+
+  private armIdleTimer(workspace: WorkspaceKey, instance: LspInstance): void {
+    this.clearIdleTimer(workspace)
+    const timer = setTimeout(() => {
+      this.idleTimers.delete(workspace)
+      if (this.disposed || this.queues.has(workspace)) return
+      if (this.instances.get(workspace) !== instance) return
+      this.evictIfCurrent(workspace, instance)
+      const disposal = instance.dispose()
+        .catch(() => {
+          // Idle eviction teardown errors are contained so timer callbacks never trigger unhandledRejection.
+        })
+        .finally(() => {
+          this.idleDisposals.delete(disposal)
+        })
+      this.idleDisposals.add(disposal)
+    }, this.config.idleTimeoutMs)
+    timer.unref()
+    this.idleTimers.set(workspace, timer)
   }
 
   /** Return or synchronously publish the one instance for a canonical workspace. */
@@ -382,6 +458,9 @@ class LocalLspProvider implements LspProvider {
       maxStderrBytes: this.config.maxStderrBytes,
       shutdownTimeoutMs: this.config.shutdownTimeoutMs,
       killGraceMs: this.config.killGraceMs,
+      keepDocumentsOpen: this.config.keepDocumentsOpen,
+      maxOpenDocuments: this.config.maxOpenDocuments,
+      diagnosticsWaitMs: this.config.diagnosticsWaitMs,
     }
     return new LspInstance(spec, this.spawner)
   }
@@ -390,17 +469,22 @@ class LocalLspProvider implements LspProvider {
   async disposeAll(): Promise<void> {
     this.disposed = true
     this.lifetime.abort(new LspError('lsp-stdio provider is disposed', 'LSP_DISPOSED'))
+    for (const timer of this.idleTimers.values()) clearTimeout(timer)
+    this.idleTimers.clear()
     const live = [...this.instances.values()]
     const draining = [...this.queues.values()]
     const resolving = [...this.workspaceLookups]
+    const idleDisposals = [...this.idleDisposals]
     this.instances.clear()
     const results = await Promise.allSettled([
       ...live.map(instance => instance.dispose()),
       ...draining,
       ...resolving,
+      ...idleDisposals,
     ])
     this.queues.clear()
     this.workspaceLookups.clear()
+    this.idleDisposals.clear()
     throwTeardownFailures(results, 'lsp-stdio instance teardown failed')
   }
 }

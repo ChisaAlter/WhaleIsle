@@ -6,11 +6,11 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { AclWriteGrant, tempWriteSid, workspaceWriteSid } from '../src/index.ts'
@@ -660,4 +660,99 @@ TryOpen 'DIRECTORY' '${child}'
       expect(result.stderr).toContain('windows-acl-run: ')
     }
   }, 15_000)
+
+  it('repeatable --extra-dir and paired --extra-sid grant additional roots in both standalone and seam-managed runs', () => {
+    const ownedDirs: string[] = []
+    try {
+      const extraA = mkdtempSync(join(tmpdir(), 'dsh-acl-runner-extra-a-'))
+      const extraB = mkdtempSync(join(tmpdir(), 'dsh-acl-runner-extra-b-'))
+      ownedDirs.push(extraA, extraB)
+      const targetA = join(extraA, 'from-standalone.txt')
+      const targetB = join(extraB, 'from-standalone.txt')
+
+      // Standalone (agentless): repeatable --extra-dir without --extra-sid
+      const standalone = runRunner([
+        '--workspace', writableDir, '--temp', isolatedTemp, '--mode', 'workspace-write',
+        '--extra-dir', extraA, '--extra-dir', extraB,
+        '--', process.execPath, '-e',
+        "const fs = require('node:fs'); fs.writeFileSync(process.argv[1], 'a'); fs.writeFileSync(process.argv[2], 'b')",
+        targetA, targetB,
+      ])
+      expect(standalone.status, `stderr: ${standalone.stderr}`).toBe(0)
+      expect(readFileSync(targetA, 'utf8')).toBe('a')
+      expect(readFileSync(targetB, 'utf8')).toBe('b')
+
+      // Seam-managed: paired --extra-dir and --extra-sid
+      const wsSid = workspaceWriteSid(writableDir)
+      const sidA = workspaceWriteSid(extraA)
+      const sidB = workspaceWriteSid(extraB)
+      const tempSid = tempWriteSid(isolatedTemp)
+      const wsGrant = AclWriteGrant.create(wsSid)
+      const grantA = AclWriteGrant.create(sidA)
+      const grantB = AclWriteGrant.create(sidB)
+      const tempGrant = AclWriteGrant.create(tempSid)
+      wsGrant.add(writableDir, true)
+      grantA.add(extraA, true)
+      grantB.add(extraB, true)
+      tempGrant.add(isolatedTemp)
+      try {
+        const seamTargetA = join(extraA, 'from-seam.txt')
+        const seamTargetB = join(extraB, 'from-seam.txt')
+        const seam = runRunner([
+          '--workspace', writableDir, '--temp', isolatedTemp, '--mode', 'workspace-write',
+          '--write-sid', wsSid, '--temp-write-sid', tempSid,
+          '--extra-dir', extraA, '--extra-sid', sidA,
+          '--extra-dir', extraB, '--extra-sid', sidB,
+          '--', process.execPath, '-e',
+          "const fs = require('node:fs'); fs.writeFileSync(process.argv[1], 'sa'); fs.writeFileSync(process.argv[2], 'sb')",
+          seamTargetA, seamTargetB,
+        ])
+        expect(seam.status, `stderr: ${seam.stderr}`).toBe(0)
+        expect(readFileSync(seamTargetA, 'utf8')).toBe('sa')
+        expect(readFileSync(seamTargetB, 'utf8')).toBe('sb')
+      } finally {
+        tempGrant.dispose()
+        grantB.dispose()
+        grantA.dispose()
+        wsGrant.dispose()
+      }
+    } finally {
+      for (const dir of ownedDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  describe('extra-dir negative checks', () => {
+    const ownedDirs: string[] = []
+    afterEach(() => {
+      for (const dir of ownedDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+    })
+
+    it('runner rejects symlinks, unpaired --extra-sid, mismatched --extra-sid, and read-only --extra-sid', () => {
+      const extraDir = mkdtempSync(join(tmpdir(), 'dsh-acl-runner-neg-'))
+      const junctionParent = mkdtempSync(join(tmpdir(), 'dsh-acl-runner-junc-'))
+      ownedDirs.push(extraDir, junctionParent)
+      const junctionDir = join(junctionParent, 'extra-junction')
+      symlinkSync(extraDir, junctionDir, 'junction')
+      const writeSid = workspaceWriteSid(writableDir)
+      const tempSid = tempWriteSid(isolatedTemp)
+
+      const cases: string[][] = [
+        ['--mode', 'workspace-write', '--extra-dir', junctionDir],
+        ['--mode', 'workspace-write', '--extra-dir', join(junctionParent, 'missing-dir')],
+        ['--mode', 'workspace-write', '--extra-dir', extraDir, '--extra-sid', workspaceWriteSid(extraDir)],
+        ['--mode', 'workspace-write', '--write-sid', writeSid, '--temp-write-sid', tempSid, '--extra-dir', extraDir],
+        ['--mode', 'workspace-write', '--write-sid', writeSid, '--temp-write-sid', tempSid, '--extra-dir', extraDir, '--extra-sid', 'S-1-4-1-99'],
+        ['--mode', 'read-only', '--extra-dir', extraDir, '--extra-sid', workspaceWriteSid(extraDir)],
+      ]
+      for (const args of cases) {
+        const result = runRunner([
+          '--workspace', writableDir, '--temp', isolatedTemp,
+          ...args,
+          '--', process.execPath, '-e', 'process.exit(99)',
+        ])
+        expect(result.status, `args: ${args.join(' ')}\nstderr: ${result.stderr}`).toBe(127)
+        expect(result.stderr).toContain('windows-acl-run: ')
+      }
+    }, 30_000)
+  })
 })

@@ -203,6 +203,9 @@ export class ApiSessionAgentController {
   ): Promise<ApiSessionAgentResult> {
     const live = this.liveAgent(sessionId)
     if (live !== undefined) return live
+    await this.ctx.sessionLifecycle?.waitForRelease(sessionId)
+    const afterRelease = this.liveAgent(sessionId)
+    if (afterRelease !== undefined) return afterRelease
     const attached = this.ctx.sessions.get(sessionId)
     if (attached !== undefined && hasApiSessionSubagentOwner(attached)) {
       return { error: apiSessionSubagentOwnershipError(sessionId) }
@@ -311,7 +314,7 @@ export class ApiSessionAgentController {
 
   private liveAgent(sessionId: SessionId): ApiSessionAgentResult | undefined {
     const agent = this.ctx.agents.get(sessionId)
-    if (agent === undefined) return undefined
+    if (agent === undefined || this.ctx.sessionLifecycle?.releasingIds.has(sessionId)) return undefined
     return hasApiSessionSubagentOwner(agent.session)
       ? { error: apiSessionSubagentOwnershipError(sessionId) }
       : { agent }

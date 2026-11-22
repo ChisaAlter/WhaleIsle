@@ -224,9 +224,9 @@ describe('tool-jobs setup', () => {
       .rejects.toThrow('waitTimeoutMs (100) exceeds maxWaitTimeoutMs (50)')
   })
 
-  it('defaults delivery to unbounded wakeup and rejects an unknown lane', () => {
+  it('defaults delivery to wakeup bounded by 20 consecutive wakes and rejects an unknown lane', () => {
     expect(ToolJobs.Config({}).completionDelivery).toBe('wakeup')
-    expect(ToolJobs.Config({}).maxConsecutiveWakes).toBeUndefined()
+    expect(ToolJobs.Config({}).maxConsecutiveWakes).toBe(20)
     expect(() => ToolJobs.Config({ completionDelivery: 'loud' as never })).toThrow()
     expect(() => ToolJobs.Config({ maxConsecutiveWakes: 0 })).toThrow()
   })
@@ -857,6 +857,17 @@ describe('completion notice delivery', () => {
     await settleTasks(ctx, owner, 4)
     expect(followup).toHaveBeenCalledTimes(4)
     expect(inject).not.toHaveBeenCalled()
+  })
+
+  it('degrades to injection after the default 20 consecutive wakes without user input', async () => {
+    const { ctx } = await setup()
+    const inject = vi.fn()
+    const followup = vi.fn()
+    const owner = await fakeAgent(ctx, 'sess-default-budget', { inject, followup, status: 'idle' })
+
+    await settleTasks(ctx, owner, 21)
+    expect(followup).toHaveBeenCalledTimes(20)
+    expect(inject).toHaveBeenCalledTimes(1)
   })
 
   it('degrades to injection once the consecutive wake budget is spent', async () => {

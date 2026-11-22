@@ -211,8 +211,37 @@ function hasExactLabel(labelAcl: NativePtr, lowLabelSidPtr: NativePtr): boolean 
 type LabelEdit = { kind: 'apply'; acl: NativePtr } | { kind: 'clear' } | { kind: 'keep' }
 
 /**
- * Shared tail of grantWrite and revokeWrite: merge `entries` into `oldAcl`
- * (null = no explicit DACL yet; SetEntriesInAclW builds one from scratch),
+ * Remove our exact container-inherited ambient-delete deny ACE for `worldSidPtr`
+ * from a freshly allocated merged ACL (`SetEntriesInAclW`'s `REVOKE_ACCESS`
+ * ignores `ACCESS_DENIED_ACE` entries). Deletes in reverse index order so earlier
+ * indices stay stable.
+ */
+function stripExactDenyFromNewAcl(api: Win32Bindings, path: string, newAcl: NativePtr, worldSidPtr: NativePtr): void {
+  const aclSize = decodeUint16At(newAcl, 2)
+  const aceCount = decodeUint16At(newAcl, 4)
+  if (aclSize < 8 || aclSize > 1_048_576) return
+  const matchedIndices: number[] = []
+  let offset = 8
+  for (let index = 0; index < aceCount; index += 1) {
+    const aceSize = decodeUint16At(newAcl, offset + 2)
+    if (aceSize < 8 || offset + aceSize > aclSize) return
+    const isExactWorldDeny = decodeUint8At(newAcl, offset) === abi.ACCESS_DENIED_ACE_TYPE
+      && decodeUint8At(newAcl, offset + 1) === abi.CONTAINER_INHERIT_ACE
+      && decodeUint32At(newAcl, offset + 4) === abi.FILE_DELETE_CHILD
+      && sameSidAt(newAcl, offset + 8, worldSidPtr, 0)
+    if (isExactWorldDeny) matchedIndices.push(index)
+    offset += aceSize
+  }
+  for (const index of matchedIndices.toReversed()) {
+    if (api.deleteAce(newAcl, index) === 0) {
+      throwLastError(api, 'DeleteAce', `revokeWrite(${path})`)
+    }
+  }
+}
+
+/**
+ * Shared tail of grantWrite and revokeWrite: merge `entries` into `oldAcl`,
+ * optionally strip the ambient-delete deny ACE from the merged ACL,
  * free the descriptor before applying the merged ACL, apply the merged DACL
  * together with the label edit in one SetNamedSecurityInfoW call, then free
  * every ACL this call owns — checking each call and reporting with the
@@ -221,19 +250,21 @@ type LabelEdit = { kind: 'apply'; acl: NativePtr } | { kind: 'clear' } | { kind:
  * @param api - the binding table.
  * @param path - the directory the DACL and label edits apply to.
  * @param entries - packed EXPLICIT_ACCESS_W records to merge (grant, deny, or revoke).
- * @param oldAcl - the current explicit DACL (from {@link readCurrentSecurity}).
+ * @param oldAcl - the non-null current explicit DACL (from {@link readCurrentSecurity}).
  * @param labelEdit - the label change to apply alongside the DACL.
  * @param descriptor - the descriptor allocation owning `oldAcl`.
  * @param label - the caller's name for error details.
+ * @param stripDenyWorldSid - optional world SID whose exact ambient-delete deny ACE is deleted from `newAcl`.
  */
 function mergeAndApply(
   api: Win32Bindings,
   path: string,
   entries: Buffer,
-  oldAcl: NativePtr | null,
+  oldAcl: NativePtr,
   labelEdit: LabelEdit,
   descriptor: NativePtr | null,
   label: string,
+  stripDenyWorldSid?: NativePtr,
 ): void {
   const newAclSlot = allocPtrSlot()
   const mergeResult = api.setEntriesInAclW(entries.length / abi.EXPLICIT_ACCESS_W_SIZE, entries, oldAcl, newAclSlot)
@@ -247,6 +278,16 @@ function mergeAndApply(
     if (descriptor !== null) api.localFree(descriptor)
     if (labelEdit.kind === 'apply') api.localFree(labelEdit.acl)
     throwWin32(api, 'SetEntriesInAclW', api.getLastError(), `${label}(${path}): null new ACL`)
+  }
+  if (stripDenyWorldSid !== undefined) {
+    try {
+      stripExactDenyFromNewAcl(api, path, newAcl, stripDenyWorldSid)
+    } catch (error) {
+      if (descriptor !== null) api.localFree(descriptor)
+      api.localFree(newAcl)
+      if (labelEdit.kind === 'apply') api.localFree(labelEdit.acl)
+      throw error
+    }
   }
 
   // The descriptor block (oldAcl included) is dead after the merge — free it
@@ -383,7 +424,13 @@ export function grantWrite(
 ): void {
   withPathLock(api, path, () => {
     const { oldAcl, labelAcl, descriptor } = readCurrentSecurity(api, path)
-    if (oldAcl !== null && labelAcl !== null
+    if (oldAcl === null) {
+      // NULL explicit DACL means unrestricted access; SetEntriesInAclW(..., null, ...)
+      // would replace it with a restricted ACL instead of merging. Fail closed.
+      if (descriptor !== null) api.localFree(descriptor)
+      throw new Error(`grantWrite(${path}): refusing to modify directory with NULL DACL`)
+    }
+    if (labelAcl !== null
       && hasExactGrant(oldAcl, sidPtr) && hasExactDeny(oldAcl, worldSidPtr)
       && hasExactLabel(labelAcl, lowLabelSidPtr)) {
       // The exact ACE, deny, and label stand: releasing the descriptor is the whole operation.
@@ -426,9 +473,10 @@ export function grantWrite(
  * @param api - the binding table.
  * @param path - the directory whose DACL loses the capability-SID ACEs.
  * @param sidPtr - the capability SID whose ACEs are removed.
+ * @param worldSidPtr - optional Everyone SID whose ambient-delete deny ACE is also revoked when no foreign grant remains.
  * @returns whether an ACE removal was attempted (false when the directory carries no DACL at all).
  */
-export function revokeWrite(api: Win32Bindings, path: string, sidPtr: NativePtr): boolean {
+export function revokeWrite(api: Win32Bindings, path: string, sidPtr: NativePtr, worldSidPtr?: NativePtr): boolean {
   return withPathLock(api, path, () => {
     const { oldAcl, descriptor } = readCurrentSecurity(api, path)
     if (oldAcl === null) {
@@ -438,10 +486,14 @@ export function revokeWrite(api: Win32Bindings, path: string, sidPtr: NativePtr)
       }
       return false
     }
+    const foreignGrant = hasForeignGrant(oldAcl, sidPtr)
+    const stripDenyWorldSid = !foreignGrant && worldSidPtr !== undefined && hasExactDeny(oldAcl, worldSidPtr)
+      ? worldSidPtr
+      : undefined
     mergeAndApply(
       api, path, buildExplicitAccess(sidPtr, abi.REVOKE_ACCESS, 0), oldAcl,
-      hasForeignGrant(oldAcl, sidPtr) ? { kind: 'keep' } : { kind: 'clear' },
-      descriptor, 'revokeWrite',
+      foreignGrant ? { kind: 'keep' } : { kind: 'clear' },
+      descriptor, 'revokeWrite', stripDenyWorldSid,
     )
     return true
   })
