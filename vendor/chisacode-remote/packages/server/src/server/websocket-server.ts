@@ -601,6 +601,19 @@ export class VoiceAssistantWebSocketServer {
           // Delegated to loopback-only LAN E2EE transport sharing this HTTP server.
           return;
         }
+        if (!wss.shouldHandle(req)) {
+          try {
+            socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+          } catch {
+            // ignore
+          }
+          try {
+            socket.destroy();
+          } catch {
+            // ignore
+          }
+          return;
+        }
         wss.handleUpgrade(req, socket, head, (ws) => {
           wss.emit("connection", ws, req);
         });
