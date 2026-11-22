@@ -221,5 +221,5 @@
   margin-top: 8px;
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-error-text, #d93025);
+  color: var(--dsw-alias-state-error-primary);
 }

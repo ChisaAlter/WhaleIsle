@@ -162,7 +162,7 @@
 
 .hunkAction {
   padding: 1px 6px;
-  border: 1px solid var(--dsw-alias-border-primary);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-secondary);

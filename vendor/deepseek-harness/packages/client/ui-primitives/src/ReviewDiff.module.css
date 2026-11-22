@@ -18,16 +18,16 @@
 .number { padding-right: 8px; color: var(--dsw-alias-label-tertiary); text-align: right; user-select: none; }
 .sign { text-align: center; user-select: none; }
 .text { padding-right: 16px; }
-.lineCommentBtn { position: absolute; left: 2px; top: 1px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 20px; padding: 0; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; line-height: 1; cursor: pointer; opacity: 0; }
-.line:hover .lineCommentBtn,
+.lineCommentBtn { position: absolute; left: 2px; top: 1px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 20px; padding: 0; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-button-floating-fill); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; line-height: 1; cursor: pointer; opacity: 0; }
 .line:focus-within .lineCommentBtn,
-.sideLine:hover .lineCommentBtn,
 .sideLine:focus-within .lineCommentBtn,
-.cell:hover .lineCommentBtn,
 .cell:focus-within .lineCommentBtn,
 .lineCommentBtn:focus-visible { opacity: 1; }
 @media (hover: hover) {
-  .lineCommentBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+  .line:hover .lineCommentBtn,
+  .sideLine:hover .lineCommentBtn,
+  .cell:hover .lineCommentBtn { opacity: 1; }
+  .lineCommentBtn:hover { background: var(--dsw-alias-button-floating-hover); }
 }
 .progressiveBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px 4px; }
 .progressiveBtn { padding: 4px 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-secondary); font: var(--dsw-font-xs-13); cursor: pointer; }
