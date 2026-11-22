@@ -164,9 +164,9 @@ export async function createIsolatedSubagentWorktree(
     )
   }
 
-  const realBaseCwd = realpathSync(baseCwd)
-  const repoRoot = realpathSync(topLevel)
-  const gitCommonDir = realpathSync(resolve(realBaseCwd, commonDirRaw))
+  const realBaseCwd = realpathSync.native(baseCwd)
+  const repoRoot = realpathSync.native(topLevel)
+  const gitCommonDir = realpathSync.native(resolve(realBaseCwd, commonDirRaw))
 
   let baseCommit: string
   try {
@@ -205,7 +205,7 @@ export async function createIsolatedSubagentWorktree(
     )
   }
 
-  const worktreePath = realpathSync(rawWorktreePath)
+  const worktreePath = realpathSync.native(rawWorktreePath)
   const relSubdir = relative(repoRoot, realBaseCwd)
   const candidateChildCwd = relSubdir.length > 0 && !relSubdir.startsWith('..') && !isAbsolute(relSubdir)
     ? join(worktreePath, relSubdir)

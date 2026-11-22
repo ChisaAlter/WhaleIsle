@@ -66,7 +66,7 @@ function makeTempDir(prefix: string): string {
 
 async function initGitRepo(): Promise<{ repoDir: string; baseCommit: string }> {
   const rawDir = makeTempDir('dsh-subagent-wt-repo-')
-  const repoDir = realpathSync(rawDir)
+  const repoDir = realpathSync.native(rawDir)
   await git(['init'], repoDir)
   writeFileSync(join(repoDir, 'README.md'), 'initial\n', 'utf8')
   await git(['add', 'README.md'], repoDir)
