@@ -534,7 +534,8 @@ describe('DiffPanel', () => {
       diff: {
         files: [
           { path: 'new-name.ts', status: 'renamed', oldPath: 'old-name.ts', hunks: SAMPLE.files[0]!.hunks },
-          { path: 'logo.png', status: 'added', hunks: [] },
+          { path: 'logo.png', status: 'added', binary: true, hunks: [] },
+          { path: 'huge.log', status: 'added', tooLarge: true, hunks: [] },
         ],
       },
     })
@@ -543,6 +544,8 @@ describe('DiffPanel', () => {
       expect(document.querySelector('[data-diff-note="renamed"]')?.textContent).toContain('Renamed from')
     })
     expect(screen.getByText('Binary or oversized file; no line diff')).toBeTruthy()
+    expect(document.querySelector('[data-diff-note="too-large"]')?.textContent)
+      .toBe('Untracked text file exceeds size limit; line diff omitted')
   })
 
   it('collapses every file when the diff is large, expanding on demand', async () => {

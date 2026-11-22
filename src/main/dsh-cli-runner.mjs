@@ -20,33 +20,48 @@
  */
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { watchParentLifeline } from './parent-lifeline.mjs'
+import { isResidentServiceArgs, watchParentLifeline, watchParentPid } from './parent-lifeline.mjs'
 
 const require = createRequire(import.meta.url)
 const { signalProcessTree } = require('../shared/process-tree.js')
 const { collectInternalSecrets, INTERNAL_SECRETS_ENV } = require('../shared/secret.js')
 
+const [cli, pnpm, ...args] = process.argv.slice(2)
+if (!cli || !pnpm) throw new Error('Desktop CLI requires the dsh and pnpm entry paths')
+
+const stopOwnedTreeOnParentLoss = (exitProcess) => {
+  process.on('SIGTERM', () => {})
+  const killed = signalProcessTree(process.pid, { signal: 'SIGTERM' })
+  setTimeout(() => {
+    signalProcessTree(process.pid, { signal: 'SIGKILL' })
+  }, 5000).unref()
+  if (exitProcess) {
+    Promise.resolve(killed).finally(() => process.exit(1))
+    setTimeout(() => process.exit(1), 1500).unref()
+  }
+}
+
 // Parent gone → stop this whole tree: signal the process group this host
 // leads. Surviving the group SIGTERM keeps a sender around for the SIGKILL 5s
 // later, so a descendant that ignored SIGTERM cannot outlive the host. Normal
 // stops are unaffected — Electron holds stdin open, so this handler only runs
-// once the parent is dead. POSIX only: the orphan comes from the detached
-// process group, and on Windows an active stdin pipe read keeps the event
-// loop alive despite unref, so one-shot commands (`dsh plugin …`) never exit.
+// once the parent is dead. POSIX watches stdin; Windows one-shot invocations
+// cannot keep an active stdin read without hanging exit, so only resident
+// `web` services arm an unref'd parent-PID watcher there.
 if (process.platform !== 'win32') {
   watchParentLifeline({
-    onParentGone: /** @param {string} reason */ (reason) => {
-      process.on('SIGTERM', () => {})
-      signalProcessTree(process.pid, { signal: 'SIGTERM' })
-      setTimeout(() => {
-        signalProcessTree(process.pid, { signal: 'SIGKILL' })
-      }, 5000).unref()
-    },
+    onParentGone: () => stopOwnedTreeOnParentLoss(false),
+  })
+} else if (isResidentServiceArgs(args)) {
+  const configuredParent = Number(process.env.DSHD_PARENT_PID)
+  const parentPid = Number.isInteger(configuredParent) && configuredParent > 0
+    ? configuredParent
+    : process.ppid
+  watchParentPid({
+    parentPid,
+    onParentGone: () => stopOwnedTreeOnParentLoss(true),
   })
 }
-
-const [cli, pnpm, ...args] = process.argv.slice(2)
-if (!cli || !pnpm) throw new Error('Desktop CLI requires the dsh and pnpm entry paths')
 // Reading coexists with the lifeline above: it only consumes the token lines
 // and the end marker, then detaches — end/close keep reaching the lifeline.
 // The lifeline unrefs stdin, so the collection window must ref it back or the

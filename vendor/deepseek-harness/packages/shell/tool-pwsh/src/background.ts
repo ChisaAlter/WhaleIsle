@@ -42,6 +42,9 @@ function sandboxNotes(sandbox: ShellSandboxInfo | undefined, escalationModes: re
   return []
 }
 
+const STATUS_DLL_INIT_FAILED_U32 = 3221225794
+const STATUS_DLL_INIT_FAILED_I32 = -1073741502
+
 /**
  * Map a settled background process onto the generic job-outcome vocabulary:
  * `killed` stays `killed` (detail: the signal when one is known), everything
@@ -63,6 +66,14 @@ export function processOutcome(proc: ShellProcess, escalationModes: readonly San
     ? { status: 'killed', detail: proc.signal !== null ? `signal: ${proc.signal}` : 'killed before exit' }
     : { status: 'completed', detail: `exit code: ${proc.exitCode ?? 0}` }
   const notes = sandboxNotes(proc.sandbox, escalationModes)
+  if (proc.exitCode === STATUS_DLL_INIT_FAILED_U32 || proc.exitCode === STATUS_DLL_INIT_FAILED_I32) {
+    const modeLabel = proc.sandbox?.mode ?? 'workspace-write'
+    notes.push(
+      `Windows ${modeLabel} sandbox restricted process failed to initialize `
+        + '(STATUS_DLL_INIT_FAILED / 0xC0000142); '
+        + 'do not retry identical pwsh commands; use read/edit tools or switch permission mode',
+    )
+  }
   return notes.length === 0 ? base : { ...base, detail: `${base.detail}; ${notes.join(' ')}` }
 }
 

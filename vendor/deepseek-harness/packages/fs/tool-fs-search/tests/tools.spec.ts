@@ -347,12 +347,11 @@ describe('config validation', () => {
 })
 
 describe('command construction (plain argv)', () => {
-  it('glob: fixed rg --files argv with the pattern and paired VCS excludes', () => {
+  it('glob: fixed rg --files argv respects .gitignore by default and omits --no-ignore unless requested', () => {
     expect(buildGlobCommand({ pattern: '**/*.ts' })).toEqual([
       '--files',
       '--glob=**/*.ts',
       '--sort=modified',
-      '--no-ignore',
       '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
@@ -361,10 +360,12 @@ describe('command construction (plain argv)', () => {
       '--glob=!**/.jj', '--glob=!**/.jj/**',
       '--glob=!**/.sl', '--glob=!**/.sl/**',
     ])
+    expect(buildGlobCommand({ pattern: '**/*.ts', noIgnore: true })).toContain('--no-ignore')
+    expect(buildGlobCommand({ pattern: '**/*.ts', noIgnore: false })).not.toContain('--no-ignore')
   })
 
   it('glob: the search root rides behind -- as a plain element', () => {
-    expect(buildGlobCommand({ pattern: '*.md', path: 'docs dir' })).toEqual(['--files', '--glob=*.md', '--sort=modified', '--no-ignore', '--hidden',
+    expect(buildGlobCommand({ pattern: '*.md', path: 'docs dir' })).toEqual(['--files', '--glob=*.md', '--sort=modified', '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
       '--glob=!**/.hg', '--glob=!**/.hg/**',
@@ -378,9 +379,25 @@ describe('command construction (plain argv)', () => {
     expect(buildGrepCommand({ pattern: 'foo.*bar' })).toEqual(['--json', '--regexp=foo.*bar'])
   })
 
-  it('grep: include in --glob= form, path behind --, both plain elements', () => {
-    expect(buildGrepCommand({ pattern: 'x', path: '-leading-dash', include: '*.{ts,tsx}' }))
-      .toEqual(['--json', '--regexp=x', '--glob=*.{ts,tsx}', '--', '-leading-dash'])
+  it('grep: include in --glob= form (with lists & ! exclusions), case_insensitive, context_lines, files_with_matches', () => {
+    expect(buildGrepCommand({
+      pattern: 'x',
+      path: '-leading-dash',
+      include: '*.{ts,tsx}, !*.spec.ts',
+      case_insensitive: true,
+      context_lines: 2,
+    })).toEqual([
+      '--json',
+      '--regexp=x',
+      '--ignore-case',
+      '--context=2',
+      '--glob=*.{ts,tsx}',
+      '--glob=!*.spec.ts',
+      '--',
+      '-leading-dash',
+    ])
+    expect(buildGrepCommand({ pattern: 'x', output_mode: 'files_with_matches' }))
+      .toEqual(['--json', '--regexp=x', '--max-count=1'])
   })
 
   it.each([
@@ -428,9 +445,8 @@ describe('workdir derivation and signal forwarding', () => {
     // preprocessor into this unconfined spawn.
     expect(spec?.argv).toEqual([rgPath, '--no-config', '--json', '--regexp=needle'])
     expect(spec?.stdio.stdin).toBe('ignore')
-    // stdout gets the tool's parse budget; stderr is a diagnostic excerpt;
-    // both are the seam's diagnostic-tail shape (no spill files requested).
-    expect((spec?.stdio.stdout as { maxBytes: number }).maxBytes).toBe(1234)
+    // stdout uses pipe for bounded head-first capture; stderr is a diagnostic excerpt.
+    expect(spec?.stdio.stdout).toBe('pipe')
     expect((spec?.stdio.stderr as { maxBytes: number }).maxBytes).toBe(4096)
     expect(spec?.graceMs).toBe(5_000)
   })
@@ -634,30 +650,36 @@ describe('exit semantics and failure classification', () => {
 })
 
 describe('raw output acquisition', () => {
-  it('fails with SEARCH_RAW_OUTPUT_OVERFLOW when truncated stdout has a raw spill path', async () => {
+  it('returns captured prefix paths with truncation notice when lossy glob stdout hits cap', async () => {
     const { ctx, subprocess } = await setup({ config: { rawOutputMaxBytes: 16 } })
-    subprocess.handler = () => runResult('', { stdout: { text: 'x', lossy: true, spillPath: '/does/not/get-read' } })
+    subprocess.handler = () => runResult('', { stdout: { text: 'a.ts\nb.ts\npartial', lossy: true, spillPath: '/does/not/get-read' } })
     const result = await call(ctx, 'glob', { pattern: '*' })
-    expect(result.error).toMatchObject({ info: { code: 'SEARCH_RAW_OUTPUT_OVERFLOW' } })
-    expect(text(result)).toContain('narrow pattern, path, or include')
+    expect(result.isError).toBe(false)
+    expect(text(result)).toContain('a.ts\nb.ts')
+    expect(text(result)).not.toContain('partial')
+    expect(text(result)).toContain('stopped early')
   })
 
-  it('fails with SEARCH_RAW_OUTPUT_OVERFLOW when UNTRUNCATED inline stdout exceeds the cap', async () => {
-    // A subprocess implementation retaining more inline than this package's
-    // cap (or a deployment lowering rawOutputMaxBytes below the retention
-    // budget) must not smuggle an over-cap parse through the untruncated path.
-    const { ctx, subprocess } = await setup({ config: { rawOutputMaxBytes: 16 } })
-    subprocess.handler = () => runResult(`${'x'.repeat(64)}\n`)
-    const result = await call(ctx, 'grep', { pattern: 'x' })
-    expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_RAW_OUTPUT_OVERFLOW' } })
-    expect(text(result)).toContain('narrow pattern, path, or include')
+  it('returns captured prefix matches with truncation notice when inline grep stdout exceeds rawOutputMaxBytes', async () => {
+    const line1 = `${matchLine('a.ts', 1, 'hit1')}\n`
+    const line2 = `${matchLine('b.ts', 2, 'hit2')}\n`
+    const cap = Buffer.byteLength(line1, 'utf8') + 10
+    const { ctx, subprocess } = await setup({ config: { rawOutputMaxBytes: cap } })
+    subprocess.handler = () => runResult(`${line1}${line2}`)
+    const result = await call(ctx, 'grep', { pattern: 'hit' })
+    expect(result.isError).toBe(false)
+    expect(text(result)).toContain('a.ts')
+    expect(text(result)).toContain('Line 1: hit1')
+    expect(text(result)).not.toContain('b.ts')
+    expect(text(result)).toContain('stopped early')
   })
 
-  it('fails with SEARCH_RAW_OUTPUT_OVERFLOW when truncated stdout has no spill path', async () => {
-    const { ctx, subprocess } = await setup()
+  it('safely handles truncated grep stdout with no complete line without throwing SEARCH_FAILED', async () => {
+    const { ctx, subprocess } = await setup({ config: { rawOutputMaxBytes: 64 } })
     subprocess.handler = () => runResult('', { stdout: { text: 'partial', lossy: true } })
     const result = await call(ctx, 'grep', { pattern: 'x' })
-    expect(result.error).toMatchObject({ info: { code: 'SEARCH_RAW_OUTPUT_OVERFLOW' } })
+    expect(result.isError).toBe(false)
+    expect(text(result)).toContain('stopped early')
   })
 })
 
@@ -775,7 +797,7 @@ describe('glob results', () => {
     subprocess.handler = () => runResult('sub/a.ts\n')
     const result = await call(ctx, 'glob', { pattern: '*.ts', path: 'sub' })
     expect(result.isError).toBe(false)
-    expect(subprocess.spawns[0]?.argv).toEqual([rgPath, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--no-ignore', '--hidden',
+    expect(subprocess.spawns[0]?.argv).toEqual([rgPath, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
       '--glob=!**/.hg', '--glob=!**/.hg/**',
@@ -1116,14 +1138,17 @@ describe('grep results', () => {
     expect(subprocess.spawns).toHaveLength(0)
   })
 
-  it('validates arguments (empty pattern, blank path, bad include)', async () => {
+  it('validates arguments (empty pattern, blank path, bad include, invalid modes/limits)', async () => {
     const { ctx } = await setup()
     for (const [args, message] of [
       [{ pattern: '' }, 'pattern must be a non-empty string'],
       [{ pattern: 'x', path: '  ' }, 'path must be a non-empty string'],
       [{ pattern: 'x', include: '  ' }, 'include must be a non-empty glob'],
-      [{ pattern: 'x', include: '!*.ts' }, 'negated patterns'],
-      [{ pattern: 'x', include: '*.ts,*.js' }, 'comma-separated list'],
+      [{ pattern: 'x', include: '!' }, 'negated glob'],
+      [{ pattern: 'x', include: '*.ts,,*.js' }, 'empty glob segments'],
+      [{ pattern: 'x', include: '{*.ts' }, 'unclosed brace'],
+      [{ pattern: 'x', context_lines: -1 }, 'context_lines must be a non-negative integer'],
+      [{ pattern: 'x', head_limit: 0 }, 'head_limit must be a positive integer'],
     ] as const) {
       const result = await call(ctx, 'grep', args)
       expect(text(result)).toContain(message)
@@ -1131,10 +1156,40 @@ describe('grep results', () => {
     }
   })
 
-  it('accepts a whitespace-only pattern (a legitimate regex) and brace alternation in include', async () => {
+  it('supports output_mode (files_with_matches, count), context_lines, case_insensitive, head_limit, and list/negated include', async () => {
+    const { ctx, subprocess } = await setup()
+    subprocess.handler = () => runResult([
+      matchLine('a.ts', 1, 'hit1'),
+      JSON.stringify({ type: 'context', data: { path: { text: 'a.ts' }, lines: { text: 'ctx\n' }, line_number: 2 } }),
+      matchLine('a.ts', 3, 'hit2'),
+      matchLine('b.ts', 5, 'hit3'),
+      '',
+    ].join('\n'))
+
+    const filesMode = await call(ctx, 'grep', {
+      pattern: 'hit',
+      include: '*.ts, !*.test.ts',
+      output_mode: 'files_with_matches',
+      case_insensitive: true,
+      head_limit: 1,
+    })
+    expect(filesMode.isError).toBe(false)
+    expect(text(filesMode)).toContain('Found 1 of 2 matching files\n\na.ts')
+
+    const countMode = await call(ctx, 'grep', { pattern: 'hit', output_mode: 'count' })
+    expect(countMode.isError).toBe(false)
+    expect(text(countMode)).toBe('Found 3 matches across 2 files\n\na.ts: 2\nb.ts: 1')
+
+    const ctxMode = await call(ctx, 'grep', { pattern: 'hit', context_lines: 1, head_limit: 2 })
+    expect(ctxMode.isError).toBe(false)
+    expect(text(ctxMode)).toContain('Line 1: hit1\nLine 2 (context): ctx')
+    expect(text(ctxMode)).toContain('Found 2 of 4 matches')
+  })
+
+  it('accepts a whitespace-only pattern (a legitimate regex) and brace alternation + negation in include', async () => {
     const { ctx, subprocess } = await setup()
     subprocess.handler = () => runResult('', { exitCode: 1 })
-    const result = await call(ctx, 'grep', { pattern: '  ', include: '*.{ts,tsx}' })
+    const result = await call(ctx, 'grep', { pattern: '  ', include: '*.{ts,tsx},!*.spec.ts' })
     expect(result.isError).toBe(false)
   })
 })

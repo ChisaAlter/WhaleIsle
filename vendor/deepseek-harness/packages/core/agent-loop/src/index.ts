@@ -34,7 +34,11 @@ import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persis
 import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { ReactLoopAgent } from './agent.ts'
 import { inboxProjectionDefinition } from './inbox.ts'
-import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
+import {
+  DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+  DEFAULT_MAX_STEPS_PER_TURN,
+  DEFAULT_MAX_TOKENS_RECOVERY_LIMIT,
+} from './constants.ts'
 import { pendingInteractionResumePlan } from './pending-interaction-recovery.ts'
 import type {} from './runtime-context.ts'
 
@@ -258,6 +262,16 @@ export interface Config {
    * omission defaults to {@link DEFAULT_MAX_PARALLEL_TOOL_CALLS}.
    */
   maxParallelToolCalls: Volatile<number>
+  /**
+   * Maximum consecutive automatic continuations when a step ends with `max-tokens`.
+   * `0` disables automatic recovery; omission defaults to {@link DEFAULT_MAX_TOKENS_RECOVERY_LIMIT}.
+   */
+  maxTokensRecoveryLimit: Volatile<number>
+  /**
+   * Maximum steps permitted in a single turn before halting.
+   * Omission defaults to {@link DEFAULT_MAX_STEPS_PER_TURN}.
+   */
+  maxStepsPerTurn: Volatile<number>
   /** Agents created or resumed at plugin startup; a resumed agent records its configured route as the Session's model selection. */
   agents: (AgentOptions & {
     /** Stable config label used in logs and as the fresh combined-id prefix. */
@@ -289,13 +303,22 @@ function validateConfiguredAgents(agents: Config['agents']): void {
   }
 }
 
+export interface ConfigInput {
+  agents?: Config['agents']
+  maxParallelToolCalls?: number
+  maxTokensRecoveryLimit?: number
+  maxStepsPerTurn?: number
+}
+
 /** Concrete agent factory and driver service. */
 export class AgentLoop extends Service implements AgentFactory {
   static inject = ['agents', 'sessions', 'llm', 'tools', 'systemPrompt', 'sessionProjections']
 
   /** Runtime schema for declarative agents. */
-  static Config: z<{ agents?: Config['agents']; maxParallelToolCalls?: number }, Config> = z.object({
+  static Config: z<ConfigInput, Config> = z.object({
     maxParallelToolCalls: z.number().step(1).min(1).default(DEFAULT_MAX_PARALLEL_TOOL_CALLS).volatile(),
+    maxTokensRecoveryLimit: z.number().step(1).min(0).default(DEFAULT_MAX_TOKENS_RECOVERY_LIMIT).volatile(),
+    maxStepsPerTurn: z.number().step(1).min(1).default(DEFAULT_MAX_STEPS_PER_TURN).volatile(),
     agents: z.array(z.object({
       id: z.string().required(),
       sessionId: z.string().min(1),
@@ -306,7 +329,7 @@ export class AgentLoop extends Service implements AgentFactory {
       cwd: z.string(),
       resumeSessionId: z.string(),
     })).default([]),
-  }) as z<{ agents?: Config['agents']; maxParallelToolCalls?: number }, Config>
+  }) as z<ConfigInput, Config>
 
   /** Validated configuration owned by the agent-loop service. */
   readonly config: Config
@@ -322,6 +345,8 @@ export class AgentLoop extends Service implements AgentFactory {
     this.config = {
       agents: applyLauncherIdentities(config.agents, ctx.get(CONFIGURED_AGENT_IDENTITIES_KEY)),
       maxParallelToolCalls: config.maxParallelToolCalls,
+      maxTokensRecoveryLimit: config.maxTokensRecoveryLimit,
+      maxStepsPerTurn: config.maxStepsPerTurn,
     }
     validateConfiguredAgents(this.config.agents)
     this.ownership = new FactoryOwnership(ctx.fiber)

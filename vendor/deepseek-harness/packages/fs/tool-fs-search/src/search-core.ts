@@ -97,14 +97,16 @@ export class SearchError extends HarnessError {
   }
 }
 
-/** The completed acquisition of one `rg` run: complete stdout plus the resolved workdir. */
+/** The completed acquisition of one `rg` run: captured stdout plus the resolved workdir. */
 export interface RipgrepRun {
-  /** Complete raw stdout retained by the subprocess seam within the requested cap. */
+  /** Captured raw stdout retained within `rawOutputMaxBytes`. */
   stdout: string
-  /** True when ripgrep exited 1: a successful search with zero results. */
+  /** True when ripgrep exited 1 without overflow: a successful search with zero results. */
   noMatches: boolean
   /** The resolved working directory the command ran in (the display-relativization base). */
   workdir: string
+  /** True when raw output approached/exceeded `rawOutputMaxBytes` and collection stopped early. */
+  rawTruncated: boolean
 }
 
 /**
@@ -130,29 +132,82 @@ function classifyRunFailure(toolName: string, exitCode: number, stderrText: stri
   return new SearchError(`${toolName} search failed (exit ${exitCode})${stderr.length > 0 ? `: ${stderr}` : ''}`, 'SEARCH_FAILED')
 }
 
-/**
- * Acquire the COMPLETE raw stdout of a finished run, enforcing
- * `rawOutputMaxBytes` on the in-memory transport. A truncated result means the
- * subprocess seam could not retain complete stdout within the requested
- * budget, so the tool fails clearly instead of parsing a silently-partial
- * stream.
- */
-function completeStdout(toolName: string, stdout: SubprocessOutputRead, rawOutputMaxBytes: number): string {
-  const narrow = 'narrow pattern, path, or include and retry'
-  if (!stdout.lossy) {
-    const inlineBytes = Buffer.byteLength(stdout.text, 'utf8')
-    if (inlineBytes > rawOutputMaxBytes) {
-      throw new SearchError(
-        `${toolName} produced ${inlineBytes} bytes of raw output, over the ${rawOutputMaxBytes}-byte cap; ${narrow}`,
-        'SEARCH_RAW_OUTPUT_OVERFLOW',
-      )
+function sliceCompleteLinesWithinBytes(text: string, maxBytes: number): string {
+  const retainer = new TextRetainer({ kind: 'head', maxBytes })
+  retainer.push(text)
+  const kept = retainer.finish().text
+  const lastNewline = kept.lastIndexOf('\n')
+  return lastNewline === -1 ? '' : kept.slice(0, lastNewline + 1)
+}
+
+async function drainStdoutWithCap(
+  stream: NodeJS.ReadableStream,
+  maxBytes: number,
+  onCap: () => void,
+): Promise<{ text: string; truncated: boolean }> {
+  const chunks: Buffer[] = []
+  let total = 0
+  const state = { truncated: false }
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = (): void => {
+      stream.removeListener('data', onData)
+      stream.removeListener('end', onEnd)
+      stream.removeListener('close', onEnd)
+      stream.removeListener('error', onError)
     }
-    return stdout.text
+    const onEnd = (): void => {
+      cleanup()
+      resolve()
+    }
+    const onError = (error: unknown): void => {
+      cleanup()
+      if (state.truncated) resolve()
+      else reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    const onData = (raw: Buffer | string): void => {
+      if (state.truncated) return
+      const buf = typeof raw === 'string' ? Buffer.from(raw, 'utf8') : raw
+      const remaining = maxBytes - total
+      if (buf.length > remaining) {
+        if (remaining > 0) {
+          chunks.push(buf.subarray(0, remaining))
+          total += remaining
+        }
+        state.truncated = true
+        cleanup()
+        if ('destroy' in stream && typeof (stream as { destroy?: () => void }).destroy === 'function') {
+          (stream as { destroy: () => void }).destroy()
+        }
+        onCap()
+        resolve()
+        return
+      }
+      chunks.push(buf)
+      total += buf.length
+    }
+    stream.on('data', onData)
+    stream.once('end', onEnd)
+    stream.once('close', onEnd)
+    stream.once('error', onError)
+  })
+  const combined = Buffer.concat(chunks, total)
+  if (!state.truncated) return { text: combined.toString('utf8'), truncated: false }
+  const lastNewline = combined.lastIndexOf(0x0a)
+  const bounded = lastNewline === -1 ? Buffer.alloc(0) : combined.subarray(0, lastNewline + 1)
+  return { text: bounded.toString('utf8'), truncated: true }
+}
+
+/**
+ * Acquire raw stdout safely within `rawOutputMaxBytes`: if collected output
+ * exceeds the cap (or was flagged lossy), return the leading complete lines
+ * plus `truncated: true` rather than failing the entire search.
+ */
+function boundedCollectedStdout(stdout: SubprocessOutputRead, rawOutputMaxBytes: number): { text: string; truncated: boolean } {
+  const inlineBytes = Buffer.byteLength(stdout.text, 'utf8')
+  if (!stdout.lossy && inlineBytes <= rawOutputMaxBytes) {
+    return { text: stdout.text, truncated: false }
   }
-  throw new SearchError(
-    `${toolName} produced more raw output than the subprocess seam retained within the ${rawOutputMaxBytes}-byte cap; ${narrow}`,
-    'SEARCH_RAW_OUTPUT_OVERFLOW',
-  )
+  return { text: sliceCompleteLinesWithinBytes(stdout.text, rawOutputMaxBytes), truncated: true }
 }
 
 /**
@@ -213,7 +268,7 @@ export async function runRipgrep(
       cwd: workdir,
       stdio: {
         stdin: 'ignore',
-        stdout: { maxBytes: rawOutputMaxBytes },
+        stdout: 'pipe',
         stderr: { maxBytes: stderrMaxBytes },
       },
       graceMs,
@@ -231,15 +286,24 @@ export async function runRipgrep(
     }
     throw new SearchError(`${toolName} could not start its search command (ripgrep launch failed)`, 'SEARCH_FAILED', { cause: error })
   }
+  const capState = { stopped: false }
+  const drainedPromise = handle.stdout !== undefined
+    ? drainStdoutWithCap(handle.stdout, rawOutputMaxBytes, () => {
+      capState.stopped = true
+      handle.terminate()
+    })
+    : undefined
+  // Prevent unhandled rejection if handle.done rejects before drainedPromise is awaited.
+  drainedPromise?.catch(() => undefined)
   let outcome: SubprocessOutcome
   try {
     outcome = await handle.done
   } catch (error: unknown) {
     throw new SearchError(`${toolName} subprocess failed before reporting an outcome (ripgrep provider failure)`, 'SEARCH_FAILED', { cause: error })
   }
-  const stdout = handle.collected.stdout?.readFrom(0)
+  const streamed = drainedPromise !== undefined ? await drainedPromise : undefined
   const stderr = handle.collected.stderr?.readFrom(0)
-  if (stdout === undefined || stderr === undefined) {
+  if (stderr === undefined) {
     throw new SearchError(`${toolName} search command produced no collected output streams`, 'SEARCH_FAILED')
   }
   // The signal can abort while the spawn is awaited; the static narrowing that
@@ -248,14 +312,39 @@ export async function runRipgrep(
   if (exec.signal.aborted) {
     throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
   }
+  if (streamed !== undefined) {
+    if (!capState.stopped) {
+      if (outcome.signal !== null || outcome.exitCode === null) {
+        throw new SearchError(`${toolName} search command was killed by signal ${outcome.signal ?? '(unknown)'}`, 'SEARCH_FAILED')
+      }
+      if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
+        throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
+      }
+    }
+    return {
+      stdout: streamed.text,
+      noMatches: !streamed.truncated && outcome.exitCode === 1,
+      workdir,
+      rawTruncated: streamed.truncated,
+    }
+  }
+  const stdout = handle.collected.stdout?.readFrom(0)
+  if (stdout === undefined) {
+    throw new SearchError(`${toolName} search command produced no collected output streams`, 'SEARCH_FAILED')
+  }
   if (outcome.signal !== null || outcome.exitCode === null) {
     throw new SearchError(`${toolName} search command was killed by signal ${outcome.signal ?? '(unknown)'}`, 'SEARCH_FAILED')
   }
   if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
     throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
   }
-  const text = completeStdout(toolName, stdout, rawOutputMaxBytes)
-  return { stdout: text, noMatches: outcome.exitCode === 1, workdir }
+  const bounded = boundedCollectedStdout(stdout, rawOutputMaxBytes)
+  return {
+    stdout: bounded.text,
+    noMatches: !bounded.truncated && outcome.exitCode === 1,
+    workdir,
+    rawTruncated: bounded.truncated,
+  }
 }
 
 /**
@@ -278,11 +367,12 @@ export function toWorkdirRelative(path: string, workdir: string): string {
   return rel
 }
 
-/** One parsed match: the file, the 1-based line number, and the (possibly previewed) line text. */
+/** One parsed match or context line: the file, the 1-based line number, and the (possibly previewed) line text. */
 export interface GrepMatch {
   path: string
   lineNumber: number
   line: string
+  isContext?: boolean
 }
 
 /**

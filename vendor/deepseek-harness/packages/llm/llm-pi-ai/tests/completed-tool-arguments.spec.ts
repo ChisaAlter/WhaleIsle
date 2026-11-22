@@ -1,4 +1,4 @@
-/** Completed provider arguments fail before a malformed call can enter successful history or dispatch. */
+/** Completed provider arguments conservatively repair mild JSON flaws and surface unrecoverable calls for per-tool self-correction. */
 
 import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -90,38 +90,81 @@ describe('completed tool-call arguments through the public runtime', () => {
     ['anthropic-messages', anthropicEvents],
     ['openai-completions', completionsEvents],
     ['openai-responses', responsesEvents],
-  ] as const)('%s rejects malformed completed arguments without successful replay', async (api, events) => {
+  ] as const)('%s preserves unrecoverable malformed arguments per tool without failing the whole step', async (api, events) => {
     const raw = '{"value":"unfinished'
     const { chunks, assembler, server } = await collect(api, events(raw))
-    expect(assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_RESPONSE' } })
-    expect(assembler.finish).toHaveProperty('failure.message', expect.stringContaining(raw))
-    expect(assembler.replayState).toBeUndefined()
+    expect(assembler.finish).toEqual({ kind: 'tool-calls' })
+    const toolBlock = assembler.blocks().find(block => block.type === 'tool-call')
+    expect(toolBlock).toMatchObject({
+      type: 'tool-call',
+      name: 'count',
+      arguments: raw,
+    })
+    expect(toolBlock?.type === 'tool-call' ? toolBlock.id : '').toContain('call_invalid')
+    if (api !== 'openai-responses') {
+      expect(assembler.blocks()).toContainEqual({ type: 'text', text: 'before tool' })
+    }
+    expect(assembler.replayState).toBeDefined()
     expect(chunks.filter(chunk => chunk.type === 'finish')).toHaveLength(1)
-    expect(chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toBe(false)
+    expect(chunks.some(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toBe(true)
     expect(server.requests).toHaveLength(1)
   })
 
-  it.each(['null', '[]', '42'])('rejects non-object completed arguments %s', async (raw) => {
+  it.each(['null', '[]', '42'])('preserves non-object completed arguments %s for tool-stage validation', async (raw) => {
     const { assembler } = await collect('openai-completions', completionsEvents(raw))
-    expect(assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_RESPONSE' } })
-    expect(assembler.replayState).toBeUndefined()
+    expect(assembler.finish).toEqual({ kind: 'tool-calls' })
+    expect(assembler.blocks()).toContainEqual({
+      type: 'tool-call',
+      id: 'call_invalid',
+      name: 'count',
+      arguments: raw,
+    })
+    expect(assembler.replayState).toBeDefined()
   })
 
   it('uses authoritative invalid Responses arguments after a valid streamed prefix', async () => {
     const raw = '{"value":"final-invalid'
     const { chunks, assembler } = await collect('openai-responses', responsesEvents(raw, '{"value":"valid-prefix"}'))
     expect(chunks).toContainEqual(expect.objectContaining({ type: 'tool-call-delta', argumentsDelta: '{"value":"valid-prefix"}' }))
-    expect(assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MALFORMED_RESPONSE' } })
-    expect(assembler.finish).toHaveProperty('failure.message', expect.stringContaining(raw))
-    expect(assembler.replayState).toBeUndefined()
+    expect(assembler.finish).toEqual({ kind: 'tool-calls' })
+    expect(assembler.blocks()).toContainEqual({
+      type: 'tool-call',
+      id: 'call_invalid|item_invalid',
+      name: 'count',
+      arguments: raw,
+    })
+    expect(assembler.replayState).toBeDefined()
   })
 
-  it('retains the first completed-argument failure when several calls are invalid', async () => {
+  it('retains each raw invalid argument string when several calls are invalid', async () => {
     const { assembler } = await collect('openai-responses', responsesEvents('[]', undefined, true, '[1]'))
-    expect(assembler.finish).toEqual({ kind: 'error', failure: {
-      code: 'MALFORMED_RESPONSE', message: 'Tool call "count": Tool arguments must be a JSON object\n\nReceived arguments:\n[1]',
-    } })
-    expect(assembler.replayState).toBeUndefined()
+    expect(assembler.finish).toEqual({ kind: 'tool-calls' })
+    expect(assembler.blocks()).toEqual([
+      { type: 'tool-call', id: 'call_valid|item_valid', name: 'count', arguments: '[1]' },
+      { type: 'tool-call', id: 'call_invalid|item_invalid', name: 'count', arguments: '[]' },
+    ])
+    expect(assembler.replayState?.blocks).toEqual([{ type: 'tool-call' }, { type: 'tool-call' }])
+  })
+
+  it.each([
+    ['anthropic-messages', anthropicEvents],
+    ['openai-completions', completionsEvents],
+    ['openai-responses', responsesEvents],
+  ] as const)('%s conservatively repairs trailing commas and control characters in tool arguments', async (api, events) => {
+    const raw = '{"value":"line1\nline2",}'
+    const { assembler } = await collect(api, events(raw))
+    expect(assembler.finish).toEqual({ kind: 'tool-calls' })
+    const toolBlock = assembler.blocks().find(block => block.type === 'tool-call')
+    expect(toolBlock).toMatchObject({
+      type: 'tool-call',
+      name: 'count',
+      arguments: JSON.stringify({ value: 'line1\nline2' }),
+    })
+    expect(toolBlock?.type === 'tool-call' ? toolBlock.id : '').toContain('call_invalid')
+    if (api !== 'openai-responses') {
+      expect(assembler.blocks()).toContainEqual({ type: 'text', text: 'before tool' })
+    }
+    expect(assembler.replayState).toBeDefined()
   })
 
   it('retains a native provider failure after malformed argument output', async () => {
@@ -161,9 +204,33 @@ describe('completed tool-call arguments through the public runtime', () => {
     expect(assembler.replayState?.response).toMatchObject({ stopReason: 'length' })
   })
 
-  it('does not dispatch an earlier valid parallel call when a later call is malformed', async () => {
+  it('executes valid parallel calls and surfaces malformed-JSON tool validation back to the model for single-step recovery', async () => {
     const raw = '{"value":"unfinished'
-    const server = await mockServer([{ events: responsesEvents(raw, undefined, true) }])
+    const recoveredItem = {
+      type: 'message',
+      id: 'msg_1',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'recovered after validation feedback', annotations: [] }],
+    }
+    const server = await mockServer([
+      { events: responsesEvents(raw, undefined, true) },
+      {
+        events: [
+          JSON.stringify({ type: 'response.created', response: { id: 'response_recovered' } }),
+          JSON.stringify({ type: 'response.output_item.added', output_index: 0, item: recoveredItem }),
+          JSON.stringify({ type: 'response.output_item.done', output_index: 0, item: recoveredItem }),
+          JSON.stringify({
+            type: 'response.completed',
+            response: {
+              id: 'response_recovered',
+              status: 'completed',
+              output: [recoveredItem],
+              usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+            },
+          }),
+        ],
+      },
+    ])
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
     await mountAgentLoopTestDependencies(ctx)
@@ -184,16 +251,25 @@ describe('completed tool-call arguments through the public runtime', () => {
     agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'count twice' }] }))
     await idle
     const events = agent.session.snapshotEvents()
-    expect(executions).toBe(0)
-    expect(events.filter(event => event.type === 'tool/call' || event.type === 'tool/result' || event.type === 'assistant/message')).toEqual([])
-    const attempts = events.filter(event => event.type === 'assistant/attempt')
-    expect(attempts).toHaveLength(1)
-    expect(JSON.stringify(attempts)).toContain('call_valid|item_valid')
-    expect(JSON.stringify(attempts)).toContain('MALFORMED_RESPONSE')
-    expect(JSON.stringify(attempts)).not.toContain('replayState')
-    expect(events.find(event => event.type === 'turn/end')).toMatchObject({
-      data: { reason: { kind: 'error', error: { code: 'MALFORMED_RESPONSE' } } },
+    expect(executions).toBe(1)
+    const toolResults = events.filter(event => event.type === 'tool/result')
+    expect(toolResults).toHaveLength(2)
+    expect(toolResults[0]?.data).toMatchObject({
+      message: { toolCallId: 'call_valid|item_valid', isError: false },
     })
-    expect(server.requests).toHaveLength(1)
+    expect(toolResults[1]?.data).toMatchObject({
+      message: {
+        toolCallId: 'call_invalid|item_invalid',
+        isError: true,
+      },
+      error: { name: 'ToolArgsError', code: 'INVALID_ARGS' },
+    })
+    const invalidResult = toolResults[1]?.data
+    if (invalidResult?.message.content[0]?.type !== 'text') throw new Error('expected text error result')
+    expect(invalidResult.message.content[0].text).toContain('malformed JSON')
+    expect(events.find(event => event.type === 'turn/end')).toMatchObject({
+      data: { reason: { kind: 'completed' } },
+    })
+    expect(server.requests).toHaveLength(2)
   })
 })

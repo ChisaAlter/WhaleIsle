@@ -405,13 +405,26 @@ describe('runner launch inputs', () => {
     expect(probed).toEqual([
       'C:\\target\\bash.com',
       'C:\\target\\bash.exe',
+      'C:\\target\\bash.bat',
+      'C:\\target\\bash.cmd',
       'C:\\target\\relative\\bash.com',
       'C:\\target\\relative\\bash.exe',
+      'C:\\target\\relative\\bash.bat',
+      'C:\\target\\relative\\bash.cmd',
       'C:\\semi;colon\\bash.com',
       'C:\\semi;colon\\bash.exe',
+      'C:\\semi;colon\\bash.bat',
+      'C:\\semi;colon\\bash.cmd',
       'C:\\tools\\git\\bin\\bash.com',
       'C:\\tools\\git\\bin\\bash.exe',
     ])
+
+    expect(resolveWindowsExecutable('npm', 'C:\\target', {
+      PATH: 'C:\\nodejs',
+    }, candidate => candidate === 'C:\\nodejs\\npm.cmd')).toBe('C:\\nodejs\\npm.cmd')
+    expect(resolveWindowsExecutable('build', 'C:\\target', {
+      PATH: 'C:\\scripts',
+    }, candidate => candidate === 'C:\\scripts\\build.bat')).toBe('C:\\scripts\\build.bat')
 
     expect(resolveWindowsExecutable('local.exe', 'C:\\target', {}, candidate =>
       candidate === 'C:\\target\\local.exe')).toBe('C:\\target\\local.exe')

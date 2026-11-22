@@ -353,11 +353,23 @@ retryEl.addEventListener('click', () => {
   renderState({ state: 'starting', recovery: { status: 'inactive' } });
   invoke('restart')
     .then((snapshot) => {
-      if (snapshot && snapshot.state) {
+      if (snapshot && snapshot.state && snapshot.ok !== false) {
         renderState(snapshot);
+        return;
       }
+      const message = snapshot && snapshot.error ? String(snapshot.error) : '重启请求被拒绝，请重试';
+      retryEl.disabled = false;
+      renderState({
+        state: 'error',
+        error: message,
+        failure: {
+          phase: 'startup',
+          message,
+        },
+      });
     })
     .catch((error) => {
+      retryEl.disabled = false;
       renderState({
         state: 'error',
         error: error.message || String(error),

@@ -29,6 +29,7 @@ function ApprovalFlow(props: FactoryComponentPropsOf<'conversation.approval.card
     : props.renderSlot('conversation.approval.detail', { callId: props.callId, ...props.requester === undefined ? {} : { requester: props.requester } })
   const controls = props.renderSlot('conversation.approval.actions', {})
   const [answered, setAnswered] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const root = rootRef.current
@@ -64,28 +65,34 @@ function ApprovalFlow(props: FactoryComponentPropsOf<'conversation.approval.card
     active.current = true
     return () => { active.current = false }
   }, [])
+  useEffect(() => {
+    setSubmitError(null)
+  }, [requestKey])
   const answer = (send: () => Promise<void>): void => {
     if (waiting.current || !canAnswer()) return
     waiting.current = true
+    setSubmitError(null)
     setAnswered(true)
-    void send().catch(() => {
+    void send().catch((error: unknown) => {
       if (!active.current || !canAnswer()) return
       waiting.current = false
       setAnswered(false)
+      const detail = error instanceof Error ? error.message.trim() : typeof error === 'string' ? error.trim() : ''
+      setSubmitError(detail ? `${t('submitFailed')}: ${detail}` : t('submitFailed'))
     })
   }
   const keydown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const element = event.target as Element
     if (event.defaultPrevented || !event.currentTarget.contains(document.activeElement)
       || element.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]') !== null) return
-    if (event.key !== 'Enter' && event.key !== 'Escape') return
-    if (event.key === 'Enter' && element.closest('button, a[href], [role="button"]') !== null) return
+    if (event.key !== 'Enter') return
+    if (element.closest('button, a[href], [role="button"]') !== null) return
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
     event.preventDefault()
     event.stopPropagation()
     // oxlint-disable-next-line typescript/no-deprecated -- IME 229 covers engines without isComposing.
     if (event.repeat || composing.current || compositionEnded.current || event.nativeEvent.isComposing || event.keyCode === 229) return
-    answer(event.key === 'Enter' ? onAllow : onReject)
+    answer(onAllow)
   }
   return (
     <div ref={rootRef} className={css.root} data-approval-key={requestKey} aria-busy={answered}
@@ -113,6 +120,7 @@ function ApprovalFlow(props: FactoryComponentPropsOf<'conversation.approval.card
           {description !== undefined && <p className={css.description}>{description}</p>}
           {detail !== null && <div className={css.command}>{detail}</div>}
         </div>
+        {submitError !== null && <div className={css.submitError} role="alert">{submitError}</div>}
         <div className={css.actionRow}>
           {controls !== null && <div className={css.sessionControls}>{controls}</div>}
           <Button variant="outline" className={css.reject} disabled={answered} onClick={() => { answer(onReject) }}>

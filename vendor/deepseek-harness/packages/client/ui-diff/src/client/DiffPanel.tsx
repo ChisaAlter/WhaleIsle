@@ -262,7 +262,9 @@ export function DiffPanel({
       return notes
     }
     if (file.hunks.length === 0) {
-      notes.push({ text: t('file.binary'), attrs: { 'data-diff-note': 'binary' } })
+      notes.push(file.tooLarge === true
+        ? { text: t('file.tooLarge'), attrs: { 'data-diff-note': 'too-large' } }
+        : { text: t('file.binary'), attrs: { 'data-diff-note': 'binary' } })
       return notes
     }
     if (view.truncated) {

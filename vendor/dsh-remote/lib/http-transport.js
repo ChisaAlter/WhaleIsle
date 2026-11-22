@@ -3,6 +3,7 @@
 // Connection's authenticated, carrier-neutral channel on portless Desktop.
 import { Readable } from 'node:stream'
 import { EventEmitter } from 'node:events'
+import { protectWebRoute } from './http-auth.js'
 
 const MAX_BODY_BYTES = 1024 * 1024
 
@@ -88,7 +89,17 @@ export function registerHttpTransports(ctx, routes) {
   // Reactive injection matters: either service can arrive after the plugin.
   // Neither optional transport is a hard prerequisite for the SSH tools.
   ctx.inject(['webServer'], (inner) => {
-    const disposers = routes.map((route) => inner.get('webServer').register(route))
+    const resolveConnection = () => {
+      try {
+        return (typeof inner.get === 'function' ? inner.get('connection') : undefined)
+          ?? (typeof ctx.get === 'function' ? ctx.get('connection') : undefined)
+          ?? null
+      } catch {
+        // Connection service may not be active yet on ctx; return null so protectWebRoute fails closed.
+        return null
+      }
+    }
+    const disposers = routes.map((route) => inner.get('webServer').register(protectWebRoute(route, resolveConnection)))
     inner.effect(() => () => disposers.forEach((dispose) => dispose()), 'dsh-remote.web-routes')
   })
   ctx.inject(['connection'], (inner) => {

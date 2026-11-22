@@ -311,11 +311,25 @@ export class BasicCompactionEngine extends CompactionEngine {
           const info = await this.ctx.llm.resolveModelInfo(header.config.provider, header.config.model, signal)
           if (info.contextManagement === 'provider') return null
         }
-        this.ctx.get('toolResultPruner')?.pruneSession(agent.session)
+        const pruner = this.ctx.get('toolResultPruner')
+        if (pruner !== undefined) {
+          const pruned = pruner.pruneSession(agent.session)
+          if (pruned.pruned.length === 0) {
+            pruner.pruneSession(agent.session, { protectRecentToolResults: 0 })
+          }
+        }
         const measurement = this.ctx.tokenMeter.measure(agent.session)
         const range = selectCompactableRange(agent.session, measurement, 0)
         if (range === null) return null
-        return this.compactRegion(range.start, range.end, agent, signal)
+        return compactSurfaceRegion(
+          this.regionDependencies(),
+          agent.session,
+          range.start,
+          range.end,
+          agent,
+          { owner: 'current-turn', stability: 'whole-surface', overflowFallback: true },
+          signal,
+        )
       }
       /* v8 ignore next -- closed-union exhaustiveness guard */
       default:

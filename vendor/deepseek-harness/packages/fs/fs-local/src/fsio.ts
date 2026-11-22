@@ -16,6 +16,8 @@ import { FsError, FsTargetKey, FsVersion, fsErrorFromErrno } from '@deepseek-ai/
 import { copyFileDaclWin32, replaceFileWin32 } from './win32.ts'
 
 const BINARY_SAMPLE_BYTES = 8192
+const FORMAT_SAMPLE_BYTES = 65_536
+const UTF8_BOM = '\uFEFF'
 const realpath = promisify(realpathCallback.native)
 // Bound one non-abortable FileHandle.read so cancellation is observed between chunks.
 const DIFF_BASIS_READ_CHUNK_BYTES = 64 * 1024
@@ -348,14 +350,34 @@ function notTextError(verb: 'read' | 'edit', displayPath: string): FsError {
   return new FsError(`cannot ${verb} "${displayPath}": invalid UTF-8 text`, 'FS_NOT_TEXT')
 }
 
-function decodeUtf8(buffer: Uint8Array, verb: 'read' | 'edit', displayPath: string): string {
+function decodeUtf8(buffer: Uint8Array, verb: 'read' | 'edit', displayPath: string, ignoreBom = false): string {
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: ignoreBom }).decode(buffer)
   } catch (error: unknown) {
     /* v8 ignore next 2 -- TextDecoder({fatal}) only throws TypeError on invalid bytes; any other throw is an unreachable runtime fault. */
     if (!(error instanceof TypeError)) throw error
     throw notTextError(verb, displayPath)
   }
+}
+
+function hasUtf8Bom(buffer: Uint8Array): boolean {
+  return buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf
+}
+
+function trimIncompleteTrailingUtf8(buffer: Uint8Array): Uint8Array {
+  let check = buffer.length - 1
+  let cont = 0
+  while (check >= 0 && cont < 3) {
+    const byte = buffer[check]
+    if (byte === undefined || (byte & 0xc0) !== 0x80) break
+    cont++
+    check--
+  }
+  if (check < 0) return buffer
+  const lead = buffer[check]
+  if (lead === undefined || lead < 0x80) return buffer
+  const expectedLen = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc2 ? 2 : 1
+  return cont + 1 < expectedLen ? buffer.subarray(0, check) : buffer
 }
 
 function decodeUtf8Stream(
@@ -719,10 +741,30 @@ function normalizeLineEndings(content: string): string {
 }
 
 function detectLineEndings(raw: string): LineEndings {
-  const sample = raw.slice(0, 4096)
+  const sample = raw.slice(0, FORMAT_SAMPLE_BYTES)
   const crlfCount = sample.split('\r\n').length - 1
   const lfCount = sample.split('\n').length - 1 - crlfCount
   return crlfCount > lfCount ? 'CRLF' : 'LF'
+}
+
+/**
+ * Restore a UTF-8 BOM prefix (`\uFEFF`) detected at read time without doubling
+ * if the replacement content already carries one.
+ * @param content - text ready for disk write-back.
+ * @param hasBom - whether the source file began with a UTF-8 BOM.
+ * @returns text prefixed with `\uFEFF` when `hasBom` is true.
+ */
+export function restoreUtf8Bom(content: string, hasBom: boolean): string {
+  return hasBom && !content.startsWith(UTF8_BOM) ? `${UTF8_BOM}${content}` : content
+}
+
+/**
+ * Strip a single leading `\uFEFF` BOM from text for diff-basis alignment.
+ * @param content - decoded text that may begin with a UTF-8 BOM.
+ * @returns text without a leading `\uFEFF`.
+ */
+export function stripLeadingUtf8Bom(content: string): string {
+  return content.startsWith(UTF8_BOM) ? content.slice(1) : content
 }
 
 /**
@@ -737,36 +779,97 @@ function restoreLineEndings(content: string, lineEndings: LineEndings): string {
   return lineEndings === 'LF' ? content : normalizeLineEndings(content).split('\n').join('\r\n')
 }
 
-function countOccurrences(content: string, needle: string): number {
-  let count = 0
+function findMatchIndices(haystack: string, needle: string, step = 1): number[] {
+  const indices: number[] = []
   let index = 0
-  while (true) {
-    const found = content.indexOf(needle, index)
-    if (found === -1) return count
-    count += 1
-    index = found + needle.length
+  while (index <= haystack.length) {
+    const found = haystack.indexOf(needle, index)
+    if (found === -1) return indices
+    indices.push(found)
+    index = found + step
+  }
+  return indices
+}
+
+function countOccurrences(content: string, needle: string): number {
+  return findMatchIndices(content, needle, needle.length).length
+}
+
+/**
+ * Best-effort bounded inspection of an existing file's line endings and UTF-8
+ * BOM before an overwrite write. Missing, non-regular, binary, or invalid-UTF-8
+ * targets fall back to `{ lineEndings: 'LF', hasBom: false }` so writes succeed.
+ * @param absolutePath - existing file path.
+ * @param signal - optional abort signal.
+ * @returns detected line endings and UTF-8 BOM presence.
+ */
+export async function readExistingTextFormat(
+  absolutePath: string,
+  signal?: AbortSignal,
+): Promise<{ lineEndings: LineEndings; hasBom: boolean }> {
+  throwIfAborted(signal, 'write')
+  try {
+    const handle = await open(absolutePath, 'r')
+    let sample: Buffer
+    let total = 0
+    let fileSize = 0
+    try {
+      throwIfAborted(signal, 'write')
+      const info = await handle.stat()
+      if (!info.isFile()) return { lineEndings: 'LF', hasBom: false }
+      fileSize = info.size
+      const budget = Math.min(fileSize, FORMAT_SAMPLE_BYTES + 3)
+      sample = Buffer.allocUnsafe(budget)
+      while (total < budget) {
+        throwIfAborted(signal, 'write')
+        const { bytesRead } = await handle.read(sample, total, budget - total, null)
+        if (bytesRead === 0) break
+        total += bytesRead
+      }
+    } finally {
+      await handle.close()
+    }
+    const rawBytes = sample.subarray(0, total)
+    if (rawBytes.includes(0)) return { lineEndings: 'LF', hasBom: false }
+    const hasBom = hasUtf8Bom(rawBytes)
+    const body = hasBom ? rawBytes.subarray(3) : rawBytes
+    const sliced = total < fileSize ? trimIncompleteTrailingUtf8(body) : body
+    try {
+      const decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(sliced)
+      return { lineEndings: detectLineEndings(decoded), hasBom }
+    } catch (error: unknown) {
+      /* v8 ignore next 2 -- TextDecoder({fatal}) only throws TypeError on invalid bytes. */
+      if (!(error instanceof TypeError)) throw error
+      return { lineEndings: 'LF', hasBom: false }
+    }
+  } catch (error: unknown) {
+    if (error instanceof FsError) throw error
+    if (error instanceof Error && 'code' in error) return { lineEndings: 'LF', hasBom: false }
+    throw error
   }
 }
 
 /**
  * Read and decode a file for editing: rejects binaries, returns LF-normalized
- * content plus the original line-ending style for write-back.
+ * content plus the original line-ending style and UTF-8 BOM flag for write-back.
  * @param absolutePath - the file to read (typically a target key).
  * @param displayPath - the caller-facing path used in error messages.
  * @param signal - aborts the read (`FS_ABORTED`).
- * @returns the LF-normalized content and the detected style to restore on write-back.
+ * @returns the LF-normalized content and detected format metadata to restore on write-back.
  */
 export async function readForEdit(
   absolutePath: string,
   displayPath: string,
   signal?: AbortSignal,
-): Promise<{ content: string; lineEndings: LineEndings }> {
+): Promise<{ content: string; lineEndings: LineEndings; hasBom: boolean }> {
   throwIfAborted(signal, 'edit')
   const buffer = await readFileAbortable(absolutePath, displayPath, 'edit', signal)
   throwIfAborted(signal, 'edit')
   if (buffer.includes(0)) throw new FsError(`cannot edit "${displayPath}": binary file`, 'FS_NOT_TEXT')
-  const raw = decodeUtf8(buffer, 'edit', displayPath)
-  return { content: normalizeLineEndings(raw), lineEndings: detectLineEndings(raw) }
+  const hasBom = hasUtf8Bom(buffer)
+  const payload = hasBom ? buffer.subarray(3) : buffer
+  const raw = decodeUtf8(payload, 'edit', displayPath, true)
+  return { content: normalizeLineEndings(raw), lineEndings: detectLineEndings(raw), hasBom }
 }
 
 /**
@@ -834,14 +937,242 @@ export async function readTextForDiff(
   }
 }
 
+const LINE_PREFIX_STRICT_RE = /^\s*\d+(?:: |\||→)/
+const LINE_PREFIX_RELAXED_RE = /^\s*\d+(?:: ?|\| ?|→ ?)/
+
+function stripLineNumberPrefixes(text: string, pattern: RegExp): string | undefined {
+  const lines = text.split('\n')
+  const stripped: string[] = []
+  let nonEmpty = 0
+  for (const line of lines) {
+    if (line.length === 0) {
+      stripped.push('')
+      continue
+    }
+    const match = pattern.exec(line)
+    if (!match) return undefined
+    nonEmpty++
+    stripped.push(line.slice(match[0].length))
+  }
+  return nonEmpty > 0 ? stripped.join('\n') : undefined
+}
+
+function normalizeConfusablePunctuation(value: string): string {
+  return value
+    .replace(/[\u2010-\u2015\u2212]/gu, '-')
+    .replace(/[\u2018-\u201B]/gu, "'")
+    .replace(/[\u201C-\u201F]/gu, '"')
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/gu, ' ')
+}
+
+function splitsSurrogatePair(text: string, index: number): boolean {
+  if (index <= 0 || index >= text.length) return false
+  const prev = text.charCodeAt(index - 1)
+  const curr = text.charCodeAt(index)
+  return prev >= 0xd800 && prev <= 0xdbff && curr >= 0xdc00 && curr <= 0xdfff
+}
+
+function replaceUniqueSlice(
+  content: string,
+  start: number,
+  end: number,
+  newNorm: string,
+  displayPath: string,
+): { content: string; replacements: number } {
+  const originalSlice = content.slice(start, end)
+  const occurrences = findMatchIndices(content, originalSlice, 1).length
+  if (occurrences !== 1) {
+    throw new FsError(
+      `old_string matched ${occurrences} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
+      'FS_AMBIGUOUS_EDIT',
+    )
+  }
+  return { content: `${content.slice(0, start)}${newNorm}${content.slice(end)}`, replacements: 1 }
+}
+
+function tryStrippedLinePrefixEdit(
+  content: string,
+  oldNorm: string,
+  newNorm: string,
+  displayPath: string,
+): { content: string; replacements: number } | undefined {
+  // Keep original newNorm untouched and abort if newNorm itself looks line-numbered.
+  if (stripLineNumberPrefixes(newNorm, LINE_PREFIX_RELAXED_RE) !== undefined) return undefined
+  for (const pattern of [LINE_PREFIX_STRICT_RE, LINE_PREFIX_RELAXED_RE]) {
+    const strippedOld = stripLineNumberPrefixes(oldNorm, pattern)
+    if (strippedOld === undefined || strippedOld.length === 0 || strippedOld === newNorm) continue
+    const matches = findMatchIndices(content, strippedOld, 1)
+    if (matches.length > 1) {
+      throw new FsError(
+        `old_string matched ${matches.length} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
+        'FS_AMBIGUOUS_EDIT',
+      )
+    }
+    if (matches.length === 1) {
+      const [start] = matches
+      if (start !== undefined) {
+        return replaceUniqueSlice(content, start, start + strippedOld.length, newNorm, displayPath)
+      }
+    }
+  }
+  return undefined
+}
+
+function tryTrimEndLineEdit(
+  content: string,
+  oldNorm: string,
+  newNorm: string,
+  displayPath: string,
+): { content: string; replacements: number } | undefined {
+  const endsWithNewline = oldNorm.endsWith('\n')
+  const rawOldLines = (endsWithNewline ? oldNorm.slice(0, -1) : oldNorm).split('\n')
+  if (rawOldLines.every(line => line.trimEnd().length === 0)) return undefined
+
+  const contentLines = content.split('\n')
+  if (rawOldLines.length > contentLines.length) return undefined
+
+  const starts: number[] = [0]
+  for (let i = 0; i < contentLines.length - 1; i++) {
+    const lineStart = starts[i] ?? 0
+    const lineLen = contentLines[i]?.length ?? 0
+    starts.push(lineStart + lineLen + 1)
+  }
+
+  const trimmedOld = rawOldLines.map(line => line.trimEnd())
+  const matches: Array<{ start: number; end: number }> = []
+  const maxStart = contentLines.length - rawOldLines.length
+  for (let i = 0; i <= maxStart; i++) {
+    if (endsWithNewline && i + rawOldLines.length >= contentLines.length) break
+    let matched = true
+    for (let k = 0; k < rawOldLines.length; k++) {
+      const candidate = contentLines[i + k]
+      if (candidate === undefined || candidate.trimEnd() !== trimmedOld[k]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) {
+      const start = starts[i]
+      const endIndex = i + rawOldLines.length
+      const endStart = starts[endIndex]
+      const end = endsWithNewline
+        ? endStart
+        : endIndex < contentLines.length
+          ? (endStart !== undefined ? endStart - 1 : undefined)
+          : content.length
+      if (start !== undefined && end !== undefined) {
+        matches.push({ start, end })
+      }
+    }
+  }
+
+  if (matches.length > 1) {
+    throw new FsError(
+      `old_string matched ${matches.length} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
+      'FS_AMBIGUOUS_EDIT',
+    )
+  }
+  const [match] = matches
+  if (matches.length !== 1 || match === undefined) return undefined
+
+  const { start, end } = match
+  const originalSlice = content.slice(start, end)
+  if (endsWithNewline && !originalSlice.endsWith('\n')) return undefined
+  const roundTrip = (endsWithNewline ? originalSlice.slice(0, -1) : originalSlice).split('\n').map(line => line.trimEnd())
+  if (roundTrip.length !== trimmedOld.length || roundTrip.some((line, index) => line !== trimmedOld[index])) return undefined
+  return replaceUniqueSlice(content, start, end, newNorm, displayPath)
+}
+
+function tryPunctuationNormalizedEdit(
+  content: string,
+  oldNorm: string,
+  newNorm: string,
+  displayPath: string,
+): { content: string; replacements: number } | undefined {
+  const normContent = normalizeConfusablePunctuation(content)
+  const normOld = normalizeConfusablePunctuation(oldNorm)
+  if (normContent.length !== content.length || normOld.length === 0) return undefined
+
+  const matches = findMatchIndices(normContent, normOld, 1)
+  if (matches.length > 1) {
+    throw new FsError(
+      `old_string matched ${matches.length} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
+      'FS_AMBIGUOUS_EDIT',
+    )
+  }
+  const [start] = matches
+  if (matches.length !== 1 || start === undefined) return undefined
+
+  const end = start + normOld.length
+  if (splitsSurrogatePair(content, start) || splitsSurrogatePair(content, end)) return undefined
+  const originalSlice = content.slice(start, end)
+  if (normalizeConfusablePunctuation(originalSlice) !== normOld) return undefined
+  return replaceUniqueSlice(content, start, end, newNorm, displayPath)
+}
+
+function buildEditMissHint(content: string, oldNorm: string, newNorm: string, displayPath: string): string {
+  const hints: string[] = []
+  const queryLines = oldNorm.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+  const [anchor] = queryLines
+  if (anchor !== undefined && content.length > 0) {
+    const contentLines = content.split('\n')
+    const tokens = [...new Set(queryLines.join(' ').toLowerCase().split(/\W+/u).filter(token => token.length >= 2))]
+    const anchorNorm = normalizeConfusablePunctuation(anchor).toLowerCase()
+    let bestIndex = -1
+    let bestScore = 0
+    for (let i = 0; i < contentLines.length; i++) {
+      const line = contentLines[i]
+      if (line === undefined) continue
+      const trimmed = line.trim()
+      if (trimmed.length === 0) continue
+      let score = 0
+      if (trimmed === anchor) score += 10
+      else {
+        const lineNorm = normalizeConfusablePunctuation(trimmed).toLowerCase()
+        if (lineNorm === anchorNorm || lineNorm.includes(anchorNorm) || anchorNorm.includes(lineNorm)) score += 6
+      }
+      if (tokens.length > 0) {
+        const lower = trimmed.toLowerCase()
+        for (const token of tokens) {
+          if (lower.includes(token)) score += 2
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score
+        bestIndex = i
+      }
+    }
+    if (bestIndex >= 0 && bestScore > 0) {
+      const from = Math.max(0, bestIndex - 1)
+      const to = Math.min(contentLines.length, bestIndex + Math.min(queryLines.length, 4) + 1)
+      const preview = contentLines
+        .slice(from, to)
+        .map((line, offset) => `${from + offset + 1}: ${line.slice(0, 160)}`)
+        .join('\n')
+      hints.push(`Nearest match around line ${bestIndex + 1}:\n${preview}`)
+    }
+  }
+  if (newNorm.length > 0) {
+    const newIndex = content.indexOf(newNorm)
+    if (newIndex !== -1) {
+      const lineNum = content.slice(0, newIndex).split('\n').length
+      hints.push(`missHint: new_string is already present in "${displayPath}" (starting at line ${lineNum}).`)
+    }
+  }
+  return hints.length > 0 ? `\n${hints.join('\n')}` : ''
+}
+
 /**
- * Apply a literal replacement to LF-normalized content. Empty or missing search text throws
- * `FS_EDIT_NOT_FOUND`; multiple matches throw `FS_AMBIGUOUS_EDIT` unless `replaceAll` is true.
+ * Apply a literal replacement to LF-normalized content using progressive unique matching:
+ * Pass 1 exact literal; Pass 2 line-number prefix stripping (preserving newString safety);
+ * Pass 3 per-line trimEnd tolerance; Pass 4 Unicode confusable punctuation normalization with
+ * round-trip verification. Any ambiguous pass throws `FS_AMBIGUOUS_EDIT`; total failure throws
+ * `FS_EDIT_NOT_FOUND` with nearest-line preview and `missHint`.
  * @param content - the current file content, already LF-normalized.
  * @param oldString - literal text to find; CRLF inside it is normalized to LF before
  *   matching.
  * @param newString - literal replacement text, normalized the same way.
- * @param replaceAll - replace every match instead of requiring exactly one.
+ * @param replaceAll - replace every exact match instead of requiring exactly one.
  * @param displayPath - the caller-facing path used in error messages.
  * @returns the edited LF-normalized content plus how many occurrences were replaced.
  */
@@ -858,13 +1189,23 @@ export function applyLiteralEdit(
   }
   const newNorm = normalizeLineEndings(newString)
   const replacements = countOccurrences(content, oldNorm)
-  if (replacements === 0) {
-    throw new FsError(`old_string was not found in "${displayPath}"`, 'FS_EDIT_NOT_FOUND')
+  if (replacements > 0) {
+    if (!replaceAll && replacements > 1) {
+      throw new FsError(
+        `old_string matched ${replacements} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
+        'FS_AMBIGUOUS_EDIT',
+      )
+    }
+    return { content: content.split(oldNorm).join(newNorm), replacements }
   }
-  if (!replaceAll && replacements > 1) {
-    throw new FsError(`old_string matched ${replacements} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`, 'FS_AMBIGUOUS_EDIT')
-  }
-  return { content: content.split(oldNorm).join(newNorm), replacements }
+
+  return tryStrippedLinePrefixEdit(content, oldNorm, newNorm, displayPath)
+    ?? tryTrimEndLineEdit(content, oldNorm, newNorm, displayPath)
+    ?? tryPunctuationNormalizedEdit(content, oldNorm, newNorm, displayPath)
+    ?? (() => {
+      const hint = buildEditMissHint(content, oldNorm, newNorm, displayPath)
+      throw new FsError(`old_string was not found in "${displayPath}"${hint}`, 'FS_EDIT_NOT_FOUND')
+    })()
 }
 
 export { normalizeLineEndings, restoreLineEndings }

@@ -9,6 +9,7 @@ export const zh = {
   allow: '允许',
   allowOnce: '允许一次',
   allowAlways: '始终允许',
+  submitFailed: '审批提交失败，请重试',
 } satisfies Record<string, string>
 
 /** Approval dictionary key union. */
@@ -23,6 +24,7 @@ export const en = {
   allow: 'Allow',
   allowOnce: 'Allow once',
   allowAlways: 'Always allow',
+  submitFailed: 'Failed to submit decision; please try again',
 } satisfies Record<ApprovalKey, string>
 
 /** Japanese copy, checked against the English keys. */
@@ -34,6 +36,7 @@ export const ja = {
   'allow': '許可',
   'allowOnce': '1 回だけ許可',
   'allowAlways': '常に許可',
+  'submitFailed': '承認結果の送信に失敗しました。再試行してください',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -45,6 +48,7 @@ export const es = {
   allow: 'Permitir',
   allowOnce: 'permitir una vez',
   allowAlways: 'Permitir siempre',
+  submitFailed: 'Error al enviar la decisión; inténtalo de nuevo',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -56,6 +60,7 @@ export const fr = {
   allow: 'Autoriser',
   allowOnce: 'Autoriser une fois',
   allowAlways: 'Toujours autoriser',
+  submitFailed: "Échec de l'envoi de la décision ; veuillez réessayer",
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -67,6 +72,7 @@ export const de = {
   allow: 'Erlauben',
   allowOnce: 'Einmal zulassen',
   allowAlways: 'Immer zulassen',
+  submitFailed: 'Entscheidung konnte nicht gesendet werden; bitte erneut versuchen',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -78,6 +84,7 @@ export const ru = {
   allow: 'Разрешить',
   allowOnce: 'Разрешить один раз',
   allowAlways: 'Всегда разрешать',
+  submitFailed: 'Не удалось отправить решение; повторите попытку',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -89,4 +96,5 @@ export const pt = {
   allow: 'Permitir',
   allowOnce: 'Permitir uma vez',
   allowAlways: 'Sempre permitir',
+  submitFailed: 'Falha ao enviar a decisão; tente novamente',
 } satisfies Record<keyof typeof en, string>

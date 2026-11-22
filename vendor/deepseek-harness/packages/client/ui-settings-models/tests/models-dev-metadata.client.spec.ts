@@ -6,6 +6,8 @@ import {
   enrichDiscoveredModel,
   enrichDiscoveredModels,
   enrichDiscoveredModelsBestEffort,
+  isPrivateOrLocalBaseUrl,
+  loadModelsDevMetadata,
   reasoningEffortsFromMetadata,
   resetModelsDevMetadataCache,
   selectModelsDevRecord,
@@ -158,5 +160,49 @@ describe('enrichDiscoveredModelsBestEffort', () => {
       },
       { id: 'unknown' },
     ])
+  })
+
+  it('skips models.dev fetch for localhost and private gateway baseURLs', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    for (const localUrl of [
+      'http://localhost:8080/v1',
+      'http://127.0.0.1:8080/v1',
+      'http://[::1]:8080/v1',
+      'http://10.2.3.4:8080/v1',
+      'http://172.16.5.6:8080/v1',
+      'http://192.168.1.20:8080/v1',
+      'http://magpie.local/v1',
+    ]) {
+      expect(isPrivateOrLocalBaseUrl(localUrl), localUrl).toBe(true)
+      await expect(enrichDiscoveredModelsBestEffort([{ id: 'local-model' }], { baseURL: localUrl }))
+        .resolves.toEqual([{ id: 'local-model' }])
+    }
+    expect(isPrivateOrLocalBaseUrl('https://api.deepseek.com/v1')).toBe(false)
+    expect(isPrivateOrLocalBaseUrl('http://172.32.0.1/v1')).toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('attaches an AbortSignal with a 2s timeout when fetching models.dev', async () => {
+    const controller = new AbortController()
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
+    let seenSignal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => {
+      seenSignal = init?.signal ?? undefined
+      return new Promise((_resolve, reject) => {
+        seenSignal?.addEventListener('abort', () => reject(seenSignal?.reason ?? new Error('aborted')))
+      })
+    }))
+    try {
+      const pending = loadModelsDevMetadata()
+      expect(timeoutSpy).toHaveBeenCalledWith(2_000)
+      expect(seenSignal).toBe(controller.signal)
+      expect(seenSignal?.aborted).toBe(false)
+      controller.abort(new DOMException('Timed out', 'TimeoutError'))
+      expect(seenSignal?.aborted).toBe(true)
+      await expect(pending).rejects.toThrow()
+    } finally {
+      timeoutSpy.mockRestore()
+    }
   })
 })

@@ -12,6 +12,7 @@ const {
   FORK_FILE_MARKERS,
   assertDesktopForks,
 } = require('./harness-desktop-forks');
+const { WAVE1_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave1');
 
 function writeFile(root, rel, content) {
   const full = path.join(root, ...rel.split('/'));
@@ -82,7 +83,15 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
     "  const scopedStoreBinding = scope === 'session-maybe' && scopeBinding?.key === undefined ? { key: '' } : scopeBinding",
     '',
   ].join('\n'));
+  const written = new Set();
+  const wave1ByFile = new Map();
+  for (const entry of WAVE1_FORK_FILE_MARKERS) {
+    const extra = (entry.includes || []).join('\n');
+    if (extra) wave1ByFile.set(entry.file, `${wave1ByFile.get(entry.file) || ''}${extra}\n`);
+  }
   for (const marker of FORK_FILE_MARKERS) {
+    if (written.has(marker.file)) continue;
+    written.add(marker.file);
     const content = {
       'packages/client/ui-theme/src/theme-settings.ts': 'minimalMode minimalModeSuggestions minimalModeSnoozedUntil\n',
       'packages/client/ui-theme/src/appearance-apply.ts': 'data-dsh-minimal dsh:render-mode WINDOW_MATERIAL_ATTR\n',
@@ -411,7 +420,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'apps/web/public/Claude-Artwork-NOTICES.txt': 'Ancean\nZipZipPipe\n',
     };
     const seamContent = projectSeams[marker.file] ?? content[marker.file] ?? 'export {}\n';
-    writeFile(root, marker.file, `${seamContent}${skinSeams[marker.file] ?? ''}`);
+    const extra = wave1ByFile.get(marker.file) || '';
+    writeFile(root, marker.file, `${seamContent}${skinSeams[marker.file] ?? ''}${extra}`);
   }
   return root;
 }
@@ -556,4 +566,11 @@ test('assertDesktopForks accepts the current pinned vendor tree', () => {
   const vendor = path.join(root, 'vendor', 'deepseek-harness');
   const pin = JSON.parse(fs.readFileSync(path.join(root, 'vendor', 'harness-upstream.json'), 'utf8'));
   assertDesktopForks(vendor, pin.npm);
+});
+
+test('assertDesktopForks throws when a Wave 1 fork marker regresses', (t) => {
+  const root = makeFixture(t);
+  const retryPolicyPath = path.join(root, ...'packages/llm/llm/src/retry-policy.ts'.split('/'));
+  fs.writeFileSync(retryPolicyPath, "export const DEFAULT_RETRYABLE_CODES = ['RATE_LIMIT']\n");
+  assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /STREAM_CLOSED/);
 });

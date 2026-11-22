@@ -2548,6 +2548,45 @@ test('gitCheckLargeFiles skips a listed path that is gone from disk', async () =
   }
 });
 
+test('gitDiff classifies >256 KiB untracked text with tooLarge:true rather than binary:true', async () => {
+  const cwd = makeTempDir();
+  try {
+    initRepoWithBase(cwd);
+    const bigText = Buffer.from('a'.repeat(260 * 1024), 'utf8');
+    const bigBinary = Buffer.alloc(260 * 1024, 1);
+    bigBinary[16] = 0;
+    const smallBinary = Buffer.from([0, 1, 2, 3]);
+    fs.writeFileSync(path.join(cwd, 'big-log.txt'), bigText);
+    fs.writeFileSync(path.join(cwd, 'big-blob.bin'), bigBinary);
+    fs.writeFileSync(path.join(cwd, 'small-blob.bin'), smallBinary);
+
+    const diff = await gitDiff(cwd);
+    assert.ok(diff);
+    const byPath = new Map(diff.files.map((file) => [file.path, file]));
+    assert.deepEqual(byPath.get('big-log.txt'), {
+      path: 'big-log.txt',
+      status: 'added',
+      tooLarge: true,
+      hunks: [],
+    });
+    assert.deepEqual(byPath.get('big-blob.bin'), {
+      path: 'big-blob.bin',
+      status: 'added',
+      binary: true,
+      hunks: [],
+    });
+    assert.deepEqual(byPath.get('small-blob.bin'), {
+      path: 'small-blob.bin',
+      status: 'added',
+      binary: true,
+      hunks: [],
+    });
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('gitCheckLargeFiles refuses an unauthorized cwd', async () => {
   const boot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-git-lf-boot-'));
   const outsider = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-git-lf-out-'));

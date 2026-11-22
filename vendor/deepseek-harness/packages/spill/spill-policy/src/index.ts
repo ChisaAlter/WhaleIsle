@@ -40,6 +40,7 @@ function retainable(content: readonly ContentBlock[]): content is RetainableBloc
 }
 
 const GAP = { type: 'text', text: '\n\n[...]\n\n' } as const
+const DEFAULT_IMAGE_TOKENS = 1600
 
 /**
  * Mount token retention for accepted tool results and PTC log copies.
@@ -64,12 +65,15 @@ export function apply(ctx: Context, config: Config): void {
       const calculator = provider === undefined || model === undefined
         ? undefined
         : ctx.get('llm')?.imageRequestPricing(provider, model)
-      if (calculator === undefined) throw new Error('the current model has no image token calculator')
-      const prices = calculator.priceImages(images)
-      if (prices.length !== images.length) throw new Error('image token calculator returned an inconsistent occurrence count')
-      for (const [index, image] of images.entries()) {
-        const cost = prices[index] as LlmImageRequestPrice
-        costs.set(image, cost.visualTokens + estimateContent([{ type: 'text', text: cost.text }]))
+      if (calculator === undefined) {
+        for (const image of images) costs.set(image, DEFAULT_IMAGE_TOKENS)
+      } else {
+        const prices = calculator.priceImages(images)
+        if (prices.length !== images.length) throw new Error('image token calculator returned an inconsistent occurrence count')
+        for (const [index, image] of images.entries()) {
+          const cost = prices[index] as LlmImageRequestPrice
+          costs.set(image, cost.visualTokens + estimateContent([{ type: 'text', text: cost.text }]))
+        }
       }
     }
     return block => block.type === 'image' ? costs.get(block) as number : estimateContent([block])

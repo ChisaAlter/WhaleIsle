@@ -783,7 +783,7 @@ describe('endpoint interrogation', () => {
     openEditor('openai')
 
     fireEvent.click(screen.getByText(en.fetchModels))
-    await screen.findByText(en.fetchTitle)
+    await screen.findByTitle('DeepSeek Reasoner')
     fireEvent.click(screen.getByText(en.fetchAdopt))
 
     fireEvent.click(screen.getByText(en.apply))
@@ -827,7 +827,7 @@ describe('endpoint interrogation', () => {
     openEditor('openai')
 
     fireEvent.click(screen.getByText(en.fetchModels))
-    await screen.findByText(en.fetchTitle)
+    await screen.findByTitle('GPT-4o')
     fireEvent.click(screen.getByText(en.fetchAdopt))
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
@@ -856,6 +856,48 @@ describe('endpoint interrogation', () => {
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'acme-large' }])
+  })
+
+  it('skips models.dev enrichment for local Magpie URLs', async () => {
+    setModelsDevEnrichmentDisabledForTests(false)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    resetModelsDevMetadataCache()
+
+    const localDiscover = vi.fn(() => Promise.resolve(ok({ models: [{ id: 'magpie-coder' }] })))
+    await mountSection({
+      discover: localDiscover,
+      providers: { openai: { baseURL: 'http://127.0.0.1:8080/v1', models: [] } },
+    })
+    openEditor('openai')
+    fireEvent.click(screen.getByText(en.fetchModels))
+    await screen.findByText('magpie-coder')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('displays discovered candidates immediately while models.dev is pending', async () => {
+    setModelsDevEnrichmentDisabledForTests(false)
+    let resolveMetadata!: (value: unknown) => void
+    const pendingFetch = vi.fn(() => new Promise((resolve) => { resolveMetadata = resolve }))
+    vi.stubGlobal('fetch', pendingFetch)
+    resetModelsDevMetadataCache()
+
+    const publicDiscover = vi.fn(() => Promise.resolve(ok({ models: [{ id: 'gpt-4o' }] })))
+    await mountSection({
+      discover: publicDiscover,
+      providers: { openai: { baseURL: 'https://proxy.example/v1', models: [] } },
+    })
+    openEditor('openai')
+    fireEvent.click(screen.getByText(en.fetchModels))
+    await screen.findByText('gpt-4o')
+    expect(pendingFetch).toHaveBeenCalledTimes(1)
+    resolveMetadata({
+      ok: true,
+      json: () => Promise.resolve({
+        openai: { id: 'openai', models: { 'gpt-4o': { name: 'GPT-4o', limit: { context: 128_000, output: 16_384 } } } },
+      }),
+    })
+    await screen.findByTitle('GPT-4o')
   })
 
   it('removes an unchecked configured model and keeps one the provider does not list', async () => {

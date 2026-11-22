@@ -80,7 +80,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
   })
 
   describe('glob', () => {
-    it('prunes unrelated directories and preserves workspace-relative results', async () => {
+    it('respects .gitignore by default, prunes unrelated directories, and honors noIgnore=true', async () => {
       await mkdir(join(dir, 'packages', 'core', 'src', 'nested'), { recursive: true })
       await writeFile(join(dir, 'packages', 'core', 'src', 'old.ts'), '')
       await writeFile(join(dir, 'packages', 'core', 'src', '.hidden.ts'), '')
@@ -91,18 +91,23 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       await utimes(join(dir, 'packages', 'core', 'src', 'old.ts'), new Date(2000, 0, 1), new Date(2000, 0, 1))
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
       const ensure = vi.spyOn(ctx.workingDirectory, 'ensure')
-      const result = await call('glob', { pattern: 'packages/core/src/*.ts' }, agent())
+
+      const ignoredByDefault = await call('glob', { pattern: 'packages/core/src/*.ts' }, agent())
       expect(ensure).toHaveBeenCalledTimes(1)
+      expect(ignoredByDefault.isError).toBe(false)
+      expect(text(ignoredByDefault)).toBe('No files found')
+
+      const result = await call('glob', { pattern: 'packages/core/src/*.ts', noIgnore: true }, agent())
       expect(result.isError).toBe(false)
       if (result.isError) throw new Error('expected glob success')
       expect(result.value).toEqual({ root: '.', paths: [
         join('packages', 'core', 'src', 'old.ts'),
         join('packages', 'core', 'src', '.hidden.ts'),
       ] })
-      expect(spawn.mock.calls[0]?.[0].argv.slice(3, 6)).toEqual([
+      expect(spawn.mock.calls[1]?.[0].argv.slice(3, 6)).toEqual([
         '--glob=!**', '--glob={packages,core,src}/', '--glob=packages/core/src/*.ts',
       ])
-      expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
+      expect(spawn.mock.calls[1]?.[0].argv).not.toContain('--')
     })
 
     it.each(['*.ts', '**/*.ts', 'src/**/*.ts', '!src/*.ts', './src/*.ts', 'src/../src/*.ts', '.git/*.ts'])(
@@ -127,7 +132,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
         signal: testToolSignal,
         callId: ToolCallId(`deep-glob-${++callCounter}`),
         name: 'glob',
-        arguments: { pattern },
+        arguments: { pattern, noIgnore: true },
         agent: agent() as never,
       })
       expect(result.isError).toBe(false)
@@ -139,7 +144,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
 
     it('preserves case-sensitive matching while pruning directories', async () => {
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
-      expect(text(await call('glob', { pattern: 'SRC/*.ts' }, agent()))).toBe('No files found')
+      expect(text(await call('glob', { pattern: 'SRC/*.ts', noIgnore: true }, agent()))).toBe('No files found')
       expect(spawn.mock.calls[0]?.[0].argv).toContain('--glob={SRC}/')
     })
 
@@ -148,7 +153,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       await writeFile(join(dir, 'src', 'nested', 'file.ts'), '')
       await symlink(join(dir, 'src'), join(dir, 'linked'), 'junction')
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
-      expect(text(await call('glob', { pattern: 'linked/nested/*.ts' }, agent()))).toBe('No files found')
+      expect(text(await call('glob', { pattern: 'linked/nested/*.ts', noIgnore: true }, agent()))).toBe('No files found')
       expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
     })
 
@@ -257,6 +262,54 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       const result = await call('grep', { pattern: 'x', path: 'no-such-dir' })
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { code: 'SEARCH_FAILED' } })
+    })
+
+    it('supports real rg output_mode, case_insensitive, context_lines, head_limit, and list/! include', async () => {
+      const filesMode = await call('grep', {
+        pattern: 'ALPHA',
+        case_insensitive: true,
+        output_mode: 'files_with_matches',
+        include: '*.ts,*.md,!notes.md',
+      }, agent())
+      expect(filesMode.isError).toBe(false)
+      expect(text(filesMode)).toContain(join('src', 'alpha.ts'))
+      expect(text(filesMode)).not.toContain('notes.md')
+
+      const countMode = await call('grep', { pattern: 'alpha', output_mode: 'count' }, agent())
+      expect(countMode.isError).toBe(false)
+      expect(text(countMode)).toContain(`${join('src', 'alpha.ts')}: 2`)
+      expect(text(countMode)).toContain('notes.md: 1')
+
+      const contextMode = await call('grep', { pattern: 'refit', path: 'src/alpha.ts', context_lines: 1 }, agent())
+      expect(contextMode.isError).toBe(false)
+      expect(text(contextMode)).toContain('Line 1 (context): export const alpha = 1')
+      expect(text(contextMode)).toContain('Line 2: // TODO: refit alpha')
+    })
+
+    it('stops streaming rg cleanly when raw output hits rawOutputMaxBytes and returns prefix matches', async () => {
+      const bigCtx = new Context()
+      provideWorkingDirectoryFixture(bigCtx)
+      await bigCtx.plugin(SystemPrompt)
+      await bigCtx.plugin(ToolRuntime)
+      await bigCtx.plugin(NativeToolExecutor)
+      await bigCtx.plugin(LocalSubprocessRuntime)
+      await bigCtx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true, rawOutputMaxBytes: 400 })
+      try {
+        const lines = Array.from({ length: 40 }, (_, i) => `match line number ${i} padding text\n`).join('')
+        await writeFile(join(dir, 'many.txt'), lines)
+        const result = await executeToolFixture(bigCtx, {
+          signal: testToolSignal,
+          callId: ToolCallId(`it-${++callCounter}`),
+          name: 'grep',
+          arguments: { pattern: 'match line number', path: 'many.txt' },
+          agent: agent() as never,
+        })
+        expect(result.isError).toBe(false)
+        expect(text(result)).toContain('match line number 0')
+        expect(text(result)).toContain('stopped early')
+      } finally {
+        await bigCtx.fiber.dispose()
+      }
     })
   })
 

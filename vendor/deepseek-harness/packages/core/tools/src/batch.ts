@@ -95,11 +95,96 @@ export async function executeToolBatch(
   }
 }
 
-/** Parse model arguments, preserving invalid JSON as text and mapping empty input to `{}`. */
+const VALID_JSON_ESCAPES = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't'])
+
+function isControlCharacter(char: string): boolean {
+  const codePoint = char.codePointAt(0)
+  return codePoint !== undefined && codePoint >= 0x00 && codePoint <= 0x1f
+}
+
+function escapeControlCharacter(char: string): string {
+  switch (char) {
+    case '\b': return '\\b'
+    case '\f': return '\\f'
+    case '\n': return '\\n'
+    case '\r': return '\\r'
+    case '\t': return '\\t'
+    default: return `\\u${(char.codePointAt(0) ?? 0).toString(16).padStart(4, '0')}`
+  }
+}
+
+/** Conservatively repair control characters, invalid string escapes, and trailing commas in JSON arguments. */
+function repairJsonArguments(raw: string): string {
+  let repaired = ''
+  let inString = false
+  for (let index = 0; index < raw.length; index++) {
+    const char = raw[index]
+    if (char === undefined) continue
+    if (!inString) {
+      if (char === '"') {
+        inString = true
+        repaired += char
+        continue
+      }
+      if (char === ',') {
+        let lookahead = index + 1
+        while (lookahead < raw.length && (raw[lookahead] === ' ' || raw[lookahead] === '\t' || raw[lookahead] === '\n' || raw[lookahead] === '\r')) {
+          lookahead++
+        }
+        const next = raw[lookahead]
+        if (next === '}' || next === ']') continue
+      }
+      repaired += char
+      continue
+    }
+    if (char === '"') {
+      inString = false
+      repaired += char
+      continue
+    }
+    if (char === '\\') {
+      const nextChar = raw[index + 1]
+      if (nextChar === undefined) {
+        repaired += '\\\\'
+        continue
+      }
+      if (nextChar === 'u') {
+        const unicodeDigits = raw.slice(index + 2, index + 6)
+        if (/^[0-9a-fA-F]{4}$/.test(unicodeDigits)) {
+          repaired += `\\u${unicodeDigits}`
+          index += 5
+          continue
+        }
+      }
+      if (VALID_JSON_ESCAPES.has(nextChar)) {
+        repaired += `\\${nextChar}`
+        index += 1
+        continue
+      }
+      repaired += '\\\\'
+      continue
+    }
+    repaired += isControlCharacter(char) ? escapeControlCharacter(char) : char
+  }
+  return repaired
+}
+
+/** Parse model arguments, repairing mild syntax flaws and preserving unrecoverable or string-literal input as text. */
 function parseArguments(raw: string): unknown {
+  if (!raw) return {}
   try {
-    return raw ? JSON.parse(raw) : {}
-  } catch (_error: unknown) {
+    const parsed: unknown = JSON.parse(raw)
+    return typeof parsed === 'string' ? raw : parsed
+  } catch {
+    const repaired = repairJsonArguments(raw)
+    if (repaired !== raw) {
+      try {
+        const parsed: unknown = JSON.parse(repaired)
+        return typeof parsed === 'string' ? raw : parsed
+      } catch {
+        // Fall through and preserve raw malformed input for tool-owned diagnostics.
+      }
+    }
     // Preserve malformed model input for tool-owned argument diagnostics.
     return raw
   }

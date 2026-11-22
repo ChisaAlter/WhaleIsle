@@ -979,6 +979,32 @@ describe('mapStopReason / mapUsage', () => {
     }))).toMatchObject({ kind: 'error', failure: { code: 'RATE_LIMIT' } })
   })
 
+  it.each([
+    ['HTTP 408 Request Time-out', 'TIMEOUT'],
+    ['408 Request Time-out', 'TIMEOUT'],
+    ['HTTP 402 Payment Required', 'QUOTA'],
+    ['402 billing account requires payment', 'QUOTA'],
+    ['write EPIPE', 'TRANSPORT'],
+    ['connect ETIMEDOUT 1.2.3.4:443', 'TIMEOUT'],
+    ['Error: ESOCKETTIMEDOUT', 'TIMEOUT'],
+    ['getaddrinfo EAI_AGAIN api.example.com', 'TRANSPORT'],
+    ['getaddrinfo ENOTFOUND api.example.com', 'TRANSPORT'],
+    ['fetch failed: UND_ERR_CONNECT_TIMEOUT', 'TIMEOUT'],
+    ['fetch failed: UND_ERR_SOCKET', 'TRANSPORT'],
+    ["SyntaxError: Unexpected token '<', \"<html>502...\" is not valid JSON", 'SERVER'],
+    ['Anthropic performed an unsupported mid-output model fallback', 'SERVER'],
+  ] as const)('classifies %j as %s', (errorMessage, code) => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
+      .toMatchObject({ kind: 'error', failure: { code } })
+  })
+
+  it('keeps leading gateway 5xx over embedded 402/408 in body', () => {
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: '500 upstream 402 Payment Required',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+  })
+
   it('uses the resolved context window for silent and length-stop overflows', () => {
     // Non-empty content keeps the no-window branch on the successful stop path
     // (an empty stop is EMPTY_RESPONSE, covered above); overflow wins over both.

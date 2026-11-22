@@ -639,3 +639,60 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
     delete require.cache[require.resolve('./window.js')];
   }
 });
+
+test('boot retry restores button and shows error when restart resolves with { ok: false, error }', async () => {
+  const boot = fs.readFileSync(path.join(__dirname, '../renderer/boot.js'), 'utf8');
+  const elements = new Map();
+  function element() {
+    const attributes = new Map();
+    return {
+      disabled: false, hidden: false, textContent: '', innerHTML: '', dataset: {}, handlers: {},
+      classList: { toggle() {}, add() {}, remove() {} }, append() {},
+      addEventListener(name, handler) { this.handlers[name] = handler; },
+      getAttribute(name) { return attributes.get(name) ?? null; },
+      setAttribute(name, value) { attributes.set(name, value); },
+      removeAttribute(name) { attributes.delete(name); },
+      querySelectorAll() { return []; },
+      querySelector() { return null; },
+    };
+  }
+  let resolveRestart;
+  const restartPending = new Promise((resolve) => { resolveRestart = resolve; });
+  const body = element();
+  vm.runInNewContext(boot, {
+    document: {
+      body, createElement: element, addEventListener() {},
+      getElementById(id) {
+        if (!elements.has(id)) elements.set(id, element());
+        return elements.get(id);
+      },
+    },
+    window: {
+      shell: {
+        getState: () => Promise.resolve({ state: 'error', error: 'initial failure' }),
+        onState() {},
+        restart: () => restartPending,
+      },
+      shellFeedback: {
+        mountProgress: () => ({ show() {}, hide() {} }),
+        buttonBusy: () => () => {},
+        notice() {},
+      },
+    },
+    setInterval: () => 1, clearInterval() {},
+  });
+  await new Promise(setImmediate);
+  const retry = elements.get('retry');
+  const actions = elements.get('actions');
+  retry.handlers.click();
+  assert.equal(body.dataset.state, 'starting');
+  assert.equal(actions.hidden, true);
+
+  resolveRestart({ ok: false, error: '重启被拒绝' });
+  await new Promise(setImmediate);
+  await new Promise(setImmediate);
+  assert.equal(retry.disabled, false, 'retry button must re-enable after { ok: false, error }');
+  assert.equal(actions.hidden, false);
+  assert.equal(body.dataset.state, 'error');
+  assert.match(elements.get('failure').textContent || '', /重启被拒绝/);
+});

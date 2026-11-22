@@ -20,12 +20,47 @@ function rpcEndpoint(baseUrl, method) {
   return endpoint.toString();
 }
 
+/** Default per-RPC timeout when callers do not supply an explicit signal/timeout. */
+const DEFAULT_RPC_TIMEOUT_MS = 15_000;
+
+function raceRpcTimeout(fetchPromise, method, timeoutMs, controller, externalSignal) {
+  let timer = null;
+  let timedOut = false;
+  let onExternalAbort = null;
+  const timeoutError = Object.assign(new Error(`RPC ${method} 超时（${timeoutMs}ms）`), { code: 'ETIMEDOUT' });
+  const timeoutPromise = new Promise((_, reject) => {
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort(externalSignal.reason);
+      else {
+        onExternalAbort = () => controller.abort(externalSignal.reason);
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
+    if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort(timeoutError);
+        reject(timeoutError);
+      }, timeoutMs);
+    }
+  });
+  return Promise.race([
+    fetchPromise.catch((err) => {
+      throw timedOut ? timeoutError : err;
+    }),
+    timeoutPromise,
+  ]).finally(() => {
+    if (timer !== null) clearTimeout(timer);
+    if (externalSignal && onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
+  });
+}
+
 /**
  * @param {string} baseUrl
  * @param {string} method
  * @param {Record<string, unknown>} args
  * @param {typeof fetch} [fetchImpl]
- * @param {{ cookie?: string, signal?: AbortSignal }} [options]
+ * @param {{ cookie?: string, signal?: AbortSignal, timeoutMs?: number }} [options]
  */
 async function rpc(baseUrl, method, args, fetchImpl = fetch, options = {}) {
   const rpcId = randomUUID();
@@ -36,10 +71,13 @@ async function rpc(baseUrl, method, args, fetchImpl = fetch, options = {}) {
   if (options.cookie) {
     headers.Cookie = options.cookie;
   }
+  const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : DEFAULT_RPC_TIMEOUT_MS;
+  const controller = new AbortController();
   /** @type {RequestInit} */
   const init = {
     method: 'POST',
     headers,
+    signal: controller.signal,
     body: JSON.stringify({
       type: 'client-request',
       rpcId,
@@ -47,10 +85,13 @@ async function rpc(baseUrl, method, args, fetchImpl = fetch, options = {}) {
       payload: { args: args && typeof args === 'object' && !Array.isArray(args) ? args : {} },
     }),
   };
-  if (options.signal) {
-    init.signal = options.signal;
-  }
-  const response = await fetchImpl(rpcEndpoint(baseUrl, method), init);
+  const response = await raceRpcTimeout(
+    Promise.resolve().then(() => fetchImpl(rpcEndpoint(baseUrl, method), init)),
+    method,
+    timeoutMs,
+    controller,
+    options.signal,
+  );
   const body = await response.text();
   let parsed;
   try {

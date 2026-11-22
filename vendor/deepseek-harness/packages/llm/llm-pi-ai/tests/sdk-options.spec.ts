@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 
+import type { Api, Model, SimpleStreamOptions, TranscriptContext } from '@earendil-works/pi-ai'
+
 const streamSimple = vi.hoisted(() => vi.fn())
 
 // A hand-declared route is built by `createProvider` over the protocol table in
@@ -70,6 +72,48 @@ describe('pi-ai SDK retry boundary', () => {
       baseUrl: 'http://127.0.0.1:9/v1',
       contextWindow: 8192,
       maxTokens: 1024,
+    })
+  })
+
+  it('extracts Retry-After passed through pi-ai onResponse hook onto error finish chunks', async () => {
+    const impl = (model: Model<Api>, _context: TranscriptContext, options?: SimpleStreamOptions) => (async function * () {
+      await options?.onResponse?.({ status: 429, headers: { 'retry-after': '12' } }, model)
+      yield {
+        type: 'error' as const,
+        reason: 'error' as const,
+        error: {
+          role: 'assistant' as const,
+          content: [],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'error' as const,
+          errorMessage: '429 rate limited',
+          timestamp: 0,
+        },
+      }
+    })()
+    streamSimple.mockImplementation(impl)
+
+    const chunks = await drain(gatewayAdapter())
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: {
+        kind: 'error',
+        failure: {
+          code: 'RATE_LIMIT',
+          providerRetryAfterMs: 12_000,
+        },
+      },
     })
   })
 })

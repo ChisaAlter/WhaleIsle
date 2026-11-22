@@ -117,6 +117,19 @@ function parseUnifiedDiff(text) {
   return files;
 }
 
+const BINARY_PREFIX_BYTES = 8192;
+
+function hasBinaryNullByte(target) {
+  const fd = fs.openSync(target, 'r');
+  try {
+    const probe = Buffer.allocUnsafe(BINARY_PREFIX_BYTES);
+    const read = fs.readSync(fd, probe, 0, BINARY_PREFIX_BYTES, 0);
+    return probe.subarray(0, read).includes(0);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function untrackedAsDiff(root, rel) {
   const target = path.join(root, rel);
   let stat;
@@ -127,11 +140,13 @@ function untrackedAsDiff(root, rel) {
   }
   if (!stat.isFile()) return null;
   if (stat.size > MAX_UNTRACKED_BYTES) {
-    return { path: rel, status: 'added', hunks: [] };
+    return hasBinaryNullByte(target)
+      ? { path: rel, status: 'added', binary: true, hunks: [] }
+      : { path: rel, status: 'added', tooLarge: true, hunks: [] };
   }
   const buf = fs.readFileSync(target);
   if (buf.includes(0)) {
-    return { path: rel, status: 'added', hunks: [] };
+    return { path: rel, status: 'added', binary: true, hunks: [] };
   }
   const body = buf.toString('utf8').replace(/\r\n/g, '\n');
   const rows = body.split('\n');

@@ -256,6 +256,42 @@ function requestHeaderDiagnostic(error: unknown): string {
     : 'the contributing plugin threw a non-Error value; throw an Error with a safe diagnostic'
 }
 
+/** Read a header value case-insensitively from either `Headers` or a flat record. */
+function headerValue(headers: Headers | Readonly<Record<string, string>>, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined
+  const lower = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower) return value
+  }
+  return undefined
+}
+
+/** Parse positive millisecond Retry-After duration from `retry-after-ms` or `retry-after`. */
+export function parseRetryAfterMs(
+  headers: Headers | Readonly<Record<string, string>>,
+  nowMs = Date.now(),
+): number | undefined {
+  const retryAfterMs = headerValue(headers, 'retry-after-ms')?.trim()
+  if (retryAfterMs !== undefined && /^\d+(?:\.\d+)?$/.test(retryAfterMs)) {
+    const ms = Number(retryAfterMs)
+    if (Number.isFinite(ms) && ms > 0) return ms
+  }
+  const retryAfter = headerValue(headers, 'retry-after')?.trim()
+  if (retryAfter === undefined || retryAfter.length === 0) return undefined
+  if (/^\d+(?:\.\d+)?$/.test(retryAfter)) {
+    const ms = Number(retryAfter) * 1000
+    return Number.isFinite(ms) && ms > 0 ? ms : undefined
+  }
+  const parsedDateMs = Date.parse(retryAfter)
+  if (!Number.isFinite(parsedDateMs)) return undefined
+  const delayMs = parsedDateMs - nowMs
+  return Number.isFinite(delayMs) && delayMs > 0 ? delayMs : undefined
+}
+
+function supportsCustomFetch(api: Api): boolean {
+  return api !== 'google-generative-ai' && api !== 'google-vertex'
+}
+
 /** Prepare request-owned headers without allowing contributors to replace attribution. */
 function requestHeaders(
   configured: Readonly<Record<string, string>> | undefined,
@@ -453,6 +489,7 @@ export class PiAiAdapter extends LlmAdapter {
       : AbortSignal.any([options.signal, consumer.signal])
     const streamIdleTimeoutMs = profile.streamIdleTimeoutMs
     using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
+    let providerRetryAfterMs: number | undefined
 
     try {
       const containsImage = options.messages.some(message => contentHasImage(message.content))
@@ -485,6 +522,10 @@ export class PiAiAdapter extends LlmAdapter {
       const { context, digest } = bindThinkingToPrefix(converted, model.api, prefixDigests, manualThinking, (count) => {
         this.config.onThinkingOmitted?.({ provider: options.provider, model: options.model, count })
       })
+      const recordRetryAfter = (headers: Headers | Readonly<Record<string, string>>): void => {
+        const parsed = parseRetryAfterMs(headers)
+        if (parsed !== undefined) providerRetryAfterMs = parsed
+      }
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
@@ -492,6 +533,16 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
+        onResponse: (response) => {
+          recordRetryAfter(response.headers)
+        },
+        ...supportsCustomFetch(model.api) ? {
+          fetch: async (input, init) => {
+            const response = await globalThis.fetch(input, init)
+            recordRetryAfter(response.headers)
+            return response
+          },
+        } : {},
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id, digest)[Symbol.asyncIterator]()
       let exhausted = false
@@ -502,7 +553,24 @@ export class PiAiAdapter extends LlmAdapter {
             exhausted = true
             return
           }
-          yield result.value
+          const chunk = result.value
+          if (chunk.type === 'finish'
+            && chunk.reason.kind === 'error'
+            && providerRetryAfterMs !== undefined
+            && chunk.reason.failure.providerRetryAfterMs === undefined) {
+            yield {
+              ...chunk,
+              reason: {
+                ...chunk.reason,
+                failure: {
+                  ...chunk.reason.failure,
+                  providerRetryAfterMs,
+                },
+              },
+            }
+          } else {
+            yield chunk
+          }
         }
       } finally {
         if (!exhausted) {
@@ -519,6 +587,9 @@ export class PiAiAdapter extends LlmAdapter {
       }
       if (options.signal?.aborted) {
         throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
+      }
+      if (error instanceof LlmError && providerRetryAfterMs !== undefined && error.failure.providerRetryAfterMs === undefined) {
+        throw LlmError.fromFailure({ ...error.failure, providerRetryAfterMs }, { cause: error })
       }
       throw error
     } finally {

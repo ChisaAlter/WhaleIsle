@@ -114,6 +114,10 @@ export interface ConnectionHandle extends ServerContext {
    * the status cell and blocks replacement.
    */
   dispose(): Promise<void>
+  /**
+   * Explicitly reset prior failure/closure locks and start a fresh connection generation.
+   */
+  reconnect(): Promise<void>
 }
 
 /**
@@ -197,9 +201,13 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
 
   function scheduleReconnect(error: string, connectedAt?: number): void {
     if (disposed || closureFailure !== undefined) return
+    // Immediately withdraw stale tools so reconnect-disabled / reconnecting /
+    // gave-up never expose ghost tools from the dropped generation.
+    clearTools()
+    syncChain = syncChain.then(clearTools)
     if (!policy.enabled) {
       const message = connectedAt !== undefined
-        ? 'connection lost and reconnect is disabled — registered tools will fail until an HMR reload or Host restart'
+        ? 'connection lost and reconnect is disabled — tools unregistered; reload the plugin or restart the Host to reconnect'
         : 'connection failed and reconnect is disabled — no tools were registered; reload the plugin or restart the Host to connect'
       status.update({ state: 'failed', reason: 'reconnect-disabled', lastError: error })
       ctx.logger.error(`${label}: ${message}`)
@@ -208,7 +216,6 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     if (connectedAt !== undefined && Date.now() - connectedAt >= policy.maxDelayMs) failedAttempts = 0
     failedAttempts++
     if (failedAttempts > policy.maxAttempts) {
-      syncChain = syncChain.then(clearTools)
       status.update({ state: 'failed', reason: 'gave-up', lastError: error })
       ctx.logger.error(`${label}: giving up after ${policy.maxAttempts} consecutive failed reconnect attempts — tools unregistered; reload the plugin or restart the Host to reconnect`)
       return
@@ -231,6 +238,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     settling = close(record).then((confirmed) => {
       readiness.resolve({ error: new Error(error) })
       if (confirmed) scheduleReconnect(error, record.connectedAt)
+      else clearTools()
     })
   }
 
@@ -382,6 +390,26 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
           throw error
         }
       },
+    },
+    async reconnect(): Promise<void> {
+      if (disposed) return
+      stopTimers()
+      closureFailure = undefined
+      failedAttempts = 0
+      status.recordClosure({ closeConfirmed: true })
+      const record = current
+      const attempt = settling
+      current = undefined
+      const closeConfirmed = record === undefined ? true : await close(record)
+      await attempt
+      await syncChain
+      stopTimers()
+      clearTools()
+      if (isStopped() || !closeConfirmed) return
+      closureFailure = undefined
+      status.recordClosure({ closeConfirmed: true })
+      settling = connectGeneration()
+      await settling
     },
     async dispose(): Promise<void> {
       disposed = true

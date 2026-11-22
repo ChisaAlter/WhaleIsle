@@ -598,16 +598,16 @@ describe('reconnect supervisor', () => {
     expect(mockConnect).toHaveBeenCalledTimes(1)
   })
 
-  it('reconnect disabled keeps the registered tools and reports manual recovery', async () => {
+  it('reconnect disabled unregisters stale tools immediately and reports manual recovery', async () => {
     const { errors } = captureLogs(ctx)
     await apply(ctx, stdioConfig({ enabled: false }))
     await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
 
     instances[0]!.transport?.onclose?.()
-    await sleep(30)
+    await vi.waitFor(() => {
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+    })
     expect(mockConnect).toHaveBeenCalledTimes(1)
-    // Pre-reconnect contract: the generation stays registered until disposal.
-    expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     expect(errors.some(line => line.includes('connection lost and reconnect is disabled'))).toBe(true)
   })
   it('reconnect disabled after a failed initial connect reports no registered tools', async () => {
@@ -746,6 +746,43 @@ describe('reconnect supervisor', () => {
     const staleHandler = mockSetNotificationHandler.mock.calls[0]![1] as () => void
     staleHandler()
     expect(mockListTools).toHaveBeenCalledTimes(listCalls)
+  })
+
+  it('clears tools immediately upon entering reconnecting state', async () => {
+    await apply(ctx, stdioConfig({ initialDelayMs: 500, maxDelayMs: 500, maxAttempts: 2 }))
+    await vi.waitFor(() => { expect(ctx.tools.get('mcp__srv__remote')).toBeDefined() })
+
+    instances[0]!.transport?.onclose?.()
+    await vi.waitFor(() => {
+      expect(connectionStatusOf(ctx.fiber)?.current()).toMatchObject({ state: 'reconnecting' })
+    })
+    expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+  })
+
+  it('resets closureFailure on explicit reconnect so a prior unclosed generation does not brick recovery', async () => {
+    vi.useFakeTimers()
+    try {
+      const status = new McpStatusCell(() => {})
+      mockConnect.mockRejectedValueOnce(new Error('initialize failed'))
+      mockClose.mockResolvedValueOnce(undefined)
+      const handle = startConnection(ctx, stdioConfig({ initialDelayMs: 2, maxDelayMs: 8, maxAttempts: 2 }), resolveReconnectPolicy(undefined, 'test'), status)
+      await vi.advanceTimersByTimeAsync(5_100)
+      await handle.ready
+      expect(status.current()).toMatchObject({ state: 'failed', reason: 'unclosed-generation' })
+
+      // Restore healthy connect/close behavior and explicitly reconnect.
+      mockConnect.mockResolvedValue(undefined)
+      mockClose.mockImplementation(function (this: { transport?: Transport }) {
+        this.transport?.onclose?.()
+        return Promise.resolve()
+      })
+      await handle.reconnect()
+      expect(status.current()).toMatchObject({ state: 'connected', toolCount: 1 })
+      expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
+      await handle.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

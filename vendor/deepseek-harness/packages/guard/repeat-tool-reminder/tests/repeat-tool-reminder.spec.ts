@@ -410,4 +410,130 @@ describe('config validation fails loud', () => {
     const ctx2 = await spine()
     await expect(ctx2.plugin(RepeatToolGuard, { argumentsPreviewChars: 12.5 })).rejects.toThrow(/argumentsPreviewChars/)
   })
+
+  it('rejects an invalid hardStopThreshold', async () => {
+    const ctx = await spine()
+    await expect(ctx.plugin(RepeatToolGuard, { hardStopThreshold: 1 })).rejects.toThrow(/hardStopThreshold/)
+    const ctx2 = await spine()
+    await expect(ctx2.plugin(RepeatToolGuard, { hardStopThreshold: 2.5 })).rejects.toThrow(/hardStopThreshold/)
+  })
+})
+
+describe('ABAB oscillation detection and hard-stop interception', () => {
+  it('detects cross-step ABAB 2-cycle oscillation without flagging A->B->A read-edit-read sequences', async () => {
+    const safeCtx = await harness()
+    safeCtx.llm.registerAdapter(['mock'], new MockAdapter([
+      toolCallResponse('s1', 'probe', { path: 'a.ts' }),
+      toolCallResponse('s2', 'other', { patch: '1' }),
+      toolCallResponse('s3', 'probe', { path: 'a.ts' }),
+      textResponse('done reading after edit'),
+    ]))
+    const safeAgent = await safeCtx.agentLoop.create(SessionId('safe-aba'), { provider: 'mock', model: 'mock' })
+    safeAgent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(safeCtx, safeAgent)
+    expect(reminders(safeAgent)).toHaveLength(0)
+
+    const ctx = await harness()
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([
+      toolCallResponse('c1', 'probe', { q: 'x' }),
+      toolCallResponse('c2', 'other', { y: 1 }),
+      toolCallResponse('c3', 'probe', { q: 'x' }),
+      toolCallResponse('c4', 'other', { y: 1 }),
+      toolCallResponse('c5', 'probe', { q: 'x' }),
+      textResponse('broke oscillation'),
+    ]))
+    const agent = await ctx.agentLoop.create(SessionId('abab-oscillation'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const found = reminders(agent)
+    expect(found).toHaveLength(2)
+    expect(found[0]!.text).toContain('ABAB oscillation')
+    expect(found[0]!.source).toEqual(guardSource('other', 4).kind ? {
+      kind: 'repeat-tool-reminder',
+      form: 'notice',
+      summary: 'other ⇄ 4',
+    } : undefined)
+    expect(found[1]!.text).toContain('oscillation_calls: 5')
+    expect(found[1]!.text).toContain('other ⇄ probe')
+  })
+
+  it('hard-stops consecutive repeats at default threshold 10, prevents 10th execution, and forces convergence', async () => {
+    const ctx = new Context()
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(RepeatToolGuard, {})
+    let executions = 0
+    ctx.tools.register(defineContentToolFixture({
+      name: 'probe',
+      description: 'p',
+      parameters: {},
+      async execute() { executions += 1; return [{ type: 'text', text: 'ok' }] },
+    }))
+    const adapter = new MockAdapter([
+      ...Array.from({ length: 10 }, (_, i) => toolCallResponse(`c${i}`, 'probe', { q: 'stuck' })),
+      toolCallResponse('c10', 'probe', { q: 'fresh' }),
+      textResponse('done after reset'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('hard-stop-10'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(executions).toBe(9)
+    expect(adapter.requests).toHaveLength(10)
+    const events = agent.session.snapshotEvents()
+    const toolResults = events.filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
+    expect(toolResults).toHaveLength(10)
+    expect(toolResults[9]!.data).toMatchObject({
+      message: { isError: true },
+      error: { name: 'RepeatToolHardStopError', code: 'REPEAT_TOOL_HARD_STOP' },
+    })
+    expect(events.at(-1)).toMatchObject({
+      type: 'turn/end',
+      data: { reason: { kind: 'blocked' } },
+    })
+
+    // A fresh human message resets the guard for subsequent turns.
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'try again' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+    expect(executions).toBe(10)
+  })
+
+  it('hard-stops ABAB oscillation at threshold 10, blocks execution, and converges', async () => {
+    const ctx = new Context()
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(RepeatToolGuard, {})
+    let executions = 0
+    ctx.tools.register(defineContentToolFixture({
+      name: 'probe', description: 'p', parameters: {},
+      async execute() { executions += 1; return [{ type: 'text', text: 'ok' }] },
+    }))
+    ctx.tools.register(defineContentToolFixture({
+      name: 'other', description: 'o', parameters: {},
+      async execute() { executions += 1; return [{ type: 'text', text: 'ok' }] },
+    }))
+    const adapter = new MockAdapter([
+      ...Array.from({ length: 14 }, (_, i) => toolCallResponse(`c${i}`, i % 2 === 0 ? 'probe' : 'other', { step: i % 2 })),
+      textResponse('never reached'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('hard-stop-abab'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(executions).toBe(9)
+    expect(adapter.requests).toHaveLength(10)
+    const events = agent.session.snapshotEvents()
+    const toolResults = events.filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
+    expect(toolResults[9]!.data).toMatchObject({
+      message: { isError: true },
+      error: { name: 'RepeatToolHardStopError', code: 'REPEAT_TOOL_HARD_STOP' },
+    })
+    expect(events.at(-1)).toMatchObject({
+      type: 'turn/end',
+      data: { reason: { kind: 'blocked' } },
+    })
+  })
 })

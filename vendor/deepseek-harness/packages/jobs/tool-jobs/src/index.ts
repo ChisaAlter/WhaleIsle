@@ -39,6 +39,9 @@ export const inject = ['tools', 'jobs', 'systemPrompt']
  */
 export type CompletionDelivery = 'quiet' | 'wakeup'
 
+/** Default consecutive wakeup turns allowed without human input before degrading to injection. */
+export const DEFAULT_MAX_CONSECUTIVE_WAKES = 20
+
 /** Configures bounded `job_output` waits and completion-notice delivery. */
 export interface Config {
   /** Wait duration applied when `job_output` sets `wait` without `timeout_ms` (default 30s). */
@@ -49,11 +52,10 @@ export interface Config {
   completionDelivery?: CompletionDelivery
   /**
    * Turns one owner may have opened by completion wakes before the next
-   * notice degrades to injection, reset by any user-authored input. Absent by
-   * default: every idle completion wakes its owner. Set it to bound the
-   * self-exciting chain where a woken turn starts the job whose completion
-   * wakes it again, at the cost of notices past the cap waiting silently for
-   * the next user input.
+   * notice degrades to injection, reset by any user-authored input. Defaults
+   * to {@link DEFAULT_MAX_CONSECUTIVE_WAKES} (`20`) to bound the self-exciting
+   * chain where a woken turn starts the job whose completion wakes it again,
+   * leaving notices past the cap queued silently until the next user input.
    */
   maxConsecutiveWakes?: number
   /**
@@ -69,7 +71,7 @@ export const Config: z<Config> = z.object({
   waitTimeoutMs: z.number().min(1).default(30_000),
   maxWaitTimeoutMs: z.number().min(1).default(600_000),
   completionDelivery: z.union(['quiet', 'wakeup'] as const).default('wakeup'),
-  maxConsecutiveWakes: z.number().min(1),
+  maxConsecutiveWakes: z.number().min(1).default(DEFAULT_MAX_CONSECUTIVE_WAKES),
   inlineOutputBytes: z.natural().default(2048),
 })
 
@@ -241,7 +243,7 @@ export function apply(ctx: Context, config: Config): void {
   const waitDefault = config.waitTimeoutMs ?? 30_000
   const waitCap = config.maxWaitTimeoutMs ?? 600_000
   const delivery = config.completionDelivery ?? 'wakeup'
-  const wakeBudget = config.maxConsecutiveWakes
+  const wakeBudget = config.maxConsecutiveWakes ?? DEFAULT_MAX_CONSECUTIVE_WAKES
   const inlineBytes = config.inlineOutputBytes ?? 2048
 
   // Turns this plugin opened on each owner since that owner last consumed
@@ -252,8 +254,8 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error(`tool-jobs: waitTimeoutMs (${waitDefault}) exceeds maxWaitTimeoutMs (${waitCap})`)
   }
   // A budget is a count of turns: a fraction never names a turn, and
-  // `Infinity` would spell an "unbounded" that omitting the field already means.
-  if (wakeBudget !== undefined && !Number.isSafeInteger(wakeBudget)) {
+  // `Infinity` cannot bound consecutive self-wakes.
+  if (!Number.isSafeInteger(wakeBudget)) {
     throw new Error(`tool-jobs: maxConsecutiveWakes (${wakeBudget}) must be a whole number of turns`)
   }
 
@@ -266,7 +268,7 @@ export function apply(ctx: Context, config: Config): void {
   // still pending, which would only repeat its result.
   const pending = new Map<JobId, PendingNotice>()
 
-  if (delivery === 'wakeup' && wakeBudget !== undefined) {
+  if (delivery === 'wakeup') {
     ctx.on('agent/inbox/claimed', ({ agent, message }) => {
       // Claiming is the point the human's input actually enters a step; a notice
       // this plugin itself queued must not refill the budget it just spent.
@@ -396,10 +398,6 @@ export function apply(ctx: Context, config: Config): void {
       owner: event.job.owner, messageId: message.id, inline: inline !== undefined, ...held === undefined ? {} : { held },
     })
     if (delivery === 'wakeup' && owner.status === 'idle') {
-      if (wakeBudget === undefined) {
-        owner.followup(message)
-        return
-      }
       const spent = spentWakes.get(owner) ?? 0
       if (spent < wakeBudget) {
         spentWakes.set(owner, spent + 1)

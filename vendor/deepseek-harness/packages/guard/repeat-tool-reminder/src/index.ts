@@ -19,9 +19,12 @@ declare module '@deepseek-ai/dsh-llm' {
 
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
-import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { PostToolDecision, PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 
 export const name = 'repeat-tool-reminder'
+
+/** Default threshold at which repeated identical or ABAB-oscillating calls hard-stop the turn. */
+export const DEFAULT_HARD_STOP_THRESHOLD = 10
 
 /**
  * Plugin config, validated by the same-named schemastery schema plus the
@@ -35,6 +38,8 @@ export const name = 'repeat-tool-reminder'
 export interface Config {
   /** Consecutive-repeat counts that trigger a reminder (default `[3, 5, 8]`). */
   thresholds?: number[]
+  /** High repeat or ABAB-oscillation count that blocks further execution and stops the turn (default `10`). */
+  hardStopThreshold?: number
   /** Tool-name patterns to track; empty means every tool is tracked. */
   include?: string[]
   /** Tool-name patterns transparent to the chain (neither count nor reset). */
@@ -51,6 +56,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   thresholds: z.array(z.number()).default([3, 5, 8]),
+  hardStopThreshold: z.number().default(DEFAULT_HARD_STOP_THRESHOLD),
   include: z.array(z.string()).default([]),
   exclude: z.array(z.string()).default([]),
   argumentsPreviewChars: z.number().default(500),
@@ -83,6 +89,40 @@ function detailedReminder(toolName: string, count: number, canonicalArguments: s
     + 'these exact arguments again. Inspect the latest result and choose a '
     + 'different action, different arguments, or finish the task if enough '
     + 'evidence has been gathered.'
+}
+
+const GENTLE_OSCILLATION_REMINDER =
+  'You are alternating between the same two tool calls (ABAB oscillation) without making progress. '
+  + 'Stop repeating this cycle, analyze the results gathered so far, and either try a new approach or finish.'
+
+function detailedOscillationReminder(
+  toolName: string,
+  otherKey: string,
+  count: number,
+  canonicalArguments: string,
+): string {
+  const otherTool = parsedToolName(otherKey)
+  return 'Alternating tool-call oscillation (ABAB) detected:\n'
+    + `- pattern: ${otherTool} ⇄ ${toolName}\n`
+    + `- oscillation_calls: ${count}\n`
+    + `- latest_arguments: ${canonicalArguments}\n`
+    + 'The alternating calls are not making progress. Break the oscillation by '
+    + 'changing approach or concluding the task.'
+}
+
+function hardStopReason(toolName: string, count: number, mode: 'consecutive' | 'oscillation'): string {
+  const kindLabel = mode === 'oscillation' ? 'alternating ABAB oscillation' : 'consecutive identical calls'
+  return `Repeat tool guard hard stop: tool "${toolName}" reached ${count} ${kindLabel} without progress; blocking further execution to force convergence.`
+}
+
+function parsedToolName(chainKey: string): string {
+  try {
+    const parsed: unknown = JSON.parse(chainKey)
+    if (Array.isArray(parsed) && typeof parsed[0] === 'string') return parsed[0]
+  } catch {
+    // fallback if key cannot be parsed
+  }
+  return 'unknown'
 }
 
 /**
@@ -155,10 +195,50 @@ function prependContext(ours: UserMessage, theirs: UserMessage[] | undefined): U
   return [ours, ...theirs ?? []]
 }
 
-/** One agent's consecutive-repeat chain: the last tracked call's identity key and its run length. */
+/** One agent's repeat-call and ABAB 2-cycle oscillation state. */
 interface Chain {
-  key: string
-  count: number
+  consecutiveKey: string
+  consecutiveCount: number
+  lastKey: string
+  cycle?: {
+    readonly keys: readonly [string, string]
+    nextExpectedIndex: 0 | 1
+    length: number
+  }
+}
+
+type Observation =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'reminder'; readonly message: UserMessage }
+  | { readonly kind: 'hard-stop'; readonly reason: string }
+
+function advanceChain(previous: Chain | undefined, key: string): Chain {
+  if (previous === undefined) {
+    return { consecutiveKey: key, consecutiveCount: 1, lastKey: key }
+  }
+  const consecutiveCount = previous.consecutiveKey === key ? previous.consecutiveCount + 1 : 1
+  if (key === previous.lastKey) {
+    // Calling the same key twice in a row breaks any ABAB 2-cycle alternation.
+    return { consecutiveKey: key, consecutiveCount, lastKey: key }
+  }
+  if (previous.cycle !== undefined && key === previous.cycle.keys[previous.cycle.nextExpectedIndex]) {
+    return {
+      consecutiveKey: key,
+      consecutiveCount,
+      lastKey: key,
+      cycle: {
+        keys: previous.cycle.keys,
+        nextExpectedIndex: previous.cycle.nextExpectedIndex === 0 ? 1 : 0,
+        length: previous.cycle.length + 1,
+      },
+    }
+  }
+  return {
+    consecutiveKey: key,
+    consecutiveCount,
+    lastKey: key,
+    cycle: { keys: [previous.lastKey, key], nextExpectedIndex: 0, length: 2 },
+  }
 }
 
 /**
@@ -170,6 +250,10 @@ export function apply(ctx: Context, config: Config): void {
   // schemastery's .default() guarantees the fields are set after validation.
   const thresholds = validateThresholds(config.thresholds as number[])
   const thresholdSet = new Set(thresholds)
+  const hardStopThreshold = config.hardStopThreshold as number
+  if (!Number.isInteger(hardStopThreshold) || hardStopThreshold < 2) {
+    throw new Error(`repeat-tool-reminder: invalid hardStopThreshold ${hardStopThreshold} — must be an integer >= 2`)
+  }
   const includePatterns = (config.include as string[]).map(wildcardToRegExp)
   const excludePatterns = (config.exclude as string[]).map(wildcardToRegExp)
   const argumentsPreviewChars = config.argumentsPreviewChars as number
@@ -178,6 +262,8 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const chains = new WeakMap<Agent, Chain>()
+  const observedExecs = new WeakMap<ToolExecution, Observation>()
+  const hardStoppedAgents = new WeakSet<Agent>()
 
   /** Whether a tool participates in the chain (untracked calls are transparent: they neither count nor reset). */
   function tracked(toolName: string): boolean {
@@ -186,49 +272,107 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   /**
-   * Advance the calling agent's chain for one attempt and return the reminder
-   * to deliver, if this attempt's run length hits a configured threshold.
-   * Counting happens here — in post-execute — because denied calls also flow
-   * through this waterfall (`ToolRuntime.execute` routes a deny through the
-   * same pipeline), and a model hammering a denied call is exactly the loop
-   * worth breaking.
+   * Advance the calling agent's chain for one attempt and determine whether it
+   * emits a reminder or trips the hard stop.
    */
-  function observe(exec: ToolExecution): UserMessage | undefined {
+  function observe(exec: ToolExecution): Observation {
     // A direct `ctx.tools.execute()` caller has no model to remind and no id
     // to key on; only agent-loop calls participate.
-    if (!exec.agent) return undefined
-    if (!tracked(exec.name)) return undefined
+    if (!exec.agent) return { kind: 'none' }
+    if (!tracked(exec.name)) return { kind: 'none' }
     const canonical = canonicalize(exec.arguments)
     const key = JSON.stringify([exec.name, canonical])
-    const chain = chains.get(exec.agent)
-    const count = chain !== undefined && chain.key === key ? chain.count + 1 : 1
-    chains.set(exec.agent, { key, count })
-    if (!thresholdSet.has(count)) return undefined
-    const text = count === thresholds[0]
-      ? GENTLE_REMINDER
-      : detailedReminder(exec.name, count, previewArguments(canonical, argumentsPreviewChars))
-    return createUserMessage({
-      content: [{ type: 'text', text }],
-      source: { ...REMINDER_SOURCE, form: 'notice', summary: `${exec.name} × ${count}` },
-    })
+    const nextChain = advanceChain(chains.get(exec.agent), key)
+    chains.set(exec.agent, nextChain)
+
+    const consecutiveCount = nextChain.consecutiveCount
+    const oscillationLength = nextChain.cycle !== undefined && nextChain.cycle.length >= 4
+      ? nextChain.cycle.length
+      : 0
+
+    if (consecutiveCount >= hardStopThreshold || oscillationLength >= hardStopThreshold) {
+      const mode = oscillationLength >= hardStopThreshold ? 'oscillation' : 'consecutive'
+      const count = mode === 'oscillation' ? oscillationLength : consecutiveCount
+      return { kind: 'hard-stop', reason: hardStopReason(exec.name, count, mode) }
+    }
+
+    if (thresholdSet.has(consecutiveCount)) {
+      const text = consecutiveCount === thresholds[0]
+        ? GENTLE_REMINDER
+        : detailedReminder(exec.name, consecutiveCount, previewArguments(canonical, argumentsPreviewChars))
+      return {
+        kind: 'reminder',
+        message: createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { ...REMINDER_SOURCE, form: 'notice', summary: `${exec.name} × ${consecutiveCount}` },
+        }),
+      }
+    }
+
+    const cycle = nextChain.cycle
+    if (cycle !== undefined && oscillationLength >= 4) {
+      const firstThreshold = thresholds[0] ?? 3
+      const firstOscillationTrigger = oscillationLength === 4 && firstThreshold < 4
+      if (firstOscillationTrigger || thresholdSet.has(oscillationLength)) {
+        const isGentle = firstOscillationTrigger || oscillationLength === firstThreshold
+        const otherKey = cycle.keys.find(entry => entry !== key) ?? key
+        const text = isGentle
+          ? GENTLE_OSCILLATION_REMINDER
+          : detailedOscillationReminder(
+            exec.name,
+            otherKey,
+            oscillationLength,
+            previewArguments(canonical, argumentsPreviewChars),
+          )
+        return {
+          kind: 'reminder',
+          message: createUserMessage({
+            content: [{ type: 'text', text }],
+            source: { ...REMINDER_SOURCE, form: 'notice', summary: `${exec.name} ⇄ ${oscillationLength}` },
+          }),
+        }
+      }
+    }
+
+    return { kind: 'none' }
   }
 
-  // Observe-and-enrich, never veto: count first (state advances regardless of
-  // the downstream outcome), DELEGATE so a later listener can still block or
-  // replace, then fold the reminder onto whatever came back — additionalContexts
-  // rides both decision variants, so a blocked call still gets the nudge.
-  ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
-    const reminder = observe(exec)
-    const downstream = await next()
-    if (!reminder) return downstream
-    return { ...downstream, additionalContexts: prependContext(reminder, downstream.additionalContexts) }
+  ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
+    const observation = observe(exec)
+    observedExecs.set(exec, observation)
+    if (observation.kind === 'hard-stop' && exec.agent !== undefined) {
+      hardStoppedAgents.add(exec.agent)
+      return {
+        kind: 'deny',
+        reason: observation.reason,
+        info: { name: 'RepeatToolHardStopError', code: 'REPEAT_TOOL_HARD_STOP' },
+      }
+    }
+    return next()
   })
 
-  // A user interjection changes the context; repetition across it is not a
-  // loop. Pure reset hook: always delegates (attaching nothing, vetoing
-  // nothing).
+  // Enrich post-execute decisions (including calls denied by an earlier
+  // pre-execute listener before ours ran) without overwriting downstream state.
+  ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
+    const observation = observedExecs.get(exec) ?? observe(exec)
+    const downstream = await next()
+    if (observation.kind !== 'reminder') return downstream
+    return { ...downstream, additionalContexts: prependContext(observation.message, downstream.additionalContexts) }
+  })
+
+  // A user interjection changes the context and resets the guard. When hard-stopped
+  // without new user input, reject the next step to force loop convergence.
   ctx.on('agent/pre-step', ({ agent, messages }, next): Promise<PreStepDecision> => {
-    if (messages.some(message => message.source.kind === 'user')) chains.delete(agent)
+    if (messages.some(message => message.source.kind === 'user')) {
+      chains.delete(agent)
+      hardStoppedAgents.delete(agent)
+      return next()
+    }
+    if (hardStoppedAgents.has(agent)) {
+      hardStoppedAgents.delete(agent)
+      chains.delete(agent)
+      return Promise.resolve({ kind: 'reject' })
+    }
     return next()
   })
 }

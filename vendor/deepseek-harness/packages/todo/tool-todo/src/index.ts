@@ -127,7 +127,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     init: () => null,
     apply: (state, event) => {
       if (event.type === 'todo/write') return event.data.todos
-      if (event.type === 'turn/start') return null
+      if (event.type === 'turn/start') {
+        if (state === null || state.length === 0 || state.every(item => item.status === 'completed')) return null
+        return state
+      }
       return state
     },
     wire: { viewSchema: todosProjectionSchema, view: state => state, summary: false },

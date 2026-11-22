@@ -46,20 +46,132 @@ const LEADING_HTTP_STATUS = /^[45]\d\d\b/
 // wrapper a bare `terminated`, so we are left pattern-matching terse words here.
 // If pi-ai ever forwards the original Error (or a fetch/dispatcher hook that lets
 // us capture the cause ourselves), classify on `code`/`cause` instead of text.
+const VALID_JSON_ESCAPES = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't'])
+const RECEIVED_ARGUMENTS_MARKER = '\n\nReceived arguments:\n'
+
+function isControlCharacter(char: string): boolean {
+  const codePoint = char.codePointAt(0)
+  return codePoint !== undefined && codePoint >= 0x00 && codePoint <= 0x1f
+}
+
+function escapeControlCharacter(char: string): string {
+  switch (char) {
+    case '\b': return '\\b'
+    case '\f': return '\\f'
+    case '\n': return '\\n'
+    case '\r': return '\\r'
+    case '\t': return '\\t'
+    default: return `\\u${(char.codePointAt(0) ?? 0).toString(16).padStart(4, '0')}`
+  }
+}
+
+/**
+ * Conservatively repair mild JSON syntax blemishes in tool-call arguments:
+ * - escapes raw control characters inside string literals
+ * - doubles invalid backslashes inside string literals
+ * - removes trailing commas before `}` or `]` outside string literals
+ */
+export function repairToolArgumentsJson(json: string): string {
+  let repaired = ''
+  let inString = false
+  for (let index = 0; index < json.length; index++) {
+    const char = json[index]
+    if (char === undefined) continue
+    if (!inString) {
+      if (char === '"') {
+        inString = true
+        repaired += char
+        continue
+      }
+      if (char === ',') {
+        let lookahead = index + 1
+        while (lookahead < json.length && (json[lookahead] === ' ' || json[lookahead] === '\t' || json[lookahead] === '\n' || json[lookahead] === '\r')) {
+          lookahead++
+        }
+        const next = json[lookahead]
+        if (next === '}' || next === ']') continue
+      }
+      repaired += char
+      continue
+    }
+    if (char === '"') {
+      inString = false
+      repaired += char
+      continue
+    }
+    if (char === '\\') {
+      const nextChar = json[index + 1]
+      if (nextChar === undefined) {
+        repaired += '\\\\'
+        continue
+      }
+      if (nextChar === 'u') {
+        const unicodeDigits = json.slice(index + 2, index + 6)
+        if (/^[0-9a-fA-F]{4}$/.test(unicodeDigits)) {
+          repaired += `\\u${unicodeDigits}`
+          index += 5
+          continue
+        }
+      }
+      if (VALID_JSON_ESCAPES.has(nextChar)) {
+        repaired += `\\${nextChar}`
+        index += 1
+        continue
+      }
+      repaired += '\\\\'
+      continue
+    }
+    repaired += isControlCharacter(char) ? escapeControlCharacter(char) : char
+  }
+  return repaired
+}
+
+function tryParseRepairedObjectJson(raw: string): Record<string, unknown> | undefined {
+  for (const candidate of [raw, repairToolArgumentsJson(raw)]) {
+    try {
+      const parsed: unknown = JSON.parse(candidate)
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      // Unrecoverable JSON syntax remains raw text for tool-stage validation feedback.
+    }
+  }
+  return undefined
+}
+
+function extractRawToolArguments(argumentsError: string, fallbackDelta?: string): string {
+  const markerIndex = argumentsError.indexOf(RECEIVED_ARGUMENTS_MARKER)
+  if (markerIndex !== -1) {
+    return argumentsError.slice(markerIndex + RECEIVED_ARGUMENTS_MARKER.length)
+  }
+  if (fallbackDelta !== undefined && fallbackDelta.length > 0) {
+    return fallbackDelta
+  }
+  return argumentsError
+}
+
 function classifyPiAiError(message: string): BuiltinLlmFailureCode {
   const statusSource = LEADING_HTTP_STATUS.exec(message)?.[0] ?? message
   if (/\b(?:401|403)\b/.test(statusSource)) return 'AUTH'
+  if (/\b402\b/.test(statusSource) || /\bpayment required\b/i.test(statusSource)) return QUOTA_EXCEEDED_CODE
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE
   if (/\b429\b/.test(statusSource) || /rate.?limit/i.test(message)) return 'RATE_LIMIT'
   // A rejected request body (gateway or provider size cap): resending the
   // same request cannot succeed, so it is invalid, not transient.
   if (/\b413\b/.test(statusSource) || /failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
   if (/\b400\b/.test(statusSource) || /invalid.?request/i.test(message)) return 'INVALID_REQUEST'
+  if (/\b408\b/.test(statusSource) || /\brequest\s+time-?out\b/i.test(statusSource)) return 'TIMEOUT'
   if (/\b5\d\d\b/.test(statusSource)) return 'SERVER'
   // A provider that says it is overloaded or out of capacity, with no status number left after pi-ai flattened the
   // error to its message, is a transient server condition: retrying can succeed, so it must not be PI_AI_ERROR.
   if (/\b(?:overloaded|over capacity|at capacity|temporarily unavailable|service unavailable)\b/i.test(message)) return 'SERVER'
-  if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
+  if (/\bSyntaxError:\s*Unexpected token\s*['"]?<['"]?|Unexpected token\s*['"]?<['"]?.*not valid JSON/i.test(message)) return 'SERVER'
+  if (/\bunsupported mid-output model fallback\b/i.test(message)) return 'SERVER'
+  if (/\btime(?:d)?\s*-?\s*out\b|timeout/i.test(message)
+    || /\b(?:ETIMEDOUT|ESOCKETTIMEDOUT|UND_ERR_(?:HEADERS|BODY|CONNECT)_TIMEOUT)\b/i.test(message)) {
+    return 'TIMEOUT'
+  }
   // A stream truncated before the provider's terminal event: each pi-ai provider
   // throws its own wording when the wire closes mid-response without a terminal
   // event (`… stream ended before message_stop`, `… before a terminal response
@@ -67,7 +179,8 @@ function classifyPiAiError(message: string): BuiltinLlmFailureCode {
   // finish_reason`). The connection dropped mid-response, so this is a transport
   // truncation, not a model-level error.
   if (/stream ended (?:before|without)\b/i.test(message)) return 'TRANSPORT'
-  if (/\b(?:network|connection|socket|fetch)\b|\bECONN[A-Z]+\b/i.test(message)
+  if (/\b(?:network|connection|socket|fetch)\b/i.test(message)
+    || /\b(?:ECONN[A-Z]+|EPIPE|EAI_AGAIN|ENOTFOUND|EHOSTUNREACH|ENETUNREACH)\b|\bUND_ERR_[A-Z0-9_]+\b/i.test(message)
     || /\b(?:other side closed|HTTP2 request did not get a response|WebSocket closed unexpectedly)\b/i.test(message)
     // undici renders a mid-stream socket drop as a bare `terminated` (its
     // `cause` — the real SocketError — was flattened away upstream); Node's
@@ -161,9 +274,8 @@ export async function* toStreamChunks(
   prefixDigest?: string,
 ): AsyncGenerator<StreamChunk> {
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
-  // in stream order), but we track ids per index for tool calls.
-  const toolIds = new Map<number, { id: string; name: string }>()
-  let argumentsError: string | undefined
+  // in stream order), but we track ids and raw deltas per index for tool calls.
+  const toolIds = new Map<number, { id: string; name: string; rawDelta: string }>()
 
   for await (const event of events) {
     switch (event.type) {
@@ -192,24 +304,43 @@ export async function* toStreamChunks(
         const partial = event.partial.content[event.contentIndex]
         const id = partial?.type === 'toolCall' ? partial.id : ''
         const name = partial?.type === 'toolCall' ? partial.name : ''
-        toolIds.set(event.contentIndex, { id, name })
+        toolIds.set(event.contentIndex, { id, name, rawDelta: '' })
         yield { type: 'block-start', index: event.contentIndex, blockType: 'tool-call' }
         break
       }
       case 'toolcall_delta': {
-        const known = toolIds.get(event.contentIndex)
+        let known = toolIds.get(event.contentIndex)
+        if (known === undefined) {
+          known = { id: '', name: '', rawDelta: '' }
+          toolIds.set(event.contentIndex, known)
+        }
+        known.rawDelta += event.delta
         yield {
           type: 'tool-call-delta',
           index: event.contentIndex,
-          id: brandString<ToolCallId>(known?.id ?? ''),
-          ...known?.name !== undefined && known.name.length > 0 ? { name: known.name } : {},
+          id: brandString<ToolCallId>(known.id),
+          ...known.name.length > 0 ? { name: known.name } : {},
           argumentsDelta: event.delta,
         }
         break
       }
-      case 'toolcall_end':
+      case 'toolcall_end': {
         if (event.toolCall.argumentsError !== undefined) {
-          argumentsError ??= `Tool call "${event.toolCall.name}": ${event.toolCall.argumentsError}`
+          const rawArgs = extractRawToolArguments(
+            event.toolCall.argumentsError,
+            toolIds.get(event.contentIndex)?.rawDelta,
+          )
+          const repaired = tryParseRepairedObjectJson(rawArgs)
+          yield {
+            type: 'block-end',
+            index: event.contentIndex,
+            block: {
+              type: 'tool-call',
+              id: brandString<ToolCallId>(event.toolCall.id),
+              name: event.toolCall.name,
+              arguments: repaired !== undefined ? JSON.stringify(repaired) : rawArgs,
+            },
+          }
           break
         }
         yield {
@@ -225,11 +356,9 @@ export async function* toStreamChunks(
           },
         }
         break
+      }
       case 'done':
         yield { type: 'usage', usage: mapUsage(event.message.usage) }
-        if (argumentsError !== undefined && event.message.stopReason !== 'length') {
-          throw new LlmError(argumentsError, 'MALFORMED_RESPONSE')
-        }
         yield {
           type: 'finish',
           reason: mapStopReason(event.message, contextWindow),

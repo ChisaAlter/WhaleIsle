@@ -17,6 +17,8 @@ export interface DiffFile {
   path: string
   status: 'added' | 'modified' | 'deleted' | 'renamed'
   oldPath?: string
+  binary?: boolean
+  tooLarge?: boolean
   hunks: DiffHunk[]
 }
 

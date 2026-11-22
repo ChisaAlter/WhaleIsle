@@ -216,3 +216,10 @@
 
 .withSubject .body { text-align: left; }
 .withSubject .actionRow { flex-wrap: wrap; }
+
+.submitError {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-error-text, #d93025);
+}

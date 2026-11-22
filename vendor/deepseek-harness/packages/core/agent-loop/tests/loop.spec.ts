@@ -30,7 +30,11 @@ function driverDone(agent: Agent): Promise<void> {
   return (agent as Agent & { done: Promise<void> }).done
 }
 
-async function harness(adapter: MockAdapter, persona = '') {
+async function harness(
+  adapter: MockAdapter,
+  persona = '',
+  loopConfig: { maxTokensRecoveryLimit?: number; maxStepsPerTurn?: number } = {},
+) {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
@@ -39,7 +43,7 @@ async function harness(adapter: MockAdapter, persona = '') {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(AgentLoop, { agents: [], ...loopConfig })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
 }
@@ -1426,11 +1430,11 @@ describe('agent loop', () => {
     })
   })
 
-  it('surfaces max-tokens as the turn-end reason when the last step is cut off', async () => {
-    // A single step that ends with a max-tokens finish (no tool calls): the
-    // turn stops by default and ends max-tokens, not completed.
+  it('surfaces max-tokens as the turn-end reason when auto-recovery is disabled (maxTokensRecoveryLimit: 0)', async () => {
+    // When automatic max-tokens recovery is disabled, a single truncated step
+    // stops immediately and surfaces max-tokens rather than completed.
     const adapter = new MockAdapter([maxTokensResponse('truncat')])
-    const ctx = await harness(adapter)
+    const ctx = await harness(adapter, '', { maxTokensRecoveryLimit: 0 })
     const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     const reasons: TurnEndReason[] = []
@@ -1447,13 +1451,13 @@ describe('agent loop', () => {
   })
 
   it('a max-tokens step earlier in a turn still surfaces as max-tokens after a later completed step', async () => {
-    // Step 1 is cut off (max-tokens, no tool calls → would stop by default), so continuation
+    // Step 1 is cut off (max-tokens, with auto-recovery disabled), so continuation
     // must be FORCED to reach step 2 which finishes normally (stop).
     const adapter = new MockAdapter([
       maxTokensResponse('first half'),
       textResponse('second half'),
     ])
-    const ctx = await harness(adapter)
+    const ctx = await harness(adapter, '', { maxTokensRecoveryLimit: 0 })
     const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     let steps = 0
@@ -1500,10 +1504,10 @@ describe('agent loop', () => {
   })
 
   it('a completed step after no max-tokens keeps the turn completed (max-tokens does not leak across turns)', async () => {
-    // Two consecutive turns: turn 1 is cut off (max-tokens), turn 2 is a clean
+    // Two consecutive turns: turn 1 is cut off (max-tokens with auto-recovery off), turn 2 is a clean
     // stop. The per-turn reason must be independent — turn 2 ends completed.
     const adapter = new MockAdapter([maxTokensResponse('cut'), textResponse('clean')])
-    const ctx = await harness(adapter)
+    const ctx = await harness(adapter, '', { maxTokensRecoveryLimit: 0 })
     const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     const reasons: TurnEndReason[] = []
@@ -1526,7 +1530,7 @@ describe('agent loop', () => {
       { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
       { type: 'finish', reason: { kind: 'max-tokens' } },
     ]])
-    const ctx = await harness(adapter)
+    const ctx = await harness(adapter, '', { maxTokensRecoveryLimit: 0 })
     let executions = 0
     ctx.tools.register(defineContentToolFixture({
       name: 'echo',
@@ -1580,7 +1584,7 @@ describe('agent loop', () => {
       { type: 'block-end', index: 0, block: { type: 'tool-call', id: callId, name: 'echo', arguments: '{"text":"x"}' } },
       { type: 'finish', reason: { kind: 'max-tokens' } },
     ]])
-    const ctx = await harness(adapter)
+    const ctx = await harness(adapter, '', { maxTokensRecoveryLimit: 0 })
     ctx.tools.register(defineContentToolFixture({
       name: 'echo',
       description: '',
@@ -1666,7 +1670,7 @@ describe('agent loop', () => {
         replayState: { response: { responseId: 'resp-1' }, blocks: ['text-meta', 'tool-meta'] },
       },
     ], textResponse('continued')])
-    const ctx = await harness(adapter)
+    const ctx = await harness(adapter, '', { maxTokensRecoveryLimit: 0 })
     const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     send(agent, 'go')
@@ -1974,5 +1978,126 @@ describe('agent loop', () => {
     expect(replayed.snapshotEvents().slice(0, agent.session.seq).map(e => e.type)).toEqual(
       agent.session.snapshotEvents().map(e => e.type))
     expect(replayed.snapshotEvents().at(-1)?.type).toBe('session/end-seed')
+  })
+
+  it('auto-continues pure text max-tokens truncation by default and completes when recovered', async () => {
+    const adapter = new MockAdapter([
+      maxTokensResponse('first half'),
+      textResponse('second half'),
+    ])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('max-tokens-text-recover'), { provider: 'mock', model: 'mock' })
+
+    const reasons: TurnEndReason[] = []
+    ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+
+    send(agent, 'write long prose')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests).toHaveLength(2)
+    expect(reasons).toEqual([{ kind: 'completed' }])
+    const derived = agent.session.deriveMessages().slice(1)
+    expect(derived).toMatchObject([
+      { role: 'user', content: [{ type: 'text', text: 'write long prose' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'first half' }] },
+      { role: 'user', source: { kind: 'max-tokens-recovery', form: 'notice' } },
+      { role: 'assistant', content: [{ type: 'text', text: 'second half' }] },
+    ])
+  })
+
+  it('retains non-tool blocks and injects tool-truncation guidance when max-tokens cuts off a tool call', async () => {
+    const callId = ToolCallId('cut_tool')
+    const adapter = new MockAdapter([
+      [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: 'preparing edit' },
+        { type: 'block-end', index: 0, block: { type: 'text', text: 'preparing edit' } },
+        { type: 'block-start', index: 1, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 1, id: callId, name: 'echo', argumentsDelta: '{"text":"partial' },
+        { type: 'finish', reason: { kind: 'max-tokens' }, replayState: { response: { id: 'r1' }, blocks: ['t', 'tc'] } },
+      ],
+      textResponse('split into smaller steps'),
+    ])
+    const ctx = await harness(adapter)
+    let toolExecutions = 0
+    ctx.tools.register(defineContentToolFixture({
+      name: 'echo',
+      description: '',
+      parameters: { text: { type: 'string' } },
+      async execute() { toolExecutions += 1; return [{ type: 'text', text: 'ok' }] },
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('max-tokens-tool-recover'), { provider: 'mock', model: 'mock' })
+
+    const reasons: TurnEndReason[] = []
+    ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+
+    send(agent, 'run big edit')
+    await waitForIdle(ctx, agent)
+
+    expect(toolExecutions).toBe(0)
+    expect(adapter.requests).toHaveLength(2)
+    expect(reasons).toEqual([{ kind: 'completed' }])
+    expect(adapter.requests[1]!.messages.slice(1)).toMatchObject([
+      { role: 'user', content: [{ type: 'text', text: 'run big edit' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'preparing edit' }] },
+      {
+        role: 'user',
+        content: [{ type: 'text', text: '输出因 max_tokens 截断导致工具参数未闭合，请缩小每次修改幅度或分步调用' }],
+        source: { kind: 'max-tokens-recovery', form: 'notice' },
+      },
+    ])
+  })
+
+  it('returns { kind: "max-tokens" } only after exhausting default maxTokensRecoveryLimit (2)', async () => {
+    const adapter = new MockAdapter([
+      maxTokensResponse('part 1'),
+      maxTokensResponse('part 2'),
+      maxTokensResponse('part 3'),
+    ])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('max-tokens-exhaust'), { provider: 'mock', model: 'mock' })
+
+    const reasons: TurnEndReason[] = []
+    ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+
+    send(agent, 'overflow forever')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests).toHaveLength(3)
+    expect(reasons).toEqual([{ kind: 'max-tokens' }])
+  })
+
+  it('halts runaway tool loops when maxStepsPerTurn is reached', async () => {
+    const adapter = new MockAdapter(
+      Array.from({ length: 10 }, (_, idx) => toolCallResponse(`c${idx}`, 'echo', { text: `s${idx}` })),
+    )
+    const ctx = await harness(adapter, '', { maxStepsPerTurn: 3 })
+    let toolExecutions = 0
+    ctx.tools.register(defineContentToolFixture({
+      name: 'echo',
+      description: '',
+      parameters: { text: { type: 'string' } },
+      async execute(args) { toolExecutions += 1; return [{ type: 'text', text: String(args.text) }] },
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('max-steps-halt'), { provider: 'mock', model: 'mock' })
+    const agentErrors: unknown[] = []
+    ctx.on('agent/error', ({ error }) => { agentErrors.push(error) })
+    const reasons: TurnEndReason[] = []
+    ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+
+    send(agent, 'loop forever')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests).toHaveLength(3)
+    expect(toolExecutions).toBe(3)
+    expect(agentErrors).toHaveLength(1)
+    expect(reasons).toEqual([{
+      kind: 'error',
+      error: {
+        code: 'MAX_STEPS_EXCEEDED',
+        message: 'Turn 1 exceeded maxStepsPerTurn (3)',
+      },
+    }])
+    expect(agent.status).toBe('idle')
   })
 })

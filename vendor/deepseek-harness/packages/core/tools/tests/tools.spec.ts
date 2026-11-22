@@ -3158,3 +3158,100 @@ it('settles every unowned call when cancellation precedes the batch', async () =
     await ctx.fiber.dispose()
   }
 })
+
+it('repairs mild JSON syntax blemishes in tool batch calls and conservatively coerces defineTool scalars', async () => {
+  const ctx = await setup()
+  try {
+    ctx.tools.register(defineTool({
+      name: 'typed',
+      description: 'typed args',
+      parameters: {
+        count: { type: 'integer', required: true },
+        flag: { type: 'boolean', required: true },
+        note: { type: 'string' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        return `${args.count}:${String(args.flag)}:${args.note ?? ''}`
+      },
+    }))
+    const batch = await ctx.tools.execute({
+      signal: testToolSignal,
+      calls: [
+        { type: 'tool-call', id: ToolCallId('mild-json'), name: 'typed', arguments: '{"count":"7","flag":"true","note":"line1\nline2",}' },
+        { type: 'tool-call', id: ToolCallId('broken-json'), name: 'typed', arguments: '{"count":1,' },
+        { type: 'tool-call', id: ToolCallId('lossy-int'), name: 'typed', arguments: '{"count":"1.5","flag":"true"}' },
+      ],
+    })
+    expect(batch.results[0]?.result).toMatchObject({ isError: false, value: '7:true:line1\nline2' })
+    expect(batch.results[1]?.result).toMatchObject({
+      isError: true,
+      error: { info: { name: 'ToolArgsError', code: 'INVALID_ARGS' } },
+    })
+    expect(batch.results[2]?.result).toMatchObject({
+      isError: true,
+      error: { info: { name: 'ToolArgsError', code: 'INVALID_ARGS' } },
+    })
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
+it('rejects unparseable or string-literal arguments centrally before invoking non-defineTool tools', async () => {
+  const ctx = await setup()
+  try {
+    let executed = 0
+    let concurrencyChecked = 0
+    ctx.tools.register({
+      name: 'raw_guide',
+      description: 'raw non-defineTool tool with defensive fallback',
+      parameters: { type: 'object', properties: { section: { type: 'string' } }, additionalProperties: false },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value as string }],
+      },
+      isConcurrencySafe() {
+        concurrencyChecked++
+        return true
+      },
+      async execute(args: unknown) {
+        executed++
+        const raw = (args ?? {}) as { section?: unknown }
+        return typeof raw.section === 'string' ? raw.section : 'full-guide'
+      },
+    })
+    const batch = await ctx.tools.execute({
+      signal: testToolSignal,
+      calls: [
+        { type: 'tool-call', id: ToolCallId('broken'), name: 'raw_guide', arguments: '{section:' },
+        { type: 'tool-call', id: ToolCallId('bare-str'), name: 'raw_guide', arguments: '"Layout"' },
+        { type: 'tool-call', id: ToolCallId('unknown-bad'), name: 'missing_tool', arguments: '{broken' },
+        { type: 'tool-call', id: ToolCallId('repaired'), name: 'raw_guide', arguments: '{"section":"Layout",}' },
+        { type: 'tool-call', id: ToolCallId('empty'), name: 'raw_guide', arguments: '' },
+      ],
+    })
+    expect(batch.results[0]?.result).toMatchObject({
+      isError: true,
+      error: { info: { name: 'ToolArgsError', code: 'INVALID_ARGS' } },
+    })
+    expect(batch.results[0]?.result.error?.message).toContain('malformed JSON arguments')
+    expect(batch.results[1]?.result).toMatchObject({
+      isError: true,
+      error: { info: { name: 'ToolArgsError', code: 'INVALID_ARGS' } },
+    })
+    expect(batch.results[1]?.result.error?.message).toContain('arguments must be an object')
+    expect(batch.results[2]?.result).toMatchObject({
+      isError: true,
+      error: { info: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' } },
+    })
+    expect(batch.results[3]?.result).toMatchObject({ isError: false, value: 'Layout' })
+    expect(batch.results[4]?.result).toMatchObject({ isError: false, value: 'full-guide' })
+    expect(executed).toBe(2)
+    expect(concurrencyChecked).toBe(2)
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})

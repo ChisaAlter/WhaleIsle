@@ -687,7 +687,34 @@ export class SessionCommandController {
     // A plugin-owned public conversation may own background work beyond its
     // current turn. Persist its stop policy and stop that work before the
     // ordinary cancellation; sessions without a listener retain their path.
-    await this.ctx.serial('session/before-cancel', { agent, request })
+    const BEFORE_CANCEL_TIMEOUT_MS = 3_000
+    let beforeCancelTimer: ReturnType<typeof setTimeout> | undefined
+    const hook = (async (): Promise<'completed'> => {
+      try {
+        await this.ctx.serial('session/before-cancel', { agent, request })
+      } catch (error) {
+        this.ctx.logger.warn(
+          `session-controller: session/before-cancel failed for "${request.sessionId}": ${String(error)}`,
+        )
+      }
+      return 'completed'
+    })()
+    let beforeCancelTimedOut: boolean
+    try {
+      beforeCancelTimedOut = await Promise.race([
+        hook.then(() => false),
+        new Promise<boolean>((resolve) => {
+          beforeCancelTimer = setTimeout(() => { resolve(true) }, BEFORE_CANCEL_TIMEOUT_MS)
+        }),
+      ])
+    } finally {
+      if (beforeCancelTimer !== undefined) clearTimeout(beforeCancelTimer)
+    }
+    if (beforeCancelTimedOut) {
+      this.ctx.logger.warn(
+        `session-controller: session/before-cancel timed out after ${BEFORE_CANCEL_TIMEOUT_MS}ms for "${request.sessionId}"`,
+      )
+    }
     agent.cancel({ kind: 'user' }, { keepInbox: true })
     return { accepted: true }
   }
