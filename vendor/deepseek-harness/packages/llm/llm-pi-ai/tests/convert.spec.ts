@@ -1058,4 +1058,34 @@ describe('toStreamChunks defensive branches', () => {
     )))
     expect(chunks[0]).toEqual({ type: 'tool-call-delta', index: 0, id: '', argumentsDelta: '{}' })
   })
+
+  it('tracks toolcall id and name arriving late across chunked deltas without clobbering prior identity', async () => {
+    const emptyStart = assistant({ content: [{ type: 'toolCall', id: '', name: '', arguments: {} }] })
+    const withId = assistant({ content: [{ type: 'toolCall', id: 'call_late', name: '', arguments: {} }] })
+    const withIdAndName = assistant({ content: [{ type: 'toolCall', id: 'call_late', name: 'read', arguments: {} }] })
+    const wipedPartial = assistant({ content: [{ type: 'toolCall', id: '', name: '', arguments: {} }] })
+
+    const chunks = await collect(toStreamChunks(feed(
+      { type: 'toolcall_start', contentIndex: 0, partial: emptyStart },
+      { type: 'toolcall_delta', contentIndex: 0, delta: '{"pa', partial: withId },
+      { type: 'toolcall_delta', contentIndex: 0, delta: 'th":"a"}', partial: withIdAndName },
+      { type: 'toolcall_delta', contentIndex: 0, delta: '', partial: wipedPartial },
+      {
+        type: 'toolcall_end',
+        contentIndex: 0,
+        toolCall: { type: 'toolCall', id: '', name: '', arguments: undefined as never },
+        partial: withIdAndName,
+      },
+      { type: 'done', reason: 'toolUse', message: assistant({ stopReason: 'toolUse' }) },
+    )))
+
+    expect(chunks[1]).toEqual({ type: 'tool-call-delta', index: 0, id: 'call_late', argumentsDelta: '{"pa' })
+    expect(chunks[2]).toEqual({ type: 'tool-call-delta', index: 0, id: 'call_late', name: 'read', argumentsDelta: 'th":"a"}' })
+    expect(chunks[3]).toEqual({ type: 'tool-call-delta', index: 0, id: 'call_late', name: 'read', argumentsDelta: '' })
+    expect(chunks[4]).toEqual({
+      type: 'block-end',
+      index: 0,
+      block: { type: 'tool-call', id: 'call_late', name: 'read', arguments: '{}' },
+    })
+  })
 })

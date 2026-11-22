@@ -13,7 +13,7 @@ import { executeModelToolFixture, executeToolFixture } from '@deepseek-ai/dsh-to
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
@@ -208,6 +208,39 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       const result = await call('glob', { pattern: '[' }, agent())
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_INVALID_PATTERN' } })
+    })
+
+    describe('bare directory without .git', () => {
+      const bareDirs: string[] = []
+      afterEach(() => {
+        while (bareDirs.length > 0) {
+          const d = bareDirs.pop()
+          if (d !== undefined) rmSync(d, { recursive: true, force: true })
+        }
+      })
+
+      it('honors .gitignore in a bare directory without .git unless noIgnore is true', async () => {
+        const bareDir = mkdtempSync(join(tmpdir(), 'dsh-search-bare-'))
+        bareDirs.push(bareDir)
+        await writeFile(join(bareDir, '.gitignore'), 'ignored-dir/\n')
+        await mkdir(join(bareDir, 'ignored-dir'), { recursive: true })
+        await writeFile(join(bareDir, 'kept.ts'), 'export const kept = 1\n')
+        await writeFile(join(bareDir, 'ignored-dir', 'nested.ts'), 'export const nested = 1\n')
+        const bareAgent = () => ({ session: { header: { id: 'session-bare', cwd: bareDir } } })
+
+        const defaultResult = await call('glob', { pattern: '**/*.ts' }, bareAgent())
+        expect(defaultResult.isError).toBe(false)
+        expect(text(defaultResult).split('\n')).toEqual(['kept.ts'])
+
+        const ignoredDirResult = await call('glob', { pattern: 'ignored-dir/*.ts' }, bareAgent())
+        expect(ignoredDirResult.isError).toBe(false)
+        expect(text(ignoredDirResult)).toBe('No files found')
+
+        const unignoredResult = await call('glob', { pattern: '**/*.ts', noIgnore: true }, bareAgent())
+        expect(unignoredResult.isError).toBe(false)
+        const paths = text(unignoredResult).split('\n').sort()
+        expect(paths).toEqual([join('ignored-dir', 'nested.ts'), 'kept.ts'])
+      })
     })
   })
 

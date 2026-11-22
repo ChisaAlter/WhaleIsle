@@ -27,7 +27,12 @@ import type { McpCloseResult } from './types.ts'
 import { McpGeneration } from './generation.ts'
 import { McpTemplateBinding } from './credentials.ts'
 import { MissingTemplateValue } from './templates.ts'
+import { computeSchemaFingerprint, createMcpSchemaCache, identityFromServerConfig } from './schema-cache.ts'
 import { McpToolRegistrationError, syncTools } from './tools.ts'
+
+function readServerVersion(client: Partial<Pick<Client, 'getServerVersion'>>): unknown {
+  return typeof client.getServerVersion === 'function' ? client.getServerVersion() : undefined
+}
 import type { ToolDisposers } from './tools.ts'
 import type { Config } from './index.ts'
 
@@ -148,6 +153,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   let reconnectTimer: NodeJS.Timeout | undefined
   let failedAttempts = 0
   let closureFailure: McpCloseResult | undefined
+  let reconnecting: Promise<void> | undefined
   let checkingCredentials: Promise<void> | undefined
   let credentialsDirty = false
   const isCurrent = (record: Generation): boolean => !disposed && current === record && !record.wire.lifetime.signal.aborted
@@ -182,9 +188,25 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     return closureFailure === undefined
   }
 
-  function enqueueSync(record: Generation): Promise<void> {
+  function enqueueSync(
+    record: Generation,
+    syncOpts?: { refreshSchemaCache?: boolean; instructionsText?: string },
+  ): Promise<void> {
     const run = syncChain.then(async () => {
       if (!isCurrent(record)) return
+      const schemaIdentity = identityFromServerConfig(config)
+      const schemaCache = config.schemaCacheDir === undefined
+        ? undefined
+        : createMcpSchemaCache({
+          cacheDir: config.schemaCacheDir,
+          identity: schemaIdentity,
+          fingerprint: computeSchemaFingerprint(schemaIdentity, {
+            serverVersion: readServerVersion(record.wire.client),
+            instructions: syncOpts?.instructionsText ?? '',
+          }),
+          ...config.schemaCacheTtlMs !== undefined ? { ttlMs: config.schemaCacheTtlMs } : {},
+          onWarn: (message) => { ctx.logger.warn(message) },
+        })
       await record.wire.run(async (signal) => {
         // Closure waits for this task to take ownership, even if cancellation rejects its caller first.
         disposers = await syncTools(record.wire.client, ctx, {
@@ -192,6 +214,10 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
           toolCallTimeoutMs: config.toolCallTimeoutMs,
           signal,
           ...config.expandTemplates ? { redact: (text: string) => binding.redact(text) } : {},
+          ...config.toolDiscoveryMode !== undefined ? { toolDiscoveryMode: config.toolDiscoveryMode } : {},
+          ...config.inlineToolThreshold !== undefined ? { inlineToolThreshold: config.inlineToolThreshold } : {},
+          ...schemaCache !== undefined ? { schemaCache } : {},
+          ...syncOpts?.refreshSchemaCache ? { refreshSchemaCache: true } : {},
         }, disposers, () => isCurrent(record))
       })
     })
@@ -304,7 +330,10 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       if (!isCurrent(record)) return
       ctx.logger.info(`${label}: tool list changed, re-syncing`)
       try {
-        await enqueueSync(record)
+        await enqueueSync(record, {
+          refreshSchemaCache: true,
+          instructionsText: record.wire.client.getInstructions()?.trimEnd() ?? '',
+        })
         if (isCurrent(record) && record.connectedAt !== undefined) {
           status.update({ state: 'connected', toolCount: disposers.size, connectedAt: record.connectedAt })
         }
@@ -325,7 +354,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       const instructions = text ? `### MCP server: ${config.serverName}\n\n${text}` : ''
       const maxInstructionBytes = config.maxInstructionBytes ?? DEFAULT_MAX_INSTRUCTION_BYTES
       if (Buffer.byteLength(instructions) > maxInstructionBytes) throw new McpLocalError(`${label}: server instructions exceed maxInstructionBytes (${maxInstructionBytes})`)
-      const sync = enqueueSync(record)
+      const sync = enqueueSync(record, { instructionsText: text })
       const budget = remaining()
       await (budget === undefined ? sync : withDeadline(sync, budget, `${label}: startup timed out`))
       if (!isCurrent(record)) return
@@ -393,23 +422,44 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     },
     async reconnect(): Promise<void> {
       if (disposed) return
-      stopTimers()
-      closureFailure = undefined
-      failedAttempts = 0
-      status.recordClosure({ closeConfirmed: true })
-      const record = current
-      const attempt = settling
-      current = undefined
-      const closeConfirmed = record === undefined ? true : await close(record)
-      await attempt
-      await syncChain
-      stopTimers()
-      clearTools()
-      if (isStopped() || !closeConfirmed) return
-      closureFailure = undefined
-      status.recordClosure({ closeConfirmed: true })
-      settling = connectGeneration()
-      await settling
+      if (reconnecting !== undefined) return reconnecting
+      let finish!: () => void
+      let fail!: (error: unknown) => void
+      const lock = new Promise<void>((resolve, reject) => {
+        finish = resolve
+        fail = reject
+      })
+      // Mark handled so an initiator failure never emits unhandledRejection when no waiter joined.
+      void lock.catch(() => undefined)
+      reconnecting = lock
+      let outcome: { ok: true } | { ok: false; error: unknown } = { ok: true }
+      try {
+        stopTimers()
+        closureFailure = undefined
+        failedAttempts = 0
+        status.recordClosure({ closeConfirmed: true })
+        const record = current
+        const attempt = settling
+        current = undefined
+        const closeConfirmed = record === undefined ? true : await close(record)
+        await attempt
+        await syncChain
+        stopTimers()
+        clearTools()
+        if (!isStopped() && closeConfirmed) {
+          closureFailure = undefined
+          status.recordClosure({ closeConfirmed: true })
+          settling = connectGeneration()
+          await settling
+        }
+      } catch (error) {
+        outcome = { ok: false, error }
+      } finally {
+        if (reconnecting === lock) reconnecting = undefined
+        if (outcome.ok) finish()
+        else fail(outcome.error)
+      }
+      if (!outcome.ok) throw outcome.error
     },
     async dispose(): Promise<void> {
       disposed = true
@@ -420,7 +470,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
       current = undefined
       if (record !== undefined) await close(record)
       try {
-        await withDeadline(Promise.all([settling, syncChain, checkingCredentials]), config.closeTimeoutMs, 'MCP cleanup did not settle')
+        await withDeadline(Promise.all([settling, syncChain, checkingCredentials, reconnecting]), config.closeTimeoutMs, 'MCP cleanup did not settle')
       } catch (error) {
         closureFailure ??= { ...status.closure(), cleanupError: diagnostic(error, 'cleanup') }
       }

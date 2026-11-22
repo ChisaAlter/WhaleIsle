@@ -972,20 +972,26 @@ function splitsSurrogatePair(text: string, index: number): boolean {
   return prev >= 0xd800 && prev <= 0xdbff && curr >= 0xdc00 && curr <= 0xdfff
 }
 
+/** Build a consistent ambiguity error without suggesting `replace_all` when already set. */
+function ambiguousEditError(occurrences: number, displayPath: string, replaceAll: boolean): FsError {
+  const guidance = replaceAll
+    ? 'provide a more specific old_string'
+    : 'provide a more specific old_string or set replace_all to true'
+  return new FsError(`old_string matched ${occurrences} times in "${displayPath}"; ${guidance}`, 'FS_AMBIGUOUS_EDIT')
+}
+
 function replaceUniqueSlice(
   content: string,
   start: number,
   end: number,
   newNorm: string,
   displayPath: string,
+  replaceAll: boolean,
 ): { content: string; replacements: number } {
   const originalSlice = content.slice(start, end)
   const occurrences = findMatchIndices(content, originalSlice, 1).length
   if (occurrences !== 1) {
-    throw new FsError(
-      `old_string matched ${occurrences} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
-      'FS_AMBIGUOUS_EDIT',
-    )
+    throw ambiguousEditError(occurrences, displayPath, replaceAll)
   }
   return { content: `${content.slice(0, start)}${newNorm}${content.slice(end)}`, replacements: 1 }
 }
@@ -995,6 +1001,7 @@ function tryStrippedLinePrefixEdit(
   oldNorm: string,
   newNorm: string,
   displayPath: string,
+  replaceAll: boolean,
 ): { content: string; replacements: number } | undefined {
   // Keep original newNorm untouched and abort if newNorm itself looks line-numbered.
   if (stripLineNumberPrefixes(newNorm, LINE_PREFIX_RELAXED_RE) !== undefined) return undefined
@@ -1003,15 +1010,12 @@ function tryStrippedLinePrefixEdit(
     if (strippedOld === undefined || strippedOld.length === 0 || strippedOld === newNorm) continue
     const matches = findMatchIndices(content, strippedOld, 1)
     if (matches.length > 1) {
-      throw new FsError(
-        `old_string matched ${matches.length} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
-        'FS_AMBIGUOUS_EDIT',
-      )
+      throw ambiguousEditError(matches.length, displayPath, replaceAll)
     }
     if (matches.length === 1) {
       const [start] = matches
       if (start !== undefined) {
-        return replaceUniqueSlice(content, start, start + strippedOld.length, newNorm, displayPath)
+        return replaceUniqueSlice(content, start, start + strippedOld.length, newNorm, displayPath, replaceAll)
       }
     }
   }
@@ -1023,6 +1027,7 @@ function tryTrimEndLineEdit(
   oldNorm: string,
   newNorm: string,
   displayPath: string,
+  replaceAll: boolean,
 ): { content: string; replacements: number } | undefined {
   const endsWithNewline = oldNorm.endsWith('\n')
   const rawOldLines = (endsWithNewline ? oldNorm.slice(0, -1) : oldNorm).split('\n')
@@ -1067,10 +1072,7 @@ function tryTrimEndLineEdit(
   }
 
   if (matches.length > 1) {
-    throw new FsError(
-      `old_string matched ${matches.length} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
-      'FS_AMBIGUOUS_EDIT',
-    )
+    throw ambiguousEditError(matches.length, displayPath, replaceAll)
   }
   const [match] = matches
   if (matches.length !== 1 || match === undefined) return undefined
@@ -1080,7 +1082,7 @@ function tryTrimEndLineEdit(
   if (endsWithNewline && !originalSlice.endsWith('\n')) return undefined
   const roundTrip = (endsWithNewline ? originalSlice.slice(0, -1) : originalSlice).split('\n').map(line => line.trimEnd())
   if (roundTrip.length !== trimmedOld.length || roundTrip.some((line, index) => line !== trimmedOld[index])) return undefined
-  return replaceUniqueSlice(content, start, end, newNorm, displayPath)
+  return replaceUniqueSlice(content, start, end, newNorm, displayPath, replaceAll)
 }
 
 function tryPunctuationNormalizedEdit(
@@ -1088,6 +1090,7 @@ function tryPunctuationNormalizedEdit(
   oldNorm: string,
   newNorm: string,
   displayPath: string,
+  replaceAll: boolean,
 ): { content: string; replacements: number } | undefined {
   const normContent = normalizeConfusablePunctuation(content)
   const normOld = normalizeConfusablePunctuation(oldNorm)
@@ -1095,10 +1098,7 @@ function tryPunctuationNormalizedEdit(
 
   const matches = findMatchIndices(normContent, normOld, 1)
   if (matches.length > 1) {
-    throw new FsError(
-      `old_string matched ${matches.length} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
-      'FS_AMBIGUOUS_EDIT',
-    )
+    throw ambiguousEditError(matches.length, displayPath, replaceAll)
   }
   const [start] = matches
   if (matches.length !== 1 || start === undefined) return undefined
@@ -1107,7 +1107,7 @@ function tryPunctuationNormalizedEdit(
   if (splitsSurrogatePair(content, start) || splitsSurrogatePair(content, end)) return undefined
   const originalSlice = content.slice(start, end)
   if (normalizeConfusablePunctuation(originalSlice) !== normOld) return undefined
-  return replaceUniqueSlice(content, start, end, newNorm, displayPath)
+  return replaceUniqueSlice(content, start, end, newNorm, displayPath, replaceAll)
 }
 
 function buildEditMissHint(content: string, oldNorm: string, newNorm: string, displayPath: string): string {
@@ -1191,17 +1191,14 @@ export function applyLiteralEdit(
   const replacements = countOccurrences(content, oldNorm)
   if (replacements > 0) {
     if (!replaceAll && replacements > 1) {
-      throw new FsError(
-        `old_string matched ${replacements} times in "${displayPath}"; provide a more specific old_string or set replace_all to true`,
-        'FS_AMBIGUOUS_EDIT',
-      )
+      throw ambiguousEditError(replacements, displayPath, false)
     }
     return { content: content.split(oldNorm).join(newNorm), replacements }
   }
 
-  return tryStrippedLinePrefixEdit(content, oldNorm, newNorm, displayPath)
-    ?? tryTrimEndLineEdit(content, oldNorm, newNorm, displayPath)
-    ?? tryPunctuationNormalizedEdit(content, oldNorm, newNorm, displayPath)
+  return tryStrippedLinePrefixEdit(content, oldNorm, newNorm, displayPath, replaceAll)
+    ?? tryTrimEndLineEdit(content, oldNorm, newNorm, displayPath, replaceAll)
+    ?? tryPunctuationNormalizedEdit(content, oldNorm, newNorm, displayPath, replaceAll)
     ?? (() => {
       const hint = buildEditMissHint(content, oldNorm, newNorm, displayPath)
       throw new FsError(`old_string was not found in "${displayPath}"${hint}`, 'FS_EDIT_NOT_FOUND')

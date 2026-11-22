@@ -784,6 +784,42 @@ describe('reconnect supervisor', () => {
       vi.useRealTimers()
     }
   })
+
+  it('serializes concurrent reconnect calls without starting overlapping generations', async () => {
+    const status = new McpStatusCell(() => {})
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'test'), status)
+    await handle.ready
+    expect(instances).toHaveLength(1)
+
+    const closeGate: PromiseWithResolvers<void> = Promise.withResolvers()
+    mockClose.mockImplementationOnce(function (this: { transport?: Transport }) {
+      return closeGate.promise.then(() => {
+        this.transport?.onclose?.()
+      })
+    })
+    const connectGate: PromiseWithResolvers<void> = Promise.withResolvers()
+    mockConnect.mockImplementationOnce(() => connectGate.promise)
+
+    const p1 = handle.reconnect()
+    const p2 = handle.reconnect()
+    await sleep(10)
+    expect(instances).toHaveLength(1)
+
+    closeGate.resolve()
+    await vi.waitFor(() => { expect(instances).toHaveLength(2) })
+    const p3 = handle.reconnect()
+    expect(instances).toHaveLength(2)
+
+    connectGate.resolve()
+    await Promise.all([p1, p2, p3])
+    expect(instances).toHaveLength(2)
+    expect(status.current()).toMatchObject({ state: 'connected', toolCount: 1 })
+
+    // A subsequent sequential reconnect after settling runs a fresh generation.
+    await handle.reconnect()
+    expect(instances).toHaveLength(3)
+    await handle.dispose()
+  })
 })
 
 // ---- Policy resolution ----

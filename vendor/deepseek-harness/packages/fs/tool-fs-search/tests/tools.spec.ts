@@ -347,11 +347,12 @@ describe('config validation', () => {
 })
 
 describe('command construction (plain argv)', () => {
-  it('glob: fixed rg --files argv respects .gitignore by default and omits --no-ignore unless requested', () => {
+  it('glob: fixed rg --files argv respects .gitignore by default (even without .git) and omits --no-ignore unless requested', () => {
     expect(buildGlobCommand({ pattern: '**/*.ts' })).toEqual([
       '--files',
       '--glob=**/*.ts',
       '--sort=modified',
+      '--no-require-git',
       '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
@@ -360,12 +361,16 @@ describe('command construction (plain argv)', () => {
       '--glob=!**/.jj', '--glob=!**/.jj/**',
       '--glob=!**/.sl', '--glob=!**/.sl/**',
     ])
-    expect(buildGlobCommand({ pattern: '**/*.ts', noIgnore: true })).toContain('--no-ignore')
-    expect(buildGlobCommand({ pattern: '**/*.ts', noIgnore: false })).not.toContain('--no-ignore')
+    const noIgnoreArgv = buildGlobCommand({ pattern: '**/*.ts', noIgnore: true })
+    expect(noIgnoreArgv).toContain('--no-ignore')
+    expect(noIgnoreArgv).not.toContain('--no-require-git')
+    const defaultArgv = buildGlobCommand({ pattern: '**/*.ts', noIgnore: false })
+    expect(defaultArgv).not.toContain('--no-ignore')
+    expect(defaultArgv).toContain('--no-require-git')
   })
 
   it('glob: the search root rides behind -- as a plain element', () => {
-    expect(buildGlobCommand({ pattern: '*.md', path: 'docs dir' })).toEqual(['--files', '--glob=*.md', '--sort=modified', '--hidden',
+    expect(buildGlobCommand({ pattern: '*.md', path: 'docs dir' })).toEqual(['--files', '--glob=*.md', '--sort=modified', '--no-require-git', '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
       '--glob=!**/.hg', '--glob=!**/.hg/**',
@@ -797,7 +802,7 @@ describe('glob results', () => {
     subprocess.handler = () => runResult('sub/a.ts\n')
     const result = await call(ctx, 'glob', { pattern: '*.ts', path: 'sub' })
     expect(result.isError).toBe(false)
-    expect(subprocess.spawns[0]?.argv).toEqual([rgPath, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--hidden',
+    expect(subprocess.spawns[0]?.argv).toEqual([rgPath, '--no-config', '--files', '--glob=*.ts', '--sort=modified', '--no-require-git', '--hidden',
       '--glob=!**/.git', '--glob=!**/.git/**',
       '--glob=!**/.svn', '--glob=!**/.svn/**',
       '--glob=!**/.hg', '--glob=!**/.hg/**',

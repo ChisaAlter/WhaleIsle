@@ -13,6 +13,7 @@ const {
   assertDesktopForks,
 } = require('./harness-desktop-forks');
 const { WAVE1_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave1');
+const { WAVE2_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave2');
 
 function writeFile(root, rel, content) {
   const full = path.join(root, ...rel.split('/'));
@@ -84,10 +85,10 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
     '',
   ].join('\n'));
   const written = new Set();
-  const wave1ByFile = new Map();
-  for (const entry of WAVE1_FORK_FILE_MARKERS) {
+  const extraByFile = new Map();
+  for (const entry of [...WAVE1_FORK_FILE_MARKERS, ...WAVE2_FORK_FILE_MARKERS]) {
     const extra = (entry.includes || []).join('\n');
-    if (extra) wave1ByFile.set(entry.file, `${wave1ByFile.get(entry.file) || ''}${extra}\n`);
+    if (extra) extraByFile.set(entry.file, `${extraByFile.get(entry.file) || ''}${extra}\n`);
   }
   for (const marker of FORK_FILE_MARKERS) {
     if (written.has(marker.file)) continue;
@@ -419,8 +420,10 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-chat/src/client/chat/RunningWhaleGirl.tsx': '/claude-isle-reading.png\ndata-dsh-mascot\n',
       'apps/web/public/Claude-Artwork-NOTICES.txt': 'Ancean\nZipZipPipe\n',
     };
-    const seamContent = projectSeams[marker.file] ?? content[marker.file] ?? 'export {}\n';
-    const extra = wave1ByFile.get(marker.file) || '';
+    const targetPath = path.join(root, ...marker.file.split('/'));
+    const baseContent = projectSeams[marker.file] ?? content[marker.file];
+    const seamContent = baseContent ?? (fs.existsSync(targetPath) ? `${fs.readFileSync(targetPath, 'utf8')}\n` : 'export {}\n');
+    const extra = extraByFile.get(marker.file) || '';
     writeFile(root, marker.file, `${seamContent}${skinSeams[marker.file] ?? ''}${extra}`);
   }
   return root;
@@ -573,4 +576,11 @@ test('assertDesktopForks throws when a Wave 1 fork marker regresses', (t) => {
   const retryPolicyPath = path.join(root, ...'packages/llm/llm/src/retry-policy.ts'.split('/'));
   fs.writeFileSync(retryPolicyPath, "export const DEFAULT_RETRYABLE_CODES = ['RATE_LIMIT']\n");
   assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /STREAM_CLOSED/);
+});
+
+test('assertDesktopForks throws when a Wave 2 fork marker regresses', (t) => {
+  const root = makeFixture(t);
+  const eventsPath = path.join(root, ...'packages/api/session-controller/src/client/contract/events.ts'.split('/'));
+  fs.writeFileSync(eventsPath, 'export class MutableSessionEventSource {}\n');
+  assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /APPEND_SEGMENT_SIZE/);
 });

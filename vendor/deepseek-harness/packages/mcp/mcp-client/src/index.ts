@@ -21,6 +21,8 @@ import { DEFAULT_MAX_INSTRUCTION_BYTES, RECONNECT_DEFAULTS, resolveReconnectPoli
 
 export { resolveReconnectPolicy } from './connection.ts'
 import type { ReconnectConfig } from './connection.ts'
+import { DEFAULT_INLINE_TOOL_THRESHOLD, type ToolDiscoveryMode } from './deferred-tools.ts'
+import { DEFAULT_SCHEMA_CACHE_TTL_MS } from './schema-cache.ts'
 import { registerServerContext } from './server-context.ts'
 import { reportMcpClientStatus, connectionStatusIn, registerStatusCell } from './status.ts'
 import type { McpConnectionStatusHandle } from './status.ts'
@@ -29,6 +31,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 
 export { createMcpToolDefinition } from './tools.ts'
 export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
+export type { ToolDiscoveryMode } from './deferred-tools.ts'
 export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 export { mcpClientStatus, reportMcpClientStatus } from './status.ts'
 export type { McpClientStatus, McpConnectionHealth } from './status.ts'
@@ -102,6 +105,14 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /** Tool registration strategy: `'auto'` (default), `'eager'`, or `'deferred'`. */
+  toolDiscoveryMode?: ToolDiscoveryMode
+  /** Remote tool count above which `'auto'` switches to deferred meta-tools (default 16). */
+  inlineToolThreshold?: number
+  /** Optional directory for on-disk tool schema caching across connections; omitted disables caching. */
+  schemaCacheDir?: string
+  /** Schema cache TTL in milliseconds when `schemaCacheDir` is set (default 86400000). */
+  schemaCacheTtlMs?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -132,6 +143,14 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /** Tool registration strategy: `'auto'` (default), `'eager'`, or `'deferred'`. */
+  toolDiscoveryMode?: ToolDiscoveryMode
+  /** Remote tool count above which `'auto'` switches to deferred meta-tools (default 16). */
+  inlineToolThreshold?: number
+  /** Optional directory for on-disk tool schema caching across connections; omitted disables caching. */
+  schemaCacheDir?: string
+  /** Schema cache TTL in milliseconds when `schemaCacheDir` is set (default 86400000). */
+  schemaCacheTtlMs?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -174,6 +193,14 @@ export const Config = z.union([
     expandTemplates: z.boolean().default(false),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+    toolDiscoveryMode: z.union([
+      z.const('eager'),
+      z.const('deferred'),
+      z.const('auto'),
+    ]).default('auto'),
+    inlineToolThreshold: z.number().step(1).min(0).default(DEFAULT_INLINE_TOOL_THRESHOLD),
+    schemaCacheDir: z.string(),
+    schemaCacheTtlMs: z.number().step(1).min(1).default(DEFAULT_SCHEMA_CACHE_TTL_MS),
     reconnect: ReconnectSchema,
   }),
   z.object({
@@ -187,6 +214,14 @@ export const Config = z.union([
     expandTemplates: z.boolean().default(false),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+    toolDiscoveryMode: z.union([
+      z.const('eager'),
+      z.const('deferred'),
+      z.const('auto'),
+    ]).default('auto'),
+    inlineToolThreshold: z.number().step(1).min(0).default(DEFAULT_INLINE_TOOL_THRESHOLD),
+    schemaCacheDir: z.string(),
+    schemaCacheTtlMs: z.number().step(1).min(1).default(DEFAULT_SCHEMA_CACHE_TTL_MS),
     reconnect: ReconnectSchema,
   }),
 ]) as z<ConfigInput, Config>

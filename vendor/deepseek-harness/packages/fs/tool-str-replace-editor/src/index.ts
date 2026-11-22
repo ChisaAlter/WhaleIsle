@@ -15,6 +15,123 @@ import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { ToolArgsError, defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolCallView, ToolRunContext } from '@deepseek-ai/dsh-tools'
 
+/** Maximum regular-file size (10 MiB) read into memory by `view`, `str_replace`, and `insert`. */
+export const MAX_EDITABLE_FILE_BYTES = 10 * 1024 * 1024
+
+type EditableCommand = 'view' | 'str_replace' | 'insert'
+type LineEndingKind = 'CRLF' | 'LF'
+
+interface LoadedEditableText {
+  readonly raw: string
+  readonly normalized: string
+  readonly lineEndings: LineEndingKind
+  readonly hasMixedLineEndings: boolean
+}
+
+function assertEditableFileSize(target: FsTarget, size: number, command: EditableCommand): void {
+  if (size > MAX_EDITABLE_FILE_BYTES) {
+    throw new FsError(
+      `cannot ${command} "${target.displayPath}": file is ${size} bytes, exceeding the ${MAX_EDITABLE_FILE_BYTES} byte limit`,
+      'FS_TOO_LARGE',
+    )
+  }
+}
+
+function analyzeLineEndings(text: string): { lineEndings: LineEndingKind; hasMixedLineEndings: boolean } {
+  let crlfCount = 0
+  let lfCount = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\r' && text[i + 1] === '\n') {
+      crlfCount++
+      i++
+    } else if (text[i] === '\n') {
+      lfCount++
+    }
+  }
+  return {
+    lineEndings: crlfCount > lfCount ? 'CRLF' : 'LF',
+    hasMixedLineEndings: crlfCount > 0 && lfCount > 0,
+  }
+}
+
+function normalizeLineEndings(text: string): string {
+  return text.replaceAll('\r\n', '\n')
+}
+
+function restoreLineEndings(text: string, lineEndings: LineEndingKind): string {
+  const lf = normalizeLineEndings(text)
+  return lineEndings === 'CRLF' ? lf.replaceAll('\n', '\r\n') : lf
+}
+
+async function readEditableFile(
+  ctx: Context,
+  target: FsTarget,
+  info: FsInfo,
+  command: EditableCommand,
+  exec: ToolRunContext,
+): Promise<LoadedEditableText> {
+  if (info.size !== undefined) {
+    assertEditableFileSize(target, info.size, command)
+  }
+  const raw = await ctx.fs.readText(target, exec.signal)
+  if (info.size === undefined) {
+    assertEditableFileSize(target, Buffer.byteLength(raw, 'utf8'), command)
+  }
+  const { lineEndings, hasMixedLineEndings } = analyzeLineEndings(raw)
+  return {
+    raw,
+    normalized: normalizeLineEndings(raw),
+    lineEndings,
+    hasMixedLineEndings,
+  }
+}
+
+function ambiguousReplaceError(
+  content: string,
+  oldValue: string,
+  offsets: readonly number[],
+): FsError {
+  const lines = lineNumbersAt(content, offsets)
+  return new FsError(
+    `No replacement was performed. Multiple occurrences of old_str \`${oldValue}\` in lines [${lines.join(', ')}]. Please ensure it is unique`,
+    'FS_AMBIGUOUS_EDIT',
+  )
+}
+
+function applyEditorReplacement(
+  target: FsTarget,
+  loaded: LoadedEditableText,
+  oldValue: string,
+  newValue: string,
+): string {
+  // Mixed-EOL files can use explicit CRLF vs LF to disambiguate identical text; prefer literal first.
+  if (loaded.hasMixedLineEndings) {
+    const rawOffsets = matchOffsets(loaded.raw, oldValue)
+    if (rawOffsets.length > 1) {
+      throw ambiguousReplaceError(loaded.raw, oldValue, rawOffsets)
+    }
+    const [rawOffset] = rawOffsets
+    if (rawOffset !== undefined) {
+      return loaded.raw.slice(0, rawOffset) + newValue + loaded.raw.slice(rawOffset + oldValue.length)
+    }
+  }
+  const oldNorm = normalizeLineEndings(oldValue)
+  const newNorm = normalizeLineEndings(newValue)
+  const offsets = matchOffsets(loaded.normalized, oldNorm)
+  const offset = offsets[0]
+  if (offset === undefined) {
+    throw new FsError(
+      `No replacement was performed, old_str \`${oldValue}\` did not appear verbatim in ${target.displayPath}.`,
+      'FS_EDIT_NOT_FOUND',
+    )
+  }
+  if (offsets.length > 1) {
+    throw ambiguousReplaceError(loaded.normalized, oldValue, offsets)
+  }
+  const afterNorm = loaded.normalized.slice(0, offset) + newNorm + loaded.normalized.slice(offset + oldNorm.length)
+  return restoreLineEndings(afterNorm, loaded.lineEndings)
+}
+
 const TRUNCATED_MESSAGE = '<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>'
 
 const DEFAULT_DESCRIPTION = `
@@ -241,9 +358,9 @@ async function viewPath(
   if (info.type !== 'file') {
     throw new FsError(`cannot view "${target.displayPath}": not a regular file or directory`, 'FS_NOT_REGULAR_FILE')
   }
-  const content = await ctx.fs.readText(target, exec.signal)
+  const loaded = await readEditableFile(ctx, target, info, 'view', exec)
   ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
-  return formatFileView(target.displayPath, content, maxOutputChars, viewRange)
+  return formatFileView(target.displayPath, loaded.normalized, maxOutputChars, viewRange)
 }
 
 async function createFile(
@@ -306,27 +423,13 @@ async function replaceInFile(
   if (info.type !== 'file') {
     throw new FsError(`cannot edit "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
   }
-  const before = await ctx.fs.readText(target, exec.signal)
-  const offsets = matchOffsets(before, oldValue)
-  const offset = offsets[0]
-  if (offset === undefined) {
-    throw new FsError(
-      `No replacement was performed, old_str \`${oldValue}\` did not appear verbatim in ${target.displayPath}.`,
-      'FS_EDIT_NOT_FOUND',
-    )
-  }
-  if (offsets.length > 1) {
-    const lines = lineNumbersAt(before, offsets)
-    throw new FsError(
-      `No replacement was performed. Multiple occurrences of old_str \`${oldValue}\` in lines [${lines.join(', ')}]. Please ensure it is unique`,
-      'FS_AMBIGUOUS_EDIT',
-    )
-  }
+  const loaded = await readEditableFile(ctx, target, info, 'str_replace', exec)
+  const after = applyEditorReplacement(target, loaded, oldValue, newValue)
   let outcome
   try {
     outcome = await ctx.fs.writeText(
       target,
-      before.slice(0, offset) + newValue + before.slice(offset + oldValue.length),
+      after,
       intent === undefined
         ? { kind: 'replaceIfVersion', version: info.version }
         : { kind: 'replaceIfVersion', version: intent.version },
@@ -357,18 +460,19 @@ async function insertInFile(
   if (info.type !== 'file') {
     throw new FsError(`cannot insert into "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
   }
-  const before = await ctx.fs.readText(target, exec.signal)
-  const lines = before.split('\n')
+  const loaded = await readEditableFile(ctx, target, info, 'insert', exec)
+  const lines = loaded.normalized.split('\n')
   if (!Number.isInteger(insertLine) || insertLine < 0 || insertLine > lines.length) {
     throw new ToolArgsError([
       `Invalid \`insert_line\` parameter: ${insertLine}. It should be within the range of lines of the file: [0, ${lines.length}]`,
     ])
   }
-  const after = [
+  const afterNorm = [
     ...lines.slice(0, insertLine),
-    ...value.split('\n'),
+    ...normalizeLineEndings(value).split('\n'),
     ...lines.slice(insertLine),
   ].join('\n')
+  const after = restoreLineEndings(afterNorm, loaded.lineEndings)
   const expected: FsWriteIntent = intent === undefined
     ? { kind: 'replaceIfVersion', version: info.version }
     : { kind: 'replaceIfVersion', version: intent.version }

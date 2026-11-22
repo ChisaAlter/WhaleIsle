@@ -266,6 +266,23 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
  *   `MALFORMED_RESPONSE` when completed tool arguments are invalid. Length-limited
  *   output retains its terminal reason so the assembler can discard incomplete calls.
  */
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function partialToolCallOf(
+  partial: AssistantMessage | undefined,
+  contentIndex: number,
+): { id?: unknown; name?: unknown } | undefined {
+  if (!Array.isArray(partial?.content)) return undefined
+  const block = partial.content[contentIndex]
+  return block?.type === 'toolCall' ? block : undefined
+}
+
+function stringifyToolArguments(args: unknown): string {
+  return args === undefined ? '{}' : JSON.stringify(args)
+}
+
 export async function* toStreamChunks(
   events: AsyncIterable<AssistantMessageEvent>,
   contextWindow?: number,
@@ -300,10 +317,10 @@ export async function* toStreamChunks(
         yield { type: 'block-end', index: event.contentIndex, block: { type: 'reasoning', text: event.content } }
         break
       case 'toolcall_start': {
-        // The id/name live on the partial's content at this index.
-        const partial = event.partial.content[event.contentIndex]
-        const id = partial?.type === 'toolCall' ? partial.id : ''
-        const name = partial?.type === 'toolCall' ? partial.name : ''
+        // The id/name live on the partial's content at this index when sent upfront.
+        const partial = partialToolCallOf(event.partial, event.contentIndex)
+        const id = nonEmptyString(partial?.id) ?? ''
+        const name = nonEmptyString(partial?.name) ?? ''
         toolIds.set(event.contentIndex, { id, name, rawDelta: '' })
         yield { type: 'block-start', index: event.contentIndex, blockType: 'tool-call' }
         break
@@ -314,21 +331,40 @@ export async function* toStreamChunks(
           known = { id: '', name: '', rawDelta: '' }
           toolIds.set(event.contentIndex, known)
         }
-        known.rawDelta += event.delta
+        // OpenAI-compatible gateways may split tool call id/name across later delta
+        // chunks on the cumulative partial block; sync without clobbering known values.
+        const partial = partialToolCallOf(event.partial, event.contentIndex)
+        const partialId = nonEmptyString(partial?.id)
+        const partialName = nonEmptyString(partial?.name)
+        if (partialId !== undefined) known.id = partialId
+        if (partialName !== undefined) known.name = partialName
+        const delta = typeof event.delta === 'string' ? event.delta : ''
+        known.rawDelta += delta
         yield {
           type: 'tool-call-delta',
           index: event.contentIndex,
           id: brandString<ToolCallId>(known.id),
           ...known.name.length > 0 ? { name: known.name } : {},
-          argumentsDelta: event.delta,
+          argumentsDelta: delta,
         }
         break
       }
       case 'toolcall_end': {
+        const known = toolIds.get(event.contentIndex)
+        toolIds.delete(event.contentIndex)
+        const partial = partialToolCallOf(event.partial, event.contentIndex)
+        const id = nonEmptyString(event.toolCall.id)
+          ?? nonEmptyString(known?.id)
+          ?? nonEmptyString(partial?.id)
+          ?? ''
+        const name = nonEmptyString(event.toolCall.name)
+          ?? nonEmptyString(known?.name)
+          ?? nonEmptyString(partial?.name)
+          ?? ''
         if (event.toolCall.argumentsError !== undefined) {
           const rawArgs = extractRawToolArguments(
             event.toolCall.argumentsError,
-            toolIds.get(event.contentIndex)?.rawDelta,
+            known?.rawDelta,
           )
           const repaired = tryParseRepairedObjectJson(rawArgs)
           yield {
@@ -336,8 +372,8 @@ export async function* toStreamChunks(
             index: event.contentIndex,
             block: {
               type: 'tool-call',
-              id: brandString<ToolCallId>(event.toolCall.id),
-              name: event.toolCall.name,
+              id: brandString<ToolCallId>(id),
+              name,
               arguments: repaired !== undefined ? JSON.stringify(repaired) : rawArgs,
             },
           }
@@ -348,11 +384,11 @@ export async function* toStreamChunks(
           index: event.contentIndex,
           block: {
             type: 'tool-call',
-            id: brandString<ToolCallId>(event.toolCall.id),
-            name: event.toolCall.name,
+            id: brandString<ToolCallId>(id),
+            name,
             // pi-ai hands back the PARSED arguments; the harness vocabulary
             // keeps the raw string.
-            arguments: JSON.stringify(event.toolCall.arguments),
+            arguments: stringifyToolArguments(event.toolCall.arguments),
           },
         }
         break

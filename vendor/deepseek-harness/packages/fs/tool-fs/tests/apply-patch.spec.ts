@@ -186,7 +186,7 @@ it('dispatches native and PTC patch calls with identical values', async () => {
   expect(await t.bytes('a')).toBe('new\n')
 })
 
-it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('retains completed operations after a real write permission failure', async () => {
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('rolls back completed operations after a real write permission failure', async () => {
   const t = await setup()
   const locked = resolve(t.workspace, 'locked')
   await mkdir(locked, { mode: 0o555 })
@@ -195,11 +195,12 @@ it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('retains com
     expect(result.isError).toBe(false)
     const first = resolve(t.workspace, 'first')
     const denied = resolve(locked, 'denied')
-    expect(result.content).toEqual([{ type: 'text', text: `Patch stopped after 1 of 3 operations.\nCompleted:\nA ${first}\nFailed:\n`
+    expect(result.content).toEqual([{ type: 'text', text: 'Patch stopped after 0 of 3 operations.\nFailed:\n'
       + `- operation 2 (add ${denied}, patch line 4): cannot write "${denied}": permission denied\nNot executed:\n`
+      + `- operation 1 (add ${first})\n`
       + `- operation 3 (add ${resolve(t.workspace, 'last')})` }])
     expect(result.meta).toEqual({ stopped: true, diffs: [] })
-    expect(await t.bytes('first')).toBe('new\n')
+    await expect(t.bytes('first')).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(t.bytes('last')).rejects.toMatchObject({ code: 'ENOENT' })
   } finally { await chmod(locked, 0o755) }
 })

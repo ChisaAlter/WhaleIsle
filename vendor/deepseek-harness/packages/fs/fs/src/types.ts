@@ -47,10 +47,11 @@ export function FsVersion(v: string): FsVersion {
 /**
  * One authoritative observation of a target. A present observation carries the
  * version used by guarded replacement; an absent observation authorizes only a
- * guarded create, never an edit.
+ * guarded create, never an edit. `partial` marks a windowed or truncated read
+ * that did not observe the complete file.
  */
 export type FsObservation =
-  | { readonly kind: 'present'; readonly version: FsVersion }
+  | { readonly kind: 'present'; readonly version: FsVersion; readonly partial?: boolean }
   | { readonly kind: 'absent' }
 
 /**

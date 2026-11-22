@@ -114,7 +114,8 @@ export function buildGlobCommand(input: GlobInput): string[] {
     ...pruning,
     `--glob=${input.pattern}`,
     '--sort=modified',
-    ...input.noIgnore === true ? ['--no-ignore'] : [],
+    // Honor .gitignore even when the workspace is a bare directory with no .git/ root.
+    ...input.noIgnore === true ? ['--no-ignore'] : ['--no-require-git'],
     '--hidden',
     // Two negated globs per VCS name: the bare form prunes the directory
     // during traversal; the /** form still excludes the contents when the

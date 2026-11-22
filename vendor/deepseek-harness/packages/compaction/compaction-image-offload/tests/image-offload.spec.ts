@@ -470,3 +470,102 @@ describe('compaction-image-offload', () => {
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'error' } } })
   })
 })
+
+function sizedImage(name: string, bytes: number): Extract<ContentBlock, { type: 'image' }> {
+  return {
+    type: 'image',
+    attachment: { attachmentId: `sha256:${'a'.repeat(64)}` as never, name, mediaType: 'image/png', bytes, width: 1, height: 1 },
+  }
+}
+
+async function configuredHarness(adapter: ScriptedAdapter, config?: offload.Config): Promise<Context> {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(offload, config)
+  await ctx.plugin(AgentLoop, { agents: [] })
+  ctx.llm.registerAdapter(['mock'], adapter)
+  return ctx
+}
+
+describe('proactive dual-watermark hysteresis image offload', () => {
+  it('stays backwards-compatible with empty config {} and does not evict inside the hysteresis band', async () => {
+    const adapter = new ScriptedAdapter([textResponse('step1'), textResponse('step2')])
+    const ctx = await configuredHarness(adapter, {})
+    const agent = await ctx.agentLoop.create(SessionId('hysteresis-empty-config'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [image('first'), image('second')], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    agent.followup(createUserMessage({ content: [image('third')], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    expect(decisions(agent.session)).toHaveLength(0)
+    expect(replacements(agent.session)).toHaveLength(0)
+    expect(adapter.requests.map(offloadedNames)).toEqual([[], []])
+  })
+
+  it('evicts oldest retained images down to lowWatermarkImages in one batch only when exceeding highWatermarkImages', async () => {
+    const adapter = new ScriptedAdapter([
+      textResponse('ok-1'),
+      textResponse('ok-2'),
+      textResponse('ok-3'),
+    ])
+    const ctx = await configuredHarness(adapter, { highWatermarkImages: 4, lowWatermarkImages: 2 })
+    const agent = await ctx.agentLoop.create(SessionId('hysteresis-count'), { provider: 'mock', model: 'mock' })
+
+    // 4 images total is at the high watermark (<= 4) -> no proactive eviction.
+    agent.followup(createUserMessage({
+      content: [image('img-1'), image('img-2'), image('img-3'), image('img-4')],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    expect(decisions(agent.session)).toHaveLength(0)
+
+    // 1 new incoming image crosses highWatermarkImages (4 + 1 = 5 > 4).
+    // Evicts oldest 3 from surface so retained total drops to lowWatermarkImages (1 + 1 = 2).
+    agent.followup(createUserMessage({ content: [image('img-5')], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    expect(decisions(agent.session)).toHaveLength(1)
+    expect(adapter.requests[1]?.messages).toBeDefined()
+    expect(offloadedNames(adapter.requests[1]!)).toEqual(['img-1', 'img-2', 'img-3'])
+
+    // 1 more image reaches 3 retained (between low=2 and high=4) -> hysteresis suppresses eviction.
+    agent.followup(createUserMessage({ content: [image('img-6')], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    expect(decisions(agent.session)).toHaveLength(1)
+    expect(offloadedNames(adapter.requests[2]!)).toEqual(['img-1', 'img-2', 'img-3'])
+  })
+
+  it('evicts oldest retained images down to lowWatermarkBytes when byte budget breaches highWatermarkBytes', async () => {
+    const adapter = new ScriptedAdapter([
+      textResponse('ok-1'),
+      textResponse('ok-2'),
+    ])
+    const ctx = await configuredHarness(adapter, {
+      highWatermarkImages: 100,
+      lowWatermarkImages: 50,
+      highWatermarkBytes: 1000,
+      lowWatermarkBytes: 500,
+    })
+    const agent = await ctx.agentLoop.create(SessionId('hysteresis-bytes'), { provider: 'mock', model: 'mock' })
+
+    // 3 * 300 = 900 bytes <= 1000 -> stays retained.
+    agent.followup(createUserMessage({
+      content: [sizedImage('b1', 300), sizedImage('b2', 300), sizedImage('b3', 300)],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    expect(decisions(agent.session)).toHaveLength(0)
+
+    // +200 bytes => 1100 > 1000. Must evict oldest 2 (b1 + b2 = 600 bytes) to bring remaining bytes to 500 <= 500.
+    agent.followup(createUserMessage({ content: [sizedImage('b4', 200)], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    expect(decisions(agent.session)).toHaveLength(1)
+    expect(offloadedNames(adapter.requests[1]!)).toEqual(['b1', 'b2'])
+  })
+
+  it('validates invalid watermark bounds upfront', () => {
+    expect(() => offload.resolveConfig({ highWatermarkImages: 0 })).toThrow(/positive safe integer/)
+    expect(() => offload.resolveConfig({ highWatermarkImages: 5, lowWatermarkImages: 6 })).toThrow(/must not exceed/)
+    expect(() => offload.resolveConfig({ lowWatermarkBytes: -1 })).toThrow(/non-negative safe integer/)
+    expect(() => offload.resolveConfig({ highWatermarkBytes: 100, lowWatermarkBytes: 101 })).toThrow(/must not exceed/)
+  })
+})

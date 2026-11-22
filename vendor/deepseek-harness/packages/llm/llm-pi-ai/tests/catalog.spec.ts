@@ -1167,7 +1167,7 @@ describe('compat switches', () => {
   })
 
   it('refuses compat keys pi-ai’s catalog owns, pointing at the catalog route', () => {
-    for (const compat of [{ openRouterRouting: {} }, { supportsAdditionalTools: true }]) {
+    for (const compat of [{ openRouterRouting: {} }, { zaiToolStream: true }]) {
       expect(() => resolveProfiles({
         'acme-gateway': {
           api: 'openai-completions',
@@ -1176,6 +1176,99 @@ describe('compat switches', () => {
         },
       })).toThrow(/which is not configurable here/)
     }
+  })
+
+  it('surfaces mid-conversation update modes when configured on supported protocols', async () => {
+    const adapter = new PiAiAdapter({
+      profiles: () => resolveProfiles({
+        completions: {
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          models: [{
+            id: 'c-1',
+            compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true },
+          }],
+        },
+        anthropic: {
+          compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true },
+          models: [{ id: 'claude-sonnet-4-5' }],
+        },
+        responses: {
+          api: 'openai-responses',
+          baseURL: 'https://acme.test/v1',
+          models: [{
+            id: 'r-1',
+            compat: { supportsMidConvoSystemMessages: true, supportsAdditionalTools: true },
+          }],
+        },
+      }),
+      resolveApiKey: () => Promise.resolve('k'),
+      auth: { getApiKey: async () => undefined } as never,
+    })
+    await expect(adapter.resolveModel('completions', 'c-1')).resolves.toMatchObject({
+      systemPromptUpdate: 'in-history',
+      toolUpdate: 'addition-only',
+    })
+    await expect(adapter.resolveModel('anthropic', 'claude-sonnet-4-5')).resolves.toMatchObject({
+      systemPromptUpdate: 'in-history',
+      toolUpdate: 'in-history',
+    })
+    await expect(adapter.resolveModel('responses', 'r-1')).resolves.toMatchObject({
+      systemPromptUpdate: 'in-history',
+      toolUpdate: 'addition-only',
+    })
+  })
+
+  it('applies safe DeepSeek compat defaults on third-party openai-completions routes without clobbering overrides or non-DeepSeek models', () => {
+    const resolved = resolveProfiles({
+      magpie: {
+        api: 'openai-completions',
+        baseURL: 'https://magpie.example/v1',
+        models: [
+          { id: 'deepseek-v4-pro' },
+          { id: 'deepseek/DeepSeek-R1', compat: { supportsDeveloperRole: true } },
+          { id: 'deepseek-disabled-rc', compat: { requiresReasoningContentOnAssistantMessages: false } },
+          { id: 'gpt-4o' },
+        ],
+      },
+      openrouter: {
+        api: 'openai-completions',
+        models: [
+          { id: 'deepseek/deepseek-r1' },
+          { id: 'deepseek/deepseek-custom-v5' },
+        ],
+      },
+    })
+    const magpie = new Map(resolved.get('magpie')?.piProvider?.getModels().map(m => [m.id, m.compat]))
+    expect(magpie.get('deepseek-v4-pro')).toEqual({
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      requiresReasoningContentOnAssistantMessages: true,
+    })
+    expect(magpie.get('deepseek/DeepSeek-R1')).toEqual({
+      supportsStore: false,
+      supportsDeveloperRole: true,
+      requiresReasoningContentOnAssistantMessages: true,
+    })
+    expect(magpie.get('deepseek-disabled-rc')).toEqual({
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      requiresReasoningContentOnAssistantMessages: false,
+    })
+    expect(magpie.get('gpt-4o')).toBeUndefined()
+
+    const openrouter = new Map(resolved.get('openrouter')?.piProvider?.getModels().map(m => [m.id, m.compat]))
+    expect(openrouter.get('deepseek/deepseek-r1')).toMatchObject({
+      thinkingFormat: 'openrouter',
+      supportsDeveloperRole: false,
+      supportsStore: false,
+      requiresReasoningContentOnAssistantMessages: true,
+    })
+    expect(openrouter.get('deepseek/deepseek-custom-v5')).toEqual({
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      requiresReasoningContentOnAssistantMessages: true,
+    })
   })
 })
 

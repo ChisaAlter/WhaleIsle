@@ -975,9 +975,17 @@ describe('applyLiteralEdit', () => {
     // Rejects when newString itself still carries line prefixes (safety check).
     expect(() => applyLiteralEdit('alpha\nbeta\n', '1: alpha\n2: beta', '1: ALPHA\n2: BETA', false, 'f'))
       .toThrow(expect.objectContaining({ code: 'FS_EDIT_NOT_FOUND' }))
-    // Rejects ambiguous match in Pass 2 even when replaceAll=true.
+    // Rejects ambiguous match in Pass 2 even when replaceAll=true, without suggesting replace_all.
     expect(() => applyLiteralEdit('dup\ndup\n', '1: dup', 'X', true, 'f'))
-      .toThrow(expect.objectContaining({ code: 'FS_AMBIGUOUS_EDIT' }))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string',
+      }))
+    expect(() => applyLiteralEdit('dup\ndup\n', '1: dup', 'X', false, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string or set replace_all to true',
+      }))
   })
 
   it('Pass 3 matches lines modulo trailing whitespace (trimEnd) and swaps safely', () => {
@@ -987,9 +995,17 @@ describe('applyLiteralEdit', () => {
     // Does not strip leading indentation.
     expect(() => applyLiteralEdit('  indented\n', 'indented  ', 'X', false, 'f'))
       .toThrow(expect.objectContaining({ code: 'FS_EDIT_NOT_FOUND' }))
-    // Rejects ambiguous trimEnd matches.
+    // Rejects ambiguous trimEnd matches with accurate replaceAll guidance.
     expect(() => applyLiteralEdit('dup  \ndup\t\n', 'dup', 'X', false, 'f'))
-      .toThrow(expect.objectContaining({ code: 'FS_AMBIGUOUS_EDIT' }))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string or set replace_all to true',
+      }))
+    expect(() => applyLiteralEdit('k: dup  \nz\nk: dup\t\nz\n', 'k: dup\nz', 'X', true, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string',
+      }))
   })
 
   it('Pass 4 normalizes confusable Unicode punctuation with round-trip safety and ambiguity guard', () => {
@@ -997,7 +1013,15 @@ describe('applyLiteralEdit', () => {
     const res = applyLiteralEdit(content, 'const msg = "hello -\'world\'"', 'const msg = "hi"', false, 'f')
     expect(res).toEqual({ content: 'const msg = "hi"\nconsole.log(msg) // 😀\n', replacements: 1 })
     expect(() => applyLiteralEdit('“x”\n“x”\n', '"x"', '"y"', false, 'f'))
-      .toThrow(expect.objectContaining({ code: 'FS_AMBIGUOUS_EDIT' }))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string or set replace_all to true',
+      }))
+    expect(() => applyLiteralEdit('“x”\n“x”\n', '"x"', '"y"', true, 'f'))
+      .toThrow(expect.objectContaining({
+        code: 'FS_AMBIGUOUS_EDIT',
+        message: 'old_string matched 2 times in "f"; provide a more specific old_string',
+      }))
   })
 
   it('includes nearest-line preview and newString missHint when all passes fail', () => {

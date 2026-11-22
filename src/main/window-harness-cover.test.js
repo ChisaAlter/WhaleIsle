@@ -508,9 +508,10 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
     constructor(options) {
       this.webContents = new FakeWebContents();
       this.webContents.ownerOptions = options;
+      this.boundsLog = [];
     }
 
-    setBounds() {}
+    setBounds(bounds) { this.boundsLog.push(bounds); }
     setAutoResize() {}
   }
 
@@ -576,8 +577,8 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
     filename: pathsPath,
     loaded: true,
     exports: {
-      rendererFile: (name) => `C:/app/${name}`,
-      assetFile: (name) => `C:/app/${name}`,
+      rendererFile: (name) => path.join(__dirname, '..', 'renderer', name),
+      assetFile: (name) => path.join(__dirname, '..', '..', 'assets', name),
       preloadFile: () => 'C:/app/preload.js',
     },
   };
@@ -695,4 +696,207 @@ test('boot retry restores button and shows error when restart resolves with { ok
   assert.equal(actions.hidden, false);
   assert.equal(body.dataset.state, 'error');
   assert.match(elements.get('failure').textContent || '', /重启被拒绝/);
+});
+
+test('watchPluginBoot fails closed without revealHarnessView when PLUGIN_BOOT_TIMEOUT_MS expires with !hasApp', { timeout: 2_000 }, async () => {
+  const electronPath = require.resolve('electron');
+  const chromePath = require.resolve('./chrome.js');
+  const pathsPath = require.resolve('./paths.js');
+  const acrylicPath = require.resolve('./window-acrylic');
+  const renderModePath = require.resolve('./render-mode');
+  const cached = new Map([
+    [electronPath, require.cache[electronPath]],
+    [chromePath, require.cache[chromePath]],
+    [pathsPath, require.cache[pathsPath]],
+    [acrylicPath, require.cache[acrylicPath]],
+    [renderModePath, require.cache[renderModePath]],
+  ]);
+
+  let currentNow = 10_000;
+  let hasApp = false;
+  const originalDateNow = Date.now;
+  Date.now = () => currentNow;
+
+  class FakeWebContents extends EventEmitter {
+    constructor() {
+      super();
+      this.destroyed = false;
+      this.url = '';
+      this.probes = 0;
+      this.sent = [];
+      this.insertedCss = 0;
+    }
+
+    isDestroyed() { return this.destroyed; }
+    getURL() { return this.url; }
+    setWindowOpenHandler() {}
+    send(channel, payload) { this.sent.push({ channel, payload }); }
+    insertCSS() { this.insertedCss += 1; return Promise.resolve('fade-css-key'); }
+    removeInsertedCSS() { return Promise.resolve(); }
+    capturePage() { return Promise.resolve({ toDataURL: () => '' }); }
+    close() { this.destroyed = true; }
+
+    loadURL(url) {
+      this.url = url;
+      return Promise.resolve();
+    }
+
+    executeJavaScript(script) {
+      if (script.includes('data-dshd-boot-status')) {
+        this.probes += 1;
+        if (!hasApp) currentNow += 95_000;
+        return Promise.resolve({
+          pending: true,
+          ready: 1,
+          total: 3,
+          failed: false,
+          hasApp,
+          error: '',
+        });
+      }
+      if (script.includes('prefers-reduced-motion')) return Promise.resolve(true);
+      return Promise.resolve(undefined);
+    }
+  }
+
+  class FakeBrowserView {
+    constructor(options) {
+      this.webContents = new FakeWebContents();
+      this.webContents.ownerOptions = options;
+      this.boundsLog = [];
+    }
+
+    setBounds(bounds) { this.boundsLog.push(bounds); }
+    setAutoResize() {}
+  }
+
+  class FakeBrowserWindow extends EventEmitter {
+    constructor(options) {
+      super();
+      this.webContents = new FakeWebContents();
+      this.webContents.ownerOptions = options;
+      this.views = [];
+      this.addedViews = [];
+      this.topViews = [];
+    }
+
+    isDestroyed() { return Boolean(this.destroyed); }
+    isMaximized() { return false; }
+    setBackgroundColor() {}
+    getContentBounds() { return { width: 1_440, height: 920 }; }
+    getBrowserViews() { return this.views; }
+    setTopBrowserView(view) { this.topViews.push(view); }
+    show() {}
+    destroy() { this.destroyed = true; this.emit('closed'); }
+    setAppDetails() {}
+
+    addBrowserView(view) {
+      this.addedViews.push(view);
+      if (!this.views.includes(view)) this.views.push(view);
+    }
+
+    removeBrowserView(view) {
+      this.views = this.views.filter((candidate) => candidate !== view);
+    }
+
+    loadFile(file) {
+      this.webContents.url = `file:///${file.replaceAll('\\', '/')}`;
+      return Promise.resolve();
+    }
+  }
+
+  require.cache[electronPath] = {
+    id: electronPath,
+    filename: electronPath,
+    loaded: true,
+    exports: {
+      app: { isPackaged: false, getAppPath: () => 'C:/app' },
+      BrowserView: FakeBrowserView,
+      BrowserWindow: FakeBrowserWindow,
+      shell: { openExternal() {} },
+      nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+    },
+  };
+  require.cache[chromePath] = {
+    id: chromePath,
+    filename: chromePath,
+    loaded: true,
+    exports: {
+      shellWindowChrome: (options) => options,
+      attachIntegratedChrome() {},
+      hideNativeMenu() {},
+      prepareHarnessChrome() {},
+      syncHarnessChrome() { return Promise.resolve(); },
+      currentTheme: () => ({ bg: '#ffffff' }),
+      markWindowTransparent() {},
+      paintBackground() {},
+    },
+  };
+  require.cache[pathsPath] = {
+    id: pathsPath,
+    filename: pathsPath,
+    loaded: true,
+    exports: {
+      rendererFile: (name) => path.join(__dirname, '..', 'renderer', name),
+      assetFile: (name) => path.join(__dirname, '..', '..', 'assets', name),
+      preloadFile: () => 'C:/app/preload.js',
+    },
+  };
+  require.cache[acrylicPath] = {
+    id: acrylicPath,
+    filename: acrylicPath,
+    loaded: true,
+    exports: { prepareWindowAcrylic: () => false },
+  };
+  require.cache[renderModePath] = {
+    id: renderModePath,
+    filename: renderModePath,
+    loaded: true,
+    exports: { getMinimalMode: () => true },
+  };
+
+  try {
+    delete require.cache[require.resolve('./window.js')];
+    const {
+      getMainWindow, getHarnessWebContents, showBoot, showHarness, dismissMainWindow, isHarnessLoaded,
+    } = require('./window.js');
+    await showBoot();
+    const win = getMainWindow();
+    const error = await showHarness('http://127.0.0.1:3080/').then(
+      () => null,
+      (err) => err,
+    );
+    assert.ok(error instanceof Error, 'timeout with !hasApp must reject showHarness');
+    assert.match(error.message, /超时/);
+    assert.equal(isHarnessLoaded(win), false, 'revealHarnessView must stay unrevealed on boot timeout');
+    assert.equal(win.topViews.length, 0);
+    assert.equal(getHarnessWebContents().insertedCss, 0);
+    assert.deepEqual(win.views[0]?.boundsLog, [{ x: 0, y: 0, width: 0, height: 0 }]);
+    const bootMessages = win.webContents.sent.filter((msg) => msg.channel === 'shell:plugin-boot');
+    assert.ok(bootMessages.length >= 1);
+    const lastStatus = bootMessages.at(-1).payload;
+    assert.equal(lastStatus.failed, true);
+    assert.equal(lastStatus.settled, false);
+    assert.equal(lastStatus.pending, false);
+    assert.match(lastStatus.error, /超时/);
+
+    // Verify settled status reveals cleanly when hasApp is true even right at deadline.
+    hasApp = true;
+    currentNow = 20_000;
+    const status = await showHarness('http://127.0.0.1:3080/');
+    assert.equal(status.hasApp, true);
+    assert.equal(isHarnessLoaded(win), true, 'settled launch must reveal harness view');
+    assert.equal(win.topViews.length, 1);
+    assert.equal(getHarnessWebContents().insertedCss, 1);
+    assert.ok(win.views[0]?.boundsLog.some((bounds) => bounds.width > 0 && bounds.height > 0));
+
+    dismissMainWindow();
+  } finally {
+    Date.now = originalDateNow;
+    for (const [modulePath, entry] of cached) {
+      if (entry) require.cache[modulePath] = entry;
+      else delete require.cache[modulePath];
+    }
+    delete require.cache[require.resolve('./window.js')];
+  }
 });

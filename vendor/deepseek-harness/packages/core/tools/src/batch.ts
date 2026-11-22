@@ -12,13 +12,28 @@
  */
 
 import { ToolBatchExecutionError } from './executor.ts'
-import { TOOL_ABORTED_BEFORE_DISPATCH } from './contracts.ts'
+import { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from './contracts.ts'
 import type { ToolBatchInput, ToolBatchResult, ToolCallResult } from './executor.ts'
 import { createToolResultMessage, type ToolCallBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 import type { ToolExecutionInput, ToolExecutionMode, ToolExecutionResult, ToolRunContext } from './contracts.ts'
 import type { ScheduledToolDispatch, ToolExecutionPipeline } from './pipeline.ts'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
+
+/** Default bound in milliseconds for draining started tool dispatches after abort. */
+export const DEFAULT_ABORT_DRAIN_TIMEOUT_MS = 5_000
+
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+
+/** Scheduler overrides for executing a batch of tool calls. */
+export interface ExecuteToolBatchOptions {
+  /**
+   * Maximum milliseconds to wait for already-dispatched tool bodies to settle
+   * once `signal` aborts. Unsettled calls are detached and recorded with
+   * {@link TOOL_ABORTED}. Defaults to {@link DEFAULT_ABORT_DRAIN_TIMEOUT_MS}.
+   */
+  readonly abortDrainTimeoutMs?: number
+}
 
 /** One tool call after argument parsing, ready to schedule. */
 interface PlannedCall {
@@ -44,17 +59,24 @@ interface GroupOutcome {
  * @param input - raw calls, optional concurrency override, and optional Session owner.
  * @param pipeline - executor-owned invocation implementation.
  * @param maxParallel - reads the executor's current validated limit when input has no override.
- * @returns model-ordered outcomes after every started body has settled.
- * @throws RangeError when the explicit concurrency override is not a positive integer.
+ * @param options - optional scheduler overrides such as {@link ExecuteToolBatchOptions.abortDrainTimeoutMs}.
+ * @returns model-ordered outcomes after every started body has settled, or after
+ *   {@link ExecuteToolBatchOptions.abortDrainTimeoutMs} detaches hung calls on abort.
+ * @throws RangeError when the explicit concurrency override or abort drain timeout is invalid.
  */
 export async function executeToolBatch(
   input: ToolBatchInput,
   pipeline: ToolExecutionPipeline,
   maxParallel: () => number,
+  options?: ExecuteToolBatchOptions,
 ): Promise<ToolBatchResult> {
   const { calls: toolCalls, signal, agent, toolSet, maxParallelToolCalls } = input
   if (maxParallelToolCalls !== undefined && (!Number.isInteger(maxParallelToolCalls) || maxParallelToolCalls < 1)) {
     throw new RangeError('maxParallelToolCalls must be a positive integer')
+  }
+  const abortDrainTimeoutMs = options?.abortDrainTimeoutMs ?? DEFAULT_ABORT_DRAIN_TIMEOUT_MS
+  if (!Number.isFinite(abortDrainTimeoutMs) || abortDrainTimeoutMs < 0 || abortDrainTimeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new RangeError(`abortDrainTimeoutMs must be a non-negative finite number no greater than ${MAX_TIMER_DELAY_MS}`)
   }
   const settlement = new BatchSettlement(input)
   try {
@@ -80,7 +102,7 @@ export async function executeToolBatch(
       const mode = pipeline.executionMode(first.exec).kind
       const group = mode === 'parallel' ? planned.slice(next) : [first]
       const outcome = await runGroup(
-        pipeline, settlement, maxParallelToolCalls ?? maxParallel(), group, mode, signal,
+        pipeline, settlement, maxParallelToolCalls ?? maxParallel(), group, mode, signal, abortDrainTimeoutMs,
       )
       next += outcome.consumed
       concluded ||= outcome.concluded
@@ -199,6 +221,17 @@ function parseArguments(raw: string): unknown {
  * returns an aborted outcome. Scheduler failure drains dispatches and rejects
  * for the owning step to record recovery results.
  */
+function abortedStartedToolResult(): ToolExecutionResult {
+  return {
+    content: [{ type: 'text', text: 'Error: tool call aborted' }],
+    isError: true,
+    error: {
+      message: 'tool call aborted',
+      info: { name: 'AbortError', code: TOOL_ABORTED },
+    },
+  }
+}
+
 async function runGroup(
   pipeline: ToolExecutionPipeline,
   settlement: BatchSettlement,
@@ -206,6 +239,7 @@ async function runGroup(
   group: PlannedCall[],
   mode: ToolExecutionMode['kind'],
   signal: AbortSignal,
+  abortDrainTimeoutMs: number,
 ): Promise<GroupOutcome> {
   const slots: (Slot | undefined)[] = group.map(() => undefined)
   // Started slots retain their `tool/call` seq so the result can cite it.
@@ -216,6 +250,32 @@ async function runGroup(
   let aborted: boolean = signal.aborted
   let concluded = false
   let schedulerFailure: { error: unknown } | undefined
+  let drainTimedOut = false
+  let drainArmed = false
+  let drainTimer: ReturnType<typeof setTimeout> | undefined
+  const { promise: drainExpired, resolve: resolveDrainExpired } = Promise.withResolvers<'drain-timeout'>()
+  const armDrainTimer = (): void => {
+    if (drainArmed) return
+    drainArmed = true
+    if (abortDrainTimeoutMs <= 0) {
+      drainTimedOut = true
+      resolveDrainExpired('drain-timeout')
+      return
+    }
+    drainTimer = setTimeout(() => {
+      drainTimedOut = true
+      resolveDrainExpired('drain-timeout')
+    }, abortDrainTimeoutMs)
+  }
+  const onAbort = (): void => {
+    aborted = true
+    armDrainTimer()
+  }
+  if (signal.aborted) {
+    armDrainTimer()
+  } else {
+    signal.addEventListener('abort', onAbort, { once: true })
+  }
   const throwSchedulerFailure = (): void => {
     if (schedulerFailure !== undefined) throw schedulerFailure.error
   }
@@ -235,6 +295,13 @@ async function runGroup(
   }
 
   const inFlight = new Map<number, Promise<number>>()
+  const detachInFlight = (): void => {
+    for (const promise of inFlight.values()) {
+      promise.catch(() => {
+        // Detached after abort drain timeout; suppress unhandled late rejections.
+      })
+    }
+  }
 
   const startCall = async (index: number): Promise<void> => {
     // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
@@ -247,10 +314,12 @@ async function runGroup(
       case 'dispatch': {
         const promise = pipeline.dispatch(prepared.exec).then(
           (outcome) => {
+            if (drainTimedOut) return index
             slots[index] = { ...outcome, exec: prepared.exec }
             return index
           },
           (error: unknown) => {
+            if (drainTimedOut) return index
             schedulerFailure ??= { error }
             return index
           },
@@ -281,30 +350,74 @@ async function runGroup(
       await commitReady()
       throwSchedulerFailure()
       // Abort may arrive while pre-execute awaits.
-      if (signal.aborted) aborted = true
+      if (signal.aborted) {
+        aborted = true
+        armDrainTimer()
+      }
     }
   }
 
   // Ordered pre-execute may await; only dispatch/body overlaps. A scheduler
   // failure stops new dispatches and reaches the turn boundary after every
-  // already-started dispatch settles.
+  // already-started dispatch settles (or after abortDrainTimeoutMs on abort).
   try {
-    await fillPool()
-    while (inFlight.size > 0) {
-      const settledIndex = await Promise.race(inFlight.values())
-      inFlight.delete(settledIndex)
-      throwSchedulerFailure()
-      await commitReady()
-      throwSchedulerFailure()
-      // Abort may arrive while a tool or ordered commit awaits.
-
-      if (signal.aborted) aborted = true
+    try {
       await fillPool()
+      while (inFlight.size > 0) {
+        const raceOutcome = await Promise.race([Promise.race(inFlight.values()), drainExpired])
+        if (raceOutcome === 'drain-timeout') {
+          aborted = true
+          drainTimedOut = true
+          detachInFlight()
+          break
+        }
+        inFlight.delete(raceOutcome)
+        throwSchedulerFailure()
+        await commitReady()
+        throwSchedulerFailure()
+        // Abort may arrive while a tool or ordered commit awaits.
+        if (signal.aborted) {
+          aborted = true
+          armDrainTimer()
+        }
+        await fillPool()
+      }
+      if (drainTimedOut) {
+        // Commit already-finished slots and synthesize TOOL_ABORTED for timed-out started calls in model order.
+        while (committed < started) {
+          const slot = slots[committed]
+          // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
+          const call = group[committed]!
+          if (slot !== undefined) {
+            const result = await pipeline.complete(slot.exec, slot)
+            settlement.commit(call.block, result, callSeqs[committed])
+            concluded ||= result.concludesTurn === true
+          } else {
+            settlement.commit(call.block, abortedStartedToolResult(), callSeqs[committed])
+          }
+          inFlight.delete(committed)
+          committed++
+        }
+      }
+    } catch (error: unknown) {
+      schedulerFailure ??= { error }
+      if (!drainTimedOut && inFlight.size > 0) {
+        if (signal.aborted) {
+          aborted = true
+          armDrainTimer()
+        }
+        const allSettled = Promise.allSettled(inFlight.values()).then(() => 'settled' as const)
+        const outcome = await Promise.race([allSettled, drainExpired])
+        if (outcome === 'drain-timeout') {
+          drainTimedOut = true
+          detachInFlight()
+        }
+      }
+      throw schedulerFailure.error
     }
-  } catch (error: unknown) {
-    schedulerFailure ??= { error }
-    await Promise.allSettled(inFlight.values())
-    throw schedulerFailure.error
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+    if (drainTimer !== undefined) clearTimeout(drainTimer)
   }
 
   if (aborted) {

@@ -20,6 +20,32 @@
  * The owner is `agent.session` when present. It is treated as an opaque object
  * identity (a `WeakMap` key); this package never reads any of its fields.
  */
+/**
+ * Minimal structural view of a persisted content block inside `agent.session.deriveMessages()`,
+ * avoiding a hard package dependency on `@deepseek-ai/dsh-session`.
+ */
+export interface FsSessionContentBlock {
+  readonly type: string
+  readonly id?: string
+  readonly name?: string
+  readonly arguments?: string
+  readonly text?: string
+}
+
+/** Minimal structural view of one derived session message. */
+export interface FsSessionMessage {
+  readonly role: string
+  readonly toolCallId?: string
+  readonly isError?: boolean
+  readonly content?: readonly FsSessionContentBlock[]
+}
+
+/** Structural contract for a live or resumed session exposed on `actor.agent.session`. */
+export interface FsObservedSession {
+  readonly header?: { readonly cwd?: string }
+  readonly deriveMessages?: () => readonly FsSessionMessage[]
+}
+
 export interface FsObservationActor {
   /** The agent on whose behalf the call runs, when there is one. */
   agent?: {

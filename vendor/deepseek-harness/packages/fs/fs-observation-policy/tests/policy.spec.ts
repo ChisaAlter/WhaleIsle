@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
-import type { FsObservation, FsTarget, FsWriteIntent } from '@deepseek-ai/dsh-fs'
+import type { FileSystem, FsInfo, FsObservation, FsTarget, FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import type { FsObservationActor } from '@deepseek-ai/dsh-fs-observation-policy'
 
@@ -252,5 +252,113 @@ describe('delete-intent decision', () => {
       expect(await intent()).toEqual({ version: 'v7' })
     } finally { await fiber.dispose() }
     expect(await intent()).toBeUndefined()
+  })
+})
+
+describe('partial-read overwrite guard (rejectOverwriteAfterPartialRead)', () => {
+  it('rejects write overwrites after a partial read while allowing targeted edits/deletes until full read', async () => {
+    const { ctx } = await setup()
+    const actor = ownerExec({})
+    const t = target('big.txt')
+    ctx.emit('fs/observed', t, { kind: 'present', version: FsVersion('v1'), partial: true }, actor)
+
+    await expect(writeIntent(ctx, t, actor)).rejects.toMatchObject({
+      code: 'FS_NOT_OBSERVED',
+      message: expect.stringContaining('partially read') as string,
+    })
+    expect(await editIntent(ctx, t, actor)).toEqual({ version: FsVersion('v1') })
+    expect(await ctx.waterfall('fs/delete-intent', t, actor, () => undefined)).toEqual({ version: FsVersion('v1') })
+
+    // Re-observing the file with a full read authorizes write replacement.
+    ctx.emit('fs/observed', t, { kind: 'present', version: FsVersion('v1'), partial: false }, actor)
+    expect(await writeIntent(ctx, t, actor)).toEqual({ kind: 'replaceIfVersion', version: FsVersion('v1') })
+  })
+
+  it('allows write overwrites after partial read when rejectOverwriteAfterPartialRead is disabled', async () => {
+    const ctx = new Context()
+    await ctx.plugin(FsPolicy, { rejectOverwriteAfterPartialRead: false })
+    const actor = ownerExec({})
+    const t = target('big.txt')
+    ctx.emit('fs/observed', t, { kind: 'present', version: FsVersion('v1'), partial: true }, actor)
+
+    expect(await writeIntent(ctx, t, actor)).toEqual({ kind: 'replaceIfVersion', version: FsVersion('v1') })
+  })
+})
+
+describe('cross-session resume lazy backfill from deriveMessages()', () => {
+  it('lazily reconstructs full, partial, absent, and edited observations without side-effect temp files', async () => {
+    const ctx = new Context()
+    const stats = new Map<string, FsInfo | undefined>([
+      ['/abs/full.txt', { type: 'file', version: FsVersion('v-full'), size: 12 }],
+      ['/abs/partial.txt', { type: 'file', version: FsVersion('v-partial'), size: 200 }],
+      ['/abs/unread.txt', { type: 'file', version: FsVersion('v-unread'), size: 10 }],
+    ])
+    const stubFs = {
+      async resolve(path: string): Promise<FsTarget> {
+        const displayPath = path.startsWith('/abs/') ? path : `/abs/${path}`
+        return { targetKey: FsTargetKey(`key:${displayPath}`), displayPath }
+      },
+      async stat(t: FsTarget): Promise<FsInfo | undefined> {
+        return stats.get(t.displayPath)
+      },
+    }
+    ctx.provide('fs', stubFs as unknown as FileSystem)
+    await ctx.plugin(FsPolicy)
+
+    const session = {
+      header: { cwd: '/abs' },
+      deriveMessages: () => [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool-call', id: 'c1', name: 'read', arguments: '{"file_path":"full.txt"}' },
+            { type: 'tool-call', id: 'c2', name: 'read', arguments: '{"file_path":"partial.txt","offset":2,"limit":2}' },
+            { type: 'tool-call', id: 'c3', name: 'read', arguments: '{"file_path":"missing.txt"}' },
+          ],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'c1',
+          isError: false,
+          content: [{
+            type: 'text',
+            text: '<path>/abs/full.txt</path>\n<type>file</type>\n<content>\n1: hello\n\n(End of file - total 1 lines)\n</content>',
+          }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'c2',
+          isError: false,
+          content: [{
+            type: 'text',
+            text: '<path>/abs/partial.txt</path>\n<type>file</type>\n<content>\n2: two\n3: three\n\n'
+              + '(Showing lines 2-3 of 10. Use offset=4 to continue.)\n</content>',
+          }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'c3',
+          isError: true,
+          content: [{ type: 'text', text: 'Error: cannot read "/abs/missing.txt": not found' }],
+        },
+      ],
+    }
+    const actor = ownerExec(session)
+    const fullTarget = await stubFs.resolve('full.txt')
+    const partialTarget = await stubFs.resolve('partial.txt')
+    const missingTarget = await stubFs.resolve('missing.txt')
+    const unreadTarget = await stubFs.resolve('unread.txt')
+
+    expect(await editIntent(ctx, fullTarget, actor)).toEqual({ version: FsVersion('v-full') })
+    expect(await writeIntent(ctx, fullTarget, actor)).toEqual({ kind: 'replaceIfVersion', version: FsVersion('v-full') })
+
+    expect(await editIntent(ctx, partialTarget, actor)).toEqual({ version: FsVersion('v-partial') })
+    await expect(writeIntent(ctx, partialTarget, actor)).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+
+    await expect(editIntent(ctx, missingTarget, actor)).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+    expect(await writeIntent(ctx, missingTarget, actor)).toEqual({ kind: 'createIfAbsent' })
+
+    await expect(editIntent(ctx, unreadTarget, actor)).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
+    expect(await writeIntent(ctx, unreadTarget, actor)).toEqual({ kind: 'createIfAbsent' })
   })
 })

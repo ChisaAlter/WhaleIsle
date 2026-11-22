@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { WAVE1_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave1');
+const { WAVE2_FORK_FILE_MARKERS } = require('./harness-desktop-forks-wave2');
 
 const DESKTOP_PACKAGES = [
   { dir: 'packages/experimental/agent-team-profile', name: '@deepseek-ai/dsh-experimental-agent-team-profile' },
@@ -576,6 +577,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/llm/token-meter/src/usage-projection.ts', includes: ['CONTEXT_WINDOW_EXCEEDED_CODE', 'stateVersion: 6'] },
   { file: 'packages/llm/token-meter/tests/token-usage-projection.spec.ts', includes: ['does not display zero occupancy when the provider rejects the request as too long'] },
   ...WAVE1_FORK_FILE_MARKERS,
+  ...WAVE2_FORK_FILE_MARKERS,
 ];
 
 /**

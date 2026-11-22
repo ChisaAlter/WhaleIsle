@@ -319,7 +319,7 @@ describe('Conversation registries', () => {
     expect(listener).toHaveBeenCalledOnce()
   })
 
-  it('publishes frame-paced updates after three animation frames and lets immediate updates preempt them', async () => {
+  it('publishes frame-paced updates in one animation frame and lets immediate updates preempt them', async () => {
     let nextFrame = 0
     const frames = new Map<number, FrameRequestCallback>()
     const requestFrame = vi.fn((callback: FrameRequestCallback) => {
@@ -388,23 +388,10 @@ describe('Conversation registries', () => {
     expect(listener).not.toHaveBeenCalled()
 
     const first = frames.get(1)
-    if (first === undefined) throw new Error('first animation frame was not scheduled')
+    if (first === undefined) throw new Error('animation frame was not scheduled')
     frames.delete(1)
     first(0)
-    expect(requestFrame).toHaveBeenCalledTimes(2)
-    expect(listener).not.toHaveBeenCalled()
-
-    const second = frames.get(2)
-    if (second === undefined) throw new Error('second animation frame was not scheduled')
-    frames.delete(2)
-    second(16)
-    expect(requestFrame).toHaveBeenCalledTimes(3)
-    expect(listener).not.toHaveBeenCalled()
-
-    const third = frames.get(3)
-    if (third === undefined) throw new Error('third animation frame was not scheduled')
-    frames.delete(3)
-    third(32)
+    expect(requestFrame).toHaveBeenCalledOnce()
     expect(listener).toHaveBeenCalledOnce()
 
     append({
@@ -416,6 +403,7 @@ describe('Conversation registries', () => {
         turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'c' },
       },
     })
+    expect(requestFrame).toHaveBeenCalledTimes(2)
     source.settleAssistant(LlmAttemptId('frame-probe'), {
       type: 'event',
       event: {
@@ -434,9 +422,78 @@ describe('Conversation registries', () => {
         surfaceOp: 'append',
       },
     })
-    expect(cancelFrame).toHaveBeenCalledWith(4)
+    expect(cancelFrame).toHaveBeenCalledWith(2)
     expect(frames).toHaveLength(0)
     expect(listener).toHaveBeenCalledTimes(2)
+
+    append({
+      seq: SessionSeq(6),
+      time: 6,
+      type: 'assistant/live-chunk',
+      data: {
+        attemptId: LlmAttemptId('frame-probe'),
+        turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'd' },
+      },
+    })
+    expect(cancelFrame).toHaveBeenCalledTimes(1)
+    await binding.ctx.fiber.dispose()
+    expect(cancelFrame).toHaveBeenCalledWith(3)
+    expect(frames).toHaveLength(0)
+
+    unsubscribe()
+  })
+
+  it('flushes animation-frame publications immediately when requestAnimationFrame is unavailable', async () => {
+    vi.stubGlobal('requestAnimationFrame', undefined)
+    vi.stubGlobal('cancelAnimationFrame', undefined)
+    const { uiConversation, binding, events, views } = await bootRegistries()
+    const definition: ConversationNodeDefinition<number> = {
+      kind: 'frame-fallback',
+      target: 'chat',
+      match: event => event.type === 'turn/start'
+        ? { id: String(event.data.turn), role: 'start' }
+        : event.type === 'assistant/live-chunk'
+          ? { id: String(event.data.turn), role: 'update' }
+          : null,
+      start: () => 0,
+      update: context => context.state + 1,
+      publication: match => match.event.type === 'assistant/live-chunk' ? 'animation-frame' : 'immediate',
+      buildViewNode: context => ({
+        key: context.key,
+        kind: 'frame-fallback',
+        id: context.id,
+        target: 'chat',
+        data: context.state,
+      }),
+    }
+    events.register(definition)
+    views.register(viewDefinition('chat'))
+    await Promise.resolve()
+    const conversation = uiConversation.binding(binding)
+    conversation.activate('chat')
+    const listener = vi.fn()
+    const unsubscribe = conversation.snapshot.subscribe(listener)
+    const source = binding.eventSource as MutableSessionEventSource
+
+    source.append({
+      type: 'event',
+      event: { seq: SessionSeq(1), time: 1, type: 'turn/start', data: { turn: 1 } },
+    })
+    listener.mockClear()
+
+    source.append({
+      type: 'transient',
+      event: {
+        seq: SessionSeq(2),
+        time: 2,
+        type: 'assistant/live-chunk',
+        data: {
+          attemptId: LlmAttemptId('frame-fallback'),
+          turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'x' },
+        },
+      },
+    })
+    expect(listener).toHaveBeenCalledOnce()
 
     unsubscribe()
     await binding.ctx.fiber.dispose()

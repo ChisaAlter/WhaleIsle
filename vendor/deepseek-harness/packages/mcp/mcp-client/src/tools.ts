@@ -24,6 +24,8 @@ import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { describeError, McpLocalError } from './diagnostic.ts'
+import { createDeferredToolDefinitions, resolveToolDiscoveryStrategy, type ToolDiscoveryMode } from './deferred-tools.ts'
+import type { McpListedTool, McpSchemaCache } from './schema-cache.ts'
 
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
@@ -37,6 +39,14 @@ export interface ToolBridgeOptions {
    * @returns the text with secret values replaced.
    */
   redact?: (text: string) => string
+  /** Tool registration strategy: `'auto'` (default), `'eager'`, or `'deferred'`. */
+  toolDiscoveryMode?: ToolDiscoveryMode
+  /** Remote tool count ceiling for inline registration in `'auto'` mode (default 16). */
+  inlineToolThreshold?: number
+  /** Optional on-disk tool schema cache for this server. */
+  schemaCache?: McpSchemaCache
+  /** When true, bypass schema cache reads and refresh from `tools/list`. */
+  refreshSchemaCache?: boolean
 }
 
 /** Registration failed after the prior generation was removed and partial registrations were rolled back. */
@@ -132,38 +142,66 @@ export async function syncTools(
 ): Promise<ToolDisposers> {
   // Phase 1: fetch and build the next generation without touching the registry.
   const definitions = new Map<string, ToolDefinition>()
-  const response = client.getServerCapabilities()?.tools === undefined
-    ? { tools: [] }
-    : await client.listTools(undefined, { cacheMode: 'refresh', signal: opts.signal })
-  for (const tool of response.tools) {
-    const publicName = publicToolName(opts.serverName, tool.name)
-    if (definitions.has(publicName)) {
+  let toolsList: McpListedTool[]
+  if (client.getServerCapabilities()?.tools === undefined) {
+    toolsList = []
+  } else {
+    const cached = opts.schemaCache !== undefined && opts.refreshSchemaCache !== true
+      ? await opts.schemaCache.read()
+      : undefined
+    if (cached !== undefined) {
+      toolsList = cached
+    } else {
+      const response = await client.listTools(undefined, { cacheMode: 'refresh', signal: opts.signal })
+      toolsList = response.tools
+      if (opts.schemaCache !== undefined && eligible()) {
+        try {
+          await opts.schemaCache.write(toolsList)
+        } catch (error) {
+          ctx.logger.warn(`mcp-client(${opts.serverName}): failed to write schema cache: ${String(error)}`)
+        }
+      }
+    }
+  }
+
+  const seenRawNames = new Set<string>()
+  for (const tool of toolsList) {
+    if (seenRawNames.has(tool.name)) {
       throw new Error(
         `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
       )
     }
-    definitions.set(publicName, createMcpToolDefinition(ctx, {
-      name: publicName,
-      rawName: tool.name,
-      description: tool.description ?? '',
-      inputSchema: tool.inputSchema,
-      outputSchema: tool.outputSchema,
-      taskRequired: tool.execution?.taskSupport === 'required',
-      call: async (args, execution) => {
-        try {
-          const result = await client.callTool(
-            { name: tool.name, arguments: args },
-            { signal: AbortSignal.any([execution.signal, opts.signal]),
-              timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
-          )
-          if (result.isError !== true || opts.redact === undefined) return result
-          return { isError: true, content: [{ type: 'text', text: opts.redact(extractText(result.content as JsonValue[], tool.name)) }] }
-        } catch (error) {
-          if (opts.redact === undefined) throw error
-          throw new Error(opts.redact(describeError(error)))
-        }
-      },
-    }))
+    seenRawNames.add(tool.name)
+  }
+
+  const strategy = resolveToolDiscoveryStrategy(
+    toolsList.length,
+    opts.toolDiscoveryMode,
+    opts.inlineToolThreshold,
+  )
+
+  if (strategy === 'deferred') {
+    for (const definition of createDeferredToolDefinitions(ctx, client, opts, toolsList)) {
+      definitions.set(definition.name, definition)
+    }
+  } else {
+    for (const tool of toolsList) {
+      const publicName = publicToolName(opts.serverName, tool.name)
+      if (definitions.has(publicName)) {
+        throw new Error(
+          `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
+        )
+      }
+      definitions.set(publicName, createMcpToolDefinition(ctx, {
+        name: publicName,
+        rawName: tool.name,
+        description: tool.description ?? '',
+        inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema,
+        taskRequired: tool.execution?.taskSupport === 'required',
+        call: (args, execution) => callMcpRemoteTool(client, opts, tool, args, execution),
+      }))
+    }
   }
 
   // Phase 2: swap generations — but only for a generation still entitled to
@@ -256,32 +294,86 @@ export interface McpToolDefinitionOptions {
  * @param options - upstream tool fields and its raw-result callback.
  * @returns the unregistered ToolRuntime definition.
  */
+/** Create the per-tool execution projection map used by eager and deferred MCP bridges. */
+export function createProjectionStore(): WeakMap<ToolExecution, PreparedProjection> {
+  return new WeakMap<ToolExecution, PreparedProjection>()
+}
+
+/** Build the ToolRuntime `projectContent` hook backed by an execution projection map. */
+export function createProjectContent(
+  projections: WeakMap<ToolExecution, PreparedProjection>,
+): NonNullable<ToolDefinition['projectContent']> {
+  return (exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) => {
+    const projection = projections.get(exec)
+    if (projection === undefined) return undefined
+    projections.delete(exec)
+    if (result.isError) return undefined
+    if (!isDeepStrictEqual(result.value, projection.value)) return undefined
+    if (!isDeepStrictEqual(result.content, projection.fallback)) return undefined
+    return projection.content
+  }
+}
+
+/**
+ * Invoke one remote MCP tool with generation cancellation, per-call timeout, and
+ * optional credential redaction for protocol errors and MCP `isError` responses.
+ */
+export async function callMcpRemoteTool(
+  client: Client,
+  opts: Pick<ToolBridgeOptions, 'toolCallTimeoutMs' | 'signal' | 'redact'>,
+  tool: McpListedTool,
+  args: Record<string, unknown>,
+  execution: ToolExecution,
+): Promise<unknown> {
+  try {
+    const result = await client.callTool(
+      { name: tool.name, arguments: args },
+      {
+        signal: AbortSignal.any([execution.signal, opts.signal]),
+        timeout: opts.toolCallTimeoutMs,
+        toolDefinition: tool,
+      },
+    )
+    if (result.isError !== true || opts.redact === undefined) return result
+    return {
+      isError: true,
+      content: [{ type: 'text', text: opts.redact(extractText(result.content as JsonValue[], tool.name)) }],
+    }
+  } catch (error) {
+    if (opts.redact === undefined) throw error
+    throw new Error(opts.redact(describeError(error)))
+  }
+}
+
+/**
+ * Adapt an upstream MCP tool to canonical values and durable image content.
+ * Registration, provider lifetime, deadlines, and transport belong to the caller.
+ * @param ctx - plugin context carrying optional attachment and model services.
+ * @param options - upstream tool fields and its raw-result callback.
+ * @returns the unregistered ToolRuntime definition.
+ */
 export function createMcpToolDefinition(
   ctx: Context,
   options: McpToolDefinitionOptions,
 ): ToolDefinition {
   const { name, rawName, description, inputSchema } = options
-  const projections = new WeakMap<ToolExecution, PreparedProjection>()
+  const projections = createProjectionStore()
   return {
     name,
     description,
     parameters: inputSchema,
-    output: createOutput(rawName, supportedOutputSchema(options.outputSchema)),
+    output: createMcpOutput(rawName, supportedOutputSchema(options.outputSchema)),
     execute: createExecutor(ctx, options, projections),
-    projectContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {
-      const projection = projections.get(exec)
-      if (projection === undefined) return undefined
-      projections.delete(exec)
-      if (result.isError) return undefined
-      if (!isDeepStrictEqual(result.value, projection.value)) return undefined
-      if (!isDeepStrictEqual(result.content, projection.fallback)) return undefined
-      return projection.content
-    },
+    projectContent: createProjectContent(projections),
   }
 }
 
 /** Build the canonical result schema and existing Native text projection. */
-function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefined): ToolDefinition['output'] {
+export function createMcpOutput(
+  rawName: string,
+  structuredSchema: JsonSchemaNode | undefined,
+  resolveRawName?: (args: unknown) => string,
+): ToolDefinition['output'] {
   return {
     schema: {
       type: 'object',
@@ -292,11 +384,47 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
       required: structuredSchema === undefined ? ['content'] : ['content', 'structuredContent'],
       additionalProperties: false,
     },
-    render(_args: unknown, value: JsonValue) {
+    render(args: unknown, value: JsonValue) {
       const result = value as McpResult
-      return [{ type: 'text', text: extractText(result.content, rawName) }]
+      return [{ type: 'text', text: extractText(result.content, resolveRawName?.(args) ?? rawName) }]
     },
   }
+}
+
+/** Validate a raw MCP tool result, preserve structured content, and prepare image projection. */
+export async function executeAndProjectMcpCall(
+  ctx: Context,
+  rawName: string,
+  rawResult: unknown,
+  exec: ToolExecution,
+  projections: WeakMap<ToolExecution, PreparedProjection>,
+): Promise<McpResult> {
+  const parsed = specTypeSchemas.CallToolResult['~standard'].validate(rawResult)
+  if (parsed.issues !== undefined) {
+    throw new Error(`Tool "${rawName}" returned an invalid MCP result: ${parsed.issues.map(issue => issue.message).join('; ')}`)
+  }
+  const result = parsed.value
+
+  const content = result.content as unknown as JsonValue[]
+  const text = extractText(content, rawName)
+
+  // MCP isError → throw so ToolRuntime produces an isError result for the model.
+  if (result.isError === true) {
+    throw new Error(text)
+  }
+
+  const value: McpResult = {
+    content,
+    ...result.structuredContent !== undefined
+      ? { structuredContent: result.structuredContent as JsonValue }
+      : {},
+  }
+  if (containsImage(content)) {
+    const fallback: ContentBlock[] = [{ type: 'text', text: extractText(content, rawName) }]
+    const projected = await prepareImageProjection(ctx, exec, content, rawName)
+    projections.set(exec, { value, fallback, content: projected })
+  }
+  return value
 }
 
 /**
@@ -318,32 +446,8 @@ function createExecutor(
     // string/number/null). Fallback to {} lets the MCP server produce a
     // specific "missing required param" error the model can learn from.
     const argsObj = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
-    const parsed = specTypeSchemas.CallToolResult['~standard'].validate(await options.call(argsObj, exec))
-    if (parsed.issues !== undefined) {
-      throw new Error(`Tool "${rawName}" returned an invalid MCP result: ${parsed.issues.map(issue => issue.message).join('; ')}`)
-    }
-    const result = parsed.value
-
-    const content = result.content as unknown as JsonValue[]
-    const text = extractText(content, rawName)
-
-    // MCP isError → throw so ToolRuntime produces an isError result for the model.
-    if (result.isError === true) {
-      throw new Error(text)
-    }
-
-    const value: McpResult = {
-      content,
-      ...result.structuredContent !== undefined
-        ? { structuredContent: result.structuredContent as JsonValue }
-        : {},
-    }
-    if (containsImage(content)) {
-      const fallback: ContentBlock[] = [{ type: 'text', text: extractText(content, rawName) }]
-      const projected = await prepareImageProjection(ctx, exec, content, rawName)
-      projections.set(exec, { value, fallback, content: projected })
-    }
-    return value
+    const rawResult = await options.call(argsObj, exec)
+    return await executeAndProjectMcpCall(ctx, rawName, rawResult, exec, projections)
   }
 }
 

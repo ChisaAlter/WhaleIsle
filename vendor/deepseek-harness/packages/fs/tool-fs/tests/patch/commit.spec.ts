@@ -138,28 +138,41 @@ it('checks both move targets when its destination was published but the reply is
   await expect(t.editIntent('b')).rejects.toMatchObject({ code: 'FS_NOT_OBSERVED' })
 })
 
-it('retains preceding changes when an external edit invalidates the next commit guard', async () => {
+it('rolls back preceding changes when an external edit invalidates the next commit guard', async () => {
   const t = await setup()
   await t.file('b', 'old\n')
   const observed = await t.editIntent('b')
   const write = t.fs.writeText.bind(t.fs)
+  let injected = false
   vi.spyOn(t.fs, 'writeText').mockImplementation(async (...args) => {
     const result = await write(...args)
-    await writeFile(resolve(t.workspace, 'b'), 'external edit\n')
+    if (!injected) {
+      injected = true
+      await writeFile(resolve(t.workspace, 'b'), 'external edit\n')
+    }
     return result
   })
   const a = t.record('add', 'a')
   const b = t.record('update', 'b', 1, 4)
   expect(await t.run(patch(add('a'), update('b'), add('c')))).toEqual({ phase: 'commit', outcomes: [
-    { status: 'completed', operation: a, changes: [{ path: a.path, before: null, after: 'new\n' }] },
-    { status: 'failed', operation: b, failure: { code: 'FS_STALE_VERSION', message: expect.stringContaining('re-read the file, then retry') as string }, changes: [] },
+    { status: 'skipped', operation: a },
+    {
+      status: 'failed',
+      operation: b,
+      failure: {
+        code: 'FS_STALE_VERSION',
+        message: expect.stringContaining('re-read the file, then retry') as string,
+      },
+      changes: [],
+    },
     { status: 'skipped', operation: t.record('add', 'c', 2, 8) },
-  ], affectedPaths: [a.path], cancelled: false })
-  expect(await t.bytes('a')).toBe('new\n')
+  ], affectedPaths: [], cancelled: false })
+  await expect(t.bytes('a')).rejects.toMatchObject({ code: 'ENOENT' })
   expect(await t.bytes('b')).toBe('external edit\n')
   await expect(t.bytes('c')).rejects.toMatchObject({ code: 'ENOENT' })
-  expect(await t.editIntent('a')).toEqual({ version: await t.version('a') })
+  await expect(t.editIntent('a')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
   expect(await t.editIntent('b')).toEqual(observed)
+  expect(t.observations.at(-1)).toEqual({ path: a.path, observation: { kind: 'absent' } })
 })
 
 it('propagates programmer defects from mutation and preserves observed state', async () => {
@@ -204,16 +217,130 @@ it('stops at the first provider sandbox denial under read-only policy', async ()
   expect(t.observations).toEqual([])
 })
 
-it('retains earlier writes when the provider denies a move destination outside writable roots', async () => {
+it('rolls back earlier writes when the provider denies a move destination outside writable roots', async () => {
   const t = await setup({ mode: 'workspace-write' })
   await t.file('a', 'old\n')
   const outside = resolve(process.cwd(), 'patch-commit-outside-root')
   const b = t.record('add', 'b')
   expect(await t.run(patch(add('b'), move('a', outside)))).toEqual({ phase: 'commit', outcomes: [
-    { status: 'completed', operation: b, changes: [{ path: b.path, before: null, after: 'new\n' }] },
-    { status: 'failed', operation: t.record('move', 'a', 1, 4, outside), failure: { code: 'FS_SANDBOX_DENIED', message: expect.stringContaining('[sandbox: file access denied under workspace-write mode]') as string }, changes: [] },
-  ], affectedPaths: [b.path], cancelled: false })
+    { status: 'skipped', operation: b },
+    {
+      status: 'failed',
+      operation: t.record('move', 'a', 1, 4, outside),
+      failure: {
+        code: 'FS_SANDBOX_DENIED',
+        message: expect.stringContaining('[sandbox: file access denied under workspace-write mode]') as string,
+      },
+      changes: [],
+    },
+  ], affectedPaths: [], cancelled: false })
   expect(await t.bytes('a')).toBe('old\n')
-  expect(await t.bytes('b')).toBe('new\n')
-  expect(t.observations.map(event => event.path)).toEqual([b.path])
+  await expect(t.bytes('b')).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(t.observations).toEqual([
+    { path: b.path, observation: { kind: 'present', version: expect.any(String) as unknown as never } },
+    { path: b.path, observation: { kind: 'absent' } },
+  ])
+})
+
+it('rolls back completed update, delete, add, and move operations in reverse order and updates observations', async () => {
+  const t = await setup()
+  await t.file('u.txt', 'orig-u\r\n')
+  await t.file('d.txt', 'orig-d\n')
+  await t.file('m-src.txt', 'orig-m\n')
+  await t.file('m-dst.txt', 'prev-dst\n')
+  await t.file('fail.txt', 'old\n')
+
+  // External edit on fail.txt triggers deterministic FS_STALE_VERSION on the final op.
+  const moveOrig = t.fs.moveFile.bind(t.fs)
+  vi.spyOn(t.fs, 'moveFile').mockImplementation(async (...args) => {
+    const out = await moveOrig(...args)
+    await writeFile(resolve(t.workspace, 'fail.txt'), 'changed-externally\n')
+    return out
+  })
+
+  const restoreLog: string[] = []
+  const origWrite = t.fs.writeText.bind(t.fs)
+  const origDelete = t.fs.deleteFile.bind(t.fs)
+  vi.spyOn(t.fs, 'writeText').mockImplementation(async (target, ...rest) => {
+    restoreLog.push(`write:${target.displayPath}`)
+    return origWrite(target, ...rest)
+  })
+  vi.spyOn(t.fs, 'deleteFile').mockImplementation(async (target, ...rest) => {
+    restoreLog.push(`delete:${target.displayPath}`)
+    return origDelete(target, ...rest)
+  })
+
+  const body = patch(
+    update('u.txt', 'orig-u', 'edited-u'),
+    add('added.txt'),
+    remove('d.txt'),
+    move('m-src.txt', 'm-dst.txt', 'orig-m', 'moved-m'),
+    update('fail.txt'),
+  )
+  const report = await t.run(body)
+  expect(report.phase).toBe('commit')
+  if (report.phase !== 'commit') throw new Error('expected commit phase')
+  expect(report.affectedPaths).toEqual([])
+  expect(report.cancelled).toBe(false)
+  expect(report.outcomes.map(o => o.status)).toEqual(['skipped', 'skipped', 'skipped', 'skipped', 'failed'])
+
+  expect(await t.bytes('u.txt')).toBe('orig-u\r\n')
+  await expect(t.bytes('added.txt')).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await t.bytes('d.txt')).toBe('orig-d\n')
+  expect(await t.bytes('m-src.txt')).toBe('orig-m\n')
+  expect(await t.bytes('m-dst.txt')).toBe('prev-dst\n')
+
+  // Forward ops write added.txt; reverse rollback deletes added.txt AFTER restoring d.txt and m-src/m-dst.
+  const idxAddedDelete = restoreLog.indexOf(`delete:${resolve(t.workspace, 'added.txt')}`)
+  const idxDeleteRestore = restoreLog.indexOf(`write:${resolve(t.workspace, 'd.txt')}`)
+  const idxMoveSrcRestore = restoreLog.indexOf(`write:${resolve(t.workspace, 'm-src.txt')}`)
+  const idxUpdateRestore = restoreLog.indexOf(`write:${resolve(t.workspace, 'u.txt')}`)
+  expect(idxMoveSrcRestore).toBeGreaterThan(-1)
+  expect(idxDeleteRestore).toBeGreaterThan(idxMoveSrcRestore)
+  expect(idxAddedDelete).toBeGreaterThan(idxDeleteRestore)
+  expect(idxUpdateRestore).toBeGreaterThan(idxAddedDelete)
+
+  // Re-emitted fs/observed versions authorize immediate follow-up edits without re-reading.
+  expect(await t.editIntent('u.txt')).toEqual({ version: await t.version('u.txt') })
+  expect(await t.editIntent('d.txt')).toEqual({ version: await t.version('d.txt') })
+  expect(await t.editIntent('m-src.txt')).toEqual({ version: await t.version('m-src.txt') })
+  expect(await t.editIntent('m-dst.txt')).toEqual({ version: await t.version('m-dst.txt') })
+  await expect(t.editIntent('added.txt')).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+})
+
+it('continues best-effort rollback across remaining operations when one rollback target fails', async () => {
+  const t = await setup()
+  await t.file('keep.txt', 'orig-keep\n')
+  await t.file('fail.txt', 'old\n')
+
+  const origPatch = t.fs.patchText.bind(t.fs)
+  let patchCalls = 0
+  vi.spyOn(t.fs, 'patchText').mockImplementation(async (...args) => {
+    patchCalls++
+    const res = await origPatch(...args)
+    if (patchCalls === 1) {
+      await writeFile(resolve(t.workspace, 'fail.txt'), 'stale\n')
+    }
+    return res
+  })
+  const origWrite = t.fs.writeText.bind(t.fs)
+  vi.spyOn(t.fs, 'writeText').mockImplementation(async (target, ...rest) => {
+    if (target.displayPath === resolve(t.workspace, 'keep.txt')) {
+      throw new FsError('rollback write blocked', 'FS_PERMISSION_DENIED')
+    }
+    return origWrite(target, ...rest)
+  })
+
+  const report = await t.run(patch(
+    update('keep.txt', 'orig-keep', 'changed-keep'),
+    add('undo-me.txt'),
+    update('fail.txt'),
+  ))
+  expect(report.phase).toBe('commit')
+  if (report.phase !== 'commit') throw new Error('expected commit phase')
+  // undo-me.txt was rolled back even though keep.txt rollback failed with FsError.
+  await expect(t.bytes('undo-me.txt')).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await t.bytes('keep.txt')).toBe('changed-keep\n')
+  expect(report.outcomes.map(o => o.status)).toEqual(['completed', 'skipped', 'failed'])
+  expect(report.affectedPaths).toEqual([resolve(t.workspace, 'keep.txt')])
 })

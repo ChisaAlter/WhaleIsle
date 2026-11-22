@@ -657,44 +657,75 @@ export class ReactLoopAgent implements Agent {
         signal.throwIfAborted()
       } catch (error: unknown) {
         if (!started) throw error
-        try {
-          if (signal.aborted) {
-            const content = live.interruptedBlocks()
-            if (content.length > 0) {
-              live.settle('assistant/message', () => this.session.append('assistant/message', {
-                turn,
-                step,
-                message: createAssistantMessage({
-                  content,
-                  source: {
-                    provider: request.provider,
-                    model: request.model,
-                    ...live.replayState === undefined ? {} : { replayState: live.replayState },
-                  },
-                }),
-                interrupted: true,
-                ...live.usage === undefined ? {} : { usage: live.usage },
-                stream: live.stream,
-              }, { surfaceOp: 'append' }).seq)
-            } else {
-              live.settle(
-                'assistant/attempt',
-                () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
-              )
-            }
-          } else {
-            live.settle(
-              'assistant/attempt',
-              () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
-            )
-          }
-        } catch (settlementError: unknown) {
-          throw new AggregateError(
-            [error, settlementError],
-            'Assistant stream failed and its durable settlement was rejected',
-            { cause: error },
+        const settleAttempt = (): void => {
+          live.settle(
+            'assistant/attempt',
+            () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
           )
         }
+        const settlePartialOrAttempt = (): void => {
+          const content = live.interruptedBlocks()
+          if (content.length > 0) {
+            const replayState = live.replayState !== undefined
+              && (live.replayState.blocks === undefined || live.replayState.blocks.length === content.length)
+              ? live.replayState
+              : undefined
+            live.settle('assistant/message', () => this.session.append('assistant/message', {
+              turn,
+              step,
+              message: createAssistantMessage({
+                content,
+                source: {
+                  provider: request.provider,
+                  model: request.model,
+                  ...replayState === undefined ? {} : { replayState },
+                },
+              }),
+              interrupted: true,
+              ...live.usage === undefined ? {} : { usage: live.usage },
+              stream: live.stream,
+            }, { surfaceOp: 'append' }).seq)
+          } else {
+            settleAttempt()
+          }
+        }
+        const settleWithCause = (settle: () => void): void => {
+          try {
+            settle()
+          } catch (settlementError: unknown) {
+            throw new AggregateError(
+              [error, settlementError],
+              'Assistant stream failed and its durable settlement was rejected',
+              { cause: error },
+            )
+          }
+        }
+        if (!signal.aborted && error instanceof LlmError) {
+          const action = await this.dispatch.waterfall(
+            'agent/request-error', {
+              turn,
+              step,
+              provider: request.provider,
+              failure: error.failure,
+              retryPolicy: preparedCall?.retryPolicy,
+              signal,
+            },
+            () => Promise.resolve<RequestErrorAction>(undefined),
+          )
+          try {
+            signal.throwIfAborted()
+          } catch (abortError: unknown) {
+            settleWithCause(settleAttempt)
+            throw abortError
+          }
+          if (action?.kind === 'retry') {
+            settleWithCause(settleAttempt)
+            continue
+          }
+          settleWithCause(settlePartialOrAttempt)
+          throw error
+        }
+        settleWithCause(signal.aborted ? settlePartialOrAttempt : settleAttempt)
         throw error
       }
       try {
