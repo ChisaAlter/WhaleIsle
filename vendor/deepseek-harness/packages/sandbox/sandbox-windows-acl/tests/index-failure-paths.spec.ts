@@ -8,7 +8,7 @@
  * acl.spec.ts and runner.spec.ts (win32 only).
  */
 
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
@@ -575,8 +575,9 @@ describe('AclSandbox extraDirs, extraWriteSids, and revokeWorkspaceAclOnDispose'
       writeSid: workspaceWriteSid(ws),
       mode: 'workspace-write',
     })
-    expect(derived.extraWriteSids).toEqual([workspaceWriteSid(extra)])
-    expect(derived.writeSids).toEqual([workspaceWriteSid(ws), workspaceWriteSid(extra)])
+    const canonicalExtra = realpathSync.native(extra)
+    expect(derived.extraWriteSids).toEqual([workspaceWriteSid(canonicalExtra)])
+    expect(derived.writeSids).toEqual([workspaceWriteSid(ws), workspaceWriteSid(canonicalExtra)])
 
     expect(() => new AclSandbox({
       writableDirs: [ws],
