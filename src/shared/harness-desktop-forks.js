@@ -115,7 +115,8 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/core/agent-loop/src/agent.ts', includes: ['The initiator scope is closing', 'resumePendingInteraction'] },
   { file: 'packages/llm/llm/src/content.ts', includes: ['export function requireValidToolCallIdentity', 'TOOL_NAME_PATTERN'] },
   { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
-  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold', "info.contextManagement === 'provider'"] },
+  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold', "info.contextManagement === 'provider'", 'switchTargets', 'isUnconfiguredModelError'] },
+  { file: 'packages/compaction/compaction-basic/src/summarizer.ts', includes: ['overrideTarget'] },
   // Local Project continuations use explicit cwd/preset and admission policy.
   // Ordinary Team and Session ownership are not changed by this feature.
   // SettingsSelect: official Menu pill for every settings value dropdown.
@@ -522,7 +523,9 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar-right/src/client/tabs/guide/GuideBody.tsx', includes: ['ShippedGuide', 'css.grid'] },
   { file: 'packages/client/ui-sidebar-right/src/client/tabs/guide/GuideBody.module.css', includes: ['.grid {', 'aspect-ratio: 1 / 1'] },
   { file: 'packages/client/ui-sidebar-right/src/client/locales.ts', includes: ["'tab.guide.heading'"] },
-  { file: 'packages/client/ui-sidebar-right/src/client/index.ts', includes: ['locale: NS'] },
+  { file: 'packages/client/ui-sidebar-right/src/client/index.ts', includes: ['locale: NS', 'PROJECTS_PANEL_ID', 'openInProjectsPanel'] },
+  { file: 'packages/client/ui-sidebar-right/src/client/shell/RightbarRoot.tsx', includes: ["info.activePanelId === 'projects'"] },
+  { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['leaveProjectPanel'] },
   // ui-preview reads sidebarRightTabs via ctx.get at apply time; upstream's
   // inject list omits it because the web profile disables the Browser type
   // anyway. On our web+desktop profile the entry must register, so the
@@ -551,7 +554,6 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/experimental/client-ui-agent-team/src/client/TeamAction.module.css', includes: ['.embedded .body'] },
   { file: 'packages/experimental/client-ui-agent-team/src/client/index.ts', includes: ['TeamEmbedded'] },
   { file: 'packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx', includes: ['embedded Team'] },
-  { file: 'apps/web/tests/project-composer-stability.e2e.ts', includes: ['dsh-project-task-rail'] },
   // 0.2.2-rc.1 sync. The terminal's Ghostty wasm and fonts are served from beside its bundle: the revisioned
   // package-asset route only knows images, and without this fallback the terminal would load nothing.
   { file: 'packages/client/modules/src/index.ts', includes: ['BUNDLE_SIDE_ASSET_TYPES', 'bundleSideAssetResponse'] },
@@ -574,6 +576,22 @@ const FORK_FILE_MARKERS = [
   // A rejected request with zero billable tokens or CONTEXT_WINDOW_EXCEEDED drops the stale pressure sample instead of showing 0% occupancy.
   { file: 'packages/llm/token-meter/src/usage-projection.ts', includes: ['CONTEXT_WINDOW_EXCEEDED_CODE', 'stateVersion: 6'] },
   { file: 'packages/llm/token-meter/tests/token-usage-projection.spec.ts', includes: ['does not display zero occupancy when the provider rejects the request as too long'] },
+  // Orca-style Bots sidebar sections above/below Workspaces inside the shared
+  // sidebar scrollport, with nested-scroller wheel handoff and projects-first reorder.
+  { file: 'packages/client/ui-sidebar/src/client/contract/slots.ts', includes: ["'sidebar.sections.before'", "'sidebar.sections.after'"] },
+  { file: 'packages/client/ui-sidebar/src/client/index.ts', includes: ["'sidebar.sections.before'", "'sidebar.sections.after'"] },
+  { file: 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx', includes: ["'sidebar.sections.before'", "'sidebar.sections.after'", 'data-sidebar-sections-before', 'data-sidebar-sections-after'] },
+  { file: 'packages/client/ui-sidebar/src/client/SidebarRoot.module.css', includes: ['.sectionsBefore', '.sectionsAfter', "data-sidebar-projects-first='true'"] },
+  { file: 'packages/client/ui-sidebar/src/client/scroll-handoff.ts', includes: ['data-sidebar-nested-scroller'] },
+  { file: 'packages/client/ui-settings-general/src/client/WhaleAssistantRow.tsx', includes: ['whaleAssistantEnabled !== false'] },
+  // Narrow conversation header (<= 560px): subagent trigger collapses to a centered
+  // 28x28 icon button with normal-flow .activitySlot (never pinned top-right by
+  // stale .catalogIcon absolute-positioning rules or duplicated at 460px).
+  {
+    file: 'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css',
+    includes: ['@container (max-width: 560px)', 'position: static;', '.trigger .compactIcon'],
+    excludes: ['.catalogIcon', '.catalogChevron', '@container (max-width: 460px)'],
+  },
 ];
 
 /**

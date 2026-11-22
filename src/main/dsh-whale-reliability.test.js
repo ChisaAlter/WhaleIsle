@@ -7,13 +7,18 @@ const os = require('node:os');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const moduleUrl = (name) => pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib', name)).href;
 
 async function host(t, services = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-reliability-'));
   const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
-  t.after(() => {
+  const disposers = [];
+  t.after(async () => {
+    for (const fn of disposers.splice(0).reverse()) {
+      await fn?.();
+    }
     if (previous === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = previous;
     fs.rmSync(home, { recursive: true, force: true });
@@ -35,8 +40,23 @@ async function host(t, services = {}) {
   const ctx = {
     systemPrompt: { section() {} },
     connection: { requestRejection: () => undefined },
-    webServer: { register: (value) => { route = value; } },
-    effect: (fn) => fn(),
+    webServer: {
+      register: (value) => {
+        if (value?.path === '/dsh-whale' || !route) route = value;
+        return () => {};
+      },
+    },
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') disposers.push(dispose);
+      else if (dispose && typeof dispose.then === 'function') {
+        disposers.push(async () => {
+          const resolved = await dispose;
+          if (typeof resolved === 'function') await resolved();
+        });
+      }
+      return () => {};
+    },
     get: (name) => name === 'sessionController' ? controller : services[name],
     on: (_name, listener) => { listeners.add(listener); return () => listeners.delete(listener); },
   };
@@ -148,16 +168,17 @@ test('a capable chat route and configured vision fallback cannot override the re
 
 test('failed pulse admissions stay durable and can be delivered after host restart without duplicate concurrent attempts', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-delivery-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   let eventHandler;
   let cleanup;
+  t.after(() => {
+    try { cleanup?.(); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
   const ctx = { on: (_name, handler) => { eventHandler = handler; }, effect: (fn) => { cleanup = fn(); } };
   const observe = await import(`${moduleUrl('observe.js')}?reliability`);
   let accept = false;
   let attempts = 0;
   const wake = async () => { attempts += 1; if (!accept) throw new Error('admission unavailable'); return { accepted: true }; };
   observe.startPulse(ctx, { home: dir, wake });
-  t.after(() => cleanup?.());
   const schedule = observe.addSchedule({ text: '提醒休息', inMinutes: 1 }).schedule;
   observe.addWatch({ sessionId: 'target', once: true });
   eventHandler({ id: 'target' }, { type: 'turn/end', data: { reason: { kind: 'completed' } } });

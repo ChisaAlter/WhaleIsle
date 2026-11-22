@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Projects",
+    "description": "Adds a three-column Projects board to the left sidebar. One goal, many parallel tasks: a coordinator splits and dispatches work, workers run in the project workspace or isolated Git worktrees, with real-time SSE updates, topic-file shared memory, diff review, and human acceptance."
+  }
+}

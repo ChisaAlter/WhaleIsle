@@ -1798,9 +1798,8 @@ module.exports = async function afterPack(context) {
     run: (dir) => defaultNpmInstall(dir, { includeOptional: true }),
   });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-im');
-  restoreVendoredPluginNodeModules(projectDir, resources, 'dsh-whale');
-  installPluginRuntimeDeps(path.join(resources, 'vendor', 'dsh-whale'), { skipIfComplete: true });
-  assertVendoredPluginRuntimeDeps(resources, 'dsh-whale');
+  // dsh-whale & dsh-project share Harness's own peers via stageDesktopPluginRuntime;
+  // only verify their shipped tree & resolve their peers against harnessDest below.
   restoreVendoredPluginNodeModules(projectDir, resources, 'dsh-remote');
   installPluginRuntimeDeps(path.join(resources, 'vendor', 'dsh-remote'), { skipIfComplete: true });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-remote');
@@ -1811,7 +1810,7 @@ module.exports = async function afterPack(context) {
   // dsh-pad peers are supplied by Harness's linked-plugin resolver at startup.
   assertVendoredPluginRuntimeDeps(resources, 'dsh-pad');
   assertVendoredPluginRuntimeDeps(resources, 'dsh-deepseek-tools');
-  for (const name of ['dsh-usage-panel', 'dsh-im', 'dsh-whale', 'dsh-remote']) {
+  for (const name of ['dsh-usage-panel', 'dsh-im', 'dsh-remote']) {
     const root = path.join(resources, 'vendor', name);
     const removed = prunePluginDevDependencies(root, resolvePackageFrom, runtimeDependencyEntries, target);
     assertVendoredPluginRuntimeDeps(resources, name);
@@ -1846,8 +1845,9 @@ module.exports = async function afterPack(context) {
   );
   assertHarnessRuntime(harnessDest, pin, target.platform, target.arch);
   assertVendoredPluginRuntimeDeps(resources, 'dsh-project');
-  require('../src/main/dsh-project-desktop').projectPeerDirectories(harnessDest,
-    JSON.parse(fs.readFileSync(path.join(resources, 'vendor', 'dsh-project', 'package.json'), 'utf8')));
+  require('../src/main/desktop-plugin-runtime').resolveHarnessPeerDirectories(harnessDest, JSON.parse(fs.readFileSync(path.join(resources, 'vendor', 'dsh-project', 'package.json'), 'utf8')), { label: 'Project' });
+  assertVendoredPluginRuntimeDeps(resources, 'dsh-whale');
+  require('../src/main/dsh-whale-desktop').assertPackagedDshWhale({ resources, projectDir, harnessDest });
   // Office payload and the acrylic bridge are Windows x64 deliverables.
   if (context.electronPlatformName === 'win32') {
     pruneOfficeRuntime(path.join(resources, 'runtime', 'primary-runtime'), target);

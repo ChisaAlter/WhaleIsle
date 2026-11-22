@@ -18,6 +18,9 @@ function fixture(t, peers = {}) {
   fs.mkdirSync(path.join(sourceDir, 'lib'), { recursive: true }); fs.mkdirSync(profileDir);
   fs.writeFileSync(path.join(sourceDir, 'package.json'), JSON.stringify({ name: 'dsh-project', type: 'module', main: 'lib/index.js', peerDependencies: peers }));
   fs.writeFileSync(path.join(sourceDir, 'lib', 'index.js'), 'export const project = true;\n');
+  fs.mkdirSync(path.join(sourceDir, 'locale'), { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, 'locale', 'zh.json'), '{"title":"项目"}\n');
+  fs.writeFileSync(path.join(sourceDir, 'icon.svg'), '<svg></svg>\n');
   return { folder, sourceDir, profileDir };
 }
 
@@ -27,6 +30,8 @@ test('optional Project mount preserves user Team settings and data across disabl
   fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), userPatch);
   const first = await ensureDesktopDshProject({ sourceDir, profileDir });
   assert.equal(first.ok, true);
+  assert.equal(fs.existsSync(path.join(first.runtimeDir, 'icon.svg')), true);
+  assert.equal(fs.existsSync(path.join(first.runtimeDir, 'locale', 'zh.json')), true);
   assert.equal(fs.realpathSync(path.join(profileDir, 'node_modules', 'dsh-project')), fs.realpathSync(first.runtimeDir));
   assert.equal(fs.existsSync(path.join(sourceDir, 'node_modules')), false);
   const overlay = fs.readFileSync(first.overlayFile, 'utf8');

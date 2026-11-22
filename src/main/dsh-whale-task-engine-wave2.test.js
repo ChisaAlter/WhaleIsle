@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 
 const todoServiceUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib/todo-service.js')).href;
 const taskToolsUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib/task-tools.js')).href;

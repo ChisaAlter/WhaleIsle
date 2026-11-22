@@ -6,51 +6,20 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  canonicalExistingPath,
+  canonicalIfExists,
+  samePath,
+  withinPath as within,
+} from '../../dsh-shared/lib/path-guard.mjs';
 import { whaleHomeDir } from './preset.js';
 
-/** @param {string} value */
-const identity = (value) => (process.platform === 'win32' ? value.toLowerCase() : value);
-
-/**
- * @param {string} root
- * @param {string} target
- */
-export function within(root, target) {
-  const rel = path.relative(identity(root), identity(target));
-  return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
-}
+export { within };
 
 /** @param {string} dir */
 function isFilesystemRoot(dir) {
   const resolved = path.resolve(dir);
   return path.parse(resolved).root === resolved;
-}
-
-/** @param {string} candidate */
-function canonicalIfExists(candidate) {
-  try {
-    return fs.realpathSync.native(path.resolve(candidate));
-  } catch {
-    return '';
-  }
-}
-
-/** @param {string} declared */
-function canonicalPath(declared) {
-  const missing = [];
-  let cursor = declared;
-  while (true) {
-    try {
-      const real = fs.realpathSync.native(cursor);
-      return missing.length ? path.join(real, ...missing.reverse()) : real;
-    } catch (/** @type {any} */ error) {
-      if (error?.code !== 'ENOENT') throw error;
-      const parent = path.dirname(cursor);
-      if (parent === cursor) return declared;
-      missing.push(path.basename(cursor));
-      cursor = parent;
-    }
-  }
 }
 
 /** @param {string} userHome */
@@ -69,7 +38,7 @@ function systemDataAnchors(userHome) {
   return raw.flatMap((entry) => {
     const resolved = path.resolve(entry);
     const real = canonicalIfExists(resolved);
-    return real && identity(real) !== identity(resolved) ? [resolved, real] : [resolved];
+    return real && !samePath(real, resolved) ? [resolved, real] : [resolved];
   });
 }
 
@@ -78,11 +47,11 @@ function dshHomeAnchors(dshHome) {
   if (!dshHome) return { inside: [], ancestorOnly: [] };
   const resolved = path.resolve(dshHome);
   const real = canonicalIfExists(resolved);
-  const inside = [resolved, ...(real && identity(real) !== identity(resolved) ? [real] : [])];
+  const inside = [resolved, ...(real && !samePath(real, resolved) ? [real] : [])];
   const whale = path.resolve(whaleHomeDir(dshHome));
   const whaleReal = canonicalIfExists(whale);
   inside.push(whale);
-  if (whaleReal && identity(whaleReal) !== identity(whale)) inside.push(whaleReal);
+  if (whaleReal && !samePath(whaleReal, whale)) inside.push(whaleReal);
   const ancestorOnly = [];
   // When running under Electron userData/dsh-home, also refuse userData itself
   // and its ancestors without blocking sibling test temp dirs.
@@ -148,7 +117,7 @@ export function taskCwdRefusal(raw, { dshHome = process.env.DSH_HOME || '', requ
     if (error?.code !== 'ENOENT') return 'invalid';
     if (requireExisting) return 'missing';
     try {
-      real = canonicalPath(declared);
+      real = canonicalExistingPath(declared);
     } catch {
       return 'invalid';
     }

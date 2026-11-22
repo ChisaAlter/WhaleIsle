@@ -1,327 +1,341 @@
 'use strict';
 
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { createRequire } = require('node:module');
+const { gateTests, harnessDependencies } = require('../../scripts/lib/test-prerequisites.cjs');
+
+const HARNESS_DEPS = harnessDependencies();
+const domTest = gateTests(nodeTest, HARNESS_DEPS);
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const WHALE_CLIENT = path.join(ROOT, 'vendor', 'dsh-whale', 'client', 'client.js');
 const PAD_CLIENT = path.join(ROOT, 'vendor', 'dsh-pad', 'lib', 'client.js');
 
-const settle = async () => {
-  for (let i = 0; i < 6; i++) await new Promise((resolve) => setImmediate(resolve));
-};
+const vendorRequire = createRequire(path.join(ROOT, 'vendor', 'deepseek-harness', 'package.json'));
+const clientRequire = createRequire(path.join(ROOT, 'vendor', 'dsh-im', 'package.json'));
+const React = clientRequire('react');
+const ReactJsxRuntime = clientRequire('react/jsx-runtime');
+const ReactDOM = clientRequire('react-dom');
+const { createRoot } = clientRequire('react-dom/client');
+const { JSDOM } = HARNESS_DEPS.ok ? vendorRequire('jsdom') : {};
+const { act, createElement: h } = React;
 
-function findElement(node, predicate) {
-  if (!node || typeof node !== 'object') return null;
-  if (predicate(node)) return node;
-  const kids = Array.isArray(node.children)
-    ? node.children
-    : (Array.isArray(node.props?.children) ? node.props.children : (node.props?.children ? [node.props.children] : []));
-  for (const child of kids.flat(Infinity)) {
-    const hit = findElement(child, predicate);
-    if (hit) return hit;
-  }
-  return null;
+function createFakeEventSourceClass(bucket) {
+  return class FakeEventSource {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      this.listeners = new Map();
+      this.closed = false;
+      bucket.push(this);
+    }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type).add(fn);
+    }
+    removeEventListener(type, fn) {
+      this.listeners.get(type)?.delete(fn);
+    }
+    close() {
+      this.closed = true;
+      this.readyState = 2;
+    }
+  };
 }
 
-function loadWhaleClient({
-  stateful = true,
-  matchMediaMatches = false,
-  sessionsList = [],
-  onModalLayer,
-  pickWorkspaceDirectory,
-} = {}) {
-  const spec = { current: null };
-  const storage = new Map();
-  const docAttrs = new Map();
-  const docStyles = new Map();
-  const document = {
-    hidden: false,
-    documentElement: {
-      dataset: {},
-      setAttribute: (k, v) => docAttrs.set(k, String(v)),
-      removeAttribute: (k) => docAttrs.delete(k),
-      getAttribute: (k) => (docAttrs.has(k) ? docAttrs.get(k) : null),
-      hasAttribute: (k) => docAttrs.has(k),
-      style: {
-        setProperty: (k, v) => docStyles.set(k, String(v)),
-        removeProperty: (k) => docStyles.delete(k),
-      },
-    },
-    getElementById: () => null,
-    querySelector: () => null,
-    createElement: () => ({ style: {}, setAttribute() {}, remove() {} }),
-    head: { appendChild() {} },
-    addEventListener() {},
-    removeEventListener() {},
+function mountBotsClientInDom(t, { rpcHandler }) {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
+    url: 'http://localhost:3123/',
+    pretendToBeVisual: true,
+  });
+
+  const eventSources = [];
+  const rpcCalls = [];
+  const FakeEventSource = createFakeEventSourceClass(eventSources);
+  const fetchImpl = async (url, init = {}) => {
+    const rawUrl = String(url);
+    if (rawUrl.endsWith('/dsh-bots/rpc')) {
+      const body = init.body ? JSON.parse(String(init.body)) : {};
+      rpcCalls.push(body);
+      const result = await rpcHandler(body.method, body.params ?? {});
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ ok: true, result }) };
+    }
+    return { ok: true, status: 200, statusText: 'OK', json: async () => ({ ok: true, result: {} }), text: async () => '<svg></svg>' };
   };
-  const window = {
-    innerWidth: matchMediaMatches ? 780 : 1400,
-    innerHeight: 900,
-    __ModuleLoader__: { load: (entry) => { spec.current = entry; } },
-    matchMedia: () => ({
-      matches: matchMediaMatches,
-      addEventListener() {},
-      removeEventListener() {},
-      addListener() {},
-      removeListener() {},
-    }),
-    localStorage: {
-      getItem: (k) => (storage.has(k) ? storage.get(k) : null),
-      setItem: (k, v) => storage.set(k, String(v)),
-      removeItem: (k) => storage.delete(k),
-    },
-    addEventListener() {},
-    removeEventListener() {},
-    requestAnimationFrame: (cb) => { cb(); return 1; },
-    cancelAnimationFrame() {},
-    shell: pickWorkspaceDirectory ? { pickWorkspaceDirectory } : undefined,
-    confirm: () => false,
+
+  const globalValues = {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    localStorage: dom.window.localStorage,
+    EventSource: FakeEventSource,
+    fetch: fetchImpl,
+    IS_REACT_ACT_ENVIRONMENT: true,
   };
+  const savedGlobals = Object.fromEntries(
+    Object.keys(globalValues).map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]),
+  );
+  for (const [k, v] of Object.entries(globalValues)) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value: v });
+  }
+
+  let spec = null;
+  dom.window.__ModuleLoader__ = { load: (entry) => { spec = entry; } };
+  dom.window.EventSource = FakeEventSource;
+  dom.window.fetch = fetchImpl;
+
   vm.runInNewContext(
     fs.readFileSync(WHALE_CLIENT, 'utf8'),
-    { window, document, localStorage: window.localStorage, MutationObserver: class { observe() {} disconnect() {} }, console },
+    {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      EventSource: FakeEventSource,
+      fetch: fetchImpl,
+      setTimeout: dom.window.setTimeout.bind(dom.window),
+      clearTimeout: dom.window.clearTimeout.bind(dom.window),
+      setInterval: dom.window.setInterval.bind(dom.window),
+      clearInterval: dom.window.clearInterval.bind(dom.window),
+      AbortController,
+      URL,
+      URLSearchParams,
+      CustomEvent: dom.window.CustomEvent,
+      console,
+    },
     { filename: WHALE_CLIENT },
   );
-  assert.ok(spec.current);
+  assert.ok(spec, 'dsh-whale client must register via __ModuleLoader__.load');
 
-  const states = [];
-  const refs = [];
-  const effects = [];
-  let c = 0;
-  let rc = 0;
-  let ec = 0;
-  const react = {
-    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
-    useState: (init) => {
-      if (!stateful) return [typeof init === 'function' ? init() : init, () => {}];
-      const i = c++;
-      if (!(i in states)) states[i] = typeof init === 'function' ? init() : init;
-      return [states[i], (v) => { states[i] = typeof v === 'function' ? v(states[i]) : v; }];
-    },
-    useEffect: (fn, deps) => {
-      if (!stateful) return fn();
-      const i = ec++;
-      const prev = effects[i];
-      if (prev && deps?.every((v, k) => Object.is(v, prev.deps?.[k]))) return;
-      prev?.cleanup?.();
-      effects[i] = { deps, cleanup: fn() };
-    },
-    useMemo: (fn) => fn(),
-    useCallback: (fn) => fn,
-    useRef: (v) => {
-      if (!stateful) return { current: v };
-      const i = rc++;
-      if (!(i in refs)) refs[i] = { current: v };
-      return refs[i];
-    },
-    Fragment: Symbol('Fragment'),
-  };
-  const modalLayerCalls = [];
-  const primitives = {
-    useModalLayer: (opts) => {
-      modalLayerCalls.push(opts);
-      onModalLayer?.(opts);
-    },
-    useSessions: () => ({
-      byId: Object.fromEntries(sessionsList.map((row) => [row.id, row])),
-      list: sessionsList,
-    }),
-    Button: (props) => ({ type: 'Button', props, children: props.children ? [props.children] : [] }),
-    Modal: (props) => ({ type: 'Modal', props, children: props.children ? [props.children] : [] }),
-    Toast: (props) => ({ type: 'Toast', props, children: [] }),
-    Input: (props) => ({ type: 'Input', props, children: [] }),
-    Spinner: (props) => ({ type: 'Spinner', props, children: [] }),
-  };
-  const exports = spec.current.factory((name) => {
-    if (name === 'react') return react;
-    if (name === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
+  const pluginExports = spec.factory((name) => {
+    if (name === 'react') return React;
+    if (name === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (name === 'react-dom') return ReactDOM;
+    if (name === 'react-dom/client') return { createRoot };
     return {};
   });
-  return {
-    exports,
-    window,
-    document,
-    docAttrs,
-    docStyles,
-    storage,
-    modalLayerCalls,
-    resetState: () => { states.length = 0; refs.length = 0; effects.length = 0; },
-    render: (component, props) => {
-      c = 0; rc = 0; ec = 0;
-      return component(props);
+
+  const disposers = [];
+  const registrations = [];
+  const rightTabs = [];
+  const calls = { openSession: [], selectPanel: [], openTab: [], openTabIn: [] };
+  const specs = new Set([
+    'sidebar.sections.before',
+    'conversation.session.header.leading',
+    'conversation.session.header.actions',
+    'conversation.hero.frame',
+    'main',
+    'sidebar.right.pane.tab',
+    'settings.pet.item',
+    'shell.overlay',
+  ]);
+  const sidebarRight = {
+    openTab: (kind, opts) => calls.openTab.push({ kind, opts }),
+    openTabIn: (sid, kind, opts) => {
+      calls.openTabIn.push({ sid, kind, opts });
+      return true;
     },
   };
-}
-
-function makeWhaleCtx({ rpcImpl, specs = ['shell.overlay', 'settings.pet.item', 'conversation.session.header.actions', 'sidebar.panellist', 'main'] } = {}) {
-  const registrations = [];
-  const calls = { openSession: [], selectPanel: [], rpc: [] };
-  const ctx = {
-    locale: { register: () => () => {}, bind: () => (k) => k },
-    effect: (fn) => { fn(); return () => {}; },
-    connection: {
-      rpc: {
-        call: async (prefix, endpoint, input) => {
-          calls.rpc.push({ prefix, endpoint, input });
-          if (rpcImpl) return { result: { value: await rpcImpl(endpoint, input) } };
-          if (endpoint === 'assistant/ensure') return { result: { value: { sessionId: 'whale-resident' } } };
-          return { result: { value: { name: '鲸鱼娘', sessionId: 'whale-resident', taskRootDir: 'C:\\Users\\demo\\WhaleTasks', bigFishEnabled: false, bigFishPrompted: true, bigFishTab: 'panel' } } };
-        },
-      },
+  const sidebarRightTabs = {
+    register: (def) => {
+      rightTabs.push(def);
+      return () => {};
     },
+  };
+  const ctx = {
+    locale: {
+      register: () => () => {},
+      getLocale: () => ({ active: 'zh-CN' }),
+      subscribe: () => () => {},
+    },
+    sessions: { list: { getSnapshot: () => ({ byId: {} }), subscribe: () => () => {} } },
     uiWorkspace: { openSession: async (id) => { calls.openSession.push(id); } },
     layout: { selectPanel: (id) => { calls.selectPanel.push(id); } },
+    settingsNavigation: { open: () => {}, close: () => {} },
+    sidebarRight,
+    sidebarRightTabs,
     slots: {
-      spec: (name) => specs.includes(name),
+      spec: (name) => (specs.has(name) ? {} : undefined),
       subscribe: () => () => {},
-      inject: (name, fn) => { if (specs.includes(name)) fn(); },
-      register: (decl, component) => { registrations.push({ decl, component }); return () => {}; },
-      has: () => false,
+      inject: (_name, fn) => fn(),
+      register: (decl, component) => {
+        registrations.push({ decl, component });
+        return () => {};
+      },
+    },
+    get: (name) => ({ sidebarRight, sidebarRightTabs, uiWorkspace: ctx.uiWorkspace, sessions: ctx.sessions })[name],
+    inject: (_deps, fn) => { fn(ctx); return () => {}; },
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') disposers.push(dispose);
+      return () => dispose?.();
     },
   };
-  return { ctx, registrations, calls };
+
+  pluginExports.apply(ctx);
+  const root = createRoot(dom.window.document.querySelector('main'));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    for (const dispose of disposers.splice(0).reverse()) dispose?.();
+    for (const es of eventSources) {
+      if (!es.closed) es.close();
+    }
+    dom.window.close();
+    for (const [k, desc] of Object.entries(savedGlobals)) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await new Promise((resolve) => setImmediate(resolve)); });
+    }
+  };
+
+  return { dom, root, flush, registrations, rightTabs, calls, rpcCalls, eventSources };
 }
 
-test('whale client removes Proactive shell, preserves relative claude-isle-head.png, and satisfies CSS/React18/button contracts', () => {
+nodeTest('whale client removes legacy Proactive and Big Fish overlays, keeps Bots CSS layering, and decouples from dsh-pad', () => {
   const src = fs.readFileSync(WHALE_CLIENT, 'utf8');
   assert.doesNotMatch(src, /whale-inbox|whale-outbox|WhaleOperations|WhaleOpsCard|proactiveDispatch/);
-  assert.match(src, /["']claude-isle-head\.png["']/);
-  assert.doesNotMatch(src, /["']\/claude-isle-head\.png["']/);
-  assert.doesNotMatch(src, /iconOnly\s*:\s*true/);
-  assert.match(src, /dsh-whale-icon-btn/);
-  assert.match(src, /inert\s*:\s*["']{2}/);
-  assert.match(src, /@container\s*\(max-width:\s*390px\)/);
-  assert.match(src, /padding-right:\s*0\s*!important/);
-  assert.match(src, /\.dsh-project-task-rail/);
-  assert.match(src, /data-dsh-whale-dragging/);
-  assert.match(src, /html\[data-platform="darwin"\]\[data-fullscreen\]/);
-  assert.match(src, /data-window-drag-exclude/);
-  assert.match(src, /dsh-whale-danger-button/);
-  assert.match(src, /rgb\(from var\(--dsw-specific-sidebar-fill\) r g b \/ 1\)/);
-  // At least 3 primary modal buttons (onboarding, task editor Save, task confirm primary)
-  const primaryMatches = src.match(/variant:\s*["']primary["']/g) ?? [];
-  assert.ok(primaryMatches.length >= 3, `expected >= 3 primary modal buttons, found ${primaryMatches.length}`);
+  assert.doesNotMatch(src, /data-dsh-whale-mode|\.dsh-whale-mode-toggle|dsh-whale\.workbench/);
+  assert.doesNotMatch(src, /dsh-whale:pad-display|--dshpad-reserve/, 'Bots client must stay decoupled from dsh-pad dock layout');
+
+  assert.match(src, /\.dsh-bots-section/);
+  assert.match(src, /\.dsh-bots-card/);
+  assert.match(src, /\.dsh-bots-pcard/);
+  assert.match(src, /\.dsh-bots-panel-root/);
+  assert.match(src, /dshHideBotWorkspaces/);
+  assert.match(src, /sidebarProjectsFirst/);
+
+  const backdropZ = /\.dsh-bots-backdrop\s*\{[^}]*z-index:\s*(\d+)/.exec(src);
+  const popoverZ = /\.dsh-bots-popover\s*\{[^}]*z-index:\s*(\d+)/.exec(src);
+  assert.ok(backdropZ && popoverZ, 'Bots CSS must declare explicit z-index for backdrop and popover');
+  assert.ok(Number(popoverZ[1]) > Number(backdropZ[1]), `popover z-index (${popoverZ[1]}) must sit above modal backdrop (${backdropZ[1]})`);
 });
 
-test('WhaleSettings exposes taskRootDir input/picker/reset and updates mode.taskRootDir & name', async () => {
-  const pickedDir = 'D:\\MyIsolatedTasks';
-  const plugin = loadWhaleClient({
-    pickWorkspaceDirectory: async () => pickedDir,
-  });
-  let serverSettings = {
-    name: '鲸鱼娘',
-    taskRootDir: 'C:\\Users\\demo\\WhaleTasks',
-    imDefault: true,
-    bigFishEnabled: false,
-    bigFishPrompted: true,
+domTest('GlobalBotsSettings exposes global switches and desktop-pet bound bot selector via bots.settings.set', async (t) => {
+  const state = {
+    botsEnabled: true,
+    skipNewHomeChatConfirm: false,
+    hideBotCreatedWorkspaces: true,
+    sidebarProjectsFirst: false,
+    petBotId: 'bot-1',
+    bots: [
+      { id: 'bot-1', name: '鲸鱼娘', avatar: 'whale', avatarColor: '#3b82f6', homeSessionId: 's1', chatSessionId: 's1' },
+      { id: 'bot-2', name: '代码评审官', avatar: 'owl', avatarColor: '#8b5cf6', homeSessionId: 's2', chatSessionId: 's2' },
+    ],
+    groups: [],
+    chatsByBot: {},
+    needsYou: {},
   };
   const updates = [];
-  const { ctx, registrations } = makeWhaleCtx({
-    rpcImpl: async (endpoint, input) => {
-      if (endpoint === 'settings/update') {
-        updates.push(input);
-        serverSettings = { ...serverSettings, ...input };
+  const mounted = mountBotsClientInDom(t, {
+    rpcHandler: (method, params) => {
+      if (method === 'bots.list') return state;
+      if (method === 'bots.settings.set') {
+        updates.push(params);
+        Object.assign(state, params);
+        return { ok: true };
       }
-      return { ...serverSettings };
+      return { ok: true };
     },
   });
-  plugin.exports.apply(ctx);
-  const settingsSlot = registrations.find((r) => r.decl.name === 'settings.pet.item');
-  assert.ok(settingsSlot);
-  const rpc = async (endpoint, input) => {
-    const res = await ctx.connection.rpc.call('/dsh-whale', endpoint, input);
-    return res.result.value;
-  };
-  const props = { t: (k) => k, rpc };
-  plugin.render(settingsSlot.component, props);
-  await settle();
-  let tree = plugin.render(settingsSlot.component, props);
+  await mounted.flush();
 
-  const taskRootInput = findElement(tree, (n) => n.props?.['aria-label'] === 'field.taskRootDir');
-  assert.ok(taskRootInput, 'settings must render taskRootDir input');
-  assert.equal(taskRootInput.props.value, 'C:\\Users\\demo\\WhaleTasks');
+  const settingsSlot = mounted.registrations.find((r) => r.decl.name === 'settings.pet.item');
+  assert.ok(settingsSlot, 'settings.pet.item slot must be registered');
 
-  const pickBtn = findElement(tree, (n) => typeof n.props?.onClick === 'function' && n.children?.includes('field.taskRootDirPick'));
-  assert.ok(pickBtn, 'settings must render directory picker button when window.shell.pickWorkspaceDirectory exists');
-  await pickBtn.props.onClick();
-  await settle();
-  assert.equal(updates.at(-1)?.taskRootDir, pickedDir);
+  await act(async () => {
+    mounted.root.render(h(settingsSlot.component, {}));
+  });
+  await mounted.flush();
 
-  tree = plugin.render(settingsSlot.component, props);
-  const resetBtn = findElement(tree, (n) => typeof n.props?.onClick === 'function' && n.children?.includes('field.taskRootDirReset'));
-  assert.ok(resetBtn);
-  await resetBtn.props.onClick();
-  await settle();
-  assert.equal(updates.at(-1)?.taskRootDir, '');
+  const rootEl = mounted.dom.window.document.querySelector('[data-dsh-bots-global-settings]');
+  assert.ok(rootEl, 'GlobalBotsSettings root must render');
+  const switches = rootEl.querySelectorAll('button[role="switch"]');
+  assert.equal(switches.length, 3);
+  assert.equal(mounted.dom.window.document.documentElement.dataset.dshHideBotWorkspaces, 'true');
+
+  // Toggle "Hide bot-created workspaces" off -> RPC bots.settings.set + dataset removed.
+  await act(async () => { switches[2].click(); });
+  await mounted.flush();
+  assert.equal(updates.at(-1)?.hideBotCreatedWorkspaces, false);
+  assert.equal(mounted.dom.window.document.documentElement.dataset.dshHideBotWorkspaces, undefined);
+
+  // Switch desktop pet bound bot -> RPC bots.settings.set({ petBotId: 'bot-2' }).
+  const select = rootEl.querySelector('select');
+  assert.ok(select, 'GlobalBotsSettings must render desktop pet bot selector');
+  assert.equal(select.value, 'bot-1');
+  const setter = Object.getOwnPropertyDescriptor(mounted.dom.window.HTMLSelectElement.prototype, 'value').set;
+  await act(async () => {
+    setter.call(select, 'bot-2');
+    select.dispatchEvent(new mounted.dom.window.Event('change', { bubbles: true }));
+  });
+  await mounted.flush();
+  assert.equal(updates.at(-1)?.petBotId, 'bot-2');
 });
 
-test('createBigFish hydrates on boot, coalesces concurrent settings/update, gates WhaleHeaderGear, and wires narrow useModalLayer', async () => {
-  const plugin = loadWhaleClient({
-    matchMediaMatches: true,
-    sessionsList: [
-      { id: 'whale-resident', title: '鲸鱼娘', retainedBy: { mainView: 0 } },
-      { id: 'other-session', title: '重构任务', retainedBy: { mainView: 1 } },
+domTest('Bots client mounts single native right-sidebar tab and lightweight BotsModalHost without a second right sidebar or overlay drawer', async (t) => {
+  const fixtures = {
+    botsEnabled: true,
+    hideBotCreatedWorkspaces: true,
+    petBotId: 'bot-whale',
+    bots: [
+      { id: 'bot-whale', name: '鲸鱼娘', avatar: 'whale', avatarColor: '#3b82f6', homeSessionId: 'sess-whale', chatSessionId: 'sess-whale', needsYouCount: 2 },
     ],
-  });
-  let serverSettings = {
-    name: '小鲸鱼',
-    sessionId: 'whale-resident',
-    taskRootDir: 'D:\\SafeTasks',
-    bigFishEnabled: true,
-    bigFishPrompted: true,
-    bigFishTab: 'panel',
-  };
-  let inflight = 0;
-  let maxInflight = 0;
-  const { ctx, registrations } = makeWhaleCtx({
-    rpcImpl: async (endpoint, input) => {
-      if (endpoint === 'settings/update') {
-        inflight += 1;
-        maxInflight = Math.max(maxInflight, inflight);
-        await new Promise((r) => setTimeout(r, 15));
-        serverSettings = { ...serverSettings, ...input };
-        inflight -= 1;
-      }
-      if (endpoint === 'assistant/ensure') return { sessionId: 'whale-resident' };
-      return { ...serverSettings };
+    groups: [],
+    chatsByBot: {
+      'bot-whale': {
+        botId: 'bot-whale',
+        chats: [{ chatId: 'sess-whale', sessionId: 'sess-whale', origin: 'home', title: 'Home Chat' }],
+      },
     },
-  });
-  plugin.exports.apply(ctx);
-  await settle();
+    needsYou: { 'bot-whale': 2 },
+  };
 
-  // WhaleHeaderGear returns null while big-fish mode is active (hydrated true).
-  const gearSlot = registrations.find((r) => r.decl.name === 'conversation.session.header.actions');
-  assert.ok(gearSlot);
-  const overlaySlot = registrations.find((r) => r.decl.name === 'shell.overlay');
+  const mounted = mountBotsClientInDom(t, {
+    rpcHandler: (method) => (method === 'bots.list' ? fixtures : { ok: true, items: [], chats: [], files: [], requests: [], automations: [], suggestions: [] }),
+  });
+  await mounted.flush();
+
+  // Single native right-sidebar tab registration (no custom overlay sidebar).
+  assert.equal(mounted.rightTabs.length, 1);
+  assert.equal(mounted.rightTabs[0].id, 'dsh-whale:bots-panel');
+  assert.equal(mounted.rightTabs[0].kind, 'dsh-bots');
+
+  const overlaySlot = mounted.registrations.find((r) => r.decl.name === 'shell.overlay');
   assert.ok(overlaySlot);
+  assert.equal(overlaySlot.decl.id, 'dsh-bots.modals');
 
-  // Render overlay in narrow mode while active -> useModalLayer must be called & back-to-whale shown for other-session.
-  const face = overlaySlot.decl.inject();
-  const overlayTree = plugin.render(overlaySlot.component, {
-    ...face,
-    t: (k, a) => (a ? `${k}:${JSON.stringify(a)}` : k),
-    renderSlot: () => null,
+  const actionsSlot = mounted.registrations.find((r) => r.decl.name === 'conversation.session.header.actions');
+  assert.ok(actionsSlot);
+
+  await act(async () => {
+    mounted.root.render(h('div', null,
+      h(actionsSlot.component, { sessionId: 'sess-whale' }),
+      h(overlaySlot.component, {}),
+    ));
   });
-  assert.ok(plugin.modalLayerCalls.length >= 1, 'narrow drawer must use useModalLayer');
-  const aside = findElement(overlayTree, (n) => n.type === 'aside');
-  assert.ok(aside, 'overlay must render aside');
-  assert.equal(aside.props.tabIndex, -1);
+  await mounted.flush();
 
-  // Concurrent mode.tab calls must serialize (maxInflight === 1).
-  await Promise.all([face.mode.tab('task'), face.mode.tab('panel'), face.mode.tab('task')]);
-  assert.equal(maxInflight, 1, 'settings/update queue must serialize concurrent writes');
-  assert.equal(serverSettings.bigFishTab, 'task');
+  // Overlay renders no <aside> drawer and sets no fullscreen data-dsh-whale-mode attribute.
+  assert.equal(mounted.dom.window.document.querySelector('aside'), null);
+  assert.equal(mounted.dom.window.document.documentElement.hasAttribute('data-dsh-whale-mode'), false);
 
-  plugin.resetState();
-  const gearWhenActive = plugin.render(gearSlot.component, { ...gearSlot.decl.inject(), t: (k) => k });
-  assert.equal(gearWhenActive, null, 'WhaleHeaderGear must hide when Big Fish mode is active');
+  // Clicking conversation header Home/Chats/Files buttons opens the single native right tab.
+  const actionButtons = mounted.dom.window.document.querySelectorAll('[data-dsh-bots-conv-actions="bot-whale"] button');
+  assert.ok(actionButtons.length >= 3);
+  await act(async () => { actionButtons[0].click(); });
+  await mounted.flush();
+  assert.ok(mounted.calls.openTabIn.some((call) => call.sid === 'sess-whale' && call.kind === 'dsh-bots' && call.opts?.expand === true));
 });
 
-test('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelCard captures Escape, and WhalePanels preserves draft on unavailable', (t) => {
+nodeTest('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelCard captures Escape, and WhalePanels preserves draft on unavailable', (t) => {
   const padSrc = fs.readFileSync(PAD_CLIENT, 'utf8');
   assert.match(padSrc, /setEmbeddedMode/);
   assert.match(padSrc, /embeddedMode/);
@@ -427,12 +441,11 @@ test('dsh-pad embeddedMode suppresses Dock reserve/announce/watchIds, PanelCard 
   for (const cleanup of effectCleanups) cleanup();
 });
 
-test('WhaleWorkbench preserves focus across narrow->wide transition without yanking to toggleSide and portals dshpad-focus', () => {
+nodeTest('Bots client portals modals into document.body and stays decoupled from dsh-pad floating dock', () => {
   const whaleSrc = fs.readFileSync(WHALE_CLIENT, 'utf8');
   const padSrc = fs.readFileSync(PAD_CLIENT, 'utf8');
-  assert.match(whaleSrc, /useLayoutEffectHook/);
-  assert.match(whaleSrc, /wideningFromDrawer/);
-  assert.match(whaleSrc, /preservedFocus/);
-  assert.match(whaleSrc, /sessionId:\s*typeof catalog\?\.sessionId === "string"|const sessionId = typeof catalog\?\.sessionId === "string"/);
+  assert.match(whaleSrc, /createPortal/);
+  assert.match(whaleSrc, /sidebarRightTabs/);
+  assert.doesNotMatch(whaleSrc, /dsh-pad|dshpad/i, 'dsh-whale Bots client must stay independent of dsh-pad');
   assert.match(padSrc, /createPortal\(focusOverlay,\s*document\.body\)/);
 });

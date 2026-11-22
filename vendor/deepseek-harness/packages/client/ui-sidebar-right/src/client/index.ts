@@ -84,6 +84,8 @@ export type { SidebarRightOpenTab } from './tab-inventory.ts'
 
 /** This package's copy namespace. */
 const NS = 'sidebarRight'
+/** Main panel that hosts embedded conversations and opens rightbar previews on demand. */
+const PROJECTS_PANEL_ID = 'projects'
 
 /** Required browser services: the slot registry, the frame's panel actions, copy, and the resource model. */
 export const inject = ['contextMenus', 'slots', 'layout', 'locale', 'resources', 'sessions', 'uiSession', 'shortcuts']
@@ -115,14 +117,25 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   const tabs = new SidebarRightTabRegistry(ctx)
   const views = new SidebarSessionViews(ctx.sessions)
+  const layout: ILayout = ctx.layout
+  let projectPreviewSession: SessionId | undefined
+  let pendingProjectOpen: { readonly sessionId: SessionId; readonly run: () => void } | undefined
   ctx.effect(() => {
     const current = ctx.uiSession.adapter.current
-    const sync = (): void => { views.select(current.getSnapshot().key as SessionId | undefined) }
+    const sync = (): void => {
+      if (layout.panelInfo.getSnapshot().activePanelId === PROJECTS_PANEL_ID) {
+        views.select(projectPreviewSession)
+      } else {
+        projectPreviewSession = undefined
+        pendingProjectOpen = undefined
+        views.select(current.getSnapshot().key as SessionId | undefined)
+      }
+    }
     const unsubscribe = current.subscribe(sync)
+    const unsubscribePanel = layout.panelInfo.subscribe(sync)
     sync()
-    return () => { unsubscribe(); views.dispose() }
+    return () => { unsubscribe(); unsubscribePanel(); views.dispose() }
   }, 'ui-sidebar-right: retained Session views')
-  const layout: ILayout = ctx.layout
   // The automatic fullscreen rule as the seats last rendered it: the frame
   // hands them its width as owner props, and every seat reports the same rule.
   let autoFullscreen = false
@@ -135,6 +148,20 @@ export function apply(ctx: ClientContext): void {
       closeWithFocus: (sessionId, paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
     },
   )
+  const openInProjectsPanel = (sessionId: SessionId, run: () => boolean): boolean => {
+    if (layout.panelInfo.getSnapshot().activePanelId !== PROJECTS_PANEL_ID) return run()
+    projectPreviewSession = sessionId
+    views.select(sessionId)
+    if (run()) return true
+    pendingProjectOpen = { sessionId, run: () => { run() } }
+    return true
+  }
+  const baseOpenResourceIn = controller.openResourceIn.bind(controller)
+  controller.openResourceIn = (sessionId, address, options) =>
+    openInProjectsPanel(sessionId, () => baseOpenResourceIn(sessionId, address, options))
+  const baseOpenTabIn = controller.openTabIn.bind(controller)
+  controller.openTabIn = (sessionId, kind, options) =>
+    openInProjectsPanel(sessionId, () => baseOpenTabIn(sessionId, kind, options))
   ctx.effect(() => ctx.slots.inject('contextMenu.icon', () => ctx.slots.register({
     name: 'contextMenu.icon', key: 'sidebar.close',
   }, IconCloseOutlineRegular)), 'sidebar: menu icon')
@@ -167,8 +194,9 @@ export function apply(ctx: ClientContext): void {
   // reads it, and its seat mints the Session's store in the same render.
   ctx.effect(() => {
     const sync = (): void => {
+      const panelId = layout.panelInfo.getSnapshot().activePanelId
       const selected = views.source.getSnapshot().find(view => view.selected)
-      show(layout.panelInfo.getSnapshot().activePanelId === null ? selected?.sessionId : undefined)
+      show(panelId === null || panelId === PROJECTS_PANEL_ID ? selected?.sessionId : undefined)
     }
     const unsubscribeViews = views.source.subscribe(sync)
     const unsubscribePanel = layout.panelInfo.subscribe(sync)
@@ -210,6 +238,15 @@ export function apply(ctx: ClientContext): void {
           const sessionId = scopeKey as SessionId
           adoptions.get(sessionId)?.()
           adoptions.set(sessionId, adopt(sessionId, instance))
+          if (pendingProjectOpen?.sessionId === sessionId) {
+            const task = pendingProjectOpen
+            pendingProjectOpen = undefined
+            queueMicrotask(() => {
+              if (projectPreviewSession === sessionId && layout.panelInfo.getSnapshot().activePanelId === PROJECTS_PANEL_ID) {
+                task.run()
+              }
+            })
+          }
         }
         return { ...instance, clearPersisted() {
           instance.clearPersisted()

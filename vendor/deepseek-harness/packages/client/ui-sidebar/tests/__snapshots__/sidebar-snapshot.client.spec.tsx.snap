@@ -86,9 +86,32 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
           class="regionArea"
         >
           <div
-            data-slot="sidebar.workspaces"
-            style="display: contents;"
-          />
+            class="sectionsBefore"
+            data-sidebar-sections-before="true"
+          >
+            <div
+              data-slot="sidebar.sections.before"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="workspacesSlot"
+            data-sidebar-workspaces="true"
+          >
+            <div
+              data-slot="sidebar.workspaces"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="sectionsAfter"
+            data-sidebar-sections-after="true"
+          >
+            <div
+              data-slot="sidebar.sections.after"
+              style="display: contents;"
+            />
+          </div>
         </div>
       </div>
       <span
@@ -248,9 +271,32 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
           class="regionArea"
         >
           <div
-            data-slot="sidebar.workspaces"
-            style="display: contents;"
-          />
+            class="sectionsBefore"
+            data-sidebar-sections-before="true"
+          >
+            <div
+              data-slot="sidebar.sections.before"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="workspacesSlot"
+            data-sidebar-workspaces="true"
+          >
+            <div
+              data-slot="sidebar.workspaces"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="sectionsAfter"
+            data-sidebar-sections-after="true"
+          >
+            <div
+              data-slot="sidebar.sections.after"
+              style="display: contents;"
+            />
+          </div>
         </div>
       </div>
       <span
@@ -368,9 +414,32 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
           class="regionArea"
         >
           <div
-            data-slot="sidebar.workspaces"
-            style="display: contents;"
-          />
+            class="sectionsBefore"
+            data-sidebar-sections-before="true"
+          >
+            <div
+              data-slot="sidebar.sections.before"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="workspacesSlot"
+            data-sidebar-workspaces="true"
+          >
+            <div
+              data-slot="sidebar.workspaces"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="sectionsAfter"
+            data-sidebar-sections-after="true"
+          >
+            <div
+              data-slot="sidebar.sections.after"
+              style="display: contents;"
+            />
+          </div>
         </div>
       </div>
       <span
@@ -530,9 +599,32 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
           class="regionArea"
         >
           <div
-            data-slot="sidebar.workspaces"
-            style="display: contents;"
-          />
+            class="sectionsBefore"
+            data-sidebar-sections-before="true"
+          >
+            <div
+              data-slot="sidebar.sections.before"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="workspacesSlot"
+            data-sidebar-workspaces="true"
+          >
+            <div
+              data-slot="sidebar.workspaces"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="sectionsAfter"
+            data-sidebar-sections-after="true"
+          >
+            <div
+              data-slot="sidebar.sections.after"
+              style="display: contents;"
+            />
+          </div>
         </div>
       </div>
       <span
@@ -692,9 +784,32 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
           class="regionArea"
         >
           <div
-            data-slot="sidebar.workspaces"
-            style="display: contents;"
-          />
+            class="sectionsBefore"
+            data-sidebar-sections-before="true"
+          >
+            <div
+              data-slot="sidebar.sections.before"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="workspacesSlot"
+            data-sidebar-workspaces="true"
+          >
+            <div
+              data-slot="sidebar.workspaces"
+              style="display: contents;"
+            />
+          </div>
+          <div
+            class="sectionsAfter"
+            data-sidebar-sections-after="true"
+          >
+            <div
+              data-slot="sidebar.sections.after"
+              style="display: contents;"
+            />
+          </div>
         </div>
       </div>
       <span

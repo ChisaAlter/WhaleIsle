@@ -274,7 +274,6 @@
     "tests/chat-long-interactions.e2e.ts",
     "tests/chat-continuous-conversation.e2e.ts",
     "tests/composer-tab-geometry.e2e.ts",
-    "tests/project-composer-stability.e2e.ts",
     "tests/conversation-view-tabs.e2e.ts",
     "tests/window-drag-coverage.e2e.ts",
     "tests/window-drag-inheritance.e2e.ts",

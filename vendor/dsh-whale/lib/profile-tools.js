@@ -27,6 +27,27 @@ function applyProfilePatch(before, patch) {
   return { next };
 }
 
+/** @param {Record<string, any>} before */
+function formatCurrentProfile(before) {
+  return JSON.stringify({
+    name: before.name,
+    userTitle: before.userTitle,
+    personaText: before.personaText,
+    model: { provider: before.modelProvider, model: before.modelModel, reasoningEffort: before.modelReasoningEffort },
+  });
+}
+
+/** @param {any} ctx @param {Record<string, any>} before @param {Record<string, any>} next */
+async function syncRenamedPresentation(ctx, before, next) {
+  if (next.name === before.name || !next.sessionId) return;
+  await controllerFrom(ctx)?.setPresentation?.({
+    sessionId: next.sessionId,
+    presentation: { owner: 'dsh-whale:assistant', title: next.name },
+  }).catch((/** @type {unknown} */ error) => {
+    console.warn('[vendor/dsh-whale/lib/profile-tools.js] background operation failed', error);
+  });
+}
+
 export function registerProfileTools(ctx) {
   ctx.tools.register(defineTool({
     name: 'whale_profile_settings',
@@ -48,12 +69,7 @@ export function registerProfileTools(ctx) {
       if (!home) return { ok: false, detail: 'Whale home is unavailable.' };
       const scope = createWhaleScope(home);
       const before = scope.get();
-      if (args.patch === undefined) {
-        return { ok: true, detail: JSON.stringify({
-          name: before.name, userTitle: before.userTitle, personaText: before.personaText,
-          model: { provider: before.modelProvider, model: before.modelModel, reasoningEffort: before.modelReasoningEffort },
-        }) };
-      }
+      if (args.patch === undefined) return { ok: true, detail: formatCurrentProfile(before) };
       if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const patch = args.patch;
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)
@@ -73,12 +89,7 @@ export function registerProfileTools(ctx) {
       } catch (/** @type {any} */ error) {
         return { ok: false, detail: String(error?.message ?? error) };
       }
-      if (next.name !== before.name && next.sessionId) {
-        await controllerFrom(ctx)?.setPresentation?.({
-          sessionId: next.sessionId,
-          presentation: { owner: 'dsh-whale:assistant', title: next.name },
-        }).catch((/** @type {unknown} */ error) => { console.warn('[vendor/dsh-whale/lib/profile-tools.js] background operation failed', error); });
-      }
+      await syncRenamedPresentation(ctx, before, next);
       return { ok: true, detail: `Whale profile updated: ${Object.keys(patch).join(', ')}.` };
     },
   }));

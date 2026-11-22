@@ -165,6 +165,15 @@ describe('ui-sidebar-right apply', () => {
     expect(ctx.sidebarRight.mounted.getSnapshot()).toBeUndefined()
     layout.panelInfo.set({ activePanelId: null })
     expect(ctx.sidebarRight.mounted.getSnapshot()).toBe(SESSION)
+    // Switching to the Projects panel clears the on-screen Session until a preview opens.
+    layout.panelInfo.set({ activePanelId: 'projects' })
+    expect(ctx.sidebarRight.mounted.getSnapshot()).toBeUndefined()
+    ctx.sidebarRightTabs.register({ id: 'spec/file', kind: 'file', patterns: ['dsh-resource://file/**'], title: () => 'file' })
+    const projectSession = 'project-coord-1' as SessionId
+    expect(ctx.sidebarRight.openResourceIn(projectSession, 'dsh-resource://file/session/project-coord-1/a.ts')).toBe(true)
+    expect(ctx.sidebarRight.mounted.getSnapshot()).toBe(projectSession)
+    layout.panelInfo.set({ activePanelId: null })
+    expect(ctx.sidebarRight.mounted.getSnapshot()).toBe(SESSION)
     current.set({ key: undefined })
     expect(ctx.sidebarRight.mounted.getSnapshot()).toBeUndefined()
   })

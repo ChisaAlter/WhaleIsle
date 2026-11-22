@@ -7,6 +7,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  beginDesktopAdmission,
+  createSerialQueue,
+} from '../../dsh-shared/lib/managed-task-runtime.mjs';
 import { ensureSafeTaskDir, resolvedTaskRootDir, validateTaskCwd, within } from './task-paths.js';
 import {
   todoSchema,
@@ -80,7 +84,7 @@ export class WhaleTodos {
     this.home = home;
     this.scope = scope;
     this.startReadonlyWorker = startReadonlyWorker;
-    this.chain = Promise.resolve();
+    this.serialQueue = createSerialQueue();
     this.closed = false;
     this.available = true;
     this.stops = new Map();
@@ -98,10 +102,12 @@ export class WhaleTodos {
     }
   }
 
+  get chain() {
+    return this.serialQueue.tail;
+  }
+
   serial(fn) {
-    const next = this.chain.then(fn);
-    this.chain = next.catch(() => { /* Keep queue alive when an individual operation fails. */ });
-    return next;
+    return this.serialQueue.run(fn);
   }
 
   subscribe(listener) {
@@ -248,10 +254,10 @@ export class WhaleTodos {
   }
 
   assertAdmissionOpen() {
-    const admission = this.ctx?.get?.('desktopTaskAdmission');
-    if (admission && typeof admission.check === 'function' && !admission.check()) {
-      throw new Error('桌面任务准入已锁定，暂不启动新任务。');
-    }
+    const lease = beginDesktopAdmission(this.ctx, 'whale-todos-check', {
+      lockedMessage: '桌面任务准入已锁定，暂不启动新任务。',
+    });
+    lease.release();
   }
 
   async create(input) {

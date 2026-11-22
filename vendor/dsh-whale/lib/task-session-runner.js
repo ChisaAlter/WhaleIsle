@@ -6,6 +6,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import {
+  createDelegatedApprovalRouter,
+  drainAgentAndJobs,
+} from '../../dsh-shared/lib/managed-task-runtime.mjs';
 import { captureInputs } from './task-inputs.js';
 import { taskLimits } from './task-store.js';
 import { startTaskWorker } from './task-worker.js';
@@ -149,30 +153,16 @@ export async function createWorkspaceTaskSession({
   return { agent, directHandle: handle, usedDirectAgents: true };
 }
 
-function ensureDelegationPolicy(approval, agent) {
-  if (typeof approval.policyRecord !== 'function') return;
-  if (approval.policyRecord(agent.session)?.source === 'delegation') return;
-  agent.session?.append?.('approval/policy', { policy: 'never', source: 'delegation' });
-}
-
-function resolveApprovalService(ctx) {
-  if (!ctx) return null;
-  return (typeof ctx.get === 'function' ? ctx.get('approval') : null) || ctx.approval || null;
-}
-
 export async function bindTaskDelegatedApproval({ ctx, agent, ownerSessionId, label, validate }) {
   if (!agent || !ownerSessionId) return null;
-  const approval = resolveApprovalService(ctx);
-  if (!approval || typeof approval.bindDelegatedRequester !== 'function') return null;
-
   const owner = await resolveOwnerAgent(ctx, ownerSessionId);
   const parentId = agent.session && agent.session.header ? agent.session.header.parentSession : '';
   if (!owner || parentId !== owner.id) return null;
 
   try {
-    ensureDelegationPolicy(approval, agent);
-    if (typeof approval.enableDelegatedRequests === 'function') approval.enableDelegatedRequests(agent, owner);
-    return approval.bindDelegatedRequester(agent, {
+    return createDelegatedApprovalRouter({
+      ctx,
+      agent,
       owner,
       label: String(label || '受管任务').slice(0, 120),
       validate,
@@ -190,32 +180,11 @@ export async function bindTaskDelegatedApproval({ ctx, agent, ownerSessionId, la
  * @param {number} [waitMs]
  */
 export async function drainSessionJobs(ctx, sessionId, waitMs = 5_000) {
-  if (!sessionId) return { killed: 0 };
-  const jobs = ctx?.get?.('jobs') ?? ctx?.jobs;
-  if (typeof jobs?.list !== 'function') return { killed: 0 };
-  let rows = [];
-  try {
-    rows = jobs.list(sessionId) ?? [];
-  } catch {
-    return { killed: 0 };
-  }
-  const active = rows.filter((job) => job && (job.status === 'running' || job.status === 'stopping'));
-  let killed = 0;
-  for (const job of active) {
-    const jobId = job.id ?? job.spec?.id;
-    if (!jobId) continue;
-    try {
-      if (typeof jobs.kill === 'function') {
-        await jobs.kill(jobId, sessionId, 'whale-todo-stopped');
-        killed += 1;
-      }
-      if (typeof jobs.wait === 'function') {
-        await jobs.wait(jobId, waitMs, sessionId).catch(() => { /* Wait timeout on an already-killed job is non-fatal during stop drain. */ });
-      }
-    } catch {
-      /* Continue draining remaining jobs for this session. */
-    }
-  }
+  const { killed } = await drainAgentAndJobs(ctx, sessionId, {
+    killReason: 'whale-todo-stopped',
+    waitMs,
+    swallowWaitErrors: true,
+  });
   return { killed };
 }
 

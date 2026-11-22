@@ -92,7 +92,12 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-primitives/src/reduced-effects.ts': 'useMinimalMode dsh:render-mode\n',
       'packages/experimental/plugin-market-bundle/cordis.patch.yml': 'DSHD_PLUGIN_MARKET_INDEX\n',
       'packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx': 'data-dsh-hero-headline\ndata-dsh-hero-preview\ndata-dsh-hero-mark\n',
-      'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-panel={id}\ndata-dsh-sidebar\ndata-dsh-sidebar-new\ndata-dsh-sidebar-brand-identity\ndata-dsh-sidebar-toggle\n',
+      'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': "data-dsh-panel={id}\ndata-dsh-sidebar\ndata-dsh-sidebar-new\ndata-dsh-sidebar-brand-identity\ndata-dsh-sidebar-toggle\n'sidebar.sections.before'\n'sidebar.sections.after'\ndata-sidebar-sections-before\ndata-sidebar-sections-after\n",
+      'packages/client/ui-sidebar/src/client/contract/slots.ts': "'sidebar.sections.before': { kind: 'list' }\n'sidebar.sections.after': { kind: 'list' }\n",
+      'packages/client/ui-sidebar/src/client/SidebarRoot.module.css': ".sectionsBefore {}\n.sectionsAfter {}\n:global(html[data-sidebar-projects-first='true']) .regionArea > .workspacesSlot { order: -1; }\n",
+      'packages/client/ui-sidebar/src/client/scroll-handoff.ts': "node.hasAttribute('data-sidebar-nested-scroller')\n",
+      'packages/client/ui-settings-general/src/client/WhaleAssistantRow.tsx': 'setEnabled(config?.whaleAssistantEnabled !== false)\n',
+      'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css': '@container (max-width: 560px) {\n  .trigger .compactIcon { display: block; }\n  .trigger .activitySlot { position: static; width: 15px; height: 15px; }\n}\n',
       'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx': 'data-plugin-back\n',
       'packages/client/ui-settings-general/src/client/SettingsRoot.tsx': 'data-dsh-settings-close\n',
       'packages/client/ui-primitives/src/markdown/MarkdownText.tsx': 'renderCodeFence MarkdownCodeFenceRenderer\n',
@@ -105,7 +110,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/subagent/tool-subagent/src/index.ts': "'subagent/delegate'\nctx.serial('subagent/delegate'\n",
       'packages/subagent/subagent/src/descriptor.ts': 'agentPreset admissionPolicy\n',
       'packages/api/session-controller/src/index.ts': 'registerManagedPolicy bindManagedSession\n',
-      'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',
+      'packages/client/ui-sidebar/src/client/index.ts': "selectTab\n'sidebar.sections.before'\n'sidebar.sections.after'\n",
       'packages/client/ui-primitives/src/index.ts': "export { SettingsSelect } from './SettingsSelect.tsx'\nexport { ReviewDiff } from './ReviewDiff.tsx'\n",
       'packages/client/ui-primitives/src/SettingsSelect.tsx': "material={block ? 'solid' : 'translucent'}\n",
       'packages/client/ui-primitives/src/Input.tsx': "variant?: 'default' | 'form'\n",
@@ -146,7 +151,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-settings-general/src/client/ProjectRow.tsx': "export const project = () => shell.saveConfig({ projectEnabled: next }) && t('project.help')\n",
       'packages/client/ui-settings-general/src/client/ProjectRow.module.css': '.row { display: flex; }\n',
       'packages/client/ui-settings-general/src/client/ApprovalPopupRow.tsx': "export const popup = () => shell.saveConfig({ approvalPopupEnabled: next }) && t('approvalPopup.title')\n",
-      'packages/client/ui-settings-general/src/client/index.ts': "import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'\nimport { ProjectRow } from './ProjectRow.tsx'\nimport { DshImRow } from './DshImRow.tsx'\nimport { ApprovalPopupRow } from './ApprovalPopupRow.tsx'\nleaveProjectLead\n",
+      'packages/client/ui-settings-general/src/client/index.ts': "import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'\nimport { ProjectRow } from './ProjectRow.tsx'\nimport { DshImRow } from './DshImRow.tsx'\nimport { ApprovalPopupRow } from './ApprovalPopupRow.tsx'\nleaveProjectLead\nleaveProjectPanel\n",
       'packages/client/ui-settings-general/src/client/locales.ts': "'remoteWorkspace.title': '远程工作区（SSH）',\n'project.help': 'Project',\n'dshIm.title': '消息渠道（IM）',\n'approvalPopup.title': '最小化时弹出审批窗口',\n",
       'packages/client/ui-settings-general/src/client/desktop-shell.ts': 'remoteWorkspaceEnabled?: boolean\nprojectEnabled?: boolean\nrestartCancelled?: boolean\ndshImEnabled?: boolean\napprovalPopupEnabled?: boolean\n',
       'packages/client/locale/src/client/LanguageRow.tsx': 'export const language = () => <SettingsSelect aria-label="language" />\n',
@@ -260,7 +265,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/preset/agent-preset-registry/src/index.ts': "...(record.config.hidden === true ? { hidden: true } : {}),\n.filter(row => row.hidden !== true || row.broken !== undefined)\n",
       'packages/preset/agent-preset-registry/tests/registry.spec.ts': "it('keeps a healthy hidden preset off the roster while resolving and mounting it by id', () => {})\n",
       'apps/web/tests/settings-chrome.e2e.ts': "const loading = page.getByText(/正在加载插件/)\n",
-      'packages/client/ui-sidebar-right/src/client/index.ts': "layout.openRightbar locale: NS\n",
+      'packages/client/ui-sidebar-right/src/client/index.ts': "layout.openRightbar locale: NS PROJECTS_PANEL_ID openInProjectsPanel\n",
+      'packages/client/ui-sidebar-right/src/client/shell/RightbarRoot.tsx': "const visible = usePanelInfo(info => info.activePanelId === null || info.activePanelId === 'projects')\n",
       'packages/client/ui-sidebar-right/src/client/tabs/guide/GuideBody.tsx': 'ShippedGuide\ncss.grid\n',
       'packages/client/ui-sidebar-right/src/client/tabs/guide/GuideBody.module.css': '.grid {\naspect-ratio: 1 / 1\n',
       'packages/client/ui-sidebar-right/src/client/locales.ts': "'tab.guide.heading'\n",
@@ -274,7 +280,6 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/experimental/client-ui-agent-team/src/client/TeamAction.module.css': '.embedded .body {}\n',
       'packages/experimental/client-ui-agent-team/src/client/index.ts': "export { TeamEmbedded } from './TeamEmbedded.tsx'\n",
       'packages/experimental/client-ui-agent-team/tests/team-action.client.spec.tsx': "describe('embedded Team')\n",
-      'apps/web/tests/project-composer-stability.e2e.ts': 'dsh-project-task-rail\n',
       'packages/client/ui-preview/src/client/apply.ts': "'sidebarRightTabs'\n",
       'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx': "data-sidebar-right-guide-only\n",
       'apps/web/tests/models-settings.e2e.ts': "await page.route('**/api/llm.discoverModels', async (route) => {\n",
@@ -339,7 +344,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/core/agent-loop/src/agent.ts': 'The initiator scope is closing\nresumePendingInteraction\n',
       'packages/llm/llm/src/content.ts': 'export function requireValidToolCallIdentity\nTOOL_NAME_PATTERN\n',
       'packages/compaction/compaction-basic/src/config.ts': 'compactionThreshold\n',
-      'packages/compaction/compaction-basic/src/index.ts': "info.context.compactionThreshold\ninfo.contextManagement === 'provider'\n",
+      'packages/compaction/compaction-basic/src/index.ts': "info.context.compactionThreshold\ninfo.contextManagement === 'provider'\nswitchTargets\nisUnconfiguredModelError\n",
+      'packages/compaction/compaction-basic/src/summarizer.ts': 'overrideTarget\n',
       'packages/client/ui-sidebar-right/src/client/shortcuts.ts': 'DSHD: Ctrl+\\\n',
       'packages/client/ui-sidebar-terminal/src/client/index.ts': 'terminal.drawer.toggle\n',
       'packages/client/ui-user-terminal/src/client/TerminalPane.tsx': 'xterm\n',
@@ -366,7 +372,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/api/session-controller/src/idle-release.ts': "class IdleSessionRelease\noptionalService(this.ctx, 'jobs')\nstateOf(agent.session, 'sessionListMetadata')\n",
       'packages/api/session-controller/src/web/controller.ts': 'using _watched = { [Symbol.dispose]: this.watch(sessionId) }\n',
       'packages/api/session-controller/src/lifecycle.ts': 'readonly releasingIds\nretained(): [SessionId, AgentHandle][]\n',
-      'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',
+      'packages/client/ui-sidebar/src/client/index.ts': "selectTab\n'sidebar.sections.before'\n'sidebar.sections.after'\n",
     };
     // Presentation-skin fork: every marker snippet lives in these files.
     const skinSeams = {
@@ -549,6 +555,13 @@ test('assertDesktopForks throws when copy-ghostty-assets drops out of package.js
   const root = makeFixture(t);
   fs.writeFileSync(path.join(root, 'package.json'), '{}\n');
   assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /copy-ghostty-assets/);
+});
+
+test('assertDesktopForks throws when SubagentHeaderLineage.module.css regresses to stale .catalogIcon or 460px rules', (t) => {
+  const root = makeFixture(t);
+  const cssPath = path.join(root, ...'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css'.split('/'));
+  fs.writeFileSync(cssPath, '@container (max-width: 560px) { .catalogIcon { display: inline-flex; } .trigger .activitySlot { position: absolute; top: 0; right: 0; } }\n');
+  assert.throws(() => assertDesktopForks(root, '0.1.0-rc.5'), /SubagentHeaderLineage\.module\.css/);
 });
 
 test('assertDesktopForks accepts the current pinned vendor tree', () => {

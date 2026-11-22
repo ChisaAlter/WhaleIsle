@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 const {
   DSH_WHALE_PACKAGE,
@@ -14,6 +15,7 @@ const {
   DSH_WHALE_OVERLAY_FILENAME,
   DSH_WHALE_BEGIN,
   DSH_WHALE_END,
+  whalePeerDirectories,
   withoutDshWhaleAliases,
   ensureDesktopDshWhale,
 } = require('./dsh-whale-desktop');
@@ -22,7 +24,13 @@ function makeSource(root) {
   const dir = path.join(root, 'source');
   fs.mkdirSync(path.join(dir, 'lib'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'client'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'assets', 'mascots'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src', 'client'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'presets', 'whale-girl'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'assets', 'mascots', 'A1.svg'), '<svg id="A1"></svg>\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'src', 'shared', 'index.js'), 'export const SHARED = true\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'src', 'client', 'index.tsx'), 'export const CLIENT_SRC = true\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
     name: DSH_WHALE_PACKAGE,
     version: '0.1.0',
@@ -66,7 +74,8 @@ test('ensureDesktopDshWhale writes the desktop overlay and junctions node_module
     const result = ensureDesktopDshWhale({ sourceDir: source, profileDir });
     assert.equal(result.ok, true);
     assert.equal(result.added, true);
-    assert.equal(result.href, pathToFileURL(source).href);
+    assert.equal(fs.realpathSync(result.runtimeDir), fs.realpathSync(path.join(legacyCopy, 'runtime')));
+    assert.equal(result.href, pathToFileURL(result.runtimeDir).href);
     assert.equal(result.overlayFile, overlayPath(profileDir));
 
     const linked = path.join(profileDir, 'node_modules', 'dsh-whale');
@@ -75,10 +84,19 @@ test('ensureDesktopDshWhale writes the desktop overlay and junctions node_module
       fs.readFileSync(path.join(linked, 'lib', 'index.js'), 'utf8'),
       'export const name = "dsh-whale"\n',
     );
-    // The junction resolves to vendor, never to the stale desktop-plugins copy.
-    assert.equal(fs.realpathSync(linked), fs.realpathSync(source));
-    // The desktop-plugins dir holds only the overlay now.
-    assert.deepEqual(fs.readdirSync(legacyCopy), [DSH_WHALE_OVERLAY_FILENAME]);
+    assert.equal(
+      fs.readFileSync(path.join(linked, 'assets', 'mascots', 'A1.svg'), 'utf8'),
+      '<svg id="A1"></svg>\n',
+    );
+    assert.equal(
+      fs.readFileSync(path.join(linked, 'src', 'shared', 'index.js'), 'utf8'),
+      'export const SHARED = true\n',
+    );
+    assert.equal(fs.existsSync(path.join(linked, 'src', 'client')), false);
+    // The junction resolves to the profile-staged runtime (not the stale legacy dump).
+    assert.equal(fs.realpathSync(linked), fs.realpathSync(result.runtimeDir));
+    // Stale legacy top-level package.json in desktop-plugins/dsh-whale is reclaimed.
+    assert.deepEqual(fs.readdirSync(legacyCopy).sort(), [DSH_WHALE_OVERLAY_FILENAME, 'runtime']);
 
     const overlay = fs.readFileSync(result.overlayFile, 'utf8');
     assert.match(overlay, new RegExp(`id: ${DSH_WHALE_INSERT_ID}`));
@@ -287,17 +305,30 @@ test('vendored dsh-whale peers satisfy the vendored runtime compatibility gate',
   }
 });
 
-test('gitignore does not ignore vendored dsh-whale runtime dependencies', () => {
-  const { spawnSync } = require('node:child_process');
-  const root = path.join(__dirname, '..', '..');
-  for (const file of [
-    'vendor/dsh-whale/node_modules/@deepseek-ai/schemastery/package.json',
-    'vendor/dsh-whale/node_modules/@deepseek-ai/dsh-tools/package.json',
-    'vendor/dsh-whale/node_modules/@deepseek-ai/dsh-llm/package.json',
-  ]) {
-    const result = spawnSync('git', ['check-ignore', '-q', file], { cwd: root, windowsHide: true });
-    assert.equal(result.status, 1, `${file} must not match the repo node_modules/ ignore`);
+test('vendored dsh-whale resolves all runtime peers and dsh-shared from built Harness without vendored node_modules', t => {
+  if (!requirePrerequisite(t, harnessWorkspace())) return;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-whale-peers-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(__dirname, '..', '..', 'vendor', 'dsh-whale');
+  const harnessRoot = path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness');
+  const manifest = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
+  assert.equal(fs.existsSync(path.join(sourceDir, 'node_modules')), false);
+  assert.deepEqual(manifest.dependencies || {}, {});
+  const peers = whalePeerDirectories(harnessRoot, manifest);
+  for (const peer of Object.keys(manifest.peerDependencies || {})) {
+    assert.equal(peers.has(peer), true, `missing staged Harness peer ${peer}`);
+    assert.equal(
+      fs.realpathSync(peers.get(peer)).startsWith(fs.realpathSync(harnessRoot)),
+      true,
+      `peer ${peer} must resolve strictly inside Harness`,
+    );
   }
+  const profileDir = path.join(root, 'profile');
+  const mounted = ensureDesktopDshWhale({ sourceDir, profileDir, harnessRoot });
+  assert.equal(mounted.ok, true);
+  assert.equal(fs.existsSync(path.join(mounted.runtimeDir, 'node_modules', 'yaml', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(mounted.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-llm', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(mounted.runtimeDir, '..', 'dsh-shared', 'lib', 'internal-secret.mjs')), true);
 });
 
 test('dsh-whale aliases strip from the disable list (desktop built-in)', () => {

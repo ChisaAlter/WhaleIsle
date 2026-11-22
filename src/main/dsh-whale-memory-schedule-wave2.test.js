@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 
 const memoryStoreUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib/memory-store.js')).href;
 const memoryToolsUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib/memory-tools.js')).href;
@@ -168,12 +169,17 @@ test('irreversible guest/group taint permanently blocks memory injection and cro
   const store = await import(memoryStoreUrl);
   const { apply: applyWhaleTools } = await import(toolsUrl);
   const { apply: applyWhaleHost } = await import(whaleIndexUrl);
-  const home = makeTempDir(t, 'whale-taint-');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-taint-'));
   const prevHome = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
-  t.after(() => {
+  const disposers = [];
+  t.after(async () => {
+    for (const fn of disposers.splice(0).reverse()) {
+      await fn?.();
+    }
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
   store.storeMemoryFact(home, { text: '主人私密日程：下周体检', category: 'upcoming' });
@@ -184,13 +190,23 @@ test('irreversible guest/group taint permanently blocks memory injection and cro
   const hostCtx = {
     get: () => undefined,
     provide: () => {},
-    on: () => {},
-    effect: () => {},
+    on: () => () => {},
+    effect: (fn) => {
+      const dispose = fn();
+      if (typeof dispose === 'function') disposers.push(dispose);
+      else if (dispose && typeof dispose.then === 'function') {
+        disposers.push(async () => {
+          const resolved = await dispose;
+          if (typeof resolved === 'function') await resolved();
+        });
+      }
+      return () => {};
+    },
     inject: (deps, fn) => { if (deps.length === 1 && deps[0] === 'tools') fn(hostCtx); },
     logger: { warn: () => {}, info: () => {} },
     agentPresets: { register: () => () => {} },
     systemPrompt: { section: (def) => { sections.set(def.name, def); return () => {}; } },
-    webServer: { onRequest: () => () => {} },
+    webServer: { register: () => () => {}, onRequest: () => () => {} },
     tools: { guard: (fn) => guards.push(fn) },
     storageDomain: { open: async () => ({ table: () => ({ entries: () => [], get: () => null, put: async () => {}, delete: async () => {} }), close: async () => {} }) },
     sessionController: { list: async () => ({ sessions: [] }) },

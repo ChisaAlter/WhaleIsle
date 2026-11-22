@@ -8,6 +8,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const { ensureDesktopDshWhale } = createRequire(import.meta.url)(path.join(root, 'src/main/dsh-whale-desktop.js'));
 const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 const runtime = path.resolve(arg('--runtime-root') ?? path.join(root, 'vendor/deepseek-harness'));
 const output = path.resolve(arg('--output') ?? path.join(root, 'work/whale-big-fish-qa'));
@@ -23,11 +24,18 @@ try {
   const { initProfile, loadLayeredEnv } = await load('@deepseek-ai/dsh-app-boot');
   const profile = path.join(home, 'profiles/big-fish-qa');
   initProfile(profile, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-whale', 'dsh-pad']);
+  const whaleMount = ensureDesktopDshWhale({
+    sourceDir: path.join(root, 'vendor/dsh-whale'),
+    profileDir: profile,
+    harnessRoot: runtime,
+    enabled: true,
+  });
+  assert.equal(whaleMount.ok, true, whaleMount.error || 'ensureDesktopDshWhale failed');
   await fs.mkdir(path.join(profile, 'node_modules'), { recursive: true });
-  for (const name of ['dsh-whale', 'dsh-pad']) await fs.symlink(path.join(root, 'vendor', name), path.join(profile, 'node_modules', name), 'junction');
+  await fs.symlink(path.join(root, 'vendor', 'dsh-pad'), path.join(profile, 'node_modules', 'dsh-pad'), 'junction');
   const manifestPath = path.join(profile, 'package.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath));
-  manifest.dependencies = { 'dsh-whale': `file:${path.join(root, 'vendor/dsh-whale')}`, 'dsh-pad': `file:${path.join(root, 'vendor/dsh-pad')}` };
+  manifest.dependencies = { 'dsh-whale': `file:${whaleMount.runtimeDir}`, 'dsh-pad': `file:${path.join(root, 'vendor/dsh-pad')}` };
   await fs.writeFile(manifestPath, JSON.stringify(manifest));
   const server = net.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise(resolve => server.close(resolve));

@@ -245,12 +245,12 @@ describe('PetSection', () => {
   })
 
   it('toggles the whale assistant through saveConfig so Harness restarts', async () => {
-    const { saveConfig, saveLive2dPetSettings } = shellWith()
+    const { saveConfig, saveLive2dPetSettings } = shellWith({ live2dPet: CONFIG.live2dPet })
     mount()
     const whale = await screen.findByRole('switch', { name: en['pet.whaleAssistant'] })
-    expect(whale.getAttribute('aria-checked')).toBe('false')
+    expect(whale.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(whale)
-    expect(saveConfig).toHaveBeenCalledWith({ whaleAssistantEnabled: true })
+    expect(saveConfig).toHaveBeenCalledWith({ whaleAssistantEnabled: false })
     expect(saveLive2dPetSettings).not.toHaveBeenCalled()
   })
 })

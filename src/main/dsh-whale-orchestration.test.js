@@ -12,8 +12,15 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { resolveHarnessPeerPath } = require('../../scripts/lib/harness-peer-hook.cjs');
 const { constantTimeEqual, storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+
+const importHarnessPeer = (specifier) => {
+  const resolved = resolveHarnessPeerPath(specifier);
+  assert.ok(resolved, `expected ${specifier} inside vendor/deepseek-harness`);
+  return import(pathToFileURL(resolved).href);
+};
 
 // Real prompt assembly runs the built SystemPrompt plugin over vendored cordis.
 const SYSTEM_PROMPT = harnessWorkspace({ entries: ['packages/core/system-prompt/lib/index.js'] });
@@ -131,7 +138,7 @@ test('configured whale name survives prompt assembly instead of a blank complete
   assert.doesNotMatch(bundledPersona, /^\s+complete:\s+true\s*$/m);
   const [{ default: SystemPrompt, renderPrompt }, { Context }] = await Promise.all([
     import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'core', 'system-prompt', 'lib', 'index.js')).href),
-    import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js')).href),
+    importHarnessPeer('@deepseek-ai/cordis'),
   ]);
   const ctx = new Context();
   try {
@@ -206,7 +213,7 @@ test('apply() registers the persona section so real assembly carries her setting
   });
   const [{ default: SystemPrompt, renderPrompt }, { Context }] = await Promise.all([
     import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'core', 'system-prompt', 'lib', 'index.js')).href),
-    import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js')).href),
+    importHarnessPeer('@deepseek-ai/cordis'),
   ]);
   const ctx = new Context();
   try {

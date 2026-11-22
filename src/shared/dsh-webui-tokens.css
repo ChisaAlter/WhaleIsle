@@ -20,14 +20,17 @@
   --dsw-shadow-lv3:
     0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
   --dsw-mask-blur: blur(2px);
-  /* Radii mirror vendor ui-theme base.css: xs/sm/md/lg/xl/panel. */
+  --dsw-menu-backdrop-filter: blur(40px) saturate(150%);
+  /* Radii mirror vendor ui-theme base.css: xs/sm/md/lg/xl/panel/dialog/button. */
   --dsw-radius-xs: 4px;
   --dsw-radius-sm: 8px;
   --dsw-radius-md: 12px;
   --dsw-radius-lg: 16px;
   --dsw-radius-xl: 20px;
+  --dsw-radius-dialog: 24px;
   --dsw-radius-panel: 28px;
   --dsw-radius-button-sm: 14px;
+  --dsw-radius-button: 18px;
   --dsw-alias-glass-opacity: 80%;
   --dsw-alias-bg-base: rgb(255, 255, 255);
   --dsw-alias-bg-layer-1: rgb(255, 255, 255);
@@ -61,7 +64,12 @@
   --dsw-alias-toast-label: rgb(255, 255, 255);
   --dsw-static-deepseek-400: rgb(122, 170, 255);
   --dsw-alias-state-business-primary: rgb(65, 118, 230);
+  --dsw-alias-state-business-tertiary: rgb(228, 237, 253);
   --dsw-alias-state-error-primary: rgb(236, 19, 19);
+  --dsw-alias-scrollbar-bg-l1: color-mix(in srgb, rgb(15, 17, 21) 18%, transparent);
+  --dsw-alias-scrollbar-bg-l2: color-mix(in srgb, rgb(15, 17, 21) 18%, transparent);
+  --dsw-alias-scrollbar-hover-l1: color-mix(in srgb, rgb(15, 17, 21) 30%, transparent);
+  --dsw-alias-scrollbar-hover-l2: color-mix(in srgb, rgb(15, 17, 21) 30%, transparent);
   --dsw-alias-state-success-primary: rgb(34, 197, 94);
   --dsw-alias-state-warn-label: rgb(221, 134, 41);
   --dsw-alias-state-warn-primary: rgb(245, 158, 11);
@@ -124,7 +132,12 @@ body[data-ds-dark-theme] {
   --dsw-alias-markdown-code-block: rgb(27, 27, 28);
   --dsw-alias-toast-bg: rgb(67, 69, 74);
   --dsw-alias-state-business-primary: rgb(103, 158, 254);
+  --dsw-alias-state-business-tertiary: rgb(52, 65, 91);
   --dsw-alias-state-error-primary: rgb(242, 90, 90);
+  --dsw-alias-scrollbar-bg-l1: rgb(60, 60, 61);
+  --dsw-alias-scrollbar-bg-l2: rgb(84, 85, 87);
+  --dsw-alias-scrollbar-hover-l1: rgb(84, 85, 87);
+  --dsw-alias-scrollbar-hover-l2: rgb(101, 103, 107);
   --dsw-alias-state-warn-label: rgb(221, 134, 41);
   --dsw-alias-state-warn-primary: rgb(245, 158, 11);
   --dsw-alias-state-warn-secondary: rgb(247, 173, 49);
@@ -146,4 +159,49 @@ body[data-ds-dark-theme] {
     --ds-motion-duration-overlay-out: 0s;
     --ds-motion-duration-popover: 0s;
   }
+}
+
+/* Shared scrollbar skin mirroring vendor ui-theme scrollbar.css. */
+body {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l1);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l1);
+  --dsh-scrollbar-thumb-border: 0px;
+  --dsh-scrollbar-track-margin: 0px;
+  --dsh-scrollbar-width: 5px;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  body,
+  body * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--dsh-scrollbar-thumb) transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  width: var(--dsh-scrollbar-width);
+  height: var(--dsh-scrollbar-width);
+}
+
+::-webkit-scrollbar-track {
+  margin-block: var(--dsh-scrollbar-track-margin);
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: var(--dsh-scrollbar-thumb-border) solid transparent;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsh-scrollbar-thumb);
+  background-clip: content-box;
+}
+
+@media (hover: hover) {
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--dsh-scrollbar-thumb-hover);
+  }
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

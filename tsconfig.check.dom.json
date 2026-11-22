@@ -32,6 +32,7 @@
     "src/renderer/whale-ui/**",
     "mobile/web/whale-ui/**",
     "src/renderer/pet-live2d/ort/**",
-    "src/renderer/pet-live2d/anime4k.js"
+    "src/renderer/pet-live2d/anime4k.js",
+    "vendor/dsh-whale/client/client.js"
   ]
 }

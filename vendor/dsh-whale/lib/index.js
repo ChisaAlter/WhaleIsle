@@ -57,6 +57,8 @@ import {
   whaleHomeDir,
   appendPetOutbox,
 } from './preset.js';
+import { delegateLegacyWhaleEndpoint, mountBotsIntoHost } from './bots/runtime.js';
+import { hasPreExistingLegacyWhaleData } from './bots/legacy-migration.js';
 
 export const name = 'dsh-whale';
 export const inject = ['systemPrompt', 'connection', 'webServer'];
@@ -645,14 +647,20 @@ async function logLookNote(ctx, scope, reply) {
   }
 }
 
-function registerRpc(ctx, scope, sseHub) {
+function registerRpc(ctx, scope, sseHub, botsRuntime = null) {
+  const ensureTargetSession = (c, s, ctrl) => {
+    const rt = typeof botsRuntime?.getRuntimeIfReady === 'function' ? botsRuntime.getRuntimeIfReady() : botsRuntime;
+    return rt?.legacyCompat?.resolvePetBot?.() ? rt.legacyCompat.ensurePetSession() : ensureAssistantSession(c, s, ctrl);
+  };
   const handle = async (endpoint, input) => {
     const home = dshHomeDir();
+    const delegated = await delegateLegacyWhaleEndpoint(botsRuntime, endpoint, input);
+    if (delegated !== undefined) return delegated;
     if (endpoint.startsWith('todos/')) {
       return handleWhaleTodosEndpoint(ctx, scope, endpoint, input);
     }
     if (endpoint.startsWith('tasks/')) {
-      return handleLegacyTasksEndpoint(ctx, scope, endpoint, input, ensureAssistantSession);
+      return handleLegacyTasksEndpoint(ctx, scope, endpoint, input, ensureTargetSession);
     }
     if (endpoint === 'side/ask') {
       return askSideQuestion(ctx, scope, {
@@ -711,7 +719,7 @@ function registerRpc(ctx, scope, sseHub) {
         return { ok: true };
       }
       case 'pet/state': {
-        const ensured = await ensureAssistantSession(ctx, scope, controllerFrom(ctx));
+        const ensured = await ensureTargetSession(ctx, scope, controllerFrom(ctx));
         if (!ensured.ok) return ensured;
         const controller = controllerFrom(ctx);
         const snapshot = typeof controller?.follow === 'function'
@@ -724,14 +732,14 @@ function registerRpc(ctx, scope, sseHub) {
         return {
           ok: true,
           sessionId: ensured.sessionId,
-          name: readSettings(scope).name || '鲸鱼娘',
+          name: ensured.name || readSettings(scope).name || '鲸鱼娘',
           model: selectedModelFrom(snapshot),
           ...(input?.includeCatalog === false ? {} : { groups: catalog ? catalogGroups(catalog) : null }),
           history: historyFromRecords(snapshot?.records),
         };
       }
       case 'pet/select-model': {
-        const ensured = await ensureAssistantSession(ctx, scope, controllerFrom(ctx));
+        const ensured = await ensureTargetSession(ctx, scope, controllerFrom(ctx));
         if (!ensured.ok) return ensured;
         const controller = controllerFrom(ctx);
         const provider = String(input?.provider ?? '').trim();
@@ -746,8 +754,6 @@ function registerRpc(ctx, scope, sseHub) {
           provider,
           model,
           ...(reasoningEffort ? { reasoningEffort } : {}),
-          // Card picks are session-local — the non-managed presentation means
-          // the controller would otherwise write the app-global default.
           saveAsDefault: false,
         });
         return { ok: true, selected: result?.selected ?? { provider, model, reasoningEffort } };
@@ -756,7 +762,7 @@ function registerRpc(ctx, scope, sseHub) {
         const text = String(input?.text ?? '').trim();
         if (!text) return { ok: false, error: 'empty-input' };
         if (text.length > 2000) return { ok: false, error: 'input-too-long' };
-        const ensured = await ensureAssistantSession(ctx, scope, controllerFrom(ctx));
+        const ensured = await ensureTargetSession(ctx, scope, controllerFrom(ctx));
         if (!ensured.ok) return ensured;
         const controller = controllerFrom(ctx);
         if (typeof controller?.prompt !== 'function' || typeof controller?.follow !== 'function') {
@@ -844,11 +850,13 @@ export function apply(ctx) {
   ctx.effect?.(() => () => sseHub.close(), 'dsh-whale:sse-hub');
 
   const home = dshHomeDir();
+  const hadLegacyWhale = home ? hasPreExistingLegacyWhaleData(home) : false;
   if (home) {
     ensureWhaleHome(home);
     const preset = ensureWhalePreset(home);
     if (!preset.ok) ctx.logger?.warn?.(`dsh-whale preset ensure failed: ${preset.error}`);
   }
+  const botsRuntime = home ? mountBotsIntoHost(ctx, { home, allowLegacyMigration: hadLegacyWhale }) : null;
 
   // Persona resolves from the live catalog per assemble — renaming or
   // re-personalizing lands on the next turn without a preset rewrite. The
@@ -878,7 +886,7 @@ export function apply(ctx) {
     },
   });
 
-  registerRpc(ctx, scope, sseHub);
+  registerRpc(ctx, scope, sseHub, botsRuntime);
 
   // Pre-compaction flush (~85% of effective compaction threshold) + idle incremental review.
   installWhaleMemoryLifecycle(ctx, scope, home, { readSettings, isWhaleAssistantContext });
@@ -898,11 +906,13 @@ export function apply(ctx) {
   const runScheduleMigrationOnce = installLegacyScheduleMigration(ctx, scope, home, ensureAssistantSession);
   ctx.inject?.(['agentPresets', 'sessionController'], (host) => host.effect(async () => {
     const unregister = await host.agentPresets.register(whalePresetDefinition(home));
-    void ensureAssistantSession(ctx, scope, host.sessionController).then(async (ensured) => {
-      if (ensured?.ok && home) await runScheduleMigrationOnce(host, ensured.sessionId);
-    }).catch((error) => {
-      ctx.logger?.warn?.(`dsh-whale assistant ensure failed: ${error?.message ?? error}`);
-    });
+    if (hadLegacyWhale) {
+      void ensureAssistantSession(ctx, scope, host.sessionController).then(async (ensured) => {
+        if (ensured?.ok && home) await runScheduleMigrationOnce(host, ensured.sessionId);
+      }).catch((error) => {
+        ctx.logger?.warn?.(`dsh-whale assistant ensure failed: ${error?.message ?? error}`);
+      });
+    }
     if (home) {
       startPulse(host, {
         home: whaleHomeDir(home),

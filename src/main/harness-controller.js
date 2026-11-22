@@ -784,7 +784,7 @@ class HarnessController extends EventEmitter {
     // disable list never applies and missing vendor files leave it off for
     // this start (listed in 启动诊断).
     const whale = await this.prepareOptionalBuiltin('鲸鱼娘助理（dsh-whale）', () => this.ensureDshWhalePlugin({
-      enabled: startConfig.whaleAssistantEnabled === true,
+      enabled: startConfig.whaleAssistantEnabled !== false,
     }), checkCurrent);
     if (whale?.overlayFile) {
       patchFiles.push(whale.overlayFile);
@@ -794,6 +794,14 @@ class HarnessController extends EventEmitter {
     } else if (whale && whale.ok) {
       this.dsh.log(whale.added ? '已接入桌面内置 dsh-whale（鲸鱼娘助理）' : '桌面内置 dsh-whale 已就绪', 'app');
     }
+    /** @param {{ harnessRoot?: string }} [opts] */
+    const prepareWhalePlugin = async ({ harnessRoot } = {}) => {
+      if (startConfig.whaleAssistantEnabled === false || !whale?.ok || !harnessRoot) return null;
+      return this.prepareOptionalBuiltin('鲸鱼娘助理（dsh-whale）', () => this.ensureDshWhalePlugin({
+        enabled: true,
+        harnessRoot,
+      }), checkCurrent);
+    };
     const deepseekTools = await this.ensureDeepSeekToolsPlugin();
     checkCurrent();
     if (deepseekTools?.ok === false) throw new Error(`DeepSeek 应用接口不可用：${deepseekTools.error}`);
@@ -837,6 +845,7 @@ class HarnessController extends EventEmitter {
       patchFiles,
       defaultPatchFile,
       prepareProjectPlugin,
+      prepareWhalePlugin,
     };
     checkCurrent();
     const url = await this.dsh.start(startOptions);

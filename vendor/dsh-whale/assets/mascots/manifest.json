@@ -1,0 +1,404 @@
+{
+  "version": 1,
+  "count": 28,
+  "ids": [
+    "W1",
+    "W2",
+    "W3",
+    "W4",
+    "W5",
+    "W6",
+    "W7",
+    "W8",
+    "A1",
+    "B1",
+    "D1",
+    "E1",
+    "F1",
+    "G1",
+    "H1",
+    "H2",
+    "I1",
+    "J1",
+    "K2",
+    "L2",
+    "M1",
+    "N1",
+    "O1",
+    "P3",
+    "Q1",
+    "R3",
+    "S2",
+    "T1"
+  ],
+  "pickable": [
+    "W1",
+    "W2",
+    "W3",
+    "W4",
+    "W5",
+    "W6",
+    "W7",
+    "W8",
+    "A1",
+    "B1",
+    "D1",
+    "E1",
+    "F1",
+    "G1",
+    "H1",
+    "H2",
+    "I1",
+    "J1",
+    "K2",
+    "L2",
+    "M1",
+    "N1",
+    "O1",
+    "P3",
+    "Q1",
+    "R3",
+    "T1"
+  ],
+  "retired": [
+    "S2"
+  ],
+  "mascots": {
+    "W1": {
+      "svg": "W1.svg",
+      "webp": "W1.webp",
+      "rim": "W1-rim.webp",
+      "sizes": {
+        "svg": 40473,
+        "webp": 17656,
+        "rim": 12428
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W2": {
+      "svg": "W2.svg",
+      "webp": "W2.webp",
+      "rim": "W2-rim.webp",
+      "sizes": {
+        "svg": 26373,
+        "webp": 11692,
+        "rim": 7818
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W3": {
+      "svg": "W3.svg",
+      "webp": "W3.webp",
+      "rim": "W3-rim.webp",
+      "sizes": {
+        "svg": 29117,
+        "webp": 14008,
+        "rim": 7558
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W4": {
+      "svg": "W4.svg",
+      "webp": "W4.webp",
+      "rim": "W4-rim.webp",
+      "sizes": {
+        "svg": 23709,
+        "webp": 10170,
+        "rim": 7342
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W5": {
+      "svg": "W5.svg",
+      "webp": "W5.webp",
+      "rim": "W5-rim.webp",
+      "sizes": {
+        "svg": 24573,
+        "webp": 10828,
+        "rim": 7330
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W6": {
+      "svg": "W6.svg",
+      "webp": "W6.webp",
+      "rim": "W6-rim.webp",
+      "sizes": {
+        "svg": 26085,
+        "webp": 11724,
+        "rim": 7570
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W7": {
+      "svg": "W7.svg",
+      "webp": "W7.webp",
+      "rim": "W7-rim.webp",
+      "sizes": {
+        "svg": 24197,
+        "webp": 10282,
+        "rim": 7596
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "W8": {
+      "svg": "W8.svg",
+      "webp": "W8.webp",
+      "rim": "W8-rim.webp",
+      "sizes": {
+        "svg": 33385,
+        "webp": 15506,
+        "rim": 9264
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "A1": {
+      "svg": "A1.svg",
+      "webp": "A1.webp",
+      "rim": "A1-rim.webp",
+      "sizes": {
+        "svg": 12947,
+        "webp": 11548,
+        "rim": 3944
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "B1": {
+      "svg": "B1.svg",
+      "webp": "B1.webp",
+      "rim": "B1-rim.webp",
+      "sizes": {
+        "svg": 15351,
+        "webp": 12152,
+        "rim": 4066
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "D1": {
+      "svg": "D1.svg",
+      "webp": "D1.webp",
+      "rim": "D1-rim.webp",
+      "sizes": {
+        "svg": 10209,
+        "webp": 7510,
+        "rim": 4182
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "E1": {
+      "svg": "E1.svg",
+      "webp": "E1.webp",
+      "rim": "E1-rim.webp",
+      "sizes": {
+        "svg": 16899,
+        "webp": 13192,
+        "rim": 4402
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "F1": {
+      "svg": "F1.svg",
+      "webp": "F1.webp",
+      "rim": "F1-rim.webp",
+      "sizes": {
+        "svg": 11316,
+        "webp": 12100,
+        "rim": 5214
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "G1": {
+      "svg": "G1.svg",
+      "webp": "G1.webp",
+      "rim": "G1-rim.webp",
+      "sizes": {
+        "svg": 14342,
+        "webp": 9952,
+        "rim": 4916
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "H1": {
+      "svg": "H1.svg",
+      "webp": "H1.webp",
+      "rim": "H1-rim.webp",
+      "sizes": {
+        "svg": 14183,
+        "webp": 11334,
+        "rim": 3964
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "H2": {
+      "svg": "H2.svg",
+      "webp": "H2.webp",
+      "rim": "H2-rim.webp",
+      "sizes": {
+        "svg": 10913,
+        "webp": 6834,
+        "rim": 5158
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "I1": {
+      "svg": "I1.svg",
+      "webp": "I1.webp",
+      "rim": "I1-rim.webp",
+      "sizes": {
+        "svg": 17028,
+        "webp": 12122,
+        "rim": 5740
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "J1": {
+      "svg": "J1.svg",
+      "webp": "J1.webp",
+      "rim": "J1-rim.webp",
+      "sizes": {
+        "svg": 19129,
+        "webp": 15424,
+        "rim": 7926
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "K2": {
+      "svg": "K2.svg",
+      "webp": "K2.webp",
+      "rim": "K2-rim.webp",
+      "sizes": {
+        "svg": 16647,
+        "webp": 12346,
+        "rim": 5066
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "L2": {
+      "svg": "L2.svg",
+      "webp": "L2.webp",
+      "rim": "L2-rim.webp",
+      "sizes": {
+        "svg": 13762,
+        "webp": 13880,
+        "rim": 6580
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "M1": {
+      "svg": "M1.svg",
+      "webp": "M1.webp",
+      "rim": "M1-rim.webp",
+      "sizes": {
+        "svg": 14664,
+        "webp": 9704,
+        "rim": 5388
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "N1": {
+      "svg": "N1.svg",
+      "webp": "N1.webp",
+      "rim": "N1-rim.webp",
+      "sizes": {
+        "svg": 13273,
+        "webp": 12584,
+        "rim": 4100
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "O1": {
+      "svg": "O1.svg",
+      "webp": "O1.webp",
+      "rim": "O1-rim.webp",
+      "sizes": {
+        "svg": 14574,
+        "webp": 13190,
+        "rim": 5458
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "P3": {
+      "svg": "P3.svg",
+      "webp": "P3.webp",
+      "rim": "P3-rim.webp",
+      "sizes": {
+        "svg": 10741,
+        "webp": 11156,
+        "rim": 3904
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "Q1": {
+      "svg": "Q1.svg",
+      "webp": "Q1.webp",
+      "rim": "Q1-rim.webp",
+      "sizes": {
+        "svg": 15598,
+        "webp": 13466,
+        "rim": 5894
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "R3": {
+      "svg": "R3.svg",
+      "webp": "R3.webp",
+      "rim": "R3-rim.webp",
+      "sizes": {
+        "svg": 15186,
+        "webp": 11766,
+        "rim": 5078
+      },
+      "pickable": true,
+      "retired": false
+    },
+    "S2": {
+      "svg": "S2.svg",
+      "webp": "S2.webp",
+      "rim": "S2-rim.webp",
+      "sizes": {
+        "svg": 14135,
+        "webp": 10430,
+        "rim": 4616
+      },
+      "pickable": false,
+      "retired": true
+    },
+    "T1": {
+      "svg": "T1.svg",
+      "webp": "T1.webp",
+      "rim": "T1-rim.webp",
+      "sizes": {
+        "svg": 12809,
+        "webp": 9508,
+        "rim": 5034
+      },
+      "pickable": true,
+      "retired": false
+    }
+  }
+}

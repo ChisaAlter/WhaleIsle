@@ -1,92 +1,137 @@
-import { internalSecret } from './internal-secret.mjs';
-import TeamService from '@deepseek-ai/dsh-agent-team';
-import { randomUUID } from 'node:crypto';
+/**
+ * WhaleIsle Projects — Host plugin entry point.
+ *
+ * Mounts:
+ * - `projects` service (`ctx.provide('projects', service)`) for `dsh-task-control` & `dsh-whale`
+ * - Dynamic coordinator system prompt section (`projects:coordinator`, order 700)
+ * - Lightweight compatibility aliases for legacy Project preset ids
+ * - `/projects-api` HTTP + SSE routes
+ * - The 8 `projects_*` agent tools
+ * - `subagent/end` settlement listener
+ */
 import z from '@deepseek-ai/schemastery';
-import { CatalogStore } from './catalog-store.js';
-import { acquireWriter } from './files.js';
+import { internalSecret } from './internal-secret.mjs';
+import { registerProjectsHttp } from './http.js';
+import { COORDINATOR_SECTION_NAME, COORDINATOR_SECTION_ORDER } from './runner.js';
+import { messageOf } from './schema.js';
 import { ProjectService } from './service.js';
-import { registerProjectTransport } from './transport.js';
-import { ALL_WORKER_PRESETS, registerProjectPresets } from './presets.js';
-export const name = 'whale-project';
-export const inject = ['loader', 'storageDomain', 'sessionController', 'sessionPersistence', 'sessions', 'sessionProjections', 'agents', 'subagents', 'agentPresets', 'tools', 'workspaceRegistry'];
+import { registerProjectTools } from './tools.js';
+
+export const name = 'dsh-project';
+export const inject = ['tools'];
 export const Config = z.object({});
 
-/** Reuse the configured Team provider before mounting the Project consumer. */
-export async function apply(ctx) {
-  if (!ctx.get('agentTeams')) {
-    // Loader imports entries concurrently; an enabled provider may still be importing.
-    const configured = [...ctx.loader.entries()].find(entry => entry.options.name === '@deepseek-ai/dsh-agent-team' && !entry.disabled);
-    if (configured) { if (!configured.fiber) await configured.init(); await configured.fiber?.await(); }
-    else await ctx.plugin(TeamService);
-  }
-  await ctx.inject(['agentTeams'], mountProject);
+const LEGACY_PRESET_ALIASES = Object.freeze([
+  'project-coordinator',
+  'project-worker',
+  'project-worker-readonly',
+  'project-worker-research',
+  'project-worker-docs',
+  'project-worker-development',
+]);
+
+function createDesktopBridge() {
+  return async (action, payload = {}) => {
+    const base = process.env.DSH_DESKTOP_INSTALL_URL;
+    const token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN');
+    if (!base || !token) {
+      const error = new Error('Project desktop bridge is unavailable.');
+      error.status = 503;
+      throw error;
+    }
+    const response = await fetch(new URL('/desktop/project', base), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok === false) {
+      const error = new Error(result.error || `Project desktop request failed (${response.status}).`);
+      error.status = response.ok ? 500 : response.status;
+      throw error;
+    }
+    return result;
+  };
 }
 
-/** Optional Project failure must leave ordinary conversations available. */
-async function mountProject(ctx) {
-  let releaseWriter, store, service;
-  ctx.effect(() => async () => {
-    try { await service?.dispose?.({ persist: false }); }
-    finally { try { await store?.close(); } finally { await releaseWriter?.(); } }
-  });
-  try {
-    const teams = ctx.agentTeams;
-    const home = process.env.DSH_HOME || process.env.DSHD_HOME;
-    if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
-    releaseWriter = await acquireWriter(home, randomUUID());
-    store = await CatalogStore.open(ctx, home, ctx.sessionPersistence);
-    const desktop = async (action, payload) => {
-      const base = process.env.DSH_DESKTOP_INSTALL_URL, token = internalSecret('DSH_DESKTOP_INSTALL_TOKEN');
-      if (!base || !token) throw new Error('Project desktop bridge is unavailable.');
-      const response = await fetch(new URL('/desktop/project', base), { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ action, ...payload }) });
-      const result = await response.json(); if (!response.ok || result.ok === false) throw new Error(result.error || `Project desktop request failed (${response.status}).`); return result;
-    };
-    service = new ProjectService(ctx, store, { home, desktop, teams });
-    // Dynamic role tool lookup works during recovery without an inject cycle.
-    ctx.provide('projects', service);
-    ctx.on('subagent/delegate', async (request, exec) => {
-      if (service.state().projects.some(project => project.coordinatorSessionId === exec.agent?.id) || service.state().workers.some(worker => worker.sessionId === exec.agent?.id)) return service.nativeDelegate(request, exec);
-    });
-    ctx.tools.guard(exec => {
-      if (!service.state().projects.some(item => item.coordinatorSessionId === exec.agent?.id)
-        && !service.state().workers.some(item => item.sessionId === exec.agent?.id)) return;
-      return service.available ? service.guard(exec) : 'Project Host is unavailable.';
-    });
-    ctx.on('agent-preset/before-select', ({ agent, agentPreset }) => {
-      if (service.state().projects.some(item => item.coordinatorSessionId === agent.id)) {
-        if (agentPreset !== 'project-coordinator') throw new Error('Project session roles cannot be changed by preset selection.');
-        return;
+function registerLegacyPresetAliases(ctx) {
+  ctx.inject(['agentPresets'], async (presetCtx) => {
+    const registry = presetCtx.agentPresets;
+    if (!registry || typeof registry.register !== 'function') return;
+    let existing = new Set();
+    try {
+      if (typeof registry.list === 'function') {
+        const rows = await registry.list();
+        existing = new Set((Array.isArray(rows) ? rows : []).map((row) => row?.id).filter(Boolean));
       }
-      const worker = service.state().workers.find(item => item.sessionId === agent.id);
-      if (worker && !ALL_WORKER_PRESETS.has(agentPreset)) {
-        throw new Error('Project session roles cannot be changed by preset selection.');
-      }
-    });
-    await registerProjectPresets(ctx);
-    ctx.on('agent/created', async ({ agent }) => {
-      const project = service.state().projects.find(item => item.coordinatorSessionId === agent.id);
-      const worker = service.state().workers.find(item => item.sessionId === agent.id);
-      if (project) agent.session.append('session/presentation', { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory });
-      else if (worker) {
-        if (worker.preset && ctx.agentPresets?.composedPreset?.(agent.ctx) !== worker.preset) {
-          await ctx.agentPresets.mount(agent.ctx, worker.preset);
+    } catch {
+      existing = new Set();
+    }
+    for (const id of LEGACY_PRESET_ALIASES) {
+      if (existing.has(id)) continue;
+      try {
+        const dispose = await registry.register({
+          id,
+          name: `Legacy ${id}`,
+          hidden: true,
+          plugins: [],
+        });
+        if (typeof dispose === 'function') {
+          presetCtx.effect(() => dispose, `dsh-project: legacy preset alias ${id}`);
         }
-        agent.session.append('session/presentation', { owner: 'project', title: service.stream(worker.workstreamId).title, composer: 'managed' });
+      } catch (error) {
+        console.warn(`dsh-project: could not register legacy preset alias ${id}: ${messageOf(error)}`);
       }
-      service.approvals.created(agent);
-    });
-    ctx.on('subagent/start', info => { service.track(service.runStarted(info), 'Project start accounting failed'); });
-    ctx.on('subagent/end', info => { service.track(service.runEnded(info), 'Project end accounting failed'); });
-    ctx.on('agent/pre-step', (input, next) => service.preStep(input, next));
-    ctx.on('session/event', (session, event) => { service.track(service.assistantReply(session, event), 'Project summary accounting failed'); });
-    ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { service.track(service.jobChanged(event), 'Project job observation failed'); })));
-    await service.recover();
-  } catch (error) {
-    const issues = error.cause?.issues ?? error.issues;
-    const message = issues?.find(issue => issue.code === 'custom')?.message ?? error.message;
-    ctx.logger.warn('Project unavailable: %s', message);
-    if (service) { service.available = false; service.error = message; }
-    else { service = { available: false, error: message, async command(endpoint) { if (endpoint === 'list') return { projects: [], available: false, error: this.error }; throw new Error(this.error); } }; ctx.provide('projects', service); }
-  }
-  registerProjectTransport(ctx, service);
+    }
+  });
 }
+
+export function apply(ctx) {
+  const service = new ProjectService(ctx, {
+    home: process.env.DSH_HOME || process.env.DSHD_HOME || '',
+    desktop: createDesktopBridge(),
+  });
+
+  ctx.provide('projects', service);
+
+  ctx.effect(() => () => {
+    service.dispose();
+  }, 'dsh-project: dispose workers and permits');
+
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    try {
+      promptCtx.effect(
+        () =>
+          promptCtx.systemPrompt.section({
+            name: COORDINATOR_SECTION_NAME,
+            order: COORDINATOR_SECTION_ORDER,
+            text: (context) => service.runner.coordinatorSectionFor(context),
+          }),
+        'dsh-project: coordinator system prompt section',
+      );
+    } catch (error) {
+      console.warn(`dsh-project: could not register coordinator prompt section: ${messageOf(error)}`);
+    }
+  });
+
+  registerLegacyPresetAliases(ctx);
+  registerProjectsHttp(ctx, service);
+  registerProjectTools(ctx, service);
+
+  if (typeof ctx.on === 'function') {
+    try {
+      ctx.on('subagent/end', (info) => {
+        void service.settleWorker(info).catch((error) => {
+          console.warn(`dsh-project: could not settle worker ${info?.id}: ${messageOf(error)}`);
+        });
+      });
+    } catch (error) {
+      console.warn(`dsh-project: subagent/end listener unavailable: ${messageOf(error)}`);
+    }
+  }
+}
+
+export { ProjectService };

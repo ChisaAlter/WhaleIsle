@@ -3,8 +3,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { createRequire } = require('node:module');
-const { ensureDirectoryLink } = require('./desktop-plugin-link');
+const {
+  resolveHarnessPeerDirectories,
+  stageDesktopPluginRuntime,
+} = require('./desktop-plugin-runtime');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
 const { atomicWriteFileSync } = require('../shared/fs-safe');
@@ -12,63 +14,11 @@ const { atomicWriteFileSync } = require('../shared/fs-safe');
 const DSH_PROJECT_PACKAGE = 'dsh-project';
 const DSH_PROJECT_ALIASES = [DSH_PROJECT_PACKAGE];
 const DSH_PROJECT_OVERLAY_FILENAME = 'desktop-project.patch.yml';
+const DSH_PROJECT_ENTRIES = ['package.json', 'lib', 'client', 'locale', 'icon.svg', 'cordis.patch.yml', 'README.md'];
 
 /** Resolve peers from the same CLI/bundle instances that compose Harness. */
 function projectPeerDirectories(harnessRoot, manifest) {
-  const cli = path.join(harnessRoot, 'apps', 'cli', 'package.json');
-  const anchors = [cli];
-  const find = (name) => {
-    for (const anchor of anchors) {
-      if (!fs.existsSync(anchor)) continue;
-      for (const modules of createRequire(anchor).resolve.paths(name) || []) {
-        const dir = path.join(modules, name);
-        if (fs.existsSync(path.join(dir, 'package.json'))) return fs.realpathSync(dir);
-      }
-    }
-    return null;
-  };
-  for (const bundle of ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']) {
-    const dir = find(bundle); if (dir) anchors.push(path.join(dir, 'package.json'));
-  }
-  const directories = new Map(), remaining = new Set(Object.keys(manifest.peerDependencies || {}));
-  // A schema peer such as zod is owned by storage-domain's isolated install.
-  while (remaining.size) {
-    let found = false;
-    for (const name of remaining) {
-      const dir = find(name); if (!dir) continue;
-      const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-      const missing = missingDeclaredEntries(dir, pkg).filter(entry => !entry.endsWith('.ts'));
-      if (missing.length) throw new Error(`Project peer ${name} has missing runtime entries: ${missing.join(',')}`);
-      directories.set(name, dir); anchors.push(path.join(dir, 'package.json')); remaining.delete(name); found = true;
-    }
-    if (!found) throw new Error(`Project peers unavailable: ${[...remaining].join(',')}`);
-  }
-  return directories;
-}
-
-function ownedDirectory(parent, name) {
-  const target = path.join(parent, name);
-  let info; try { info = fs.lstatSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  if (info && (info.isSymbolicLink() || !info.isDirectory())) throw new Error(`Project runtime directory was replaced: ${target}`);
-  if (!info) fs.mkdirSync(target);
-  return target;
-}
-function copyRuntime(source, target) {
-  const info = fs.lstatSync(source);
-  if (info.isSymbolicLink()) throw new Error(`Project runtime source is a link: ${source}`);
-  let destination; try { destination = fs.lstatSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  if (destination?.isSymbolicLink()) throw new Error(`Project runtime target was replaced: ${target}`);
-  if (info.isDirectory()) {
-    if (destination && !destination.isDirectory()) throw new Error(`Project runtime directory contains a file: ${target}`);
-    if (!destination) fs.mkdirSync(target);
-    const names = fs.readdirSync(source);
-    // Drop entries the current source no longer ships so stale modules cannot be imported after an upgrade.
-    for (const name of fs.readdirSync(target)) if (!names.includes(name)) fs.rmSync(path.join(target, name), { recursive: true, force: true });
-    for (const name of names) copyRuntime(path.join(source, name), path.join(target, name));
-  } else {
-    if (destination && !destination.isFile()) throw new Error(`Project runtime file contains a directory: ${target}`);
-    fs.copyFileSync(source, target);
-  }
+  return resolveHarnessPeerDirectories(harnessRoot, manifest, { label: 'Project' });
 }
 
 // Project is on by default and can be disabled from Settings › Interface. Hidden
@@ -100,21 +50,15 @@ async function ensureDesktopDshProject(options = {}) {
   catch { return { ok: false, sourceDir, error: 'missing-source:package.json' }; }
   const missing = [...missingDeclaredEntries(sourceDir, manifest), ...missingRuntimeFiles(sourceDir)];
   if (missing.length) return { ok: false, sourceDir, error: `missing-source:${missing.join(',')}` };
-  const peers = Object.keys(manifest.peerDependencies || {}).length
-    ? projectPeerDirectories(options.harnessRoot || require('./paths').harnessRoot(), manifest) : new Map();
-  fs.mkdirSync(profileDir, { recursive: true });
-  const owned = ownedDirectory(ownedDirectory(fs.realpathSync.native(profileDir), 'desktop-plugins'), DSH_PROJECT_PACKAGE);
-  const runtimeDir = ownedDirectory(owned, 'runtime');
-  // Installed resources may be read-only. All runtime peer links live in the profile.
-  for (const name of ['package.json', 'lib', 'client', 'cordis.patch.yml', 'README.md']) {
-    if (fs.existsSync(path.join(sourceDir, name))) copyRuntime(path.join(sourceDir, name), path.join(runtimeDir, name));
-  }
-  const modules = ownedDirectory(runtimeDir, 'node_modules');
-  for (const [name, dir] of peers) {
-    const parts = name.split('/'), parent = parts.length === 2 ? ownedDirectory(modules, parts[0]) : modules;
-    ensureDirectoryLink(dir, path.join(parent, parts.at(-1)));
-  }
-  ensureDirectoryLink(runtimeDir, path.join(profileDir, 'node_modules', DSH_PROJECT_PACKAGE));
+  const { runtimeDir } = stageDesktopPluginRuntime({
+    packageName: DSH_PROJECT_PACKAGE,
+    sourceDir,
+    profileDir,
+    harnessRoot: options.harnessRoot,
+    manifest,
+    entries: DSH_PROJECT_ENTRIES,
+    label: 'Project',
+  });
   const added = !fs.existsSync(overlayFile);
   fs.mkdirSync(path.dirname(overlayFile), { recursive: true });
   const contents = [

@@ -94,7 +94,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
   const shell = desktopShell()
   const [enabled, setEnabled] = useState(true)
   const [settings, setSettings] = useState<Live2dPetSettings>({})
-  const [whaleAssistant, setWhaleAssistant] = useState(false)
+  const [whaleAssistant, setWhaleAssistant] = useState(true)
   const [lookRoutes, setLookRoutes] = useState<readonly LookRoute[] | undefined>(undefined)
   const [lookLoadError, setLookLoadError] = useState('')
   const [error, setError] = useState('')
@@ -113,7 +113,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
       if (cancelled) return
       setEnabled(config?.live2dPet?.enabled !== false)
       setSettings(config?.live2dPet?.settings ?? {})
-      setWhaleAssistant(config?.whaleAssistantEnabled === true)
+      setWhaleAssistant(config?.whaleAssistantEnabled !== false)
       setReadError('')
     }).catch((caught: unknown) => {
       if (cancelled) return

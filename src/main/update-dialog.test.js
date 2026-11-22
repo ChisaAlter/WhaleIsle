@@ -110,3 +110,45 @@ test('both available download choices survive confirmation and cancellation neve
     f.dialog.dispose();
   }
 });
+
+test('ShellConfirmDialog forwards sanitized tone, attribution, and requestSection into view', () => {
+  const f = dialogFixture();
+  void f.dialog.show(f.parent, {
+    title: 't',
+    message: 'm',
+    tone: 'danger',
+    attribution: { source: '来自bot_reply的请求', level: '判定等级：破坏性', tone: 'danger' },
+    requestSection: { caption: '请求内容', summary: '删除记录', details: 'id=1', hint: '', isSecret: false },
+  });
+  assert.equal(f.dialog.active.view.tone, 'danger');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.dialog.active.view.attribution)), {
+    source: '来自bot_reply的请求',
+    level: '判定等级：破坏性',
+    tone: 'danger',
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(f.dialog.active.view.requestSection)), {
+    caption: '请求内容',
+    summary: '删除记录',
+    details: 'id=1',
+    hint: '',
+    isSecret: false,
+  });
+  void f.dialog.show(f.parent, {
+    title: 'fallback',
+    message: 'm',
+    type: 'warning',
+    tone: 'bogus',
+  });
+  assert.equal(f.dialog.active.view.tone, 'warning');
+  assert.equal(f.dialog.active.view.attribution, null);
+  assert.equal(f.dialog.active.view.requestSection, null);
+  f.dialog.dispose();
+});
+
+test('update-dialog.css follows DSHD design-language token and geometry rules', () => {
+  assert.match(css, /border-radius:\s*var\(--dsw-radius-dialog\)/);
+  assert.match(css, /border-radius:\s*var\(--dsw-radius-button\)/);
+  assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}|rgba?\(/);
+  assert.doesNotMatch(css, /data-ds-dark-theme|data-theme|prefers-color-scheme/);
+  assert.doesNotMatch(css, /::-webkit-scrollbar/);
+});

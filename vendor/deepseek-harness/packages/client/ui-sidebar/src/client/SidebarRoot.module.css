@@ -878,6 +878,41 @@
   flex: 1;
 }
 
+.sectionsBefore {
+  order: 0;
+  flex: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspacesSlot {
+  order: 1;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionsAfter {
+  order: 2;
+  flex: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionsBefore:empty,
+.sectionsAfter:empty {
+  display: none;
+}
+
+/* Reorder Workspaces above before-sections without unmounting state. */
+:global(html[data-sidebar-projects-first='true']) .regionArea > .workspacesSlot {
+  order: -1;
+}
+
 /* Footer seats: additive actions stack above Settings. Each occupant owns its
    button geometry and hover chrome. */
 .footArea {

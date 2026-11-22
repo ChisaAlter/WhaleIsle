@@ -9,6 +9,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const { gateTests, harnessDependencies } = require('../../scripts/lib/test-prerequisites.cjs');
 
 const HARNESS_DEPS = harnessDependencies();
@@ -23,6 +24,8 @@ const memoryStoreUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whal
 const vendorRequire = createRequire(path.join(__dirname, '../../vendor/deepseek-harness/package.json'));
 const clientRequire = createRequire(path.join(__dirname, '../../vendor/dsh-im/package.json'));
 const React = clientRequire('react');
+const ReactJsxRuntime = clientRequire('react/jsx-runtime');
+const ReactDOM = clientRequire('react-dom');
 const { JSDOM } = HARNESS_DEPS.ok ? vendorRequire('jsdom') : {};
 const { act, createElement: h } = React;
 
@@ -62,12 +65,15 @@ function createFakeHttpRes() {
 nodeTest('/dsh-whale/events SSE enforces auth, streams authoritative snapshots & live updates, and projects needsYou', async (t) => {
   const { apply: applyWhaleHost } = await import(whaleIndexUrl);
   const { buildWorkbenchSnapshot } = await import(sseHubUrl);
-  const home = makeTempDir(t, 'whale-sse-host-');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-sse-host-'));
   const prevHome = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
-  t.after(() => {
+  const cleanups = [];
+  t.after(async () => {
+    for (const fn of cleanups.splice(0).reverse()) await fn?.();
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
   const subscribers = new Set();
@@ -107,12 +113,21 @@ nodeTest('/dsh-whale/events SSE enforces auth, streams authoritative snapshots &
   ]);
 
   let requestHandler = null;
-  const cleanups = [];
   const hostCtx = {
     get: (name) => services.get(name),
     provide: (name, value) => services.set(name, value),
     on: () => {},
-    effect: (fn) => { const d = fn(); if (typeof d === 'function') cleanups.push(d); },
+    effect: (fn) => {
+      const d = fn();
+      if (typeof d === 'function') cleanups.push(d);
+      else if (d && typeof d.then === 'function') {
+        cleanups.push(async () => {
+          const resolved = await d;
+          if (typeof resolved === 'function') await resolved();
+        });
+      }
+      return () => {};
+    },
     logger: { warn: () => {}, info: () => {} },
     agentPresets: { register: () => () => {} },
     systemPrompt: { section: () => () => {} },
@@ -126,7 +141,6 @@ nodeTest('/dsh-whale/events SSE enforces auth, streams authoritative snapshots &
       },
     },
   };
-  t.after(() => { for (const fn of cleanups.reverse()) fn?.(); });
 
   applyWhaleHost(hostCtx, {});
   assert.ok(requestHandler, 'webServer.register must register /dsh-whale handler');
@@ -236,7 +250,7 @@ nodeTest('/side side-question runs zero-tool read-only llm.stream, never mutates
   assert.equal(mainAppends.length, 0);
 });
 
-test('Big Fish client uses SSE + reconnect snapshot reconciliation, needsYou badges, deliverables, review continue, autoAdvance, and /side modal', async (t) => {
+test('Orca Bots client mounts single right-panel tab + BotsModalHost, reconciles /dsh-bots/events SSE reconnects, and renders panel tabs & modal portal', async (t) => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
     url: 'http://localhost:3123/',
     pretendToBeVisual: true,
@@ -265,94 +279,99 @@ test('Big Fish client uses SSE + reconnect snapshot reconciliation, needsYou bad
   }
 
   const rpcCalls = [];
-  const fetchCalls = [];
-  let snapshotPayload = {
-    cards: [
+  const botsPayload = {
+    botsEnabled: true,
+    hideBotCreatedWorkspaces: true,
+    petBotId: 'bot-1',
+    bots: [
       {
-        id: 'todo-1',
-        title: '代码审查任务',
-        description: '检查接口变更',
-        mode: 'workspace-task',
-        cwd: 'C:/work/repo',
-        state: 'waiting_approval',
-        phase: '等待审批：shell',
-        pendingInput: ['approval'],
-        sessionId: 'task-sess-1',
-        deliverables: [],
-        runs: [{ runId: 'r1', attempt: 1, state: 'waiting_approval' }],
-        summary: '',
-        error: '',
-        pinned: false,
-        archived: false,
-      },
-      {
-        id: 'todo-2',
-        title: '产出周报',
-        description: '汇总交付',
-        mode: 'workspace-task',
-        cwd: 'C:/work/briefs',
-        state: 'review',
-        phase: '待验收',
-        pendingInput: [],
-        sessionId: 'task-sess-2',
-        deliverables: [{ path: 'C:/work/briefs/weekly.md', description: '本周总结', seq: 4, index: 0, sessionId: 'task-sess-2' }],
-        runs: [{ runId: 'r2', attempt: 1, state: 'review' }],
-        summary: '已完成三项核心交付总结。',
-        error: '',
-        pinned: false,
-        archived: false,
+        id: 'bot-1',
+        name: '鲸鱼娘',
+        purpose: '研发助理',
+        avatar: 'whale',
+        avatarColor: '#3b82f6',
+        paused: false,
+        dotState: 'working',
+        homeSessionId: 'sess-bot-1',
+        chatSessionId: 'sess-bot-1',
+        homePath: 'C:/Users/demo/.whaleisle/bots/bot-1',
+        needsYouCount: 1,
       },
     ],
-    autoAdvance: false,
-    needsYou: [
-      { kind: 'card', cardId: 'todo-1', title: '代码审查任务', sessionId: 'task-sess-1', state: 'waiting_approval', pendingInput: ['approval'], phase: '等待审批：shell' },
-    ],
-    activeCount: 1,
+    groups: [],
+    chatsByBot: {
+      'bot-1': {
+        botId: 'bot-1',
+        chats: [
+          { chatId: 'sess-bot-1', sessionId: 'sess-bot-1', origin: 'home', title: 'Home Chat' },
+          { chatId: 'sess-side-1', sessionId: 'sess-side-1', origin: 'side', title: '发布复盘' },
+        ],
+      },
+    },
+    needsYou: { 'bot-1': 1 },
+    needsYouAt: Date.now(),
   };
 
-  const rpcHandler = async (channel, endpoint, body = {}) => {
-    rpcCalls.push({ channel, endpoint, body });
-    if (endpoint === 'todos/snapshot') return { ok: true, value: snapshotPayload };
-    if (endpoint === 'todos/list') return { ok: true, value: { cards: snapshotPayload.cards } };
-    if (endpoint === 'todos/auto-advance') {
-      snapshotPayload = { ...snapshotPayload, autoAdvance: body.enabled === true };
-      return { ok: true, value: { autoAdvance: snapshotPayload.autoAdvance } };
-    }
-    if (endpoint === 'todos/continue') {
-      return { ok: true, value: { card: { id: body.id, state: 'running', sessionId: 'task-sess-2' } } };
-    }
-    if (endpoint === 'side/ask') {
-      return { ok: true, value: { ok: true, answer: '这是旁路即时回答，不写入主会话。', model: 'deepseek/deepseek-chat' } };
-    }
-    if (endpoint === 'state' || endpoint === 'ensure' || endpoint === 'settings') {
-      return {
-        ok: true,
-        value: {
-          ok: true,
-          settings: { enabled: true, bigFishEnabled: true, bigFishTab: 'task', name: '鲸鱼娘', sessionId: 'resident-1', autoAdvance: snapshotPayload.autoAdvance },
-          sessionId: 'resident-1',
-        },
-      };
-    }
-    return { ok: true, value: { ok: true } };
-  };
+  const workItems = [
+    {
+      uid: 'item-1',
+      number: 1,
+      botId: 'bot-1',
+      title: '审批生产发布计划',
+      status: 'needs_you',
+      kind: 'ask',
+      body: '是否现在合并并发布？',
+      createdAt: Date.now() - 10_000,
+      updatedAt: Date.now() - 5_000,
+    },
+    {
+      uid: 'item-2',
+      number: 2,
+      botId: 'bot-1',
+      title: '整理本周周报',
+      status: 'working',
+      kind: 'task',
+      body: '正在汇总提交记录',
+      createdAt: Date.now() - 20_000,
+      updatedAt: Date.now() - 1_000,
+    },
+  ];
 
   const fakeFetch = async (url, init = {}) => {
-    const body = init.body ? JSON.parse(init.body) : null;
-    fetchCalls.push({ url: String(url), method: init.method ?? 'GET', body });
-    return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '{"ok":true}' };
+    const rawUrl = String(url);
+    if (rawUrl.endsWith('/dsh-bots/rpc')) {
+      const body = init.body ? JSON.parse(String(init.body)) : {};
+      rpcCalls.push(body);
+      const { method } = body;
+      let result = { ok: true };
+      if (method === 'bots.list') result = botsPayload;
+      else if (method === 'bots.items.owner.list') result = { items: workItems };
+      else if (method === 'bots.automations.list') result = { automations: [] };
+      else if (method === 'bots.access.list') result = { requests: [] };
+      else if (method === 'bots.suggest') result = { suggestions: [] };
+      else if (method === 'bots.chats.own' || method === 'bots.chats') result = { chats: botsPayload.chatsByBot['bot-1'].chats };
+      else if (method === 'bots.files.list') result = { files: [{ path: 'SOUL.md', size: 120, mtimeMs: Date.now() }] };
+      else if (method === 'bots.connectors') result = { connectors: [] };
+      else if (method === 'bots.agentChoices') result = { models: [] };
+      return { ok: true, status: 200, statusText: 'OK', json: async () => ({ ok: true, result }) };
+    }
+    return { ok: true, status: 200, statusText: 'OK', json: async () => ({ ok: true, result: {} }), text: async () => '<svg></svg>' };
   };
 
   const intervals = [];
+  const origSetInterval = dom.window.setInterval.bind(dom.window);
+  const origClearInterval = dom.window.clearInterval.bind(dom.window);
   const wrappedSetInterval = (fn, ms) => {
     intervals.push(ms);
-    return setInterval(fn, ms);
+    return origSetInterval(fn, ms);
   };
+  dom.window.setInterval = wrappedSetInterval;
 
   const globalValues = {
     window: dom.window,
     document: dom.window.document,
     navigator: dom.window.navigator,
+    localStorage: dom.window.localStorage,
     EventSource: FakeEventSource,
     fetch: fakeFetch,
     IS_REACT_ACT_ENVIRONMENT: true,
@@ -369,92 +388,84 @@ test('Big Fish client uses SSE + reconnect snapshot reconciliation, needsYou bad
   vm.runInNewContext(fs.readFileSync(CLIENT_FILE, 'utf8'), {
     window: dom.window,
     document: dom.window.document,
+    localStorage: dom.window.localStorage,
     EventSource: FakeEventSource,
     fetch: fakeFetch,
-    setTimeout,
-    clearTimeout,
+    setTimeout: dom.window.setTimeout.bind(dom.window),
+    clearTimeout: dom.window.clearTimeout.bind(dom.window),
     setInterval: wrappedSetInterval,
-    clearInterval,
+    clearInterval: origClearInterval,
     AbortController,
     URL,
     URLSearchParams,
     CustomEvent: dom.window.CustomEvent,
+    console,
   }, { filename: CLIENT_FILE });
 
-  const iconStub = () => null;
-  const primitives = {
-    Button: React.forwardRef(function StubButton({ children, loading, feedback, variant, size, ...props }, ref) {
-      return h('button', { type: 'button', ...props, ref }, children);
-    }),
-    Input: (props) => h('input', props),
-    Modal: ({ open, title, children, footer, onClose }) => (open
-      ? h('div', { role: 'dialog', 'aria-label': title },
-          title ? h('h3', null, title) : null,
-          children,
-          footer,
-          onClose ? h('button', { type: 'button', onClick: onClose }, '关闭弹窗') : null)
-      : null),
-    Menu: ({ trigger, children }) => h('div', null, trigger, children),
-    SettingsSelect: ({ value, onChange, options = [], ...props }) => h('select', { ...props, value, onChange: (e) => onChange?.(e.target.value) },
-      options.map((o) => h('option', { key: o.value, value: o.value }, o.label))),
-    StateDot: () => h('span', { className: 'stub-dot' }),
-    Switch: ({ checked, onChange, disabled, 'aria-label': ariaLabel }) => h('input', {
-      type: 'checkbox',
-      checked: Boolean(checked),
-      disabled,
-      'aria-label': ariaLabel,
-      onChange: (e) => onChange?.(e),
-    }),
-    Toast: ({ text }) => (text ? h('div', { role: 'status' }, text) : null),
-    Tooltip: ({ children }) => children,
-    IconSettingsOutline16: iconStub,
-    IconEllipsisOutline16: iconStub,
-    IconPlusOutline16: iconStub,
-    IconPanelRightOutline16: iconStub,
-    IconPinOutlineRegular: iconStub,
-    useModalLayer: () => {},
-  };
+  const { createRoot } = clientRequire('react-dom/client');
   const plugin = registration.factory((name) => {
     if (name === 'react') return React;
-    if (name === 'react-dom') return clientRequire('react-dom');
-    if (name === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
+    if (name === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (name === 'react-dom') return ReactDOM;
+    if (name === 'react-dom/client') return { createRoot };
     return {};
   });
 
   const registeredSlots = new Map();
+  const rightTabs = [];
   const openedSessions = [];
   const cleanups = [];
-  let dictionaries = {};
-  plugin.apply({
-    effect: (fn) => { const d = fn(); if (typeof d === 'function') cleanups.push(d); },
+  const declared = new Set(['sidebar.right.pane.tab', 'shell.overlay', 'sidebar.sections.before']);
+  const sidebarRight = { openTab: () => {}, openTabIn: () => true };
+  const sidebarRightTabs = {
+    register: (def) => {
+      rightTabs.push(def);
+      return () => {};
+    },
+  };
+  const ctx = {
+    effect: (fn) => { const d = fn(); if (typeof d === 'function') cleanups.push(d); return () => d?.(); },
     locale: {
-      register: (_ns, dicts) => { dictionaries = dicts; return () => {}; },
-      bind: () => (key) => dictionaries?.zh?.[key] ?? key,
-      getLocale: () => ({ active: 'zh' }),
+      register: () => () => {},
+      getLocale: () => ({ active: 'zh-CN' }),
+      subscribe: () => () => {},
     },
-    connection: { rpc: { call: rpcHandler } },
     slots: {
-      spec: (name) => name === 'shell.overlay',
+      spec: (name) => declared.has(name),
+      subscribe: () => () => {},
       inject: (_name, fn) => fn(),
-      register: (opts, comp) => { registeredSlots.set(`${opts.name}:${opts.id}`, { opts, comp }); return () => {}; },
+      register: (opts, comp) => { registeredSlots.set(`${opts.name}:${opts.key ?? opts.id ?? ''}`, { opts, comp }); return () => {}; },
     },
-    uiWorkspace: {
-      openSession: (id) => openedSessions.push(id),
-      activeSessionId: () => 'resident-1',
-    },
-    sessions: { activeId: () => 'resident-1', open: (id) => openedSessions.push(id) },
-    layout: { setSidebarCollapsed: () => {}, sidebarCollapsed: false },
-    settingsNavigation: { open: () => {} },
-  });
+    uiWorkspace: { openSession: (id) => openedSessions.push(id) },
+    sessions: { list: { getSnapshot: () => ({ byId: {} }), subscribe: () => () => {} } },
+    layout: { selectPanel: () => {} },
+    settingsNavigation: { open: () => {}, close: () => {} },
+    sidebarRight,
+    sidebarRightTabs,
+    get: (name) => ({ sidebarRight, sidebarRightTabs, uiWorkspace: ctx.uiWorkspace, sessions: ctx.sessions })[name],
+    inject: (_deps, fn) => { fn(ctx); return () => {}; },
+  };
 
-  const workbenchSlot = registeredSlots.get('shell.overlay:dsh-whale.workbench');
-  assert.ok(workbenchSlot, 'Big Fish shell.overlay workbench slot must be registered');
+  plugin.apply(ctx);
 
-  const { createRoot } = clientRequire('react-dom/client');
+  // Single native right-sidebar tab + lightweight BotsModalHost overlay (NO legacy shell.overlay workbench!).
+  assert.equal(rightTabs.length, 1);
+  assert.equal(rightTabs[0].id, 'dsh-whale:bots-panel');
+  assert.equal(rightTabs[0].kind, 'dsh-bots');
+  const rightTabSlot = registeredSlots.get('sidebar.right.pane.tab:dsh-whale:bots-panel');
+  const modalHostSlot = registeredSlots.get('shell.overlay:dsh-bots.modals');
+  const sidebarSlot = registeredSlots.get('sidebar.sections.before:dsh-bots');
+  assert.ok(rightTabSlot, 'native sidebar.right.pane.tab slot must be registered');
+  assert.ok(modalHostSlot, 'shell.overlay:dsh-bots.modals slot must be registered');
+  assert.equal(registeredSlots.has('shell.overlay:dsh-whale.workbench'), false, 'legacy Big Fish workbench overlay must be removed');
+
   const root = createRoot(dom.window.document.querySelector('main'));
   t.after(async () => {
     await act(async () => root.unmount());
-    for (const d of cleanups.reverse()) d?.();
+    for (const d of cleanups.splice(0).reverse()) d?.();
+    for (const es of eventSources) {
+      if (!es.closed) es.close();
+    }
     dom.window.close();
     for (const [k, desc] of Object.entries(savedGlobals)) {
       if (desc) Object.defineProperty(globalThis, k, desc);
@@ -468,117 +479,78 @@ test('Big Fish client uses SSE + reconnect snapshot reconciliation, needsYou bad
     }
   };
 
-  const injected = workbenchSlot.opts.inject();
   await act(async () => {
-    root.render(h(workbenchSlot.comp, {
-      ...injected,
-      renderSlot: () => null,
-    }));
+    root.render(h('div', null,
+      h(sidebarSlot.comp, { wide: true }),
+      h(rightTabSlot.comp, { sessionId: 'sess-bot-1' }),
+      h(modalHostSlot.comp, {}),
+    ));
   });
   await flush();
+
+  // Subscribes via EventSource /dsh-bots/events (NO 3000ms polling interval).
+  assert.equal(intervals.includes(3000), false, '3s setInterval polling must not exist');
+  assert.ok(eventSources.some((es) => es.url.includes('/dsh-bots/events')), 'must subscribe via EventSource /dsh-bots/events');
+
+  // Panel displays bot name and work items fetched via RPC.
+  const initialText = dom.window.document.body.textContent;
+  assert.match(initialText, /鲸鱼娘/);
+  assert.match(initialText, /审批生产发布计划/);
+  assert.match(initialText, /整理本周周报/);
+
+  // Emit initial ready + granular bots:changed SSE event updating needsYou badge.
   await act(async () => {
-    injected.mode.set({
-      active: true,
-      tab: 'task',
-      sideOpen: true,
-      enabled: true,
-      name: '鲸鱼娘',
-      sessionId: 'resident-1',
+    eventSources[0].emit('open');
+    eventSources[0].emit('ready');
+    eventSources[0].emit('bots:changed', {
+      data: JSON.stringify({
+        botIds: ['bot-1'],
+        kinds: ['items'],
+        needsYou: { counts: { 'bot-1': 3 }, at: Date.now() },
+      }),
     });
   });
   await flush();
+  assert.match(dom.window.document.body.textContent, /3/);
 
-  // Connected via SSE /dsh-whale/events (NO 3000ms polling interval!).
-  assert.equal(intervals.includes(3000), false, '3s setInterval polling must be eliminated');
-  assert.ok(eventSources.length >= 1 && eventSources.some((es) => es.url.includes('/dsh-whale/events')), 'must subscribe via EventSource /dsh-whale/events');
-
-  // Push initial snapshot over SSE.
+  // SSE disconnect preserves rendered items; reconnect ready triggers bots.list reconciliation.
+  const listBeforeReconnect = rpcCalls.filter((c) => c.method === 'bots.list').length;
   await act(async () => {
-    for (const es of eventSources) {
-      es.emit('open');
-      es.emit('snapshot', { data: JSON.stringify(snapshotPayload) });
-    }
+    eventSources[0].emit('error', { wasClean: false });
   });
   await flush();
+  assert.match(dom.window.document.body.textContent, /审批生产发布计划/, 'SSE disconnect must not clear rendered items');
 
-  const text = dom.window.document.body.textContent;
-  assert.match(text, /代码审查任务/);
-  assert.match(text, /等待审批/);
-  assert.match(text, /产出周报/);
-  assert.match(text, /weekly\.md|本周总结/);
-
-  // SSE disconnect does NOT mark running/waiting_approval card as ended!
-  const beforeDisconnectCount = rpcCalls.filter((c) => c.endpoint === 'todos/snapshot').length;
   await act(async () => {
-    eventSources[0].emit('error', { wasClean: true });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
   });
   await flush();
-  assert.match(dom.window.document.body.textContent, /等待审批/, 'SSE disconnect must NEVER falsely mark card as ended');
-
-  // Reconnect triggers full snapshot reconciliation.
+  const reconnectedEs = eventSources.at(-1);
+  assert.ok(reconnectedEs && reconnectedEs !== eventSources[0], 'SSE client must open a fresh EventSource on retry');
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1150));
+    reconnectedEs.emit('open');
+    reconnectedEs.emit('ready');
   });
   await flush();
-  const latestEs = eventSources.at(-1);
-  if (latestEs && !latestEs.closed) {
-    await act(async () => { latestEs.emit('open'); });
-    await flush();
-  }
-  const afterReconnectCount = rpcCalls.filter((c) => c.endpoint === 'todos/snapshot').length;
-  assert.ok(afterReconnectCount > beforeDisconnectCount, 'SSE reconnect must trigger full todos/snapshot reconciliation');
+  assert.ok(rpcCalls.filter((c) => c.method === 'bots.list').length > listBeforeReconnect, 'SSE reconnect ready must trigger bots.list reconciliation');
 
-  // Toggle Auto-advance switch -> RPC todos/auto-advance with enabled: true.
-  const autoCheckbox = dom.window.document.querySelector('input[type="checkbox"]');
-  assert.ok(autoCheckbox, 'Auto-advance toggle must be rendered');
-  await act(async () => { autoCheckbox.click(); });
+  // Opening Create menu -> New bot from sidebar triggers BotsModalHost portal dialog without legacy fullscreen overlay.
+  const createTrigger = [...dom.window.document.querySelectorAll('.dsh-bots-header-actions button')].at(-1);
+  assert.ok(createTrigger, 'sidebar header must expose create (+) trigger button');
+  await act(async () => { createTrigger.click(); });
   await flush();
-  const autoCall = rpcCalls.find((c) => c.endpoint === 'todos/auto-advance');
-  assert.ok(autoCall && autoCall.body.enabled === true, 'Auto-advance toggle must send enabled: true');
+  const newBotItem = [...dom.window.document.querySelectorAll('.dsh-bots-popover .dsh-bots-menu-item')][0];
+  assert.ok(newBotItem, 'create popover must render New bot menu item');
+  await act(async () => { newBotItem.click(); });
+  await flush();
+  const dialog = dom.window.document.querySelector('[role="dialog"]');
+  assert.ok(dialog, 'BotsModalHost must portal NewBotDialog into document.body');
+  assert.equal(dom.window.document.documentElement.hasAttribute('data-dsh-whale-mode'), false);
 
-  // Click deliverable Open button -> POST /api/present.open.
-  const openDelivBtn = [...dom.window.document.querySelectorAll('.dsh-whale-deliverable-row button')].find((b) => /打开/.test(b.textContent));
-  assert.ok(openDelivBtn, 'deliverable Open button must be rendered');
-  await act(async () => { openDelivBtn.click(); });
-  await flush();
-  assert.ok(fetchCalls.some((c) => c.url.includes('present.open')));
-
-  // Review inline follow-up revision: click 追问修订 -> enter feedback -> click 继续执行 -> RPC todos/continue.
-  const openContinueBtn = [...dom.window.document.querySelectorAll('button')].find((b) => b.textContent.trim() === '追问修订');
-  assert.ok(openContinueBtn, 'review card must render 追问修订 toggle button');
-  await act(async () => { openContinueBtn.click(); });
-  await flush();
-  const followInput = dom.window.document.querySelector('.dsh-whale-continue-box textarea');
-  assert.ok(followInput, 'review card must render inline follow-up textarea');
-  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set;
+  // Escape on the dialog closes the modal cleanly.
   await act(async () => {
-    setter.call(followInput, '请再补一节结论');
-    followInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    dialog.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   });
-  const followBtn = [...dom.window.document.querySelectorAll('.dsh-whale-continue-box button')].find((b) => /继续执行/.test(b.textContent));
-  assert.ok(followBtn, 'review follow-up submit button must be rendered');
-  await act(async () => { followBtn.click(); });
   await flush();
-  const contCall = rpcCalls.find((c) => c.endpoint === 'todos/continue');
-  assert.ok(contCall, 'review follow-up must call RPC todos/continue');
-  assert.equal(contCall.body.id, 'todo-2');
-  assert.equal(contCall.body.feedback, '请再补一节结论');
-
-  // Open /side modal and ask a question -> RPC side/ask.
-  const sideBtn = [...dom.window.document.querySelectorAll('button')].find((b) => /\/side/.test(b.textContent));
-  assert.ok(sideBtn, '/side button must be rendered in Big Fish mode');
-  await act(async () => { sideBtn.click(); });
-  await flush();
-  const sideInput = dom.window.document.querySelector('.dsh-whale-side-qa textarea');
-  assert.ok(sideInput, '/side modal textarea must be rendered');
-  await act(async () => {
-    setter.call(sideInput, '这两个任务谁先跑完？');
-    sideInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  });
-  const askBtn = [...dom.window.document.querySelectorAll('[role="dialog"] button')].find((b) => /发送|提问/.test(b.textContent));
-  assert.ok(askBtn, '/side submit button must be rendered');
-  await act(async () => { askBtn.click(); });
-  await flush();
-  assert.ok(rpcCalls.some((c) => c.endpoint === 'side/ask'));
-  assert.match(dom.window.document.body.textContent, /这是旁路即时回答，不写入主会话/);
+  assert.equal(dom.window.document.querySelector('[role="dialog"]'), null, 'Escape must dismiss BotsModalHost dialog');
 });

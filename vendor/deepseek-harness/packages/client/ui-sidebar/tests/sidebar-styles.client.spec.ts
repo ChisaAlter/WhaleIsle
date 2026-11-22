@@ -148,4 +148,13 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.fallbackBrandName')?.get('font-size')).toBe('17px')
     expect(declarations('.fallbackBrandName')?.get('white-space')).toBe('nowrap')
   })
+
+  it('collapses empty additive section wrappers and supports reordering workspaces first', () => {
+    expect(declarations('.sectionsBefore:empty')?.get('display')).toBe('none')
+    expect(declarations('.sectionsAfter:empty')?.get('display')).toBe('none')
+    expect(declarations('.sectionsBefore')?.get('order')).toBe('0')
+    expect(declarations('.workspacesSlot')?.get('order')).toBe('1')
+    expect(declarations('.sectionsAfter')?.get('order')).toBe('2')
+    expect(declarations(":global(html[data-sidebar-projects-first='true']) .regionArea > .workspacesSlot")?.get('order')).toBe('-1')
+  })
 })

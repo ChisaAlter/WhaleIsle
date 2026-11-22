@@ -9,6 +9,7 @@ const http = require('node:http');
 const { EventEmitter } = require('node:events');
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const toUrl = (rel) => pathToFileURL(path.join(root, rel)).href;
@@ -50,14 +51,30 @@ test('dsh-whale RPC memory/replace and memory/clear work end-to-end without Refe
   await withTempDir(async (home) => {
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = home;
+    const disposers = [];
     try {
       let webHandler = null;
       const ctx = {
         logger: { warn() {} },
         systemPrompt: { section() {} },
         connection: { requestRejection: () => undefined },
-        webServer: { register(route) { webHandler = route.handler; return () => {}; } },
-        effect(fn) { return fn(); },
+        webServer: {
+          register(route) {
+            if (route?.path === '/dsh-whale' || !webHandler) webHandler = route.handler;
+            return () => {};
+          },
+        },
+        effect(fn) {
+          const dispose = fn();
+          if (typeof dispose === 'function') disposers.push(dispose);
+          else if (dispose && typeof dispose.then === 'function') {
+            disposers.push(async () => {
+              const resolved = await dispose;
+              if (typeof resolved === 'function') await resolved();
+            });
+          }
+          return () => {};
+        },
         on() { return () => {}; },
         get() { return undefined; },
         inject() {},
@@ -97,6 +114,7 @@ test('dsh-whale RPC memory/replace and memory/clear work end-to-end without Refe
       assert.equal(cleared.result.value.ok, true);
       assert.match(fs.readFileSync(memoryIndexPath(home), 'utf8'), /还没有记住什么/);
     } finally {
+      for (const fn of disposers.splice(0).reverse()) await fn?.();
       if (prevHome === undefined) delete process.env.DSH_HOME;
       else process.env.DSH_HOME = prevHome;
     }

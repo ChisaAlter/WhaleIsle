@@ -19,6 +19,7 @@ const { readPin } = require('../shared/harness-upstream');
 const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
 const { passSecretToChild, INTERNAL_SECRETS_END, INTERNAL_SECRETS_ENV } = require('../shared/secret');
 const { probeHarnessReady, isUnpublishedHarnessNpm } = require('./harness-browser-auth');
+const { applyPreparedPluginOverlays } = require('./desktop-plugin-runtime');
 
 const PORT_SCAN_RANGE = 50;
 
@@ -1067,13 +1068,7 @@ class DshManager extends EventEmitter {
       if (this.preparationAbort === preparationAbort) this.preparationAbort = null;
     }
 
-    if (typeof options.prepareProjectPlugin === 'function') {
-      const project = await options.prepareProjectPlugin({ harnessRoot: preparedHarnessRoot });
-      if (!isCurrent()) throw cancelledError();
-      if (project?.overlayFile) {
-        options = { ...options, patchFiles: [...(options.patchFiles || []), project.overlayFile] };
-      }
-    }
+    options = await applyPreparedPluginOverlays(options, { harnessRoot: preparedHarnessRoot, isCurrent, cancelledError });
 
     const port = Number(options.port) || Number(config.port) || 3080;
     const launch = this._buildLaunch({ ...config, ...options, port });

@@ -25,8 +25,10 @@ import { registerDesktopTools } from './desktop-tools.js';
 import { registerStickerTools } from './sticker-tools.js';
 import { registerProfileTools } from './profile-tools.js';
 import { registerTaskTools } from './task-tools.js';
+import { registerProjectBridgeTools } from './project-bridge-tools.js';
 import { registerMemoryTools } from './memory-tools.js';
 import { registerDiscoveryTools } from './discovery-tools.js';
+import { registerBotTools } from './bots/bot-tools-registry.js';
 
 export const name = 'dsh-whale-tools';
 export const inject = ['tools', 'agents'];
@@ -599,7 +601,9 @@ export function apply(ctx) {
   registerSessionTools(ctx, { getSelfId });
   registerDiscoveryTools(ctx, { getSelfId });
   registerTaskTools(ctx);
+  registerProjectBridgeTools(ctx, { getSelfId });
   registerDesktopTools(ctx);
   registerProfileTools(ctx);
   registerStickerTools(ctx);
+  registerBotTools(ctx, { defineTool });
 }

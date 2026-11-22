@@ -48,6 +48,25 @@ function atEnd(viewport: HTMLElement): boolean {
 }
 
 /**
+ * Find a nested independent scroller (marked `data-sidebar-nested-scroller`)
+ * between the wheel target and the sidebar viewport that can still absorb the
+ * current vertical delta natively before handing off to the outer column.
+ */
+function canAbsorbNestedScroll(viewport: HTMLElement, scroller: HTMLElement, target: Node | null, delta: number): boolean {
+  if (target === null || scroller.contains(target)) return false
+  let node: HTMLElement | null = target instanceof HTMLElement ? target : target.parentElement
+  while (node !== null && node !== viewport) {
+    if (node.hasAttribute('data-sidebar-nested-scroller')) {
+      const canScrollDown = delta > 0 && node.scrollTop + node.clientHeight < node.scrollHeight - 1
+      const canScrollUp = delta < 0 && node.scrollTop > 0
+      if (canScrollDown || canScrollUp) return true
+    }
+    node = node.parentElement
+  }
+  return false
+}
+
+/**
  * Create the hand-off for one sidebar render tree.
  * @returns The viewport ref callback and the occupant hook; both keep their identity.
  */
@@ -62,6 +81,7 @@ export function createScrollHandoff(): ScrollHandoff {
     // A gesture split here stays here: native scrolling does not resume within its momentum.
     const continuing = event.cancelable && event.timeStamp - lastSplit < GESTURE_GAP_MS
     if (!continuing) {
+      if (canAbsorbNestedScroll(viewport, scroller, event.target as Node | null, delta)) return
       // With the navigation gone, the section scroller under the pointer takes this step natively.
       const native = atEnd(viewport) && scroller.contains(event.target as Node | null)
       if (native && (delta > 0 || scroller.scrollTop + delta >= 0)) return

@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const moduleUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib/todo-service.js')).href;
 
 test('unreadable task storage reports unavailability without replacing established assistant services', async () => {

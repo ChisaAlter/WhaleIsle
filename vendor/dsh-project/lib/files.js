@@ -1,30 +1,21 @@
 /** Project-owned knowledge and exports never widen access through a filesystem link. */
 import fs from 'node:fs/promises';
 import { createReadStream, lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { join, resolve, relative, isAbsolute } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { join, resolve, relative } from 'node:path';
+import { createHash } from 'node:crypto';
+import {
+  atomicWriteText as atomicText,
+  comparablePath,
+  renameWithRetry,
+  samePath,
+  withinPath as within,
+} from '../../dsh-shared/lib/path-guard.mjs';
+
+export { atomicText, comparablePath, renameWithRetry, samePath, within };
 
 export function identifier(value) {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value)) throw new Error('Invalid Project resource identity.');
   return value;
-}
-export function within(root, target) {
-  const rel = relative(root, target);
-  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
-}
-const identity = path => process.platform === 'win32' ? path.toLowerCase() : path;
-/** Canonical lexical comparison key that treats Windows drive/path casing and slash styles as identical. */
-export function comparablePath(value) {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  return identity(resolve(trimmed));
-}
-/** Windows paths are case-insensitive; realpath may return a different case than the declared path. */
-export function samePath(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  if (!a.trim() || !b.trim()) return a.trim() === b.trim();
-  return comparablePath(a) === comparablePath(b);
 }
 const gitMetadata = relativePath => relativePath.split(/[\\/]+/).some(part => part.toLowerCase() === '.git');
 
@@ -69,7 +60,7 @@ export function safeReadStoreFileSync(root, filename, maxBytes = 64 * 1024) {
 /** References in domain records are already canonical; a replacement root cannot widen them. */
 export async function checkedRoot(root) {
   const declared = resolve(root), actual = await fs.realpath(declared);
-  if (identity(actual) !== identity(declared) || !(await fs.stat(actual)).isDirectory()) throw new Error('An authorized directory was moved or replaced with a link.');
+  if (!samePath(actual, declared) || !(await fs.stat(actual)).isDirectory()) throw new Error('An authorized directory was moved or replaced with a link.');
   return actual;
 }
 
@@ -83,7 +74,7 @@ async function ownedDirectory(parent, component) {
   }
   if (info.isSymbolicLink() || !info.isDirectory()) throw new Error('Project directory was replaced with a link or a file.');
   const actual = await fs.realpath(folder);
-  if (identity(actual) !== identity(folder) || !within(parent, actual)) throw new Error('Project directory points outside its registered identity.');
+  if (!samePath(actual, folder) || !within(parent, actual)) throw new Error('Project directory points outside its registered identity.');
   return actual;
 }
 export async function projectDirectory(home, projectId) {
@@ -97,42 +88,6 @@ export async function safeProjectSubdirectory(home, projectId, ...components) {
   let current = await projectDirectory(home, projectId);
   for (const component of components) current = await ownedDirectory(current, component);
   return current;
-}
-// Windows refuses rename over a destination still held by another handle —
-// a concurrent reader, indexer or antivirus scan — and reports the transient
-// failure as EPERM/EACCES/EBUSY. This retry contract mirrors
-// src/shared/fs-safe.js#renameWithRetry: the plugin runtime is copied into
-// profiles by src/main/dsh-project-desktop.js (copyRuntime), so this file
-// cannot import that one. src/shared/fs-safe.test.js pins both copies.
-const RENAME_RETRYABLE_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
-const RENAME_RETRY_BUDGET_MS = 2000;
-const RENAME_RETRY_DELAY_MS = 25;
-
-export async function renameWithRetry(from, to, options = {}) {
-  const rename = options.rename ?? fs.rename;
-  const wait = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
-  const platform = options.platform ?? process.platform;
-  const deadline = Date.now() + (options.budgetMs ?? RENAME_RETRY_BUDGET_MS);
-  let delayMs = RENAME_RETRY_DELAY_MS;
-  for (;;) {
-    try { return await rename(from, to); }
-    catch (error) {
-      if (platform !== 'win32' || !RENAME_RETRYABLE_CODES.has(error?.code) || Date.now() >= deadline) throw error;
-      await wait(delayMs);
-      delayMs = Math.min(delayMs * 2, 250);
-    }
-  }
-}
-export async function atomicText(path, text, options = {}) {
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  let renamed = false;
-  try {
-    await fs.writeFile(temporary, text, { flag: 'wx', mode: 0o600 });
-    await renameWithRetry(temporary, path, options);
-    renamed = true;
-  } finally {
-    if (!renamed) await fs.unlink(temporary).catch(() => { /* Preserve the original write failure when the temporary file is already absent. */ });
-  }
 }
 export async function checkedFile(path, roots) {
   const actual = await fs.realpath(resolve(path));

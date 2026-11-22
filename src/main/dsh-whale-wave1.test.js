@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 
 const { safeRemove } = require('../shared/fs-safe');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');

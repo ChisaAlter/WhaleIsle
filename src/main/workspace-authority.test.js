@@ -672,3 +672,60 @@ test('loadWorkspaceAuthority ignores a registered filesystem root', () => {
     fs.rmSync(outsider, { recursive: true, force: true });
   }
 });
+
+test('loadWorkspaceAuthority authorizes v2 project.json workspaces and task worktrees while retaining legacy fallback', () => {
+  const home = makeRoot();
+  const boot = makeRoot();
+  const v2Workspace = makeRoot();
+  const legacyWorkspace = makeRoot();
+  const outsider = makeRoot();
+  const previousConfig = require.cache[require.resolve('./config')];
+  try {
+    const v2Worktree = path.join(home, 'project-worktrees', 'proj-v2', 'task-1');
+    fs.mkdirSync(v2Worktree, { recursive: true });
+    fs.mkdirSync(path.join(home, 'projects', 'proj-v2'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'projects', 'proj-v2', 'project.json'), JSON.stringify({
+      id: 'proj-v2',
+      name: 'V2 Project',
+      workspace: v2Workspace,
+      tasks: [
+        { id: 'task-1', title: 'Valid worktree', worktreePath: v2Worktree },
+        { id: 'task-2', title: 'Untrusted outside path', worktreePath: outsider },
+      ],
+    }), 'utf8');
+
+    const legacyReal = canonical(legacyWorkspace);
+    fs.mkdirSync(path.join(home, 'storages', 'whale_project_local', 'projects'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'storages', 'whale_project_local', 'projects', 'proj-v1.json'), JSON.stringify({
+      version: 1,
+      record: {
+        id: 'proj-v1',
+        lifecycle: 'ready',
+        canonicalWorkingDirectory: legacyReal,
+        directoryIdentity: process.platform === 'win32' ? legacyReal.toLowerCase() : legacyReal,
+      },
+    }), 'utf8');
+
+    require.cache[require.resolve('./config')] = {
+      id: require.resolve('./config'),
+      filename: require.resolve('./config'),
+      loaded: true,
+      exports: { loadConfig: () => ({ workspace: boot }) },
+    };
+    setDesktopDshHome(home);
+    const authority = loadWorkspaceAuthority();
+    assert.equal(authority.resolveAuthorizedCwd(v2Workspace), canonical(v2Workspace));
+    assert.equal(authority.resolveAuthorizedCwd(v2Worktree), canonical(v2Worktree));
+    assert.equal(authority.resolveAuthorizedCwd(legacyWorkspace), canonical(legacyWorkspace));
+    assert.equal(authority.resolveAuthorizedCwd(outsider), null, 'arbitrary task.worktreePath outside project-worktrees must not gain authority');
+  } finally {
+    if (previousConfig) require.cache[require.resolve('./config')] = previousConfig;
+    else delete require.cache[require.resolve('./config')];
+    clearDesktopDshHome();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(boot, { recursive: true, force: true });
+    fs.rmSync(v2Workspace, { recursive: true, force: true });
+    fs.rmSync(legacyWorkspace, { recursive: true, force: true });
+    fs.rmSync(outsider, { recursive: true, force: true });
+  }
+});

@@ -111,6 +111,12 @@ function mountShell({ collapsed = false, width = 300, drawer = false, shortcuts 
           footerActionOwner = owner
           return <div data-testid="footer-action-seat" data-wide={owner.wide} />
         }
+        if (key === 'sidebar.sections.before') {
+          return <div data-testid="sections-before" data-wide={owner.wide} />
+        }
+        if (key === 'sidebar.sections.after') {
+          return <div data-testid="sections-after" data-wide={owner.wide} />
+        }
         regionOwner = owner as SidebarSectionOwnerProps
         regionContext = opts?.hookContext
         return <div data-testid="region" data-wide={owner.wide}>{content}</div>
@@ -150,7 +156,14 @@ describe('SidebarRoot shell', () => {
     mountShell({ panels: [{ id: 'notes' as SidebarPanelMetadata['id'], order: 1, label: 'Notes' }] })
     const viewport = document.querySelector('[data-sidebar-scrollport]')!
     expect(viewport.contains(screen.getByRole('navigation'))).toBe(true)
-    expect(viewport.contains(screen.getByTestId('region'))).toBe(true)
+    const before = screen.getByTestId('sections-before')
+    const region = screen.getByTestId('region')
+    const after = screen.getByTestId('sections-after')
+    expect(viewport.contains(before)).toBe(true)
+    expect(viewport.contains(region)).toBe(true)
+    expect(viewport.contains(after)).toBe(true)
+    expect(before.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(region.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     for (const button of screen.getAllByRole('button', { name: 'New session' })) {
       expect(viewport.contains(button)).toBe(false)
     }

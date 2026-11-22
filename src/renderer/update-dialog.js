@@ -25,7 +25,7 @@ document.getElementById('close').addEventListener('click', () => { respond(view.
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && view !== undefined) { event.preventDefault(); respond(view.cancelId); }
   if (event.key !== 'Tab') return;
-  const controls = [...document.querySelectorAll('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), #content:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
+  const controls = [...document.querySelectorAll('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), #content:not([hidden]), #request-secret:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
   const current = controls.indexOf(document.activeElement);
   const next = current < 0 ? (event.shiftKey ? controls.length - 1 : 0)
     : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
@@ -34,6 +34,111 @@ document.addEventListener('keydown', (event) => {
 });
 function applyWindowState(state) {
   document.documentElement.toggleAttribute('data-window-maximized', Boolean(state.maximized));
+}
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function createSvgPath(attrs) {
+  const path = document.createElementNS(SVG_NS, 'path');
+  for (const [key, value] of Object.entries(attrs)) path.setAttribute(key, value);
+  return path;
+}
+function renderToneIcon(tone, isUpdate) {
+  const iconHost = document.getElementById('tone-icon');
+  iconHost.replaceChildren();
+  if (isUpdate || (tone !== 'danger' && tone !== 'warning' && tone !== 'info')) {
+    iconHost.hidden = true;
+    return;
+  }
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  if (tone === 'info') {
+    svg.setAttribute('viewBox', '0 0 14 14');
+    svg.append(
+      createSvgPath({
+        d: 'M12.5757 7.00012C12.5757 3.92085 10.0794 1.42463 7.00012 1.42456C3.9208 1.42456 1.42456 3.9208 1.42456 7.00012C1.42463 10.0794 3.92085 12.5757 7.00012 12.5757C10.0793 12.5756 12.5756 10.0793 12.5757 7.00012ZM13.8002 7.00012C13.8001 10.7559 10.7559 13.8001 7.00012 13.8002C3.2443 13.8002 0.199291 10.7559 0.199219 7.00012C0.199219 3.24426 3.24426 0.199219 7.00012 0.199219C10.7559 0.199291 13.8002 3.2443 13.8002 7.00012Z',
+        fill: 'currentColor',
+      }),
+      createSvgPath({ d: 'M7.6127 3.18921V4.55986H6.38735V3.18921H7.6127Z', fill: 'currentColor' }),
+      createSvgPath({ d: 'M7.6127 5.68921V10.8109H6.38735V5.68921H7.6127Z', fill: 'currentColor' }),
+    );
+  } else {
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('stroke-width', '1.3');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.append(
+      createSvgPath({
+        d: 'M8 14.5C11.5899 14.5 14.5 11.5899 14.5 8C14.5 4.41015 11.5899 1.5 8 1.5C4.41015 1.5 1.5 4.41015 1.5 8C1.5 11.5899 4.41015 14.5 8 14.5Z',
+        stroke: 'currentColor',
+      }),
+      createSvgPath({ d: 'M8 4.29199V9.79199', stroke: 'currentColor' }),
+      createSvgPath({ d: 'M8 10.708V11.708', stroke: 'currentColor' }),
+    );
+  }
+  iconHost.append(svg);
+  iconHost.hidden = false;
+}
+function renderContext(state) {
+  const contextEl = document.getElementById('context');
+  contextEl.replaceChildren();
+  const attr = state.attribution;
+  if (attr && (attr.source || attr.level)) {
+    contextEl.dataset.layout = 'badges';
+    if (attr.source) {
+      const sourceChip = document.createElement('span');
+      sourceChip.className = 'context-source';
+      sourceChip.textContent = attr.source;
+      contextEl.append(sourceChip);
+    }
+    if (attr.level) {
+      const levelChip = document.createElement('span');
+      levelChip.className = 'context-level';
+      levelChip.dataset.tone = attr.tone || 'neutral';
+      levelChip.textContent = attr.level;
+      contextEl.append(levelChip);
+    }
+    contextEl.hidden = false;
+    return;
+  }
+  delete contextEl.dataset.layout;
+  contextEl.textContent = state.context || '';
+  contextEl.hidden = !state.context;
+}
+function renderRequestCard(state) {
+  const card = document.getElementById('request-card');
+  const captionEl = document.getElementById('request-caption');
+  const summaryEl = document.getElementById('request-summary');
+  const secretEl = document.getElementById('request-secret');
+  const detailsEl = document.getElementById('request-details');
+  const hintEl = document.getElementById('request-hint');
+  const dialog = document.getElementById('dialog');
+  const req = state.kind !== 'update' ? state.requestSection : null;
+  if (!req) {
+    card.hidden = true;
+    captionEl.textContent = '';
+    summaryEl.textContent = '';
+    secretEl.textContent = '';
+    detailsEl.textContent = '';
+    hintEl.textContent = '';
+    dialog.setAttribute('aria-describedby', 'detail');
+    return false;
+  }
+  document.getElementById('detail').hidden = true;
+  document.getElementById('detail').textContent = '';
+  captionEl.textContent = req.caption || '';
+  captionEl.hidden = !req.caption;
+  summaryEl.textContent = req.summary || '';
+  summaryEl.hidden = !req.summary;
+  secretEl.textContent = req.isSecret ? (req.details || '') : '';
+  secretEl.hidden = !(req.isSecret && req.details);
+  detailsEl.textContent = !req.isSecret ? (req.details || '') : '';
+  detailsEl.hidden = !(!req.isSecret && req.details);
+  hintEl.textContent = req.hint || '';
+  hintEl.hidden = !req.hint;
+  card.hidden = false;
+  dialog.setAttribute('aria-describedby', 'request-card');
+  return true;
 }
 function renderNotes(state) {
   const tabs = document.getElementById('notes-tabs');
@@ -101,9 +206,11 @@ function render(state) {
   document.documentElement.lang = state.locale;
   document.title = state.title;
   document.getElementById('title').textContent = state.message;
-  document.getElementById('dialog').dataset.kind = state.kind || 'confirmation';
-  document.getElementById('context').textContent = state.context || '';
-  document.getElementById('context').hidden = !state.context;
+  const dialog = document.getElementById('dialog');
+  dialog.dataset.kind = state.kind || 'confirmation';
+  dialog.dataset.tone = state.kind === 'update' ? '' : (state.tone || '');
+  renderToneIcon(state.tone, state.kind === 'update');
+  renderContext(state);
   const methods = state.downloadMethods || [];
   document.getElementById('download-methods').hidden = methods.length === 0;
   const options = document.getElementById('download-method-options');
@@ -128,13 +235,14 @@ function render(state) {
     options.append(label);
   }
   renderNotes(state);
+  const hasRequestCard = renderRequestCard(state);
   document.getElementById('close').setAttribute('aria-label', state.closeLabel);
   document.getElementById('technical-details').hidden = state.technicalDetails === '';
   document.getElementById('technical-details-label').textContent = state.technicalDetailsLabel;
   document.getElementById('technical-details-content').textContent = state.technicalDetails;
   document.getElementById('technical-details').open = false;
   document.getElementById('content').setAttribute('aria-label', state.kind === 'update' ? '更新说明' : '详情');
-  document.getElementById('content').hidden = !state.detail && !state.technicalDetails;
+  document.getElementById('content').hidden = !hasRequestCard && !state.detail && !state.technicalDetails;
   document.getElementById('actions').replaceChildren();
   for (const [index, label] of state.buttons.entries()) {
     const button = document.createElement('button');
