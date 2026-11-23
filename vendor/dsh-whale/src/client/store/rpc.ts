@@ -9,17 +9,26 @@ import {
   BOT_CHANGE_KINDS,
   BOT_VIEW_KINDS,
   BOT_WORK_KINDS,
-  RPC_METHODS,
+  RPC_METHODS as SHARED_RPC_METHODS,
   botChangeBotIds,
   botChangeConcerns,
   readBotChangeScope,
 } from '../../shared/bot-rpc-methods.js';
 
+export const RPC_METHODS = Object.freeze({
+  ...SHARED_RPC_METHODS,
+  GROUPS_ITEMS: SHARED_RPC_METHODS.GROUP_ITEMS_LIST ?? 'bots.groups.items',
+  GROUP_ITEMS_LIST: SHARED_RPC_METHODS.GROUP_ITEMS_LIST ?? 'bots.groups.items',
+  CHAT_DELETE: SHARED_RPC_METHODS.CHAT_DELETE ?? 'bots.chat.delete',
+  WORK_STOP: SHARED_RPC_METHODS.WORK_STOP ?? 'bots.work.stop',
+} as const);
+
+export type BotRpcMethodName = (typeof RPC_METHODS)[keyof typeof RPC_METHODS];
+
 export {
   BOT_CHANGE_KINDS,
   BOT_VIEW_KINDS,
   BOT_WORK_KINDS,
-  RPC_METHODS,
   botChangeBotIds,
   botChangeConcerns,
   readBotChangeScope,
@@ -305,6 +314,114 @@ export interface BotSharePrepareResult {
   redactedCount?: number;
   redactions?: number;
   warnings?: string[];
+}
+
+export interface BotItemAttachmentImage {
+  name?: string;
+  mimeType: string;
+  dataUrl: string;
+  bytes?: number;
+}
+
+export interface BotItemAttachmentFile {
+  name: string;
+  mimeType?: string;
+  bytes?: number;
+  path?: string;
+  text?: string;
+  textContent?: string;
+  dataUrl?: string;
+}
+
+export interface BotItemOwnerCommentParams {
+  botId: string;
+  uid: string;
+  text: string;
+  requestId?: string;
+  questionEventId?: number | string | null;
+  plain?: boolean;
+  askedInConversation?: string | null;
+  files?: BotItemAttachmentFile[];
+  images?: BotItemAttachmentImage[];
+}
+
+export interface BotItemOwnerStatusParams {
+  botId: string;
+  uid?: string;
+  uids?: string[];
+  status: BotItemRecord['status'];
+  reason?: string;
+  note?: string;
+}
+
+export interface BotItemOwnerSnoozeItem {
+  uid: string;
+  othersLastEventId?: number;
+}
+
+export interface BotItemOwnerSnoozeParams {
+  botId: string;
+  uid?: string;
+  uids?: string[];
+  items?: BotItemOwnerSnoozeItem[];
+  until?: number | null;
+  preset?: string | null;
+  clear?: boolean;
+  othersLastEventId?: number;
+}
+
+export interface BotUpNextSeenParams {
+  botId: string;
+  id?: string;
+  suggestionId?: string;
+  ids?: string[];
+}
+
+export interface BotTakeOverParams {
+  botId: string;
+  cwd: string;
+  title?: string;
+  chat?: 'home' | 'new';
+  prompt?: string | null;
+}
+
+export interface BotTakeOverResult {
+  ok?: boolean;
+  botId?: string;
+  sessionId?: string;
+  cwd?: string;
+}
+
+export interface BotGroupItemsParams {
+  groupId: string;
+  scope?: 'group' | 'all';
+  botId?: string;
+  onlyNeedsYou?: boolean;
+  threadId?: string;
+  openOnly?: boolean;
+  closedOnly?: boolean;
+  closedCursor?: string | null;
+  limit?: number;
+}
+
+export interface BotGroupStopParams {
+  groupId: string;
+  threadId?: string;
+  turnId?: string;
+  botId?: string;
+  sequence?: number;
+}
+
+export interface BotChatDeleteParams {
+  botId: string;
+  sessionId: string;
+  chatId?: string;
+}
+
+export interface BotWorkStopParams {
+  botId: string;
+  workId: string;
+  sessionId?: string;
 }
 
 export interface BotRpcOptions {

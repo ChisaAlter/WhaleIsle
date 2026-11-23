@@ -4,9 +4,9 @@
 // 3. computer (host & Home folder path + copy)
 // 4. look-around (toggle, cadence, weekdaysOnly, focus, look now)
 // 5. tidy-up (toggle, cadence, status, tidy now, undo)
-// 6. soul (SOUL.md read/edit dual mode, double-click to edit, counters, unsaved guard, changed-on-disk conflict)
+// 6. soul (SOUL.md read/edit dual mode, auto-save on blur & close, changed-on-disk leave guard)
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LOOK_AROUND_EVERY_CHOICES,
   LOOK_AROUND_EVERY_LABELS,
@@ -23,6 +23,7 @@ import {
   type BotRecord,
 } from '../store/rpc';
 import {
+  IconAlertTriangle,
   IconCheck,
   IconCopy,
   IconEdit,
@@ -31,8 +32,56 @@ import {
   IconUndo,
 } from './Icons';
 
+export type BotSettingsLeaveGuard = () => Promise<boolean> | boolean;
+
 export interface SubpageProps {
   bot: BotRecord;
+  onRegisterLeaveGuard?: (guard: BotSettingsLeaveGuard | null) => void;
+}
+
+const unsavedSoulBots = new Set<string>();
+const SOUL_DRAFT_SESSION_PREFIX = 'dsh-bots.unsavedSoul:';
+
+export function hasUnsavedSoulDraft(botId: string): boolean {
+  if (unsavedSoulBots.has(botId)) {
+    return true;
+  }
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      return window.sessionStorage.getItem(`${SOUL_DRAFT_SESSION_PREFIX}${botId}`) === '1';
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export function clearUnsavedSoulDraftFlag(botId: string): void {
+  unsavedSoulBots.delete(botId);
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      window.sessionStorage.removeItem(`${SOUL_DRAFT_SESSION_PREFIX}${botId}`);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+}
+
+function setUnsavedSoulDraftFlag(botId: string, dirty: boolean): void {
+  if (dirty) {
+    unsavedSoulBots.add(botId);
+  } else {
+    unsavedSoulBots.delete(botId);
+  }
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      const key = `${SOUL_DRAFT_SESSION_PREFIX}${botId}`;
+      if (dirty) window.sessionStorage.setItem(key, '1');
+      else window.sessionStorage.removeItem(key);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
 }
 
 type ExtendedBot = BotRecord & {
@@ -497,7 +546,7 @@ export function BotTidyUpSubpage({ bot }: SubpageProps) {
   );
 }
 
-export function BotSoulSubpage({ bot }: SubpageProps) {
+export function BotSoulSubpage({ bot, onRegisterLeaveGuard }: SubpageProps) {
   const { locale, tr } = useBotsLocale();
   const zh = locale === 'zh-CN';
   const [mode, setMode] = useState<'read' | 'edit'>('read');
@@ -508,6 +557,20 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
   const [conflict, setConflict] = useState<{ diskContent: string; diskSignature?: string } | null>(null);
+  const [leaveGuardPending, setLeaveGuardPending] = useState(false);
+
+  const draftRef = useRef(draft);
+  const diskTextRef = useRef(diskText);
+  const signatureRef = useRef(signature);
+  const conflictRef = useRef(conflict);
+  const savingRef = useRef(saving);
+  const leaveResolverRef = useRef<((allowLeave: boolean) => void) | null>(null);
+
+  draftRef.current = draft;
+  diskTextRef.current = diskText;
+  signatureRef.current = signature;
+  conflictRef.current = conflict;
+  savingRef.current = saving;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -520,6 +583,7 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
       setDraft(text);
       setSignature(res?.signature);
       setConflict(null);
+      setUnsavedSoulDraftFlag(bot.id, false);
     } catch (err) {
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     } finally {
@@ -534,34 +598,138 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
   const dirty = draft !== diskText;
   const lineCount = draft ? draft.split(/\r?\n/).length : 0;
 
-  const saveSoul = async (forceSignature?: string | null) => {
+  // Keep global unsaved-soul flag in sync so DeleteBotConfirmDialog can guard against data loss.
+  useEffect(() => {
+    setUnsavedSoulDraftFlag(bot.id, dirty || Boolean(conflict));
+  }, [bot.id, conflict, dirty]);
+
+  const saveSoul = useCallback(async (forceSignature?: string | null): Promise<'saved' | 'conflict' | 'error'> => {
+    const contentToSave = draftRef.current;
+    if (savingRef.current) {
+      return 'saved';
+    }
     setSaving(true);
     setSavedNotice(false);
     try {
       const res = await callBotRpc<{ content?: string; signature?: string }>(RPC_METHODS.SOUL_WRITE, {
         botId: bot.id,
-        content: draft,
-        ...(forceSignature === null ? {} : { expectedSignature: forceSignature ?? signature }),
+        content: contentToSave,
+        ...(forceSignature === null ? {} : { expectedSignature: forceSignature ?? signatureRef.current }),
       });
-      setDiskText(res?.content ?? draft);
-      setDraft(res?.content ?? draft);
+      const persisted = res?.content ?? contentToSave;
+      setDiskText(persisted);
+      setDraft(persisted);
       setSignature(res?.signature);
       setConflict(null);
       setSavedNotice(true);
+      setUnsavedSoulDraftFlag(bot.id, false);
       void botsStore.refresh();
+      return 'saved';
     } catch (err) {
       if (err instanceof BotRpcError && err.code === 'changed-on-disk') {
         const details = (err.details ?? {}) as { diskContent?: string; diskSignature?: string };
         setConflict({
-          diskContent: details.diskContent ?? diskText,
+          diskContent: details.diskContent ?? diskTextRef.current,
           diskSignature: details.diskSignature,
         });
-      } else {
-        botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+        setMode('edit');
+        return 'conflict';
       }
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      return 'error';
     } finally {
       setSaving(false);
     }
+  }, [bot.id]);
+
+  // Register leave guard with BotSettingsView: auto-save on leave, block & prompt on disk conflict.
+  useEffect(() => {
+    if (!onRegisterLeaveGuard) {
+      return undefined;
+    }
+    const guard: BotSettingsLeaveGuard = async () => {
+      if (conflictRef.current) {
+        setLeaveGuardPending(true);
+        return new Promise<boolean>((resolve) => {
+          leaveResolverRef.current = resolve;
+        });
+      }
+      if (draftRef.current !== diskTextRef.current) {
+        const outcome = await saveSoul();
+        if (outcome === 'saved') {
+          return true;
+        }
+        if (outcome === 'conflict') {
+          setLeaveGuardPending(true);
+          return new Promise<boolean>((resolve) => {
+            leaveResolverRef.current = resolve;
+          });
+        }
+        return false;
+      }
+      return true;
+    };
+    onRegisterLeaveGuard(guard);
+    return () => {
+      onRegisterLeaveGuard(null);
+      if (leaveResolverRef.current) {
+        leaveResolverRef.current(false);
+        leaveResolverRef.current = null;
+      }
+    };
+  }, [onRegisterLeaveGuard, saveSoul]);
+
+  // Auto-save on component unmount (e.g. closing settings drawer) if dirty without disk conflict.
+  useEffect(() => () => {
+    if (draftRef.current !== diskTextRef.current && !conflictRef.current) {
+      void callBotRpc(RPC_METHODS.SOUL_WRITE, {
+        botId: bot.id,
+        content: draftRef.current,
+        ...(signatureRef.current ? { expectedSignature: signatureRef.current } : {}),
+      }).then(() => {
+        setUnsavedSoulDraftFlag(bot.id, false);
+        void botsStore.refresh();
+      }).catch(() => {
+        // Keep unsaved flag set if unmount save failed (e.g. disk conflict).
+      });
+    }
+  }, [bot.id]);
+
+  const resolvePendingLeave = (allow: boolean) => {
+    setLeaveGuardPending(false);
+    const resolver = leaveResolverRef.current;
+    leaveResolverRef.current = null;
+    resolver?.(allow);
+  };
+
+  const handleKeepMine = async () => {
+    if (!conflict) return;
+    const outcome = await saveSoul(conflict.diskSignature ?? null);
+    if (outcome === 'saved' && leaveGuardPending) {
+      resolvePendingLeave(true);
+    }
+  };
+
+  const handleUseDisk = () => {
+    if (!conflict) return;
+    setDiskText(conflict.diskContent);
+    setDraft(conflict.diskContent);
+    setSignature(conflict.diskSignature);
+    setConflict(null);
+    setUnsavedSoulDraftFlag(bot.id, false);
+    if (leaveGuardPending) {
+      resolvePendingLeave(true);
+    }
+  };
+
+  const handleSwitchMode = async (nextMode: 'read' | 'edit') => {
+    if (nextMode === 'read' && mode === 'edit' && dirty && !conflict) {
+      const outcome = await saveSoul();
+      if (outcome !== 'saved') {
+        return;
+      }
+    }
+    setMode(nextMode);
   };
 
   return (
@@ -572,7 +740,7 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
             type="button"
             className="dsh-bots-picker-seg-btn"
             aria-pressed={mode === 'read'}
-            onClick={() => setMode('read')}
+            onClick={() => void handleSwitchMode('read')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
             <IconEye size={12} />
@@ -582,7 +750,7 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
             type="button"
             className="dsh-bots-picker-seg-btn"
             aria-pressed={mode === 'edit'}
-            onClick={() => setMode('edit')}
+            onClick={() => void handleSwitchMode('edit')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
             <IconEdit size={12} />
@@ -594,8 +762,13 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
           <span className="dsh-bots-muted">
             {draft.length} {zh ? '字' : 'chars'} · {lineCount} {zh ? '行' : 'lines'}
           </span>
-          {dirty && <span className="dsh-bots-badge dsh-bots-badge-warn">{tr('settings.bots.unsaved', 'Unsaved')}</span>}
-          {!dirty && savedNotice && (
+          {saving && (
+            <span className="dsh-bots-badge">{tr('settings.bots.saving', zh ? '保存中…' : 'Saving…')}</span>
+          )}
+          {!saving && dirty && (
+            <span className="dsh-bots-badge dsh-bots-badge-warn">{tr('settings.bots.unsaved', 'Unsaved')}</span>
+          )}
+          {!saving && !dirty && savedNotice && (
             <span className="dsh-bots-badge dsh-bots-badge-success">
               <IconCheck size={10} /> {tr('settings.bots.saved', 'Saved')}
             </span>
@@ -614,31 +787,54 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
       </div>
 
       {conflict && (
-        <div className="dsh-bots-pcard dsh-bots-pcard-warn">
-          <div style={{ fontWeight: 600 }}>{tr('settings.bots.soulConflict', 'SOUL.md changed on disk.')}</div>
-          <div className="dsh-bots-muted">
-            {zh ? '在你编辑期间磁盘文件已被修改，请选择要保留的版本：' : 'Choose which version of SOUL.md to keep:'}
+        <div
+          className="dsh-bots-pcard dsh-bots-pcard-warn dsh-bots-soul-conflict"
+          role="alertdialog"
+          aria-label={zh ? 'SOUL.md 磁盘冲突' : 'SOUL.md disk conflict'}
+        >
+          <div className="dsh-bots-row-left" style={{ fontWeight: 600 }}>
+            <IconAlertTriangle size={14} className="dsh-bots-text-warn" />
+            <span>
+              {leaveGuardPending
+                ? (zh ? '离开前请先处理 SOUL.md 磁盘冲突' : 'Resolve SOUL.md conflict before leaving')
+                : tr('settings.bots.soulConflict', 'SOUL.md changed on disk.')}
+            </span>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="dsh-bots-muted">
+            {zh
+              ? '在你编辑期间磁盘上的 SOUL.md 已被外部修改，自动保存已暂停。请选择要保留的版本：'
+              : 'SOUL.md was modified on disk while you were editing. Choose which version to keep:'}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             <button
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
-              onClick={() => void saveSoul(conflict.diskSignature ?? null)}
+              disabled={saving}
+              onClick={() => void handleKeepMine()}
             >
-              {zh ? '保留我的版本（覆盖）' : 'Keep mine'}
+              {leaveGuardPending
+                ? (zh ? '保留我的修改并离开' : 'Keep mine & leave')
+                : (zh ? '保留我的修改（覆盖）' : 'Keep mine')}
             </button>
             <button
               type="button"
               className="dsh-bots-pbtn dsh-bots-pbtn-xs"
-              onClick={() => {
-                setDiskText(conflict.diskContent);
-                setDraft(conflict.diskContent);
-                setSignature(conflict.diskSignature);
-                setConflict(null);
-              }}
+              disabled={saving}
+              onClick={handleUseDisk}
             >
-              {zh ? '使用磁盘版本' : 'Use disk version'}
+              {leaveGuardPending
+                ? (zh ? '采用磁盘版本并离开' : 'Use disk version & leave')
+                : (zh ? '采用磁盘版本' : 'Use disk version')}
             </button>
+            {leaveGuardPending && (
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-ghost"
+                onClick={() => resolvePendingLeave(false)}
+              >
+                {zh ? '留在此页' : 'Stay'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -654,23 +850,33 @@ export function BotSoulSubpage({ bot }: SubpageProps) {
           {draft.trim() || <span className="dsh-bots-muted">{tr('settings.bots.soulEmpty', 'No instructions yet.')}</span>}
         </div>
       ) : (
-        <textarea
-          className="dsh-bots-ptextarea dsh-bots-ptextarea-mono"
-          style={{ minHeight: 280 }}
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setSavedNotice(false);
-          }}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-              e.preventDefault();
-              if (dirty) {
+        <>
+          <textarea
+            className="dsh-bots-ptextarea dsh-bots-ptextarea-mono"
+            style={{ minHeight: 280 }}
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setSavedNotice(false);
+            }}
+            onBlur={() => {
+              if (draftRef.current !== diskTextRef.current && !conflictRef.current && !savingRef.current) {
                 void saveSoul();
               }
-            }
-          }}
-        />
+            }}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                if (dirty) {
+                  void saveSoul();
+                }
+              }
+            }}
+          />
+          <div className="dsh-bots-muted">
+            {zh ? '失焦或离开页面时会自动保存；如遇磁盘冲突将弹出确认防止覆盖丢失。' : 'Auto-saves on blur and close; disk conflicts trigger a guard prompt.'}
+          </div>
+        </>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
-// Confirmation dialogs (delete bot, new Home Chat, delete group) plus unified BotsModalHost + Toasts.
+// Confirmation dialogs (delete bot with unsaved Home/SOUL draft guard, new Home Chat, delete group)
+// plus unified BotsModalHost + Toasts.
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -11,10 +12,105 @@ import {
 } from '../store/bots-store';
 import { BotGroupDialog } from './BotGroupDialog';
 import { BotImportDialog } from './BotImportDialog';
+import { clearUnsavedSoulDraftFlag, hasUnsavedSoulDraft } from './BotSettingsSubpagesA';
 import { BotShareDialog } from './BotShareDialog';
 import { BotTemplatesDialog } from './BotTemplatesDialog';
+import { HandToBotDialog, type HandToBotWorkspace } from './HandToBotDialog';
 import { IconAlertTriangle, IconTrash } from './Icons';
 import { NewBotDialog } from './NewBotDialog';
+
+interface UnsavedDraftBlockers {
+  soulDirty: boolean;
+  homeDraft: boolean;
+  itemDraftKeys: string[];
+}
+
+function detectUnsavedDraftsForBot(botId: string, homeSessionId?: string | null): UnsavedDraftBlockers {
+  const soulDirty = hasUnsavedSoulDraft(botId);
+  let homeDraft = false;
+  const itemDraftKeys: string[] = [];
+
+  if (typeof window !== 'undefined') {
+    const hostHook = (window as unknown as {
+      __DSH_BOTS_HAS_UNSAVED_DRAFT__?: (id: string, sessionId?: string | null) => boolean;
+    }).__DSH_BOTS_HAS_UNSAVED_DRAFT__;
+    if (typeof hostHook === 'function') {
+      try {
+        if (hostHook(botId, homeSessionId)) {
+          homeDraft = true;
+        }
+      } catch {
+        // Ignore host hook error.
+      }
+    }
+
+    try {
+      const prefill = window.sessionStorage?.getItem(`dsh-bots.prefillDraft:${botId}`);
+      if (prefill && prefill.trim()) {
+        homeDraft = true;
+      }
+    } catch {
+      // Ignore sessionStorage error.
+    }
+
+    if (window.localStorage) {
+      try {
+        const itemPrefix = `dsh-bots.itemDraft:${botId}:`;
+        const sessionCandidateKeys = homeSessionId
+          ? [
+            `dsh-bots.homeDraft:${botId}`,
+            `dsh.chatDraft:${homeSessionId}`,
+            `dsh-chat-draft:${homeSessionId}`,
+            `chat-draft:${homeSessionId}`,
+          ]
+          : [`dsh-bots.homeDraft:${botId}`];
+
+        for (let i = 0; i < window.localStorage.length; i += 1) {
+          const key = window.localStorage.key(i);
+          if (!key) continue;
+          const val = window.localStorage.getItem(key);
+          if (!val || !val.trim()) continue;
+          if (key.startsWith(itemPrefix)) {
+            itemDraftKeys.push(key);
+          } else if (sessionCandidateKeys.includes(key)) {
+            homeDraft = true;
+          } else if (homeSessionId && key.includes(homeSessionId) && /draft/i.test(key)) {
+            homeDraft = true;
+          }
+        }
+      } catch {
+        // Ignore localStorage error.
+      }
+    }
+  }
+
+  return { soulDirty, homeDraft, itemDraftKeys };
+}
+
+function clearLocalDraftsForBot(botId: string, homeSessionId?: string | null, itemDraftKeys: string[] = []): void {
+  clearUnsavedSoulDraftFlag(botId);
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage?.removeItem(`dsh-bots.prefillDraft:${botId}`);
+  } catch {
+    // Ignore storage error.
+  }
+  if (window.localStorage) {
+    try {
+      window.localStorage.removeItem(`dsh-bots.homeDraft:${botId}`);
+      if (homeSessionId) {
+        window.localStorage.removeItem(`dsh.chatDraft:${homeSessionId}`);
+        window.localStorage.removeItem(`dsh-chat-draft:${homeSessionId}`);
+        window.localStorage.removeItem(`chat-draft:${homeSessionId}`);
+      }
+      for (const k of itemDraftKeys) {
+        window.localStorage.removeItem(k);
+      }
+    } catch {
+      // Ignore storage error.
+    }
+  }
+}
 
 function ConfirmDialogShell({
   open,
@@ -22,6 +118,7 @@ function ConfirmDialogShell({
   description,
   danger,
   confirmLabel,
+  confirmDisabled,
   busy,
   extra,
   onCancel,
@@ -32,6 +129,7 @@ function ConfirmDialogShell({
   description: string;
   danger?: boolean;
   confirmLabel: string;
+  confirmDisabled?: boolean;
   busy?: boolean;
   extra?: ReactNode;
   onCancel: () => void;
@@ -88,7 +186,7 @@ function ConfirmDialogShell({
             type="button"
             className="dsh-bots-btn"
             data-variant={danger ? 'danger' : 'primary'}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
           >
             {confirmLabel}
@@ -110,25 +208,52 @@ export function DeleteBotConfirmDialog({
   onClose: () => void;
 }) {
   const { locale, tr } = useBotsLocale();
+  const zh = locale === 'zh-CN';
   const bot = useBotById(botId);
   const [busy, setBusy] = useState(false);
+  const [blockers, setBlockers] = useState<UnsavedDraftBlockers>({
+    soulDirty: false,
+    homeDraft: false,
+    itemDraftKeys: [],
+  });
+
+  const homeSessionId = bot?.chatSessionId ?? bot?.homeSessionId ?? null;
+
+  useEffect(() => {
+    if (open && bot) {
+      setBusy(false);
+      setBlockers(detectUnsavedDraftsForBot(bot.id, homeSessionId));
+    }
+  }, [bot, homeSessionId, open]);
 
   if (!bot) {
     return null;
   }
 
+  const hasBlockers = blockers.soulDirty || blockers.homeDraft || blockers.itemDraftKeys.length > 0;
+
   const handleConfirm = async () => {
     if (busy) {
       return;
     }
+    const latest = detectUnsavedDraftsForBot(bot.id, homeSessionId);
+    setBlockers(latest);
+    if (latest.soulDirty || latest.homeDraft || latest.itemDraftKeys.length > 0) {
+      botsStore.pushToast({
+        message: zh ? '请先保存或清空未保存的草稿后再删除队友' : 'Save or clear unsaved drafts before deleting this bot.',
+        tone: 'error',
+      });
+      return;
+    }
+
     setBusy(true);
     try {
       const result = await botsStore.deleteBot(bot.id);
       const pathText = result.folderPath || bot.homePath;
       botsStore.pushToast({
         message: pathText
-          ? (locale === 'zh-CN' ? `已移除「${bot.name}」，文件夹保留在 ${pathText}` : `Removed "${bot.name}". Folder kept at ${pathText}`)
-          : (locale === 'zh-CN' ? `已移除「${bot.name}」` : `Removed "${bot.name}"`),
+          ? (zh ? `已移除「${bot.name}」，文件夹保留在 ${pathText}` : `Removed "${bot.name}". Folder kept at ${pathText}`)
+          : (zh ? `已移除「${bot.name}」` : `Removed "${bot.name}"`),
         tone: 'info',
       });
       onClose();
@@ -146,6 +271,7 @@ export function DeleteBotConfirmDialog({
       open={open}
       danger
       busy={busy}
+      confirmDisabled={hasBlockers}
       title={tr('bots.row.deleteTitle', 'Delete {{name}}?', { name: bot.name })}
       description={tr(
         'bots.row.deleteDescription',
@@ -153,6 +279,65 @@ export function DeleteBotConfirmDialog({
         { path: bot.homePath || '~/.whaleisle/bots' },
       )}
       confirmLabel={tr('bots.row.deleteConfirm', 'Delete bot')}
+      extra={hasBlockers ? (
+        <div className="dsh-bots-pcard dsh-bots-pcard-warn" role="alert">
+          <div className="dsh-bots-row-left" style={{ fontWeight: 600 }}>
+            <IconAlertTriangle size={14} className="dsh-bots-text-warn" />
+            <span>{zh ? '存在未保存的草稿，已阻止删除' : 'Unsaved drafts detected — delete blocked'}</span>
+          </div>
+          <ul className="dsh-bots-draft-blocker-list">
+            {blockers.soulDirty && (
+              <li>{zh ? 'SOUL.md 存在未保存或存在冲突的修改' : 'SOUL.md has unsaved or conflicted edits'}</li>
+            )}
+            {blockers.homeDraft && (
+              <li>{zh ? '主对话 (Home Chat) 输入框存在未发送草稿' : 'Home Chat has an unsaved message draft'}</li>
+            )}
+            {blockers.itemDraftKeys.length > 0 && (
+              <li>
+                {zh
+                  ? `工作条目评论区存在 ${blockers.itemDraftKeys.length} 份未发送草稿`
+                  : `${blockers.itemDraftKeys.length} work item comment draft(s) unsent`}
+              </li>
+            )}
+          </ul>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {blockers.soulDirty && (
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+                onClick={() => {
+                  onClose();
+                  botsStore.openBotSettings(bot.id, { host: 'panel', page: 'soul' });
+                }}
+              >
+                {zh ? '前往保存 SOUL.md' : 'Go to SOUL.md'}
+              </button>
+            )}
+            {blockers.homeDraft && (
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+                onClick={() => {
+                  onClose();
+                  void botsStore.openBotHome(bot.id);
+                }}
+              >
+                {zh ? '打开主对话' : 'Open Home Chat'}
+              </button>
+            )}
+            <button
+              type="button"
+              className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-ghost"
+              onClick={() => {
+                clearLocalDraftsForBot(bot.id, homeSessionId, blockers.itemDraftKeys);
+                setBlockers(detectUnsavedDraftsForBot(bot.id, homeSessionId));
+              }}
+            >
+              {zh ? '放弃这些本地草稿' : 'Discard local drafts'}
+            </button>
+          </div>
+        </div>
+      ) : undefined}
       onCancel={onClose}
       onConfirm={() => void handleConfirm()}
     />
@@ -314,7 +499,29 @@ export function BotsToastHost() {
  */
 export function BotsModalHost() {
   const modal = useBotsState((s) => s.modal);
+  const { locale } = useBotsLocale();
+  const zh = locale === 'zh-CN';
   const close = () => botsStore.closeModal();
+
+  const handleCreateBotFromWorkspace = (workspace: HandToBotWorkspace, prompt: string) => {
+    const cleaned = String(workspace.cwd ?? '').replace(/[\\/]+$/, '');
+    const fallbackName = cleaned.split(/[\\/]/).filter(Boolean).at(-1) || cleaned || 'Workspace';
+    const workspaceName = workspace.name?.trim() || fallbackName;
+    const trimmedPrompt = prompt.trim();
+    botsStore.openModal({
+      kind: 'new-bot',
+      draft: {
+        initialName: workspaceName,
+        initialPurpose: trimmedPrompt || (zh ? `负责维护工作区 ${workspaceName}` : `Maintain workspace ${workspaceName}`),
+        takeOverWorkspace: {
+          workspaceId: workspace.workspaceId ?? workspace.cwd,
+          name: workspaceName,
+          watches: workspace.cwd,
+          does: trimmedPrompt || undefined,
+        },
+      },
+    });
+  };
 
   return (
     <>
@@ -342,6 +549,19 @@ export function BotsModalHost() {
         botId={modal?.kind === 'share' && modal.mode === 'export' ? modal.botId : undefined}
         initialJson={modal?.kind === 'share' && modal.mode === 'import' ? modal.initialJson : undefined}
         onClose={close}
+      />
+      <HandToBotDialog
+        open={modal?.kind === 'hand-to-bot'}
+        workspace={modal?.kind === 'hand-to-bot' ? modal.workspace : null}
+        initialBotId={modal?.kind === 'hand-to-bot' ? modal.initialBotId : null}
+        initialPrompt={modal?.kind === 'hand-to-bot' ? modal.initialPrompt : ''}
+        onClose={close}
+        onCreateNewBot={handleCreateBotFromWorkspace}
+        onSuccess={(result) => {
+          if (result.botId) {
+            void botsStore.refreshBotChatTree(result.botId);
+          }
+        }}
       />
       <DeleteBotConfirmDialog
         open={modal?.kind === 'confirm-delete-bot'}

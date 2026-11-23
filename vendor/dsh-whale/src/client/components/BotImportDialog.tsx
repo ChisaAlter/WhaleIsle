@@ -1,6 +1,7 @@
 // Import existing bots from local Orca / OpenClaw / Hermes / legacy Whale folders.
+// Enhanced with scanBotText security review, expandable SOUL/Skill preview, and re-review on content change.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { randomMascotAvatar } from '../../shared/bot-avatar.js';
 import { DEFAULT_BOT_AVATAR_COLOR, normalizeHexColor } from '../../shared/bot-avatar-color.js';
@@ -13,10 +14,18 @@ import {
 } from '../store/rpc';
 import { AvatarPickerPopover, type AvatarPickerValue } from './AvatarPicker';
 import { BotAvatar } from './BotAvatar';
+import { BotChevron, BotDisclosure } from './BotDisclosure';
 import {
+  SecurityScanPanel,
+  computeContentDigest,
+  runBotSecurityScan,
+} from './BotShareDialog';
+import {
+  IconAlertTriangle,
   IconArrowRight,
   IconCheck,
   IconDownload,
+  IconFileText,
   IconLink,
   IconRefresh,
   IconSpinner,
@@ -27,6 +36,15 @@ export interface BotImportDialogProps {
   open: boolean;
   onClose: () => void;
 }
+
+type ExtendedImportSource = BotImportSource & {
+  soul?: string;
+  files?: Record<string, string>;
+  skills?: Array<{ name: string; content?: string; description?: string }>;
+  scan?: { blockers?: unknown[]; warnings?: unknown[]; findings?: unknown[] };
+  warnings?: unknown[];
+  blockers?: unknown[];
+};
 
 const SOURCE_LABELS: Record<string, string> = {
   orca: 'Orca',
@@ -42,8 +60,9 @@ function sourceKindOf(src: BotImportSource): string {
 
 export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
   const { locale, tr } = useBotsLocale();
+  const zh = locale === 'zh-CN';
 
-  const [sources, setSources] = useState<BotImportSource[]>([]);
+  const [sources, setSources] = useState<ExtendedImportSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [targetName, setTargetName] = useState('');
@@ -55,23 +74,29 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
+  const [reviewedDigestBySource, setReviewedDigestBySource] = useState<Record<string, string>>({});
+  const [changedAfterReview, setChangedAfterReview] = useState(false);
 
   const loadSources = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await callBotRpc<{ sources?: BotImportSource[] } | BotImportSource[]>(RPC_METHODS.IMPORT_SOURCES);
+      const res = await callBotRpc<{ sources?: ExtendedImportSource[] } | ExtendedImportSource[]>(RPC_METHODS.IMPORT_SOURCES);
       const list = Array.isArray(res) ? res : (res?.sources ?? []);
       setSources(list);
-      const first = list.find((s) => !s.imported) ?? list[0] ?? null;
+      const keep = selectedId ? list.find((s) => s.id === selectedId) : null;
+      const first = keep ?? list.find((s) => !s.imported) ?? list[0] ?? null;
       if (first) {
         setSelectedId(first.id);
-        setTargetName(first.name);
-        setAvatarVal({
-          avatar: first.avatar || randomMascotAvatar(),
-          avatarColor: normalizeHexColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
-          uploadedImage: null,
-        });
+        if (!keep) {
+          setTargetName(first.name);
+          setAvatarVal({
+            avatar: first.avatar || randomMascotAvatar(),
+            avatarColor: normalizeHexColor(first.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
+            uploadedImage: null,
+          });
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -85,6 +110,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
       return undefined;
     }
     setPickerAnchor(null);
+    setChangedAfterReview(false);
     void loadSources();
     const handleEsc = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape' && !pickerAnchor) {
@@ -93,13 +119,90 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
     };
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
-  }, [onClose, open, pickerAnchor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, open]);
 
   const selected = sources.find((s) => s.id === selectedId) ?? null;
 
-  const handleSelectSource = (src: BotImportSource) => {
+  const inspectableFiles = useMemo(() => {
+    if (!selected) return [];
+    const list: Array<{ path: string; label: string; content: string }> = [];
+    const seen = new Set<string>();
+    const add = (path: string, label: string, content: string) => {
+      if (!seen.has(path) && content) {
+        seen.add(path);
+        list.push({ path, label, content });
+      }
+    };
+    if (typeof selected.soul === 'string' && selected.soul.trim()) {
+      add('SOUL.md', 'SOUL.md', selected.soul);
+    }
+    if (selected.files && typeof selected.files === 'object') {
+      for (const [filePath, content] of Object.entries(selected.files)) {
+        if (typeof content === 'string' && content.trim()) {
+          add(filePath, filePath, content);
+        }
+      }
+    }
+    for (const sk of selected.skills ?? []) {
+      if (sk.content) {
+        add(`skills/${sk.name}/SKILL.md`, `Skill: ${sk.name}`, sk.content);
+      }
+    }
+    return list;
+  }, [selected]);
+
+  const currentDigest = useMemo(() => {
+    if (!selected) return null;
+    return computeContentDigest([
+      selected.id,
+      selected.path,
+      selected.description,
+      ...inspectableFiles.map((f) => `${f.path}\n${f.content}`),
+    ]);
+  }, [inspectableFiles, selected]);
+
+  useEffect(() => {
+    if (!selected || !currentDigest) {
+      setChangedAfterReview(false);
+      return;
+    }
+    const prev = reviewedDigestBySource[selected.id];
+    if (prev && prev !== currentDigest) {
+      setChangedAfterReview(true);
+    } else {
+      setChangedAfterReview(false);
+    }
+  }, [currentDigest, reviewedDigestBySource, selected]);
+
+  const scanReport = useMemo(() => {
+    if (!selected) return { blockers: [], warnings: [] };
+    const entries: Array<{ file: string; text: string }> = [
+      ...inspectableFiles.map((f) => ({ file: f.path, text: f.content })),
+      ...(selected.description ? [{ file: 'description', text: selected.description }] : []),
+    ];
+    return runBotSecurityScan(entries, zh, {
+      blockers: selected.blockers ?? selected.scan?.blockers,
+      warnings: [...(selected.warnings ?? []), ...(selected.scan?.warnings ?? [])],
+      findings: selected.scan?.findings,
+    });
+  }, [inspectableFiles, selected, zh]);
+
+  const hasBlockers = scanReport.blockers.length > 0;
+  const needsExplicitReview = scanReport.warnings.length > 0 || changedAfterReview;
+  const reviewSatisfied = Boolean(selected && currentDigest && reviewedDigestBySource[selected.id] === currentDigest);
+  const canImport = Boolean(
+    selected
+    && targetName.trim()
+    && !importing
+    && !hasBlockers
+    && (!needsExplicitReview || reviewSatisfied),
+  );
+
+  const handleSelectSource = (src: ExtendedImportSource) => {
     setSelectedId(src.id);
     setTargetName(src.name);
+    setExpandedFiles({});
     setAvatarVal({
       avatar: src.avatar || randomMascotAvatar(),
       avatarColor: normalizeHexColor(src.avatarColor) ?? DEFAULT_BOT_AVATAR_COLOR,
@@ -108,7 +211,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
   };
 
   const handleImport = async () => {
-    if (!selected || !targetName.trim() || importing) {
+    if (!selected || !canImport) {
       return;
     }
     setImporting(true);
@@ -140,7 +243,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
         void botsStore.openBotHome(created.id);
       }
       botsStore.pushToast({
-        message: locale === 'zh-CN'
+        message: zh
           ? `已导入大肥鱼队友「${created?.name ?? targetName.trim()}」`
           : `Imported "${created?.name ?? targetName.trim()}"`,
         tone: 'success',
@@ -177,7 +280,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
             <button
               type="button"
               className="dsh-bots-icon-btn"
-              title={locale === 'zh-CN' ? '重新扫描' : 'Rescan'}
+              title={zh ? '重新扫描' : 'Rescan'}
               onClick={() => void loadSources()}
             >
               <IconRefresh size={15} className={loading ? 'dsh-bots-spin' : undefined} />
@@ -192,22 +295,22 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
           {loading ? (
             <div style={{ padding: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)', fontSize: 13, lineHeight: '20px' }}>
               <IconSpinner size={15} />
-              <span>{locale === 'zh-CN' ? '正在扫描 Orca、OpenClaw、Hermes 与旧大肥鱼目录…' : 'Scanning Orca, OpenClaw, Hermes, and WhaleIsle folders…'}</span>
+              <span>{zh ? '正在扫描 Orca、OpenClaw、Hermes 与旧大肥鱼目录…' : 'Scanning Orca, OpenClaw, Hermes, and WhaleIsle folders…'}</span>
             </div>
           ) : sources.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
               <div style={{ fontSize: 14, lineHeight: '22px', fontWeight: 600 }}>
-                {locale === 'zh-CN' ? '未检测到本地可导入的大肥鱼队友' : 'No local bots found to import'}
+                {zh ? '未检测到本地可导入的大肥鱼队友' : 'No local bots found to import'}
               </div>
               <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', maxWidth: 420 }}>
-                {locale === 'zh-CN'
+                {zh
                   ? '已扫描 ~/.orca/bots、~/.openclaw、~/.hermes 与 WhaleIsle 历史大肥鱼配置。你也可以导入 JSON 分享包。'
                   : 'Checked ~/.orca/bots, ~/.openclaw, ~/.hermes, and legacy WhaleIsle data. You can also import a BotPackage JSON.'}
               </div>
             </div>
           ) : (
             <>
-              <div style={{ maxHeight: 190, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ maxHeight: 170, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {sources.map((src) => {
                   const active = src.id === selectedId;
                   return (
@@ -235,7 +338,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
                           {src.imported && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, color: 'var(--dsw-alias-state-success-primary)' }}>
                               <IconCheck size={11} />
-                              {locale === 'zh-CN' ? '已导入' : 'Imported'}
+                              {zh ? '已导入' : 'Imported'}
                             </span>
                           )}
                         </div>
@@ -285,7 +388,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
                         />
                       </button>
                       <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-link)', marginTop: 4 }}>
-                        {locale === 'zh-CN' ? '点击更换头像' : 'Change picture'}
+                        {zh ? '点击更换头像' : 'Change picture'}
                       </div>
                     </div>
                   </div>
@@ -302,6 +405,66 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
                       onChange={(e) => setTargetName(e.target.value)}
                     />
                   </div>
+
+                  {changedAfterReview && !reviewSatisfied && (
+                    <div className="dsh-bots-pcard dsh-bots-pcard-warn" role="alert">
+                      <div className="dsh-bots-row-left" style={{ fontWeight: 600 }}>
+                        <IconAlertTriangle size={14} className="dsh-bots-text-warn" />
+                        <span>{zh ? '源文件内容已变动，请重新审阅' : 'Source changed — review again'}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <SecurityScanPanel report={scanReport} />
+
+                  {inspectableFiles.length > 0 && (
+                    <div className="dsh-bots-file-review-list">
+                      <div className="dsh-bots-field-label" style={{ marginBottom: 4 }}>
+                        {zh ? '展开审阅 SOUL / Skill 正文' : 'Inspect SOUL / Skill content'}
+                      </div>
+                      {inspectableFiles.map((file) => {
+                        const openFile = Boolean(expandedFiles[file.path]);
+                        return (
+                          <div key={file.path} className="dsh-bots-file-review-item">
+                            <button
+                              type="button"
+                              className="dsh-bots-file-review-head"
+                              aria-expanded={openFile}
+                              onClick={() => setExpandedFiles((prev) => ({ ...prev, [file.path]: !prev[file.path] }))}
+                            >
+                              <BotChevron open={openFile} size={12} />
+                              <IconFileText size={12} />
+                              <span className="dsh-bots-ellipsis">{file.label}</span>
+                            </button>
+                            <BotDisclosure open={openFile}>
+                              <pre className="dsh-bots-file-review-pre">{file.content}</pre>
+                            </BotDisclosure>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!hasBlockers && needsExplicitReview && currentDigest && (
+                    <label className="dsh-bots-review-ack">
+                      <input
+                        type="checkbox"
+                        checked={reviewSatisfied}
+                        onChange={(e) => {
+                          setReviewedDigestBySource((prev) => {
+                            const next = { ...prev };
+                            if (e.target.checked) next[selected.id] = currentDigest;
+                            else delete next[selected.id];
+                            return next;
+                          });
+                          if (e.target.checked) setChangedAfterReview(false);
+                        }}
+                      />
+                      <span>
+                        {zh ? '我已审阅上述安全警告并确认继续导入' : 'I have reviewed the warnings and wish to import'}
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
             </>
@@ -318,7 +481,7 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
             onClick={() => botsStore.openModal({ kind: 'share', mode: 'import' })}
           >
             <IconLink size={14} />
-            <span>{locale === 'zh-CN' ? '导入 JSON 分享包…' : 'Import package JSON…'}</span>
+            <span>{zh ? '导入 JSON 分享包…' : 'Import package JSON…'}</span>
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" className="dsh-bots-btn" onClick={onClose}>
@@ -328,12 +491,16 @@ export function BotImportDialog({ open, onClose }: BotImportDialogProps) {
               type="button"
               className="dsh-bots-btn"
               data-variant="primary"
-              disabled={!selected || !targetName.trim() || importing}
+              disabled={!canImport}
               onClick={() => void handleImport()}
             >
               {importing
-                ? (locale === 'zh-CN' ? '导入中…' : 'Importing…')
-                : (locale === 'zh-CN' ? '导入队友' : 'Import bot')}
+                ? (zh ? '导入中…' : 'Importing…')
+                : hasBlockers
+                  ? (zh ? '存在阻断项，无法导入' : 'Blocked by scan')
+                  : changedAfterReview && !reviewSatisfied
+                    ? (zh ? '请重新审阅' : 'Review again')
+                    : (zh ? '导入队友' : 'Import bot')}
             </button>
           </div>
         </div>
