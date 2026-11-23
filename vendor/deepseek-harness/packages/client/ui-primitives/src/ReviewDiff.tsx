@@ -16,6 +16,9 @@ import css from './ReviewDiff.module.css'
 /** Maximum rendered lines per comparison; further hunk content truncates with a note. */
 export const MAX_RENDERED_LINES = 5000
 
+/** Default per-chunk line budget when progressive expansion is enabled. */
+export const DEFAULT_PROGRESSIVE_CHUNK_LINES = 400
+
 /**
  * A unified-diff hunk in the shape every comparison surface can produce:
  * a display header and prefixed body lines. Line numbers start from
@@ -422,6 +425,102 @@ export interface ReviewNote {
   attrs?: Record<string, string>
 }
 
+/** Target metadata passed when triggering a line-level comment action on a diff row. */
+export interface ReviewLineCommentTarget {
+  /** 1-based line number on the target side (`new` for add/context, `old` for del). */
+  lineNumber: number
+  /** Which file side owns `lineNumber`. */
+  side: 'old' | 'new'
+  /** Unified diff line kind. */
+  kind: 'add' | 'del' | 'context'
+  /** Line content without the leading diff prefix. */
+  text: string
+  /** Complete enclosing hunk. */
+  hunk: ReviewHunk
+}
+
+/** Props accepted by {@link ReviewDiff}. */
+export interface ReviewDiffProps {
+  /** Served hunks; each keeps its own header or gets one synthesized. */
+  hunks: readonly ReviewHunk[]
+  /** Grammar hint for highlighting; unknown or loading grammars render plain text. */
+  language?: string | undefined
+  /** Requested side-by-side layout; one-sided comparisons always draw unified. */
+  split: boolean
+  /** Wrap long lines instead of clipping them behind synced columns. */
+  wrap: boolean
+  /** Localized note paragraphs above the hunks (created/deleted/unchanged/coarse and the like). */
+  notes?: readonly ReviewNote[] | undefined
+  /** Localized line shown when the body hit {@link MAX_RENDERED_LINES}. */
+  truncatedNote?: string | undefined
+  /** Localized line shown when any hunk skipped highlighting over the budget. */
+  skippedNote?: string | undefined
+  /** Optional hunk header action slot rendered in both unified and split views. */
+  renderHunkActions?: ((hunk: ReviewHunk, index: number) => ReactNode) | undefined
+  /** Optional callback triggered by the hover/focus line comment button. */
+  onLineComment?: ((target: ReviewLineCommentTarget) => void) | undefined
+  /** Accessible label for the line comment button. */
+  lineCommentLabel?: string | undefined
+  /** Optional chunk size for progressive rendering; defaults to rendering all kept lines. */
+  progressiveChunkLines?: number | undefined
+  /** Label or formatter for revealing the next progressive chunk. */
+  showMoreLabel?: string | ((remaining: number, nextCount: number) => string) | undefined
+  /** Label or formatter for expanding all remaining kept lines at once. */
+  expandRemainingLabel?: string | ((remaining: number) => string) | undefined
+}
+
+function unifiedCommentTarget(row: DiffRow, hunk: ReviewHunk): ReviewLineCommentTarget | undefined {
+  switch (row.kind) {
+    case 'add':
+      return row.new === undefined ? undefined : { lineNumber: row.new, side: 'new', kind: 'add', text: row.text, hunk }
+    case 'del':
+      return row.old === undefined ? undefined : { lineNumber: row.old, side: 'old', kind: 'del', text: row.text, hunk }
+    case 'context': {
+      const side = row.new !== undefined ? 'new' : 'old'
+      const lineNumber = side === 'new' ? row.new : row.old
+      return lineNumber === undefined ? undefined : { lineNumber, side, kind: 'context', text: row.text, hunk }
+    }
+    case 'eof':
+      return undefined
+  }
+}
+
+function splitCellCommentTarget(
+  cell: NonNullable<SplitRow['left']> | NonNullable<SplitRow['right']> | undefined,
+  side: 'old' | 'new',
+  hunk: ReviewHunk,
+): ReviewLineCommentTarget | undefined {
+  if (cell === undefined || cell.no === undefined) return undefined
+  return { lineNumber: cell.no, side, kind: cell.kind, text: cell.text, hunk }
+}
+
+function LineCommentTrigger({
+  label,
+  target,
+  onComment,
+}: {
+  label: string
+  target: ReviewLineCommentTarget | undefined
+  onComment: ((target: ReviewLineCommentTarget) => void) | undefined
+}): ReactNode {
+  if (onComment === undefined || target === undefined) return null
+  return (
+    <button
+      type="button"
+      className={css.lineCommentBtn}
+      data-diff-line-comment
+      aria-label={label}
+      title={label}
+      onClick={(event) => {
+        event.stopPropagation()
+        onComment(target)
+      }}
+    >
+      +
+    </button>
+  )
+}
+
 /**
  * The side-by-side view without wrapping: two columns that clip their long
  * lines and scroll together on both axes, so a long line on one side never
@@ -429,7 +528,21 @@ export interface ReviewNote {
  * Every line is one fixed-height row, which keeps the sides aligned.
  * The columns suppress elastic overscroll while retaining native in-range scrolling.
  */
-function SplitColumns({ hunks, highlights }: { hunks: readonly ReviewHunk[]; highlights: readonly (HunkHighlights | undefined)[] }): ReactNode {
+function SplitColumns({
+  hunks,
+  fullHunks,
+  highlights,
+  renderHunkActions,
+  onLineComment,
+  commentLabel,
+}: {
+  hunks: readonly ReviewHunk[]
+  fullHunks: readonly ReviewHunk[]
+  highlights: readonly (HunkHighlights | undefined)[]
+  renderHunkActions?: ((hunk: ReviewHunk, index: number) => ReactNode) | undefined
+  onLineComment?: ((target: ReviewLineCommentTarget) => void) | undefined
+  commentLabel: string
+}): ReactNode {
   const paired = useMemo(() => hunks.map(hunk => ({ header: hunkHeader(hunk), rows: splitRows(hunk) })), [hunks])
   const columns = useRef<Record<'left' | 'right', HTMLDivElement | null>>({ left: null, right: null })
   const offsets = useRef({ left: { scrollLeft: 0, scrollTop: 0 }, right: { scrollLeft: 0, scrollTop: 0 } })
@@ -452,24 +565,37 @@ function SplitColumns({ hunks, highlights }: { hunks: readonly ReviewHunk[]; hig
       {(['left', 'right'] as const).map(side => (
         <div key={side} className={css.column} data-diff-side={side}
           ref={(element) => { columns.current[side] = element }} onScroll={follow(side)}>
-          {paired.map((hunk, position) => (
-            <section key={position} className={css.hunk} data-diff-hunk>
-              <div className={css.hunkHeader} data-diff-hunk-header>{hunk.header}</div>
-              {hunk.rows.map((row, at) => {
-                if (row.eof !== undefined) {
-                  return <div key={at} className={`${css.sideLine} ${css.eof}`} data-diff-line="eof"><span className={css.number} /><DiffText text={row.eof} spans={undefined} /></div>
-                }
-                const cell = row[side]
-                const spans = cell === undefined || cell.no === undefined ? undefined : highlights[position]?.[side === 'left' ? 'old' : 'new']?.get(cell.no)
-                return (
-                  <div key={at} className={`${css.sideLine} ${cell === undefined ? css.empty : css[cell.kind]}`} data-diff-line={splitRowKind(row)}>
-                    <span className={css.number}>{cell?.no ?? ''}</span>
-                    <DiffText text={cell?.text ?? ''} spans={spans} />
-                  </div>
-                )
-              })}
-            </section>
-          ))}
+          {paired.map((hunk, position) => {
+            const fullHunk = fullHunks[position] ?? hunks[position]
+            const targetSide = side === 'left' ? 'old' : 'new'
+            return (
+              <section key={position} className={css.hunk} data-diff-hunk>
+                <div className={css.hunkHeader} data-diff-hunk-header>
+                  <span className={css.hunkHeaderText}>{hunk.header}</span>
+                  {side === 'right' && renderHunkActions !== undefined && fullHunk !== undefined && (
+                    <span className={css.hunkActions} data-diff-hunk-actions>
+                      {renderHunkActions(fullHunk, position)}
+                    </span>
+                  )}
+                </div>
+                {hunk.rows.map((row, at) => {
+                  if (row.eof !== undefined) {
+                    return <div key={at} className={`${css.sideLine} ${css.eof}`} data-diff-line="eof"><span className={css.number} /><DiffText text={row.eof} spans={undefined} /></div>
+                  }
+                  const cell = row[side]
+                  const spans = cell === undefined || cell.no === undefined ? undefined : highlights[position]?.[targetSide]?.get(cell.no)
+                  const target = fullHunk === undefined ? undefined : splitCellCommentTarget(cell, targetSide, fullHunk)
+                  return (
+                    <div key={at} className={`${css.sideLine} ${cell === undefined ? css.empty : css[cell.kind]}`} data-diff-line={splitRowKind(row)}>
+                      <LineCommentTrigger label={commentLabel} target={target} onComment={onLineComment} />
+                      <span className={css.number}>{cell?.no ?? ''}</span>
+                      <DiffText text={cell?.text ?? ''} spans={spans} />
+                    </div>
+                  )
+                })}
+              </section>
+            )
+          })}
         </div>
       ))}
     </div>
@@ -481,54 +607,108 @@ function SplitColumns({ hunks, highlights }: { hunks: readonly ReviewHunk[]; hig
  * Addition-only and deletion-only comparisons use one column without changing
  * the requested layout. Plain text paints first; token highlighting lands in
  * cancellable slices, and comparisons over budget stay readable as text.
- * @param props - hunks, layout choices, and localized notes.
+ * @param props - hunks, layout choices, optional actions, and localized notes.
  * @returns the comparison body.
  */
-export function ReviewDiff({ hunks, language, split, wrap, notes, truncatedNote, skippedNote }: {
-  /** Served hunks; each keeps its own header or gets one synthesized. */
-  hunks: readonly ReviewHunk[]
-  /** Grammar hint for highlighting; unknown or loading grammars render plain text. */
-  language?: string | undefined
-  /** Requested side-by-side layout; one-sided comparisons always draw unified. */
-  split: boolean
-  /** Wrap long lines instead of clipping them behind synced columns. */
-  wrap: boolean
-  /** Localized note paragraphs above the hunks (created/deleted/unchanged/coarse and the like). */
-  notes?: readonly ReviewNote[] | undefined
-  /** Localized line shown when the body hit {@link MAX_RENDERED_LINES}. */
-  truncatedNote?: string | undefined
-  /** Localized line shown when any hunk skipped highlighting over the budget. */
-  skippedNote?: string | undefined
-}): ReactNode {
+export function ReviewDiff({
+  hunks,
+  language,
+  split,
+  wrap,
+  notes,
+  truncatedNote,
+  skippedNote,
+  renderHunkActions,
+  onLineComment,
+  lineCommentLabel,
+  progressiveChunkLines,
+  showMoreLabel,
+  expandRemainingLabel,
+}: ReviewDiffProps): ReactNode {
   const { hunks: kept, truncated } = useMemo(() => renderedHunks(hunks), [hunks])
-  const { highlights, skipped } = useReviewHighlights(kept, language)
+  const chunkSize = progressiveChunkLines !== undefined && progressiveChunkLines > 0
+    ? Math.floor(progressiveChunkLines)
+    : undefined
+  const [visibleLimit, setVisibleLimit] = useState<number>(() => chunkSize ?? Number.POSITIVE_INFINITY)
+  useEffect(() => {
+    setVisibleLimit(chunkSize ?? Number.POSITIVE_INFINITY)
+  }, [hunks, chunkSize])
+  const totalKeptLines = useMemo(() => kept.reduce((sum, hunk) => sum + hunk.lines.length, 0), [kept])
+  const isChunked = chunkSize !== undefined && visibleLimit < totalKeptLines
+  const visibleHunks = useMemo(
+    () => (isChunked ? renderedHunks(kept, visibleLimit).hunks : kept),
+    [isChunked, kept, visibleLimit],
+  )
+  const visibleCount = useMemo(() => visibleHunks.reduce((sum, hunk) => sum + hunk.lines.length, 0), [visibleHunks])
+  const remainingLines = Math.max(0, totalKeptLines - visibleCount)
+  const nextChunkCount = chunkSize === undefined ? remainingLines : Math.min(chunkSize, remainingLines)
+  const { highlights, skipped } = useReviewHighlights(visibleHunks, language)
   const hasAdditions = kept.some(hunk => hunk.lines.some(line => line.startsWith('+')))
   const hasDeletions = kept.some(hunk => hunk.lines.some(line => line.startsWith('-')))
   const effectiveSplit = split && !(hasAdditions !== hasDeletions)
+  const commentLabel = lineCommentLabel ?? 'Add to chat'
+  const showMoreText = typeof showMoreLabel === 'function'
+    ? showMoreLabel(remainingLines, nextChunkCount)
+    : showMoreLabel ?? `Show ${nextChunkCount} more lines (${remainingLines} remaining)`
+  const expandRemainingText = typeof expandRemainingLabel === 'function'
+    ? expandRemainingLabel(remainingLines)
+    : expandRemainingLabel ?? `Expand remaining (${remainingLines} lines)`
   return (
     <div className={css.body} data-review-view={effectiveSplit ? 'split' : 'unified'} data-review-wrap={wrap || undefined}>
       {notes?.map((note, index) => <p key={index} className={css.note} {...note.attrs}>{note.text}</p>)}
       {truncated && truncatedNote !== undefined && <p className={css.note} data-diff-truncated>{truncatedNote}</p>}
       {skipped && skippedNote !== undefined && <p className={css.note} data-diff-highlight-skipped>{skippedNote}</p>}
-      {effectiveSplit && !wrap ? <SplitColumns hunks={kept} highlights={highlights} /> : kept.map((hunk, position) => {
+      {effectiveSplit && !wrap ? (
+        <SplitColumns
+          hunks={visibleHunks}
+          fullHunks={kept}
+          highlights={highlights}
+          renderHunkActions={renderHunkActions}
+          onLineComment={onLineComment}
+          commentLabel={commentLabel}
+        />
+      ) : visibleHunks.map((hunk, position) => {
         const highlighted = highlights[position]
+        const fullHunk = kept[position] ?? hunk
         return <section key={position} className={css.hunk} data-diff-hunk>
-          <div className={css.hunkHeader} data-diff-hunk-header>{hunkHeader(hunk)}</div>
+          <div className={css.hunkHeader} data-diff-hunk-header>
+            <span className={css.hunkHeaderText}>{hunkHeader(hunk)}</span>
+            {renderHunkActions !== undefined && (
+              <span className={css.hunkActions} data-diff-hunk-actions>
+                {renderHunkActions(fullHunk, position)}
+              </span>
+            )}
+          </div>
           {effectiveSplit ? splitRows(hunk).map((row, at) => (
             row.eof !== undefined
               ? <div key={at} className={css.splitLine} data-diff-line="eof"><span className={`${css.cell} ${css.eof}`}><span className={css.number} /><DiffText text={row.eof} spans={undefined} /></span></div>
               : <div key={at} className={css.splitLine} data-diff-line={splitRowKind(row)}>
                 <span className={`${css.cell} ${row.left === undefined ? css.empty : css[row.left.kind]}`}>
+                  <LineCommentTrigger
+                    label={commentLabel}
+                    target={splitCellCommentTarget(row.left, 'old', fullHunk)}
+                    onComment={onLineComment}
+                  />
                   <span className={css.number}>{row.left?.no ?? ''}</span>
                   <DiffText text={row.left?.text ?? ''} spans={row.left?.no === undefined ? undefined : highlighted?.old?.get(row.left.no)} />
                 </span>
                 <span className={`${css.cell} ${row.right === undefined ? css.empty : css[row.right.kind]}`}>
+                  <LineCommentTrigger
+                    label={commentLabel}
+                    target={splitCellCommentTarget(row.right, 'new', fullHunk)}
+                    onComment={onLineComment}
+                  />
                   <span className={css.number}>{row.right?.no ?? ''}</span>
                   <DiffText text={row.right?.text ?? ''} spans={row.right?.no === undefined ? undefined : highlighted?.new?.get(row.right.no)} />
                 </span>
               </div>
           )) : hunkRows(hunk).map((row, at) => (
             <div key={at} className={`${css.line} ${css[row.kind]}`} data-diff-line={row.kind}>
+              <LineCommentTrigger
+                label={commentLabel}
+                target={unifiedCommentTarget(row, fullHunk)}
+                onComment={onLineComment}
+              />
               <span className={css.number}>{row.old ?? ''}</span>
               <span className={css.number}>{row.new ?? ''}</span>
               <span className={css.sign}>{row.kind === 'add' ? '+' : row.kind === 'del' ? '-' : ' '}</span>
@@ -539,6 +719,28 @@ export function ReviewDiff({ hunks, language, split, wrap, notes, truncatedNote,
           ))}
         </section>
       })}
+      {remainingLines > 0 && (
+        <div className={css.progressiveBar} data-diff-progressive>
+          <button
+            type="button"
+            className={css.progressiveBtn}
+            data-diff-show-more
+            onClick={() => { setVisibleLimit(current => Math.min(totalKeptLines, current + (chunkSize ?? totalKeptLines))) }}
+          >
+            {showMoreText}
+          </button>
+          {remainingLines > nextChunkCount && (
+            <button
+              type="button"
+              className={css.progressiveBtn}
+              data-diff-expand-remaining
+              onClick={() => { setVisibleLimit(totalKeptLines) }}
+            >
+              {expandRemainingText}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

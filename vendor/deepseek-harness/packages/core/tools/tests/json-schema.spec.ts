@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assertObjectJsonSchema,
   assertSupportedJsonSchema,
+  coerceJsonSchemaValue,
   JsonSchemaError,
   validateJsonSchemaValue,
   type JsonSchemaNode,
@@ -451,5 +452,54 @@ describe('validateJsonSchemaValue', () => {
   it('keeps assertNever as a forged-schema backstop', () => {
     const forged = { type: 'tuple' } as unknown as JsonSchemaNode
     expect(() => validateJsonSchemaValue(forged, 1)).toThrow(/tuple/)
+  })
+})
+
+describe('coerceJsonSchemaValue', () => {
+  it('conservatively coerces lossless stringified scalars for number, integer, and boolean targets', () => {
+    const schema = asserted({
+      type: 'object',
+      properties: {
+        count: { type: 'integer' },
+        ratio: { type: 'number' },
+        enabled: { type: 'boolean' },
+        disabled: { type: 'boolean' },
+        nested: { type: 'array', items: { type: 'integer' } },
+      },
+    })
+    const input = Object.freeze({
+      count: '42',
+      ratio: '-3.5',
+      enabled: 'true',
+      disabled: ' false ',
+      nested: Object.freeze(['1', '2']),
+      extra: 'keep-me',
+    })
+    const coerced = coerceJsonSchemaValue(schema, input)
+    expect(coerced).toEqual({
+      count: 42,
+      ratio: -3.5,
+      enabled: true,
+      disabled: false,
+      nested: [1, 2],
+      extra: 'keep-me',
+    })
+    expect(input.count).toBe('42')
+  })
+
+  it('rejects lossy, ambiguous, or non-matching conversions and keeps untyped/union strings untouched', () => {
+    expect(coerceJsonSchemaValue(asserted({ type: 'integer' }), '1.5')).toBe('1.5')
+    expect(coerceJsonSchemaValue(asserted({ type: 'integer' }), '9007199254740993')).toBe('9007199254740993')
+    expect(coerceJsonSchemaValue(asserted({ type: 'number' }), '12px')).toBe('12px')
+    expect(coerceJsonSchemaValue(asserted({ type: 'number' }), 'Infinity')).toBe('Infinity')
+    expect(coerceJsonSchemaValue(asserted({ type: 'number' }), '-0')).toBe('-0')
+    expect(coerceJsonSchemaValue(asserted({ type: 'number' }), '0x10')).toBe('0x10')
+    expect(coerceJsonSchemaValue(asserted({ type: 'number' }), '')).toBe('')
+    expect(coerceJsonSchemaValue(asserted({ type: 'boolean' }), 'yes')).toBe('yes')
+    expect(coerceJsonSchemaValue(asserted({ type: 'boolean' }), '1')).toBe('1')
+    expect(coerceJsonSchemaValue(asserted({ type: 'string' }), 42)).toBe(42)
+    expect(coerceJsonSchemaValue(asserted({}), '42')).toBe('42')
+    expect(coerceJsonSchemaValue(asserted({ oneOf: [{ type: 'number' }, { type: 'string' }] }), '42')).toBe('42')
+    expect(coerceJsonSchemaValue(asserted({ oneOf: [{ type: 'integer' }, { type: 'null' }] }), '7')).toBe(7)
   })
 })

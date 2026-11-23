@@ -2,9 +2,11 @@ import { ToolExecutionPipeline } from '@deepseek-ai/dsh-tools/pipeline'
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { ToolCallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
@@ -949,5 +951,298 @@ describe('depth budget configuration', () => {
     await ctx.plugin(tool, { provider: 'external', maxDepth: 'provider-managed' })
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(requests[0]?.maxDepth).toBeUndefined()
+  })
+})
+
+describe('worktree isolation', () => {
+  const execFileAsync = promisify(execFile)
+  const tempWorkspaces: Array<{ dir: string; cleanup?: () => Promise<void> }> = []
+
+  afterEach(async () => {
+    const errors: unknown[] = []
+    for (const item of tempWorkspaces.splice(0).reverse()) {
+      try {
+        await item.cleanup?.()
+        rmSync(item.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      } catch (error: unknown) {
+        errors.push(error)
+      }
+    }
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1) throw new AggregateError(errors, 'tool-subagent worktree cleanup failed')
+  })
+
+  const TEST_GIT_ENV: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    GIT_AUTHOR_NAME: 'Test User',
+    GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test User',
+    GIT_COMMITTER_EMAIL: 'test@example.com',
+  }
+
+  async function runGit(args: readonly string[], cwd: string): Promise<string> {
+    const { stdout } = await execFileAsync('git', ['-c', 'core.fsmonitor=false', '-c', 'commit.gpgsign=false', ...args], {
+      cwd,
+      encoding: 'utf8',
+      windowsHide: true,
+      env: TEST_GIT_ENV,
+    })
+    return stdout.trim()
+  }
+
+  function makeTempDir(prefix: string): string {
+    const dir = mkdtempSync(path.join(tmpdir(), prefix))
+    tempWorkspaces.push({ dir })
+    return dir
+  }
+
+  async function initTempGitRepo(): Promise<{ repoDir: string; baseCommit: string }> {
+    const repoDir = realpathSync(makeTempDir('dsh-tool-subagent-git-'))
+    await runGit(['init'], repoDir)
+    writeFileSync(path.join(repoDir, 'file.txt'), 'base\n', 'utf8')
+    await runGit(['add', 'file.txt'], repoDir)
+    await runGit(['commit', '-m', 'init'], repoDir)
+    const baseCommit = await runGit(['rev-parse', 'HEAD'], repoDir)
+    return { repoDir, baseCommit }
+  }
+
+  async function setupContinuableTool(adapterScript: ConstructorParameters<typeof MockAdapter>[0]) {
+    const persistRoot = mkdtempSync(path.join(tmpdir(), 'dsh-tool-subagent-wt-persist-'))
+    const ctx = new Context()
+    tempWorkspaces.push({
+      dir: persistRoot,
+      cleanup: () => ctx.fiber.dispose(),
+    })
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(JsonlSessionPersistence, { root: persistRoot })
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+    await ctx.plugin(tool, { provider: 'spawn' })
+    ctx.llm.registerAdapter(['mock'], new MockAdapter(adapterScript))
+    return ctx
+  }
+
+  async function createParentInDir(ctx: Context, id: string, dir: string): Promise<Agent> {
+    const parent = await ctx.agentLoop.create(SessionId(id), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    await ctx.workingDirectory.set(parent, dir, testToolSignal)
+    return parent
+  }
+
+  it('exposes optional isolation parameter on continuable spawn tool while keeping external mock parameter list untouched', async () => {
+    const spawnCtx = await setupContinuableTool([textResponse('ok')])
+    const spawnProps = (spawnCtx.tools.schemas().find(s => s.name === 'subagent')!.parameters as { properties?: Record<string, { enum?: unknown }> }).properties ?? {}
+    expect(Object.keys(spawnProps)).toContain('isolation')
+    expect(spawnProps.isolation?.enum).toEqual(['none', 'worktree'])
+
+    const mockCtx = await setup({ provider: 'mock' })
+    const mockProps = (mockCtx.tools.schemas().find(s => s.name === 'subagent')!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
+    expect(Object.keys(mockProps)).toEqual(['cwd', 'description', 'name', 'prompt'])
+  })
+
+  it('fails loudly without silent downgrade when isolation is "worktree" outside a Git repository', { timeout: 20_000 }, async () => {
+    const plainDir = makeTempDir('dsh-tool-subagent-non-git-')
+    const ctx = await setupContinuableTool([])
+    const parent = await createParentInDir(ctx, 'wt-non-git-parent', plainDir)
+    const startSpy = vi.spyOn(ctx.subagents, 'startActivation')
+
+    const result = await callSubagent(ctx, {
+      description: 'non-git test',
+      prompt: 'check non git',
+      isolation: 'worktree',
+    }, { agent: parent })
+
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('Git repository')
+    expect(startSpy).not.toHaveBeenCalled()
+  })
+
+  it('creates an isolated worktree from HEAD, returns worktreePath and branch, binds child cwd, and cleans untouched worktrees', { timeout: 20_000 }, async () => {
+    const { repoDir } = await initTempGitRepo()
+    const ctx = await setupContinuableTool([textResponse('clean done'), textResponse('parent ack')])
+    const parent = await createParentInDir(ctx, 'wt-clean-parent', repoDir)
+
+    let childEffectiveCwd: string | undefined
+    let spawnedChildId: SessionId | undefined
+    const childEnded = Promise.withResolvers<undefined>()
+    const allowFinish = Promise.withResolvers<undefined>()
+    ctx.on('subagent/start', (info) => {
+      spawnedChildId = info.id
+    })
+    ctx.on('subagent/end', (info) => {
+      if (info.id === spawnedChildId) childEnded.resolve(undefined)
+    })
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      if (subject.id !== parent.id) {
+        childEffectiveCwd = await ctx.workingDirectory.ensure(subject, testToolSignal)
+        await allowFinish.promise
+      }
+      return next()
+    })
+
+    const result = await callSubagent(ctx, {
+      description: 'clean task',
+      prompt: 'inspect only',
+      name: 'worker',
+      isolation: 'worktree',
+    }, { agent: parent })
+
+    expect(result.isError).toBe(false)
+    const value = result.value as { kind: string; name: string; worktreePath?: string; branch?: string }
+    try {
+      expect(value.kind).toBe('activation')
+      expect(value.name).toBe('worker')
+      expect(value.worktreePath).toBeTypeOf('string')
+      expect(value.branch).toMatch(/^subagent-worker-[0-9a-f]{8}$/)
+      expect(text(result)).toContain(value.worktreePath!)
+      expect(text(result)).toContain(value.branch!)
+      await vi.waitFor(() => { expect(childEffectiveCwd).toBeDefined() })
+      expect(childEffectiveCwd).toBe(value.worktreePath)
+      expect(await ctx.workingDirectory.ensure(parent, testToolSignal)).toBe(repoDir)
+    } finally {
+      allowFinish.resolve(undefined)
+    }
+
+    await childEnded.promise
+    await parent.whenIdle()
+
+    expect(existsSync(value.worktreePath!)).toBe(false)
+    expect(await runGit(['branch', '--list', value.branch!], repoDir)).toBe('')
+  })
+
+  it('retains worktree and branch when child leaves uncommitted changes and reports them to parent', { timeout: 20_000 }, async () => {
+    const { repoDir } = await initTempGitRepo()
+    const ctx = await setupContinuableTool([textResponse('dirty done'), textResponse('parent saw dirty')])
+    const parent = await createParentInDir(ctx, 'wt-dirty-parent', repoDir)
+
+    let spawnedChildId: SessionId | undefined
+    const childEnded = Promise.withResolvers<undefined>()
+    const allowFinish = Promise.withResolvers<undefined>()
+    ctx.on('subagent/start', (info) => {
+      spawnedChildId = info.id
+    })
+    ctx.on('subagent/end', (info) => {
+      if (info.id === spawnedChildId) childEnded.resolve(undefined)
+    })
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      if (subject.id !== parent.id) await allowFinish.promise
+      return next()
+    })
+
+    const result = await callSubagent(ctx, {
+      description: 'dirty task',
+      prompt: 'write a file',
+      name: 'editor',
+      isolation: 'worktree',
+    }, { agent: parent })
+
+    expect(result.isError).toBe(false)
+    const value = result.value as { worktreePath: string; branch: string }
+    try {
+      writeFileSync(path.join(value.worktreePath, 'untracked.txt'), 'child edit\n', 'utf8')
+    } finally {
+      allowFinish.resolve(undefined)
+    }
+
+    await childEnded.promise
+    await parent.whenIdle()
+
+    expect(existsSync(path.join(value.worktreePath, 'untracked.txt'))).toBe(true)
+    expect(existsSync(path.join(repoDir, 'untracked.txt'))).toBe(false)
+    expect(await runGit(['branch', '--list', value.branch], repoDir)).toContain(value.branch)
+
+    const notices = [
+      ...parent.session.snapshotEvents().flatMap(event => event.type === 'user/message' ? [event.data] : []),
+      ...parent.inbox.nextStep,
+      ...parent.inbox.nextTurn,
+    ]
+      .filter(msg => msg.source.kind === 'subagent-settled')
+      .map(msg => msg.content.flatMap(b => b.type === 'text' ? [b.text] : []).join('\n'))
+    expect(notices.some(n => n.includes('retained') && n.includes(value.worktreePath) && n.includes(value.branch))).toBe(true)
+
+    await runGit(['worktree', 'remove', '--force', value.worktreePath], repoDir)
+  })
+
+  it('retains worktree and branch when child creates new commits while leaving main repo HEAD unchanged', { timeout: 20_000 }, async () => {
+    const { repoDir, baseCommit } = await initTempGitRepo()
+    const ctx = await setupContinuableTool([textResponse('committed done'), textResponse('parent saw commit')])
+    const parent = await createParentInDir(ctx, 'wt-commit-parent', repoDir)
+
+    let spawnedChildId: SessionId | undefined
+    const childEnded = Promise.withResolvers<undefined>()
+    const allowFinish = Promise.withResolvers<undefined>()
+    ctx.on('subagent/start', (info) => {
+      spawnedChildId = info.id
+    })
+    ctx.on('subagent/end', (info) => {
+      if (info.id === spawnedChildId) childEnded.resolve(undefined)
+    })
+    ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+      if (subject.id !== parent.id) await allowFinish.promise
+      return next()
+    })
+
+    const result = await callSubagent(ctx, {
+      description: 'commit task',
+      prompt: 'commit work',
+      name: 'committer',
+      isolation: 'worktree',
+    }, { agent: parent })
+    expect(result.isError).toBe(false)
+    const value = result.value as { worktreePath: string; branch: string }
+
+    let newCommit = ''
+    try {
+      writeFileSync(path.join(value.worktreePath, 'committed.txt'), 'commit payload\n', 'utf8')
+      await runGit(['add', 'committed.txt'], value.worktreePath)
+      await runGit(['commit', '-m', 'isolated commit'], value.worktreePath)
+      newCommit = await runGit(['rev-parse', 'HEAD'], value.worktreePath)
+    } finally {
+      allowFinish.resolve(undefined)
+    }
+
+    await childEnded.promise
+    await parent.whenIdle()
+
+    expect(existsSync(value.worktreePath)).toBe(true)
+    expect(await runGit(['rev-parse', `refs/heads/${value.branch}`], repoDir)).toBe(newCommit)
+    expect(await runGit(['rev-parse', 'HEAD'], repoDir)).toBe(baseCommit)
+
+    const notices = [
+      ...parent.session.snapshotEvents().flatMap(event => event.type === 'user/message' ? [event.data] : []),
+      ...parent.inbox.nextStep,
+      ...parent.inbox.nextTurn,
+    ]
+      .filter(msg => msg.source.kind === 'subagent-settled')
+      .map(msg => msg.content.flatMap(b => b.type === 'text' ? [b.text] : []).join('\n'))
+    expect(notices.some(n => n.includes('new commits') && n.includes(value.worktreePath) && n.includes(value.branch))).toBe(true)
+
+    await runGit(['worktree', 'remove', '--force', value.worktreePath], repoDir)
+  })
+
+  it('rolls back provisioned worktree and branch if startActivation fails', { timeout: 20_000 }, async () => {
+    const { repoDir } = await initTempGitRepo()
+    const ctx = await setupContinuableTool([])
+    const parent = await createParentInDir(ctx, 'wt-rollback-parent', repoDir)
+    vi.spyOn(ctx.subagents, 'startActivation').mockRejectedValue(new Error('synthetic start failure'))
+
+    const result = await callSubagent(ctx, {
+      description: 'failing start',
+      prompt: 'fail cleanly',
+      name: 'doomed',
+      isolation: 'worktree',
+    }, { agent: parent })
+
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('synthetic start failure')
+    const branches = await runGit(['branch', '--list', 'subagent-doomed-*'], repoDir)
+    expect(branches).toBe('')
   })
 })

@@ -58,6 +58,7 @@ export interface GlobToolCaps {
 export interface GlobInput {
   pattern: string
   path?: string
+  noIgnore?: boolean
 }
 
 /**
@@ -66,12 +67,16 @@ export interface GlobInput {
  * (`INVALID_ARGS`) otherwise.
  *
  * @param args - the schema-validated `glob` arguments.
- * @returns the accepted input, unchanged.
+ * @returns the accepted input with optional fields preserved when provided.
  */
-export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInput {
+export function parseGlobArgs(args: { pattern: string; path?: string; noIgnore?: boolean }): GlobInput {
   if (args.pattern.trim().length === 0) throw new ToolArgsError(['pattern must be a non-empty string'])
   if (args.path !== undefined && args.path.trim().length === 0) throw new ToolArgsError(['path must be a non-empty string when given'])
-  return { pattern: args.pattern, ...args.path !== undefined ? { path: args.path } : {} }
+  return {
+    pattern: args.pattern,
+    ...args.path !== undefined ? { path: args.path } : {},
+    ...args.noIgnore !== undefined ? { noIgnore: args.noIgnore } : {},
+  }
 }
 
 /**
@@ -79,13 +84,14 @@ export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInp
  * model-controlled value ({@link GlobInput.pattern}, {@link GlobInput.path})
  * is a plain argv element — no shell layer exists, so no quoting applies; the
  * search root rides behind `--` so a leading-dash path can never be parsed as
- * a flag. `--sort=modified` orders by modification time, `--no-ignore
- * --hidden` searches ignored and hidden files, and
- * {@link GLOB_VCS_EXCLUDES} keeps VCS metadata out. Simple directory prefixes
- * prune unrelated subtrees through directory-name globs without changing the
- * search root, path separators, or symlink handling. The last matching glob
- * wins. A fixed 8 KiB budget bounds added argv bytes; larger additions retain
- * the original traversal, since even linear growth can exceed command-line limits.
+ * a flag. `--sort=modified` orders by modification time, `--hidden` searches
+ * hidden files while `.gitignore`/`.ignore` rules are respected by default
+ * unless `noIgnore` is true (`--no-ignore`), and {@link GLOB_VCS_EXCLUDES} keeps
+ * VCS metadata out. Simple directory prefixes prune unrelated subtrees through
+ * directory-name globs without changing the search root, path separators, or
+ * symlink handling. The last matching glob wins. A fixed 8 KiB budget bounds
+ * added argv bytes; larger additions retain the original traversal, since even
+ * linear growth can exceed command-line limits.
  *
  * @param input - the validated arguments.
  * @returns the complete ripgrep argument vector (excluding the binary itself).
@@ -93,7 +99,9 @@ export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInp
 export function buildGlobCommand(input: GlobInput): string[] {
   const directories = input.pattern.split('/').slice(0, -1)
   const pruning: string[] = []
-  if (input.path === undefined && directories.length > 0
+  // Only enable directory-glob pruning when noIgnore=true; a positive --glob=dir/
+  // overrides .gitignore in ripgrep and would otherwise re-include ignored subtrees.
+  if (input.noIgnore === true && input.path === undefined && directories.length > 0
     && directories.every(part => /^[\w .-]+$/.test(part) && part !== '.' && part !== '..' && !GLOB_VCS_EXCLUDES.includes(part))) {
     // Trailing slashes admit directories only, never files with the same names.
     const directoryGlob = `--glob={${[...new Set(directories)].join(',')}}/`
@@ -101,12 +109,16 @@ export function buildGlobCommand(input: GlobInput): string[] {
       pruning.push('--glob=!**', directoryGlob)
     }
   }
+  // Skip a catch-all positive --glob=**/* or --glob=** when ignoring is enabled: in ripgrep,
+  // an explicit positive glob overrides directory .gitignore rules and surfaces ignored subtrees.
+  const omitCatchAllGlob = input.noIgnore !== true && (input.pattern === '**/*' || input.pattern === '**')
   const parts = [
     '--files',
     ...pruning,
-    `--glob=${input.pattern}`,
+    ...omitCatchAllGlob ? [] : [`--glob=${input.pattern}`],
     '--sort=modified',
-    '--no-ignore',
+    // Honor .gitignore even when the workspace is a bare directory with no .git/ root.
+    ...input.noIgnore === true ? ['--no-ignore'] : ['--no-require-git'],
     '--hidden',
     // Two negated globs per VCS name: the bare form prunes the directory
     // during traversal; the /** form still excludes the contents when the
@@ -243,15 +255,22 @@ function formatGlobPage(items: readonly string[], seen: number, spillRef: SpillR
 }
 
 /** Bound and format one canonical path list for the Native surface relative to its search root. */
-function renderGlobPaths(paths: string[], caps: GlobToolCaps, root: string, spillRef?: SpillRef): string {
-  if (paths.length === 0) return 'No files found'
+function renderGlobPaths(paths: string[], caps: GlobToolCaps, root: string, spillRef?: SpillRef, rawTruncated = false): string {
+  if (paths.length === 0) {
+    return rawTruncated
+      ? `(Raw ripgrep output reached the ${caps.rawOutputMaxBytes}-byte cap and was stopped early before a complete path could be captured; narrow pattern or path and retry.)`
+      : 'No files found'
+  }
+  const rawNotice = rawTruncated
+    ? `\n\n(Raw ripgrep output reached the ${caps.rawOutputMaxBytes}-byte cap and was stopped early; results are incomplete. Narrow pattern or path to see more.)`
+    : ''
   // A result that fits is shown whole, untouched: modification-time order is the
   // tool's contract, and over a complete result it is what answers age questions.
-  if (paths.length <= caps.maxResults) return paths.join('\n')
+  if (paths.length <= caps.maxResults) return `${paths.join('\n')}${rawNotice}`
   if (!caps.sampleOverCapGlobResults) {
-    return formatGlobPage(paths.slice(0, caps.maxResults), paths.length, spillRef, '.')
+    return `${formatGlobPage(paths.slice(0, caps.maxResults), paths.length, spillRef, '.')}${rawNotice}`
   }
-  return formatGlobOutput(sampleAcrossTopLevel(paths, caps.maxResults, root), paths.length, spillRef)
+  return `${formatGlobOutput(sampleAcrossTopLevel(paths, caps.maxResults, root), paths.length, spillRef)}${rawNotice}`
 }
 
 /**
@@ -320,7 +339,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
   const overCapDescription = caps.sampleOverCapGlobResults ? 'is sampled across top-level entries' : 'keeps the first paths'
   const tool = defineTool({
     name: 'glob',
-    description: 'Find files, not directories, whose paths match a glob pattern, including hidden and ignored files. '
+    description: 'Find files, not directories, whose paths match a glob pattern, including hidden files (respects .gitignore by default; set noIgnore=true to include ignored files). '
       + `Returns up to ${caps.maxResults} paths in modification-time order; a larger result ${overCapDescription} `
       + 'and reports where the complete list was saved.',
     parameters: {
@@ -331,6 +350,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
           + 'A pattern with no "/" matches the basename at any depth, so "*" and "*.ts" both search the whole tree; include a separator to anchor the depth.',
       },
       path: { type: 'string', description: 'Directory to search in. Defaults to the session workspace; a relative path resolves against it.' },
+      noIgnore: { type: 'boolean', description: 'Set true to include files ignored by .gitignore or .ignore rules (defaults to false).' },
     },
     timeoutMs: caps.timeoutMs,
     // Path listing records no file observation; over-cap spilling runs in model-ordered post-execute.
@@ -342,12 +362,17 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
         properties: {
           root: { type: 'string', required: true },
           paths: { type: 'array', required: true, items: { type: 'string' } },
+          rawTruncated: { type: 'boolean' },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: renderGlobPaths(value.paths, caps, value.root) }],
+      render: (_args, value) => [{ type: 'text', text: renderGlobPaths(value.paths, caps, value.root, undefined, value.rawTruncated) }],
       presentationMeta: (_args, value) => {
         const page = globCardPage(value.paths, caps, value.root)
-        return globSearchMeta({ items: page.items, truncated: page.truncated, seen: value.paths.length }, caps.maxMetaBytes)
+        return globSearchMeta({
+          items: page.items,
+          truncated: page.truncated || Boolean(value.rawTruncated),
+          seen: value.paths.length,
+        }, caps.maxMetaBytes)
       },
     },
     async execute(args, exec) {
@@ -362,7 +387,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
         const displayPath = toWorkdirRelative(line, run.workdir)
         all.push(displayPath)
       }
-      return { root, paths: all }
+      return { root, paths: all, ...run.rawTruncated ? { rawTruncated: true } : {} }
     },
     presentCall: presentGlobCall,
     presentResult: presentGlobResult,
@@ -371,14 +396,20 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
     const decision = await next()
-    const value = acceptedDirectCallValue(ctx, tool, exec, result, decision) as { root: string; paths: string[] } | undefined
+    const value = acceptedDirectCallValue(
+      ctx,
+      tool,
+      exec,
+      result,
+      decision,
+    ) as { root: string; paths: string[]; rawTruncated?: boolean } | undefined
     if (value === undefined) return decision
     const paths = value.paths
     if (paths.length <= caps.maxResults) return decision
     const spillRef = await trySaveFormattedResult(ctx, exec, 'glob-results.txt', paths.join('\n'))
     return {
       kind: 'accept',
-      content: [{ type: 'text', text: renderGlobPaths(paths, caps, value.root, spillRef) }],
+      content: [{ type: 'text', text: renderGlobPaths(paths, caps, value.root, spillRef, value.rawTruncated) }],
       ...decision.additionalContexts !== undefined ? { additionalContexts: decision.additionalContexts } : {},
     }
   })

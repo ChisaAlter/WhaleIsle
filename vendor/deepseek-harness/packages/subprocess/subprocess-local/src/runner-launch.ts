@@ -236,6 +236,8 @@ function windowsExecutableNames(command: string, name: string): string[] {
     ...hasExtension ? [command] : [],
     `${command}${separator}com`,
     `${command}${separator}exe`,
+    `${command}${separator}bat`,
+    `${command}${separator}cmd`,
   ]
 }
 

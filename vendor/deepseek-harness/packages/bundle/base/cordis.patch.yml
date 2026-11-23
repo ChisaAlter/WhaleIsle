@@ -301,7 +301,7 @@
 
     - id: fs-observation-policy
       name: '@deepseek-ai/dsh-fs-observation-policy'
-      disabled: true
+      disabled: !!js process.env.DSH_FS_OBSERVATION_POLICY !== '1'
 
     - id: tool-fs
       name: '@deepseek-ai/dsh-tool-fs'

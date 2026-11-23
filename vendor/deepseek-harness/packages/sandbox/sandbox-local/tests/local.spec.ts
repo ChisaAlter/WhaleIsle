@@ -8,13 +8,13 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LAUNCHER_FAILURE_EXIT } from '@deepseek-ai/node-addon-system/landlock-run'
-import { SANDBOX_UNAVAILABLE, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
+import { SANDBOX_UNAVAILABLE, SandboxInvalidRootError, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import {
   LocalSandboxProvider,
@@ -430,7 +430,7 @@ describe('the default seatbelt probe (sandbox-exec contract)', () => {
 })
 
 describe('the windows-acl probe (runner invocation contract)', () => {
-  it.each([RO, WW])('ignores extra directory grants in $mode runner arguments', async (policy) => {
+  it('ignores extra directory grants under read-only and validates/forwards them under workspace-write', async () => {
     const { ctx, sandbox } = await setup({}, {
       chain: ['windows-acl'],
       probeWindowsAcl: () => true,
@@ -440,11 +440,26 @@ describe('the windows-acl probe (runner invocation contract)', () => {
     tempDirs.push(extra)
     const file = join(extra, 'file.txt')
     writeFileSync(file, 'file')
+    const linkDir = join(extra, 'link-dir')
+    symlinkSync(extra, linkDir, process.platform === 'win32' ? 'junction' : 'dir')
     try {
-      const original = await sandbox.confine(['true'], policy)
+      const originalRo = await sandbox.confine(['true'], RO)
       await expect(sandbox.confine(['true'], {
-        ...policy, additionalWritableRoots: [extra, join(extra, 'missing'), file],
-      })).resolves.toEqual(original)
+        ...RO, additionalWritableRoots: [extra, join(extra, 'missing'), file],
+      })).resolves.toEqual(originalRo)
+
+      const withExtraWw = await sandbox.confine(['true'], { ...WW, additionalWritableRoots: [extra] })
+      expect(withExtraWw.argv).toEqual([
+        'node', 'windows-acl-runner.js', '--workspace', '/ws', '--temp', tmpdir(), '--mode', 'workspace-write',
+        '--extra-dir', extra, '--', 'true',
+      ])
+
+      await expect(sandbox.confine(['true'], { ...WW, additionalWritableRoots: [join(extra, 'missing')] }))
+        .rejects.toThrow(SandboxInvalidRootError)
+      await expect(sandbox.confine(['true'], { ...WW, additionalWritableRoots: [file] }))
+        .rejects.toThrow(SandboxInvalidRootError)
+      await expect(sandbox.confine(['true'], { ...WW, additionalWritableRoots: [linkDir] }))
+        .rejects.toThrow(SandboxInvalidRootError)
     } finally {
       await ctx.fiber.dispose()
     }

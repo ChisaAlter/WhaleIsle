@@ -7,6 +7,7 @@ import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+import { TeamBoardCoordinator } from './board-events.ts'
 
 /** Cordis plugin name. */
 export const name = 'tool-agent-team'
@@ -38,7 +39,7 @@ The Team Lead and all teammates share the same working directory and filesystem.
 
 Prefer read/edit/write for file changes. If a file operation returns FS_STALE_VERSION, read the current file, rebase your intended change onto the new content, and retry. Bash, formatters, code generators, and scripts are not fully protected by the filesystem version guard; coordinate them explicitly and have the Lead review the final diff and run tests.
 
-Use the target returned by spawn_teammate or list_agents for send_message${interrupt ? ' and interrupt_agent' : ''}, or as owner when assigning or filtering shared tasks. send_message steers a running target at its nearest step boundary and starts or resumes an inactive target. inactive means no turn is executing; it does not describe task completion, success, failure, or waiting for other agents. provisioning means member creation is in progress; failed means member creation failed. A peer message starts with its sender name. A successful send does not mean the recipient has processed it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task readiness never starts an owner. Before wait_agent, use list_agents and make sure another required member is running or provisioning; use send_message first when the required member is inactive. wait_agent observes only changes after that call starts, never wakes a member, and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
+Use the target returned by spawn_teammate or list_agents for send_message${interrupt ? ' and interrupt_agent' : ''}, or as owner when assigning or filtering shared tasks. send_message steers a running target at its nearest step boundary and starts or resumes an inactive target. inactive means no turn is executing; it does not describe task completion, success, failure, or waiting for other agents. provisioning means member creation is in progress; failed means member creation failed. A peer message starts with its sender name. A successful send does not mean the recipient has processed it. Shared-task workflow is list, get, claim with the current revision, perform the work, then complete. Task board changes (ready task creation, reassignment, unblocking, and completion) notify and wake relevant inactive members and resolve active wait_agent calls. Before wait_agent, use list_agents and confirm whether another required member is running or provisioning; use send_message when you need to steer or prompt a specific member beyond board events. wait_agent returns unread board events if any arrived before the call, otherwise waits for the next change and returns noProgress immediately when no other member can produce a change. Re-list after wakeup or timeout. The Lead must wait for required teammates before giving the final answer.`
 }
 
 const ACTIVE_WAIT_STATUSES: ReadonlySet<TeamMemberView['status']> = new Set(['running', 'provisioning'])
@@ -165,7 +166,7 @@ function callingAgent(agent: Agent | undefined, toolName: string): Agent {
 }
 
 /** Register the complete Team tool set in one exact Agent scope. */
-function install(agent: Agent, ctx: Context, config: Required<Config>): () => void {
+function install(agent: Agent, ctx: Context, config: Required<Config>, board: TeamBoardCoordinator): () => void {
   const scoped = agent.ctx
   const disposers: Array<() => unknown> = []
   const register = (disposer: () => unknown): void => { disposers.push(disposer) }
@@ -248,7 +249,7 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
 
     register(scoped.tools.register(defineTool({
       name: 'wait_agent',
-      description: 'Wait for the next teammate status, message, or shared-task change after this call starts. This never wakes inactive members and returns noProgress immediately when no other member is running or provisioning. Re-list after wakeup or timeout instead of polling.',
+      description: 'Wait for the next teammate status, message, or shared-task change (or consume unread task-board notifications that arrived before this call). Returns noProgress immediately when no unread board event exists and no other member is running or provisioning. Re-list after wakeup or timeout instead of polling.',
       parameters: {
         timeout_ms: {
           type: 'integer',
@@ -264,6 +265,10 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10_000 || timeoutMs > 3_600_000) {
           return await ctx.projectTeams.waitForChange(caller, timeoutMs, exec.signal)
         }
+        const teamId = ctx.projectTeams.membership(caller).id
+        if (board.consumeUnread(teamId, caller.id).length > 0) {
+          return { timedOut: false }
+        }
         // The active-peer read and waiter registration must remain one synchronous
         // span; awaiting between them can lose the only peer-status edge.
         const hasActivePeer = ctx.projectTeams.listMembers(caller).some(member =>
@@ -277,7 +282,23 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
             },
           }
         }
-        return await ctx.projectTeams.waitForChange(caller, timeoutMs, exec.signal)
+        const waiter = board.registerWaiter(teamId, caller.id)
+        const waitController = new AbortController()
+        const onAbort = (): void => {
+          waitController.abort(exec.signal.reason)
+          waiter.dispose()
+        }
+        exec.signal.addEventListener('abort', onAbort, { once: true })
+        try {
+          return await Promise.race([
+            ctx.projectTeams.waitForChange(caller, timeoutMs, waitController.signal),
+            waiter.promise.then(() => ({ timedOut: false })),
+          ])
+        } finally {
+          waitController.abort()
+          waiter.dispose()
+          exec.signal.removeEventListener('abort', onAbort)
+        }
       },
     })))
 
@@ -310,12 +331,23 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return await ctx.projectTeams.createTask(callingAgent(exec.agent, 'team_task_create'), {
+        const caller = callingAgent(exec.agent, 'team_task_create')
+        const beforeTasks = ctx.projectTeams.listTasks(caller)
+        const created = await ctx.projectTeams.createTask(caller, {
           subject: args.subject,
           description: args.description,
           ...args.blocked_by === undefined ? {} : { blockedBy: args.blocked_by.map(TeamTaskId) },
           ...args.write_scopes === undefined ? {} : { writeScopes: args.write_scopes },
         })
+        const afterTasks = ctx.projectTeams.listTasks(caller)
+        await board.onBoardMutation(caller, {
+          action: 'create',
+          beforeTasks,
+          afterTasks,
+          updatedTask: created,
+          signal: exec.signal,
+        })
+        return created
       },
     })))
 
@@ -386,7 +418,9 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return await ctx.projectTeams.updateTask(callingAgent(exec.agent, 'team_task_update'), {
+        const caller = callingAgent(exec.agent, 'team_task_update')
+        const beforeTasks = ctx.projectTeams.listTasks(caller)
+        const updated = await ctx.projectTeams.updateTask(caller, {
           taskId: TeamTaskId(args.task_id),
           expectedRevision: args.expected_revision,
           action: args.action,
@@ -396,6 +430,15 @@ To message another teammate, use send_message({ target: "<teammate name>", messa
           ...args.write_scopes === undefined ? {} : { writeScopes: args.write_scopes },
           ...args.owner === undefined ? {} : { owner: args.owner },
         })
+        const afterTasks = ctx.projectTeams.listTasks(caller)
+        await board.onBoardMutation(caller, {
+          action: args.action,
+          beforeTasks,
+          afterTasks,
+          updatedTask: updated,
+          signal: exec.signal,
+        })
+        return updated
       },
     })))
   } catch (error: unknown) {
@@ -414,10 +457,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     freshProvider: config.freshProvider ?? 'spawn',
     forkProvider: config.forkProvider ?? 'fork',
   }
+  const board = new TeamBoardCoordinator(ctx)
   const installed = new Map<Agent, () => void>()
   const maybeInstall = (agent: Agent): void => {
     if (installed.has(agent) || ctx.projectTeams.tryMembership(agent) === undefined) return
-    installed.set(agent, install(agent, ctx, resolved))
+    installed.set(agent, install(agent, ctx, resolved, board))
   }
   for (const agent of ctx.agents.list()) maybeInstall(agent)
   ctx.on('agent/created', ({ agent }) => { maybeInstall(agent) })
@@ -428,5 +472,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => () => {
     for (const dispose of installed.values()) dispose()
     installed.clear()
+    board.disposeAll()
   }, 'tool-team.scopedTools()')
 }

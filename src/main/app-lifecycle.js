@@ -216,7 +216,7 @@ function createAppLifecycle({ state, dsh, harness, quitApp, openLauncher, confir
       return;
     }
     try {
-      state.desktopResources.pty.killAll();
+      await state.desktopResources.pty.killAll();
     } catch (error) {
       dsh.log(`PTY 清理失败：${/** @type {any} */ (error).message}`, 'app');
     }

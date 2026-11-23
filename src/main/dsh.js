@@ -15,10 +15,15 @@ const { taskControlToken } = require('./task-protection');
 const { platformToken } = require('./platform-session');
 const { desktopCliArgs } = require('./pnpm-runtime');
 const { readPin } = require('../shared/harness-upstream');
-const { spawnTreeOptions, killProcessTree, windowsProcessStartTime, sameProcessStartTime } = require('../shared/process-tree');
+const { spawnTreeOptions, killProcessTree, sameProcessStartTime } = require('../shared/process-tree');
 const { passSecretToChild, INTERNAL_SECRETS_END, INTERNAL_SECRETS_ENV } = require('../shared/secret');
 const { probeHarnessReady, isUnpublishedHarnessNpm } = require('./harness-browser-auth');
 const { applyPreparedPluginOverlays, createPackageDirFinder } = require('./desktop-plugin-runtime');
+const { attachLineStream } = require('./dsh-output-buffer');
+const {
+  resolveKillArgs, pidFileShellContext, trackManagedShell,
+  managedShellStopContext, windowsProcessStartTime, isSafeWindowsShell,
+} = require('./dsh-win-process');
 
 const PORT_SCAN_RANGE = 50;
 
@@ -231,19 +236,21 @@ function isSelfPid(pid) {
   return pid === process.pid || pid === process.ppid;
 }
 
-async function isSafeToKill(pid, run = execFile) {
-  if (!pid || isSelfPid(pid)) {
-    return false;
-  }
+async function isSafeToKill(pid, runOrContext = execFile, maybeContext = {}) {
+  if (!pid || isSelfPid(pid)) return false;
+  const { run, context } = resolveKillArgs(runOrContext, maybeContext, execFile);
   const name = (await processImageName(pid, run)).toLowerCase();
-  if (!name || name.includes('electron')) {
-    return false;
+  if (!name || name.includes('electron')) return false;
+  if (/^(node|dsh)(\.exe)?$/.test(name)) return true;
+  if (process.platform === 'win32' && name === 'cmd.exe') {
+    return isSafeWindowsShell(pid, run, execTimed, context);
   }
-  return /^(node|dsh)(\.exe)?$/.test(name);
+  return false;
 }
 
-async function killTree(pid, run = execFile) {
-  if (!pid || !await isSafeToKill(pid, run)) {
+async function killTree(pid, runOrContext = execFile, maybeContext = {}) {
+  const { run, context } = resolveKillArgs(runOrContext, maybeContext, execFile);
+  if (!pid || !await isSafeToKill(pid, run, context)) {
     return false;
   }
   try {
@@ -282,6 +289,7 @@ function parsePidFile(raw) {
         pid,
         port: Number.isInteger(entry?.port) && entry.port > 0 ? entry.port : null,
         startTime: typeof entry?.startTime === 'string' ? entry.startTime : '',
+        ...(entry?.shell === true ? { shell: true } : {}),
       };
     }
   } catch {
@@ -315,13 +323,13 @@ function readPidFile() {
   }
 }
 
-function writePidFile(pid, port, startTime) {
+function writePidFile(pid, port, startTime, shell = false) {
   const file = pidFilePath();
   if (!file || !pid) {
     return;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ pid, port, startTime }), 'utf8');
+  fs.writeFileSync(file, JSON.stringify({ pid, port, startTime, ...(shell ? { shell: true } : {}) }), 'utf8');
 }
 
 function clearPidFile() {
@@ -370,18 +378,13 @@ async function processImageName(pid, run = execFile) {
 async function processStartTime(pid, run = execFile) {
   try {
     if (process.platform === 'linux') {
-      // /proc/<pid>/stat field 22 (starttime, clock ticks since boot). comm in
-      // parentheses may itself contain spaces/parens, so anchor on the last ')'.
       const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
       const close = stat.lastIndexOf(')');
       if (close === -1) return '';
       return stat.slice(close + 2).trim().split(/\s+/)[19] || '';
     }
     if (process.platform === 'win32') {
-      if (run === execFile) {
-        try { return windowsProcessStartTime(pid); } catch { /* Fall back to PowerShell. */ }
-      }
-      return (await execTimed('powershell.exe', ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`], 3000, run)).trim();
+      return await windowsProcessStartTime(pid, run, execFile, execTimed);
     }
     return (await execTimed('ps', ['-p', String(pid), '-o', 'lstart='], 2000, run)).trim();
   } catch {
@@ -643,9 +646,10 @@ async function ensureOwnedPort(host, wantedPort, log = () => {}, deps = {}) {
     const current = await startTimeOf(previousPid);
     confirmed = sameProcessStartTime(current, previous.startTime);
   }
-  if (previousPid && confirmed && await safeToKill(previousPid)) {
+  const killContext = pidFileShellContext(previous);
+  if (previousPid && confirmed && await safeToKill(previousPid, killContext)) {
     log(`停止上次残留的 dsh（pid ${previousPid}，端口 ${previous.port || wanted}）`);
-    await stopTree(previousPid);
+    await stopTree(previousPid, killContext);
     await wait(400);
     probe = await probePort(host, wanted);
     if (!probe.inUse) {
@@ -732,6 +736,7 @@ class DshManager extends EventEmitter {
     this.generation = 0;
     this.inFlight = null;
     this._stopPromise = null;
+    this._shellPids = new Map();
     this._deps = {
       loadConfig: options.loadConfig || loadConfig,
       ensurePackagedHarness: options.ensurePackagedHarness || ensurePackagedHarness,
@@ -950,25 +955,21 @@ class DshManager extends EventEmitter {
 
   attachOutput(child) {
     const pattern = readyUrlPattern(this.host);
-    const onChunk = (chunk, source) => {
-      const text = chunk.toString('utf8');
-      for (const line of text.split(/\r?\n/)) {
-        this.log(line, source);
-        const match = line.match(pattern);
-        if (match) {
-          // Wildcard hosts in the announced URL are bind targets, not connect
-          // targets: rewrite them so reachability checks and the BrowserView
-          // load use a connectable address.
-          const url = new URL(match[1]);
-          url.hostname = connectHost(url.hostname);
-          this.baseUrl = url.toString().replace(/\/$/, '');
-          this.webReady = true;
-          this._readyWaker?.();
-        }
-      }
+    const onLine = (line) => {
+      this.log(line, 'dsh');
+      const match = line.match(pattern);
+      if (!match) return;
+      // Wildcard hosts in the announced URL are bind targets, not connect
+      // targets: rewrite them so reachability checks and the BrowserView
+      // load use a connectable address.
+      const url = new URL(match[1]);
+      url.hostname = connectHost(url.hostname);
+      this.baseUrl = url.toString().replace(/\/$/, '');
+      this.webReady = true;
+      this._readyWaker?.();
     };
-    child.stdout?.on('data', (chunk) => onChunk(chunk, 'dsh'));
-    child.stderr?.on('data', (chunk) => onChunk(chunk, 'dsh'));
+    attachLineStream(child.stdout, onLine);
+    attachLineStream(child.stderr, onLine);
   }
 
   /**
@@ -1041,7 +1042,7 @@ class DshManager extends EventEmitter {
     this.preparationAbort = preparationAbort;
     let preparedHarnessRoot;
     try {
-      preparedHarnessRoot = await this._ensurePackagedHarness((line) => { if (isCurrent()) this.log(line); }, { signal: preparationAbort.signal });
+      preparedHarnessRoot = await this._ensurePackagedHarness((/** @type {string} */ line) => { if (isCurrent()) this.log(line); }, { signal: preparationAbort.signal });
       if (!isCurrent()) {
         throw cancelledError();
       }
@@ -1124,10 +1125,13 @@ class DshManager extends EventEmitter {
       child.on('error', (error) => { childEnded = true; this._onChildError(gen, child, error, readiness); });
       child.on('exit', (code, signal) => { childEnded = true; this._onChildExit(gen, child, code, signal, readiness); });
       const spawned = child;
+      const isShell = trackManagedShell(this._shellPids, spawned, launch.command);
       let pidRecordError = null;
       const pidRecorded = spawned.pid
         ? Promise.resolve().then(() => this._processStartTime(spawned.pid)).then((startTime) => {
-          if (!childEnded && isCurrent() && this.child === spawned) this._writePidFile(spawned.pid, launch.port, startTime);
+          if (!childEnded && isCurrent() && this.child === spawned) {
+            this._writePidFile(spawned.pid, launch.port, startTime, isShell);
+          }
         }).catch((error) => { pidRecordError = error; })
         : Promise.resolve();
       this.waitUntilReady(expectedUrl, child, gen).then(
@@ -1325,8 +1329,9 @@ class DshManager extends EventEmitter {
     return this._deps.readPidFile();
   }
 
-  _writePidFile(pid, port, startTime) {
-    return this._deps.writePidFile(pid, port, startTime);
+  /** @param {boolean} [shell] */
+  _writePidFile(pid, port, startTime, shell) {
+    return this._deps.writePidFile(pid, port, startTime, shell);
   }
 
   _processStartTime(pid) {
@@ -1337,12 +1342,13 @@ class DshManager extends EventEmitter {
     return this._deps.clearPidFile();
   }
 
-  _killTree(pid) {
-    return this._deps.killTree(pid);
+  /** @param {import('./dsh-win-process').WindowsShellContext} [context] */
+  _killTree(pid, context) {
+    return this._deps.killTree(pid, context);
   }
 
   async _stopOwnedProcess(pid) {
-    const stopped = await this._killTree(pid);
+    const stopped = await this._killTree(pid, managedShellStopContext(this._shellPids, pid));
     if (stopped === false && processAlive(pid)) {
       const error = new Error(`无法安全停止 dsh 进程（pid ${pid}），进程身份未通过检查`);
       error.code = 'DSH_STOP_FAILED';

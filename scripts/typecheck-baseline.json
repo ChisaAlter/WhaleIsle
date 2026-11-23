@@ -5278,7 +5278,6 @@
         "Parameter 'bindOn' implicitly has an 'any' type.": 4,
         "Parameter 'candidates' implicitly has an 'any' type.": 1,
         "Parameter 'child' implicitly has an 'any' type.": 4,
-        "Parameter 'chunk' implicitly has an 'any' type.": 3,
         "Parameter 'code' implicitly has an 'any' type.": 3,
         "Parameter 'command' implicitly has an 'any' type.": 5,
         "Parameter 'config' implicitly has an 'any' type.": 6,
@@ -5300,7 +5299,6 @@
         "Parameter 'readiness' implicitly has an 'any' type.": 2,
         "Parameter 'root' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 3,
-        "Parameter 'source' implicitly has an 'any' type.": 1,
         "Parameter 'startPort' implicitly has an 'any' type.": 1,
         "Parameter 'startTime' implicitly has an 'any' type.": 2,
         "Parameter 'state' implicitly has an 'any' type.": 1,
@@ -8324,7 +8322,6 @@
         "'logCountEl' is possibly 'null'.": 1,
         "'logEl' is possibly 'null'.": 10,
         "'openLauncherEl' is possibly 'null'.": 8,
-        "'retryEl' is possibly 'null'.": 4,
         "'saveLogEl' is possibly 'null'.": 7,
         "'statusEl' is possibly 'null'.": 4,
         "'statusTextEl' is possibly 'null'.": 4,
@@ -8333,7 +8330,7 @@
         "'tickerLineEl' is possibly 'null'.": 2
       },
       "TS2339": {
-        "Property 'disabled' does not exist on type 'HTMLElement'.": 9,
+        "Property 'disabled' does not exist on type 'HTMLElement'.": 7,
         "Property 'shell' does not exist on type 'Window & typeof globalThis'.": 2,
         "Property 'shellFeedback' does not exist on type 'Window & typeof globalThis'.": 5,
         "Property 'test' does not exist on type 'string | RegExp'.": 1,

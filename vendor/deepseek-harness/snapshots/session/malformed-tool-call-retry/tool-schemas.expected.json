@@ -91,6 +91,22 @@
       }
     },
     {
+      "name": "exit_plan_mode",
+      "description": "Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string",
+            "description": "The complete plan, as markdown, starting with a # heading that names it."
+          }
+        },
+        "required": [
+          "plan"
+        ]
+      }
+    },
+    {
       "name": "get_goal",
       "description": "Read the current session goal, including the id and revision that update_goal requires.",
       "parameters": {
@@ -100,7 +116,7 @@
     },
     {
       "name": "glob",
-      "description": "Find files, not directories, whose paths match a glob pattern, including hidden and ignored files. Returns up to 100 paths in modification-time order; a larger result keeps the first paths and reports where the complete list was saved.",
+      "description": "Find files, not directories, whose paths match a glob pattern, including hidden files (respects .gitignore by default; set noIgnore=true to include ignored files). Returns up to 100 paths in modification-time order; a larger result keeps the first paths and reports where the complete list was saved.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -111,6 +127,10 @@
           "path": {
             "type": "string",
             "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it."
+          },
+          "noIgnore": {
+            "type": "boolean",
+            "description": "Set true to include files ignored by .gitignore or .ignore rules (defaults to false)."
           }
         },
         "required": [
@@ -120,7 +140,7 @@
     },
     {
       "name": "grep",
-      "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns up to 250 matches; a larger result reports where the complete match list was saved.",
+      "description": "Search file contents with a ripgrep regular expression. Supports content lines (with optional context_lines), files_with_matches, count, case_insensitive, head_limit, and glob lists/exclusions in include. Returns up to 250 matches; a larger result reports where the complete match list was saved.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -134,7 +154,28 @@
           },
           "include": {
             "type": "string",
-            "description": "One glob filter for which files to search (e.g. \"*.ts\", \"*.{js,jsx}\"). Not a list; negation is not supported."
+            "description": "Glob filter(s) for which files to search, supporting brace alternation, comma-separated globs, and \"!\" exclusions (e.g. \"*.ts,!*.test.ts\")."
+          },
+          "output_mode": {
+            "type": "string",
+            "description": "Output mode: \"content\" (matching lines, default), \"files_with_matches\" (file paths only), or \"count\" (match counts per file).",
+            "enum": [
+              "content",
+              "files_with_matches",
+              "count"
+            ]
+          },
+          "case_insensitive": {
+            "type": "boolean",
+            "description": "Enable case-insensitive matching (-i)."
+          },
+          "context_lines": {
+            "type": "integer",
+            "description": "Number of leading and trailing context lines around each match (-C) in content mode."
+          },
+          "head_limit": {
+            "type": "integer",
+            "description": "Limit output to the first N matches (content mode) or N files (files_with_matches/count modes)."
           }
         },
         "required": [
@@ -345,6 +386,14 @@
           "prompt": {
             "type": "string",
             "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+          },
+          "isolation": {
+            "type": "string",
+            "description": "Optional workspace isolation mode ('none' default, or 'worktree'). When set to 'worktree', runs the subagent in an isolated Git worktree and branch created from HEAD.",
+            "enum": [
+              "none",
+              "worktree"
+            ]
           }
         },
         "required": [

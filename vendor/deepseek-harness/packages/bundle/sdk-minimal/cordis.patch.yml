@@ -28,7 +28,7 @@
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
         defaultContextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)
-        streamIdleTimeoutMs: 172800000
+        streamIdleTimeoutMs: 300000
 
     - id: sandbox
       name: '@deepseek-ai/dsh-sandbox-local'

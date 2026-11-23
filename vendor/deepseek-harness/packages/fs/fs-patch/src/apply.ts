@@ -57,12 +57,14 @@ interface Replacement {
 /**
  * Apply parsed hunks to LF-normalized text without I/O or input mutation.
  * All searches use the original text; a failed search returns no partial text.
- * Successful nonempty output ends in LF, including initially unterminated text.
+ * Trailing LF is preserved when present in the original text, when inserting
+ * into an empty text, or when the patch explicitly ends with a blank line.
  * @param before - text normalized by the caller; CR characters receive no line-ending handling.
  * @param hunks - ordered hunks from parsePatch; EOF searches follow NormalizeToLf tail semantics.
  * @returns new text or the first unmatched hunk, without throwing for a match failure.
  */
 export function applyHunks(before: string, hunks: readonly PatchHunk[]): ApplyHunksResult {
+  const hadTrailingNewline = before.endsWith('\n')
   const original = before.split('\n')
   if (original.at(-1) === '') original.pop()
   const replacements: Replacement[] = []
@@ -111,6 +113,8 @@ export function applyHunks(before: string, hunks: readonly PatchHunk[]): ApplyHu
       ...lines.slice(replacement.start + replacement.oldLength),
     ]
   }
-  if (lines.at(-1) !== '') lines.push('')
+  if (lines.length > 0 && lines.at(-1) !== '' && (hadTrailingNewline || before.length === 0)) {
+    lines.push('')
+  }
   return { ok: true, after: lines.join('\n') }
 }

@@ -463,7 +463,9 @@ function registerIpc({
     require('./editors').openWithSystemDefault({ cwd, relativePath })
   ));
   handle('shell:git-stage', guardGitIpc((_event, cwd, relativePath) => git().gitStage(cwd, relativePath)));
+  handle('shell:git-stage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => git().gitStagePatch(cwd, patchText)));
   handle('shell:git-unstage', guardGitIpc((_event, cwd, relativePath) => git().gitUnstage(cwd, relativePath)));
+  handle('shell:git-unstage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => git().gitUnstagePatch(cwd, patchText)));
   handle('shell:git-discard', guardGitIpc((_event, cwd, relativePath) => git().gitDiscard(cwd, relativePath)));
   handle('shell:git-status-entries', guardGitIpc((_event, cwd) => git().gitStatusEntries(cwd)));
   handle('shell:git-branch-list', guardGitIpc((_event, cwd) => git().gitBranchList(cwd)));

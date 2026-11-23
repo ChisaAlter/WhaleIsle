@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
+import { LocalBashExecutor, ENV_OVERRIDES } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
@@ -60,6 +60,20 @@ describe('LocalBashExecutor.run', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout.text).toBe('hi\n')
     expect(result.timeoutMs).toBe(5_000)
+  })
+
+  it('defines non-interactive environment overrides', () => {
+    expect(ENV_OVERRIDES).toMatchObject({
+      NO_COLOR: '1',
+      TERM: 'dumb',
+      PAGER: 'cat',
+      GIT_PAGER: 'cat',
+      GIT_TERMINAL_PROMPT: '0',
+      GCM_INTERACTIVE: 'never',
+      PIP_NO_INPUT: '1',
+      NPM_CONFIG_YES: 'true',
+      CI: '1',
+    })
   })
 
   it('uses config cwd, overridable per call', async () => {

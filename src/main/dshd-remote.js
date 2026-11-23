@@ -845,7 +845,7 @@ class DshdRemote extends EventEmitter {
       if (current) {
         this.runtimeKey = '';
         this.relayState = { connected: false, lastError: this.error };
-        await this.stopMobileWebServer();
+        await Promise.allSettled([this.closeGitTunnel(), this.stopMobileWebServer()]);
       }
       throw err;
     } finally {
@@ -1083,20 +1083,19 @@ class DshdRemote extends EventEmitter {
     }
   }
 
-  async stopDaemonResources() {
-    const handles = [...new Set([this.daemon, this.pendingDaemon].filter(Boolean))];
-    const stopped = await Promise.allSettled(handles.map((handle) => this.terminateDaemonProcess(handle)));
+  async closeGitTunnel() {
     // The cancelled startup no longer publishes ready, but can still be
     // finishing a concrete server listen. Wait for those resource acquisitions.
     await this.gitTunnelStarting?.catch(() => { /* Wait for cancelled tunnel acquisition before releasing its resources. */ });
-    const cleanup = [];
-    if (this.gitTunnel) {
-      const tunnel = this.gitTunnel;
-      cleanup.push(Promise.resolve().then(() => tunnel.close()).then(() => {
-        if (this.gitTunnel === tunnel) this.gitTunnel = null;
-      }));
-    }
-    cleanup.push(this.stopMobileWebServer());
+    const tunnel = this.gitTunnel;
+    if (!tunnel) return;
+    try { await tunnel.close(); } finally { if (this.gitTunnel === tunnel) this.gitTunnel = null; }
+  }
+
+  async stopDaemonResources() {
+    const handles = [...new Set([this.daemon, this.pendingDaemon].filter(Boolean))];
+    const stopped = await Promise.allSettled(handles.map((handle) => this.terminateDaemonProcess(handle)));
+    const cleanup = [this.closeGitTunnel(), this.stopMobileWebServer()];
     const results = stopped.concat(await Promise.allSettled(cleanup));
     const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
     if (failures.length) throw new AggregateError(failures, failures.map((error) => error?.message || String(error)).join('\n'));

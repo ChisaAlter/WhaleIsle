@@ -8,6 +8,7 @@
   "files": [
     "src/chat-settings.ts",
     "src/openui-guide.ts",
+    "src/whale-ui-guide.ts",
     "src/index.ts"
   ],
   "references": [

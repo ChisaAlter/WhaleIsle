@@ -63,12 +63,20 @@ const SAMPLE: GitDiffResult = {
 
 function mount(opts: {
   cwd?: string | undefined
+  sessionId?: SessionId | undefined
   status?: unknown
   diff?: GitDiffResult | null
+  gitDiffImpl?: (cwd: string, options?: GitDiffOptions) => Promise<GitDiffResult | null>
   entries?: { ok: boolean; entries?: { path: string; xy: string }[] } | null
+  gitStagePatch?: (cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>
+  gitUnstagePatch?: (cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>
+  appendComposerText?: (sessionId: string, text: string) => void
 }) {
   const gitStatus = vi.fn(async () => opts.status ?? null)
-  const gitDiff = vi.fn(async (_cwd: string, _options?: GitDiffOptions): Promise<GitDiffResult | null> => opts.diff ?? null)
+  const gitDiff = vi.fn(async (cwd: string, options?: GitDiffOptions): Promise<GitDiffResult | null> => {
+    if (opts.gitDiffImpl !== undefined) return opts.gitDiffImpl(cwd, options)
+    return opts.diff ?? null
+  })
   const gitStatusEntries = vi.fn(async () => opts.entries ?? null)
   const gitStage = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
   const gitUnstage = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
@@ -79,9 +87,10 @@ function mount(opts: {
     branches: [{ name: 'main', isCurrent: true }, { name: 'origin/main', isRemote: true, isDefault: true }],
   }))
   const openFile = vi.fn()
+  const sessionProp = 'sessionId' in opts ? opts.sessionId : SID
   render(
     <DiffPanel {...({
-      sessionId: SID,
+      sessionId: sessionProp,
       useSession: neverHook,
       useSessions: (sel: (s: SessionListState) => unknown) => sel(sessionList(opts.cwd)),
       useWorkspaces: neverHook,
@@ -94,6 +103,9 @@ function mount(opts: {
       gitUnstage,
       gitDiscard,
       gitBranchList,
+      ...(opts.gitStagePatch === undefined ? {} : { gitStagePatch: opts.gitStagePatch }),
+      ...(opts.gitUnstagePatch === undefined ? {} : { gitUnstagePatch: opts.gitUnstagePatch }),
+      ...(opts.appendComposerText === undefined ? {} : { appendComposerText: opts.appendComposerText }),
       t,
     } as unknown as DiffPanelProps)} />,
   )
@@ -534,7 +546,8 @@ describe('DiffPanel', () => {
       diff: {
         files: [
           { path: 'new-name.ts', status: 'renamed', oldPath: 'old-name.ts', hunks: SAMPLE.files[0]!.hunks },
-          { path: 'logo.png', status: 'added', hunks: [] },
+          { path: 'logo.png', status: 'added', binary: true, hunks: [] },
+          { path: 'huge.log', status: 'added', tooLarge: true, hunks: [] },
         ],
       },
     })
@@ -543,6 +556,8 @@ describe('DiffPanel', () => {
       expect(document.querySelector('[data-diff-note="renamed"]')?.textContent).toContain('Renamed from')
     })
     expect(screen.getByText('Binary or oversized file; no line diff')).toBeTruthy()
+    expect(document.querySelector('[data-diff-note="too-large"]')?.textContent)
+      .toBe('Untracked text file exceeds size limit; line diff omitted')
   })
 
   it('collapses every file when the diff is large, expanding on demand', async () => {
@@ -560,6 +575,227 @@ describe('DiffPanel', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('[data-diff-line]').length).toBeGreaterThan(0)
     })
+  })
+
+  it('fetches single-file diff on demand and falls back smoothly without looping on empty responses', async () => {
+    const bulkFiles = Array.from({ length: 10 }, (_v, index) => ({
+      path: `file-${index}.ts`,
+      status: 'modified' as const,
+      hunks: SAMPLE.files[0]!.hunks,
+    }))
+    const b = mount({
+      cwd: '/tmp/repo',
+      status: { refName: 'main' },
+      entries: { ok: true, entries: bulkFiles.map(file => ({ path: file.path, xy: ' M' })) },
+      gitDiffImpl: async (_cwd, options) => {
+        if (options?.path === 'file-0.ts') return null
+        if (options?.path === 'file-1.ts') {
+          return {
+            files: [{
+              path: 'file-1.ts',
+              status: 'modified',
+              hunks: [{ header: '@@ -5,1 +5,1 @@', lines: [{ kind: 'add', text: 'fetched-file-1' }] }],
+            }],
+          }
+        }
+        return { files: bulkFiles, truncated: true }
+      },
+    })
+    await waitFor(() => {
+      expect(screen.getByText('file-9.ts')).toBeTruthy()
+    })
+    const toggles = screen.getAllByRole('button', { expanded: false })
+    fireEvent.click(toggles[0]!)
+    fireEvent.click(toggles[1]!)
+    await waitFor(() => {
+      expect(screen.getByText('fetched-file-1')).toBeTruthy()
+    })
+    // file-0 fell back cleanly to initial hunk ('world') and was probed only once.
+    expect(screen.getByText('world')).toBeTruthy()
+    const file0Calls = b.gitDiff.mock.calls.filter(call => call[1]?.path === 'file-0.ts')
+    expect(file0Calls).toEqual([['/tmp/repo', { path: 'file-0.ts', staged: false }]])
+  })
+
+  it('fetches separate staged and unstaged hunks for MM files', async () => {
+    const b = mount({
+      cwd: '/tmp/repo',
+      status: { refName: 'main' },
+      entries: { ok: true, entries: [{ path: 'dual.ts', xy: 'MM' }] },
+      gitDiffImpl: async (_cwd, options) => {
+        if (options?.staged === true) {
+          return {
+            files: [{
+              path: 'dual.ts',
+              status: 'modified',
+              hunks: [{ header: '@@ -1,1 +1,1 @@', lines: [{ kind: 'del', text: 'head' }, { kind: 'add', text: 'indexed' }] }],
+            }],
+          }
+        }
+        if (options?.staged === false) {
+          return {
+            files: [{
+              path: 'dual.ts',
+              status: 'modified',
+              hunks: [{ header: '@@ -10,1 +10,1 @@', lines: [{ kind: 'del', text: 'indexed' }, { kind: 'add', text: 'worktree' }] }],
+            }],
+          }
+        }
+        return { files: [{ path: 'dual.ts', status: 'modified', hunks: [] }] }
+      },
+    })
+    expect(await screen.findByText('worktree')).toBeTruthy()
+    expect(screen.getAllByText('indexed').length).toBeGreaterThan(0)
+    expect(b.gitDiff).toHaveBeenCalledWith('/tmp/repo', { path: 'dual.ts', staged: true })
+    expect(b.gitDiff).toHaveBeenCalledWith('/tmp/repo', { path: 'dual.ts', staged: false })
+  })
+
+  it('stages and unstages individual hunks with concurrency guard and retry toast', async () => {
+    let resolveStage!: (value: { ok: boolean; message?: string }) => void
+    const gitStagePatch = vi.fn((_cwd: string, _patchText: string) => new Promise<{ ok: boolean; message?: string }>((resolve) => {
+      resolveStage = resolve
+    }))
+    const gitUnstagePatch = vi.fn(async (_cwd: string, _patchText: string) => ({ ok: true }))
+    const twoHunks: GitDiffResult = {
+      files: [{
+        path: 'multi.ts',
+        status: 'modified',
+        hunks: [
+          { header: '@@ -1,1 +1,1 @@', lines: [{ kind: 'del', text: 'a1' }, { kind: 'add', text: 'b1' }] },
+          { header: '@@ -20,1 +20,1 @@', lines: [{ kind: 'del', text: 'a2' }, { kind: 'add', text: 'b2' }] },
+        ],
+      }],
+    }
+    const b = mount({
+      cwd: '/tmp/repo',
+      status: { refName: 'main' },
+      diff: twoHunks,
+      entries: { ok: true, entries: [{ path: 'multi.ts', xy: ' M' }] },
+      gitStagePatch,
+      gitUnstagePatch,
+    })
+    const stageHunkButtons = await screen.findAllByRole('button', { name: 'Stage hunk' })
+    expect(stageHunkButtons).toHaveLength(2)
+
+    fireEvent.click(stageHunkButtons[1]!)
+    expect(gitStagePatch).toHaveBeenCalledTimes(1)
+    expect(gitStagePatch.mock.calls[0]![1]).toContain('@@ -20,1 +20,1 @@')
+    expect(gitStagePatch.mock.calls[0]![1]).not.toContain('@@ -1,1 +1,1 @@')
+    // Whole-file actions and hunk buttons are disabled while patch is in flight.
+    expect(screen.getByRole('button', { name: 'Stage' }).hasAttribute('disabled')).toBe(true)
+    expect((stageHunkButtons[0] as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(stageHunkButtons[0]!)
+    expect(gitStagePatch).toHaveBeenCalledTimes(1)
+
+    resolveStage({ ok: false, message: 'hunk failed' })
+    expect(await screen.findByText('hunk failed')).toBeTruthy()
+
+    const beforeRetryCalls = b.gitDiff.mock.calls.length
+    gitStagePatch.mockResolvedValueOnce({ ok: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(gitStagePatch).toHaveBeenCalledTimes(2)
+      expect(b.gitDiff.mock.calls.length).toBeGreaterThan(beforeRetryCalls)
+    })
+
+    cleanup()
+    mount({
+      cwd: '/tmp/repo',
+      status: { refName: 'main' },
+      diff: twoHunks,
+      entries: { ok: true, entries: [{ path: 'multi.ts', xy: 'M ' }] },
+      gitStagePatch,
+      gitUnstagePatch,
+    })
+    const unstageHunkButtons = await screen.findAllByRole('button', { name: 'Unstage hunk' })
+    expect(unstageHunkButtons).toHaveLength(2)
+    fireEvent.click(unstageHunkButtons[0]!)
+    await waitFor(() => {
+      expect(gitUnstagePatch).toHaveBeenCalledTimes(1)
+    })
+    expect(gitUnstagePatch.mock.calls[0]![1]).toContain('@@ -1,1 +1,1 @@')
+  })
+
+  it('hides hunk actions for branch scope, untracked placeholders, and conflicts', async () => {
+    const gitStagePatch = vi.fn(async () => ({ ok: true }))
+    const gitUnstagePatch = vi.fn(async () => ({ ok: true }))
+    const validHunks = [{
+      header: '@@ -1,2 +1,2 @@',
+      lines: [
+        { kind: 'context' as const, text: 'hello' },
+        { kind: 'del' as const, text: 'old' },
+        { kind: 'add' as const, text: 'world' },
+      ],
+    }]
+    const b = mount({
+      cwd: '/tmp/repo',
+      status: { refName: 'main' },
+      diff: {
+        files: [
+          { path: 'untracked.ts', status: 'added', hunks: [{ header: '@@ -0,0 +1,1 @@', lines: [{ kind: 'add', text: 'x' }] }] },
+          { path: 'conflict.ts', status: 'modified', hunks: validHunks },
+          { path: 'normal.ts', status: 'modified', hunks: validHunks },
+        ],
+      },
+      entries: {
+        ok: true,
+        entries: [
+          { path: 'untracked.ts', xy: '??' },
+          { path: 'conflict.ts', xy: 'UU' },
+          { path: 'normal.ts', xy: ' M' },
+        ],
+      },
+      gitStagePatch,
+      gitUnstagePatch,
+    })
+    // Only normal.ts exposes Stage hunk; untracked and conflicted do not.
+    const buttons = await screen.findAllByRole('button', { name: 'Stage hunk' })
+    expect(buttons).toHaveLength(1)
+
+    // Switch to branch scope -> hunk actions must disappear completely.
+    fireEvent.click(screen.getByRole('button', { name: 'Working tree' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'origin/main' }))
+    await waitFor(() => {
+      expect(b.gitDiff).toHaveBeenCalledWith('/tmp/repo', { baseRef: 'origin/main' })
+    })
+    expect(screen.queryByRole('button', { name: 'Stage hunk' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unstage hunk' })).toBeNull()
+  })
+
+  it('inserts line-level chat comments and supports progressive chunk expansion', async () => {
+    const appendComposerText = vi.fn()
+    const bigLines = Array.from({ length: 450 }, (_v, index) => ({ kind: 'add' as const, text: `row-${index + 1}` }))
+    mount({
+      cwd: '/tmp/repo',
+      sessionId: undefined,
+      status: { refName: 'main' },
+      diff: {
+        files: [
+          SAMPLE.files[0]!,
+          {
+            path: 'big.ts',
+            status: 'modified',
+            hunks: [{ header: '@@ -1,0 +1,450 @@', lines: bigLines }],
+          },
+        ],
+      },
+      appendComposerText,
+    })
+    await waitFor(() => {
+      expect(screen.getByText('big.ts')).toBeTruthy()
+    })
+    // Progressive chunk renders first 400 lines of big.ts + 3 lines of README.md = 403 rows initially.
+    const showMore = document.querySelector<HTMLButtonElement>('[data-diff-show-more]')
+    expect(showMore).not.toBeNull()
+    expect(document.querySelectorAll('[data-diff-line]').length).toBe(403)
+    expect(screen.queryByText('row-450')).toBeNull()
+    fireEvent.click(showMore!)
+    expect(document.querySelectorAll('[data-diff-line]').length).toBe(453)
+    expect(screen.getByText('row-450')).toBeTruthy()
+
+    const commentButtons = document.querySelectorAll<HTMLButtonElement>('[data-diff-line-comment]')
+    // Click '+' on the added '+world' line (3rd line of README.md).
+    fireEvent.click(commentButtons[2]!)
+    expect(appendComposerText).toHaveBeenCalledWith(SID, 'L2 `README.md`\n\n```diff\n+world\n```')
   })
 })
 

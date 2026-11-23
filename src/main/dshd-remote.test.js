@@ -1358,3 +1358,37 @@ test('DshdRemote snapshot is chisacode-v2 and has no host-token wall', () => {
   assert.equal(cleared.relayTokenSet, true);
   assert.equal(cleared.relayConfigured, true);
 });
+
+test('startDaemon failure closes an opened gitTunnel before rejecting', async () => {
+  const home = tempDir('dsh-remote-tunnel-cleanup-');
+  const remote = new DshdRemote({
+    getConfig: () => ({ remoteEnabled: true, remoteMode: 'lan' }),
+    getHomeDir: () => home,
+  });
+  let tunnelClosed = 0;
+  const fakeTunnel = {
+    url: 'http://127.0.0.1:4444',
+    token: 'tok',
+    async close() { tunnelClosed += 1; },
+  };
+  let killedHandle = false;
+  const fakeHandle = { pid: 999999 };
+  remote.serverApi = {
+    generateLocalPairingOffer: () => ({ url: 'https://example.com/#offer=ok', linkUrl: '' }),
+    RelayPairingLinkStore: class {},
+  };
+  remote.ensureApi = async () => remote.serverApi;
+  remote.spawnDaemonProcess = async () => {
+    remote.gitTunnel = fakeTunnel;
+    return fakeHandle;
+  };
+  remote.terminateDaemonProcess = async () => { killedHandle = true; };
+  remote.ensureMobileWebServer = async () => {};
+  remote.refreshPairing = async () => {
+    throw new Error('pairing refresh failed');
+  };
+  await assert.rejects(() => remote.startDaemon(), /pairing refresh failed/);
+  assert.equal(tunnelClosed, 1, 'gitTunnel must be closed when startDaemon fails after spawning');
+  assert.equal(remote.gitTunnel, null);
+  assert.equal(killedHandle, true);
+});

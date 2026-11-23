@@ -1,9 +1,5 @@
 const { app, BrowserView, BrowserWindow, nativeImage, screen } = require('electron');
-const {
-  attachRendererConsoleTail, RendererConsoleTail, RendererMemorySamples, collectHangStack, rendererMemorySample,
-  writeCrashReport, desktopErrorState,
-} = require('./crash-report');
-const { attachRecovery, UNRESPONSIVE } = require('./renderer-recovery');
+const { allowHangCallStacks, attachRendererRecovery } = require('./window-renderer-recovery');
 const { rendererFile, assetFile, preloadFile } = require('./paths');
 const { applyWindowsAppDetails } = require('./window-app-details');
 const { REMOTE_FEATURE_ENABLED } = require('./config');
@@ -52,94 +48,6 @@ function foreground() {
 }
 
 const PLUGIN_BOOT_TIMEOUT_MS = 90_000;
-
-// A dead frameless renderer can leave no usable controls. Offer
-// reload-or-quit so a crash never strands the user. The dialog is anchored
-// to no window so it stays visible even when the surface is hidden in tray.
-// Renderer error-level console lines retained across windows for crash files.
-const rendererConsoleTail = new RendererConsoleTail();
-
-/** app.getPath('logs') resolves only after ready; reports defer without it. */
-function crashLogDir() {
-  try {
-    const { app } = require('electron');
-    return require('node:path').join(app.getPath('logs'), 'crash');
-  } catch {
-    return null;
-  }
-}
-
-/** Persist the diagnostic, then keep only its last lines in the dialog. */
-async function writeRendererReport(why, contents, diagnostics = {}) {
-  const dir = crashLogDir();
-  if (!dir) return undefined;
-  const { app } = require('electron');
-  return writeCrashReport(dir, {
-    source: 'renderer',
-    phase: 'running',
-    error: desktopErrorState(new Error(why)),
-    rendererConsole: rendererConsoleTail.snapshot(),
-    rendererStack: diagnostics.stack,
-    rendererMemory: diagnostics.memory,
-    app: {
-      name: 'Whale Isle',
-      version: app.getVersion(),
-      platform: process.platform,
-      arch: process.arch,
-      electron: process.versions.electron || '',
-      node: process.versions.node || '',
-      locale: app.getLocale(),
-    },
-    time: new Date(),
-  });
-}
-
-// One hour of five-minute readings shows whether memory climbed before an OOM.
-const RENDERER_MEMORY_INTERVAL_MS = 5 * 60 * 1000;
-const hangStackSessions = new WeakSet();
-
-/**
- * Let unresponsive Harness pages report their running JavaScript: Chromium
- * collects the stack only for documents that opt in through Document-Policy,
- * and index.js enables the feature. Only main-frame responses pass through.
- */
-function allowHangCallStacks(session) {
-  if (!session || hangStackSessions.has(session)) return;
-  hangStackSessions.add(session);
-  session.webRequest.onHeadersReceived(
-    { urls: ['http://127.0.0.1/*', 'http://localhost/*'], types: ['mainFrame'] },
-    (details, callback) => {
-      callback({ responseHeaders: { ...details.responseHeaders, 'Document-Policy': ['include-js-call-stacks-in-crash-reports'] } });
-    },
-  );
-}
-
-function attachRendererRecovery(contents, label) {
-  if (!contents || contents.__dshdRecoveryAttached) {
-    return;
-  }
-  contents.__dshdRecoveryAttached = true;
-  attachRendererConsoleTail(contents, rendererConsoleTail);
-  const memory = new RendererMemorySamples();
-  const sampleMemory = () => {
-    if (contents.isDestroyed()) return;
-    const { app } = require('electron');
-    memory.record(rendererMemorySample(contents.getOSProcessId(), app.getAppMetrics()));
-  };
-  const memoryTimer = setInterval(sampleMemory, RENDERER_MEMORY_INTERVAL_MS);
-  memoryTimer.unref?.();
-  contents.once('destroyed', () => { clearInterval(memoryTimer); });
-  // Crash, hang and load failure recover without a dialog: reload, then a
-  // failure page inside the surface (renderer-recovery.js).
-  attachRecovery(contents, {
-    label,
-    report: async (why) => {
-      sampleMemory();
-      const stack = why === UNRESPONSIVE ? await collectHangStack(contents.mainFrame) : undefined;
-      return writeRendererReport(why, contents, { stack, memory: memory.snapshot() });
-    },
-  });
-}
 
 const PLUGIN_BOOT_PROBE = `(() => {
   const boot = document.querySelector('[data-dshd-boot-status]');
@@ -605,14 +513,28 @@ function watchPluginBoot(view, win) {
       catch { status = { pending: true, ready: 0, total: 0, failed: false, hasApp: false, error: '' }; }
       if (!isCurrent()) return;
       const settled = Boolean(status.hasApp);
+      const timedOut = !settled && !status.failed && Date.now() > deadline;
+      const error = status.error || (timedOut ? 'Web UI 插件加载超时，应用界面未就绪' : '');
       sendPluginBoot({
-        ready: status.ready, total: status.total, pending: Boolean(status.pending) && !settled,
-        failed: Boolean(status.failed), settled, error: status.error || '',
+        ready: status.ready,
+        total: status.total,
+        pending: Boolean(status.pending) && !settled && !timedOut,
+        failed: Boolean(status.failed) || timedOut,
+        settled,
+        error,
       });
-      if (status.failed) { finish(reject, new Error(status.error || '插件加载失败')); return; }
-      if (settled || Date.now() > deadline) {
-        try { await revealHarnessView(win); }
-        catch (error) { finish(reject, error); return; }
+      if (status.failed || timedOut) {
+        finish(reject, new Error(error || '插件加载失败'));
+        return;
+      }
+      if (settled) {
+        try {
+          await revealHarnessView(win);
+        } catch (revealError) {
+          // Reject the boot waiter so the boot page stays visible and shows retry on reveal failure.
+          finish(reject, revealError);
+          return;
+        }
         if (!isCurrent()) return;
         finish(resolve, status);
         return;

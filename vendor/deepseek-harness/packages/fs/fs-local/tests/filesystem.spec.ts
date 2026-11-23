@@ -589,6 +589,28 @@ describe('writeText', () => {
     expect(outcome.after).toBe('a\nB\nc\n')
   })
 
+  it('writeText overwrite preserves existing CRLF line endings and UTF-8 BOM on disk', async () => {
+    await writeFile(
+      join(dir, 'win.ps1'),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('Write-Output "old"\r\nWrite-Output "end"\r\n', 'utf8')]),
+    )
+    const target = await fs.resolve('win.ps1')
+    const outcome = await fs.writeText(target, 'Write-Output "new"\nWrite-Output "end"\n')
+    expect(outcome.before).toBe('Write-Output "old"\nWrite-Output "end"\n')
+    expect(outcome.after).toBe('Write-Output "new"\nWrite-Output "end"\n')
+    const raw = await readFile(join(dir, 'win.ps1'))
+    expect(raw.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]))
+    expect(raw.subarray(3).toString('utf8')).toBe('Write-Output "new"\r\nWrite-Output "end"\r\n')
+  })
+
+  it('editText and patchText preserve UTF-8 BOM alongside CRLF', async () => {
+    const file = join(dir, 'bom-edit.txt')
+    await writeFile(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('one\r\ntwo\r\n', 'utf8')]))
+    const target = await fs.resolve('bom-edit.txt')
+    await fs.editText(target, { oldString: 'two', newString: 'TWO', replaceAll: false })
+    expect(await readFile(file, 'utf8')).toBe('\uFEFFone\r\nTWO\r\n')
+  })
+
   it('an overwrite of a BINARY prior file reports before:null (undiffable), still succeeds', async () => {
     await writeFile(join(dir, 'a.bin'), Buffer.from([0x00, 0x01, 0x02]))
     const target = await fs.resolve('a.bin')

@@ -1721,3 +1721,88 @@ test('a rejecting processStartTime does not produce an unhandledRejection when s
   assert.equal(result.error, spawnError);
   assert.deepEqual(unhandled, []);
 });
+
+test('attachOutput buffers split dsh web readiness URLs and split UTF-8 characters', async (t) => {
+  const { createLineBuffer } = require('./dsh-output-buffer');
+  const h = makeHarness({ announceReady: false });
+  t.after(h.cleanup);
+  h.setReachable(false, false);
+  const starting = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1);
+  const child = h.lastChild();
+  const utf8Line = Buffer.from('日志：中文日志与就绪行\ndsh web: http://127.0.0.', 'utf8');
+  // Slice right inside a 3-byte Chinese UTF-8 sequence ("中" starts at byte 9).
+  child.stdout.emit('data', utf8Line.subarray(0, 10));
+  child.stdout.emit('data', utf8Line.subarray(10));
+  child.stdout.emit('data', Buffer.from('1:3080/?token=split-tok\n', 'utf8'));
+  h.setReachable(true, false);
+  const res = await starting;
+  assert.equal(res.ok, true);
+  assert.equal(res.value, 'http://127.0.0.1:3080/?token=split-tok');
+  assert.ok(h.manager.logs.some((entry) => entry.includes('中文日志与就绪行')));
+  assert.equal(h.manager.logs.some((entry) => entry.includes('\uFFFD')), false);
+
+  const lines = [];
+  const lb = createLineBuffer((line) => lines.push(line));
+  const raw = Buffer.from('第一行\r\n无换行结尾的最后一行', 'utf8');
+  lb.push(raw.subarray(0, 4));
+  lb.push(raw.subarray(4));
+  lb.flush();
+  assert.deepEqual(lines, ['第一行', '无换行结尾的最后一行']);
+});
+
+test('parsePidFile retains optional shell marker and isOwnedHarnessCommandLine validates cmd wrappers', () => {
+  const { parsePidFile } = require('./dsh');
+  const { isOwnedHarnessCommandLine } = require('./dsh-win-process');
+  assert.deepEqual(
+    parsePidFile('{"pid":4242,"port":3080,"startTime":"winft:1","shell":true}'),
+    { pid: 4242, port: 3080, startTime: 'winft:1', shell: true },
+  );
+  assert.equal(isOwnedHarnessCommandLine('cmd.exe /d /s /c "C:\\npm\\dsh.cmd" web --port 3080'), true);
+  assert.equal(isOwnedHarnessCommandLine('cmd.exe /d /s /c npx.cmd @deepseek-ai/dsh web'), true);
+  assert.equal(isOwnedHarnessCommandLine('cmd.exe /c notepad.exe'), false);
+});
+
+test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated cmd.exe', { skip: process.platform !== 'win32' }, async () => {
+  const { killTree } = require('./dsh');
+  const killedCmds = [];
+  const ownedOk = await killTree(CHILD_PID, (command, args, _opts, cb) => {
+    killedCmds.push(command);
+    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'powershell.exe') return cb(null, 'cmd.exe /d /s /c "C:\\npm\\dsh.cmd" web --port 3080');
+    if (command === 'taskkill') return cb(null, '');
+    return cb(null, '');
+  });
+  assert.equal(ownedOk, true);
+  assert.deepEqual(killedCmds, ['tasklist', 'powershell.exe', 'taskkill']);
+
+  const unrelatedCmds = [];
+  const unrelatedOk = await killTree(CHILD_PID, (command, _args, _opts, cb) => {
+    unrelatedCmds.push(command);
+    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'powershell.exe') return cb(null, 'C:\\Windows\\System32\\cmd.exe /c calc.exe');
+    return cb(new Error('must not kill unrelated cmd.exe'));
+  }, { confirmedManagedShell: true });
+  assert.equal(unrelatedOk, false);
+  assert.deepEqual(unrelatedCmds, ['tasklist', 'powershell.exe']);
+
+  const fallbackCmds = [];
+  const confirmedFallback = await killTree(CHILD_PID, (command, _args, _opts, cb) => {
+    fallbackCmds.push(command);
+    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'powershell.exe') return cb(null, '');
+    if (command === 'taskkill') return cb(null, '');
+    return cb(null, '');
+  }, { confirmedManagedShell: true });
+  assert.equal(confirmedFallback, true);
+  assert.deepEqual(fallbackCmds, ['tasklist', 'powershell.exe', 'taskkill']);
+});
+
+test('Windows processStartTime uses non-blocking Koffi GetProcessTimes without spawning PowerShell', { skip: process.platform !== 'win32' }, async () => {
+  const { processStartTime } = require('./dsh');
+  const t0 = Date.now();
+  const mark = await processStartTime(process.pid);
+  assert.ok(Date.now() - t0 < 500, 'native GetProcessTimes must avoid 3s PowerShell startup overhead');
+  assert.match(mark, /^winft:\d+$/);
+  assert.equal(await processStartTime(2 ** 29), '');
+});

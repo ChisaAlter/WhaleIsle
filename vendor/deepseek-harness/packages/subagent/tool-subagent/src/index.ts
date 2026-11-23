@@ -16,10 +16,12 @@ import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import {
   assertSubagentMaxDepth,
+  createIsolatedSubagentWorktree,
   delegationDepthOf,
   parentAgentOptionsForDelegation,
+  rollbackIsolatedSubagentWorktree,
 } from '@deepseek-ai/dsh-subagent'
-import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
+import type { SubagentProvider, SubagentWorktreeSpec } from '@deepseek-ai/dsh-subagent'
 import {
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
@@ -84,6 +86,12 @@ export interface Config extends PresetSelectionConfig {
    * the current Host subagent depth setting (default `1`) at each delegation.
    */
   maxDepth?: number | 'provider-managed'
+  /**
+   * Expose optional `isolation: 'none' | 'worktree'` parameter. Defaults to
+   * exposing `isolation` on fresh continuable providers (such as `spawn`) and
+   * omitting it on forked/external presets unless explicitly set.
+   */
+  worktreeIsolation?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -106,6 +114,7 @@ export const Config: z<Config> = z.object({
   agentPreset: z.string().min(1),
   allowedAgentPresets: (z.array(z.string().min(1)).min(1) as z<string[] | undefined>).default(undefined),
   maxDepth: z.union([z.natural().max(Number.MAX_SAFE_INTEGER), z.const('provider-managed' as const)]),
+  worktreeIsolation: z.boolean(),
 })
 
 /**
@@ -208,6 +217,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     assertSubagentProviderConfiguration(subagentProvider)
     const wording = providerWording(subagentProvider.inheritsParentContext)
     const providerRouteDefaults = subagentProvider.agentRouteDefaults
+    const worktreeIsolationEnabled = config.worktreeIsolation
+      ?? (subagentProvider.prepareContinuable !== undefined && !subagentProvider.inheritsParentContext)
     const selectionDescription = providerRouteDefaults !== undefined
       ? ' Omit `provider`, `model`, and `reasoning_effort` to use child defaults, falling back to this backend\'s route defaults.'
       : ' Omit `provider`, `model`, and `reasoning_effort` to use child defaults, falling back to compatible parent values.'
@@ -243,6 +254,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           required: true,
           description: wording.promptDescription,
         },
+        ...worktreeIsolationEnabled ? {
+          isolation: {
+            type: 'string' as const,
+            enum: ['none', 'worktree'] as const,
+            description:
+              'Optional workspace isolation mode (\'none\' default, or \'worktree\'). '
+              + 'When set to \'worktree\', runs the subagent in an isolated Git worktree and branch created from HEAD.',
+          },
+        } : {},
         ...presets.choices === undefined ? {} : {
           agent_preset: {
             type: 'string' as const,
@@ -272,10 +292,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           properties: {
             kind: { type: 'string', required: true, enum: ['activation', 'queued'] },
             name: { type: 'string', required: true },
+            worktreePath: { type: 'string' },
+            branch: { type: 'string' },
           },
         },
-        render: (_args, value) => [{ type: 'text', text: `${value.kind === 'queued' ? 'queued delegation' : 'started subagent'} ${value.name}` }],
-        presentationMeta: (_args, value) => ({ kind: value.kind, name: value.name }),
+        render: (_args, value) => [{
+          type: 'text',
+          text: `${value.kind === 'queued' ? 'queued delegation' : 'started subagent'} ${value.name}`
+            + (value.worktreePath !== undefined && value.branch !== undefined
+              ? ` (worktree: ${value.worktreePath}, branch: ${value.branch})`
+              : ''),
+        }],
+        presentationMeta: (_args, value) => ({
+          kind: value.kind,
+          name: value.name,
+          ...value.worktreePath === undefined ? {} : { worktreePath: value.worktreePath },
+          ...value.branch === undefined ? {} : { branch: value.branch },
+        }),
       },
       isConcurrencySafe: () => true,
       async execute(args, exec) {
@@ -320,28 +353,74 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           }
         }
         exec.signal.throwIfAborted()
-        const maxDepth = ctx.subagents.resolveMaxDepth(config.maxDepth)
-        const request = {
-          ...args.cwd === undefined ? {} : { cwd: args.cwd },
-          prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
-          parent,
-          ...agentPreset === undefined ? {} : { agentPreset },
-          ...requestedChildAgentOptions !== undefined ? { agentOptions: requestedChildAgentOptions } : {},
-          ...maxDepth !== undefined ? { maxDepth } : {},
+        const rawIsolation = (args as { isolation?: unknown }).isolation
+        if (rawIsolation !== undefined && rawIsolation !== 'none' && rawIsolation !== 'worktree') {
+          throw new Error(`invalid subagent isolation mode ${JSON.stringify(rawIsolation)}; expected "none" or "worktree"`)
+        }
+        const isolation = rawIsolation ?? 'none'
+        if (isolation === 'worktree'
+          && (config.worktreeIsolation === false || (subagentProvider.inheritsParentContext && config.worktreeIsolation !== true))) {
+          throw new Error(`tool-subagent: worktree isolation is disabled for tool "${toolName}"`)
         }
 
-        const managed = await ctx.serial('subagent/delegate', { provider: config.provider, args, options: { agentPreset, agentOptions: requestedChildAgentOptions, maxDepth } }, exec)
-        if (managed !== undefined) return managed
+        const maxDepth = ctx.subagents.resolveMaxDepth(config.maxDepth)
+        let worktree: SubagentWorktreeSpec | undefined
+        if (isolation === 'worktree') {
+          const baseCwd = await ctx.subagents.resolveDirectory(parent, args.cwd, exec.signal)
+          worktree = await createIsolatedSubagentWorktree(baseCwd, {
+            ...(args.name === undefined ? {} : { nameHint: args.name }),
+            signal: exec.signal,
+          })
+        }
 
-        const started = await ctx.subagents.startActivation({
-          provider: config.provider,
-          label: args.description,
-          ...args.name === undefined ? {} : { name: args.name },
-          ...request,
-          signal: exec.signal,
-          delivery: 'parent',
-        })
-        return { kind: 'activation' as const, name: started.name }
+        try {
+          const requestCwd = worktree === undefined ? args.cwd : (worktree.childCwd ?? worktree.path)
+          const request = {
+            ...requestCwd === undefined ? {} : { cwd: requestCwd },
+            prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
+            parent,
+            ...agentPreset === undefined ? {} : { agentPreset },
+            ...requestedChildAgentOptions !== undefined ? { agentOptions: requestedChildAgentOptions } : {},
+            ...maxDepth !== undefined ? { maxDepth } : {},
+          }
+
+          const managed = await ctx.serial('subagent/delegate', {
+            provider: config.provider,
+            args,
+            options: {
+              agentPreset,
+              agentOptions: requestedChildAgentOptions,
+              maxDepth,
+              ...worktree === undefined ? {} : { worktree },
+            },
+          }, exec)
+          if (managed !== undefined) {
+            return {
+              ...managed,
+              ...worktree === undefined ? {} : { worktreePath: worktree.path, branch: worktree.branch },
+            }
+          }
+
+          const started = await ctx.subagents.startActivation({
+            provider: config.provider,
+            label: args.description,
+            ...args.name === undefined ? {} : { name: args.name },
+            ...request,
+            signal: exec.signal,
+            delivery: 'parent',
+            ...worktree === undefined ? {} : { worktree },
+          })
+          return {
+            kind: 'activation' as const,
+            name: started.name,
+            ...worktree === undefined ? {} : { worktreePath: worktree.path, branch: worktree.branch },
+          }
+        } catch (error: unknown) {
+          if (worktree !== undefined) {
+            await rollbackIsolatedSubagentWorktree(worktree)
+          }
+          throw error
+        }
       },
     })
     const disposeTool = ctx.effect(() => {

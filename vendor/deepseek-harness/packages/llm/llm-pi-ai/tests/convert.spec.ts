@@ -979,6 +979,32 @@ describe('mapStopReason / mapUsage', () => {
     }))).toMatchObject({ kind: 'error', failure: { code: 'RATE_LIMIT' } })
   })
 
+  it.each([
+    ['HTTP 408 Request Time-out', 'TIMEOUT'],
+    ['408 Request Time-out', 'TIMEOUT'],
+    ['HTTP 402 Payment Required', 'QUOTA'],
+    ['402 billing account requires payment', 'QUOTA'],
+    ['write EPIPE', 'TRANSPORT'],
+    ['connect ETIMEDOUT 1.2.3.4:443', 'TIMEOUT'],
+    ['Error: ESOCKETTIMEDOUT', 'TIMEOUT'],
+    ['getaddrinfo EAI_AGAIN api.example.com', 'TRANSPORT'],
+    ['getaddrinfo ENOTFOUND api.example.com', 'TRANSPORT'],
+    ['fetch failed: UND_ERR_CONNECT_TIMEOUT', 'TIMEOUT'],
+    ['fetch failed: UND_ERR_SOCKET', 'TRANSPORT'],
+    ["SyntaxError: Unexpected token '<', \"<html>502...\" is not valid JSON", 'SERVER'],
+    ['Anthropic performed an unsupported mid-output model fallback', 'SERVER'],
+  ] as const)('classifies %j as %s', (errorMessage, code) => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
+      .toMatchObject({ kind: 'error', failure: { code } })
+  })
+
+  it('keeps leading gateway 5xx over embedded 402/408 in body', () => {
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: '500 upstream 402 Payment Required',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+  })
+
   it('uses the resolved context window for silent and length-stop overflows', () => {
     // Non-empty content keeps the no-window branch on the successful stop path
     // (an empty stop is EMPTY_RESPONSE, covered above); overflow wins over both.
@@ -1031,5 +1057,35 @@ describe('toStreamChunks defensive branches', () => {
       { type: 'done', reason: 'stop', message: assistant() },
     )))
     expect(chunks[0]).toEqual({ type: 'tool-call-delta', index: 0, id: '', argumentsDelta: '{}' })
+  })
+
+  it('tracks toolcall id and name arriving late across chunked deltas without clobbering prior identity', async () => {
+    const emptyStart = assistant({ content: [{ type: 'toolCall', id: '', name: '', arguments: {} }] })
+    const withId = assistant({ content: [{ type: 'toolCall', id: 'call_late', name: '', arguments: {} }] })
+    const withIdAndName = assistant({ content: [{ type: 'toolCall', id: 'call_late', name: 'read', arguments: {} }] })
+    const wipedPartial = assistant({ content: [{ type: 'toolCall', id: '', name: '', arguments: {} }] })
+
+    const chunks = await collect(toStreamChunks(feed(
+      { type: 'toolcall_start', contentIndex: 0, partial: emptyStart },
+      { type: 'toolcall_delta', contentIndex: 0, delta: '{"pa', partial: withId },
+      { type: 'toolcall_delta', contentIndex: 0, delta: 'th":"a"}', partial: withIdAndName },
+      { type: 'toolcall_delta', contentIndex: 0, delta: '', partial: wipedPartial },
+      {
+        type: 'toolcall_end',
+        contentIndex: 0,
+        toolCall: { type: 'toolCall', id: '', name: '', arguments: undefined as never },
+        partial: withIdAndName,
+      },
+      { type: 'done', reason: 'toolUse', message: assistant({ stopReason: 'toolUse' }) },
+    )))
+
+    expect(chunks[1]).toEqual({ type: 'tool-call-delta', index: 0, id: 'call_late', argumentsDelta: '{"pa' })
+    expect(chunks[2]).toEqual({ type: 'tool-call-delta', index: 0, id: 'call_late', name: 'read', argumentsDelta: 'th":"a"}' })
+    expect(chunks[3]).toEqual({ type: 'tool-call-delta', index: 0, id: 'call_late', name: 'read', argumentsDelta: '' })
+    expect(chunks[4]).toEqual({
+      type: 'block-end',
+      index: 0,
+      block: { type: 'tool-call', id: 'call_late', name: 'read', arguments: '{}' },
+    })
   })
 })

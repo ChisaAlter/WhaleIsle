@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import {
-  Button, DisclosureRow, IconCodeOutline16, IconCompareSplitOutlineRegular, IconNowrapFillRegular,
-  IconRefreshOutline16, IconWrapFillRegular, languageForPath, MAX_RENDERED_LINES, Menu, Modal,
-  renderedHunks, ReviewDiff, IconWarningOutline16, Toast, Tooltip,
+  Button, DEFAULT_PROGRESSIVE_CHUNK_LINES, DisclosureRow, IconCodeOutline16, IconCompareSplitOutlineRegular,
+  IconNowrapFillRegular, IconRefreshOutline16, IconWarningOutline16, IconWrapFillRegular, languageForPath,
+  Menu, Modal, ReviewDiff, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ReviewHunk, ReviewNote } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ReviewHunk, ReviewLineCommentTarget, ReviewNote } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { buildSingleHunkPatch, formatDiffLineComment } from './hunk-patch.ts'
 import { NS } from './locales.ts'
-import { toReviewHunk } from './review-hunks.ts'
 import {
-  isStaged, isUnstaged, type DiffBranchRef, type DiffFile, type DiffShellInjected, type GitStatusEntry,
+  buildFileViews, buildVisibleRows, canPatchSingleHunk, COLLAPSE_FILE_THRESHOLD, needsSingleFileFetch,
+  PANEL_RENDER_BUDGET, resolveRowFile, type FileView, type VisibleDiffRow,
+} from './panel-model.ts'
+import {
+  isStaged, isUnstaged, type DiffBranchRef, type DiffFile, type DiffShellInjected, type GitDiffOptions,
+  type GitStatusEntry,
 } from './shell.ts'
 import css from './DiffPanel.module.css'
 
@@ -25,47 +30,7 @@ export interface DiffPanelInjected extends DiffShellInjected {
   openFile: (relativePath: string) => void | Promise<void>
 }
 
-/**
- * One open file's rendered slice: shared-format hunks, whether the panel-wide
- * row budget cut them, and whether the budget was already gone.
- */
-interface FileView {
-  hunks: ReviewHunk[]
-  truncated: boolean
-  omitted: boolean
-}
-
-/** The mounted-row ceiling across the whole panel; collapsed files never consume it. */
-const PANEL_RENDER_BUDGET = MAX_RENDERED_LINES
-
-/** The number of files above which rows start collapsed so a large diff mounts on demand. */
-const COLLAPSE_FILE_THRESHOLD = 8
-
-/**
- * Allocate the panel row budget across open files in display order and convert
- * each file's IPC hunks to the shared renderer's shape.
- * @param files - served files.
- * @param openPaths - expanded paths; only open files consume the budget.
- * @param order - display order of paths (staged+unstaged when known).
- * @returns per-path view data.
- */
-function buildFileViews(files: readonly DiffFile[], openPaths: ReadonlySet<string>, order: readonly string[]): Map<string, FileView> {
-  const views = new Map<string, FileView>()
-  let remaining = PANEL_RENDER_BUDGET
-  for (const path of order) {
-    const file = files.find(entry => entry.path === path)
-    if (file === undefined || !openPaths.has(path)) continue
-    if (remaining === 0) {
-      views.set(path, { hunks: [], truncated: false, omitted: true })
-      continue
-    }
-    const review = file.hunks.map(toReviewHunk)
-    const sliced = renderedHunks(review, remaining)
-    remaining -= sliced.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0)
-    views.set(path, { hunks: sliced.hunks, truncated: sliced.truncated, omitted: false })
-  }
-  return views
-}
+type PendingFileAction = 'stage' | 'unstage' | 'discard' | 'stage-hunk' | 'unstage-hunk'
 
 /**
  * Prefer origin HEAD, then main/master, then the first local branch.
@@ -99,15 +64,22 @@ export function DiffPanel({
   gitUnstage,
   gitDiscard,
   gitBranchList,
+  gitStagePatch,
+  gitUnstagePatch,
+  appendComposerText,
   t,
 }: DiffPanelProps): ReactNode {
+  const resolvedSessionId = useSessions((state) => {
+    return sessionId ?? Object.values(state.byId).find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
+  })
   const cwd = useSessions((state) => {
-    const id = sessionId ?? Object.values(state.byId).find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
-    const next = id === undefined ? undefined : sessionWorkingDirectory(state.byId[id])
+    const next = resolvedSessionId === undefined ? undefined : sessionWorkingDirectory(state.byId[resolvedSessionId])
     return next ? next : undefined
   })
   const [available, setAvailable] = useState(false)
   const [files, setFiles] = useState<DiffFile[]>([])
+  const [sectionFiles, setSectionFiles] = useState<Readonly<Record<string, DiffFile>>>({})
+  const [loadingKeys, setLoadingKeys] = useState<ReadonlySet<string>>(new Set())
   const [entries, setEntries] = useState<GitStatusEntry[] | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -115,12 +87,20 @@ export function DiffPanel({
   const notificationId = useRef(0)
   const [loading, setLoading] = useState(cwd !== undefined)
   const [branchLoading, setBranchLoading] = useState(false)
-  const [pendingOps, setPendingOps] = useState<Readonly<Record<string, 'stage' | 'unstage' | 'discard'>>>({})
+  const [pendingOps, setPendingOps] = useState<Readonly<Record<string, PendingFileAction>>>({})
+  const [pendingHunkKey, setPendingHunkKey] = useState<string | null>(null)
   const inFlightOps = useRef(new Set<string>())
+  const activeLoadIdRef = useRef(0)
+  const attemptedKeysRef = useRef(new Set<string>())
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const notifyError = useCallback((text: string, retry: () => void): void => {
     setNotification({ id: ++notificationId.current, text, retry })
   }, [])
-  const [openPaths, setOpenPaths] = useState<ReadonlySet<string>>(new Set())
+  const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(new Set())
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const [generation, setGeneration] = useState(0)
   const [split, setSplit] = useState(false)
@@ -140,11 +120,16 @@ export function DiffPanel({
   }, [reload])
 
   useEffect(() => {
+    const loadId = ++activeLoadIdRef.current
+    attemptedKeysRef.current.clear()
+    setSectionFiles({})
+    setLoadingKeys(new Set())
     if (cwd === undefined) {
       setAvailable(false)
       setFiles([])
       setEntries(null)
       setTruncated(false)
+      setOpenKeys(new Set())
       setError(null)
       setNotification(null)
       setLoading(false)
@@ -155,12 +140,13 @@ export function DiffPanel({
     const options = scope === 'branch' && baseRef !== null ? { baseRef } : undefined
     const porcelainProbe = scope === 'worktree' ? gitStatusEntries(cwd) : Promise.resolve(null)
     void Promise.all([gitStatus(cwd), gitDiff(cwd, options), porcelainProbe]).then(([status, diff, porcelain]) => {
-      if (cancelled) return
+      if (cancelled || activeLoadIdRef.current !== loadId) return
       if (status === null) {
         setAvailable(false)
         setFiles([])
         setEntries(null)
         setTruncated(false)
+        setOpenKeys(new Set())
         setError(null)
         setNotification(null)
         return
@@ -170,35 +156,98 @@ export function DiffPanel({
         setFiles([])
         setEntries(null)
         setTruncated(false)
+        setOpenKeys(new Set())
         setError(t('error.load'))
         notifyError(t('error.load'), reload)
         return
       }
+      const porcelainEntries = porcelain?.ok === true ? porcelain.entries ?? [] : null
+      const nextStaged = porcelainEntries?.filter(entry => isStaged(entry.xy)) ?? []
+      const nextUnstaged = porcelainEntries?.filter(entry => isUnstaged(entry.xy)) ?? []
+      const initialRows = buildVisibleRows(scope, porcelainEntries, nextStaged, nextUnstaged, diff.files)
+      const rowCount = porcelainEntries !== null ? Math.max(diff.files.length, initialRows.length) : diff.files.length
       setAvailable(true)
       setFiles(diff.files)
       setTruncated(diff.truncated === true)
-      setEntries(porcelain?.ok === true ? porcelain.entries ?? [] : null)
-      setOpenPaths(diff.files.length > COLLAPSE_FILE_THRESHOLD
-        ? new Set()
-        : new Set(diff.files.map(file => file.path)))
+      setEntries(porcelainEntries)
+      setOpenKeys(rowCount > COLLAPSE_FILE_THRESHOLD ? new Set() : new Set(initialRows.map(row => row.key)))
       setError(null)
       setNotification(null)
     }).catch(() => {
-      if (!cancelled) {
+      if (!cancelled && activeLoadIdRef.current === loadId) {
         setError(t('error.load'))
         notifyError(t('error.load'), reload)
       }
     }).finally(() => {
-      if (!cancelled) setLoading(false)
+      if (!cancelled && activeLoadIdRef.current === loadId) setLoading(false)
     })
     return () => { cancelled = true }
   }, [cwd, gitStatus, gitDiff, gitStatusEntries, t, generation, scope, baseRef, notifyError, reload])
 
-  const toggle = (path: string): void => {
-    const next = new Set(openPaths)
-    if (next.has(path)) next.delete(path)
-    else next.add(path)
-    setOpenPaths(next)
+  const staged = useMemo(() => entries?.filter(entry => isStaged(entry.xy)) ?? [], [entries])
+  const unstaged = useMemo(() => entries?.filter(entry => isUnstaged(entry.xy)) ?? [], [entries])
+  const visibleRows = useMemo(
+    () => buildVisibleRows(scope, entries, staged, unstaged, files),
+    [scope, entries, staged, unstaged, files],
+  )
+
+  useEffect(() => {
+    if (loading || !available || cwd === undefined) return
+    const loadId = activeLoadIdRef.current
+    const pendingRows: VisibleDiffRow[] = []
+    for (const row of visibleRows) {
+      if (!openKeys.has(row.key)) continue
+      const attemptToken = `${loadId}:${row.key}`
+      if (attemptedKeysRef.current.has(attemptToken)) continue
+      const initialFile = files.find(file => file.path === row.path)
+      if (!needsSingleFileFetch(row, initialFile, truncated, files.length, scope)) continue
+      attemptedKeysRef.current.add(attemptToken)
+      pendingRows.push(row)
+    }
+    if (pendingRows.length === 0) return
+
+    setLoadingKeys((previous) => {
+      const next = new Set(previous)
+      for (const row of pendingRows) next.add(row.key)
+      return next
+    })
+
+    for (const row of pendingRows) {
+      const singleOptions: GitDiffOptions = scope === 'branch' && baseRef !== null
+        ? { baseRef, path: row.path }
+        : row.section === 'staged'
+          ? { path: row.path, staged: true }
+          : row.section === 'unstaged'
+            ? { path: row.path, staged: false }
+            : { path: row.path }
+      void gitDiff(cwd, singleOptions)
+        .then((result) => {
+          if (!mountedRef.current || activeLoadIdRef.current !== loadId) return
+          const matched = result?.files.find(entry => entry.path === row.path)
+          if (matched !== undefined) {
+            setSectionFiles(previous => ({ ...previous, [row.key]: matched }))
+          }
+        })
+        .catch(() => {
+          // Smooth fallback to initial bulk diff without retry loop when single-file probe rejects.
+        })
+        .finally(() => {
+          if (!mountedRef.current || activeLoadIdRef.current !== loadId) return
+          setLoadingKeys((previous) => {
+            if (!previous.has(row.key)) return previous
+            const next = new Set(previous)
+            next.delete(row.key)
+            return next
+          })
+        })
+    }
+  }, [loading, available, cwd, visibleRows, openKeys, files, truncated, scope, baseRef, gitDiff])
+
+  const toggle = (key: string): void => {
+    const next = new Set(openKeys)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setOpenKeys(next)
   }
 
   const runOp = async (
@@ -223,13 +272,39 @@ export function DiffPanel({
       notifyError(reason instanceof Error ? reason.message : t('error.load'), retry)
     } finally {
       inFlightOps.current.delete(relativePath)
-      setPendingOps(previous => {
-        const next = { ...previous }
-        delete next[relativePath]
-        return next
-      })
+      setPendingOps(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => key !== relativePath)))
     }
   }
+
+  const runHunkOp = async (
+    op: (cwd: string, patchText: string) => Promise<{ ok: boolean; message?: string }>,
+    relativePath: string,
+    patchText: string,
+    action: 'stage-hunk' | 'unstage-hunk',
+    hunkOpKey: string,
+  ): Promise<void> => {
+    if (cwd === undefined || inFlightOps.current.has(relativePath)) return
+    inFlightOps.current.add(relativePath)
+    setPendingOps(previous => ({ ...previous, [relativePath]: action }))
+    setPendingHunkKey(hunkOpKey)
+    const retry = (): void => { void runHunkOp(op, relativePath, patchText, action, hunkOpKey) }
+    try {
+      const result = await op(cwd, patchText)
+      if (!result.ok) {
+        notifyError(result.message ?? t('error.load'), retry)
+        return
+      }
+      setNotification(null)
+      reload()
+    } catch (reason) {
+      notifyError(reason instanceof Error ? reason.message : t('error.load'), retry)
+    } finally {
+      inFlightOps.current.delete(relativePath)
+      setPendingHunkKey(current => (current === hunkOpKey ? null : current))
+      setPendingOps(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => key !== relativePath)))
+    }
+  }
+
   const openWorkspaceFile = async (path: string): Promise<void> => {
     try { await openFile(path) }
     catch (reason) {
@@ -237,20 +312,10 @@ export function DiffPanel({
     }
   }
 
-  const staged = useMemo(() => entries?.filter(entry => isStaged(entry.xy)) ?? [], [entries])
-  const unstaged = useMemo(() => entries?.filter(entry => isUnstaged(entry.xy)) ?? [], [entries])
-  const displayOrder = useMemo(() => {
-    const seen = new Set<string>()
-    const order: string[] = []
-    for (const path of [...staged, ...unstaged].map(entry => entry.path).concat(files.map(file => file.path))) {
-      if (seen.has(path)) continue
-      seen.add(path)
-      order.push(path)
-    }
-    return order
-  }, [staged, unstaged, files])
-
-  const fileViews = useMemo(() => buildFileViews(files, openPaths, displayOrder), [files, openPaths, displayOrder])
+  const fileViews = useMemo(
+    () => buildFileViews(visibleRows, openKeys, files, sectionFiles),
+    [visibleRows, openKeys, files, sectionFiles],
+  )
 
   const fileNotes = (file: DiffFile, view: FileView): ReviewNote[] => {
     const notes: ReviewNote[] = []
@@ -262,7 +327,9 @@ export function DiffPanel({
       return notes
     }
     if (file.hunks.length === 0) {
-      notes.push({ text: t('file.binary'), attrs: { 'data-diff-note': 'binary' } })
+      notes.push(file.tooLarge === true
+        ? { text: t('file.tooLarge'), attrs: { 'data-diff-note': 'too-large' } }
+        : { text: t('file.binary'), attrs: { 'data-diff-note': 'binary' } })
       return notes
     }
     if (view.truncated) {
@@ -271,11 +338,70 @@ export function DiffPanel({
     return notes
   }
 
-  const hunksFor = (path: string): ReactNode => {
-    const file = files.find(entry => entry.path === path)
-    if (file === undefined) return null
-    const view = fileViews.get(path)
+  const hunksFor = (row: VisibleDiffRow): ReactNode => {
+    const file = resolveRowFile(row.key, row.path, files, sectionFiles)
+    if (file === undefined) {
+      if (!loadingKeys.has(row.key)) return null
+      return (
+        <div className={css.hunks}>
+          <p className={css.message} data-diff-note="loading">{t('file.loading')}</p>
+        </div>
+      )
+    }
+    const view = fileViews.get(row.key)
     if (view === undefined) return null
+
+    const hasSectionFile = sectionFiles[row.key] !== undefined
+    const canOfferHunkSlot = scope === 'worktree'
+      && entries !== null
+      && row.section !== 'combined'
+      && (row.section === 'staged' ? gitUnstagePatch !== undefined : gitStagePatch !== undefined)
+
+    const renderHunkActions = canOfferHunkSlot
+      ? (hunk: ReviewHunk, index: number): ReactNode => {
+        const allowed = canPatchSingleHunk({
+          scope,
+          section: row.section,
+          entry: row.entry,
+          file,
+          view,
+          hunkIndex: index,
+          renderedHunk: hunk,
+          hasStagePatch: gitStagePatch !== undefined,
+          hasUnstagePatch: gitUnstagePatch !== undefined,
+          hasSectionFile,
+        })
+        if (!allowed) return null
+        const patchOp = row.section === 'staged' ? gitUnstagePatch : gitStagePatch
+        if (patchOp === undefined) return null
+        const patchText = buildSingleHunkPatch(file, file.hunks[index] ?? hunk)
+        if (patchText === null) return null
+        const action = row.section === 'staged' ? 'unstage-hunk' : 'stage-hunk'
+        const hunkOpKey = `${row.key}:${index}`
+        return (
+          <button
+            type="button"
+            className={css.hunkAction}
+            data-diff-hunk-action={action}
+            aria-busy={pendingHunkKey === hunkOpKey || undefined}
+            disabled={pendingOps[row.path] !== undefined}
+            onClick={(event) => {
+              event.stopPropagation()
+              void runHunkOp(patchOp, row.path, patchText, action, hunkOpKey)
+            }}
+          >
+            {t(row.section === 'staged' ? 'hunk.unstage' : 'hunk.stage')}
+          </button>
+        )
+      }
+      : undefined
+
+    const handleLineComment = appendComposerText !== undefined && resolvedSessionId !== undefined
+      ? (target: ReviewLineCommentTarget): void => {
+        appendComposerText(resolvedSessionId, formatDiffLineComment(file.path, target))
+      }
+      : undefined
+
     return (
       <div className={css.hunks}>
         {view.omitted
@@ -288,31 +414,37 @@ export function DiffPanel({
               wrap={wrap}
               notes={fileNotes(file, view)}
               skippedNote={t('diff.highlightSkipped')}
+              renderHunkActions={renderHunkActions}
+              onLineComment={handleLineComment}
+              lineCommentLabel={t('line.comment')}
+              progressiveChunkLines={DEFAULT_PROGRESSIVE_CHUNK_LINES}
+              showMoreLabel={(remaining, nextCount) => t('diff.showMore', { next: String(nextCount), remaining: String(remaining) })}
+              expandRemainingLabel={remaining => t('diff.expandRemaining', { remaining: String(remaining) })}
             />
           )}
       </div>
     )
   }
 
-  const fileRow = (path: string, actions: ReactNode): ReactNode => (
+  const fileRow = (row: VisibleDiffRow, actions: ReactNode): ReactNode => (
     <div
-      key={path}
+      key={row.key}
       onClick={(event: MouseEvent<HTMLDivElement>) => {
         const target = event.target as HTMLElement
-        if (target.closest(`.${css.fileTitle}`) !== null) void openWorkspaceFile(path)
+        if (target.closest(`.${css.fileTitle}`) !== null) void openWorkspaceFile(row.path)
       }}
     >
       <DisclosureRow
         icon={<IconCodeOutline16 size={14} />}
-        title={path}
+        title={row.path}
         titleClassName={css.fileTitle}
-        open={openPaths.has(path)}
+        open={openKeys.has(row.key)}
         expandable
-        onToggle={() => { toggle(path) }}
+        onToggle={() => { toggle(row.key) }}
         collapsedContent={actions}
         keepContentWhenOpen
       >
-        {hunksFor(path)}
+        {hunksFor(row)}
       </DisclosureRow>
     </div>
   )
@@ -348,6 +480,10 @@ export function DiffPanel({
       notifyError(reason instanceof Error ? reason.message : t('error.branches'), loadBranches)
     }).finally(() => { setBranchLoading(false) })
   }
+
+  const stagedRows = visibleRows.filter(row => row.section === 'staged')
+  const unstagedRows = visibleRows.filter(row => row.section === 'unstaged')
+  const combinedRows = visibleRows.filter(row => row.section === 'combined')
 
   return (
     <div className={css.root} data-diff-panel>
@@ -403,14 +539,14 @@ export function DiffPanel({
         <button
           type="button"
           className={css.action}
-          onClick={() => { setOpenPaths(new Set()) }}
+          onClick={() => { setOpenKeys(new Set()) }}
         >
           {t('collapseAll')}
         </button>
         <button
           type="button"
           className={css.action}
-          onClick={() => { setOpenPaths(new Set(files.map(file => file.path))) }}
+          onClick={() => { setOpenKeys(new Set(visibleRows.map(row => row.key))) }}
         >
           {t('expandAll')}
         </button>
@@ -461,81 +597,81 @@ export function DiffPanel({
           loading ? null : <p className={css.message} data-diff-unavailable>{t('unavailable')}</p>
         ) : (
           <>
-            {entries !== null ? (
-          <>
-            {truncated ? <p className={css.message}>{t('truncated')}</p> : null}
-            {staged.length === 0 && unstaged.length === 0 ? (
+            {entries !== null && scope === 'worktree' ? (
+              <>
+                {truncated ? <p className={css.message}>{t('truncated')}</p> : null}
+                {stagedRows.length === 0 && unstagedRows.length === 0 ? (
+                  <p className={css.message}>{t('empty.changes')}</p>
+                ) : (
+                  <>
+                    {stagedRows.length > 0 ? (
+                      <section>
+                        <h4 className={css.group}>{t('group.staged')}</h4>
+                        {stagedRows.map(row => fileRow(row, (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="button"
+                            className={css.action}
+                            disabled={pendingOps[row.path] !== undefined}
+                            loading={pendingOps[row.path] === 'unstage'}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void runOp(gitUnstage, row.path, 'unstage')
+                            }}
+                          >
+                            {t('unstage')}
+                          </Button>
+                        )))}
+                      </section>
+                    ) : null}
+                    {unstagedRows.length > 0 ? (
+                      <section>
+                        <h4 className={css.group}>{t('group.unstaged')}</h4>
+                        {unstagedRows.map(row => fileRow(row, (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              type="button"
+                              className={css.action}
+                              disabled={pendingOps[row.path] !== undefined}
+                              loading={pendingOps[row.path] === 'stage'}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void runOp(gitStage, row.path, 'stage')
+                              }}
+                            >
+                              {t('stage')}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              type="button"
+                              className={css.action}
+                              disabled={pendingOps[row.path] !== undefined}
+                              loading={pendingOps[row.path] === 'discard'}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setDiscardPath(row.path)
+                              }}
+                            >
+                              {t('discard')}
+                            </Button>
+                          </>
+                        )))}
+                      </section>
+                    ) : null}
+                  </>
+                )}
+              </>
+            ) : combinedRows.length === 0 ? (
               <p className={css.message}>{t('empty.changes')}</p>
             ) : (
               <>
-                {staged.length > 0 ? (
-                  <section>
-                    <h4 className={css.group}>{t('group.staged')}</h4>
-                    {staged.map(entry => fileRow(entry.path, (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        className={css.action}
-                        disabled={pendingOps[entry.path] !== undefined}
-                        loading={pendingOps[entry.path] === 'unstage'}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void runOp(gitUnstage, entry.path, 'unstage')
-                        }}
-                      >
-                        {t('unstage')}
-                      </Button>
-                    )))}
-                  </section>
-                ) : null}
-                {unstaged.length > 0 ? (
-                  <section>
-                    <h4 className={css.group}>{t('group.unstaged')}</h4>
-                    {unstaged.map(entry => fileRow(entry.path, (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          className={css.action}
-                          disabled={pendingOps[entry.path] !== undefined}
-                          loading={pendingOps[entry.path] === 'stage'}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            void runOp(gitStage, entry.path, 'stage')
-                          }}
-                        >
-                          {t('stage')}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          type="button"
-                          className={css.action}
-                          disabled={pendingOps[entry.path] !== undefined}
-                          loading={pendingOps[entry.path] === 'discard'}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setDiscardPath(entry.path)
-                          }}
-                        >
-                          {t('discard')}
-                        </Button>
-                      </>
-                    )))}
-                  </section>
-                ) : null}
+                {truncated ? <p className={css.message}>{t('truncated')}</p> : null}
+                {combinedRows.map(row => fileRow(row, null))}
               </>
-            )}
-          </>
-        ) : files.length === 0 ? (
-          <p className={css.message}>{t('empty.changes')}</p>
-        ) : (
-          <>
-            {truncated ? <p className={css.message}>{t('truncated')}</p> : null}
-            {files.map(file => fileRow(file.path, null))}
-          </>
             )}
           </>
         )}

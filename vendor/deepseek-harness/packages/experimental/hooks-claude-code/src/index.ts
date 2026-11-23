@@ -35,37 +35,53 @@ import {
   selectHookGroups,
   type HookOutput,
   type MergedHookOutcome,
+  type RunHookOptions,
 } from '@deepseek-ai/dsh-hook-protocol'
 // Pulls in the declaration-merged subagent events and the identity pairing their
 // start/end edges.
 import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import { parseClaudeCodeConfig, type ClaudeCodeHookConfig } from './config.ts'
+import { createClaudeProjectHookResolver } from './project-hooks.ts'
 
 export const name = 'hooks-claude-code'
 // `shell` runs hooks and `agents` supplies turn numbers; the rest
 // are read opportunistically via ctx.get so a deployment can omit them.
 export const inject = ['shell', 'agents', 'workingDirectory']
 
-/** Plugin config: where the CC hook config lives + substitution roots. */
+type HookSandboxPolicy = NonNullable<RunHookOptions['sandboxPolicy']>
+
+interface OptionalSandboxPolicyService {
+  resolve(request?: { session?: Agent['session'] }): HookSandboxPolicy
+}
+
+/** Resolve optional `sandboxPolicy` service without forcing a required Cordis injection. */
+function resolveHookSandboxPolicy(ctx: Context, agent: Agent | undefined): HookSandboxPolicy | undefined {
+  const service = ctx.get('sandboxPolicy') as OptionalSandboxPolicyService | undefined
+  return service?.resolve(agent === undefined ? {} : { session: agent.session })
+}
+
+/** Plugin config: optional global CC hook config path, per-session discovery, and substitution roots. */
 export interface Config {
   /**
-   * Path to a `hooks.json` or a settings file whose `hooks` key holds the config.
-   * Process-level: read once at load, a relative path resolves against the process
-   * launch cwd, so one config applies to the whole process.
-   * TODO(per-session-hook-config): per-session discovery of a project-local
-   * `hooks.json` from each `session/new.cwd`.
+   * Optional path to a `hooks.json` or settings file whose `hooks` key holds
+   * process-level hooks. A relative path resolves against the process launch cwd.
    */
-  configPath: string
+  configPath?: string
+  /**
+   * Dynamically discover and cache project-local hooks under each session's `cwd`
+   * (`.claude/settings.local.json`, `.claude/settings.json`, `.claude/hooks.json`).
+   * Defaults to `true` when `configPath` is omitted, and `false` when `configPath`
+   * is explicitly provided.
+   */
+  discoverProjectHooks?: boolean
   /**
    * Replaces `${CLAUDE_PLUGIN_ROOT}` in command strings (the plugin's root dir).
    */
   pluginRoot?: string
   /**
    * Replaces `${CLAUDE_PROJECT_DIR}` in command strings AND is exported as the
-   * `CLAUDE_PROJECT_DIR` env var for hook processes. When omitted, the env var
-   * defaults per-run to the agent's current directory (the
-   * same dir the hook runs in) — Claude Code always exports this var, and common
-   * unmodified hooks reference `$CLAUDE_PROJECT_DIR` for project-relative paths.
+   * `CLAUDE_PROJECT_DIR` env var for hook processes. When omitted, defaults
+   * per-session to the agent's working directory (`cwd`).
    */
   projectDir?: string
   /** Default per-hook timeout in ms when a hook sets none (CC default: 600000). */
@@ -75,7 +91,8 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  configPath: z.string().required(),
+  configPath: z.string(),
+  discoverProjectHooks: z.boolean(),
   pluginRoot: z.string(),
   projectDir: z.string(),
   defaultTimeoutMs: z.number().default(DEFAULT_HOOK_TIMEOUT_MS),
@@ -103,22 +120,32 @@ export function apply(ctx: Context, config: Config): void {
   const stderrSummaryMaxChars = config.stderrSummaryMaxChars ?? DEFAULT_STDERR_SUMMARY_MAX_CHARS
   assertPositiveInteger('stderrSummaryMaxChars', stderrSummaryMaxChars)
   const defaultTimeoutMs = config.defaultTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
-  // Parse once at load. A read or parse failure logs and registers nothing.
+  const discoverProject = config.discoverProjectHooks ?? (config.configPath === undefined)
   let parsed: ClaudeCodeHookConfig = {}
-  try {
-    const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
-    const result = parseClaudeCodeConfig(raw, {
+  if (config.configPath !== undefined) {
+    try {
+      const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
+      const result = parseClaudeCodeConfig(raw, {
+        ...config.pluginRoot !== undefined ? { pluginRoot: config.pluginRoot } : {},
+        ...config.projectDir !== undefined ? { projectDir: config.projectDir } : {},
+      })
+      parsed = result.config
+      for (const s of result.skipped) {
+        ctx.logger.warn(`hooks-claude-code: skipping unsupported "${s.type}" hook on ${s.event} (only command hooks run)`)
+      }
+    } catch (error: unknown) {
+      ctx.logger.warn(`hooks-claude-code: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
+      if (!discoverProject) return
+    }
+  }
+
+  const projectHooks = discoverProject
+    ? createClaudeProjectHookResolver({
       ...config.pluginRoot !== undefined ? { pluginRoot: config.pluginRoot } : {},
       ...config.projectDir !== undefined ? { projectDir: config.projectDir } : {},
+      onWarn: (message) => { ctx.logger.warn(message) },
     })
-    parsed = result.config
-    for (const s of result.skipped) {
-      ctx.logger.warn(`hooks-claude-code: skipping unsupported "${s.type}" hook on ${s.event} (only command hooks run)`)
-    }
-  } catch (error: unknown) {
-    ctx.logger.warn(`hooks-claude-code: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
-    return
-  }
+    : undefined
 
   // Emit-shaped points run detached, so track their chains; disposal aborts
   // active hooks and drains continuations before resolving.
@@ -128,7 +155,10 @@ export function apply(ctx: Context, config: Config): void {
   // handle unregisters the agent. Every retained entry relies on that paired
   // end; a producer that can omit it must provide another release edge.
   const subagentChildren = new Map<SubagentRunId, Agent>()
-  ctx.effect(() => () => detached.drain(), 'hooks-claude-code: drain detached hook runs')
+  ctx.effect(() => () => {
+    projectHooks?.clear()
+    return detached.drain()
+  }, 'hooks-claude-code: drain detached hook runs')
 
   /**
    * Run every command hook configured for `point` whose matcher selects
@@ -145,7 +175,16 @@ export function apply(ctx: Context, config: Config): void {
     payload: Record<string, unknown>,
     opts: { agent?: Agent; turn?: number; directory?: 'committed'; readonly signal: AbortSignal },
   ): Promise<MergedHookOutcome> {
-    const groups = selectHookGroups(parsed[point], matchQuery, 'claude-code')
+    const staticGroups = selectHookGroups(parsed[point], matchQuery, 'claude-code')
+    const lookupCwd = projectHooks === undefined
+      ? undefined
+      : opts.agent === undefined ? process.cwd() : ctx.workingDirectory.get(opts.agent.session)
+    const projectGroups = projectHooks !== undefined && lookupCwd !== undefined
+      ? selectHookGroups(projectHooks.resolve(lookupCwd)[point], matchQuery, 'claude-code')
+      : []
+    const groups = staticGroups.length === 0
+      ? projectGroups
+      : projectGroups.length === 0 ? staticGroups : [...staticGroups, ...projectGroups]
     if (groups.length === 0) return mergeHookOutputs([])
     const outputs: HookOutput[] = []
     const workdir = opts.agent === undefined ? undefined
@@ -153,7 +192,7 @@ export function apply(ctx: Context, config: Config): void {
         : await ctx.workingDirectory.ensure(opts.agent, opts.signal)
     // CLAUDE_PROJECT_DIR: an explicit config value wins; otherwise default it to the session
     // workspace (the same dir the hook runs in).
-    const projectDir = config.projectDir ?? workdir
+    const projectDir = config.projectDir ?? workdir ?? (projectHooks !== undefined ? lookupCwd : undefined)
     const hookEnv = projectDir !== undefined ? { CLAUDE_PROJECT_DIR: projectDir } : undefined
     for (const group of groups) {
       for (const hook of group.hooks) {
@@ -165,11 +204,13 @@ export function apply(ctx: Context, config: Config): void {
             matcher: group.matcher,
           })
         }
+        const sandboxPolicy = resolveHookSandboxPolicy(ctx, opts.agent)
         const { output, durationMs } = await runHook(ctx.shell, hook, {
           payload: { ...payload, cwd: workdir ?? process.cwd() },
           defaultTimeoutMs,
           ...hookEnv ? { env: hookEnv } : {},
           ...workdir !== undefined ? { cwd: workdir } : {},
+          ...sandboxPolicy !== undefined ? { sandboxPolicy } : {},
           signal: opts.signal,
           trailingNewline: true,
           // Discard a `hookSpecificOutput` block whose `hookEventName` names a

@@ -654,3 +654,96 @@ function checkValue(schema: JsonSchemaNode, value: unknown, path: string): strin
 export function validateJsonSchemaValue(schema: JsonSchemaNode, value: unknown, path = 'value'): string[] {
   return checkValue(schema, value, path)
 }
+
+const FINITE_DECIMAL_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
+const INTEGER_LITERAL_PATTERN = /^-?(?:0|[1-9]\d*)$/
+
+function tryCoerceStringToNumber(raw: string, integerOnly: boolean): number | undefined {
+  const trimmed = raw.trim()
+  if (trimmed.length === 0 || !FINITE_DECIMAL_PATTERN.test(trimmed)) return undefined
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || Object.is(parsed, -0)) return undefined
+  if (integerOnly) {
+    return Number.isInteger(parsed) && Number.isSafeInteger(parsed) ? parsed : undefined
+  }
+  if (INTEGER_LITERAL_PATTERN.test(trimmed) && !Number.isSafeInteger(parsed)) return undefined
+  return parsed
+}
+
+function tryCoerceStringToBoolean(raw: string): boolean | undefined {
+  const trimmed = raw.trim()
+  if (trimmed === 'true') return true
+  if (trimmed === 'false') return false
+  return undefined
+}
+
+/**
+ * Conservatively coerce stringified scalars when the schema explicitly targets
+ * `number`, `integer`, or `boolean` and the conversion is lossless. Never mutates inputs.
+ * @param schema - trusted parameter or value schema.
+ * @param value - parsed candidate argument value.
+ * @returns a coerced copy when any target leaf changed, otherwise `value` unchanged.
+ */
+export function coerceJsonSchemaValue(schema: JsonSchemaNode, value: unknown): unknown {
+  try {
+    const oneOf = Object.hasOwn(schema, 'oneOf') ? schema.oneOf : undefined
+    if (Array.isArray(oneOf)) {
+      if (oneOf.some(branch => checkValue(branch, value, '').length === 0)) return value
+      const matches: unknown[] = []
+      for (const branch of oneOf) {
+        const candidate = coerceJsonSchemaValue(branch, value)
+        if (!Object.is(candidate, value) && checkValue(branch, candidate, '').length === 0) {
+          matches.push(candidate)
+        }
+      }
+      return matches.length === 1 ? matches[0] : value
+    }
+
+    const nodeType = Object.hasOwn(schema, 'type') ? schema.type : undefined
+    if (nodeType === undefined) return value
+
+    switch (nodeType) {
+      case 'number':
+        return typeof value === 'string' ? (tryCoerceStringToNumber(value, false) ?? value) : value
+      case 'integer':
+        return typeof value === 'string' ? (tryCoerceStringToNumber(value, true) ?? value) : value
+      case 'boolean':
+        return typeof value === 'string' ? (tryCoerceStringToBoolean(value) ?? value) : value
+      case 'object': {
+        if (!isPlainJsonRecord(value)) return value
+        const properties = Object.hasOwn(schema, 'properties') ? schema.properties : undefined
+        if (properties === undefined) return value
+        let copy: Record<string, unknown> | undefined
+        for (const [key, childSchema] of Object.entries(properties)) {
+          if (!Object.hasOwn(value, key) || value[key] === undefined) continue
+          const coercedChild = coerceJsonSchemaValue(childSchema, value[key])
+          if (!Object.is(coercedChild, value[key])) {
+            copy ??= { ...value }
+            copy[key] = coercedChild
+          }
+        }
+        return copy ?? value
+      }
+      case 'array': {
+        if (!Array.isArray(value)) return value
+        const items = Object.hasOwn(schema, 'items') ? schema.items : undefined
+        if (items === undefined) return value
+        let copy: unknown[] | undefined
+        for (let index = 0; index < value.length; index++) {
+          const entry: unknown = value[index]
+          const coercedEntry = coerceJsonSchemaValue(items, entry)
+          if (!Object.is(coercedEntry, entry)) {
+            copy ??= (value as unknown[]).slice()
+            copy[index] = coercedEntry
+          }
+        }
+        return copy ?? value
+      }
+      default:
+        return value
+    }
+  } catch {
+    // Best-effort coercion: keep the original value so downstream schema validation reports any error cleanly.
+    return value
+  }
+}

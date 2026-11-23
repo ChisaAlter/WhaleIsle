@@ -87,3 +87,21 @@ test('rpc reports a non-JSON carrier failure with its HTTP status', async () => 
     /返回非 JSON（HTTP 404）/,
   );
 });
+
+test('rpc aborts and rejects with ETIMEDOUT when fetch hangs past timeoutMs', async () => {
+  let seenSignal;
+  await assert.rejects(
+    () => rpc(
+      'http://127.0.0.1:3080',
+      'workspace/create',
+      {},
+      async (_url, init) => {
+        seenSignal = init.signal;
+        return new Promise(() => {});
+      },
+      { timeoutMs: 25 },
+    ),
+    (err) => err?.code === 'ETIMEDOUT' && /超时（25ms）/.test(err.message),
+  );
+  assert.equal(seenSignal?.aborted, true);
+});

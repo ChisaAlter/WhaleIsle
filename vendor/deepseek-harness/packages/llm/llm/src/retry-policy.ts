@@ -21,6 +21,7 @@ const DEFAULT_RETRYABLE_CODES: readonly BuiltinLlmFailureCode[] = Object.freeze(
   MALFORMED_RESPONSE_CODE,
   'RATE_LIMIT',
   'SERVER',
+  'STREAM_CLOSED',
   'TIMEOUT',
   'TRANSPORT',
 ])

@@ -21,7 +21,7 @@ import type { Message, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenMeasurement, TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import { SessionSeq, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { frameSummary } from './summarizer.ts'
+import { frameSummary, isOverflowOrSummarySizeFailure } from './summarizer.ts'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
 interface RegionDependencies {
   readonly meter: TokenMeter
@@ -61,6 +61,8 @@ interface CompactionTransactionOptions {
   readonly flush?: () => Promise<void>
   /** Manual command that initiated this transaction, when present. */
   readonly sourceCommandId?: CommandId
+  /** Enable zero-LLM sliding-window eviction if summarization fails on overflow/sizing. */
+  readonly overflowFallback?: boolean
 }
 
 interface CompactionEntryState {
@@ -104,11 +106,29 @@ function systemHead(session: Session, headSeq: SessionSeq): SessionEvent<'system
   return head.type === 'system/message' ? head : undefined
 }
 
+const PROTECTED_BASELINE_SOURCE_KINDS: ReadonlySet<string> = new Set([
+  'agent-instructions',
+  'skill-catalog',
+])
+
+function isProtectedBaselineNode(session: Session, seq: SessionSeq): boolean {
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+  const event = session.eventAt(seq)
+  if (event?.type !== 'user/message') return false
+  const source = event.data.source
+  if (PROTECTED_BASELINE_SOURCE_KINDS.has(source.kind)) return true
+  if (source.kind !== 'user' && source.kind !== 'compact-checkpoint') {
+    for (const block of event.data.content) {
+      if (block.type === 'text' && block.text.includes('<available_skills>')) return true
+    }
+  }
+  return false
+}
+
 /**
  * Resolve the next range starting at the first non-system surface node while
- * retaining a priced recent tail and never splitting an assistant
- * tool-call/result pair. A `system/message` at surface node 0 is never inside
- * the range; without one the range starts at node 0.
+ * retaining a priced recent tail, protecting baseline instruction/skill-catalog
+ * injections, and never splitting an assistant tool-call/result pair.
  * @param session - session supplying authoritative current surface positions.
  * @param measurement - unified pressure and surface measurement from the conversation meter.
  * @param retainTokens - minimum recent tail budget retained verbatim.
@@ -147,11 +167,51 @@ export function selectCompactableRange(
   }
   if (keepFromIdx <= firstIdx) return null
 
-  // oxlint-disable-next-line typescript/no-non-null-assertion
-  const first = surfaceNodes[firstIdx]!
-  // oxlint-disable-next-line typescript/no-non-null-assertion
-  const cutoff = surfaceNodes[keepFromIdx - 1]!
-  return { start: first, end: cutoff }
+  let best: { startIdx: number; endIdx: number; tokens: number } | null = null
+  let idx = firstIdx
+  while (idx < keepFromIdx) {
+    const idxSeq = surfaceNodes[idx]
+    if (idxSeq === undefined || isProtectedBaselineNode(session, idxSeq)) {
+      idx += 1
+      continue
+    }
+    const runStart = idx
+    while (idx < keepFromIdx) {
+      const candidateSeq = surfaceNodes[idx]
+      if (candidateSeq === undefined || isProtectedBaselineNode(session, candidateSeq)) break
+      idx += 1
+    }
+    let s = runStart
+    let e = idx - 1
+    while (s <= e) {
+      const startCandidate = surfaceNodes[s]
+      if (startCandidate !== undefined && toolPairingBalancedBefore(session, startCandidate)) break
+      s += 1
+    }
+    while (e >= s) {
+      const endCandidate = surfaceNodes[e]
+      if (endCandidate !== undefined && toolPairingBalancedAfter(session, endCandidate)) break
+      e -= 1
+    }
+    const startSeq = surfaceNodes[s]
+    const endSeq = surfaceNodes[e]
+    if (s <= e
+      && startSeq !== undefined
+      && endSeq !== undefined
+      && toolPairingBalancedBefore(session, startSeq)
+      && toolPairingBalancedAfter(session, endSeq)) {
+      let tokens = 0
+      for (let k = s; k <= e; k += 1) tokens += pricedNodes[k]?.tokens ?? 0
+      if (best === null || tokens > best.tokens) {
+        best = { startIdx: s, endIdx: e, tokens }
+      }
+    }
+  }
+
+  if (best === null) return null
+  const bestStart = surfaceNodes[best.startIdx]
+  const bestEnd = surfaceNodes[best.endIdx]
+  return bestStart !== undefined && bestEnd !== undefined ? { start: bestStart, end: bestEnd } : null
 }
 
 /**
@@ -227,6 +287,7 @@ export async function compactSurfaceRegion(
       compactionId,
       options.sourceCommandId,
       assertStable,
+      options.overflowFallback ?? false,
       signal,
     )
     if (options.owner === null) signal?.throwIfAborted()
@@ -383,6 +444,83 @@ function prepareCompaction(
   }
 }
 
+function buildOmissionPlaceholder(
+  session: Session,
+  prepared: PreparedCompaction,
+): Extract<Message['content'][number], { type: 'text' }>[] {
+  const counts = { user: 0, assistant: 0, tool: 0, other: 0 }
+  for (const seq of prepared.shadowedSeqs) {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+    const event = session.eventAt(seq)
+    if (event?.type === 'user/message') counts.user += 1
+    else if (event?.type === 'assistant/message') counts.assistant += 1
+    else if (event?.type === 'tool/result') counts.tool += 1
+    else counts.other += 1
+  }
+  const breakdown = [
+    counts.user > 0 ? `${counts.user} user` : '',
+    counts.assistant > 0 ? `${counts.assistant} assistant` : '',
+    counts.tool > 0 ? `${counts.tool} tool_result` : '',
+    counts.other > 0 ? `${counts.other} other` : '',
+  ].filter(Boolean).join(', ')
+  return [{
+    type: 'text',
+    text: `[Deterministic context-overflow fallback: omitted ${prepared.shadowedSeqs.length} oldest compactable nodes (${breakdown}; ~${prepared.shadowedRouteTokenCount} tokens; seqs ${prepared.start}..${prepared.end}) while preserving tool_call/tool_result pairing.]`,
+  }]
+}
+
+function buildDeterministicOverflowFallback(
+  dependencies: RegionDependencies,
+  session: Session,
+  prepared: PreparedCompaction,
+  compactionId: CompactionResult['compactionId'],
+  sourceCommandId: CommandId | undefined,
+): SummarizedCompaction | null {
+  const surfaceNodes = session.surface.nodes
+  const halfTarget = Math.max(1, Math.ceil(prepared.shadowedRouteTokenCount * 0.5))
+  let windowTokens = 0
+
+  for (let idx = prepared.startIdx; idx <= prepared.endIdx; idx += 1) {
+    windowTokens += prepared.measurement.nodes[idx]?.tokens ?? 0
+    const isLast = idx === prepared.endIdx
+    if (!isLast && windowTokens < halfTarget) continue
+    const endSeq = surfaceNodes[idx]
+    if (endSeq === undefined || !toolPairingBalancedAfter(session, endSeq)) continue
+
+    const sliceSelection = validateSurfaceRegion(session, prepared.start, endSeq)
+    const slicePrepared = idx === prepared.endIdx
+      ? prepared
+      : prepareCompaction(dependencies, session, sliceSelection)
+    const detailedBlocks = buildOmissionPlaceholder(session, slicePrepared)
+    const compactBlocks = [{
+      type: 'text' as const,
+      text: `[Omitted ${slicePrepared.shadowedSeqs.length} older nodes (${slicePrepared.shadowedRouteTokenCount} tokens) due to context overflow]`,
+    }]
+
+    const candidates: Array<{ summary: typeof detailedBlocks; content: typeof detailedBlocks }> = [
+      { summary: detailedBlocks, content: frameSummary(detailedBlocks) as typeof detailedBlocks },
+      { summary: detailedBlocks, content: detailedBlocks },
+      { summary: compactBlocks, content: compactBlocks },
+    ]
+    for (const candidate of candidates) {
+      const checkpointMessage = createUserMessage({
+        content: candidate.content,
+        source: compactCheckpointSource(compactionId, sourceCommandId),
+      })
+      if (dependencies.meter.estimateMessage(checkpointMessage) < slicePrepared.shadowedRouteTokenCount) {
+        return {
+          ...slicePrepared,
+          summary: candidate.summary,
+          provider: 'deterministic-fallback',
+          model: 'sliding-window-eviction',
+          checkpointMessage,
+        }
+      }
+    }
+  }
+  return null
+}
+
 /** Run the summarizer and frame its replacement checkpoint. */
 async function summarizeCompaction(
   dependencies: RegionDependencies,
@@ -391,39 +529,56 @@ async function summarizeCompaction(
   compactionId: CompactionResult['compactionId'],
   sourceCommandId: CommandId | undefined,
   assertStable: StabilityCheck,
+  overflowFallback: boolean,
   signal?: AbortSignal,
 ): Promise<SummarizedCompaction> {
-  let summaryResult: SummaryResult
-  for (;;) {
-    signal?.throwIfAborted()
-    try {
-      summaryResult = await dependencies.summarize(prepared.input, agent, signal)
-      break
-    } catch (error: unknown) {
-      if (signal?.aborted === true) throw error
-      assertStable(dependencies, agent.session, prepared)
-      if (!dependencies.recover(error, agent, prepared.shadowedSeqs, signal)) throw error
-      prepared = prepareCompaction(dependencies, agent.session,
-        validateSurfaceRegion(agent.session, prepared.start, prepared.end))
+  try {
+    let summaryResult: SummaryResult
+    for (;;) {
+      signal?.throwIfAborted()
+      try {
+        summaryResult = await dependencies.summarize(prepared.input, agent, signal)
+        break
+      } catch (error: unknown) {
+        if (signal?.aborted === true) throw error
+        assertStable(dependencies, agent.session, prepared)
+        if (!dependencies.recover(error, agent, prepared.shadowedSeqs, signal)) throw error
+        prepared = prepareCompaction(dependencies, agent.session,
+          validateSurfaceRegion(agent.session, prepared.start, prepared.end))
+      }
     }
-  }
-  const checkpointMessage = createUserMessage({
-    content: frameSummary(summaryResult.summary),
-    source: compactCheckpointSource(compactionId, sourceCommandId),
-  })
-  // The checkpoint is text-only, so its fixed-heuristic price IS its route
-  // price; comparing it against the span's route price asks the real
-  // question — does the replacement lower the next request's pressure.
-  const framedSummaryTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
-  if (framedSummaryTokenCount >= prepared.shadowedRouteTokenCount) {
-    throw new Error(
-      `summary is not smaller than the shadowed content (${framedSummaryTokenCount} estimated framed tokens >= ${prepared.shadowedRouteTokenCount})`,
+    const checkpointMessage = createUserMessage({
+      content: frameSummary(summaryResult.summary),
+      source: compactCheckpointSource(compactionId, sourceCommandId),
+    })
+    // The checkpoint is text-only, so its fixed-heuristic price IS its route
+    // price; comparing it against the span's route price asks the real
+    // question — does the replacement lower the next request's pressure.
+    const framedSummaryTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
+    if (framedSummaryTokenCount >= prepared.shadowedRouteTokenCount) {
+      throw new Error(
+        `summary is not smaller than the shadowed content (${framedSummaryTokenCount} estimated framed tokens >= ${prepared.shadowedRouteTokenCount})`,
+      )
+    }
+    return {
+      ...prepared,
+      ...summaryResult,
+      checkpointMessage,
+    }
+  } catch (error: unknown) {
+    if (signal?.aborted === true || !overflowFallback || !isOverflowOrSummarySizeFailure(error)) {
+      throw error
+    }
+    assertStable(dependencies, agent.session, prepared)
+    const fallback = buildDeterministicOverflowFallback(
+      dependencies,
+      agent.session,
+      prepared,
+      compactionId,
+      sourceCommandId,
     )
-  }
-  return {
-    ...prepared,
-    ...summaryResult,
-    checkpointMessage,
+    if (fallback === null) throw error
+    return fallback
   }
 }
 

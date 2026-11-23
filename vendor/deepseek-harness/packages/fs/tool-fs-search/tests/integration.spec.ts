@@ -13,7 +13,7 @@ import { executeModelToolFixture, executeToolFixture } from '@deepseek-ai/dsh-to
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
@@ -80,29 +80,49 @@ describe('search tools over the real subprocess service + the packaged rg', () =
   })
 
   describe('glob', () => {
-    it('prunes unrelated directories and preserves workspace-relative results', async () => {
+    it('respects .gitignore by default, prunes unrelated directories, and honors noIgnore=true', async () => {
       await mkdir(join(dir, 'packages', 'core', 'src', 'nested'), { recursive: true })
       await writeFile(join(dir, 'packages', 'core', 'src', 'old.ts'), '')
       await writeFile(join(dir, 'packages', 'core', 'src', '.hidden.ts'), '')
       await writeFile(join(dir, 'packages', 'core', 'src', 'nested', 'other.ts'), '')
       await mkdir(join(dir, 'packages', 'src', 'core'), { recursive: true })
       await writeFile(join(dir, 'packages', 'src', 'core', 'other.ts'), '')
-      await writeFile(join(dir, '.gitignore'), 'packages/\n')
+      await writeFile(join(dir, '.gitignore'), 'packages/\nnode_modules/\ndist/\n')
+      await mkdir(join(dir, 'node_modules', 'pkg'), { recursive: true })
+      await writeFile(join(dir, 'node_modules', 'pkg', 'index.js'), '')
+      await mkdir(join(dir, 'dist'), { recursive: true })
+      await writeFile(join(dir, 'dist', 'bundle.js'), '')
       await utimes(join(dir, 'packages', 'core', 'src', 'old.ts'), new Date(2000, 0, 1), new Date(2000, 0, 1))
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
       const ensure = vi.spyOn(ctx.workingDirectory, 'ensure')
-      const result = await call('glob', { pattern: 'packages/core/src/*.ts' }, agent())
+
+      const ignoredByDefault = await call('glob', { pattern: 'packages/core/src/*.ts' }, agent())
       expect(ensure).toHaveBeenCalledTimes(1)
+      expect(ignoredByDefault.isError).toBe(false)
+      expect(text(ignoredByDefault)).toBe('No files found')
+
+      for (const catchAll of ['**/*', '**'] as const) {
+        const catchAllResult = await call('glob', { pattern: catchAll }, agent())
+        expect(catchAllResult.isError).toBe(false)
+        const catchAllPaths = text(catchAllResult).split('\n')
+        expect(catchAllPaths).toContain(join('src', 'alpha.ts'))
+        expect(catchAllPaths).not.toContain(join('packages', 'core', 'src', 'old.ts'))
+        expect(catchAllPaths).not.toContain(join('node_modules', 'pkg', 'index.js'))
+        expect(catchAllPaths).not.toContain(join('dist', 'bundle.js'))
+      }
+
+      const result = await call('glob', { pattern: 'packages/core/src/*.ts', noIgnore: true }, agent())
       expect(result.isError).toBe(false)
       if (result.isError) throw new Error('expected glob success')
       expect(result.value).toEqual({ root: '.', paths: [
         join('packages', 'core', 'src', 'old.ts'),
         join('packages', 'core', 'src', '.hidden.ts'),
       ] })
-      expect(spawn.mock.calls[0]?.[0].argv.slice(3, 6)).toEqual([
+      const noIgnoreCall = spawn.mock.calls.at(-1)?.[0]
+      expect(noIgnoreCall?.argv.slice(3, 6)).toEqual([
         '--glob=!**', '--glob={packages,core,src}/', '--glob=packages/core/src/*.ts',
       ])
-      expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
+      expect(noIgnoreCall?.argv).not.toContain('--')
     })
 
     it.each(['*.ts', '**/*.ts', 'src/**/*.ts', '!src/*.ts', './src/*.ts', 'src/../src/*.ts', '.git/*.ts'])(
@@ -127,7 +147,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
         signal: testToolSignal,
         callId: ToolCallId(`deep-glob-${++callCounter}`),
         name: 'glob',
-        arguments: { pattern },
+        arguments: { pattern, noIgnore: true },
         agent: agent() as never,
       })
       expect(result.isError).toBe(false)
@@ -139,7 +159,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
 
     it('preserves case-sensitive matching while pruning directories', async () => {
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
-      expect(text(await call('glob', { pattern: 'SRC/*.ts' }, agent()))).toBe('No files found')
+      expect(text(await call('glob', { pattern: 'SRC/*.ts', noIgnore: true }, agent()))).toBe('No files found')
       expect(spawn.mock.calls[0]?.[0].argv).toContain('--glob={SRC}/')
     })
 
@@ -148,7 +168,7 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       await writeFile(join(dir, 'src', 'nested', 'file.ts'), '')
       await symlink(join(dir, 'src'), join(dir, 'linked'), 'junction')
       const spawn = vi.spyOn(ctx.subprocess, 'spawn')
-      expect(text(await call('glob', { pattern: 'linked/nested/*.ts' }, agent()))).toBe('No files found')
+      expect(text(await call('glob', { pattern: 'linked/nested/*.ts', noIgnore: true }, agent()))).toBe('No files found')
       expect(spawn.mock.calls[0]?.[0].argv).not.toContain('--')
     })
 
@@ -204,6 +224,69 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { name: 'SearchError', code: 'SEARCH_INVALID_PATTERN' } })
     })
+
+    describe('bare directory without .git', () => {
+      const bareDirs: string[] = []
+      afterEach(() => {
+        while (bareDirs.length > 0) {
+          const d = bareDirs.pop()
+          if (d !== undefined) rmSync(d, { recursive: true, force: true })
+        }
+      })
+
+      it('honors .gitignore in a bare directory without .git unless noIgnore is true', async () => {
+        const bareDir = mkdtempSync(join(tmpdir(), 'dsh-search-bare-'))
+        bareDirs.push(bareDir)
+        await writeFile(join(bareDir, '.gitignore'), 'ignored-dir/\n')
+        await mkdir(join(bareDir, 'ignored-dir'), { recursive: true })
+        await writeFile(join(bareDir, 'kept.ts'), 'export const kept = 1\n')
+        await writeFile(join(bareDir, 'ignored-dir', 'nested.ts'), 'export const nested = 1\n')
+        const bareAgent = () => ({ session: { header: { id: 'session-bare', cwd: bareDir } } })
+
+        const defaultResult = await call('glob', { pattern: '**/*.ts' }, bareAgent())
+        expect(defaultResult.isError).toBe(false)
+        expect(text(defaultResult).split('\n')).toEqual(['kept.ts'])
+
+        const ignoredDirResult = await call('glob', { pattern: 'ignored-dir/*.ts' }, bareAgent())
+        expect(ignoredDirResult.isError).toBe(false)
+        expect(text(ignoredDirResult)).toBe('No files found')
+
+        const unignoredResult = await call('glob', { pattern: '**/*.ts', noIgnore: true }, bareAgent())
+        expect(unignoredResult.isError).toBe(false)
+        const paths = text(unignoredResult).split('\n').sort()
+        expect(paths).toEqual([join('ignored-dir', 'nested.ts'), 'kept.ts'])
+      })
+
+      it('honors .gitignore for catch-all pattern "**/*" and "**" in a bare directory without .git unless noIgnore is true', async () => {
+        const bareDir = mkdtempSync(join(tmpdir(), 'dsh-search-bare-all-'))
+        bareDirs.push(bareDir)
+        await writeFile(join(bareDir, '.gitignore'), 'node_modules/\ndist/\n')
+        await mkdir(join(bareDir, 'src'), { recursive: true })
+        await mkdir(join(bareDir, 'node_modules', 'dep'), { recursive: true })
+        await mkdir(join(bareDir, 'dist'), { recursive: true })
+        await writeFile(join(bareDir, 'src', 'app.js'), 'console.log(1)\n')
+        await writeFile(join(bareDir, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+        await writeFile(join(bareDir, 'dist', 'out.js'), '/* built */\n')
+        const bareAgent = () => ({ session: { header: { id: 'session-bare-all', cwd: bareDir } } })
+
+        for (const pattern of ['**/*', '**'] as const) {
+          const defaultResult = await call('glob', { pattern }, bareAgent())
+          expect(defaultResult.isError).toBe(false)
+          const found = text(defaultResult).split('\n').sort()
+          expect(found).toEqual(['.gitignore', join('src', 'app.js')])
+        }
+
+        const unignoredResult = await call('glob', { pattern: '**/*', noIgnore: true }, bareAgent())
+        expect(unignoredResult.isError).toBe(false)
+        const allPaths = text(unignoredResult).split('\n').sort()
+        expect(allPaths).toEqual([
+          '.gitignore',
+          join('dist', 'out.js'),
+          join('node_modules', 'dep', 'index.js'),
+          join('src', 'app.js'),
+        ])
+      })
+    })
   })
 
   describe('grep', () => {
@@ -257,6 +340,54 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       const result = await call('grep', { pattern: 'x', path: 'no-such-dir' })
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { code: 'SEARCH_FAILED' } })
+    })
+
+    it('supports real rg output_mode, case_insensitive, context_lines, head_limit, and list/! include', async () => {
+      const filesMode = await call('grep', {
+        pattern: 'ALPHA',
+        case_insensitive: true,
+        output_mode: 'files_with_matches',
+        include: '*.ts,*.md,!notes.md',
+      }, agent())
+      expect(filesMode.isError).toBe(false)
+      expect(text(filesMode)).toContain(join('src', 'alpha.ts'))
+      expect(text(filesMode)).not.toContain('notes.md')
+
+      const countMode = await call('grep', { pattern: 'alpha', output_mode: 'count' }, agent())
+      expect(countMode.isError).toBe(false)
+      expect(text(countMode)).toContain(`${join('src', 'alpha.ts')}: 2`)
+      expect(text(countMode)).toContain('notes.md: 1')
+
+      const contextMode = await call('grep', { pattern: 'refit', path: 'src/alpha.ts', context_lines: 1 }, agent())
+      expect(contextMode.isError).toBe(false)
+      expect(text(contextMode)).toContain('Line 1 (context): export const alpha = 1')
+      expect(text(contextMode)).toContain('Line 2: // TODO: refit alpha')
+    })
+
+    it('stops streaming rg cleanly when raw output hits rawOutputMaxBytes and returns prefix matches', async () => {
+      const bigCtx = new Context()
+      provideWorkingDirectoryFixture(bigCtx)
+      await bigCtx.plugin(SystemPrompt)
+      await bigCtx.plugin(ToolRuntime)
+      await bigCtx.plugin(NativeToolExecutor)
+      await bigCtx.plugin(LocalSubprocessRuntime)
+      await bigCtx.plugin(ToolFsSearch, { sampleOverCapGlobResults: true, rawOutputMaxBytes: 400 })
+      try {
+        const lines = Array.from({ length: 40 }, (_, i) => `match line number ${i} padding text\n`).join('')
+        await writeFile(join(dir, 'many.txt'), lines)
+        const result = await executeToolFixture(bigCtx, {
+          signal: testToolSignal,
+          callId: ToolCallId(`it-${++callCounter}`),
+          name: 'grep',
+          arguments: { pattern: 'match line number', path: 'many.txt' },
+          agent: agent() as never,
+        })
+        expect(result.isError).toBe(false)
+        expect(text(result)).toContain('match line number 0')
+        expect(text(result)).toContain('stopped early')
+      } finally {
+        await bigCtx.fiber.dispose()
+      }
     })
   })
 

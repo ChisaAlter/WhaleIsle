@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-hook-protocol/runner
  */
 
-import type { ShellExecutor } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecutor } from '@deepseek-ai/dsh-shell'
 import { parseHookOutput } from './codec.ts'
 import type { CommandHook, HookOutput } from './types.ts'
 
@@ -44,6 +44,8 @@ export interface RunHookOptions {
    * {@link parseHookOutput}). Omit it to apply any block as-is.
    */
   expectedEventName?: string
+  /** Optional resolved sandbox execution policy forwarded to {@link ShellExecutor.resolve}. */
+  sandboxPolicy?: NonNullable<ShellExecRequest['sandboxPolicy']>
 }
 
 /** The {@link HookOutput} plus the wall-clock duration of the run (for `hook/result`). */
@@ -74,13 +76,14 @@ export async function runHook(
   const timeoutMs = hook.timeoutSec !== undefined ? hook.timeoutSec * 1000 : options.defaultTimeoutMs
   const stdin = JSON.stringify(options.payload) + (options.trailingNewline ? '\n' : '')
 
-  const request = {
+  const request: ShellExecRequest = {
     command: hook.command,
     timeoutMs,
     stdin,
     signal: options.signal,
     ...options.cwd !== undefined ? { workdir: options.cwd } : {},
     ...options.env !== undefined ? { env: options.env } : {},
+    ...options.sandboxPolicy !== undefined ? { sandboxPolicy: options.sandboxPolicy } : {},
   }
 
   try {

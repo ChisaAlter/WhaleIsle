@@ -11,6 +11,7 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createVolatile, updateVolatile } from '../../../../vendor/cosmokit/src/volatile.ts'
 import * as VisualReplies from '../src/index.ts'
+import { VISUAL_REPLY_PAGE_GUIDE } from '../src/tools.ts'
 import type { Config } from '../src/config.ts'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
@@ -195,5 +196,23 @@ describe('Visual reply tool lifecycle and durable output', () => {
     expect(result.isError).toBe(true)
     expect(read).not.toHaveBeenCalled()
     expect(result.content.filter(block => block.type === 'text').map(block => block.text).join('')).toContain('fixture policy denies publication')
+  })
+
+  it('keeps VISUAL_REPLY_PAGE_GUIDE only in the visual-replies system prompt section without duplicating it in html_preview or html_render descriptions', async () => {
+    const fixture = await setup(true)
+    const assembly = await fixture.ctx.systemPrompt.assemble()
+    const section = assembly.sections.find(item => item.name === 'visual-replies')
+    expect(section).toBeDefined()
+    expect(section!.text).toContain(VISUAL_REPLY_PAGE_GUIDE)
+
+    const schemas = fixture.ctx.tools.schemas()
+    const preview = schemas.find(tool => tool.name === 'html_preview')
+    const render = schemas.find(tool => tool.name === 'html_render')
+    expect(preview).toBeDefined()
+    expect(render).toBeDefined()
+    expect(preview!.description).not.toContain(VISUAL_REPLY_PAGE_GUIDE)
+    expect(render!.description).not.toContain(VISUAL_REPLY_PAGE_GUIDE)
+    expect(preview!.description).toContain('visual-replies')
+    expect(render!.description).toContain('visual-replies')
   })
 })

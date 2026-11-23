@@ -52,3 +52,21 @@ it('defaults to ten and restores that default without remounting the loop', asyn
   expect(ctx.agentLoop.config.maxParallelToolCalls.get()).toBe(10)
   expect(live.entry.fiber === live.fiber).toBe(true)
 })
+
+it('defaults maxTokensRecoveryLimit to 2 and maxStepsPerTurn to 200 with live updates', async () => {
+  const { ctx, live } = await boot()
+  const loop = ctx.agentLoop
+  expect(loop.config.maxTokensRecoveryLimit.get()).toBe(2)
+  expect(loop.config.maxStepsPerTurn.get()).toBe(200)
+  await live.update({ maxTokensRecoveryLimit: 0, maxStepsPerTurn: 25 })
+  expect(loop.config.maxTokensRecoveryLimit.get()).toBe(0)
+  expect(loop.config.maxStepsPerTurn.get()).toBe(25)
+  await expect(live.update({ maxTokensRecoveryLimit: -1 })).rejects.toThrow()
+  await expect(live.update({ maxStepsPerTurn: 0 })).rejects.toThrow()
+  await expect(live.update({ maxStepsPerTurn: 1.5 })).rejects.toThrow()
+  expect(loop.config.maxTokensRecoveryLimit.get()).toBe(0)
+  expect(loop.config.maxStepsPerTurn.get()).toBe(25)
+  await live.replace({ agents: [] })
+  expect(loop.config.maxTokensRecoveryLimit.get()).toBe(2)
+  expect(loop.config.maxStepsPerTurn.get()).toBe(200)
+})

@@ -250,3 +250,17 @@
   config:
     fetch: false
     searchTimeoutMs: 60000
+
+# ── project hooks (explicit opt-in) ─────────────────────────────────────────
+
+# Project-local Claude Code and Codex command hooks stay disabled by default so
+# untrusted repositories never run external shell commands automatically. Set
+# DSH_PROJECT_HOOKS=1 only for trusted repositories; both rows consume host
+# `shell`, `agents`, and `workingDirectory` and publish no process-global service.
+- id: hooks-claude-code
+  name: '@deepseek-ai/dsh-hooks-claude-code'
+  disabled: !!js process.env.DSH_PROJECT_HOOKS !== '1'
+
+- id: hooks-codex
+  name: '@deepseek-ai/dsh-hooks-codex'
+  disabled: !!js process.env.DSH_PROJECT_HOOKS !== '1'

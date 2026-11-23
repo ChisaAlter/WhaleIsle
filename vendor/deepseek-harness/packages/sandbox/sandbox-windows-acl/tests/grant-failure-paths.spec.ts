@@ -10,10 +10,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import koffi from 'koffi'
 
+import { allocBytes, ptrAddress } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import { AclWriteGrant } from '../src/index.ts'
 
 const PVOID = koffi.pointer('void')
+
+function craftEmptyAcl(): NativePtr {
+  const acl = allocBytes(8)
+  koffi.encode(acl, 'uint8', 2)
+  koffi.encode(acl, 2, 'uint16', 8)
+  koffi.encode(acl, 4, 'uint16', 0)
+  return acl
+}
 
 /** Stub binding table: only the members a test drives, so the rest are never called. */
 function stubBindings(overrides: Partial<Win32Bindings>): Win32Bindings {
@@ -23,6 +32,7 @@ function stubBindings(overrides: Partial<Win32Bindings>): Win32Bindings {
 /** The stub the grant-then-fail-revoke sequence needs: every call succeeds until the DACL read is flipped off. */
 function grantThenFailApi(): { api: Win32Bindings; failReads: () => void } {
   const state = { failReads: false }
+  const defaultDacl = craftEmptyAcl()
   const api = stubBindings({
     convertStringSidToSidW: vi.fn((_sid: string, slot: NativePtr) => {
       koffi.encode(slot, PVOID, 42n)
@@ -48,7 +58,7 @@ function grantThenFailApi(): { api: Win32Bindings; failReads: () => void } {
       dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
     ) => {
       if (state.failReads) return 2 // ERROR_FILE_NOT_FOUND — the revoke's read fails
-      koffi.encode(dacl, PVOID, 0n) // no explicit DACL: the merge builds one
+      koffi.encode(dacl, PVOID, ptrAddress(defaultDacl))
       koffi.encode(sacl, PVOID, 0n)
       koffi.encode(descriptor, PVOID, 0n)
       return 0

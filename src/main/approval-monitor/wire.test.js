@@ -264,3 +264,49 @@ test('wire client multiplexes streams, ignores ordinary ask_user without sending
 
   client.dispose();
 });
+
+test('settle aborts and rejects with ETIMEDOUT when $events/result hangs past settleTimeoutMs', async () => {
+  FakeWebSocket.instances = [];
+  let seenSignal;
+  const client = createApprovalWireClient({
+    WebSocketImpl: FakeWebSocket,
+    settleTimeoutMs: 25,
+    rpcImpl: async (_origin, method, _args, _fetchImpl, opts) => {
+      if (method === '$events/result') {
+        seenSignal = opts?.signal;
+        return new Promise(() => {});
+      }
+      return { ok: true, value: { events: [] } };
+    },
+    onApprovalUpsert() {},
+    onApprovalCancel() {},
+  });
+  client.connect('http://127.0.0.1:3080', '');
+  const ws = FakeWebSocket.instances[0];
+  ws.emit('open');
+  const eventsStreamId = ws.sent[0].streamId;
+  ws.emit('message', JSON.stringify({
+    type: 'item',
+    streamId: eventsStreamId,
+    value: { type: 'ready', clientId: 'client-timeout', host: { home: '/tmp' } },
+  }));
+  ws.emit('message', JSON.stringify({
+    type: 'item',
+    streamId: eventsStreamId,
+    value: {
+      type: 'waterfall',
+      event: 'approval/request',
+      eventId: 'evt-hung',
+      agentId: 's-1',
+      request: { toolName: 'bash' },
+    },
+  }));
+
+  await assert.rejects(
+    () => client.settle('evt-hung', 'allow-once'),
+    (err) => err?.code === 'ETIMEDOUT' && /timed out after 25ms/.test(err.message),
+  );
+  assert.equal(seenSignal?.aborted, true);
+  assert.equal(client.hasRecipe('evt-hung'), true, 'failed settle must preserve recipe so user can retry');
+  client.dispose();
+});

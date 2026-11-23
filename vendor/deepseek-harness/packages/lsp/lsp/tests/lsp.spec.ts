@@ -184,4 +184,45 @@ describe('Lsp registration', () => {
   it('brands a provider id without altering the string', () => {
     expect(LspProviderId('ts')).toBe('ts')
   })
+
+  it('reports file extension support via supportsFile()', async () => {
+    const { lsp } = await mountLsp()
+    expect(lsp.supportsFile('a.ts')).toBe(false)
+    const dispose = lsp.registerProvider(makeProvider('ts', { '.ts': 'typescript' }))
+    expect(lsp.supportsFile('src/Foo.TS')).toBe(true)
+    expect(lsp.supportsFile('a.py')).toBe(false)
+    expect(lsp.supportsFile('.bashrc')).toBe(false)
+    dispose()
+    expect(lsp.supportsFile('a.ts')).toBe(false)
+  })
+
+  it('supports positionless diagnostics queries while requiring position for cursor operations', async () => {
+    const { lsp } = await mountLsp()
+    const diagResult: LspQueryResult = {
+      kind: 'diagnostics',
+      uri: 'file:///ws/a.ts',
+      diagnostics: [{
+        range: { start: { line: 1, character: 2 }, end: { line: 1, character: 5 } },
+        severity: 'error',
+        message: 'bad type',
+        source: 'ts',
+        code: 2322,
+      }],
+      resolvedWorkspaceUri: 'file:///ws',
+    }
+    const provider = makeProvider('ts', { '.ts': 'typescript' }, diagResult)
+    lsp.registerProvider(provider)
+
+    await expect(lsp.query({ operation: 'diagnostics', filePath: 'a.ts', workspaceRoot: '/ws' }))
+      .resolves.toEqual(diagResult)
+    expect(provider.seen[0]).toMatchObject({
+      operation: 'diagnostics',
+      filePath: 'a.ts',
+      position: { line: 0, character: 0 },
+      languageId: 'typescript',
+    })
+
+    await expect(lsp.query({ operation: 'goToDefinition', filePath: 'a.ts', workspaceRoot: '/ws' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'LSP_INVALID_REQUEST' }))
+  })
 })

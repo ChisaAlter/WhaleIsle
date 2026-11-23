@@ -155,6 +155,9 @@ describe('mcp-client plugin module exports', () => {
     expect(omitted.startupTimeoutMs).toBeUndefined()
     expect(omitted.closeTimeoutMs).toBe(5_000)
     expect(omitted.expandTemplates).toBe(false)
+    expect(omitted.toolDiscoveryMode).toBe('auto')
+    expect(omitted.inlineToolThreshold).toBe(16)
+    expect(omitted.schemaCacheDir).toBeUndefined()
     expect(omitted.reconnect).toEqual({ enabled: true, initialDelayMs: 500, maxDelayMs: 30_000, maxAttempts: 10 })
 
     const partial = ConfigSchema({
