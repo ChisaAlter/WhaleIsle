@@ -3,6 +3,8 @@
 
 import './styles/bots.css';
 import './styles/bots-panels.css';
+import './styles/bots-enhancements.css';
+import './styles/bots-group-enhancements.css';
 
 import { useEffect, type ComponentType, type ReactNode } from 'react';
 import { LOCALES, normalizeLocale } from '../shared/locales.js';
@@ -20,7 +22,7 @@ import { BotSettingsView } from './components/BotSettingsView';
 import { GlobalBotsSettings } from './components/GlobalBotsSettings';
 import { IconBot } from './components/Icons';
 import { SidebarBotsSection } from './components/SidebarBotsSection';
-import { botsStore, type BotRightPanelTab } from './store/bots-store';
+import { botsStore, type BotRightPanelTab, type HandToBotWorkspace } from './store/bots-store';
 import type { BotRecord } from './store/rpc';
 
 const NS = 'dsh-whale';
@@ -29,6 +31,9 @@ const BOTS_RIGHT_TAB_KIND = 'dsh-bots';
 const GROUP_PANEL_ID = 'dsh-bots:group';
 const SETTINGS_PANEL_ID = 'dsh-bots:settings';
 const LEGACY_WHALE_PANEL_ID = 'whale';
+const PREFILL_CHAT_DRAFT_EVENT = 'dsh-bots:prefill-chat-draft';
+const FLASH_CHAT_PANE_EVENT = 'dsh-bots:flash-chat-pane';
+const HAND_TO_BOT_EVENT = 'dsh-bots:hand-to-bot';
 
 export const name = 'dsh-whale';
 export const inject = [
@@ -79,6 +84,26 @@ interface SidebarRightTabsLike {
 interface SidebarRightControllerLike {
   openTab?: (kind: string, options?: { expand?: boolean }) => void;
   openTabIn?: (sessionId: string, kind: string, options?: { expand?: boolean }) => boolean;
+}
+
+interface WorkspaceContextMenuTarget {
+  workspaceId?: string;
+  path?: string;
+  displayTitle?: string;
+}
+
+interface ContextMenusLike {
+  register?: (contribution: {
+    id: string;
+    target: 'workspace';
+    order: number;
+    resolve: (target: WorkspaceContextMenuTarget) => readonly {
+      id: string;
+      label: string;
+      separatorBefore?: boolean;
+      run: () => void;
+    }[];
+  }) => () => void;
 }
 
 interface SlotsServiceLike {
@@ -296,6 +321,145 @@ function openNativeRightPanel(
   } catch (err) {
     console.warn('[dsh-whale] Failed to open native right sidebar tab', err);
   }
+}
+
+function registerWorkspaceHandToBotMenu(ctx: HarnessClientContext): void {
+  const attach = (scoped: HarnessClientContext) => {
+    const contextMenus = readOptionalService<ContextMenusLike>(scoped, 'contextMenus');
+    if (typeof contextMenus?.register !== 'function') {
+      return;
+    }
+    scoped.effect(
+      () => contextMenus.register?.({
+        id: 'dsh-whale.workspace.hand-to-bot',
+        target: 'workspace',
+        order: 150,
+        resolve: (target) => {
+          const cwd = String(target?.path ?? '').trim();
+          if (!cwd) {
+            return [];
+          }
+          const label = readLocaleActive(ctx.locale) === 'zh-CN'
+            ? '移交给大肥鱼队友…'
+            : 'Hand to teammate…';
+          return [{
+            id: 'dsh-whale:hand-to-bot',
+            label,
+            separatorBefore: true,
+            run: () => {
+              botsStore.openHandToBot({
+                cwd,
+                workspaceId: target?.workspaceId,
+                name: target?.displayTitle,
+              });
+            },
+          }];
+        },
+      }),
+      'dsh-whale: workspace hand-to-bot context menu',
+    );
+  };
+
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['contextMenus'], attach);
+  } else {
+    attach(ctx);
+  }
+}
+
+function escapeAttrSelector(value: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value);
+  }
+  return value.replace(/["\\]/g, '\\$&');
+}
+
+function findMainChatComposer(): HTMLElement | null {
+  if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') {
+    return null;
+  }
+  const selectors = [
+    '[data-dsh-composer] [data-lexical-editor="true"]',
+    '[data-dsh-composer] textarea',
+    '[data-dsh-composer] [contenteditable="true"]',
+    'main [data-lexical-editor="true"]',
+    'main textarea',
+    'main [contenteditable="true"]',
+  ];
+  for (const selector of selectors) {
+    const nodes = document.querySelectorAll<HTMLElement>(selector);
+    for (const el of nodes) {
+      if (el.closest?.('.dsh-bots-modal, .dsh-bots-sidebar, .dsh-bots-panel, .dsh-bots-popover')) {
+        continue;
+      }
+      if ((el as HTMLTextAreaElement).disabled) {
+        continue;
+      }
+      return el;
+    }
+  }
+  return null;
+}
+
+function readComposerText(el: HTMLElement): string {
+  if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    return String((el as HTMLTextAreaElement).value ?? '');
+  }
+  return String(el.textContent ?? '');
+}
+
+function applyComposerDraft(el: HTMLElement, text: string): boolean {
+  if (readComposerText(el).trim().length > 0) {
+    return false;
+  }
+  try {
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+      const input = el as HTMLTextAreaElement;
+      const proto = el.tagName === 'TEXTAREA'
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) {
+        setter.call(input, text);
+      } else {
+        input.value = text;
+      }
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus?.();
+      return true;
+    }
+    el.focus?.();
+    if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+      const inserted = document.execCommand('insertText', false, text);
+      if (inserted) {
+        return true;
+      }
+    }
+    el.textContent = text;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  } catch (err) {
+    console.warn('[dsh-whale] Failed to apply prefill draft to composer', err);
+    return false;
+  }
+}
+
+function resolveChatPaneTarget(sessionId?: string | null): HTMLElement | null {
+  if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+    return null;
+  }
+  const selectors: string[] = [];
+  if (sessionId) {
+    selectors.push(`[data-session-id="${escapeAttrSelector(sessionId)}"]`);
+  }
+  selectors.push('.dsh-bots-conv-frame', '[data-dsh-chat-pane]', 'main');
+  for (const selector of selectors) {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) {
+      return el;
+    }
+  }
+  return null;
 }
 
 function registerNativeRightSidebarTab(
@@ -540,6 +704,8 @@ export function apply(ctx: HarnessClientContext): void {
     capturedRightbar = controller;
   });
 
+  registerWorkspaceHandToBotMenu(ctx);
+
   registerSlotWhenDeclared(
     ctx,
     'settings.pet.item',
@@ -573,21 +739,194 @@ export function apply(ctx: HarnessClientContext): void {
 
   ctx.effect(() => {
     const win = typeof window !== 'undefined'
-      ? (window as Window & { __dshWhaleOpen?: () => Promise<string | null> })
+      ? (window as Window & {
+        __dshWhaleOpen?: () => Promise<string | null>;
+        __dshWhaleHandToBot?: (
+          workspace: HandToBotWorkspace,
+          options?: { initialBotId?: string | null; initialPrompt?: string },
+        ) => void;
+        __DSH_BOTS_HAS_UNSAVED_DRAFT__?: (botId: string, homeSessionId?: string | null) => boolean;
+      })
       : null;
     if (!win) {
       return undefined;
     }
-    const previous = win.__dshWhaleOpen;
+
+    const activeTimers = new Set<number>();
+    const pendingDrafts = new Map<string, string>();
+    const trackTimer = (id: number) => {
+      activeTimers.add(id);
+      return id;
+    };
+    const clearTrackedTimer = (id: number) => {
+      activeTimers.delete(id);
+      win.clearTimeout?.(id);
+    };
+
+    const handlePrefillDraft = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        botId?: string;
+        sessionId?: string | null;
+        text?: string;
+      }>)?.detail;
+      const text = typeof detail?.text === 'string' ? detail.text : '';
+      const botId = typeof detail?.botId === 'string' ? detail.botId.trim() : '';
+      if (!text.trim()) {
+        return;
+      }
+      if (botId) {
+        pendingDrafts.set(botId, text);
+        try {
+          win.sessionStorage?.setItem(`dsh-bots.prefillDraft:${botId}`, text);
+        } catch {
+          // Ignore sessionStorage errors in restricted environments.
+        }
+      }
+      let attempts = 0;
+      const tryInject = () => {
+        attempts += 1;
+        const composer = findMainChatComposer();
+        if (composer && applyComposerDraft(composer, text)) {
+          if (botId) {
+            pendingDrafts.delete(botId);
+          }
+          return;
+        }
+        if (attempts < 5 && typeof win.setTimeout === 'function') {
+          const tid = trackTimer(win.setTimeout(() => {
+            activeTimers.delete(tid);
+            tryInject();
+          }, 120));
+        }
+      };
+      if (typeof win.setTimeout === 'function') {
+        const tid = trackTimer(win.setTimeout(() => {
+          activeTimers.delete(tid);
+          tryInject();
+        }, 0));
+      } else {
+        tryInject();
+      }
+    };
+
+    const handleFlashChatPane = (event: Event) => {
+      const detail = (event as CustomEvent<{ botId?: string; sessionId?: string | null }>)?.detail;
+      const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId : null;
+      const applyFallbackFlash = () => {
+        const target = resolveChatPaneTarget(sessionId);
+        if (!target || target.classList?.contains('dsh-bots-pane-rim-flash')) {
+          return;
+        }
+        target.classList?.add('dsh-bots-pane-rim-flash');
+        if (typeof win.setTimeout === 'function') {
+          const tid = trackTimer(win.setTimeout(() => {
+            activeTimers.delete(tid);
+            target.classList?.remove('dsh-bots-pane-rim-flash');
+          }, 720));
+        }
+      };
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(applyFallbackFlash);
+      } else {
+        applyFallbackFlash();
+      }
+    };
+
+    const handleHandToBot = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        cwd?: string;
+        path?: string;
+        workspaceId?: string;
+        name?: string;
+        displayTitle?: string;
+        branch?: string;
+        initialBotId?: string | null;
+        initialPrompt?: string;
+      }>)?.detail;
+      const cwd = String(detail?.cwd ?? detail?.path ?? '').trim();
+      if (!cwd) {
+        return;
+      }
+      botsStore.openHandToBot(
+        {
+          cwd,
+          workspaceId: detail?.workspaceId,
+          name: detail?.name ?? detail?.displayTitle,
+          branch: detail?.branch,
+        },
+        {
+          initialBotId: detail?.initialBotId ?? null,
+          initialPrompt: detail?.initialPrompt ?? '',
+        },
+      );
+    };
+
+    const handToBotBridge = (
+      workspace: HandToBotWorkspace,
+      options?: { initialBotId?: string | null; initialPrompt?: string },
+    ) => {
+      botsStore.openHandToBot(workspace, options);
+    };
+
+    const defaultUnsavedDraftCheck = (botId: string, homeSessionId?: string | null): boolean => {
+      if (pendingDrafts.has(botId)) {
+        return true;
+      }
+      const state = botsStore.getState();
+      const activeIsHome = Boolean(homeSessionId) && state.activeSessionId === homeSessionId;
+      if (activeIsHome) {
+        const composer = findMainChatComposer();
+        if (composer && readComposerText(composer).trim().length > 0) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const previousOpen = win.__dshWhaleOpen;
+    const previousHandToBot = win.__dshWhaleHandToBot;
+    const previousDraftHook = win.__DSH_BOTS_HAS_UNSAVED_DRAFT__;
+
     win.__dshWhaleOpen = openDefaultBot;
+    win.__dshWhaleHandToBot = handToBotBridge;
+    if (typeof previousDraftHook !== 'function') {
+      win.__DSH_BOTS_HAS_UNSAVED_DRAFT__ = defaultUnsavedDraftCheck;
+    }
+
+    win.addEventListener?.(PREFILL_CHAT_DRAFT_EVENT, handlePrefillDraft);
+    win.addEventListener?.(FLASH_CHAT_PANE_EVENT, handleFlashChatPane);
+    win.addEventListener?.(HAND_TO_BOT_EVENT, handleHandToBot);
+
     return () => {
+      for (const tid of [...activeTimers]) {
+        clearTrackedTimer(tid);
+      }
+      pendingDrafts.clear();
+      win.removeEventListener?.(PREFILL_CHAT_DRAFT_EVENT, handlePrefillDraft);
+      win.removeEventListener?.(FLASH_CHAT_PANE_EVENT, handleFlashChatPane);
+      win.removeEventListener?.(HAND_TO_BOT_EVENT, handleHandToBot);
+
       if (win.__dshWhaleOpen === openDefaultBot) {
-        if (previous !== undefined) {
-          win.__dshWhaleOpen = previous;
+        if (previousOpen !== undefined) {
+          win.__dshWhaleOpen = previousOpen;
         } else {
           delete win.__dshWhaleOpen;
         }
       }
+      if (win.__dshWhaleHandToBot === handToBotBridge) {
+        if (previousHandToBot !== undefined) {
+          win.__dshWhaleHandToBot = previousHandToBot;
+        } else {
+          delete win.__dshWhaleHandToBot;
+        }
+      }
+      if (win.__DSH_BOTS_HAS_UNSAVED_DRAFT__ === defaultUnsavedDraftCheck) {
+        if (previousDraftHook !== undefined) {
+          win.__DSH_BOTS_HAS_UNSAVED_DRAFT__ = previousDraftHook;
+        } else {
+          delete win.__DSH_BOTS_HAS_UNSAVED_DRAFT__;
+        }
+      }
     };
-  }, 'dsh-whale: desktop pet jump bridge');
+  }, 'dsh-whale: desktop pet jump & client event bridges');
 }

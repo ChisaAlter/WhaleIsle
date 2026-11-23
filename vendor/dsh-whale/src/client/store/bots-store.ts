@@ -33,6 +33,9 @@ import {
   type BotSidebarView,
   type PetVoiceState,
 } from './rpc';
+import type { HandToBotWorkspace } from '../components/HandToBotDialog';
+
+export type { HandToBotWorkspace };
 
 export type BotRightPanelTab = 'home' | 'connectors' | 'chats' | 'files';
 
@@ -59,6 +62,7 @@ export type BotsModalState =
   | { kind: 'import'; initialTab?: 'apps' | 'package' }
   | { kind: 'share'; mode: 'export'; botId: string }
   | { kind: 'share'; mode: 'import'; initialJson?: string }
+  | { kind: 'hand-to-bot'; workspace: HandToBotWorkspace; initialBotId?: string | null; initialPrompt?: string }
   | { kind: 'confirm-delete-bot'; botId: string }
   | { kind: 'confirm-new-home'; botId: string }
   | { kind: 'confirm-delete-group'; groupId: string };
@@ -580,6 +584,23 @@ class BotsStore {
   closeBotSettings(): void { this.setState({ settingsRoute: null }); }
   openModal(modal: BotsModalState): void { this.setState({ modal }); }
   closeModal(): void { this.setState({ modal: null }); }
+
+  openHandToBot(
+    workspace: HandToBotWorkspace,
+    options: { initialBotId?: string | null; initialPrompt?: string } = {},
+  ): void {
+    const cwd = String(workspace?.cwd ?? '').trim();
+    if (!cwd) return;
+    if (!this.state.loaded && !this.state.loading) {
+      void this.refresh();
+    }
+    this.openModal({
+      kind: 'hand-to-bot',
+      workspace: { ...workspace, cwd },
+      initialBotId: options.initialBotId ?? null,
+      initialPrompt: options.initialPrompt ?? '',
+    });
+  }
 
   pushToast(toast: Omit<BotToast, 'id'>, durationMs = 5000): string {
     this.toastSeq += 1;

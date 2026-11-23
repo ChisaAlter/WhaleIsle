@@ -256,11 +256,13 @@ function makeHarnessCtx({
   specs = ALL_SLOT_SPECS,
   uiWorkspace = true,
   sessionsOpen = false,
+  contextMenus: includeContextMenus = false,
   disposers = [],
 } = {}) {
   const declared = new Set(specs);
   const registrations = [];
   const rightTabs = [];
+  const contextMenuRegistrations = [];
   const calls = {
     openSession: [],
     sessionsOpen: [],
@@ -273,6 +275,7 @@ function makeHarnessCtx({
   };
   const slotDisposed = [];
   let rightTabDisposed = 0;
+  let contextMenuDisposed = 0;
 
   const sessions = {
     list: {
@@ -297,12 +300,21 @@ function makeHarnessCtx({
       return () => { rightTabDisposed += 1; };
     },
   };
+  const contextMenus = includeContextMenus
+    ? {
+      register: (contribution) => {
+        contextMenuRegistrations.push(contribution);
+        return () => { contextMenuDisposed += 1; };
+      },
+    }
+    : undefined;
 
   const services = {
     sessions,
     uiWorkspace: workspace,
     sidebarRight,
     sidebarRightTabs,
+    ...(contextMenus ? { contextMenus } : {}),
   };
 
   const ctx = {
@@ -325,6 +337,7 @@ function makeHarnessCtx({
     ...(workspace ? { uiWorkspace: workspace } : {}),
     sidebarRight,
     sidebarRightTabs,
+    ...(contextMenus ? { contextMenus } : {}),
     slots: {
       spec: (name) => (declared.has(name) ? {} : undefined),
       subscribe: () => () => {},
@@ -350,9 +363,11 @@ function makeHarnessCtx({
     ctx,
     registrations,
     rightTabs,
+    contextMenuRegistrations,
     calls,
     slotDisposed,
     get rightTabDisposed() { return rightTabDisposed; },
+    get contextMenuDisposed() { return contextMenuDisposed; },
   };
 }
 
@@ -427,14 +442,18 @@ nodeTest('apply(ctx) registers every Orca Bots slot, single right-sidebar tab, B
   assert.equal(host.rightTabs[0].priority, 'extension');
   assert.equal(host.rightTabs[0].keepMounted, true);
 
-  // Desktop pet jump bridge is installed.
+  // Desktop pet jump bridge and hand-to-bot / draft bridges are installed.
   assert.equal(typeof plugin.window.__dshWhaleOpen, 'function');
+  assert.equal(typeof plugin.window.__dshWhaleHandToBot, 'function');
+  assert.equal(typeof plugin.window.__DSH_BOTS_HAS_UNSAVED_DRAFT__, 'function');
 
-  // Calling all disposers cleans up slots, right tab, SSE, and window.__dshWhaleOpen.
+  // Calling all disposers cleans up slots, right tab, SSE, and window bridges.
   for (const dispose of plugin.disposers.splice(0).reverse()) {
     dispose?.();
   }
   assert.equal(plugin.window.__dshWhaleOpen, undefined);
+  assert.equal(plugin.window.__dshWhaleHandToBot, undefined);
+  assert.equal(plugin.window.__DSH_BOTS_HAS_UNSAVED_DRAFT__, undefined);
   assert.equal(host.rightTabDisposed, 1);
   assert.ok(host.slotDisposed.length >= 10);
   assert.ok(plugin.eventSources.every((es) => es.closed));
@@ -601,9 +620,16 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
 
   await flush();
 
-  // Inline CSS mounted idempotently into document.head.
+  // Inline CSS mounted idempotently into document.head (all 4 stylesheets in order).
   const styleTags = dom.window.document.head.querySelectorAll('style[data-dsh-whale-style]');
-  assert.ok(styleTags.length >= 2, 'bots.css and bots-panels.css must be mounted with data-dsh-whale-style');
+  const styleIds = [...styleTags].map((el) => el.getAttribute('data-dsh-whale-style'));
+  assert.equal(styleTags.length, 4, 'all 4 bots stylesheets must be mounted with data-dsh-whale-style');
+  assert.deepEqual(styleIds, [
+    'src/client/styles/bots.css',
+    'src/client/styles/bots-panels.css',
+    'src/client/styles/bots-enhancements.css',
+    'src/client/styles/bots-group-enhancements.css',
+  ]);
 
   const slotComp = (predicate) => host.registrations.find((r) => predicate(r.decl))?.component;
   const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
@@ -672,7 +698,7 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
   // Smooth disclosure checks: section header, bot sublist card, and sub-chat workers rotate a single chevron and animate 0fr <-> 1fr.
   const workerDisclosure = whaleCard.sublist.querySelector('.dsh-bots-workers-disclosure');
   const workerChevron = whaleCard.sublist.querySelector('.dsh-bots-subrow .dsh-bots-icon-btn-sm .dsh-bots-chevron');
-  const workerFoldBtn = whaleCard.sublist.querySelector('.dsh-bots-subrow .dsh-bots-icon-btn-sm');
+  const workerFoldBtn = workerChevron?.closest('button');
   assert.ok(workerDisclosure && workerChevron && workerFoldBtn);
   assert.equal(workerDisclosure.getAttribute('data-state'), 'open');
   assert.equal(workerChevron.getAttribute('data-open'), 'true');
@@ -797,7 +823,7 @@ domTest('Orca Bots components render sidebar, conversation header/frame, global 
 nodeTest('dsh-whale CSS sources enforce zero hardcoded colors, ms literals, theme branches, or custom scrollbars', () => {
   const stylesDir = path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'src', 'client', 'styles');
   const forbidden = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\b\d+ms\b|data-ds-dark-theme|\[data-theme|prefers-color-scheme|webkit-scrollbar|--dsw-specific-sidebar-nav-item-active/;
-  for (const fileName of ['bots.css', 'bots-panels.css']) {
+  for (const fileName of ['bots.css', 'bots-panels.css', 'bots-enhancements.css', 'bots-group-enhancements.css']) {
     const cssText = fs.readFileSync(path.join(stylesDir, fileName), 'utf8');
     const hit = forbidden.exec(cssText);
     assert.equal(hit, null, `${fileName} must not contain forbidden visual/motion token violation: ${hit?.[0]}`);
@@ -1243,4 +1269,367 @@ domTest('Wave 2-E UI upgrades: 4-tab contract, ketchup digest, TSV audit, 9 chan
   await act(async () => { quickBtn.click(); });
   await flush();
   assert.ok(rpcCalls.some((c) => c.method === 'bots.createOffer' && c.params?.purpose === '盯 CI 并修复单测'));
+});
+
+domTest('Wave 2 wiring: HandToBotDialog, workspace context menu, prefill/flash events, subchat actions, and Group workbench', async (t) => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><main><div data-dsh-composer="true"><textarea id="host-composer"></textarea></div><div id="mount"></div></main></body></html>', {
+    url: 'http://localhost:3123/',
+    pretendToBeVisual: true,
+  });
+
+  const eventSources = [];
+  const rpcCalls = [];
+  const FakeEventSource = createFakeEventSourceClass(eventSources);
+  const fixtures = defaultBotFixtures();
+  const fetchImpl = makeRpcFetch((method, params) => {
+    if (method === 'bots.list') return fixtures;
+    if (method === 'bots.chat.open') return { sessionId: 'sess-whale-home' };
+    if (method === 'bots.chatTree') return fixtures.chatsByBot[params.botId] ?? { chats: [] };
+    if (method === 'bots.takeOver') {
+      return { ok: true, botId: params.botId, sessionId: 'sess-handed-1', cwd: params.cwd };
+    }
+    if (method === 'bots.chat.delete') return { ok: true };
+    if (method === 'bots.work.stop') return { ok: true };
+    if (method === 'bots.groups.items') {
+      return {
+        items: [
+          {
+            uid: 'item-grp-1',
+            number: 7,
+            botId: 'bot-whale',
+            title: '群内发布确认',
+            status: 'needs_you',
+            groupId: 'grp-1',
+            updatedAt: Date.now(),
+          },
+        ],
+        counts: { total: 1, open: 1, needsYou: 1, byBot: { 'bot-whale': { open: 1, needsYou: 1, total: 1 } } },
+      };
+    }
+    if (method === 'bots.groups.read') {
+      return {
+        group: fixtures.groups[0],
+        messages: [
+          {
+            id: 'msg-1',
+            sequence: 1,
+            text: '请同步一下进度',
+            turns: [
+              {
+                botId: 'bot-whale',
+                status: 'replying',
+                reply: '检查完成，请看 **关键结果**',
+                startedAt: Date.now() - 2000,
+              },
+            ],
+            createdAt: Date.now(),
+          },
+        ],
+      };
+    }
+    if (method === 'bots.groups.stop') return { ok: true };
+    if (method === 'bots.upNext.list') {
+      const nowTs = Date.now();
+      return {
+        seenAt: nowTs - 10_000,
+        openSuggestions: [
+          {
+            id: 'sug-open-unread',
+            title: '新发现的未读建议',
+            why: '需要核查构建日志',
+            status: 'open',
+            createdAt: nowTs - 2_000,
+          },
+          {
+            id: 'sug-open-read',
+            title: '已读的历史开放建议',
+            why: '此前已经看过',
+            status: 'open',
+            createdAt: nowTs - 60_000,
+          },
+        ],
+        suggestions: [
+          {
+            id: 'sug-open-unread',
+            title: '新发现的未读建议',
+            status: 'open',
+            createdAt: nowTs - 2_000,
+          },
+          {
+            id: 'sug-open-read',
+            title: '已读的历史开放建议',
+            status: 'open',
+            createdAt: nowTs - 60_000,
+          },
+          {
+            id: 'sug-started',
+            title: '已启动的历史建议不应渲染',
+            status: 'started',
+            createdAt: nowTs - 1_000,
+          },
+          {
+            id: 'sug-dismissed',
+            title: '已忽略的历史建议不应渲染',
+            status: 'dismissed',
+            createdAt: nowTs - 1_000,
+          },
+          {
+            id: 'sug-replaced',
+            title: '已替换的历史建议不应渲染',
+            status: 'replaced',
+            createdAt: nowTs - 1_000,
+          },
+        ],
+      };
+    }
+    if (method === 'bots.upNext.seen' || method === 'bots.upNext.unseen') return { ok: true };
+    if (method === 'bots.agentChoices') return { models: [] };
+    return { ok: true, items: [], chats: [], files: [], requests: [], automations: [], suggestions: [] };
+  }, rpcCalls);
+
+  const globalValues = {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    localStorage: dom.window.localStorage,
+    sessionStorage: dom.window.sessionStorage,
+    Event: dom.window.Event,
+    CustomEvent: dom.window.CustomEvent,
+    HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
+    HTMLInputElement: dom.window.HTMLInputElement,
+    EventSource: FakeEventSource,
+    fetch: fetchImpl,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  const savedGlobals = Object.fromEntries(
+    Object.keys(globalValues).map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]),
+  );
+  for (const [k, v] of Object.entries(globalValues)) {
+    Object.defineProperty(globalThis, k, { configurable: true, writable: true, value: v });
+  }
+
+  let spec = null;
+  dom.window.__ModuleLoader__ = { load: (entry) => { spec = entry; } };
+  dom.window.EventSource = FakeEventSource;
+  dom.window.fetch = fetchImpl;
+
+  vm.runInNewContext(
+    fs.readFileSync(CLIENT_FILE, 'utf8'),
+    {
+      window: dom.window,
+      document: dom.window.document,
+      localStorage: dom.window.localStorage,
+      sessionStorage: dom.window.sessionStorage,
+      Event: dom.window.Event,
+      CustomEvent: dom.window.CustomEvent,
+      HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
+      HTMLInputElement: dom.window.HTMLInputElement,
+      EventSource: FakeEventSource,
+      fetch: fetchImpl,
+      setTimeout: dom.window.setTimeout.bind(dom.window),
+      clearTimeout: dom.window.clearTimeout.bind(dom.window),
+      setInterval: dom.window.setInterval.bind(dom.window),
+      clearInterval: dom.window.clearInterval.bind(dom.window),
+      queueMicrotask,
+      AbortController,
+      URL,
+      URLSearchParams,
+      console,
+    },
+    { filename: CLIENT_FILE },
+  );
+
+  const pluginExports = spec.factory((id) => {
+    if (id === 'react') return React;
+    if (id === 'react/jsx-runtime') return ReactJsxRuntime;
+    if (id === 'react-dom') return ReactDOM;
+    if (id === 'react-dom/client') return { createRoot };
+    return {};
+  });
+
+  const disposers = [];
+  const host = makeHarnessCtx({ contextMenus: true, disposers });
+  pluginExports.apply(host.ctx);
+
+  const root = createRoot(dom.window.document.querySelector('#mount'));
+  t.after(async () => {
+    await act(async () => root.unmount());
+    for (const dispose of disposers.splice(0).reverse()) {
+      dispose?.();
+    }
+    for (const es of eventSources) {
+      if (!es.closed) es.close();
+    }
+    dom.window.close();
+    for (const [k, desc] of Object.entries(savedGlobals)) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  });
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await new Promise((resolve) => setImmediate(resolve)); });
+    }
+  };
+
+  await flush();
+
+  // Workspace context menu contribution registered cleanly.
+  const wsContrib = host.contextMenuRegistrations.find((c) => c.id === 'dsh-whale.workspace.hand-to-bot');
+  assert.ok(wsContrib && wsContrib.target === 'workspace');
+  const resolvedActions = wsContrib.resolve({ workspaceId: 'ws-demo', path: 'C:/repo/demo', displayTitle: 'demo-app' });
+  assert.equal(resolvedActions.length, 1);
+
+  const slotComp = (predicate) => host.registrations.find((r) => predicate(r.decl))?.component;
+  const SidebarComp = slotComp((d) => d.name === 'sidebar.sections.before');
+  const RightPanelComp = slotComp((d) => d.name === 'sidebar.right.pane.tab');
+  const GroupRoomComp = slotComp((d) => d.name === 'main' && d.key === 'dsh-bots:group');
+  const OverlayComp = slotComp((d) => d.name === 'shell.overlay' && d.id === 'dsh-bots.modals');
+
+  await act(async () => {
+    root.render(h('div', null,
+      h(SidebarComp, { wide: true }),
+      h('section', { id: 'right-panel-host' }, h(RightPanelComp, {})),
+      h('section', { id: 'group-room-host' }, h(GroupRoomComp, {})),
+      h(OverlayComp, {}),
+    ));
+  });
+  await flush();
+
+  // 1. Trigger HandToBotDialog via workspace context menu run() and submit bots.takeOver.
+  await act(async () => { resolvedActions[0].run(); });
+  await flush();
+  const handDialog = dom.window.document.querySelector('[data-dsh-bots-hand-dialog="true"]');
+  assert.ok(handDialog, 'HandToBotDialog must mount inside BotsModalHost');
+  assert.match(handDialog.textContent, /demo-app/);
+  assert.match(handDialog.textContent, /C:\/repo\/demo/);
+
+  const newSideBtn = [...handDialog.querySelectorAll('.dsh-bots-seg-btn')][1];
+  const goalInput = handDialog.querySelector('#dsh-bots-hand-goal');
+  const confirmBtn = handDialog.querySelector('.dsh-bots-modal-footer button[data-variant="primary"]');
+  assert.ok(newSideBtn && goalInput && confirmBtn);
+  await act(async () => { newSideBtn.click(); });
+  await act(async () => {
+    const propsKey = Object.keys(goalInput).find((k) => k.startsWith('__reactProps$'));
+    assert.ok(propsKey, 'textarea must expose React props');
+    goalInput[propsKey].onChange({ target: { value: '检查测试并整理待办' } });
+  });
+  await flush();
+  assert.equal(goalInput.value, '检查测试并整理待办');
+  await act(async () => { confirmBtn.click(); });
+  await flush();
+
+  const takeOverCall = rpcCalls.find((c) => c.method === 'bots.takeOver');
+  assert.ok(takeOverCall, 'Confirming HandToBotDialog must invoke bots.takeOver');
+  assert.equal(takeOverCall.params.botId, 'bot-whale');
+  assert.equal(takeOverCall.params.cwd, 'C:/repo/demo');
+  assert.equal(takeOverCall.params.title, 'demo-app');
+  assert.equal(takeOverCall.params.chat, 'new');
+  assert.equal(takeOverCall.params.prompt, '检查测试并整理待办');
+  assert.ok(host.calls.openSession.includes('sess-handed-1'));
+
+  // 2. Trigger HandToBotDialog via global event `dsh-bots:hand-to-bot` and jump to NewBotDialog.
+  await act(async () => {
+    dom.window.dispatchEvent(new dom.window.CustomEvent('dsh-bots:hand-to-bot', {
+      detail: { cwd: 'C:/repo/alpha', name: 'Alpha', initialPrompt: '接管 Alpha' },
+    }));
+  });
+  await flush();
+  const handDialog2 = dom.window.document.querySelector('[data-dsh-bots-hand-dialog="true"]');
+  assert.ok(handDialog2);
+  const createNewBtn = handDialog2.querySelector('.dsh-bots-hand-create-btn');
+  assert.ok(createNewBtn);
+  await act(async () => { createNewBtn.click(); });
+  await flush();
+  assert.equal(dom.window.document.querySelector('[data-dsh-bots-hand-dialog="true"]'), null);
+  const newBotInput = dom.window.document.querySelector('.dsh-bots-modal input[type="text"]');
+  assert.ok(newBotInput && newBotInput.value === 'Alpha', 'NewBotDialog should receive prefilled workspace name');
+
+  // Close NewBotDialog via Escape.
+  await act(async () => {
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' }));
+  });
+  await flush();
+
+  // 3. Global events: prefill-chat-draft & flash-chat-pane.
+  const hostComposer = dom.window.document.querySelector('#host-composer');
+  await act(async () => {
+    dom.window.dispatchEvent(new dom.window.CustomEvent('dsh-bots:prefill-chat-draft', {
+      detail: { botId: 'bot-whale', sessionId: 'sess-whale-home', text: '每天早上9点巡检' },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  await flush();
+  assert.equal(dom.window.sessionStorage.getItem('dsh-bots.prefillDraft:bot-whale'), '每天早上9点巡检');
+  assert.equal(hostComposer.value, '每天早上9点巡检');
+
+  await act(async () => {
+    dom.window.dispatchEvent(new dom.window.CustomEvent('dsh-bots:flash-chat-pane', {
+      detail: { botId: 'bot-whale', sessionId: 'sess-whale-home' },
+    }));
+  });
+  await flush();
+  assert.ok(dom.window.document.querySelector('main').classList.contains('dsh-bots-pane-rim-flash'));
+
+  // 4. BotSubChatList '...' menu protects Home Chat and deletes Side Chat via bots.chat.delete.
+  const subrows = [...dom.window.document.querySelectorAll('.dsh-bots-subrow')];
+  assert.ok(subrows.length >= 2);
+  const homeMoreBtn = subrows[0].querySelector('.dsh-bots-subrow-more-btn');
+  const sideMoreBtn = subrows[1].querySelector('.dsh-bots-subrow-more-btn');
+  assert.ok(homeMoreBtn && sideMoreBtn);
+  await act(async () => { homeMoreBtn.click(); });
+  await flush();
+  const homeDeleteBtn = dom.window.document.querySelector('.dsh-bots-chat-row-menu .dsh-bots-menu-item-danger');
+  assert.ok(homeDeleteBtn && homeDeleteBtn.disabled, 'Home Chat delete menu item must be disabled');
+
+  await act(async () => { sideMoreBtn.click(); });
+  await flush();
+  const sideDeleteBtn = dom.window.document.querySelector('.dsh-bots-chat-row-menu .dsh-bots-menu-item-danger');
+  assert.ok(sideDeleteBtn && !sideDeleteBtn.disabled, 'Side Chat delete menu item must be enabled');
+  await act(async () => { sideDeleteBtn.click(); });
+  await flush();
+  assert.ok(rpcCalls.some((c) => c.method === 'bots.chat.delete' && c.params?.botId === 'bot-whale' && c.params?.sessionId === 'sess-whale-side'));
+
+  // 4.5 Up Next real backend contract: filters out started/dismissed/replaced and derives unread from seenAt.
+  const rightPanelHost = dom.window.document.querySelector('#right-panel-host');
+  assert.ok(rightPanelHost);
+  assert.match(rightPanelHost.textContent, /新发现的未读建议/);
+  assert.match(rightPanelHost.textContent, /已读的历史开放建议/);
+  assert.doesNotMatch(rightPanelHost.textContent, /已启动的历史建议不应渲染/);
+  assert.doesNotMatch(rightPanelHost.textContent, /已忽略的历史建议不应渲染/);
+  assert.doesNotMatch(rightPanelHost.textContent, /已替换的历史建议不应渲染/);
+  const upNextCards = [...rightPanelHost.querySelectorAll('.dsh-bots-pcard[data-unread]')];
+  const unreadCard = upNextCards.find((card) => card.textContent?.includes('新发现的未读建议'));
+  const readCard = upNextCards.find((card) => card.textContent?.includes('已读的历史开放建议'));
+  assert.equal(unreadCard?.getAttribute('data-unread'), 'true', 'createdAt > seenAt must be marked unread');
+  assert.equal(readCard?.getAttribute('data-unread'), 'false', 'createdAt <= seenAt must be marked read');
+  const markReadBtn = unreadCard?.querySelector('button[title="标为已读"], button[title="Mark as read"]');
+  assert.ok(markReadBtn, 'unread Up Next card must expose mark-as-read button');
+  await act(async () => { markReadBtn.click(); });
+  await flush();
+  assert.ok(rpcCalls.some((c) => c.method === 'bots.upNext.seen' && c.params?.id === 'sug-open-unread'));
+
+  // 5. Group workbench in RightPanel + GroupRoomView safe Markdown & Stop RPC.
+  const groupCard = [...dom.window.document.querySelectorAll('.dsh-bots-card')]
+    .find((card) => card.querySelector('.dsh-bots-card-name')?.textContent === '核心小组');
+  assert.ok(groupCard, 'Group card must render in sidebar');
+  await act(async () => { groupCard.click(); });
+  await flush();
+  assert.ok(rpcCalls.some((c) => c.method === 'bots.groups.items' && c.params?.groupId === 'grp-1'));
+  assert.match(dom.window.document.querySelector('#right-panel-host').textContent, /群内发布确认/);
+  assert.ok(dom.window.document.querySelector('#group-room-host strong')?.textContent === '关键结果', 'GroupRoomView should render safe Markdown bold nodes');
+  const stopBtn = [...dom.window.document.querySelectorAll('#group-room-host button')]
+    .find((btn) => /停止|Stop/i.test(btn.textContent || ''));
+  assert.ok(stopBtn, 'Active group turn must expose Stop button');
+  await act(async () => { stopBtn.click(); });
+  await flush();
+  assert.ok(rpcCalls.some((c) => c.method === 'bots.groups.stop' && c.params?.groupId === 'grp-1'));
+
+  // 6. Disposing unregisters workspace context menu and global bridges cleanly.
+  for (const dispose of disposers.splice(0).reverse()) {
+    dispose?.();
+  }
+  assert.equal(host.contextMenuDisposed, 1);
+  assert.equal(dom.window.__dshWhaleHandToBot, undefined);
 });
