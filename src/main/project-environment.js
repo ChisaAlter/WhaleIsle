@@ -412,16 +412,18 @@ function createProjectEnvironment(options = {}) {
     } finally { fs.rmSync(file, { force: true }); }
   }
   function selectDirectoryAction(payload) {
-    if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) throw new Error('请选择本机绝对目录');
+    if (typeof payload.workingDirectory !== 'string' || !payload.workingDirectory.trim()) throw new Error('请选择本机绝对目录');
     if (hasUnsafeDirectorySyntax(payload.workingDirectory)) throw Object.assign(new Error(DIRECTORY_REFUSALS['unsafe-path']), { code: 'project/directory-unsafe-path' });
+    if (!path.isAbsolute(payload.workingDirectory)) throw new Error('请选择本机绝对目录');
     const refusal = workspaceRootRefusal(payload.workingDirectory);
     if (refusal) throw Object.assign(new Error(DIRECTORY_REFUSALS[refusal]), { code: `project/directory-${refusal}` });
     const canonicalPath = fs.realpathSync.native(payload.workingDirectory);
     return { ok: true, canonicalPath, identity: identity(canonicalPath) };
   }
   function checkDirectoryAction(payload) {
-    if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'missing' };
+    if (typeof payload.workingDirectory !== 'string' || !payload.workingDirectory.trim()) return { ok: true, allowed: false, reason: 'missing' };
     if (hasUnsafeDirectorySyntax(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'unsafe-path' };
+    if (!path.isAbsolute(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'missing' };
     const refusal = workspaceRootRefusal(payload.workingDirectory);
     return refusal ? { ok: true, allowed: false, reason: refusal } : { ok: true, allowed: true };
   }

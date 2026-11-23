@@ -5,6 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 require('../../scripts/lib/harness-peer-hook.cjs');
 const moduleUrl = pathToFileURL(path.join(__dirname, '../../vendor/dsh-whale/lib/todo-service.js')).href;
+const SYNTHETIC_ROOT = path.parse(process.cwd()).root;
 
 test('unreadable task storage reports unavailability without replacing established assistant services', async () => {
   const { mountWhaleTodos } = await import(moduleUrl);
@@ -27,7 +28,7 @@ async function fixture() {
       resolveAgent: async id => ({ agent: id === 'resident' ? { id } : agents.get(id) }),
       selectModel: async input => calls.push(['model', input]), prompt: async input => calls.push(['prompt', input]),
     } };
-  const service = new WhaleTodos(ctx, domain, { home: 'C:/synthetic-home', scope: { get: () => ({ sessionId: 'resident' }) } });
+  const service = new WhaleTodos(ctx, domain, { home: path.join(SYNTHETIC_ROOT, 'synthetic-home'), scope: { get: () => ({ sessionId: 'resident' }) } });
   return { service, values, calls, ctx };
 }
 
@@ -43,10 +44,11 @@ test('task cards persist validated metadata without running; pinning does not sc
 
 test('task execution uses a distinct session and current model without changing defaults', async () => {
   const { service, calls } = await fixture();
-  const card = await service.create({ title: '写摘要', cwd: 'C:/chosen-workspace' });
+  const chosenWorkspace = path.join(SYNTHETIC_ROOT, 'chosen-workspace');
+  const card = await service.create({ title: '写摘要', cwd: chosenWorkspace });
   const run = await service.start(card.id);
   assert.equal(run.state, 'running'); assert.notEqual(run.sessionId, 'resident');
-  assert.equal(calls.find(([kind]) => kind === 'create')[1].cwd, 'C:/chosen-workspace');
+  assert.equal(calls.find(([kind]) => kind === 'create')[1].cwd, chosenWorkspace);
   assert.equal(calls.find(([kind]) => kind === 'create')[1].agentPreset, 'standard');
   assert.deepEqual(calls.find(([kind]) => kind === 'model')[1], { sessionId: run.sessionId, provider: 'scripted', model: 'test', saveAsDefault: false });
   assert.match(calls.find(([kind]) => kind === 'prompt')[1].content[0].text, /写摘要/);

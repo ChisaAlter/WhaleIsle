@@ -882,7 +882,7 @@ test('showBoot prewarms one hidden BrowserView after renderHints settle, showHar
     setAppDetails() {}
     addBrowserView(view) { if (!this.views.includes(view)) this.views.push(view); }
     removeBrowserView(view) { this.views = this.views.filter((candidate) => candidate !== view); }
-    loadFile(file) { this.webContents.url = `file:///${file.replaceAll('\\\\', '/')}`; return Promise.resolve(); }
+    loadFile(file) { this.webContents.url = pathToFileURL(path.resolve(file)).href; return Promise.resolve(); }
   }
 
   require.cache[electronPath] = {
@@ -903,7 +903,11 @@ test('showBoot prewarms one hidden BrowserView after renderHints settle, showHar
   };
   require.cache[pathsPath] = {
     id: pathsPath, filename: pathsPath, loaded: true,
-    exports: { rendererFile: (name) => `C:/app/${name}`, assetFile: (name) => `C:/app/${name}`, preloadFile: () => 'C:/app/preload.js' },
+    exports: {
+      rendererFile: (name) => path.join(__dirname, '..', 'renderer', name),
+      assetFile: (name) => path.join(__dirname, '..', '..', 'assets', name),
+      preloadFile: () => path.join(__dirname, '..', 'preload', 'index.js'),
+    },
   };
   require.cache[acrylicPath] = {
     id: acrylicPath, filename: acrylicPath, loaded: true,
