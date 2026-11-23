@@ -30,9 +30,11 @@ function _configureForTest(deps) {
 
 function register({ handle, send, onQuitCommit }) {
   const svc = ensureService();
-  const bridge = serviceDeps ? serviceDeps.whaleBridge : require('../launcher/whalebridge').whaleBridgeService();
+  const bridge = serviceDeps ? (serviceDeps.magpie || serviceDeps.whaleBridge) : require('../launcher/magpie').magpieService();
+  const bridgeId = bridge?.id || 'magpie';
   bridgeService = bridge || null;
-  const progress = (event, id) => (payload) => send(event, 'shell:components-progress', { id, ...payload });
+  const progress = (/** @type {any} */ event, /** @type {any} */ id) => (/** @type {any} */ payload) => send(event, 'shell:components-progress', { id, ...payload });
+  const isBridge = (/** @type {any} */ id) => Boolean(bridge && id === bridgeId);
 
   handle('shell:components-list', async (_event, options) => {
     const list = svc.list();
@@ -44,49 +46,61 @@ function register({ handle, send, onQuitCommit }) {
 
   handle('shell:components-install', (event, arg) => {
     const id = typeof arg === 'string' ? arg : arg?.id;
-    return id === 'whalebridge' && bridge ? bridge.install(progress(event, id)) : svc.install(arg, progress(event, id));
+    return isBridge(id) ? bridge.install(progress(event, id)) : svc.install(arg, progress(event, id));
   });
 
-  handle('shell:components-start', (event, id) => id === 'whalebridge' && bridge ? bridge.start(progress(event, id)) : svc.start(id, progress(event, id)));
+  handle('shell:components-start', (event, id) => (isBridge(id) ? bridge.start(progress(event, id)) : svc.start(id, progress(event, id))));
 
   handle('shell:components-stop', async (event, id) => {
-    if (id !== 'whalebridge' || !bridge) return svc.stop(id, progress(event, id));
+    if (!isBridge(id)) return svc.stop(id, progress(event, id));
     const result = await bridge.stop(progress(event, id));
-    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    if (result.ok) require('./magpie-window').closeMagpieWindow();
     return result;
   });
 
   handle('shell:components-update', async (event, id) => {
-    if (id !== 'whalebridge' || !bridge) return svc.update(id, progress(event, id));
+    if (!isBridge(id)) return svc.update(id, progress(event, id));
     const previousUrl = bridge.state()?.url;
     const result = await bridge.update(progress(event, id));
+    if (result?.externalUrl) {
+      await require('./open-external').openExternalHttp(result.externalUrl);
+      return result;
+    }
     // A failed switch can restore the old version on a new management URL.
-    if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
+    if (result.ok || bridge.state()?.url !== previousUrl) require('./magpie-window').closeMagpieWindow();
     return result;
   });
 
   handle('shell:components-rollback', async (event, id) => {
-    if (id !== 'whalebridge' || !bridge) return svc.rollback(id, progress(event, id));
+    if (!isBridge(id)) return svc.rollback(id, progress(event, id));
     const previousUrl = bridge.state()?.url;
     const result = await bridge.rollback(progress(event, id));
-    if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
+    if (result.ok || bridge.state()?.url !== previousUrl) require('./magpie-window').closeMagpieWindow();
     return result;
   });
 
   handle('shell:components-uninstall', async (event, arg) => {
     const id = typeof arg === 'string' ? arg : arg?.id;
-    if (id !== 'whalebridge' || !bridge) return svc.uninstall(id, progress(event, id));
+    if (!isBridge(id)) return svc.uninstall(id, progress(event, id));
     const previousUrl = bridge.state()?.url;
     const result = await bridge.uninstall(arg, progress(event, id));
-    if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
+    if (result.ok || bridge.state()?.url !== previousUrl) require('./magpie-window').closeMagpieWindow();
     return result;
   });
-  handle('shell:components-uninstall-info', (_event, id) => id === 'whalebridge' && bridge ? bridge.uninstallInfo() : {});
+  handle('shell:components-uninstall-info', (_event, id) => (isBridge(id) ? bridge.uninstallInfo() : {}));
   handle('shell:components-open', async (event, id) => {
-    if (id !== 'whalebridge' || !bridge) return { ok: false, error: 'unknown-component' };
+    if (!isBridge(id)) return { ok: false, error: 'unknown-component' };
     const result = await bridge.start(progress(event, id));
     if (!result.ok) return result;
-    require('./whalebridge-window').openWhaleBridgeWindow(result.url);
+    const row = typeof bridge.row === 'function' ? bridge.row() : null;
+    require('./magpie-window').openMagpieWindow({
+      url: result.url,
+      ownership: result.ownership || row?.ownership,
+      version: result.version || row?.installedVersion,
+      latestVersion: row?.latest || '',
+      externalUpdateUrl: row?.capabilities?.externalUpdateUrl || '',
+      onClose: typeof bridge.stopCompanion === 'function' ? () => { void bridge.stopCompanion(); } : null,
+    });
     return { ok: true };
   });
 
@@ -97,14 +111,16 @@ function register({ handle, send, onQuitCommit }) {
   // quit, so a plain listener would shut services down on a cancelled quit.
   if (!quitHooked) {
     quitHooked = true;
+    const shutdownAll = () => {
+      svc.shutdown();
+      void bridge?.stopCompanion?.();
+    };
     if (typeof onQuitCommit === 'function') {
-      onQuitCommit(() => svc.shutdown());
+      onQuitCommit(shutdownAll);
     } else {
       try {
         const { app } = require('electron');
-        app.on('before-quit', () => {
-          svc.shutdown();
-        });
+        app.on('before-quit', shutdownAll);
       } catch {
         // outside Electron (unit tests) — shutdown stays reachable directly
       }

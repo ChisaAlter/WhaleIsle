@@ -84,6 +84,10 @@ test('summarizeRelease selects the host-compatible macOS DMG and rejects a forei
 test('desktop release listing and install reject component releases and standalone executables', async (t) => {
   useReleasePlatform(t, 'win32');
   const component = {
+    tag_name: 'magpie-v0.1.4708',
+    assets: [{ name: 'magpie-cli-windows-amd64.exe', browser_download_url: 'https://example.test/magpie.exe' }],
+  };
+  const legacyComponent = {
     tag_name: 'whalebridge-v1.1.0',
     assets: [{ name: 'WhaleBridge-win32-x64.exe', browser_download_url: 'https://example.test/bridge.exe' }],
   };
@@ -92,6 +96,7 @@ test('desktop release listing and install reject component releases and standalo
     assets: [{ name: 'Whale-Isle-Setup-0.3.5.exe', browser_download_url: 'https://example.test/setup.exe' }],
   };
   assert.equal(summarizeRelease(component, '0.3.3'), null);
+  assert.equal(summarizeRelease(legacyComponent, '0.3.3'), null);
   assert.equal(summarizeRelease({ ...component, assets: desktop.assets }, '0.3.3'), null);
   assert.equal(summarizeRelease({ ...desktop, assets: component.assets }, '0.3.3').installable, false);
   assert.equal(summarizeRelease({ ...desktop, tag_name: 'v0.3.6-rc.1+candidate', prerelease: true }, '0.3.5').installable, true);

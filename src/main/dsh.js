@@ -1041,9 +1041,9 @@ class DshManager extends EventEmitter {
     // without requiring the launcher or component settings window to be open.
     // A component failure is reported without preventing other channels.
     try {
-      await require('../launcher/whalebridge').ensureWhaleBridgeRuntime();
+      await require('../launcher/magpie').ensureMagpieRuntime();
     } catch (error) {
-      this.log(`鲸桥不可用：${error.message}`, 'app');
+      this.log(`Magpie 不可用：${error.message}`, 'app');
     }
 
     const preparationAbort = new AbortController();

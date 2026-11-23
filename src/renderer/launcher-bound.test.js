@@ -153,27 +153,27 @@ test('component feedback stays on its buttons, shows one result, and restores fo
   assert.ok(r.updateFailed.failureLines.includes('操作未完成：fixture package refused'));
 
   assert.equal(r.persistentErrorInline, false, 'catalog error stays available without a raw inline message');
-  assert.equal(r.statusDetails.noticeTitle, '鲸桥状态');
-  assert.equal(r.statusDetails.noticeBody, '鲸桥状态：fixture catalog is unavailable');
+  assert.equal(r.statusDetails.noticeTitle, 'Magpie状态');
+  assert.equal(r.statusDetails.noticeBody, 'Magpie状态：fixture catalog is unavailable');
   assert.equal(r.statusDetails.modalVisible, false);
   assert.equal(r.refreshed.busy, null);
   assert.equal(r.refreshed.sameButton, true, 'refresh keeps its static control');
   assert.equal(r.calls.filter(call => call.op === 'component-list' && call.refresh).length, 1, 'duplicate refresh is not issued');
 
-  assert.match(r.uninstallReading.loadingLabel, /读取鲸桥状态/);
+  assert.match(r.uninstallReading.loadingLabel, /读取Magpie状态/);
   assert.equal(r.uninstallReading.noticeVisible, false);
   assert.equal(r.uninstallReading.controls.every(button => button.disabled), true, 'preflight locks conflicting actions before confirmation');
   assert.equal(r.uninstallConfirm.modalVisible, true);
-  assert.match(r.uninstallConfirm.confirmBody, /当前默认模型使用鲸桥/);
+  assert.match(r.uninstallConfirm.confirmBody, /当前默认模型使用 Magpie/);
   assert.equal(r.uninstallsAfterCancel, 0, 'cancelling the first confirmation leaves the component installed');
   assert.equal(r.uninstallCancelled.modalVisible, false);
   assert.equal(r.uninstallCancelled.controls.every(button => !button.disabled), true);
   assert.equal(r.keepDataConfirm.modalVisible, true);
-  assert.equal(r.keepDataConfirm.confirmTitle, '是否同时删除鲸桥配置？');
+  assert.equal(r.keepDataConfirm.confirmTitle, '是否同时删除 Magpie 配置？');
   assert.equal(r.keepDataConfirm.cancelHidden, false);
   const uninstall = r.calls.filter(call => call.op === 'component-uninstall');
   assert.equal(uninstall.length, 1);
-  assert.deepEqual(uninstall[0].argument, { id: 'whalebridge', removeData: false }, 'keep configuration choice is preserved');
+  assert.deepEqual(uninstall[0].argument, { id: 'magpie', removeData: false }, 'keep configuration choice is preserved');
   assert.equal(r.calls.filter(call => call.op === 'component-uninstall-info').length, 2, 'each intentional uninstall reads status once');
   assert.equal(r.calls.filter(call => call.op === 'component-start').length, 2, 'double click is guarded; later intentional start still works');
 

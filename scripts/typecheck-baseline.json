@@ -3210,212 +3210,6 @@
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 1
       }
     },
-    "scripts/qa-whalebridge-agents.cjs": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 1
-      },
-      "TS2339": {
-        "Property '_initPaths' does not exist on type 'typeof Module'.": 1,
-        "Property 'cleanup' does not exist on type '{ binary: { version: any; size: number; sha256: string; }; visualOnly: boolean; errorOnly: boolean; splitSmoke: boolean; checks: never[]; screenshots: never[]; layouts: never[]; requests: never[]; rendererErrors: never[]; }'.": 2,
-        "Property 'error' does not exist on type '{ binary: { version: any; size: number; sha256: string; }; visualOnly: boolean; errorOnly: boolean; splitSmoke: boolean; checks: never[]; screenshots: never[]; layouts: never[]; requests: never[]; rendererErrors: never[]; }'.": 1,
-        "Property 'method' does not exist on type 'never'.": 2,
-        "Property 'ok' does not exist on type '{ binary: { version: any; size: number; sha256: string; }; visualOnly: boolean; errorOnly: boolean; splitSmoke: boolean; checks: never[]; screenshots: never[]; layouts: never[]; requests: never[]; rendererErrors: never[]; }'.": 7,
-        "Property 'port' does not exist on type 'string | AddressInfo'.": 2
-      },
-      "TS2345": {
-        "Argument of type 'any' is not assignable to parameter of type 'never'.": 4,
-        "Argument of type 'string | undefined' is not assignable to parameter of type 'string | URL'.": 1,
-        "Argument of type 'string | undefined' is not assignable to parameter of type 'string'.": 1,
-        "Argument of type 'string' is not assignable to parameter of type 'never'.": 1,
-        "Argument of type '{ method: string; path: string; }' is not assignable to parameter of type 'never'.": 1,
-        "Argument of type '{ native: { requested: { width: any; height: any; }; bounds: any; contentBounds: any; renderer: any; }; }' is not assignable to parameter of type 'never'.": 2
-      },
-      "TS2531": {
-        "Object is possibly 'null'.": 2
-      },
-      "TS2769": {
-        "No overload matches this call.": 4
-      },
-      "TS7005": {
-        "Variable 'win' implicitly has an 'any' type.": 5
-      },
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1,
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'condition' implicitly has an 'any' type.": 1,
-        "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'field' implicitly has an 'any' type.": 6,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'height' implicitly has an 'any' type.": 2,
-        "Parameter 'id' implicitly has an 'any' type.": 1,
-        "Parameter 'key' implicitly has an 'any' type.": 3,
-        "Parameter 'name' implicitly has an 'any' type.": 3,
-        "Parameter 'option' implicitly has an 'any' type.": 3,
-        "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'route' implicitly has an 'any' type.": 1,
-        "Parameter 'row' implicitly has an 'any' type.": 14,
-        "Parameter 'scheme' implicitly has an 'any' type.": 1,
-        "Parameter 'selector' implicitly has an 'any' type.": 2,
-        "Parameter 'source' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 3,
-        "Parameter 'width' implicitly has an 'any' type.": 2
-      },
-      "TS7034": {
-        "Variable 'win' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "scripts/qa-whalebridge-community.mjs": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 5
-      },
-      "TS2307": {
-        "Cannot find module 'playwright' or its corresponding type declarations.": 1
-      },
-      "TS2322": {
-        "Type 'string' is not assignable to type 'null'.": 1
-      },
-      "TS2339": {
-        "Property 'disabled' does not exist on type 'Element'.": 1,
-        "Property 'failed' does not exist on type '{ runtime: { originalWindow: string; activate: boolean; interaction: string; communitySourcesMocked: boolean; }; scenarios: never[]; screenshots: never[]; consoleErrors: never[]; nativeDiagnostics: never[]; ... <n> more ...; isolatedDirectory: string; }'.": 2,
-        "Property 'fatal' does not exist on type '{ runtime: { originalWindow: string; activate: boolean; interaction: string; communitySourcesMocked: boolean; }; scenarios: never[]; screenshots: never[]; consoleErrors: never[]; nativeDiagnostics: never[]; ... <n> more ...; isolatedDirectory: string; }'.": 1,
-        "Property 'passed' does not exist on type '{ runtime: { originalWindow: string; activate: boolean; interaction: string; communitySourcesMocked: boolean; }; scenarios: never[]; screenshots: never[]; consoleErrors: never[]; nativeDiagnostics: never[]; ... <n> more ...; isolatedDirectory: string; }'.": 1,
-        "Property 'previousAttempts' does not exist on type '{ runtime: { originalWindow: string; activate: boolean; interaction: string; communitySourcesMocked: boolean; }; scenarios: never[]; screenshots: never[]; consoleErrors: never[]; nativeDiagnostics: never[]; ... <n> more ...; isolatedDirectory: string; }'.": 1,
-        "Property 'reason' does not exist on type '{}'.": 2,
-        "Property 'resumedFrom' does not exist on type '{ runtime: { originalWindow: string; activate: boolean; interaction: string; communitySourcesMocked: boolean; }; scenarios: never[]; screenshots: never[]; consoleErrors: never[]; nativeDiagnostics: never[]; ... <n> more ...; isolatedDirectory: string; }'.": 1,
-        "Property 'status' does not exist on type 'never'.": 2,
-        "Property 'stoppedOwnService' does not exist on type '{ runtime: { originalWindow: string; activate: boolean; interaction: string; communitySourcesMocked: boolean; }; scenarios: never[]; screenshots: never[]; consoleErrors: never[]; nativeDiagnostics: never[]; ... <n> more ...; isolatedDirectory: string; }'.": 2
-      },
-      "TS2345": {
-        "Argument of type 'NonSharedBuffer' is not assignable to parameter of type 'string'.": 4,
-        "Argument of type 'string' is not assignable to parameter of type 'never'.": 3,
-        "Argument of type '{ name: any; path: string; binarySHA256: string; requestedNativeSize: { width: any; height: any; }; geometry: any; }' is not assignable to parameter of type 'never'.": 1,
-        "Argument of type '{ name: any; status: any; }' is not assignable to parameter of type 'never'.": 1
-      },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
-      },
-      "TS7005": {
-        "Variable 'api' implicitly has an 'any' type.": 15,
-        "Variable 'electron' implicitly has an 'any' type.": 11,
-        "Variable 'page' implicitly has an 'any' type.": 122
-      },
-      "TS7006": {
-        "Parameter 'action' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 1,
-        "Parameter 'button' implicitly has an 'any' type.": 1,
-        "Parameter 'chunk' implicitly has an 'any' type.": 1,
-        "Parameter 'dark' implicitly has an 'any' type.": 1,
-        "Parameter 'element' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 2,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'fn' implicitly has an 'any' type.": 1,
-        "Parameter 'height' implicitly has an 'any' type.": 1,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'name' implicitly has an 'any' type.": 3,
-        "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 10,
-        "Parameter 'path' implicitly has an 'any' type.": 1,
-        "Parameter 'r' implicitly has an 'any' type.": 4,
-        "Parameter 'response' implicitly has an 'any' type.": 1,
-        "Parameter 's' implicitly has an 'any' type.": 3,
-        "Parameter 'size' implicitly has an 'any' type.": 1,
-        "Parameter 'spec' implicitly has an 'any' type.": 3,
-        "Parameter 'status' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 3,
-        "Parameter 'width' implicitly has an 'any' type.": 1
-      },
-      "TS7031": {
-        "Binding element 'BrowserWindow' implicitly has an 'any' type.": 10,
-        "Binding element 'height' implicitly has an 'any' type.": 1,
-        "Binding element 'nativeTheme' implicitly has an 'any' type.": 1,
-        "Binding element 'width' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'api' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'electron' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'page' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ USERPROFILE: string; HOME: string; APPDATA: string; LOCALAPPDATA: string; XDG_CONFIG_HOME: string; XDG_CACHE_HOME: string; CODEX_HOME: string; CLAUDE_CONFIG_DIR: string; MAGPIE_ADDR: string; MAGPIE_BUN: string | undefined; }'.": 2
-      }
-    },
-    "scripts/qa-whalebridge-models.mjs": {
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1,
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'm' implicitly has an 'any' type.": 4,
-        "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'route' implicitly has an 'any' type.": 1
-      }
-    },
-    "scripts/qa-whalebridge-provider-parity.mjs": {
-      "TS18048": {
-        "'req.url' is possibly 'undefined'.": 2
-      },
-      "TS2339": {
-        "Property 'ELECTRON_RUN_AS_NODE' does not exist on type '{ USERPROFILE: string; HOME: string; XDG_CONFIG_HOME: string; CODEX_HOME: string; CLAUDE_CONFIG_DIR: string; MAGPIE_ADDR: string; }'.": 1,
-        "Property 'port' does not exist on type 'string | AddressInfo'.": 1
-      },
-      "TS2345": {
-        "Argument of type 'Buffer<ArrayBuffer>' is not assignable to parameter of type 'string'.": 1
-      },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
-      },
-      "TS2769": {
-        "No overload matches this call.": 1
-      },
-      "TS7005": {
-        "Variable 'electron' implicitly has an 'any' type.": 2,
-        "Variable 'releases' implicitly has an 'any[]' type.": 3
-      },
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1,
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'f' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 2,
-        "Parameter 'path' implicitly has an 'any' type.": 1,
-        "Parameter 'signal' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'electron' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'releases' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "scripts/qa-whalebridge.mjs": {
-      "TS2339": {
-        "Property 'port' does not exist on type 'string | AddressInfo'.": 1
-      },
-      "TS2345": {
-        "Argument of type 'Buffer<ArrayBuffer>' is not assignable to parameter of type 'string'.": 1,
-        "Argument of type 'NonSharedBuffer' is not assignable to parameter of type 'string'.": 2
-      },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
-      },
-      "TS2722": {
-        "Cannot invoke an object which is possibly 'undefined'.": 2
-      },
-      "TS2769": {
-        "No overload matches this call.": 1
-      },
-      "TS2810": {
-        "Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.": 1
-      },
-      "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 1,
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 1,
-        "Parameter 'm' implicitly has an 'any' type.": 1,
-        "Parameter 'n' implicitly has an 'any' type.": 1,
-        "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'path' implicitly has an 'any' type.": 1,
-        "Parameter 's' implicitly has an 'any' type.": 2
-      }
-    },
     "scripts/record-android-release.mjs": {
       "TS7006": {
         "Parameter 'manifest' implicitly has an 'any' type.": 1
@@ -4470,70 +4264,6 @@
       },
       "TS7034": {
         "Variable 'runtimeAbort' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "src/launcher/whalebridge.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 10
-      },
-      "TS2339": {
-        "Property 'ELECTRON_RUN_AS_NODE' does not exist on type '{ LAUNCHER_COMPONENT_ID: string; LAUNCHER_COMPONENT_DATA_DIR: string; WHALEBRIDGE_DSH_HOME: any; MAGPIE_ADDR: string; }'.": 1,
-        "Property 'MAGPIE_WEB_KEY' does not exist on type '{ LAUNCHER_COMPONENT_ID: string; LAUNCHER_COMPONENT_DATA_DIR: string; WHALEBRIDGE_DSH_HOME: any; MAGPIE_ADDR: string; }'.": 1,
-        "Property 'MAGPIE_WEB_RUNKEY' does not exist on type '{ LAUNCHER_COMPONENT_ID: string; LAUNCHER_COMPONENT_DATA_DIR: string; WHALEBRIDGE_DSH_HOME: any; MAGPIE_ADDR: string; }'.": 1,
-        "Property 'arch' does not exist on type '{}'.": 1,
-        "Property 'devPackage' does not exist on type '{}'.": 1,
-        "Property 'dshHome' does not exist on type '{}'.": 1,
-        "Property 'execFile' does not exist on type '{}'.": 1,
-        "Property 'execFileSync' does not exist on type '{}'.": 2,
-        "Property 'exitTimeoutMs' does not exist on type '{}'.": 1,
-        "Property 'fetchJson' does not exist on type '{}'.": 1,
-        "Property 'isPidAlive' does not exist on type '{}'.": 1,
-        "Property 'killPid' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 2,
-        "Property 'platform' does not exist on type '{}'.": 1,
-        "Property 'readyTimeoutMs' does not exist on type '{}'.": 1,
-        "Property 'removeData' does not exist on type '{}'.": 1,
-        "Property 'root' does not exist on type '{}'.": 2,
-        "Property 'spawn' does not exist on type '{}'.": 1
-      },
-      "TS2531": {
-        "Object is possibly 'null'.": 1
-      },
-      "TS2556": {
-        "A spread argument must either have a tuple type or be passed to a rest parameter.": 1
-      },
-      "TS7006": {
-        "Parameter 'a' implicitly has an 'any' type.": 2,
-        "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'current' implicitly has an 'any' type.": 4,
-        "Parameter 'dshHome' implicitly has an 'any' type.": 1,
-        "Parameter 'e' implicitly has an 'any' type.": 1,
-        "Parameter 'file' implicitly has an 'any' type.": 4,
-        "Parameter 'fn' implicitly has an 'any' type.": 2,
-        "Parameter 'from' implicitly has an 'any' type.": 3,
-        "Parameter 'index' implicitly has an 'any' type.": 1,
-        "Parameter 'keep' implicitly has an 'any' type.": 1,
-        "Parameter 'line' implicitly has an 'any' type.": 5,
-        "Parameter 'lines' implicitly has an 'any' type.": 2,
-        "Parameter 'm' implicitly has an 'any' type.": 1,
-        "Parameter 'mode' implicitly has an 'any' type.": 1,
-        "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 1,
-        "Parameter 'percent' implicitly has an 'any' type.": 1,
-        "Parameter 'phase' implicitly has an 'any' type.": 1,
-        "Parameter 'position' implicitly has an 'any' type.": 1,
-        "Parameter 'previous' implicitly has an 'any' type.": 1,
-        "Parameter 'progress' implicitly has an 'any' type.": 9,
-        "Parameter 'route' implicitly has an 'any' type.": 1,
-        "Parameter 'summary' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 3,
-        "Parameter 'to' implicitly has an 'any' type.": 1,
-        "Parameter 'url' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1,
-        "Parameter 'version' implicitly has an 'any' type.": 3
-      },
-      "TS7019": {
-        "Rest parameter 'args' implicitly has an 'any[]' type.": 2
       }
     },
     "src/main/account-backend.js": {
@@ -5943,10 +5673,9 @@
         "Parameter '_event' implicitly has an 'any' type.": 2,
         "Parameter 'arg' implicitly has an 'any' type.": 2,
         "Parameter 'deps' implicitly has an 'any' type.": 1,
-        "Parameter 'event' implicitly has an 'any' type.": 8,
-        "Parameter 'id' implicitly has an 'any' type.": 7,
-        "Parameter 'options' implicitly has an 'any' type.": 1,
-        "Parameter 'payload' implicitly has an 'any' type.": 1
+        "Parameter 'event' implicitly has an 'any' type.": 7,
+        "Parameter 'id' implicitly has an 'any' type.": 6,
+        "Parameter 'options' implicitly has an 'any' type.": 1
       },
       "TS7031": {
         "Binding element 'handle' implicitly has an 'any' type.": 1,
@@ -8275,41 +8004,6 @@
         "Variable 'disposeActiveHandlers' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
-    "src/main/whalebridge-notifications.js": {
-      "TS2339": {
-        "Property 'Notification' does not exist on type '{}'.": 1,
-        "Property 'clearInterval' does not exist on type '{}'.": 1,
-        "Property 'environment' does not exist on type '{}'.": 1,
-        "Property 'onError' does not exist on type '{}'.": 1,
-        "Property 'service' does not exist on type '{}'.": 1,
-        "Property 'setInterval' does not exist on type '{}'.": 1
-      },
-      "TS7005": {
-        "Variable 'pid' implicitly has an 'any' type.": 1
-      },
-      "TS7006": {
-        "Parameter 'alert' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'pid' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "src/main/whalebridge-window.js": {
-      "TS7005": {
-        "Variable 'lastMaximized' implicitly has an 'any' type.": 1,
-        "Variable 'window' implicitly has an 'any' type.": 3
-      },
-      "TS7006": {
-        "Parameter 'event' implicitly has an 'any' type.": 2,
-        "Parameter 'target' implicitly has an 'any' type.": 1,
-        "Parameter 'url' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'lastMaximized' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'window' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      }
-    },
     "src/main/window.js": {
       "TS18047": {
         "'frame' is possibly 'null'.": 2
@@ -8689,7 +8383,6 @@
       "TS2339": {
         "Property '__launcherComponents' does not exist on type 'Window & typeof globalThis'.": 1,
         "Property 'componentsList' does not exist on type 'never'.": 1,
-        "Property 'componentsUninstallInfo' does not exist on type 'never'.": 1,
         "Property 'contains' does not exist on type 'never'.": 1,
         "Property 'dshdErrText' does not exist on type 'Window & typeof globalThis'.": 1,
         "Property 'hidden' does not exist on type 'never'.": 1,
@@ -8702,7 +8395,7 @@
         "Argument of type '{ title: string; body: string; }' is not assignable to parameter of type '{ title?: string | undefined; body: any; tone?: string | undefined; holdMs: any; }'.": 1
       },
       "TS2349": {
-        "This expression is not callable.": 2
+        "This expression is not callable.": 1
       },
       "TS2531": {
         "Object is possibly 'null'.": 1
@@ -8711,14 +8404,14 @@
         "Variable 'buttons' implicitly has an 'any[]' type.": 1
       },
       "TS7006": {
-        "Parameter 'action' implicitly has an 'any' type.": 3,
-        "Parameter 'button' implicitly has an 'any' type.": 6,
+        "Parameter 'action' implicitly has an 'any' type.": 2,
+        "Parameter 'button' implicitly has an 'any' type.": 5,
         "Parameter 'cls' implicitly has an 'any' type.": 1,
         "Parameter 'el' implicitly has an 'any' type.": 2,
         "Parameter 'error' implicitly has an 'any' type.": 1,
         "Parameter 'fallback' implicitly has an 'any' type.": 1,
         "Parameter 'host' implicitly has an 'any' type.": 3,
-        "Parameter 'id' implicitly has an 'any' type.": 2,
+        "Parameter 'id' implicitly has an 'any' type.": 1,
         "Parameter 'label' implicitly has an 'any' type.": 1,
         "Parameter 'message' implicitly has an 'any' type.": 1,
         "Parameter 'payload' implicitly has an 'any' type.": 3,

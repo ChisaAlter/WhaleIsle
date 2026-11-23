@@ -28,7 +28,7 @@ test('same or older versions never replace a published release', () => {
   assert.equal(releaseDecision({ ...state(), latest: null }).tag, 'v1.2.3')
 })
 test('a non-desktop latest tag never breaks the version comparison', () => {
-  for (const tagName of ['whalebridge-v1.1.0', 'android-v2', 'nightly']) {
+  for (const tagName of ['magpie-v0.1.4708', 'whalebridge-v1.1.0', 'android-v2', 'nightly']) {
     assert.deepEqual(releaseDecision({ ...state(), latest: { tag_name: tagName } }), { tag: 'v1.2.3', macos: true })
     assert.equal(releaseDecision({ ...state(), latest: { tag_name: tagName }, artifacts: [artifact] }).macos, false)
   }

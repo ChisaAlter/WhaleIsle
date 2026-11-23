@@ -155,8 +155,6 @@ test('启动顺序：ready 阶段步骤次序固定', () => {
     'const homeEnv = sanitizePackagedDshHomeEnv',
     'setRenderHintsSource(detectGpuTier(app)',
     'setDesktopDshHome(desktopDshHomeFromUserData',
-    "require('./whalebridge-notifications').startWhaleBridgeNotifications()",
-    "app.once('will-quit', stopWhaleBridgeNotifications)",
     'configureDesktopPet({',
     'configureProfileOps({',
     'configureLive2dPet({',

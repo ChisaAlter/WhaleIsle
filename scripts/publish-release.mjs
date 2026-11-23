@@ -10,7 +10,7 @@ import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { assertReleaseVersion } from './check-release-version.mjs'
 import { validateReleaseAssets } from './check-release-assets.mjs'
 
-// Whalebridge and Android publish under their own tag schemes; only vX.Y.Z
+// Magpie and Android publish under their own tag schemes; only vX.Y.Z
 // tags are desktop releases for the version comparison below.
 const DESKTOP_TAG = /^v\d+\.\d+\.\d+$/
 

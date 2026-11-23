@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-shell-theme="official">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Magpie</title>
+  <link rel="stylesheet" href="../shared/dsh-webui-tokens.css" />
+  <link rel="stylesheet" href="window-controls.css" />
+  <link rel="stylesheet" href="magpie-shell.css" />
+</head>
+<body>
+  <header class="magpie-topbar">
+    <div class="magpie-brand">
+      <span class="magpie-title">Magpie</span>
+      <span class="magpie-badge" id="magpie-ownership"></span>
+      <span class="magpie-version" id="magpie-version"></span>
+    </div>
+    <div class="magpie-actions">
+      <button type="button" class="magpie-btn" id="magpie-update-btn" hidden>有新版本</button>
+      <button type="button" class="magpie-btn" id="magpie-reload-btn" title="重新加载页面">刷新</button>
+    </div>
+    <div class="window-controls"></div>
+  </header>
+  <script src="../shared/dom.js"></script>
+  <script src="window-controls.js"></script>
+  <script src="magpie-shell.js"></script>
+</body>
+</html>

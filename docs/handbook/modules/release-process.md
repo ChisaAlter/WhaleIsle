@@ -71,15 +71,13 @@ Android 使用 `android-v<版本>` 独立标签，已发布的首版为 0.3.10 /
 
 实际可用性以 CNB main/tag、正式 Release 与匿名附件下载结果为准；仅合并工作流或设置 secret 不代表同步成功。
 
-## 鲸桥组件
+## Magpie 组件
 
-组件源码和 CI 已迁至 [WhaleBridge](https://github.com/ChisaAlter/WhaleBridge) 独立仓库。其 `upstream.json` 管理组件版本，`scripts/build.mjs` 生成 Windows 二进制及包含大小、SHA256、MIT 版权的清单。鲸屿不再编译或发布 Go 组件，只维护下载、启动、原生管理窗口与实际联动 QA。
+鲸屿不再自行维护 Go 分叉仓库或构建组件二进制，而是直接分发官方上游 [yetone/magpie](https://github.com/yetone/magpie) 的 `magpie-cli` 预编译产物（覆盖 Windows amd64/arm64、macOS arm64/amd64、Linux amd64/arm64）。
 
-独立仓库的 Windows CI 保留网关与设置回归，并验证构建后二进制的实际启动协议及组件页面交互。成功的 main 构建在组件版本尚未发布时发布 `whalebridge-v<版本>`，附件契约保持 `WhaleBridge-win32-x64.exe` 和 `WhaleBridge-component.json`。工作分支与 PR 只产生检查和开发产物。
-
-桌面安装包不携带组件二进制，安装桌面更新也不等于已更新组件。用户从启动器明确安装或更新鲸桥，社区插件同样需要用户选择与信任确认。组件能力与版本以实际下载的组件清单和二进制为准，不能从桌面版本推断已经更新。
-
-鲸屿的 CNB 工作流只监听桌面 Release；现有镜像中的历史组件和手动校验能力保留。独立仓库已公开，稳定 1.1.0 原始资产已迁入并通过宿主实际匿名下载安装验证。独立鲸桥的 `CNB_TOKEN` 已加密迁入，新工作流只同步新组件 tag 和发布原始字节；首次新版本的实际 CNB 镜像仍待发布后校验。1.2.0 的代码及工作流尚在开发分支，未发布新版；旧仓库手动关闭的发布和镜像工作流没有重新启用。
+- **GitHub 线路**：启动器通过上游 `/releases/latest` 重定向确定版本并下载 `SHA256SUMS` 与对应平台二进制，不依赖易受限的 REST API 配额；校验字节大小和 SHA256 后投入使用。
+- **CNB 国内镜像**：[Magpie CNB mirror](../../../.github/workflows/magpie-cnb-mirror.yml) 定时或手动运行 `scripts/sync-magpie-cnb.mjs`，从上游拉取 `SHA256SUMS` 与全部 6 平台二进制、逐个核验 SHA256，并以 `magpie-v<版本>` 标签上传至 CNB Release（保持 `make_latest: 'false'`，不覆盖桌面 latest）。
+- **版本约束**：桌面安装包仍不含组件二进制；旧版 `whalebridge-v*` 与桌面 `v*` 继续在 `scripts/publish-release.mjs` 与 `scripts/sync-cnb.mjs` 的 tag 过滤中被忽略或隔离保留历史兼容性。
 
 ## 失败处理
 
