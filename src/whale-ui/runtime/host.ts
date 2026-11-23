@@ -1,5 +1,16 @@
-import { validateWhaleDocument } from './validate.ts';
+import type { validateWhaleDocument as ValidateWhaleDocument } from './validate.ts';
 import type { SourceLanguage } from '../viewer/protocol.ts';
+
+declare function require(id: string): unknown;
+
+let cachedValidator: typeof ValidateWhaleDocument | undefined;
+function loadValidator(): typeof ValidateWhaleDocument {
+  if (cachedValidator === undefined) {
+    const mod = require('./host-validator.cjs') as { validateWhaleDocument: typeof ValidateWhaleDocument };
+    cachedValidator = mod.validateWhaleDocument;
+  }
+  return cachedValidator;
+}
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 const languages = new Set<SourceLanguage>(['whale-ui', 'openui', 'openui-lang', 'dsh-ui']);
@@ -23,7 +34,7 @@ export const renderUiTool = {
     const program = typeof args.program === 'string' ? args.program : JSON.stringify(args.spec);
     const language = args.language === undefined ? (record(args.spec) ? 'dsh-ui' : 'whale-ui') : args.language;
     if (typeof language !== 'string' || !languages.has(language as SourceLanguage)) throw new Error('The interface language is unsupported.');
-    const result = validateWhaleDocument(program, language as SourceLanguage);
+    const result = loadValidator()(program, language as SourceLanguage);
     if (!result.complete) throw new Error(`The interface is incomplete or invalid:\n${result.errors.join('\n')}`);
     return { version: 1, language, program };
   },

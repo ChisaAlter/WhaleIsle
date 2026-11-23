@@ -870,7 +870,7 @@ class DshdRemote extends EventEmitter {
       JSON.stringify({ serverExport: SERVER_EXPORT, daemonConfig }),
       { encoding: 'utf8', mode: 0o600 },
     );
-    const git = this.git;
+    const git = typeof this.git === 'function' ? this.git() : this.git;
     if (git && !this.gitTunnel) {
       const startingTunnel = this.gitTunnelStarting || startGitTunnelServer({ git });
       this.gitTunnelStarting = startingTunnel;

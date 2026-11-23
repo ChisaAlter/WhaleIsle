@@ -7,8 +7,6 @@ preserveUserDataPath(app, LEGACY_DESKTOP_USER_DATA);
 const { loadConfig, saveConfig, REMOTE_FEATURE_ENABLED, parkRemoteSnapshot, normalizeRemotePatch } = require('./config');
 const { DshManager } = require('./dsh');
 const { DshdRemote, resolveDesktopChisaCodeHome } = require('./dshd-remote');
-const git = require('./git');
-const { invokeTrayAction } = require('./tray');
 const {
   onHarnessOriginChange,
   getHarnessOrigin,
@@ -27,7 +25,6 @@ const { createAppHarness } = require('./app-harness');
 const { createAppLifecycle } = require('./app-lifecycle');
 const { createUpdateFlow } = require('./app-updates');
 const { registerAppEvents } = require('./app-events');
-const { runAppReady } = require('./app-ready');
 
 /**
  * Packaged-gated QA flag (see qa-gate.js).
@@ -80,7 +77,7 @@ const remote = new DshdRemote(/** @type {any} */ ({
   log: (/** @type {string} */ line) => dsh.log(line, 'app'),
   getHarnessOrigin,
   getSessionCookie: () => dsh.sessionCookie || '',
-  git,
+  git: () => require('./git'),
 }));
 
 onHarnessOriginChange((/** @type {any} */ origin) => {
@@ -186,6 +183,7 @@ if (!gotLock) {
   app.setAppUserModelId('ai.deepseek.harness.gui');
 
   app.whenReady().then(async () => {
+    const { runAppReady } = require('./app-ready');
     await runAppReady({
       state,
       dsh,
@@ -219,6 +217,7 @@ if (!gotLock) {
       // QA / smoke orchestration lives in ./smoke and is only required inside
       // this gate: a production start never loads the QA drivers.
       const { createSmokeRunner } = require('./smoke');
+      const { invokeTrayAction } = require('./tray');
       const smoke = createSmokeRunner({
         qaEnv,
         qaRemoteMode,

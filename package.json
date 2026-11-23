@@ -116,6 +116,7 @@
       "src/main/parent-lifeline.mjs",
       "src/shared/process-tree.js",
       "src/renderer/whale-ui/host.cjs",
+      "src/renderer/whale-ui/host-validator.cjs",
       "src/main/dshd-daemon-runner.mjs",
       "src/main/dshd-daemon-hooks.mjs",
       "src/shared/dshd-host-tunnel.js",

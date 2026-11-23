@@ -1,7 +1,6 @@
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
-const { createRequire } = require('module');
 const { spawn, execFile, execFileSync } = require('child_process');
 const EventEmitter = require('events');
 const { loadConfig, configPath } = require('./config');
@@ -16,15 +15,23 @@ const { taskControlToken } = require('./task-protection');
 const { platformToken } = require('./platform-session');
 const { desktopCliArgs } = require('./pnpm-runtime');
 const { readPin } = require('../shared/harness-upstream');
-const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
+const { spawnTreeOptions, killProcessTree, windowsProcessStartTime, sameProcessStartTime } = require('../shared/process-tree');
 const { passSecretToChild, INTERNAL_SECRETS_END, INTERNAL_SECRETS_ENV } = require('../shared/secret');
 const { probeHarnessReady, isUnpublishedHarnessNpm } = require('./harness-browser-auth');
-const { applyPreparedPluginOverlays } = require('./desktop-plugin-runtime');
+const { applyPreparedPluginOverlays, createPackageDirFinder } = require('./desktop-plugin-runtime');
 
 const PORT_SCAN_RANGE = 50;
 
 const READY_TIMEOUT_MS = 180_000;
 const LOG_LIMIT = 400;
+const YIELD_BUDGET_MS = 8;
+
+/** @param {number} since */
+function yieldIfSlow(since) {
+  return Date.now() - since >= YIELD_BUDGET_MS
+    ? new Promise((resolve) => setTimeout(resolve, 0))
+    : Promise.resolve();
+}
 
 function whichAll(command) {
   try {
@@ -150,21 +157,6 @@ function sourceHarnessStatus() {
   };
 }
 
-function forkPackageDirFromAnchor(anchor, packageName) {
-  try {
-    const searchPaths = createRequire(anchor).resolve.paths(packageName) || [];
-    for (const searchPath of searchPaths) {
-      const candidate = path.join(searchPath, packageName);
-      if (fs.existsSync(path.join(candidate, 'package.json'))) {
-        return candidate;
-      }
-    }
-  } catch {
-    // Invalid anchors resolve nothing; the caller treats that as missing.
-  }
-  return '';
-}
-
 /**
  * Registered desktop fork packages the shipped web composition mounts but the
  * harness install cannot load. The dsh Loader imports every composed row
@@ -187,21 +179,18 @@ function missingDesktopForkPackages(root) {
   if (!fs.existsSync(cliAnchor)) {
     return [];
   }
+  const findPackageDir = createPackageDirFinder();
   const anchors = [cliAnchor];
   for (const bundle of ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']) {
-    const dir = forkPackageDirFromAnchor(cliAnchor, bundle);
-    if (dir) {
-      anchors.push(path.join(dir, 'package.json'));
-    }
+    const dir = findPackageDir(cliAnchor, bundle);
+    if (dir) anchors.push(path.join(dir, 'package.json'));
   }
   const missing = [];
   for (const pkg of DESKTOP_PACKAGES) {
     let dir = '';
     for (const anchor of anchors) {
-      dir = forkPackageDirFromAnchor(anchor, pkg.name);
-      if (dir) {
-        break;
-      }
+      dir = findPackageDir(anchor, pkg.name);
+      if (dir) break;
     }
     if (!dir) {
       missing.push(pkg.name);
@@ -385,18 +374,14 @@ async function processStartTime(pid, run = execFile) {
       // parentheses may itself contain spaces/parens, so anchor on the last ')'.
       const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
       const close = stat.lastIndexOf(')');
-      if (close === -1) {
-        return '';
-      }
+      if (close === -1) return '';
       return stat.slice(close + 2).trim().split(/\s+/)[19] || '';
     }
     if (process.platform === 'win32') {
-      return (await execTimed(
-        'powershell.exe',
-        ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).StartTime.ToString('o')`],
-        3000,
-        run,
-      )).trim();
+      if (run === execFile) {
+        try { return windowsProcessStartTime(pid); } catch { /* Fall back to PowerShell. */ }
+      }
+      return (await execTimed('powershell.exe', ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).StartTime.ToUniversalTime().ToString('o')`], 3000, run)).trim();
     }
     return (await execTimed('ps', ['-p', String(pid), '-o', 'lstart='], 2000, run)).trim();
   } catch {
@@ -656,7 +641,7 @@ async function ensureOwnedPort(host, wantedPort, log = () => {}, deps = {}) {
   let confirmed = false;
   if (previousPid && previous && previous.startTime && alive(previousPid)) {
     const current = await startTimeOf(previousPid);
-    confirmed = Boolean(current) && current === previous.startTime;
+    confirmed = sameProcessStartTime(current, previous.startTime);
   }
   if (previousPid && confirmed && await safeToKill(previousPid)) {
     log(`停止上次残留的 dsh（pid ${previousPid}，端口 ${previous.port || wanted}）`);
@@ -978,6 +963,7 @@ class DshManager extends EventEmitter {
           url.hostname = connectHost(url.hostname);
           this.baseUrl = url.toString().replace(/\/$/, '');
           this.webReady = true;
+          this._readyWaker?.();
         }
       }
     };
@@ -1042,11 +1028,14 @@ class DshManager extends EventEmitter {
     // An installed channel must work when the desktop is started directly,
     // without requiring the launcher or component settings window to be open.
     // A component failure is reported without preventing other channels.
-    try {
-      await require('../launcher/whalebridge').ensureWhaleBridgeRuntime();
-    } catch (error) {
-      this.log(`鲸桥不可用：${error.message}`, 'app');
-    }
+    // Start WhaleBridge concurrently with packaged harness preparation.
+    const whaleBridgeReady = (async () => {
+      try {
+        await require('../launcher/whalebridge').ensureWhaleBridgeRuntime();
+      } catch (error) {
+        if (isCurrent()) this.log(`鲸桥不可用：${error.message}`, 'app');
+      }
+    })();
 
     const preparationAbort = new AbortController();
     this.preparationAbort = preparationAbort;
@@ -1067,11 +1056,15 @@ class DshManager extends EventEmitter {
     } finally {
       if (this.preparationAbort === preparationAbort) this.preparationAbort = null;
     }
+    await whaleBridgeReady;
+    if (!isCurrent()) throw cancelledError();
 
     options = await applyPreparedPluginOverlays(options, { harnessRoot: preparedHarnessRoot, isCurrent, cancelledError });
-
+    const launchPrepStart = Date.now();
     const port = Number(options.port) || Number(config.port) || 3080;
     const launch = this._buildLaunch({ ...config, ...options, port });
+    await yieldIfSlow(launchPrepStart);
+    if (!isCurrent()) throw cancelledError();
     const expectedUrl = `http://${connectHost(launch.host)}:${launch.port}`;
     this.host = launch.host;
     this.port = launch.port;
@@ -1130,21 +1123,21 @@ class DshManager extends EventEmitter {
       let childEnded = false;
       child.on('error', (error) => { childEnded = true; this._onChildError(gen, child, error, readiness); });
       child.on('exit', (code, signal) => { childEnded = true; this._onChildExit(gen, child, code, signal, readiness); });
-      if (child.pid) {
-        const startTime = await this._processStartTime(child.pid);
-        // Never record a child that failed, exited or was replaced meanwhile.
-        if (!childEnded && this.child === child) this._writePidFile(child.pid, launch.port, startTime);
-      }
-
+      const spawned = child;
+      let pidRecordError = null;
+      const pidRecorded = spawned.pid
+        ? Promise.resolve().then(() => this._processStartTime(spawned.pid)).then((startTime) => {
+          if (!childEnded && isCurrent() && this.child === spawned) this._writePidFile(spawned.pid, launch.port, startTime);
+        }).catch((error) => { pidRecordError = error; })
+        : Promise.resolve();
       this.waitUntilReady(expectedUrl, child, gen).then(
         (url) => readiness.resolve(url),
         (error) => readiness.reject(error),
       );
-
       const url = await readiness.promise;
-      if (!isCurrent()) {
-        throw cancelledError();
-      }
+      await pidRecorded;
+      if (pidRecordError) throw pidRecordError;
+      if (!isCurrent()) throw cancelledError();
       this.setState('ready', { baseUrl: url, attached: false, failure: null });
       this.log(`Web UI 就绪 ${url}`);
       return url;
@@ -1187,6 +1180,7 @@ class DshManager extends EventEmitter {
     const phase = this.state === 'ready' ? 'runtime' : 'startup';
     const failure = failureRecord(phase, message, null, null);
     this.setState('error', { error: message, failure });
+    this._readyWaker?.();
     readiness.reject(error instanceof Error ? error : new Error(message));
   }
 
@@ -1210,6 +1204,7 @@ class DshManager extends EventEmitter {
     this.log(message, 'error');
     this.setState('error', { error: message, failure });
     if (phase === 'startup') {
+      this._readyWaker?.();
       readiness.reject(new Error(message));
     }
   }
@@ -1221,32 +1216,37 @@ class DshManager extends EventEmitter {
   async waitUntilReady(baseUrl, child, gen) {
     const started = Date.now();
     while (true) {
-      if (gen !== this.generation || this.child !== child) {
-        throw cancelledError();
-      }
-      if (child.exitCode !== null) {
-        throw new Error(this.error || `dsh 已退出（code ${child.exitCode}）`);
-      }
+      if (gen !== this.generation || this.child !== child) throw cancelledError();
+      if (child.exitCode !== null) throw new Error(this.error || `dsh 已退出（code ${child.exitCode}）`);
       const target = this.baseUrl || baseUrl;
       const stillCurrent = () => gen === this.generation && this.child === child;
       if (this.webReady && await this._isReachable(target, stillCurrent)) {
         // 注入的探活实现可能忽略 guard：发布 URL 前必须再次校验代际与 child。
-        if (!stillCurrent()) {
-          throw cancelledError();
-        }
+        if (!stillCurrent()) throw cancelledError();
         this.baseUrl = target;
         return target;
       }
       if (Date.now() - started >= READY_TIMEOUT_MS) {
         throw new Error('启动超时。若本机已安装 dsh，检查端口占用；否则确认 npx 能运行 @deepseek-ai/dsh。');
       }
-      await this._sleep(400);
+      await this._sleepUntilReady(400);
     }
+  }
+
+  /** @param {number} ms */
+  _sleepUntilReady(ms) {
+    if (this.webReady) return this._sleep(ms);
+    return new Promise((resolve) => {
+      const done = () => { if (this._readyWaker === done) this._readyWaker = null; resolve(undefined); };
+      this._readyWaker = done;
+      Promise.resolve(this._sleep(ms)).then(done, done);
+    });
   }
 
   async stop() {
     // Every stop request also cancels a start queued behind an earlier stop.
     this.generation += 1;
+    this._readyWaker?.();
     this.preparationAbort?.abort();
     this.inFlight = null;
     if (this._stopPromise) {

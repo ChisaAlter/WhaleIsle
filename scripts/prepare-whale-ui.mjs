@@ -202,7 +202,8 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
   if (promptOnly) return;
   fs.mkdirSync(path.join(output, 'assets'), { recursive: true });
   fs.mkdirSync(path.join(mobileOutput, 'assets'), { recursive: true });
-  await esbuild.build({ ...shared, entryPoints: [path.join(source, 'runtime/host.ts')], outfile: path.join(output, 'host.cjs'), format: 'cjs', platform: 'node', minify: true, define: { 'process.env.NODE_ENV': '"production"' }, loader: { ...shared.loader, '.css': 'empty' } });
+  await esbuild.build({ ...shared, entryPoints: [path.join(source, 'runtime/host.ts')], outfile: path.join(output, 'host.cjs'), format: 'cjs', platform: 'node', external: ['./host-validator.cjs'], minify: true, define: { 'process.env.NODE_ENV': '"production"' }, loader: { ...shared.loader, '.css': 'empty' } });
+  await esbuild.build({ ...shared, entryPoints: [path.join(source, 'runtime/host-validator.ts')], outfile: path.join(output, 'host-validator.cjs'), format: 'cjs', platform: 'node', minify: true, define: { 'process.env.NODE_ENV': '"production"' }, loader: { ...shared.loader, '.css': 'empty' } });
   const worker = fs.readFileSync(dependency.resolve('maplibre-gl/dist/maplibre-gl-worker.mjs'), 'utf8');
   const viewer = await esbuild.build({ ...shared, entryPoints: [path.join(source, 'viewer/index.tsx')], outfile: path.join(output, 'viewer.js'), write: false, format: 'iife', platform: 'browser', target: 'chrome136', minify: true, define: { 'process.env.NODE_ENV': '"production"', __WHALE_MAP_WORKER_SOURCE__: JSON.stringify(worker), 'import.meta.url': '"about:srcdoc"' } });
   const script = viewer.outputFiles.find(file => file.path.endsWith('.js'))?.text;
@@ -226,7 +227,7 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
     await esbuild.build({ ...shared, entryPoints: [path.join(source, 'resources/route.mjs')], outfile: path.join(output, 'api', `${operation}.cjs`), format: 'cjs', platform: 'node', external: ['electron'], define: { __WHALE_RESOURCE_OPERATION__: JSON.stringify(operation) } });
   }
   writeChanged(path.join(output, 'THIRD_PARTY_NOTICES.txt'), licenseText(dependency));
-  const products = ['viewer.html', 'host.cjs', ...Object.keys(assets).map(file => `assets/${file}`), ...['wiki', 'image-search', 'street-route'].map(name => `api/${name}.cjs`), 'THIRD_PARTY_NOTICES.txt'];
+  const products = ['viewer.html', 'host.cjs', 'host-validator.cjs', ...Object.keys(assets).map(file => `assets/${file}`), ...['wiki', 'image-search', 'street-route'].map(name => `api/${name}.cjs`), 'THIRD_PARTY_NOTICES.txt'];
   writeChanged(stamp, JSON.stringify({ format: 'whale-ui-build', version: 1, digest, products }, null, 2) + '\n');
   console.log('[whale-ui] prepared owned viewer, component guide, rendering engines and resource handlers');
 }

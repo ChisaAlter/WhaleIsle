@@ -1663,3 +1663,61 @@ test('a spawn error while the start time is still being read is not lost and no 
   assert.equal(h.manager.failure.phase, 'startup');
   assert.deepEqual(h.calls.writePid, [], 'a child that failed before its start time was read must not be recorded');
 });
+
+test('ensureOwnedPort matches a local-offset legacy startTime against a UTC startTime for the same instant', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const first = await occupiedPortFixture(t);
+  const killed = [];
+  const port = await ensureOwnedPort('127.0.0.1', first.wanted, () => {}, {
+    readPidFile: () => ({ pid: 5555, port: first.wanted, startTime: '2026-11-22T23:42:51.8663146+08:00' }),
+    clearPidFile: () => {},
+    processAlive: () => true,
+    processStartTime: async () => '2026-11-22T15:42:51.8663146Z',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => {
+      killed.push(pid);
+      for (const socket of first.sockets) socket.destroy();
+      await new Promise((resolve) => first.server.close(resolve));
+    },
+    sleep: async () => {},
+  });
+  assert.equal(port, first.wanted);
+  assert.deepEqual(killed, [5555]);
+
+  const second = await occupiedPortFixture(t);
+  const killedMismatch = [];
+  const nextPort = await ensureOwnedPort('127.0.0.1', second.wanted, () => {}, {
+    readPidFile: () => ({ pid: 5555, port: second.wanted, startTime: '2026-11-22T23:42:51.8663147+08:00' }),
+    clearPidFile: () => {},
+    processAlive: () => true,
+    processStartTime: async () => '2026-11-22T15:42:51.8663146Z',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => { killedMismatch.push(pid); },
+    sleep: async () => {},
+  });
+  assert.notEqual(nextPort, second.wanted);
+  assert.deepEqual(killedMismatch, [], '100ns difference must still reject recycled PID');
+});
+
+test('a rejecting processStartTime does not produce an unhandledRejection when spawn fails', async (t) => {
+  const unhandled = [];
+  const onUnhandled = (error) => unhandled.push(error);
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => process.off('unhandledRejection', onUnhandled));
+
+  const h = makeHarness({
+    deps: {
+      processStartTime: () => Promise.reject(new Error('start-time-unavailable')),
+    },
+  });
+  t.after(h.cleanup);
+  const spawnError = Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+  const outcome = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1);
+  h.lastChild().emit('error', spawnError);
+  const result = await outcome;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, spawnError);
+  assert.deepEqual(unhandled, []);
+});

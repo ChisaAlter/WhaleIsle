@@ -1482,3 +1482,60 @@ test('an IM loader failure automatically recovers without its overlay and restor
   assert.deepEqual(calls, [true, false, true]);
   assert.ok(f.dsh.startOptions[2].patchFiles.includes(overlayFile));
 });
+
+test('prepareWhalePlugin skips duplicate staging when peersHarnessRoot already matches harnessRoot', async () => {
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-whale-peer-'));
+  try {
+    const canonical = fs.realpathSync.native(dir);
+    const whaleCalls = [];
+    const f = fixture({
+      ensureDshWhalePlugin: async (opts) => {
+        whaleCalls.push(opts);
+        return { ok: true, overlayFile: path.join(dir, 'whale.yml'), peersHarnessRoot: canonical };
+      },
+    });
+    await f.controller.start();
+    assert.equal(whaleCalls.length, 1);
+    const reused = await f.dsh.startOptions[0].prepareWhalePlugin({ harnessRoot: dir });
+    assert.equal(whaleCalls.length, 1, 'matching harnessRoot must not restage dsh-whale');
+    assert.equal(reused.peersHarnessRoot, canonical);
+
+    const otherDir = path.join(dir, 'other-harness');
+    await f.dsh.startOptions[0].prepareWhalePlugin({ harnessRoot: otherDir });
+    assert.equal(whaleCalls.length, 2, 'different harnessRoot must restage with explicit harnessRoot');
+    assert.equal(whaleCalls[1].harnessRoot, otherDir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('showHarness starts concurrently with ensureWorkspace and start still awaits workspace registration', async () => {
+  let releaseWorkspace;
+  const workspaceGate = new Promise((resolve) => { releaseWorkspace = resolve; });
+  const events = [];
+  const f = fixture({
+    ensureWorkspace: async () => {
+      events.push('workspace:start');
+      await workspaceGate;
+      events.push('workspace:done');
+    },
+    showHarness: async (url) => {
+      events.push(`harness:${url}`);
+      f.window.url = url;
+    },
+  });
+  let settled = false;
+  const starting = f.controller.start().then(() => { settled = true; });
+  await settle();
+  await settle();
+  assert.deepEqual(events, ['workspace:start', 'harness:http://127.0.0.1:3080']);
+  assert.equal(settled, false, 'start must still await workspace registration before settling');
+  releaseWorkspace();
+  await starting;
+  assert.equal(settled, true);
+  assert.deepEqual(events, ['workspace:start', 'harness:http://127.0.0.1:3080', 'workspace:done']);
+  await f.controller.shutdown();
+});

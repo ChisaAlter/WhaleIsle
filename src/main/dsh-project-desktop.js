@@ -5,16 +5,17 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const {
   resolveHarnessPeerDirectories,
-  stageDesktopPluginRuntime,
+  stageDesktopPluginRuntimeAsync,
 } = require('./desktop-plugin-runtime');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir } = require('./plugins');
-const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { atomicWriteFileIfChanged } = require('../shared/fs-safe');
 
 const DSH_PROJECT_PACKAGE = 'dsh-project';
 const DSH_PROJECT_ALIASES = [DSH_PROJECT_PACKAGE];
 const DSH_PROJECT_OVERLAY_FILENAME = 'desktop-project.patch.yml';
-const DSH_PROJECT_ENTRIES = ['package.json', 'lib', 'client', 'locale', 'icon.svg', 'cordis.patch.yml', 'README.md'];
+const DSH_PROJECT_ENTRIES = ['package.json', 'lib', 'icon.svg', 'cordis.patch.yml', 'README.md'];
+const DSH_PROJECT_LINKED_ENTRIES = ['client', 'locale'];
 
 /** Resolve peers from the same CLI/bundle instances that compose Harness. */
 function projectPeerDirectories(harnessRoot, manifest) {
@@ -50,17 +51,18 @@ async function ensureDesktopDshProject(options = {}) {
   catch { return { ok: false, sourceDir, error: 'missing-source:package.json' }; }
   const missing = [...missingDeclaredEntries(sourceDir, manifest), ...missingRuntimeFiles(sourceDir)];
   if (missing.length) return { ok: false, sourceDir, error: `missing-source:${missing.join(',')}` };
-  const { runtimeDir } = stageDesktopPluginRuntime({
+  const { runtimeDir } = await stageDesktopPluginRuntimeAsync({
     packageName: DSH_PROJECT_PACKAGE,
     sourceDir,
     profileDir,
     harnessRoot: options.harnessRoot,
     manifest,
     entries: DSH_PROJECT_ENTRIES,
+    linkedEntries: DSH_PROJECT_LINKED_ENTRIES,
     label: 'Project',
   });
   const added = !fs.existsSync(overlayFile);
-  fs.mkdirSync(path.dirname(overlayFile), { recursive: true });
+  await fs.promises.mkdir(path.dirname(overlayFile), { recursive: true });
   const contents = [
     '# Desktop-owned optional Project overlay.',
     '# The user cordis.patch.yml is never changed by this overlay.',
@@ -69,7 +71,7 @@ async function ensureDesktopDshProject(options = {}) {
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
     '',
   ].join('\n');
-  atomicWriteFileSync(overlayFile, contents, { encoding: 'utf8' });
+  await atomicWriteFileIfChanged(overlayFile, contents, { encoding: 'utf8' });
   return { ok: true, sourceDir, runtimeDir, overlayFile, added };
 }
 

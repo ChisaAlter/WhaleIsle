@@ -1,12 +1,18 @@
 // Persistent SSH/SFTP connection pool (one identity → one live client).
-import ssh2 from 'ssh2'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { toSftpPath, truncate } from './paths.js'
 import { createHostKeyGuard } from './hostkey.js'
 
-const { Client } = ssh2
+let sshClientCtor = null
+async function loadSshClient() {
+  if (!sshClientCtor) {
+    const mod = await import('ssh2')
+    sshClientCtor = (mod.default || mod).Client
+  }
+  return sshClientCtor
+}
 
 export class SshPool {
   constructor(config, opts = {}) {
@@ -79,6 +85,8 @@ export class SshPool {
     const isCurrent = () => this.epoch === epoch
     const knownHostsFile = typeof this._knownHostsFile === 'function' ? this._knownHostsFile() : this._knownHostsFile
     const guard = createHostKeyGuard(this.config, knownHostsFile)
+    const Client = await loadSshClient()
+    if (!isCurrent()) throw new Error('ssh target changed during connect')
     const client = new Client()
     let settled = false
     const fail = (err) => {

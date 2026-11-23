@@ -5272,7 +5272,6 @@
         "Variable 'child' implicitly has an 'any' type.": 2
       },
       "TS7006": {
-        "Parameter 'anchor' implicitly has an 'any' type.": 1,
         "Parameter 'args' implicitly has an 'any' type.": 3,
         "Parameter 'baseUrl' implicitly has an 'any' type.": 2,
         "Parameter 'bin' implicitly has an 'any' type.": 1,
@@ -5294,7 +5293,6 @@
         "Parameter 'ms' implicitly has an 'any' type.": 2,
         "Parameter 'nodeBin' implicitly has an 'any' type.": 2,
         "Parameter 'options' implicitly has an 'any' type.": 3,
-        "Parameter 'packageName' implicitly has an 'any' type.": 1,
         "Parameter 'phase' implicitly has an 'any' type.": 1,
         "Parameter 'pid' implicitly has an 'any' type.": 11,
         "Parameter 'port' implicitly has an 'any' type.": 11,
@@ -7622,9 +7620,6 @@
       }
     },
     "src/main/task-control-peer.js": {
-      "TS18046": {
-        "'error' is of type 'unknown'.": 1
-      },
       "TS2339": {
         "Property 'code' does not exist on type '{}'.": 1,
         "Property 'message' does not exist on type '{}'.": 2
@@ -7642,11 +7637,10 @@
         "Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.": 1
       },
       "TS7005": {
-        "Variable 'server' implicitly has an 'any' type.": 7
+        "Variable 'server' implicitly has an 'any' type.": 5
       },
       "TS7006": {
         "Parameter 'body' implicitly has an 'any' type.": 1,
-        "Parameter 'error' implicitly has an 'any' type.": 1,
         "Parameter 'generation' implicitly has an 'any' type.": 1,
         "Parameter 'peer' implicitly has an 'any' type.": 1,
         "Parameter 'req' implicitly has an 'any' type.": 2,

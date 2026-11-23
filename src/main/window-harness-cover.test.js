@@ -247,6 +247,204 @@ test('failed renderer animation releases the hold before covering boot', async (
   assert.ok(fixture.events.includes('remove-css'));
 });
 
+test('reveal prefers JPEG snapshot encoding when NativeImage.toJPEG is available', async () => {
+  const fixture = revealFixture();
+  let jpegQuality = null;
+  let usedPng = false;
+  fixture.win.webContents.capturePage = () => Promise.resolve({
+    toJPEG(quality) {
+      jpegQuality = quality;
+      return Buffer.from('fake-jpeg');
+    },
+    toDataURL() {
+      usedPng = true;
+      return 'data:image/png;base64,unused';
+    },
+  });
+  await fixture.reveal(fixture.win);
+  assert.equal(jpegQuality, 92);
+  assert.equal(usedPng, false);
+  assert.ok(fixture.events.includes('prepare-curtain'));
+  assert.ok(fixture.events.includes('covered'));
+});
+
+test('prepareLauncher defers launcher.html load and queues sendToLauncher until showLauncher loads it', async () => {
+  const source = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8').replace(/\r\n/g, '\n');
+  const slice = source.slice(
+    source.indexOf('function getLauncherWindow'),
+    source.indexOf('function closeLauncherWindow'),
+  );
+  const sent = [];
+  let loaded = false;
+  let loadCalls = 0;
+  let shown = 0;
+  class FakeLauncherWindow {
+    constructor() {
+      this.webContents = {
+        getURL: () => (loaded ? 'file:///app/launcher.html' : ''),
+        send: (channel, payload) => sent.push({ channel, payload }),
+      };
+    }
+    isDestroyed() { return false; }
+    isMinimized() { return false; }
+    once() {}
+    on() {}
+    loadFile() {
+      loadCalls += 1;
+      return Promise.resolve().then(() => { loaded = true; });
+    }
+    show() { shown += 1; }
+    focus() {}
+    showInactive() { shown += 1; }
+  }
+  const api = vm.runInNewContext(
+    `let launcherWindow = null;\n${slice}\n({ prepareLauncher, showLauncher, sendToLauncher, getLauncherWindow })`,
+    {
+      BrowserWindow: FakeLauncherWindow,
+      shellWindowChrome: o => o,
+      iconImage: () => null,
+      preloadFile: () => 'preload.js',
+      rendererFile: name => name,
+      attachWindowsAppDetails() {},
+      markWindowTransparent() {},
+      attachIntegratedChrome() {},
+      hideNativeMenu() {},
+      attachPrivilegedNavigationGuards() {},
+      attachRendererRecovery() {},
+      isLauncherNavigationUrl: url => url.includes('launcher.html'),
+    },
+  );
+  const win = await api.prepareLauncher();
+  assert.equal(win, api.getLauncherWindow());
+  assert.equal(loadCalls, 0);
+  api.sendToLauncher('shell:show-tab', { tab: 'import' });
+  api.sendToLauncher('shell:launcher-hint', { check: { status: 'none' } });
+  assert.deepEqual(sent, []);
+  await api.showLauncher();
+  assert.equal(loadCalls, 1);
+  assert.equal(shown, 1);
+  assert.deepEqual(sent, [
+    { channel: 'shell:show-tab', payload: { tab: 'import' } },
+    { channel: 'shell:launcher-hint', payload: { check: { status: 'none' } } },
+  ]);
+  api.sendToLauncher('shell:desktop-ready', { ok: true });
+  assert.equal(sent.length, 3);
+});
+
+test('sendToLauncher coalesces progress/tab spam, never drops newest control messages, and showLauncher tolerates mid-load destroy', async () => {
+  const source = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8').replace(/\r\n/g, '\n');
+  const slice = source.slice(
+    source.indexOf('function getLauncherWindow'),
+    source.indexOf('function closeLauncherWindow'),
+  );
+  const sent = [];
+  let loaded = false;
+  let destroyed = false;
+  let resolveLoad;
+  let shown = 0;
+  class FakeLauncherWindow {
+    constructor() {
+      this.webContents = {
+        getURL: () => (loaded ? 'file:///app/launcher.html' : ''),
+        send: (channel, payload) => {
+          sent.push({ channel, payload });
+          if (channel === 'shell:show-tab' && payload.tab === 'settings') {
+            api.sendToLauncher('shell:launcher-hint', { check: { status: 'follow-up' } });
+          }
+        },
+      };
+    }
+    isDestroyed() { return destroyed; }
+    isMinimized() { return false; }
+    once() {}
+    on() {}
+    loadFile() {
+      return new Promise((resolve) => {
+        resolveLoad = () => { loaded = true; resolve(); };
+      });
+    }
+    show() { if (destroyed) throw new Error('Object has been destroyed'); shown += 1; }
+    focus() { if (destroyed) throw new Error('Object has been destroyed'); }
+    showInactive() { if (destroyed) throw new Error('Object has been destroyed'); shown += 1; }
+  }
+  const api = vm.runInNewContext(
+    `let launcherWindow = null;\n${slice}\n({ prepareLauncher, showLauncher, sendToLauncher, getLauncherWindow })`,
+    {
+      BrowserWindow: FakeLauncherWindow,
+      shellWindowChrome: o => o,
+      iconImage: () => null,
+      preloadFile: () => 'preload.js',
+      rendererFile: name => name,
+      attachWindowsAppDetails() {},
+      markWindowTransparent() {},
+      attachIntegratedChrome() {},
+      hideNativeMenu() {},
+      attachPrivilegedNavigationGuards() {},
+      attachRendererRecovery() {},
+      isLauncherNavigationUrl: url => url.includes('launcher.html'),
+    },
+  );
+  await api.prepareLauncher();
+  for (let i = 0; i < 40; i += 1) {
+    api.sendToLauncher('shell:update-progress', { percent: i });
+  }
+  api.sendToLauncher('shell:show-tab', { tab: 'home' });
+  api.sendToLauncher('shell:show-tab', { tab: 'settings' });
+  api.sendToLauncher('shell:desktop-failed', { error: 'boom' });
+
+  const showing = api.showLauncher();
+  resolveLoad();
+  await showing;
+  assert.equal(shown, 1);
+  assert.deepEqual(sent, [
+    { channel: 'shell:update-progress', payload: { percent: 39 } },
+    { channel: 'shell:show-tab', payload: { tab: 'settings' } },
+    { channel: 'shell:launcher-hint', payload: { check: { status: 'follow-up' } } },
+    { channel: 'shell:desktop-failed', payload: { error: 'boom' } },
+  ]);
+
+  // Mid-load destruction must not throw on show/focus.
+  loaded = false;
+  const showingDestroyed = api.showLauncher();
+  destroyed = true;
+  resolveLoad();
+  await showingDestroyed;
+  assert.equal(shown, 1);
+});
+
+test('reveal re-syncs curtain bounds if main window resizes during capturePage', async () => {
+  let bounds = { x: 0, y: 0, width: 1200, height: 800 };
+  const curtainBounds = [];
+  const fixture = revealFixture();
+  fixture.win.getContentBounds = () => ({ ...bounds });
+  const origCapture = fixture.win.webContents.capturePage;
+  fixture.win.webContents.capturePage = async () => {
+    bounds = { x: 40, y: 20, width: 1600, height: 900 };
+    return origCapture();
+  };
+  // Track setBounds by reading the source-level check directly through a fresh fixture with instrumented BrowserWindow.
+  const source = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8');
+  const snippet = source.slice(source.indexOf('const HARNESS_FADE_'), source.indexOf('function watchPluginBoot'));
+  const view = { webContents: { isDestroyed: () => false, insertCSS: () => Promise.resolve('k'), removeInsertedCSS: () => Promise.resolve(), executeJavaScript: s => Promise.resolve(s.includes('matchMedia') ? false : undefined) } };
+  const context = {
+    require: () => ({ getMinimalMode: () => false }),
+    harnessView: view, harnessRevealed: false, renderHints: { lowPowerGpu: false }, rendererFile: n => n,
+    BrowserWindow: class {
+      constructor() {
+        this.webContents = { isDestroyed: () => false, capturePage: () => Promise.resolve(), executeJavaScript: () => Promise.resolve() };
+      }
+      setBounds(b) { curtainBounds.push(b); }
+      setIgnoreMouseEvents() {} showInactive() {} loadFile() { return Promise.resolve(); }
+      isDestroyed() { return false; } destroy() {}
+    },
+    setBootHarnessCovered() {}, layoutHarnessView() {}, desktopPet: () => null, prepareHarnessChrome() {},
+    syncHarnessChrome: () => Promise.resolve(), consumePendingMarketplaceJump() {}, consumePendingSessionJump() {}, setTimeout() {},
+  };
+  const api = vm.runInNewContext(`${snippet}\n({ reveal: revealHarnessView })`, context);
+  await api.reveal(fixture.win);
+  assert.deepEqual(curtainBounds.at(-1), { x: 40, y: 20, width: 1600, height: 900 });
+});
+
 test('harness view keeps painting while the window is hidden so restore does not flash a blank surface', () => {
   const src = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8');
   assert.match(src, /backgroundThrottling:\s*false/);
@@ -631,6 +829,118 @@ test('showBoot cancels a plugin boot watch before its first probe', { timeout: 1
     assert.equal(result.error?.code, 'HARNESS_OPERATION_CANCELLED');
     assert.equal(harnessContents.probes, 0);
     assert.equal(harnessContents.isDestroyed(), true);
+  } finally {
+    for (const [modulePath, entry] of cached) {
+      if (entry) require.cache[modulePath] = entry;
+      else delete require.cache[modulePath];
+    }
+    delete require.cache[require.resolve('./window.js')];
+  }
+});
+
+test('showBoot prewarms one hidden BrowserView after renderHints settle, showHarness reuses it, and hideHarnessView cleans up unused views', { timeout: 2_000 }, async () => {
+  const electronPath = require.resolve('electron');
+  const chromePath = require.resolve('./chrome.js');
+  const pathsPath = require.resolve('./paths.js');
+  const acrylicPath = require.resolve('./window-acrylic');
+  const cached = new Map([
+    [electronPath, require.cache[electronPath]],
+    [chromePath, require.cache[chromePath]],
+    [pathsPath, require.cache[pathsPath]],
+    [acrylicPath, require.cache[acrylicPath]],
+  ]);
+  const createdViews = [];
+
+  class FakeWebContents extends EventEmitter {
+    constructor() { super(); this.destroyed = false; this.url = ''; }
+    isDestroyed() { return this.destroyed; }
+    getURL() { return this.url; }
+    setWindowOpenHandler() {}
+    send() {}
+    close() { this.destroyed = true; }
+    loadURL(url) { this.url = url; return Promise.resolve(); }
+    executeJavaScript() { return Promise.resolve({ pending: true, ready: 0, total: 0, failed: false, hasApp: false, error: '' }); }
+  }
+  class FakeBrowserView {
+    constructor(options) {
+      this.webContents = new FakeWebContents();
+      this.webContents.ownerOptions = options;
+      createdViews.push(this);
+    }
+    setBounds() {}
+    setAutoResize() {}
+  }
+  class FakeBrowserWindow extends EventEmitter {
+    constructor() { super(); this.webContents = new FakeWebContents(); this.views = []; }
+    isDestroyed() { return false; }
+    setBackgroundColor() {}
+    getContentBounds() { return { width: 1_440, height: 920 }; }
+    getBrowserViews() { return this.views; }
+    setTopBrowserView() {}
+    show() {}
+    setAppDetails() {}
+    addBrowserView(view) { if (!this.views.includes(view)) this.views.push(view); }
+    removeBrowserView(view) { this.views = this.views.filter((candidate) => candidate !== view); }
+    loadFile(file) { this.webContents.url = `file:///${file.replaceAll('\\\\', '/')}`; return Promise.resolve(); }
+  }
+
+  require.cache[electronPath] = {
+    id: electronPath, filename: electronPath, loaded: true,
+    exports: {
+      app: { isPackaged: false, getAppPath: () => 'C:/app' },
+      BrowserView: FakeBrowserView, BrowserWindow: FakeBrowserWindow,
+      shell: { openExternal() {} }, nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+    },
+  };
+  require.cache[chromePath] = {
+    id: chromePath, filename: chromePath, loaded: true,
+    exports: {
+      shellWindowChrome: (options) => options, attachIntegratedChrome() {}, hideNativeMenu() {},
+      prepareHarnessChrome() {}, syncHarnessChrome() {}, currentTheme: () => ({ bg: '#ffffff' }),
+      markWindowTransparent() {}, paintBackground() {},
+    },
+  };
+  require.cache[pathsPath] = {
+    id: pathsPath, filename: pathsPath, loaded: true,
+    exports: { rendererFile: (name) => `C:/app/${name}`, assetFile: (name) => `C:/app/${name}`, preloadFile: () => 'C:/app/preload.js' },
+  };
+  require.cache[acrylicPath] = {
+    id: acrylicPath, filename: acrylicPath, loaded: true,
+    exports: { prepareWindowAcrylic: () => false },
+  };
+
+  try {
+    delete require.cache[require.resolve('./window.js')];
+    const {
+      getHarnessView, getMainWindow, hideHarnessView, setRenderHintsSource, showBoot, showHarness,
+    } = require('./window.js');
+    let resolveHints;
+    setRenderHintsSource(new Promise((resolve) => { resolveHints = resolve; }));
+    await showBoot();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(createdViews.length, 0, 'prewarm must wait for renderHintsReady');
+    assert.equal(getHarnessView(), null);
+
+    resolveHints({ lowPower: true });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(createdViews.length, 1, 'prewarm creates one hidden BrowserView once renderHints settle');
+    assert.equal(getHarnessView(), null, 'prewarmed view stays hidden from getHarnessView until claimed');
+    assert.ok(createdViews[0].webContents.ownerOptions.webPreferences.additionalArguments.includes('--dshd-low-power-gpu=1'));
+
+    const outcome = showHarness('http://127.0.0.1:3080/').catch((error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(createdViews.length, 1, 'showHarness reuses the prewarmed BrowserView instead of spawning a second one');
+    assert.equal(getHarnessView(), createdViews[0]);
+
+    await showBoot();
+    const cancelled = await outcome;
+    assert.equal(cancelled?.code, 'HARNESS_OPERATION_CANCELLED');
+    assert.equal(createdViews[0].webContents.isDestroyed(), true);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(createdViews.length, 2, 'subsequent boot schedules a fresh prewarm');
+    hideHarnessView(getMainWindow());
+    assert.equal(createdViews[1].webContents.isDestroyed(), true, 'hideHarnessView disposes an unclaimed prewarmed view');
   } finally {
     for (const [modulePath, entry] of cached) {
       if (entry) require.cache[modulePath] = entry;

@@ -41,13 +41,23 @@ function normalizeRoute(value) {
 const CHINA_TIME_ZONES = new Set(['Asia/Shanghai', 'Asia/Chongqing', 'Asia/Chungking', 'Asia/Harbin',
   'Asia/Urumqi', 'Asia/Kashgar', 'PRC']);
 
+/** @type {string | null} */
+let cachedTimeZone = null;
+
+function systemTimeZone() {
+  if (cachedTimeZone === null) {
+    cachedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  }
+  return cachedTimeZone;
+}
+
 function systemRegion() {
   try {
     const { app } = require('electron');
     if (!app?.isReady?.()) return null;
     return {
       locale: app.getSystemLocale?.() || app.getLocale?.() || '',
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+      timeZone: systemTimeZone(),
     };
   } catch {
     return null;

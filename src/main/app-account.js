@@ -1,9 +1,6 @@
 'use strict';
 
 const { app, nativeTheme } = require('electron');
-const { connectWelcome } = require('./welcome-backend');
-const { openExternalHttp } = require('./open-external');
-const { resolveDesktopStartupLocale } = require('./desktop-locale');
 const { currentVersion } = require('./update');
 
 /**
@@ -60,7 +57,7 @@ function createDesktopAccount({ state, dsh }) {
       const attempt = accountState.attempt;
       if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
         openedAttempt = attempt.id;
-        void openExternalHttp(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined);
+        void require('./open-external').openExternalHttp(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined);
       }
       previousAccountStatus = accountState.status;
     }, () => {
@@ -78,6 +75,8 @@ function createDesktopAccount({ state, dsh }) {
     if (initializingDesktopAccount) return initializingDesktopAccount;
     initializingDesktopAccount = (async () => {
       try {
+        const { connectWelcome } = require('./welcome-backend');
+        const { resolveDesktopStartupLocale } = require('./desktop-locale');
         welcomeBackend = await connectWelcome(new URL(targetUrl).origin, () => dsh.sessionCookie);
         if (state.quitting) return;
         startAccountWatch();
