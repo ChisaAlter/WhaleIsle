@@ -12,7 +12,6 @@ const {
   MAGPIE_ID,
   platformAssetName,
   resolveMagpieConfigDir,
-  setDirWritable,
 } = require('./platform');
 const { resolveLatestMagpieRelease } = require('./release');
 const { detectMagpieState, probeConcurrency } = require('./detect');
@@ -28,6 +27,7 @@ const {
   pruneVersions,
   quitWebProcess,
   readJsonSafe,
+  removeDirWithRetry,
   spawnMagpieWeb,
   stageMagpieBinary,
   writeJsonSafe,
@@ -565,8 +565,7 @@ function createMagpieService(deps = {}) {
       detachMagpieDshChannels(dshHome);
       safeRemoveSync(installedFile);
       const versionsDir = path.join(root, 'versions');
-      setDirWritable(versionsDir);
-      safeRemoveSync(versionsDir);
+      removeDirWithRetry(versionsDir);
       if (options.removeData === true && !current.sharedConfig) {
         safeRemoveSync(configDir);
       }

@@ -134,6 +134,7 @@ test('createMagpieService handles install, start, concurrency guard, in-launcher
     assert.equal(installedRes.component.installedVersion, '0.1.4708');
     assert.equal(installedRes.component.state, 'running');
     assert.equal(spawned[0].args.join(' '), 'web --addr 127.0.0.1:3430 --no-open');
+    assert.equal(spawned[0].opts.cwd, root);
     assert.equal(spawned[0].opts.env.DSH_HOME, dshHome);
     assert.equal(fs.statSync(path.join(root, 'versions', '0.1.4708', asset)).mode & 0o200, 0);
 
@@ -162,6 +163,12 @@ test('createMagpieService handles install, start, concurrency guard, in-launcher
     assert.equal(rolledBack.ok, true);
     assert.equal(rolledBack.component.installedVersion, '0.1.4708');
     assert.equal(rolledBack.component.state, 'running');
+
+    // Uninstall cleanly stops and deletes read-only versions/ dir
+    const uninstalled = await svc.uninstall({ removeData: true });
+    assert.equal(uninstalled.ok, true);
+    assert.equal(fs.existsSync(path.join(root, 'versions')), false);
+    assert.equal(fs.existsSync(path.join(root, 'installed.json')), false);
   });
 });
 

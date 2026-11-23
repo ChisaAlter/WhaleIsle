@@ -7,14 +7,13 @@ const path = require('node:path');
 const { atomicWriteFileSync, safeRemoveSync } = require('../../shared/fs-safe');
 const { spawnTreeOptions } = require('../../shared/process-tree');
 const {
-  DEFAULT_GATEWAY_PORT,
   DEFAULT_WEB_PORT,
   MAX_BINARY_BYTES,
   assertNoPortableMarkers,
   setBinaryReadOnly,
   setDirWritable,
 } = require('./platform');
-const { probeGateway } = require('./detect');
+const { probeGateway, resolveGatewayCandidate } = require('./detect');
 const { ensureDshWebProfileExists } = require('./dsh-sync');
 
 const LOG_MAX_BYTES = 1024 * 1024;
@@ -135,7 +134,7 @@ async function waitForMagpieReady(child, ctx) {
         writeJsonSafe(companionStateFile, record);
         return record;
       }
-      const candidate = readJsonSafe(path.join(configDir, 'gateway.json'))?.addr || `127.0.0.1:${DEFAULT_GATEWAY_PORT}`;
+      const candidate = resolveGatewayCandidate(configDir).addr;
       const gw = await probeGateway(candidate, { fetchJson: deps.fetchJson, fetchImpl: deps.fetchImpl });
       if (gw) {
         const record = { pid: child.pid, version, webPort, webKey, webUrl, gatewayAddr: gw.addr };
@@ -177,7 +176,7 @@ async function spawnMagpieWeb(ctx) {
   let child;
   try {
     child = run(bin, ['web', '--addr', `127.0.0.1:${webPort}`, '--no-open'], {
-      cwd: versionDir,
+      cwd: root,
       env: buildMagpieSpawnEnv(dshHome, webKey),
       stdio: ['ignore', logFd, logFd],
       windowsHide: true,
@@ -232,6 +231,16 @@ async function quitWebProcess(stateRecord, stateFilePath, ctx) {
 }
 
 /**
+ * Clear read-only attributes and remove a managed directory with Windows handle retries.
+ * @param {string} target
+ */
+function removeDirWithRetry(target) {
+  if (!fs.existsSync(target)) return;
+  setDirWritable(target);
+  fs.rmSync(target, { recursive: true, force: true, maxRetries: 12, retryDelay: 150 });
+}
+
+/**
  * Download and verify a Magpie binary into `versions/<version>`.
  * @param {{
  *   root: string,
@@ -246,8 +255,7 @@ async function stageMagpieBinary(ctx) {
   const { root, release: rel, platform, progress, emit, downloadFile } = ctx;
   const targetDir = path.join(root, 'versions', rel.version);
   const stagingDir = path.join(root, 'versions', `.staging-${process.pid}`);
-  setDirWritable(stagingDir);
-  safeRemoveSync(stagingDir);
+  removeDirWithRetry(stagingDir);
   fs.mkdirSync(stagingDir, { recursive: true });
   const stagedBin = path.join(stagingDir, rel.asset);
   try {
@@ -269,13 +277,15 @@ async function stageMagpieBinary(ctx) {
     if (platform !== 'win32') fs.chmodSync(stagedBin, 0o755);
     writeJsonSafe(path.join(stagingDir, 'manifest.json'), rel);
     setBinaryReadOnly(stagingDir, stagedBin, platform);
-    setDirWritable(targetDir);
-    safeRemoveSync(targetDir);
+    removeDirWithRetry(targetDir);
     fs.renameSync(stagingDir, targetDir);
     return rel.version;
   } finally {
-    setDirWritable(stagingDir);
-    safeRemoveSync(stagingDir);
+    try {
+      removeDirWithRetry(stagingDir);
+    } catch {
+      // Staging cleanup is best-effort if the original error already occurred.
+    }
   }
 }
 
@@ -289,9 +299,11 @@ function pruneVersions(root, keep) {
   }
   for (const name of entries) {
     if (name.startsWith('.') || keep.includes(name)) continue;
-    const dir = path.join(root, 'versions', name);
-    setDirWritable(dir);
-    safeRemoveSync(dir);
+    try {
+      removeDirWithRetry(path.join(root, 'versions', name));
+    } catch {
+      // Old unreferenced version dirs are retried on the next update or uninstall.
+    }
   }
 }
 
@@ -299,6 +311,7 @@ module.exports = {
   readJsonSafe,
   writeJsonSafe,
   pickWebPort,
+  removeDirWithRetry,
   spawnMagpieWeb,
   quitWebProcess,
   stageMagpieBinary,
