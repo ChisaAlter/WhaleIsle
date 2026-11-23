@@ -8,10 +8,26 @@ import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 import { withOwnedTempDir } from '../src/shared/fs-safe.js'
 import { validateReleaseAssets } from './check-release-assets.mjs'
-import { validateManifest } from '../src/launcher/whalebridge.js'
 
 const safeRepo = /^[\w.-]+(?:\/[\w.-]+)+$/
 const stableTag = /^(?:v|whalebridge-v)\d+\.\d+\.\d+$/
+const LEGACY_WB_MAX_BYTES = 200 * 1024 * 1024
+
+/** @param {any} m */
+function validateLegacyWhaleBridgeManifest(m) {
+  const spec = m?.platforms?.['win32-x64']
+  if (m?.id !== 'whalebridge' || typeof m.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(m.version)) {
+    throw new Error('WhaleBridge release manifest mismatch')
+  }
+  if (!spec || spec.asset !== 'WhaleBridge-win32-x64.exe' || typeof spec.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(spec.sha256) || !Number.isInteger(spec.size) || spec.size <= 0 || spec.size > LEGACY_WB_MAX_BYTES) {
+    throw new Error('WhaleBridge release manifest mismatch')
+  }
+  if (typeof m.license !== 'string' || !m.license.includes('MIT License')) {
+    throw new Error('WhaleBridge release manifest mismatch')
+  }
+  return m
+}
 async function fileHash(file, algorithm = 'sha512') {
   const hash = createHash(algorithm)
   for await (const chunk of createReadStream(file)) hash.update(chunk)
@@ -101,7 +117,7 @@ export async function validateMirrorAssets(release, directory) {
     files.push({ file, name: asset.name, size: info.size, sha512: await fileHash(file) })
   }
   if (tag.startsWith('whalebridge-v')) {
-    const manifest = validateManifest(JSON.parse(await readFile(join(directory, 'WhaleBridge-component.json'), 'utf8')))
+    const manifest = validateLegacyWhaleBridgeManifest(JSON.parse(await readFile(join(directory, 'WhaleBridge-component.json'), 'utf8')))
     const spec = manifest.platforms['win32-x64']
     if (tag !== 'whalebridge-v' + manifest.version || files.length !== 2 || !names.includes('WhaleBridge-component.json') ||
         !names.includes(spec.asset) || (await stat(join(directory, spec.asset))).size !== spec.size ||

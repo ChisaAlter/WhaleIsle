@@ -274,7 +274,7 @@ const PRELOAD_SURFACE = Object.freeze({
   'update-center.js': IPC_SURFACES.UPDATE_CENTER,
   'update-dialog.js': IPC_SURFACES.UPDATE_DIALOG,
   'welcome.js': IPC_SURFACES.WELCOME,
-  'whalebridge.js': IPC_SURFACES.WHALEBRIDGE,
+  'magpie-shell.js': IPC_SURFACES.MAGPIE_SHELL,
   'file-preview.js': IPC_SURFACES.FILE_PREVIEW,
   'approval-popup.js': IPC_SURFACES.APPROVAL_POPUP,
 });

@@ -111,6 +111,25 @@
       : null;
   }
 
+  /** @param {any} row */
+  function rowCapabilities(row) {
+    const caps = row?.capabilities;
+    if (caps && typeof caps === 'object') return caps;
+    const isRunning = row.state === 'running';
+    const isInstalled = Boolean(row.installedVersion || (row.state && row.state !== 'available' && row.state !== 'unsupported'));
+    return {
+      canInstall: row.state === 'available',
+      canStart: isInstalled && !isRunning,
+      canStop: isInstalled && isRunning,
+      canOpen: Boolean(row.configurable && isRunning),
+      canUpdate: Boolean(row.updateAvailable),
+      canRollback: Boolean(row.previousVersion),
+      canUninstall: isInstalled,
+      canDeleteData: false,
+      externalUpdateUrl: '',
+    };
+  }
+
   function rowActions(row) {
     const buttons = [];
     const btn = (action, label, cls) => h('button', {
@@ -119,19 +138,30 @@
       dataset: { compAction: action, compId: row.id },
     }, label);
     if (row.state === 'unsupported') return buttons;
-    if (row.state === 'available') {
+    const caps = rowCapabilities(row);
+    if (caps.canInstall) {
       buttons.push(btn('install', '安装', 'primary'));
-    } else {
-      if (row.state === 'running') {
-        if (row.configurable) buttons.push(btn('open', '打开设置', 'primary'));
-        buttons.push(btn('stop', '停止', 'ghost'));
-      } else {
-        buttons.push(btn('start', row.state === 'error' ? '重试启动' : '启动', 'primary'));
-      }
-      const management = [];
-      if (row.updateAvailable) management.push(btn('update', `更新至 v${row.version}`, 'ghost'));
-      if (row.previousVersion) management.push(btn('rollback', `回滚至 v${row.previousVersion}`, 'ghost'));
+      return buttons;
+    }
+    if (row.state === 'running') {
+      if (caps.canOpen) buttons.push(btn('open', '打开设置', 'primary'));
+      if (caps.canStop) buttons.push(btn('stop', '停止', 'ghost'));
+    } else if (caps.canStart) {
+      buttons.push(btn('start', row.state === 'error' ? '重试启动' : '启动', 'primary'));
+    }
+    if (caps.canUpdate) {
+      buttons.push(btn('update', `更新至 v${row.latest || row.version}`, 'ghost'));
+    } else if (caps.externalUpdateUrl) {
+      buttons.push(btn('update', `前往更新 v${row.latest || row.version}`, 'ghost'));
+    }
+    const management = [];
+    if (caps.canRollback && row.previousVersion) {
+      management.push(btn('rollback', `回滚至 v${row.previousVersion}`, 'ghost'));
+    }
+    if (caps.canUninstall) {
       management.push(btn('uninstall', '卸载', 'danger'));
+    }
+    if (management.length) {
       buttons.push(h('details', { class: 'comp-manage' },
         h('summary', { 'aria-label': `管理${row.name || row.id}` },
           '管理',
@@ -168,9 +198,13 @@
       return;
     }
     mountNodes(host, ...rows.map((row) => {
+      const ownershipBadge = row.ownership === 'external' || row.ownership === 'external-ui-companion'
+        ? badge('复用本机', 'blue')
+        : (row.ownership === 'managed-shared-config' ? badge('共享配置', 'blue') : null);
       const marks = [
         kindBadge(row),
         row.source === 'official' ? badge('官方组件', 'blue') : (row.source === 'bundled' ? badge('内置', 'blue') : null),
+        ownershipBadge,
         row.updateAvailable ? badge('可更新') : null,
         row.orphan ? badge('目录外组件', 'warn') : null,
       ];
@@ -192,7 +226,7 @@
   }
 
   function componentIcon(row) {
-    return row.id === 'whalebridge'
+    return row.source === 'official'
       ? h('img', { class: 'comp-icon comp-brand', src: '../../assets/whale-head.png', alt: '鲸屿', width: '36', height: '36' })
       : h('span', { class: 'comp-icon', 'aria-hidden': 'true' }, iconGlyph(row));
   }
@@ -215,25 +249,28 @@
 
   function renderHomeRows(rows) {
     if (!state.homeEl || !state.homeList) return;
-    const installed = rows.filter(row => row.installedVersion);
+    const installed = rows.filter((row) => row.installedVersion || row.ownership === 'external' || row.ownership === 'external-ui-companion');
     state.homeEl.hidden = installed.length === 0;
     mountNodes(state.homeList, ...installed.map(row => {
+      const caps = rowCapabilities(row);
       const running = row.state === 'running';
       const name = row.name || row.id;
-      const control = h('button', {
-        type: 'button',
-        class: `${running ? 'ghost' : 'primary'} small`,
-        dataset: { compAction: running ? 'stop' : 'start', compId: row.id },
-      }, `${running ? '关闭' : '开启'}${name}`);
-      const settings = row.configurable && running
-        ? h('button', { type: 'button', class: 'ghost small', dataset: { compAction: 'open', compId: row.id } }, '打开设置')
+      const control = (running && caps.canStop) || (!running && caps.canStart)
+        ? h('button', {
+          type: 'button',
+          class: `${running ? 'ghost' : 'primary'} small`,
+          dataset: { compAction: running ? 'stop' : 'start', compId: row.id },
+        }, `${running ? '关闭' : '开启'}${name}`)
+        : null;
+      const settings = caps.canOpen && running
+        ? h('button', { type: 'button', class: `${control ? 'ghost' : 'primary'} small`, dataset: { compAction: 'open', compId: row.id } }, '打开设置')
         : null;
       return h('article', { class: 'home-component', dataset: { compRow: row.id } },
         h('div', { class: 'home-component-head' },
-          row.id === 'whalebridge' ? null : componentIcon(row),
+          row.source === 'official' ? null : componentIcon(row),
           h('div', { class: 'comp-copy' },
             h('h4', {}, name),
-            h('span', { class: 'row-meta' }, `v${row.installedVersion}`)),
+            h('span', { class: 'row-meta' }, row.installedVersion ? `v${row.installedVersion}` : '外部运行中')),
           stateBadge(row)),
         h('p', { class: 'home-component-description' }, row.description || '鲸屿扩展组件'),
         failureLine(row),
@@ -373,83 +410,121 @@
     if (target && !target.disabled && target.checkVisibility()) target.focus();
   }
 
-  async function runAction(action, id, button) {
-    const method = ACTION_METHODS[action];
-    if (!method || typeof state.shell?.[method] !== 'function' || state.pending.has(id)) {
-      return;
+  /**
+   * @param {string} id
+   * @param {string} name
+   * @param {any} row
+   * @param {any} caps
+   * @param {any} pending
+   */
+  async function promptUninstall(id, name, row, caps, pending) {
+    const shell = /** @type {any} */ (state.shell);
+    const info = typeof shell?.componentsUninstallInfo === 'function'
+      ? (await shell.componentsUninstallInfo(id) || {})
+      : {};
+    pending.label = '等待确认卸载…';
+    syncPendingButtons();
+    const sharedNote = info.sharedConfig ? '本机共享配置 ~/.config/magpie 将完整保留。' : '';
+    const channelNote = row?.source === 'official' ? `桌面端的 ${name} 渠道会移除，聊天记录和其他渠道会保留。` : '';
+    const defaultNote = info.defaultModel ? `当前默认模型使用 ${name}，卸载后需要重新选择默认模型。` : '';
+    const ok = await window.appConfirm({
+      title: `卸载组件「${name}」`,
+      body: `将停止并删除组件「${name}」及其程序文件，其配置数据会保留。${channelNote}${sharedNote}${defaultNote}`,
+      confirmText: '卸载',
+      danger: true,
+    });
+    if (!ok) return { cancelled: true, argument: id };
+    if (!caps.canDeleteData) return { cancelled: false, argument: id };
+    const removeData = await window.appConfirm({
+      title: `是否同时删除 ${name} 配置？`,
+      body: `删除会清除 ${name} 的供应商密钥、账户和用量数据。保留后重新安装可继续使用。`,
+      confirmText: '删除配置', cancelText: '保留配置', danger: true,
+    });
+    return { cancelled: false, argument: { id, removeData } };
+  }
+
+  /**
+   * @param {any} action
+   * @param {string} id
+   * @param {string} name
+   * @param {any} row
+   * @param {any} pending
+   */
+  async function confirmComponentAction(action, id, name, row, pending) {
+    if (typeof window.appConfirm !== 'function') return { cancelled: false, argument: id };
+    if (action === 'uninstall') {
+      return promptUninstall(id, name, row, row ? rowCapabilities(row) : {}, pending);
     }
+    if (action === 'rollback') {
+      const ok = await window.appConfirm({
+        title: `回滚组件「${name}」`,
+        body: `将把组件「${name}」回滚到上一个版本${row?.previousVersion ? `（v${row.previousVersion}）` : ''}，当前进程会先停止。`,
+        confirmText: '回滚',
+      });
+      return { cancelled: !ok, argument: id };
+    }
+    return { cancelled: false, argument: id };
+  }
+
+  /** @param {string} text */
+  function setComponentStatusText(text) {
+    const status = document.getElementById('component-status');
+    if (status) status.textContent = text;
+  }
+
+  /**
+   * @param {any} shell
+   * @param {string} method
+   * @param {any} argument
+   * @param {any} action
+   */
+  async function invokeComponentAction(shell, method, argument, action) {
+    try {
+      const result = await shell[method](argument);
+      if (result && result.ok === false) {
+        return { failure: ACTION_ERRORS[result.error] || errorText(result, '操作失败'), completionMessage: '' };
+      }
+      return { failure: '', completionMessage: result?.message || '' };
+    } catch (error) {
+      return { failure: errorText(error, action === 'uninstall' ? '无法卸载组件' : '操作失败'), completionMessage: '' };
+    }
+  }
+
+  /** @param {any} action @param {string} id @param {any} button */
+  async function runAction(action, id, button) {
+    const shell = /** @type {any} */ (state.shell);
+    const method = ACTION_METHODS[action];
+    if (!method || typeof shell?.[method] !== 'function' || state.pending.has(id)) return;
     const row = state.rows.get(id);
     const name = row?.name || id;
     const focusHost = state.homeEl?.contains(button) ? state.homeEl : state.el;
     const pending = {
       action,
-      label: action === 'uninstall' && id === 'whalebridge' ? '正在读取鲸桥状态…' : ACTION_LOADING[action],
+      label: action === 'uninstall' && typeof shell.componentsUninstallInfo === 'function'
+        ? `正在读取${name}状态…` : ACTION_LOADING[action],
       restoreButtons: new Map(),
     };
     state.pending.set(id, pending);
     state.failures.delete(id);
     syncPendingButtons();
-    let argument = id;
-    let failure = '';
-    let completed = false;
-    let completionMessage = '';
+    let res = { failure: '', completionMessage: '' };
     try {
-      if (action === 'uninstall' && typeof window.appConfirm === 'function') {
-        const info = id === 'whalebridge' ? await state.shell.componentsUninstallInfo(id) : {};
-        pending.label = '等待确认卸载…';
-        syncPendingButtons();
-        const ok = await window.appConfirm({
-          title: `卸载组件「${name}」`,
-          body: `将停止并删除组件「${name}」及其程序文件，其配置数据会保留。${id === 'whalebridge' ? '桌面端的鲸桥渠道会移除，聊天记录和其他渠道会保留。' : ''}${info.defaultModel ? '当前默认模型使用鲸桥，卸载后需要重新选择默认模型。' : ''}`,
-          confirmText: '卸载',
-          danger: true,
-        });
-        if (!ok) return;
-        if (id === 'whalebridge') {
-          const removeData = await window.appConfirm({
-            title: '是否同时删除鲸桥配置？',
-            body: '删除会清除鲸桥的供应商密钥、账户和用量数据。保留后重新安装可继续使用。',
-            confirmText: '删除配置', cancelText: '保留配置', danger: true,
-          });
-          argument = { id, removeData };
-        }
-      } else if (action === 'rollback' && typeof window.appConfirm === 'function') {
-        const ok = await window.appConfirm({
-          title: `回滚组件「${name}」`,
-          body: `将把组件「${name}」回滚到上一个版本${row?.previousVersion ? `（v${row.previousVersion}）` : ''}，当前进程会先停止。`,
-          confirmText: '回滚',
-        });
-        if (!ok) return;
-      }
+      const conf = await confirmComponentAction(action, id, name, row, pending);
+      if (conf.cancelled) return;
       pending.label = ACTION_LOADING[action];
-      const status = document.getElementById('component-status');
-      if (status) status.textContent = `${name}：${pending.label}`;
+      setComponentStatusText(`${name}：${pending.label}`);
       syncPendingButtons();
-      const result = await state.shell[method](argument);
-      if (result && result.ok === false) {
-        failure = ACTION_ERRORS[result.error] || errorText(result, '操作失败');
-      } else {
-        completed = true;
-        completionMessage = result?.message || '';
-      }
-    } catch (error) {
-      failure = errorText(error, action === 'uninstall' ? '无法卸载组件' : '操作失败');
+      res = await invokeComponentAction(shell, method, conf.argument, action);
     } finally {
-      if (failure) state.failures.set(id, failure);
+      if (res.failure) state.failures.set(id, res.failure);
       const restoreFocus = canRestoreActionFocus(button, focusHost);
       pending.restoreButtons.forEach(restore => restore());
       state.pending.delete(id);
-      await refresh(false, !failure);
+      await refresh(false, !res.failure);
       if (restoreFocus) restoreActionFocus(button, focusHost, action, id);
     }
-    if (failure) {
-      const status = document.getElementById('component-status');
-      if (status) status.textContent = `${name}操作未完成：${failure}`;
-    } else if (completed && completionMessage) {
-      void window.appNotice({ title: `${name}操作结果`, body: completionMessage });
-    }
-    // A plain install/update needs no notice: the refreshed row shows the
-    // installed version and state.
+    if (res.failure) setComponentStatusText(`${name}操作未完成：${res.failure}`);
+    else if (res.completionMessage) void window.appNotice({ title: `${name}操作结果`, body: res.completionMessage });
   }
 
   function onProgress(payload) {
@@ -484,7 +559,7 @@
         h('h2', {}, '组件'),
         h('span', { class: 'head-line row-meta', dataset: { compRoute: '' }, hidden: true },
           '当前线路 ', h('b', { class: 'cur-line' }))),
-      h('p', { class: 'lede lede-block' }, '按需安装独立工具与服务。鲸桥可统一管理模型，安装后自动连接桌面端的模型渠道。'),
+      h('p', { class: 'lede lede-block' }, '按需安装独立工具与服务。Magpie 可复用本机实例或由启动器托管更新，并自动接入桌面端的模型渠道。'),
       h('div', { class: 'actions' },
         h('button', { type: 'button', class: 'ghost', dataset: { compRefresh: '' } }, '刷新')),
       h('ul', { class: 'list', dataset: { compList: '' } }));
