@@ -391,9 +391,6 @@ async function syncDshToMagpieGateway({ dshHome, gatewayAddr, fetchJson }) {
 }
 
 module.exports = {
-  WHALEBRIDGE_REF,
-  MAGPIE_REF,
-  MAGPIE_CHANNEL_NAMES,
   detachWhaleBridgeDshChannel,
   detachMagpieDshChannels,
   ensureDshWebProfileExists,

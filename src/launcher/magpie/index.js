@@ -5,7 +5,7 @@ const release = require('./release');
 const detect = require('./detect');
 const dshSync = require('./dsh-sync');
 const migrate = require('./migrate');
-const service = require('./service');
+const { magpieService, ensureMagpieRuntime } = require('./service');
 
 module.exports = {
   ...platform,
@@ -13,5 +13,6 @@ module.exports = {
   ...detect,
   ...dshSync,
   ...migrate,
-  ...service,
+  magpieService,
+  ensureMagpieRuntime,
 };

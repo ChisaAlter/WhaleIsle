@@ -28,10 +28,10 @@
     "src/host/**",
     // 全部 preload 均按路径注入 webPreferences
     "src/preload/**",
-    // renderer：<script src>（boot/launcher/pet/file-preview/update-dialog/
+    // renderer：<script src>（boot/launcher/magpie-shell/pet/file-preview/update-dialog/
     // update-center/welcome/pet-live2d HTML）、vm 测试夹具（*.child.cjs）、
     // readFileSync 注入与 wasm 载荷——knip 不解析 HTML
-    "src/renderer/{approval-popup,boot,feedback,file-preview,launcher-components,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher,launcher-core,launcher-versions,launcher-plugins,launcher-routes,launcher-home,launcher-import}.js",
+    "src/renderer/{approval-popup,boot,feedback,file-preview,launcher-components,magpie-shell,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher,launcher-core,launcher-versions,launcher-plugins,launcher-routes,launcher-home,launcher-import}.js",
     "src/renderer/pet-live2d-*.js",
     "src/renderer/**/*.child.cjs",
     // 测试按路径打包/装载的渲染夹具

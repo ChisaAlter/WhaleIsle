@@ -631,10 +631,6 @@ function magpieService() {
   return singleton || (singleton = createMagpieService());
 }
 
-function resetMagpieServiceForTest() {
-  singleton = null;
-}
-
 async function ensureMagpieRuntime() {
   const svc = magpieService();
   const detected = await svc.inspect();
@@ -653,5 +649,4 @@ module.exports = {
   createMagpieService,
   magpieService,
   ensureMagpieRuntime,
-  resetMagpieServiceForTest,
 };

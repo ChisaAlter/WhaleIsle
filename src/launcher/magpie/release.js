@@ -243,8 +243,6 @@ async function resolveLatestMagpieRelease(options = {}) {
 
 module.exports = {
   GITHUB_RELEASES,
-  CNB_TAG_PREFIX,
-  MAGPIE_LICENSE,
   parseSha256Sums,
   resolveLatestMagpieRelease,
 };

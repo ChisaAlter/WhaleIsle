@@ -272,13 +272,8 @@ async function detectMagpieState(options) {
 }
 
 module.exports = {
-  readJsonSafe,
-  hasSharedUserConfig,
-  readWebPageAccess,
   resolveGatewayCandidate,
-  toLoopbackHostPort,
   probeGateway,
   probeConcurrency,
-  probeHttpReachable,
   detectMagpieState,
 };
