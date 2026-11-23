@@ -1765,10 +1765,12 @@ test('parsePidFile retains optional shell marker and isOwnedHarnessCommandLine v
 
 test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated cmd.exe', { skip: process.platform !== 'win32' }, async () => {
   const { killTree } = require('./dsh');
+  // Use an unallocated synthetic PID so waitTreeDeath does not collide with a real OS PID when taskkill is mocked.
+  const deadPid = 2 ** 30;
   const killedCmds = [];
-  const ownedOk = await killTree(CHILD_PID, (command, args, _opts, cb) => {
+  const ownedOk = await killTree(deadPid, (command, args, _opts, cb) => {
     killedCmds.push(command);
-    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
     if (command === 'powershell.exe') return cb(null, 'cmd.exe /d /s /c "C:\\npm\\dsh.cmd" web --port 3080');
     if (command === 'taskkill') return cb(null, '');
     return cb(null, '');
@@ -1777,9 +1779,9 @@ test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated
   assert.deepEqual(killedCmds, ['tasklist', 'powershell.exe', 'taskkill']);
 
   const unrelatedCmds = [];
-  const unrelatedOk = await killTree(CHILD_PID, (command, _args, _opts, cb) => {
+  const unrelatedOk = await killTree(deadPid, (command, _args, _opts, cb) => {
     unrelatedCmds.push(command);
-    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
     if (command === 'powershell.exe') return cb(null, 'C:\\Windows\\System32\\cmd.exe /c calc.exe');
     return cb(new Error('must not kill unrelated cmd.exe'));
   }, { confirmedManagedShell: true });
@@ -1787,9 +1789,9 @@ test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated
   assert.deepEqual(unrelatedCmds, ['tasklist', 'powershell.exe']);
 
   const fallbackCmds = [];
-  const confirmedFallback = await killTree(CHILD_PID, (command, _args, _opts, cb) => {
+  const confirmedFallback = await killTree(deadPid, (command, _args, _opts, cb) => {
     fallbackCmds.push(command);
-    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
     if (command === 'powershell.exe') return cb(null, '');
     if (command === 'taskkill') return cb(null, '');
     return cb(null, '');
