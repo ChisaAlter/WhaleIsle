@@ -153,11 +153,16 @@ function pruneNodePtyRuntime() {
   }
 }
 
+/**
+ * @param {string} dir
+ * @param {string[]} extensions
+ */
 function pruneFilesByExtension(dir, extensions) {
   if (!fs.existsSync(dir)) return;
   const stack = [dir];
   while (stack.length > 0) {
     const current = stack.pop();
+    if (!current) continue;
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
       const absolute = path.join(current, entry.name);
       if (entry.isDirectory()) {

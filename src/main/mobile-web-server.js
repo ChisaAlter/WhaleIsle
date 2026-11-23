@@ -202,7 +202,7 @@ function createMobileWebServer(options = {}) {
       const pendingToUpstream = [];
       let closed = false;
 
-      const teardown = (code, reason) => {
+      const teardown = (/** @type {unknown} */ code, /** @type {unknown} */ reason) => {
         if (closed) return;
         closed = true;
         activeUpstreams.delete(upstreamWs);
@@ -229,6 +229,7 @@ function createMobileWebServer(options = {}) {
         if (closed) return;
         while (pendingToUpstream.length > 0 && upstreamWs.readyState === WebSocket.OPEN) {
           const item = pendingToUpstream.shift();
+          if (!item) continue;
           try {
             upstreamWs.send(item.data, { binary: item.isBinary });
           } catch {
@@ -337,7 +338,6 @@ function listenMobileWebServer(server, bindAddress, port) {
 
 module.exports = {
   MOBILE_WEB_PORT,
-  LAN_BRIDGE_WS_PATH,
   createMobileWebServer,
   listenMobileWebServer,
 };

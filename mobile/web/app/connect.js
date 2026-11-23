@@ -396,14 +396,8 @@ export async function resumeRemoteConnection() {
   }
 }
 
-async function finishChisaCodeConnect(paired, reconnected, signal) {
-  if (signal?.aborted) {
-    await paired.client.close();
-    return;
-  }
-  state.chisacode = paired;
-  const closeOnAbort = () => { void paired.client.close().catch(() => { /* The pairing abort owns the outcome; the client may already be closed. */ }); };
-  signal?.addEventListener('abort', closeOnAbort, { once: true });
+/** @param {any} paired */
+function attachChisaCodeSubscriptions(paired) {
   const disposeEvents = bindChisaCodeEvents(paired);
   const disposeWatch = watchConnection(paired.client, {
     onStatus: (phase) => {
@@ -436,6 +430,10 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
     stopHistoryPoll();
     stopMux();
   };
+}
+
+/** @param {any} paired */
+function applyChisaCodeConnectedState(paired) {
   draftStore = createDraftStore(localStorage, paired.serverId);
   state.chisacode = paired;
   state.transport = 'chisacode';
@@ -447,6 +445,18 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
   resetWorkPanes();
   state.extPane = { mcp: null, skills: null, plugins: null };
   state.hostName = paired.computerName;
+}
+
+async function finishChisaCodeConnect(paired, reconnected, signal) {
+  if (signal?.aborted) {
+    await paired.client.close();
+    return;
+  }
+  state.chisacode = paired;
+  const closeOnAbort = () => { void paired.client.close().catch(() => { /* The pairing abort owns the outcome; the client may already be closed. */ }); };
+  signal?.addEventListener('abort', closeOnAbort, { once: true });
+  attachChisaCodeSubscriptions(paired);
+  applyChisaCodeConnectedState(paired);
   let loadError = '';
   deviceLine.textContent = '已连接，正在同步会话…';
   try {

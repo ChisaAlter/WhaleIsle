@@ -9,6 +9,9 @@ import { composerOffline, connectionLabel, operationError, setToast } from './ch
 import { options, state } from './context.js?v=20261117-app-split';
 import { descNode, ghostButton, groupNode, hairRow, primaryButton, sectionNode, valueNode } from './nodes.js?v=20261117-app-split';
 
+/**
+ * @param {{ onLogout: () => void, onRefresh?: () => void }} handlers
+ */
 export function renderConnectionDetailsPane({ onLogout, onRefresh }) {
   options.append(sectionNode(
     null,
@@ -32,6 +35,9 @@ export function renderConnectionDetailsPane({ onLogout, onRefresh }) {
   options.append(sectionNode(null, '断开会清除这台手机保存的配对凭据和草稿；电脑上的会话不受影响。', danger));
 }
 
+/**
+ * @param {(() => void) | undefined} onRefresh
+ */
 function renderIceServersSection(onRefresh) {
   const wrap = document.createElement('div');
   wrap.className = 'ice-servers-editor';
@@ -68,7 +74,8 @@ function renderIceServersSection(onRefresh) {
       );
       onRefresh?.();
     } catch (error) {
-      operationError(error?.message || 'STUN/TURN 配置格式无效');
+      const message = error instanceof Error ? error.message : '';
+      operationError(message || 'STUN/TURN 配置格式无效');
     }
   });
 

@@ -49,8 +49,8 @@
           "mobile/web/chisacode/daemon-client.bundle.js",
           "mobile/web/chisacode/daemon-client.bundle.js.map"
         ],
-        "sourceHash": "afbcb6ffe801d96824a5803f6bbd7fe0d7a8753bd50ccd16fe41442593529375",
-        "artifactHash": "6c5895a71223ac494f11fa61294a58c401e03a8a0ebc3dfb1e17ee34a91ead8d",
+        "sourceHash": "7b81f566c9d827cbc8e3f76fba44761fa417f2119ea72717ef409ffe1ba84ea0",
+        "artifactHash": "c2b041b7053a0af60580f66f1a720bdef21ae0d0e952d963bb3a95e319924c16",
         "recordCommands": [
           [
             "scripts/prepare-dshd-remote.mjs",

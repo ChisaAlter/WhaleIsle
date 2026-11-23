@@ -30,14 +30,14 @@ function transportModeLabel(mode) {
 
 /**
  * Observe active transport mode changes on a DaemonClient.
- * @param {object} client
+ * @param {{ subscribeTransportMode?: (cb: (mode: string) => void) => () => void, getTransportMode?: () => string | null }} client
  * @param {(mode: string) => void} onChange
  * @returns {() => void}
  */
 function watchTransportMode(client, onChange) {
   if (typeof onChange !== 'function') return () => {};
   if (typeof client?.subscribeTransportMode === 'function') {
-    return client.subscribeTransportMode((mode) => {
+    return client.subscribeTransportMode((/** @type {string} */ mode) => {
       onChange(mode || '');
     });
   }

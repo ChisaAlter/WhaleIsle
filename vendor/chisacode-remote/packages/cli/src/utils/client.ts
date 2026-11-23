@@ -300,12 +300,19 @@ async function connectViaRelayOffer(
   timeout: number,
   nodeWebSocketFactory: ReturnType<typeof createNodeWebSocketFactory>,
 ): Promise<DaemonClient> {
-  const url = buildRelayWebSocketUrl({
-    endpoint: offer.relay.endpoint,
-    serverId: offer.serverId,
-    role: "client",
-    useTls: offer.relay.useTls ?? shouldUseTlsForDefaultHostedRelay(offer.relay.endpoint),
-  });
+  const relayEndpoint = offer.relay?.endpoint?.trim();
+  const url = relayEndpoint
+    ? buildRelayWebSocketUrl({
+        endpoint: relayEndpoint,
+        serverId: offer.serverId,
+        role: "client",
+        useTls: offer.relay?.useTls ?? shouldUseTlsForDefaultHostedRelay(relayEndpoint),
+      })
+    : "";
+  const lanEndpoints = offer.lan?.endpoints ?? [];
+  if (!url && lanEndpoints.length === 0) {
+    throw new Error("Connection offer must provide either relay.endpoint or lan.endpoints");
+  }
 
   const client = new DaemonClient({
     url,
@@ -319,6 +326,8 @@ async function connectViaRelayOffer(
     ) => nodeWebSocketFactory(target, { headers: config?.headers, protocols: config?.protocols }),
     e2ee: { enabled: true, daemonPublicKeyB64: offer.daemonPublicKeyB64 },
     reconnect: { enabled: false },
+    ...(lanEndpoints.length > 0 ? { lanEndpoints, lanUseTls: offer.lan?.useTls === true } : {}),
+    ...(offer.iceServers && offer.iceServers.length > 0 ? { iceServers: offer.iceServers } : {}),
   });
 
   try {
