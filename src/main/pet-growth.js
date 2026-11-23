@@ -383,11 +383,11 @@ function dayKey(now = Date.now()) {
 // exists it is the accounting source of truth: it already bills a forked
 // subagent's work once, per request.
 const MAGPIE_AGENT = 'dsh';
-const MAGPIE_USAGE_DEFAULT = path.join(os.homedir(), '.config', 'magpie', 'usage.jsonl');
 
 function magpieUsageFile(env = process.env) {
-  const override = env?.MAGPIE_USAGE_FILE;
-  return typeof override === 'string' && override.trim() ? override : MAGPIE_USAGE_DEFAULT;
+  const xdg = typeof env?.XDG_CONFIG_HOME === 'string' && env.XDG_CONFIG_HOME.trim();
+  return (typeof env?.MAGPIE_USAGE_FILE === 'string' && env.MAGPIE_USAGE_FILE.trim())
+    || path.join(xdg && path.isAbsolute(xdg) ? xdg : path.join(os.homedir(), '.config'), 'magpie', 'usage.jsonl');
 }
 
 // Stable identity for one credited request. `route_id` is unique per routed

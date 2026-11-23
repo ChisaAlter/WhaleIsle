@@ -47,8 +47,8 @@ export function selectChecks(paths, { manual = false } = {}) {
     if (/^tsconfig\.check(\.(dom|launcher|pet))?\.json$/.test(path) ||
         (/^(src\/(shared|preload|main|main-launcher|host|launcher|renderer)\/|mobile\/web\/)/.test(path) && !/\.test\.(js|mjs|cjs)$/.test(path))) scope.tools = true
     if (/^(eslint\.config\.mjs|eslint-suppressions\.json)$/.test(path)) { scope.product = true; scope.tools = true }
-    if (path === '.github/workflows/cnb-mirror.yml') { scope.tools = true; continue }
-    if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
+    if (/^\.github\/workflows\/(?:magpie-)?cnb-mirror\.yml$/.test(path)) { scope.tools = true; continue }
+    if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|publish-macos-supplement\.mjs|sync-cnb\.mjs|sync-magpie-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
     if (/\.test\.(js|mjs)$/.test(path)) {
       if (!path.startsWith('scripts/')) scope.product = true
       if (/^(vendor|dsh-acp)\//.test(path)) scope.vendor = true

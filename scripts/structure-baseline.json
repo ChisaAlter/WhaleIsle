@@ -202,9 +202,6 @@
       "runNative/4eb6b4d66fc1ff79": 21,
       "runNative/4eb6b4d66fc1ff79/7bf75392b5bcf921": 27
     },
-    "scripts/qa-whalebridge-agents.cjs": {
-      "runNative": 41
-    },
     "scripts/release-download.mjs": {
       "downloadArtifact": 36
     },
@@ -256,9 +253,6 @@
     "src/launcher/runtime-install.js": {
       "installRuntime": 50,
       "startExternalDesktop": 26
-    },
-    "src/launcher/whalebridge.js": {
-      "createWhaleBridgeService/row": 22
     },
     "src/main/account-backend.js": {
       "accountView": 32

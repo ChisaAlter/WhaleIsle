@@ -1029,12 +1029,12 @@ class DshManager extends EventEmitter {
     // An installed channel must work when the desktop is started directly,
     // without requiring the launcher or component settings window to be open.
     // A component failure is reported without preventing other channels.
-    // Start WhaleBridge concurrently with packaged harness preparation.
-    const whaleBridgeReady = (async () => {
+    // Start Magpie concurrently with packaged harness preparation.
+    const magpieReady = (async () => {
       try {
-        await require('../launcher/whalebridge').ensureWhaleBridgeRuntime();
+        await require('../launcher/magpie').ensureMagpieRuntime();
       } catch (error) {
-        if (isCurrent()) this.log(`鲸桥不可用：${error.message}`, 'app');
+        if (isCurrent()) this.log(`Magpie 不可用：${error.message}`, 'app');
       }
     })();
 
@@ -1057,7 +1057,7 @@ class DshManager extends EventEmitter {
     } finally {
       if (this.preparationAbort === preparationAbort) this.preparationAbort = null;
     }
-    await whaleBridgeReady;
+    await magpieReady;
     if (!isCurrent()) throw cancelledError();
 
     options = await applyPreparedPluginOverlays(options, { harnessRoot: preparedHarnessRoot, isCurrent, cancelledError });

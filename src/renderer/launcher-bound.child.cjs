@@ -101,7 +101,7 @@ let componentVersion = visualOnly ? '1.1.1' : '1.0.3';
 let componentMessage = '';
 let componentStartResolve, componentStopResolve, componentInstallResolve, componentUpdateResolve;
 let componentListResolve, componentUninstallInfoResolve;
-const componentRow = () => ({ id: 'whalebridge', name: '鲸桥', description: '连接供应商和订阅账号，在鲸屿使用模型。', version: componentLatest, installedVersion: componentInstalled ? componentVersion : '', previousVersion: '1.0.2', updateAvailable: componentInstalled && componentVersion !== componentLatest, message: componentMessage, state: componentInstalled ? (componentRunning ? 'running' : 'stopped') : 'available', configurable: componentInstalled, source: 'official', kind: 'service' });
+const componentRow = () => ({ id: 'magpie', name: 'Magpie', description: '连接供应商和订阅账号，在鲸屿使用模型。', version: componentLatest, installedVersion: componentInstalled ? componentVersion : '', previousVersion: '1.0.2', updateAvailable: componentInstalled && componentVersion !== componentLatest, message: componentMessage, state: componentInstalled ? (componentRunning ? 'running' : 'stopped') : 'available', configurable: componentInstalled, source: 'official', kind: 'service', ownership: 'managed', capabilities: { canInstall: !componentInstalled, canStart: componentInstalled && !componentRunning, canStop: componentInstalled && componentRunning, canOpen: componentInstalled, canUpdate: componentInstalled && componentVersion !== componentLatest, canRollback: componentInstalled, canUninstall: componentInstalled, canDeleteData: componentInstalled, externalUpdateUrl: '' } });
 const componentPayload = () => ({ components: process.env.QA_COMPONENTS_HOME === '1' || componentFeedback || visualOnly ? [componentRow()] : [] });
 ipcMain.handle('shell:components-list', (_event, options) => {
   results.calls.push({ op: 'component-list', refresh: options?.refresh === true });
@@ -457,7 +457,7 @@ app.whenReady().then(async () => {
           spinnerColor: button.querySelector('.shell-button-spinner') ? getComputedStyle(button.querySelector('.shell-button-spinner')).borderTopColor : '',
           busy: button.getAttribute('aria-busy'), loadingLabel: button.getAttribute('aria-label'),
           homeHeight: document.querySelector('#home-components').getBoundingClientRect().height,
-          controls: [...document.querySelectorAll('[data-comp-id="whalebridge"]')].map(control => ({
+          controls: [...document.querySelectorAll('[data-comp-id="magpie"]')].map(control => ({
             action: control.dataset.compAction, disabled: control.disabled, busy: control.getAttribute('aria-busy'),
           })),
           extraFeedbackNodes: document.querySelectorAll('#hint, [data-comp-hint], #home-components-hint, [data-comp-progress]').length,
@@ -489,7 +489,7 @@ app.whenReady().then(async () => {
         await win.webContents.executeJavaScript('document.querySelectorAll(".shell-feedback-toast").forEach(node => node.remove())');
         await waitForDom(js, '!document.querySelector(".shell-feedback-toast")');
       };
-      const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'whalebridge', ...payload });
+      const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'magpie', ...payload });
       await waitForDom(js, '!!document.querySelector("#home-components [data-comp-action=start]")');
       await win.webContents.executeJavaScript(`window.qaComponentNotices = [];
         const originalNotice = window.appNotice;
@@ -578,7 +578,7 @@ app.whenReady().then(async () => {
       await waitForDom(js, 'window.qaComponentButton.title.includes("校验组件 60%")');
       const verifying = await readFeedback();
       componentInstallResolve();
-      await waitForDom(js, '!!document.querySelector("#tab-components [data-comp-action=open]") && !document.querySelector("[data-comp-id=whalebridge][aria-busy=true]")');
+      await waitForDom(js, '!!document.querySelector("#tab-components [data-comp-action=open]") && !document.querySelector("[data-comp-id=magpie][aria-busy=true]")');
       const installed = await readFeedback();
       await captureBound('bound-component-installed.png');
       const installDismissed = installed;
@@ -605,8 +605,8 @@ app.whenReady().then(async () => {
       componentMessage = 'fixture catalog is unavailable';
       await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
       const persistentErrorInline = await win.webContents.executeJavaScript('document.querySelector("[data-comp-list]").innerText.includes("fixture catalog")');
-      await click('#tab-components [data-comp-info="whalebridge"]');
-      await waitForDom(js, 'document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥状态：")');
+      await click('#tab-components [data-comp-info="magpie"]');
+      await waitForDom(js, 'document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("Magpie状态：")');
       const statusDetails = await readFeedback();
       await closeNotice();
 
@@ -640,7 +640,7 @@ app.whenReady().then(async () => {
       componentUninstallInfoResolve({ defaultModel: true });
       await waitForDom(js, 'document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
       await click('#app-confirm-ok');
-      await waitForDom(js, 'document.querySelector("#app-confirm-title").textContent === "是否同时删除鲸桥配置？"');
+      await waitForDom(js, 'document.querySelector("#app-confirm-title").textContent === "是否同时删除 Magpie 配置？"');
       const keepDataConfirm = await readFeedback();
       await click('#app-confirm-cancel');
       await waitForMain(() => results.calls.some(call => call.op === 'component-uninstall'), 'component-uninstall IPC');
@@ -657,7 +657,7 @@ app.whenReady().then(async () => {
     if (process.env.QA_COMPONENTS_HOME === '1') {
       const read = () => js(`(() => {
         const home = document.querySelector('#home-components');
-        const row = document.querySelector('#tab-components [data-comp-row="whalebridge"]');
+        const row = document.querySelector('#tab-components [data-comp-row="magpie"]');
         const visible = button => !!button && button.checkVisibility();
         return { hidden: home.hidden, homeText: home.innerText,
           homeStart: visible(home.querySelector('[data-comp-action="start"]')),
@@ -683,7 +683,7 @@ app.whenReady().then(async () => {
       })()`);
       // Initial render waits on the components-list IPC and its paint; the
       // catalog row appearing proves that pass settled.
-      await waitForDom(js, `!!document.querySelector('#tab-components [data-comp-row="whalebridge"]')`);
+      await waitForDom(js, `!!document.querySelector('#tab-components [data-comp-row="magpie"]')`);
       const absent = await read();
       componentInstalled = true;
       await js('window.__launcherComponents.refresh()');
@@ -716,7 +716,7 @@ app.whenReady().then(async () => {
       await js(`document.querySelector('[data-tab="components"]').click()`);
       // The components tab mounts its list on activation; the refreshed row
       // proves the async render finished.
-      await waitForDom(js, `document.querySelector('#tab-components [data-comp-row="whalebridge"] [data-comp-action="start"]')?.checkVisibility() === true`);
+      await waitForDom(js, `document.querySelector('#tab-components [data-comp-row="magpie"] [data-comp-action="start"]')?.checkVisibility() === true`);
       const catalogStopped = await read();
       await js(`document.querySelector('.comp-manage').open = true; document.querySelector('[data-comp-action="rollback"]').click()`);
       await waitForDom(js, `document.getElementById('app-confirm').hidden === false`);

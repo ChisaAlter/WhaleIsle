@@ -559,18 +559,20 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   assert.deepEqual(status.components, [{ id: 'toy', state: 'installed', version: '1.0.0' }]);
 });
 
-test('launcher WhaleBridge open reuses the settings-window path without returning its URL', async (t) => {
+test('launcher Magpie open reuses the settings-window path without returning its URL', async (t) => {
   const env = fakeEnv(t);
-  const url = 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32);
-  let outcome = { ok: true, url };
+  const url = 'http://127.0.0.1:3430/?k=' + 'a'.repeat(32);
+  let outcome = { ok: true, url, ownership: 'managed', version: '0.1.4708' };
   const bridge = {
+    id: 'magpie',
+    row: () => ({ id: 'magpie', latest: '0.1.4708', capabilities: { externalUpdateUrl: '' } }),
     start: t.mock.fn(async (progress) => {
       progress({ phase: 'done', percent: 100 });
       return outcome;
     }),
   };
-  const open = t.mock.method(require('../../main/whalebridge-window'), 'openWhaleBridgeWindow', () => {});
-  ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
+  const open = t.mock.method(require('../../main/magpie-window'), 'openMagpieWindow', () => {});
+  ipcComponents._configureForTest({ ...env.deps, magpie: bridge });
   t.after(() => ipcComponents._configureForTest());
   const channels = new Map();
   const sent = [];
@@ -584,39 +586,42 @@ test('launcher WhaleBridge open reuses the settings-window path without returnin
   const launcher = channels.get('shell:components-open');
   assert.deepEqual(contractRoles('shell:components-open'), [IPC_ROLES.LAUNCHER]);
   const event = {};
-  assert.deepEqual(await launcher.listener(event, 'whalebridge'), { ok: true });
+  assert.deepEqual(await launcher.listener(event, 'magpie'), { ok: true });
   assert.equal(bridge.start.mock.callCount(), 1);
-  assert.deepEqual(open.mock.calls.map((call) => call.arguments), [[url]]);
+  assert.equal(open.mock.calls.length, 1);
+  assert.equal(open.mock.calls[0].arguments[0].url, url);
+  assert.equal(open.mock.calls[0].arguments[0].ownership, 'managed');
   assert.ok(sent.every((row) => row.channel === 'shell:components-progress'
-    && row.payload.id === 'whalebridge' && !Object.hasOwn(row.payload, 'url')));
+    && row.payload.id === 'magpie' && !Object.hasOwn(row.payload, 'url')));
 
   for (const failure of [
     { ok: false, error: 'busy' },
-    { ok: false, error: 'whalebridge-failed', message: 'Please install WhaleBridge first' },
+    { ok: false, error: 'magpie-failed', message: 'Please install Magpie first' },
   ]) {
     outcome = failure;
-    assert.deepEqual(await launcher.listener(event, 'whalebridge'), failure);
+    assert.deepEqual(await launcher.listener(event, 'magpie'), failure);
   }
   assert.equal(open.mock.callCount(), 1, 'failed starts must not open a settings window');
   assert.deepEqual(await launcher.listener(event, 'other-component'), { ok: false, error: 'unknown-component' });
-  assert.equal(bridge.start.mock.callCount(), 3, 'unknown component must not start WhaleBridge');
+  assert.equal(bridge.start.mock.callCount(), 3, 'unknown component must not start Magpie');
 });
 
 for (const operation of ['update', 'rollback', 'uninstall']) {
-  test(`ipc-components WhaleBridge ${operation} invalidates settings only after a successful or changed runtime`, async (t) => {
+  test(`ipc-components Magpie ${operation} invalidates settings only after a successful or changed runtime`, async (t) => {
     const env = fakeEnv(t);
-    const oldUrl = 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32);
-    const restoredUrl = 'http://127.0.0.1:3428/?k=' + 'b'.repeat(32);
+    const oldUrl = 'http://127.0.0.1:3430/?k=' + 'a'.repeat(32);
+    const restoredUrl = 'http://127.0.0.1:3431/?k=' + 'b'.repeat(32);
     let live, nextLive, outcome;
     const bridge = {
+      id: 'magpie',
       state: () => live,
       [operation]: t.mock.fn(async () => {
         live = nextLive;
         return outcome;
       }),
     };
-    const close = t.mock.method(require('../../main/whalebridge-window'), 'closeWhaleBridgeWindow', () => {});
-    ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
+    const close = t.mock.method(require('../../main/magpie-window'), 'closeMagpieWindow', () => {});
+    ipcComponents._configureForTest({ ...env.deps, magpie: bridge });
     t.after(() => ipcComponents._configureForTest());
     const channels = new Map();
     ipcComponents.register({
@@ -630,13 +635,13 @@ for (const operation of ['update', 'rollback', 'uninstall']) {
     assert.deepEqual(contractRoles(`shell:components-${operation}`), [IPC_ROLES.LAUNCHER]);
     const cases = [
       { name: 'success retains existing close behavior', result: { ok: true }, after: oldUrl, closes: true },
-      { name: 'failed switch restored at a new origin', result: { ok: false, error: 'whalebridge-failed' }, after: restoredUrl, closes: true },
-      { name: 'failed switch restored with a new authentication key', result: { ok: false, error: 'whalebridge-failed' }, after: oldUrl.replace(/a{32}/, 'b'.repeat(32)), closes: true },
-      { name: 'staging failed before the healthy runtime changed', result: { ok: false, error: 'whalebridge-failed', message: 'SHA256 mismatch' }, after: oldUrl, closes: false },
+      { name: 'failed switch restored at a new origin', result: { ok: false, error: 'magpie-failed' }, after: restoredUrl, closes: true },
+      { name: 'failed switch restored with a new authentication key', result: { ok: false, error: 'magpie-failed' }, after: oldUrl.replace(/a{32}/, 'b'.repeat(32)), closes: true },
+      { name: 'staging failed before the healthy runtime changed', result: { ok: false, error: 'magpie-failed', message: 'SHA256 mismatch' }, after: oldUrl, closes: false },
       { name: 'busy refusal retains the healthy window', result: { ok: false, error: 'busy' }, after: oldUrl, closes: false },
-      { name: 'active request refusal retains the healthy window', result: { ok: false, error: 'whalebridge-failed', message: 'Active DSH request' }, after: oldUrl, closes: false },
+      { name: 'active request refusal retains the healthy window', result: { ok: false, error: 'magpie-failed', message: 'Active DSH request' }, after: oldUrl, closes: false },
     ];
-    const argument = operation === 'uninstall' ? { id: 'whalebridge', removeData: false } : 'whalebridge';
+    const argument = operation === 'uninstall' ? { id: 'magpie', removeData: false } : 'magpie';
     for (const scenario of cases) {
       live = { url: oldUrl };
       nextLive = { url: scenario.after };

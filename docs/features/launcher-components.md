@@ -4,70 +4,53 @@
 | --- | --- |
 | **id** | `launcher-components` |
 | **status** | `implemented` |
-| **last verified** | 2026-09-28 |
+| **last verified** | 2026-11-23 |
 
 历史验证与变更记录见 [docs/history/launcher-components.md](../history/launcher-components.md)。
 
 ## User paths
 
-1. 用户在启动器新增的组件分区浏览项目维护的组件，按需下载、安装、运行或停止工具/服务。
-2. 用户独立更新或卸载单个组件；失败时仍可使用上一健康版本，组件数据是否删除由用户单独选择。
-3. Launcher 窗口关闭时继续监管已运行服务；退出 Launcher 时停止旧通用组件平台监管的服务。鲸桥独立运行，退出启动器后继续服务 DSH；桌面端直接启动时也会恢复已安装的鲸桥。
+1. 用户在启动器「组件」分区浏览与安装官方上游 [Magpie CLI](https://github.com/yetone/magpie)（`magpie-cli`）。
+2. 启动器优先复用本机已存在的 Magpie 安装与 `~/.config/magpie` 配置目录；如果本机已有网关（默认 `127.0.0.1:3425`）但尚未开启 Web 界面，受管程序仅作为 `--addr 127.0.0.1:<port> --no-open` UI 伴生实例接入同一配置与网关，不与外部网关冲突。
+3. 用户点击「打开设置」时，鲸屿在原生 `BrowserWindow` 壳窗（38px 宿主标题栏）内通过零注入 `WebContentsView` 直接加载上游 Magpie Web UI。
+4. 曾安装旧版「鲸桥（WhaleBridge）」的用户在检测或安装 Magpie 时自动迁移配置到 Magpie（只读旧数据、带回滚状态机、安全合并并去重 `usage.jsonl`、按 token 新鲜度保留凭据、完成后自动断开旧 DSH `whalebridge` 渠道）。
+5. 受管安装支持在启动器内检查新版本、原地升级与一键回滚，并支持卸载或单独清理配置；外部安装的 Magpie 保持只读保护，不在启动器内强杀或覆盖用户自有二进制，升级时打开官方 Release 页面。
 
-## 鲸桥（WhaleBridge）
+## Magpie 组件生命周期与迁移边界
 
-首个正式组件从 [Magpie](https://github.com/yetone/magpie) 的源码精简开发，源码、上游 pin、Go 构建和发布资产由 [WhaleBridge](https://github.com/ChisaAlter/WhaleBridge) 独立仓库管理；鲸屿只保留组件下载、进程生命周期、原生管理窗口及默认接入。MIT 版权随组件源码和发布清单保留。供应商、订阅登录、模型、路由及用量核心保留，默认自动接入鲸屿，并通过 Agent 接入页复用上游的内置多客户端配置适配，支持显式接入、模型与推理设置、断开恢复。浏览和切换目标只读取配置；没有上游 CLI/TUI、Wails 壳或 Skills/MCP 管理入口。
-
-组件保留上游内置客户端配置适配和供应商、订阅能力，精简上游应用外壳。鲸桥自己的管理页接出上游供应商配置：多协议与模型目录地址、区域和套餐、模型选择及覆盖、价格倍率、并发与排队、缓存粘性、故障转移、代理、附加请求头、余额查询和供应商专用认证字段。ClinePass 可固定 DeepSeek 官方上游；模型可以全选、全不选或只选免费。供应商支持连接检查、导入、复制、重命名和排序。订阅与多密钥支持各自的模型范围、代理、并发限制、用量上限、权重和排序，以及供应商提供的认证、额度和适配器操作；这些操作不接管其他客户端配置。
-
-启动器组件页提供安装、启动、停止和运行时打开设置；更新、回滚与卸载放在管理菜单。安装后首页显示组件卡片，可开启、关闭鲸桥及打开设置。首页的鲸屿桌面端与鲸桥卡片不显示头像，侧栏品牌与组件管理列表图标保持不变。管理窗口使用独立的本机认证页面；供应商原始密钥不返回页面。安装和设置保存同步 `dsh-home/profiles/web/cordis.patch.yml` 中 `llm-pi-ai` 的 `providers.whalebridge`；home patch 已覆盖该插件 config 时，只在其现有配置中同步鲸桥渠道，保留其他供应商。网关凭据使用可热加载的 `dsh-home/.credentials.yaml` 受管引用，仅迁移本组件拥有的旧 `.env` key，桌面 Models 中显示「鲸桥」。安装时不覆盖默认模型。关闭鲸桥移除该渠道及其网关凭据，模型选择中不再出现鲸桥；默认模型的选择保持不变，组件下次启动时重新写入渠道。卸载只删除这两个持久层的鲸桥渠道及其凭据；默认模型属于鲸桥时清除这一默认选择，聊天记录和其他渠道保留。组件配置是否删除由用户选择。
-
-数据位于桌面共享状态目录的 `components/whalebridge/data`，程序位于版本目录。强制结束、崩溃或关机留下的 `state.json` 不再被当作运行中：管理接口不可达时，启动器询问固定网关端口的 `/whalebridge/identity`，只有连接被拒绝或返回其他 PID 才删除这份记录，响应超时不算。启动失败直接显示组件日志最后几行（如端口占用），日志超过 1 MB 时下次启动重新开始。版本切换成功后只保留当前版本和一个回滚版本。停止、更新和卸载等待旧进程真正退出后才移动程序目录，Windows 释放文件时的短暂占用会重试。卸载前读取状态和断开 DSH 的组件命令异步执行，不阻塞启动器窗口。非 Windows x64 主机显示「暂不支持」，不请求发布清单。操作锁记录为空且超过 10 秒时视为已退出的启动器留下的锁。更新先完成下载及大小/SHA256 校验，再切换进程；新版本无法就绪时恢复原版本。正在处理 Agent 请求或订阅进程等待工具结果时拒绝停止、更新和卸载，不切断流或工具续接。停止失败解除维护冻结；卸载预检查只读，不启动已停止的服务。卸载先确认进程停止并保留可恢复的程序，再原子断开 DSH；断开失败恢复安装记录及原运行状态。组件只同步用户在 Agent 接入页明确连接的外部客户端模型目录，错误在该目标页面显示；不启动上游原生账号切换、客户端安装或插件更新后台任务。卸载前恢复通过配置文件接入的客户端原配置，失败会中止卸载并保留剩余接入记录。Cindy 的导入确认与移除由该应用管理；专用启动命令和导入链接只在用户明确生成时显示，并需要用户在目标应用或终端执行。订阅认证继续使用上游原生 OAuth、官方认证 CLI 和供应商适配器，Claude 内部工具 helper 和本机 token 回调属于订阅功能依赖，不是用户 MCP 管理入口。
-
-在独立鲸桥仓库执行 `node scripts/build.mjs --out <鲸屿源码目录>/.tmp/whalebridge-package`，源码启动器即可安装本地产物。宿主联动 QA 通过 `WHALEBRIDGE_QA_PACKAGE` 指定组件包；只有需要构建下一版本的更新/回滚 QA 要求 `WHALEBRIDGE_SOURCE_DIR` 明确指向鲸桥源码。鲸屿不再含组件源码、Go builder 或组件发布工作流。
-
-正式分发沿用 `whalebridge-v<版本>` tag、`WhaleBridge-win32-x64.exe` 及 `WhaleBridge-component.json`。GitHub 线路直接读取 Latest 稳定发布的清单附件，再按清单版本固定程序下载地址，避免依赖共享出口 IP 的匿名 REST API 额度；安装仍验证大小与 SHA256。CNB 线路继续从镜像版本列表选择稳定组件，并使用该线路的清单及程序附件。1.2.0 多 Agent 版本已在独立 GitHub 仓库及共享 CNB 镜像发布；已安装组件的数据路径、校验、更新与回滚协议保留。
-
-管理页沿用鲸屿透明 logo、侧栏、语义 token 和控件。窗口隐藏独立系统标题栏，原生窗口控制融入右上角，顶部空白可拖动；页面位置、服务状态和刷新操作直接置于主面板，不另设横条。供应商、订阅账号和密钥采用管理列表，提供搜索、状态筛选、长列表折叠和批量操作。编辑工作台以分区导航组织连接、模型、路由与计费，保存与取消固定可达。模型列表按渠道与供应商分组；路由支持嵌套成员、模式匹配预览、固定推理等级、快速模式及批量排序删除。全局设置分为连接与显示、搜索与图像、隐私与脱敏、请求记录与遥测、备份与同步；全局设置与统一价格表单切换分区时保留未保存值，各表单独立保存或取消。用量页提供汇总与趋势、请求账本及 CSV、订阅额度与历史曲线、路由记录和请求归档。窗口支持浅色、深色和窄屏布局。
-
-全局设置字段按标签与控件成组排列；搜索服务草稿按供应商保留在当前窗口内，切换分区或侧栏后继续编辑，取消清除该供应商草稿。调用趋势使用固定高度的时间轴图，可切换请求、Token 与费用，按所选周期及本机时区展示。费用汇总与账本计入纯缓存请求；缺少价格的调用标明未计价，微小费用保留有效小数。
-
-DSH 模型元信息保留真实窗口大小，并独立传递模型、供应商或全局压缩阈值至实际压缩消费者。后台模型更新及仅设置变化的云同步也会更新 DSH 渠道，失败在连接状态中持续显示。供应商请求的 OTLP、S3 归档与加密备份可单独配置；备份和同步只恢复供应商与相关设置，保留服务器已有的外部客户端、Skills/MCP 数据。
-
-新增 API 供应商或完成订阅授权后，原弹窗保留明确的成功结果和模型同步说明，不自动关闭。结果区集中显示供应商、账号身份与接入状态，后续操作区说明如何在桌面端使用模型。用户可点击「完成」关闭，或「查看供应商」进入账号管理页；已有订阅重新授权显示授权已更新。表单标签与输入保留 8px 间距，字段组与动态追加的登录方式、区域、代理和密钥字段保留 20px 间距；订阅适配器安装按钮与上方说明保留 12px 间距。账号列表与新增操作、登录回调与提交操作分别留出区块间距，窄屏下长名称与操作按钮可换行。
-
-设置窗口复用启动器的窗口控件样式和图标，保留 48px 拖动区与 32px 最小化、最大化/还原和关闭按钮。沙箱 preload 只提供这三个窗控所需的动作与状态，账号页面不能取得其他桌面权限。普通用户入口沿用前台打开设置。命令启动可以明确选择不激活窗口，使设置页显示而不争用用户正在操作的窗口焦点。组件更新、回滚或卸载在恢复旧版本但管理地址发生变化时，也会释放旧设置窗口，避免继续请求失效地址。
+- **发布与校验**：GitHub 线路经由 `https://github.com/yetone/magpie/releases/latest` 重定向与 `SHA256SUMS` 解析最新版本（无匿名 REST API 配额消耗）；CNB 线路从仓库 CNB Release 读取 `magpie-v<version>` 及 `SHA256SUMS`。下载暂存后校验字节大小与 SHA256，切换时将二进制设为只读，在不修改用户 `settings.json` 的前提下阻止上游程序自更新与生命周期竞争。
+- **零注入外壳**：`src/main/magpie-window.js` 使用 `persist:magpie` 会话，仅允许本机 loopback `http://127.0.0.1:<port>` 与 `?theme=dark|light` 渲染上游界面，不挂 `preload`、不注入 CSS/JS，仅将 `http(s)://` 外部 OAuth/外链交还系统默认浏览器打开。
+- **并发保护**：停止、切换版本、回滚或卸载前，通过 `/v1/magpie/concurrency` 检查活跃请求、排队任务与子工具状态；存在运行中工作时拒绝切断连接。
+- **退出与随动**：Launcher 关闭前回收受管 `magpie-cli`；桌面端直接启动时通过 `ensureMagpieRuntime` 恢复已安装组件。通过 DSH 同步网关确保外部 Magpie 与受管进程共用正确端口及令牌。
+- **旧版 WhaleBridge 下线**：不再编译、分发或维护 Go 源码分叉，不再轮询 `/api/subscriptions/alerts/claim`；历史组件产物仅在自动化升级迁移中按只读源读取。
 
 ## Invariants
 
-- 清单入口在任何宿主上都拒绝 Windows 绝对与驱动器相对路径，并在归一分隔符后验证根内边界。
-- 组件是独立进程，不注入 Launcher renderer。鲸桥获得明确授权，仅写自己拥有的 DSH 渠道；遇到同名非鲸桥配置拒绝接管。
-- 鲸桥从项目自己的发布源读取清单，校验组件 id、版本、固定入口、大小和 SHA256。当前没有独立签名验证，界面不声称已验证签名。
-- 二进制置于 Launcher 自有版本目录，数据置于独立数据目录；暂存验证成功后才切换 active，保留上一健康版本供回滚。
-- main 进程直接启动固定入口并跟踪 PID、就绪和版本。鲸桥安装后启动；停止后可手动恢复，没有自动重试循环。
-- 组件操作锁与 DSHD 安装锁分离；组件故障不得阻塞 Launcher 的下载/安装/启动主路径。
+- 任何安装、升级、迁移或 DSH 同步都不得覆盖、终止或清理外部用户自管的 Magpie 进程与配置。
+- `BrowserWindow` 壳层的窗口控制 IPC 仅接受来自 `file:` 主框的 `magpie-shell.html` 请求，内容 `WebContentsView` 绝不拥有 `preload` 或 Node/IPC 能力。
+- 迁移写入先落事务状态 `migration-state.json` 与备份，任何步骤失败均可原子回滚到迁移前快照；冷拷贝与合并场景按固定字段重写旧相对路径、保留较新 OAuth token，并去重用量记录。
+- 组件操作锁与 DSH 主更新锁相互隔离，组件故障不得阻塞启动器或桌面主路径。
 
 ## Allowed touch
 
-- `src/launcher/` — 组件清单、安装器与进程监管服务；不新建另一套启动器 UI
-- `src/renderer/launcher.*`、`src/main/ipc.js`、`src/preload/index.js` 与提取出的启动器服务 — 组件分区、授权 IPC 与状态投影
-- `docs/design-language.md` 与 Launcher UI — 组件页视觉角色及交互
-- `.github/workflows/`、`scripts/` — 同源签名组件产物与测试夹具
+- `src/launcher/magpie/` — 发布解析、状态检测、旧配置迁移、DSH 同步与生命周期控制
+- `src/launcher/components/`、`src/renderer/launcher-components.js`、`src/main/ipc-components.js` — 组件注册、声明式能力映射与启动器交互
+- `src/main/magpie-window.js`、`src/preload/magpie-shell.js`、`src/renderer/magpie-shell.*` — 38px 外壳与零注入 `WebContentsView`
+- `.github/workflows/magpie-cnb-mirror.yml`、`scripts/sync-magpie-cnb.mjs` — CNB 镜像同步
 
 ## Do not touch
 
 - `vendor/deepseek-harness` 插件市场、`marketplace-install.js` 的 profile 锁、HarnessController 生命周期
-- 任意第三方组件加载或脚本执行入口
+- 外部用户已运行的 `magpie` 网关进程与任意未授权数据目录
 
 ## Gates
 
 | Kind | What |
 | --- | --- |
-| Automated | 清单/哈希、路径边界、安装/回滚、就绪版本、活跃请求保护、配置保留和卸载渠道 |
-| Manual / QA | 真实 Windows 工具与服务各一例：安装、运行、关窗托盘、停止、更新、卸载、断网恢复 |
+| Automated | 发布清单与 `SHA256SUMS` 校验、4 态复用检测、Scenario A/B/C 迁移与回滚、启动/停止并发锁、升级与回滚、零注入窗口与外链安全、CNB 镜像同步 |
+| Manual / QA | 本机已装 Magpie 复用、冷装受管 Magpie、旧版鲸桥自动迁移、启动器内升级与回滚、Shell 窗口打开上游 Web UI |
 
 ## Sources
 
+- Impl: `src/launcher/magpie/`、`src/main/magpie-window.js`、`src/main/ipc-components.js`、`scripts/sync-magpie-cnb.mjs`
 - Decision: [跨平台入口与 CI 修复](../decisions/implemented/bug-fix/2026-09-28-clean-ci-portability.md)
-- Decision: [启动器独立分发架构](../decisions/proposed/architecture/2026-09-24-launcher-standalone-distribution.md)
-- Plan: [启动器重构计划](../superpowers/plans/2026-09-24-launcher-refactor.md)
