@@ -1,8 +1,9 @@
-// BotPackageV1 export/import validation, planning, and bot text security scanner.
+// BotPackageV1 export/import validation, agent-neutral skill planning,
+// URL authority credential parsing, and 5-category bot text security scanner (`scanBotText`).
 
 import { BOT_AVATAR_FILE, BOT_MASCOT_IDS, isBotMascotId, mascotAvatar } from './bot-avatar.js';
 import { redactSecretLike } from './bot-memory-lines.js';
-import { BOT_TOOL_HEADER_NAME_PATTERN, BOT_TOOL_NAME_PATTERN, isValidBotToolUrl } from './bot-tools-schema.js';
+import { BOT_TOOL_HEADER_NAME_PATTERN, BOT_TOOL_LIMITS, BOT_TOOL_NAME_PATTERN } from './bot-tools-schema.js';
 import { BOT_AGENTS, isBotAgent, validateBotName } from './bot-types.js';
 
 export const BOT_PACKAGE_SCHEMA_VERSION = 1;
@@ -31,6 +32,14 @@ export const BOT_PACKAGE_EVENT_KINDS = Object.freeze({
   calendar: Object.freeze(['starting_soon']),
 });
 
+export const BOT_TEXT_SCAN_KINDS = Object.freeze([
+  'secret',
+  'pipe-to-shell',
+  'sudo',
+  'sends-file',
+  'hidden-unicode',
+]);
+
 const PART_NAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const PART_ID_RE = /^[a-z0-9-]{1,32}$/;
 const MEMORY_PATH_RE = /^memory\/([^/]+)\.md$/;
@@ -40,6 +49,53 @@ const ALLOWED_TOP_KEYS = new Set([
   'schemaVersion', 'name', 'avatar', 'purpose', 'agentHint', 'skills',
   'tools', 'connectors', 'schedules', 'eventSuggestions', 'memory', 'setupNote',
 ]);
+
+/**
+ * Extracts the authority component of a URL (`scheme://<authority>/...`), distinguishing
+ * `@` in the authority (embedded userinfo credentials like `https://user:pass@host/path`)
+ * from `@` in the path (e.g. `https://server.smithery.ai/@owner/mcp`).
+ * @param {string} rawUrl
+ */
+export function botToolUrlAuthority(rawUrl) {
+  if (typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed);
+  if (!schemeMatch) return null;
+  const afterScheme = trimmed.slice(schemeMatch[0].length);
+  const endIdx = afterScheme.search(/[/?#]/);
+  const authority = endIdx === -1 ? afterScheme : afterScheme.slice(0, endIdx);
+  if (!authority) return null;
+  const atIdx = authority.lastIndexOf('@');
+  const hasUserinfo = atIdx !== -1;
+  return {
+    scheme: schemeMatch[1].toLowerCase(),
+    authority,
+    userinfo: hasUserinfo ? authority.slice(0, atIdx) : '',
+    host: hasUserinfo ? authority.slice(atIdx + 1) : authority,
+    hasUserinfo,
+  };
+}
+
+/**
+ * Validates an HTTP/HTTPS MCP tool URL without embedded credentials in the authority,
+ * while correctly allowing `@` in the URL path (such as `https://server.smithery.ai/@owner/mcp`).
+ * @param {string} value
+ */
+export function isSafeBotPackageToolUrl(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > BOT_TOOL_LIMITS.maxUrlLength) {
+    return false;
+  }
+  const auth = botToolUrlAuthority(value);
+  if (!auth || (auth.scheme !== 'http' && auth.scheme !== 'https') || auth.hasUserinfo || !auth.host) {
+    return false;
+  }
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
 
 export function validateSkillPackageName(name) {
   if (typeof name !== 'string' || !PART_NAME_RE.test(name) || name.includes('--')) {
@@ -78,7 +134,7 @@ function validateToolsField(tools) {
       !tool || typeof tool !== 'object'
       || !PART_ID_RE.test(String(tool.id ?? ''))
       || !BOT_TOOL_NAME_PATTERN.test(String(tool.name ?? ''))
-      || !isValidBotToolUrl(tool.url)
+      || !isSafeBotPackageToolUrl(tool.url)
       || !Array.isArray(tool.headerNames)
       || tool.headerNames.length > 16
       || tool.headerNames.some((h) => !BOT_TOOL_HEADER_NAME_PATTERN.test(String(h ?? '')))
@@ -295,8 +351,12 @@ export function botPackageResults(resultsTo) {
   return 'channel' in resultsTo ? 'slack-channel' : 'linear-issue';
 }
 
-export function skillsFolderFor(agent) {
-  return agent === 'claude' ? '.claude/skills' : '.agents/skills';
+/**
+ * Agent-neutral own skills directory (`skills/`).
+ * @param {string} [_agent]
+ */
+export function skillsFolderFor(_agent) {
+  return 'skills';
 }
 
 /** Plans files, tools, and disabled schedules to install from a validated `BotPackageV1`. */
@@ -333,21 +393,64 @@ export function planBotFromPackage(bot, inventory, choice) {
   };
 }
 
-// ---- Security text redaction & scanning for imported / shared bot files ----
+// ---- Security text redaction & 5-category scanning (`scanBotText`) ----
 
 export const BOT_TEXT_LEFT_OUT = '[line left out: it looked like it held a secret]';
 
 const SECRET_LINE = /\b(passwords?|passwd|passcodes?|pins?|api ?keys?|secrets?|tokens?|private ?keys?|cookies?|credentials?|authorization)\b.*?(:|=|\bis\b)\s*\S|\bbearer\s+\S/i;
 const SECRET_SHAPE = /\b(sk-[\w-]{8,}|sk-ant-[\w-]{8,}|xox[abprs]-[\w-]{8,}|xapp-[\w-]{8,}|gh[opsu]_[\w]{8,}|github_pat_\w{8,}|AKIA[0-9A-Z]{12,}|AIza[\w-]{20,}|tvly-[\w-]{8,}|eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{5,})/;
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>)]+/gi;
 const URL_QUERY = /\b([a-z][a-z0-9+.-]*:\/\/)(?:[^\s/@"'`<>]+@)?([^\s?#"'`<>]*)\?[^\s#"'`<>]*/gi;
 const KEY_BLOCK_START = /-----BEGIN [A-Z0-9 ]+-----/;
 const KEY_BLOCK_END = /-----END [A-Z0-9 ]+-----/;
 const UNSAFE_TEXT_SOURCE = '[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]';
+const HIDDEN_UNICODE_LINE_SOURCE = '[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]';
 const UNSAFE_TEXT = new RegExp(UNSAFE_TEXT_SOURCE, 'u');
 const UNSAFE_TEXT_ALL = new RegExp(UNSAFE_TEXT_SOURCE, 'gu');
+const HIDDEN_UNICODE_LINE = new RegExp(HIDDEN_UNICODE_LINE_SOURCE, 'u');
 
+const PIPE_TO_SHELL_PATTERNS = [
+  /\b(?:curl|wget|fetch)\b[^\n|]*\|\s*(?:sudo\s+)?(?:\/(?:usr\/)?bin\/)?(?:ba|z|da|k|a)?sh\b/i,
+  /\b(?:curl|wget|fetch)\b[^\n|]*\|\s*(?:sudo\s+)?(?:python3?|node|perl|ruby|pwsh|powershell)\b/i,
+  /\b(?:(?:ba|z|da|k)?sh|source|\.)\s+<\(\s*(?:curl|wget)\b/i,
+  /\b(?:irm|iwr|invoke-restmethod|invoke-webrequest)\b[^\n|]*\|\s*(?:iex|invoke-expression)\b/i,
+];
+
+const SUDO_PATTERN = /(?:^|[\s;&|`($])sudo(?:\s+-[A-Za-z0-9]+)*\s+[A-Za-z0-9_./-]+/i;
+
+const SENDS_FILE_PATTERNS = [
+  /\bcurl\b[^\n]*(?:\s(?:-d|--data(?:-(?:binary|raw|urlencode|ascii))?)\s+@\S|\s(?:-F|--form)\s+[^\s]*=@\S|\s(?:-T|--upload-file)\s+\S)/i,
+  /\bwget\b[^\n]*\s--post-file(?:=|\s+)\S/i,
+  /\b(?:scp|rsync)\b[^\n]*\s[^\s]+:[^\s]+/i,
+];
+
+/** @param {string} line */
 function splitWords(line) {
   return line.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+}
+
+/** @param {string} line */
+function lineHasCredentialUrl(line) {
+  URL_IN_TEXT.lastIndex = 0;
+  let match;
+  while ((match = URL_IN_TEXT.exec(line)) !== null) {
+    const auth = botToolUrlAuthority(match[0]);
+    if (auth?.hasUserinfo) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** @param {string} line */
+function lineLooksLikeSecret(line) {
+  if (line.trim() === BOT_TEXT_LEFT_OUT) return false;
+  if (KEY_BLOCK_START.test(line) || SECRET_SHAPE.test(line)) return true;
+  if (lineHasCredentialUrl(line)) return true;
+  if (SECRET_LINE.test(splitWords(line))) return true;
+  // Check redactSecretLike on line with non-credential URLs masked so path `@` never false-positives
+  const urlMasked = line.replace(URL_IN_TEXT, (m) => (botToolUrlAuthority(m)?.hasUserinfo ? m : '[url]'));
+  return redactSecretLike(urlMasked) !== urlMasked;
 }
 
 export function hasUnsafeText(value) {
@@ -374,7 +477,7 @@ export function redactBotText(text) {
       continue;
     }
     const stripped = raw.replace(URL_QUERY, '$1$2?…');
-    if (SECRET_LINE.test(splitWords(stripped)) || SECRET_SHAPE.test(stripped) || redactSecretLike(stripped) !== stripped) {
+    if (lineLooksLikeSecret(stripped)) {
       leftOut += 1;
       out.push(BOT_TEXT_LEFT_OUT);
     } else {
@@ -382,6 +485,87 @@ export function redactBotText(text) {
     }
   }
   return { text: out.join('\n'), leftOut };
+}
+
+/**
+ * Scans bot text (SOUL.md, SKILL.md, memory topics, prompts) across 5 security categories:
+ * - `secret` (`severity: 'block'`): blocks sharing/importing secrets, keys, and authority credentials
+ * - `pipe-to-shell` (`severity: 'warn'`): `curl | sh`, `bash <(curl ...)`, `irm | iex`, etc.
+ * - `sudo` (`severity: 'warn'`): privilege escalation via `sudo`
+ * - `sends-file` (`severity: 'warn'`): `curl -d @file` / `-T` / `-F =@` / `wget --post-file` / `scp`
+ * - `hidden-unicode` (`severity: 'warn'`): zero-width, bidi override, or control characters
+ *
+ * @param {string} text
+ * @param {{ file?: string }} [options]
+ */
+export function scanBotText(text, options = {}) {
+  const safe = String(text ?? '');
+  const lines = safe.split(/\r?\n/);
+  /** @type {Array<{ kind: string, severity: 'block' | 'warn', line: number, file?: string, sample: string }>} */
+  const findings = [];
+  /** @type {boolean} */
+  let inKeyBlock = false;
+
+  /**
+   * @param {string} kind
+   * @param {'block' | 'warn'} severity
+   * @param {number} lineNo
+   * @param {string} raw
+   */
+  const pushFinding = (kind, severity, lineNo, raw) => {
+    const sample = kind === 'secret'
+      ? '[redacted]'
+      : withoutUnsafeText(raw).trim().slice(0, 120);
+    findings.push({
+      kind,
+      severity,
+      line: lineNo,
+      ...(options.file ? { file: options.file } : {}),
+      sample,
+    });
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const lineNo = i + 1;
+
+    if (HIDDEN_UNICODE_LINE.test(raw)) {
+      pushFinding('hidden-unicode', 'warn', lineNo, raw);
+    }
+
+    /** @type {boolean} */
+    const startsKey = !inKeyBlock && KEY_BLOCK_START.test(raw);
+    if (inKeyBlock || startsKey) {
+      if (startsKey) {
+        pushFinding('secret', 'block', lineNo, raw);
+      }
+      inKeyBlock = !KEY_BLOCK_END.test(startsKey ? raw.replace(KEY_BLOCK_START, '') : raw);
+      continue;
+    }
+
+    if (lineLooksLikeSecret(raw)) {
+      pushFinding('secret', 'block', lineNo, raw);
+    }
+    if (PIPE_TO_SHELL_PATTERNS.some((re) => re.test(raw))) {
+      pushFinding('pipe-to-shell', 'warn', lineNo, raw);
+    }
+    if (SUDO_PATTERN.test(raw)) {
+      pushFinding('sudo', 'warn', lineNo, raw);
+    }
+    if (SENDS_FILE_PATTERNS.some((re) => re.test(raw))) {
+      pushFinding('sends-file', 'warn', lineNo, raw);
+    }
+  }
+
+  const blocks = findings.filter((f) => f.severity === 'block');
+  const warnings = findings.filter((f) => f.severity === 'warn');
+  return {
+    ok: blocks.length === 0,
+    blocked: blocks.length > 0,
+    findings,
+    blocks,
+    warnings,
+  };
 }
 
 export { BOT_MASCOT_IDS, BOT_AGENTS };

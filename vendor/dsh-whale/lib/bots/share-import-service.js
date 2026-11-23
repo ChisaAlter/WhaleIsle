@@ -1,6 +1,7 @@
 /**
- * Bot Sharing (`BotPackageV1` export/review) and External Bot Discovery/Import
- * (`~/.orca/bots/`, `~/.openclaw/`, `~/.hermes/`, `$DSH_HOME/data/whale/`).
+ * Bot Sharing (`BotPackageV1` export/review with `scanBotText` security scanning)
+ * and External Bot Discovery/Import (`~/.orca/bots/`, `~/.openclaw/`, `~/.hermes/`,
+ * `$DSH_HOME/data/whale/`).
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -10,11 +11,13 @@ import {
   BOT_PACKAGE_MANIFEST_PATH,
   BOT_PACKAGE_SCHEMA_VERSION,
   BOT_PACKAGE_SOUL_PATH,
+  isSafeBotPackageToolUrl,
   parseBotPackage,
   planBotFromPackage,
   redactBotText,
-  soulDescription,
-} from '../../src/shared/index.js';
+  scanBotText,
+} from '../../src/shared/bot-package.js';
+import { soulDescription } from '../../src/shared/index.js';
 import {
   botsRootDir,
   readBotToolsConfig,
@@ -46,6 +49,41 @@ function safeReadFile(dir, rel) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Run `scanBotText` across all files, prompts, and notes in a bot package.
+ * @param {any} manifest
+ * @param {Record<string, string>} files
+ */
+function scanPackageContents(manifest, files) {
+  const findings = [];
+  for (const [filePath, content] of Object.entries(files ?? {})) {
+    if (typeof content !== 'string') continue;
+    findings.push(...scanBotText(content, { file: filePath }).findings);
+  }
+  for (const sched of manifest?.schedules ?? []) {
+    if (typeof sched?.prompt === 'string') {
+      findings.push(...scanBotText(sched.prompt, { file: `schedule:${sched.id}` }).findings);
+    }
+  }
+  for (const ev of manifest?.eventSuggestions ?? []) {
+    if (typeof ev?.prompt === 'string') {
+      findings.push(...scanBotText(ev.prompt, { file: `event:${ev.id}` }).findings);
+    }
+  }
+  if (typeof manifest?.setupNote === 'string') {
+    findings.push(...scanBotText(manifest.setupNote, { file: 'setupNote' }).findings);
+  }
+  const blocks = findings.filter((f) => f.severity === 'block');
+  const warnings = findings.filter((f) => f.severity === 'warn');
+  return {
+    ok: blocks.length === 0,
+    blocked: blocks.length > 0,
+    findings,
+    blocks,
+    warnings,
+  };
 }
 
 /** @param {string} dir @param {string} sourceKind */
@@ -155,7 +193,7 @@ export function createShareImportService(deps) {
 
     const toolsCfg = readBotToolsConfig(homeDir);
     const tools = (toolsCfg.servers ?? [])
-      .filter((s) => typeof s.url === 'string' && /^https?:\/\//i.test(s.url))
+      .filter((s) => isSafeBotPackageToolUrl(s?.url))
       .slice(0, 32)
       .map((s, idx) => ({
         id: `tool-${idx + 1}`,
@@ -198,11 +236,19 @@ export function createShareImportService(deps) {
     };
 
     const validated = parseBotPackage(manifest);
+    const scan = scanPackageContents(validated.bot, files);
+    if (scan.blocked && /** @type {any} */ (options).allowBlocked !== true) {
+      throw Object.assign(new Error('Share blocked: secret detected in exported bot files'), {
+        code: 'share_blocked_secret',
+        scan,
+      });
+    }
     return {
       manifestPath: BOT_PACKAGE_MANIFEST_PATH,
       manifest: validated.bot,
       files,
       redactedCount,
+      scan,
       packageJson: JSON.stringify({ manifest: validated.bot, files }, null, 2),
     };
   }
@@ -214,12 +260,14 @@ export function createShareImportService(deps) {
     const { bot, droppedKeys } = parseBotPackage(manifestObj);
     const inventory = Object.keys(filesObj).map((p) => ({ path: p, executable: false }));
     const plan = planBotFromPackage(bot, inventory, { agent: 'deepseek-harness', toolIds: bot.tools.map((t) => t.id) });
+    const scan = scanPackageContents(bot, filesObj);
     return {
       ok: true,
       manifest: bot,
       droppedKeys,
       fileCount: Object.keys(filesObj).length,
       plan,
+      scan,
     };
   }
 
@@ -255,12 +303,18 @@ export function createShareImportService(deps) {
       ? JSON.parse(params.packageJson)
       : (params.packageJson ?? params);
     const reviewed = reviewPackage(rawObj);
+    if (reviewed.scan?.blocked && params.allowSecrets !== true) {
+      throw Object.assign(new Error('Import blocked: secret detected in bot package'), {
+        code: 'package_blocked_secret',
+        scan: reviewed.scan,
+      });
+    }
     const filesObj = rawObj?.files && typeof rawObj.files === 'object' ? rawObj.files : {};
     const created = await botsService.createBot({
       name: params.name || reviewed.manifest.name,
       fromPackage: { manifest: reviewed.manifest, files: filesObj, toolIds: params.selectedToolIds },
     });
-    return { ok: true, bot: created.bot, sourceKind: 'package' };
+    return { ok: true, bot: created.bot, sourceKind: 'package', scan: reviewed.scan };
   }
 
   async function executeImport(params = {}) {

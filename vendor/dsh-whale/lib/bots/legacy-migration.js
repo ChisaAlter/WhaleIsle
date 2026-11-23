@@ -236,6 +236,7 @@ function copyLegacyAssets(legacyRoot, homeDir, botRecord, soulText) {
  *   dshHome: string,
  *   db: import('node:sqlite').DatabaseSync,
  *   botsStore: ReturnType<import('./db.js').createBotsStore>,
+ *   allowMigration?: boolean,
  *   now?: number,
  * }} params
  */

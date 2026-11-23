@@ -74,6 +74,172 @@ function resolveRegisteredWorkspaceDirs(ctx) {
   }
 }
 
+/** @param {Record<string, any> | null | undefined} memberSessions @param {string | null} botId @param {string | null} tid @param {Set<string>} ids */
+function collectMemberSessionChatIds(memberSessions, botId, tid, ids) {
+  for (const [key, sid] of Object.entries(memberSessions ?? {})) {
+    if (typeof sid !== 'string' || !sid.trim()) continue;
+    const colonIdx = key.indexOf(':');
+    const keyBotId = colonIdx === -1 ? key : key.slice(0, colonIdx);
+    const keyThreadId = colonIdx === -1 ? '' : key.slice(colonIdx + 1);
+    if (botId && keyBotId !== botId) continue;
+    if (tid !== null && keyThreadId !== tid) continue;
+    ids.add(sid.trim());
+  }
+}
+
+/** @param {Record<string, any> | null | undefined} formerSessions @param {string | null} botId @param {Set<string>} ids */
+function collectFormerSessionChatIds(formerSessions, botId, ids) {
+  for (const [keyBotId, entries] of Object.entries(formerSessions ?? {})) {
+    if (botId && keyBotId !== botId) continue;
+    for (const sid of Array.isArray(entries) ? entries : []) {
+      if (typeof sid === 'string' && sid.trim()) ids.add(sid.trim());
+    }
+  }
+}
+
+/** @param {any} group @param {string | null} botId @param {string | null} threadId */
+function collectGroupChatIds(group, botId = null, threadId = null) {
+  /** @type {Set<string>} */
+  const ids = new Set();
+  const tid = typeof threadId === 'string' && threadId.trim() ? threadId.trim() : null;
+  collectMemberSessionChatIds(group?.memberSessionIds, botId, tid, ids);
+  if (tid === null) {
+    collectFormerSessionChatIds(group?.formerSessionIds, botId, ids);
+  }
+  return [...ids];
+}
+
+/** @param {any} row @param {number} now */
+function isRowSnoozed(row, now) {
+  return row.snoozedUntil !== null && row.snoozedUntil !== undefined && Number(row.snoozedUntil) > now;
+}
+
+/** @param {any[]} rows @param {Record<string, number>} statusCounts @param {number} now */
+function buildGroupItemsCounts(rows, statusCounts, now) {
+  /** @type {Record<string, { open: number, needsYou: number, total: number }>} */
+  const byBot = {};
+  let total = 0;
+  let open = 0;
+  let needsYou = 0;
+  for (const row of rows) {
+    const bid = String(row.ownerBotId ?? row.botId ?? '');
+    if (!bid) continue;
+    const bucket = byBot[bid] ?? { open: 0, needsYou: 0, total: 0 };
+    bucket.total += 1;
+    total += 1;
+    if (row.status !== 'done' && row.status !== 'canceled') {
+      bucket.open += 1;
+      open += 1;
+    }
+    if (row.status === 'needs_you' && !isRowSnoozed(row, now)) {
+      bucket.needsYou += 1;
+      needsYou += 1;
+    }
+    byBot[bid] = bucket;
+  }
+  return {
+    planned: Number(statusCounts?.planned ?? 0),
+    working: Number(statusCounts?.working ?? 0),
+    needs_you: Number(statusCounts?.needs_you ?? 0),
+    done: Number(statusCounts?.done ?? 0),
+    canceled: Number(statusCounts?.canceled ?? 0),
+    total,
+    open,
+    needsYou,
+    byBot,
+  };
+}
+
+/** @param {any} p */
+function buildOwnerItemsListQuery(p) {
+  /** @type {Record<string, any>} */
+  const query = {
+    ownerBotId: p?.botId ?? p?.ownerBotId,
+    includeClosed: p?.includeClosed === true,
+  };
+  if (Array.isArray(p?.uids)) query.uids = p.uids;
+  if (Array.isArray(p?.chatIds)) query.chatIds = p.chatIds;
+  if (p?.chatId) query.chatId = p.chatId;
+  if (p?.closedOnly === true) query.closedOnly = true;
+  for (const key of ['closedCursor', 'cursor', 'link', 'limit']) {
+    if (p?.[key] !== undefined) query[key] = p[key];
+  }
+  return query;
+}
+
+/** @param {any} p */
+function normalizeOwnerSnoozeTargets(p) {
+  if (Array.isArray(p?.items)) return p.items;
+  if (Array.isArray(p?.uids)) return p.uids.map((/** @type {any} */ uid) => ({ uid }));
+  const singleUid = p?.uid ?? p?.id;
+  if (singleUid) {
+    const entry = { uid: singleUid };
+    if (p?.othersLastEventId !== undefined) {
+      return [{ ...entry, othersLastEventId: p.othersLastEventId }];
+    }
+    return [entry];
+  }
+  return [];
+}
+
+/** @param {any} p */
+function buildUpNextSeenOptions(p) {
+  const suggestionId = p?.suggestionId ?? (p?.botId ? p?.id : undefined);
+  return {
+    ...(suggestionId ? { id: suggestionId, suggestionId } : {}),
+    ...(Array.isArray(p?.ids) ? { ids: p.ids } : {}),
+  };
+}
+
+/** @param {Record<string, any>} query @param {any} p */
+function applyGroupItemsPagination(query, p) {
+  if (Array.isArray(p?.uids)) query.uids = p.uids;
+  if (p?.closedOnly === true) query.closedOnly = true;
+  if (p?.closedCursor !== undefined) query.closedCursor = p.closedCursor;
+  if (p?.cursor !== undefined) query.cursor = p.cursor;
+}
+
+/** @param {any} p @param {any} group */
+function buildGroupItemsQuery(p, group) {
+  const scope = p?.scope === 'all' ? 'all' : 'group';
+  const memberBotIds = Array.isArray(group.botIds) ? group.botIds : [];
+  const filterBotId = p?.botId ? String(p.botId).trim() : null;
+  const targetBotIds = filterBotId
+    ? (memberBotIds.includes(filterBotId) ? [filterBotId] : [])
+    : memberBotIds;
+  const chatIds = scope === 'group' ? collectGroupChatIds(group, filterBotId, p?.threadId ?? null) : null;
+
+  /** @type {Record<string, any>} */
+  const query = { botIds: targetBotIds, limit: p?.limit ?? 200 };
+  if (chatIds !== null) query.chatIds = chatIds;
+  applyGroupItemsPagination(query, p);
+  return { targetBotIds, query };
+}
+
+/** @param {any} p @param {{ groupsStore: any, itemsStore: any }} deps */
+function handleGroupItemsRpc(p, { groupsStore, itemsStore }) {
+  const groupId = String(p?.groupId ?? p?.id ?? '').trim();
+  if (!groupId) throw Object.assign(new Error('groupId is required'), { code: 'invalid_argument' });
+  const group = groupsStore.getGroup(groupId);
+  if (!group) throw Object.assign(new Error(`Group not found: ${groupId}`), { code: 'not_found' });
+
+  const { targetBotIds, query } = buildGroupItemsQuery(p, group);
+  const listed = itemsStore.list(query);
+  const now = Date.now();
+  const hydratedAll = itemsStore.viewRows(listed.items.map((/** @type {any} */ it) => it.uid), { now })
+    .map((/** @type {any} */ row) => ({ ...row, botId: row.ownerBotId }));
+  const counts = buildGroupItemsCounts(hydratedAll, listed.counts, now);
+  const items = p?.onlyNeedsYou === true
+    ? hydratedAll.filter((/** @type {any} */ row) => row.status === 'needs_you' && !row.isSnoozed)
+    : hydratedAll;
+  return {
+    items,
+    counts,
+    nextCursor: listed.nextCursor,
+    latestEventId: itemsStore.latestEventId(targetBotIds),
+  };
+}
+
 /**
  * Build the complete method dispatch table mapping every `bots.*` RPC method
  * to the runtime services.
@@ -85,6 +251,7 @@ export function buildRpcDispatchTable(runtime) {
     botsService,
     sessionRuntime,
     itemsStore,
+    groupsStore,
     lookAroundService,
     tidyUpService,
     groupsService,
@@ -126,6 +293,7 @@ export function buildRpcDispatchTable(runtime) {
     // Chats & activity
     'bots.chat.open': (p) => sessionRuntime.openHomeChat(p?.botId ?? p?.id, p),
     'bots.chat.reset': (p) => sessionRuntime.resetHomeChat(p?.botId ?? p?.id),
+    'bots.chat.delete': (/** @type {any} */ p) => botsService.deleteChat(p?.botId ?? p?.id, p?.sessionId ?? p?.chatId),
     'bots.session.start': (p) => sessionRuntime.startSideChat(p?.botId ?? p?.id, p),
     'bots.chats': (p) => sessionRuntime.listChats(p?.botId ?? p?.id, p),
     'bots.chats.own': (p) => sessionRuntime.listChats(p?.botId ?? p?.id, { includeClosed: false }),
@@ -160,10 +328,7 @@ export function buildRpcDispatchTable(runtime) {
 
     // Work Items (Owner + Bot)
     'bots.items.owner.list': (p) => ({
-      items: itemsStore.viewRows({
-        ownerBotId: p?.botId ?? p?.ownerBotId,
-        includeClosed: p?.includeClosed === true,
-      }),
+      items: itemsStore.viewRows(buildOwnerItemsListQuery(p)),
       latestEventId: itemsStore.latestEventId(p?.botId ?? p?.ownerBotId ?? null),
     }),
     'bots.items.owner.show': (p) => {
@@ -187,12 +352,16 @@ export function buildRpcDispatchTable(runtime) {
       const uids = p?.uids ?? (p?.uid ? [p.uid] : []);
       const res = itemsStore.ownerStatus(uids, { status: p?.status, reason: p?.reason, note: p?.note }, ownerActor);
       const affected = [...new Set(res.updated.map((i) => i.ownerBotId))];
-      if (affected.length) eventBus.emit({ botIds: affected, kinds: ['items'] });
+      if (affected.length) {
+        eventBus.emit({ botIds: affected, kinds: ['items'] });
+        void sessionRuntime.sendOwedMail?.().catch(() => null);
+      }
       return res;
     },
     'bots.items.owner.snooze': (p) => {
-      const res = itemsStore.ownerSnooze({ items: p?.items ?? [], until: p?.until ?? null }, ownerActor);
-      const affected = [...new Set(res.items.map((i) => i.ownerBotId))];
+      // Snooze intentionally never triggers sendOwedMail().
+      const res = itemsStore.ownerSnooze({ items: normalizeOwnerSnoozeTargets(p), until: p?.until ?? null }, ownerActor);
+      const affected = [...new Set(res.items.map((/** @type {any} */ i) => i.ownerBotId))];
       if (affected.length) eventBus.emit({ botIds: affected, kinds: ['items'] });
       return res;
     },
@@ -202,8 +371,12 @@ export function buildRpcDispatchTable(runtime) {
         images: p?.images,
         files: p?.files,
         requestId: p?.requestId,
+        questionEventId: p?.questionEventId,
+        plain: p?.plain === true,
+        askedInConversation: p?.askedInConversation,
       }, ownerActor);
       eventBus.emit({ botIds: [res.item.ownerBotId], kinds: ['items'] });
+      void sessionRuntime.sendOwedMail?.().catch(() => null);
       return res;
     },
     'bots.items.add': (p) => {
@@ -236,7 +409,18 @@ export function buildRpcDispatchTable(runtime) {
       eventBus.emit({ botIds: [res.item.ownerBotId], kinds: ['items'] });
       return res;
     },
-    'bots.items.list': (p) => itemsStore.list(p),
+    'bots.items.list': (p) => itemsStore.list({
+      ...(p ?? {}),
+      ...(p?.botId !== undefined ? { botId: p.botId } : {}),
+      ...(p?.ownerBotId !== undefined ? { ownerBotId: p.ownerBotId } : {}),
+      ...(Array.isArray(p?.botIds) ? { botIds: p.botIds } : {}),
+      ...(Array.isArray(p?.uids) ? { uids: p.uids } : {}),
+      ...(Array.isArray(p?.chatIds) ? { chatIds: p.chatIds } : {}),
+      ...(p?.closedCursor !== undefined ? { closedCursor: p.closedCursor } : {}),
+      ...(p?.closedOnly !== undefined ? { closedOnly: p.closedOnly === true } : {}),
+      ...(p?.cursor !== undefined ? { cursor: p.cursor } : {}),
+      ...(p?.link !== undefined ? { link: p.link } : {}),
+    }),
     'bots.items.show': (p) => {
       const uid = String(p?.uid ?? p?.id ?? '');
       const item = itemsStore.get(uid);
@@ -248,8 +432,8 @@ export function buildRpcDispatchTable(runtime) {
     'bots.lookAround.lookNow': (p) => lookAroundService.lookNow(p?.botId ?? p?.id),
     'bots.lookAround.set': (p) => lookAroundService.setConfig(p?.botId ?? p?.id, p?.patch ?? p),
     'bots.upNext.list': (p) => lookAroundService.getState(p?.botId ?? p?.id),
-    'bots.upNext.seen': (p) => lookAroundService.markSeen(p?.botId ?? p?.id),
-    'bots.upNext.unseen': (p) => lookAroundService.markUnseen(p?.botId ?? p?.id),
+    'bots.upNext.seen': (p) => lookAroundService.markSeen(p?.botId ?? p?.id, buildUpNextSeenOptions(p)),
+    'bots.upNext.unseen': (p) => lookAroundService.markUnseen(p?.botId ?? p?.id, buildUpNextSeenOptions(p)),
     'bots.suggest': (p) => lookAroundService.addSuggestion(p?.botId ?? p?.id, p),
     'bots.suggestions.start': (p) => lookAroundService.startSuggestion(p?.botId, p?.suggestionId ?? p?.id, p),
     'bots.suggestions.dismiss': (p) => lookAroundService.dismissSuggestion(p?.botId, p?.suggestionId ?? p?.id),
@@ -264,18 +448,20 @@ export function buildRpcDispatchTable(runtime) {
     'bots.groups.send': (p) => groupsService.send(p),
     'bots.groups.stop': (p) => groupsService.stop(p),
     'bots.groups.newThread': (p) => groupsService.newThread(p),
+    'bots.groups.items': (/** @type {any} */ p) => handleGroupItemsRpc(p, { groupsStore, itemsStore }),
 
     // Per-Bot MCP Tools, Skill Projects & Work
     'bots.tools.list': (p) => botsService.toolsList(p?.botId ?? p?.id),
-    'bots.tools.add': (p) => botsService.toolsAdd(p?.botId ?? p?.id, p?.server ?? p),
-    'bots.tools.update': (p) => botsService.toolsUpdate(p?.botId ?? p?.id, p?.name, p?.patch ?? p?.server ?? p),
-    'bots.tools.remove': (p) => botsService.toolsRemove(p?.botId ?? p?.id, p?.name),
+    'bots.tools.add': (p) => botsService.toolsAdd(p?.botId ?? p?.id, p?.server ?? p, { expectedVersion: p?.expectedVersion }),
+    'bots.tools.update': (p) => botsService.toolsUpdate(p?.botId ?? p?.id, p?.name, p?.patch ?? p?.server ?? p, { expectedVersion: p?.expectedVersion }),
+    'bots.tools.remove': (p) => botsService.toolsRemove(p?.botId ?? p?.id, p?.name, { expectedVersion: p?.expectedVersion }),
     'bots.tools.details': (p) => botsService.toolsDetails(p?.botId ?? p?.id, p?.name),
     'bots.tools.problems': () => ({ problems: [] }),
     'bots.skillProjects.scan': (p) => botsService.scanSkillProjects(
       Array.isArray(p?.dirs) ? p.dirs : resolveRegisteredWorkspaceDirs(ctx),
     ),
     'bots.work.list': (p) => workStore.listWork({ botId: p?.botId, openOnly: p?.openOnly === true }),
+    'bots.work.stop': (/** @type {any} */ p) => botsService.stopWork(p?.botId ?? p?.id, p?.workId ?? p?.dispatchId ?? p?.sessionId, { sessionId: p?.sessionId ?? null }),
     'bots.work.forget': (p) => workStore.forgetWork(p?.botId, p?.source ?? 'app', p?.externalId ?? p?.sessionId),
 
     // Automations & Waits

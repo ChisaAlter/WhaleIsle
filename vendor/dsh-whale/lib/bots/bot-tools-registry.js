@@ -12,6 +12,12 @@
  */
 import crypto from 'node:crypto';
 import path from 'node:path';
+import {
+  BOT_GROUP_MEMBER_SESSION_PREFIX,
+  BOT_REPLY_TOOL_SCHEMA,
+  validateBotName,
+  validateBotReplyArgs,
+} from '../../src/shared/index.js';
 import { isNonOwnerImTurn } from '../call-origin.js';
 import {
   CONFIRM_TOOL_TIMEOUT_MS,
@@ -21,6 +27,7 @@ import {
 } from '../desktop-confirm.js';
 import { genericOutput } from '../shared.js';
 import { buildBotItemTools } from './bot-tools-items.js';
+import { evaluateLookAroundToolPolicy } from './look-around-service.js';
 import { resolveBotForSession } from './prompt-engine.js';
 import { BOT_OWNER_WORK } from './session-runtime.js';
 
@@ -40,16 +47,194 @@ export function getActiveBotsRuntime() {
 const okOut = (detail) => ({ ok: true, detail });
 const errOut = (detail) => ({ ok: false, detail });
 
+/** @param {any} runtime @param {string} sessionId @param {any} chat */
+function resolveGroupIdForSession(runtime, sessionId, chat) {
+  if (chat?.groupId) return String(chat.groupId);
+  const sid = String(sessionId ?? '').trim();
+  const isGroupLike = (
+    chat?.kind === 'group-member'
+    || chat?.kind === 'group'
+    || chat?.origin === 'group'
+    || sid.startsWith(BOT_GROUP_MEMBER_SESSION_PREFIX)
+  );
+  if (!isGroupLike) return null;
+  const groups = runtime?.groupsStore?.listGroups?.() ?? [];
+  for (const g of groups) {
+    const memberVals = Object.values(g.memberSessionIds ?? {});
+    if (memberVals.includes(sid)) return g.id;
+    const formerVals = Object.values(g.formerSessionIds ?? {}).flat();
+    if (formerVals.includes(sid)) return g.id;
+  }
+  return 'group';
+}
+
+/** @param {any} runtime @param {any} bot @param {string} sessionId @param {any} chat @param {any} exec */
+function buildCallerInfo(runtime, bot, sessionId, chat, exec) {
+  const resolvedChat = chat ?? runtime.botsStore?.getChat?.(sessionId) ?? null;
+  const explicitKind = exec?.caller?.kind ?? exec?.sessionKind ?? null;
+  const explicitGroupId = exec?.caller?.groupId ?? exec?.groupId ?? null;
+  const kind = explicitKind || resolvedChat?.kind || (bot.chatSessionId === sessionId ? 'home' : 'side');
+  const groupId = explicitGroupId || resolveGroupIdForSession(runtime, sessionId, resolvedChat);
+  return { bot, sessionId, chat: resolvedChat, kind, groupId };
+}
+
 /** @param {any} runtime @param {any} exec */
 function resolveCallerBot(runtime, exec) {
   if (!runtime) return null;
   const resolved = resolveBotForSession(runtime, exec);
   if (resolved?.bot) {
-    return { bot: resolved.bot, sessionId: resolved.sessionId || resolved.bot.chatSessionId || 'unknown' };
+    const sessionId = resolved.sessionId || resolved.bot.chatSessionId || 'unknown';
+    return buildCallerInfo(runtime, resolved.bot, sessionId, resolved.chat, exec);
   }
   const fallback = runtime.legacyCompat?.resolvePetBot?.() ?? runtime.botsStore?.listBots?.()?.[0] ?? null;
   if (!fallback) return null;
-  return { bot: fallback, sessionId: fallback.chatSessionId || 'unknown' };
+  return buildCallerInfo(runtime, fallback, fallback.chatSessionId || 'unknown', null, exec);
+}
+
+/** @param {any} caller @param {any} exec */
+function isLookAroundContext(caller, exec) {
+  return (
+    caller?.kind === 'look-around'
+    || caller?.chat?.kind === 'look-around'
+    || exec?.caller?.kind === 'look-around'
+    || exec?.sessionKind === 'look-around'
+  );
+}
+
+/** @param {any} caller */
+function isGroupContext(caller) {
+  return Boolean(
+    caller?.groupId
+    || caller?.kind === 'group'
+    || caller?.kind === 'group-member'
+    || caller?.chat?.kind === 'group-member'
+    || caller?.chat?.origin === 'group',
+  );
+}
+
+/** @param {any} caller */
+function isWorkerContext(caller) {
+  return (
+    caller?.kind === 'worker'
+    || caller?.chat?.kind === 'worker'
+    || caller?.chat?.origin === 'work'
+  );
+}
+
+const IM_SENDER_METHODS = ['sendReply', 'deliverReply', 'sendMessage', 'send', 'reply'];
+
+/** @param {any} svc */
+function extractImSender(svc) {
+  if (!svc) return null;
+  if (typeof svc === 'function') return { send: svc, service: svc };
+  for (const method of IM_SENDER_METHODS) {
+    if (typeof svc[method] === 'function') {
+      return { send: (/** @type {any} */ payload) => svc[method](payload), service: svc };
+    }
+  }
+  return null;
+}
+
+/** @param {any} runtime */
+function resolveDshImSender(runtime) {
+  const ctxGet = typeof runtime?.ctx?.get === 'function' ? (/** @type {string} */ k) => runtime.ctx.get(k) : () => null;
+  const candidates = [
+    runtime?.imSender,
+    runtime?.imService,
+    runtime?.dshIm,
+    ctxGet('dsh-im'),
+    ctxGet('dshIm'),
+    ctxGet('imDelivery'),
+    ctxGet('imService'),
+    ctxGet('im'),
+  ];
+  for (const svc of candidates) {
+    const found = extractImSender(svc);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** @param {any} toolDef @param {() => any} getRuntime */
+function wrapWithLookAroundPolicy(toolDef, getRuntime) {
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    /** @param {any} args @param {any} exec */
+    async execute(args, exec) {
+      const runtime = getRuntime();
+      const caller = runtime ? resolveCallerBot(runtime, exec) : null;
+      if (isLookAroundContext(caller, exec)) {
+        const policy = evaluateLookAroundToolPolicy(toolDef.name, args);
+        if (!policy.allowed) {
+          return errOut(`Look Around read-only policy blocked ${toolDef.name}: ${policy.reason}`);
+        }
+      }
+      return originalExecute(args, exec);
+    },
+  };
+}
+
+/** @param {any} payload */
+function formatReplyConfirmDetails(payload) {
+  return [
+    payload.text,
+    payload.choices.length ? `[choices: ${payload.choices.join(' | ')}]` : '',
+    payload.files.length ? `[files: ${payload.files.join(', ')}]` : '',
+    payload.react ? `[react: ${payload.react}]` : '',
+  ].filter(Boolean).join(' ').slice(0, 400);
+}
+
+/** @param {string} transport @param {string} channel @param {any} payload @param {any} [receipt] */
+function formatReplyAck(transport, channel, payload, receipt) {
+  return okOut(JSON.stringify({
+    ok: true,
+    delivered: true,
+    transport,
+    channel,
+    chars: payload.text.length,
+    choicesCount: payload.choices.length,
+    filesCount: payload.files.length,
+    ...(payload.react ? { react: payload.react } : {}),
+    ...(receipt !== undefined ? { receipt } : {}),
+  }));
+}
+
+/** @param {any} imSender @param {any} caller @param {any} payload @param {string | null} targetChannel */
+async function deliverViaImSender(imSender, caller, payload, targetChannel) {
+  const channel = targetChannel ?? 'im';
+  try {
+    const receipt = await imSender.send({
+      botId: caller.bot.id,
+      botName: caller.bot.name,
+      sessionId: caller.sessionId,
+      channel,
+      externalId: caller.chat?.externalId ?? null,
+      text: payload.text,
+      choices: payload.choices,
+      files: payload.files,
+      react: payload.react,
+    });
+    return formatReplyAck('dsh-im', channel, payload, receipt ?? null);
+  } catch (error) {
+    const errMsg = String(/** @type {any} */ (error)?.message ?? error);
+    return errOut(`dsh-im delivery failed on channel "${channel}": ${errMsg}`);
+  }
+}
+
+/** @param {any} runtime @param {any} caller @param {any} payload @param {string | null} targetChannel */
+async function deliverApprovedBotReply(runtime, caller, payload, targetChannel) {
+  const isExplicitPet = targetChannel === 'pet' || targetChannel === 'desktop-pet';
+  const imSender = isExplicitPet ? null : resolveDshImSender(runtime);
+  if (imSender) return deliverViaImSender(imSender, caller, payload, targetChannel);
+  if (isExplicitPet || (!targetChannel && !caller.chat?.externalSource)) {
+    const petText = payload.text || payload.react || (payload.files.length ? `Sent ${payload.files.length} file(s)` : '');
+    runtime.legacyCompat?.notifyPet('say', petText.slice(0, 240));
+    return formatReplyAck('pet', targetChannel ?? 'pet', payload);
+  }
+  return errOut(
+    `dsh-im delivery service is unavailable for external channel "${targetChannel}". Ensure the dsh-im connector plugin is running and connected, then retry.`,
+  );
 }
 
 /** @param {string} name @param {string} description @param {Record<string, any>} parameters @param {(args: any, exec: any) => Promise<any>} execute @param {number} [timeoutMs] */
@@ -211,11 +396,28 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
         const runtime = getRuntime();
         const caller = resolveCallerBot(runtime, exec);
         if (!caller) return errOut('Caller bot context unavailable.');
+        if (isGroupContext(caller)) {
+          return errOut('bot_create_offer is not allowed inside a multi-bot group chat. Propose creating a new bot in your direct Home Chat with the owner instead.');
+        }
+        if (isLookAroundContext(caller, exec)) {
+          return errOut('bot_create_offer is not allowed during read-only Look Around sweeps.');
+        }
+        const existingBots = runtime.botsStore.listBots();
+        const nameCheck = validateBotName(args.name, { existingBots });
+        if (!nameCheck.ok) {
+          const dupBot = existingBots.find((/** @type {any} */ b) => b.name.toLowerCase() === String(args.name ?? '').trim().toLowerCase());
+          if (dupBot) {
+            return errOut(`A bot named "${dupBot.name}" already exists on this machine. Reuse that teammate or pick a distinct name.`);
+          }
+          return errOut(`Invalid bot name: ${nameCheck.reason}`);
+        }
+        const purpose = String(args.purpose ?? '').trim();
+        if (!purpose) return errOut('purpose is required for bot_create_offer.');
         const offer = {
           offerId: crypto.randomUUID(),
           proposerBotId: caller.bot.id,
-          name: String(args.name ?? '').trim(),
-          purpose: String(args.purpose ?? '').trim(),
+          name: nameCheck.name,
+          purpose,
           watches: args.watches ?? null,
           does: args.does ?? null,
           reports: args.reports ?? null,
@@ -249,13 +451,6 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
 
         const dispatchId = `disp-${crypto.randomUUID().slice(0, 12)}`;
         const taskId = `task-${crypto.randomUUID().slice(0, 12)}`;
-        const started = await runtime.sessionRuntime.startSideChat(caller.bot.id, {
-          title: args.title || `Worker · ${path.basename(cwd)}`,
-          kind: 'worker',
-          origin: 'work',
-          owner: BOT_OWNER_WORK,
-          cwd: path.resolve(cwd),
-        });
         const work = runtime.workStore.startWork({
           botId: caller.bot.id,
           source: 'app',
@@ -263,8 +458,21 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
           taskId,
           dispatchId,
         });
+        const started = await runtime.sessionRuntime.startSideChat(caller.bot.id, {
+          title: args.title || `Worker · ${path.basename(cwd)}`,
+          kind: 'worker',
+          origin: 'work',
+          owner: BOT_OWNER_WORK,
+          cwd: path.resolve(cwd),
+          dispatchId,
+          taskId,
+          workId: work.id,
+        });
         if (args.itemUid) {
-          runtime.itemsStore.linkStartedWorker(args.itemUid, dispatchId, caller.sessionId);
+          runtime.itemsStore.linkStartedWorker(args.itemUid, dispatchId, {
+            chatId: caller.sessionId,
+            botId: caller.bot.id,
+          });
         }
         void runtime.sessionRuntime.runSingleTurn(started.sessionId, prompt).catch(() => null);
         runtime.eventBus.emit({ botIds: [caller.bot.id], kinds: ['workers', 'items', 'chats'] });
@@ -289,8 +497,27 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
         const runtime = getRuntime();
         const caller = resolveCallerBot(runtime, exec);
         if (!caller) return errOut('Caller bot context unavailable.');
-        const target = runtime.botsStore.getBot(args.toBotId) ?? runtime.botsStore.getBotByName(args.toBotId);
-        if (!target) return errOut(`Target bot not found: ${args.toBotId}`);
+        const purpose = String(args.purpose ?? '').trim();
+        if (isWorkerContext(caller) && purpose === 'handoff') {
+          return errOut('Coding worker sessions cannot initiate a handoff to another bot directly. Report status back to your owning bot or owner instead (purpose="status").');
+        }
+        const allBots = runtime.botsStore.listBots();
+        const activePeers = allBots.filter((/** @type {any} */ b) => b.id !== caller.bot.id && !b.paused).map((/** @type {any} */ b) => b.name);
+        const peerHint = activePeers.length > 0
+          ? `Available active bots: ${activePeers.join(', ')}.`
+          : 'No other active bots are currently available on this machine.';
+
+        const rawTarget = String(args.toBotId ?? '').trim();
+        const target = runtime.botsStore.getBot(rawTarget) ?? runtime.botsStore.getBotByName(rawTarget);
+        if (!target) {
+          return errOut(`Target bot not found: "${rawTarget}". ${peerHint}`);
+        }
+        if (target.id === caller.bot.id || (target.chatSessionId && target.chatSessionId === caller.sessionId)) {
+          return errOut(`Cannot send a bot_send message to yourself ("${caller.bot.name}") in the same chat. Handle the step directly or choose another bot. ${peerHint}`);
+        }
+        if (target.paused === true) {
+          return errOut(`Bot "${target.name}" is currently paused and cannot accept messages. Ask the owner to resume "${target.name}" or pick another teammate. ${peerHint}`);
+        }
         const text = String(args.text ?? '').trim();
         if (!text) return errOut('text is required.');
 
@@ -298,7 +525,7 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
           rootKey: args.rootKey || `root-${caller.sessionId}`,
           fromBotId: caller.bot.id,
           toBotId: target.id,
-          purpose: args.purpose,
+          purpose,
           depth: Number.isInteger(args.depth) ? args.depth : 1,
           sendKey: args.sendKey ?? null,
           record: { text, fromName: caller.bot.name },
@@ -307,7 +534,7 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
           const home = await runtime.sessionRuntime.openHomeChat(target.id);
           void runtime.sessionRuntime.runSingleTurn(
             home.sessionId,
-            `[From bot ${caller.bot.name} (${args.purpose})]\n${text}`,
+            `[From bot ${caller.bot.name} (${purpose})]\n${text}`,
           ).catch(() => null);
           runtime.workStore.setRequestOutcome(reqRes.request.messageId, 'posted');
         }
@@ -321,6 +548,7 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
       {
         action: { type: 'string', description: 'list | add | update | remove.', required: true },
         name: { type: 'string', description: 'Server name (for update/remove).' },
+        expectedVersion: { type: 'string', description: 'Optional optimistic version token from tools list.' },
         server: {
           type: 'object',
           description: 'Server spec (for add/update).',
@@ -339,7 +567,7 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
         if (!caller) return errOut('Caller bot context unavailable.');
         const action = String(args.action ?? '').trim();
         if (action === 'list') {
-          return okOut(JSON.stringify(runtime.botsService.toolsList(caller.bot.id)));
+          return okOut(JSON.stringify(await runtime.botsService.toolsList(caller.bot.id)));
         }
         if (!['add', 'update', 'remove'].includes(action)) {
           return errOut(`Unknown bot_tools_manage action: ${action}`);
@@ -354,9 +582,10 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
         }, exec);
         if (refused) return refused;
 
-        if (action === 'add') return okOut(JSON.stringify(runtime.botsService.toolsAdd(caller.bot.id, args.server)));
-        if (action === 'update') return okOut(JSON.stringify(runtime.botsService.toolsUpdate(caller.bot.id, args.name, args.server)));
-        return okOut(JSON.stringify(runtime.botsService.toolsRemove(caller.bot.id, args.name)));
+        const opts = args.expectedVersion ? { expectedVersion: args.expectedVersion } : {};
+        if (action === 'add') return okOut(JSON.stringify(await runtime.botsService.toolsAdd(caller.bot.id, args.server, opts)));
+        if (action === 'update') return okOut(JSON.stringify(await runtime.botsService.toolsUpdate(caller.bot.id, args.name, args.server, opts)));
+        return okOut(JSON.stringify(await runtime.botsService.toolsRemove(caller.bot.id, args.name, opts)));
       },
       CONFIRM_TOOL_TIMEOUT_MS,
     ),
@@ -398,28 +627,29 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
 
     makeTool(
       'bot_reply',
-      'Send a reply to the external connector or IM thread that woke this turn (requires desktop confirmation).',
-      {
-        text: { type: 'string', description: 'Reply text.', required: true },
-        channel: { type: 'string', description: 'Optional external channel/thread identifier.' },
-      },
+      'Send a reply (text, optional quick choices, files, or emoji reaction) to the external IM channel or thread (requires desktop confirmation).',
+      BOT_REPLY_TOOL_SCHEMA,
       async (args, exec) => {
+        const blocked = refuseNonOwnerIm(exec);
+        if (blocked) return blocked;
         const runtime = getRuntime();
         const caller = resolveCallerBot(runtime, exec);
         if (!caller) return errOut('Caller bot context unavailable.');
-        const text = String(args.text ?? '').trim();
-        if (!text) return errOut('Reply text is required.');
+
+        const validated = validateBotReplyArgs(args);
+        if (!validated.ok) return errOut(`${validated.code}: ${validated.reason}`);
+        const payload = validated.data;
+        const targetChannel = payload.channel ?? caller.chat?.externalSource ?? null;
+
         const refused = await requireConfirm({
           tool: 'bot_reply',
           action: 'reply',
           effect: 'external',
-          summary: `${caller.bot.name} 请求向外部渠道发送回复`,
-          details: text.slice(0, 400),
+          summary: `${caller.bot.name} 请求向外部渠道${targetChannel ? ` (${targetChannel})` : ''}发送回复`,
+          details: formatReplyConfirmDetails(payload),
         }, exec);
         if (refused) return refused;
-
-        runtime.legacyCompat?.notifyPet('say', text.slice(0, 240));
-        return okOut(JSON.stringify({ ok: true, delivered: true, channel: args.channel ?? 'external', chars: text.length }));
+        return deliverApprovedBotReply(runtime, caller, payload, targetChannel);
       },
       CONFIRM_TOOL_TIMEOUT_MS,
     ),
@@ -451,7 +681,7 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
     ...basicTools,
     ...buildBotItemTools(getRuntime, resolveCallerBot),
     ...guardedTools,
-  ];
+  ].map((def) => wrapWithLookAroundPolicy(def, getRuntime));
 }
 
 /**

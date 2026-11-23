@@ -3,15 +3,29 @@
  * Composed into `createItemsStore` in `items-store.js`.
  */
 import {
+  CLOSED_ITEM_STATUSES,
   ITEM_LIMITS,
+  ITEM_STATUSES,
   OPEN_ITEM_STATUSES,
   formatEventId,
   mapEventRow,
   mapItemRow,
   parseEventId,
+  parseItemCursor,
+  parseLinkFilter,
   staleThresholdMs,
   validateStatus,
 } from './items-validation.js';
+
+function emptyStatusCounts() {
+  return {
+    planned: 0,
+    working: 0,
+    needs_you: 0,
+    done: 0,
+    canceled: 0,
+  };
+}
 
 /**
  * Evaluate one open item row for `needsYouCounts`.
@@ -46,33 +60,172 @@ function accumulateOpenItem(row, ctx, acc) {
   }
 }
 
-/** @param {any} filters */
-function buildListWhereClause(filters) {
-  const clauses = [];
-  const params = [];
-  if (filters.ownerBotId) {
-    clauses.push('i.owner_bot_id = ?');
-    params.push(String(filters.ownerBotId));
+/**
+ * Append an array-or-single equality filter on `column`.
+ * Returns `true` when an explicit empty array short-circuits the query.
+ * @param {string[]} clauses
+ * @param {Array<string | number>} params
+ * @param {unknown} listVal
+ * @param {unknown} singleVal
+ * @param {string} column
+ */
+function appendScopedIdFilter(clauses, params, listVal, singleVal, column) {
+  if (Array.isArray(listVal)) {
+    if (listVal.length === 0) return true;
+    clauses.push(`${column} IN (SELECT value FROM json_each(?))`);
+    params.push(JSON.stringify(listVal.map(String)));
+    return false;
   }
-  if (filters.chatId) {
-    clauses.push('i.chat_id = ?');
-    params.push(String(filters.chatId));
+  if (singleVal) {
+    clauses.push(`${column} = ?`);
+    params.push(String(singleVal));
   }
-  const statuses = filters.openOnly ? OPEN_ITEM_STATUSES : filters.statuses;
-  if (Array.isArray(statuses) && statuses.length > 0) {
-    const valid = statuses.map(validateStatus);
-    clauses.push(`i.status IN (${valid.map(() => '?').join(',')})`);
-    params.push(...valid);
+  return false;
+}
+
+/**
+ * Resolve link filter specification from query filters.
+ * @param {any} filters
+ */
+function resolveLinkFilterSpec(filters) {
+  if (filters.link !== undefined && filters.link !== null && filters.link !== '') {
+    return parseLinkFilter(filters.link);
   }
   if (filters.linkKind && filters.linkRef) {
-    clauses.push('EXISTS (SELECT 1 FROM bot_item_links l WHERE l.item_uid = i.uid AND l.kind = ? AND l.ref = ?)');
-    params.push(String(filters.linkKind), String(filters.linkRef));
+    return { kind: String(filters.linkKind), ref: String(filters.linkRef), altPrRef: null };
   }
-  if (filters.cursor && Number.isFinite(filters.cursor.lastActivityAt) && Number.isFinite(filters.cursor.number)) {
-    clauses.push('(i.last_activity_at < ? OR (i.last_activity_at = ? AND i.number < ?))');
-    params.push(filters.cursor.lastActivityAt, filters.cursor.lastActivityAt, filters.cursor.number);
+  return null;
+}
+
+/**
+ * @param {string[]} clauses
+ * @param {Array<string | number>} params
+ * @param {any} linkSpec
+ */
+function appendLinkFilter(clauses, params, linkSpec) {
+  if (!linkSpec) return;
+  if (linkSpec.altPrRef) {
+    clauses.push(
+      "EXISTS (SELECT 1 FROM bot_item_links l WHERE l.item_uid = i.uid AND ((l.kind = 'url' AND l.ref = ?) OR (l.kind = 'pr' AND l.ref = ?)))",
+    );
+    params.push(linkSpec.ref, linkSpec.altPrRef);
+  } else if (linkSpec.kind) {
+    clauses.push(
+      'EXISTS (SELECT 1 FROM bot_item_links l WHERE l.item_uid = i.uid AND l.kind = ? AND l.ref = ?)',
+    );
+    params.push(linkSpec.kind, linkSpec.ref);
+  } else {
+    clauses.push(
+      'EXISTS (SELECT 1 FROM bot_item_links l WHERE l.item_uid = i.uid AND l.ref = ?)',
+    );
+    params.push(linkSpec.ref);
   }
-  return { whereSql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+/** @param {any} filters */
+function resolveStatusList(filters) {
+  if (filters.closedOnly === true) return CLOSED_ITEM_STATUSES;
+  if (filters.openOnly === true) return OPEN_ITEM_STATUSES;
+  if (Array.isArray(filters.statuses) && filters.statuses.length > 0) {
+    return filters.statuses.map(validateStatus);
+  }
+  return null;
+}
+
+/**
+ * Build base scope WHERE clause (bot/chat/uid/link) and full query WHERE clause
+ * (adding status and pagination cursor).
+ * Returns `emptyMatch: true` when an explicit array filter (`botIds`/`chatIds`/`uids`) is empty.
+ * @param {any} filters
+ */
+function buildListWhereClauses(filters) {
+  /** @type {string[]} */
+  const baseClauses = [];
+  /** @type {Array<string | number>} */
+  const baseParams = [];
+
+  if (appendScopedIdFilter(baseClauses, baseParams, filters.botIds, filters.ownerBotId ?? filters.botId, 'i.owner_bot_id')) {
+    return { emptyMatch: true };
+  }
+  if (appendScopedIdFilter(baseClauses, baseParams, filters.chatIds, filters.chatId, 'i.chat_id')) {
+    return { emptyMatch: true };
+  }
+  if (appendScopedIdFilter(baseClauses, baseParams, filters.uids, null, 'i.uid')) {
+    return { emptyMatch: true };
+  }
+
+  appendLinkFilter(baseClauses, baseParams, resolveLinkFilterSpec(filters));
+
+  const fullClauses = [...baseClauses];
+  /** @type {Array<string | number>} */
+  const fullParams = [...baseParams];
+
+  const statuses = resolveStatusList(filters);
+  if (statuses && statuses.length > 0) {
+    fullClauses.push(`i.status IN (${statuses.map(() => '?').join(',')})`);
+    fullParams.push(...statuses);
+  }
+
+  const rawCursor = filters.closedOnly === true
+    ? (filters.closedCursor ?? filters.cursor)
+    : (filters.cursor ?? filters.closedCursor);
+  const cursor = parseItemCursor(rawCursor);
+  if (cursor) {
+    fullClauses.push('(i.last_activity_at < ? OR (i.last_activity_at = ? AND i.number < ?))');
+    fullParams.push(cursor.lastActivityAt, cursor.lastActivityAt, cursor.number);
+  }
+
+  return {
+    emptyMatch: false,
+    baseWhereSql: baseClauses.length ? `WHERE ${baseClauses.join(' AND ')}` : '',
+    baseParams,
+    whereSql: fullClauses.length ? `WHERE ${fullClauses.join(' AND ')}` : '',
+    params: fullParams,
+  };
+}
+
+/** @param {any[]} rows */
+function groupLinksForView(rows) {
+  /** @type {Map<string, any[]>} */
+  const linksByUid = new Map();
+  /** @type {Map<string, string[]>} */
+  const dispatchesByUid = new Map();
+  for (const row of rows) {
+    const uid = String(row.item_uid);
+    const addedEvent = row.added_event == null ? null : Number(row.added_event);
+    const listForItem = linksByUid.get(uid) ?? [];
+    listForItem.push({
+      kind: row.kind,
+      ref: row.ref,
+      addedEvent: row.added_event,
+      addedEventId: formatEventId(addedEvent),
+    });
+    linksByUid.set(uid, listForItem);
+    if (row.kind === 'dispatch') {
+      const dispatches = dispatchesByUid.get(uid) ?? [];
+      dispatches.push(String(row.ref));
+      dispatchesByUid.set(uid, dispatches);
+    }
+  }
+  return { linksByUid, dispatchesByUid };
+}
+
+/** @param {any[]} rows */
+function groupEventsForView(rows) {
+  /** @type {Map<string, any>} */
+  const questionByUid = new Map();
+  /** @type {Map<string, any>} */
+  const lastCommentByUid = new Map();
+  for (const row of rows) {
+    const uid = String(row.item_uid);
+    const mapped = mapEventRow(row);
+    if (row._role === 'question') {
+      questionByUid.set(uid, mapped);
+    } else if (row._role === 'comment') {
+      lastCommentByUid.set(uid, mapped);
+    }
+  }
+  return { questionByUid, lastCommentByUid };
 }
 
 /** @param {import('node:sqlite').DatabaseSync} db */
@@ -82,16 +235,52 @@ export function createItemQueries(db) {
   const selectLinksStmt = db.prepare(
     'SELECT kind, ref, added_event FROM bot_item_links WHERE item_uid = ? ORDER BY added_event ASC, kind ASC, ref ASC',
   );
-  const selectEventById = db.prepare('SELECT * FROM bot_item_events WHERE id = ?');
-  const selectLatestComment = db.prepare(
-    "SELECT * FROM bot_item_events WHERE item_uid = ? AND kind = 'commented' ORDER BY id DESC LIMIT 1",
+  const selectLatestEventAll = db.prepare('SELECT COALESCE(MAX(last_event_id), 0) AS max_id FROM bot_items');
+  const selectLatestEventByBot = db.prepare(
+    'SELECT COALESCE(MAX(last_event_id), 0) AS max_id FROM bot_items WHERE owner_bot_id = ?',
   );
-  const selectLatestEventAll = db.prepare('SELECT coalesce(max(id), 0) AS max_id FROM bot_item_events');
-  const selectLatestEventByBot = db.prepare(`
-    SELECT coalesce(max(e.id), 0) AS max_id
-    FROM bot_item_events e
-    JOIN bot_items i ON i.uid = e.item_uid
-    WHERE i.owner_bot_id = ?
+  const selectLatestEventByBots = db.prepare(
+    'SELECT COALESCE(MAX(last_event_id), 0) AS max_id FROM bot_items WHERE owner_bot_id IN (SELECT value FROM json_each(?))',
+  );
+  const selectItemsByUidsStmt = db.prepare(`
+    SELECT i.*
+    FROM bot_items i
+    JOIN json_each(?) u ON u.value = i.uid
+    ORDER BY i.last_activity_at DESC, i.number DESC
+  `);
+  const selectLinksByUidsStmt = db.prepare(`
+    SELECT l.item_uid, l.kind, l.ref, l.added_event
+    FROM bot_item_links l
+    JOIN json_each(?) u ON u.value = l.item_uid
+    ORDER BY l.added_event ASC, l.kind ASC, l.ref ASC
+  `);
+  const selectDispatchLinksByUidsStmt = db.prepare(`
+    SELECT l.item_uid, l.ref
+    FROM bot_item_links l
+    JOIN json_each(?) u ON u.value = l.item_uid
+    WHERE l.kind = 'dispatch'
+    ORDER BY l.added_event ASC
+  `);
+  const selectViewEventsByUidsStmt = db.prepare(`
+    WITH target_uids(uid) AS (SELECT value FROM json_each(?)),
+    latest_comments AS (
+      SELECT e.id, e.item_uid, e.kind, e.actor, e.data, e.mail, e.action, e.created_at,
+             ROW_NUMBER() OVER (PARTITION BY e.item_uid ORDER BY e.id DESC) AS rn
+      FROM bot_item_events e
+      JOIN target_uids t ON t.uid = e.item_uid
+      WHERE e.kind = 'commented'
+    ),
+    question_events AS (
+      SELECT e.id, e.item_uid, e.kind, e.actor, e.data, e.mail, e.action, e.created_at
+      FROM bot_item_events e
+      JOIN bot_items i ON i.question_event = e.id
+      JOIN target_uids t ON t.uid = i.uid
+    )
+    SELECT id, item_uid, kind, actor, data, mail, action, created_at, 'comment' AS _role
+    FROM latest_comments WHERE rn = 1
+    UNION ALL
+    SELECT id, item_uid, kind, actor, data, mail, action, created_at, 'question' AS _role
+    FROM question_events
   `);
 
   function get(uid) {
@@ -107,7 +296,7 @@ export function createItemQueries(db) {
       kind: row.kind,
       ref: row.ref,
       addedEvent: row.added_event,
-      addedEventId: formatEventId(row.added_event),
+      addedEventId: formatEventId(row.added_event == null ? null : Number(row.added_event)),
     }));
   }
 
@@ -144,26 +333,41 @@ export function createItemQueries(db) {
     /** @type {Record<string, string[]>} */
     const result = {};
     if (!Array.isArray(uids) || uids.length === 0) return result;
-    for (const uid of uids) result[String(uid)] = [];
-    const placeholders = uids.map(() => '?').join(',');
-    const rows = db.prepare(
-      `SELECT item_uid, ref FROM bot_item_links WHERE kind = 'dispatch' AND item_uid IN (${placeholders}) ORDER BY added_event ASC`,
-    ).all(...uids.map(String));
-    for (const row of rows) result[row.item_uid].push(row.ref);
+    const normalized = uids.map(String);
+    for (const uid of normalized) result[uid] = [];
+    const rows = selectDispatchLinksByUidsStmt.all(JSON.stringify(normalized));
+    for (const row of rows) {
+      const uid = String(row.item_uid);
+      if (result[uid]) result[uid].push(String(row.ref));
+    }
     return result;
   }
 
   function list(filters = {}) {
-    const { whereSql, params } = buildListWhereClause(filters);
-    const limit = Math.min(Math.max(1, Number(filters.limit) || ITEM_LIMITS.listPage), ITEM_LIMITS.listPageMax);
+    const built = buildListWhereClauses(filters ?? {});
+    if (built.emptyMatch) {
+      return { items: [], nextCursor: null, counts: emptyStatusCounts() };
+    }
+    const limit = Math.min(Math.max(1, Number(filters?.limit) || ITEM_LIMITS.listPage), ITEM_LIMITS.listPageMax);
     const rows = db.prepare(
-      `SELECT i.* FROM bot_items i ${whereSql} ORDER BY i.last_activity_at DESC, i.number DESC LIMIT ?`,
-    ).all(...params, limit + 1);
+      `SELECT i.* FROM bot_items i ${built.whereSql} ORDER BY i.last_activity_at DESC, i.number DESC LIMIT ?`,
+    ).all(...(built.params ?? []), limit + 1);
     const hasMore = rows.length > limit;
     const items = rows.slice(0, limit).map(mapItemRow);
     const tail = items[items.length - 1];
     const nextCursor = hasMore && tail ? { lastActivityAt: tail.lastActivityAt, number: tail.number } : null;
-    return { items, nextCursor };
+
+    const counts = emptyStatusCounts();
+    const countRows = db.prepare(
+      `SELECT i.status, COUNT(*) AS cnt FROM bot_items i ${built.baseWhereSql} GROUP BY i.status`,
+    ).all(...(built.baseParams ?? []));
+    for (const row of countRows) {
+      const status = String(row.status);
+      if (/** @type {readonly string[]} */ (ITEM_STATUSES).includes(status)) {
+        /** @type {Record<string, number>} */ (counts)[status] = Number(row.cnt ?? 0);
+      }
+    }
+    return { items, nextCursor, counts };
   }
 
   function needsYou({ ownerBotId, now = Date.now(), includeSnoozed = false } = {}) {
@@ -182,20 +386,66 @@ export function createItemQueries(db) {
     ).all(...params).map(mapItemRow);
   }
 
-  function viewRows({ ownerBotId, includeClosed = false, now = Date.now() } = {}) {
-    const { items } = list({ ownerBotId, openOnly: !includeClosed, limit: ITEM_LIMITS.listPageMax });
-    const dispatches = linkedDispatchRefs(items.map((item) => item.uid));
+  /**
+   * Resolve target items and reference timestamp for `viewRows`.
+   * @param {string[] | Record<string, any>} uidsOrFilters
+   * @param {{ now?: number }} options
+   */
+  function resolveViewItems(uidsOrFilters, options) {
+    if (Array.isArray(uidsOrFilters)) {
+      const now = options?.now ?? Date.now();
+      const uids = [...new Set(uidsOrFilters.map(String).filter(Boolean))];
+      const items = uids.length === 0 ? [] : selectItemsByUidsStmt.all(JSON.stringify(uids)).map(mapItemRow);
+      return { items, now };
+    }
+    const filters = uidsOrFilters ?? {};
+    const now = filters.now ?? options?.now ?? Date.now();
+    const explicitClosedOrStatuses = filters.closedOnly === true
+      || (Array.isArray(filters.statuses) && filters.statuses.length > 0);
+    const openOnly = filters.openOnly !== undefined
+      ? filters.openOnly
+      : (explicitClosedOrStatuses ? false : !filters.includeClosed);
+    const items = list({
+      ...filters,
+      openOnly,
+      limit: filters.limit ?? ITEM_LIMITS.listPageMax,
+    }).items;
+    return { items, now };
+  }
+
+  /**
+   * Batch-hydrate view rows using `json_each(?)` (0 N+1 queries).
+   * Accepts either:
+   * - `viewRows(uidsArray, { now })` — hydrates specific uids in 3 batched queries
+   * - `viewRows({ ownerBotId, botId, botIds, chatId, chatIds, uids, includeClosed, closedOnly, closedCursor, cursor, statuses, openOnly, link, limit, now })`
+   * @param {string[] | Record<string, any>} [uidsOrFilters]
+   * @param {{ now?: number }} [options]
+   */
+  function viewRows(uidsOrFilters = {}, options = {}) {
+    const { items, now } = resolveViewItems(uidsOrFilters, options);
+    if (items.length === 0) return [];
+
+    const uidsJson = JSON.stringify(items.map((item) => item.uid));
+    const { linksByUid, dispatchesByUid } = groupLinksForView(selectLinksByUidsStmt.all(uidsJson));
+    const { questionByUid, lastCommentByUid } = groupEventsForView(selectViewEventsByUidsStmt.all(uidsJson));
+
     return items.map((item) => ({
       ...item,
-      links: links(item.uid),
-      activeDispatches: dispatches[item.uid] ?? [],
-      question: item.questionEvent ? mapEventRow(selectEventById.get(item.questionEvent)) : null,
-      lastComment: mapEventRow(selectLatestComment.get(item.uid)),
+      links: linksByUid.get(item.uid) ?? [],
+      activeDispatches: dispatchesByUid.get(item.uid) ?? [],
+      question: item.questionEvent ? (questionByUid.get(item.uid) ?? null) : null,
+      lastComment: lastCommentByUid.get(item.uid) ?? null,
       isSnoozed: item.snoozedUntil !== null && item.snoozedUntil > now,
     }));
   }
 
+  /** @param {string | string[] | null} [ownerBotId] */
   function latestEventId(ownerBotId = null) {
+    if (Array.isArray(ownerBotId)) {
+      if (ownerBotId.length === 0) return 0;
+      const row = selectLatestEventByBots.get(JSON.stringify(ownerBotId.map(String)));
+      return Number(row?.max_id ?? 0);
+    }
     const row = ownerBotId ? selectLatestEventByBot.get(String(ownerBotId)) : selectLatestEventAll.get();
     return Number(row?.max_id ?? 0);
   }
@@ -205,14 +455,14 @@ export function createItemQueries(db) {
       "SELECT DISTINCT action FROM bot_item_events WHERE mail = 'owed' AND action > ? ORDER BY action ASC LIMIT 50",
     ).all(Number(afterAction) || 0).map((r) => r.action);
     if (actions.length === 0) return [];
-    const placeholders = actions.map(() => '?').join(',');
     const rows = db.prepare(`
       SELECT e.*, i.owner_bot_id, i.chat_id
       FROM bot_item_events e
       JOIN bot_items i ON i.uid = e.item_uid
-      WHERE e.mail = 'owed' AND e.action IN (${placeholders})
+      JOIN json_each(?) a ON a.value = e.action
+      WHERE e.mail = 'owed'
       ORDER BY e.action ASC, e.id ASC
-    `).all(...actions);
+    `).all(JSON.stringify(actions));
 
     /** @type {Map<string, any>} */
     const groups = new Map();

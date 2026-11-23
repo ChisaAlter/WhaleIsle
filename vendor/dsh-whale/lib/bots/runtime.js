@@ -5,11 +5,12 @@
  * Connectors, Share/Import, Legacy compat, and the `/dsh-bots` HTTP router.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 import { botsDbPath, openBotsDatabase } from './db.js';
 import { createItemsStore } from './items-store.js';
 import { createGroupsStore } from './groups-store.js';
 import { createWorkStore } from './work-store.js';
-import { botMetaDir } from './fs-home.js';
+import { botMetaDir, botsRootDir } from './fs-home.js';
 import { createMemoryService } from './memory-service.js';
 import { migrateLegacyWhaleIfNeeded } from './legacy-migration.js';
 import { createBotsEventBus } from './event-bus.js';
@@ -34,7 +35,12 @@ import { botPresetDefinition } from '../preset.js';
  *   dshHome: string,
  *   userHomeDir?: string,
  *   enableSchedulers?: boolean,
+ *   allowLegacyMigration?: boolean,
+ *   autoRecovery?: boolean,
+ *   imService?: any,
+ *   imSender?: any,
  *   getController?: () => any,
+ *   getRecentOwnerMessages?: (bot: any, opts?: any) => Promise<any[]> | any[],
  *   runLookAroundSweep?: (bot: any, prompt: string) => Promise<{ ok: boolean, summary?: string }>,
  *   runTidyUpModel?: (bot: any, prompt: string) => Promise<string | null>,
  * }} options
@@ -49,6 +55,19 @@ export function createBotsRuntime(options) {
   const groupsStore = createGroupsStore(db);
   const workStore = createWorkStore(db);
   const memoryService = createMemoryService({ metaRoot: botMetaDir(dshHome) });
+
+  // Zero-LLM monthly journal hook: append closed Work Items to memory/journal/YYYY-MM.md
+  itemsStore.onItemClosed((/** @type {any} */ item) => {
+    const bot = botsStore.getBot(item?.ownerBotId);
+    if (!bot) return;
+    const homeDir = path.join(botsRootDir(dshHome), bot.folder);
+    if (!fs.existsSync(homeDir)) return;
+    const links = itemsStore.links(item.uid);
+    memoryService.appendJournalEntry({
+      homeDir,
+      item: { ...item, links },
+    });
+  });
 
   const migration = migrateLegacyWhaleIfNeeded({
     dshHome,
@@ -74,6 +93,7 @@ export function createBotsRuntime(options) {
     memoryService,
     eventBus,
     migration,
+    imService: options.imService ?? options.imSender ?? null,
   };
 
   runtime.sessionRuntime = createSessionRuntime({
@@ -86,6 +106,7 @@ export function createBotsRuntime(options) {
     getController: options.getController,
     getLookAroundUpNext: (botId) => runtime.lookAroundService?.listUpNext(botId) ?? [],
     getAutomations: (botId) => runtime.automationsService?.list({ botId }) ?? [],
+    onFirstOwnerChat: (botId) => runtime.lookAroundService?.markFirstOwnerChat?.(botId),
   });
 
   runtime.botsService = createBotsService({
@@ -100,6 +121,10 @@ export function createBotsRuntime(options) {
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
     getLookAroundUpNextCount: (botId) => runtime.lookAroundService?.countOpenUpNext(botId) ?? 0,
+    getLookAroundService: () => runtime.lookAroundService,
+    getTidyUpService: () => runtime.tidyUpService,
+    getAutomationsService: () => runtime.automationsService,
+    getGroupsService: () => runtime.groupsService,
     getGroupsList: () => runtime.groupsService?.list() ?? [],
     onPetBotChanged: (bot) => { runtime.legacyCompat?.syncLegacySettingsProjection(bot); },
   });
@@ -121,6 +146,8 @@ export function createBotsRuntime(options) {
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
     runModel: options.runTidyUpModel,
+    getRecentOwnerMessages: options.getRecentOwnerMessages,
+    enableScheduler: false,
   });
 
   runtime.groupsService = createGroupsService({
@@ -135,6 +162,7 @@ export function createBotsRuntime(options) {
     workStore,
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
+    getGroupsService: () => runtime.groupsService,
     enableScheduler: options.enableSchedulers !== false,
   });
 
@@ -167,7 +195,82 @@ export function createBotsRuntime(options) {
 
   runtime.http = createBotsHttpHandler(runtime);
 
+  let closed = false;
+  /** @type {Promise<any>} */
+  let recoveryChain = Promise.resolve();
+
+  /**
+   * Serial startup recovery:
+   * 1. Drain owed Work Item mail
+   * 2. Resume pending multi-bot group deliveries & sweep orphaned dead turns
+   * 3. Backfill last 24h closed Work Items into each bot's monthly journal
+   * 4. Start Tidy-Up scheduler when `options.enableSchedulers !== false`
+   * @param {{ waitForReplies?: boolean }} [recoveryOptions]
+   */
+  runtime.startRecovery = (recoveryOptions = {}) => {
+    const run = recoveryChain.then(async () => {
+      if (closed) {
+        return { ok: false, closed: true };
+      }
+      /** @type {any} */
+      let mail = { ok: true, deliveredGroups: 0, deliveredEvents: 0, skippedGroups: 0, details: [] };
+      /** @type {any} */
+      let groups = { resumedCount: 0, cleanedDeadCount: 0, discardedCount: 0, operations: [] };
+      const journal = { bots: 0, scanned: 0, appended: 0, skipped: 0 };
+
+      if (!dbHandle.isReadOnly) {
+        mail = await runtime.sessionRuntime.sendOwedMail().catch((/** @type {any} */ err) => ({
+          ok: false,
+          error: String(err?.message ?? err),
+          deliveredGroups: 0,
+          deliveredEvents: 0,
+          skippedGroups: 0,
+          details: [],
+        }));
+
+        groups = await runtime.groupsService.resumePending({
+          waitForReplies: recoveryOptions.waitForReplies === true,
+        }).catch((/** @type {any} */ err) => ({
+          resumedCount: 0,
+          cleanedDeadCount: 0,
+          discardedCount: 0,
+          operations: [],
+          error: String(err?.message ?? err),
+        }));
+
+        const allBots = botsStore.listBots();
+        for (const bot of allBots) {
+          const homeDir = path.join(botsRootDir(dshHome), bot.folder);
+          if (!fs.existsSync(homeDir)) continue;
+          const closedList = itemsStore.list({ ownerBotId: bot.id, closedOnly: true, limit: 200 }).items;
+          const hydrated = closedList.filter(Boolean).map((/** @type {any} */ it) => ({ ...it, links: itemsStore.links(it.uid) }));
+          const res = memoryService.backfillJournal24h({ homeDir, items: hydrated });
+          journal.bots += 1;
+          journal.scanned += res.scanned;
+          journal.appended += res.appended;
+          journal.skipped += res.skipped;
+        }
+      }
+
+      let tidyUpSchedulerStarted = false;
+      if (!closed && options.enableSchedulers !== false) {
+        runtime.tidyUpService.startScheduler();
+        tidyUpSchedulerStarted = true;
+      }
+
+      return { ok: true, mail, groups, journal, tidyUpSchedulerStarted };
+    });
+    recoveryChain = run.catch(() => null);
+    return run;
+  };
+
+  if (options.autoRecovery !== false) {
+    runtime.recoveryPromise = runtime.startRecovery().catch(() => null);
+  }
+
   runtime.close = () => {
+    closed = true;
+    runtime.tidyUpService.stopScheduler();
     runtime.automationsService.close();
     runtime.lookAroundService.close();
     runtime.sessionRuntime.close();

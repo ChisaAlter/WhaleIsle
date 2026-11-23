@@ -7,11 +7,12 @@ import path from 'node:path';
 import {
   BOT_CREATED_KICKOFF,
   botTemplateKickoff,
-  orderBotChats,
+  isBotCreatedKickoff,
   resolveBotRowActivityLine,
   rollUpBotStatus,
   soulDescription,
 } from '../../src/shared/index.js';
+import { isTaintingEvent } from '../call-origin.js';
 import {
   controllerFrom,
   eventText,
@@ -21,6 +22,8 @@ import {
 } from '../shared.js';
 import { botsRootDir, readSoul } from './fs-home.js';
 import { BOT_PRESET_ID } from './prompt-engine.js';
+import { createOwedMailDrainer } from './session-mail.js';
+import { createSessionWorkOps } from './session-work.js';
 
 export const BOT_OWNER_HOME = 'dsh-bots:home';
 export const BOT_OWNER_CHAT = 'dsh-bots:chat';
@@ -30,6 +33,42 @@ export const BOT_OWNER_AUTOMATION = 'dsh-bots:automation';
 
 const TURN_TIMEOUT_DEFAULT_MS = 120_000;
 const freshSignal = () => new AbortController().signal;
+
+const INTERNAL_RPC_PREFIXES = ['bot-kickoff-', 'bot-item-mail-', 'bot-turn-', 'bot-takeover-', 'whale-pulse-'];
+
+/** @param {string} action */
+export function buildControllerUnavailableRefusal(action = 'start-session') {
+  return {
+    code: 'session-controller-unavailable',
+    reason: 'Harness session controller is unavailable or still starting. Wait for the desktop host to become ready and try again.',
+    recoverable: true,
+    action,
+  };
+}
+
+/** @param {string} action */
+function makeControllerUnavailableError(action) {
+  const refusal = buildControllerUnavailableRefusal(action);
+  return Object.assign(new Error(`${refusal.code}: ${refusal.reason}`), {
+    code: refusal.code,
+    refusal,
+  });
+}
+
+/** @param {any} event @param {any} chat */
+function isRealOwnerMessageEvent(event, chat) {
+  if (!event || event.type !== 'user/message') return false;
+  if (chat?.kind === 'look-around' || chat?.kind === 'worker' || chat?.kind === 'automation') return false;
+  if (isTaintingEvent(event)) return false;
+  const source = event.data?.source ?? {};
+  const kind = String(source.kind ?? '');
+  if (kind && kind !== 'user' && kind !== 'owner' && kind !== 'dsh-im:inbound') return false;
+  const rpcId = String(source.rpcId ?? '');
+  if (INTERNAL_RPC_PREFIXES.some((prefix) => rpcId.startsWith(prefix))) return false;
+  const text = eventText(event);
+  if (isBotCreatedKickoff(text)) return false;
+  return true;
+}
 
 /** @param {any} launch */
 export function parseLaunchModel(launch) {
@@ -88,13 +127,6 @@ function nextLiveStateFromEvent(event, prev) {
   return null;
 }
 
-/** @param {string} state */
-function liveKindFromDot(state) {
-  if (state === 'permission' || state === 'blocked' || state === 'waiting') return 'needs-you';
-  if (state === 'working' || state === 'monitoring') return 'replying';
-  return 'idle';
-}
-
 /** @param {any} ctrl @param {any} launch @param {boolean} fallbackDefault @param {boolean} strictRequire */
 async function resolveRouteToApply(ctrl, launch, fallbackDefault, strictRequire) {
   const direct = parseLaunchModel(launch);
@@ -135,6 +167,7 @@ function formatKickoffView(entry) {
  *   getController?: () => any,
  *   getLookAroundUpNext?: (botId: string) => any[],
  *   getAutomations?: (botId: string) => any[],
+ *   onFirstOwnerChat?: (botId: string) => any,
  * }} deps
  */
 export function createSessionRuntime(deps) {
@@ -147,7 +180,10 @@ export function createSessionRuntime(deps) {
   const kickoffLog = new Map();
   /** @type {Set<string>} */
   const startingSessions = new Set();
+  /** @type {Map<string, Set<{ abort: () => void }>>} */
+  const inFlightTurns = new Map();
 
+  /** @param {string} botId @param {any} patch */
   function setKickoffState(botId, patch) {
     const now = Date.now();
     const prev = kickoffLog.get(botId);
@@ -164,23 +200,26 @@ export function createSessionRuntime(deps) {
     return next;
   }
 
+  /** @param {any} bot */
   function homeDirFor(bot) {
     return path.join(botsRootDir(dshHome), bot.folder);
   }
 
+  /** @param {string} botId */
   function requireBot(botId) {
     const bot = botsStore.getBot(botId);
     if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
     return bot;
   }
 
+  /** @param {any} controller @param {string} sessionId @param {any} launch @param {any} [options] */
   async function applyLaunchModel(controller, sessionId, launch, options = {}) {
     const { strict = false, fallbackDefault = false, requireController = false } = options;
     const ctrl = controller ?? controllerOf();
     const route = await resolveRouteToApply(ctrl, launch, fallbackDefault, strict && requireController);
     if (!route) return false;
     if (typeof ctrl?.selectModel !== 'function') {
-      if (strict && requireController) throw new Error('session-controller-unavailable');
+      if (strict && requireController) throw makeControllerUnavailableError('select-model');
       return false;
     }
     if (strict) {
@@ -198,7 +237,13 @@ export function createSessionRuntime(deps) {
   async function ensureControllerSession({ sessionId, cwd, title, owner, preset = BOT_PRESET_ID, launch = null }) {
     const controller = controllerOf();
     if (!controller || typeof controller.create !== 'function') {
-      return { ok: false, sessionId, created: false, error: 'session-controller-unavailable' };
+      return {
+        ok: false,
+        sessionId,
+        created: false,
+        error: 'session-controller-unavailable',
+        refusal: buildControllerUnavailableRefusal('ensure-session'),
+      };
     }
     let existing = false;
     if (typeof controller.list === 'function') {
@@ -286,6 +331,7 @@ export function createSessionRuntime(deps) {
     return { ok: true, botId: bot.id, sessionId: nextSessionId, previousSessionId };
   }
 
+  /** @param {string} botId @param {any} [options] */
   async function startSideChat(botId, options = {}) {
     const bot = requireBot(botId);
     const now = Date.now();
@@ -308,6 +354,10 @@ export function createSessionRuntime(deps) {
       title,
       externalSource: options.externalSource ?? null,
       externalId: options.externalId ?? null,
+      ...(options.groupId ? { groupId: options.groupId } : {}),
+      ...(options.dispatchId ? { dispatchId: options.dispatchId } : {}),
+      ...(options.taskId ? { taskId: options.taskId } : {}),
+      ...(options.workId ? { workId: options.workId } : {}),
       createdAt: now,
       updatedAt: now,
     }, now);
@@ -324,7 +374,13 @@ export function createSessionRuntime(deps) {
     const controller = controllerOf();
     if (!controller || typeof controller.prompt !== 'function') {
       setKickoffState(bot.id, { status: 'ready', step: 'done', prompt, error: null });
-      return { ok: false, sessionId: opened.sessionId, queued: false };
+      return {
+        ok: false,
+        sessionId: opened.sessionId,
+        queued: false,
+        error: 'session-controller-unavailable',
+        refusal: buildControllerUnavailableRefusal('kickoff'),
+      };
     }
     setKickoffState(bot.id, { status: 'running', step: 'first-message', prompt, error: null });
     try {
@@ -377,29 +433,130 @@ export function createSessionRuntime(deps) {
     return { ok: true, botId: bot.id, sessionId: target.sessionId, cwd: entry.worktreeId };
   }
 
+  /** @param {string} sessionId @param {{ abort: () => void }} entry */
+  function registerInFlight(sessionId, entry) {
+    const key = String(sessionId);
+    let set = inFlightTurns.get(key);
+    if (!set) {
+      set = new Set();
+      inFlightTurns.set(key, set);
+    }
+    set.add(entry);
+    return () => {
+      const current = inFlightTurns.get(key);
+      if (!current) return;
+      current.delete(entry);
+      if (current.size === 0) inFlightTurns.delete(key);
+    };
+  }
+
+  /** @param {string} sessionId */
+  async function cancelSession(sessionId) {
+    const sid = String(sessionId ?? '').trim();
+    if (!sid) return { ok: false, sessionId: '', cancelled: false };
+    let cancelled = false;
+    const entries = inFlightTurns.get(sid);
+    if (entries && entries.size > 0) {
+      for (const entry of [...entries]) {
+        try {
+          entry.abort();
+          cancelled = true;
+        } catch {
+          // Best-effort abort.
+        }
+      }
+      inFlightTurns.delete(sid);
+    }
+
+    const controller = controllerOf();
+    const cancelMethod = typeof controller?.cancel === 'function'
+      ? () => controller.cancel({ sessionId: sid }, freshSignal())
+      : (typeof controller?.abort === 'function'
+        ? () => controller.abort({ sessionId: sid }, freshSignal())
+        : (typeof controller?.interrupt === 'function'
+          ? () => controller.interrupt({ sessionId: sid }, freshSignal())
+          : null));
+    if (cancelMethod) {
+      try {
+        await cancelMethod();
+        cancelled = true;
+      } catch {
+        // Best-effort underlying controller abort.
+      }
+    }
+
+    const live = liveBySession.get(sid);
+    if (live && (live.state === 'working' || live.state === 'permission' || live.state === 'monitoring')) {
+      liveBySession.set(sid, { ...live, state: 'interrupted', updatedAt: Date.now() });
+      if (live.lastBotId) {
+        eventBus.emit({ botIds: [live.lastBotId], kinds: ['status', 'chats'] });
+      }
+    }
+    return { ok: true, sessionId: sid, cancelled };
+  }
+
+  /** @param {string} sessionId @param {string} promptText @param {{ timeoutMs?: number }} [opts] */
   function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS } = {}) {
     const controller = controllerOf();
-    if (!controller || typeof controller.prompt !== 'function') {
-      return Promise.resolve({ ok: false, error: 'session-controller-unavailable', reply: '' });
+    if (!controller || (typeof controller.prompt !== 'function' && typeof controller.runTurnForTest !== 'function')) {
+      return Promise.resolve({
+        ok: false,
+        error: 'session-controller-unavailable',
+        refusal: buildControllerUnavailableRefusal('run-turn'),
+        reply: '',
+      });
     }
     if (typeof controller.runTurnForTest === 'function') {
-      return Promise.resolve(controller.runTurnForTest(sessionId, promptText));
+      const ac = new AbortController();
+      return new Promise((resolve) => {
+        let settled = false;
+        /** @type {(() => void) | null} */
+        let unregister = null;
+        /** @param {any} result */
+        const finish = (result) => {
+          if (settled) return;
+          settled = true;
+          try { unregister?.(); } catch { /* Best-effort unregister. */ }
+          resolve(result);
+        };
+        unregister = registerInFlight(sessionId, {
+          abort: () => {
+            ac.abort();
+            finish({ ok: false, error: 'aborted', reason: 'aborted', reply: '' });
+          },
+        });
+        Promise.resolve(controller.runTurnForTest(sessionId, promptText, ac.signal))
+          .then((res) => finish(res))
+          .catch((err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
+      });
     }
     const requestId = `bot-turn-${crypto.randomUUID()}`;
     const ac = new AbortController();
     return new Promise((resolve) => {
       let mine = false;
+      let settled = false;
+      /** @type {string[]} */
       const texts = [];
+      /** @type {(() => void) | null} */
       let off = null;
+      /** @type {(() => void) | null} */
+      let unregister = null;
+      /** @param {any} result */
       const finish = (result) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
+        try { unregister?.(); } catch { /* Best-effort unregister. */ }
         try { off?.(); } catch { /* Best-effort dispose. */ }
         ac.abort();
         resolve(result);
       };
+      unregister = registerInFlight(sessionId, {
+        abort: () => finish({ ok: false, error: 'aborted', reason: 'aborted', reply: texts.join('\n').trim() }),
+      });
       const timer = setTimeout(() => finish({ ok: false, error: 'timeout', reply: texts.join('\n').trim() }), timeoutMs);
       off = typeof ctx?.on === 'function'
-        ? ctx.on('session/event', (session, event) => {
+        ? ctx.on('session/event', (/** @type {any} */ session, /** @type {any} */ event) => {
           if (String(session?.id ?? session ?? '') !== String(sessionId)) return;
           const d = event?.data ?? {};
           if (!mine) {
@@ -420,105 +577,49 @@ export function createSessionRuntime(deps) {
         return;
       }
       controller.prompt({ requestId, sessionId, mode: 'queue', content: [{ type: 'text', text: promptText }] }, ac.signal)
-        .catch((err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
+        .catch((/** @type {any} */ err) => finish({ ok: false, error: String(err?.message ?? err), reply: '' }));
     });
   }
 
-  function decorateChatRow(chat, bot) {
-    const live = liveBySession.get(chat.sessionId);
-    const dotState = live?.state ?? 'idle';
-    const lastActiveAt = Math.max(chat.updatedAt ?? 0, live?.updatedAt ?? 0);
-    const unread = Boolean(live?.updatedAt && (!chat.seenAt || live.updatedAt > chat.seenAt));
-    const workers = workStore.listWork({ botId: bot.id, limit: 50 })
-      .filter((w) => w.externalId === chat.sessionId);
-    const running = workers.filter((w) => !w.closedAt).map((w) => ({
-      id: w.id, dispatchId: w.dispatchId, taskId: w.taskId, state: 'running', createdAt: w.createdAt,
-    }));
-    const finished = workers.filter((w) => Boolean(w.closedAt)).map((w) => ({
-      id: w.id, dispatchId: w.dispatchId, taskId: w.taskId, state: w.closeReason === 'start_failed' ? 'failed' : 'done',
-      closedAt: w.closedAt,
-    }));
-    return {
-      ...chat,
-      id: chat.sessionId,
-      isHome: bot.chatSessionId === chat.sessionId,
-      closed: Boolean(chat.closedAt),
-      dotState,
-      live: liveKindFromDot(dotState),
-      preview: live?.preview ?? chat.preview ?? null,
-      lastActiveAt,
-      unread,
-      running,
-      runningTotal: running.length,
-      finished,
-    };
+  const mailDrainer = createOwedMailDrainer({
+    itemsStore,
+    botsStore,
+    controllerOf,
+    openHomeChat,
+    buildControllerUnavailableRefusal,
+  });
+
+  /** @param {{ itemsStore?: any, botsStore?: any }} [opts] */
+  function deliverOwedMail(opts = {}) {
+    return mailDrainer.deliverOwedMail(opts);
   }
 
-  function listChats(botId, { includeClosed = true } = {}) {
-    const bot = requireBot(botId);
-    const rows = botsStore.listChats(bot.id, { includeClosed });
-    return orderBotChats(rows.map((row) => decorateChatRow(row, bot)));
+  function sendOwedMail() {
+    return mailDrainer.deliverOwedMail({ itemsStore, botsStore });
   }
 
-  function searchChats({ botId = null, query = '', limit = 50 } = {}) {
-    const needle = String(query ?? '').trim().toLowerCase();
-    const bots = botId ? [requireBot(botId)] : botsStore.listBots();
-    const matches = [];
-    for (const bot of bots) {
-      for (const chat of listChats(bot.id, { includeClosed: true })) {
-        const hay = `${chat.title ?? ''} ${chat.preview ?? ''} ${bot.name}`.toLowerCase();
-        if (!needle || hay.includes(needle)) {
-          matches.push({ ...chat, botName: bot.name });
-        }
-      }
-    }
-    return matches.sort((a, b) => b.lastActiveAt - a.lastActiveAt).slice(0, Math.min(200, Math.max(1, limit)));
-  }
-
-  function markSeen(sessionId) {
-    const now = Date.now();
-    const chat = botsStore.getChat(sessionId);
-    botsStore.markChatSeen(sessionId, now);
-    if (chat?.botId) eventBus.emit({ botIds: [chat.botId], kinds: ['chats', 'status'] });
-    return { ok: true, sessionId, seenAt: now };
-  }
-
-  function markUnseen(sessionId) {
-    const chat = botsStore.getChat(sessionId);
-    if (chat) {
-      botsStore.upsertChat({ ...chat, seenAt: null, updatedAt: Date.now() });
-      const live = liveBySession.get(sessionId);
-      liveBySession.set(sessionId, {
-        state: live?.state ?? 'idle',
-        updatedAt: Date.now(),
-        preview: live?.preview ?? null,
-        lastBotId: chat.botId,
-      });
-      eventBus.emit({ botIds: [chat.botId], kinds: ['chats', 'status'] });
-    }
-    return { ok: true, sessionId };
-  }
-
-  function buildChatTree(botId) {
-    const bot = requireBot(botId);
-    const chats = listChats(bot.id, { includeClosed: true });
-    return { botId: bot.id, homeSessionId: bot.chatSessionId ?? null, chats };
-  }
-
-  function buildActivity(botId) {
-    const bot = requireBot(botId);
-    const allWork = workStore.listWork({ botId: bot.id, limit: 100 });
-    const workers = allWork.filter((w) => !w.closedAt);
-    const completed = allWork.filter((w) => Boolean(w.closedAt)).slice(0, 20);
-    const automations = typeof deps.getAutomations === 'function'
-      ? deps.getAutomations(bot.id)
-      : workStore.listAutomations({ botId: bot.id });
-    const waits = automations.filter((a) => a.once && a.enabled);
-    const regularAutomations = automations.filter((a) => !a.once);
-    const upNext = typeof deps.getLookAroundUpNext === 'function' ? deps.getLookAroundUpNext(bot.id) : [];
-    const inProgress = listChats(bot.id, { includeClosed: false }).filter((c) => c.live !== 'idle');
-    return { workers, inProgress, completed, automations: regularAutomations, waits, upNext };
-  }
+  const {
+    deleteChat,
+    stopWork,
+    listChats,
+    searchChats,
+    markSeen,
+    markUnseen,
+    buildChatTree,
+    buildActivity,
+  } = createSessionWorkOps({
+    botsStore,
+    workStore,
+    eventBus,
+    liveBySession,
+    startingSessions,
+    inFlightTurns,
+    controllerOf,
+    requireBot,
+    cancelSession,
+    getAutomations: deps.getAutomations,
+    getLookAroundUpNext: deps.getLookAroundUpNext,
+  });
 
   async function listModels() {
     const controller = controllerOf();
@@ -531,11 +632,11 @@ export function createSessionRuntime(deps) {
     }
   }
 
-  function computeBotSummary(bot, { needsYouCount = 0, upNextCount = 0, waits = [] } = {}) {
+  function computeBotSummary(bot, { needsYouCount = 0, upNextCount = 0, waits = [], chats: preloadedChats = null } = {}) {
     const homePath = homeDirFor(bot);
     const soul = readSoul(homePath);
     const description = soulDescription(soul.text);
-    const chats = listChats(bot.id, { includeClosed: false });
+    const chats = Array.isArray(preloadedChats) ? preloadedChats : listChats(bot.id, { includeClosed: false });
     const homeChat = chats.find((c) => c.isHome) ?? null;
     const rows = chats.map((c) => ({
       sessionId: c.sessionId,
@@ -599,6 +700,9 @@ export function createSessionRuntime(deps) {
       const sid = String(session?.id ?? session ?? '');
       const chat = sid ? botsStore.getChat(sid) : null;
       if (!chat?.botId) return;
+      if (isRealOwnerMessageEvent(event, chat)) {
+        try { deps.onFirstOwnerChat?.(chat.botId); } catch { /* Best-effort look-around arming. */ }
+      }
       const now = Date.now();
       const prev = liveBySession.get(sid) ?? { state: 'idle', updatedAt: now, preview: null, lastBotId: chat.botId };
       const delta = nextLiveStateFromEvent(event, prev);
@@ -611,6 +715,13 @@ export function createSessionRuntime(deps) {
 
   function close() {
     try { offEvents?.(); } catch { /* Ignore cleanup error. */ }
+    for (const entries of inFlightTurns.values()) {
+      for (const entry of entries) {
+        try { entry.abort(); } catch { /* Ignore abort error on close. */ }
+      }
+    }
+    inFlightTurns.clear();
+    mailDrainer.reset();
     liveBySession.clear();
     startingSessions.clear();
   }
@@ -624,6 +735,11 @@ export function createSessionRuntime(deps) {
     retryKickoff,
     takeOverWorkspace,
     runSingleTurn,
+    cancelSession,
+    deliverOwedMail,
+    sendOwedMail,
+    deleteChat,
+    stopWork,
     applyLaunchModel,
     listChats,
     searchChats,

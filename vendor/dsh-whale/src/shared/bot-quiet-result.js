@@ -1,5 +1,5 @@
 // NO_REPLY quiet result protocol: regex matching, streaming anti-flicker holdback,
-// and final turn stripping.
+// final turn stripping, and addressed-turn word extraction (`addressedBotWords`).
 
 /** A bot's final message ending with this has nothing worth reporting, so nobody is told. */
 export const BOT_QUIET_MARKER = 'NO_REPLY';
@@ -8,6 +8,8 @@ export const BOT_QUIET_MARKER = 'NO_REPLY';
 // (`NO_REPLY`, **NO_REPLY**, NO_REPLY., **NO_REPLY!**). Words that merely contain it
 // (e.g. XNO_REPLY) do not match.
 const QUIET_ENDING = new RegExp(`(?:^|\\s)[\`*_]*${BOT_QUIET_MARKER}[\`*_.!]*\\s*$`);
+const TRAILING_BACKTICK_MARKER = new RegExp(`\`+${BOT_QUIET_MARKER}\`+[.!]*\\s*$`);
+const HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
 const MARKER_DRESSING = /^[`*_]*/;
 const MARKER_TRAILING_DRESSING = /^[`*_.!]*$/;
 
@@ -16,7 +18,7 @@ export function isQuietResult(message) {
   return typeof message === 'string' && QUIET_ENDING.test(message);
 }
 
-/** Alias matching Orca's original function name. */
+/** Alias matching original function name. */
 export const isQuietBotResult = isQuietResult;
 
 /** Strips the trailing quiet marker and trailing whitespace from a message. */
@@ -27,8 +29,47 @@ export function stripQuietMarker(message) {
   return message.replace(QUIET_ENDING, '').trimEnd();
 }
 
-/** Alias matching Orca's original function name. */
+/** Alias matching original function name. */
 export const quietBotResultText = stripQuietMarker;
+
+/**
+ * Extracts real words from a bot reply to an addressed turn (direct chat / @mention):
+ * - Iteratively strips trailing `NO_REPLY` markers (handling multiple stacked markers).
+ * - Protects inline backtick references on the same line (e.g. ``Use `NO_REPLY` ``)
+ *   so prose mentioning the token is never mutilated.
+ * - Returns `null` if nothing containing letters, digits, or CJK characters remains
+ *   after stripping (e.g. `NO_REPLY`, `> NO_REPLY`, `- NO_REPLY`).
+ * @param {unknown} message
+ */
+export function addressedBotWords(message) {
+  if (typeof message !== 'string') {
+    return null;
+  }
+  let current = message.trimEnd();
+  while (QUIET_ENDING.test(current)) {
+    const match = QUIET_ENDING.exec(current);
+    if (!match) break;
+    const matchText = match[0];
+    // Protect inline code reference like "End with `NO_REPLY`." when preceded by words on the same line
+    if (TRAILING_BACKTICK_MARKER.test(matchText.trim())) {
+      const leadingWsLen = matchText.length - matchText.trimStart().length;
+      const beforeToken = current.slice(0, match.index + leadingWsLen);
+      const lastNewline = beforeToken.lastIndexOf('\n');
+      const sameLineBefore = beforeToken.slice(lastNewline + 1);
+      if (HAS_WORD_CHAR.test(sameLineBefore)) {
+        break;
+      }
+    }
+    const next = current.slice(0, match.index).trimEnd();
+    if (next === current) break;
+    current = next;
+  }
+  const trimmed = current.trim();
+  if (!trimmed || !HAS_WORD_CHAR.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
 
 /**
  * Holds back a trailing word that is, or may still grow into, `NO_REPLY`

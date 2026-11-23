@@ -25,6 +25,57 @@ const DEFAULT_GLOBAL_CONFIG = Object.freeze({
 });
 
 const txDepthMap = new WeakMap();
+const readOnlyDbMap = new WeakMap();
+
+export class BotsDbReadOnlyError extends Error {
+  /**
+   * @param {string} [code]
+   * @param {string} [message]
+   * @param {Record<string, any>} [data]
+   */
+  constructor(
+    code = 'db_read_only',
+    message = 'Database schema is newer than this version of WhaleIsle and was opened read-only.',
+    data = undefined,
+  ) {
+    super(message);
+    this.name = 'BotsDbReadOnlyError';
+    this.code = code;
+    if (data !== undefined) this.data = data;
+  }
+}
+
+/** @param {DatabaseSync} db */
+export function isDatabaseReadOnly(db) {
+  if (!db) return false;
+  const cached = readOnlyDbMap.get(db);
+  if (cached !== undefined) return cached.readOnly === true;
+  try {
+    const version = readUserVersion(db);
+    if (version > BOTS_SCHEMA_VERSION) {
+      readOnlyDbMap.set(db, { readOnly: true, schemaVersion: version });
+      return true;
+    }
+  } catch {
+    // Ignore pragma read errors on closed handles.
+  }
+  return false;
+}
+
+/**
+ * Guard write operations when a database was opened read-only due to a newer schema version.
+ * @param {DatabaseSync} db
+ * @param {string} [code]
+ */
+export function assertDatabaseWritable(db, code = 'db_read_only') {
+  if (!isDatabaseReadOnly(db)) return;
+  const meta = readOnlyDbMap.get(db);
+  throw new BotsDbReadOnlyError(
+    code,
+    `Database schema v${meta?.schemaVersion ?? 'unknown'} is newer than supported v${BOTS_SCHEMA_VERSION}; writes are disabled in read-only mode.`,
+    { schemaVersion: meta?.schemaVersion ?? null, supportedVersion: BOTS_SCHEMA_VERSION },
+  );
+}
 
 /** @param {string} dshHome */
 export function botsDbPath(dshHome) {
@@ -255,9 +306,11 @@ const MIGRATIONS = [
  * @template T
  * @param {DatabaseSync} db
  * @param {() => T} fn
+ * @param {{ readOnlyCode?: string }} [options]
  * @returns {T}
  */
-export function withTransaction(db, fn) {
+export function withTransaction(db, fn, options = {}) {
+  assertDatabaseWritable(db, options.readOnlyCode ?? 'db_read_only');
   const depth = txDepthMap.get(db) ?? 0;
   const savepoint = `sp_bots_${depth + 1}`;
   if (depth === 0) {
@@ -313,6 +366,11 @@ function readUserVersion(db) {
 /** @param {DatabaseSync} db */
 function runMigrations(db) {
   const current = readUserVersion(db);
+  if (current > BOTS_SCHEMA_VERSION) {
+    readOnlyDbMap.set(db, { readOnly: true, schemaVersion: current });
+    db.exec('PRAGMA query_only = ON');
+    return { isReadOnly: true, schemaVersion: current };
+  }
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
     withTransaction(db, () => {
@@ -320,12 +378,18 @@ function runMigrations(db) {
       db.exec(`PRAGMA user_version = ${migration.version}`);
     });
   }
+  const finalVersion = readUserVersion(db);
+  readOnlyDbMap.set(db, { readOnly: false, schemaVersion: finalVersion });
+  return { isReadOnly: false, schemaVersion: finalVersion };
 }
 
 /**
  * Open and migrate the bots SQLite database.
+ * If the on-disk database has `user_version > BOTS_SCHEMA_VERSION`, degrades
+ * cleanly to read-only mode (`isReadOnly: true`) without running migrations or
+ * mutating the database file.
  * @param {string | { dbPath?: string, dshHome?: string }} pathOrOptions
- * @returns {{ db: DatabaseSync, dbPath: string, bots: ReturnType<typeof createBotsStore>, transaction: <T>(fn: () => T) => T, close: () => void }}
+ * @returns {{ db: DatabaseSync, dbPath: string, bots: ReturnType<typeof createBotsStore>, isReadOnly: boolean, schemaVersion: number, transaction: <T>(fn: () => T) => T, close: () => void }}
  */
 export function openBotsDatabase(pathOrOptions) {
   const targetPath = typeof pathOrOptions === 'string'
@@ -335,25 +399,55 @@ export function openBotsDatabase(pathOrOptions) {
   if (targetPath !== ':memory:') {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   }
-  const db = new DatabaseSync(targetPath);
-  if (targetPath !== ':memory:') {
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA synchronous = NORMAL');
+
+  /** @type {DatabaseSync} */
+  let db;
+  let isReadOnly = false;
+  let schemaVersion = BOTS_SCHEMA_VERSION;
+
+  if (targetPath !== ':memory:' && fs.existsSync(targetPath)) {
+    const probe = new DatabaseSync(targetPath, { readOnly: true });
+    const existingVersion = readUserVersion(probe);
+    if (existingVersion > BOTS_SCHEMA_VERSION) {
+      db = probe;
+      isReadOnly = true;
+      schemaVersion = existingVersion;
+      db.exec('PRAGMA busy_timeout = 5000');
+      db.exec('PRAGMA query_only = ON');
+      readOnlyDbMap.set(db, { readOnly: true, schemaVersion: existingVersion });
+    } else {
+      probe.close();
+      db = new DatabaseSync(targetPath);
+    }
+  } else {
+    db = new DatabaseSync(targetPath);
   }
-  db.exec('PRAGMA busy_timeout = 5000');
-  db.exec('PRAGMA foreign_keys = ON');
-  runMigrations(db);
+
+  if (!isReadOnly) {
+    if (targetPath !== ':memory:') {
+      db.exec('PRAGMA journal_mode = WAL');
+      db.exec('PRAGMA synchronous = NORMAL');
+    }
+    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec('PRAGMA foreign_keys = ON');
+    const migrated = runMigrations(db);
+    isReadOnly = migrated.isReadOnly;
+    schemaVersion = migrated.schemaVersion;
+  }
 
   const bots = createBotsStore(db);
   return {
     db,
     dbPath: targetPath,
     bots,
+    isReadOnly,
+    schemaVersion,
     transaction(fn) {
       return withTransaction(db, fn);
     },
     close() {
       txDepthMap.delete(db);
+      readOnlyDbMap.delete(db);
       db.close();
     },
   };
@@ -523,6 +617,7 @@ export function createBotsStore(db) {
   }
 
   function insertBot(bot, now = Date.now()) {
+    assertDatabaseWritable(db, 'db_read_only');
     if (!bot?.id || !bot?.folder || !bot?.name) {
       throw new Error('Bot record requires id, folder, and name');
     }
@@ -557,6 +652,7 @@ export function createBotsStore(db) {
   }
 
   function deleteBot(id) {
+    assertDatabaseWritable(db, 'db_read_only');
     const info = deleteBotStmt.run(String(id));
     return Number(info.changes ?? 0) > 0;
   }
@@ -567,11 +663,13 @@ export function createBotsStore(db) {
   }
 
   function setSetting(key, value, now = Date.now()) {
+    assertDatabaseWritable(db, 'db_read_only');
     upsertSettingStmt.run(String(key), JSON.stringify(value), now);
     return value;
   }
 
   function deleteSetting(key) {
+    assertDatabaseWritable(db, 'db_read_only');
     const info = deleteSettingStmt.run(String(key));
     return Number(info.changes ?? 0) > 0;
   }
@@ -607,6 +705,7 @@ export function createBotsStore(db) {
   }
 
   function upsertChat(chat, now = Date.now()) {
+    assertDatabaseWritable(db, 'db_read_only');
     const existing = chat?.sessionId ? mapChatRow(selectChatStmt.get(chat.sessionId)) : null;
     const norm = normalizeChatInput(chat, existing, now);
     upsertChatStmt.run(
@@ -631,21 +730,25 @@ export function createBotsStore(db) {
   }
 
   function markChatSeen(sessionId, seenAt = Date.now()) {
+    assertDatabaseWritable(db, 'db_read_only');
     const info = markChatSeenStmt.run(seenAt, seenAt, String(sessionId));
     return Number(info.changes ?? 0) > 0;
   }
 
   function closeChat(sessionId, closedAt = Date.now()) {
+    assertDatabaseWritable(db, 'db_read_only');
     const info = closeChatStmt.run(closedAt, closedAt, String(sessionId));
     return Number(info.changes ?? 0) > 0;
   }
 
   function deleteChat(sessionId) {
+    assertDatabaseWritable(db, 'db_read_only');
     const info = deleteChatStmt.run(String(sessionId));
     return Number(info.changes ?? 0) > 0;
   }
 
   return {
+    get isReadOnly() { return isDatabaseReadOnly(db); },
     getBot,
     getBotByFolder,
     getBotByName,

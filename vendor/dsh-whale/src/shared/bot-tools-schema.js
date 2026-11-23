@@ -319,3 +319,211 @@ export function parseBotToolPaste(source, platform = 'win32') {
   }
   return { name, command, args, ...(Object.keys(env).length > 0 ? { env } : {}) };
 }
+
+// ---- Native Bot Tool Parameter Schemas (`bot_item_*` & `bot_reply`) ----
+
+const BOT_ITEM_LINK_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: { type: 'string', required: true },
+    ref: { type: 'string', required: true },
+  },
+});
+
+const BOT_ITEM_ASK_SCHEMA = Object.freeze({
+  type: 'object',
+  description: 'Structured ask payload ({ context?, questions: [...] }) for needs_you.',
+  additionalProperties: true,
+  properties: {
+    context: { type: 'string', description: 'Optional short background context (<= 5 lines / 300 chars).' },
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          prompt: { type: 'string' },
+          recommended: { type: 'number' },
+          multi: { type: 'boolean' },
+          options: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: true,
+              properties: {
+                label: { type: 'string' },
+                detail: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
+const BOT_ITEM_FILES_SCHEMA = Object.freeze({
+  type: 'array',
+  description: 'Optional file attachments (up to 10 paths or attachment objects).',
+  items: { type: 'string' },
+});
+
+/** Canonical parameter schemas for the 8 native `bot_item_*` tools. */
+export const BOT_ITEM_TOOL_SCHEMAS = Object.freeze({
+  bot_item_add: Object.freeze({
+    title: { type: 'string', description: 'Short item title (<=200 chars).', required: true },
+    description: { type: 'string', description: 'Optional markdown description.' },
+    doneMeans: { type: 'string', description: 'Optional acceptance criteria.' },
+    status: { type: 'string', description: 'Initial status: planned | working | needs_you.' },
+    comment: { type: 'string', description: 'Optional initial question/note (for needs_you).' },
+    ask: BOT_ITEM_ASK_SCHEMA,
+    files: BOT_ITEM_FILES_SCHEMA,
+    links: { type: 'array', description: 'Optional array of { kind: dispatch|pr|url|file, ref }.', items: BOT_ITEM_LINK_SCHEMA },
+    targetBotId: { type: 'string', description: 'Optional target bot id when filing on behalf of another bot.' },
+  }),
+  bot_item_set: Object.freeze({
+    id: { type: 'string', description: 'Item uid or #number.', required: true },
+    title: { type: 'string', description: 'Updated title.' },
+    description: { type: 'string', description: 'Updated description (empty string clears).' },
+    doneMeans: { type: 'string', description: 'Updated acceptance criteria.' },
+    status: { type: 'string', description: 'planned | working | needs_you | done | canceled.' },
+    comment: { type: 'string', description: 'Comment attached to a status change.' },
+    ask: BOT_ITEM_ASK_SCHEMA,
+    files: BOT_ITEM_FILES_SCHEMA,
+    reason: { type: 'string', description: 'Required reason when status=canceled.' },
+    note: { type: 'string', description: 'Optional closing note when status=done.' },
+  }),
+  bot_item_comment: Object.freeze({
+    id: { type: 'string', description: 'Item uid or #number.', required: true },
+    text: { type: 'string', description: 'Comment body (optional when ask or files is provided).' },
+    ask: BOT_ITEM_ASK_SCHEMA,
+    files: BOT_ITEM_FILES_SCHEMA,
+  }),
+  bot_item_done: Object.freeze({
+    id: { type: 'string', description: 'Item uid or #number.', required: true },
+    note: { type: 'string', description: 'Optional completion note.' },
+  }),
+  bot_item_cancel: Object.freeze({
+    id: { type: 'string', description: 'Item uid or #number.', required: true },
+    reason: { type: 'string', description: 'Reason for canceling.', required: true },
+  }),
+  bot_item_link: Object.freeze({
+    id: { type: 'string', description: 'Item uid or #number.', required: true },
+    links: { type: 'array', description: 'Array of { kind: dispatch|pr|url|file, ref }.', required: true, items: BOT_ITEM_LINK_SCHEMA },
+  }),
+  bot_item_list: Object.freeze({
+    botId: { type: 'string', description: 'Optional target bot id or name (defaults to caller bot).' },
+    all: { type: 'boolean', description: 'Include closed items (alias for openOnly: false).' },
+    here: { type: 'boolean', description: 'Only return items belonging to the current chat/session.' },
+    chat: { type: 'string', description: 'Filter items by a specific chat/session id.' },
+    link: { type: 'string', description: 'Reverse-lookup items linked to a PR, URL, dispatch, file, or kind:ref.' },
+    cursor: { type: 'string', description: 'Pagination cursor returned by a previous bot_item_list call.' },
+    openOnly: { type: 'boolean', description: 'Only return open items (default true unless all=true or statuses given).' },
+    statuses: { type: 'array', description: 'Optional status filter array.', items: { type: 'string' } },
+    limit: { type: 'number', description: 'Max items (1..100, default 50).' },
+  }),
+  bot_item_show: Object.freeze({
+    id: { type: 'string', description: 'Item uid or #number.', required: true },
+    after: { type: 'string', description: 'Optional event cursor like e12.' },
+  }),
+});
+
+export const BOT_REPLY_LIMITS = Object.freeze({
+  maxChoices: 8,
+  maxChoiceLength: 80,
+  maxFiles: 10,
+  maxReactLength: 64,
+});
+
+/** Canonical parameter schema for `bot_reply` (including optional choices, files, and react). */
+export const BOT_REPLY_TOOL_SCHEMA = Object.freeze({
+  text: { type: 'string', description: 'Reply text (required unless files or react is provided).' },
+  channel: { type: 'string', description: 'Optional external channel/thread identifier.' },
+  choices: {
+    type: 'array',
+    description: 'Optional quick-reply choice buttons (1..8 unique labels, <=80 chars each; mutually exclusive with files).',
+    items: { type: 'string' },
+  },
+  files: {
+    type: 'array',
+    description: 'Optional file paths to send in the same reply post (up to 10; mutually exclusive with choices).',
+    items: { type: 'string' },
+  },
+  react: {
+    type: 'string',
+    description: 'Optional emoji reaction to add to the triggering message (e.g. :thumbsup: or 👍).',
+  },
+});
+
+/**
+ * Validate `bot_reply` arguments (choices/files mutual exclusion, bounds, uniqueness, react).
+ * @param {any} args
+ * @returns {{ ok: true, data: { text: string, channel: string | null, choices: string[], files: string[], react: string | null } } | { ok: false, code: string, reason: string }}
+ */
+export function validateBotReplyArgs(args) {
+  const raw = args && typeof args === 'object' ? args : {};
+  const text = typeof raw.text === 'string' ? raw.text.trim() : '';
+  const channel = typeof raw.channel === 'string' && raw.channel.trim() ? raw.channel.trim() : null;
+  const react = typeof raw.react === 'string' && raw.react.trim() ? raw.react.trim() : null;
+
+  if (react && react.length > BOT_REPLY_LIMITS.maxReactLength) {
+    return { ok: false, code: 'invalid_react', reason: `Reaction must be at most ${BOT_REPLY_LIMITS.maxReactLength} characters.` };
+  }
+
+  /** @type {string[]} */
+  const choices = [];
+  if (raw.choices !== undefined && raw.choices !== null) {
+    if (!Array.isArray(raw.choices)) {
+      return { ok: false, code: 'invalid_choices', reason: 'choices must be an array of strings.' };
+    }
+    if (raw.choices.length > BOT_REPLY_LIMITS.maxChoices) {
+      return { ok: false, code: 'too_many_choices', reason: `At most ${BOT_REPLY_LIMITS.maxChoices} choices allowed.` };
+    }
+    const seen = new Set();
+    for (const item of raw.choices) {
+      const label = typeof item === 'string' ? item.trim() : '';
+      if (!label || label.length > BOT_REPLY_LIMITS.maxChoiceLength) {
+        return { ok: false, code: 'invalid_choice', reason: `Each choice must be 1..${BOT_REPLY_LIMITS.maxChoiceLength} characters.` };
+      }
+      const key = label.toLowerCase();
+      if (seen.has(key)) {
+        return { ok: false, code: 'duplicate_choice', reason: `Duplicate choice: "${label}".` };
+      }
+      seen.add(key);
+      choices.push(label);
+    }
+  }
+
+  /** @type {string[]} */
+  const files = [];
+  if (raw.files !== undefined && raw.files !== null) {
+    if (!Array.isArray(raw.files)) {
+      return { ok: false, code: 'invalid_files', reason: 'files must be an array of file paths.' };
+    }
+    if (raw.files.length > BOT_REPLY_LIMITS.maxFiles) {
+      return { ok: false, code: 'too_many_files', reason: `At most ${BOT_REPLY_LIMITS.maxFiles} files allowed.` };
+    }
+    for (const item of raw.files) {
+      const filePath = typeof item === 'string' ? item.trim() : '';
+      if (!filePath) {
+        return { ok: false, code: 'invalid_file', reason: 'Each file entry must be a non-empty path string.' };
+      }
+      files.push(filePath);
+    }
+  }
+
+  if (choices.length > 0 && files.length > 0) {
+    return { ok: false, code: 'choices_files_conflict', reason: 'choices and files cannot be sent in the same reply.' };
+  }
+  if (!text && files.length === 0 && !react) {
+    return { ok: false, code: 'empty_reply', reason: 'Reply requires text, files, or react.' };
+  }
+
+  return { ok: true, data: { text, channel, choices, files, react } };
+}
+
+export const BOT_NATIVE_TOOL_PARAM_SCHEMAS = Object.freeze({
+  ...BOT_ITEM_TOOL_SCHEMAS,
+  bot_reply: BOT_REPLY_TOOL_SCHEMA,
+});

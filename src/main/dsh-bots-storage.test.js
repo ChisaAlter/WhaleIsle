@@ -229,8 +229,13 @@ test('items-store.js: all 22 operations, ask validation, auto-resume, snooze con
     assert.equal(ans1.item.snoozedUntil, null);
     assert.equal(ans1.item.questionEvent, null);
     assert.equal(ans1.event.data.answers, backToNeedsYou.item.questionEventId);
-    assert.equal(ans1.events.length, 2);
+    assert.equal(ans1.events.length, 3);
     assert.equal(ans1.events[0].action, ans1.events[1].action);
+    assert.equal(ans1.events[0].action, ans1.events[2].action);
+    const unsnoozeEv = ans1.events.find((e) => e.kind === 'unsnoozed');
+    assert.ok(unsnoozeEv);
+    assert.equal(unsnoozeEv.data.early, true);
+    assert.equal(unsnoozeEv.mail, null);
 
     const ansDup = store.ownerComment(added.item.uid, {
       text: 'Go with Stable',
@@ -466,7 +471,10 @@ test('work-store.js: work generation/forget, request cycle & depth guards, acts_
       botId: 'bot-1', source: 'app', externalId: 'sess-1', taskId: 't-2', dispatchId: 'd-2',
     }, 200);
     assert.equal(w2.generation, 2);
-    assert.equal(store.getWorkById(w1.id).closeReason, 'superseded');
+    const w1After = store.getWorkById(w1.id);
+    assert.equal(w1After.current, false);
+    assert.equal(w1After.closedAt, null);
+    assert.equal(w1After.closeReason, null);
     assert.equal(store.getWorkByDispatch('d-2').id, w2.id);
 
     const fg = store.forgetWork('bot-1', 'app', 'sess-1', { now: 300 });
@@ -876,5 +884,526 @@ test('legacy-migration.js: lossless read-only migration from data/whale/ and ide
     assert.equal(second.migrated, false);
     assert.equal(second.reason, 'already-migrated');
     assert.equal(handle.bots.listBots().length, 1);
+  });
+});
+
+test('db.js read-only downgrade guard: user_version > BOTS_SCHEMA_VERSION allows reads and blocks all writes', async () => {
+  const { openBotsDatabase, withTransaction, isDatabaseReadOnly, BOTS_SCHEMA_VERSION } = await importBotsModule('db.js');
+  const { createItemsStore } = await importBotsModule('items-store.js');
+  const { createWorkStore } = await importBotsModule('work-store.js');
+
+  await withTempWorkspace('readonly-downgrade', async ({ root, registerClose }) => {
+    // 1. Seed a normal DB and simulate a future client bumping user_version.
+    const seed = openBotsDatabase({ dshHome: root });
+    seed.bots.insertBot({ id: 'bot-ro', folder: 'ro-bot', name: 'ReadOnlyBot' }, 1000);
+    const seedItems = createItemsStore(seed.db);
+    const created = seedItems.add({
+      ownerBotId: 'bot-ro',
+      chatId: 'chat-ro',
+      source: { kind: 'home', title: null },
+      title: 'Existing item',
+    }, { kind: 'bot', botId: 'bot-ro', chatId: 'chat-ro' }, 1000);
+    assert.equal(seed.isReadOnly, false);
+    assert.equal(seed.schemaVersion, BOTS_SCHEMA_VERSION);
+    seed.db.exec(`PRAGMA user_version = ${BOTS_SCHEMA_VERSION + 5}`);
+    seed.close();
+
+    // 2. Reopen as older client: must degrade to read-only without mutating schema version.
+    const ro = openBotsDatabase({ dshHome: root });
+    registerClose(() => ro.close());
+    assert.equal(ro.isReadOnly, true);
+    assert.equal(ro.schemaVersion, BOTS_SCHEMA_VERSION + 5);
+    assert.equal(isDatabaseReadOnly(ro.db), true);
+    assert.equal(ro.bots.isReadOnly, true);
+
+    const items = createItemsStore(ro.db);
+    const work = createWorkStore(ro.db);
+    assert.equal(items.isReadOnly, true);
+
+    // Reads continue to work seamlessly.
+    assert.equal(ro.bots.listBots().length, 1);
+    assert.equal(items.get(created.item.uid).title, 'Existing item');
+    assert.deepEqual(work.listWork({ botId: 'bot-ro' }), []);
+
+    // All writes reject with explicit read-only codes.
+    assert.throws(() => ro.bots.insertBot({ id: 'b2', folder: 'b2', name: 'B2' }), (err) => err.code === 'db_read_only');
+    assert.throws(() => ro.bots.setSetting('k', 'v'), (err) => err.code === 'db_read_only');
+    assert.throws(() => withTransaction(ro.db, () => {}), (err) => err.code === 'db_read_only');
+    assert.throws(() => items.add({
+      ownerBotId: 'bot-ro', chatId: 'chat-ro', source: { kind: 'home', title: null }, title: 'Blocked',
+    }, { kind: 'owner' }), (err) => err.code === 'items_read_only');
+    assert.throws(() => items.ownerComment(created.item.uid, { text: 'Blocked' }), (err) => err.code === 'items_read_only');
+    assert.throws(() => items.ownerSnooze({ items: [created.item.uid], until: Date.now() + 60_000 }), (err) => err.code === 'items_read_only');
+    assert.throws(() => work.startWork({
+      botId: 'bot-ro', source: 'app', externalId: 's1', taskId: 't1', dispatchId: 'd1',
+    }), (err) => err.code === 'db_read_only');
+    assert.throws(() => work.upsertAutomation({ botId: 'bot-ro', prompt: 'blocked' }), (err) => err.code === 'db_read_only');
+  });
+});
+
+test('items-store.js: snooze null mail, endSnooze early vs expired, ownerComment options, cross-bot permissions, linkStartedWorker, and onItemClosed hook', async () => {
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const { createItemsStore, BotItemError } = await importBotsModule('items-store.js');
+  const { createWorkStore } = await importBotsModule('work-store.js');
+
+  await withTempWorkspace('items-v2', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+    const closedLog = [];
+    const items = createItemsStore(handle.db, {
+      onItemClosed: (item, event) => closedLog.push({ uid: item.uid, status: item.status, eventKind: event.kind }),
+    });
+    const work = createWorkStore(handle.db);
+    const t0 = 1_800_000_000_000;
+    const owner = { kind: 'owner' };
+    const botA = { kind: 'bot', botId: 'bot-a', chatId: 'chat-a' };
+    const botB = { kind: 'bot', botId: 'bot-b', chatId: 'chat-b' };
+    const botC = { kind: 'bot', botId: 'bot-c', chatId: 'chat-c' };
+
+    // 1. ownerSnooze NEVER queues owed mail (mail === null)
+    const it1 = items.add({
+      ownerBotId: 'bot-a', chatId: 'chat-a', source: { kind: 'home', title: null },
+      title: 'Confirm rollout', status: 'needs_you', comment: 'Deploy to prod?',
+    }, botA, t0);
+    const sn = items.ownerSnooze({ items: [it1.item.uid], until: t0 + 3600_000 }, owner, t0 + 100);
+    assert.equal(sn.events[0].kind, 'snoozed');
+    assert.equal(sn.events[0].mail, null);
+    assert.equal(items.owedMail(0).length, 0);
+
+    // Explicit early unsnooze records early: true and mail: null
+    const unsn = items.ownerSnooze({ items: [it1.item.uid], until: null }, owner, t0 + 200);
+    assert.equal(unsn.events[0].kind, 'unsnoozed');
+    assert.equal(unsn.events[0].data.early, true);
+    assert.equal(unsn.events[0].mail, null);
+    assert.equal(items.owedMail(0).length, 0);
+
+    // 2. ownerComment: plain: true does NOT close needs_you; askedInConversation/files/images persisted
+    items.ownerSnooze({ items: [it1.item.uid], until: t0 + 5000 }, owner, t0 + 300);
+    const plainRes = items.ownerComment(it1.item.uid, {
+      text: 'Just adding context',
+      plain: true,
+      askedInConversation: 'thread-42',
+      files: [{ path: '/tmp/log.txt', name: 'log.txt' }],
+      images: [{ path: '/tmp/ss.png', name: 'ss.png', bytes: 123 }],
+    }, owner, t0 + 400);
+    assert.equal(plainRes.item.status, 'needs_you');
+    assert.equal(plainRes.item.snoozedUntil, null);
+    assert.equal(plainRes.event.data.plain, true);
+    assert.equal(plainRes.event.data.askedInConversation, 'thread-42');
+    assert.equal(plainRes.event.data.files.length, 1);
+    assert.equal(plainRes.event.data.images.length, 1);
+    assert.equal(plainRes.event.data.answers, undefined);
+    assert.equal(plainRes.events.find((e) => e.kind === 'unsnoozed').data.early, true);
+
+    // 3. ownerComment: questionEventId guard throws item_changed when question changed
+    const oldQuestionId = plainRes.item.questionEventId;
+    // Snooze until t0 + 1000, then post a new question AFTER expiry (t0 + 2000): clears snooze WITHOUT early: true
+    items.ownerSnooze({ items: [it1.item.uid], until: t0 + 1000 }, owner, t0 + 500);
+    const newQ = items.set(it1.item.uid, {
+      status: 'needs_you',
+      comment: 'Updated question: ship canary first?',
+    }, botA, t0 + 2000);
+    assert.equal(newQ.item.snoozedUntil, null);
+    assert.equal(newQ.events.some((e) => e.kind === 'unsnoozed'), false);
+
+    assert.throws(() => items.ownerComment(it1.item.uid, {
+      text: 'Answering stale question',
+      questionEventId: oldQuestionId,
+    }, owner, t0 + 2100), (err) => err instanceof BotItemError && err.code === 'item_changed');
+
+    // Matching questionEventId succeeds and transitions needs_you -> working
+    const goodAns = items.ownerComment(it1.item.uid, {
+      text: 'Yes canary first',
+      questionEventId: newQ.item.questionEventId,
+      askedInConversation: 'thread-99',
+    }, owner, t0 + 2200);
+    assert.equal(goodAns.item.status, 'working');
+    assert.equal(goodAns.event.data.answers, newQ.item.questionEventId);
+    assert.equal(goodAns.event.data.askedInConversation, 'thread-99');
+
+    // 4. Cross-bot permissions: madeBy creator can comment, unrelated bot cannot
+    const delegated = items.add({
+      ownerBotId: 'bot-a',
+      chatId: 'chat-a',
+      source: { kind: 'chat', title: null },
+      madeBy: { botId: 'bot-b', chatId: 'chat-b' },
+      title: 'Help review migration',
+      status: 'planned',
+    }, botB, t0 + 3000);
+    const creatorComment = items.comment(delegated.item.uid, { text: 'Added context from creator' }, botB, t0 + 3100);
+    assert.equal(creatorComment.event.mail, 'owed');
+    assert.throws(() => items.comment(delegated.item.uid, { text: 'Stranger' }, botC, t0 + 3150), (err) => err.code === 'not_owner');
+    assert.throws(() => items.set(delegated.item.uid, { status: 'working' }, botB, t0 + 3160), (err) => err.code === 'not_owner');
+
+    // 5. Cross-bot attach: any bot can attach its OWN dispatch / PR / URL to open item, not foreign dispatch or file or closed item
+    work.startWork({ botId: 'bot-c', source: 'app', externalId: 'chat-c', taskId: 'tc-1', dispatchId: 'disp-c-1' }, t0 + 3200);
+    work.startWork({ botId: 'bot-a', source: 'app', externalId: 'chat-a', taskId: 'ta-1', dispatchId: 'disp-a-1' }, t0 + 3201);
+    const crossLink = items.link(delegated.item.uid, [
+      { kind: 'dispatch', ref: 'disp-c-1' },
+      { kind: 'pr', ref: 'org/repo#88' },
+      { kind: 'url', ref: 'https://example.com/spec' },
+    ], botC, t0 + 3210);
+    assert.equal(crossLink.added.length, 3);
+    assert.equal(crossLink.event.mail, 'owed');
+
+    assert.throws(() => items.link(delegated.item.uid, [{ kind: 'dispatch', ref: 'disp-a-1' }], botC, t0 + 3220), (err) => err.code === 'not_owner');
+    assert.throws(() => items.link(delegated.item.uid, [{ kind: 'file', ref: 'README.md' }], botC, t0 + 3230), (err) => err.code === 'not_owner');
+
+    // 6. linkStartedWorker: non-owner bot links dispatch without changing status; owner bot advances planned -> working; closed rejects
+    work.startWork({ botId: 'bot-b', source: 'app', externalId: 'chat-b', taskId: 'tb-1', dispatchId: 'disp-b-1' }, t0 + 3300);
+    const nonOwnerStart = items.linkStartedWorker(delegated.item.uid, 'disp-b-1', { chatId: 'chat-b', botId: 'bot-b', now: t0 + 3310 });
+    assert.equal(nonOwnerStart.linked, true);
+    assert.equal(nonOwnerStart.statusChanged, false);
+    assert.equal(nonOwnerStart.item.status, 'planned');
+
+    const ownerStart = items.linkStartedWorker(delegated.item.uid, 'disp-a-1', { chatId: 'chat-a', botId: 'bot-a', now: t0 + 3320 });
+    assert.equal(ownerStart.linked, true);
+    assert.equal(ownerStart.statusChanged, true);
+    assert.equal(ownerStart.item.status, 'working');
+
+    // 7. onItemClosed hook + early unsnooze on close + reject link/linkStartedWorker on closed item
+    items.ownerSnooze({ items: [delegated.item.uid], until: t0 + 99_999 }, owner, t0 + 3400);
+    const extraClosed = [];
+    const unsub = items.onItemClosed((item) => extraClosed.push(item.uid));
+    const closedRes = items.close(delegated.item.uid, { status: 'done', note: 'Merged' }, botA, t0 + 3500);
+    assert.equal(closedRes.item.snoozedUntil, null);
+    assert.equal(closedRes.events.find((e) => e.kind === 'unsnoozed').data.early, true);
+    assert.equal(closedLog.length, 1);
+    assert.equal(closedLog[0].uid, delegated.item.uid);
+    assert.equal(closedLog[0].status, 'done');
+    assert.deepEqual(extraClosed, [delegated.item.uid]);
+    unsub();
+
+    assert.throws(() => items.link(delegated.item.uid, [{ kind: 'url', ref: 'https://example.com/late' }], botC, t0 + 3600), (err) => err.code === 'item_closed');
+    assert.throws(() => items.linkStartedWorker(delegated.item.uid, 'disp-c-1', 'chat-c', t0 + 3610), (err) => err.code === 'item_closed');
+  });
+});
+
+test('items-queries.js: json_each batch viewRows (0 N+1), fast latestEventId, and extended list filters/counts', async () => {
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const { createItemsStore } = await importBotsModule('items-store.js');
+
+  await withTempWorkspace('items-queries', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+    const items = createItemsStore(handle.db);
+    const t0 = 1_800_000_000_000;
+    const botA = { kind: 'bot', botId: 'bot-a', chatId: 'chat-a1' };
+    const botB = { kind: 'bot', botId: 'bot-b', chatId: 'chat-b1' };
+
+    const uids = [];
+    for (let i = 0; i < 6; i += 1) {
+      const res = items.add({
+        ownerBotId: i % 2 === 0 ? 'bot-a' : 'bot-b',
+        chatId: i % 2 === 0 ? (i < 3 ? 'chat-a1' : 'chat-a2') : 'chat-b1',
+        source: { kind: 'home', title: null },
+        title: `Task ${i + 1}`,
+        status: i === 0 ? 'needs_you' : 'planned',
+        comment: i === 0 ? 'Need answer?' : undefined,
+        links: [{ kind: 'pr', ref: `org/repo#${100 + i}` }, { kind: 'dispatch', ref: `disp-${i}` }],
+      }, i % 2 === 0 ? botA : botB, t0 + i * 100);
+      uids.push(res.item.uid);
+    }
+    items.close(uids[4], { status: 'done', note: 'Finished' }, botA, t0 + 1000);
+    items.close(uids[5], { status: 'canceled', reason: 'Duplicate' }, botB, t0 + 1100);
+
+    // Verify 0 N+1: viewRows(uids) uses exactly 3 queries regardless of N=6
+    let prepareCalls = 0;
+    const origPrepare = handle.db.prepare.bind(handle.db);
+    handle.db.prepare = (...args) => {
+      prepareCalls += 1;
+      return origPrepare(...args);
+    };
+    const hydrated = items.viewRows(uids, { now: t0 + 1200 });
+    handle.db.prepare = origPrepare;
+    assert.equal(hydrated.length, 6);
+    assert.equal(prepareCalls, 0, 'viewRows(uids) must use pre-prepared json_each statements with 0 N+1 prepares');
+    const first = hydrated.find((r) => r.uid === uids[0]);
+    assert.equal(first.links.length, 2);
+    assert.deepEqual(first.activeDispatches, ['disp-0']);
+    assert.equal(first.question.data.text, 'Need answer?');
+    assert.equal(first.lastComment.data.text, 'Need answer?');
+
+    // latestEventId single bot, multi-bot array, and global
+    const maxA = items.latestEventId('bot-a');
+    const maxB = items.latestEventId('bot-b');
+    assert.ok(maxA > 0 && maxB > 0);
+    assert.equal(items.latestEventId(['bot-a', 'bot-b']), Math.max(maxA, maxB));
+    assert.equal(items.latestEventId(), Math.max(maxA, maxB));
+
+    // Extended list filters: botIds (Group Items), chatIds, uids, link, closedOnly + closedCursor, counts
+    const groupList = items.list({ botIds: ['bot-a', 'bot-b'], openOnly: true });
+    assert.equal(groupList.items.length, 4);
+    assert.deepEqual(groupList.counts, { planned: 3, working: 0, needs_you: 1, done: 1, canceled: 1 });
+
+    const byChats = items.list({ chatIds: ['chat-a1', 'chat-a2'] });
+    assert.equal(byChats.items.length, 3);
+
+    const byUids = items.list({ uids: [uids[0], uids[5]] });
+    assert.equal(byUids.items.length, 2);
+
+    const byLinkUrl = items.list({ link: 'https://github.com/org/repo/pull/102' });
+    assert.equal(byLinkUrl.items.length, 1);
+    assert.equal(byLinkUrl.items[0].uid, uids[2]);
+
+    const byLinkPrefixed = items.list({ link: 'pr:org/repo#101' });
+    assert.equal(byLinkPrefixed.items.length, 1);
+    assert.equal(byLinkPrefixed.items[0].uid, uids[1]);
+
+    const closedPage1 = items.list({ botIds: ['bot-a', 'bot-b'], closedOnly: true, limit: 1 });
+    assert.equal(closedPage1.items.length, 1);
+    assert.equal(closedPage1.items[0].uid, uids[5]);
+    assert.ok(closedPage1.nextCursor);
+    const closedPage2 = items.list({
+      botIds: ['bot-a', 'bot-b'],
+      closedOnly: true,
+      closedCursor: `${closedPage1.nextCursor.lastActivityAt}:${closedPage1.nextCursor.number}`,
+      limit: 5,
+    });
+    assert.equal(closedPage2.items.length, 1);
+    assert.equal(closedPage2.items[0].uid, uids[4]);
+  });
+});
+
+test('work-store.js: idempotent bind, generation CAS closeWork, non-closing replace, and batch chat workers', async () => {
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const { createWorkStore } = await importBotsModule('work-store.js');
+
+  await withTempWorkspace('work-cas', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+    const work = createWorkStore(handle.db);
+
+    // 1. Idempotent bind (`INSERT ... ON CONFLICT DO NOTHING`)
+    const b1 = work.bindWork({
+      id: 'w-fixed', botId: 'bot-1', source: 'app', externalId: 'chat-1', taskId: 't1', dispatchId: 'd1',
+    }, 100);
+    assert.equal(b1.inserted, true);
+    assert.equal(b1.work.generation, 1);
+
+    const b1Dup = work.bindWork({
+      id: 'w-fixed', botId: 'bot-1', source: 'app', externalId: 'chat-1', taskId: 't1', dispatchId: 'd1',
+    }, 110);
+    assert.equal(b1Dup.inserted, false);
+    assert.equal(b1Dup.work.id, 'w-fixed');
+
+    // Second bind on same active address conflicts on unique current index -> returns existing row
+    const bConflict = work.bindWork({
+      botId: 'bot-1', source: 'app', externalId: 'chat-1', taskId: 't2', dispatchId: 'd2',
+    }, 120);
+    assert.equal(bConflict.inserted, false);
+    assert.equal(bConflict.work.id, 'w-fixed');
+
+    // 2. replaceWork keeps old row open (`current = 0`, `closedAt = null`) + supports CAS ref
+    assert.equal(work.replaceWork(
+      { id: 'w-fixed', generation: 99 },
+      { botId: 'bot-1', source: 'app', externalId: 'chat-1', taskId: 't2', dispatchId: 'd2' },
+      150,
+    ), null);
+    const w2 = work.replaceWork(
+      { id: 'w-fixed', generation: 1 },
+      { botId: 'bot-1', source: 'app', externalId: 'chat-1', taskId: 't2', dispatchId: 'd2' },
+      200,
+    );
+    assert.equal(w2.generation, 2);
+    assert.equal(w2.current, true);
+    assert.equal(work.getWorkById('w-fixed').current, false);
+    assert.equal(work.getWorkById('w-fixed').closedAt, null);
+
+    // 3. closeWork generation CAS
+    assert.equal(work.closeWork(w2.id, { reason: 'task_gone', generation: 1, now: 250 }), null);
+    assert.equal(work.getWorkById(w2.id).closedAt, null);
+    const closed2 = work.closeWork(w2.id, { reason: 'task_gone', generation: 2, now: 260 });
+    assert.equal(closed2.closeReason, 'task_gone');
+    assert.equal(work.closeWork(w2.id, { reason: 'bot_gone', generation: 2, now: 270 }), null);
+
+    // 4. Batch chat workers query (eliminates decorateChatRow N+1)
+    work.startWork({ botId: 'bot-1', source: 'app', externalId: 'chat-2', taskId: 't3', dispatchId: 'd3' }, 300);
+    work.startWork({ botId: 'bot-2', source: 'app', externalId: 'chat-9', taskId: 't9', dispatchId: 'd9' }, 310);
+
+    const byChat = work.listChatWorkersByBot('bot-1');
+    assert.equal(byChat.get('chat-1').length, 2);
+    assert.equal(byChat.get('chat-2').length, 1);
+
+    const filteredByChat = work.listChatWorkersByBot('bot-1', { chatIds: ['chat-2'] });
+    assert.equal(filteredByChat.size, 1);
+    assert.equal(filteredByChat.get('chat-2')[0].dispatchId, 'd3');
+
+    const byBots = work.listChatWorkersByBots(['bot-1', 'bot-2']);
+    assert.equal(byBots.get('bot-1').get('chat-1').length, 2);
+    assert.equal(byBots.get('bot-2').get('chat-9').length, 1);
+  });
+});
+
+test('event-bus.js: leading setTimeout(0) + trailing coalesce + items-only needsYou + serial async ordering', async () => {
+  const { createBotsEventBus } = await importBotsModule('event-bus.js');
+
+  let needsYouCalls = 0;
+  const received = [];
+  const bus = createBotsEventBus({
+    coalesceMs: 80,
+    getNeedsYou: () => {
+      needsYouCalls += 1;
+      return { counts: { b1: needsYouCalls }, at: Date.now(), staleInMs: null };
+    },
+  });
+  bus.subscribe((payload) => received.push(payload));
+
+  // 1. Non-items first frame fires on next tick (setTimeout(0)) WITHOUT calling getNeedsYou
+  bus.emit({ botIds: ['b1'], kinds: ['chats', 'status'] });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(received.length, 1);
+  assert.deepEqual(received[0].kinds, ['chats', 'status']);
+  assert.equal(received[0].needsYou, undefined);
+  assert.equal(needsYouCalls, 0);
+
+  // 2. Burst during trailing window coalesces into one batch after coalesceMs
+  bus.emit({ botIds: ['b1'], kinds: ['status'] });
+  bus.emit({ botIds: ['b1'], kinds: ['items'] });
+  await new Promise((r) => setTimeout(r, 25));
+  assert.equal(received.length, 1, 'must stay coalesced inside trailing window');
+  await new Promise((r) => setTimeout(r, 90));
+  assert.equal(received.length, 2);
+  assert.ok(received[1].kinds.includes('items'));
+  assert.equal(needsYouCalls, 1);
+  assert.equal(received[1].needsYou.counts.b1, 1);
+  bus.close();
+
+  // 3. Serial delivery preserves FIFO order when async getNeedsYou overlaps with sync emit
+  const order = [];
+  const asyncBus = createBotsEventBus({
+    coalesceMs: 10,
+    getNeedsYou: () => new Promise((resolve) => {
+      setTimeout(() => resolve({ counts: { b1: 1 }, at: Date.now(), staleInMs: null }), 35);
+    }),
+  });
+  asyncBus.subscribe((payload) => order.push(payload.kinds?.[0] ?? 'all'));
+  asyncBus.emit({ botIds: ['b1'], kinds: ['items'] });
+  asyncBus.flushNow();
+  asyncBus.emit({ botIds: ['b1'], kinds: ['chats'] });
+  asyncBus.flushNow();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(order, ['items', 'chats']);
+  asyncBus.close();
+});
+
+test('bot-item-ask-advice.js, bot-tools-items.js, bot-tools-schema.js & bot-rpc-methods.js', async () => {
+  const sharedDir = path.resolve(__dirname, '../../vendor/dsh-whale/src/shared');
+  const { botItemAskAdvice } = await import(pathToFileURL(path.join(sharedDir, 'bot-item-ask-advice.js')).href);
+  const toolsSchema = await import(pathToFileURL(path.join(sharedDir, 'bot-tools-schema.js')).href);
+  const { RPC_METHODS } = await import(pathToFileURL(path.join(sharedDir, 'bot-rpc-methods.js')).href);
+  const { buildBotItemTools, linksOutsideLinkedChains } = await importBotsModule('bot-tools-items.js');
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const { createItemsStore } = await importBotsModule('items-store.js');
+  const { createWorkStore } = await importBotsModule('work-store.js');
+  const { createBotsEventBus } = await importBotsModule('event-bus.js');
+
+  // 1. RPC_METHODS additions
+  assert.equal(RPC_METHODS.CHAT_DELETE, 'bots.chat.delete');
+  assert.equal(RPC_METHODS.WORK_STOP, 'bots.work.stop');
+  assert.equal(RPC_METHODS.GROUP_ITEMS_LIST, 'bots.groups.items');
+
+  // 2. bot-tools-schema.js schemas & bot_reply validation
+  assert.ok(toolsSchema.BOT_ITEM_TOOL_SCHEMAS.bot_item_comment.files);
+  assert.ok(toolsSchema.BOT_ITEM_TOOL_SCHEMAS.bot_item_set.files);
+  for (const key of ['botId', 'all', 'here', 'chat', 'link', 'cursor']) {
+    assert.ok(toolsSchema.BOT_ITEM_TOOL_SCHEMAS.bot_item_list[key], `missing bot_item_list.${key}`);
+  }
+  assert.ok(toolsSchema.BOT_REPLY_TOOL_SCHEMA.choices);
+  assert.ok(toolsSchema.BOT_REPLY_TOOL_SCHEMA.files);
+  assert.ok(toolsSchema.BOT_REPLY_TOOL_SCHEMA.react);
+  assert.equal(toolsSchema.validateBotReplyArgs({ text: 'Pick', choices: ['Yes', 'No'] }).ok, true);
+  assert.equal(toolsSchema.validateBotReplyArgs({ react: ':thumbsup:' }).ok, true);
+  assert.equal(toolsSchema.validateBotReplyArgs({ text: 'Bad', choices: ['A'], files: ['/tmp/a.txt'] }).code, 'choices_files_conflict');
+  assert.equal(toolsSchema.validateBotReplyArgs({ text: 'Dup', choices: ['Yes', 'yes'] }).code, 'duplicate_choice');
+
+  // 3. botItemAskAdvice checks (EN + ZH, code/URL/link target skipping, linear time)
+  assert.equal(botItemAskAdvice({ text: 'Should we ship v2 today?' }), null);
+  assert.equal(botItemAskAdvice({ text: '今天发布 v2 版本吗？' }), null);
+  assert.match(botItemAskAdvice({ text: 'Pick one:\n- Canary\n- Full rollout' }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: '请选择发布方案？\n选项1：灰度\n选项2：全量' }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: 'Please confirm this rollout https://example.com/?x=1' }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: 'See `isReady?` in code and [docs](https://a.com/?q=1)' }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: `${'a'.repeat(145)}?` }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: 'L1\nL2\nL3\nL4\nL5\nL6\nShip?' }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: 'Should we revert commit a1b2c3d4?' }), /^Tip:/);
+  assert.match(botItemAskAdvice({ text: 'Check 550e8400-e29b-41d4-a716-446655440000?' }), /^Tip:/);
+  // Hash/UUID inside inline code, fenced code, or link target must NOT trigger a tip
+  assert.equal(
+    botItemAskAdvice({
+      text: 'Should we revert [PR #12](https://github.com/o/r/commit/a1b2c3d4e5f6) (`550e8400-e29b-41d4-a716-446655440000`)?\n```\na1b2c3d4\n```',
+    }),
+    null,
+  );
+  // Linear zero-backtracking sanity test on adversarial input
+  const tStart = Date.now();
+  botItemAskAdvice({ text: `${'`'.repeat(20_000)}${'['.repeat(20_000)}?` });
+  assert.ok(Date.now() - tStart < 200, 'scanner must run in linear time');
+
+  // 4. bot_item_* tools end-to-end (files, tip, list filters, cross-bot link & follow-up chain dedupe)
+  await withTempWorkspace('item-tools', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+    const itemsStore = createItemsStore(handle.db);
+    const workStore = createWorkStore(handle.db);
+    const eventBus = createBotsEventBus({ coalesceMs: 50 });
+    registerClose(() => eventBus.close());
+
+    handle.bots.insertBot({ id: 'bot-a', folder: 'a', name: 'Alpha', chatSessionId: 'chat-a' }, 1000);
+    handle.bots.insertBot({ id: 'bot-b', folder: 'b', name: 'Beta', chatSessionId: 'chat-b' }, 1001);
+
+    const runtime = { botsStore: handle.bots, itemsStore, workStore, eventBus };
+    const tools = new Map(
+      buildBotItemTools(() => runtime, (_rt, exec) => exec.caller).map((t) => [t.name, t]),
+    );
+    const callerA = { caller: { bot: handle.bots.getBot('bot-a'), sessionId: 'chat-a' } };
+    const callerB = { caller: { bot: handle.bots.getBot('bot-b'), sessionId: 'chat-b' } };
+
+    // bot_item_add + bot_item_set with files & Tip on needs_you
+    const added = JSON.parse((await tools.get('bot_item_add').execute({ title: 'Release check' }, callerA)).detail);
+    const setRes = JSON.parse((await tools.get('bot_item_set').execute({
+      id: `#${added.number}`,
+      status: 'needs_you',
+      comment: 'Check commit a1b2c3d4 without question mark',
+      files: ['release-notes.md'],
+    }, callerA)).detail);
+    assert.equal(setRes.status, 'needs_you');
+    assert.match(setRes.tip, /^Tip:/);
+
+    // bot_item_comment with files only (no text) succeeds
+    const cRes = await tools.get('bot_item_comment').execute({
+      id: added.uid,
+      files: ['artifact.log'],
+    }, callerA);
+    assert.equal(cRes.ok, true);
+
+    // bot_item_link cross-bot attach + follow-up chain deduplication
+    workStore.startWork({ botId: 'bot-b', source: 'app', externalId: 'chat-b', taskId: 'tb-1', dispatchId: 'disp-chain-1' }, 2000);
+    workStore.startWork({ botId: 'bot-b', source: 'app', externalId: 'chat-b', taskId: 'tb-2', dispatchId: 'disp-chain-2' }, 2100);
+    const link1 = JSON.parse((await tools.get('bot_item_link').execute({
+      id: added.uid,
+      links: [{ kind: 'dispatch', ref: 'disp-chain-1' }, { kind: 'pr', ref: 'org/repo#77' }],
+    }, callerB)).detail);
+    assert.equal(link1.added.length, 2);
+
+    // Second dispatch in the SAME follow-up chain is skipped cleanly
+    const link2 = JSON.parse((await tools.get('bot_item_link').execute({
+      id: added.uid,
+      links: [{ kind: 'dispatch', ref: 'disp-chain-2' }],
+    }, callerB)).detail);
+    assert.deepEqual(link2.added, []);
+    assert.deepEqual(link2.skippedChainDuplicates, ['disp-chain-2']);
+    assert.equal(linksOutsideLinkedChains([{ kind: 'dispatch', ref: 'd2' }], [{ kind: 'dispatch', ref: 'd1' }], () => 'same').kept.length, 0);
+
+    // bot_item_list with botId, here, link, all, cursor
+    const listedByLink = JSON.parse((await tools.get('bot_item_list').execute({
+      botId: 'Alpha',
+      link: 'pr:org/repo#77',
+    }, callerB)).detail);
+    assert.equal(listedByLink.items.length, 1);
+    assert.equal(listedByLink.items[0].uid, added.uid);
+
+    const listedHere = JSON.parse((await tools.get('bot_item_list').execute({ here: true }, callerA)).detail);
+    assert.equal(listedHere.items.length, 1);
   });
 });
