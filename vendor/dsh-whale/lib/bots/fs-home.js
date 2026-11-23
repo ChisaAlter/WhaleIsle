@@ -619,3 +619,182 @@ export function deleteBotHome(homeDir, botId, options = {}) {
   fs.rmSync(homeDir, { recursive: true, force: true });
   return { deleted: true, preserved: false };
 }
+
+export const DECISIONS_TSV_HEADER = 'ts\tactor\tphase\tdecision\tevidence\tnotes';
+const SAFE_SEGMENT_RE = /^[A-Za-z0-9._-]{1,128}$/u;
+const DAILY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/u;
+
+/** @param {unknown} raw @param {string} label */
+function safeSegment(raw, label) {
+  const clean = typeof raw === 'string' ? raw.trim() : '';
+  if (!clean || clean === '.' || clean === '..' || !SAFE_SEGMENT_RE.test(clean)) {
+    throw new BotFsError('path_traversal', `Invalid ${label}: ${String(raw)}`);
+  }
+  return clean;
+}
+
+/** @param {unknown} value */
+const sanitizeTsvCell = (value) => String(value ?? '').replace(/[\t\r\n]+/gu, ' ').trim();
+
+/** @param {string} homeDir @param {string} itemUid */
+export function resolveDecisionTsvPath(homeDir, itemUid) {
+  return resolveSafeHomePath(homeDir, `decisions/${safeSegment(itemUid, 'itemUid')}.tsv`);
+}
+
+/** @param {any} row @param {number} now */
+function buildDecisionEntry(row, now) {
+  const src = row && typeof row === 'object' ? row : {};
+  const hasTs = src.ts !== undefined && src.ts !== null && String(src.ts).trim().length > 0;
+  return {
+    ts: hasTs ? sanitizeTsvCell(src.ts) : new Date(now).toISOString(),
+    actor: sanitizeTsvCell(src.actor || 'bot'),
+    phase: sanitizeTsvCell(src.phase || ''),
+    decision: sanitizeTsvCell(src.decision || ''),
+    evidence: sanitizeTsvCell(src.evidence || ''),
+    notes: sanitizeTsvCell(src.notes || ''),
+  };
+}
+
+/**
+ * Append one decision row to `<homeDir>/decisions/<itemUid>.tsv`.
+ * @param {string} homeDir
+ * @param {string} itemUid
+ * @param {{ ts?: number | string, actor?: string, phase?: string, decision?: string, evidence?: string, notes?: string }} row
+ * @param {{ botId?: string, now?: number }} [options]
+ */
+export function appendDecisionTsv(homeDir, itemUid, row, options = {}) {
+  if (options.botId) assertFolderOwnedByBot(homeDir, options.botId);
+  const filePath = resolveDecisionTsvPath(homeDir, itemUid);
+  const entry = buildDecisionEntry(row, options.now ?? Date.now());
+  const line = [entry.ts, entry.actor, entry.phase, entry.decision, entry.evidence, entry.notes].join('\t');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const needsHeader = !fs.existsSync(filePath) || fs.statSync(filePath).size === 0;
+  fs.appendFileSync(filePath, `${needsHeader ? `${DECISIONS_TSV_HEADER}\n` : ''}${line}\n`, 'utf8');
+  return { path: filePath, entry };
+}
+
+/** @param {string} homeDir @param {string} itemUid */
+export function readDecisionTsv(homeDir, itemUid) {
+  const filePath = resolveDecisionTsvPath(homeDir, itemUid);
+  if (!fs.existsSync(filePath)) return { path: filePath, header: DECISIONS_TSV_HEADER, rows: [] };
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/u).filter((l) => l.trim().length > 0);
+  const body = lines[0] === DECISIONS_TSV_HEADER ? lines.slice(1) : lines;
+  const rows = body.map((line) => {
+    const [ts = '', actor = '', phase = '', decision = '', evidence = '', notes = ''] = line.split('\t');
+    return { ts, actor, phase, decision, evidence, notes };
+  });
+  return { path: filePath, header: DECISIONS_TSV_HEADER, rows };
+}
+
+/** @param {string} homeDir @param {string} relPath */
+function readOptionalHomeFile(homeDir, relPath) {
+  const full = resolveSafeHomePath(homeDir, relPath);
+  return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : '';
+}
+
+/** @param {string} homeDir */
+export const readCrewMd = (homeDir) => readOptionalHomeFile(homeDir, 'CREW.md');
+/** @param {string} homeDir @param {string} content @param {{ botId?: string }} [options] */
+export const writeCrewMd = (homeDir, content, options = {}) => writeHomeFile(homeDir, 'CREW.md', content, options);
+/** @param {string} homeDir */
+export const readPlanMd = (homeDir) => readOptionalHomeFile(homeDir, 'plan.md');
+/** @param {string} homeDir @param {string} content @param {{ botId?: string }} [options] */
+export const writePlanMd = (homeDir, content, options = {}) => writeHomeFile(homeDir, 'plan.md', content, options);
+
+/** @param {Date | string | number} [dateOrIso] */
+export function dailyMemoryRelPath(dateOrIso = new Date()) {
+  if (typeof dateOrIso === 'string') {
+    const clean = dateOrIso.trim();
+    if (!DAILY_DATE_RE.test(clean)) throw new BotFsError('invalid_argument', `Invalid daily memory date: ${dateOrIso}`);
+    return `memory/${clean}.md`;
+  }
+  const d = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
+  if (Number.isNaN(d.getTime())) throw new BotFsError('invalid_argument', 'Invalid daily memory date');
+  return `memory/${d.toISOString().slice(0, 10)}.md`;
+}
+
+/** @param {string} homeDir @param {Date | string | number} [dateOrIso] */
+export const resolveDailyMemoryPath = (homeDir, dateOrIso = new Date()) => resolveSafeHomePath(homeDir, dailyMemoryRelPath(dateOrIso));
+/** @param {string} homeDir @param {Date | string | number} [dateOrIso] */
+export const readDailyMemory = (homeDir, dateOrIso = new Date()) => readOptionalHomeFile(homeDir, dailyMemoryRelPath(dateOrIso));
+/** @param {string} homeDir @param {string} line @param {{ date?: Date | string | number, botId?: string }} [options] */
+export function appendDailyMemory(homeDir, line, options = {}) {
+  if (options.botId) assertFolderOwnedByBot(homeDir, options.botId);
+  const clean = String(line ?? '').replace(/[\r\n]+/gu, ' ').trim();
+  if (!clean) throw new BotFsError('invalid_argument', 'Daily memory line cannot be empty');
+  const filePath = resolveDailyMemoryPath(homeDir, options.date ?? new Date());
+  const bullet = clean.startsWith('- ') ? clean : `- ${clean}`;
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, `${bullet}\n`, 'utf8');
+  return { path: filePath, line: bullet };
+}
+/** @param {string} metaRoot @param {string} relPath */
+export function resolveSafeMetaPath(metaRoot, relPath) {
+  if (!metaRoot) throw new BotFsError('invalid_argument', 'metaRoot is required');
+  fs.mkdirSync(metaRoot, { recursive: true });
+  return resolveSafeHomePath(metaRoot, relPath);
+}
+/** @param {string} file @param {any} fallback */
+function readJsonSafe(file, fallback) {
+  if (!fs.existsSync(file)) return fallback;
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) ?? fallback; } catch { return fallback; }
+}
+/** @param {string} metaRoot @param {string} groupId */
+export const teamMemoryPath = (metaRoot, groupId) => resolveSafeMetaPath(metaRoot, `team-memory/${safeSegment(groupId, 'groupId')}.md`);
+/** @param {string} metaRoot @param {string} groupId */
+export const readTeamMemory = (metaRoot, groupId) => {
+  const filePath = teamMemoryPath(metaRoot, groupId);
+  return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+};
+/** @param {string} metaRoot @param {string} groupId @param {string} content */
+export function writeTeamMemory(metaRoot, groupId, content) {
+  if (typeof content !== 'string') throw new BotFsError('invalid_argument', 'Team memory content must be a string');
+  const filePath = teamMemoryPath(metaRoot, groupId);
+  writeAtomicFile(filePath, content);
+  return { path: filePath, bytes: Buffer.byteLength(content, 'utf8') };
+}
+/** @param {string} metaRoot */
+export const webhookCredentialsPath = (metaRoot) => resolveSafeMetaPath(metaRoot, 'bot-credentials/webhooks.json');
+/** @param {string} metaRoot */
+export function readWebhookCredentials(metaRoot) {
+  const parsed = readJsonSafe(webhookCredentialsPath(metaRoot), {});
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+}
+/** @param {string} metaRoot @param {Record<string, any>} data */
+export function writeWebhookCredentials(metaRoot, data) {
+  const filePath = webhookCredentialsPath(metaRoot);
+  const payload = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  writeAtomicFile(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+  return { path: filePath, count: Object.keys(payload).length };
+}
+/** @param {string} metaRoot */
+export const imRoutesPath = (metaRoot) => resolveSafeMetaPath(metaRoot, 'im-routes.json');
+/** @param {string} metaRoot */
+export function readImRoutes(metaRoot) {
+  const parsed = readJsonSafe(imRoutesPath(metaRoot), null);
+  return parsed && typeof parsed === 'object' ? parsed : { version: 1, routes: {}, updatedAt: 0 };
+}
+/** @param {string} metaRoot @param {Record<string, any>} routesDoc */
+export function writeImRoutes(metaRoot, routesDoc) {
+  const filePath = imRoutesPath(metaRoot);
+  const payload = { version: 1, routes: {}, updatedAt: Date.now(), ...(routesDoc ?? {}) };
+  writeAtomicFile(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+  return { path: filePath, routes: payload };
+}
+/** @param {string} metaRoot @param {string} botId */
+export const promptSnapshotsPath = (metaRoot, botId) => resolveSafeMetaPath(metaRoot, `bot-prompt-snapshots/${safeIdSegment(botId)}.json`);
+/** @param {string} metaRoot @param {string} botId */
+export function readPromptSnapshots(metaRoot, botId) {
+  const parsed = readJsonSafe(promptSnapshotsPath(metaRoot, botId), []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+/** @param {string} metaRoot @param {string} botId @param {Array<any>} snapshots @param {{ maxEntries?: number }} [options] */
+export function writePromptSnapshots(metaRoot, botId, snapshots, options = {}) {
+  const maxEntries = Math.max(1, Number(options.maxEntries) || 10);
+  const list = Array.isArray(snapshots) ? snapshots.slice(-maxEntries) : [];
+  const filePath = promptSnapshotsPath(metaRoot, botId);
+  writeAtomicFile(filePath, `${JSON.stringify(list, null, 2)}\n`);
+  return { path: filePath, count: list.length };
+}
+/** @param {string} metaRoot @param {string} dispatchId */
+export const resolveWorktreePath = (metaRoot, dispatchId) => resolveSafeMetaPath(metaRoot, `worktrees/${safeSegment(dispatchId, 'dispatchId')}`);

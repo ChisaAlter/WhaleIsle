@@ -10884,65 +10884,9 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/automations-service.js": {
-      "TS2339": {
-        "Property 'enabled' does not exist on type '{}'.": 1,
-        "Property 'message' does not exist on type '{}'.": 1
-      },
-      "TS7005": {
-        "Variable 'timer' implicitly has an 'any' type.": 1
-      },
-      "TS7006": {
-        "Parameter 'botId' implicitly has an 'any' type.": 2,
-        "Parameter 'id' implicitly has an 'any' type.": 3,
-        "Parameter 'params' implicitly has an 'any' type.": 1,
-        "Parameter 'waitId' implicitly has an 'any' type.": 1
-      },
-      "TS7031": {
-        "Binding element 'automationId' implicitly has an 'any' type.": 1,
-        "Binding element 'runId' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'timer' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      }
-    },
     "vendor/dsh-whale/lib/bots/bot-tools-items.js": {
       "TS7006": {
         "Parameter 'caller' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/bot-tools-registry.js": {
-      "TS7005": {
-        "Variable 'activeBotsRuntimeSource' implicitly has an 'any' type.": 3,
-        "Variable 'disposers' implicitly has an 'any[]' type.": 1
-      },
-      "TS7006": {
-        "Parameter 'detail' implicitly has an 'any' type.": 2,
-        "Parameter 'exec' implicitly has an 'any' type.": 2,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'spec' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'activeBotsRuntimeSource' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'disposers' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/connectors-service.js": {
-      "TS2339": {
-        "Property 'im' does not exist on type '{}'.": 3,
-        "Property 'imDefault' does not exist on type '{ connectors: any; }'.": 1,
-        "Property 'imDefault' does not exist on type '{}'.": 2,
-        "Property 'webhooks' does not exist on type '{}'.": 2
-      },
-      "TS7006": {
-        "Parameter 'botId' implicitly has an 'any' type.": 4,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'w' implicitly has an 'any' type.": 1
-      },
-      "TS7031": {
-        "Binding element 'decision' implicitly has an 'any' type.": 1,
-        "Binding element 'id' implicitly has an 'any' type.": 1,
-        "Binding element 'token' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/db.js": {
@@ -10970,82 +10914,9 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/event-bus.js": {
-      "TS2322": {
-        "Type 'null' is not assignable to type '() => { counts: Record<string, number>; at: number; staleInMs: number | null; }'.": 1
-      },
-      "TS7005": {
-        "Variable 'flushTimer' implicitly has an 'any' type.": 3
-      },
-      "TS7006": {
-        "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'eventName' implicitly has an 'any' type.": 2,
-        "Parameter 'fn' implicitly has an 'any' type.": 1,
-        "Parameter 'notice' implicitly has an 'any' type.": 1,
-        "Parameter 'payload' implicitly has an 'any' type.": 1,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'res' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'flushTimer' implicitly has type 'any' in some locations where its type cannot be determined.": 1
-      }
-    },
     "vendor/dsh-whale/lib/bots/fs-home.js": {
       "TS2339": {
         "Property 'code' does not exist on type '{}'.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/groups-service.js": {
-      "TS2339": {
-        "Property 'afterSequence' does not exist on type '{}'.": 1,
-        "Property 'authorName' does not exist on type '{}'.": 1,
-        "Property 'avatar' does not exist on type '{}'.": 1,
-        "Property 'avatarColor' does not exist on type '{}'.": 1,
-        "Property 'beforeSequence' does not exist on type '{}'.": 1,
-        "Property 'botId' does not exist on type '{}'.": 2,
-        "Property 'botIds' does not exist on type '{}'.": 2,
-        "Property 'expectedRevision' does not exist on type '{}'.": 1,
-        "Property 'frozenItemsByBot' does not exist on type '{}'.": 1,
-        "Property 'groupId' does not exist on type '{}'.": 6,
-        "Property 'id' does not exist on type '{}'.": 7,
-        "Property 'images' does not exist on type '{}'.": 2,
-        "Property 'limit' does not exist on type '{}'.": 1,
-        "Property 'messageId' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 1,
-        "Property 'replyMode' does not exist on type '{}'.": 1,
-        "Property 'revision' does not exist on type '{}'.": 1,
-        "Property 'sequence' does not exist on type '{}'.": 2,
-        "Property 'text' does not exist on type '{}'.": 1,
-        "Property 'threadId' does not exist on type '{}'.": 4,
-        "Property 'title' does not exist on type '{}'.": 1,
-        "Property 'waitForReplies' does not exist on type '{}'.": 1
-      },
-      "TS7006": {
-        "Parameter 'b' implicitly has an 'any' type.": 6,
-        "Parameter 'bot' implicitly has an 'any' type.": 2,
-        "Parameter 'botId' implicitly has an 'any' type.": 3,
-        "Parameter 'group' implicitly has an 'any' type.": 2,
-        "Parameter 'id' implicitly has an 'any' type.": 2,
-        "Parameter 'm' implicitly has an 'any' type.": 1,
-        "Parameter 'msg' implicitly has an 'any' type.": 2,
-        "Parameter 'orderedIds' implicitly has an 'any' type.": 1,
-        "Parameter 't' implicitly has an 'any' type.": 2,
-        "Parameter 'threadId' implicitly has an 'any' type.": 1
-      },
-      "TS7031": {
-        "Binding element 'bot' implicitly has an 'any' type.": 1,
-        "Binding element 'groupId' implicitly has an 'any' type.": 1,
-        "Binding element 'operationId' implicitly has an 'any' type.": 1,
-        "Binding element 'ownerMessage' implicitly has an 'any' type.": 1,
-        "Binding element 'quotedHistory' implicitly has an 'any' type.": 1,
-        "Binding element 'sessionId' implicitly has an 'any' type.": 1,
-        "Binding element 'threadId' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 3
-      },
-      "TS8024": {
-        "JSDoc '@param' tag has name 'group', but there is no parameter with that name.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/groups-store.js": {
@@ -11163,21 +11034,6 @@
         "Parameter 'opt' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/legacy-compat.js": {
-      "TS2339": {
-        "Property 'bigFishEnabled' does not exist on type '{}'.": 2,
-        "Property 'imDefault' does not exist on type '{}'.": 3,
-        "Property 'model' does not exist on type '{}'.": 5,
-        "Property 'name' does not exist on type '{}'.": 4,
-        "Property 'sessionId' does not exist on type '{}'.": 1
-      },
-      "TS7006": {
-        "Parameter 'b' implicitly has an 'any' type.": 1,
-        "Parameter 'extra' implicitly has an 'any' type.": 1,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 1
-      }
-    },
     "vendor/dsh-whale/lib/bots/legacy-migration.js": {
       "TS2339": {
         "Property 'allowMigration' does not exist on type '{ dshHome: string; db: DatabaseSync; botsStore: { getBot: (id: any) => any; getBotByFolder: (folder: any) => any; getBotByName: (name: any) => any; listBots: () => any[]; insertBot: (bot: any, now?: number) => any; ... <n> more ...; deleteChat: (sessionId: any) => boolean; }; now?: number | undefined; }'.": 1
@@ -11233,20 +11089,17 @@
       }
     },
     "vendor/dsh-whale/lib/bots/prompt-engine.js": {
-      "TS18048": {
-        "'turn' is possibly 'undefined'.": 2
-      },
       "TS7006": {
         "Parameter 'assembleCtx' implicitly has an 'any' type.": 2,
         "Parameter 'b' implicitly has an 'any' type.": 2,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
-        "Parameter 'event' implicitly has an 'any' type.": 4,
+        "Parameter 'event' implicitly has an 'any' type.": 3,
         "Parameter 'hint' implicitly has an 'any' type.": 1,
         "Parameter 'keys' implicitly has an 'any' type.": 1,
-        "Parameter 'resolved' implicitly has an 'any' type.": 3,
-        "Parameter 'runtime' implicitly has an 'any' type.": 3,
+        "Parameter 'resolved' implicitly has an 'any' type.": 2,
+        "Parameter 'runtime' implicitly has an 'any' type.": 2,
         "Parameter 'session' implicitly has an 'any' type.": 2,
-        "Parameter 'sessionId' implicitly has an 'any' type.": 3,
+        "Parameter 'sessionId' implicitly has an 'any' type.": 2,
         "Parameter 'sessionOrCtx' implicitly has an 'any' type.": 1,
         "Parameter 'sid' implicitly has an 'any' type.": 1
       }
@@ -11260,26 +11113,19 @@
       },
       "TS7006": {
         "Parameter 'filename' implicitly has an 'any' type.": 1,
-        "Parameter 'i' implicitly has an 'any' type.": 2,
         "Parameter 'method' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 94,
+        "Parameter 'p' implicitly has an 'any' type.": 1,
         "Parameter 'params' implicitly has an 'any' type.": 1,
         "Parameter 'req' implicitly has an 'any' type.": 2,
         "Parameter 'res' implicitly has an 'any' type.": 3,
         "Parameter 'w' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ 'bots.list': () => any; 'bots.settings.get': () => any; 'bots.settings.set': (p: any) => any; 'bots.settings.update': (p: any) => any; 'bots.roster': () => any; 'bots.models': () => any; 'bots.agentChoices': () => any; ... <n> more ...; 'bots.import.execute': (p: any) => any; }'.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/runtime.js": {
       "TS2339": {
-        "Property 'allowLegacyMigration' does not exist on type '{ ctx?: any; dshHome: string; userHomeDir?: string | undefined; enableSchedulers?: boolean | undefined; getController?: (() => any) | undefined; runLookAroundSweep?: ((bot: any, prompt: string) => Promise<...>) | undefined; runTidyUpModel?: ((bot: any, prompt: string) => Promise<...>) | undefined; }'.": 1,
-        "Property 'allowLegacyMigration' does not exist on type '{ home: string; }'.": 1,
         "Property 'forceForBotPreset' does not exist on type 'never'.": 1
       },
       "TS2353": {
-        "Object literal may only specify known properties, and 'allowLegacyMigration' does not exist in type '{ ctx?: any; dshHome: string; userHomeDir?: string | undefined; enableSchedulers?: boolean | undefined; getController?: (() => any) | undefined; runLookAroundSweep?: ((bot: any, prompt: string) => Promise<...>) | undefined; runTidyUpModel?: ((bot: any, prompt: string) => Promise<...>) | undefined; }'.": 1,
         "Object literal may only specify known properties, and 'allowMigration' does not exist in type '{ dshHome: string; db: DatabaseSync; botsStore: { getBot: (id: any) => any; getBotByFolder: (folder: any) => any; getBotByName: (name: any) => any; listBots: () => any[]; insertBot: (bot: any, now?: number) => any; ... <n> more ...; deleteChat: (sessionId: any) => boolean; }; now?: number | undefined; }'.": 1
       },
       "TS7005": {
@@ -11362,19 +11208,10 @@
     },
     "vendor/dsh-whale/lib/bots/session-runtime.js": {
       "TS2339": {
-        "Property 'cwd' does not exist on type '{}'.": 1,
-        "Property 'externalId' does not exist on type '{}'.": 1,
-        "Property 'externalSource' does not exist on type '{}'.": 1,
         "Property 'fallbackDefault' does not exist on type '{}'.": 1,
-        "Property 'kind' does not exist on type '{}'.": 1,
-        "Property 'launch' does not exist on type '{}'.": 1,
         "Property 'message' does not exist on type '{}'.": 1,
-        "Property 'origin' does not exist on type '{}'.": 1,
-        "Property 'owner' does not exist on type '{}'.": 1,
         "Property 'requireController' does not exist on type '{}'.": 1,
-        "Property 'sessionId' does not exist on type '{}'.": 1,
-        "Property 'strict' does not exist on type '{}'.": 1,
-        "Property 'title' does not exist on type '{}'.": 1
+        "Property 'strict' does not exist on type '{}'.": 1
       },
       "TS2345": {
         "Argument of type '{ note: string; } | {}' is not assignable to parameter of type '{ template?: null | undefined; note?: null | undefined; } | undefined'.": 1
@@ -11386,7 +11223,7 @@
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 2,
         "Parameter 'bot' implicitly has an 'any' type.": 4,
-        "Parameter 'botId' implicitly has an 'any' type.": 11,
+        "Parameter 'botId' implicitly has an 'any' type.": 10,
         "Parameter 'chat' implicitly has an 'any' type.": 1,
         "Parameter 'controller' implicitly has an 'any' type.": 1,
         "Parameter 'e' implicitly has an 'any' type.": 1,
@@ -11417,25 +11254,13 @@
       }
     },
     "vendor/dsh-whale/lib/bots/share-import-service.js": {
-      "TS2339": {
-        "Property 'includeMemory' does not exist on type '{}'.": 1,
-        "Property 'includeMemoryTopics' does not exist on type '{}'.": 1,
-        "Property 'includeSkills' does not exist on type '{}'.": 1,
-        "Property 'manifest' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 1,
-        "Property 'packageJson' does not exist on type '{}'.": 1,
-        "Property 'sourceId' does not exist on type '{}'.": 2,
-        "Property 'sourcePath' does not exist on type '{}'.": 2
-      },
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 2,
         "Parameter 'botId' implicitly has an 'any' type.": 2,
         "Parameter 'destHome' implicitly has an 'any' type.": 1,
-        "Parameter 'fallbackName' implicitly has an 'any' type.": 1,
         "Parameter 'idx' implicitly has an 'any' type.": 2,
         "Parameter 'params' implicitly has an 'any' type.": 1,
         "Parameter 'rawInput' implicitly has an 'any' type.": 1,
-        "Parameter 'rel' implicitly has an 'any' type.": 1,
         "Parameter 's' implicitly has an 'any' type.": 2,
         "Parameter 'srcPath' implicitly has an 'any' type.": 1
       }
@@ -11580,9 +11405,6 @@
       },
       "TS2345": {
         "Argument of type '{ ensureRuntime: () => any; getRuntimeIfReady: (hint?: null) => any; close: () => void; readonly instance: any; } | null' is not assignable to parameter of type 'null | undefined'.": 1
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'allowLegacyMigration' does not exist in type '{ home: string; }'.": 1
       },
       "TS7005": {
         "Variable 'off' implicitly has an 'any' type.": 1,

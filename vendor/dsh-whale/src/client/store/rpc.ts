@@ -185,12 +185,13 @@ export interface BotGroupThread {
 export type BotGroupReplyMode =
   | { kind: 'all' }
   | { kind: 'mentions' }
-  | { kind: 'bot'; botId: string };
+  | { kind: 'bot'; botId: string }
+  | { kind: 'coordinator'; coordinatorBotId?: string };
 
 export interface BotGroupRecord {
   id: string;
   name: string;
-  replyMode?: BotGroupReplyMode | 'bot' | 'all' | 'mentions';
+  replyMode?: BotGroupReplyMode | 'bot' | 'all' | 'mentions' | 'coordinator';
   sidebarOrder?: number;
   createdAt?: number;
   updatedAt?: number;
@@ -577,5 +578,368 @@ export function invalidateUploadedAvatarCache(botId: string): void {
     if (key.startsWith(prefix)) {
       uploadAvatarCache.delete(key);
     }
+  }
+}
+
+// ---- Wave 1+ Typed RPC Contracts & Defensive Helpers ----
+
+export interface BotPromptToolInfo {
+  name: string;
+  effect?: string;
+  source?: string;
+}
+
+export interface BotPromptSnapshotSummary {
+  index?: number;
+  id?: string;
+  at?: number;
+  timestamp?: number;
+  model?: string | null;
+  provider?: string | null;
+  tokenEstimate?: number;
+  systemChars?: number;
+  toolsCount?: number;
+  tools?: Array<string | BotPromptToolInfo>;
+  skills?: string[];
+  linkedSkills?: string[];
+  hasCrewMd?: boolean;
+  hasPlanMd?: boolean;
+  promptPreview?: string;
+  systemPrompt?: string;
+}
+
+export interface BotPromptInspectResult {
+  botId?: string;
+  latest?: BotPromptSnapshotSummary | null;
+  snapshots?: BotPromptSnapshotSummary[];
+  tools?: Array<string | BotPromptToolInfo>;
+  linkedSkills?: string[];
+  systemPrompt?: string;
+  updatedAt?: number;
+}
+
+export interface BotPromptDiffResult {
+  fromIndex?: number;
+  toIndex?: number;
+  fromAt?: number;
+  toAt?: number;
+  addedLines?: string[];
+  removedLines?: string[];
+  addedTools?: string[];
+  removedTools?: string[];
+  diffText?: string;
+  changed?: boolean;
+}
+
+export interface BotBudgetConfig {
+  botId?: string;
+  dailyLimitUsd?: number | null;
+  dailyLimitTokens?: number | null;
+  offPeakOnly?: boolean;
+  pauseOnExceed?: boolean;
+  alertThresholdPct?: number;
+  updatedAt?: number;
+}
+
+export interface BotBudgetUsageSummary {
+  botId?: string;
+  dayUtc?: string;
+  costUsd?: number;
+  peakCostUsd?: number;
+  offPeakCostUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  totalTokens?: number;
+  cacheHitRate?: number;
+  isOffPeak?: boolean;
+  nextPeakSwitchMs?: number | null;
+  exceeded?: boolean;
+  budget?: BotBudgetConfig | null;
+}
+
+export interface BotCrewAdoption {
+  sessionId: string;
+  botId: string;
+  workspaceId?: string | null;
+  cwd?: string | null;
+  title?: string | null;
+  role?: string;
+  status?: 'active' | 'released';
+  adoptedAt?: number;
+  releasedAt?: number | null;
+}
+
+export interface BotDecisionRow {
+  ts?: string;
+  actor?: string;
+  phase?: string;
+  decision?: string;
+  evidence?: string;
+  notes?: string;
+}
+
+export interface BotDecisionTsvResult {
+  path?: string;
+  header?: string[];
+  rows: BotDecisionRow[];
+}
+
+export interface BotToolProblem {
+  server?: string;
+  name?: string;
+  code?: string;
+  severity?: 'error' | 'warn';
+  message: string;
+  at?: number;
+}
+
+export interface BotMemorySearchHit {
+  entryId?: string;
+  scope?: 'bot' | 'team' | 'project';
+  scopeId?: string;
+  sourceFile?: string;
+  factDate?: string | null;
+  body: string;
+  score?: number;
+}
+
+export interface BotSkillRecordDraftResult {
+  ok?: boolean;
+  reason?: string;
+  message?: string;
+  name?: string;
+  description?: string;
+  skillMd?: string;
+  markdown?: string;
+  framesCaptured?: number;
+  redactedCount?: number;
+}
+
+export interface PetVoiceState {
+  ok?: boolean;
+  available?: boolean;
+  enabled?: boolean;
+  state?: 'idle' | 'listening' | 'thinking' | 'speaking' | 'unavailable';
+  reason?: string;
+  message?: string;
+}
+
+export async function inspectBotPrompt(botId: string): Promise<BotPromptInspectResult | null> {
+  const res = await callBotRpc<BotPromptInspectResult | null>(RPC_METHODS.PROMPT_INSPECT, { botId });
+  if (!res || typeof res !== 'object') return null;
+  return {
+    ...res,
+    snapshots: Array.isArray(res.snapshots) ? res.snapshots : [],
+    tools: Array.isArray(res.tools) ? res.tools : [],
+    linkedSkills: Array.isArray(res.linkedSkills) ? res.linkedSkills : [],
+  };
+}
+
+export async function diffBotPrompt(
+  botId: string,
+  fromIdx?: number,
+  toIdx?: number,
+): Promise<BotPromptDiffResult | null> {
+  const res = await callBotRpc<BotPromptDiffResult | null>(RPC_METHODS.PROMPT_DIFF, {
+    botId,
+    ...(fromIdx !== undefined ? { fromIdx } : {}),
+    ...(toIdx !== undefined ? { toIdx } : {}),
+  });
+  if (!res || typeof res !== 'object') return null;
+  return {
+    ...res,
+    addedLines: Array.isArray(res.addedLines) ? res.addedLines : [],
+    removedLines: Array.isArray(res.removedLines) ? res.removedLines : [],
+    addedTools: Array.isArray(res.addedTools) ? res.addedTools : [],
+    removedTools: Array.isArray(res.removedTools) ? res.removedTools : [],
+  };
+}
+
+export async function getBotBudget(botId: string): Promise<BotBudgetConfig | null> {
+  const res = await callBotRpc<BotBudgetConfig | { budget?: BotBudgetConfig | null } | null>(
+    RPC_METHODS.BUDGET_GET,
+    { botId },
+  );
+  if (!res || typeof res !== 'object') return null;
+  if ('budget' in res) return res.budget ?? null;
+  return res as BotBudgetConfig;
+}
+
+export async function setBotBudget(
+  botId: string,
+  patch: Partial<BotBudgetConfig>,
+): Promise<BotBudgetConfig | null> {
+  const res = await callBotRpc<BotBudgetConfig | { budget?: BotBudgetConfig | null } | null>(
+    RPC_METHODS.BUDGET_SET,
+    { botId, ...patch },
+  );
+  if (!res || typeof res !== 'object') return null;
+  if ('budget' in res) return res.budget ?? null;
+  return res as BotBudgetConfig;
+}
+
+export async function getBotBudgetUsage(
+  botId: string,
+  dayUtc?: string,
+): Promise<BotBudgetUsageSummary | null> {
+  const res = await callBotRpc<BotBudgetUsageSummary | { usage?: BotBudgetUsageSummary | null } | null>(
+    RPC_METHODS.BUDGET_USAGE,
+    { botId, ...(dayUtc ? { dayUtc } : {}) },
+  );
+  if (!res || typeof res !== 'object') return null;
+  if ('usage' in res && res.usage && typeof res.usage === 'object') {
+    return { ...res, ...res.usage };
+  }
+  return res as BotBudgetUsageSummary;
+}
+
+export async function listBotCrew(
+  botId: string,
+  status: 'active' | 'released' | 'all' = 'active',
+): Promise<BotCrewAdoption[]> {
+  const res = await callBotRpc<BotCrewAdoption[] | { crew?: BotCrewAdoption[]; adoptions?: BotCrewAdoption[] } | null>(
+    RPC_METHODS.CREW_LIST,
+    { botId, status },
+  );
+  const rows = Array.isArray(res)
+    ? res
+    : (Array.isArray(res?.crew) ? res.crew : (Array.isArray(res?.adoptions) ? res.adoptions : []));
+  return rows.filter((row): row is BotCrewAdoption => Boolean(row && typeof row.sessionId === 'string'));
+}
+
+export async function adoptBotCrew(params: {
+  botId: string;
+  sessionId: string;
+  workspaceId?: string;
+  cwd?: string;
+  title?: string;
+  role?: string;
+}): Promise<BotCrewAdoption | null> {
+  const res = await callBotRpc<BotCrewAdoption | { adoption?: BotCrewAdoption } | null>(
+    RPC_METHODS.CREW_ADOPT,
+    params,
+  );
+  if (!res || typeof res !== 'object') return null;
+  return 'adoption' in res && res.adoption ? res.adoption : (res as BotCrewAdoption);
+}
+
+export async function releaseBotCrew(sessionId: string, botId?: string): Promise<void> {
+  await callBotRpc(RPC_METHODS.CREW_RELEASE, {
+    sessionId,
+    ...(botId ? { botId } : {}),
+  });
+}
+
+export async function readItemDecisions(botId: string, itemUid: string): Promise<BotDecisionTsvResult> {
+  const res = await callBotRpc<BotDecisionTsvResult | BotDecisionRow[] | null>(
+    RPC_METHODS.DECISIONS_READ,
+    { botId, itemUid },
+  );
+  if (Array.isArray(res)) {
+    return { rows: res };
+  }
+  if (!res || typeof res !== 'object') {
+    return { rows: [] };
+  }
+  return {
+    path: typeof res.path === 'string' ? res.path : undefined,
+    header: Array.isArray(res.header) ? res.header : undefined,
+    rows: Array.isArray(res.rows) ? res.rows : [],
+  };
+}
+
+export async function listBotToolProblems(botId: string): Promise<BotToolProblem[]> {
+  const res = await callBotRpc<BotToolProblem[] | { problems?: BotToolProblem[] } | null>(
+    RPC_METHODS.TOOLS_PROBLEMS,
+    { botId },
+  );
+  const rows = Array.isArray(res) ? res : (Array.isArray(res?.problems) ? res.problems : []);
+  return rows.filter((row): row is BotToolProblem => Boolean(row && typeof row.message === 'string'));
+}
+
+export async function searchBotMemory(params: {
+  botId: string;
+  query: string;
+  scope?: 'bot' | 'team' | 'project' | 'all';
+  limit?: number;
+}): Promise<BotMemorySearchHit[]> {
+  const res = await callBotRpc<BotMemorySearchHit[] | { hits?: BotMemorySearchHit[]; results?: BotMemorySearchHit[] } | null>(
+    RPC_METHODS.MEMORY_SEARCH,
+    params,
+  );
+  const rows = Array.isArray(res)
+    ? res
+    : (Array.isArray(res?.hits) ? res.hits : (Array.isArray(res?.results) ? res.results : []));
+  return rows.filter((row): row is BotMemorySearchHit => Boolean(row && typeof row.body === 'string'));
+}
+
+export async function approveGroupPlan(
+  groupId: string,
+  messageId: string,
+  threadId?: string,
+): Promise<unknown> {
+  return callBotRpc(RPC_METHODS.GROUPS_APPROVE_PLAN, {
+    groupId,
+    messageId,
+    ...(threadId ? { threadId } : {}),
+  });
+}
+
+export async function setConnectorChannelRoute(params: {
+  channel: string;
+  accountId?: string;
+  botId: string | null;
+}): Promise<unknown> {
+  return callBotRpc(RPC_METHODS.CONNECTORS_SET_ROUTE, params);
+}
+
+export async function recordSkillDraft(
+  botId: string,
+  params: { goal?: string; maxFrames?: number; durationSec?: number } = {},
+): Promise<BotSkillRecordDraftResult> {
+  try {
+    const res = await callBotRpc<BotSkillRecordDraftResult | null>(RPC_METHODS.SKILL_RECORD_DRAFT, {
+      botId,
+      ...params,
+    });
+    return res && typeof res === 'object' ? res : { ok: false, reason: 'capture_unavailable' };
+  } catch (err) {
+    if (err instanceof BotRpcError && (err.code === 'capture_unavailable' || err.code === 'unknown_method' || err.code === 'not_implemented')) {
+      return { ok: false, reason: 'capture_unavailable', message: err.message };
+    }
+    throw err;
+  }
+}
+
+export async function saveRecordedSkill(
+  botId: string,
+  params: { name: string; skillMd: string; description?: string },
+): Promise<unknown> {
+  return callBotRpc(RPC_METHODS.SKILL_RECORD_SAVE, { botId, ...params });
+}
+
+export async function getPetVoiceState(): Promise<PetVoiceState> {
+  try {
+    const res = await callBotRpc<PetVoiceState | null>(RPC_METHODS.VOICE_STATE);
+    return res && typeof res === 'object' ? res : { ok: false, available: false, enabled: false, state: 'unavailable', reason: 'voice_unavailable' };
+  } catch (err) {
+    if (err instanceof BotRpcError) {
+      return { ok: false, available: false, enabled: false, state: 'unavailable', reason: err.code || 'voice_unavailable', message: err.message };
+    }
+    return { ok: false, available: false, enabled: false, state: 'unavailable', reason: 'voice_unavailable' };
+  }
+}
+
+export async function togglePetVoice(enabled: boolean): Promise<PetVoiceState> {
+  try {
+    const res = await callBotRpc<PetVoiceState | null>(RPC_METHODS.VOICE_TOGGLE, { enabled });
+    return res && typeof res === 'object' ? res : { ok: false, available: false, enabled: false, state: 'unavailable', reason: 'voice_unavailable' };
+  } catch (err) {
+    if (err instanceof BotRpcError) {
+      return { ok: false, available: false, enabled: false, state: 'unavailable', reason: err.code || 'voice_unavailable', message: err.message };
+    }
+    return { ok: false, available: false, enabled: false, state: 'unavailable', reason: 'voice_unavailable' };
   }
 }

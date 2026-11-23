@@ -56,6 +56,8 @@
   "exports": {
     ".": "./lib/index.js",
     "./tools": "./lib/tools.js",
+    "./bot-tools": "./lib/bots/bot-tools-plugin.js",
+    "./worker-tools": "./lib/bots/worker-tools-plugin.js",
     "./scope": "./lib/scope.js",
     "./persona": "./lib/persona.js",
     "./preset": "./lib/preset.js",

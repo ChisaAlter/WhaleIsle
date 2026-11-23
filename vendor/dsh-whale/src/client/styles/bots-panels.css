@@ -1467,6 +1467,345 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* ---- Ketchup Rolling Digest, Evidence Links & Today Cost Strip ---- */
+.dsh-bots-digest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dsh-bots-digest-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dsh-bots-digest-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-md);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 58%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.dsh-bots-digest-stat strong {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsh-bots-digest-stat[data-warn='true'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 32%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-layer-1));
+}
+
+.dsh-bots-digest-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsh-bots-digest-empty {
+  padding: 4px 8px 6px 20px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-bots-digest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsh-bots-digest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 58%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.dsh-bots-digest-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.dsh-bots-card-title-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+
+.dsh-bots-card-title-btn:hover {
+  text-decoration: underline;
+}
+
+.dsh-bots-decision-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.dsh-bots-evidence-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dsh-bots-evidence-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-link);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.dsh-bots-evidence-link:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dsh-bots-budget-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: auto;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-md);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 58%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.dsh-bots-budget-strip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.dsh-bots-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Decisions TSV Table, Code Previews, Inspector & Budget Subpages ---- */
+.dsh-bots-tsv-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.dsh-bots-tsv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.dsh-bots-tsv-table th,
+.dsh-bots-tsv-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  text-align: left;
+  vertical-align: top;
+}
+
+.dsh-bots-tsv-table th {
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.dsh-bots-tsv-mono {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.dsh-bots-code-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.dsh-bots-code-pre-tall {
+  max-height: 320px;
+}
+
+.dsh-bots-tool-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.dsh-bots-tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.dsh-bots-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dsh-bots-budget-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.dsh-bots-budget-metric strong {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.dsh-bots-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsh-bots-route-select {
+  width: auto;
+  min-width: 120px;
+  max-width: 168px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* ---- Group Room Image Attachments & Fleet Ready Card ---- */
+.dsh-bots-group-attachments,
+.dsh-bots-group-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dsh-bots-group-attach-item,
+.dsh-bots-group-img-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dsw-radius-sm);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.dsh-bots-group-img-thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+}
+
+.dsh-bots-group-attach-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-toast-bg);
+  color: var(--dsw-alias-toast-label);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.dsh-bots-fleet-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dsh-bots-fleet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.dsh-bots-fleet-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dsh-bots-pmenu {
     animation: none;
@@ -1490,7 +1829,20 @@
   .dsh-bots-tree-row,
   .dsh-bots-group-send-btn,
   .dsh-bots-settings-crumb-link,
-  .dsh-bots-settings-nav-row {
+  .dsh-bots-settings-nav-row,
+  .dsh-bots-digest-item,
+  .dsh-bots-evidence-link,
+  .dsh-bots-budget-strip {
     transition: none;
   }
+}
+
+:root[data-dsh-minimal] .dsh-bots-pmenu {
+  animation: none;
+}
+
+:root[data-dsh-minimal] .dsh-bots-digest-item,
+:root[data-dsh-minimal] .dsh-bots-evidence-link,
+:root[data-dsh-minimal] .dsh-bots-budget-strip {
+  transition: none;
 }

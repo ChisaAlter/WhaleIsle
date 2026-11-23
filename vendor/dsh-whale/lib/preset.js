@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 export const WHALE_PRESET_ID = 'whale-girl';
 export const BOT_PRESET_ID = 'dsh-bot';
+export const BOT_WORKER_PRESET_ID = 'dsh-bot-worker';
 export const WHALE_PRESET_COMPOSITION = 'agent.cordis.yml';
 export const SKILLS_DIR_PLACEHOLDER = '__WHALE_SKILLS_DIR__';
 
@@ -69,6 +70,34 @@ export function whalePresetDefinition(homeDir) {
   };
 }
 
+/** @param {string | undefined} homeDir */
+function botCustomSkillDirs(homeDir) {
+  if (!homeDir) return [];
+  return [
+    path.join(homeDir, 'data', 'bots'),
+    path.join(homeDir, 'data', 'bots', '_meta', 'bot-linked-skills'),
+  ];
+}
+
+/** Shared compaction group used by bot & bot-worker presets. */
+function botCompactionGroup() {
+  return {
+    id: 'compaction',
+    name: 'cordis:group',
+    group: true,
+    isolate: { compaction: true, toolResultPruner: true },
+    config: [
+      { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
+      { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
+      {
+        id: 'tool-result-pruner',
+        name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
+        config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 },
+      },
+    ],
+  };
+}
+
 /** Hidden preset for all WhaleIsle Bots (`dsh-bot`) sessions. */
 export function botPresetDefinition(homeDir) {
   return {
@@ -83,18 +112,36 @@ export function botPresetDefinition(homeDir) {
       { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
       { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
       { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
-      { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: true, customSkillDirs: homeDir ? [path.join(homeDir, 'data', 'bots')] : [] } },
+      { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: true, customSkillDirs: botCustomSkillDirs(homeDir) } },
       { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
       { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
       { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
-      { id: 'compaction', name: 'cordis:group', group: true,
-        isolate: { compaction: true, toolResultPruner: true }, config: [
-          { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
-          { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
-          { id: 'tool-result-pruner', name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
-            config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 } },
-        ] },
-      { id: 'whale-tools', name: 'dsh-whale/tools' },
+      botCompactionGroup(),
+      { id: 'bot-tools', name: 'dsh-whale/bot-tools' },
+    ],
+  };
+}
+
+/** Hidden preset for dispatched coding workers (`dsh-bot-worker`) with sandboxed shell & worker-only bot tools. @param {string} homeDir */
+export function botWorkerPresetDefinition(homeDir) {
+  return {
+    id: BOT_WORKER_PRESET_ID,
+    name: 'WhaleIsle Bot Worker',
+    description: '桌面机器人受控编码 Worker 会话用的内置隐藏预设',
+    order: 92,
+    hidden: true,
+    plugins: [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { includeRuntimeContext: false, prefix: '' } },
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
+      { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
+      { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
+      { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
+      { id: 'tool-shell', name: '@deepseek-ai/dsh-tool-shell' },
+      { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: true, customSkillDirs: botCustomSkillDirs(homeDir) } },
+      { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
+      { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
+      botCompactionGroup(),
+      { id: 'worker-tools', name: 'dsh-whale/worker-tools' },
     ],
   };
 }

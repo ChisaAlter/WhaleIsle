@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import {
   BOT_CREATED_KICKOFF,
+  BOT_PERMISSION_MODES,
   botTemplateKickoff,
   orderBotChats,
   resolveBotRowActivityLine,
@@ -20,6 +21,7 @@ import {
   trimTo,
 } from '../shared.js';
 import { botsRootDir, readSoul } from './fs-home.js';
+import { resolveBotLaunchRoute } from './launch-route.js';
 import { BOT_PRESET_ID } from './prompt-engine.js';
 
 export const BOT_OWNER_HOME = 'dsh-bots:home';
@@ -33,21 +35,14 @@ const freshSignal = () => new AbortController().signal;
 
 /** @param {any} launch */
 export function parseLaunchModel(launch) {
-  if (!launch || typeof launch !== 'object') return null;
-  const rawModel = String(launch.model ?? '').trim();
-  const optProvider = String(launch.options?.provider ?? '').trim();
-  const reasoningEffort = String(launch.options?.reasoningEffort ?? launch.options?.effort ?? '').trim();
-  let provider = optProvider;
-  let model = rawModel;
-  if (provider && model.startsWith(`${provider}/`)) {
-    model = model.slice(provider.length + 1).trim();
-  } else if (!provider && rawModel.includes('/')) {
-    const slash = rawModel.indexOf('/');
-    provider = rawModel.slice(0, slash).trim();
-    model = rawModel.slice(slash + 1).trim();
-  }
-  if (!provider || !model) return null;
-  return { provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) };
+  return resolveBotLaunchRoute(launch, null);
+}
+
+/** @param {unknown} mode */
+function normalizePermissionMode(mode) {
+  if (typeof mode !== 'string') return null;
+  const clean = mode.trim();
+  return BOT_PERMISSION_MODES.includes(clean) ? clean : null;
 }
 
 /** @param {any} catalog */
@@ -97,15 +92,15 @@ function liveKindFromDot(state) {
 
 /** @param {any} ctrl @param {any} launch @param {boolean} fallbackDefault @param {boolean} strictRequire */
 async function resolveRouteToApply(ctrl, launch, fallbackDefault, strictRequire) {
-  const direct = parseLaunchModel(launch);
+  const direct = resolveBotLaunchRoute(launch, null);
   if (direct || !fallbackDefault) return direct;
-  const def = (await ctrl?.modelCatalog?.())?.default;
-  if (!def?.provider || !def?.model) {
+  const def = (await ctrl?.modelCatalog?.())?.default ?? null;
+  const resolved = resolveBotLaunchRoute(launch, def);
+  if (!resolved) {
     if (strictRequire) throw new Error('default-model-unavailable');
     return null;
   }
-  const effort = String(launch?.options?.reasoningEffort ?? launch?.options?.effort ?? '').trim();
-  return { provider: def.provider, model: def.model, ...(effort ? { reasoningEffort: effort } : {}) };
+  return resolved;
 }
 
 const KICKOFF_STEPS = Object.freeze(['create', 'start', 'first-message', 'done']);
@@ -133,6 +128,8 @@ function formatKickoffView(entry) {
  *   workStore: any,
  *   eventBus: any,
  *   getController?: () => any,
+ *   budgetService?: any,
+ *   getBudgetService?: () => any,
  *   getLookAroundUpNext?: (botId: string) => any[],
  *   getAutomations?: (botId: string) => any[],
  * }} deps
@@ -140,6 +137,15 @@ function formatKickoffView(entry) {
 export function createSessionRuntime(deps) {
   const { ctx, dshHome, botsStore, itemsStore, workStore, eventBus } = deps;
   const controllerOf = () => (typeof deps.getController === 'function' ? deps.getController() : controllerFrom(ctx));
+  const budgetOf = () => (typeof deps.getBudgetService === 'function' ? deps.getBudgetService() : (deps.budgetService ?? null));
+
+  /** @param {string} botId @param {{ isBackground?: boolean }} [opts] */
+  function checkBudgetGate(botId, { isBackground = false } = {}) {
+    if (!botId) return { allowed: true };
+    const svc = budgetOf();
+    if (!svc || typeof svc.checkExecutionAllowed !== 'function') return { allowed: true };
+    return svc.checkExecutionAllowed(botId, { isBackground });
+  }
 
   /** @type {Map<string, { state: string, updatedAt: number, preview: string | null, lastBotId: string | null }>} */
   const liveBySession = new Map();
@@ -195,7 +201,32 @@ export function createSessionRuntime(deps) {
     }
   }
 
-  async function ensureControllerSession({ sessionId, cwd, title, owner, preset = BOT_PRESET_ID, launch = null }) {
+  async function ensureControllerSession({
+    sessionId,
+    cwd,
+    title,
+    owner,
+    preset = BOT_PRESET_ID,
+    launch = null,
+    permissionMode = null,
+    botId = null,
+    isBackground = false,
+    checkBudget = false,
+  }) {
+    if (checkBudget && botId) {
+      const gate = checkBudgetGate(botId, { isBackground });
+      if (!gate.allowed) {
+        return {
+          ok: false,
+          sessionId,
+          created: false,
+          blocked: true,
+          code: gate.reason,
+          deferUntilMs: gate.deferUntilMs ?? null,
+          error: gate.reason,
+        };
+      }
+    }
     const controller = controllerOf();
     if (!controller || typeof controller.create !== 'function') {
       return { ok: false, sessionId, created: false, error: 'session-controller-unavailable' };
@@ -205,6 +236,7 @@ export function createSessionRuntime(deps) {
       const rows = sessionRowsFrom(await controller.list({}, freshSignal()));
       existing = rows.some((row) => sessionIdFromRow(row) === sessionId);
     }
+    const validPerm = normalizePermissionMode(permissionMode);
     if (!existing) {
       startingSessions.add(sessionId);
       try {
@@ -212,6 +244,7 @@ export function createSessionRuntime(deps) {
           sessionId,
           cwd,
           agentPreset: preset,
+          ...(validPerm ? { permissionMode: validPerm } : {}),
           presentation: { owner, title },
         }, freshSignal());
       } finally {
@@ -239,6 +272,8 @@ export function createSessionRuntime(deps) {
       title: bot.name,
       owner: BOT_OWNER_HOME,
       launch: bot.launch,
+      permissionMode: bot.permissionMode,
+      botId: bot.id,
     });
     const now = Date.now();
     botsStore.upsertChat({
@@ -271,6 +306,8 @@ export function createSessionRuntime(deps) {
       title: bot.name,
       owner: BOT_OWNER_HOME,
       launch: bot.launch,
+      permissionMode: bot.permissionMode,
+      botId: bot.id,
     });
     botsStore.upsertChat({
       sessionId: nextSessionId,
@@ -286,8 +323,22 @@ export function createSessionRuntime(deps) {
     return { ok: true, botId: bot.id, sessionId: nextSessionId, previousSessionId };
   }
 
+  /** @param {string} botId @param {Record<string, any>} [options] */
   async function startSideChat(botId, options = {}) {
     const bot = requireBot(botId);
+    const isBackground = options.isBackground === true || options.owner === BOT_OWNER_AUTOMATION;
+    const gate = checkBudgetGate(bot.id, { isBackground });
+    if (!gate.allowed) {
+      return {
+        ok: false,
+        botId: bot.id,
+        sessionId: null,
+        blocked: true,
+        code: gate.reason,
+        deferUntilMs: gate.deferUntilMs ?? null,
+        error: gate.reason,
+      };
+    }
     const now = Date.now();
     const sessionId = options.sessionId || `bot-chat-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
     const title = String(options.title ?? '').trim() || `${bot.name} · 支线聊天`;
@@ -298,7 +349,10 @@ export function createSessionRuntime(deps) {
       cwd,
       title,
       owner,
+      preset: options.preset ?? BOT_PRESET_ID,
       launch: options.launch ?? bot.launch,
+      permissionMode: options.permissionMode ?? bot.permissionMode,
+      botId: bot.id,
     });
     const chat = botsStore.upsertChat({
       sessionId,
@@ -377,7 +431,21 @@ export function createSessionRuntime(deps) {
     return { ok: true, botId: bot.id, sessionId: target.sessionId, cwd: entry.worktreeId };
   }
 
-  function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS } = {}) {
+  function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS, botId = null, isBackground = false } = {}) {
+    const resolvedBotId = botId || botsStore.getChat(String(sessionId))?.botId || null;
+    if (resolvedBotId) {
+      const gate = checkBudgetGate(resolvedBotId, { isBackground });
+      if (!gate.allowed) {
+        return Promise.resolve({
+          ok: false,
+          blocked: true,
+          code: gate.reason,
+          deferUntilMs: gate.deferUntilMs ?? null,
+          error: gate.reason,
+          reply: '',
+        });
+      }
+    }
     const controller = controllerOf();
     if (!controller || typeof controller.prompt !== 'function') {
       return Promise.resolve({ ok: false, error: 'session-controller-unavailable', reply: '' });

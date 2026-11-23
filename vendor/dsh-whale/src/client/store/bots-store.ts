@@ -12,11 +12,18 @@ import {
 import { createTranslator, normalizeLocale } from '../../shared/locales.js';
 import {
   RPC_METHODS,
+  adoptBotCrew,
+  approveGroupPlan,
   callBotRpc,
+  getPetVoiceState,
+  listBotCrew,
+  releaseBotCrew,
   subscribeBotEvents,
+  togglePetVoice,
   type BotChangeScope,
   type BotChatRow,
   type BotChatTree,
+  type BotCrewAdoption,
   type BotGlobalSettings,
   type BotGroupRecord,
   type BotGroupReplyMode,
@@ -24,6 +31,7 @@ import {
   type BotModelOption,
   type BotRecord,
   type BotSidebarView,
+  type PetVoiceState,
 } from './rpc';
 
 export type BotRightPanelTab = 'home' | 'connectors' | 'chats' | 'files';
@@ -96,6 +104,7 @@ export interface BotsState extends BotGlobalSettings {
   modal: BotsModalState | null;
   toasts: BotToast[];
   startingSessionIds: string[];
+  voiceState: PetVoiceState | null;
   changeSeq: number;
   lastChangeScope: BotChangeScope | null;
 }
@@ -175,7 +184,7 @@ function buildInitialState(): BotsState {
     chatFolds: savedFolds as Record<string, 'open' | 'folded'>,
     activeBotId: null, activeGroupId: null, activeSessionId: null,
     rightPanelTab: 'home', rightPanelItemId: null, settingsRoute: null,
-    modal: null, toasts: [], startingSessionIds: [], changeSeq: 0, lastChangeScope: null,
+    modal: null, toasts: [], startingSessionIds: [], voiceState: null, changeSeq: 0, lastChangeScope: null,
   };
 }
 
@@ -582,6 +591,56 @@ class BotsStore {
 
   dismissToast(id: string): void {
     this.setState((prev) => ({ ...prev, toasts: prev.toasts.filter((item) => item.id !== id) }));
+  }
+
+  async refreshVoiceState(): Promise<PetVoiceState> {
+    const voiceState = await getPetVoiceState();
+    this.setState({ voiceState });
+    return voiceState;
+  }
+
+  async toggleVoice(enabled: boolean): Promise<PetVoiceState> {
+    const voiceState = await togglePetVoice(enabled);
+    this.setState({ voiceState });
+    return voiceState;
+  }
+
+  async listCrew(botId: string): Promise<BotCrewAdoption[]> {
+    try {
+      return await listBotCrew(botId, 'active');
+    } catch (err) {
+      console.warn(`[dsh-bots] Failed to list crew adoptions for ${botId}`, err);
+      return [];
+    }
+  }
+
+  async adoptCrew(params: {
+    botId: string;
+    sessionId: string;
+    workspaceId?: string;
+    cwd?: string;
+    title?: string;
+    role?: string;
+  }): Promise<BotCrewAdoption | null> {
+    const adopted = await adoptBotCrew(params);
+    void this.refreshBotChatTree(params.botId);
+    return adopted;
+  }
+
+  async releaseCrew(sessionId: string, botId?: string): Promise<void> {
+    await releaseBotCrew(sessionId, botId);
+    if (botId) void this.refreshBotChatTree(botId);
+  }
+
+  async approveGroupPlan(groupId: string, messageId: string, threadId?: string): Promise<void> {
+    await approveGroupPlan(groupId, messageId, threadId);
+    void this.refresh();
+  }
+
+  async submitCreateOffer(params: { name?: string; purpose: string; fromBotId?: string }): Promise<unknown> {
+    const res = await callBotRpc(RPC_METHODS.CREATE_OFFER, params);
+    void this.refresh();
+    return res;
   }
 
   async copyToClipboard(text: string): Promise<boolean> {

@@ -11,6 +11,7 @@ import {
   validateBotName,
 } from '../../src/shared/index.js';
 import {
+  appendDecisionTsv,
   botMetaDir,
   botsRootDir,
   deleteBotHome,
@@ -18,6 +19,7 @@ import {
   listHomeFiles,
   readAvatar,
   readBotToolsConfig,
+  readDecisionTsv,
   readHomeFile,
   readSoul,
   reserveBotFolder,
@@ -449,6 +451,55 @@ export function createBotsService(deps) {
     return results;
   }
 
+  /** @param {string} botId @param {{ sessionId?: string, workspaceId?: string | null, cwd?: string | null, title?: string | null, role?: string }} [options] */
+  function adoptSession(botId, { sessionId = '', workspaceId = null, cwd = null, title = null, role = 'crew' } = {}) {
+    const bot = requireBot(botId);
+    const adoption = workStore.adoptCrewSession({
+      botId: bot.id,
+      sessionId,
+      workspaceId,
+      cwd,
+      title,
+      role,
+    });
+    eventBus.emit({ botIds: [bot.id], kinds: ['chats', 'workers', 'bot'] });
+    return { ok: true, adoption };
+  }
+
+  /** @param {string} sessionId */
+  function releaseCrewSession(sessionId) {
+    const existing = workStore.getCrewAdoption(sessionId);
+    const released = workStore.releaseCrewSession(sessionId);
+    if (existing?.botId) {
+      eventBus.emit({ botIds: [existing.botId], kinds: ['chats', 'workers', 'bot'] });
+    }
+    return { ok: Boolean(released), adoption: released };
+  }
+
+  /** @param {{ botId?: string | null, status?: string }} [options] */
+  function listCrewAdoptions({ botId = null, status = 'active' } = {}) {
+    if (botId) requireBot(botId);
+    return {
+      botId: botId || null,
+      adoptions: workStore.listCrewAdoptions({ botId: botId || null, status }),
+    };
+  }
+
+  /** @param {string} botId @param {string} itemUid */
+  function decisionsRead(botId, itemUid) {
+    const bot = requireBot(botId);
+    const res = readDecisionTsv(homeDirFor(bot), itemUid);
+    return { botId: bot.id, itemUid: String(itemUid), ...res };
+  }
+
+  /** @param {string} botId @param {string} itemUid @param {any} row */
+  function decisionsAppend(botId, itemUid, row) {
+    const bot = requireBot(botId);
+    const res = appendDecisionTsv(homeDirFor(bot), itemUid, row, { botId: bot.id });
+    eventBus.emit({ botIds: [bot.id], kinds: ['items', 'bot'] });
+    return { botId: bot.id, itemUid: String(itemUid), ...res };
+  }
+
   return {
     getGlobalSettings,
     updateGlobalSettings,
@@ -476,5 +527,10 @@ export function createBotsService(deps) {
     toolsRemove,
     toolsDetails,
     scanSkillProjects,
+    adoptSession,
+    releaseCrewSession,
+    listCrewAdoptions,
+    decisionsRead,
+    decisionsAppend,
   };
 }

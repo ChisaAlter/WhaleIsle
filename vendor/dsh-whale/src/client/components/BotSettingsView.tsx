@@ -41,12 +41,18 @@ import {
   BotWhoCanAskSubpage,
 } from './BotSettingsSubpagesB';
 import {
+  BotBudgetSubpage,
+  BotInspectorSubpage,
+} from './BotSettingsSubpagesD';
+import {
   IconBell,
   IconBot,
   IconBrain,
   IconChevronLeft,
   IconChevronRight,
+  IconClock,
   IconEdit,
+  IconEye,
   IconFileText,
   IconFolder,
   IconGlobe,
@@ -79,7 +85,9 @@ type SubpageId =
   | 'who-can-ask'
   | 'tools'
   | 'skills'
-  | 'sharing';
+  | 'sharing'
+  | 'inspector'
+  | 'budget';
 
 const SUBPAGE_META: Array<{ id: SubpageId; zh: string; en: string; descZh: string; descEn: string }> = [
   { id: 'agent', zh: '智能体和模型', en: 'Agent & model', descZh: '模型选择与推理强度', descEn: 'Model and reasoning effort' },
@@ -94,6 +102,8 @@ const SUBPAGE_META: Array<{ id: SubpageId; zh: string; en: string; descZh: strin
   { id: 'tools', zh: '工具 (MCP)', en: 'Tools (MCP)', descZh: '此队友专属的 MCP 服务器', descEn: 'Per-bot MCP servers' },
   { id: 'skills', zh: '技能 (Skills)', en: 'Skills', descZh: '关联工作区技能目录（最多 20 个）', descEn: 'Linked workspace skill folders' },
   { id: 'sharing', zh: '分享与导入', en: 'Sharing', descZh: '导出脱敏分享包或审核导入', descEn: 'Export sanitized package or review import' },
+  { id: 'inspector', zh: 'Prompt 与工具透视', en: 'Prompt & tools inspector', descZh: '只读查看实跑 Prompt、工具清单与历史快照 Diff', descEn: 'Inspect live prompt, tools, and snapshot diffs' },
+  { id: 'budget', zh: '费用预算与峰谷策略', en: 'Budget & off-peak', descZh: '日费用/Token 上限、超额自动挂起与峰谷调度', descEn: 'Daily limits, auto-pause, and off-peak runs' },
 ];
 
 function renderSubpageIcon(id: SubpageId) {
@@ -110,6 +120,8 @@ function renderSubpageIcon(id: SubpageId) {
     case 'tools': return <IconWrench size={14} />;
     case 'skills': return <IconGlobe size={14} />;
     case 'sharing': return <IconShare size={14} />;
+    case 'inspector': return <IconEye size={14} />;
+    case 'budget': return <IconClock size={14} />;
   }
 }
 
@@ -127,6 +139,8 @@ function renderSubpageBody(page: SubpageId, bot: BotRecord, memoryTab?: 'facts' 
     case 'tools': return <BotToolsSubpage bot={bot} />;
     case 'skills': return <BotSkillsSubpage bot={bot} />;
     case 'sharing': return <BotSharingSubpage bot={bot} />;
+    case 'inspector': return <BotInspectorSubpage bot={bot} />;
+    case 'budget': return <BotBudgetSubpage bot={bot} />;
   }
 }
 

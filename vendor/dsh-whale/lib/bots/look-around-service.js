@@ -43,16 +43,30 @@ function loadStore(file) {
  *   botsStore: any,
  *   sessionRuntime: any,
  *   eventBus: any,
+ *   budgetService?: any,
+ *   onError?: (error: unknown, context?: Record<string, any>) => void,
  *   runSweep?: (bot: any, prompt: string) => Promise<{ ok: boolean, summary?: string }>,
  *   enableScheduler?: boolean,
  * }} deps
  */
 export function createLookAroundService(deps) {
-  const { dshHome, botsStore, sessionRuntime, eventBus } = deps;
+  const { dshHome, botsStore, sessionRuntime, eventBus, budgetService = null } = deps;
   const metaRoot = botMetaDir(dshHome);
   const file = stateFilePath(metaRoot);
   /** @type {Set<string>} */
   const runningBots = new Set();
+  /** @type {Map<string, number>} */
+  const deferredUntil = new Map();
+
+  /** @param {unknown} error @param {Record<string, any>} [context] */
+  function reportError(error, context = {}) {
+    const message = error instanceof Error ? error.message : String(error ?? 'unknown_error');
+    if (typeof deps.onError === 'function') {
+      deps.onError(error, { ...context, message });
+      return;
+    }
+    console.error('[dsh-bots:look-around]', message, context);
+  }
 
   function readBotState(botId, now = Date.now()) {
     const all = loadStore(file);
@@ -130,11 +144,26 @@ export function createLookAroundService(deps) {
     return { ok: true, duplicate: false, suggestion: item };
   }
 
-  async function lookNow(botId, now = Date.now()) {
+  async function lookNow(botId, now = Date.now(), options = /** @type {{ isBackground?: boolean }} */ ({})) {
     const bot = botsStore.getBot(botId);
     if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
     if (runningBots.has(bot.id)) {
       return { ok: true, alreadyRunning: true, botId: bot.id };
+    }
+    if (budgetService && typeof budgetService.checkExecutionAllowed === 'function') {
+      const gate = budgetService.checkExecutionAllowed(bot.id, {
+        isBackground: options.isBackground === true,
+        at: now,
+      });
+      if (!gate.allowed) {
+        return {
+          ok: false,
+          skipped: true,
+          reason: gate.reason || 'budget_exceeded',
+          deferUntilMs: gate.deferUntilMs ?? null,
+          botId: bot.id,
+        };
+      }
     }
     runningBots.add(bot.id);
     const runId = `look-${crypto.randomUUID().slice(0, 8)}`;
@@ -161,6 +190,7 @@ export function createLookAroundService(deps) {
         botsStore.closeChat(started.sessionId, Date.now());
       }
     } catch (error) {
+      reportError(error, { phase: 'lookNow', botId: bot.id, runId });
       outcome = { ok: false, summary: String(error?.message ?? error) };
     } finally {
       runningBots.delete(bot.id);
@@ -188,9 +218,34 @@ export function createLookAroundService(deps) {
       ? await sessionRuntime.startSideChat(bot.id, { title: entry.title })
       : await sessionRuntime.openHomeChat(bot.id);
     const prompt = entry.link ? `${entry.ask}\n\nLink: ${entry.link}` : entry.ask;
-    await sessionRuntime.runSingleTurn(target.sessionId, prompt, { timeoutMs: 30_000 }).catch(() => null);
+    let turnError = null;
+    try {
+      const turnRes = await sessionRuntime.runSingleTurn(target.sessionId, prompt, { timeoutMs: 30_000 });
+      if (turnRes && turnRes.ok === false) {
+        turnError = String(turnRes.error ?? 'turn_failed');
+        reportError(new Error(turnError), {
+          phase: 'startSuggestion',
+          botId: bot.id,
+          suggestionId,
+          sessionId: target.sessionId,
+        });
+      }
+    } catch (error) {
+      turnError = error instanceof Error ? error.message : String(error ?? 'turn_failed');
+      reportError(error, {
+        phase: 'startSuggestion',
+        botId: bot.id,
+        suggestionId,
+        sessionId: target.sessionId,
+      });
+    }
     eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
-    return { ok: true, suggestion: entry, sessionId: target.sessionId };
+    return {
+      ok: true,
+      suggestion: entry,
+      sessionId: target.sessionId,
+      ...(turnError ? { turnError } : {}),
+    };
   }
 
   function dismissSuggestion(botId, suggestionId, now = Date.now()) {
@@ -227,13 +282,20 @@ export function createLookAroundService(deps) {
       const now = Date.now();
       for (const bot of botsStore.listBots()) {
         if (bot.paused || runningBots.has(bot.id)) continue;
+        if ((deferredUntil.get(bot.id) ?? 0) > now) continue;
         const cfg = botLookAround(bot);
         if (!cfg.on) continue;
         const state = readBotState(bot.id, now);
         const lastAt = state.runs?.at(-1)?.at ?? cfg.since ?? bot.createdAt ?? 0;
         const dueAt = nextLookAroundAt(cfg, lastAt);
         if (dueAt !== null && dueAt <= now) {
-          void lookNow(bot.id, now).catch(() => null);
+          void lookNow(bot.id, now, { isBackground: true }).then((res) => {
+            if (res?.skipped) {
+              deferredUntil.set(bot.id, res.deferUntilMs ?? (now + TICK_MS));
+            }
+          }).catch((error) => {
+            reportError(error, { phase: 'scheduler', botId: bot.id });
+          });
         }
       }
     }, TICK_MS);
@@ -243,6 +305,7 @@ export function createLookAroundService(deps) {
   function close() {
     if (timer) clearInterval(timer);
     timer = null;
+    deferredUntil.clear();
   }
 
   return {

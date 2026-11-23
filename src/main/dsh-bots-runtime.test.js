@@ -371,13 +371,20 @@ test('Lifecycle, template provisioning, SOUL optimistic lock, avatar, memory, ti
     assert.equal(sent.message.turns[0].status, 'done');
     assert.match(sent.message.turns[0].reply, /Handled bot-group-member-/);
 
-    // 10. Share package redacts secrets + external import scan (fake ~/.orca/bots/)
+    // 10. Share package hard-blocks plaintext secrets (`secret_detected`) + external import scan (fake ~/.orca/bots/)
     await call('bots.soul.write', {
       botId: bot1.id,
       content: '# PR Reviewer\n\nReviews PRs.\nMy key is sk-proj-SECRET1234567890ABCD\n',
     });
+    await assert.rejects(
+      () => call('bots.share.prepare', { botId: bot1.id }),
+      (err) => err.code === 'secret_detected',
+    );
+    await call('bots.soul.write', {
+      botId: bot1.id,
+      content: '# PR Reviewer\n\nReviews PRs carefully without plaintext secrets.\n',
+    });
     const prepared = await call('bots.share.prepare', { botId: bot1.id });
-    assert.ok(prepared.redactedCount >= 1);
     assert.equal(prepared.packageJson.includes('sk-proj-SECRET1234567890ABCD'), false);
     const reviewed = await call('bots.share.review', { packageJson: prepared.packageJson });
     assert.equal(reviewed.ok, true);
@@ -401,7 +408,7 @@ test('Lifecycle, template provisioning, SOUL optimistic lock, avatar, memory, ti
   });
 });
 
-test('Prompt hooks, tamper restore, all 22 native tools, Harness-governed auto-run & fail-closed cross-boundary confirms, plus legacy pet/dsh-im compat', async () => {
+test('Prompt hooks, tamper restore, all 25 native tools, Harness-governed auto-run & fail-closed cross-boundary confirms, plus legacy pet/dsh-im compat', async () => {
   const { createBotsRuntime } = await importBots('runtime.js');
   const { installBotPromptAndTurnHooks } = await importBots('prompt-engine.js');
   const { buildBotToolDefinitions } = await importBots('bot-tools-registry.js');
@@ -441,7 +448,7 @@ test('Prompt hooks, tamper restore, all 22 native tools, Harness-governed auto-r
     assert.match(fs.readFileSync(path.join(bot.homePath, 'MEMORY.md'), 'utf8'), /Owner hates long walls of text/);
     assert.equal(runtime.botsStore.getBot(bot.id).firstRun, false);
 
-    // 3. All 22 native tools registered; cross-boundary tools fail closed on decline,
+    // 3. All 25 native tools registered; cross-boundary tools fail closed on decline,
     // while Harness-governed/local bot tools run directly without desktop confirm popups.
     const confirmCalls = [];
     let allowConfirm = false;
@@ -451,7 +458,7 @@ test('Prompt hooks, tamper restore, all 22 native tools, Harness-governed auto-r
         return allowConfirm ? { ok: true } : { ok: false };
       },
     });
-    assert.equal(defs.length, 22);
+    assert.equal(defs.length, 25);
     const byName = new Map(defs.map((d) => [d.name, d]));
     const execCtx = { agent: { id: sid, session: { id: sid } } };
     const nonOwnerImCtx = {
@@ -635,5 +642,203 @@ test('Phase 3 fixes: legacy model selectModel contract, kickoff state progressio
     assert.equal(selectCalls.at(-1).model, 'default');
     const projectedAfterClear = JSON.parse(fs.readFileSync(path.join(dshHome, 'data', 'whale', 'settings.json'), 'utf8'));
     assert.equal(projectedAfterClear.modelModel, '');
+  });
+});
+
+test('Wave 3 E2E: signed webhooks, prompt inspect/diff, budget fuse, crew, decisions, MCP problems, FTS5 memory, group approvePlan, 9-channel routes, owedMail wake & bridges', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+  const { createBotsHttpHandler } = await importBots('rpc-router.js');
+  const { installBotPromptAndTurnHooks } = await importBots('prompt-engine.js');
+  const { signWebhookPayload } = await importBots('connectors-service.js');
+
+  await withTempDir('wave3-e2e', async ({ root, onClose }) => {
+    const woke = [];
+    const mock = createMockHarness((sid, text) => {
+      if (text.includes('Phase 1') || text.includes('plan')) {
+        return JSON.stringify({ plan: [{ botId: 'member-placeholder', task: 'check logs' }] });
+      }
+      return `Done(${sid})`;
+    });
+    const runtime = createBotsRuntime({
+      ctx: mock.ctx,
+      dshHome: root,
+      enableSchedulers: false,
+      getController: () => mock.controller,
+      wakeBot: async (payload) => { woke.push(payload); return { ok: true }; },
+    });
+    onClose(() => runtime.close());
+    const disposeHooks = installBotPromptAndTurnHooks(mock.ctx, runtime);
+    onClose(() => disposeHooks());
+
+    let rejectCode;
+    const httpRouter = createBotsHttpHandler(runtime, { requestRejection: () => rejectCode });
+    const srv = await startHttpServer(httpRouter.handler);
+    onClose(() => srv.close());
+    const call = (method, params) => runtime.http.invokeRpc(method, params);
+
+    const b1 = (await call('bots.create', { name: 'Captain', skipKickoff: true })).bot;
+    const b2 = (await call('bots.create', { name: 'Scout', skipKickoff: true })).bot;
+
+    // 1. Signed inbound webhook pre-auth: 401 on bad signature, 200 fresh + automation trigger, 200 idempotent replay
+    const hook = await call('bots.connectors.webhooks.create', { botId: b1.id, name: 'CI Hook' });
+    const whAuto = await call('bots.automations.create', {
+      botId: b1.id, name: 'On CI', prompt: 'Inspect CI payload', triggers: [{ kind: 'webhook', webhookId: hook.webhook.id }],
+    });
+    const rawPayload = JSON.stringify({ build: 99 });
+    const ts = String(Math.floor(Date.now() / 1000));
+    rejectCode = 401;
+    const badWh = await fetch(`${srv.baseUrl}/dsh-bots/webhooks/${hook.webhook.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-whale-timestamp': ts, 'x-whale-signature': 'sha256=deadbeef', 'x-whale-event-id': 'evt-1' },
+      body: rawPayload,
+    });
+    assert.equal(badWh.status, 401);
+    const sig = `sha256=${signWebhookPayload({ secret: hook.secret, timestamp: ts, rawBody: rawPayload })}`;
+    const okWh = await fetch(`${srv.baseUrl}/dsh-bots/webhooks/${hook.webhook.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-whale-timestamp': ts, 'x-whale-signature': sig, 'x-whale-event-id': 'evt-1' },
+      body: rawPayload,
+    });
+    assert.equal(okWh.status, 200);
+    const okBody = await okWh.json();
+    assert.equal(okBody.duplicate, false);
+    assert.equal(okBody.matched, 1);
+    const replayWh = await fetch(`${srv.baseUrl}/dsh-bots/webhooks/${hook.webhook.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-whale-timestamp': ts, 'x-whale-signature': sig, 'x-whale-event-id': 'evt-1' },
+      body: rawPayload,
+    });
+    assert.equal(replayWh.status, 200);
+    assert.equal((await replayWh.json()).duplicate, true);
+    rejectCode = undefined;
+    assert.ok((await call('bots.automations.claims', { automationId: whAuto.id })).claims.length >= 1);
+
+    // 2. Prompt inspect & diff across 2 turns
+    const assembleCtx = { agent: { id: b1.chatSessionId, session: { id: b1.chatSessionId, header: { cwd: b1.homePath } } } };
+    for (const [note, toolName] of [['Alpha rule', 'bot_list'], ['Beta rule', 'bot_memory_search']]) {
+      await call('bots.memory.add', { botId: b1.id, text: note, date: '2026-11-22' });
+      mock.ctx.systemPrompt.sections.forEach((s) => s.text(assembleCtx));
+      mock.ctx.emit('session/event', { id: b1.chatSessionId }, { type: 'turn/start', data: {} });
+      mock.ctx.emit('session/event', { id: b1.chatSessionId }, { type: 'tool/call', data: { name: toolName } });
+      mock.ctx.emit('session/event', { id: b1.chatSessionId }, { type: 'turn/end', data: { reason: { kind: 'completed' } } });
+    }
+    const inspected = await call('bots.prompt.inspect', { botId: b1.id });
+    assert.ok(inspected.snapshots.length >= 2 && inspected.systemPrompt.includes('Beta rule'));
+    const diffed = await call('bots.prompt.diff', { botId: b1.id, fromIdx: 0, toIdx: 1 });
+    assert.equal(diffed.changed, true);
+    assert.ok(diffed.addedTools.includes('bot_memory_search'));
+
+    // 3. Crew adoption, Decisions TSV, Per-Bot MCP problems, FTS5 search & team memory
+    const adopted = await call('bots.crew.adopt', { botId: b1.id, sessionId: 'plain-sess-1', title: 'Fix CI' });
+    assert.equal(adopted.ok, true);
+    assert.equal((await call('bots.crew.list', { botId: b1.id })).adoptions.length, 1);
+    assert.equal((await call('bots.crew.release', { sessionId: 'plain-sess-1' })).ok, true);
+
+    await call('bots.decisions.append', { botId: b1.id, itemUid: 'item-1', actor: 'captain', phase: 'verify', decision: 'approved', evidence: 'ok' });
+    assert.equal((await call('bots.decisions.read', { botId: b1.id, itemUid: 'item-1' })).rows.length, 1);
+
+    fs.mkdirSync(path.join(b1.homePath, '.whale'), { recursive: true });
+    fs.writeFileSync(path.join(b1.homePath, '.whale', 'bot-tools.json'), JSON.stringify({
+      servers: [{ name: 'bad-mcp', url: 'ftp://invalid', headers: { Authorization: 'Bearer tok-leak' } }],
+    }), 'utf8');
+    const probs = await call('bots.tools.problems', { botId: b1.id });
+    assert.ok(probs.problems.some((p) => p.code === 'inline_credentials_detected'));
+    assert.ok(probs.problems.some((p) => p.code === 'invalid_url'));
+
+    await call('bots.memory.teamWrite', { groupId: 'grp-team', content: '- 2026-11-22 Deploy window is Friday\n' });
+    assert.match((await call('bots.memory.teamRead', { groupId: 'grp-team' })).content, /Deploy window/);
+    const memHits = await call('bots.memory.search', { botId: b1.id, query: 'Beta' });
+    assert.ok(memHits.hits.some((h) => h.body.includes('Beta rule')));
+
+    // 4. 9-channel connectors.setRoute, webhooks list/delete, Group approvePlan + images + mobile alias
+    await call('bots.connectors.setRoute', { channel: 'telegram', botId: b1.id });
+    assert.equal((await call('bots.connectors.routes')).routes.telegram.botId, b1.id);
+    assert.equal((await call('bots.connectors.list', { botId: b1.id })).imChannels.length, 9);
+    assert.equal((await call('bots.connectors.webhooks.list', { botId: b1.id })).webhooks.length, 1);
+    assert.equal((await call('bots.connectors.webhooks.delete', { botId: b1.id, webhookId: hook.webhook.id })).deleted, true);
+
+    const grp = await call('bots.groups.create', {
+      botIds: [b1.id, b2.id], replyMode: { kind: 'coordinator', coordinatorBotId: b1.id },
+    });
+    const planMsg = await call('bots.groups.send', {
+      groupId: grp.id, text: 'Run release plan', images: [{ name: 'shot.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AAAA' }], waitForReplies: true,
+    });
+    assert.equal(planMsg.message.planGate.status, 'awaiting_approval');
+    const approved = await call('bots.groups.approvePlan', {
+      groupId: grp.id, messageId: planMsg.message.id, steps: [{ botId: b2.id, task: 'Verify release' }],
+    });
+    assert.equal(approved.message.planGate.status, 'completed');
+    assert.ok((await call('bots.groups.messages', { groupId: grp.id })).messages.length >= 1);
+
+    // 5. ownerComment (mobile alias) triggers owedMail wake + safe bridges + Budget fuse
+    const item = await call('bots.items.add', {
+      ownerBotId: b1.id, chatId: b1.chatSessionId, source: { kind: 'home', title: null }, title: 'Confirm rollout', status: 'needs_you',
+      actor: { kind: 'bot', botId: b1.id, chatId: b1.chatSessionId },
+    });
+    assert.equal((await call('bots.items.detail', { uid: item.item.uid })).item.uid, item.item.uid);
+    await call('bots.items.ownerComment', { uid: item.item.uid, text: 'Proceed now', requestId: 'mob-1' });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.ok(woke.length >= 1);
+    assert.equal(runtime.itemsStore.owedMail().length, 0);
+
+    assert.equal((await call('bots.skill.recordDraft', { botId: b1.id })).reason, 'capture_unavailable');
+    await assert.rejects(() => call('bots.skill.recordSave', { botId: b1.id, name: 'bad', skillMd: 'token sk-proj-SECRET1234567890ABCD' }), (e) => e.code === 'secret_detected');
+    const savedSkill = await call('bots.skill.recordSave', { botId: b1.id, name: 'Export Report', skillMd: '# Export Report\n1. Open report.' });
+    assert.equal(savedSkill.path, 'skills/export-report/SKILL.md');
+    assert.equal((await call('bots.voice.state')).reason, 'voice_unavailable');
+    assert.equal((await call('bots.voice.toggle', { enabled: true })).reason, 'voice_unavailable');
+    const offerBot = await call('bots.createOffer', { purpose: 'Monitor logs', fromBotId: b1.id, skipKickoff: true });
+    assert.ok(offerBot.bot.id);
+
+    await call('bots.budget.set', { botId: b1.id, dailyLimitUsd: 0.01, pauseOnExceed: true });
+    assert.equal((await call('bots.budget.get', { botId: b1.id })).dailyLimitUsd, 0.01);
+    runtime.budgetService.recordUsage({ botId: b1.id, costUsd: 0.02, inputTokens: 1000, outputTokens: 200 });
+    const usage = await call('bots.budget.usage', { botId: b1.id });
+    assert.equal(usage.exceeded, true);
+    assert.ok(usage.nextPeakSwitchMs === null || (usage.nextPeakSwitchMs >= 0 && usage.nextPeakSwitchMs <= 7 * 86_400_000));
+    assert.equal((await call('bots.automations.runNow', { id: whAuto.id })).reason, 'skipped_budget');
+    assert.equal((await call('bots.lookAround.lookNow', { botId: b1.id })).reason, 'budget_exceeded');
+  });
+});
+
+test('Wave 3 lifecycle: IM bridge lazy symbol resolution and zero lingering timers after close()', async () => {
+  const { createBotsRuntime } = await importBots('runtime.js');
+  const IM_SYM = Symbol.for('whaleisle.dsh-im.bot-outbound-bridge');
+
+  await withTempDir('wave3-timers', async ({ root, onClose }) => {
+    const activeIntervals = new Set();
+    const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
+    globalThis.setInterval = (...args) => {
+      const h = origSetInterval(...args);
+      activeIntervals.add(h);
+      return h;
+    };
+    globalThis.clearInterval = (h) => {
+      activeIntervals.delete(h);
+      return origClearInterval(h);
+    };
+    const prevBridge = globalThis[IM_SYM];
+    onClose(() => {
+      globalThis.setInterval = origSetInterval;
+      globalThis.clearInterval = origClearInterval;
+      if (prevBridge === undefined) delete globalThis[IM_SYM];
+      else globalThis[IM_SYM] = prevBridge;
+    });
+
+    delete globalThis[IM_SYM];
+    const mock = createMockHarness();
+    const runtime = createBotsRuntime({ ctx: mock.ctx, dshHome: root, enableSchedulers: true, getController: () => mock.controller });
+    assert.ok(activeIntervals.size >= 3, 'Schedulers must register intervals when enabled');
+    assert.equal(runtime.imOutboundBridge.sendText, undefined);
+
+    const delivered = [];
+    globalThis[IM_SYM] = { deliverReply: async (p) => { delivered.push(p); return { ok: true, delivered: true }; } };
+    const sendRes = await runtime.imOutboundBridge.sendText({ botId: 'b1', channel: 'feishu', chatId: 'oc_1', text: 'hello' });
+    assert.equal(sendRes.delivered, true);
+    assert.equal(delivered[0].targetId, 'oc_1');
+
+    runtime.close();
+    assert.equal(activeIntervals.size, 0, 'close() must clear all scheduler intervals with zero leaks');
   });
 });

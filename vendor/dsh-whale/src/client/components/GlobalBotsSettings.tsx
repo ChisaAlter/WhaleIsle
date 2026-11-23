@@ -1,7 +1,9 @@
 // Global Bots Settings block mounted in Harness `settings.pet.item` slot:
 // Enable bots, Ask before new Home Chat, Hide bot-created workspaces,
-// Desktop Pet bound bot selector, and quick navigation into any bot's settings page.
+// Desktop Pet bound bot selector, Desktop Pet Voice interaction toggle,
+// and quick navigation into any bot's settings page.
 
+import { useEffect, useState } from 'react';
 import { botsStore, useBotsLocale, useBotsState } from '../store/bots-store';
 import { BotAvatar } from './BotAvatar';
 import { IconChevronRight, IconPlus } from './Icons';
@@ -18,6 +20,31 @@ export function GlobalBotsSettings({ closeSettings }: GlobalBotsSettingsProps) {
   const hideBotCreatedWorkspaces = useBotsState((state) => state.hideBotCreatedWorkspaces);
   const petBotId = useBotsState((state) => state.petBotId);
   const bots = useBotsState((state) => state.bots);
+  const voiceState = useBotsState((state) => state.voiceState);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+
+  useEffect(() => {
+    void botsStore.refreshVoiceState();
+  }, []);
+
+  const voiceEnabled = Boolean(voiceState?.enabled);
+  const voiceUnavailable = voiceState?.reason === 'voice_unavailable' || voiceState?.state === 'unavailable';
+
+  const handleToggleVoice = async () => {
+    if (voiceBusy) return;
+    setVoiceBusy(true);
+    try {
+      const next = await botsStore.toggleVoice(!voiceEnabled);
+      if (next.ok === false || next.reason === 'voice_unavailable') {
+        botsStore.pushToast({
+          message: next.message || (zh ? '当前环境未检测到可用语音设备，已保持文字气泡模式' : 'Voice device unavailable; staying in text bubble mode'),
+          tone: 'info',
+        });
+      }
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
 
   return (
     <div className="dsh-bots-global-settings" data-dsh-bots-global-settings="">
@@ -109,6 +136,38 @@ export function GlobalBotsSettings({ closeSettings }: GlobalBotsSettingsProps) {
             <option key={b.id} value={b.id}>{b.name}</option>
           ))}
         </select>
+      </div>
+
+      <div className="dsh-bots-global-row" data-dsh-bots-voice-row="">
+        <div className="dsh-bots-global-row-text">
+          <div className="dsh-bots-global-row-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span>{zh ? '桌宠语音交互（支持插话打断）' : 'Desktop pet voice interaction'}</span>
+            {voiceState?.state && voiceState.state !== 'unavailable' && (
+              <span className="dsh-bots-badge">{voiceState.state}</span>
+            )}
+          </div>
+          <div className="dsh-bots-global-row-desc">
+            {voiceUnavailable
+              ? (zh
+                ? '当前环境未检测到可用语音端点或麦克风，已自动保持文字气泡交互。'
+                : 'No voice endpoint or microphone detected; staying in text bubble mode.')
+              : (zh
+                ? '开启桌宠低延迟语音对话，支持播报中途随时打断（Barge-in）并即时中止在途推理。'
+                : 'Enable low-latency voice conversation with instant barge-in interruption.')}
+          </div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          className="dsh-bots-switch"
+          aria-checked={voiceEnabled}
+          aria-label={zh ? '桌宠语音交互' : 'Desktop pet voice interaction'}
+          data-dsh-bots-voice-switch=""
+          disabled={voiceBusy}
+          onClick={() => void handleToggleVoice()}
+        >
+          <span className="dsh-bots-switch-thumb" />
+        </button>
       </div>
 
       <div style={{ paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>

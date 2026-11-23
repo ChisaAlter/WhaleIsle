@@ -3,6 +3,7 @@
 const { describe, test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
+const fs = require('node:fs');
 const path = require('node:path');
 const {
   startDesktopInstallControl,
@@ -10,6 +11,8 @@ const {
   desktopInstallReady,
   desktopInstallEnv,
   desktopInstallToken,
+  redactAuditSecrets,
+  resolveConfirmAuditPath,
 } = require('./desktop-install-control');
 const { DshManager } = require('./dsh');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
@@ -1003,5 +1006,149 @@ describe('desktop install control', { concurrency: false }, () => {
       body: JSON.stringify({ secret: 'ABCD-EFGH' }),
     })).json();
     assert.equal(result.ok, false);
+  });
+
+  test('/desktop/confirm and /desktop/plugin append redacted JSONL audit entries under $DSH_HOME/logs/confirm-audit.jsonl', async () => {
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-confirm-audit-'));
+    try {
+      setDesktopDshHome(tmpHome);
+      const expectedAuditPath = path.join(tmpHome, 'logs', 'confirm-audit.jsonl');
+      assert.equal(resolveConfirmAuditPath(), expectedAuditPath);
+
+      let mode = 'always';
+      startDesktopInstallControl({
+        installPlugin: async () => ({ ok: true }),
+        startHarness: async () => {},
+        restartDelayMs: 5000,
+        confirmModelAction: async () => mode,
+        desktop: {
+          installCatalog: async () => ({ ok: true }),
+          removePlugin: async () => ({ ok: true }),
+          disablePlugins: async () => ({ ok: true }),
+          enablePlugin: async () => ({ ok: true }),
+        },
+      });
+      const { url, token } = await desktopInstallReady();
+      const post = (pathname, payload) => fetch(new URL(pathname, url), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }).then((r) => r.json());
+
+      // 1. Unattended confirm -> hard declined + audited with secret redaction
+      const unattended = await post('/desktop/confirm', {
+        tool: 'whale_update_queue',
+        action: 'steer',
+        effect: 'external',
+        unattended: true,
+        summary: 'send with Bearer supersecret_token_value',
+        details: 'api_key=sk-1234567890abcdef1234567890 and ghp_abcdefghijklmnopqrstuvwxyz1234',
+      });
+      assert.equal(unattended.ok, false);
+      assert.equal(unattended.declined, true);
+
+      // 2. Always grant + remembered replay
+      const firstAllow = await post('/desktop/confirm', {
+        tool: 'whale_update_queue',
+        action: 'steer',
+        effect: 'external',
+        summary: 'allow with password=my_top_secret_pw',
+      });
+      assert.equal(firstAllow.ok, true);
+      const remembered = await post('/desktop/confirm', {
+        tool: 'whale_update_queue',
+        action: 'steer',
+        effect: 'external',
+        summary: 'remembered',
+      });
+      assert.equal(remembered.ok, true);
+
+      // 3. Code-level effect still cannot be remembered even when confirmer returns 'always'
+      const codeRes = await post('/desktop/confirm', {
+        tool: 'acp_delegate',
+        action: 'delegate',
+        effect: 'local',
+        summary: 'delegate code',
+      });
+      assert.equal(codeRes.ok, true);
+
+      // 4. Plugin enable allowed, plugin remove declined
+      mode = true;
+      const pluginAllow = await post('/desktop/plugin', { action: 'enable', name: 'safe-pack' });
+      assert.equal(pluginAllow.ok, true);
+      mode = false;
+      const pluginDecline = await post('/desktop/plugin', { action: 'remove', name: 'token=ghp_abcdefghijklmnopqrstuvwxyz1234' });
+      assert.equal(pluginDecline.ok, false);
+      assert.equal(pluginDecline.declined, true);
+
+      const rawLog = fs.readFileSync(expectedAuditPath, 'utf8');
+      assert.doesNotMatch(rawLog, /supersecret_token_value/);
+      assert.doesNotMatch(rawLog, /sk-1234567890abcdef1234567890/);
+      assert.doesNotMatch(rawLog, /ghp_abcdefghijklmnopqrstuvwxyz1234/);
+      assert.doesNotMatch(rawLog, /my_top_secret_pw/);
+
+      const rows = rawLog.trim().split('\n').map((line) => JSON.parse(line));
+      assert.equal(rows.length, 6);
+      assert.equal(rows[0].route, '/desktop/confirm');
+      assert.equal(rows[0].decision, 'declined_unattended');
+      assert.equal(rows[0].unattended, true);
+      assert.match(rows[0].summary, /\[REDACTED\]/);
+      assert.match(rows[0].details, /\[REDACTED\]/);
+      assert.equal(rows[1].decision, 'allowed_always');
+      assert.equal(rows[1].always, true);
+      assert.equal(rows[2].decision, 'allowed_remembered');
+      assert.equal(rows[2].remembered, true);
+      assert.equal(rows[3].effect, 'code');
+      assert.equal(rows[3].decision, 'allowed_once');
+      assert.equal(rows[3].always, false);
+      assert.equal(rows[4].route, '/desktop/plugin');
+      assert.equal(rows[4].action, 'enable');
+      assert.equal(rows[4].decision, 'allowed');
+      assert.equal(rows[5].route, '/desktop/plugin');
+      assert.equal(rows[5].action, 'remove');
+      assert.equal(rows[5].decision, 'declined');
+      assert.match(rows[5].target, /\[REDACTED\]/);
+
+      // Direct secret redaction helper covers nested credential keys
+      const redactedObj = redactAuditSecrets({
+        apiKey: 'secret-value-12345',
+        nested: { note: 'Bearer abcdefgh12345678' },
+      });
+      assert.equal(redactedObj.apiKey, '[REDACTED]');
+      assert.equal(redactedObj.nested.note, '[REDACTED]');
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test('audit log write errors never block /desktop/confirm or /desktop/plugin responses', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-confirm-audit-err-'));
+    try {
+      // Point auditLogPath to an existing directory so appendFileSync throws EISDIR
+      startDesktopInstallControl({
+        auditLogPath: tmpDir,
+        installPlugin: async () => ({ ok: true }),
+        startHarness: async () => {},
+        confirmModelAction: async () => 'once',
+        desktop: { enablePlugin: async () => ({ ok: true }) },
+      });
+      const { url, token } = await desktopInstallReady();
+      const res = await fetch(new URL('/desktop/confirm', url), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ tool: 'whale_update_queue', action: 'steer', effect: 'external' }),
+      });
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.ok, true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

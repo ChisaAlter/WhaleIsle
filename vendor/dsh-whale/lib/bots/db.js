@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const BOTS_SCHEMA_VERSION = 1;
+export const BOTS_SCHEMA_VERSION = 2;
 
 const DEFAULT_GLOBAL_CONFIG = Object.freeze({
   botsEnabled: true,
@@ -246,8 +246,119 @@ CREATE TABLE IF NOT EXISTS bot_access_requests (
 CREATE INDEX IF NOT EXISTS idx_bot_access_bot ON bot_access_requests(bot_id, status, created_at DESC);
 `;
 
+const SCHEMA_V2_SQL = `
+CREATE TABLE IF NOT EXISTS automation_claims (
+  claim_id TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL,
+  bot_id TEXT NOT NULL,
+  slot_at INTEGER NOT NULL,
+  trigger_kind TEXT NOT NULL CHECK(trigger_kind IN ('schedule','manual','webhook','folder')),
+  status TEXT NOT NULL CHECK(status IN ('claimed','running','completed','failed','interrupted','skipped_budget')),
+  coalesced_count INTEGER NOT NULL DEFAULT 1,
+  run_id TEXT,
+  session_id TEXT,
+  error TEXT,
+  claimed_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  UNIQUE(automation_id, slot_at)
+);
+CREATE INDEX IF NOT EXISTS idx_automation_claims_status ON automation_claims(status, claimed_at);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL,
+  webhook_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  signature_ts INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('accepted','dispatched','failed','rejected')),
+  automation_id TEXT,
+  payload_sha256 TEXT NOT NULL,
+  received_at INTEGER NOT NULL,
+  UNIQUE(webhook_id, event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_received ON webhook_events(received_at);
+
+CREATE TABLE IF NOT EXISTS memory_index_meta (
+  entry_id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL CHECK(scope IN ('bot','team','project')),
+  scope_id TEXT NOT NULL,
+  bot_id TEXT,
+  source_file TEXT NOT NULL,
+  line_hash TEXT NOT NULL,
+  fact_date TEXT,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_meta_scope ON memory_index_meta(scope, scope_id, updated_at DESC);
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+  entry_id UNINDEXED,
+  scope UNINDEXED,
+  scope_id UNINDEXED,
+  bot_id UNINDEXED,
+  source_file UNINDEXED,
+  fact_date UNINDEXED,
+  body,
+  tokenize='unicode61'
+);
+
+CREATE TABLE IF NOT EXISTS tool_wal (
+  wal_id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  action TEXT NOT NULL,
+  idempotency_key TEXT,
+  effect TEXT NOT NULL,
+  args_digest TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('intent','committed','failed','unknown')),
+  result_summary TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_wal_idem
+  ON tool_wal(bot_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tool_wal_status ON tool_wal(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS bot_budgets (
+  bot_id TEXT PRIMARY KEY,
+  daily_limit_usd REAL,
+  daily_limit_tokens INTEGER,
+  off_peak_only INTEGER NOT NULL DEFAULT 0,
+  pause_on_exceed INTEGER NOT NULL DEFAULT 1,
+  alert_threshold_pct INTEGER NOT NULL DEFAULT 80,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bot_usage_daily (
+  day_utc TEXT NOT NULL,
+  bot_id TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  peak_cost_usd REAL NOT NULL DEFAULT 0,
+  off_peak_cost_usd REAL NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY(day_utc, bot_id, source_kind)
+);
+
+CREATE TABLE IF NOT EXISTS crew_adoptions (
+  session_id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL,
+  workspace_id TEXT,
+  cwd TEXT,
+  title TEXT,
+  role TEXT NOT NULL DEFAULT 'crew',
+  status TEXT NOT NULL CHECK(status IN ('active','released')) DEFAULT 'active',
+  adopted_at INTEGER NOT NULL,
+  released_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_crew_adoptions_bot ON crew_adoptions(bot_id, status);
+`;
+
 const MIGRATIONS = [
   { version: 1, sql: SCHEMA_V1_SQL },
+  { version: 2, sql: SCHEMA_V2_SQL },
 ];
 
 /**
@@ -313,13 +424,14 @@ function readUserVersion(db) {
 /** @param {DatabaseSync} db */
 function runMigrations(db) {
   const current = readUserVersion(db);
-  for (const migration of MIGRATIONS) {
-    if (migration.version <= current) continue;
-    withTransaction(db, () => {
+  const pending = MIGRATIONS.filter((migration) => migration.version > current);
+  if (pending.length === 0) return;
+  withTransaction(db, () => {
+    for (const migration of pending) {
       db.exec(migration.sql);
       db.exec(`PRAGMA user_version = ${migration.version}`);
-    });
-  }
+    }
+  });
 }
 
 /**
@@ -336,27 +448,33 @@ export function openBotsDatabase(pathOrOptions) {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   }
   const db = new DatabaseSync(targetPath);
-  if (targetPath !== ':memory:') {
-    db.exec('PRAGMA journal_mode = WAL');
-    db.exec('PRAGMA synchronous = NORMAL');
-  }
-  db.exec('PRAGMA busy_timeout = 5000');
-  db.exec('PRAGMA foreign_keys = ON');
-  runMigrations(db);
+  try {
+    if (targetPath !== ':memory:') {
+      db.exec('PRAGMA journal_mode = WAL');
+      db.exec('PRAGMA synchronous = NORMAL');
+    }
+    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec('PRAGMA foreign_keys = ON');
+    runMigrations(db);
 
-  const bots = createBotsStore(db);
-  return {
-    db,
-    dbPath: targetPath,
-    bots,
-    transaction(fn) {
-      return withTransaction(db, fn);
-    },
-    close() {
-      txDepthMap.delete(db);
-      db.close();
-    },
-  };
+    const bots = createBotsStore(db);
+    return {
+      db,
+      dbPath: targetPath,
+      bots,
+      transaction(fn) {
+        return withTransaction(db, fn);
+      },
+      close() {
+        txDepthMap.delete(db);
+        db.close();
+      },
+    };
+  } catch (error) {
+    txDepthMap.delete(db);
+    try { db.close(); } catch { /* Best-effort close on failed open. */ }
+    throw error;
+  }
 }
 
 /**
