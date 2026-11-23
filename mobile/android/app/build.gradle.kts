@@ -13,6 +13,9 @@ android {
         targetSdk = 36
         versionCode = 5
         versionName = "0.3.11"
+        providers.gradleProperty("dshTestApplicationId").orNull?.takeIf { it.isNotBlank() }?.let {
+            testApplicationId = it
+        }
         testInstrumentationRunner = providers.gradleProperty("dshTestRunner")
             .orElse("ai.deepseek.harness.mobile.NativeUpgradeInstrumentation").get()
     }
