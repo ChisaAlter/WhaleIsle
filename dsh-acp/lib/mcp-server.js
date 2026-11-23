@@ -12,6 +12,7 @@
  * token scoped to the issuing agent connection.
  */
 import crypto from 'node:crypto';
+import { resolveDelegationCwd } from './delegate-cwd.js';
 import { executionProvider, listDirectChildren } from './host-contract.js';
 import { AGENT_TOOLS, CONTROL_TOOLS, resultRequest } from './delegation.js';
 import { acpErrorMessage } from './errors.js';
@@ -316,12 +317,20 @@ export function createWhaleIsleMcp({ ctx, diag, listAgents, delegate, tasks, wai
     if (name === 'acp_delegate') {
       const parent = safeGetService('agents')?.get?.(session.dshSession?.id);
       if (!parent || !session.signal) return errorResult('Delegation requires an active parent conversation.');
+      let resolvedCwd = '';
+      try {
+        resolvedCwd = resolveDelegationCwd(args, parent);
+      } catch (error) {
+        return errorResult(String(error instanceof Error ? error.message : error));
+      }
+      const hasExplicitCwd = typeof args?.cwd === 'string' && args.cwd.trim() !== '';
+      const targetCwd = hasExplicitCwd ? resolvedCwd : '';
       const confirmation = await confirmModelAction({
         tool: 'acp_delegate',
         action: 'delegate',
         effect: 'code',
-        summary: `在已配置代理 ${String(args?.agent ?? '?')} 上启动一个可以执行命令的子任务`,
-        details: String(args?.prompt ?? '').slice(0, 2000),
+        summary: `在已配置代理 ${String(args?.agent ?? '?')} 上启动一个可以执行命令的子任务${targetCwd ? `（目录：${targetCwd}）` : ''}`,
+        details: `${targetCwd ? `目标目录：${targetCwd}\n\n` : ''}${String(args?.prompt ?? '').slice(0, 2000)}`,
       });
       if (confirmation.ok !== true) return errorResult(DECLINED_TEXT);
       const signal = session.signal;

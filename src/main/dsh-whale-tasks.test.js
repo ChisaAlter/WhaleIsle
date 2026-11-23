@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { tmpdir } = require('node:os');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const lib = name => pathToFileURL(path.resolve('vendor/dsh-whale/lib', name)).href;
 const modules = Promise.all([import(lib('task-store.js')), import(lib('task-service.js')), import(lib('task-inputs.js')), import(lib('task-worker.js'))]);
 function domain() {

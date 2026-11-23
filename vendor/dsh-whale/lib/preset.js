@@ -17,6 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const WHALE_PRESET_ID = 'whale-girl';
+export const BOT_PRESET_ID = 'dsh-bot';
 export const WHALE_PRESET_COMPOSITION = 'agent.cordis.yml';
 export const SKILLS_DIR_PLACEHOLDER = '__WHALE_SKILLS_DIR__';
 
@@ -48,12 +49,44 @@ export function whalePresetDefinition(homeDir) {
     hidden: true,
     plugins: [
       { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { includeRuntimeContext: false, prefix: '' } },
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
       { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
       { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
       { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
       { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: false, customSkillDirs: [whaleSkillsDir(homeDir)] } },
       { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
       { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
+      { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
+      { id: 'compaction', name: 'cordis:group', group: true,
+        isolate: { compaction: true, toolResultPruner: true }, config: [
+          { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
+          { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
+          { id: 'tool-result-pruner', name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
+            config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 } },
+        ] },
+      { id: 'whale-tools', name: 'dsh-whale/tools' },
+    ],
+  };
+}
+
+/** Hidden preset for all WhaleIsle Bots (`dsh-bot`) sessions. */
+export function botPresetDefinition(homeDir) {
+  return {
+    id: BOT_PRESET_ID,
+    name: 'WhaleIsle Bot',
+    description: '桌面机器人会话用的内置隐藏预设',
+    order: 91,
+    hidden: true,
+    plugins: [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { includeRuntimeContext: false, prefix: '' } },
+      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
+      { id: 'agent-instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } },
+      { id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs' },
+      { id: 'tool-fs-search', name: '@deepseek-ai/dsh-tool-fs-search', config: { sampleOverCapGlobResults: false } },
+      { id: 'skill-filesystem', name: '@deepseek-ai/dsh-skill-filesystem', config: { includeDefaultRoots: true, customSkillDirs: homeDir ? [path.join(homeDir, 'data', 'bots')] : [] } },
+      { id: 'tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
+      { id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user' },
+      { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
       { id: 'compaction', name: 'cordis:group', group: true,
         isolate: { compaction: true, toolResultPruner: true }, config: [
           { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
@@ -137,6 +170,7 @@ export function ensureWhalePreset(homeDir, sourceDir = whalePresetSourceDir()) {
 export function ensureWhaleHome(homeDir) {
   if (!homeDir) return { ok: false, error: 'missing-home' };
   const dir = whaleHomeDir(homeDir);
+  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
   fs.mkdirSync(whaleSkillsDir(homeDir), { recursive: true });
   fs.mkdirSync(whaleDisabledSkillsDir(homeDir), { recursive: true });
   fs.mkdirSync(whaleStickersDir(homeDir), { recursive: true });

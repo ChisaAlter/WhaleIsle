@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
 const {
   DSH_WHALE_PACKAGE,
@@ -14,6 +15,7 @@ const {
   DSH_WHALE_OVERLAY_FILENAME,
   DSH_WHALE_BEGIN,
   DSH_WHALE_END,
+  whalePeerDirectories,
   withoutDshWhaleAliases,
   ensureDesktopDshWhale,
 } = require('./dsh-whale-desktop');
@@ -22,7 +24,13 @@ function makeSource(root) {
   const dir = path.join(root, 'source');
   fs.mkdirSync(path.join(dir, 'lib'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'client'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'assets', 'mascots'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src', 'client'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'presets', 'whale-girl'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'assets', 'mascots', 'A1.svg'), '<svg id="A1"></svg>\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'src', 'shared', 'index.js'), 'export const SHARED = true\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'src', 'client', 'index.tsx'), 'export const CLIENT_SRC = true\n', 'utf8');
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
     name: DSH_WHALE_PACKAGE,
     version: '0.1.0',
@@ -66,7 +74,8 @@ test('ensureDesktopDshWhale writes the desktop overlay and junctions node_module
     const result = ensureDesktopDshWhale({ sourceDir: source, profileDir });
     assert.equal(result.ok, true);
     assert.equal(result.added, true);
-    assert.equal(result.href, pathToFileURL(source).href);
+    assert.equal(fs.realpathSync(result.runtimeDir), fs.realpathSync(path.join(legacyCopy, 'runtime')));
+    assert.equal(result.href, pathToFileURL(result.runtimeDir).href);
     assert.equal(result.overlayFile, overlayPath(profileDir));
 
     const linked = path.join(profileDir, 'node_modules', 'dsh-whale');
@@ -75,10 +84,19 @@ test('ensureDesktopDshWhale writes the desktop overlay and junctions node_module
       fs.readFileSync(path.join(linked, 'lib', 'index.js'), 'utf8'),
       'export const name = "dsh-whale"\n',
     );
-    // The junction resolves to vendor, never to the stale desktop-plugins copy.
-    assert.equal(fs.realpathSync(linked), fs.realpathSync(source));
-    // The desktop-plugins dir holds only the overlay now.
-    assert.deepEqual(fs.readdirSync(legacyCopy), [DSH_WHALE_OVERLAY_FILENAME]);
+    assert.equal(
+      fs.readFileSync(path.join(linked, 'assets', 'mascots', 'A1.svg'), 'utf8'),
+      '<svg id="A1"></svg>\n',
+    );
+    assert.equal(
+      fs.readFileSync(path.join(linked, 'src', 'shared', 'index.js'), 'utf8'),
+      'export const SHARED = true\n',
+    );
+    assert.equal(fs.existsSync(path.join(linked, 'src', 'client')), false);
+    // The junction resolves to the profile-staged runtime (not the stale legacy dump).
+    assert.equal(fs.realpathSync(linked), fs.realpathSync(result.runtimeDir));
+    // Stale legacy top-level package.json in desktop-plugins/dsh-whale is reclaimed.
+    assert.deepEqual(fs.readdirSync(legacyCopy).sort(), [DSH_WHALE_OVERLAY_FILENAME, 'runtime']);
 
     const overlay = fs.readFileSync(result.overlayFile, 'utf8');
     assert.match(overlay, new RegExp(`id: ${DSH_WHALE_INSERT_ID}`));
@@ -287,17 +305,30 @@ test('vendored dsh-whale peers satisfy the vendored runtime compatibility gate',
   }
 });
 
-test('gitignore does not ignore vendored dsh-whale runtime dependencies', () => {
-  const { spawnSync } = require('node:child_process');
-  const root = path.join(__dirname, '..', '..');
-  for (const file of [
-    'vendor/dsh-whale/node_modules/@deepseek-ai/schemastery/package.json',
-    'vendor/dsh-whale/node_modules/@deepseek-ai/dsh-tools/package.json',
-    'vendor/dsh-whale/node_modules/@deepseek-ai/dsh-llm/package.json',
-  ]) {
-    const result = spawnSync('git', ['check-ignore', '-q', file], { cwd: root, windowsHide: true });
-    assert.equal(result.status, 1, `${file} must not match the repo node_modules/ ignore`);
+test('vendored dsh-whale resolves all runtime peers and dsh-shared from built Harness without vendored node_modules', t => {
+  if (!requirePrerequisite(t, harnessWorkspace())) return;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-whale-peers-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(__dirname, '..', '..', 'vendor', 'dsh-whale');
+  const harnessRoot = path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness');
+  const manifest = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
+  assert.equal(fs.existsSync(path.join(sourceDir, 'node_modules')), false);
+  assert.deepEqual(manifest.dependencies || {}, {});
+  const peers = whalePeerDirectories(harnessRoot, manifest);
+  for (const peer of Object.keys(manifest.peerDependencies || {})) {
+    assert.equal(peers.has(peer), true, `missing staged Harness peer ${peer}`);
+    assert.equal(
+      fs.realpathSync(peers.get(peer)).startsWith(fs.realpathSync(harnessRoot)),
+      true,
+      `peer ${peer} must resolve strictly inside Harness`,
+    );
   }
+  const profileDir = path.join(root, 'profile');
+  const mounted = ensureDesktopDshWhale({ sourceDir, profileDir, harnessRoot });
+  assert.equal(mounted.ok, true);
+  assert.equal(fs.existsSync(path.join(mounted.runtimeDir, 'node_modules', 'yaml', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(mounted.runtimeDir, 'node_modules', '@deepseek-ai', 'dsh-llm', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(mounted.runtimeDir, '..', 'dsh-shared', 'lib', 'internal-secret.mjs')), true);
 });
 
 test('dsh-whale aliases strip from the disable list (desktop built-in)', () => {
@@ -308,4 +339,123 @@ test('dsh-whale aliases strip from the disable list (desktop built-in)', () => {
   );
   assert.deepEqual(withoutDshWhaleAliases([]), []);
   assert.deepEqual(withoutDshWhaleAliases(undefined), []);
+});
+
+test('stageDesktopPluginRuntime skips unchanged old files, upgrades copied dirs to links, and validates link sources before deleting targets', (t) => {
+  const { stageDesktopPluginRuntime } = require('./desktop-plugin-runtime');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-stage-opt-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, 'source');
+  const profileDir = path.join(root, 'profile');
+  fs.mkdirSync(path.join(sourceDir, 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(sourceDir, 'assets'), { recursive: true });
+  fs.mkdirSync(profileDir, { recursive: true });
+  const manifest = { name: 'demo-plugin', version: '1.0.0' };
+  fs.writeFileSync(path.join(sourceDir, 'package.json'), JSON.stringify(manifest), 'utf8');
+  const oldFile = path.join(sourceDir, 'lib', 'old.js');
+  fs.writeFileSync(oldFile, 'export const v = 1;\n', 'utf8');
+  const pastSec = (Date.now() - 10_000) / 1000;
+  fs.utimesSync(oldFile, pastSec, pastSec);
+  fs.writeFileSync(path.join(sourceDir, 'assets', 'icon.txt'), 'ok', 'utf8');
+
+  // Pre-seed a legacy real directory for assets to verify upgrade replacement.
+  const runtimeDir = path.join(profileDir, 'desktop-plugins', 'demo-plugin', 'runtime');
+  fs.mkdirSync(path.join(runtimeDir, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeDir, 'assets', 'legacy.txt'), 'stale', 'utf8');
+
+  stageDesktopPluginRuntime({
+    packageName: 'demo-plugin',
+    sourceDir,
+    profileDir,
+    manifest,
+    entries: ['package.json', 'lib'],
+    linkedEntries: ['assets'],
+    linkPeers: false,
+  });
+  const stagedOld = path.join(runtimeDir, 'lib', 'old.js');
+  const firstIno = fs.lstatSync(stagedOld).ino;
+  assert.equal(fs.lstatSync(path.join(runtimeDir, 'assets')).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(path.join(runtimeDir, 'assets', 'icon.txt'), 'utf8'), 'ok');
+
+  // Second run must skip rewriting unchanged file older than 2s (preserves destination inode/mtime).
+  const firstStat = fs.lstatSync(stagedOld);
+  stageDesktopPluginRuntime({
+    packageName: 'demo-plugin',
+    sourceDir,
+    profileDir,
+    manifest,
+    entries: ['package.json', 'lib'],
+    linkedEntries: ['assets'],
+    linkPeers: false,
+  });
+  assert.equal(fs.lstatSync(stagedOld).ino, firstIno);
+  assert.equal(fs.lstatSync(stagedOld).mtimeMs, firstStat.mtimeMs);
+
+  // If a linked entry source is a regular file, staging must fail before deleting existing target.
+  const badSource = path.join(root, 'bad-source');
+  fs.mkdirSync(badSource, { recursive: true });
+  fs.writeFileSync(path.join(badSource, 'package.json'), JSON.stringify(manifest), 'utf8');
+  fs.writeFileSync(path.join(badSource, 'assets'), 'not-a-directory', 'utf8');
+  const keepDir = path.join(profileDir, 'desktop-plugins', 'demo-bad', 'runtime', 'assets');
+  fs.mkdirSync(keepDir, { recursive: true });
+  fs.writeFileSync(path.join(keepDir, 'keep.txt'), 'keep', 'utf8');
+  assert.throws(() => stageDesktopPluginRuntime({
+    packageName: 'demo-bad',
+    sourceDir: badSource,
+    profileDir,
+    manifest,
+    entries: ['package.json'],
+    linkedEntries: ['assets'],
+    linkPeers: false,
+  }), /not a directory/);
+  assert.equal(fs.readFileSync(path.join(keepDir, 'keep.txt'), 'utf8'), 'keep');
+});
+
+test('stageDesktopPluginRuntimeAsync stages files asynchronously, prunes stale files, and skips unchanged files', async (t) => {
+  const { stageDesktopPluginRuntimeAsync } = require('./desktop-plugin-runtime');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-runtime-async-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceDir = path.join(root, 'source');
+  const profileDir = path.join(root, 'profile');
+  fs.mkdirSync(path.join(sourceDir, 'lib', 'nested'), { recursive: true });
+  fs.mkdirSync(path.join(sourceDir, 'assets'), { recursive: true });
+  fs.mkdirSync(profileDir, { recursive: true });
+  const manifest = { name: 'async-plugin', version: '1.0.0' };
+  fs.writeFileSync(path.join(sourceDir, 'package.json'), JSON.stringify(manifest), 'utf8');
+  const fileA = path.join(sourceDir, 'lib', 'nested', 'mod.js');
+  fs.writeFileSync(fileA, 'export const a = 1;\n', 'utf8');
+  const pastSec = (Date.now() - 10_000) / 1000;
+  fs.utimesSync(fileA, pastSec, pastSec);
+  fs.writeFileSync(path.join(sourceDir, 'assets', 'icon.txt'), 'ok', 'utf8');
+
+  const runtimeDir = path.join(profileDir, 'desktop-plugins', 'async-plugin', 'runtime');
+  fs.mkdirSync(path.join(runtimeDir, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(runtimeDir, 'lib', 'stale.js'), 'old', 'utf8');
+
+  await stageDesktopPluginRuntimeAsync({
+    packageName: 'async-plugin',
+    sourceDir,
+    profileDir,
+    manifest,
+    entries: ['package.json', 'lib'],
+    linkedEntries: ['assets'],
+    linkPeers: false,
+  });
+  const staged = path.join(runtimeDir, 'lib', 'nested', 'mod.js');
+  assert.equal(fs.readFileSync(staged, 'utf8'), 'export const a = 1;\n');
+  assert.equal(fs.existsSync(path.join(runtimeDir, 'lib', 'stale.js')), false);
+  assert.equal(fs.lstatSync(path.join(runtimeDir, 'assets')).isSymbolicLink(), true);
+
+  const firstStat = fs.lstatSync(staged);
+  await stageDesktopPluginRuntimeAsync({
+    packageName: 'async-plugin',
+    sourceDir,
+    profileDir,
+    manifest,
+    entries: ['package.json', 'lib'],
+    linkedEntries: ['assets'],
+    linkPeers: false,
+  });
+  assert.equal(fs.lstatSync(staged).ino, firstStat.ino);
+  assert.equal(fs.lstatSync(staged).mtimeMs, firstStat.mtimeMs);
 });

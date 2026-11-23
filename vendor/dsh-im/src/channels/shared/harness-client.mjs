@@ -8,6 +8,10 @@ import {
   InboundFileError,
 } from './inbound-file.mjs';
 import { outboundArtifactRegistry } from './semantic/artifact.mjs';
+import {
+  formatSpeakerRpcId,
+  normalizeSpeakerMetadata,
+} from './single-owner-gate.mjs';
 import { t } from './i18n.mjs';
 
 // Every channel plugin runs in the same Host process. Sharing ownership by
@@ -1164,6 +1168,12 @@ export class HarnessClient {
       ? options.onInteractionResolved
       : undefined;
     const control = normalizeControl(options.control);
+    const speaker = normalizeSpeakerMetadata(options.speaker);
+    if (speaker && speaker.role === 'none') {
+      const denied = new Error('Speaker is not authorized to send prompts to this session.');
+      denied.code = 'speaker-not-authorized';
+      throw denied;
+    }
     const inboundFiles = Array.isArray(options.files) ? options.files.filter(Boolean) : [];
     await this.ensureRunning({ signal });
     const before = await this.rpc(
@@ -1173,7 +1183,9 @@ export class HarnessClient {
       { signal },
     );
     const baselineSeq = Math.max(-1, ...(before.events ?? []).map(({ event }) => event.seq ?? -1));
-    const promptRpcId = `${this.#rpcIdPrefix}-${randomUUID()}`;
+    const promptRpcId = speaker
+      ? formatSpeakerRpcId(this.#rpcIdPrefix, speaker)
+      : `${this.#rpcIdPrefix}-${randomUUID()}`;
     const tracker = new HarnessReplyTracker({ promptRpcId, afterSeq: baselineSeq });
     const interactionController = onInteraction || onInteractionResolved
       ? new AbortController()

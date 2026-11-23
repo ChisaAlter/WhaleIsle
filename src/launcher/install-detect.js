@@ -214,30 +214,136 @@ function uninstallSearchRoots() {
   return roots;
 }
 
-/** @type {any} */
-let registryGetValue;
+/** @type {{ open: any, enumKey: any, getValue: any, close: any } | null} */
+let nativeRegistryApi = null;
+
+function getNativeRegistryApi() {
+  if (!nativeRegistryApi) {
+    const advapi32 = require('koffi').load('advapi32.dll');
+    nativeRegistryApi = {
+      open: advapi32.func('int32_t __stdcall RegOpenKeyExW(intptr_t, str16, uint32_t, uint32_t, _Out_ intptr_t *)'),
+      enumKey: advapi32.func('int32_t __stdcall RegEnumKeyExW(intptr_t, uint32_t, void *, _Inout_ uint32_t *, void *, void *, void *, void *)'),
+      getValue: advapi32.func('int32_t __stdcall RegGetValueW(intptr_t, str16, str16, uint32_t, void *, void *, _Inout_ uint32_t *)'),
+      close: advapi32.func('int32_t __stdcall RegCloseKey(intptr_t)'),
+    };
+  }
+  return nativeRegistryApi;
+}
+
+const REG_HIVE_CU = -2147483647;
+const REG_HIVE_LM = -2147483646;
+const REG_KEY_READ = 0x20019;
+const REG_VALUE_STRING_FLAGS = 0x10000006; // REG_SZ/REG_EXPAND_SZ, without expansion.
+const REG_ERROR_MORE_DATA = 234;
+const REG_ERROR_NO_MORE_ITEMS = 259;
+
+/** @param {string} key */
+function splitRegistryKey(key) {
+  const match = String(key).match(/^(HKCU|HKLM|HKEY_CURRENT_USER|HKEY_LOCAL_MACHINE)\\(.+)$/i);
+  if (!match) return null;
+  const isCu = /^(HKCU|HKEY_CURRENT_USER)$/i.test(match[1]);
+  return {
+    hive: isCu ? REG_HIVE_CU : REG_HIVE_LM,
+    hiveName: isCu ? 'HKEY_CURRENT_USER' : 'HKEY_LOCAL_MACHINE',
+    subkey: match[2],
+  };
+}
+
+/**
+ * @param {any} api
+ * @param {number} hKey
+ * @param {string} subkey
+ * @param {string} valueName
+ */
+function readNativeRegString(api, hKey, subkey, valueName) {
+  const size = [0];
+  if (api.getValue(hKey, subkey, valueName, REG_VALUE_STRING_FLAGS, null, null, size) !== 0 || !size[0]) {
+    return '';
+  }
+  const data = Buffer.alloc(size[0]);
+  if (api.getValue(hKey, subkey, valueName, REG_VALUE_STRING_FLAGS, null, data, size) !== 0) {
+    return '';
+  }
+  return data.subarray(0, size[0]).toString('utf16le').replace(/\0+$/, '').trim();
+}
+
+/**
+ * @param {any} api
+ * @param {number} hKey
+ * @param {string} subkey
+ * @param {string} keyPath
+ * @param {boolean} [requireDisplayName]
+ */
+function readNativeRegEntry(api, hKey, subkey, keyPath, requireDisplayName = false) {
+  const displayName = readNativeRegString(api, hKey, subkey, 'DisplayName');
+  if (requireDisplayName && !displayName) return null;
+  const uninstallCommand = readNativeRegString(api, hKey, subkey, 'UninstallString');
+  const installPath = (readNativeRegString(api, hKey, subkey, 'InstallLocation')
+    || readNativeRegString(api, hKey, subkey, 'DisplayIcon').replace(/\\[^\\]+$/, '')).trim();
+  const displayVersion = readNativeRegString(api, hKey, subkey, 'DisplayVersion');
+  if (!displayName && !installPath && !uninstallCommand) return null;
+  return { key: keyPath, displayName, uninstallCommand, installPath, displayVersion };
+}
 
 /** @param {string} key */
 function unicodeRegistryBlock(key) {
-  const match = String(key).match(/^(HKCU|HKLM|HKEY_CURRENT_USER|HKEY_LOCAL_MACHINE)\\(.+)$/i);
-  if (!match) return '';
-  if (!registryGetValue) {
-    registryGetValue = require('koffi').load('advapi32.dll').func(
-      'int32_t __stdcall RegGetValueW(intptr_t, str16, str16, uint32_t, void *, void *, _Inout_ uint32_t *)',
-    );
-  }
-  const hive = /^(HKCU|HKEY_CURRENT_USER)$/i.test(match[1]) ? -2147483647 : -2147483646;
+  const parts = splitRegistryKey(key);
+  if (!parts) return '';
+  const api = getNativeRegistryApi();
   const lines = [key];
   for (const name of ['DisplayName', 'DisplayVersion', 'InstallLocation', 'DisplayIcon', 'UninstallString']) {
-    const size = [0];
-    // Read Unicode strings directly; console encodings can lose path characters.
-    const flags = 0x10000006; // REG_SZ/REG_EXPAND_SZ, without expansion.
-    if (registryGetValue(hive, match[2], name, flags, null, null, size) !== 0 || !size[0]) continue;
-    const data = Buffer.alloc(size[0]);
-    if (registryGetValue(hive, match[2], name, flags, null, data, size) !== 0) continue;
-    lines.push(`    ${name}    REG_SZ    ${data.subarray(0, size[0]).toString('utf16le').replace(/\0+$/, '')}`);
+    const value = readNativeRegString(api, parts.hive, parts.subkey, name);
+    if (value) lines.push(`    ${name}    REG_SZ    ${value}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * @param {{ appId: string, productName: string }} target
+ */
+function findRegisteredWindowsInstallNative(target) {
+  const api = getNativeRegistryApi();
+  for (const key of uninstallRegistryKeyPaths(target)) {
+    const parts = splitRegistryKey(key);
+    if (!parts) continue;
+    const parsed = readNativeRegEntry(api, parts.hive, parts.subkey, key);
+    if (parsed) return parsed;
+  }
+  const names = productNames(target.productName);
+  const nameBuf = Buffer.alloc(512 * 2);
+  for (const root of uninstallSearchRoots()) {
+    const parts = splitRegistryKey(root);
+    if (!parts) continue;
+    const handle = [0];
+    if (api.open(parts.hive, parts.subkey, 0, REG_KEY_READ, handle) !== 0) continue;
+    /** @type {Array<{ key: string, displayName: string, uninstallCommand: string, installPath: string, displayVersion: string }>} */
+    const entries = [];
+    try {
+      for (let index = 0; ; index += 1) {
+        const nameLen = [512];
+        const rc = api.enumKey(handle[0], index, nameBuf, nameLen, null, null, null, null);
+        if (rc === REG_ERROR_NO_MORE_ITEMS) break;
+        if (rc === REG_ERROR_MORE_DATA) continue;
+        if (rc !== 0) break;
+        const sub = nameBuf.subarray(0, nameLen[0] * 2).toString('utf16le');
+        const fullKey = `${parts.hiveName}\\${parts.subkey}\\${sub}`;
+        const parsed = readNativeRegEntry(api, handle[0], sub, fullKey, true);
+        if (parsed) entries.push(parsed);
+      }
+    } finally {
+      api.close(handle[0]);
+    }
+    for (const name of names) {
+      for (const parsed of entries) {
+        if (parsed.displayName.includes(name)
+          || parsed.uninstallCommand.includes(name)
+          || parsed.installPath.includes(name)) {
+          return parsed;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -267,6 +373,13 @@ function findRegisteredWindowsInstall(deps = {}) {
     return null;
   }
   const target = resolveTarget(deps);
+  if (typeof deps.execFileSync !== 'function') {
+    try {
+      return findRegisteredWindowsInstallNative(target);
+    } catch {
+      // Fall back to reg.exe if koffi/advapi32 is unavailable.
+    }
+  }
   for (const key of uninstallRegistryKeyPaths(target)) {
     const parsed = parseRegBlock(queryRegKey(key, deps), key);
     if (parsed) {

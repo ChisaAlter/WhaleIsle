@@ -23,6 +23,7 @@ import {
   observeBotWorkspaceRemovals,
 } from '../../../../src/channels/shared/bot-workspace-store.mjs';
 import { listAgentPresetCatalog } from '../../../../src/channels/shared/agent-preset.mjs';
+import { sharedSingleOwnerGate } from '../../../../src/channels/shared/single-owner-gate.mjs';
 import { createFeishuTaskBinding } from './whale-tasks.mjs';
 
 function webSocketProxyUrl(env) {
@@ -91,6 +92,9 @@ export async function createProductionController(ctx, config = {}, internals = {
     : (ctx.logger ?? console);
   const agentPresetCatalog = () => listAgentPresetCatalog(ctx);
   const paths = pluginPaths(config);
+  const singleOwnerGate = internals.singleOwnerGate
+    ?? config.singleOwnerGate
+    ?? await sharedSingleOwnerGate(config.dshHome);
   const configStore = await new ConfigStore(paths.config).load();
   const defaultWorkspace = resolve(config.workspace ?? process.cwd());
   const WorkspaceStore = internals.WorkspaceStore ?? BotWorkspaceStore;
@@ -166,8 +170,17 @@ export async function createProductionController(ctx, config = {}, internals = {
       const state = await stateFor(botConfig);
       const id = botId ?? botConfig.id ?? botConfig.appId;
       await workspaces.ensure(id, { defaultAgentPreset: config.agentPreset });
+      const accessGate = singleOwnerGate && id
+        ? singleOwnerGate.createBotGate({
+            channel: 'feishu',
+            botId: id,
+            getBotConfig: () => listConfiguredBots().find((row) => row.id === id) ?? botConfig,
+            getPreset: () => workspaces.agentPresetFor?.(id) ?? null,
+            home: config.dshHome,
+          })
+        : null;
       const workspaceScope = createBotWorkspaceScope(harness, {
-        botId: id, workspaces, state, agentPresetCatalog,
+        botId: id, workspaces, state, agentPresetCatalog, accessGate,
       });
       return new Runtime({
         lark,
@@ -179,7 +192,7 @@ export async function createProductionController(ctx, config = {}, internals = {
         botOpenId: botConfig.botOpenId,
         groupResponseMode: botConfig.groupResponseMode,
         ownerOpenIds: botConfig.ownerOpenIds ?? [botConfig.ownerOpenId],
-        taskBinding: createFeishuTaskBinding(ctx, { botId: id, botConfig, workspaces, configStore }),
+        taskBinding: createFeishuTaskBinding(ctx, { botId: id, botConfig, workspaces, configStore, accessGate }),
         harness: workspaceScope.harness,
         state: workspaceScope.state,
         replyTimeoutMs: config.replyTimeoutMs ?? 600_000,
@@ -205,6 +218,9 @@ export async function createProductionController(ctx, config = {}, internals = {
     workspaces,
     stateFor: stateForBotId,
     agentPresetCatalog,
+    singleOwnerGate,
+    channel: 'feishu',
+    listBotConfigs: listConfiguredBots,
   });
 
   const supervisor = createSupervisor({

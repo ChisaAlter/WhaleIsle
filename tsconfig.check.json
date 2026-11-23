@@ -11,23 +11,22 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "paths": {
-      // 宿主运行时注入的依赖：类型直接指向 vendor/dsh-whale 自带的
-      // node_modules 里那份（与运行时同源）。paths 候选不能落在
-      // node_modules 目录上——tsc 会按 pnpm 布局去 .pnpm 探测而失败，所以
-      // 逐条指到包的 types 文件。未列出的宿主注入包（dsh-agent-team、
+      // 宿主运行时注入的依赖：类型直接指向 vendor/deepseek-harness 里的真实
+      // 包声明（与运行时 peer 解析同源）。paths 候选逐条指到包的 types 文件，
+      // 避免 tsc 按 pnpm 布局去 .pnpm 探测失败。未列出的宿主注入包（dsh-agent-team、
       // dsh-client-* 等）保持未解析，进基线。
-      "@deepseek-ai/cordis": ["./vendor/dsh-whale/node_modules/@deepseek-ai/cordis/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-tools": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-tools/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-llm": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-llm/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-scope": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-scope/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-brand": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-brand/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-timeout": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-timeout/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-typert-protocol": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-typert-protocol/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-util-crypto": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-util-crypto/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-util-values": ["./vendor/dsh-whale/node_modules/@deepseek-ai/dsh-util-values/lib/types/index.d.ts"],
-      "@deepseek-ai/cosmokit": ["./vendor/dsh-whale/node_modules/@deepseek-ai/cosmokit/lib/types/index.d.ts"],
-      "@deepseek-ai/schemastery": ["./vendor/dsh-whale/node_modules/@deepseek-ai/schemastery/lib/types/index.d.ts"],
-      "zod": ["./vendor/dsh-whale/node_modules/zod/index.d.ts"]
+      "@deepseek-ai/cordis": ["./vendor/deepseek-harness/vendor/cordis/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-tools": ["./vendor/deepseek-harness/packages/core/tools/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-llm": ["./vendor/deepseek-harness/packages/llm/llm/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-scope": ["./vendor/deepseek-harness/packages/core/scope/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-brand": ["./vendor/deepseek-harness/packages/util/brand/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-timeout": ["./vendor/deepseek-harness/packages/util/timeout/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-typert-protocol": ["./vendor/deepseek-harness/packages/typert/protocol/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-util-crypto": ["./vendor/deepseek-harness/packages/util/crypto/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-util-values": ["./vendor/deepseek-harness/packages/util/values/lib/types/index.d.ts"],
+      "@deepseek-ai/cosmokit": ["./vendor/deepseek-harness/vendor/cosmokit/lib/types/index.d.ts"],
+      "@deepseek-ai/schemastery": ["./vendor/deepseek-harness/vendor/schemastery/lib/types/index.d.ts"],
+      "zod": ["./vendor/deepseek-harness/node_modules/zod/index.d.ts"]
     }
   },
   "include": [
@@ -51,6 +50,7 @@
     "**/node_modules/**",
     "src/main/test-fixtures/**",
     "src/renderer/**",
-    "vendor/*/client/**"
+    "vendor/*/client/**",
+    "vendor/dsh-whale/src/client/**"
   ]
 }

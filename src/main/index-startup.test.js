@@ -570,7 +570,6 @@ test('控制通道：startDesktopInstallControl 装配确认/重启/desktop 能�
     /confirmModelAction/,
     /showSecret:\s*showDesktopSecret/,
     /desktop:\s*\{/,
-    new RegExp(`proactive:\\s*\\(${T}payload\\)\\s*=>\\s*proactiveService\\.dispatch\\(payload\\)`),
     new RegExp(`project:\\s*\\(${T}payload\\)\\s*=>\\s*projectEnvironment\\.dispatch\\(payload\\)`),
     /state:\s*\(\)\s*=>\s*\{/,
     /kernel:\s*dshKernelState\(dsh\)/,

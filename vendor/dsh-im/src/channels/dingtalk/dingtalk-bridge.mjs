@@ -29,6 +29,11 @@ import { runWorkspaceCommand } from '../shared/workspace-command.mjs';
 import { askInWorkspaceSession } from '../shared/workspace-session.mjs';
 import { sharedWhaleSessionId } from '../shared/whale-session.mjs';
 import {
+  attachImmutableSpeaker,
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from '../shared/single-owner-gate.mjs';
+import {
   BatchInputManager,
   batchInputBusyMessage,
   batchInputGroupUnsupportedMessage,
@@ -381,6 +386,7 @@ export class DingtalkHarnessBridge {
   #acceptedMessageIds = new Set();
   #approvals;
   #batchInputs = new BatchInputManager();
+  #accessGate;
 
   constructor({
     api,
@@ -394,6 +400,7 @@ export class DingtalkHarnessBridge {
     reactionTimeoutMs = 5_000,
     maxMessageChars = 4_000,
     signal,
+    accessGate = null,
   }) {
     if (!api || typeof api.sendText !== 'function') throw new TypeError('DingTalk API is required');
     if (!nonEmptyString(clientId) || !nonEmptyString(clientSecret)) {
@@ -407,6 +414,7 @@ export class DingtalkHarnessBridge {
     this.#state = state;
     this.#status = status;
     this.#logger = logger;
+    this.#accessGate = accessGate ?? harness?.accessGate ?? null;
     this.#approvals = new HarnessApprovalQueue({ label: 'DingTalk', logger });
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#reactionTimeoutMs = Number.isFinite(reactionTimeoutMs) && reactionTimeoutMs > 0
@@ -430,6 +438,45 @@ export class DingtalkHarnessBridge {
     if (!messageId || !sender || this.#state.hasSeen(messageId)
       || this.#acceptedMessageIds.has(messageId)) return Promise.resolve();
     this.#acceptedMessageIds.add(messageId);
+    const gate = this.#accessGate;
+    const chatType = String(message?.conversationType) === '1' ? 'private' : 'group';
+    if (gate && typeof gate.evaluateInbound === 'function') {
+      return Promise.resolve().then(async () => {
+        const decision = await gate.evaluateInbound({
+          senderId: sender,
+          displayName: nonEmptyString(message?.senderNick),
+          chatType,
+          harness: this.#harness,
+        });
+        if (!decision.allowed) {
+          this.#acceptedMessageIds.delete(messageId);
+          await this.#state.markSeen(messageId).catch(() => undefined);
+          increment(this.#status, 'messagesRejected');
+          this.#status.lastRejectedAt = new Date().toISOString();
+          if (decision.replyText) {
+            try {
+              const webhook = normalizeDingtalkSessionWebhook(message?.sessionWebhook);
+              await this.#send(webhook, decision.replyText);
+            } catch {
+              // Unsafe or unavailable webhook cannot deliver pairing guide.
+            }
+          }
+          return;
+        }
+        const stamped = { ...message };
+        attachImmutableSpeaker(stamped, decision.speaker);
+        return this.#acceptAuthorized(stamped, messageId, sender);
+      }).catch((error) => {
+        this.#acceptedMessageIds.delete(messageId);
+        throw error;
+      });
+    }
+    const stamped = { ...message };
+    attachImmutableSpeaker(stamped, { role: 'guest', chat: chatType });
+    return this.#acceptAuthorized(stamped, messageId, sender);
+  }
+
+  #acceptAuthorized(message, messageId, sender) {
 
     let key;
     try {
@@ -897,8 +944,8 @@ export class DingtalkHarnessBridge {
         return;
       }
       if (isPlainText && !hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness)) {
-          await this.#send(sessionWebhook, t('鲸鱼娘只有一条常驻对话，继续发送消息即可。'));
+        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+          await this.#send(sessionWebhook, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(key);
           await this.#send(sessionWebhook, t('已开启新会话。请发送你的问题。'));
@@ -949,6 +996,7 @@ export class DingtalkHarnessBridge {
         state: this.#state,
         key,
         ...(hasImages ? { content } : { text }),
+        speaker: message.speaker,
         createOptions: { signal: this.#signal },
         existsOptions: { signal: this.#signal },
         askOptions: {

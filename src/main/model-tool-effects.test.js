@@ -8,7 +8,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { register: registerLoaderHooks } = require('node:module');
 
-const { TOOLS, LEGACY_TOOLS, ENDPOINTS, LEVELS, effectOf } = require('../shared/model-tool-effects');
+const { TOOLS, BOT_TOOLS, LEGACY_TOOLS, ENDPOINTS, LEVELS, effectOf } = require('../shared/model-tool-effects');
 const { storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 const {
   startDesktopInstallControl,
@@ -225,10 +225,10 @@ function confirmCalls() {
 describe('model tool effect registry', () => {
   const discovered = scanToolNames();
   const confirms = confirmCalls();
-  const allEffects = Object.entries({ ...TOOLS, ...LEGACY_TOOLS });
+  const allEffects = Object.entries({ ...TOOLS, ...BOT_TOOLS, ...LEGACY_TOOLS });
 
   test('every registered tool name appears in the registry', () => {
-    const missing = [...discovered.keys()].filter((name) => !(name in TOOLS));
+    const missing = [...discovered.keys()].filter((name) => !(name in TOOLS) && !(name in BOT_TOOLS));
     assert.deepEqual(missing, []);
   });
 
@@ -364,6 +364,16 @@ describe('effectOf level resolution', () => {
     assert.equal(effectOf('pad_update', 'run-sources'), 'code');
     assert.equal(effectOf('whale_desktop_config', 'patch'), 'external');
     assert.equal(effectOf('whale_desktop_config', 'patch-credentials'), 'destructive');
+    assert.equal(effectOf('bot_work_start', 'start'), 'harness-governed');
+    assert.equal(effectOf('bot_send', 'send'), 'harness-governed');
+    assert.equal(effectOf('bot_tools_manage', 'list'), 'read');
+    assert.equal(effectOf('bot_tools_manage', 'add'), 'code');
+    assert.equal(effectOf('bot_tools_manage', 'update'), 'code');
+    assert.equal(effectOf('bot_tools_manage', 'remove'), 'destructive');
+    assert.equal(effectOf('bot_automation_create', 'create'), 'local');
+    assert.equal(effectOf('bot_automation_create', 'delete'), 'local');
+    assert.equal(effectOf('bot_reply', 'reply'), 'external');
+    assert.equal(effectOf('bot_new_chat', 'create'), 'harness-governed');
   });
 
   test('an unknown action falls back to the strictest level the tool can reach', () => {
@@ -373,6 +383,8 @@ describe('effectOf level resolution', () => {
     assert.equal(effectOf('chatgpt_checkpoint', 'bogus'), 'local');
     assert.equal(effectOf('pad_create', 'bogus'), 'code');
     assert.equal(effectOf('whale_desktop_config', 'bogus'), 'destructive');
+    assert.equal(effectOf('bot_tools_manage', 'bogus'), 'code');
+    assert.equal(effectOf('bot_automation_create', 'bogus'), 'local');
   });
 
   test('a registered tool with no actions table treats an unknown action as unverifiable', () => {
@@ -406,12 +418,17 @@ let loaderHooksRegistered = false;
 function ensureLoaderHooks() {
   if (loaderHooksRegistered) return;
   loaderHooksRegistered = true;
-  const whaleLib = path.join(ROOT, 'vendor/dsh-whale/lib');
-  const vendorUrl = (specifier) => pathToFileURL(require.resolve(specifier, { paths: [whaleLib] })).href;
+  const { installHarnessPeerHooks, resolveHarnessPeerPath } = require('../../scripts/lib/harness-peer-hook.cjs');
+  installHarnessPeerHooks();
+  const peerUrl = (specifier) => {
+    const resolved = resolveHarnessPeerPath(specifier);
+    if (!resolved) throw new Error(`Harness peer unavailable: ${specifier}`);
+    return pathToFileURL(resolved).href;
+  };
   // No installed schemastery has .volatile(); the Config schema is inert for
-  // these tests, so a proxy wrapper adds it as a no-op on the whale copy.
+  // these tests, so a proxy wrapper adds it as a no-op on the Harness copy.
   const schemasteryShim = `data:text/javascript,${encodeURIComponent(
-    `import RealSchema from ${JSON.stringify(vendorUrl('@deepseek-ai/schemastery'))};
+    `import RealSchema from ${JSON.stringify(peerUrl('@deepseek-ai/schemastery'))};
      const handler = {
        get(target, key) {
          if (key === 'volatile') return () => wrap(target);
@@ -426,8 +443,8 @@ function ensureLoaderHooks() {
   )}`;
   const map = {
     '@deepseek-ai/schemastery': schemasteryShim,
-    '@deepseek-ai/dsh-tools': vendorUrl('@deepseek-ai/dsh-tools'),
-    '@deepseek-ai/dsh-llm': vendorUrl('@deepseek-ai/dsh-llm'),
+    '@deepseek-ai/dsh-tools': peerUrl('@deepseek-ai/dsh-tools'),
+    '@deepseek-ai/dsh-llm': peerUrl('@deepseek-ai/dsh-llm'),
   };
   const needyParents = ['/vendor/dsh-pad/', '/vendor/dsh-deepseek-tools/'];
   const hooks = `export async function resolve(specifier, context, next) {
@@ -526,6 +543,7 @@ const execFor = (agent) => ({ agent, signal: new AbortController().signal });
 
 describe('refusal path', () => {
   test('whale_delete_session does not delete when confirmation declines', async () => {
+    ensureLoaderHooks();
     const { registerSessionTools } = await import('../../vendor/dsh-whale/lib/session-tools.js');
     const deleted = [];
     const { ctx, tools } = makeCtx({ sessionController: { delete: async (args) => { deleted.push(args); return {}; } } });
@@ -538,6 +556,7 @@ describe('refusal path', () => {
   });
 
   test('whale_delete_session fails closed when the channel is missing', async () => {
+    ensureLoaderHooks();
     const { registerSessionTools } = await import('../../vendor/dsh-whale/lib/session-tools.js');
     const deleted = [];
     const { ctx, tools } = makeCtx({ sessionController: { delete: async (args) => { deleted.push(args); return {}; } } });
@@ -549,6 +568,7 @@ describe('refusal path', () => {
   });
 
   test('whale_send_to_session does not deliver when confirmation declines', async () => {
+    ensureLoaderHooks();
     const { apply } = await import('../../vendor/dsh-whale/lib/tools.js');
     const agentGets = [];
     const { ctx, tools } = makeCtx({
@@ -564,6 +584,7 @@ describe('refusal path', () => {
   });
 
   test('whale_new_session does not create when confirmation declines', async () => {
+    ensureLoaderHooks();
     const { apply } = await import('../../vendor/dsh-whale/lib/tools.js');
     const created = [];
     const { ctx, tools } = makeCtx({
@@ -578,6 +599,7 @@ describe('refusal path', () => {
   });
 
   test('whale_update_queue steer/edit do not inject when confirmation declines', async () => {
+    ensureLoaderHooks();
     const { registerSessionTools } = await import('../../vendor/dsh-whale/lib/session-tools.js');
     const updates = [];
     const { ctx, tools } = makeCtx({
@@ -597,6 +619,7 @@ describe('refusal path', () => {
   });
 
   test('whale_desktop_config sensitive patch never reaches the config endpoint', async () => {
+    ensureLoaderHooks();
     const { registerDesktopTools } = await import('../../vendor/dsh-whale/lib/desktop-tools.js');
     const applied = [];
     const { ctx, tools } = makeCtx();

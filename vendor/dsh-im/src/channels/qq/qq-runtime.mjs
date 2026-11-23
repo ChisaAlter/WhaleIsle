@@ -146,8 +146,14 @@ export class QqRuntime {
     });
     bot.use?.(this.#typingMiddleware({
       keepAlive: true,
-      predicate: (ctx) => this.#config.ownerUserOpenid === '*'
-        || ctx?.message?.senderId === this.#config.ownerUserOpenid,
+      predicate: (ctx) => {
+        const gate = this.#harness?.accessGate;
+        if (gate?.isWhaleEnforcedSync?.()) {
+          return ctx?.message?.kind === 'c2c' && gate.isOwner(ctx?.message?.senderId);
+        }
+        return this.#config.ownerUserOpenid === '*'
+          || ctx?.message?.senderId === this.#config.ownerUserOpenid;
+      },
     }));
 
     let readyResolve;

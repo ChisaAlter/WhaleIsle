@@ -204,8 +204,85 @@ async function killProcessTree(pid, { graceMs = 2000, signal = 'SIGTERM', run = 
   throw treeStopError(pid, failure);
 }
 
+/** @type {{ openProcess: any, getProcessTimes: any, closeHandle: any } | null} */
+let nativeProcessTimesApi = null;
+const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+const FILETIME_EPOCH_DIFF_100NS = 116444736000000000n;
+
+/**
+ * Read a Windows process creation timestamp via Win32 GetProcessTimes without
+ * spawning PowerShell. Returns '' when the pid does not exist or cannot be opened.
+ * @param {number} pid
+ * @returns {string}
+ */
+function windowsProcessStartTime(pid) {
+  if (process.platform !== 'win32' || !Number.isInteger(pid) || pid <= 0 || pid > 0xFFFFFFFF) {
+    return '';
+  }
+  if (!nativeProcessTimesApi) {
+    const kernel32 = require('koffi').load('kernel32.dll');
+    nativeProcessTimesApi = {
+      openProcess: kernel32.func('intptr_t __stdcall OpenProcess(uint32_t, int32_t, uint32_t)'),
+      getProcessTimes: kernel32.func(
+        'int32_t __stdcall GetProcessTimes(intptr_t, _Out_ uint64_t *, _Out_ uint64_t *, _Out_ uint64_t *, _Out_ uint64_t *)',
+      ),
+      closeHandle: kernel32.func('int32_t __stdcall CloseHandle(intptr_t)'),
+    };
+  }
+  const handle = nativeProcessTimesApi.openProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+  if (!handle) return '';
+  try {
+    const creation = [0n];
+    const exit = [0n];
+    const kernel = [0n];
+    const user = [0n];
+    if (!nativeProcessTimesApi.getProcessTimes(handle, creation, exit, kernel, user)) return '';
+    const ticks = BigInt(creation[0]) - FILETIME_EPOCH_DIFF_100NS;
+    const ms = Number(ticks / 10000n);
+    const subMs = String(Number(((ticks % 10000n) + 10000n) % 10000n)).padStart(4, '0');
+    return new Date(ms).toISOString().replace(/Z$/, `${subMs}Z`);
+  } finally {
+    nativeProcessTimesApi.closeHandle(handle);
+  }
+}
+
+const ISO_TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Normalize an ISO-8601 timestamp with explicit UTC or offset designator to a
+ * timezone-independent `<wholeEpochMs>:<7-digit-100ns-fraction>` key.
+ * @param {string} value
+ * @returns {string | null}
+ */
+function canonicalIsoInstant(value) {
+  const match = ISO_TIMESTAMP_RE.exec(String(value));
+  if (!match) return null;
+  const wholeMs = Date.parse(`${match[1]}${match[3]}`);
+  if (!Number.isFinite(wholeMs)) return null;
+  const frac = (match[2] || '').padEnd(7, '0').slice(0, 7);
+  return `${wholeMs}:${frac}`;
+}
+
+/**
+ * Compare two OS process start timestamps. Matches identical strings directly
+ * and equates ISO-8601 timestamps representing the same 100ns instant across
+ * UTC (`Z`) and local-offset (`±HH:MM`) encodings.
+ * @param {string} current
+ * @param {string} recorded
+ * @returns {boolean}
+ */
+function sameProcessStartTime(current, recorded) {
+  if (!current || !recorded) return false;
+  if (current === recorded) return true;
+  const a = canonicalIsoInstant(current);
+  const b = canonicalIsoInstant(recorded);
+  return a !== null && a === b;
+}
+
 module.exports = {
   spawnTreeOptions,
   signalProcessTree,
   killProcessTree,
+  windowsProcessStartTime,
+  sameProcessStartTime,
 };

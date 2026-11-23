@@ -809,6 +809,41 @@ test('response lifecycle setup failure does not leak admission', async () => {
   assert.equal(state.pending.size, 0);
 });
 
+test('task-control inspection tracks active dsh-project work, fails closed on project inspection errors, and triggers projects.schedule on unlock', async t => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const server = lifecycleWebServer();
+  let scheduled = 0;
+  let inspectImpl = () => ({
+    activeCount: 2,
+    activeProjects: ['p-1'],
+    details: [
+      { kind: 'work-preparing', id: 'ws-1', projectId: 'p-1' },
+      { kind: 'settlement-check-timer', id: 'p-1', projectId: 'p-1' },
+    ],
+  });
+  const ctx = lifecycleContext({ webServer: server });
+  const originalGet = ctx.get;
+  ctx.get = key => key === 'projects' ? { available: true, inspect: () => inspectImpl(), schedule: () => { scheduled += 1; } } : originalGet(key);
+  apply(ctx);
+
+  const active = await controlReply(server, 'inspect');
+  assert.equal(active.coverage.projects, 'ok');
+  assert.equal(active.activeWork.filter(item => item.kind === 'project').length, 2);
+
+  inspectImpl = () => { throw new Error('catalog unavailable'); };
+  const broken = await controlReply(server, 'inspect');
+  assert.equal(broken.coverage.projects, 'unavailable');
+
+  inspectImpl = () => ({ activeCount: 0, activeProjects: [], details: [] });
+  const acquired = await controlReply(server, 'acquire', { owner: 'desktop-update' });
+  assert.equal(acquired.ok, true);
+  assert.equal(scheduled, 0);
+  await controlReply(server, 'release', { owner: 'desktop-update', lockId: acquired.lockId });
+  assert.equal(scheduled, 1, 'releasing maintenance lock re-drives projects.schedule()');
+  ctx.dispose();
+});
+
 test('wrapRouteEntry leaves WebResourceRoute without synthetic handler while preserving route admission', async () => {
   const { createControlState, acquireLock, releaseLock } = await load('state.js');
   const { wrapWebServer, disposeGuards } = await load('wrap.js');

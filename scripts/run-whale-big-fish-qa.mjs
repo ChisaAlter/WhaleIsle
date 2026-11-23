@@ -8,6 +8,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { withOwnedTempDir } from '../src/shared/fs-safe.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const { ensureDesktopDshWhale } = createRequire(import.meta.url)(path.join(root, 'src/main/dsh-whale-desktop.js'));
 const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 const runtime = path.resolve(arg('--runtime-root') ?? path.join(root, 'vendor/deepseek-harness'));
 const output = path.resolve(arg('--output') ?? path.join(root, 'work/whale-big-fish-qa'));
@@ -23,11 +24,18 @@ try {
   const { initProfile, loadLayeredEnv } = await load('@deepseek-ai/dsh-app-boot');
   const profile = path.join(home, 'profiles/big-fish-qa');
   initProfile(profile, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-whale', 'dsh-pad']);
+  const whaleMount = ensureDesktopDshWhale({
+    sourceDir: path.join(root, 'vendor/dsh-whale'),
+    profileDir: profile,
+    harnessRoot: runtime,
+    enabled: true,
+  });
+  assert.equal(whaleMount.ok, true, whaleMount.error || 'ensureDesktopDshWhale failed');
   await fs.mkdir(path.join(profile, 'node_modules'), { recursive: true });
-  for (const name of ['dsh-whale', 'dsh-pad']) await fs.symlink(path.join(root, 'vendor', name), path.join(profile, 'node_modules', name), 'junction');
+  await fs.symlink(path.join(root, 'vendor', 'dsh-pad'), path.join(profile, 'node_modules', 'dsh-pad'), 'junction');
   const manifestPath = path.join(profile, 'package.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath));
-  manifest.dependencies = { 'dsh-whale': `file:${path.join(root, 'vendor/dsh-whale')}`, 'dsh-pad': `file:${path.join(root, 'vendor/dsh-pad')}` };
+  manifest.dependencies = { 'dsh-whale': `file:${whaleMount.runtimeDir}`, 'dsh-pad': `file:${path.join(root, 'vendor/dsh-pad')}` };
   await fs.writeFile(manifestPath, JSON.stringify(manifest));
   const server = net.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port; await new Promise(resolve => server.close(resolve));
@@ -74,108 +82,55 @@ try {
     page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: 'zh-CN' });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(10000);
-    const wait = condition => page.waitForFunction(condition, undefined, { timeout: 10000 });
-    const card = title => page.locator('[data-whale-todo]').filter({ has: page.getByRole('button', { name: title, exact: true }) });
-    const menu = async (title, action) => { await card(title).getByRole('button', { name: `任务操作：${title}` }).click(); await page.getByRole('menuitem', { name: action, exact: true }).click(); };
-    const add = async title => { await page.getByRole('button', { name: '新增任务', exact: true }).click(); await page.getByLabel('任务名称', { exact: true }).fill(title); await page.getByLabel('任务说明', { exact: true }).fill('保持独立会话，给出可核对的结果。'); await page.getByRole('button', { name: '保存', exact: true }).click(); await card(title).waitFor(); };
-    const start = async title => { await card(title).getByRole('button', { name: '开始执行', exact: true }).click(); await page.getByRole('dialog').getByRole('button', { name: '开始执行', exact: true }).click(); };
     await page.goto(url);
     await page.getByRole('button', { name: '继续', exact: true }).click();
     await page.waitForFunction(() => typeof window.__dshWhaleOpen === 'function');
-    await page.getByText('鲸鱼娘', { exact: true }).first().click();
-    await page.getByRole('button', { name: '暂不进入', exact: true }).click();
+    await page.getByText('你的大肥鱼队友', { exact: true }).waitFor();
+    assert.equal(await page.locator('html[data-dsh-whale-mode]').count(), 0, 'legacy fullscreen overlay must not exist');
     await page.evaluate(() => window.__dshWhaleOpen());
-    assert.equal(await page.getByRole('dialog').count(), 0, 'decline is remembered');
-    const geometry = await page.locator('[data-dsh-frame]').getAttribute('style');
-    await page.getByRole('button', { name: '大肥鱼模式', exact: true }).click();
-    await page.locator('html[data-dsh-whale-mode]').waitFor();
-    assert.equal(await page.locator('[data-dsh-frame-region="sidebar"]').isVisible(), false);
-    assert.equal(await page.locator('[data-titlebar-trailing]').isVisible(), false);
-    assert.deepEqual(await page.getByRole('tab').allTextContents(), ['面板', '任务']);
+    const newBotDialog = page.getByRole('dialog', { name: '新建大肥鱼队友' });
+    await newBotDialog.waitFor();
+    await newBotDialog.getByPlaceholder('给你的大肥鱼起个名字').fill('鲸鱼娘');
+    await newBotDialog.getByRole('button', { name: '创建', exact: true }).click();
+    await newBotDialog.waitFor({ state: 'detached' });
+    await page.locator('[data-dsh-bots-conv-action="home"]').click();
+    await page.locator('[data-dsh-bots-right-panel]').waitFor();
+    await page.locator('[data-dsh-bots-right-panel]').getByText('鲸鱼娘', { exact: true }).first().waitFor();
+    for (const tabLabel of ['连接器', '对话', '文件', '概览']) {
+      await page.locator('[data-dsh-bots-right-panel]').getByRole('tab', { name: tabLabel, exact: true }).click();
+    }
+    assert.equal(await page.locator('html[data-dsh-whale-mode]').count(), 0);
+    await page.screenshot({ path: path.join(output, 'bots-desktop.png') });
+
+    await page.locator('#dshpad-ball').click();
+    await page.getByText('今日工作台', { exact: true }).waitFor();
     await page.getByText('这张面板要在本机运行以下数据源：', { exact: true }).waitFor();
     await page.getByRole('button', { name: '允许运行', exact: true }).click();
-    await page.locator('.dshpad-whale-panels iframe').waitFor();
-    const frame = page.frameLocator('.dshpad-whale-panels iframe');
+    await page.locator('.dshpad-root iframe').waitFor();
+    const frame = page.frameLocator('.dshpad-root iframe');
     await frame.getByText('已授权读数：42', { exact: true }).waitFor();
     await frame.getByRole('button', { name: '检查交互' }).click();
     await frame.getByRole('button', { name: '已点击' }).waitFor();
     await page.screenshot({ path: path.join(output, 'panels-desktop.png') });
-    const composer = page.locator('[data-composer-input]');
-    await composer.fill('保留的草稿');
-    await page.getByRole('button', { name: '添加面板', exact: true }).click();
-    await page.getByLabel('想创建什么面板？', { exact: true }).fill('展示今日三件事');
-    await page.getByRole('button', { name: '放入对话', exact: true }).click();
-    assert.match(await composer.innerText(), /^保留的草稿[\s\S]*展示今日三件事$/);
-    const draft = await composer.innerText();
-    await page.getByRole('button', { name: '更多操作', exact: true }).click();
-    await page.getByText('从侧栏移除', { exact: true }).click();
-    assert.equal(await page.locator('.dshpad-whale-panels iframe').count(), 0);
-    const savedPanels = JSON.parse(await fs.readFile(path.join(home, 'dsh-pad/panels.json')));
-    assert.equal(savedPanels.panels.length, 1, 'sidebar removal must not delete the panel');
-    await page.getByRole('button', { name: '添加面板', exact: true }).first().click();
-    await page.getByRole('button', { name: '添加已有：今日工作台', exact: true }).click();
-    await page.getByRole('tab', { name: '任务', exact: true }).click();
-    await add('整理今日清单');
-    assert.equal(app.ctx.get('whaleTodos').list()[0].sessionId, '', 'creation does not execute');
-    await menu('整理今日清单', '置顶');
-    await card('整理今日清单').locator('[aria-label="已置顶"]').waitFor({ state: 'attached' });
-    assert.equal(app.ctx.get('whaleTodos').list()[0].pinned, true);
-    await start('整理今日清单');
-    await card('整理今日清单').getByText('执行结束 · 待确认', { exact: true }).waitFor();
-    await card('整理今日清单').getByRole('button', { name: '查看成果', exact: true }).click();
-    assert.match(await card('整理今日清单').innerText(), /请人工确认成果/);
-    await card('整理今日清单').getByRole('button', { name: '打开关联对话', exact: true }).click();
-    await page.locator('[data-dsh-frame-region="center"]').getByText('已整理今日清单：检查布局、验证任务、确认面板。请人工确认成果。', { exact: true }).first().waitFor();
-    await page.getByRole('button', { name: '返回鲸鱼娘', exact: true }).click();
-    await wait(() => document.querySelector('[data-composer-input]')?.innerText.startsWith('保留的草稿'));
-    assert.equal(await composer.innerText(), draft);
-    await card('整理今日清单').getByRole('button', { name: '确认完成', exact: true }).click();
-    await menu('整理今日清单', '归档');
-    await page.locator('summary').filter({ hasText: '归档' }).click();
-    await card('整理今日清单').getByText('已完成', { exact: true }).waitFor();
-    await menu('整理今日清单', '移出归档');
-    await add('等待停止'); await start('等待停止');
-    await card('等待停止').getByText('正在执行', { exact: true }).waitFor();
-    await page.getByRole('button', { name: '退出模式', exact: true }).click();
-    // The native header's ResizeObserver remeasures its trailing reserve after
-    // display:none is released. Assert the settled layout, not that first frame.
-    await page.waitForFunction(expected => document.querySelector('[data-dsh-frame]')?.getAttribute('style') === expected, geometry, { timeout: 10000 });
-    assert.equal(await page.locator('[data-dsh-frame]').getAttribute('style'), geometry);
-    assert.equal(await composer.innerText(), draft);
-    assert.equal(app.ctx.get('whaleTodos').list().find(value => value.title === '等待停止').state, 'running', 'exit does not cancel work');
-    await page.getByRole('button', { name: '大肥鱼模式', exact: true }).click();
-    await menu('等待停止', '停止执行…');
-    await page.getByRole('dialog').getByRole('button', { name: '停止执行', exact: true }).click();
-    await card('等待停止').getByText('已取消', { exact: true }).waitFor();
-    await menu('等待停止', '删除任务卡…');
-    await page.getByRole('dialog').getByRole('button', { name: '删除任务卡', exact: true }).click();
-    await wait(() => document.querySelectorAll('[data-whale-todo]').length === 1);
-    await page.locator('[role="dialog"]').waitFor({ state: 'detached' });
-    await page.screenshot({ path: path.join(output, 'tasks-desktop.png') });
-    await page.getByRole('separator', { name: '调整右边栏宽度' }).focus();
-    await page.keyboard.press('ArrowLeft');
-    assert.equal(await page.getByRole('separator', { name: '调整右边栏宽度' }).getAttribute('aria-valuenow'), '376');
-    await page.getByRole('button', { name: '收起右边栏', exact: true }).click();
-    assert.equal(await page.getByRole('complementary', { name: '鲸鱼娘右边栏' }).isVisible(), false);
-    await page.getByRole('button', { name: '展开右边栏', exact: true }).click();
+
     await page.setViewportSize({ width: 760, height: 820 });
-    await wait(() => document.querySelector('[data-dsh-frame-region="center"]')?.inert === true);
-    await page.screenshot({ path: path.join(output, 'tasks-narrow.png') });
-    await page.keyboard.press('Escape');
-    assert.equal(await page.getByRole('dialog', { name: '鲸鱼娘右边栏' }).isVisible(), false);
-    await page.getByRole('button', { name: '展开右边栏', exact: true }).click();
+    await page.screenshot({ path: path.join(output, 'bots-narrow.png') });
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.setViewportSize({ width: 1440, height: 960 });
-    await page.screenshot({ path: path.join(output, 'tasks-dark.png') });
+    await page.screenshot({ path: path.join(output, 'bots-dark.png') });
+
     await page.reload();
     await page.waitForFunction(() => typeof window.__dshWhaleOpen === 'function');
+    await page.getByText('鲸鱼娘', { exact: true }).first().waitFor();
     await page.evaluate(() => window.__dshWhaleOpen());
-    await page.locator('html[data-dsh-whale-mode]').waitFor();
-    await card('整理今日清单').getByText('已完成', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('tab', { name: '任务', exact: true }).getAttribute('aria-selected'), 'true');
+    await page.locator('[data-dsh-bots-conv-action="home"]').waitFor();
+    await page.locator('[data-dsh-bots-conv-action="home"]').click();
+    await page.locator('[data-dsh-bots-right-panel]').waitFor();
+    await page.locator('[data-dsh-bots-right-panel]').getByText('鲸鱼娘', { exact: true }).first().waitFor();
+    assert.equal(await page.locator('html[data-dsh-whale-mode]').count(), 0);
     await fs.writeFile(path.join(output, 'browser-errors.json'), JSON.stringify(errors, null, 2));
     assert.deepEqual(errors, []);
-    await fs.writeFile(path.join(output, 'result.json'), JSON.stringify({ passed: true, checks: ['first-entry decline and manual entry', 'native conversation retained', 'iframe interaction', 'draft append', 'sidebar-only panel removal and restore', 'no autorun', 'pin', 'native Agent completion requires review', 'linked conversation', 'confirm/archive/unarchive', 'scoped stop/delete', 'exit preserves geometry/draft and running task', 'keyboard resize/collapse', 'narrow/dark', 'reload persistence'], model: 'local scripted adapter; no external model calls' }, null, 2));
+    await fs.writeFile(path.join(output, 'result.json'), JSON.stringify({ passed: true, checks: ['orca empty state and new bot modal via __dshWhaleOpen', 'bot creation and home chat open', 'right panel 4 tabs without fullscreen overlay', 'dsh-pad dock iframe authorization and interaction', 'narrow/dark', 'reload persistence'], model: 'local scripted adapter; no external model calls' }, null, 2));
     console.log(`Big Fish UI QA passed; evidence: ${output}`);
   }
 } catch (error) {

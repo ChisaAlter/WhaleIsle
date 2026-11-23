@@ -11,6 +11,9 @@
     includeRuntimeContext: false
     prefix: ''
 
+- id: time-context
+  name: '@deepseek-ai/dsh-time-context'
+
 # AGENTS.md is loaded from the home cwd; the host's dsh-whale:memory section
 # reads MEMORY.md live on each whale turn.
 - id: agent-instructions
@@ -40,6 +43,9 @@
 
 - id: tool-ask-user
   name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-schedule
+  name: '@deepseek-ai/dsh-tool-schedule'
 
 # Keep the long-lived conversation on the same compaction path as Standard.
 - id: compaction

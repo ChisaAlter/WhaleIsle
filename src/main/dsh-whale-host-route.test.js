@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 
 const whaleModule = pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'lib', 'index.js')).href;
 const scopeModule = pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'lib', 'scope.js')).href;

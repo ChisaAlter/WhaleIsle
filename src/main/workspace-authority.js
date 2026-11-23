@@ -318,16 +318,10 @@ function readHarnessRegisteredWorkspacePaths(homeDir = dshHome()) {
   return paths;
 }
 
-/**
- * App-created worktrees are execution directories, not user Workspace rows.
- * Only exact ready receipts beneath the desktop home add a root; neither the
- * Project store nor a receipt-supplied arbitrary path becomes authorized.
- */
-function readProjectExecutionPaths(homeDir = dshHome()) {
-  const paths = [];
-  let realHome;
-  try { realHome = fs.realpathSync.native(homeDir); } catch { return paths; }
-  const safePath = (...parts) => {
+const SAFE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/;
+
+function createSafeHomeResolver(realHome) {
+  return (...parts) => {
     let current = realHome;
     for (const part of parts) {
       current = path.join(current, part);
@@ -338,53 +332,171 @@ function readProjectExecutionPaths(homeDir = dshHome()) {
     }
     return current;
   };
+}
+
+function collectV2ProjectExecutionPaths(safePath, projectId, pushUnique) {
+  const projectFile = safePath('projects', projectId, 'project.json');
+  if (!projectFile) return;
+  let doc;
+  try {
+    doc = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+  } catch { return; }
+  const tasks = Array.isArray(doc?.tasks) ? doc.tasks : [];
+  for (const task of tasks) {
+    const taskId = typeof task?.id === 'string' ? task.id : '';
+    if (!SAFE_ID_RE.test(taskId)) continue;
+    if (typeof task?.worktreePath !== 'string' || !task.worktreePath.trim()) continue;
+    const cwd = safePath('project-worktrees', projectId, taskId);
+    if (!cwd) continue;
+    try {
+      const declaredReal = fs.realpathSync.native(path.resolve(task.worktreePath));
+      if (identityKey(declaredReal) === identityKey(cwd) && fs.statSync(cwd).isDirectory()) {
+        pushUnique(cwd);
+      }
+    } catch { /* Missing or moved worktree grants no authority. */ }
+  }
+}
+
+function isValidLegacyReceipt(record, projectId, workstreamId, cwd) {
+  return record.projectId === projectId
+    && record.workstreamId === workstreamId
+    && record.ownership === 'project'
+    && record.mode === 'worktree'
+    && record.state === 'ready'
+    && typeof record.receipt === 'string'
+    && Boolean(record.receipt)
+    && typeof record.canonicalPath === 'string'
+    && identityKey(record.canonicalPath) === identityKey(cwd)
+    && record.directoryIdentity === identityKey(cwd);
+}
+
+function collectLegacyProjectExecutionPaths(safePath, projectId, pushUnique) {
+  const bindings = safePath('projects', projectId, 'internal', 'desktop-workspaces');
+  if (!bindings) return;
+  let files;
+  try { files = fs.readdirSync(bindings); } catch { return; }
+  for (const filename of files) {
+    const workstreamId = filename.replace(/\.json$/, '');
+    if (filename !== `${workstreamId}.json` || !SAFE_ID_RE.test(workstreamId)) continue;
+    const file = safePath('projects', projectId, 'internal', 'desktop-workspaces', filename);
+    const cwd = safePath('project-worktrees', projectId, workstreamId);
+    if (!file || !cwd) continue;
+    try {
+      const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (!isValidLegacyReceipt(record, projectId, workstreamId, cwd)) continue;
+      if (!fs.statSync(cwd).isDirectory()) continue;
+      pushUnique(cwd);
+    } catch { /* An unavailable or invalid receipt grants no authority. */ }
+  }
+}
+
+/**
+ * App-created worktrees are execution directories, not user Workspace rows.
+ * Only exact ready receipts beneath the desktop home add a root; neither the
+ * Project store nor a receipt-supplied arbitrary path becomes authorized.
+ */
+function readProjectExecutionPaths(homeDir = dshHome()) {
+  const paths = [];
+  let realHome;
+  try { realHome = fs.realpathSync.native(homeDir); } catch { return paths; }
+  const safePath = createSafeHomeResolver(realHome);
   const projects = safePath('projects');
   if (!projects) return paths;
   let projectIds;
   try { projectIds = fs.readdirSync(projects); } catch { return paths; }
-  for (const projectId of projectIds) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(projectId)) continue;
-    const bindings = safePath('projects', projectId, 'internal', 'desktop-workspaces');
-    if (!bindings) continue;
-    let files;
-    try { files = fs.readdirSync(bindings); } catch { continue; }
-    for (const filename of files) {
-      const workstreamId = filename.replace(/\.json$/, '');
-      if (filename !== `${workstreamId}.json` || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(workstreamId)) continue;
-      const file = safePath('projects', projectId, 'internal', 'desktop-workspaces', filename);
-      const cwd = safePath('project-worktrees', projectId, workstreamId);
-      if (!file || !cwd) continue;
-      try {
-        const record = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (record.projectId !== projectId || record.workstreamId !== workstreamId
-          || record.ownership !== 'project' || record.mode !== 'worktree' || record.state !== 'ready'
-          || typeof record.receipt !== 'string' || !record.receipt
-          || typeof record.canonicalPath !== 'string'
-          || identityKey(record.canonicalPath) !== identityKey(cwd)
-          || record.directoryIdentity !== identityKey(cwd) || !fs.statSync(cwd).isDirectory()) continue;
-        paths.push(cwd);
-      } catch { /* An unavailable or invalid receipt grants no authority. */ }
+  const seen = new Set();
+  const pushUnique = (candidate) => {
+    const key = identityKey(candidate);
+    if (!seen.has(key)) {
+      seen.add(key);
+      paths.push(candidate);
     }
+  };
+  for (const projectId of projectIds) {
+    if (!SAFE_ID_RE.test(projectId)) continue;
+    collectV2ProjectExecutionPaths(safePath, projectId, pushUnique);
+    collectLegacyProjectExecutionPaths(safePath, projectId, pushUnique);
   }
   return paths;
 }
 
+function readV2ProjectPaths(homeDir) {
+  const paths = [];
+  let realHome;
+  try { realHome = fs.realpathSync.native(homeDir); } catch { return paths; }
+  const projectsDir = path.join(realHome, 'projects');
+  try {
+    if (fs.lstatSync(projectsDir).isSymbolicLink()
+      || identityKey(fs.realpathSync.native(projectsDir)) !== identityKey(projectsDir)) return paths;
+  } catch { return paths; }
+  let projectIds;
+  try { projectIds = fs.readdirSync(projectsDir); } catch { return paths; }
+  for (const projectId of projectIds) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(projectId)) continue;
+    const projectDir = path.join(projectsDir, projectId);
+    const projectFile = path.join(projectDir, 'project.json');
+    try {
+      if (fs.lstatSync(projectDir).isSymbolicLink()
+        || identityKey(fs.realpathSync.native(projectDir)) !== identityKey(projectDir)) continue;
+      if (fs.lstatSync(projectFile).isSymbolicLink()
+        || identityKey(fs.realpathSync.native(projectFile)) !== identityKey(projectFile)) continue;
+      const doc = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
+      if (typeof doc?.workspace !== 'string' || !doc.workspace.trim()) continue;
+      const real = fs.realpathSync.native(path.resolve(doc.workspace));
+      if (fs.statSync(real).isDirectory()) paths.push(real);
+    } catch { /* Missing or malformed v2 project record never disables other projects. */ }
+  }
+  return paths;
+}
+
+function verifiedProjectPaths(projects) {
+  if (!Array.isArray(projects)) return [];
+  return projects.flatMap(project => {
+    if (!project || !['ready', 'archived'].includes(project.lifecycle) || typeof project.canonicalWorkingDirectory !== 'string') return [];
+    try {
+      const real = fs.realpathSync.native(project.canonicalWorkingDirectory);
+      return identityKey(real) === project.directoryIdentity && identityKey(real) === identityKey(project.canonicalWorkingDirectory) ? [real] : [];
+    } catch { return []; }
+  });
+}
+
+function readPerRecordProjects(homeDir) {
+  const dir = path.join(homeDir, 'storages', 'whale_project_local', 'projects');
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return null; }
+  const projects = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    try {
+      const doc = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+      if (doc?.version === 1 && doc.record && typeof doc.record === 'object') projects.push(doc.record);
+    } catch { /* One malformed record file never disables other registered projects. */ }
+  }
+  return projects;
+}
+
 /** Project selections are registered roots without creating ordinary Workspace rows. */
 function readProjectRegisteredPaths(homeDir = dshHome()) {
-  try {
-    const file = path.join(homeDir, 'storages', 'whale_project_local.json');
-    const document = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (document.unit?.name !== 'whale_project_local') return [];
-    const projects = document.tables?.state?.catalog?.projects;
-    if (!Array.isArray(projects)) return [];
-    return projects.flatMap(project => {
-      if (!['ready', 'archived'].includes(project.lifecycle) || typeof project.canonicalWorkingDirectory !== 'string') return [];
-      try {
-        const real = fs.realpathSync.native(project.canonicalWorkingDirectory);
-        return identityKey(real) === project.directoryIdentity && identityKey(real) === identityKey(project.canonicalWorkingDirectory) ? [real] : [];
-      } catch { return []; }
-    });
-  } catch { return []; }
+  const roots = [...readV2ProjectPaths(homeDir)];
+  const perRecord = readPerRecordProjects(homeDir);
+  if (perRecord !== null) {
+    roots.push(...verifiedProjectPaths(perRecord));
+  } else {
+    try {
+      const file = path.join(homeDir, 'storages', 'whale_project_local.json');
+      const document = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (document.unit?.name === 'whale_project_local') {
+        roots.push(...verifiedProjectPaths(document.tables?.state?.catalog?.projects));
+      }
+    } catch { /* No legacy single-file project catalog. */ }
+  }
+  const seen = new Set();
+  return roots.filter(root => {
+    const key = identityKey(root);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**

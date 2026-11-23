@@ -173,6 +173,7 @@ export default [
       // 范围内的打包 / 第三方产物
       'src/whale-ui/**', // TS 项目，由 tsc 负责
       'src/renderer/whale-ui/**', // 同上（任务约定路径）
+      'src/renderer/openui/**', // gitignore 生成产物
       'mobile/web/whale-ui/**', // 同上
       'src/renderer/welcome/welcome.js', // 打包产物（React production bundle）
       'src/renderer/pet-live2d/anime4k.js', // 第三方 UMD bundle（anime4k.LICENSE）

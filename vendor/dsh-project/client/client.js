@@ -1,1922 +1,4335 @@
-window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
-  const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
-  const { createPortal, flushSync } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, StateDot, Tag, MarkdownText, Toast, Tooltip, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
-  const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
-  const { subagentChatAddress } = require('@deepseek-ai/dsh-client-ui-subagent');
-  const NS = 'dsh-project';
-  const zh = {
-    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', rowCreate: '在此目录新建 Project', backgroundError: 'Project 出错：{message}', dirMissing: '找不到这个目录。', dirNotDirectory: '这个路径不是文件夹。', dirRoot: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。', dirHome: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。', dirSystemData: '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。', dirAppData: '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。', rowOpen: '打开 Project', heroHint: '以当前目录开启 Project，已输入的内容会一起带过去', heroOpenHint: '打开此目录的 Project，已输入的内容会一起带过去', loading: '正在读取…', close: '关闭', refresh: '刷新',
-    requirements: '需求', requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
-    requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '等待依赖、资源或执行容量', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
-    archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', archived: '已归档',
-    directory: 'Project 工作目录', openDirectory: '打开项目目录', materials: '项目资料', progress: '工作进度',
-    noWork: '在这里提出需求，后续可以继续同一项工作。', process: '成员记录', viewProcess: '查看记录', viewResult: '查看成果', workDetails: '详情', executionInfo: '执行信息', earlierWork: '更早工作',
-    processHint: '需要调整这项工作时，在主对话中继续说明。', noProcess: '暂无记录。', priorWorkFailed: '此前工作失败', priorWorkStopped: '此前工作已停止', priorReportPending: '此前报告待汇总', priorWorkPending: '此前工作尚未完成',
-    older: '更早记录', workRequest: '工作要求', earlierRequests: '更早要求', teamMessage: '团队消息',
-    newer: '最新记录', previous: '更早一页', next: '更新一页', assistant: '助手', tool: '工具',
-    result: '结果', failed: '失败', open: '等待工作', running: '进行中', blocked: '需要处理', done: '已完成',
-    provisioning: '正在准备', active: '执行中', idle: '空闲', stopping: '正在停止', paused: '已停止',
-    pause: '暂停后台工作', resume: '解除暂停', resumeHint: '在主对话中提出新的要求，即可继续原工作。',
-    checklistTitle: '任务清单', checklistProgress: '{done}/{total} 已完成',
-    membersWorking: '{count} 个成员工作中', membersWaiting: '{count} 项工作等待中', openTeam: '打开智能体团队',
-    memberRecordTitle: '成员工作记录', memberComposerHint: '在这里查看成员的执行过程。安排或调整工作，请回到协调者对话。', backToLead: '回到协调者',
-    stop: '停止后台工作', stopWork: '停止这项工作', archive: '归档项目', restore: '恢复项目',
-    notes: '笔记', preferences: '项目要求', docs: '全部文档', allResults: '全部成果', noDocs: '暂无项目文档。', noResults: '完成工作后，成果会保存在这里。',
-    generatedNotes: '工作记录', userNotes: '项目笔记', remainingIssues: '待处理事项', reportDetails: '报告详情', reportSource: '成员报告',
-    keyEvidence: '关键验证', noEvidence: '这份报告未提供验证记录。', backToResults: '返回成果', delivered: '已交付', partialDelivery: '部分交付', historicalDelivery: '历史交付', historicalDeliveryHint: '这是旧版本保存的交付记录，保留原结论和资料；不代表当前要求已经完成。继续工作时，请在主对话中说明新的要求。', deliveryDetails: '交付详情', memberReports: '成员报告与文件', earlierDeliveries: '更早交付', requestVersion: '要求版本', executionRound: '执行轮次', roundEnded: '本轮执行已结束', historicalError: '本轮曾遇到错误', selectRun: '定位执行记录', locatingRun: '正在定位这轮执行记录…', runRecordsMissing: '未找到这轮执行的原始记录。', recordedAt: '记录时间', saveAndClose: '保存并关闭', saveBeforeClose: '保存修改后再关闭？', resultMissing: '原报告当前不可用，请查看错误详情。',
-    notesHint: '记录你希望保留的背景和想法。', preferencesHint: '设置本项目的长期约定，例如代码风格、测试命令和交付要求；后续明确要求优先。',
-    storeHint: '查看项目成果，管理此项目的笔记与长期偏好。', save: '保存', saved: '已保存', saveFailed: '修改尚未保存，你可以重试或继续编辑。', materialsError: '操作未完成，请查看错误详情。', textTooLong: '内容过长，请缩短后再保存。',
-    workResults: '成果', resultHistory: '其他报告版本', currentResult: '最新成果', previousResult: '历史成果', completed: '已完成', modifiedArtifact: '文件在报告后发生了变化，当前打开的是最新内容。', archivedMaterials: '恢复项目后可编辑笔记和项目要求。',
-    openFile: '打开文件', fileMore: '文件操作', diff: '当前目录改动', diffScope: '可能包含原有改动及其他工作的修改。',
-    fileLocation: '文件位置', artifactMaterials: '项目资料', artifactExisting: '项目目录', artifactWorktree: '独立分支', errorDetails: '错误详情', modelSettings: '模型设置',
-    summaryCredentialHint: '当前模型未配置凭据。请补充凭据，或在输入框选择已配置的模型，再重新汇总。', summaryErrorHint: '本次汇总未完成。请查看错误详情，处理原因后重新汇总。', sidebarSummaryFailed: '汇总失败', sidebarPendingSummary: '等待汇总',
-    noDiff: '当前没有文件差异。', diffWorkingDirectory: '工作目录', diffRepositoryPath: '仓库内路径', branch: '分支', readonly: '查看项目文件，不修改文件', docsScope: '修改已授权的文档', developmentScope: '执行已授权的开发工作', worktree: '独立分支', existing: '项目目录',
-    copy: '复制', copied: '已复制', footnotes: '脚注', unavailable: 'Project 暂不可用',
-    evidence: '验证记录', pendingSummary: '正在汇总', pendingDelivery: '交付未完成', needsReview: '结果需复核', roundDelivered: '本轮已交付', summaryFailed: '成果已保存，汇总未完成', retrySummary: '重新汇总', resultUpdated: '结果已更新，请查看最新结果。', handoverErrorHint: '本次交付未完成。已有成果仍保留，处理错误后可重新汇总。', authorityErrorHint: '这项要求缺少可核对的原始授权记录。请在主对话中重新说明或修订要求，再继续工作。',
-    retrySummaryPrompt: '请重新汇总以下已保存结果，说明成果、验证和剩余问题；只读取已有报告，不重新执行后台工作：', waitingDependencies: '等待前置工作完成', waitingDirectory: '等待其他工作释放目录', waitingCapacity: '等待团队空出执行名额', prerequisitesChanged: '依据已变化', prerequisitesHint: '前置工作已收到新要求。这份报告保留原有结果，需按当前要求复核。', deliveryChangedHint: '要求或依据已变化。这份交付保留原版本结果，需按当前要求复核。',
-    notGit: '当前目录不是 Git 仓库，无法读取 Git 差异。', unsaved: '修改尚未保存', discard: '放弃修改', saveAndSwitch: '保存并切换', discardAndSwitch: '放弃并切换', keepEditing: '继续编辑', saveBeforeSwitch: '是否保存修改，再切换页面？',
-    taskList: '任务', taskCurrent: '当前工作', taskCompleted: '已交付', taskArchive: '归档任务', taskArchiveEmpty: '还没有归档任务。', taskEmptyTitle: '还没有任务', taskEmpty: '直接在主对话里说你要完成什么。协调者开始后，这里会显示进度与成果。', taskDetail: '任务详情', taskOverview: '概览', taskTeam: '团队', taskResults: '成果', taskActivity: '活动', taskMaterials: '成果与资料', taskBack: '返回任务', teamBack: '返回团队', taskArchiveAction: '归档任务', taskRestoreAction: '移回任务列表', taskArchiveUnavailable: '只有已完成交付的任务可以归档。', taskMemberCount: '位成员', taskWorkCount: '项工作', taskNoMembers: '协调者尚未安排团队成员。', taskNoResults: '尚无最终交付；已有成员报告会继续保留。', taskNoActivity: '尚无执行记录。', taskRevision: '第 {revision} 版要求', observerStrip: '收起', observerOpen: '打开 Project 面板', observerIdle: '待命', observerArchiving: '归档中', taskMore: '加载更多',
-    projectOverview: '项目概览', observerExpand: '展开', visualResults: '可视化成果', resultFiles: '相关文件',
-    teamLead: '协调者', teamMember: '团队成员', teamLeadRole: '安排工作与汇总交付', teamLeadWorking: '正在处理主对话',
-    teamLeadWaiting: '等待主对话继续安排', teamLeadBackground: '团队成员在后台工作，协调者当前未运行', teamAssigned: '已分配，当前未运行', teamReported: '已提交报告', teamReady: '待命',
-    teamStatusUnavailable: '当前运行状态不可用', teamNoAssignment: '暂无分配工作', teamNoMatch: '没有匹配的成员或工作。',
-    teamOtherWork: '其他工作', teamTarget: '消息目标', teamSession: '会话 ID',
-    observerTaskProgress: '任务进度', observerTodo: '当前待办', observerTodoPending: '待完成', observerExecutor: '当前执行者', observerFlow: '从需求到交付', observerNoTodo: '尚未安排具体工作', observerCard: '收起详情', observerIsland: '收为灵动浮条', observerReturnCurrent: '返回当前任务', observerTaskCount: '项当前任务', observerReports: '份报告已提交', observerAwaitDelivery: '等待协调者交付', observerDeliverToYou: '交付给你', observerRegistered: '已登记', observerReportCount: '{count} 份', observerNoCurrent: '没有当前任务',
+/**
+ * WhaleIsle Projects — Client half.
+ *
+ * Full-page three-column project workspace registered through four DSH slots:
+ *   1. `sidebar.panellist` (id: 'projects', order: 30) — left sidebar entry.
+ *   2. `main` (key: 'projects') — three-column container-aware board page.
+ *   3. `projects.conversation` — embedded native DSH conversation surface.
+ *   4. `tool.call.toolview` (key: 'projects_dispatch') — clickable dispatch card.
+ *
+ * Data flows through same-origin `/projects-api/*` REST routes and real-time
+ * `EventSource('/projects-api/events')` SSE updates. All styling strictly uses
+ * `--dsw-*` / `--ds-*` design tokens and `@deepseek-ai/dsh-client-ui-primitives`.
+ */
 
-  };
-  const en = {
-    requirements: 'Requests', requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
-    requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
-    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', rowCreate: 'New Project here', backgroundError: 'Project error: {message}', dirMissing: 'This folder cannot be found.', dirNotDirectory: 'This path is not a folder.', dirRoot: 'A drive root cannot be a Project folder. Choose a specific project folder.', dirHome: 'Your home folder cannot be a Project folder. Choose a specific project folder inside it.', dirSystemData: 'System configuration folders (such as AppData, .config or .ssh) cannot be Project folders. Choose your project folder.', dirAppData: 'This is Whale Isle’s own data folder and cannot be a Project folder. Choose your project folder.', rowOpen: 'Open Project', heroHint: 'Start a Project in this directory; your draft comes along', heroOpenHint: 'Open this directory’s Project; your draft comes along', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
-    archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', archived: 'Archived',
-    directory: 'Project working directory', openDirectory: 'Open project directory', materials: 'Project materials', progress: 'Work progress',
-    noWork: 'Describe what you need here, and continue the same work later.', process: 'Member history', viewProcess: 'View history', viewResult: 'View results', workDetails: 'Details', executionInfo: 'Execution details', earlierWork: 'Earlier work',
-    processHint: 'Continue in the main conversation to request changes to this work.', noProcess: 'No records yet.', priorWorkFailed: 'Earlier work failed', priorWorkStopped: 'Earlier work stopped', priorReportPending: 'Earlier report awaits handover', priorWorkPending: 'Earlier work is unfinished',
-    older: 'Earlier records', workRequest: 'Assignment', earlierRequests: 'Earlier requests', teamMessage: 'Team message',
-    newer: 'Latest records', previous: 'Earlier page', next: 'Later page', assistant: 'Assistant', tool: 'Tool',
-    result: 'Result', failed: 'Failed', open: 'Waiting for work', running: 'In progress', blocked: 'Needs attention', done: 'Done',
-    provisioning: 'Preparing', active: 'Running', idle: 'Idle', stopping: 'Stopping', paused: 'Stopped',
-    pause: 'Pause background work', resume: 'Unpause', resumeHint: 'Give a new instruction in the main conversation to continue the original work.',
-    checklistTitle: 'Checklist', checklistProgress: '{done}/{total} done',
-    membersWorking: 'Working: {count}', membersWaiting: 'Waiting: {count}', openTeam: 'Open Agent Team',
-    memberRecordTitle: 'Member work records', memberComposerHint: 'View this member’s progress here. Return to the coordinator to assign or change work.', backToLead: 'Back to coordinator',
-    stop: 'Stop background work', stopWork: 'Stop this work', archive: 'Archive project', restore: 'Restore project',
-    notes: 'Notes', preferences: 'Project instructions', docs: 'All documents', allResults: 'All results', noDocs: 'No Project documents yet.', noResults: 'Results will be saved here when work is completed.',
-    generatedNotes: 'Work history', userNotes: 'Project notes', remainingIssues: 'Open issues', reportDetails: 'Report details', reportSource: 'Member report',
-    keyEvidence: 'Key verification', noEvidence: 'This report has no verification records.', backToResults: 'Back to results', delivered: 'Delivered', partialDelivery: 'Partial delivery', historicalDelivery: 'Historical delivery', historicalDeliveryHint: 'This delivery was saved by an earlier version. Its conclusion and materials remain available, but it does not confirm completion of the current request. Describe a new request in the main conversation to continue.', deliveryDetails: 'Delivery details', memberReports: 'Member reports and files', earlierDeliveries: 'Earlier deliveries', requestVersion: 'Request version', executionRound: 'Execution round', roundEnded: 'This execution ended', historicalError: 'An error occurred in this execution', selectRun: 'Locate execution records', locatingRun: 'Locating this execution’s records…', runRecordsMissing: 'The original records for this execution were not found.', recordedAt: 'Recorded at', saveAndClose: 'Save and close', saveBeforeClose: 'Save your changes before closing?', resultMissing: 'The original report is unavailable. Review the error details.',
-    notesHint: 'Keep the background and ideas you want to remember.', preferencesHint: 'Set this Project’s standing instructions, such as code style, test commands and delivery requirements. Later explicit requests take precedence.',
-    storeHint: 'View results and manage this Project’s notes and preferences.', save: 'Save', saved: 'Saved', saveFailed: 'Changes are not saved. Retry or keep editing.', materialsError: 'The operation did not finish. Review the error details.', textTooLong: 'This content is too long. Shorten it before saving.',
-    workResults: 'Results', resultHistory: 'Other report versions', currentResult: 'Latest result', previousResult: 'Historical result', completed: 'Completed', modifiedArtifact: 'The file changed after this report. The preview shows its latest content.', archivedMaterials: 'Restore the Project to edit notes and instructions.',
-    openFile: 'Open file', fileMore: 'File actions', diff: 'Current directory changes', diffScope: 'May include pre-existing changes and changes from other work.',
-    fileLocation: 'File location', artifactMaterials: 'Project materials', artifactExisting: 'Project directory', artifactWorktree: 'Independent branch', errorDetails: 'Error details', modelSettings: 'Model settings',
-    summaryCredentialHint: 'The current model has no credentials. Add credentials or choose a configured model in the composer, then summarize again.', summaryErrorHint: 'The summary did not finish. Review the error details, address the cause, then summarize again.', sidebarSummaryFailed: 'Summary failed', sidebarPendingSummary: 'Awaiting summary',
-    noDiff: 'There are no current file changes.', diffWorkingDirectory: 'Working directory', diffRepositoryPath: 'Repository path', branch: 'Branch', readonly: 'Inspect Project files without modifying them', docsScope: 'Edit authorized documents', developmentScope: 'Perform authorized development', worktree: 'Independent branch', existing: 'Project directory',
-    copy: 'Copy', copied: 'Copied', footnotes: 'Footnotes', unavailable: 'Project is currently unavailable',
-    evidence: 'Verification records', pendingSummary: 'Preparing summary', pendingDelivery: 'Delivery incomplete', needsReview: 'Results need review', roundDelivered: 'This request is delivered', summaryFailed: 'Results saved; summary incomplete', retrySummary: 'Summarize again', resultUpdated: 'The result changed. View the latest result.', handoverErrorHint: 'The handover did not complete. Saved results remain available; resolve the error and summarize again.', authorityErrorHint: 'The original authorization for this request cannot be verified. Restate or revise the request in the main conversation before continuing.',
-    retrySummaryPrompt: 'Summarize the following saved result again, including changes, verification and remaining issues. Read the existing report without rerunning background work:', waitingDependencies: 'Waiting for prerequisite work', waitingDirectory: 'Waiting for other work to release the directory', waitingCapacity: 'Waiting for an available team slot', prerequisitesChanged: 'Prerequisites changed', prerequisitesHint: 'Prerequisite work has received a new request. This report retains the original result and needs review against the current request.', deliveryChangedHint: 'The request or its prerequisites changed. This delivery retains its original version and needs review against the current request.',
-    notGit: 'This directory is not a Git repository; Git changes are unavailable.', unsaved: 'Unsaved changes', discard: 'Discard changes', saveAndSwitch: 'Save and switch', discardAndSwitch: 'Discard and switch', keepEditing: 'Keep editing', saveBeforeSwitch: 'Save your changes before switching pages?',
-    taskList: 'Tasks', taskCurrent: 'Current work', taskCompleted: 'Delivered', taskArchive: 'Archived tasks', taskArchiveEmpty: 'No archived tasks yet.', taskEmptyTitle: 'No tasks yet', taskEmpty: 'Tell the Lead what you want to accomplish in the main conversation. Progress and results appear here when work starts.', taskDetail: 'Task details', taskOverview: 'Overview', taskTeam: 'Team', taskResults: 'Results', taskActivity: 'Activity', taskMaterials: 'Results & materials', taskBack: 'Back to tasks', teamBack: 'Back to team', taskArchiveAction: 'Archive task', taskRestoreAction: 'Move to task list', taskArchiveUnavailable: 'Only delivered tasks can be archived.', taskMemberCount: 'members', taskWorkCount: 'team jobs', taskNoMembers: 'The Lead has not assigned a team member yet.', taskNoResults: 'No final delivery yet. Existing member reports remain available.', taskNoActivity: 'No execution records yet.', taskRevision: 'Request version {revision}', observerStrip: 'Collapse', observerOpen: 'Open Project panel', observerIdle: 'Ready', observerArchiving: 'Archiving', taskMore: 'Load more',
-    projectOverview: 'Project overview', observerExpand: 'Expand', visualResults: 'Visual results', resultFiles: 'Related files',
-    teamLead: 'Coordinator', teamMember: 'Team member', teamLeadRole: 'Assigns work and prepares delivery', teamLeadWorking: 'Working in the main conversation',
-    teamLeadWaiting: 'Awaiting the next request in the main conversation', teamLeadBackground: 'Team members are working in the background; the coordinator is not running.', teamAssigned: 'Assigned · not running', teamReported: 'Report submitted', teamReady: 'Ready',
-    teamStatusUnavailable: 'Current runtime status unavailable', teamNoAssignment: 'No work assigned', teamNoMatch: 'No matching members or work.',
-    teamOtherWork: 'Other work', teamTarget: 'Message target', teamSession: 'Session ID',
-    observerTaskProgress: 'Task progress', observerTodo: 'Current to-dos', observerTodoPending: 'Pending', observerExecutor: 'Current executor', observerFlow: 'From request to delivery', observerNoTodo: 'No work has been assigned yet', observerCard: 'Collapse details', observerIsland: 'Collapse to status strip', observerReturnCurrent: 'Back to current task', observerTaskCount: 'current tasks', observerReports: 'reports submitted', observerAwaitDelivery: 'Awaiting the coordinator’s delivery', observerDeliverToYou: 'Delivery to you', observerRegistered: 'Registered', observerReportCount: '{count} reports', observerNoCurrent: 'No current task',
+window.__ModuleLoader__.load({
+  id: 'dsh-project',
+  factory(require) {
+    const React = require('react')
+    const h = React.createElement
+    const { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } = React
+    const Primitives = require('@deepseek-ai/dsh-client-ui-primitives') || {}
 
-  };
-  Object.assign(zh, { requestSections: '需求详情', requestProgress: '进度', requestResults: '成果', leadPlan: '协调者计划', stageRail: '执行阶段', stageArranging: '安排', stageExecuting: '执行', stageSummarizing: '汇总', stageDelivered: '交付', sectionMembers: '成员', panelSections: '面板内容', pinObserver: '固定观察', returnFloat: '返回浮窗', closeObserver: '关闭观察', statusUnknown: '状态未知', statusWaiting: '等待中', statusHandover: '等待交付', statusArranging: '正在安排', statusSummarizing: '正在汇总', retryRead: '重新读取', retainedStatus: '连接中断，以下为上次确认的数据。', queueRetry: '重试队列操作', allRequestDetails: '查看完整需求', workPreviewHint: '完整工作记录正在读取…' });
-  Object.assign(en, { requestSections: 'Request details', requestProgress: 'Progress', requestResults: 'Results', leadPlan: 'Coordinator plan', stageRail: 'Execution stages', stageArranging: 'Arrange', stageExecuting: 'Execute', stageSummarizing: 'Summarize', stageDelivered: 'Deliver', sectionMembers: 'Members', panelSections: 'Panel sections', pinObserver: 'Keep observing', returnFloat: 'Return to popover', closeObserver: 'Close observer', statusUnknown: 'Unknown', statusWaiting: 'Waiting', statusHandover: 'Awaiting delivery', statusArranging: 'Arranging', statusSummarizing: 'Summarizing', retryRead: 'Reload', retainedStatus: 'Disconnected; showing the last confirmed data.', queueRetry: 'Retry queue action', allRequestDetails: 'View full request', workPreviewHint: 'Loading full work records…' });
-  Object.assign(zh, { researchHosts: '研究站点', researchHostsHint: '限制研究成员只能读取这些站点：每行一个域名（如 example.com，同时包含它的子域），用 # 写注释。留空表示不限制。', researchHostsPlaceholder: 'example.com\ndocs.example.org  # 注释' });
-  Object.assign(en, { researchHosts: 'Research sites', researchHostsHint: 'Limit research members to these sites: one domain per line (example.com also covers its subdomains), # starts a comment. Leave it empty for no limit.', researchHostsPlaceholder: 'example.com\ndocs.example.org  # comment' });
-  Object.assign(zh, { requestRoleResearch: '调研', researchSources: '查阅的来源', searchedPrefix: '搜索：' });
-  Object.assign(en, { requestRoleResearch: 'Research', researchSources: 'Sources consulted', searchedPrefix: 'Searched: ' });
-  Object.assign(zh, { needsYou: '需要你', groupActive: '进行中', stageAwaitingAnswer: '等你回答', stageAwaitingDecision: '等你决定', askFromMember: '成员在等你回答', askPlaceholder: '输入你的回答', askSend: '回答', askSent: '已回复，协调者处理中…', askIfUnanswered: '不回答时：{text}', askAnswer: '{title}：{answer}',
-    blockedRetry: '重试', blockedRetryPrompt: '请重试受阻的需求「{title}」。受阻原因：{reason}。先说明你准备怎么做；如果需要我提供什么，请用 project_ask 问我。', viewResults: '查看成果', statusNeedsYou: '{count} 项等你', statusSummaryRetrying: '汇总遇到临时故障，自动重试中', summaryRetrying: '临时故障，自动重试中（第 {attempt}/{of} 次）' });
-  Object.assign(en, { needsYou: 'Needs you', groupActive: 'In progress', stageAwaitingAnswer: 'Waiting for your answer', stageAwaitingDecision: 'Waiting for your decision', askFromMember: 'A member is waiting for your answer', askPlaceholder: 'Type your answer', askSend: 'Answer', askSent: 'Sent; the coordinator is on it…', askIfUnanswered: 'If you don’t answer: {text}', askAnswer: '{title}: {answer}',
-    blockedRetry: 'Retry', blockedRetryPrompt: 'Please retry the blocked requirement “{title}”. Reason: {reason}. Say how you plan to proceed; if you need something from me, ask with project_ask.', viewResults: 'View results', statusNeedsYou: '{count} need you', statusSummaryRetrying: 'Temporary failure, retrying the summary', summaryRetrying: 'Temporary failure, retrying automatically (attempt {attempt}/{of})' });
-  const charterLimit = 16000;
-  Object.assign(zh, {
-    preferences: '偏好', preferencesHint: '软性的习惯与偏好，例如回复风格、常用命令。必须遵守的内容请写进「项目规则」。',
-    charter: '项目规则', charterHint: '写下这个项目长期要遵守的规则，每条一行。协调者和每位成员每次工作都会读到；你在对话里明确要求破例时，协调者会先和你确认。',
-    charterPlaceholder: '例如：\n- 新增或修改的功能必须附带测试\n- 不要修改 vendor/ 目录\n- 交付前运行项目测试并报告结果',
-    charterUsage: '{used} / {limit} KB', charterTooLong: '规则超过 16 KB，请精简后再保存。', charterExamples: '常用规则',
-    charterExampleTests: '附带测试', charterExampleScope: '只改相关文件', charterExampleVerify: '交付前跑测试', charterExampleLanguage: '中文文案',
-    charterLineTests: '- 新增或修改的功能必须附带测试', charterLineScope: '- 只修改与需求相关的文件，不顺手重构无关代码',
-    charterLineVerify: '- 交付前运行项目测试，并在交付中报告结果', charterLineLanguage: '- 界面文案使用中文，代码注释使用英文',
-    statusDiscussing: '讨论中', statusQueued: '排队中', statusActive: '进行中', statusBlocked: '受阻', statusPartial: '部分交付', statusDelivered: '已交付',
-    statusNeedsReview: '需复查', statusPaused: '已暂停', statusStopping: '正在停止', statusCancelled: '已取消', statusArchived: '已归档', statusQueuePosition: '第 {position} 位',
-    nextStep: '下一步：', nextDependencies: '前置工作完成后自动继续', nextDirectory: '目录空出后自动继续', nextCapacity: '有空闲成员后自动继续',
-    nextFailure: '打开详情查看原因，或在对话里让协调者重试', nextSummary: '打开详情重新汇总', nextAuthority: '在对话里重新说明这个需求',
-    nextPartial: '在对话里补充，或让协调者继续未完成的部分', nextNeedsReview: '交付依据已变化，查看详情后重新加入队列', nextPaused: '点「继续」恢复',
-    nextDiscussing: '确认要做时，点「加入开发队列」', nextQueued: '前一项交付后自动开始', nextQueuedPreparing: '正在提前调查；前一项交付后开始开发', nextQueuedPaused: '队列已暂停，点「继续队列」恢复', nextCancelled: '需要时可从菜单重新加入队列',
-    boardSummary: '需求概况', boardActive: '进行中', boardBlocked: '受阻', boardWaiting: '待开始', boardDelivered: '已交付', requestUndo: '撤销',
-    deliveryFiles: '交付文件', deliveryFileCount: '{count} 个', stripFileCount: '{count} 个文件', viewChanges: '查看改动', viewResultPage: '查看结果页', moreFiles: '查看全部 {count} 个文件',
-    diffFileCount: '{count} 个文件有改动', diff_added: '新增', diff_deleted: '删除', diff_renamed: '重命名', diff_untracked: '未跟踪', diff_modified: '修改',
-    diffUntrackedHint: '新文件尚未纳入 Git，差异中不含其内容；可在目录中打开查看。', diffBinary: '二进制文件，不显示内容。', diffNoContent: '没有可显示的文本差异。', diffLinesCapped: '仅显示前 {count} 行；完整内容请打开目录查看。',
-    changeStats: '{count} 个文件', revertChanges: '撤销改动', revertTitle: '撤销这条需求的改动？', revertBody: '会把这条需求改动过的文件恢复到开始开发前的状态，其他文件不受影响。如果这些文件在交付后又被改过，撤销不会执行，你可以交给协调者处理。',
-    revertConfirm: '撤销改动', revertDone: '已撤销这条需求的改动。', revertConflictTitle: '无法自动撤销', revertConflictBody: '这些文件在交付后又被修改过，自动撤销会覆盖新的修改，因此没有执行任何更改。',
-    revertAsk: '交给协调者处理', revertAskPrompt: '请撤销需求「{title}」带来的改动。自动撤销遇到冲突（文件在交付后被修改过），请检查冲突文件，只还原这条需求的改动，保留之后的其他修改。',
-    statusReverted: '已撤销改动', nextReverted: '如需重新实现，在对话里说一声', requestDiffIsolated: '部分开发在独立工作目录中进行，那些改动不在此列，也不能从这里撤销。', requestDiffScope: '这条需求从开始开发到交付的改动。', requestDiffLive: '这条需求从开始开发至今的改动，尚未交付。', requestDiffReverted: '这些改动已被撤销。',
-    decisionLog: '决策日志', decisionLogEmpty: '交付后，协调者的关键决策会自动记录在这里。',
-  });
-  Object.assign(en, {
-    preferences: 'Preferences', preferencesHint: 'Soft habits and preferences, such as reply style or common commands. Put anything that must always be followed in Project rules.',
-    charter: 'Project rules', charterHint: 'Write the standing rules for this Project, one per line. The coordinator and every member read them on every assignment; if you explicitly ask for an exception in the conversation, the coordinator confirms it with you first.',
-    charterPlaceholder: 'For example:\n- New or changed features must include tests\n- Do not modify the vendor/ directory\n- Run the project tests before delivery and report the result',
-    charterUsage: '{used} / {limit} KB', charterTooLong: 'Rules exceed 16 KB. Shorten them before saving.', charterExamples: 'Common rules',
-    charterExampleTests: 'Include tests', charterExampleScope: 'Related files only', charterExampleVerify: 'Test before delivery', charterExampleLanguage: 'Product language',
-    charterLineTests: '- New or changed features must include tests', charterLineScope: '- Change only files related to the requirement; no unrelated refactoring',
-    charterLineVerify: '- Run the project tests before delivery and report the result', charterLineLanguage: '- Keep user-facing text in the product language; write code comments in English',
-    statusDiscussing: 'Discussing', statusQueued: 'Queued', statusActive: 'In progress', statusBlocked: 'Blocked', statusPartial: 'Partly delivered', statusDelivered: 'Delivered',
-    statusNeedsReview: 'Needs review', statusPaused: 'Paused', statusStopping: 'Stopping', statusCancelled: 'Cancelled', statusArchived: 'Archived', statusQueuePosition: '#{position}',
-    nextStep: 'Next: ', nextDependencies: 'Continues automatically after its prerequisites finish', nextDirectory: 'Continues automatically when the directory is free', nextCapacity: 'Continues automatically when a member is free',
-    nextFailure: 'Open details for the cause, or ask the coordinator to retry', nextSummary: 'Open details to summarize again', nextAuthority: 'Restate this requirement in the conversation',
-    nextPartial: 'Add details in the conversation, or ask the coordinator to finish the rest', nextNeedsReview: 'Its delivery evidence changed; review details, then queue it again', nextPaused: 'Choose Continue to resume',
-    nextDiscussing: 'When you want it built, choose Add to development queue', nextQueued: 'Starts automatically after the previous delivery', nextQueuedPreparing: 'Investigating ahead; development starts after the previous delivery', nextQueuedPaused: 'The queue is paused; choose Continue queue', nextCancelled: 'You can queue it again from the menu',
-    boardSummary: 'Requirements overview', boardActive: 'In progress', boardBlocked: 'Blocked', boardWaiting: 'Up next', boardDelivered: 'Delivered', requestUndo: 'Undo',
-    deliveryFiles: 'Delivered files', deliveryFileCount: '{count}', stripFileCount: '{count} files', viewChanges: 'View changes', viewResultPage: 'View result page', moreFiles: 'View all {count} files',
-    diffFileCount: '{count} changed files', diff_added: 'Added', diff_deleted: 'Deleted', diff_renamed: 'Renamed', diff_untracked: 'Untracked', diff_modified: 'Modified',
-    diffUntrackedHint: 'This new file is not tracked by Git yet, so the diff has no content; open the directory to view it.', diffBinary: 'Binary file; content is not shown.', diffNoContent: 'No text differences to show.', diffLinesCapped: 'Showing the first {count} lines; open the directory for the full content.',
-    changeStats: '{count} files', revertChanges: 'Revert changes', revertTitle: 'Revert this requirement’s changes?', revertBody: 'Files changed by this requirement return to their state before development started; other files are untouched. If they changed again after delivery, nothing is reverted and you can hand it to the coordinator.',
-    revertConfirm: 'Revert changes', revertDone: 'This requirement’s changes were reverted.', revertConflictTitle: 'Could not revert automatically', revertConflictBody: 'These files changed after delivery. Reverting automatically would overwrite the newer edits, so nothing was changed.',
-    revertAsk: 'Ask the coordinator', revertAskPrompt: 'Please revert the changes from the requirement “{title}”. The automatic revert hit a conflict because the files changed after delivery; inspect the conflicting files and restore only this requirement’s changes while keeping later edits.',
-    statusReverted: 'Changes reverted', nextReverted: 'Say so in the conversation if you want it implemented again', requestDiffIsolated: 'Part of this work ran in an isolated worktree; those changes are not listed here and cannot be reverted from here.', requestDiffScope: 'Changes made by this requirement from the start of development to delivery.', requestDiffLive: 'Changes made by this requirement since development started; not delivered yet.', requestDiffReverted: 'These changes have been reverted.',
-    decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
-  });
-  const CSS = `
-    [data-project-rail="true"][data-project-rail-compact="false"]>[data-conversation-content]{margin-right:336px}
-    .dsh-project-task-rail{position:absolute;inset:84px 12px 12px auto;width:312px;display:flex;flex-direction:column;min-height:0;z-index:12;border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-2);box-shadow:0 8px 28px rgb(0 0 0 / .16);color:var(--dsw-alias-label-primary)}
-    [data-project-rail-compact="true"] .dsh-project-task-rail{bottom:calc(var(--project-composer-height,180px) + 12px);max-height:65%;width:min(340px,calc(100% - 24px))}
-    .dsh-project-rail-heading,.dsh-project-rail-footer,.dsh-project-rail-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;flex:none}
-    .dsh-project-rail-heading{font-size:14px;line-height:22px}
-    .dsh-project-rail-footer{border-top:1px solid var(--dsw-alias-border-standard)}
-    .dsh-project-rail-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 12px 12px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-label-tertiary) transparent}
-    .dsh-project-rail-tools{padding:0 0 8px}.dsh-project-rail-tools select{font:inherit;color:inherit;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-standard);border-radius:8px;padding:5px 8px;max-width:70%}
-    .dsh-project-rail-card{border:1px solid var(--dsw-alias-border-standard);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;line-height:20px;background:var(--dsw-alias-bg-base)}
-    .dsh-project-rail-card-title{display:flex;align-items:start;justify-content:space-between;gap:8px;width:100%;text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}
-    .dsh-project-rail-card-title strong{overflow-wrap:anywhere;font-size:14px;line-height:22px;font-weight:600}
-    .dsh-project-rail-card-title svg{flex:none;margin-top:4px}
-    .dsh-project-rail-status{display:flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary);margin:6px 0 10px;font-size:12px;line-height:18px}
-    .dsh-project-rail-work{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .dsh-project-rail-work p{flex-basis:100%;margin:0;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-rail-link{background:none;border:0;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere;flex:1}
-    .dsh-project-rail-summary{margin:10px 0 0;overflow-wrap:anywhere}
-    .dsh-project-rail-details{margin-top:12px;border-top:1px solid var(--dsw-alias-border-standard);padding-top:10px;overflow-wrap:anywhere}
-    .dsh-project-task-rail > .dsh-project-rail-details{margin:0 12px 12px;flex-shrink:0}
-    .dsh-project-rail-details p{margin:0 0 10px}.dsh-project-rail-details ul{padding-left:18px}.dsh-project-rail-details .dsh-project-actions{margin-top:12px}
-    .dsh-project-rail-empty{padding:18px 4px;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-rail-count{display:inline-block;min-width:3ch;text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-rail-card button:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:3px;border-radius:4px}
+    const NS = 'dsh-project'
+    const PANEL_ID = 'projects'
+    const API_BASE = '/projects-api'
 
-    .dsh-project-hero-option-wrap{display:inline-flex;border-radius:var(--dsw-radius-sm)}
-    .dsh-project-hero-option-wrap:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
-    .dsh-project-row-badge{flex:none;margin-left:6px;padding:0 5px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:16px;font-weight:500;white-space:nowrap}
-    /* The badge sits against the row's time; a fixed time width keeps every badge in one column ("刚刚" is 20px, "59分钟" 34px). */
-    :has(>.dsh-project-row-badge)+span{min-width:36px;text-align:right}
-    .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .dsh-project-heading{justify-content:space-between;gap:4px;flex-wrap:nowrap}
-    .dsh-project-list{display:flex;flex-direction:column;gap:2px}
-    .dsh-project-header{display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
-    .dsh-project-header-directory{min-width:0;max-width:100%}
-    .dsh-project-header-path{min-width:0;max-width:280px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}
-    .dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-materials-frame{display:flex;flex:1;min-height:0;overflow:hidden}
-    .dsh-project-composer-notice{display:flex;flex-direction:column;gap:12px;align-self:center;width:var(--dsh-composer-card-max-width);min-width:0;max-width:calc(100% - 16px);margin:8px auto;box-sizing:border-box;padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);corner-shape:round;background:var(--dsw-alias-bg-panel-solid);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}
-    .dsh-project-composer-notice-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
-    .dsh-project-composer-notice-copy>strong{color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14)}
-    .dsh-project-composer-notice p{margin:0;overflow-wrap:anywhere}
-    .dsh-project-composer-notice .dsh-project-actions{gap:8px}
-    .dsh-project-composer-notice .dsh-project-actions>button{flex:none;max-width:100%}
-    .dsh-project-muted{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}
-    .dsh-project-error{color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;font-size:13px}
-    .dsh-project-progress{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:8px;color:var(--dsw-alias-label-primary);font-size:13px}
-    .dsh-project-progress>p{margin:0}
-    .dsh-project-work{border-top:1px solid var(--dsw-alias-border-l2);padding-top:6px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;min-width:0}
-    .dsh-project-work>.dsh-project-actions{grid-column:2;grid-row:1}
-    .dsh-project-work>p,.dsh-project-work>button,.dsh-project-work>details{grid-column:1/-1}
-    .dsh-project-work>button{justify-self:start}
-    .dsh-project-work>p{margin:0}
-    .dsh-project-work-heading{flex-wrap:nowrap;min-width:0}
-    .dsh-project-work-heading strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-work-details>summary,.dsh-project-work-history>summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-work-details[open]>summary{margin-bottom:8px}
-    .dsh-project-work-detail-body{display:flex;flex-direction:column;gap:6px;min-width:0}
-    .dsh-project-work-history{display:flex;flex-direction:column;gap:8px}
-    .dsh-project-path{color:var(--dsw-alias-label-tertiary);font:12px monospace;overflow-wrap:anywhere}
-    .dsh-project-body{display:flex;flex-direction:column;gap:12px;min-width:0}
-    .dsh-project-artifact{display:flex;flex-direction:column;gap:4px;min-width:0}
-    .dsh-project-artifact-row{display:flex;align-items:center;gap:8px;min-width:0}
-    .dsh-project-artifact-title{flex:1;min-width:0;height:auto;min-height:32px;white-space:normal;overflow-wrap:anywhere;text-align:left;justify-content:flex-start}
-    .dsh-project-artifact-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:8px}
-    .dsh-project-artifact-row>span{flex-shrink:0}
-    .dsh-project-artifact>.dsh-project-path{padding:8px}
-    .dsh-project-error-details>summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-error-details pre{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-modal{width:min(760px,calc(100vw - 32px))}
-    .dsh-project-modal-content{max-height:80vh;overflow:hidden}
-    .dsh-project-modal-content>:first-child{flex-shrink:0}
-    .dsh-project-modal-content>:last-child{min-height:0;overflow:auto}
-    .dsh-project-editor{width:100%;min-height:240px;resize:vertical;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:12px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:1.6;box-sizing:border-box}
-    .dsh-project-materials{min-height:0;overflow:hidden!important}
-    .dsh-project-materials-tabs{flex-shrink:0}
-    .dsh-project-materials-content{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:16px}
-    .dsh-project-materials-footer{flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;gap:12px}
-    .dsh-project-materials-footer>.dsh-project-muted{flex:1}
-    .dsh-project-result{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-bottom:1px solid var(--dsw-alias-border-l2);min-width:0}
-    .dsh-project-result:first-child{padding-top:0}
-    .dsh-project-result-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0}
-    .dsh-project-result-heading strong{min-width:0;overflow-wrap:anywhere}
-    .dsh-project-result-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .dsh-project-result-body{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .dsh-project-result-disclosure>summary,.dsh-project-documents>summary{cursor:pointer;font-size:13px;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-result-disclosure[open]>summary{margin-bottom:8px}
-    .dsh-project-result-details{display:flex;flex-direction:column;gap:8px}
-    .dsh-project-work-detail-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .dsh-project-empty{margin:0;padding:4px 12px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center;line-height:1.5}
-    .dsh-project-result-conclusion{margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
-    .dsh-project-result-checks{display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.6;min-width:0}
-    .dsh-project-result-checks ul{margin:0;padding-left:20px;overflow-wrap:anywhere}
-    .dsh-project-materials-host{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1}
-    .dsh-project-materials-host[hidden],.dsh-project-results-list[hidden]{display:none}
-    .dsh-project-results-list{display:flex;flex-direction:column;gap:16px;min-width:0}
-    .dsh-project-context{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;margin-bottom:12px}
-    .dsh-project-context-label{font-size:13px;color:var(--dsw-alias-label-secondary);min-width:0;overflow-wrap:anywhere}
-    .dsh-project-record-heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-    .dsh-project-record-time{font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
-    .dsh-project-record-round{padding-top:16px;display:flex;flex-direction:column;gap:6px}
-    .dsh-project-record-runs{display:flex;flex-direction:column;gap:4px}
-    .dsh-project-record-runs button{height:auto;white-space:normal;text-align:left;justify-content:flex-start}
-    .dsh-project-result-heading>:last-child{flex-shrink:0;white-space:nowrap}
-    .dsh-project-record{font:12px/1.6 monospace;white-space:pre;overflow:auto;padding:10px;background:var(--dsw-alias-markdown-code-block);border-radius:12px;max-height:320px}
-    .dsh-project-record-row{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px}
-    .dsh-project-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-task-group-title{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:20px 0 4px;color:var(--dsw-alias-label-secondary);font-size:13px}
-    .dsh-project-task-group-title:first-child{padding-top:0}
-    .dsh-project-task-pagination{display:flex;gap:8px;justify-content:flex-end}
-    .dsh-project-task-detail{display:flex;flex-direction:column;gap:10px;min-width:0}
-    .dsh-project-task-queue-actions{display:flex;align-items:center;gap:8px;flex:0 1 auto;flex-wrap:wrap;min-width:0}
-    .dsh-project-task-queue-actions>button{min-height:28px}
-    .dsh-project-task-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-    .dsh-project-task-detail-heading h2{margin:0;min-width:0;overflow-wrap:anywhere;font-size:16px;line-height:24px}
-    .dsh-project-task-tab-body{min-width:0}
-    .dsh-project-task-section{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}
-    .dsh-project-task-section p,.dsh-project-task-member p{margin:0}
-    .dsh-project-task-section ul{margin:0;padding-left:20px;overflow-wrap:anywhere}
-    .dsh-project-task-member{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}
-    .dsh-project-task-member .dsh-project-actions{grid-column:1/-1}
-    .dsh-project-task-event{display:grid;grid-template-columns:100px minmax(0,1fr);gap:2px 8px;padding:8px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}
-    .dsh-project-task-event>span:last-child{grid-column:2;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-task-version{padding:8px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0;overflow-wrap:anywhere}
-    .dsh-project-task-version>summary{line-height:1.5}
-    .dsh-project-task-version>summary time{margin-right:8px}
-    .dsh-project-task-version>summary strong{color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-version .dsh-project-task-section{gap:4px}
-    .dsh-project-visual-results,.dsh-project-result-files{display:flex;flex-direction:column;gap:12px;min-width:0;padding:8px 0}
-    .dsh-project-visual-page{min-width:0;max-width:100%;overflow:hidden}
-    .dsh-project-result-checks{padding:8px 0}
-    .dsh-project-result-heading{align-items:flex-start;flex-wrap:wrap;line-height:24px}
-    @keyframes dsh-project-ticker{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(var(--project-ticker-end))}}
-    .dsh-project-header-panel{position:relative;flex:none;min-width:28px}
-    .dsh-project-header-trigger{display:inline-flex;align-items:center;gap:5px;min-height:28px;min-width:28px;max-width:100%;padding:3px 7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
-    .dsh-project-header-trigger svg{flex:none}.dsh-project-header-trigger:hover,.dsh-project-header-trigger:focus-visible,.dsh-project-header-trigger[aria-expanded=true]{color:var(--dsw-alias-label-primary)}
-    .dsh-project-header-trigger-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-header-badge{min-width:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
-    .dsh-project-header-badge[data-tone=info]{color:var(--dsw-alias-label-primary)}.dsh-project-header-badge[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
-    @container (max-width:560px){.dsh-project-header-trigger-label{display:none}.dsh-project-header-trigger{padding:0 4px;justify-content:center}}
-    .dsh-project-header-surface{position:fixed;z-index:100;display:flex;flex-direction:column;box-sizing:border-box;width:min(460px,100vw - 32px);max-height:min(680px,calc(100vh - 32px));padding:8px 2px 0;overflow:hidden;border-radius:12px;--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-14);outline:none}
-    .dsh-project-header-surface[hidden]{display:none}.dsh-project-header-surface::before{content:'';position:absolute;z-index:-1;inset:0;border-radius:12px;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter)}
-    .dsh-project-panel-body{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;min-width:0;padding:0 9px 16px 14px;overflow-y:auto;scrollbar-gutter:stable}
-    .dsh-project-requests-toolbar{display:flex;align-items:center;gap:4px;min-width:0;min-height:32px;flex:none}
-    .dsh-project-requests-toolbar>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--dsw-font-xxs-strong-12)}.dsh-project-requests-toolbar button{flex:none}
-    .dsh-project-requests-current,.dsh-project-requests-list{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .dsh-project-requests-empty{padding:16px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;font:var(--dsw-font-s-14)}.dsh-project-requests-empty p{margin:8px 0 0;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-task-card{position:relative;isolation:isolate;min-width:0;border-radius:14px;color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-surface{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2)}
-    .dsh-project-task-card:not([data-project-request-mode=strip]){padding:14px 16px 8px}.dsh-project-task-card[data-project-request-mode=strip]{height:44px;min-height:44px}
-    .dsh-project-task-strip{display:flex;align-items:center;gap:0;height:44px;padding:0 4px;min-width:0}.dsh-project-task-strip-open{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1;min-width:0;height:44px;padding:0 8px;font:var(--dsw-font-xxs-12)}
-    .dsh-project-task-strip-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}.dsh-project-task-strip-open>small{max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:var(--dsw-alias-label-secondary)}.dsh-project-task-strip-open>svg,.dsh-project-task-strip>.dsh-project-task-queue-actions{flex:none}
-    .dsh-project-task-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}.dsh-project-task-title{display:block;flex:1;min-width:0;font:var(--dsw-font-base-strong-16);font-weight:600;line-height:24px;overflow-wrap:anywhere}
-    .dsh-project-task-queue-actions{display:flex;align-items:center;gap:0;flex:none}.dsh-project-task-queue-actions>button{height:28px;min-height:28px;padding:0 6px}
-    .dsh-project-task-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;min-width:0;padding:8px 0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}.dsh-project-task-meta>span{min-width:0;overflow-wrap:anywhere}.dsh-project-task-meta>span:last-child{text-align:right;max-width:65%}.dsh-project-task-state{color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-summary{min-width:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}.dsh-project-task-summary>p{margin:0 0 8px;overflow-wrap:anywhere;font:var(--dsw-font-xxs-12)}
-    .dsh-project-task-state-dot{display:block;flex:none;width:6px;height:6px;margin:6px 4px 0;border-radius:50%;background:var(--dsw-alias-label-secondary)}.dsh-project-task-strip .dsh-project-task-state-dot{margin-top:0}.dsh-project-task-state-dot[data-state=running]{background:var(--dsw-alias-state-business-primary)}.dsh-project-task-state-dot[data-state=blocked]{background:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-task-waiting{color:var(--dsw-alias-label-secondary)}.dsh-project-task-outcome{color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-    .dsh-project-task-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding-top:8px}.dsh-project-task-footer button{height:28px;min-height:28px;padding:0 8px;font:var(--dsw-font-xxs-12)}
-    .dsh-project-observer-section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;font:var(--dsw-font-xxs-strong-12)}.dsh-project-observer-section-heading>span{color:var(--dsw-alias-label-secondary);font-weight:400}
-    .dsh-project-observer-blocker,.dsh-project-observer-request-info{font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}.dsh-project-observer-blocker{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box;height:32px;min-height:32px}
-    .dsh-project-requests-list>.dsh-project-task-group-title{padding:8px 4px 0;font:var(--dsw-font-xxs-12)}
-    .dsh-project-tone-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-idle-primary)}
-    .dsh-project-tone-dot[data-tone=info],.dsh-project-task-state-dot[data-tone=info]{background:var(--dsw-alias-state-business-primary)}
-    .dsh-project-tone-dot[data-tone=warning],.dsh-project-task-state-dot[data-tone=warning]{background:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-tone-dot[data-tone=success],.dsh-project-task-state-dot[data-tone=success]{background:var(--dsw-alias-state-success-primary)}
-    .dsh-project-tone-dot[data-tone=danger],.dsh-project-task-state-dot[data-tone=danger]{background:var(--dsw-alias-state-error-primary)}
-    .dsh-project-task-state-dot[data-tone=neutral],.dsh-project-task-state-dot[data-tone=outline]{background:var(--dsw-alias-label-tertiary)}
-    .dsh-project-task-status{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}
-    .dsh-project-task-status-row{display:flex;align-items:center;gap:8px;min-width:0}
-    .dsh-project-task-status-row>.dsh-project-task-state{flex:none;display:inline-flex}
-    .dsh-project-task-status-row>span:last-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-    .dsh-project-task-next{display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
-  /* The one thing a requirement waits on the user for: a question with its answers, or the action that unblocks it. */
-  .dsh-project-ask{display:flex;flex-direction:column;gap:8px;min-width:0;margin:0 0 8px;padding:10px 12px;border-radius:8px;border-left:3px solid var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-interactive-bg-hover)}
-  .dsh-project-ask-question{margin:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
-  .dsh-project-ask-options{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
-  .dsh-project-ask-form{display:flex;align-items:center;gap:6px;min-width:0}.dsh-project-ask-form>*:first-child{flex:1;min-width:0}
-  .dsh-project-ask-note{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
-    .dsh-project-task-next[data-tone=warning]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 8%,transparent)}
-    .dsh-project-task-next[data-tone=info]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 6%,transparent)}
-    .dsh-project-task-next>span:first-child:not(:last-child){color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-next strong{font-weight:500;color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-footer-actions{display:flex;align-items:center;gap:4px;min-width:0}
-    .dsh-project-charter-intro{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
-    .dsh-project-charter-intro>strong{font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary)}
-    .dsh-project-charter-intro>p{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-    .dsh-project-charter-examples{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
-    .dsh-project-charter-examples>span{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-charter-meter{display:flex;align-items:center;gap:12px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
-    .dsh-project-charter-meter-track{flex:1;height:3px;border-radius:2px;background:var(--dsw-alias-interactive-bg-active);overflow:hidden}
-    .dsh-project-charter-meter-track>span{display:block;height:100%;background:var(--dsw-alias-label-tertiary)}
-    .dsh-project-charter-meter[data-over=true]{color:var(--dsw-alias-state-error-primary)}
-    .dsh-project-charter-meter[data-over=true] .dsh-project-charter-meter-track>span{background:var(--dsw-alias-state-error-primary)}
-    .dsh-project-task-delivery{display:flex;flex-direction:column;gap:4px;min-width:0;padding:4px 0 8px}
-    .dsh-project-task-files{display:flex;flex-direction:column;gap:0;min-width:0;margin:0 -8px}
-    .dsh-project-task-file{display:flex;align-items:baseline;justify-content:flex-start;gap:8px;width:100%;min-width:0;height:auto;min-height:28px;padding:5px 8px;font-size:12px;line-height:18px;text-align:left}
-    .dsh-project-task-file>span{flex:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary)}
-    .dsh-project-task-file>small{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-task-delivery-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-left:-8px}
-    .dsh-project-diff{gap:12px}
-    .dsh-project-diff-summary{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;line-height:20px}
-    .dsh-project-diff-summary>strong{font-weight:600}
-    .dsh-project-diff-add{color:var(--dsw-alias-state-success-primary);font-variant-numeric:tabular-nums;font-size:12px}
-    .dsh-project-diff-del{color:var(--dsw-alias-state-error-primary);font-variant-numeric:tabular-nums;font-size:12px}
-    .dsh-project-diff-file{min-width:0;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-panel-solid)}
-    .dsh-project-diff-file>summary{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px;list-style:none;cursor:pointer;font-size:12px;line-height:18px}
-    .dsh-project-diff-file>summary:hover{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-diff-file[open]>summary{border-bottom:1px solid var(--dsw-alias-border-l1)}
-    .dsh-project-diff-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary)}
-    .dsh-project-diff-name>span{color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-diff-lines{margin:0;padding:4px 0;max-height:360px;overflow:auto;font:12px/18px var(--ds-font-family-code);white-space:pre;tab-size:2;color:var(--dsw-alias-label-primary)}
-    .dsh-project-diff-line{display:block;min-width:max-content;padding:0 12px}
-    .dsh-project-diff-line[data-kind=add]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)}
-    .dsh-project-diff-line[data-kind=del]{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent)}
-    .dsh-project-diff-line[data-kind=hunk]{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-diff-line[data-kind=note]{color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-diff-note{margin:0;padding:8px 12px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-task-changes{display:inline-flex;align-items:baseline;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
-    .dsh-project-task-delivery-actions>.dsh-project-task-changes{margin-right:auto;padding-left:8px}
-    .dsh-project-confirm-detail{margin:0;padding:8px 12px;max-height:160px;overflow:auto;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);font:12px/18px var(--ds-font-family-code);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
+    // =========================================================================
+    // Section 1: Constants, Localization (zh / en), and Token-Only Stylesheet
+    // =========================================================================
 
+    const LIST_DEFAULT_WIDTH = 248
+    const LIST_MIN_WIDTH = 188
+    const EXEC_DEFAULT_WIDTH = 380
+    const EXEC_MIN_WIDTH = 280
+    const MAIN_MIN_WIDTH = 400
+    const RAIL_WIDTH = 44
+    const RESIZER_WIDTH = 5
+    const EXEC_FOLD_BELOW = MAIN_MIN_WIDTH + LIST_MIN_WIDTH + EXEC_MIN_WIDTH + RESIZER_WIDTH * 2
+    const LIST_FOLD_BELOW = MAIN_MIN_WIDTH + LIST_MIN_WIDTH + RAIL_WIDTH + RESIZER_WIDTH
+    const MENU_MARGIN = 8
+    const MAX_CONCURRENCY = 8
+    const GENERIC_EFFORTS = ['off', 'low', 'high', 'max']
+    const SSE_MIN_DELAY_MS = 1000
+    const SSE_MAX_DELAY_MS = 30000
 
-    .dsh-project-activity-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-task-checklist{display:flex;flex-direction:column;margin:0;padding:0;list-style:none;min-width:0}
-    .dsh-project-task-step{display:flex;flex-direction:column;min-width:0}.dsh-project-task-step-actions{display:flex;flex-wrap:wrap;gap:2px 4px;padding:0 4px 4px 22px}.dsh-project-task-step-actions button{min-height:24px;height:24px;padding:0 6px;font:var(--dsw-font-xxs-12)}.dsh-project-task-step-failure{display:flex;flex-direction:column;gap:6px;padding:0 4px 6px 22px}.dsh-project-task-step-note{margin:0;padding:0 4px 6px 22px;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}.dsh-project-task-step-reason{margin:0;padding:0 4px 6px 22px;color:var(--dsw-alias-state-error-primary);font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}
-    .dsh-project-task-step-open{display:flex;width:100%;box-sizing:border-box;align-items:flex-start;gap:8px;min-width:0;padding:6px 4px;border:0;border-radius:6px;background:transparent;color:inherit;font:var(--dsw-font-xxs-12);text-align:left}
-    button.dsh-project-task-step-open{cursor:pointer}button.dsh-project-task-step-open:hover,button.dsh-project-task-step-open:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-task-step-title{flex:1;min-width:0;overflow-wrap:anywhere}.dsh-project-task-step[data-state=completed] .dsh-project-task-step-title{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-task-step-open>small{flex:none;max-width:40%;min-width:0;text-align:right;color:var(--dsw-alias-label-secondary);font:inherit;overflow-wrap:anywhere}
-    .dsh-project-task-check{flex:none;margin-top:2px;color:var(--dsw-alias-state-success-primary)}
-    .dsh-project-header-directory{width:28px;height:28px;min-width:28px;padding:0;flex:none}
-    .dsh-project-header-trigger{height:28px;width:184px;box-sizing:border-box;flex:none;overflow:hidden}
-    .dsh-project-header-trigger-label{flex:none}
-    .dsh-project-header-badge{width:28px;min-width:28px;flex:none;padding:0 2px}
-    .dsh-project-header-state{width:72px;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left;font-variant-numeric:tabular-nums}
-    .dsh-project-header-state[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-header-state[data-tone=success]{color:var(--dsw-alias-state-success-primary)}
-    .dsh-project-header-surface{height:min(620px,calc(100dvh - 32px));max-height:calc(100dvh - 32px);background:var(--dsw-alias-bg-panel-solid)}
-    .dsh-project-requests-toolbar{position:sticky;top:0;z-index:1;background:var(--dsw-alias-bg-panel-solid);padding-bottom:6px}
-    .dsh-project-request-tabs{margin:8px 0;flex:none}
-    [data-project-request-tab][hidden]{display:none}
-    [data-project-request-tab]{min-width:0}
-    .dsh-project-native-plan{padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font:var(--dsw-font-xxs-12)}
-    .dsh-project-native-plan>li{display:flex;align-items:flex-start;gap:8px;overflow-wrap:anywhere}
-    .dsh-project-native-plan>li[data-state=completed]{color:var(--dsw-alias-label-tertiary);text-decoration:line-through}
-    .dsh-project-stop{width:28px;min-width:28px;height:28px;padding:0;flex:none;position:relative}
-    .dsh-project-stop[data-error=true]{color:var(--dsw-alias-state-error-primary)}
-    .dsh-project-stop[data-error=true]::after{content:'';position:absolute;right:3px;top:3px;width:4px;height:4px;border-radius:50%;background:currentColor}
-    .dsh-project-materials-footer button{min-width:76px}
-    .dsh-project-request-refresh{width:28px;min-width:28px;padding:0;font-size:18px}
-    [data-composer-seat]:has([data-project-composer-takeover]) [data-chain-overlay-fallback='conversation.composer']{display:block!important;position:absolute;inset:0 0 auto;visibility:hidden;pointer-events:none}
-    .dsh-project-composer-frame{display:flex;align-items:center;flex-direction:column;padding:var(--project-composer-top,0px) var(--dsh-composer-side-clearance,16px) var(--project-composer-bottom,32px);min-width:0}
-    .dsh-project-composer-frame>.dsh-project-archive-notice{box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;gap:8px;width:var(--project-composer-width,100%);max-width:100%;height:var(--project-composer-height,128px);min-height:0;margin:0;overflow:auto;border-radius:var(--dsw-radius-md);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);padding:12px}
-    .dsh-project-composer-frame p{margin:0;font-size:12px;overflow-wrap:anywhere}
-    .dsh-project-composer-frame button{flex:none;min-height:28px;align-self:flex-start}
-    .dsh-project-requests [data-error=true],.dsh-project-materials [data-error=true]{color:var(--dsw-alias-state-error-primary)}
-    @container (max-width:560px){.dsh-project-header-trigger{width:124px;gap:4px}.dsh-project-header-state{width:62px}.dsh-project-requests-toolbar>strong{display:none}}
-    @media (max-width:480px){.dsh-project-task-card:not([data-project-request-mode=strip]){padding:10px 12px 8px}.dsh-project-requests-toolbar{gap:2px}}
-    /* Execution motion: transform and opacity only, so a long conversation's layout is never invalidated. Reduced motion stops all of it. */
-    @keyframes dsh-project-halo{0%{transform:scale(1);opacity:.55}100%{transform:scale(2.6);opacity:0}}
-    @keyframes dsh-project-halo-soft{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.5);opacity:0}}
-    @keyframes dsh-project-flow{0%{background-position:200% 0}100%{background-position:-200% 0}}
-    @keyframes dsh-project-enter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-    @keyframes dsh-project-pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.25);opacity:1}100%{transform:scale(1);opacity:1}}
-    @keyframes dsh-project-bump{0%{transform:scale(1)}40%{transform:scale(1.3)}100%{transform:scale(1)}}
-    .dsh-project-task-state-dot[data-state=running],.dsh-project-task-state-dot[data-tone=info]{position:relative}
-    .dsh-project-task-state-dot[data-state=running]::after,.dsh-project-task-state-dot[data-tone=info]::after{content:'';position:absolute;inset:0;border-radius:50%;background:inherit;pointer-events:none;animation:dsh-project-halo 1.8s ease-out infinite}
-    .dsh-project-header-badge{position:relative}
-    .dsh-project-header-badge[data-live=true]::after{content:'';position:absolute;inset:0;box-sizing:border-box;border-radius:inherit;border:1.5px solid var(--dsw-alias-state-business-primary);pointer-events:none;animation:dsh-project-halo-soft 1.8s ease-out infinite}
-    .dsh-project-header-badge[data-bump=true]{animation:dsh-project-bump calc(var(--ds-transition-duration,200ms)*1.6) ease-out}
-    .dsh-project-stage-rail{--stage-color:var(--dsw-alias-label-tertiary);display:flex;margin:0;padding:6px 0 4px;list-style:none}
-    .dsh-project-stage-rail[data-tone=info]{--stage-color:var(--dsw-alias-state-business-primary)}
-    .dsh-project-stage-rail[data-tone=warning]{--stage-color:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-stage-rail[data-tone=success]{--stage-color:var(--dsw-alias-state-success-primary)}
-    .dsh-project-stage{position:relative;display:flex;flex:1 1 0;flex-direction:column;align-items:center;gap:6px;min-width:0;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}
-    .dsh-project-stage[data-stage=done]{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-stage[data-stage=current]{color:var(--dsw-alias-label-primary)}
-    .dsh-project-stage-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-stage-dot{position:relative;z-index:1;box-sizing:border-box;width:12px;height:12px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid);transition:background-color var(--ds-transition-duration,200ms),border-color var(--ds-transition-duration,200ms)}
-    .dsh-project-stage[data-stage=done] .dsh-project-stage-dot,.dsh-project-stage[data-stage=current] .dsh-project-stage-dot{border-color:var(--stage-color);background:var(--stage-color)}
-    .dsh-project-stage[data-stage=current] .dsh-project-stage-dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--stage-color) 18%,transparent)}
-    .dsh-project-stage-rail[data-tone=info] .dsh-project-stage[data-stage=current] .dsh-project-stage-dot::after{content:'';position:absolute;inset:-2px;border-radius:50%;border:2px solid var(--stage-color);pointer-events:none;animation:dsh-project-halo-soft 1.8s ease-out infinite}
-    .dsh-project-stage::before,.dsh-project-stage::after{content:'';position:absolute;top:5px;left:calc(-50% + 9px);right:calc(50% + 9px);height:2px;border-radius:1px}
-    .dsh-project-stage:first-child::before,.dsh-project-stage:first-child::after{display:none}
-    .dsh-project-stage::before{background:var(--dsw-alias-border-l2)}
-    .dsh-project-stage::after{background:var(--stage-color);transform:scaleX(0);transform-origin:left center;transition:transform calc(var(--ds-transition-duration,200ms)*2) ease-out}
-    .dsh-project-stage[data-stage=done]::after,.dsh-project-stage[data-stage=current]::after{transform:scaleX(1)}
-    .dsh-project-stage-rail[data-tone=info] .dsh-project-stage[data-stage=current]+.dsh-project-stage::before{background:linear-gradient(90deg,var(--dsw-alias-border-l2) 0,var(--stage-color) 50%,var(--dsw-alias-border-l2) 100%);background-size:200% 100%;animation:dsh-project-flow 1.6s linear infinite}
-    .dsh-project-task-step[data-enter=true]{animation:dsh-project-enter calc(var(--ds-transition-duration,200ms)*1.2) ease-out both}
-    .dsh-project-task-check.is-fresh{animation:dsh-project-pop .45s cubic-bezier(.2,1.2,.4,1)}
-    .dsh-project-elapsed{font-variant-numeric:tabular-nums}
-    .dsh-project-lead-plan{margin-top:4px}
-    .dsh-project-section-tabs{position:sticky;top:38px;z-index:1;flex:none;background:var(--dsw-alias-bg-panel-solid)}
-    .dsh-project-section-page{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .dsh-project-section-page[hidden]{display:none}
-    @media (prefers-reduced-motion:reduce){.dsh-project-task-state-dot::after,.dsh-project-header-badge,.dsh-project-header-badge::after,.dsh-project-stage-dot::after,.dsh-project-stage::before,.dsh-project-stage::after,.dsh-project-task-step,.dsh-project-task-check{animation:none!important;transition:none!important}}
-  `;
-  const requestId = () => globalThis.crypto.randomUUID();
-  const button = (label, onClick, disabled = false) => h(Button, { variant: 'outline', onClick, disabled }, label);
-  function OperationToast({ text }) {
-    const [dismissed, setDismissed] = useState('');
-    useEffect(() => { if (!text) setDismissed(''); }, [text]);
-    return text && text !== dismissed ? h(Toast, { text, holdMs: 6000, onDone: () => setDismissed(text) }) : null;
-  }
-  const markdown = (t, text) => h(MarkdownText, { text, labels: { code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('footnotes') } });
-  const stateLabel = (t, state) => Object.hasOwn(zh, state) ? t(state) : String(state ?? '');
-  const waitingLabel = (t, waiting) => waiting ? `${t({ dependencies: 'waitingDependencies', directory: 'waitingDirectory', capacity: 'waitingCapacity' }[waiting.kind])}${waiting.workTitles?.length ? ` · ${waiting.workTitles.join('、')}` : ''}` : '';
-  const workBlockedLabel = (t, reason) => reason === 'Application restarted; waiting for explicit continuation.' ? t('requestRestarted') : reason;
-  const errorText = failure => failure?.message ?? String(failure);
-  const messageText = message => (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
-  const processRecords = entries => entries.filter(entry => entry.type === 'event' && ['turn/start', 'user/message', 'assistant/message', 'tool/call', 'tool/result', 'turn/end'].includes(entry.event.type)).map(entry => entry.event);
-  const assignmentIndex = (records, messageId) => typeof messageId === 'string' && messageId ? records.findIndex(event => event.type === 'user/message' && (event.data.id === messageId || event.data.source?.messageId === messageId)) : -1;
-  const assignmentPageStart = (records, index) => {
-    const before = records.findLastIndex((event, at) => at < index && event.type === 'turn/start');
-    return Math.max(0, before);
-  };
-  const assignmentPageEnd = (records, index, leadId) => {
-    const next = records.findIndex((event, at) => at > index && event.type === 'user/message' && (event.data.source?.kind === 'team-message' && event.data.source.senderId === leadId || event.data.source?.kind === 'agent-message' && event.data.source.senderSessionId === leadId));
-    if (next < 0) return records.length;
-    const boundary = records.findLastIndex((event, at) => at > index && at < next && event.type === 'turn/start');
-    return boundary < 0 ? next : boundary;
-  };
-  const timeLabel = value => Number.isFinite(value) && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString() : '';
-  const recordedTime = value => timeLabel(value) ? h('time', { className: 'dsh-project-record-time', dateTime: new Date(value).toISOString() }, timeLabel(value)) : null;
-  const summaryPreview = text => {
-    const blocks = String(text ?? '').trim().split(/\n\s*\n/);
-    const body = blocks.map(block => block.split('\n').filter(line => !/^\s*#{1,6}\s/.test(line)).join('\n').trim()).find(block => block && !/^\s*(```|~~~)/.test(block)) ?? blocks[0] ?? '';
-    const preview = body.trim();
-    return preview.length > 360 ? preview.slice(0, 360) + '…' : preview;
-  };
-  const requestLabel = (t, request) => request ? `${request.title} · ${t('requestVersion')} ${request.revision}` : '';
-  const isLive = worker => Boolean(worker.activeRunId || worker.jobs?.length || worker.phase === 'stopping');
-  const fileName = path => path.split(/[\\/]/).at(-1);
-  // Why the desktop refuses a folder (see the desktop directory check), as locale keys.
-  const DIRECTORY_REFUSALS = { missing: 'dirMissing', 'not-directory': 'dirNotDirectory', root: 'dirRoot', home: 'dirHome', 'system-data': 'dirSystemData', 'app-data': 'dirAppData' };
-  const comparablePath = path => path.replaceAll('\\', '/').replace(/\/$/, '');
-  const directoryParts = project => project.canonicalWorkingDirectory.replaceAll('\\', '/').replace(/\/$/, '').split('/').filter(Boolean);
-  function Artifact({ file, open, busy, t }) {
-    const [menu, setMenu] = useState(false), [locationOpen, setLocationOpen] = useState(false);
-    const name = fileName(file.path), location = { materials: 'artifactMaterials', existing: 'artifactExisting', worktree: 'artifactWorktree' }[file.location];
-    const size = Number.isFinite(file.size) ? file.size < 1024 ? `${file.size} B` : `${(file.size / 1024).toFixed(1)} KB` : '';
-    return h('div', { className: 'dsh-project-artifact' },
-      h('div', { className: 'dsh-project-artifact-row' }, h(Button, { variant: 'ghost', className: 'dsh-project-artifact-title', title: file.path, 'aria-label': `${t('openFile')}: ${name}`, disabled: busy, onClick: () => open(file.path) }, name),
-        size ? h('span', { className: 'dsh-project-muted' }, size) : null,
-        h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, align: 'end', items: [{ id: 'location', label: t('fileLocation') }], onSelect: () => { setMenu(false); setLocationOpen(value => !value); }, anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${t('fileMore')}: ${name}`, 'aria-expanded': menu, onClick: () => setMenu(value => !value) }, '…') })),
-      location ? h('div', { className: 'dsh-project-artifact-meta dsh-project-muted' }, t(location)) : null,
-      locationOpen ? h('div', { className: 'dsh-project-path' }, file.path) : null);
-  }
+    const THREAD_GROUPS = [
+      { key: 'running', icon: 'running', titleKey: 'groupRunning', statuses: ['running'] },
+      { key: 'review', icon: 'review', titleKey: 'groupReview', statuses: ['review'] },
+      { key: 'waiting', icon: 'waiting', titleKey: 'groupWaiting', statuses: ['blocked', 'failed'] },
+      { key: 'idle', icon: 'idle', titleKey: 'groupIdle', statuses: ['queued'] },
+      { key: 'resolved', icon: 'resolved', titleKey: 'groupResolved', statuses: ['resolved'] },
+    ]
 
-  function SummaryFailure({ failure, autoRetry, openModelSettings, t }) {
-    const credentials = failure.error.code === 'MISSING_CREDENTIAL';
-    return h(Fragment, null,
-      h('p', { className: 'dsh-project-error' }, t('summaryFailed')),
-      autoRetry ? h('p', { role: 'status', className: 'dsh-project-muted' }, t('summaryRetrying').replace('{attempt}', autoRetry.attempt).replace('{of}', autoRetry.of)) : null,
-      h('p', { className: 'dsh-project-muted' }, t(credentials ? 'summaryCredentialHint' : 'summaryErrorHint')),
-      credentials ? button(t('modelSettings'), openModelSettings) : null,
-      h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, `${failure.error.code}\n${failure.error.message}`)));
-  }
+    const DEFAULT_COLLAPSED_GROUPS = { resolved: true }
 
-  function ProjectLifecycleDialog({ useStore, actions, useProjects, command, t }) {
-    const lifecycle = useStore(value => value.lifecycle), project = useProjects(value => value.projects.find(item => item.id === lifecycle?.projectId));
-    const [title, setTitle] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
-    useEffect(() => { setTitle(project?.title ?? ''); setError(''); }, [lifecycle]);
-    if (!lifecycle) return null;
-    const close = () => { if (!busy) actions.setLifecycle(null); };
-    const execute = async () => { setBusy(true); setError(''); try { await command(project.id, lifecycle.action, lifecycle.action === 'rename' ? { title } : undefined); actions.setLifecycle(null); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    const unavailable = lifecycle.error || !project;
-    return h(Modal, { open: true, onClose: close, closeLabel: t('cancel'), className: 'dsh-project-confirm', title: t(unavailable ? 'unavailable' : lifecycle.action === 'rename' ? 'rename' : 'archiveActive'), footer: h('div', { className: 'dsh-project-actions' }, button(t('cancel'), close, busy), unavailable ? null : h(Button, { variant: 'outline', loading: busy, title: error || undefined, 'data-error': Boolean(error), onClick: execute, disabled: busy || lifecycle.action === 'rename' && !title.trim() }, t(lifecycle.action === 'rename' ? 'save' : 'archiveActive'))) },
-      unavailable ? h('p', { role: 'alert', className: 'dsh-project-error' }, lifecycle.error || t('unavailable')) : lifecycle.action === 'rename' ? h(Input, { value: title, maxLength: 240, 'aria-label': t('rename'), onChange: event => setTitle(event.target.value) }) : h('p', null, t('archiveHint')),
-      h(OperationToast, { text: error }));
-  }
-
-  // Project Leads list among ordinary conversations; this tag marks them.
-  function ProjectRowBadge({ sessionId, useProjects, t }) {
-    const project = useProjects(value => value.projects.some(item => item.coordinatorSessionId === sessionId));
-    return project ? h('span', { className: 'dsh-project-row-badge' }, t('tab')) : null;
-  }
-
-  // Background failures (list refresh, detail reload) have no panel of their own;
-  // each distinct message is shown once, and a recovery lets it show again.
-  function ProjectErrorNotice({ useProjects, t }) {
-    const error = useProjects(value => value.error);
-    const [dismissed, setDismissed] = useState('');
-    useEffect(() => { if (!error) setDismissed(''); }, [error]);
-    if (!error || error === dismissed) return null;
-    return h(Toast, { key: error, text: t('backgroundError').replace('{message}', error), holdMs: 8000, onDone: () => setDismissed(error) });
-  }
-
-  // New Session option: start (or reopen) the selected directory's Project and carry the draft into its Lead.
-  // A folder the desktop refuses keeps the option visible but disabled, with its reason.
-  function ProjectHeroOption({ sessionId, openWithDraft, startProject, checkDirectory, useProjects, useProjectSessions, useWorkspaceList, useDirectoryChecks, t }) {
-    const available = useProjects(value => value.available), cwd = useProjectSessions(value => value.byId[sessionId]?.cwd);
-    const scratch = useWorkspaceList(value => value.scratchCwd);
-    const existing = useProjects(value => Boolean(cwd) && value.projects.some(project => project.lifecycle !== 'archived' && comparablePath(project.canonicalWorkingDirectory) === comparablePath(cwd)));
-    const refusal = useDirectoryChecks(value => cwd ? value[comparablePath(cwd)]?.reason : undefined);
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    useEffect(() => { if (available && cwd && cwd !== scratch) checkDirectory(cwd); }, [available, cwd, scratch]);
-    if (!available || !cwd || cwd === scratch) return null;
-    const start = async () => { setBusy(true); setError(''); try { await startProject(cwd, openWithDraft); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    const reason = refusal ? t(DIRECTORY_REFUSALS[refusal] ?? 'unavailable') : '';
-    const option = h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-hero-option', title: reason ? undefined : t(existing ? 'heroOpenHint' : 'heroHint'), 'aria-busy': busy || undefined, 'aria-description': reason || undefined, disabled: busy || Boolean(reason), onClick: () => { void start(); } },
-      h(IconChecklistOutlineRegular, { size: 16 }), t('tab'));
-    return h(Fragment, null,
-      // A disabled button receives no pointer events, so the reason's tooltip anchors on a focusable wrapper.
-      reason ? h(Tooltip, { label: reason, side: 'bottom', align: 'end', portal: true, maxWidth: 280 }, h('span', { className: 'dsh-project-hero-option-wrap', tabIndex: 0 }, option)) : option,
-      error ? h(Toast, { text: error, holdMs: 6000, onDone: () => setError('') }) : null);
-  }
-
-  // Project panels open only by explicit click and keep their contents mounted while closed.
-  const LIVE_HEADER_STATES = ['running', 'pendingSummary', 'pendingDelivery'];
-  // Counts the changes after the first paint, so the badge can acknowledge each one without animating on mount.
-  function useBump(value) {
-    const previous = useRef(value), count = useRef(0);
-    if (previous.current !== value) { previous.current = value; count.current += 1; }
-    return count.current;
-  }
-  function HeaderPanel({ id, icon, label, badge, tone, status, state, needs = 0, useDismissals, useRequestPanels, sessionId, setRequestPanel, pinRequests, children }) {
-    const local = useRequestPanels(value => value[sessionId]), open = local?.open ?? false;
-    const [visited, setVisited] = useState(false), rootRef = useRef(null), triggerRef = useRef(null), panelRef = useRef(null);
-    const dismissals = useDismissals(value => value);
-    const bump = useBump(badge);
-    const position = useAnchoredPosition({ open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16 });
-    const change = next => {
-      if (next) setVisited(true);
-      if (next && local?.observing) { pinRequests(sessionId); return; }
-      setRequestPanel(sessionId, { open: next });
-    };
-    useEffect(() => { change(false); }, [dismissals]);
-    useEffect(() => () => setRequestPanel(sessionId, { open: false }), [sessionId]);
-    useLayoutEffect(() => { if (open && position) { setVisited(true); panelRef.current?.focus(); } }, [open, Boolean(position)]);
-    useEffect(() => {
-      if (!open) return;
-      const close = () => { const inside = panelRef.current?.contains(document.activeElement); change(false); if (inside) triggerRef.current?.focus(); };
-      const outside = event => {
-        const target = event.target;
-        if (!target || rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-        if (target.closest?.('[role="menu"], [role="dialog"][aria-modal="true"]')) return;
-        close();
-      };
-      const escape = event => {
-        if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('[role="menu"], [role="dialog"][aria-modal="true"]')) return;
-        event.preventDefault(); close();
-      };
-      document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape);
-      return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
-    }, [open]);
-    return h('div', { ref: rootRef, className: 'dsh-project-header-panel', 'data-project-header-panel': id, 'data-state': state, 'data-needs-you': needs || undefined },
-      h(Tooltip, { label: `${label} · ${status}`, side: 'bottom', disabled: open }, h('button', { type: 'button', ref: triggerRef, className: 'dsh-project-header-trigger', 'aria-label': `${label} · ${status}`, 'aria-haspopup': 'dialog', 'aria-expanded': open,
-        onClick: () => change(!open) }, icon, h('span', { className: 'dsh-project-header-trigger-label' }, label),
-        h('span', { key: bump, className: 'dsh-project-header-badge', 'data-tone': tone, 'data-live': !needs && LIVE_HEADER_STATES.includes(state), 'data-bump': bump > 0 }, badge), h('span', { className: 'dsh-project-header-state', 'data-tone': tone }, status))),
-      // Retain the same tree while hidden: refreshes and closing do not reset tabs or reading position.
-      visited || open ? createPortal(h('div', { ref: panelRef, className: 'dsh-project-header-surface', 'data-project-panel': id, role: 'dialog', tabIndex: -1, 'aria-label': label, hidden: !open,
-        style: position ?? { visibility: 'hidden', left: 0, top: 0 } }, children), document.body) : null);
-  }
-
-  function useProjectLive({ useProjects, useProjectSessions, useProjectSessionStatus }, sessionId, project) {
-    const detail = useProjects(value => project ? value.details[project.id] : undefined);
-    const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.projectTeam);
-    const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
-    const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
-    return { detail, team, sessions };
-  }
-
-  const projectHeaderState = (project, current, t) => {
-    const state = current.loading ? 'loading' : !current.available || current.error ? 'unknown' : project.archiving ? 'stopping' : project.lifecycle === 'archived' ? 'archived' : project.activity?.state ?? 'unknown';
-    const keys = { unknown: 'statusUnknown', loading: 'loading', archived: 'statusArchived', stopping: 'statusStopping', blocked: 'statusBlocked', summaryFailed: 'statusBlocked', needsReview: 'statusNeedsReview', paused: 'statusPaused', running: project.activity?.coordinatorRunning && !project.activity?.running ? 'statusArranging' : 'statusActive', provisioning: 'provisioning', queued: 'statusWaiting', pendingSummary: 'statusSummarizing', pendingDelivery: 'statusHandover', done: 'statusDelivered', idle: 'observerIdle' };
-    return { state, label: t(keys[state] ?? 'statusUnknown'), tone: ['blocked', 'summaryFailed', 'needsReview', 'paused', 'unknown'].includes(state) ? 'warning' : state === 'done' ? 'success' : ['running', 'pendingSummary', 'pendingDelivery'].includes(state) ? 'info' : 'neutral' };
-  };
-  function ProjectHeader(props) {
-    const { sessionId, useProjects, read, trackActiveProject, t } = props;
-    const current = useProjects(value => value);
-    const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    const panel = props.useRequestPanels(value => value[sessionId]);
-    const anchor = useRef(null), [host, setHost] = useState(null), [error, setError] = useState(null);
-    const open = Boolean(panel?.open);
-    useEffect(() => { if (project) return trackActiveProject(project.id); }, [project?.id]);
-    useLayoutEffect(() => {
-      const root = anchor.current?.closest('[data-dsh-chat]');
-      if (!root || !project) return;
-      setHost(root);
-      const measure = () => { root.dataset.projectRailCompact = String(root.clientWidth < 920); const composer = root.querySelector('[data-composer-seat]'); root.style.setProperty('--project-composer-height', (composer?.getBoundingClientRect().height ?? 180) + 'px'); };
-      const observer = new ResizeObserver(measure); observer.observe(root);
-      const composer = root.querySelector('[data-composer-seat]'); if (composer) observer.observe(composer);
-      measure();
-      return () => { observer.disconnect(); delete root.dataset.projectRail; delete root.dataset.projectRailCompact; root.style.removeProperty('--project-composer-height'); };
-    }, [project?.id]);
-    useLayoutEffect(() => { if (host) host.dataset.projectRail = String(open); }, [host, open]);
-    if (!project) return null;
-    const count = (project.queue?.activeRequests?.length ?? (project.queue?.active ? 1 : 0)) + (project.queue?.queued?.length ?? 0);
-    const headerState = projectHeaderState(project, current, t), unknown = ['unknown', 'loading'].includes(headerState.state);
-    const close = () => { props.setRequestPanel(sessionId, { open: false }); anchor.current?.focus(); };
-    return h('div', { className: 'dsh-project-header', 'data-state': headerState.state },
-      h(Button, { variant: 'ghost', size: 'sm', onClick: () => void read(project.id, 'open').catch(failure => setError(before => ({ id: (before?.id ?? 0) + 1, text: t('openDirectory') + ': ' + errorText(failure) }))), title: project.canonicalWorkingDirectory, 'aria-label': t('openDirectory') }, h(IconFolderCloseRegular, { size: 16 })),
-      h(Button, { ref: anchor, variant: 'ghost', size: 'sm', title: headerState.label, 'aria-expanded': open, 'aria-controls': 'project-rail-' + project.id, onClick: () => props.setRequestPanel(sessionId, { open: !open }), className: 'dsh-project-rail-toggle' }, h(IconChecklistOutlineRegular, { size: 16 }), t('taskList'), h('span', { className: 'dsh-project-rail-count' }, unknown ? '?' : count > 99 ? '99+' : count)),
-      host && open ? createPortal(h('aside', { id: 'project-rail-' + project.id, className: 'dsh-project-task-rail', 'aria-label': t('taskList'), onKeyDown: event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } } },
-        h('div', { className: 'dsh-project-rail-heading' }, h('strong', null, t('taskList')), h(Button, { variant: 'ghost', size: 'sm', onClick: close, 'aria-label': t('close') }, h(IconChevronRightOutlineRegular, { size: 16 }))),
-        current.error || !current.available ? h('div', { className: 'dsh-project-rail-details', role: 'alert' }, h('p', null, t('retainedStatus')), h('p', null, current.error || t('unavailable')), h(Button, { variant: 'ghost', size: 'sm', onClick: props.refresh }, t('retryRead'))) : null,
-        h(ProjectRequirements, { ...props, project }),
-        h('footer', { className: 'dsh-project-rail-footer' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => props.showMaterials(project.id) }, t('taskMaterials')), h(ProjectStop, { ...props, compact: false }))), host) : null,
-      error ? h(OperationToast, { key: error.id, text: error.text }) : null);
-  }
-
-  const requestStateLabel = (t, card, position = true) => card.status === 'completed' ? t('completed')
-    : card.queue?.state === 'queued' ? `${t('requestQueued')}${position && card.queue.position ? ` · ${t('requestQueuePosition').replace('{position}', card.queue.position)}` : ''}`
-    : card.queue?.state === 'discussing' ? t('requestDiscussing') : card.queue?.state === 'cancelled' ? t('requestCancelled') : stateLabel(t, card.status);
-  const requestQueueNote = (t, card, queue) => card.status === 'completed' ? ''
-    : card.queue?.state === 'queued' ? t(queue?.paused ? 'requestQueuePaused' : !queue?.active && card.queue.position === 1 ? 'requestQueueReady' : 'requestQueueWaiting')
-    : card.queue?.state === 'discussing' ? t('requestDiscussingHint') : card.queue?.state === 'cancelled' ? t('requestCancelledHint') : '';
-  const requestQueueItems = (card, queue, busy, t) => {
-    if (!card.queue || card.status === 'completed' || card.archivedAt) return [];
-    const state = card.queue.state, index = queue?.queued?.findIndex(item => item.id === card.id) ?? -1;
-    return [
-      ...(state === 'discussing' ? [{ id: 'enqueue', label: t('requestEnqueue'), disabled: busy }] : []),
-      ...(state === 'cancelled' || card.queue.released ? [{ id: 'enqueue', label: t('requestRejoin'), disabled: busy }] : []),
-      ...(card.id === queue?.active?.id && !card.queue.released && (queue.paused || card.status === 'paused') ? [{ id: 'resume', label: t('requestResume'), disabled: busy }] : []),
-      ...(state === 'queued' && queue?.paused && !queue.active && index === 0 ? [{ id: 'resume', label: t('requestResumeQueue'), disabled: busy }] : []),
-      ...(state === 'queued' ? [{ id: 'moveUp', label: t('requestMoveUp'), disabled: busy || index <= 0 },
-        { id: 'moveDown', label: t('requestMoveDown'), disabled: busy || index < 0 || index >= queue.queued.length - 1 }] : []),
-      ...(['discussing', 'queued', 'active'].includes(state) ? [{ id: 'cancel', label: t('requestCancel'), danger: true, disabled: busy }] : []),
-    ];
-  };
-  const humanNextKeys = { dependencies: 'nextDependencies', directory: 'nextDirectory', capacity: 'nextCapacity' };
-  // One plain-language status per requirement: tone for the badge, an optional reason and the user's next step.
-  const requestHumanStatus = (project, card, state, steps, queue, t) => {
-    const status = (tone, label, next, reason) => ({ tone, label: t(label), ...(next ? { next: t(next) } : {}), ...(reason ? { reason } : {}) });
-    const waiting = steps.find(item => item.waitingReason || item.blockedReason);
-    if (card.archivedAt) return status('neutral', 'statusArchived');
-    if (card.queue?.state === 'cancelled') return status('neutral', 'statusCancelled', 'nextCancelled');
-    if (card.status === 'completed' && card.changes?.revertedAt) return status('neutral', 'statusReverted', 'nextReverted');
-    if (card.status === 'completed') return status('success', 'statusDelivered');
-    if (card.stage?.id === 'awaitingAnswer') return status('warning', 'stageAwaitingAnswer');
-    if (card.status === 'needsReview') return status('warning', 'statusNeedsReview', 'nextNeedsReview');
-    if (card.queue?.state === 'discussing') return status('neutral', 'statusDiscussing', 'nextDiscussing');
-    if (card.queue?.state === 'queued') return { ...status('outline', 'statusQueued', queue?.paused ? 'nextQueuedPaused' : steps.some(item => item.status === 'running') ? 'nextQueuedPreparing' : 'nextQueued'),
-      label: card.queue.position ? `${t('statusQueued')} · ${t('statusQueuePosition').replace('{position}', card.queue.position)}` : t('statusQueued') };
-    if (card.status === 'stopping' || project.activity?.state === 'stopping') return status('neutral', 'statusStopping');
-    if (card.status === 'paused' || project.paused) return status('warning', 'statusPaused', 'nextPaused');
-    if (card.authorityError) return status('warning', 'statusBlocked', 'nextAuthority', t('authorityErrorHint'));
-    if (card.stage?.retry) return status('info', 'statusSummaryRetrying', '', t('summaryRetrying').replace('{attempt}', card.stage.retry.attempt).replace('{of}', card.stage.retry.of));
-    if (card.status === 'summaryFailed' || card.handoverError) return status('warning', 'statusBlocked', 'nextSummary', t('summaryFailed'));
-    if (card.status === 'blocked' && card.delivery?.outcome === 'partial') return status('warning', 'statusPartial', 'nextPartial');
-    if (waiting?.waitingReason) return card.status === 'blocked'
-      ? status('warning', 'statusBlocked', humanNextKeys[waiting.waitingReason.kind], waitingLabel(t, waiting.waitingReason))
-      : status('info', 'statusActive', humanNextKeys[waiting.waitingReason.kind], waitingLabel(t, waiting.waitingReason));
-    if (card.status === 'blocked' || card.status === 'failed') return status('warning', 'statusBlocked', 'nextFailure', waiting?.blockedReason ? workBlockedLabel(t, waiting.blockedReason) : '');
-    if (state === 'requestArranging') return status('info', 'statusArranging', '', t('requestArrangingHint'));
-    if (card.status === 'pendingDelivery' || state === 'requestHandover') return status('info', 'statusHandover');
-    if (card.status === 'pendingSummary') return status('info', 'statusSummarizing');
-    return status('info', 'statusActive');
-  };
-  // Delivered files, the requirement's own changes, revert and its result page, shown on the task card itself.
-  function ProjectTaskDelivery({ project, card, controls, read, openResults, t }) {
-    const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [confirm, setConfirm] = useState(null);
-    const delivery = card.delivery, changes = card.changes;
-    if (!delivery || !Array.isArray(delivery.artifacts) || !(card.status === 'completed' || delivery.outcome === 'partial')) return null;
-    const files = delivery.artifacts, pages = delivery.pages ?? [], diffWork = (card.work ?? []).find(item => item.memberRole && !['readonly', 'research'].includes(item.memberRole));
-    const requirementDiff = changes?.isGit && changes.fileCount !== undefined;
-    if (!files.length && !pages.length && !diffWork && !requirementDiff) return null;
-    const open = async file => {
-      setBusy(true);
-      try { const value = await read(project.id, 'open', { workstreamId: file.workstreamId, delegationRef: file.delegationRef, path: file.path }); if (value?.modifiedSinceReport) setMessage(t('modifiedArtifact')); }
-      catch (failure) { setMessage(errorText(failure)); } finally { setBusy(false); }
-    };
-    const revert = async () => {
-      setBusy(true);
-      try { await controls.revert(card); setConfirm(null); setMessage(t('revertDone')); }
-      catch (failure) { setConfirm(failure.code === 'revert_conflict' ? { conflict: errorText(failure) } : null); if (failure.code !== 'revert_conflict') setMessage(errorText(failure)); }
-      finally { setBusy(false); }
-    };
-    const ask = async () => { setConfirm(null); try { await controls.ask(t('revertAskPrompt').replace('{title}', card.title)); } catch (failure) { setMessage(errorText(failure)); } };
-    return h('section', { className: 'dsh-project-task-delivery', 'aria-label': t('deliveryFiles') },
-      files.length ? h(Fragment, null,
-        h('div', { className: 'dsh-project-observer-section-heading' }, h('strong', null, t('deliveryFiles')), h('span', null, t('deliveryFileCount').replace('{count}', files.length))),
-        h('div', { className: 'dsh-project-task-files' }, files.slice(0, 4).map(file => {
-          const name = fileName(file.path), folder = file.path.slice(0, file.path.length - name.length).replace(/[\\/]$/, '');
-          return h(Button, { key: `${file.workstreamId}:${file.delegationRef}:${file.path}`, variant: 'ghost', size: 'sm', className: 'dsh-project-task-file', title: file.path,
-            'aria-label': `${t('openFile')}: ${name}`, disabled: busy, onClick: () => { void open(file); } }, h('span', null, name), folder ? h('small', null, folder) : null);
-        }))) : null,
-      h('div', { className: 'dsh-project-task-delivery-actions' },
-        requirementDiff ? h('span', { className: 'dsh-project-task-changes' }, t('changeStats').replace('{count}', changes.fileCount),
-          changes.added ? h('span', { className: 'dsh-project-diff-add' }, `+${changes.added}`) : null, changes.removed ? h('span', { className: 'dsh-project-diff-del' }, `−${changes.removed}`) : null) : null,
-        requirementDiff || diffWork ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => requirementDiff ? controls.showRequestDiff(card.id) : controls.showDiff(project.id, diffWork.workstreamId) }, t('viewChanges')) : null,
-        pages.length ? h(Button, { variant: 'ghost', size: 'sm', onClick: openResults }, t('viewResultPage'))
-          : files.length > 4 ? h(Button, { variant: 'ghost', size: 'sm', onClick: openResults }, t('moreFiles').replace('{count}', files.length)) : null,
-        changes?.revertible && project.lifecycle === 'ready' && !project.archiving ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy || controls.busy, onClick: () => setConfirm({}) }, t('revertChanges')) : null),
-      confirm ? h(Modal, { open: true, onClose: () => { if (!busy) setConfirm(null); }, closeLabel: t('cancel'), title: t(confirm.conflict ? 'revertConflictTitle' : 'revertTitle'), className: 'dsh-project-confirm',
-        footer: h('div', { className: 'dsh-project-actions' }, button(t('cancel'), () => setConfirm(null), busy),
-          confirm.conflict ? h(Button, { variant: 'primary', onClick: () => { void ask(); } }, t('revertAsk'))
-            : h(Button, { variant: 'primary', disabled: busy, onClick: () => { void revert(); } }, t('revertConfirm'))) },
-        h('p', null, t(confirm.conflict ? 'revertConflictBody' : 'revertBody')), confirm.conflict ? h('pre', { className: 'dsh-project-confirm-detail' }, confirm.conflict) : null) : null,
-      message ? h(Toast, { text: message, onDone: () => setMessage('') }) : null);
-  }
-  // One requirement: a one-line strip, or its checklist, delivery and actions.
-  // Each work item opens its member's live conversation beside this one.
-  // Stages of one requirement, left to right: arranged by the Lead, executed by members, summarized, delivered.
-  const REQUEST_STAGES = ['stageArranging', 'stageExecuting', 'stageSummarizing', 'stageDelivered'];
-  const requestStageIndex = (card, state, steps) => card.status === 'completed' ? 3
-    : state === 'requestArranging' ? 0
-    : state === 'requestHandover' || ['pendingSummary', 'pendingDelivery', 'summaryFailed', 'needsReview'].includes(card.status) || card.handoverError ? 2
-    : steps.length ? 1 : 0;
-  // The rail moves only transform and opacity, so a running requirement never invalidates the page layout.
-  function StageRail({ index, tone, t }) {
-    return h('ol', { className: 'dsh-project-stage-rail', 'data-tone': tone, 'aria-label': t('stageRail') },
-      REQUEST_STAGES.map((key, position) => h('li', { key, className: 'dsh-project-stage', 'data-stage': index === 3 || position < index ? 'done' : position === index ? 'current' : 'todo', 'aria-current': position === index && index < 3 ? 'step' : undefined },
-        h('span', { className: 'dsh-project-stage-dot', 'aria-hidden': true }), h('span', { className: 'dsh-project-stage-label' }, t(key)))));
-  }
-  const elapsedLabel = ms => {
-    const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60), pad = value => String(value).padStart(2, '0');
-    return minutes >= 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}:${pad(seconds % 60)}` : `${minutes}:${pad(seconds % 60)}`;
-  };
-  // Ticks only while its row is on screen; the span keeps its place, so the row never reflows.
-  function Elapsed({ since }) {
-    const [now, setNow] = useState(Date.now), ref = useRef(null);
-    useEffect(() => {
-      const timer = setInterval(() => { if (!document.hidden && ref.current?.offsetParent) setNow(Date.now()); }, 1000);
-      return () => clearInterval(timer);
-    }, []);
-    const age = now - since;
-    return h('span', { ref, className: 'dsh-project-elapsed' }, Number.isFinite(age) && age >= 0 && age < 48 * 3600000 ? ` · ${elapsedLabel(age)}` : '');
-  }
-  // A running member shows a breathing dot; when it finishes the dot becomes a check that pops in once.
-  function StepMark({ status }) {
-    const before = useRef(status), [fresh, setFresh] = useState(false);
-    useEffect(() => {
-      const arrived = before.current !== status && status === 'completed'; before.current = status;
-      if (!arrived) return undefined;
-      setFresh(true); const timer = setTimeout(() => setFresh(false), 700);
-      return () => clearTimeout(timer);
-    }, [status]);
-    return status === 'completed' ? h(IconCheckOutlineRegular, { size: 14, className: `dsh-project-task-check${fresh ? ' is-fresh' : ''}` })
-      : h('span', { className: 'dsh-project-task-state-dot', 'data-state': status, 'aria-hidden': true });
-  }
-
-  // The one question a requirement waits on. The answer is an ordinary message to the Lead; the host clears the question when
-  // that message enters the Lead's next step, so until then this block only remembers that the answer went out.
-  function ProjectAsk({ card, controls, t }) {
-    const ask = card.stage.ask, [text, setText] = useState(''), [sent, setSent] = useState(false);
-    useEffect(() => { setSent(false); setText(''); }, [ask.id]);
-    const send = async answer => {
-      const value = answer.trim();
-      if (!value || controls.busy || sent) return;
-      setSent(true);
-      if (!await controls.say(card, t('askAnswer').replace('{title}', card.title).replace('{answer}', value))) setSent(false);
-    };
-    return h('div', { className: 'dsh-project-ask', 'data-project-ask': ask.id, role: 'group', 'aria-label': t(ask.by === 'member' ? 'askFromMember' : 'stageAwaitingAnswer') },
-      h('p', { className: 'dsh-project-ask-question' }, ask.question),
-      sent ? h('p', { role: 'status', className: 'dsh-project-ask-note' }, t('askSent')) : h(Fragment, null,
-        ask.options?.length ? h('div', { className: 'dsh-project-ask-options' }, ask.options.map(option => h(Button, { key: option, variant: 'outline', size: 'sm', disabled: controls.busy, onClick: () => { void send(option); } }, option))) : null,
-        h('div', { className: 'dsh-project-ask-form' },
-          h(Input, { value: text, maxLength: 500, 'aria-label': t('askPlaceholder'), placeholder: t('askPlaceholder'), onChange: event => setText(event.target.value), onKeyDown: event => { if (event.key === 'Enter' && !event.nativeEvent?.isComposing) { event.preventDefault(); void send(text); } } }),
-          h(Button, { variant: 'primary', size: 'sm', disabled: controls.busy || !text.trim(), onClick: () => { void send(text); } }, t('askSend'))),
-        ask.ifUnanswered ? h('p', { className: 'dsh-project-ask-note' }, t('askIfUnanswered').replace('{text}', ask.ifUnanswered)) : null));
-  }
-  // Inline actions for the rest of "needs you": retry what is blocked, re-summarize, or look at what was delivered.
-  function ProjectAttention({ card, controls, retryHandover, setTab, t }) {
-    const stage = card.stage;
-    if (stage.id === 'awaitingAnswer') return h(ProjectAsk, { card, controls, t });
-    const action = stage.id === 'blocked' && stage.reason === 'work' ? { label: t('blockedRetry'), run: () => { void controls.say(card, t('blockedRetryPrompt').replace('{title}', card.title).replace('{reason}', stage.detail || '')); } }
-      : stage.id === 'awaitingDecision' && stage.reason === 'summaryFailed' ? { label: t('retrySummary'), run: () => { void retryHandover(card); } }
-      : stage.id === 'awaitingDecision' ? { label: t('viewResults'), run: () => setTab('results') } : null;
-    if (!action && !stage.detail) return null;
-    return h('div', { className: 'dsh-project-ask', 'data-project-attention-actions': stage.id },
-      stage.detail ? h('p', { className: 'dsh-project-ask-question' }, stage.detail) : null,
-      action ? h('div', { className: 'dsh-project-ask-options' }, h(Button, { variant: 'outline', size: 'sm', disabled: controls.busy, onClick: action.run }, action.label)) : null);
-  }
-
-  function ProjectTaskCard({ card: preview, project, resourceRevision, mode, setMode, tab, setTab, read, team, sessions, controls, queue, changeQueue, archive, retryHandover, openMember, workstreams, todos, renderFactorySlot, t }) {
-    const [saved, setSaved] = useState(null), [error, setError] = useState(''), [menu, setMenu] = useState(false), [readKey, setReadKey] = useState(0);
-    const expanded = mode !== 'strip';
-    // Rows that appear after the card is on screen slide in; the ones present at first paint stay still.
-    const armed = useRef(false), seen = useRef(new Map());
-    useEffect(() => { armed.current = true; }, []);
-    useEffect(() => {
-      if (!expanded) return;
-      let live = true;
-      void read(project.id, 'requests/get', { requestId: preview.id }).then(value => { if (live) { setSaved(value.card); setError(''); } })
-        .catch(failure => { if (live) setError(errorText(failure)); });
-      return () => { live = false; };
-    }, [project.id, preview.id, preview.revision, resourceRevision, expanded, readKey]);
-    const card = saved?.revision === preview.revision && saved?.status === preview.status ? saved : preview;
-    const done = card.status === 'completed', steps = projectRequestSteps(card, team, t, sessions);
-    const executor = projectRequestExecutor(project, card, team, t, sessions), state = projectRequestStage(project, card, steps);
-    const label = ['requestArranging', 'requestHandover'].includes(state) ? t(state) : requestStateLabel(t, card);
-    const human = requestHumanStatus(project, card, state, steps, queue, t);
-    const queueItems = project.lifecycle === 'ready' && !project.archiving ? requestQueueItems(card, queue, controls.busy, t) : [];
-    const primary = queueItems.find(item => ['enqueue', 'resume'].includes(item.id));
-    const archiveItems = project.lifecycle === 'ready' && !project.archiving && (done || card.archivedAt)
-      ? [{ id: 'archive', label: t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction'), disabled: controls.busy }] : [];
-    const more = h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, align: 'end',
-      items: [...queueItems, ...archiveItems], onSelect: action => { setMenu(false); if (action === 'archive') archive(card); else changeQueue(card, action); },
-      anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, title: controls.actionError('archive', card.id), 'data-error': Boolean(controls.actionError('archive', card.id)), onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) });
-    const finished = card.counts?.completed ?? steps.filter(item => item.status === 'completed').length, total = card.counts?.total ?? steps.length;
-    const delivery = card.delivery;
-    const sections = ['progress', 'results'].map(value => ({ value, label: t({ progress: 'requestProgress', results: 'requestResults' }[value]), id: `${card.id}-tab-${value}`, panelId: `${card.id}-panel-${value}` }));
-    const pane = value => ({ role: 'tabpanel', id: `${card.id}-panel-${value}`, 'aria-labelledby': `${card.id}-tab-${value}`, 'data-project-request-tab': value, hidden: tab !== value });
-    const stageIndex = requestStageIndex(card, state, steps);
-    const stageShown = !card.archivedAt && !card.queue?.released && !['discussing', 'queued', 'cancelled'].includes(card.queue?.state);
-    const planItems = queue?.active?.id === card.id && todos?.length ? todos : null;
-    return h('article', { className: 'dsh-project-task-card', 'data-project-request-id': card.id, 'data-project-request-mode': expanded ? 'card' : 'strip', 'data-project-request-status': state },
-      h('div', { className: 'dsh-project-task-surface', 'aria-hidden': true }),
-      !expanded ? h('div', { className: 'dsh-project-task-strip' },
-        h(Button, { variant: 'ghost', className: 'dsh-project-task-strip-open', 'aria-label': `${card.title} · ${label}`, 'aria-expanded': false, onClick: () => setMode('card'), title: `${card.title} · ${label} · ${executor.name}` },
-          done ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': state, 'data-tone': human.tone, 'aria-hidden': true }),
-          h('span', { className: 'dsh-project-task-strip-title' }, card.title), h('small', null, card.queue?.state === 'queued' ? human.label : done && (delivery?.artifactCount ?? delivery?.artifacts?.length) ? `${human.label} · ${t('stripFileCount').replace('{count}', delivery.artifactCount ?? delivery.artifacts.length)}` : total ? `${human.label} · ${finished}/${total}` : human.label),
-          h(IconChevronDownOutlineRegular, { size: 14 })), queueItems.length || archiveItems.length ? more : null) : h(Fragment, null,
-        h('div', { className: 'dsh-project-task-card-heading' }, h('strong', { className: 'dsh-project-task-title' }, card.title),
-          h('div', { className: 'dsh-project-task-queue-actions' }, queueItems.length || archiveItems.length ? more : null,
-            h(Button, { variant: 'ghost', size: 'sm', 'data-error': Boolean(error), title: error || undefined, 'aria-label': `${card.title} · ${t(error ? 'retryRead' : 'observerStrip')}`, onClick: () => error ? setReadKey(value => value + 1) : setMode('strip') }, h(IconChevronUpOutlineRegular, { size: 14 })))),
-        h('div', { className: 'dsh-project-task-status' }, h('div', { className: 'dsh-project-task-status-row' }, h('span', { role: 'status', className: 'dsh-project-task-state' }, h(Tag, { tone: human.tone }, human.label)),
-          total ? h('span', null, `${finished} / ${total}`) : null),
-          human.reason || human.next ? h('div', { className: 'dsh-project-task-next', 'data-tone': human.tone },
-            human.reason ? h('span', null, human.reason) : null, human.next ? h('span', null, h('strong', null, t('nextStep')), human.next) : null) : null),
-        card.stage?.needsYou ? h(ProjectAttention, { card, controls, retryHandover, setTab, t }) : null,
-        h(SegmentedTabs, { className: 'dsh-project-request-tabs', items: sections, value: tab, onChange: setTab, label: t('requestSections') }),
-        h('div', pane('progress'),
-        card.authorityError ? h(RequestAuthority, { request: card, t }) : null,
-        card.handoverError && !card.authorityError ? h('div', { className: 'dsh-project-task-next', 'data-tone': 'warning' },
-          h('span', null, t('handoverErrorHint')), h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('handover', card.id), 'data-error': Boolean(controls.actionError('handover', card.id)), onClick: () => retryHandover(card) }, t('retrySummary')),
-          h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, card.handoverError))) : null,
-        stageShown ? h(StageRail, { index: stageIndex, tone: human.tone, t }) : null,
-        !Array.isArray(card.work) && total > steps.length ? h('p', { className: 'dsh-project-muted' }, t('workPreviewHint')) : null,
-        steps.length ? h('ul', { className: 'dsh-project-task-checklist', 'aria-label': t('observerTaskProgress') }, steps.map(item => {
-          const live = item.status === 'running', canOpen = Boolean(item.workerSessionId);
-          const rowKey = `${item.workstreamId}:${item.delegationRef}`;
-          if (!seen.current.has(rowKey)) seen.current.set(rowKey, armed.current);
-          // Current work opens the member's live conversation; an earlier round opens its exact recorded assignment.
-          const open = () => item.current === false ? controls.showProcess(project.id, item.workstreamId, false, { delegationRef: item.delegationRef }) : openMember(item.workerSessionId);
-          const row = h(Fragment, null,
-            h(StepMark, { status: item.status }),
-            h('span', { className: 'dsh-project-task-step-title' }, item.title),
-            h('small', null, item.waitingReason ? waitingLabel(t, item.waitingReason) : `${item.executor} · ${stateLabel(t, item.status)}`, live && !item.waitingReason ? h(Elapsed, { since: item.assignmentAt }) : null));
-          const stream = workstreams?.find(work => work.id === item.workstreamId);
-          const failure = item.status === 'summaryFailed' && stream?.summaryFailure?.delegationRef === item.delegationRef ? stream.summaryFailure : null;
-          // A delivered requirement shows its own changes once, in the delivery; work in progress shows its directory.
-          const changes = !done && item.current !== false && Boolean(item.memberRole) && !['readonly', 'research'].includes(item.memberRole);
-          const stoppable = item.current !== false && !controls.paused && (live || ['queued', 'preparing', 'provisioning', 'stopping'].includes(item.status));
-          return h('li', { key: rowKey, className: 'dsh-project-task-step', 'data-state': item.status, 'data-enter': seen.current.get(rowKey) },
-            canOpen ? h('button', { type: 'button', className: 'dsh-project-task-step-open', title: t('viewProcess'), onClick: open }, row) : h('div', { className: 'dsh-project-task-step-open' }, row),
-            item.reportId || stoppable || changes ? h('div', { className: 'dsh-project-task-step-actions' },
-              item.reportId ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('viewResult')}`, onClick: () => controls.showMaterials(project.id, item.workstreamId, { delegationRef: item.delegationRef }) }, t('viewResult')) : null,
-              changes ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('viewChanges')}`, onClick: () => controls.showDiff(project.id, item.workstreamId) }, t('viewChanges')) : null,
-              stoppable ? h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${item.title} · ${t('stopWork')}`, title: controls.actionError('stop', item.workstreamId) || t('stopWork'), 'data-error': Boolean(controls.actionError('stop', item.workstreamId)), disabled: controls.busy || item.status === 'stopping', onClick: () => controls.act('stop', { workstreamId: item.workstreamId }) }, t('stopWork')) : null) : null,
-            ['blocked', 'failed'].includes(item.status) && item.blockedReason && item.blockedReason !== 'stopped' && !item.waitingReason ? h('p', { className: 'dsh-project-task-step-reason', role: 'alert' }, workBlockedLabel(t, item.blockedReason)) : null,
-            stream?.prerequisitesChanged && item.current !== false ? h('p', { className: 'dsh-project-task-step-note', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
-            failure ? h('div', { className: 'dsh-project-task-step-failure' }, h(SummaryFailure, { failure, autoRetry: stream?.autoRetry, openModelSettings: controls.openModelSettings, t }),
-              !card.authorityError ? h(Button, { variant: 'outline', disabled: controls.busy, title: controls.actionError('summary', item.workstreamId), 'data-error': Boolean(controls.actionError('summary', item.workstreamId)), onClick: () => controls.retrySummary({ id: item.workstreamId, summaryFailure: failure }) }, t('retrySummary')) : null) : null);
-        })) : h('p', { className: 'dsh-project-task-waiting' }, t('observerNoTodo')),
-        planItems ? h('details', { className: 'dsh-project-result-disclosure dsh-project-lead-plan', open: !steps.length },
-          h('summary', null, t('leadPlan'), ` · ${planItems.filter(todo => todo.status === 'completed').length}/${planItems.length}`),
-          h('ul', { className: 'dsh-project-native-plan' }, planItems.map((todo, index) => h('li', { key: index, 'data-state': todo.status },
-            h(StateDot, { state: todo.status === 'completed' ? 'done' : todo.status === 'in_progress' ? 'ongoing' : 'idle' }), h('span', null, todo.content))))) : null,
-        h('details', { className: 'dsh-project-result-disclosure dsh-project-observer-request-info', open: !steps.length && !planItems }, h('summary', null, t('workRequest')),
-          markdown(t, card.goal),
-          card.conditions?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementConditions')), h('ul', null, card.conditions.map((item, index) => h('li', { key: index }, item)))) : null,
-          card.constraints?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementConstraints')), h('ul', null, card.constraints.map((item, index) => h('li', { key: index }, item)))) : null,
-          card.versions?.length > 1 ? card.versions.toReversed().map(version => h('details', { key: version.revision, className: 'dsh-project-task-version dsh-project-result-disclosure' },
-            h('summary', null, recordedTime(version.at), h('strong', null, `${t('requestVersion')} ${version.revision}`)),
-            h('div', { className: 'dsh-project-result-details' },
-              h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementGoal')), markdown(t, version.goal)),
-              ...[['constraints', 'requirementConstraints', 'noRequirementConstraints'], ['conditions', 'requirementConditions', 'noRequirementConditions']].map(([field, label, empty]) =>
-                h('div', { key: field, className: 'dsh-project-task-section' }, h('strong', null, t(label)), version[field]?.length
-                  ? h('ul', null, version[field].map((text, index) => h('li', { key: index }, markdown(t, text))))
-                  : h('p', { className: 'dsh-project-muted' }, t(empty))))))) : null,
-          h('div', { className: 'dsh-project-task-meta' }, recordedTime(card.updatedAt), h('span', null, `${t('requestVersion')} ${card.revision}`)))),
-        h('div', pane('results'), delivery ? h(Fragment, null,
-          h('p', { className: 'dsh-project-task-outcome' }, summaryPreview(delivery.summary ?? delivery.summaryPreview)),
-          h(ProjectVisualResults, { pages: delivery.pages, renderFactorySlot, t }),
-          h(ProjectTaskDelivery, { project, card, controls, read, openResults: () => controls.showMaterials(project.id), t }),
-          delivery.remainingIssues?.length ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('remainingIssues')),
-            h('ul', null, delivery.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null) : h('p', { className: 'dsh-project-muted' }, t('taskNoResults'))),
-        primary || ['discussing', 'queued'].includes(card.queue?.state) && queueItems.some(item => item.id === 'cancel') ? h('div', { className: 'dsh-project-task-footer' }, h('div', { className: 'dsh-project-task-footer-actions' },
-          primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : null,
-          ['discussing', 'queued'].includes(card.queue?.state) && queueItems.some(item => item.id === 'cancel') ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, 'cancel') }, t('requestUndo')) : null)) : null),
-      error ? h(OperationToast, { text: error }) : null);
-  }
-  function projectMemberDisplayName(member, work, t) {
-    if (member.role === 'lead') return t('teamLead');
-    const name = member.name?.trim();
-    const internalName = name === `member-${member.id?.replace(/^session-/, '')}`
-      || /^member-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name ?? '');
-    return name && !internalName ? name : work?.title || work?.subject || member.description || t('teamMember');
-  }
-
-  function projectRequestSteps(card, team, t, sessions = {}) {
-    return (card?.work ?? card?.workPreview ?? []).map(work => {
-      const historical = card.status === 'completed' || card.queue?.released || work.current === false;
-      const task = historical ? undefined : team?.tasks?.find(item => item.id === work.workstreamId);
-      const member = historical ? undefined : team?.members?.find(item => task?.ownerName ? item.name === task.ownerName : item.id === work.workerSessionId);
-      const title = task?.subject || work.title, name = projectMemberDisplayName(member ?? { name: work.memberName }, work, t);
-      const roleKey = { development: 'requestRoleDevelopment', readonly: 'requestRoleReview', research: 'requestRoleResearch', docs: 'requestRoleDocs' }[work.memberRole];
-      const executorName = name === title || name === work.title ? t('teamMember') : name;
-      const executor = roleKey ? executorName === t('teamMember') ? t(roleKey) : `${t(roleKey)} · ${executorName}` : executorName;
-      const blocked = task?.blockedBy?.filter(id => team.tasks.find(item => item.id === id)?.status !== 'completed') ?? [];
-      const dependencyBlocked = blocked.length > 0 || task?.status === 'pending' && task.ready === false;
-      const running = sessions[member?.id ?? work.workerSessionId]?.running || work.runningJob === true;
-      // Project-owned states (a failed summary, a stop in progress, a hold) outrank the Team task's view.
-      const status = ['summaryFailed', 'stopping', 'paused', 'failed', 'blocked'].includes(work.status) ? work.status
-        : !historical && running === true ? 'running'
-        : task ? task.status === 'completed' ? 'completed' : task.status === 'deleted' ? 'deleted' : dependencyBlocked ? 'blocked'
-        : task.status === 'in_progress' ? 'teamAssigned' : 'queued' : work.status;
-      return { ...work, title, status, executor,
-        ...(dependencyBlocked ? { waitingReason: { kind: 'dependencies', workTitles: blocked.map(id => team.tasks.find(item => item.id === id)?.subject).filter(Boolean) } } : {}) };
-    });
-  }
-
-  function projectRequestStage(project, card, steps) {
-    return card?.queue?.state === 'active' && !card.queue.released && !project.paused && !steps.length && !card.delivery && !card.handoverError && !card.authorityError
-      ? 'requestArranging' : card?.status === 'pendingDelivery' && steps.length && steps.every(item => item.status === 'completed') ? 'requestHandover' : card?.status ?? project.activity?.state ?? 'idle';
-  }
-
-  function projectRequestExecutor(project, card, team, t, sessions) {
-    if (card?.status === 'completed') return { name: t('teamLead'), stage: t('completed') };
-    if (project.archiving || project.activity?.state === 'stopping') return { name: t('teamLead'), stage: t('stopping') };
-    const steps = projectRequestSteps(card, team, t, sessions);
-    if (projectRequestStage(project, card, steps) === 'requestArranging') return { name: t('teamLead'), stage: t('requestArranging') };
-    if (card?.queue && (card.queue.state !== 'active' || card.queue.released)) return { name: t('teamLead'), stage: requestStateLabel(t, card, false) };
-    const work = steps.find(item => item.status === 'running');
-    if (work) return { name: work.executor, stage: stateLabel(t, work.status), title: work.title, sessionId: work.workerSessionId };
-    if (project.activity?.coordinatorRunning) return { name: t('teamLead'), stage: stateLabel(t, project.activity.pendingSummary ? 'pendingSummary' : 'running'), sessionId: project.coordinatorSessionId };
-    return { name: t('teamLead'), stage: stateLabel(t, card?.status ?? 'observerIdle') };
-  }
-
-  function ProjectReportView({ projectId, reference, read, showProcess, t }) {
-    const [result, setResult] = useState(null), [error, setError] = useState('');
-    useEffect(() => {
-      let live = true; setResult(null); setError('');
-      Promise.all([read(projectId, 'workstreams/get', { workstreamId: reference.workstreamId }),
-        read(projectId, 'store/results', { workstreamId: reference.workstreamId, delegationRef: reference.delegationRef })])
-        .then(([work, reports]) => { if (live) {
-          const report = reports.items.find(item => item.delegationRef === reference.delegationRef);
-          if (!report) throw new Error(t('resultMissing'));
-          setResult({ workstreamId: reference.workstreamId, title: work.workstream.title, report, reportCount: reports.total,
-            request: reports.request ?? report.request, current: work.workstream.currentDelegationRef === reference.delegationRef });
-        } }).catch(failure => { if (live) setError(errorText(failure)); });
-      return () => { live = false; };
-    }, [projectId, reference.workstreamId, reference.delegationRef]);
-    return error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : result
-      ? h(ResultEntry, { projectId, result, read, showProcess, t }) : h('p', { role: 'status' }, t('loading'));
-  }
-
-  function RailQuestion({ project, ask, sendUserRequest, t }) {
-    const [answer, setAnswer] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
-    const send = async text => { if (!text.trim()) return; setBusy(true); try { await sendUserRequest(project.id, ask.question + '\n' + text); setAnswer(''); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h('div', { className: 'dsh-project-rail-details' }, h('p', null, ask.question), h('div', { className: 'dsh-project-actions' }, ask.options?.map(option => h(Button, { key: option, variant: 'outline', size: 'sm', disabled: busy, onClick: () => send(option) }, option))), h('form', { onSubmit: event => { event.preventDefault(); void send(answer); } }, h(Input, { 'aria-label': ask.question, value: answer, onChange: event => setAnswer(event.target.value), disabled: busy }), h(Button, { type: 'submit', variant: 'ghost', size: 'sm', disabled: busy || !answer.trim() }, t('askSend'))), error ? h('p', { role: 'alert' }, error) : null);
-  }
-  function RailFailure({ project, card, work, read, sendUserRequest, openModelSettings, t }) {
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    const failure = work?.summaryFailure;
-    const retry = async () => {
-      setBusy(true); setError('');
-      try {
-        let context;
-        if (work) {
-          const { workstream } = await read(project.id, 'workstreams/get', { workstreamId: work.id });
-          if (workstream.request?.authorityError) throw new Error(t('authorityErrorHint'));
-          const fresh = workstream.summaryFailure, report = workstream.latestReport;
-          const terminal = workstream.recentSettlements?.find(item => item.runId === fresh?.runId && item.delegationRefs.includes(fresh.delegationRef));
-          if (fresh?.delegationRef !== failure.delegationRef || !(report?.delegationRef === fresh.delegationRef || terminal)) throw new Error(t('resultUpdated'));
-          context = workstream.title + ' · ' + new Date((report ?? terminal).at).toISOString();
-        } else {
-          const fresh = await read(project.id, 'detail');
-          const current = fresh.project.currentRequests?.find(item => item.id === card.id && item.revision === card.revision && item.handoverError === card.handoverError);
-          if (!current) throw new Error(t('resultUpdated'));
-          if (current.authorityError) throw new Error(t('authorityErrorHint'));
-          context = requestLabel(t, current) + '\n' + current.goal;
-        }
-        await sendUserRequest(project.id, t('retrySummaryPrompt') + '\n' + context);
-      } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
-    };
-    return h('div', { className: 'dsh-project-rail-details' },
-      failure ? h(SummaryFailure, { failure, autoRetry: work.autoRetry, openModelSettings, t }) : h(Fragment, null, h('p', null, t('handoverErrorHint')), h('details', null, h('summary', null, t('errorDetails')), h('pre', null, card.handoverError))),
-      h(Button, { variant: 'outline', size: 'sm', disabled: busy, onClick: retry }, t('retrySummary')),
-      error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
-  }
-  function RailCard(props) {
-    const { card, project, t } = props, [expanded, setExpanded] = useState(Boolean(props.expandedCards?.[card.id])), [full, setFull] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
-    useEffect(() => { let live = true; if (expanded) void props.read(project.id, 'requests/get', { requestId: card.id }).then(value => { if (live) { setFull(value); setError(''); } }, failure => { if (live) setError(errorText(failure)); }); return () => { live = false; }; }, [expanded, card.updatedAt, card.status]);
-    const action = async name => { setBusy(true); setError(''); try { await props.command(project.id, 'requests/queue', { requestId: card.id, requestRevision: card.revision, action: name }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    const current = full?.card ?? full?.request ?? full ?? card, work = expanded && full ? current.work ?? card.workPreview ?? [] : card.workPreview ?? [];
-    const toggle = () => { setExpanded(value => !value); props.rememberExpanded?.(card.id, !expanded); };
-    return h('article', { className: 'dsh-project-rail-card', 'data-project-request': card.id },
-      h('button', { type: 'button', className: 'dsh-project-rail-card-title', 'aria-expanded': expanded, onClick: toggle }, h('strong', null, card.title), h(IconChevronDownOutlineRegular, { size: 14, style: { transform: expanded ? 'rotate(180deg)' : undefined } })),
-      h('div', { className: 'dsh-project-rail-status', 'data-status': card.status }, h(StateDot, { tone: ['blocked', 'failed', 'summaryFailed'].includes(card.status) ? 'warning' : card.status === 'completed' ? 'success' : 'neutral' }), requestStateLabel(t, card)),
-      work.map(item => h('div', { className: 'dsh-project-rail-work', key: item.workstreamId }, h('button', { type: 'button', className: 'dsh-project-rail-link', disabled: !item.workerSessionId, onClick: () => props.openMember(project, item.workerSessionId, item.parentSessionId) }, item.title), h('span', { className: 'dsh-project-muted' }, stateLabel(t, item.status)), ['running','queued','preparing','stopping'].includes(item.status) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy || item.status === 'stopping', onClick: async () => { setBusy(true); setError(''); try { await props.command(project.id, 'stop', { workstreamId: item.workstreamId }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } } }, t('stopWork')) : null, item.waitingReason || item.blockedReason ? h('p', null, item.waitingReason ? waitingLabel(t, item.waitingReason) : workBlockedLabel(t, item.blockedReason)) : null)),
-      card.delivery?.summaryPreview ? h('p', { className: 'dsh-project-rail-summary' }, card.delivery.summaryPreview) : null,
-      card.stage?.ask ? h(RailQuestion, { ...props, ask: card.stage.ask }) : null,
-      current.authorityError ? h('p', { role: 'alert', className: 'dsh-project-rail-details' }, t('authorityErrorHint')) : current.handoverError ? h(RailFailure, { ...props, card: current }) : null,
-      work.filter(item => item.status === 'summaryFailed' && !current.authorityError).map(item => {
-        const stream = props.workstreams?.find(work => work.id === item.workstreamId);
-        return stream?.summaryFailure ? h(RailFailure, { ...props, key: item.workstreamId, work: stream }) : null;
-      }),
-      expanded ? h('div', { className: 'dsh-project-rail-details' }, full ? h(Fragment, null,
-        h('p', null, current.goal), h(ProjectTaskDelivery, { project, card: current, read: props.read, openResults: () => props.showMaterials(project.id), controls: { busy, revert: card => props.command(project.id, 'requests/revert', { requestId: card.id, requestRevision: card.revision }), ask: text => props.sendUserRequest(project.id, text), showRequestDiff: requestId => props.showRequestDiff(project.id, requestId), showDiff: props.showDiff }, t }), h(ProjectVisualResults, { pages: current.delivery?.pages, renderFactorySlot: props.renderFactorySlot, t }), current.delivery ? h('section', null, h('strong', null, t('viewResult')), h('p', null, current.delivery.summary), current.delivery.evidence?.map((text,index) => h('p', { key: index }, text)), current.delivery.remainingIssues?.map((text,index) => h('p', { key: index }, text)), current.delivery.artifacts?.map(file => h(Button, { key: file.path, variant: 'ghost', size: 'sm', onClick: () => void props.read(project.id, 'open', { workstreamId: file.workstreamId, delegationRef: file.delegationRef, path: file.path }).catch(failure => setError(errorText(failure))) }, file.path.split(/[\\/]/).at(-1)))) : null, current.constraints?.length ? h('ul', null, current.constraints.map((text, index) => h('li', { key: index }, text))) : null,
-        current.versions?.length > 1 ? h('details', null, h('summary', null, t('requestVersion')), current.versions.map(version => h('section', { key: version.revision }, h('strong', null, version.title), h('p', null, version.goal), h('ul', null, [...(version.constraints ?? []), ...(version.conditions ?? [])].map((text,index) => h('li', { key:index },text)))))) : null, current.conditions?.length ? h('details', null, h('summary', null, t('requirementConditions')), h('ul', null, current.conditions.map((text, index) => h('li', { key: index }, text)))) : null,
-        (current.work ?? current.requiredWork ?? []).map(item => item.reportId ? h(Button, { key: item.workstreamId + item.delegationRef, variant: 'ghost', size: 'sm', 'aria-label': t('viewResult'), onClick: () => props.showReport(project.id, item.workstreamId, { delegationRef: item.delegationRef }) }, item.title ?? t('viewResult')) : null)) : h('p', { role: 'status' }, t('loading')),
-        h('div', { className: 'dsh-project-actions' },
-          ['discussing', 'cancelled'].includes(card.queue?.state) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('enqueue') }, t('requestEnqueue')) : null,
-          (project.paused || card.queue?.suspended || card.status === 'paused') && ['active','queued'].includes(card.queue?.state) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('resume') }, t('requestResume')) : null,
-          !['completed', 'cancelled'].includes(card.status) ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => action('cancel') }, t('requestCancel')) : null,
-          (card.status === 'completed' || card.archivedAt) && project.lifecycle === 'ready' && !project.archiving ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: async () => { setBusy(true); setError(''); try { await props.command(project.id, card.archivedAt ? 'requests/restore' : 'requests/archive', { requestId: card.id }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } } }, t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction')) : null,
-          h(Button, { variant: 'ghost', size: 'sm', onClick: () => props.showRequestDiff(project.id, card.id) }, t('viewChanges')))) : null,
-      error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
-  }
-
-  // One quiet list over existing goal records; history and evidence remain available on demand.
-  function ProjectRequirements(props) {
-    const { project, sessionId, t } = props, detail = props.useProjects(value => value.details[project.id]);
-    const saved = props.useRequestPanels(value => value[sessionId]?.rail), [history, setHistory] = useState(saved?.history ?? 'current'), [page, setPage] = useState({ items: [] }), [cursor, setCursor] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true), [refresh, setRefresh] = useState(0), [expandedCards, setExpandedCards] = useState(saved?.expandedCards ?? {});
-    const list = useRef(null), order = useRef([]), retained = useRef(new Map()), group = useRef(history), position = useRef(saved?.scrollTop ?? 0);
-    useEffect(() => {
-      let live = true; setLoading(true);
-      if (group.current !== history) { retained.current.clear(); order.current = []; group.current = history; }
-      void (async () => {
-        const value = await props.read(project.id, 'requests/list', { kind: history, ...(cursor ? { cursor } : {}) });
-        if (!live) return;
-        // A completed card stays at its reading position until the user changes
-        // the group or closes the rail. Refresh its facts by exact identity.
-        const present = new Set(value.items.map(item => item.id));
-        const missing = [...retained.current.keys()].filter(id => !present.has(id));
-        const updates = await Promise.all(missing.map(requestId => props.read(project.id, 'requests/get', { requestId })));
-        if (!live) return;
-        for (const item of [...value.items, ...updates.map(item => item.card)]) {
-          if (!order.current.includes(item.id)) order.current.push(item.id);
-          retained.current.set(item.id, item);
-        }
-        setPage({ ...value, items: [...retained.current.values()] }); setError('');
-      })().catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setLoading(false); });
-      return () => { live = false; };
-    }, [project.id, detail?.revision, project.updatedAt, history, cursor, refresh]);
-    useLayoutEffect(() => { if (list.current) list.current.scrollTop = position.current; }, [Boolean(page.items.length)]);
-    useEffect(() => { props.setRequestPanel(sessionId, { rail: { history, expandedCards, scrollTop: position.current } }); }, [history, expandedCards, sessionId]);
-    const cards = [...page.items].sort((a,b) => order.current.indexOf(a.id) - order.current.indexOf(b.id));
-    return h('div', { className: 'dsh-project-rail-body', ref: list, onScroll: event => { position.current = event.currentTarget.scrollTop; props.setRequestPanel(sessionId, { rail: { history, expandedCards, scrollTop: position.current } }); } },
-      h('div', { className: 'dsh-project-rail-tools' }, h('select', { 'aria-label': t('taskList'), value: history, onChange: event => { setHistory(event.target.value); setCursor(null); order.current = []; position.current = 0; } }, ['current','completed','cancelled','archived'].map(kind => h('option', { value: kind, key: kind }, t({ current: 'groupActive', completed: 'taskCompleted', cancelled: 'taskCancelled', archived: 'taskArchive' }[kind])))), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setRefresh(value => value + 1) }, t('refresh'))),
-      error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
-      loading && !cards.length ? h('p', { role: 'status' }, t('loading')) : null,
-      !loading && !error && !cards.length ? h('div', { className: 'dsh-project-rail-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
-      cards.map(card => h(RailCard, { ...props, workstreams: detail?.workstreams, card, key: card.id, expandedCards, rememberExpanded: (id, value) => setExpandedCards(before => ({ ...before, [id]: value })) })),
-      page.nextCursor ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => setCursor(page.nextCursor) }, t('more')) : null,
-      cursor ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => setCursor(null) }, t('taskBack')) : null);
-  }
-
-  function ProjectRequestSidebar(props) {
-    const project = props.useProjects(value => value.projects.find(item => item.coordinatorSessionId === props.sessionId));
-    const { tab, panel } = props.useTabInfo();
-    if (!project) return null;
-    return h(ProjectRequirements, { ...props, project, returnFloat: () => {
-      tab.actions.close();
-      if (panel.host === 'dock') props.collapseEmptyObserver(props.sessionId);
-      props.setRequestPanel(props.sessionId, { open: true, observing: false });
-    } });
-  }
-
-  function ProjectComposerFrame({ children, label }) {
-    const rootRef = useRef(null);
-    useLayoutEffect(() => {
-      const root = rootRef.current, seat = root?.closest('[data-composer-seat]');
-      const card = seat?.querySelector('[data-chain-overlay-fallback="conversation.composer"] [data-composer-card]');
-      if (!root || !card) return;
-      const frame = card.closest('[data-chain-overlay-fallback="conversation.composer"]');
-      const layoutTop = element => { let top = 0; for (let node = element; node; node = node.offsetParent) top += node.offsetTop; return top; };
-      const measure = () => {
-        const box = card.getBoundingClientRect();
-        root.style.setProperty('--project-composer-width', `${box.width}px`);
-        root.style.setProperty('--project-composer-height', `${box.height}px`);
-        if (frame) {
-          const top = layoutTop(card) - layoutTop(frame);
-          root.style.setProperty('--project-composer-top', `${top}px`);
-          root.style.setProperty('--project-composer-bottom', `${frame.offsetHeight - card.offsetHeight - top}px`);
-        }
-      };
-      const observer = new ResizeObserver(measure); observer.observe(card); if (frame) observer.observe(frame); measure();
-      return () => observer.disconnect();
-    }, []);
-    return h('div', { ref: rootRef, className: 'dsh-project-composer-frame', 'data-project-composer-takeover': true }, h('div', { className: 'dsh-project-archive-notice dsh-project-composer-notice', role: 'note', 'aria-label': label }, children));
-  }
-
-  // A member's conversation is read for its progress; work reaches it through the Lead.
-  function ProjectMemberComposer({ matched, useProjects, command, openLead, t }) {
-    const project = useProjects(value => value.projects.find(item => item.id === matched.projectId));
-    const worker = useProjects(value => value.details[matched.projectId]?.workers?.find(item => item.sessionId === matched.workerSessionId));
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    const stop = async () => { setBusy(true); setError(''); try { await command(matched.projectId, 'stop', { workstreamId: worker.workstreamId }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    const back = event => { try { openLead(project.coordinatorSessionId, event.currentTarget); } catch (failure) { setError(errorText(failure)); } };
-    return h(ProjectComposerFrame, { label: t('memberRecordTitle') },
-      h('div', { className: 'dsh-project-composer-notice-copy' }, h('strong', null, t('memberRecordTitle')), h('p', null, t('memberComposerHint'))),
-      h('div', { className: 'dsh-project-actions' }, project ? h(Button, { variant: 'outline', size: 'sm', shape: 'pill', onClick: back }, t('backToLead')) : null,
-        worker && !worker.stopped && isLive(worker) && project?.lifecycle === 'ready' ? h(Button, { variant: 'ghost', size: 'sm', shape: 'pill', loading: busy, disabled: busy || worker.phase === 'stopping', 'aria-busy': busy || worker.phase === 'stopping', onClick: stop }, t('stopWork')) : null),
-      error ? h(OperationToast, { text: error }) : null);
-  }
-
-  function ProjectArchiveComposer({ matched, useProjects, command, t }) {
-    const project = useProjects(value => value.projects.find(item => item.id === matched.projectId));
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    const restore = async () => { setBusy(true); setError(''); try { await command(project.id, 'restore'); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h(ProjectComposerFrame, { label: t(project?.archiving ? 'archiving' : 'archived') },
-      h('p', null, t(project?.archiving ? 'archiving' : 'archivedHint')),
-      h('div', { className: 'dsh-project-actions' }, h(Button, { variant: 'outline', size: 'sm', shape: 'pill', loading: busy, disabled: busy || project?.lifecycle !== 'archived', onClick: restore }, t('restore'))),
-      error ? h(OperationToast, { text: error }) : null);
-  }
-
-  function RequestAuthority({ request, className = 'dsh-project-work', t }) {
-    return h('div', { className, 'data-request-recovery-id': request.id },
-      h('strong', null, requestLabel(t, request)), h('p', { className: 'dsh-project-error' }, t('authorityErrorHint')),
-      h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('workRequest')), markdown(t, request.goal)),
-      h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, request.authorityError)));
-  }
-
-  function ProjectStop({ sessionId, useProjects, command, t, compact = true }) {
-    const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    if (!project || project.lifecycle !== 'ready' || project.archiving) return null;
-    const active = Boolean(project.activity?.running || project.activity?.queued || project.activity?.provisioning || project.activity?.coordinatorRunning || project.activity?.state === 'stopping');
-    const stop = async () => { setBusy(true); setError(''); try { await command(project.id, 'stop'); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h(Fragment, null, h(Button, { variant: 'ghost', size: 'sm', className: compact ? 'dsh-project-stop' : undefined, loading: busy, 'data-error': Boolean(error), 'aria-label': t('stop'), title: error || t('stop'), disabled: busy || !active && !error || project.activity?.state === 'stopping', onClick: stop }, compact ? h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true }, h('rect', { x: 3, y: 3, width: 10, height: 10, rx: 2, fill: 'currentColor' })) : t('stop')),
-      error ? h(OperationToast, { text: error }) : null);
-  }
-
-  const ProjectApprovalStop = props => h(ProjectStop, { ...props, compact: false });
-
-  function ResultCard({ projectId, workstreamId, report, read, showProcess, request, t }) {
-    const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
-    const open = async path => { setError(''); setNotice(''); setBusy(true); try { const value = await read(projectId, 'open', { workstreamId, delegationRef: report.delegationRef, path }); if (value.modifiedSinceReport) setNotice(t('modifiedArtifact')); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h('div', { className: 'dsh-project-result-body' }, h('div', { className: 'dsh-project-result-meta' }, h(Pill, null, stateLabel(t, report.outcome)), recordedTime(report.at), h('span', { className: 'dsh-project-muted' }, t('reportSource'))),
-      request ? h('p', { className: 'dsh-project-muted' }, requestLabel(t, request)) : null,
-      h('div', { className: 'dsh-project-result-conclusion' }, markdown(t, summaryPreview(report.summary))),
-      report.prerequisitesChanged ? h('p', { className: 'dsh-project-muted' }, t('prerequisitesChanged'), ' · ', t('prerequisitesHint')) : null,
-      h('div', { className: 'dsh-project-result-checks' }, h('strong', null, t('keyEvidence')), report.evidence?.length ? h('ul', null, report.evidence.slice(0, 2).map((item, index) => h('li', { key: index }, item))) : h('p', { className: 'dsh-project-muted' }, t('noEvidence'))),
-      report.remainingIssues?.length ? h('div', { className: 'dsh-project-result-checks' }, h('strong', null, t('remainingIssues')), h('ul', null, report.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null,
-      report.artifacts?.map(file => h(Artifact, { key: file.path, file, open, busy, t })),
-      // What a research member opened and searched, as the host recorded it while the calls were made.
-      report.sources?.length ? h('details', { className: 'dsh-project-result-disclosure', 'data-project-sources': report.sources.length }, h('summary', null, `${t('researchSources')} · ${report.sources.length}`),
-        h('ul', null, report.sources.map((item, index) => h('li', { key: index }, item.kind === 'search' ? `${t('searchedPrefix')}${item.text}` : item.text)))) : null,
-      h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('reportDetails')),
-        h('div', { className: 'dsh-project-result-details' }, markdown(t, report.summary),
-          report.evidence?.length > 2 ? h('details', null, h('summary', null, t('evidence')), h('ul', null, report.evidence.map((item, index) => h('li', { key: index }, item)))) : null)),
-      showProcess ? h('div', { className: 'dsh-project-work-detail-actions' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => showProcess(projectId, workstreamId, false, { delegationRef: report.delegationRef, reportAt: report.at, request }) }, t('viewProcess'))) : null,
-      h(OperationToast, { text: error || notice }));
-  }
-
-  function ResultHistory({ projectId, result, read, showProcess, t }) {
-    const [open, setOpen] = useState(false), [history, setHistory] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [cursors, setCursors] = useState([null]);
-    const selected = cursors.at(-1);
-    useEffect(() => {
-      if (!open) return;
-      let live = true; setBusy(true); setError('');
-      void read(projectId, 'store/results', { workstreamId: result.workstreamId, ...(selected ? { cursor: selected } : {}) }).then(value => { if (live) setHistory(value); }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setBusy(false); });
-      return () => { live = false; };
-    }, [open, projectId, result.workstreamId, selected]);
-    return h('details', { className: 'dsh-project-result-disclosure', open, onToggle: event => setOpen(event.currentTarget.open) }, h('summary', null, t('resultHistory'), ` (${result.reportCount - 1})`),
-      open ? h(Fragment, null,
-      history?.items.filter(report => report.delegationRef !== result.report.delegationRef).map(report => h(ResultCard, { key: report.delegationRef, projectId, workstreamId: result.workstreamId, report, request: report.request, read, showProcess, t })),
-      busy ? h('p', { role: 'status' }, t('loading')) : null, error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
-      h('div', { className: 'dsh-project-actions' }, cursors.length > 1 ? button(t('previous'), () => setCursors(before => before.slice(0, -1)), busy) : null,
-        history?.nextCursor ? button(t('older'), () => setCursors(before => [...before, history.nextCursor]), busy) : null)) : null);
-  }
-
-  function ResultEntry({ projectId, result, read, showProcess, t }) {
-    return h('article', { className: 'dsh-project-result', 'data-result-workstream-id': result.workstreamId },
-      h('div', { className: 'dsh-project-result-heading' }, h('strong', null, result.title), h('span', { className: 'dsh-project-muted' }, t(result.current ? 'currentResult' : 'previousResult'))),
-      h(ResultCard, { projectId, workstreamId: result.workstreamId, report: result.report, request: result.request, read, showProcess, t }),
-      result.reportCount > 1 ? h(ResultHistory, { key: result.report.delegationRef, projectId, result, read, showProcess, t }) : null);
-  }
-
-  function ProjectVisualResults({ pages, renderFactorySlot, t }) {
-    return pages?.length ? h('section', { className: 'dsh-project-visual-results', 'aria-label': t('visualResults') },
-      pages.map(page => h('div', { key: page.callId, className: 'dsh-project-visual-page' },
-        renderFactorySlot('visual-reply.page', { sessionId: page.sessionId, file: page.file, title: page.title, height: page.height },
-          { fallback: h('p', { role: 'status' }, t('loading')) })))) : null;
-  }
-
-  function DeliveryEntry({ projectId, delivery, results, read, openReport, showProcess, renderFactorySlot, t }) {
-    const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
-    const historical = delivery.status === 'historical' || delivery.status === 'obsolete';
-    const openFile = async file => {
-      setBusy(true); setError(''); setNotice('');
-      try { const value = await read(projectId, 'open', { workstreamId: file.workstreamId, delegationRef: file.delegationRef, path: file.path }); if (value.modifiedSinceReport) setNotice(t('modifiedArtifact')); }
-      catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
-    };
-    return h('article', { className: 'dsh-project-result', 'data-delivery-id': delivery.id },
-      h('div', { className: 'dsh-project-result-heading' }, h('strong', null, delivery.title), h(Pill, null, t(historical ? 'historicalDelivery' : delivery.outcome === 'completed' ? 'delivered' : 'partialDelivery'))),
-      h(ProjectVisualResults, { pages: delivery.pages, renderFactorySlot, t }),
-      h('div', { className: 'dsh-project-result-conclusion' }, markdown(t, summaryPreview(delivery.summary))),
-      historical ? h('p', { className: 'dsh-project-muted' }, t('historicalDeliveryHint')) : delivery.applicable === false ? h('p', { className: 'dsh-project-muted' }, t('needsReview'), ' · ', t('deliveryChangedHint')) : null,
-      delivery.evidence?.length ? h('div', { className: 'dsh-project-result-checks' }, h('strong', null, t('keyEvidence')), h('ul', null, delivery.evidence.slice(0, 2).map((item, index) => h('li', { key: index }, item)))) : null,
-      delivery.remainingIssues?.length ? h('div', { className: 'dsh-project-result-checks' }, h('strong', null, t('remainingIssues')), h('ul', null, delivery.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null,
-      delivery.artifacts?.length ? h('section', { className: 'dsh-project-result-files' }, h('strong', null, t('resultFiles')),
-        delivery.artifacts.map(file => h(Artifact, { key: file.workstreamId + ':' + file.delegationRef + ':' + file.path, file, busy, t, open: () => openFile(file) }))) : null,
-      delivery.reportRefs.length ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('reportSource')), h('div', { className: 'dsh-project-work-detail-actions' }, delivery.reportRefs.map((reference, index) => h(Button, { key: reference.workstreamId + ':' + reference.delegationRef, variant: 'ghost', size: 'sm', onClick: () => openReport(reference) }, results?.find(result => result.workstreamId === reference.workstreamId)?.title ?? `${t('reportSource')} ${index + 1}`)))) : null,
-      h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('deliveryDetails')),
-        h('div', { className: 'dsh-project-result-meta' }, h('span', { className: 'dsh-project-muted' }, `${t('requestVersion')} ${delivery.requestRevision}`), recordedTime(delivery.at)),
-        markdown(t, delivery.summary), delivery.evidence?.length > 2 ? h('ul', null, delivery.evidence.map((item, index) => h('li', { key: index }, item))) : null,
-        historical ? h('p', { className: 'dsh-project-muted' }, t('result'), ' · ', t(delivery.outcome === 'completed' ? 'completed' : delivery.outcome === 'partial' ? 'partialDelivery' : delivery.outcome)) : null,
-        showProcess && delivery.terminalRefs?.length ? h('div', { className: 'dsh-project-work-detail-actions' }, delivery.terminalRefs.map((reference, index) => h(Button, {
-          key: reference.workstreamId + ':' + reference.delegationRef + ':' + reference.runId, variant: 'ghost', size: 'sm',
-          onClick: () => showProcess(projectId, reference.workstreamId, false, { delegationRef: reference.delegationRef, reportAt: delivery.at, request: { id: delivery.requestId, title: delivery.title, revision: delivery.requestRevision } }),
-        }, t('viewProcess'), delivery.terminalRefs.length > 1 ? ` ${index + 1}` : ''))) : null),
-      delivery.error ? h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, errorText(delivery.error))) : null,
-      h(OperationToast, { text: error || notice }));
-  }
-
-  function DeliveryGroup({ projectId, items, results, read, openReport, showProcess, renderFactorySlot, t }) {
-    const versions = [...items].sort((left, right) => right.requestRevision - left.requestRevision || right.at - left.at);
-    const render = delivery => h(DeliveryEntry, { key: delivery.id, projectId, delivery, results, read, openReport, showProcess, renderFactorySlot, t });
-    return h('section', { className: 'dsh-project-delivery-group', 'data-request-id': versions[0].requestId }, render(versions[0]),
-      versions.length > 1 ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('earlierDeliveries')), versions.slice(1).map(render)) : null);
-  }
-
-  function Materials({ projectId, workstreamId, delegationRef, resourceRevision, active = true, read: readOriginal, command, onDirtyChange, editorRef, readonly, showProcess: showProcessOriginal, renderFactorySlot, t }) {
-    const [listing, setListing] = useState(null), [path, setPath] = useState('docs'), [text, setText] = useState('');
-    const [loadedPath, setLoadedPath] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
-    const [savedText, setSavedText] = useState(''), [generatedText, setGeneratedText] = useState(''), [decisionText, setDecisionText] = useState('');
-    const [resultCursors, setResultCursors] = useState([null]), resultsCursor = resultCursors.at(-1);
-    const [deliveryCursors, setDeliveryCursors] = useState([null]), deliveryCursor = deliveryCursors.at(-1);
-    const [deliveries, setDeliveries] = useState(null), [deliveriesBusy, setDeliveriesBusy] = useState(false);
-    const [requestCursors, setRequestCursors] = useState([null]), requestCursor = requestCursors.at(-1);
-    const [requestsPage, setRequestsPage] = useState(null), [requestsBusy, setRequestsBusy] = useState(false);
-    const [selectedWork, setSelectedWork] = useState(workstreamId), [selectedDelegation, setSelectedDelegation] = useState(delegationRef), [selectedResult, setSelectedResult] = useState(null), [pendingPath, setPendingPath] = useState(null);
-    const contentRef = useRef(null), returnScroll = useRef(0), visibleScroll = useRef(0);
-    useLayoutEffect(() => { if (active && contentRef.current) contentRef.current.scrollTop = visibleScroll.current; }, [active]);
-    const materialTarget = useRef(null);
-    useLayoutEffect(() => {
-      if (!active) { materialTarget.current = null; return; }
-      const target = { path, selectedWork, selectedDelegation };
-      materialTarget.current = target;
-      return () => { materialTarget.current = null; };
-    }, [active, path, selectedWork, selectedDelegation]);
-    const read = (...args) => {
-      const target = materialTarget.current;
-      if (args[1] === 'open' && active) visibleScroll.current = contentRef.current?.scrollTop ?? 0;
-      return readOriginal(...args, () => target !== null && materialTarget.current === target);
-    };
-    const showProcess = (id, work, member, context) => {
-      const target = materialTarget.current;
-      if (active) visibleScroll.current = contentRef.current?.scrollTop ?? 0;
-      showProcessOriginal(id, work, member, { ...context, isCurrent: () => target !== null && materialTarget.current === target });
-    };
-    const [listingBusy, setListingBusy] = useState(true), [selectionBusy, setSelectionBusy] = useState(Boolean(workstreamId));
-    const pending = busy || listingBusy || selectionBusy;
-    const dirty = loadedPath === path && text !== savedText;
-    useEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
-    useEffect(() => {
-      let live = true;
-      setListingBusy(true); setError('');
-      read(projectId, 'store/list', resultsCursor ? { resultsCursor } : {}).then(value => { if (live) setListing(value); }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setListingBusy(false); });
-      return () => { live = false; };
-    }, [projectId, resultsCursor, resourceRevision]);
-    useEffect(() => {
-      if (!deliveryCursor) { setDeliveries(null); return; }
-      let live = true; setDeliveriesBusy(true); setError('');
-      read(projectId, 'store/list', { kind: 'deliveries', cursor: deliveryCursor }).then(value => { if (live) setDeliveries(value.deliveries); }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setDeliveriesBusy(false); });
-      return () => { live = false; };
-    }, [projectId, deliveryCursor, resourceRevision]);
-    useEffect(() => {
-      if (!requestCursor) { setRequestsPage(null); return; }
-      let live = true; setRequestsBusy(true); setError('');
-      read(projectId, 'store/list', { kind: 'requests', cursor: requestCursor }).then(value => { if (live) setRequestsPage(value.requests); }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setRequestsBusy(false); });
-      return () => { live = false; };
-    }, [projectId, requestCursor, resourceRevision]);
-    useEffect(() => {
-      if (!selectedWork) { setSelectionBusy(false); return; }
-      let live = true; setSelectedResult(null); setError(''); setSelectionBusy(true);
-      Promise.all([read(projectId, 'workstreams/get', { workstreamId: selectedWork }), read(projectId, 'store/results', { workstreamId: selectedWork, ...(selectedDelegation ? { delegationRef: selectedDelegation } : {}) })]).then(([value, history]) => {
-        if (!live) return;
-        const report = selectedDelegation ? history.items.find(item => item.delegationRef === selectedDelegation) : history.items[0];
-        if (selectedDelegation && !report) throw new Error(t('resultMissing'));
-        setSelectedResult(report ? { workstreamId: selectedWork, title: value.workstream.title, report, reportCount: history.total, request: history.request ?? report.request, current: report.delegationRef === value.workstream.currentDelegationRef } : null);
-      }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setSelectionBusy(false); });
-      return () => { live = false; };
-    }, [projectId, selectedWork, selectedDelegation]);
-    useEffect(() => { if (!selectedWork && contentRef.current) contentRef.current.scrollTop = returnScroll.current; }, [selectedWork]);
-    useEffect(() => {
-      let live = true;
-      if (path === 'docs') { setLoadedPath('docs'); setBusy(false); setError(''); return; }
-      setLoadedPath(null); setBusy(true); setError(''); setNotice(''); setGeneratedText('');
-      if (path === 'notes.md') read(projectId, 'store/read', { path: 'decisions.md' }).then(value => { if (live) setDecisionText(value?.text ?? ''); }).catch(() => { if (live) setDecisionText(''); });
-      read(projectId, 'store/read', { path }).then(value => { if (live) { const editableText = path === 'notes.md' ? value.userText : value.text; setText(editableText); setSavedText(editableText); setGeneratedText(value.generatedText ?? ''); setLoadedPath(path); } })
-        .catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setBusy(false); });
-      return () => { live = false; };
-    }, [projectId, path]);
-    const editable = path === 'notes.md' || path === 'preferences.md' || path === 'charter.md' || path === 'research-hosts.txt';
-    const textBytes = editable && loadedPath === path ? new TextEncoder().encode(text).byteLength : 0, tooLong = textBytes > (path === 'charter.md' ? charterLimit : 256000);
-    const charterLines = ['Tests', 'Scope', 'Verify', 'Language'].map(key => ({ key, label: t(`charterExample${key}`), line: t(`charterLine${key}`) }));
-    const hasRule = line => text.split('\n').some(item => item.trim() === line);
-    const toggleRule = line => { if (readonly || pending) return; setText(hasRule(line) ? text.split('\n').filter(item => item.trim() !== line).join('\n') : `${text.replace(/\s+$/, '')}${text.trim() ? '\n' : ''}${line}`); setNotice(''); };
-    const save = async () => {
-      if (tooLong) return false;
-      setBusy(true); setError(''); setNotice('');
-      try { const value = await command(projectId, 'store/write', { path, text }); setSavedText(text); if (path === 'notes.md') setGeneratedText(value.generatedText ?? generatedText); setNotice(t('saved')); return true; } catch (failure) { setError(errorText(failure)); return false; } finally { setBusy(false); }
-    };
-    useEffect(() => { if (editorRef) editorRef.current = { save, discard: () => { setText(savedText); setNotice(''); }, dirty, busy: pending, tooLong }; return () => { if (editorRef) editorRef.current = null; }; }, [editorRef, save, savedText, dirty, pending, tooLong]);
-    const tabs = ['docs', 'charter.md', 'preferences.md', 'research-hosts.txt', 'notes.md'].map(file => ({ value: file, label: t({ docs: 'workResults', 'charter.md': 'charter', 'preferences.md': 'preferences', 'research-hosts.txt': 'researchHosts', 'notes.md': 'notes' }[file]), id: `${projectId}-material-tab-${file}`, panelId: `${projectId}-material-panel-${file}` }));
-    const switchPath = next => { if (pending || next === path) return; if (dirty) { setError(''); setPendingPath(next); } else setPath(next); };
-    const finishSwitch = () => { setPath(pendingPath); setPendingPath(null); setNotice(''); };
-    const openReport = reference => { returnScroll.current = contentRef.current?.scrollTop ?? 0; setSelectedDelegation(reference.delegationRef); setSelectedWork(reference.workstreamId); };
-    const deliveryPage = deliveries ?? listing?.deliveries;
-    const authorityRequests = requestsPage ?? listing?.requests;
-    const deliveryGroups = new Map();
-    for (const delivery of deliveryPage?.items ?? []) { const items = deliveryGroups.get(delivery.requestId) ?? []; items.push(delivery); deliveryGroups.set(delivery.requestId, items); }
-    return h(Fragment, null, h('div', { className: 'dsh-project-body dsh-project-materials' },
-      h(SegmentedTabs, { className: 'dsh-project-materials-tabs', label: t('materials'), items: tabs, value: path, onChange: switchPath }),
-      h('div', { ref: contentRef, className: 'dsh-project-materials-content', onScroll: event => { if (active) visibleScroll.current = event.currentTarget.scrollTop; }, role: 'tabpanel', id: `${projectId}-material-panel-${path}`, 'aria-labelledby': `${projectId}-material-tab-${path}` },
-      path === 'docs' ? h(Fragment, null,
-      selectedWork ? h(Fragment, null,
-        h(Button, { variant: 'ghost', size: 'sm', style: { alignSelf: 'flex-start' }, onClick: () => { setSelectedWork(undefined); setSelectedDelegation(undefined); setSelectedResult(null); } }, t('allResults')),
-        selectedResult ? h(ResultEntry, { key: selectedResult.workstreamId + ':' + selectedResult.report.delegationRef, projectId, result: selectedResult, read, showProcess, t }) : null) : null,
-      h('div', { className: 'dsh-project-results-list', hidden: Boolean(selectedWork) },
-        authorityRequests?.items.map(request => h(RequestAuthority, { key: request.id, request, className: 'dsh-project-result', t })),
-        h('div', { className: 'dsh-project-actions' }, requestCursors.length > 1 ? button(t('previous'), () => setRequestCursors(before => before.slice(0, -1)), requestsBusy) : null,
-          authorityRequests?.nextCursor ? button(t('earlierRequests'), () => setRequestCursors(before => [...before, authorityRequests.nextCursor]), requestsBusy) : null),
-        requestsBusy ? h('p', { role: 'status' }, t('loading')) : null,
-        [...deliveryGroups.entries()].map(([requestId, items]) => h(DeliveryGroup, { key: requestId, projectId, items, results: listing?.results, read, openReport, showProcess, renderFactorySlot, t })),
-        h('div', { className: 'dsh-project-actions' }, deliveryCursors.length > 1 ? button(t('previous'), () => setDeliveryCursors(before => before.slice(0, -1)), deliveriesBusy) : null,
-          deliveryPage?.nextCursor ? button(t('earlierDeliveries'), () => setDeliveryCursors(before => [...before, deliveryPage.nextCursor]), deliveriesBusy) : null),
-        deliveriesBusy ? h('p', { role: 'status' }, t('loading')) : null,
-        listing?.results?.length ? h('details', { className: 'dsh-project-result-disclosure', open: !deliveryPage?.items.length }, h('summary', null, t('memberReports')),
-          listing.results.map(result => h(ResultEntry, { key: result.workstreamId, projectId, result, read, showProcess, t })),
-          h('div', { className: 'dsh-project-actions' }, resultCursors.length > 1 ? button(t('previous'), () => setResultCursors(before => before.slice(0, -1)), pending) : null,
-            listing.nextResultsCursor ? button(t('next'), () => setResultCursors(before => [...before, listing.nextResultsCursor]), pending) : null)) : null,
-        !pending && !error && !deliveryPage?.items.length && !listing?.results?.length && !authorityRequests?.items.length ? h('p', { className: 'dsh-project-muted' }, t('noResults')) : null),
-      h('details', { className: 'dsh-project-documents' }, h('summary', null, t('docs'), ` (${listing?.docs.length ?? 0})`), listing?.docs.length ? h('div', { className: 'dsh-project-list' }, listing.docs.map(file => h(Artifact, {
-        key: file.path, file: { ...file, location: 'materials' }, busy: pending, t, open: path => { void read(projectId, 'open', { path }).catch(failure => setError(errorText(failure))); },
-      }))) : h('p', { className: 'dsh-project-muted' }, t('noDocs')))) : loadedPath === path ? h(Fragment, null,
-        path === 'charter.md' ? h('div', { className: 'dsh-project-charter-intro' }, h('strong', null, t('charter')), h('p', null, t('charterHint'))) : h('p', { className: 'dsh-project-muted' }, t({ 'notes.md': 'notesHint', 'research-hosts.txt': 'researchHostsHint' }[path] ?? 'preferencesHint')),
-        path === 'charter.md' && !readonly ? h('div', { className: 'dsh-project-charter-examples' }, h('span', null, t('charterExamples')),
-          charterLines.map(item => h(Pill, { key: item.key, active: hasRule(item.line), 'aria-pressed': hasRule(item.line), disabled: pending, title: item.line.replace(/^-\s*/, ''), onClick: () => toggleRule(item.line) }, item.label))) : null,
-        h('textarea', { className: 'dsh-project-editor', value: text, placeholder: path === 'charter.md' ? t('charterPlaceholder') : path === 'research-hosts.txt' ? t('researchHostsPlaceholder') : undefined, disabled: pending, readOnly: readonly, 'aria-label': t(path === 'notes.md' ? 'userNotes' : path === 'charter.md' ? 'charter' : path === 'research-hosts.txt' ? 'researchHosts' : 'preferences'), onChange: event => { setText(event.target.value); setNotice(''); } }),
-        path === 'charter.md' ? h('div', { className: 'dsh-project-charter-meter', 'data-over': tooLong },
-          h('div', { className: 'dsh-project-charter-meter-track', 'aria-hidden': true }, h('span', { style: { width: `${Math.min(100, textBytes / charterLimit * 100)}%` } })),
-          h('span', { role: tooLong ? 'alert' : undefined }, tooLong ? t('charterTooLong') : t('charterUsage').replace('{used}', (textBytes / 1000).toFixed(1)).replace('{limit}', String(charterLimit / 1000))))
-          : tooLong ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('textTooLong')) : null,
-        path === 'notes.md' ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('generatedNotes')), markdown(t, generatedText)) : null,
-        path === 'notes.md' ? h('details', { className: 'dsh-project-result-disclosure', 'data-decision-log': true }, h('summary', null, t('decisionLog')),
-          decisionText.replace(/^# .*\n+/, '').trim() ? markdown(t, decisionText.replace(/^# .*\n+/, '').replace(/<!-- decision:[^>]* -->\n?/g, '')) : h('p', { className: 'dsh-project-muted' }, t('decisionLogEmpty'))) : null) : null,
-      pending ? h('p', { role: 'status' }, t('loading')) : null,
-      h(OperationToast, { text: error ? `${t(editable && dirty ? 'saveFailed' : 'materialsError')} ${error}` : '' })),
-      editable ? h('div', { className: 'dsh-project-materials-footer' }, readonly ? h('p', { className: 'dsh-project-muted' }, t('archivedMaterials')) :
-        h(Button, { variant: 'primary', loading: busy, feedback: notice || undefined, title: error || undefined, 'data-error': Boolean(error), onClick: save, disabled: pending || loadedPath !== path || !dirty || tooLong }, t('save'))) : null),
-      h(Modal, { open: pendingPath !== null, onClose: () => { if (!busy) setPendingPath(null); }, closeLabel: t('keepEditing'), className: 'dsh-project-confirm', title: t('unsaved'), footer: h('div', { className: 'dsh-project-actions' },
-        h(Button, { variant: 'ghost', onClick: () => setPendingPath(null), disabled: busy }, t('keepEditing')), button(t('discardAndSwitch'), () => { setText(savedText); finishSwitch(); }, busy), h(Button, { variant: 'primary', onClick: async () => { if (await save()) finishSwitch(); }, disabled: busy || readonly || tooLong }, t('saveAndSwitch'))) },
-        h('p', { className: 'dsh-project-muted' }, t('saveBeforeSwitch')),
-        tooLong ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('textTooLong')) : null,
-        error ? h(Fragment, null, h('p', { role: 'alert', className: 'dsh-project-error' }, t('saveFailed')), h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, error))) : null));
-  }
-
-  function ProcessRecords({ project, work, delegation, retainProcess, t }) {
-    const [binding, setBinding] = useState(null), [window, setWindow] = useState(null), [sessionState, setSessionState] = useState(null);
-    const [error, setError] = useState(''), [pageEnd, setPageEnd] = useState(null), [pageStart, setPageStart] = useState(null), [busy, setBusy] = useState(false), [locating, setLocating] = useState(false), [locatedRef, setLocatedRef] = useState(null);
-    useEffect(() => {
-      let live = true, reference, offEvents, offState;
-      setError('');
-      try {
-        reference = retainProcess(project, work);
-        reference.ready.then(value => {
-          if (!live) return;
-          setBinding(value);
-          const updateEvents = () => setWindow(value.eventSource.getSnapshot()), updateState = () => setSessionState(value.session.getSnapshot());
-          offEvents = value.eventSource.subscribe(updateEvents); offState = value.session.subscribe(updateState); updateEvents(); updateState();
-        }).catch(failure => { if (live) setError(errorText(failure)); });
-      } catch (failure) { setError(errorText(failure)); }
-      return () => { live = false; offEvents?.(); offState?.(); reference?.release(); };
-    }, [project.id, work.workerSessionId]);
-    useEffect(() => {
-      if (!binding || !delegation) return;
-      let live = true; setLocating(true); setError('');
-      void (async () => {
-        if (!delegation.messageId) throw new Error(t('runRecordsMissing'));
-        while (live) {
-          const snapshot = binding.eventSource.getSnapshot(), items = processRecords(snapshot.entries);
-          const target = assignmentIndex(items, delegation.messageId);
-          if (target >= 0) {
-            const boundary = assignmentPageStart(items, target);
-            setPageStart(boundary); setPageEnd(Math.min(assignmentPageEnd(items, target, project.coordinatorSessionId), boundary + 50)); setLocatedRef(delegation.ref); return;
-          }
-          if (!snapshot.hasMore) throw new Error(t('runRecordsMissing'));
-          const firstSeq = snapshot.entries.find(entry => entry.type === 'event')?.event.seq;
-          await binding.session.loadOlder();
-          if (!live) return;
-          if (binding.eventSource.getSnapshot().entries.find(entry => entry.type === 'event')?.event.seq === firstSeq) throw new Error(t('runRecordsMissing'));
-        }
-      })().catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setLocating(false); });
-      return () => { live = false; };
-    }, [binding, delegation?.ref]);
-    const records = processRecords(window?.entries ?? []), end = pageEnd ?? records.length, start = pageStart ?? Math.max(0, end - 50);
-    const callNames = new Map(records.filter(event => event.type === 'tool/call').map(event => [event.data.callId, event.data.name]));
-    const targetUnresolved = Boolean(delegation && locatedRef !== delegation.ref);
-    const older = async () => {
-      if (start > 0) { setPageStart(null); setPageEnd(start); return; }
-      if (!binding || !window.hasMore) return;
-      const firstSeq = records[0]?.seq;
-      setBusy(true); setError('');
-      try {
-        await binding.session.loadOlder();
-        const updated = processRecords(binding.eventSource.getSnapshot().entries);
-        const boundary = firstSeq === undefined ? updated.length : updated.findIndex(event => event.seq === firstSeq);
-        if (boundary > 0) { setPageStart(null); setPageEnd(boundary); }
-      } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
-    };
-    return h('div', { className: 'dsh-project-body' }, h('p', { className: 'dsh-project-muted' }, t('processHint')),
-      !window && !error ? h('p', { role: 'status' }, t('loading')) : null,
-      locating ? h('p', { role: 'status' }, t('locatingRun')) : null,
-      (targetUnresolved ? [] : records.slice(start, end)).map(event => {
-        const data = event.data;
-        if (event.type === 'turn/start') return h('div', { key: event.seq, className: 'dsh-project-record-round' }, h('div', { className: 'dsh-project-record-heading' }, h('strong', null, `${t('executionRound')} ${data.turn}`), recordedTime(event.time)));
-        if (event.type === 'user/message') return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, t(data.source.kind === 'team-message' ? 'teamMessage' : 'workRequest'), ' · ', recordedTime(event.time)), markdown(t, messageText(data)));
-        if (event.type === 'assistant/message') {
-          const text = messageText(data.message);
-          return text.trim() ? h('div', { key: event.seq, className: 'dsh-project-record-row' }, h('div', { className: 'dsh-project-record-heading' }, h('strong', null, t('assistant')), recordedTime(event.time)), markdown(t, text)) : null;
-        }
-        if (event.type === 'tool/call') return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, `${t('tool')}: ${data.name}`, ' · ', recordedTime(event.time)), h('pre', { className: 'dsh-project-record' }, data.arguments));
-        if (event.type === 'tool/result') return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, `${t(data.message.isError ? 'failed' : 'result')}: ${callNames.get(data.message.toolCallId) ?? t('tool')}`, ' · ', recordedTime(event.time)), h('pre', { className: 'dsh-project-record' }, messageText(data.message)), data.error ? h('p', { className: 'dsh-project-error' }, data.error.reason ?? data.error.code) : null);
-        return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, `${t('executionRound')} ${data.turn} · ${t(data.reason?.kind === 'error' ? 'historicalError' : 'roundEnded')}`, ' · ', recordedTime(event.time)), data.reason?.kind === 'error' ? h('pre', { className: 'dsh-project-record' }, data.reason.error.message) : null);
-      }), window && !records.length ? h('p', { className: 'dsh-project-muted' }, t('noProcess')) : null,
-      sessionState?.openError ? h('p', { role: 'alert', className: 'dsh-project-error' }, sessionState.openError.message) : null,
-      error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
-      h('div', { className: 'dsh-project-actions' }, start > 0 || window?.hasMore ? button(t(start > 0 ? 'previous' : 'older'), older, busy || locating || targetUnresolved) : null,
-        pageEnd !== null && end < records.length ? button(t('next'), () => { setPageStart(end); setPageEnd(Math.min(records.length, end + 50)); }, busy || locating || targetUnresolved) : null,
-        pageEnd !== null ? button(t('newer'), () => { setPageStart(null); setPageEnd(null); }, busy || locating || targetUnresolved) : null));
-  }
-
-  const diffLineLimit = 400;
-  const diffLineKind = line => line.startsWith('@@') ? 'hunk' : line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : line.startsWith('\\') ? 'note' : 'context';
-  const diffStatusKind = status => status === '??' ? 'untracked' : /D/.test(status) ? 'deleted' : /A/.test(status) ? 'added' : /R/.test(status) ? 'renamed' : 'modified';
-  // Split a unified `git diff` into per-file sections with added/removed line counts.
-  function parseUnifiedDiff(text) {
-    const files = []; let current = null;
-    for (const line of String(text ?? '').replace(/\n$/, '').split('\n')) {
-      const header = /^diff --git a\/(.*?) b\/(.*)$/.exec(line);
-      if (header) { current = { path: header[2], lines: [], added: 0, removed: 0, kind: header[1] !== header[2] ? 'renamed' : 'modified' }; files.push(current); continue; }
-      if (!current) continue;
-      if (!current.lines.length && /^new file mode/.test(line)) current.kind = 'added';
-      else if (!current.lines.length && /^deleted file mode/.test(line)) current.kind = 'deleted';
-      else if (!current.lines.length && /^(index |similarity |dissimilarity |rename |copy |old mode|new mode|--- |\+\+\+ )/.test(line)) continue;
-      else if (/^Binary files /.test(line)) current.binary = true;
-      else { if (line.startsWith('+')) current.added++; else if (line.startsWith('-')) current.removed++; current.lines.push(line); }
+    const ZH = {
+      nav: '项目',
+      title: '项目',
+      projects: '项目',
+      project: '项目',
+      newProject: '新建项目',
+      projectName: '项目名称',
+      projectNamePlaceholder: '例如：接口重构、发布前巡检…',
+      instructions: '项目指令',
+      instructionsHint: '作为长期背景与约束发送给协调者和每位执行者。',
+      instructionsPlaceholder: '目标、范围、代码规范、验收标准…',
+      workspace: '工作区',
+      chooseFolder: '选择文件夹',
+      clear: '清除',
+      noWorkspace: '未选择目录（继承默认工作目录）',
+      openFolder: '打开工作目录',
+      autonomy: '派发模式',
+      autonomyManual: '手动审批',
+      autonomyAuto: '自动派发',
+      autonomyManualHint: '任务需先批准，协调者才可派发执行。',
+      autonomyAutoHint: '协调者拆解后可直接派发执行。',
+      pausedBadge: '已暂停',
+      pauseProject: '暂停派发',
+      resumeProject: '恢复派发',
+      pausedHint: '开启后阻止新任务派发，已运行的执行者不受影响。',
+      concurrency: '并发上限',
+      concurrencyHint: '同时运行的执行者线程数（1–8）。',
+      worktreeIsolation: '独立 Git Worktree',
+      worktreeIsolationHint: '为每个任务创建独立工作树与分支，互不覆盖改动；非 Git 目录自动降级。',
+      create: '创建项目',
+      cancel: '取消',
+      save: '保存',
+      close: '关闭',
+      confirm: '确认',
+      settings: '项目设置',
+      settingsNav: '设置分组',
+      general: '通用',
+      threads: '线程',
+      threadsSettings: '执行线程',
+      threadsHint: '配置本项目执行者的默认派发策略、并发上限、模型路由与目录隔离。',
+      memory: '共享记忆',
+      memoryHint: '按主题分文件保存项目长期知识；执行者按索引按需读取与追加。',
+      memoryEmpty: '还没有共享记忆主题。',
+      memoryNewTopic: '新建主题',
+      memoryTopicName: '主题标识',
+      memoryTopicNamePlaceholder: '例如：architecture-notes',
+      memoryTopicDesc: '一句话摘要',
+      memoryTopicDescPlaceholder: '供索引展示的简短说明（可选）',
+      memoryBody: '正文内容',
+      memoryPlaceholder: '记录关键结论、约定、踩坑与依赖关系…',
+      memoryFiles: '个主题',
+      memoryChars: '字',
+      memoryBudget: '预算',
+      memoryAutoCompact: '超预算自动归档',
+      memoryAutoCompactHint: '总字数超出预算时，自动将最旧整文件移入 archive/（永不拆分单文件）。',
+      memoryIndex: '索引',
+      memoryReadOnly: '只读',
+      memoryStale: '已过时',
+      memoryArchived: '已归档',
+      memoryIndexDesc: '由各主题文件自动生成的共享记忆索引',
+      memoryIndexHint: 'MEMORY.md 每次写入自动重建，仅可只读查看；请编辑或删除具体主题文件。',
+      memoryArchivedHint: '该文件已由自动压缩移至 memory/archive/，此处仅可查看。',
+      memoryLoading: '正在读取…',
+      memoryLoadFailed: '读取记忆文件失败',
+      memoryEditFile: '编辑',
+      memoryDeleteFile: '删除主题',
+      memoryDeleteConfirm: '确认删除',
+      memoryDeleted: '主题已删除。',
+      memoryNameRequired: '请输入主题标识。',
+      memoryTextRequired: '请输入正文内容。',
+      model: '默认模型',
+      reasoningEffort: '思考强度',
+      effortShort: '思考',
+      modelDefault: '默认（继承宿主）',
+      effortDefault: '默认（跟随模型）',
+      modelRoutePlaceholder: 'provider/model',
+      modelFreeTextHint: '当前无法枚举模型列表，可手填 provider/model。',
+      effortFreeTextHint: '当前无法枚举思考强度，可手填档位 ID（如 low / high）。',
+      effortOff: '关闭',
+      effortLow: '低',
+      effortHigh: '高',
+      effortMax: '最高',
+      effectiveModel: '生效模型',
+      fromTask: '任务覆盖',
+      fromProject: '项目默认',
+      fromHost: '宿主默认',
+      archiveSection: '归档项目',
+      archiveWarning: '归档后项目移入底部归档列表并停止新派发；任务、记忆与会话保留，关联工作树会被清理。',
+      archive: '归档项目',
+      archiveConfirm: '确认归档',
+      unarchive: '恢复项目',
+      archivedBadge: '已归档',
+      archivedProjects: '已归档项目',
+      archivedHint: '项目已归档，请先在设置中恢复后再启动或派发。',
+      noProjects: '还没有项目。新建一个项目，让协调者帮你并行推进。',
+      noSelection: '从左侧选择一个项目，或新建一个项目。',
+      nameRequired: '请输入项目名称。',
+      startCoordinator: '启动协调者',
+      startCoordinatorHint: '协调者负责拆解目标、并行派发任务并汇总进度，它的完整原生对话就在这里。',
+      coordinatorArchived: '协调者会话已归档，新消息不会触发运行。恢复后可继续对话。',
+      restore: '恢复会话',
+      coordinatorChatFailed: '无法加载内嵌协调者会话。',
+      workerChatFailed: '无法加载执行者会话。',
+      noConversation: '该任务尚未启动执行者会话。',
+      taskBriefHeading: '任务说明',
+      emptyTasks: '还没有任务。在中间对话告诉协调者目标，由它拆解并派发。',
+      noMatches: '没有匹配的线程。',
+      noTask: '该任务已不在当前看板中。',
+      searchThreads: '搜索线程',
+      filterThreads: '筛选分组',
+      filterGroups: '显示的分组',
+      showAllGroups: '显示全部分组',
+      collapseAll: '全部折叠',
+      expandAll: '全部展开',
+      collapseList: '收起项目栏',
+      expandList: '展开项目栏',
+      collapseThreads: '收起线程栏',
+      expandThreads: '展开线程栏',
+      resizeColumns: '拖拽调整栏宽',
+      groupRunning: '执行中',
+      groupReview: '待验收',
+      groupWaiting: '等你处理',
+      groupIdle: '待开始',
+      groupResolved: '已解决',
+      queued: '待开始',
+      running: '执行中',
+      review: '待验收',
+      failed: '失败',
+      blocked: '受阻',
+      resolved: '已解决',
+      needsApproval: '待批准',
+      approve: '批准',
+      approvedBadge: '已批准',
+      stop: '停止',
+      retry: '重试',
+      resolve: '验收解决',
+      unresolve: '退回待验收',
+      resolvedBadge: '已解决',
+      delete: '删除',
+      deleteConfirm: '确认删除任务',
+      deleteOnlyTask: '只删任务',
+      deleteOnlyTaskHint: '保留执行者会话与历史记录。',
+      deleteAndArchive: '删除并归档会话',
+      archiveSessionHint: '归档执行者会话（移出侧栏且不再运行），不释放磁盘空间。',
+      deleteArchived: '任务已删除，执行者会话已归档。',
+      archiveRunning: '执行者仍在运行，请先停止或等待其结束。',
+      archiveParamRejected: '归档参数被拒绝，任务未删除：',
+      taskRetriedDispatched: '任务已重新派发。',
+      taskRetriedQueued: '任务已重置为待开始，可在对话中让协调者派发。',
+      taskStopped: '已请求停止该任务。',
+      tabChat: '对话',
+      tabDiff: '改动',
+      taskViewTabs: '任务详情视图',
+      diffLoading: '正在读取改动…',
+      diffEmpty: '当前没有文件改动。',
+      diffUnavailable: '无法读取 Git 改动。',
+      diffTruncated: '差异过长，仅展示前一部分。',
+      diffFilesCount: '个文件变更',
+      diffRefresh: '刷新',
+      diffAdded: '新增',
+      diffModified: '修改',
+      diffDeleted: '删除',
+      diffRenamed: '重命名',
+      diffUntracked: '未跟踪',
+      worktreeMerge: '合并到主分支',
+      worktreeMergeTitle: '合并工作树到主分支？',
+      worktreeMergeDesc: '将分支 {branch} 的改动合并回主工作区。若存在冲突或主工作区有冲突改动，操作会被安全中止。',
+      worktreeMerged: '已合并到主分支。',
+      worktreeCleanup: '清理工作树',
+      worktreeCleanupTitle: '清理此任务的工作树？',
+      worktreeCleanupDesc: '将强制移除该任务的独立工作树目录与分支（包含未提交改动），任务记录与会话不受影响。',
+      worktreeCleaned: '工作树已清理。',
+      worktreeWorkspaceMissing: '已开启独立工作树，但工作区目录缺失，已降级到默认目录运行。',
+      worktreeNotGit: '已开启独立工作树，但当前目录不是 Git 仓库，已降级到共享目录运行。',
+      copyBranch: '复制分支名',
+      branchCopied: '分支名已复制。',
+      copyFailed: '剪贴板不可用，无法复制分支名。',
+      switchDiscardTitle: '放弃未保存修改？',
+      switchDiscardDesc: '当前项目指令有未保存的更改，切换项目将丢弃这些修改。',
+      discardAndSwitch: '放弃并切换',
+      keepEditing: '继续编辑',
+      dispatchCard: '派发任务',
+      dispatchPreparing: '正在派发…',
+      dispatchOpenHint: '点击查看该执行者详情',
+      taskActions: '任务操作',
+      justNow: '刚刚',
+      counts: '个任务',
+      unsavedTag: '未保存',
+      sseDisconnected: '实时连接中断，正在自动重连…',
+      sessionUnavailable: '当前环境不支持会话服务。',
+      pickerUnavailable: '当前环境不支持目录选择器。',
+      promptRejected: '发送协调者首条消息被拒绝。',
+      errorPrefix: '操作失败：',
     }
-    return files;
-  }
-  const diffTone = { added: 'success', deleted: 'danger', renamed: 'info', untracked: 'outline', modified: 'neutral' };
-  function diffDirectoryLabel(directory, directories) {
-    const parts = directoryParts({ canonicalWorkingDirectory: directory });
-    if (!parts.length || /^[a-z]:[\\/]*$/i.test(directory)) return directory;
-    const peers = directories.filter(other => other !== directory).map(other => directoryParts({ canonicalWorkingDirectory: other }));
-    for (let count = 1; count < parts.length; count++) {
-      const label = parts.slice(-count).join('/');
-      if (peers.every(other => other.slice(-count).join('/') !== label)) return `…/${label}`;
+
+    const EN = {
+      nav: 'Projects',
+      title: 'Projects',
+      projects: 'Projects',
+      project: 'Project',
+      newProject: 'New project',
+      projectName: 'Project name',
+      projectNamePlaceholder: 'e.g. API Refactor, Release Audit…',
+      instructions: 'Project instructions',
+      instructionsHint: 'Shared goal, constraints and acceptance conventions sent to coordinator and workers.',
+      instructionsPlaceholder: 'Goal, scope, conventions, verification criteria…',
+      workspace: 'Workspace',
+      chooseFolder: 'Choose folder',
+      clear: 'Clear',
+      noWorkspace: 'No folder (inherits default directory)',
+      openFolder: 'Open workspace folder',
+      autonomy: 'Dispatch mode',
+      autonomyManual: 'Manual approval',
+      autonomyAuto: 'Auto dispatch',
+      autonomyManualHint: 'Tasks require approval before the coordinator can dispatch them.',
+      autonomyAutoHint: 'Coordinator dispatches tasks immediately without waiting.',
+      pausedBadge: 'Paused',
+      pauseProject: 'Pause dispatch',
+      resumeProject: 'Resume dispatch',
+      pausedHint: 'Blocks dispatching new tasks without stopping running workers.',
+      concurrency: 'Concurrency',
+      concurrencyHint: 'Max parallel worker threads (1–8).',
+      worktreeIsolation: 'Isolated Git Worktree',
+      worktreeIsolationHint: 'Runs each task in its own worktree and branch; degrades cleanly for non-git folders.',
+      create: 'Create project',
+      cancel: 'Cancel',
+      save: 'Save',
+      close: 'Close',
+      confirm: 'Confirm',
+      settings: 'Project settings',
+      settingsNav: 'Settings sections',
+      general: 'General',
+      threads: 'Threads',
+      threadsSettings: 'Worker threads',
+      threadsHint: 'Default dispatch mode, concurrency cap, model route and worktree isolation for this project.',
+      memory: 'Shared memory',
+      memoryHint: 'Per-topic markdown files read and updated on demand by workers via index.',
+      memoryEmpty: 'No shared memory topics yet.',
+      memoryNewTopic: 'New topic',
+      memoryTopicName: 'Topic slug',
+      memoryTopicNamePlaceholder: 'e.g. architecture-notes',
+      memoryTopicDesc: 'One-line description',
+      memoryTopicDescPlaceholder: 'Short summary shown in index (optional)',
+      memoryBody: 'Content',
+      memoryPlaceholder: 'Record findings, decisions, gotchas and conventions…',
+      memoryFiles: 'topics',
+      memoryChars: 'chars',
+      memoryBudget: 'Budget',
+      memoryAutoCompact: 'Auto-archive over budget',
+      memoryAutoCompactHint: 'Moves oldest whole topic files to archive/ when exceeding budget without splitting files.',
+      memoryIndex: 'Index',
+      memoryReadOnly: 'Read-only',
+      memoryStale: 'Superseded',
+      memoryArchived: 'Archived',
+      memoryIndexDesc: 'Generated index of all topic files in shared memory',
+      memoryIndexHint: 'MEMORY.md is rebuilt automatically on every write and is read-only here.',
+      memoryArchivedHint: 'Moved to memory/archive/ by compaction; read-only here.',
+      memoryLoading: 'Loading…',
+      memoryLoadFailed: 'Could not read memory file',
+      memoryEditFile: 'Edit',
+      memoryDeleteFile: 'Delete topic',
+      memoryDeleteConfirm: 'Confirm delete',
+      memoryDeleted: 'Memory topic deleted.',
+      memoryNameRequired: 'A topic slug is required.',
+      memoryTextRequired: 'Content is required.',
+      model: 'Default model',
+      reasoningEffort: 'Reasoning effort',
+      effortShort: 'Effort',
+      modelDefault: 'Default (inherit host)',
+      effortDefault: 'Default (model default)',
+      modelRoutePlaceholder: 'provider/model',
+      modelFreeTextHint: 'Models could not be enumerated; type a provider/model route.',
+      effortFreeTextHint: 'Efforts could not be enumerated; type an effort id such as low or high.',
+      effortOff: 'Off',
+      effortLow: 'Low',
+      effortHigh: 'High',
+      effortMax: 'Max',
+      effectiveModel: 'Effective model',
+      fromTask: 'task override',
+      fromProject: 'project default',
+      fromHost: 'host default',
+      archiveSection: 'Archive project',
+      archiveWarning: 'Moves project to archived list and stops new dispatches. Tasks, memory and sessions stay intact; task worktrees are cleaned up.',
+      archive: 'Archive project',
+      archiveConfirm: 'Confirm archive',
+      unarchive: 'Restore project',
+      archivedBadge: 'Archived',
+      archivedProjects: 'Archived projects',
+      archivedHint: 'This project is archived. Restore it in settings to resume.',
+      noProjects: 'No projects yet. Create one to let the coordinator split and run tasks in parallel.',
+      noSelection: 'Select a project on the left, or create a new one.',
+      nameRequired: 'Project name is required.',
+      startCoordinator: 'Start coordinator',
+      startCoordinatorHint: 'The coordinator splits goals, dispatches parallel workers and reports back in this native conversation.',
+      coordinatorArchived: 'Coordinator session is archived and cannot run new messages. Restore it to continue.',
+      restore: 'Restore session',
+      coordinatorChatFailed: 'Could not mount the embedded coordinator conversation.',
+      workerChatFailed: 'Could not mount the worker conversation.',
+      noConversation: 'This task has no worker session yet.',
+      taskBriefHeading: 'Task brief',
+      emptyTasks: 'No tasks yet. Describe your goal in the coordinator chat to split and dispatch work.',
+      noMatches: 'No matching threads.',
+      noTask: 'This task is no longer on the board.',
+      searchThreads: 'Search threads',
+      filterThreads: 'Filter groups',
+      filterGroups: 'Visible groups',
+      showAllGroups: 'Show all groups',
+      collapseAll: 'Collapse all',
+      expandAll: 'Expand all',
+      collapseList: 'Collapse project list',
+      expandList: 'Expand project list',
+      collapseThreads: 'Collapse threads panel',
+      expandThreads: 'Expand threads panel',
+      resizeColumns: 'Resize columns',
+      groupRunning: 'Running',
+      groupReview: 'Ready for review',
+      groupWaiting: 'Waiting on you',
+      groupIdle: 'Queued',
+      groupResolved: 'Resolved',
+      queued: 'Queued',
+      running: 'Running',
+      review: 'Ready for review',
+      failed: 'Failed',
+      blocked: 'Blocked',
+      resolved: 'Resolved',
+      needsApproval: 'Needs approval',
+      approve: 'Approve',
+      approvedBadge: 'Approved',
+      stop: 'Stop',
+      retry: 'Retry',
+      resolve: 'Resolve',
+      unresolve: 'Unresolve',
+      resolvedBadge: 'Resolved',
+      delete: 'Delete',
+      deleteConfirm: 'Confirm delete',
+      deleteOnlyTask: 'Delete task only',
+      deleteOnlyTaskHint: 'Keeps the worker session and history.',
+      deleteAndArchive: 'Delete and archive session',
+      archiveSessionHint: 'Archives the worker session (hides from sidebar, stops runs). Frees no disk space.',
+      deleteArchived: 'Task deleted and worker session archived.',
+      archiveRunning: 'Worker is still running. Stop it or wait for it to finish first.',
+      archiveParamRejected: 'Archive parameter rejected; task was not deleted:',
+      taskRetriedDispatched: 'Task re-dispatched.',
+      taskRetriedQueued: 'Task reset to queued. Ask the coordinator to dispatch it.',
+      taskStopped: 'Stop requested for this task.',
+      tabChat: 'Chat',
+      tabDiff: 'Changes',
+      taskViewTabs: 'Task detail view',
+      diffLoading: 'Loading diff…',
+      diffEmpty: 'No file changes detected.',
+      diffUnavailable: 'Git diff is unavailable.',
+      diffTruncated: 'Diff is truncated to the leading portion.',
+      diffFilesCount: 'files changed',
+      diffRefresh: 'Refresh',
+      diffAdded: 'Added',
+      diffModified: 'Modified',
+      diffDeleted: 'Deleted',
+      diffRenamed: 'Renamed',
+      diffUntracked: 'Untracked',
+      worktreeMerge: 'Merge to main',
+      worktreeMergeTitle: 'Merge worktree into main branch?',
+      worktreeMergeDesc: 'Merges branch {branch} into the main workspace. Conflicts or dirty conflicting files abort safely.',
+      worktreeMerged: 'Merged into main branch.',
+      worktreeCleanup: 'Remove worktree',
+      worktreeCleanupTitle: 'Remove task worktree?',
+      worktreeCleanupDesc: 'Force-removes this task’s worktree directory and branch (including uncommitted edits). Task record and chat remain.',
+      worktreeCleaned: 'Worktree removed.',
+      worktreeWorkspaceMissing: 'Worktree isolation is enabled, but workspace folder is missing; ran in default folder.',
+      worktreeNotGit: 'Worktree isolation is enabled, but workspace is not a Git repository; ran in shared folder.',
+      copyBranch: 'Copy branch name',
+      branchCopied: 'Branch name copied.',
+      copyFailed: 'Clipboard unavailable; could not copy branch name.',
+      switchDiscardTitle: 'Discard unsaved changes?',
+      switchDiscardDesc: 'Project instructions have unsaved edits. Switching projects will discard them.',
+      discardAndSwitch: 'Discard and switch',
+      keepEditing: 'Keep editing',
+      dispatchCard: 'Dispatched task',
+      dispatchPreparing: 'Dispatching…',
+      dispatchOpenHint: 'Click to inspect worker thread',
+      taskActions: 'Task actions',
+      justNow: 'just now',
+      counts: 'tasks',
+      unsavedTag: 'Unsaved',
+      sseDisconnected: 'Realtime stream disconnected, reconnecting…',
+      sessionUnavailable: 'Session service is unavailable on this page.',
+      pickerUnavailable: 'Directory picker is unavailable on this page.',
+      promptRejected: 'Initial coordinator message was rejected.',
+      errorPrefix: 'Error: ',
     }
-    return directory;
-  }
-  function DiffFile({ file, directoryLabel, open, t }) {
-    const slash = file.path.lastIndexOf('/'), shown = file.lines.slice(0, diffLineLimit);
-    const location = file.workingDirectory ? `${t('diffWorkingDirectory')}: ${file.workingDirectory}\n${t('diffRepositoryPath')}: ${file.path}` : file.path;
-    return h('details', { className: 'dsh-project-diff-file', open, 'data-diff-path': file.path, 'data-diff-directory': file.workingDirectory },
-      h('summary', null, h(Tag, { tone: diffTone[file.kind] }, t(`diff_${file.kind}`)),
-        h('span', { className: 'dsh-project-diff-name', title: location }, slash >= 0 ? h('span', null, file.path.slice(0, slash + 1)) : null, file.path.slice(slash + 1),
-          file.workingDirectory ? h('span', null, ` · ${directoryLabel}`) : null),
-        file.added ? h('span', { className: 'dsh-project-diff-add' }, `+${file.added}`) : null, file.removed ? h('span', { className: 'dsh-project-diff-del' }, `−${file.removed}`) : null),
-      file.kind === 'untracked' ? h('p', { className: 'dsh-project-diff-note' }, t('diffUntrackedHint'))
-        : file.binary ? h('p', { className: 'dsh-project-diff-note' }, t('diffBinary'))
-        : shown.length ? h('pre', { className: 'dsh-project-diff-lines' }, shown.map((line, index) => h('span', { key: index, className: 'dsh-project-diff-line', 'data-kind': diffLineKind(line) }, line || ' ')))
-        : h('p', { className: 'dsh-project-diff-note' }, t('diffNoContent')),
-      file.lines.length > diffLineLimit ? h('p', { className: 'dsh-project-diff-note' }, t('diffLinesCapped').replace('{count}', diffLineLimit)) : null);
-  }
 
-  function DiffView({ files, truncated, t }) {
-    const added = files.reduce((sum, file) => sum + file.added, 0), removed = files.reduce((sum, file) => sum + file.removed, 0);
-    const directories = [...new Set(files.map(file => file.workingDirectory).filter(Boolean))];
-    const labels = new Map(directories.map(directory => [directory, diffDirectoryLabel(directory, directories)]));
-    return !files.length ? h('p', { className: 'dsh-project-muted' }, t('noDiff')) : h(Fragment, null,
-      h('div', { className: 'dsh-project-diff-summary' }, h('strong', null, t('diffFileCount').replace('{count}', files.length)),
-        h('span', { className: 'dsh-project-diff-add' }, `+${added}`), h('span', { className: 'dsh-project-diff-del' }, `−${removed}`)),
-      files.map((file, index) => h(DiffFile, { key: `${file.workingDirectory ?? ''}:${file.path}`, file, directoryLabel: labels.get(file.workingDirectory), open: index < 3, t })),
-      truncated ? h('p', { className: 'dsh-project-muted' }, t('diffTruncated')) : null);
-  }
+    function formatCopy(template, params) {
+      if (!params) return template
+      return String(template).replace(/\{(\w+)\}/g, (_, k) => (params[k] !== undefined ? String(params[k]) : `{${k}}`))
+    }
 
-  function FileDiff({ projectId, workstreamId, read, t }) {
-    const [value, setValue] = useState(null), [error, setError] = useState('');
-    useEffect(() => {
-      let live = true;
-      read(projectId, 'diff', { workstreamId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
-      return () => { live = false; };
-    }, [projectId, workstreamId]);
-    if (error) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'alert', className: 'dsh-project-error' }, error));
-    if (!value) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'status' }, t('loading')));
-    const parsed = parseUnifiedDiff(value.snapshot.diff), known = new Set(parsed.map(file => file.path));
-    const files = [...parsed, ...(value.snapshot.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: 0, removed: 0, kind: diffStatusKind(file.status) }))];
-    return h('div', { className: 'dsh-project-body dsh-project-diff' },
-      h('p', { className: 'dsh-project-muted' }, t('diffScope')),
-      h('p', { className: 'dsh-project-path' }, value.worker.cwd, value.worker.branch ? ` · ${t('branch')}: ${value.worker.branch}` : ''),
-      value.snapshot.isGit === false ? h('p', { className: 'dsh-project-muted' }, t('notGit')) : h(DiffView, { files, truncated: value.snapshot.truncated, t }));
-  }
+    // Shared rules used both inside the full page and inside standalone
+    // `projects_dispatch` tool cards rendered in conversations outside the page.
+    const DISPATCH_SHARED_CSS = `
+.pj-dispatch-wrap{margin:4px 0}
+.pj-dispatch-card{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-dispatch-card:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l3)}
+.pj-dispatch-card:disabled{cursor:default;opacity:0.72}
+.pj-dispatch-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.pj-dispatch-time{flex:none;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);white-space:nowrap}
+.pj-glyph{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none}
+.pj-glyph-review{color:var(--dsw-alias-state-success-primary)}
+.pj-glyph-waiting{color:var(--dsw-alias-state-warn-primary)}
+.pj-glyph-failed{color:var(--dsw-alias-state-error-primary)}
+.pj-glyph-idle{color:var(--dsw-alias-label-tertiary)}
+.pj-glyph-resolved{color:var(--dsw-alias-label-secondary)}
+.pj-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;height:20px;padding:0 6px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pj-chip-branch{font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-3);border:0.5px solid var(--dsw-alias-border-l2)}
+.pj-chip-warn{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent);color:var(--dsw-alias-state-warn-label)}
+`
 
-  // One requirement's own changes: from its recorded starting point to its delivery (or to now before delivery).
-  function RequestDiff({ projectId, requestId, read, t }) {
-    const [value, setValue] = useState(null), [error, setError] = useState('');
-    useEffect(() => {
-      let live = true;
-      read(projectId, 'requests/changes', { requestId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
-      return () => { live = false; };
-    }, [projectId, requestId]);
-    if (error) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'alert', className: 'dsh-project-error' }, error));
-    if (!value) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'status' }, t('loading')));
-    const files = (value.workspaces ?? [value]).flatMap(scope => {
-      const parsed = parseUnifiedDiff(scope.diff), known = new Set(parsed.map(file => file.path));
-      return [...parsed, ...(scope.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))]
-        .map(file => ({ ...file, ...(scope.workingDirectory ? { workingDirectory: scope.workingDirectory } : {}) }));
-    });
-    return h('div', { className: 'dsh-project-body dsh-project-diff', 'data-request-diff': requestId },
-      h('p', { className: 'dsh-project-muted' }, t(value.final ? 'requestDiffScope' : 'requestDiffLive'), value.revertedAt ? ` ${t('requestDiffReverted')}` : '', value.isolated ? ` ${t('requestDiffIsolated')}` : ''),
-      value.isGit === false ? h('p', { className: 'dsh-project-muted' }, t('notGit')) : h(DiffView, { files, truncated: value.truncated, t }));
-  }
+    const PAGE_CSS = `
+.pj-page{display:flex;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;background:transparent;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);font-size:14px;line-height:22px;box-sizing:border-box}
+.pj-page *,.pj-page *::before,.pj-page *::after{box-sizing:border-box}
+.pj-page :focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
+.pj-page.pj-resizing{cursor:col-resize;user-select:none}
 
-  function ProcessPreview({ project, workstreamId, workerSessionId, delegationRef, read, retainProcess, t }) {
-    const [value, setValue] = useState(null), [error, setError] = useState(''), [selectedRef, setSelectedRef] = useState(delegationRef);
-    const [pickerOpen, setPickerOpen] = useState(false), [runPageEnd, setRunPageEnd] = useState(null);
-    useEffect(() => { setSelectedRef(delegationRef); }, [delegationRef]);
-    useEffect(() => {
-      let live = true; setValue(null); setError('');
-      void read(project.id, 'workstreams/get', workerSessionId ? { workerSessionId } : { workstreamId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
-      return () => { live = false; };
-    }, [project.id, workstreamId, workerSessionId]);
-    const delegation = value?.workstream.delegations?.find(item => item.ref === selectedRef);
-    const delegations = value?.workstream.delegations ?? [], runEnd = runPageEnd ?? delegations.length, runStart = Math.max(0, runEnd - 20);
-    return error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : value ? h('div', { className: 'dsh-project-body' },
-      h('strong', null, value.workstream.title),
-      value.workstream.request && (!delegation || delegation.requestId === value.workstream.request.id && delegation.requestRevision === value.workstream.request.revision) ? h('p', { className: 'dsh-project-muted' }, requestLabel(t, value.workstream.request)) : delegation?.requestRevision ? h('p', { className: 'dsh-project-muted' }, `${t('requestVersion')} ${delegation.requestRevision}`) : null,
-      delegations.length > 1 ? h('details', { className: 'dsh-project-result-disclosure', open: pickerOpen, onToggle: event => setPickerOpen(event.currentTarget.open) }, h('summary', null, t('selectRun')), pickerOpen ? h(Fragment, null,
-        h('div', { className: 'dsh-project-record-runs' }, delegations.slice(runStart, runEnd).map(item => h(Button, { key: item.ref, variant: 'ghost', size: 'sm', 'aria-pressed': item.ref === selectedRef, onClick: () => setSelectedRef(item.ref) }, recordedTime(item.createdAt), item.requestRevision ? ` · ${t('requestVersion')} ${item.requestRevision}` : ''))),
-        h('div', { className: 'dsh-project-actions' }, runStart > 0 ? button(t('previous'), () => setRunPageEnd(runStart)) : null, runEnd < delegations.length ? button(t('next'), () => setRunPageEnd(Math.min(delegations.length, runEnd + 20))) : null)) : null) : null,
-      selectedRef && !delegation ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('runRecordsMissing')) : h(ProcessRecords, { key: value.workstream.workerSessionId, project, work: value.workstream, delegation, retainProcess, t })) : h('p', { role: 'status' }, t('loading'));
-  }
+/* Columns */
+.pj-list{display:flex;flex-direction:column;flex:0 0 auto;min-width:0;min-height:0;background:var(--dsw-alias-bg-layer-1);border-right:1px solid var(--dsw-alias-border-l2)}
+.pj-list.pj-collapsed{width:44px;min-width:44px;max-width:44px}
+.pj-main{display:flex;flex-direction:column;flex:1 1 0;min-width:0;min-height:0;background:transparent}
+.pj-exec{display:flex;flex-direction:column;flex:0 0 auto;min-width:0;min-height:0;background:var(--dsw-alias-bg-layer-1);border-left:1px solid var(--dsw-alias-border-l2)}
+.pj-exec.pj-collapsed{width:44px;min-width:44px;max-width:44px}
 
-  function ProjectOverlay({ useStore, actions, useProjects, read, command, retainProcess, getFileReturn, renderFactorySlot, t }) {
-    const modal = useStore(value => value.modal), transition = useStore(value => value.pendingModal), materialsPreview = useStore(value => value.materialsPreview);
-    const detail = useProjects(value => modal ? value.details[modal.projectId] : undefined), project = useProjects(value => modal ? value.projects.find(item => item.id === modal.projectId) : undefined);
-    const [child, setChild] = useState(null), [transitionBusy, setTransitionBusy] = useState(false), [transitionFailed, setTransitionFailed] = useState(false);
-    const editorRef = useRef(null), backRef = useRef(null), processReturn = useRef(null), materialsHost = useRef(null), parking = useRef(null), wasPreview = useRef(false), returnPosition = useRef();
-    const [materialsContainer] = useState(() => { const element = document.createElement('div'); element.className = 'dsh-project-materials-host'; return element; });
-    const restoreMaterialsScroll = () => {
-      const content = materialsContainer.querySelector('.dsh-project-materials-content');
-      const saved = returnPosition.current;
-      if (saved?.scrollTop !== undefined && (!saved.isCurrent || saved.isCurrent()) && saved.modal.projectId === modal?.projectId && saved.modal.workstreamId === modal?.workstreamId && saved.modal.delegationRef === modal?.delegationRef
-        && !materialsPreview && !child && !materialsContainer.hidden && content?.getClientRects().length) {
-        content.scrollTop = saved.scrollTop;
-        returnPosition.current = undefined;
-        if (saved === processReturn.current) saved.pending = false;
+/* Column Headers */
+.pj-col-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:none}
+.pj-col-title{margin:0;font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-main-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:none;min-width:0}
+.pj-main-head-left{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto}
+.pj-main-title{margin:0;font-size:15px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-main-head-right{display:flex;align-items:center;gap:6px;flex:none}
+.pj-head-actions{display:flex;align-items:center;gap:4px;flex:none}
+.pj-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:none;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-icon-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.pj-icon-btn:disabled{opacity:0.4;cursor:not-allowed}
+.pj-icon-btn.pj-active{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
+.pj-icon-btn.pj-resolved-on{color:var(--dsw-alias-state-success-primary)}
+
+/* Resizers */
+.pj-resizer{position:relative;flex:0 0 5px;width:5px;padding:0;border:0;background:transparent;cursor:col-resize;touch-action:none}
+.pj-resizer::after{content:'';position:absolute;inset:0 -2px}
+.pj-resizer:hover,.pj-resizer:focus-visible{background:var(--dsw-alias-border-l3)}
+
+/* Collapsed 44px Rails */
+.pj-rail{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0;flex:1 1 auto;min-height:0;overflow-y:auto}
+.pj-rail-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;font-weight:600;cursor:pointer;flex:none;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-rail-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.pj-rail-btn.pj-active{background:var(--dsw-specific-sidebar-nav-item-active);color:var(--dsw-alias-label-primary)}
+.pj-rail-sep{width:20px;height:1px;background:var(--dsw-alias-border-l2);flex:none;margin:2px 0}
+.pj-rail-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;border-radius:var(--dsw-radius-badge);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-weight:500}
+
+/* Left Column: Project List */
+.pj-list-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:8px}
+.pj-list-item{display:flex;flex-direction:column;gap:2px;width:100%;padding:8px 10px;margin-bottom:2px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-list-item:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.pj-list-item.pj-active{background:var(--dsw-specific-sidebar-nav-item-active)}
+.pj-list-row-top{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0}
+.pj-list-name{font-size:13px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}
+.pj-list-dir{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-list-meta{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-archived-fold{flex:none;border-top:1px solid var(--dsw-alias-border-l2);padding:6px 8px}
+.pj-archived-toggle{display:flex;align-items:center;gap:6px;width:100%;padding:4px 6px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:18px;font-weight:500;text-align:left;cursor:pointer}
+.pj-archived-toggle:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
+.pj-archived-list{max-height:180px;overflow-y:auto;margin-top:4px}
+
+/* Middle Column: Coordinator Conversation */
+.pj-main-body{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;min-width:0;overflow:hidden}
+.pj-chat-host{position:relative;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;min-width:0;overflow:hidden}
+.pj-start-hero{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;flex:1 1 auto;padding:24px;text-align:center;max-width:480px;margin:0 auto}
+.pj-start-goal{width:100%;padding:12px 16px;border-radius:var(--dsw-radius-md);border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:left;white-space:pre-wrap;max-height:180px;overflow-y:auto}
+.pj-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 16px;border-bottom:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,var(--dsw-alias-bg-panel-solid));color:var(--dsw-alias-state-warn-label);font-size:12px;line-height:18px;flex:none}
+.pj-ws-pill{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-pill-paused{color:var(--dsw-alias-state-warn-label)}
+
+/* Right Column: Threads Panel */
+.pj-search-bar{padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:none}
+.pj-exec-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:8px 10px 24px}
+.pj-group{margin-bottom:12px}
+.pj-group-btn{display:flex;align-items:center;gap:6px;width:100%;padding:4px 8px;margin-bottom:2px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:18px;font-weight:500;text-align:left;cursor:pointer}
+.pj-group-btn:hover{color:var(--dsw-alias-label-primary)}
+.pj-task-card-wrap{position:relative;margin-bottom:2px}
+.pj-task-card{display:grid;grid-template-columns:16px minmax(0,1fr) auto;grid-template-areas:"icon title time" "icon sub sub" "icon chips chips";align-items:center;column-gap:8px;row-gap:2px;width:100%;padding:8px 10px;border:0.5px solid transparent;border-radius:var(--dsw-radius-md);background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-task-card:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l1)}
+.pj-task-card.pj-active{background:var(--dsw-specific-sidebar-nav-item-active);border-color:var(--dsw-alias-border-l2)}
+.pj-task-icon{grid-area:icon;align-self:start;margin-top:3px}
+.pj-task-title{grid-area:title;font-size:13px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-task-time{grid-area:time;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);white-space:nowrap}
+.pj-task-sub{grid-area:sub;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-task-chips{grid-area:chips;display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;min-width:0}
+.pj-task-quick{position:absolute;top:6px;right:6px;display:flex;align-items:center;gap:4px;opacity:0;pointer-events:none;transition:opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);background:var(--dsw-alias-bg-panel-solid);padding:2px;border-radius:var(--dsw-radius-sm);box-shadow:var(--dsw-shadow-lv1)}
+.pj-task-card-wrap:hover .pj-task-quick,.pj-task-card-wrap:focus-within .pj-task-quick{opacity:1;pointer-events:auto}
+
+/* Filter Popover & Context Menu */
+.pj-filter-wrap{position:relative;display:inline-flex}
+.pj-popover-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:80;min-width:200px;padding:4px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-specific-menu,var(--dsw-alias-bg-panel-solid));backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-prominent);display:flex;flex-direction:column;gap:2px}
+.pj-ctx-menu{position:fixed;z-index:1200;min-width:196px;max-width:296px;padding:4px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-specific-menu,var(--dsw-alias-bg-panel-solid));backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-prominent);display:flex;flex-direction:column;gap:2px}
+.pj-menu-row{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;padding:6px 8px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer}
+.pj-menu-row:hover:not(:disabled),.pj-menu-row:focus-visible:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.pj-menu-row:disabled{opacity:0.4;cursor:not-allowed}
+.pj-menu-row.pj-danger{color:var(--dsw-alias-state-error-primary)}
+.pj-menu-row.pj-danger:hover:not(:disabled),.pj-menu-row.pj-danger:focus-visible:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger)}
+.pj-menu-icon{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none;color:var(--dsw-alias-menu-icon)}
+.pj-menu-row.pj-danger .pj-menu-icon{color:var(--dsw-alias-state-error-primary)}
+.pj-menu-check{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none;color:var(--dsw-alias-state-business-primary)}
+.pj-menu-text{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.pj-menu-hint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);white-space:normal}
+.pj-menu-caption{padding:4px 8px 2px;font-size:11px;line-height:16px;font-weight:500;color:var(--dsw-alias-label-tertiary)}
+.pj-menu-sep{height:1px;margin:4px 6px;background:var(--dsw-alias-border-l2)}
+
+/* Task Master-Detail View */
+.pj-detail-shell{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+.pj-detail-head{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:none;background:var(--dsw-alias-bg-layer-1)}
+.pj-detail-row{display:flex;align-items:center;gap:6px;min-width:0}
+.pj-detail-title{flex:1 1 auto;min-width:0;font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-detail-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.pj-detail-branch-row{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;line-height:18px}
+.pj-branch-pill{display:inline-flex;align-items:center;gap:4px;max-width:100%;min-width:0;height:24px;padding:0 4px 0 8px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);border:0.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
+.pj-branch-code{font-family:var(--ds-font-family-code);font-size:11px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-worktree-warn{font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-detail-body{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+.pj-brief-card{margin:12px;padding:12px 14px;border-radius:var(--dsw-radius-md);border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid);font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Diff View */
+.pj-diff-panel{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+.pj-diff-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:none}
+.pj-diff-scroll{flex:1 1 auto;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.pj-diff-files{display:flex;flex-direction:column;gap:4px}
+.pj-diff-file-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-panel-solid);border:0.5px solid var(--dsw-alias-border-l1);font-size:12px;line-height:18px}
+.pj-diff-file-path{font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}
+.pj-diff-counts{display:inline-flex;align-items:center;gap:6px;flex:none;font-family:var(--ds-font-family-code);font-size:11px;line-height:16px}
+.pj-diff-add{color:var(--dsw-alias-state-success-primary)}
+.pj-diff-del{color:var(--dsw-alias-state-error-primary)}
+.pj-diff-pre{margin:0;padding:12px;border-radius:var(--dsw-radius-md);border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-panel-solid);font-family:var(--ds-font-family-code);font-size:12px;line-height:18px;overflow:auto;white-space:pre}
+.pj-diff-line{display:block;padding:0 4px}
+.pj-diff-line-add{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 12%,transparent);color:var(--dsw-alias-state-success-primary)}
+.pj-diff-line-del{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent);color:var(--dsw-alias-state-error-primary)}
+.pj-diff-line-hunk{color:var(--dsw-alias-state-business-primary)}
+
+/* Forms & Modals (note: Modal & context menus portal to document.body outside .pj-page) */
+.pj-modal-solid,.pj-modal-solid *,.pj-modal-solid *::before,.pj-modal-solid *::after,.pj-settings-modal,.pj-settings-modal *,.pj-settings-modal *::before,.pj-settings-modal *::after,.pj-ctx-menu,.pj-ctx-menu *{box-sizing:border-box}
+.pj-modal-solid{background:var(--dsw-alias-bg-panel-solid)}
+.pj-modal-form{width:min(500px,calc(100vw - 32px))}
+.pj-modal-wide{width:min(620px,calc(100vw - 32px))}
+.pj-form-stack{display:flex;flex-direction:column;gap:14px;min-width:0;width:100%}
+.pj-field{display:flex;flex-direction:column;gap:6px;min-width:0;width:100%}
+.pj-field-row{display:flex;align-items:center;gap:8px;min-width:0;width:100%}
+.pj-field-row > button{flex:none;white-space:nowrap}
+.pj-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%;min-width:0}
+.pj-label{font-size:13px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary)}
+.pj-hint{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.pj-textarea,.pj-select{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;border:0.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-panel-solid);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;padding:8px 12px}
+.pj-textarea{min-height:92px;resize:vertical}
+.pj-textarea-tall{min-height:260px;font-family:var(--ds-font-family-code);font-size:12px;line-height:18px}
+.pj-select{height:36px;padding:0 10px}
+.pj-textarea:focus-visible,.pj-select:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary)}
+.pj-path-box{box-sizing:border-box;flex:1 1 0;min-width:0;max-width:100%;height:36px;display:flex;align-items:center;padding:0 12px;border:0.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow:hidden}
+.pj-path-box.pj-empty-path{color:var(--dsw-alias-label-tertiary)}
+.pj-path-text{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-switch-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:8px 0}
+.pj-switch-copy{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+.pj-danger-zone{margin-top:8px;padding-top:16px;border-top:0.5px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,var(--dsw-alias-border-l2))}
+.pj-danger-title{margin:0 0 6px;font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-state-error-primary)}
+.pj-danger-btn{color:var(--dsw-alias-state-error-primary)}
+
+/* Two-Column Settings Shell (inside headless Modal) */
+.pj-settings-modal{width:min(780px,calc(100vw - 32px));height:min(680px,calc(100vh - 48px));max-height:calc(100vh - 48px);padding:0;overflow:hidden;background:var(--dsw-alias-bg-panel-solid)}
+.pj-settings-grid{display:grid;grid-template-columns:188px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"title head" "nav body";width:100%;height:100%;min-height:0}
+.pj-settings-title{grid-area:title;margin:0;padding:18px 12px 10px 20px;font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary);border-bottom:1px solid var(--dsw-alias-border-l1)}
+.pj-settings-head{grid-area:head;display:flex;align-items:center;justify-content:flex-end;padding:12px 14px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.pj-settings-nav{grid-area:nav;display:flex;flex-direction:column;gap:4px;padding:12px;border-right:1px solid var(--dsw-alias-border-l2);overflow-y:auto}
+.pj-settings-nav-btn{display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 12px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:20px;font-weight:400;text-align:left;cursor:pointer}
+.pj-settings-nav-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.pj-settings-nav-btn.pj-active{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary);font-weight:500}
+.pj-settings-body{grid-area:body;min-width:0;min-height:0;overflow-y:auto;padding:16px 20px 24px;display:flex;flex-direction:column;gap:16px}
+.pj-section{display:flex;flex-direction:column;gap:10px;padding-bottom:16px;border-bottom:0.5px solid var(--dsw-alias-border-l2)}
+.pj-section:last-child{border-bottom:0;padding-bottom:0}
+.pj-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pj-section-title{margin:0;font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary)}
+
+/* Shared Memory List & Progress */
+.pj-budget-bar{width:100%;height:6px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-layer-2);overflow:hidden}
+.pj-budget-fill{height:100%;background:var(--dsw-alias-state-business-primary);transition:width var(--ds-transition-duration) var(--ds-ease-in-out)}
+.pj-budget-fill.pj-over{background:var(--dsw-alias-state-warn-primary)}
+.pj-memory-list{display:flex;flex-direction:column;gap:4px}
+.pj-memory-row{display:flex;flex-direction:column;gap:2px;width:100%;padding:8px 10px;border:0.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:inherit;text-align:left;font:inherit;cursor:pointer;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-memory-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.pj-memory-row-head{display:flex;align-items:center;gap:6px;min-width:0}
+.pj-memory-row-name{flex:1 1 auto;min-width:0;font-size:13px;line-height:20px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-memory-row-desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj-memory-row-meta{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
+.pj-memory-body-pre{margin:0;padding:12px;border-radius:var(--dsw-radius-md);border:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);font-size:13px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow-y:auto}
+.pj-empty{padding:24px 16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:20px;display:flex;flex-direction:column;align-items:center;gap:12px}
+
+/* Fallback switch when primitive unavailable */
+.pj-switch-fallback{position:relative;display:inline-flex;align-items:center;width:36px;height:20px;padding:0;border:0;border-radius:14px;background:var(--dsw-alias-border-l3);cursor:pointer;flex:none;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-switch-fallback[aria-checked='true']{background:var(--dsw-alias-state-business-primary)}
+.pj-switch-fallback-thumb{position:absolute;left:2px;width:16px;height:16px;border-radius:14px;background:var(--dsw-alias-label-primary-foreground);transition:transform var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+.pj-switch-fallback[aria-checked='true'] .pj-switch-fallback-thumb{transform:translateX(16px)}
+
+@media (max-width: 640px){
+  .pj-settings-grid{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto minmax(0,1fr);grid-template-areas:"title head" "nav nav" "body body"}
+  .pj-settings-nav{flex-direction:row;border-right:0;border-bottom:1px solid var(--dsw-alias-border-l2);padding:8px 12px}
+  .pj-field-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion: reduce){
+  .pj-page *,.pj-dispatch-card{transition:none !important;animation:none !important}
+}
+${DISPATCH_SHARED_CSS}
+`
+
+    // =========================================================================
+    // Section 2: HTTP Client & SSE Real-Time Event Subscription
+    // =========================================================================
+
+    function messageOf(error) {
+      if (error instanceof Error) return error.message
+      return String(error)
+    }
+
+    async function api(path, init) {
+      const method = (init && init.method ? String(init.method) : 'GET').toUpperCase()
+      const headers = {
+        'x-projects-api': '1',
+        ...(method === 'GET' || method === 'HEAD' ? {} : { 'content-type': 'application/json' }),
+        ...(init && init.headers),
       }
-    };
-    useLayoutEffect(() => {
-      if (wasPreview.current && !materialsPreview) returnPosition.current = getFileReturn();
-      if (!child && processReturn.current?.pending) returnPosition.current = processReturn.current;
-      materialsContainer.hidden = Boolean(child);
-      const target = materialsPreview ? parking.current : materialsHost.current;
-      if (target && materialsContainer.parentNode !== target) target.append(materialsContainer);
-      if (target && target === materialsHost.current) restoreMaterialsScroll();
-    }, [materialsContainer, materialsPreview, child, modal]);
-    useEffect(() => { if (wasPreview.current && !materialsPreview && !transition) { const origin = getFileReturn()?.origin; if (origin?.isConnected) origin.focus({ preventScroll: true }); } wasPreview.current = materialsPreview; }, [materialsPreview, transition]);
-    useEffect(() => { setChild(null); processReturn.current = null; returnPosition.current = undefined; }, [modal]);
-    useEffect(() => { if (child) backRef.current?.focus(); else if (processReturn.current?.origin?.isConnected && (!processReturn.current.isCurrent || processReturn.current.isCurrent())) processReturn.current.origin.focus({ preventScroll: true }); }, [child]);
-    useEffect(() => { setTransitionFailed(false); }, [transition]);
-    if (!modal) return null;
-    const close = () => { if (child) setChild(null); else actions.setModal(null); };
-    const openRecords = (_projectId, workstreamId, member = false, context = {}) => {
-      processReturn.current = { origin: document.activeElement, modal, scrollTop: materialsContainer.querySelector('.dsh-project-materials-content')?.scrollTop, isCurrent: context.isCurrent, pending: true };
-      setChild({ kind: 'process', workstreamId, ...(member ? { workerSessionId: workstreamId } : {}), ...context });
-    };
-    const saveAndLeave = async () => { if (!editorRef.current || editorRef.current.busy || transitionBusy) return; setTransitionBusy(true); setTransitionFailed(false); try { if (await editorRef.current.save()) actions.completeModalTransition(); else setTransitionFailed(true); } finally { setTransitionBusy(false); } };
-    const title = `${t(child ? 'process' : { report: 'reportSource', requestDiff: 'viewChanges' }[modal.kind] ?? modal.kind)}${project ? ' · ' + project.title : ''}`;
-    return h(Fragment, null, h('div', { hidden: true, ref: parking }),
-      modal.kind === 'materials' ? createPortal(h(Materials, { key: `${modal.projectId}:${modal.workstreamId ?? ''}:${modal.delegationRef ?? ''}`, projectId: modal.projectId, resourceRevision: detail?.revision, workstreamId: modal.workstreamId, delegationRef: modal.delegationRef, read, command, onDirtyChange: actions.setModalDirty, editorRef, readonly: detail?.project.lifecycle === 'archived' || detail?.project.archiving, showProcess: openRecords, renderFactorySlot, t }), materialsContainer) : null,
-      h(Modal, { open: !materialsPreview, onClose: close, closeLabel: t(child ? 'backToResults' : 'close'), title, className: 'dsh-project-modal', contentClassName: 'dsh-project-modal-content' },
-      child ? h('div', { className: 'dsh-project-context' }, h(Button, { ref: backRef, variant: 'ghost', size: 'sm', onClick: () => setChild(null) }, t('backToResults')), child.request ? h('span', { className: 'dsh-project-context-label' }, requestLabel(t, child.request)) : child.reportAt ? recordedTime(child.reportAt) : null) : null,
-      modal.kind === 'materials' ? h('div', { className: 'dsh-project-materials-frame', ref: element => { materialsHost.current = element; if (element && !materialsPreview) { element.append(materialsContainer); restoreMaterialsScroll(); } } })
-        : modal.kind === 'diff' ? h(FileDiff, { key: modal.workstreamId, projectId: modal.projectId, workstreamId: modal.workstreamId, read, t })
-          : modal.kind === 'requestDiff' ? h(RequestDiff, { key: modal.requestId, projectId: modal.projectId, requestId: modal.requestId, read, t })
-          : modal.kind === 'report' ? h('div', { hidden: Boolean(child) }, h(ProjectReportView, { key: `${modal.workstreamId}:${modal.delegationRef ?? ''}`, projectId: modal.projectId, reference: modal, read, showProcess: openRecords, t }))
-          : detail ? h(ProcessPreview, { key: modal.workstreamId ?? modal.workerSessionId, project: detail.project, workstreamId: modal.workstreamId, workerSessionId: modal.workerSessionId, delegationRef: modal.delegationRef, read, retainProcess, t }) : h('p', { role: 'status' }, t('loading')),
-      child && detail ? h(ProcessPreview, { key: child.workstreamId + ':' + (child.delegationRef ?? ''), project: detail.project, workstreamId: child.workerSessionId ? undefined : child.workstreamId, workerSessionId: child.workerSessionId, delegationRef: child.delegationRef, read, retainProcess, t }) : null),
-      h(Modal, { open: Boolean(transition), onClose: () => { if (!transitionBusy) actions.cancelModalTransition(); }, closeLabel: t('keepEditing'), className: 'dsh-project-confirm', title: t('unsaved'), footer: h('div', { className: 'dsh-project-actions' },
-        button(t('keepEditing'), () => actions.cancelModalTransition(), transitionBusy), button(t(transition?.target ? 'discardAndSwitch' : 'discard'), () => actions.completeModalTransition(), transitionBusy), h(Button, { variant: 'primary', onClick: saveAndLeave, disabled: transitionBusy || editorRef.current?.busy || editorRef.current?.tooLong || project?.lifecycle === 'archived' || project?.archiving }, t(transition?.target ? 'saveAndSwitch' : 'saveAndClose'))) },
-        project ? h('p', { className: 'dsh-project-context-label' }, project.title) : null,
-        h('p', { className: 'dsh-project-muted' }, t(transition?.target ? 'saveBeforeSwitch' : 'saveBeforeClose')),
-        editorRef.current?.tooLong ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('textTooLong')) : null,
-        transitionFailed ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('saveFailed')) : null));
-  }
+      const response = await fetch(`${API_BASE}${path}`, {
+        credentials: 'include',
+        ...init,
+        method,
+        headers,
+      })
+      let payload = {}
+      try {
+        payload = await response.json()
+      } catch {
+        payload = {}
+      }
+      if (!response.ok) {
+        const failure = new Error(
+          (payload && (typeof payload.error === 'string' ? payload.error : payload.error?.message))
+            || `HTTP ${response.status}`,
+        )
+        failure.status = response.status
+        throw failure
+      }
+      return payload
+    }
 
-  return {
-    inject: ['slots', 'connection', 'locale', 'uiWorkspace', 'uiSidebar', 'workspaces', 'sessions', 'uiSession', 'conversation', 'settingsNavigation'],
-    apply(ctx) {
-      const t = ctx.locale.bind(NS);
-      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-project: locale');
-      const snapshot = createSnapshotStore({ projects: [], details: {}, available: false, loading: true, error: '' });
-      const requestModes = createSnapshotStore({}, { persist: { name: 'dsh-project.request-modes' } });
-      const requestPanels = createSnapshotStore({});
-      const setRequestPanel = (sessionId, next) => requestPanels.set({ ...requestPanels.getSnapshot(), [sessionId]: { ...requestPanels.getSnapshot()[sessionId], ...next } });
-      let sidebar, teamScopes;
-      ctx.inject(['sidebarRight'], scope => {
-        sidebar = scope.sidebarRight;
-        scope.effect(() => sidebar.openTabs.subscribe(() => {
-          const tabs = sidebar.openTabs.getSnapshot(), before = requestPanels.getSnapshot();
-          let next = before;
-          for (const [id, value] of Object.entries(before)) if (value.observing && !tabs.some(tab => tab.sessionId === id && tab.kind === 'project-requests')) next = { ...next, [id]: { ...value, observing: false } };
-          if (next !== before) requestPanels.set(next);
-        }), 'dsh-project: Request observer closes');
-        scope.effect(() => () => { sidebar = undefined; }, 'dsh-project: Sidebar');
-      });
-      const pinRequests = sessionId => {
-        if (!sidebar) throw new Error(t('unavailable'));
-        if (!sidebar.openTabIn(sessionId, 'project-requests')) throw new Error(t('unavailable'));
-        setRequestPanel(sessionId, { open: false, observing: true });
-      };
-      const collapseEmptyObserver = sessionId => {
-        if (sidebar?.mounted.getSnapshot() === sessionId && sidebar.isExpanded()
-          && !sidebar.openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.kind !== 'guide')) sidebar.toggleExpanded();
-      };
-      const openLead = (sessionId, origin) => {
-        const target = sidebar?.focusedTarget(origin);
-        const fullscreen = origin.closest('[data-sidebar-right-panel="fullscreen"]') !== null;
-        // Commit the destination before restoring its editor's retained caret.
-        flushSync(() => {
-          if (target?.sessionId === sessionId) {
-            sidebar.closeTarget(target);
+    /**
+     * Subscribe to `/projects-api/events` SSE stream with exponential-backoff
+     * reconnect and visibility recovery. Calls `onUpdate(payload)` on each
+     * server push and `onReconnect()` after a reconnect so no change is missed.
+     */
+    function subscribeProjectEvents({ onUpdate, onReconnect, onStateChange }) {
+      const ES = typeof EventSource !== 'undefined'
+        ? EventSource
+        : (typeof window !== 'undefined' ? window.EventSource : undefined)
+      if (typeof ES !== 'function') {
+        onStateChange?.('unavailable')
+        return () => {}
+      }
+      let source = null
+      let retryTimer = null
+      let retryDelay = SSE_MIN_DELAY_MS
+      let connectedOnce = false
+      let closed = false
+
+      const clearRetry = () => {
+        if (retryTimer !== null) {
+          clearTimeout(retryTimer)
+          retryTimer = null
+        }
+      }
+      const closeSource = () => {
+        if (source) {
+          try { source.close() } catch {}
+          source = null
+        }
+      }
+      const scheduleReconnect = () => {
+        if (closed || retryTimer !== null) return
+        const wait = retryDelay
+        retryDelay = Math.min(SSE_MAX_DELAY_MS, Math.round(retryDelay * 1.8))
+        retryTimer = setTimeout(() => {
+          retryTimer = null
+          connect()
+        }, wait)
+      }
+      const parseEvent = (raw) => {
+        try {
+          return JSON.parse(raw)
+        } catch {
+          return { type: 'update', ts: Date.now() }
+        }
+      }
+      const connect = () => {
+        if (closed) return
+        closeSource()
+        let es
+        try {
+          es = new ES(`${API_BASE}/events`, { withCredentials: true })
+        } catch {
+          onStateChange?.('disconnected')
+          scheduleReconnect()
+          return
+        }
+        source = es
+        let settledOpen = false
+        const handleOpen = () => {
+          if (settledOpen) return
+          settledOpen = true
+          const isReconnect = connectedOnce
+          connectedOnce = true
+          retryDelay = SSE_MIN_DELAY_MS
+          onStateChange?.('connected')
+          if (isReconnect) onReconnect?.()
+        }
+        const handleUpdate = (event) => {
+          onUpdate?.(parseEvent(event && event.data))
+        }
+        if (typeof es.addEventListener === 'function') {
+          es.addEventListener('open', handleOpen)
+          es.addEventListener('ready', handleOpen)
+          es.addEventListener('update', handleUpdate)
+          es.addEventListener('message', handleUpdate)
+        } else {
+          es.onopen = handleOpen
+          es.onmessage = handleUpdate
+        }
+        es.onerror = () => {
+          onStateChange?.('disconnected')
+          closeSource()
+          scheduleReconnect()
+        }
+      }
+
+      const onVisibility = () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !source && !closed) {
+          clearRetry()
+          retryDelay = SSE_MIN_DELAY_MS
+          connect()
+        }
+      }
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', onVisibility)
+      }
+      connect()
+
+      return () => {
+        closed = true
+        clearRetry()
+        closeSource()
+        if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+          document.removeEventListener('visibilitychange', onVisibility)
+        }
+      }
+    }
+
+    // =========================================================================
+    // Section 3: Cross-Subtree Stores (Dispatch Cards & Locale Updates)
+    // =========================================================================
+
+    function createStore(initial) {
+      let value = initial
+      const listeners = new Set()
+      return {
+        get: () => value,
+        set(next) {
+          if (Object.is(next, value)) return
+          value = next
+          for (const listener of [...listeners]) {
+            try { listener(value) } catch {}
           }
-          ctx.uiSidebar.selectTab('sessions');
-          ctx.uiWorkspace.openSession(sessionId);
-        });
-        // The destination may restore its own fullscreen Sidebar when leaving a main member.
-        const coveringSidebar = fullscreen || [...document.querySelectorAll('[data-sidebar-right-panel="fullscreen"][data-sidebar-right-open]')].some(panel => panel.dataset.sidebarRightSession === sessionId);
-        if (coveringSidebar && sidebar?.isExpanded()) flushSync(() => sidebar.toggleExpanded());
-        else flushSync(() => collapseEmptyObserver(sessionId));
-        const scope = ctx.sessions.scope(sessionId);
-        if (!scope) throw new Error(t('unavailable'));
-        ctx.conversation.input.for(scope).focus();
-      };
-      // A member's live conversation opens beside the Lead instead of replacing it.
-      const openMember = (project, workerSessionId, parentSessionId = project.coordinatorSessionId) => sidebar?.openResource(subagentChatAddress({
-        parentSessionId, childSessionId: workerSessionId, mode: 'continuable' }), { kind: 'subagentchat' });
-      const openTeamMember = (leadSessionId, childSessionId) => {
-        if (childSessionId === leadSessionId || (ctx.sessions.retainInfo(leadSessionId).getSnapshot().retainedBy.mainView ?? 0) === 0) return;
-        ctx.uiWorkspace.openSession({ parentSessionId: leadSessionId, childSessionId, mode: 'continuable' });
-      };
-      // Desktop verdicts on whether a folder may host a Project, keyed by comparable path.
-      const directoryChecks = createSnapshotStore({});
-      const checkDirectory = path => {
-        const key = comparablePath(path);
-        if (directoryChecks.getSnapshot()[key] !== undefined) return;
-        directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: { pending: true } });
-        void rpc('directory/check', { workingDirectory: path }).then(
-          result => {
-            directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: result.allowed === false ? { reason: result.reason } : {} });
-            // Republish so Workspace rows drop the entry for a refused folder.
-            if (result.allowed === false) registerAction();
-          },
-          // An unavailable check leaves the entry; creation still enforces the rule.
-          () => directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: {} }));
-      };
-      // Bumped to close the header panels when a native file preview takes over.
-      const dismissals = createSnapshotStore(0);
-      const dismissPanels = () => dismissals.set(dismissals.getSnapshot() + 1);
-      const archiveRequests = new Set();
-      const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, modalDirty: false, pendingModal: null, modalRevision: 0, materialsPreview: false, lifecycle: null }), actions: {
-        selectProject: (draft, id) => { draft.selected = id; },
-        setModal: (draft, modal) => {
-          if (draft.modal?.kind === modal?.kind && draft.modal?.projectId === modal?.projectId && draft.modal?.workstreamId === modal?.workstreamId && draft.modal?.workerSessionId === modal?.workerSessionId && draft.modal?.delegationRef === modal?.delegationRef && draft.modal?.requestId === modal?.requestId) return;
-          if (draft.modal?.kind === 'materials' && draft.modalDirty) { draft.materialsPreview = false; draft.pendingModal = { target: modal }; return; }
-          draft.modal = modal; draft.modalDirty = false; draft.pendingModal = null; draft.materialsPreview = false; draft.modalRevision++;
         },
-        suspendMaterials: (draft, projectId, revision) => { if (draft.modal?.kind === 'materials' && draft.modal.projectId === projectId && draft.modalRevision === revision) draft.materialsPreview = true; },
-        returnMaterials: (draft, projectId) => { if (draft.modal?.projectId === projectId && draft.materialsPreview) { draft.materialsPreview = false; draft.modalRevision++; } },
-        setLifecycle: (draft, lifecycle) => { draft.lifecycle = lifecycle; },
-        setModalDirty: (draft, dirty) => { draft.modalDirty = dirty; },
-        cancelModalTransition: draft => { draft.pendingModal = null; },
-        completeModalTransition: draft => { if (!draft.pendingModal) return; draft.modal = draft.pendingModal.target; draft.modalDirty = false; draft.pendingModal = null; draft.materialsPreview = false; draft.modalRevision++; },
-      } });
-      const viewInstance = viewHandle.create(), viewStore = { ...viewHandle, create: () => viewInstance };
-      let alive = true, refreshing, disposeAction, trackedProject, fileReturn;
-      let navigationGeneration = 0, refreshGeneration = 0;
-      const detailSequences = new Map(), detailPages = new Map();
-      const rpc = async (endpoint, input = {}) => {
-        const response = await ctx.connection.rpc.call('/dsh-project', endpoint, input), result = response?.result ?? response;
-        if (result?.ok === false) throw Object.assign(new Error(result.error?.message ?? result.error?.code ?? t('unavailable')), { code: result.error?.code });
-        return result?.value ?? result;
-      };
-      const acceptDetail = detail => {
-        if (!alive || detail?.unchanged || !detail?.project) return;
-        const previous = snapshot.getSnapshot(), id = detail.project.id;
-        snapshot.set({ ...previous, error: '', projects: previous.projects.some(project => project.id === id)
-          ? previous.projects.map(project => project.id === id ? detail.project : project) : [...previous.projects, detail.project],
-          details: { ...previous.details, [id]: { workstreams: [], workers: [], ...previous.details[id], ...detail } } });
-      };
-      const read = async (projectId, endpoint, input, isCurrent) => {
-        const originalView = viewInstance.getSnapshot(), origin = document.activeElement;
-        const scrollTop = endpoint === 'open' && input?.path && originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId
-          ? document.querySelector('.dsh-project-materials-host:not([hidden]) .dsh-project-materials-content')?.scrollTop : undefined;
-        const value = await rpc(endpoint, { ...input, projectId });
-        if (endpoint === 'open' && input?.path) {
-          if (isCurrent && !isCurrent()) return value;
-          if (typeof ctx.workspaces.openPath !== 'function') throw new Error(t('unavailable'));
-          const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
-          await ctx.workspaces.openPath(value.canonicalPath, { sessionId: project.coordinatorSessionId, workingDirectory: value.root, presentation: 'mini' });
-          if (isCurrent && !isCurrent()) return value;
-          dismissPanels();
-          // Only Materials can be suspended and returned to; other dialogs give way to the preview.
-          if (originalView.modal && originalView.modal.kind !== 'materials' && viewInstance.getSnapshot().modalRevision === originalView.modalRevision) viewInstance.actions.setModal(null);
-          const currentView = viewInstance.getSnapshot();
-          if (originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId && originalView.modalRevision === currentView.modalRevision && !currentView.pendingModal && (!isCurrent || isCurrent())) { fileReturn = { origin, modal: originalView.modal, scrollTop, isCurrent }; viewInstance.actions.suspendMaterials(projectId, originalView.modalRevision); }
-        }
-        return value;
-      };
-      const readDetail = async (projectId, incremental = false, cursor = detailPages.has(projectId) ? detailPages.get(projectId) : snapshot.getSnapshot().details[projectId]?.workPage?.currentCursor) => {
-        const sequence = (detailSequences.get(projectId) ?? 0) + 1;
-        detailSequences.set(projectId, sequence); detailPages.set(projectId, cursor ?? null);
-        const generation = refreshGeneration, since = incremental ? snapshot.getSnapshot().details[projectId]?.revision : undefined;
-        const detail = await read(projectId, 'detail', { ...(since === undefined ? {} : { since }), ...(cursor ? { currentCursor: cursor } : {}) });
-        if (generation === refreshGeneration && detailSequences.get(projectId) === sequence) {
-          if (!detail.unchanged) detailPages.set(projectId, detail.workPage?.currentCursor ?? null);
-          acceptDetail(detail);
-        }
-        return detail.unchanged ? snapshot.getSnapshot().details[projectId] : detail;
-      };
-      const command = async (projectId, endpoint, input) => {
-        refreshGeneration++;
-        if (endpoint === 'archive') { archiveRequests.add(projectId); const current = snapshot.getSnapshot(); snapshot.set({ ...current, projects: current.projects.map(project => project.id === projectId ? { ...project, archiving: true } : project) }); }
-        let value;
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+      }
+    }
+
+    function useStoreValue(store) {
+      const [value, setValue] = useState(store.get)
+      useEffect(() => {
+        setValue(store.get())
+        return store.subscribe(setValue)
+      }, [store])
+      return value
+    }
+
+    const projectSnapshot = createStore(null)
+    const openTaskRequest = createStore(null)
+    let openTaskSeq = 0
+
+    function requestOpenTask(projectId, taskId) {
+      openTaskSeq += 1
+      openTaskRequest.set({ projectId, taskId, seq: openTaskSeq })
+    }
+
+    // =========================================================================
+    // Section 4: Container-Aware Layout & Pure Domain Helpers
+    // =========================================================================
+
+    function readStored(key, fallback) {
+      try {
+        if (typeof window === 'undefined' || !window.localStorage) return fallback
+        const value = window.localStorage.getItem(`projects.${key}`)
+        return value === null ? fallback : value
+      } catch {
+        return fallback
+      }
+    }
+
+    function writeStored(key, value) {
+      try {
+        if (typeof window === 'undefined' || !window.localStorage) return
+        window.localStorage.setItem(`projects.${key}`, String(value))
+      } catch {}
+    }
+
+    function readStoredNumber(key, fallback) {
+      const n = Number(readStored(key, ''))
+      return Number.isFinite(n) && n > 0 ? n : fallback
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), Math.max(min, max))
+    }
+
+    /**
+     * Compute three-column collapsed states and pixel widths purely from the
+     * observed container width (via ResizeObserver), independent of viewport width.
+     */
+    function computeColumnLayout({
+      containerWidth,
+      listChoice,
+      execChoice,
+      execForceOpen = false,
+      lastOpenedSide = 'exec',
+      listWidth,
+      execWidth,
+    }) {
+      const w = Number(containerWidth) || 0
+      let listCollapsed = listChoice === '1' || (listChoice !== '0' && w > 0 && w < LIST_FOLD_BELOW)
+      let execCollapsed = !execForceOpen && (execChoice === '1' || (execChoice !== '0' && w > 0 && w < EXEC_FOLD_BELOW))
+
+      // Never allow both side columns to squeeze the middle Coordinator column
+      // below MAIN_MIN_WIDTH (400px); auto-fold the other side to its 44px rail.
+      if (w > 0 && !listCollapsed && !execCollapsed && w < EXEC_FOLD_BELOW) {
+        if (execForceOpen || lastOpenedSide === 'exec') listCollapsed = true
+        else execCollapsed = true
+      }
+
+      const listSpan = listCollapsed ? RAIL_WIDTH : listWidth
+      const execSpan = execCollapsed ? RAIL_WIDTH : execWidth
+      if (!(w > 0) || (listCollapsed && execCollapsed)) {
+        return { listCollapsed, execCollapsed, list: listSpan, exec: execSpan }
+      }
+      const separators = (listCollapsed ? 0 : RESIZER_WIDTH) + (execCollapsed ? 0 : RESIZER_WIDTH)
+      const room = w - MAIN_MIN_WIDTH - separators
+      if (listCollapsed) {
+        const maxExec = Math.max(0, room - RAIL_WIDTH)
+        const exec = maxExec >= EXEC_MIN_WIDTH ? clamp(execWidth, EXEC_MIN_WIDTH, maxExec) : Math.max(200, maxExec)
+        return { listCollapsed, execCollapsed, list: RAIL_WIDTH, exec }
+      }
+      if (execCollapsed) {
+        const maxList = Math.max(0, room - RAIL_WIDTH)
+        const list = maxList >= LIST_MIN_WIDTH ? clamp(listWidth, LIST_MIN_WIDTH, maxList) : Math.max(160, maxList)
+        return { listCollapsed, execCollapsed, list, exec: RAIL_WIDTH }
+      }
+      if (listWidth + execWidth <= room) {
+        return { listCollapsed, execCollapsed, list: listWidth, exec: execWidth }
+      }
+      const spare = Math.max(0, room - LIST_MIN_WIDTH - EXEC_MIN_WIDTH)
+      const excess = (listWidth - LIST_MIN_WIDTH) + (execWidth - EXEC_MIN_WIDTH)
+      const scale = excess > 0 ? Math.min(1, spare / excess) : 0
+      const list = LIST_MIN_WIDTH + Math.round((listWidth - LIST_MIN_WIDTH) * scale)
+      return { listCollapsed, execCollapsed, list, exec: Math.max(EXEC_MIN_WIDTH, room - list) }
+    }
+
+    function columnDragCeiling({ containerWidth, layout, which }) {
+      const w = Number(containerWidth) || 0
+      if (!(w > 0)) return 680
+      const other = which === 'list' ? layout.exec : layout.list
+      const separators = (layout.listCollapsed ? 0 : RESIZER_WIDTH) + (layout.execCollapsed ? 0 : RESIZER_WIDTH)
+      const floor = which === 'list' ? LIST_MIN_WIDTH : EXEC_MIN_WIDTH
+      return Math.max(floor, Math.round(w - MAIN_MIN_WIDTH - other - separators))
+    }
+
+    function shortPath(workspace) {
+      const raw = String(workspace || '').trim().replace(/[\\/]+$/, '')
+      if (!raw) return ''
+      const parts = raw.split(/[\\/]/).filter(Boolean)
+      return parts.length ? parts[parts.length - 1] : raw
+    }
+
+    function initialOf(name) {
+      const value = String(name || '').trim()
+      return value ? Array.from(value)[0].toUpperCase() : '·'
+    }
+
+    function plainLine(text) {
+      const line = String(text || '').split('\n').find((entry) => entry.trim())
+      if (!line) return ''
+      return line
+        .replace(/^\s{0,3}#{1,6}\s*/, '')
+        .replace(/^\s*[-*+]\s+/, '')
+        .replace(/^\s*>\s*/, '')
+        .replace(/\*\*|__|`/g, '')
+        .trim()
+    }
+
+    function taskSubtitle(task, t) {
+      return plainLine(task && task.output) || plainLine(task && task.brief) || t((task && task.status) || 'queued')
+    }
+
+    function relativeTime(task, t, locale) {
+      const stamp = Number(task && task.finishedAt) || Number(task && task.updatedAt) || Number(task && task.createdAt) || 0
+      if (!stamp) return ''
+      const delta = Date.now() - stamp
+      if (!Number.isFinite(delta) || delta < 60000) return t('justNow')
+      const hour = 3600000
+      const day = 86400000
+      if (delta < hour) return `${Math.floor(delta / 60000)}m`
+      if (delta < day) return `${Math.floor(delta / hour)}h`
+      if (delta < 7 * day) return `${Math.floor(delta / day)}d`
+      try {
+        return new Date(stamp).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+      } catch {
+        return ''
+      }
+    }
+
+    function taskChips(task, project, t) {
+      const chips = []
+      const branch = String((task && task.branch) || '').trim()
+      if (branch) chips.push({ key: 'branch', text: branch, kind: 'branch' })
+      if (project && project.autonomy === 'manual' && task && !task.approved && task.status === 'queued') {
+        chips.push({ key: 'approval', text: t('needsApproval'), kind: 'warn' })
+      }
+      const model = String((task && task.model) || '').trim()
+      if (model) chips.push({ key: 'model', text: model.split('/').pop() || model, kind: 'default' })
+      if (task && task.id) chips.push({ key: 'id', text: String(task.id).slice(0, 10), kind: 'default' })
+      return chips.slice(0, 2)
+    }
+
+    function threadGroups(tasks) {
+      const buckets = new Map(THREAD_GROUPS.map((g) => [g.key, []]))
+      for (const task of tasks || []) {
+        const group = THREAD_GROUPS.find((entry) => entry.statuses.includes(task.status))
+        if (group) buckets.get(group.key).push(task)
+      }
+      return THREAD_GROUPS.map((group) => ({ ...group, tasks: buckets.get(group.key) }))
+    }
+
+    function countsLine(project, t) {
+      const counts = (project && project.counts) || {}
+      const parts = ['running', 'review', 'blocked', 'failed', 'queued', 'resolved']
+        .filter((status) => (counts[status] || 0) > 0)
+        .map((status) => `${counts[status]} ${t(status)}`)
+      if (parts.length) return parts.join(' · ')
+      const total = Object.values(counts).reduce((sum, v) => sum + (Number(v) || 0), 0)
+      return `${total} ${t('counts')}`
+    }
+
+    function modelLabel(catalog, value) {
+      const route = String(value || '').trim()
+      if (!route) return ''
+      const found = ((catalog && catalog.models) || []).find((entry) => entry && entry.id === route)
+      return (found && found.label) || route
+    }
+
+    function effectiveModel(project, task) {
+      const fromTask = String((task && task.model) || '').trim()
+      if (fromTask) return { value: fromTask, source: 'task' }
+      const fromProject = String((project && project.model) || '').trim()
+      if (fromProject) return { value: fromProject, source: 'project' }
+      return { value: '', source: 'host' }
+    }
+
+    function effortsFor(catalog, route) {
+      const key = String(route || '').trim()
+      const found = ((catalog && catalog.models) || []).find((entry) => entry && entry.id === key)
+      const advertised = found && Array.isArray(found.efforts) ? found.efforts : []
+      const entries = advertised
+        .filter((e) => e && e.id)
+        .map((e) => ({ id: String(e.id), name: e.name ? String(e.name) : String(e.id) }))
+      if (entries.length) return entries
+      return GENERIC_EFFORTS.map((id) => ({ id, name: '' }))
+    }
+
+    function effortLabel(catalog, route, value, t) {
+      const id = String(value || '').trim()
+      if (!id) return ''
+      const found = effortsFor(catalog, route).find((e) => e.id === id)
+      if (found && found.name) return found.name
+      const key = `effort${id.charAt(0).toUpperCase()}${id.slice(1)}`
+      const localized = t(key)
+      return localized === key ? id : localized
+    }
+
+    function effectiveEffort(project, task) {
+      const fromTask = String((task && task.reasoningEffort) || '').trim()
+      if (fromTask) return { value: fromTask, source: 'task' }
+      const fromProject = String((project && project.reasoningEffort) || '').trim()
+      if (fromProject) return { value: fromProject, source: 'project' }
+      return { value: '', source: 'host' }
+    }
+
+    function memorySize(chars, t) {
+      const value = Number(chars) || 0
+      const formatted = value < 1000 ? String(value) : `${Math.round(value / 100) / 10}k`
+      return `${formatted} ${t('memoryChars')}`
+    }
+
+    function memoryDateOf(modified) {
+      const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(modified || ''))
+      return match ? match[1] : ''
+    }
+
+    function memoryMeta(file, t) {
+      const parts = [memorySize(file && file.size, t)]
+      const date = memoryDateOf(file && file.modified)
+      if (date) parts.push(date)
+      return parts.join(' · ')
+    }
+
+    function worktreeNoteOf(task, t) {
+      const note = String((task && task.worktreeNote) || '').trim()
+      if (note) return note
+      if (task && task.worktreeDegraded === 'workspace_missing') return t('worktreeWorkspaceMissing')
+      if (task && task.worktreeDegraded === 'not_a_git_repository') return t('worktreeNotGit')
+      return ''
+    }
+
+    function taskDeleteFailure(failure, t, archive) {
+      const status = failure && failure.status
+      const detail = messageOf(failure)
+      if (archive && status === 409) {
+        return /still running/i.test(detail) ? t('archiveRunning') : detail
+      }
+      if (archive && status === 400) return `${t('archiveParamRejected')} ${detail}`
+      return detail
+    }
+
+    /** First user message sent when starting a fresh coordinator session (board snapshot only; rules live in system prompt). */
+    function coordinatorBoard(project) {
+      const tasks = (project && project.tasks) || []
+      const open = tasks.filter((task) => task.status !== 'resolved')
+      const tally = {}
+      for (const task of tasks) tally[task.status] = (tally[task.status] || 0) + 1
+      const countsText =
+        ['running', 'review', 'queued', 'failed', 'blocked', 'resolved']
+          .filter((status) => (tally[status] || 0) > 0)
+          .map((status) => `${tally[status]} ${status}`)
+          .join(', ') || 'none'
+      const taskLines = open.length
+        ? open.map((task) => `- ${task.id} [${task.status}] ${task.title}`).join('\n')
+        : tasks.length === 0
+          ? '(none yet)'
+          : '(no open tasks)'
+      const resolvedNote = tally.resolved > 0
+        ? `${tally.resolved} resolved task(s) are not listed here; read their output with projects_get and include_resolved: true.`
+        : ''
+      return [
+        `The board of the DSH project "${project.name}" (project_id: ${project.id}).`,
+        '',
+        '## Project instructions',
+        (project.goal && project.goal.trim()) || '(none)',
+        '',
+        '## Current tasks',
+        `counts: ${countsText}`,
+        taskLines,
+        ...(resolvedNote ? [resolvedNote] : []),
+      ].join('\n')
+    }
+
+    function readCollapsedGroups() {
+      const raw = readStored('collapsedGroups', '')
+      if (!raw) return { ...DEFAULT_COLLAPSED_GROUPS }
+      try {
+        const parsed = JSON.parse(raw)
+        if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_COLLAPSED_GROUPS }
+        const next = {}
+        for (const g of THREAD_GROUPS) next[g.key] = parsed[g.key] === true
+        return next
+      } catch {
+        return { ...DEFAULT_COLLAPSED_GROUPS }
+      }
+    }
+
+    // =========================================================================
+    // Section 5: Icons & UI Primitives Bridge
+    // =========================================================================
+
+    const UIButton = Primitives.Button || React.forwardRef(function FallbackButton(
+      { variant, size, shape, icon, loading, feedback, children, ...rest },
+      ref,
+    ) {
+      return h('button', { type: 'button', ref, ...rest, disabled: rest.disabled || loading }, icon, children)
+    })
+
+    const UIInput = Primitives.Input || React.forwardRef(function FallbackInput(
+      { variant, icon, className, ...rest },
+      ref,
+    ) {
+      return h('input', { ref, className, ...rest })
+    })
+
+    const UIModal = Primitives.Modal || function FallbackModal({ open, title, closeLabel, onClose, children, footer, headless }) {
+      if (!open) return null
+      return h(
+        'div',
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': title, className: 'pj-modal-solid' },
+        headless
+          ? children
+          : h(
+              Fragment,
+              null,
+              h('div', null, h('h2', null, title), closeLabel && h('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, closeLabel)),
+              children,
+              footer,
+            ),
+      )
+    }
+
+    const UIPill = Primitives.Pill || function FallbackPill({ active, onClick, children, ...rest }) {
+      return onClick
+        ? h('button', { type: 'button', 'aria-pressed': active, onClick, ...rest }, children)
+        : h('span', rest, children)
+    }
+
+    const UISegmentedTabs = Primitives.SegmentedTabs || function FallbackTabs({ items, value, onChange, label }) {
+      return h(
+        'div',
+        { role: 'tablist', 'aria-label': label },
+        items.map((item) =>
+          h('button', {
+            key: item.value,
+            id: item.id,
+            type: 'button',
+            role: 'tab',
+            'aria-selected': value === item.value,
+            'aria-controls': item.panelId,
+            onClick: () => onChange(item.value),
+          }, item.label),
+        ),
+      )
+    }
+
+    const UIStateDot = Primitives.StateDot || function FallbackDot({ state }) {
+      return h('span', { 'data-state-dot': state, 'aria-hidden': true })
+    }
+
+    const UITag = Primitives.Tag || function FallbackTag({ tone, className, children }) {
+      return h('span', { 'data-tone': tone, className }, children)
+    }
+
+    const UITooltip = Primitives.Tooltip || function FallbackTooltip({ label, children }) {
+      return children
+    }
+
+    const UIToast = Primitives.Toast || function FallbackToast({ text }) {
+      return h('div', { role: 'status' }, text)
+    }
+
+    function SafeSwitch({ checked, onChange, label, disabled, title }) {
+      if (typeof Primitives.Switch === 'function') {
+        return h(Primitives.Switch, { checked: Boolean(checked), onChange, label, disabled, title })
+      }
+      return h(
+        'button',
+        {
+          type: 'button',
+          role: 'switch',
+          className: 'pj-switch-fallback',
+          'aria-checked': checked ? 'true' : 'false',
+          'aria-label': label,
+          title,
+          disabled,
+          onClick: () => onChange(!checked),
+        },
+        h('span', { className: 'pj-switch-fallback-thumb', 'aria-hidden': true }),
+      )
+    }
+
+    /** Hand-drawn 24x24 stacked-card outline glyph for `sidebar.panellist`. */
+    function ProjectsIcon({ size }) {
+      const edge = typeof size === 'number' && size > 0 ? size : 18
+      const stroke = {
+        stroke: 'currentColor',
+        strokeWidth: 1.8,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }
+      return h(
+        'svg',
+        { width: edge, height: edge, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true },
+        h('path', { d: 'M7 2.9H17', ...stroke }),
+        h('path', { d: 'M5 7.9H19', ...stroke }),
+        h('path', {
+          d: 'M5.9 12.9H18.1Q21.1 12.9 21.1 15.9V18.1Q21.1 21.1 18.1 21.1H5.9Q2.9 21.1 2.9 18.1V15.9Q2.9 12.9 5.9 12.9Z',
+          ...stroke,
+        }),
+      )
+    }
+
+    function Icon({ name, size = 16 }) {
+      const Comp = Primitives[name]
+      if (typeof Comp === 'function') return h(Comp, { size })
+      // Minimal 16px SVG fallbacks when running under lightweight unit mocks.
+      const props = { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true }
+      const s = { stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' }
+      if (name === 'IconPlusOutlineRegular') return h('svg', props, h('path', { d: 'M8 2.5v11M2.5 8h11', ...s }))
+      if (name === 'IconCloseOutline16' || name === 'IconCloseOutlineRegular') return h('svg', props, h('path', { d: 'M3 3l10 10M13 3L3 13', ...s }))
+      if (name === 'IconCheckOutlineRegular') return h('svg', props, h('path', { d: 'M3.2 8.4l3 3 6.6-6.6', ...s }))
+      if (name === 'IconPanelRightOutline16') return h('svg', props, h('rect', { x: 1.5, y: 1.5, width: 13, height: 13, rx: 1.5, ...s }), h('path', { d: 'M10.5 1.5v13', ...s }))
+      if (name === 'IconPanelLeftOutlineRegular') return h('svg', props, h('rect', { x: 1.5, y: 1.5, width: 13, height: 13, rx: 1.5, ...s }), h('path', { d: 'M5.5 1.5v13', ...s }))
+      if (name === 'IconSearchOutlineRegular') return h('svg', props, h('circle', { cx: 6.8, cy: 6.8, r: 4.5, ...s }), h('path', { d: 'M10.4 10.4L14 14', ...s }))
+      if (name === 'IconSlidersTwoOutlineRegular') return h('svg', props, h('path', { d: 'M2.5 5h5.5M11.5 5h2M2.5 11h2M8 11h5.5', ...s }), h('circle', { cx: 9.8, cy: 5, r: 1.4, ...s }), h('circle', { cx: 6.2, cy: 11, r: 1.4, ...s }))
+      if (name === 'IconBranchOutlineRegular') return h('svg', props, h('path', { d: 'M4.5 4v8M4.5 8c0-2 1.5-3.4 3.5-3.4h3', ...s }), h('circle', { cx: 4.5, cy: 3, r: 1.2, ...s }), h('circle', { cx: 4.5, cy: 13, r: 1.2, ...s }), h('circle', { cx: 11.5, cy: 4.6, r: 1.2, ...s }))
+      if (name === 'IconStopFillRegular') return h('svg', props, h('rect', { x: 4, y: 4, width: 8, height: 8, rx: 1.2, fill: 'currentColor' }))
+      if (name === 'IconRefreshOutlineRegular') return h('svg', props, h('path', { d: 'M13 8a5 5 0 1 1-1.5-3.5L13 6M13 2.5V6H9.5', ...s }))
+      if (name === 'IconTrashOutlineRegular') return h('svg', props, h('path', { d: 'M3.2 5.2h9.6M6.2 5.2V3.6h3.6v1.6M4.6 5.2l.6 7.4h5.6l.6-7.4', ...s }))
+      if (name === 'IconArchiveOutlineRegular') return h('svg', props, h('rect', { x: 1.8, y: 2.5, width: 12.4, height: 3, rx: 0.8, ...s }), h('path', { d: 'M2.8 5.5v7.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V5.5M6.5 9.2h3', ...s }))
+      if (name === 'IconCopyOutlineRegular') return h('svg', props, h('rect', { x: 5.5, y: 5.5, width: 7.5, height: 7.5, rx: 1.2, ...s }), h('path', { d: 'M10.5 5.5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v5.5a1 1 0 0 0 1 1h1.5', ...s }))
+      if (name === 'IconFolderOpenOutlineRegular') return h('svg', props, h('path', { d: 'M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.5H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5z', ...s }))
+      if (name === 'IconPauseOutlineRegular') return h('svg', props, h('path', { d: 'M5.5 3.5v9M10.5 3.5v9', ...s }))
+      if (name === 'IconPlayOutlineRegular') return h('svg', props, h('path', { d: 'M5 3.5l7.5 4.5L5 12.5V3.5z', ...s }))
+      if (name === 'IconSettingsOutlineRegular') return h('svg', props, h('circle', { cx: 8, cy: 8, r: 2.2, ...s }), h('circle', { cx: 8, cy: 8, r: 5.5, strokeDasharray: '2.5 2', ...s }))
+      if (name === 'IconChevronLeftOutlineRegular') return h('svg', props, h('path', { d: 'M9.5 3.5L5 8l4.5 4.5', ...s }))
+      if (name === 'IconChevronRightOutlineRegular') return h('svg', props, h('path', { d: 'M6.5 3.5L11 8l-4.5 4.5', ...s }))
+      if (name === 'IconChevronDownOutlineRegular') return h('svg', props, h('path', { d: 'M3.5 6.5L8 11l4.5-4.5', ...s }))
+      return h('svg', props, h('circle', { cx: 8, cy: 8, r: 4, ...s }))
+    }
+
+    function statusTagTone(status) {
+      if (status === 'running') return 'info'
+      if (status === 'review') return 'warning'
+      if (status === 'failed') return 'danger'
+      if (status === 'blocked') return 'warning'
+      if (status === 'resolved') return 'success'
+      return 'neutral'
+    }
+
+    function StatusBadge({ status, t }) {
+      return h(UITag, { tone: statusTagTone(status) }, t(status || 'queued'))
+    }
+
+    function ThreadGlyph({ status, className }) {
+      if (status === 'running') {
+        return h('span', { className: `pj-glyph ${className || ''}` }, h(UIStateDot, { state: 'ongoing', size: 14 }))
+      }
+      if (status === 'review') {
+        return h(
+          'span',
+          { className: `pj-glyph pj-glyph-review ${className || ''}` },
+          h(UIStateDot, { state: 'done', size: 10 }),
+        )
+      }
+      if (status === 'failed') {
+        return h(
+          'span',
+          { className: `pj-glyph pj-glyph-failed ${className || ''}` },
+          h(UIStateDot, { state: 'error', size: 10 }),
+        )
+      }
+      if (status === 'blocked' || status === 'waiting') {
+        return h(
+          'span',
+          { className: `pj-glyph pj-glyph-waiting ${className || ''}` },
+          h(UIStateDot, { state: 'warning', size: 10 }),
+        )
+      }
+      if (status === 'resolved') {
+        return h(
+          'span',
+          { className: `pj-glyph pj-glyph-resolved ${className || ''}` },
+          h(UIStateDot, { state: 'done', appearance: 'step', size: 14 }),
+        )
+      }
+      return h(
+        'span',
+        { className: `pj-glyph pj-glyph-idle ${className || ''}` },
+        h(UIStateDot, { state: 'idle', size: 10 }),
+      )
+    }
+
+    // =========================================================================
+    // Section 6: Embedded Conversation & In-Chat Dispatch Tool Card
+    // =========================================================================
+
+    class EmbeddedBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { failed: false }
+      }
+      static getDerivedStateFromError() {
+        return { failed: true }
+      }
+      componentDidCatch(error) {
+        console.error('dsh-project: embedded conversation failed', error)
+      }
+      render() {
+        return this.state.failed ? this.props.fallback : this.props.children
+      }
+    }
+
+    function FixedChatView(props) {
+      return typeof props.renderSlot === 'function'
+        ? props.renderSlot('conversation.session', { view: 'chat' })
+        : null
+    }
+
+    function ConversationContentHost(props) {
+      const { sessionId, useSession, useConversation, useSessions, renderFactorySlot } = props
+      const session = useSession((value) => value)
+      const conversation = typeof useConversation === 'function' ? useConversation((value) => value) : undefined
+      const active = (conversation && conversation.activeTargets && conversation.activeTargets.size > 0)
+        || (session && !session.blank && !session.awaitingFirstTurn)
+        || Boolean(session && session.running)
+      const phase = active ? 'active' : (session && session.promptAttempted) ? 'engaging' : 'blank'
+      const summaryBlank = typeof useSessions === 'function' ? useSessions((state) => state?.byId?.[sessionId]?.blank) : undefined
+      const settling = phase === 'blank' && session && session.openState === 'loading' && summaryBlank !== true
+      const hero = phase === 'blank' && ((session && session.openState === 'open') || summaryBlank === true)
+      const resolved = settling ? 'settling' : hero ? 'hero' : 'active'
+      return renderFactorySlot(
+        'conversation.content',
+        { variant: 'embedded', phase: resolved, hero },
+        { slots: { views: FixedChatView } },
+      )
+    }
+
+    function EmbeddedConversation(props) {
+      if (typeof props.useSession !== 'function' || typeof props.renderFactorySlot !== 'function') {
+        return h('div', { className: 'pj-empty' }, 'The conversation surface is unavailable.')
+      }
+      return h(ConversationContentHost, props)
+    }
+
+    /** `tool.call.toolview` card for `projects_dispatch` calls inside coordinator chat. */
+    function ProjectsDispatchRow(props) {
+      const t = typeof props.translate === 'function' ? props.translate : (k) => k
+      const locale = typeof props.activeLocale === 'function' ? props.activeLocale() : 'zh'
+      const block = props.block
+      const args = block && block.args
+      const readArg = (name) => {
         try {
-          value = await read(projectId, endpoint, endpoint.startsWith('requests/') ? input : { ...input, requestId: requestId() });
-          refreshGeneration++;
-          if (value?.project) acceptDetail(value);
-        } finally { if (endpoint === 'archive') { archiveRequests.delete(projectId); const current = snapshot.getSnapshot(); snapshot.set({ ...current, projects: current.projects.map(project => project.id === projectId ? { ...project, archiving: false } : project) }); } }
-        if (!Array.isArray(value?.workstreams) || !Array.isArray(value?.workers)) {
-          await readDetail(projectId).catch(failure => { if (alive) snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); });
+          return args && typeof args.text === 'function' ? String(args.text(name) || '') : ''
+        } catch {
+          return ''
         }
-        return value;
-      };
-      const registerAction = () => {
-        disposeAction?.(); disposeAction = undefined;
-        if (!snapshot.getSnapshot().available) return;
-        // Projects start from the New Session option or a Workspace row, not the directory picker.
-        disposeAction = ctx.uiWorkspace.registerDirectoryAction({ id: NS, label: t('add'), order: 20, picker: false, adopt: path => startProject(path),
-          rowLabel: path => {
-            if (projectAt(path)) return t('rowOpen');
-            const check = directoryChecks.getSnapshot()[comparablePath(path)];
-            if (check === undefined) checkDirectory(path);
-            return check?.reason ? undefined : t('rowCreate');
-          } });
-      };
-      const refresh = () => {
-        if (refreshing) return refreshing;
-        const generation = refreshGeneration;
-        refreshing = (async () => {
+      }
+      const projectId = readArg('project_id')
+      const taskId = readArg('task_id')
+      const snapshot = useStoreValue(projectSnapshot)
+      const tasks = snapshot && snapshot.projectId === projectId ? (snapshot.project && snapshot.project.tasks) || [] : []
+      const task = tasks.find((entry) => entry && entry.id === taskId) || null
+      const resultText = props.phase === 'result' && block && Array.isArray(block.content)
+        ? block.content.filter((c) => c && c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join('\n').trim()
+        : ''
+      const status = task
+        ? task.status
+        : props.phase === 'result'
+          ? (block && block.isError) ? 'failed' : /^(Dispatched|Continued) task\b/.test(resultText) ? 'running' : 'queued'
+          : props.phase === 'start'
+            ? 'running'
+            : 'queued'
+      const title = (task && task.title) || taskId || t('dispatchPreparing')
+      const stamp = task ? relativeTime(task, t, locale) : ''
+      const branch = task && task.branch ? String(task.branch).trim() : ''
+      const openable = Boolean(projectId && taskId)
+
+      return h(
+        'div',
+        { className: 'pj-dispatch-wrap' },
+        h('style', { dangerouslySetInnerHTML: { __html: DISPATCH_SHARED_CSS } }),
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'pj-dispatch-card',
+            disabled: !openable,
+            'aria-label': `${t('dispatchCard')}: ${title}`,
+            title: openable ? `${title} — ${t('dispatchOpenHint')}` : title,
+            onClick: () => {
+              if (openable) requestOpenTask(projectId, taskId)
+            },
+          },
+          h(ThreadGlyph, { status }),
+          h('span', { className: 'pj-dispatch-title' }, title),
+          branch && h('span', { className: 'pj-chip pj-chip-branch' }, branch),
+          stamp && h('span', { className: 'pj-dispatch-time' }, stamp),
+          h(StatusBadge, { status, t }),
+        ),
+      )
+    }
+
+    // =========================================================================
+    // Section 7: Focused Column & Detail Sub-Components
+    // =========================================================================
+
+    function ProjectListColumn({
+      projects,
+      selectedId,
+      collapsed,
+      width,
+      busy,
+      onSelect,
+      onNewProject,
+      onToggleCollapse,
+      newProjectBtnRef,
+      t,
+    }) {
+      const [archivedOpen, setArchivedOpen] = useState(false)
+      const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects])
+      const archivedProjects = useMemo(() => projects.filter((p) => p.archived), [projects])
+
+      if (collapsed) {
+        return h(
+          'aside',
+          { className: 'pj-list pj-collapsed', 'aria-label': t('projects') },
+          h(
+            'div',
+            { className: 'pj-rail' },
+            h(
+              UITooltip,
+              { label: t('expandList'), side: 'right', portal: true },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'pj-rail-btn',
+                  'aria-label': t('expandList'),
+                  'aria-expanded': 'false',
+                  onClick: onToggleCollapse,
+                },
+                h(Icon, { name: 'IconPanelLeftOutlineRegular', size: 16 }),
+              ),
+            ),
+            h(
+              UITooltip,
+              { label: t('newProject'), side: 'right', portal: true },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  ref: newProjectBtnRef,
+                  className: 'pj-rail-btn',
+                  'aria-label': t('newProject'),
+                  disabled: busy,
+                  onClick: onNewProject,
+                },
+                h(Icon, { name: 'IconPlusOutlineRegular', size: 16 }),
+              ),
+            ),
+            activeProjects.length > 0 && h('div', { className: 'pj-rail-sep' }),
+            activeProjects.map((entry) =>
+              h(
+                UITooltip,
+                { key: entry.id, label: entry.name, side: 'right', portal: true },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: `pj-rail-btn${entry.id === selectedId ? ' pj-active' : ''}`,
+                    'aria-label': entry.name,
+                    'aria-current': entry.id === selectedId ? 'true' : undefined,
+                    onClick: () => onSelect(entry),
+                  },
+                  initialOf(entry.name),
+                ),
+              ),
+            ),
+          ),
+        )
+      }
+
+      const renderRow = (entry) =>
+        h(
+          'button',
+          {
+            key: entry.id,
+            type: 'button',
+            className: `pj-list-item${entry.id === selectedId ? ' pj-active' : ''}`,
+            'aria-current': entry.id === selectedId ? 'true' : undefined,
+            onClick: () => onSelect(entry),
+          },
+          h(
+            'div',
+            { className: 'pj-list-row-top' },
+            h('span', { className: 'pj-list-name' }, entry.name),
+            entry.paused && !entry.archived && h(UITag, { tone: 'warning' }, t('pausedBadge')),
+            entry.archived && h(UITag, { tone: 'neutral' }, t('archivedBadge')),
+          ),
+          entry.workspace && h('span', { className: 'pj-list-dir', title: entry.workspace }, shortPath(entry.workspace)),
+          h('span', { className: 'pj-list-meta' }, countsLine(entry, t)),
+        )
+
+      return h(
+        'aside',
+        { className: 'pj-list', style: { width: `${width}px`, flexBasis: `${width}px` }, 'aria-label': t('projects') },
+        h(
+          'div',
+          { className: 'pj-col-head' },
+          h('h2', { className: 'pj-col-title' }, t('projects')),
+          h(
+            'div',
+            { className: 'pj-head-actions' },
+            h(
+              UITooltip,
+              { label: t('newProject'), side: 'bottom', portal: true },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  ref: newProjectBtnRef,
+                  className: 'pj-icon-btn',
+                  'aria-label': t('newProject'),
+                  disabled: busy,
+                  onClick: onNewProject,
+                },
+                h(Icon, { name: 'IconPlusOutlineRegular', size: 16 }),
+              ),
+            ),
+            h(
+              UITooltip,
+              { label: t('collapseList'), side: 'bottom', portal: true },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'pj-icon-btn',
+                  'aria-label': t('collapseList'),
+                  'aria-expanded': 'true',
+                  onClick: onToggleCollapse,
+                },
+                h(Icon, { name: 'IconPanelLeftOutlineRegular', size: 16 }),
+              ),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'pj-list-scroll' },
+          activeProjects.length === 0 && archivedProjects.length === 0
+            ? h(
+                'div',
+                { className: 'pj-empty' },
+                h('div', null, t('noProjects')),
+                h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', onClick: onNewProject }, t('newProject')),
+              )
+            : activeProjects.map(renderRow),
+        ),
+        archivedProjects.length > 0 &&
+          h(
+            'div',
+            { className: 'pj-archived-fold' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'pj-archived-toggle',
+                'aria-expanded': archivedOpen ? 'true' : 'false',
+                onClick: () => setArchivedOpen((v) => !v),
+              },
+              h(Icon, { name: archivedOpen ? 'IconChevronDownOutlineRegular' : 'IconChevronRightOutlineRegular', size: 14 }),
+              h('span', null, `${t('archivedProjects')} (${archivedProjects.length})`),
+            ),
+            archivedOpen && h('div', { className: 'pj-archived-list' }, archivedProjects.map(renderRow)),
+          ),
+      )
+    }
+
+    function CoordinatorColumn({
+      project,
+      thread,
+      coordinatorArchived,
+      busy,
+      onOpenWorkspace,
+      onToggleAutonomy,
+      onTogglePaused,
+      onOpenSettings,
+      onStartCoordinator,
+      onRestoreCoordinator,
+      settingsBtnRef,
+      SessionProvider,
+      renderSlot,
+      t,
+    }) {
+      return h(
+        'section',
+        { className: 'pj-main', 'aria-label': project ? project.name : t('title') },
+        h(
+          'header',
+          { className: 'pj-main-head' },
+          h(
+            'div',
+            { className: 'pj-main-head-left' },
+            h('h1', { className: 'pj-main-title', title: project ? project.name : t('title') }, project ? project.name : t('title')),
+            project && project.archived && h(UITag, { tone: 'neutral' }, t('archivedBadge')),
+            project && project.workspace &&
+              h(
+                UITooltip,
+                { label: `${t('openFolder')}: ${project.workspace}`, side: 'bottom', portal: true },
+                h(
+                  UIPill,
+                  {
+                    className: 'pj-ws-pill',
+                    disabled: busy,
+                    onClick: () => onOpenWorkspace(project),
+                  },
+                  h(Icon, { name: 'IconFolderOpenOutlineRegular', size: 13 }),
+                  h('span', { className: 'pj-ws-pill' }, shortPath(project.workspace)),
+                ),
+              ),
+          ),
+          project &&
+            h(
+              'div',
+              { className: 'pj-main-head-right' },
+              h(
+                UITooltip,
+                {
+                  label: project.autonomy === 'auto' ? t('autonomyAutoHint') : t('autonomyManualHint'),
+                  side: 'bottom',
+                  portal: true,
+                },
+                h(
+                  UIPill,
+                  {
+                    active: project.autonomy === 'auto',
+                    disabled: busy || project.archived,
+                    'aria-label': t('autonomy'),
+                    onClick: onToggleAutonomy,
+                  },
+                  project.autonomy === 'auto' ? t('autonomyAuto') : t('autonomyManual'),
+                ),
+              ),
+              h(
+                UITooltip,
+                { label: project.paused ? t('resumeProject') : t('pauseProject'), side: 'bottom', portal: true },
+                h(
+                  UIPill,
+                  {
+                    active: Boolean(project.paused),
+                    className: project.paused ? 'pj-pill-paused' : undefined,
+                    disabled: busy || project.archived,
+                    'aria-label': project.paused ? t('resumeProject') : t('pauseProject'),
+                    onClick: onTogglePaused,
+                  },
+                  h(Icon, { name: project.paused ? 'IconPlayOutlineRegular' : 'IconPauseOutlineRegular', size: 12 }),
+                  project.paused ? t('resumeProject') : t('pauseProject'),
+                ),
+              ),
+              h(
+                UITooltip,
+                { label: t('settings'), side: 'bottom', portal: true },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    ref: settingsBtnRef,
+                    className: 'pj-icon-btn',
+                    'aria-label': t('settings'),
+                    onClick: onOpenSettings,
+                  },
+                  h(Icon, { name: 'IconSettingsOutlineRegular', size: 16 }),
+                ),
+              ),
+            ),
+        ),
+        coordinatorArchived &&
+          h(
+            'div',
+            { className: 'pj-banner', role: 'status' },
+            h('span', null, t('coordinatorArchived')),
+            h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: onRestoreCoordinator }, t('restore')),
+          ),
+        h(
+          'div',
+          { className: 'pj-main-body' },
+          !project
+            ? h('div', { className: 'pj-empty' }, t('noSelection'))
+            : thread && thread.reference
+              ? h(
+                  'div',
+                  { className: 'pj-chat-host' },
+                  h(
+                    EmbeddedBoundary,
+                    { fallback: h('div', { className: 'pj-empty' }, t('coordinatorChatFailed')) },
+                    typeof SessionProvider === 'function' && typeof renderSlot === 'function'
+                      ? h(SessionProvider, { session: thread.reference }, renderSlot('projects.conversation', {}))
+                      : h('div', { className: 'pj-empty' }, t('coordinatorChatFailed')),
+                  ),
+                )
+              : h(
+                  'div',
+                  { className: 'pj-start-hero' },
+                  project.goal && project.goal.trim() && h('div', { className: 'pj-start-goal' }, project.goal.trim()),
+                  h('p', { className: 'pj-hint' }, t('startCoordinatorHint')),
+                  h(
+                    UIButton,
+                    {
+                      variant: 'primary',
+                      size: 'md',
+                      shape: 'pill',
+                      loading: busy,
+                      disabled: busy || project.archived,
+                      title: project.archived ? t('archivedHint') : undefined,
+                      onClick: onStartCoordinator,
+                    },
+                    t('startCoordinator'),
+                  ),
+                ),
+        ),
+      )
+    }
+
+    function TaskDiffPanel({ projectId, task, refreshToken, onMerge, onCleanup, busy, t }) {
+      const [loading, setLoading] = useState(true)
+      const [data, setData] = useState(null)
+      const [error, setError] = useState('')
+      const seqRef = useRef(0)
+
+      const fetchDiff = useCallback(async () => {
+        if (!projectId || !task || !task.id) return
+        const seq = ++seqRef.current
+        setLoading(true)
+        setError('')
+        try {
+          const result = await api(`/projects/${projectId}/tasks/${task.id}/diff`)
+          if (seq !== seqRef.current) return
+          setData(result)
+        } catch (err) {
+          if (seq !== seqRef.current) return
+          setError(messageOf(err))
+        } finally {
+          if (seq === seqRef.current) setLoading(false)
+        }
+      }, [projectId, task && task.id])
+
+      useEffect(() => {
+        void fetchDiff()
+      }, [fetchDiff, refreshToken])
+
+      const hasWorktree = Boolean((task && (task.worktreePath || task.branch)) || (data && data.worktreePath))
+      const files = (data && Array.isArray(data.files)) ? data.files : []
+      const diffText = (data && typeof data.diff === 'string') ? data.diff : ''
+
+      const fileStatusLabel = (st) => {
+        if (st === 'added' || st === 'A') return t('diffAdded')
+        if (st === 'deleted' || st === 'D') return t('diffDeleted')
+        if (st === 'renamed' || st === 'R') return t('diffRenamed')
+        if (st === 'untracked' || st === '?') return t('diffUntracked')
+        return t('diffModified')
+      }
+
+      const fileStatusTone = (st) => {
+        if (st === 'added' || st === 'A') return 'success'
+        if (st === 'deleted' || st === 'D') return 'danger'
+        if (st === 'untracked' || st === '?') return 'info'
+        return 'neutral'
+      }
+
+      return h(
+        'div',
+        { className: 'pj-diff-panel' },
+        h(
+          'div',
+          { className: 'pj-diff-toolbar' },
+          h(
+            'span',
+            { className: 'pj-hint' },
+            files.length > 0 ? `${files.length} ${t('diffFilesCount')}` : (data && data.baseRef ? `base: ${data.baseRef}` : t('tabDiff')),
+          ),
+          h(
+            'div',
+            { className: 'pj-head-actions' },
+            hasWorktree &&
+              h(
+                UIButton,
+                { variant: 'primary', size: 'sm', shape: 'pill', disabled: busy || loading, onClick: onMerge },
+                t('worktreeMerge'),
+              ),
+            hasWorktree &&
+              h(
+                UIButton,
+                { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy || loading, onClick: onCleanup },
+                t('worktreeCleanup'),
+              ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'pj-icon-btn',
+                'aria-label': t('diffRefresh'),
+                title: t('diffRefresh'),
+                disabled: loading,
+                onClick: () => void fetchDiff(),
+              },
+              h(Icon, { name: 'IconRefreshOutlineRegular', size: 15 }),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'pj-diff-scroll' },
+          loading
+            ? h('div', { className: 'pj-empty' }, t('diffLoading'))
+            : error
+              ? h('div', { className: 'pj-empty' }, error)
+              : data && data.available === false
+                ? h('div', { className: 'pj-empty' }, data.note || t('diffUnavailable'))
+                : files.length === 0 && !diffText
+                  ? h('div', { className: 'pj-empty' }, (data && data.note) || t('diffEmpty'))
+                  : h(
+                      Fragment,
+                      null,
+                      files.length > 0 &&
+                        h(
+                          'div',
+                          { className: 'pj-diff-files' },
+                          files.map((file, idx) =>
+                            h(
+                              'div',
+                              { key: `${file.path}:${idx}`, className: 'pj-diff-file-row' },
+                              h(UITag, { tone: fileStatusTone(file.status) }, fileStatusLabel(file.status)),
+                              h('span', { className: 'pj-diff-file-path', title: file.path }, file.path),
+                              h(
+                                'span',
+                                { className: 'pj-diff-counts' },
+                                typeof file.additions === 'number' && file.additions > 0 && h('span', { className: 'pj-diff-add' }, `+${file.additions}`),
+                                typeof file.deletions === 'number' && file.deletions > 0 && h('span', { className: 'pj-diff-del' }, `-${file.deletions}`),
+                              ),
+                            ),
+                          ),
+                        ),
+                      data && data.truncated && h('p', { className: 'pj-hint' }, t('diffTruncated')),
+                      diffText &&
+                        h(
+                          'pre',
+                          { className: 'pj-diff-pre' },
+                          diffText.split('\n').map((line, i) => {
+                            const cls = line.startsWith('+') && !line.startsWith('+++')
+                              ? 'pj-diff-line pj-diff-line-add'
+                              : line.startsWith('-') && !line.startsWith('---')
+                                ? 'pj-diff-line pj-diff-line-del'
+                                : line.startsWith('@@')
+                                  ? 'pj-diff-line pj-diff-line-hunk'
+                                  : 'pj-diff-line'
+                            return h('span', { key: i, className: cls }, `${line}\n`)
+                          }),
+                        ),
+                    ),
+        ),
+      )
+    }
+
+    function TaskContextMenu({
+      menu,
+      task,
+      busy,
+      onClose,
+      onResolve,
+      onStop,
+      onRetry,
+      onDelete,
+      t,
+    }) {
+      const menuRef = useRef(null)
+      const [pos, setPos] = useState({ x: menu.x, y: menu.y })
+      const [confirming, setConfirming] = useState(false)
+      const armedAtRef = useRef(0)
+      const armTimerRef = useRef(null)
+
+      useEffect(() => {
+        setPos({ x: menu.x, y: menu.y })
+        setConfirming(false)
+        if (armTimerRef.current !== null) {
+          clearTimeout(armTimerRef.current)
+          armTimerRef.current = null
+        }
+      }, [menu.x, menu.y, menu.taskId])
+
+      useEffect(() => () => {
+        if (armTimerRef.current !== null) {
+          clearTimeout(armTimerRef.current)
+          armTimerRef.current = null
+        }
+      }, [])
+
+      useLayoutEffect(() => {
+        const node = menuRef.current
+        if (!node || typeof node.getBoundingClientRect !== 'function') return
+        const rect = node.getBoundingClientRect()
+        const vw = typeof document !== 'undefined' && document.documentElement ? document.documentElement.clientWidth : 0
+        const vh = typeof document !== 'undefined' && document.documentElement ? document.documentElement.clientHeight : 0
+        if (!(vw > 0 && vh > 0)) return
+        const x = clamp(menu.x, MENU_MARGIN, vw - rect.width - MENU_MARGIN)
+        const y = clamp(menu.y, MENU_MARGIN, vh - rect.height - MENU_MARGIN)
+        if (x !== pos.x || y !== pos.y) setPos({ x, y })
+      }, [menu.x, menu.y, confirming])
+
+      useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        const onPointerDown = (event) => {
+          if (menuRef.current && typeof menuRef.current.contains === 'function' && menuRef.current.contains(event.target)) return
+          onClose()
+        }
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') onClose()
+        }
+        const onScroll = () => onClose()
+        window.addEventListener('pointerdown', onPointerDown, true)
+        window.addEventListener('keydown', onKeyDown, true)
+        window.addEventListener('scroll', onScroll, true)
+        window.addEventListener('resize', onScroll)
+        return () => {
+          window.removeEventListener('pointerdown', onPointerDown, true)
+          window.removeEventListener('keydown', onKeyDown, true)
+          window.removeEventListener('scroll', onScroll, true)
+          window.removeEventListener('resize', onScroll)
+        }
+      }, [onClose])
+
+      if (!task) return null
+      const accepted = task.status === 'resolved'
+      const canArchive = Boolean(task.childSessionId)
+
+      const armDelete = () => {
+        setConfirming(true)
+        armedAtRef.current = Date.now()
+        if (armTimerRef.current !== null) clearTimeout(armTimerRef.current)
+        armTimerRef.current = setTimeout(() => {
+          armTimerRef.current = null
+          setConfirming((cur) => (Date.now() - armedAtRef.current >= 2900 ? false : cur))
+        }, 3000)
+      }
+
+      const executeDelete = (archive) => {
+        if (Date.now() - armedAtRef.current < 500) return
+        if (armTimerRef.current !== null) {
+          clearTimeout(armTimerRef.current)
+          armTimerRef.current = null
+        }
+        onClose()
+        onDelete(task.id, { archive })
+      }
+
+      return h(
+        'div',
+        {
+          ref: menuRef,
+          className: 'pj-ctx-menu',
+          role: 'menu',
+          'aria-label': t('taskActions'),
+          style: { left: `${pos.x}px`, top: `${pos.y}px` },
+          onContextMenu: (e) => e.preventDefault(),
+        },
+        h(
+          'button',
+          {
+            type: 'button',
+            role: 'menuitem',
+            className: 'pj-menu-row',
+            disabled: busy,
+            onClick: () => { onClose(); onResolve(task) },
+          },
+          h('span', { className: 'pj-menu-icon' }, h(Icon, { name: 'IconCheckOutlineRegular', size: 14 })),
+          h('span', null, accepted ? t('unresolve') : t('resolve')),
+        ),
+        task.status === 'running' &&
+          h(
+            'button',
+            {
+              type: 'button',
+              role: 'menuitem',
+              className: 'pj-menu-row',
+              disabled: busy,
+              onClick: () => { onClose(); onStop(task) },
+            },
+            h('span', { className: 'pj-menu-icon' }, h(Icon, { name: 'IconStopFillRegular', size: 14 })),
+            h('span', null, t('stop')),
+          ),
+        (task.status === 'failed' || task.status === 'blocked') &&
+          h(
+            'button',
+            {
+              type: 'button',
+              role: 'menuitem',
+              className: 'pj-menu-row',
+              disabled: busy,
+              onClick: () => { onClose(); onRetry(task) },
+            },
+            h('span', { className: 'pj-menu-icon' }, h(Icon, { name: 'IconRefreshOutlineRegular', size: 14 })),
+            h('span', null, t('retry')),
+          ),
+        h('div', { className: 'pj-menu-sep', role: 'separator' }),
+        !confirming
+          ? h(
+              'button',
+              {
+                type: 'button',
+                role: 'menuitem',
+                className: 'pj-menu-row pj-danger',
+                disabled: busy,
+                onClick: armDelete,
+              },
+              h('span', { className: 'pj-menu-icon' }, h(Icon, { name: 'IconTrashOutlineRegular', size: 14 })),
+              h('span', null, t('delete')),
+            )
+          : h(
+              Fragment,
+              null,
+              h('div', { className: 'pj-menu-caption' }, t('deleteConfirm')),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  role: 'menuitem',
+                  className: 'pj-menu-row pj-danger',
+                  disabled: busy,
+                  onClick: () => executeDelete(false),
+                },
+                h('span', { className: 'pj-menu-icon' }, h(Icon, { name: 'IconTrashOutlineRegular', size: 14 })),
+                h(
+                  'span',
+                  { className: 'pj-menu-text' },
+                  h('span', null, t('deleteOnlyTask')),
+                  h('span', { className: 'pj-menu-hint' }, t('deleteOnlyTaskHint')),
+                ),
+              ),
+              canArchive &&
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    role: 'menuitem',
+                    className: 'pj-menu-row',
+                    disabled: busy,
+                    onClick: () => executeDelete(true),
+                  },
+                  h('span', { className: 'pj-menu-icon' }, h(Icon, { name: 'IconArchiveOutlineRegular', size: 14 })),
+                  h(
+                    'span',
+                    { className: 'pj-menu-text' },
+                    h('span', null, t('deleteAndArchive')),
+                    h('span', { className: 'pj-menu-hint' }, t('archiveSessionHint')),
+                  ),
+                ),
+            ),
+      )
+    }
+
+    function ThreadsColumn({
+      project,
+      catalog,
+      collapsed,
+      width,
+      busy,
+      execTarget,
+      diffRefreshToken,
+      onToggleCollapse,
+      onSelectTask,
+      onCloseDetail,
+      onApproveTask,
+      onStopTask,
+      onRetryTask,
+      onResolveTask,
+      onDeleteTask,
+      onCopyBranch,
+      onRequestMergeWorktree,
+      onRequestCleanupWorktree,
+      SessionProvider,
+      renderSlot,
+      activeLocale,
+      t,
+    }) {
+      const [searchOpen, setSearchOpen] = useState(false)
+      const [query, setQuery] = useState('')
+      const [filterOpen, setFilterOpen] = useState(false)
+      const [hiddenGroups, setHiddenGroups] = useState({})
+      const [collapsedGroups, setCollapsedGroups] = useState(readCollapsedGroups)
+      const [detailTab, setDetailTab] = useState('chat')
+      const [menu, setMenu] = useState(null)
+      const searchRef = useRef(null)
+      const filterWrapRef = useRef(null)
+
+      useEffect(() => {
+        writeStored('collapsedGroups', JSON.stringify(collapsedGroups))
+      }, [collapsedGroups])
+
+      useEffect(() => {
+        setDetailTab('chat')
+      }, [execTarget && execTarget.taskId])
+
+      useEffect(() => {
+        setFilterOpen(false)
+        setHiddenGroups({})
+        setMenu(null)
+      }, [project && project.id])
+
+      useEffect(() => {
+        if (searchOpen && searchRef.current && typeof searchRef.current.focus === 'function') {
+          searchRef.current.focus()
+        }
+      }, [searchOpen])
+
+      useEffect(() => {
+        if (!filterOpen || typeof window === 'undefined') return undefined
+        const onPointerDown = (e) => {
+          if (filterWrapRef.current && typeof filterWrapRef.current.contains === 'function' && filterWrapRef.current.contains(e.target)) return
+          setFilterOpen(false)
+        }
+        const onKeyDown = (e) => { if (e.key === 'Escape') setFilterOpen(false) }
+        window.addEventListener('pointerdown', onPointerDown, true)
+        window.addEventListener('keydown', onKeyDown, true)
+        return () => {
+          window.removeEventListener('pointerdown', onPointerDown, true)
+          window.removeEventListener('keydown', onKeyDown, true)
+        }
+      }, [filterOpen])
+
+      const taskList = (project && project.tasks) || []
+      const execTask = execTarget ? taskList.find((item) => item.id === execTarget.taskId) || null : null
+
+      if (collapsed) {
+        return h(
+          'aside',
+          { className: 'pj-exec pj-collapsed', 'aria-label': t('threads') },
+          h(
+            'div',
+            { className: 'pj-rail' },
+            h(
+              UITooltip,
+              { label: t('expandThreads'), side: 'left', portal: true },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'pj-rail-btn',
+                  'aria-label': t('expandThreads'),
+                  'aria-expanded': 'false',
+                  onClick: onToggleCollapse,
+                },
+                h(Icon, { name: 'IconPanelRightOutline16', size: 16 }),
+              ),
+            ),
+            taskList.length > 0 &&
+              h(
+                UITooltip,
+                { label: `${taskList.length} ${t('counts')}`, side: 'left', portal: true },
+                h('span', { className: 'pj-rail-count' }, String(taskList.length)),
+              ),
+          ),
+        )
+      }
+
+      const toggleSearch = () => {
+        setSearchOpen((open) => {
+          if (open) setQuery('')
+          return !open
+        })
+      }
+
+      const allCollapsed = THREAD_GROUPS.every((g) => collapsedGroups[g.key])
+      const anyHidden = THREAD_GROUPS.some((g) => hiddenGroups[g.key])
+
+      const toggleAllGroups = () => {
+        const next = {}
+        for (const g of THREAD_GROUPS) next[g.key] = !allCollapsed
+        setCollapsedGroups(next)
+        setFilterOpen(false)
+      }
+
+      const needle = query.trim().toLowerCase()
+      const visibleTasks = needle
+        ? taskList.filter((task) => `${task.title || ''} ${taskSubtitle(task, t)}`.toLowerCase().includes(needle))
+        : taskList
+      const groups = threadGroups(visibleTasks).filter((g) => g.tasks.length > 0 && !hiddenGroups[g.key])
+
+      if (execTarget && project) {
+        const accepted = execTask && execTask.status === 'resolved'
+        const effModel = execTask ? effectiveModel(project, execTask) : null
+        const effEffort = execTask ? effectiveEffort(project, execTask) : null
+        const modelSrc = effModel && (effModel.source === 'task' ? t('fromTask') : effModel.source === 'project' ? t('fromProject') : t('fromHost'))
+        const effEffortText = effEffort && effEffort.value ? effortLabel(catalog, effModel && effModel.value, effEffort.value, t) : ''
+        const metaParts = execTask
+          ? [
+              effModel && effModel.value ? `${modelLabel(catalog, effModel.value)} (${modelSrc})` : t('fromHost'),
+              effEffortText ? `${t('effortShort')}: ${effEffortText}` : '',
+              execTask.childName || '',
+            ].filter(Boolean)
+          : []
+        const branch = execTask ? String(execTask.branch || '').trim() : ''
+        const wtNote = execTask ? worktreeNoteOf(execTask, t) : ''
+        const canApprove = Boolean(execTask && project.autonomy === 'manual' && !execTask.approved && execTask.status !== 'running' && execTask.status !== 'resolved')
+
+        return h(
+          'aside',
+          { className: 'pj-exec', style: { width: `${width}px`, flexBasis: `${width}px` }, 'aria-label': t('threads') },
+          h(
+            'div',
+            { className: 'pj-detail-shell' },
+            h(
+              'header',
+              { className: 'pj-detail-head' },
+              h(
+                'div',
+                { className: 'pj-detail-row' },
+                h(
+                  UIButton,
+                  {
+                    variant: 'ghost',
+                    size: 'sm',
+                    icon: h(Icon, { name: 'IconChevronLeftOutlineRegular', size: 14 }),
+                    onClick: onCloseDetail,
+                  },
+                  t('threads'),
+                ),
+                h('span', { className: 'pj-detail-title', title: (execTask && execTask.title) || execTarget.title }, (execTask && execTask.title) || execTarget.title),
+                execTask && h(StatusBadge, { status: execTask.status, t }),
+              ),
+              execTask &&
+                h(
+                  'div',
+                  { className: 'pj-detail-row' },
+                  canApprove &&
+                    h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', disabled: busy || project.archived, onClick: () => onApproveTask(execTask) }, t('approve')),
+                  execTask.status === 'running' &&
+                    h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, icon: h(Icon, { name: 'IconStopFillRegular', size: 12 }), onClick: () => onStopTask(execTask) }, t('stop')),
+                  (execTask.status === 'failed' || execTask.status === 'blocked') &&
+                    h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy || project.archived, icon: h(Icon, { name: 'IconRefreshOutlineRegular', size: 13 }), onClick: () => onRetryTask(execTask) }, t('retry')),
+                  h(
+                    UIButton,
+                    {
+                      variant: accepted ? 'outline' : 'ghost',
+                      size: 'sm',
+                      shape: 'pill',
+                      disabled: busy,
+                      'aria-pressed': accepted ? 'true' : 'false',
+                      icon: h(Icon, { name: 'IconCheckOutlineRegular', size: 14 }),
+                      onClick: () => onResolveTask(execTask),
+                    },
+                    accepted ? t('unresolve') : t('resolve'),
+                  ),
+                ),
+              metaParts.length > 0 &&
+                h(
+                  'div',
+                  { className: 'pj-detail-meta' },
+                  h('span', null, metaParts.join(' · ')),
+                  execTask && execTask.approved && h(UITag, { tone: 'neutral' }, t('approvedBadge')),
+                ),
+              (branch || wtNote) &&
+                h(
+                  'div',
+                  { className: 'pj-detail-branch-row' },
+                  branch &&
+                    h(
+                      'span',
+                      { className: 'pj-branch-pill' },
+                      h(Icon, { name: 'IconBranchOutlineRegular', size: 12 }),
+                      h('code', { className: 'pj-branch-code', title: execTask.worktreePath || branch }, branch),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'pj-icon-btn',
+                          style: { width: '20px', height: '20px' },
+                          'aria-label': t('copyBranch'),
+                          title: t('copyBranch'),
+                          onClick: () => onCopyBranch(branch),
+                        },
+                        h(Icon, { name: 'IconCopyOutlineRegular', size: 12 }),
+                      ),
+                    ),
+                  wtNote && h('span', { className: 'pj-worktree-warn', title: wtNote }, wtNote),
+                ),
+              execTask &&
+                h(UISegmentedTabs, {
+                  size: 'sm',
+                  label: t('taskViewTabs'),
+                  value: detailTab,
+                  onChange: setDetailTab,
+                  items: [
+                    { value: 'chat', label: t('tabChat'), id: 'pj-tab-chat', panelId: 'pj-panel-chat' },
+                    { value: 'diff', label: t('tabDiff'), id: 'pj-tab-diff', panelId: 'pj-panel-diff' },
+                  ],
+                }),
+            ),
+            h(
+              'div',
+              { className: 'pj-detail-body' },
+              !execTask
+                ? h('div', { className: 'pj-empty' }, t('noTask'))
+                : detailTab === 'diff'
+                  ? h(
+                      'div',
+                      { id: 'pj-panel-diff', role: 'tabpanel', 'aria-labelledby': 'pj-tab-diff', className: 'pj-detail-body' },
+                      h(TaskDiffPanel, {
+                        projectId: project.id,
+                        task: execTask,
+                        refreshToken: diffRefreshToken,
+                        busy,
+                        onMerge: () => onRequestMergeWorktree(execTask),
+                        onCleanup: () => onRequestCleanupWorktree(execTask),
+                        t,
+                      }),
+                    )
+                  : h(
+                      'div',
+                      { id: 'pj-panel-chat', role: 'tabpanel', 'aria-labelledby': 'pj-tab-chat', className: 'pj-detail-body' },
+                      execTarget.reference
+                        ? h(
+                            'div',
+                            { className: 'pj-chat-host' },
+                            h(
+                              EmbeddedBoundary,
+                              { fallback: h('div', { className: 'pj-empty' }, t('workerChatFailed')) },
+                              typeof SessionProvider === 'function' && typeof renderSlot === 'function'
+                                ? h(SessionProvider, { session: execTarget.reference }, renderSlot('projects.conversation', {}))
+                                : h('div', { className: 'pj-empty' }, t('workerChatFailed')),
+                            ),
+                          )
+                        : h(
+                            'div',
+                            { className: 'pj-exec-scroll' },
+                            execTask.brief &&
+                              h(
+                                'div',
+                                { className: 'pj-brief-card' },
+                                h('div', { className: 'pj-label', style: { marginBottom: '6px' } }, t('taskBriefHeading')),
+                                execTask.brief,
+                              ),
+                            h('div', { className: 'pj-empty' }, t('noConversation')),
+                          ),
+                    ),
+            ),
+          ),
+        )
+      }
+
+      return h(
+        'aside',
+        { className: 'pj-exec', style: { width: `${width}px`, flexBasis: `${width}px` }, 'aria-label': t('threads') },
+        h(
+          'header',
+          { className: 'pj-col-head' },
+          h('h2', { className: 'pj-col-title' }, t('threads')),
+          h(
+            'div',
+            { className: 'pj-head-actions' },
+            project &&
+              h(
+                UITooltip,
+                { label: t('searchThreads'), side: 'bottom', portal: true },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: `pj-icon-btn${searchOpen ? ' pj-active' : ''}`,
+                    'aria-label': t('searchThreads'),
+                    'aria-expanded': searchOpen ? 'true' : 'false',
+                    onClick: toggleSearch,
+                  },
+                  h(Icon, { name: 'IconSearchOutlineRegular', size: 16 }),
+                ),
+              ),
+            project &&
+              h(
+                'div',
+                { ref: filterWrapRef, className: 'pj-filter-wrap' },
+                h(
+                  UITooltip,
+                  { label: t('filterThreads'), side: 'bottom', portal: true },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: `pj-icon-btn${anyHidden ? ' pj-active' : ''}`,
+                      'aria-label': t('filterThreads'),
+                      'aria-haspopup': 'menu',
+                      'aria-expanded': filterOpen ? 'true' : 'false',
+                      onClick: () => setFilterOpen((o) => !o),
+                    },
+                    h(Icon, { name: 'IconSlidersTwoOutlineRegular', size: 16 }),
+                  ),
+                ),
+                filterOpen &&
+                  h(
+                    'div',
+                    { className: 'pj-popover-menu', role: 'menu', 'aria-label': t('filterGroups') },
+                    THREAD_GROUPS.map((g) => {
+                      const shown = !hiddenGroups[g.key]
+                      return h(
+                        'button',
+                        {
+                          key: g.key,
+                          type: 'button',
+                          role: 'menuitemcheckbox',
+                          'aria-checked': shown ? 'true' : 'false',
+                          className: 'pj-menu-row',
+                          onClick: () => setHiddenGroups((cur) => ({ ...cur, [g.key]: !cur[g.key] })),
+                        },
+                        h('span', { className: 'pj-menu-check' }, shown ? h(Icon, { name: 'IconCheckOutlineRegular', size: 14 }) : null),
+                        h('span', null, t(g.titleKey)),
+                      )
+                    }),
+                    h('div', { className: 'pj-menu-sep', role: 'separator' }),
+                    h(
+                      'button',
+                      { type: 'button', role: 'menuitem', className: 'pj-menu-row', onClick: toggleAllGroups },
+                      h('span', { className: 'pj-menu-check' }),
+                      h('span', null, allCollapsed ? t('expandAll') : t('collapseAll')),
+                    ),
+                    anyHidden &&
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          role: 'menuitem',
+                          className: 'pj-menu-row',
+                          onClick: () => { setHiddenGroups({}); setFilterOpen(false) },
+                        },
+                        h('span', { className: 'pj-menu-check' }),
+                        h('span', null, t('showAllGroups')),
+                      ),
+                  ),
+              ),
+            h(
+              UITooltip,
+              { label: t('collapseThreads'), side: 'bottom', portal: true },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'pj-icon-btn',
+                  'aria-label': t('collapseThreads'),
+                  'aria-expanded': 'true',
+                  onClick: onToggleCollapse,
+                },
+                h(Icon, { name: 'IconPanelRightOutline16', size: 16 }),
+              ),
+            ),
+          ),
+        ),
+        project && searchOpen &&
+          h(
+            'div',
+            { className: 'pj-search-bar' },
+            h(UIInput, {
+              ref: searchRef,
+              type: 'search',
+              icon: h(Icon, { name: 'IconSearchOutlineRegular', size: 14 }),
+              placeholder: t('searchThreads'),
+              'aria-label': t('searchThreads'),
+              value: query,
+              onChange: (e) => setQuery(e.target.value),
+            }),
+          ),
+        !project
+          ? null
+          : h(
+              'div',
+              { className: 'pj-exec-scroll' },
+              taskList.length === 0
+                ? h('div', { className: 'pj-empty' }, t('emptyTasks'))
+                : groups.length === 0
+                  ? h('div', { className: 'pj-empty' }, t('noMatches'))
+                  : groups.map((group) => {
+                      const folded = Boolean(collapsedGroups[group.key])
+                      return h(
+                        'div',
+                        { key: group.key, className: 'pj-group' },
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'pj-group-btn',
+                            'aria-expanded': folded ? 'false' : 'true',
+                            onClick: () => setCollapsedGroups((c) => ({ ...c, [group.key]: !c[group.key] })),
+                          },
+                          h(Icon, { name: folded ? 'IconChevronRightOutlineRegular' : 'IconChevronDownOutlineRegular', size: 12 }),
+                          h(ThreadGlyph, { status: group.icon }),
+                          h('span', null, `${t(group.titleKey)} · ${group.tasks.length}`),
+                        ),
+                        !folded &&
+                          group.tasks.map((task) => {
+                            const chips = taskChips(task, project, t)
+                            const stamp = relativeTime(task, t, activeLocale())
+                            const showQuickStop = task.status === 'running'
+                            const showQuickApprove = project.autonomy === 'manual' && !task.approved && task.status === 'queued' && !project.archived
+                            return h(
+                              'div',
+                              { key: task.id, className: 'pj-task-card-wrap' },
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: `pj-task-card${execTarget && execTarget.taskId === task.id ? ' pj-active' : ''}`,
+                                  title: `${task.title}\n${taskSubtitle(task, t)}`,
+                                  onClick: () => onSelectTask(task),
+                                  onContextMenu: (e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setMenu({ taskId: task.id, x: e.clientX || 0, y: e.clientY || 0 })
+                                  },
+                                },
+                                h('span', { className: 'pj-task-icon' }, h(ThreadGlyph, { status: task.status })),
+                                h('span', { className: 'pj-task-title' }, task.title || ''),
+                                stamp && h('span', { className: 'pj-task-time' }, stamp),
+                                h('span', { className: 'pj-task-sub' }, taskSubtitle(task, t)),
+                                chips.length > 0 &&
+                                  h(
+                                    'span',
+                                    { className: 'pj-task-chips' },
+                                    chips.map((chip) =>
+                                      h(
+                                        'span',
+                                        {
+                                          key: chip.key,
+                                          className: `pj-chip${chip.kind === 'branch' ? ' pj-chip-branch' : chip.kind === 'warn' ? ' pj-chip-warn' : ''}`,
+                                          title: chip.text,
+                                        },
+                                        chip.text,
+                                      ),
+                                    ),
+                                  ),
+                              ),
+                              (showQuickStop || showQuickApprove) &&
+                                h(
+                                  'div',
+                                  { className: 'pj-task-quick' },
+                                  showQuickApprove &&
+                                    h(
+                                      UIButton,
+                                      {
+                                        variant: 'primary',
+                                        size: 'sm',
+                                        shape: 'pill',
+                                        disabled: busy,
+                                        onClick: (e) => { e.stopPropagation(); onApproveTask(task) },
+                                      },
+                                      t('approve'),
+                                    ),
+                                  showQuickStop &&
+                                    h(
+                                      UIButton,
+                                      {
+                                        variant: 'outline',
+                                        size: 'sm',
+                                        shape: 'pill',
+                                        disabled: busy,
+                                        onClick: (e) => { e.stopPropagation(); onStopTask(task) },
+                                      },
+                                      t('stop'),
+                                    ),
+                                ),
+                            )
+                          }),
+                      )
+                    }),
+            ),
+        menu &&
+          h(TaskContextMenu, {
+            menu,
+            task: taskList.find((item) => item.id === menu.taskId) || null,
+            busy,
+            onClose: () => setMenu(null),
+            onResolve: onResolveTask,
+            onStop: onStopTask,
+            onRetry: onRetryTask,
+            onDelete: onDeleteTask,
+            t,
+          }),
+      )
+    }
+
+    // =========================================================================
+    // Section 8: In-App Modals (New Project, Settings, Memory, Confirm)
+    // =========================================================================
+
+    function NewProjectModal({ open, busy, onClose, onCreate, pickFolder, t }) {
+      const [form, setForm] = useState({
+        name: '',
+        goal: '',
+        workspace: '',
+        autonomy: 'manual',
+        concurrency: 3,
+        worktreeIsolation: false,
+      })
+
+      useEffect(() => {
+        if (open) {
+          setForm({ name: '', goal: '', workspace: '', autonomy: 'manual', concurrency: 3, worktreeIsolation: false })
+        }
+      }, [open])
+
+      const chooseDir = async () => {
+        const dir = await pickFolder()
+        if (dir) setForm((cur) => ({ ...cur, workspace: dir }))
+      }
+
+      const submit = () => {
+        onCreate({
+          name: form.name.trim(),
+          goal: form.goal.trim(),
+          workspace: form.workspace.trim(),
+          autonomy: form.autonomy,
+          concurrency: clamp(Number(form.concurrency) || 3, 1, MAX_CONCURRENCY),
+          worktreeIsolation: Boolean(form.worktreeIsolation),
+        })
+      }
+
+      return h(UIModal, {
+        open,
+        onClose: busy ? () => {} : onClose,
+        title: t('newProject'),
+        closeLabel: t('close'),
+        className: 'pj-modal-solid pj-modal-form',
+        footer: h(
+          Fragment,
+          null,
+          h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: onClose }, t('cancel')),
+          h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', loading: busy, disabled: busy, onClick: submit }, t('create')),
+        ),
+        children: h(
+          'div',
+          { className: 'pj-form-stack' },
+          h(
+            'label',
+            { className: 'pj-field' },
+            h('span', { className: 'pj-label' }, t('projectName')),
+            h(UIInput, {
+              variant: 'form',
+              'data-modal-autofocus': '',
+              'aria-label': t('projectName'),
+              placeholder: t('projectNamePlaceholder'),
+              value: form.name,
+              onChange: (e) => setForm((cur) => ({ ...cur, name: e.target.value })),
+            }),
+          ),
+          h(
+            'label',
+            { className: 'pj-field' },
+            h('span', { className: 'pj-label' }, t('instructions')),
+            h('textarea', {
+              className: 'pj-textarea',
+              'aria-label': t('instructions'),
+              placeholder: t('instructionsPlaceholder'),
+              value: form.goal,
+              onChange: (e) => setForm((cur) => ({ ...cur, goal: e.target.value })),
+            }),
+          ),
+          h(
+            'div',
+            { className: 'pj-field' },
+            h('span', { className: 'pj-label' }, t('workspace')),
+            h(
+              'div',
+              { className: 'pj-field-row' },
+              h(
+                'div',
+                { className: `pj-path-box${form.workspace ? '' : ' pj-empty-path'}`, title: form.workspace || t('noWorkspace') },
+                h('span', { className: 'pj-path-text' }, form.workspace || t('noWorkspace')),
+              ),
+              h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: () => void chooseDir() }, t('chooseFolder')),
+              form.workspace &&
+                h(UIButton, { variant: 'ghost', size: 'sm', shape: 'pill', disabled: busy, onClick: () => setForm((c) => ({ ...c, workspace: '' })) }, t('clear')),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pj-field-grid' },
+            h(
+              'div',
+              { className: 'pj-field' },
+              h('span', { className: 'pj-label' }, t('autonomy')),
+              h(UISegmentedTabs, {
+                size: 'sm',
+                label: t('autonomy'),
+                value: form.autonomy,
+                onChange: (v) => setForm((cur) => ({ ...cur, autonomy: v })),
+                items: [
+                  { value: 'manual', label: t('autonomyManual'), id: 'pj-new-auto-manual', panelId: 'pj-new-auto-manual-p' },
+                  { value: 'auto', label: t('autonomyAuto'), id: 'pj-new-auto-auto', panelId: 'pj-new-auto-auto-p' },
+                ],
+              }),
+            ),
+            h(
+              'label',
+              { className: 'pj-field' },
+              h('span', { className: 'pj-label' }, t('concurrency')),
+              h(UIInput, {
+                variant: 'form',
+                type: 'number',
+                min: 1,
+                max: MAX_CONCURRENCY,
+                'aria-label': t('concurrency'),
+                value: form.concurrency,
+                onChange: (e) => setForm((cur) => ({ ...cur, concurrency: e.target.value })),
+              }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pj-switch-row' },
+            h(
+              'div',
+              { className: 'pj-switch-copy' },
+              h('span', { className: 'pj-label' }, t('worktreeIsolation')),
+              h('span', { className: 'pj-hint' }, t('worktreeIsolationHint')),
+            ),
+            h(SafeSwitch, {
+              checked: form.worktreeIsolation,
+              disabled: busy,
+              label: t('worktreeIsolation'),
+              onChange: (next) => setForm((cur) => ({ ...cur, worktreeIsolation: next })),
+            }),
+          ),
+        ),
+      })
+    }
+
+    function ProjectSettingsModal({
+      open,
+      project,
+      memory,
+      catalog,
+      goalText,
+      goalDirty,
+      busy,
+      onGoalChange,
+      onSaveGoal,
+      onPatchProject,
+      onChooseWorkspace,
+      onClearWorkspace,
+      onArchiveToggle,
+      onOpenMemoryPreview,
+      onNewMemoryTopic,
+      onClose,
+      t,
+    }) {
+      const [group, setGroup] = useState('general')
+      const [archiveArmed, setArchiveArmed] = useState(false)
+
+      useEffect(() => {
+        if (open) {
+          setGroup('general')
+          setArchiveArmed(false)
+        }
+      }, [open, project && project.id])
+
+      if (!project) return null
+
+      const memoryFiles = (memory && Array.isArray(memory.files)) ? memory.files.filter(Boolean) : []
+      const indexFile = (memory && memory.indexFile && typeof memory.indexFile === 'object') ? memory.indexFile : null
+      const totalChars = Number(memory && memory.total) || 0
+      const budget = Number(memory && memory.budget) || Number(project.memoryBudget) || 64000
+      const pct = Math.min(100, Math.round((totalChars / Math.max(1, budget)) * 100))
+
+      const handleArchiveClick = () => {
+        if (project.archived) {
+          setArchiveArmed(false)
+          onArchiveToggle(false)
+          return
+        }
+        if (!archiveArmed) {
+          setArchiveArmed(true)
+          return
+        }
+        setArchiveArmed(false)
+        onArchiveToggle(true)
+      }
+
+      const renderGeneral = () =>
+        h(
+          Fragment,
+          null,
+          h(
+            'div',
+            { className: 'pj-section' },
+            h('div', { className: 'pj-section-head' }, h('h3', { className: 'pj-section-title' }, t('project'))),
+            h(
+              'label',
+              { className: 'pj-field' },
+              h('span', { className: 'pj-label' }, t('projectName')),
+              h(UIInput, {
+                variant: 'form',
+                key: `${project.id}:${project.name}`,
+                defaultValue: project.name,
+                'aria-label': t('projectName'),
+                disabled: busy,
+                onBlur: (e) => {
+                  const val = e.target.value.trim()
+                  if (val && val !== project.name) onPatchProject({ name: val })
+                },
+              }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pj-section' },
+            h(
+              'div',
+              { className: 'pj-section-head' },
+              h('h3', { className: 'pj-section-title' }, t('instructions')),
+              h(
+                'div',
+                { className: 'pj-head-actions' },
+                goalDirty && h(UITag, { tone: 'warning' }, t('unsavedTag')),
+                h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', disabled: busy || !goalDirty, onClick: onSaveGoal }, t('save')),
+              ),
+            ),
+            h('p', { className: 'pj-hint' }, t('instructionsHint')),
+            h('textarea', {
+              className: 'pj-textarea',
+              'aria-label': t('instructions'),
+              placeholder: t('instructionsPlaceholder'),
+              value: goalText,
+              onChange: (e) => onGoalChange(e.target.value),
+            }),
+          ),
+          h(
+            'div',
+            { className: 'pj-section' },
+            h('div', { className: 'pj-section-head' }, h('h3', { className: 'pj-section-title' }, t('workspace'))),
+            h(
+              'div',
+              { className: 'pj-field-row' },
+              h(
+                'div',
+                { className: `pj-path-box${project.workspace ? '' : ' pj-empty-path'}`, title: project.workspace || t('noWorkspace') },
+                h('span', { className: 'pj-path-text' }, project.workspace || t('noWorkspace')),
+              ),
+              h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: onChooseWorkspace }, t('chooseFolder')),
+              project.workspace &&
+                h(UIButton, { variant: 'ghost', size: 'sm', shape: 'pill', disabled: busy, onClick: onClearWorkspace }, t('clear')),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pj-section' },
+            h('div', { className: 'pj-section-head' }, h('h3', { className: 'pj-section-title' }, t('threadsSettings'))),
+            h('p', { className: 'pj-hint' }, t('threadsHint')),
+            h(
+              'div',
+              { className: 'pj-field-grid' },
+              h(
+                'div',
+                { className: 'pj-field' },
+                h('span', { className: 'pj-label' }, t('autonomy')),
+                h(UISegmentedTabs, {
+                  size: 'sm',
+                  label: t('autonomy'),
+                  value: project.autonomy === 'auto' ? 'auto' : 'manual',
+                  onChange: (val) => onPatchProject({ autonomy: val }),
+                  items: [
+                    { value: 'manual', label: t('autonomyManual'), id: 'pj-set-auto-manual', panelId: 'pj-set-auto-manual-p' },
+                    { value: 'auto', label: t('autonomyAuto'), id: 'pj-set-auto-auto', panelId: 'pj-set-auto-auto-p' },
+                  ],
+                }),
+              ),
+              h(
+                'label',
+                { className: 'pj-field' },
+                h('span', { className: 'pj-label' }, t('concurrency')),
+                h(UIInput, {
+                  variant: 'form',
+                  type: 'number',
+                  min: 1,
+                  max: MAX_CONCURRENCY,
+                  key: `${project.id}:c:${project.concurrency}`,
+                  defaultValue: project.concurrency,
+                  'aria-label': t('concurrency'),
+                  disabled: busy,
+                  onBlur: (e) => {
+                    const n = Number(e.target.value)
+                    if (Number.isFinite(n) && n !== project.concurrency) onPatchProject({ concurrency: clamp(n, 1, MAX_CONCURRENCY) })
+                  },
+                }),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'pj-switch-row' },
+              h(
+                'div',
+                { className: 'pj-switch-copy' },
+                h('span', { className: 'pj-label' }, t('pauseProject')),
+                h('span', { className: 'pj-hint' }, t('pausedHint')),
+              ),
+              h(SafeSwitch, {
+                checked: Boolean(project.paused),
+                disabled: busy || project.archived,
+                label: t('pauseProject'),
+                onChange: (next) => onPatchProject({ paused: next }),
+              }),
+            ),
+            h(
+              'div',
+              { className: 'pj-field-grid' },
+              h(
+                'label',
+                { className: 'pj-field' },
+                h('span', { className: 'pj-label' }, t('model')),
+                catalog.enumerable
+                  ? h(
+                      'select',
+                      {
+                        className: 'pj-select',
+                        'aria-label': t('model'),
+                        value: project.model || '',
+                        disabled: busy,
+                        onChange: (e) => onPatchProject({ model: e.target.value }),
+                      },
+                      h('option', { value: '' }, t('modelDefault')),
+                      ...(catalog.models || []).map((m) => h('option', { key: m.id, value: m.id }, m.label || m.id)),
+                      project.model && !(catalog.models || []).some((m) => m.id === project.model)
+                        ? h('option', { value: project.model }, project.model)
+                        : null,
+                    )
+                  : h(UIInput, {
+                      variant: 'form',
+                      key: `${project.id}:m:${project.model || ''}`,
+                      defaultValue: project.model || '',
+                      placeholder: t('modelRoutePlaceholder'),
+                      'aria-label': t('model'),
+                      disabled: busy,
+                      onBlur: (e) => {
+                        const v = e.target.value.trim()
+                        if (v !== (project.model || '')) onPatchProject({ model: v })
+                      },
+                    }),
+                !catalog.enumerable && h('span', { className: 'pj-hint' }, t('modelFreeTextHint')),
+              ),
+              h(
+                'label',
+                { className: 'pj-field' },
+                h('span', { className: 'pj-label' }, t('reasoningEffort')),
+                catalog.enumerable
+                  ? h(
+                      'select',
+                      {
+                        className: 'pj-select',
+                        'aria-label': t('reasoningEffort'),
+                        value: project.reasoningEffort || '',
+                        disabled: busy,
+                        onChange: (e) => onPatchProject({ reasoningEffort: e.target.value }),
+                      },
+                      h('option', { value: '' }, t('effortDefault')),
+                      ...effortsFor(catalog, project.model).map((ef) =>
+                        h('option', { key: ef.id, value: ef.id }, ef.name || effortLabel(catalog, project.model, ef.id, t)),
+                      ),
+                      project.reasoningEffort && !effortsFor(catalog, project.model).some((ef) => ef.id === project.reasoningEffort)
+                        ? h('option', { value: project.reasoningEffort }, project.reasoningEffort)
+                        : null,
+                    )
+                  : h(UIInput, {
+                      variant: 'form',
+                      key: `${project.id}:e:${project.reasoningEffort || ''}`,
+                      defaultValue: project.reasoningEffort || '',
+                      placeholder: t('effortDefault'),
+                      'aria-label': t('reasoningEffort'),
+                      disabled: busy,
+                      onBlur: (e) => {
+                        const v = e.target.value.trim()
+                        if (v !== (project.reasoningEffort || '')) onPatchProject({ reasoningEffort: v })
+                      },
+                    }),
+                !catalog.enumerable && h('span', { className: 'pj-hint' }, t('effortFreeTextHint')),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'pj-switch-row' },
+              h(
+                'div',
+                { className: 'pj-switch-copy' },
+                h('span', { className: 'pj-label' }, t('worktreeIsolation')),
+                h('span', { className: 'pj-hint' }, t('worktreeIsolationHint')),
+              ),
+              h(SafeSwitch, {
+                checked: Boolean(project.worktreeIsolation),
+                disabled: busy,
+                label: t('worktreeIsolation'),
+                onChange: (next) => onPatchProject({ worktreeIsolation: next }),
+              }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pj-danger-zone' },
+            h('h3', { className: 'pj-danger-title' }, t('archiveSection')),
+            h('p', { className: 'pj-hint', style: { marginBottom: '10px' } }, t('archiveWarning')),
+            h(
+              'div',
+              { className: 'pj-head-actions' },
+              project.archived
+                ? h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: handleArchiveClick }, t('unarchive'))
+                : archiveArmed
+                  ? h(
+                      Fragment,
+                      null,
+                      h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', disabled: busy, onClick: handleArchiveClick }, t('archiveConfirm')),
+                      h(UIButton, { variant: 'ghost', size: 'sm', shape: 'pill', disabled: busy, onClick: () => setArchiveArmed(false) }, t('cancel')),
+                    )
+                  : h(
+                      UIButton,
+                      { variant: 'outline', size: 'sm', shape: 'pill', className: 'pj-danger-btn', disabled: busy, onClick: handleArchiveClick },
+                      t('archive'),
+                    ),
+            ),
+          ),
+        )
+
+      const renderMemory = () => {
+        const rows = indexFile
+          ? [{ ...indexFile, name: indexFile.name || 'MEMORY.md', description: t('memoryIndexDesc'), isIndex: true, readOnly: true }, ...memoryFiles]
+          : memoryFiles
+        return h(
+          'div',
+          { className: 'pj-section' },
+          h(
+            'div',
+            { className: 'pj-section-head' },
+            h('h3', { className: 'pj-section-title' }, t('memory')),
+            h(
+              UIButton,
+              {
+                variant: 'primary',
+                size: 'sm',
+                shape: 'pill',
+                icon: h(Icon, { name: 'IconPlusOutlineRegular', size: 14 }),
+                disabled: busy,
+                onClick: onNewMemoryTopic,
+              },
+              t('memoryNewTopic'),
+            ),
+          ),
+          h('p', { className: 'pj-hint' }, t('memoryHint')),
+          h(
+            'div',
+            { className: 'pj-field' },
+            h(
+              'div',
+              { className: 'pj-section-head' },
+              h('span', { className: 'pj-hint' }, `${memoryFiles.length} ${t('memoryFiles')} · ${memorySize(totalChars, t)}`),
+              h('span', { className: 'pj-hint' }, `${t('memoryBudget')}: ${memorySize(budget, t)} (${pct}%)`),
+            ),
+            h(
+              'div',
+              { className: 'pj-budget-bar', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 },
+              h('div', { className: `pj-budget-fill${totalChars > budget ? ' pj-over' : ''}`, style: { width: `${pct}%` } }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'pj-switch-row' },
+            h(
+              'div',
+              { className: 'pj-switch-copy' },
+              h('span', { className: 'pj-label' }, t('memoryAutoCompact')),
+              h('span', { className: 'pj-hint' }, t('memoryAutoCompactHint')),
+            ),
+            h(SafeSwitch, {
+              checked: project.autoCompact !== false,
+              disabled: busy,
+              label: t('memoryAutoCompact'),
+              onChange: (next) => onPatchProject({ autoCompact: next }),
+            }),
+          ),
+          rows.length === 0
+            ? h('div', { className: 'pj-empty' }, t('memoryEmpty'))
+            : h(
+                'div',
+                { className: 'pj-memory-list' },
+                rows.map((file) => {
+                  const isIdx = Boolean(file.isIndex || file.readOnly)
+                  return h(
+                    'button',
+                    {
+                      key: file.name,
+                      type: 'button',
+                      className: 'pj-memory-row',
+                      onClick: () => onOpenMemoryPreview(file),
+                    },
+                    h(
+                      'div',
+                      { className: 'pj-memory-row-head' },
+                      h('span', { className: 'pj-memory-row-name' }, file.name),
+                      isIdx && h(UITag, { tone: 'neutral' }, t('memoryIndex')),
+                      isIdx && h(UITag, { tone: 'quiet' }, t('memoryReadOnly')),
+                      file.stale && h(UITag, { tone: 'warning' }, t('memoryStale')),
+                    ),
+                    file.description && h('span', { className: 'pj-memory-row-desc' }, file.description),
+                    h('span', { className: 'pj-memory-row-meta' }, memoryMeta(file, t)),
+                  )
+                }),
+              ),
+        )
+      }
+
+      return h(UIModal, {
+        open,
+        headless: true,
+        onClose: archiveArmed ? () => {} : onClose,
+        title: t('settings'),
+        className: 'pj-settings-modal',
+        children: h(
+          'div',
+          { className: 'pj-settings-grid' },
+          h('h2', { className: 'pj-settings-title' }, t('settings')),
+          h(
+            'div',
+            { className: 'pj-settings-head' },
+            h(
+              'button',
+              { type: 'button', className: 'pj-icon-btn', 'aria-label': t('close'), onClick: onClose },
+              h(Icon, { name: 'IconCloseOutline16', size: 14 }),
+            ),
+          ),
+          h(
+            'nav',
+            { className: 'pj-settings-nav', 'aria-label': t('settingsNav') },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: `pj-settings-nav-btn${group === 'general' ? ' pj-active' : ''}`,
+                'aria-current': group === 'general' ? 'true' : undefined,
+                onClick: () => { setArchiveArmed(false); setGroup('general') },
+              },
+              h(Icon, { name: 'IconSettingsOutlineRegular', size: 16 }),
+              h('span', null, t('general')),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: `pj-settings-nav-btn${group === 'memory' ? ' pj-active' : ''}`,
+                'aria-current': group === 'memory' ? 'true' : undefined,
+                onClick: () => { setArchiveArmed(false); setGroup('memory') },
+              },
+              h(Icon, { name: 'IconDataOutlineRegular', size: 16 }),
+              h('span', null, t('memory')),
+            ),
+          ),
+          h('div', { className: 'pj-settings-body' }, group === 'memory' ? renderMemory() : renderGeneral()),
+        ),
+      })
+    }
+
+    function MemoryPreviewModal({ file, busy, onClose, onEdit, onDelete, t }) {
+      const [armed, setArmed] = useState(false)
+      useEffect(() => { setArmed(false) }, [file && file.name])
+      if (!file) return null
+      const isIdx = Boolean(file.isIndex || file.readOnly)
+      const isArchived = file.archived === true
+      const footer = isIdx
+        ? null
+        : armed
+          ? h(
+              Fragment,
+              null,
+              h(UIButton, { variant: 'ghost', size: 'sm', shape: 'pill', disabled: busy, onClick: () => setArmed(false) }, t('cancel')),
+              h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', disabled: busy, onClick: () => onDelete(file) }, t('memoryDeleteConfirm')),
+            )
+          : h(
+              Fragment,
+              null,
+              h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', className: 'pj-danger-btn', disabled: busy || isArchived || file.loading, onClick: () => setArmed(true) }, t('memoryDeleteFile')),
+              h(UIButton, { variant: 'primary', size: 'sm', shape: 'pill', disabled: busy || isArchived || file.loading, onClick: () => onEdit(file) }, t('memoryEditFile')),
+            )
+
+      return h(UIModal, {
+        open: Boolean(file),
+        onClose,
+        title: file.name,
+        closeLabel: t('close'),
+        className: 'pj-modal-solid pj-modal-wide',
+        footer,
+        children: h(
+          'div',
+          { className: 'pj-form-stack' },
+          h(
+            'div',
+            { className: 'pj-detail-meta' },
+            h('span', null, memoryMeta(file, t)),
+            isIdx && h(UITag, { tone: 'neutral' }, t('memoryReadOnly')),
+            file.stale && h(UITag, { tone: 'warning' }, t('memoryStale')),
+            isArchived && h(UITag, { tone: 'neutral' }, t('memoryArchived')),
+          ),
+          file.description && h('p', { className: 'pj-hint' }, file.description),
+          isIdx && h('p', { className: 'pj-hint' }, t('memoryIndexHint')),
+          isArchived && h('p', { className: 'pj-hint' }, t('memoryArchivedHint')),
+          file.loading
+            ? h('div', { className: 'pj-empty' }, t('memoryLoading'))
+            : file.error
+              ? h('div', { className: 'pj-empty' }, file.error)
+              : h('pre', { className: 'pj-memory-body-pre' }, file.text || ''),
+        ),
+      })
+    }
+
+    function MemoryEditorModal({ editor, busy, onClose, onSave, t }) {
+      const [name, setName] = useState('')
+      const [description, setDescription] = useState('')
+      const [text, setText] = useState('')
+
+      useEffect(() => {
+        if (!editor) return
+        setName(editor.name || '')
+        setDescription(editor.description || '')
+        setText(editor.text || '')
+      }, [editor && editor.name, editor && editor.isNew, editor && editor.loading])
+
+      if (!editor) return null
+      const isNew = Boolean(editor.isNew)
+
+      return h(UIModal, {
+        open: Boolean(editor),
+        onClose: busy ? () => {} : onClose,
+        title: isNew ? t('memoryNewTopic') : editor.name,
+        closeLabel: t('close'),
+        className: 'pj-modal-solid pj-modal-wide',
+        footer: h(
+          Fragment,
+          null,
+          h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: onClose }, t('cancel')),
+          h(
+            UIButton,
+            {
+              variant: 'primary',
+              size: 'sm',
+              shape: 'pill',
+              loading: busy,
+              disabled: busy || editor.loading,
+              onClick: () => onSave({ name: name.trim(), description: description.trim(), type: editor.type || 'reference', text }),
+            },
+            t('save'),
+          ),
+        ),
+        children: h(
+          'div',
+          { className: 'pj-form-stack' },
+          isNew &&
+            h(
+              'label',
+              { className: 'pj-field' },
+              h('span', { className: 'pj-label' }, t('memoryTopicName')),
+              h(UIInput, {
+                variant: 'form',
+                'data-modal-autofocus': '',
+                'aria-label': t('memoryTopicName'),
+                placeholder: t('memoryTopicNamePlaceholder'),
+                value: name,
+                onChange: (e) => setName(e.target.value),
+              }),
+            ),
+          h(
+            'label',
+            { className: 'pj-field' },
+            h('span', { className: 'pj-label' }, t('memoryTopicDesc')),
+            h(UIInput, {
+              variant: 'form',
+              'aria-label': t('memoryTopicDesc'),
+              placeholder: t('memoryTopicDescPlaceholder'),
+              value: description,
+              onChange: (e) => setDescription(e.target.value),
+            }),
+          ),
+          h(
+            'label',
+            { className: 'pj-field' },
+            h('span', { className: 'pj-label' }, t('memoryBody')),
+            h('textarea', {
+              className: 'pj-textarea pj-textarea-tall',
+              'data-modal-autofocus': isNew ? undefined : '',
+              'aria-label': t('memoryBody'),
+              placeholder: t('memoryPlaceholder'),
+              disabled: busy || editor.loading,
+              value: editor.loading ? '' : text,
+              onChange: (e) => setText(e.target.value),
+            }),
+          ),
+        ),
+      })
+    }
+
+    function ConfirmModal({ state, busy, onClose, t }) {
+      if (!state) return null
+      return h(UIModal, {
+        open: Boolean(state),
+        onClose: busy ? () => {} : onClose,
+        title: state.title,
+        description: state.description,
+        tone: state.tone,
+        closeLabel: t('close'),
+        className: 'pj-modal-solid',
+        footer: h(
+          Fragment,
+          null,
+          h(UIButton, { variant: 'outline', size: 'sm', shape: 'pill', disabled: busy, onClick: onClose }, state.cancelLabel || t('cancel')),
+          h(
+            UIButton,
+            {
+              variant: 'primary',
+              size: 'sm',
+              shape: 'pill',
+              loading: busy,
+              disabled: busy,
+              onClick: () => state.onConfirm(),
+            },
+            state.confirmLabel || t('confirm'),
+          ),
+        ),
+      })
+    }
+
+    // =========================================================================
+    // Section 9: Main Page Orchestrator & Plugin Entry
+    // =========================================================================
+
+    function ProjectsPage({
+      translate,
+      getLocale,
+      localeStore,
+      pickFolder,
+      threadApi,
+      renderSlot,
+      SessionProvider,
+      useWorkspaces,
+    }) {
+      useStoreValue(localeStore)
+      const t = translate
+
+      const pageRef = useRef(null)
+      const newProjectBtnRef = useRef(null)
+      const settingsBtnRef = useRef(null)
+      const [containerWidth, setContainerWidth] = useState(0)
+
+      const [projects, setProjects] = useState([])
+      const [selectedId, setSelectedId] = useState(null)
+      const [detail, setDetail] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [toast, setToast] = useState(null)
+      const toastSeqRef = useRef(0)
+
+      const [goalText, setGoalText] = useState('')
+      const [goalDirty, setGoalDirty] = useState(false)
+      const goalDirtyRef = useRef(false)
+
+      const [showNewProject, setShowNewProject] = useState(false)
+      const [showSettings, setShowSettings] = useState(false)
+      const [memoryPreview, setMemoryPreview] = useState(null)
+      const [memoryEditor, setMemoryEditor] = useState(null)
+      const [confirmState, setConfirmState] = useState(null)
+
+      const [thread, setThread] = useState(null)
+      const [execTarget, setExecTarget] = useState(null)
+      const [diffRefreshToken, setDiffRefreshToken] = useState(0)
+      const [catalog, setCatalog] = useState({ models: [], enumerable: false, presets: [], presetsEnumerable: false })
+
+      const [listChoice, setListChoice] = useState(() => readStored('listCollapsed', ''))
+      const [execChoice, setExecChoice] = useState(() => readStored('execCollapsed', ''))
+      const [execForceOpen, setExecForceOpen] = useState(false)
+      const [lastOpenedSide, setLastOpenedSide] = useState('exec')
+      const [listWidth, setListWidth] = useState(() => readStoredNumber('listWidth', LIST_DEFAULT_WIDTH))
+      const [execWidth, setExecWidth] = useState(() => readStoredNumber('execWidth', EXEC_DEFAULT_WIDTH))
+      const [resizing, setResizing] = useState(null)
+
+      const selectedRef = useRef(null)
+      const listReqSeq = useRef(0)
+      const detailReqSeq = useRef(0)
+      const pendingOpenRef = useRef(null)
+
+      const showToast = useCallback((text, options = {}) => {
+        if (!text) return
+        toastSeqRef.current += 1
+        setToast({ seq: toastSeqRef.current, text, tone: options.tone, holdMs: options.holdMs })
+      }, [])
+
+      useEffect(() => {
+        selectedRef.current = selectedId
+      }, [selectedId])
+
+      useEffect(() => { writeStored('listCollapsed', listChoice) }, [listChoice])
+      useEffect(() => { writeStored('execCollapsed', execChoice) }, [execChoice])
+
+      // Measure the actual Projects container with ResizeObserver (container-aware layout).
+      useEffect(() => {
+        const node = pageRef.current
+        if (!node) return undefined
+        const update = (w) => {
+          const measured = Math.round(Number(w) || 0)
+          if (measured > 0) setContainerWidth(measured)
+        }
+        if (typeof node.getBoundingClientRect === 'function') {
+          update(node.getBoundingClientRect().width)
+        }
+        const RO = typeof ResizeObserver !== 'undefined'
+          ? ResizeObserver
+          : (typeof window !== 'undefined' ? window.ResizeObserver : undefined)
+        if (typeof RO !== 'function') return undefined
+        const observer = new RO((entries) => {
+          const entry = entries && entries[0]
+          if (entry && entry.contentRect) update(entry.contentRect.width)
+        })
+        observer.observe(node)
+        return () => observer.disconnect()
+      }, [])
+
+      // Release retained Session references on switch or unmount.
+      useEffect(() => () => { try { thread?.reference?.release?.() } catch {} }, [thread])
+      useEffect(() => () => { try { execTarget?.reference?.release?.() } catch {} }, [execTarget])
+
+      const loadProjects = useCallback(async () => {
+        const seq = ++listReqSeq.current
+        const data = await api('/projects')
+        if (seq !== listReqSeq.current) return null
+        const list = Array.isArray(data.projects) ? data.projects : []
+        setProjects(list)
+        return list
+      }, [])
+
+      const loadDetail = useCallback(async (id) => {
+        if (!id) return null
+        const seq = ++detailReqSeq.current
+        const data = await api(`/projects/${id}`)
+        if (seq !== detailReqSeq.current) return null
+        if (selectedRef.current && selectedRef.current !== id) return null
+        setDetail(data)
+        return data
+      }, [])
+
+      const refresh = useCallback(async (preferredId) => {
+        const list = await loadProjects()
+        if (!list) return
+        const target = preferredId
+          || (selectedRef.current && list.some((p) => p.id === selectedRef.current) ? selectedRef.current : null)
+          || (list.find((p) => !p.archived) || list[0])?.id
+          || null
+        if (target) {
+          selectedRef.current = target
+          setSelectedId(target)
+          await loadDetail(target)
+        } else {
+          selectedRef.current = null
+          setSelectedId(null)
+          setDetail(null)
+        }
+      }, [loadDetail, loadProjects])
+
+      // Initial load + SSE real-time subscription (zero 4s blind polling).
+      useEffect(() => {
+        let stopped = false
+        let flushTimer = null
+        let pendingProjectId = null
+
+        void refresh().catch((err) => {
+          if (!stopped) showToast(`${t('errorPrefix')}${messageOf(err)}`, { holdMs: null })
+        })
+
+        const scheduleRefresh = (evt) => {
+          if (stopped) return
+          if (evt && evt.projectId) pendingProjectId = evt.projectId
+          if (flushTimer !== null) return
+          flushTimer = setTimeout(() => {
+            flushTimer = null
+            const hinted = pendingProjectId
+            pendingProjectId = null
+            void loadProjects().then((list) => {
+              if (stopped || !list) return
+              const activeId = selectedRef.current || (list.find((p) => !p.archived) || list[0])?.id || null
+              if (activeId && (!hinted || hinted === activeId)) {
+                if (!selectedRef.current) {
+                  selectedRef.current = activeId
+                  setSelectedId(activeId)
+                }
+                void loadDetail(activeId).catch(() => {})
+                setDiffRefreshToken((n) => n + 1)
+              }
+            }).catch(() => {})
+          }, 80)
+        }
+
+        const unsubscribe = subscribeProjectEvents({
+          onUpdate: scheduleRefresh,
+          onReconnect: () => scheduleRefresh(null),
+        })
+
+        return () => {
+          stopped = true
+          if (flushTimer !== null) clearTimeout(flushTimer)
+          unsubscribe()
+        }
+      }, [loadDetail, loadProjects, refresh])
+
+      // Load model catalog once per mount.
+      useEffect(() => {
+        let stopped = false
+        void api('/models')
+          .then((data) => {
+            if (stopped) return
+            setCatalog({
+              models: Array.isArray(data.models) ? data.models : [],
+              enumerable: data.enumerable === true,
+              presets: Array.isArray(data.presets) ? data.presets : [],
+              presetsEnumerable: data.presetsEnumerable === true,
+            })
+          })
+          .catch(() => {
+            if (!stopped) setCatalog({ models: [], enumerable: false, presets: [], presetsEnumerable: false })
+          })
+        return () => { stopped = true }
+      }, [])
+
+      const useWorkspacesSafe = typeof useWorkspaces === 'function' ? useWorkspaces : () => undefined
+      const archivedSessionIds = useWorkspacesSafe((state) => state && state.archivedSessionIds)
+      const project = detail && detail.project ? detail.project : null
+      const projectId = project ? project.id : null
+      const coordinatorSessionId = project ? project.coordinatorSessionId : null
+      const coordinatorArchived = Boolean(
+        coordinatorSessionId && Array.isArray(archivedSessionIds) && archivedSessionIds.includes(coordinatorSessionId),
+      )
+
+      // Auto-reopen an already bound coordinator Session on project selection.
+      useEffect(() => {
+        if (!coordinatorSessionId) {
+          setThread((cur) => (cur ? null : cur))
+          return undefined
+        }
+        if (!threadApi || typeof threadApi.ensure !== 'function') return undefined
+        if (thread && thread.sessionId === coordinatorSessionId) return undefined
+        let cancelled = false
+        void (async () => {
           try {
-            const result = await rpc('list');
-            if (!alive || generation !== refreshGeneration) return;
-            const previous = snapshot.getSnapshot();
-            snapshot.set({ ...previous, projects: result.available === true ? result.projects : previous.projects, available: result.available === true, loading: false, error: result.error ?? '' });
-            if (previous.available !== (result.available === true)) registerAction();
-            if (trackedProject && result.projects.some(project => project.id === trackedProject)) await readDetail(trackedProject, true);
-          } catch (failure) { if (alive) snapshot.set({ ...snapshot.getSnapshot(), loading: false, error: errorText(failure) }); }
-          finally { refreshing = undefined; }
-        })();
-        return refreshing;
-      };
-      // Callers surface failures: the directory picker, a directory row or the New Session option.
-      const openProject = async (projectId, open = sessionId => ctx.uiWorkspace.openSession(sessionId)) => {
-        const navigation = ++navigationGeneration;
-        const detail = await readDetail(projectId);
-        if (!alive || navigation !== navigationGeneration) return;
-        viewInstance.actions.selectProject(projectId); ctx.uiSidebar.selectTab('sessions'); open(detail.project.coordinatorSessionId);
-      };
-      const projectAt = path => snapshot.getSnapshot().projects.some(project => project.lifecycle !== 'archived' && comparablePath(project.canonicalWorkingDirectory) === comparablePath(path));
-      // Creating an existing directory's Project resumes its original Lead.
-      const startProject = async (path, open) => {
-        const result = await rpc('create', { workingDirectory: path, requestId: requestId() });
-        acceptDetail({ project: result.project }); await openProject(result.project.id, open);
-      };
-      const show = (kind, projectId, workstreamId, context = {}) => { viewInstance.actions.setModal({ kind, projectId, workstreamId, ...context }); };
-      const openLifecycle = async (projectId, action) => {
-        const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
-        if (!project) { viewInstance.actions.setLifecycle({ action, error: t('unavailable') }); return; }
+            if (Array.isArray(archivedSessionIds) && archivedSessionIds.includes(coordinatorSessionId)) {
+              await threadApi.restoreSession(coordinatorSessionId)
+            }
+            const res = await threadApi.ensure(project, coordinatorBoard(project), { create: false })
+            if (!res) return
+            if (cancelled) {
+              try { res.reference.release() } catch {}
+            } else {
+              setThread({ sessionId: res.sessionId, reference: res.reference })
+            }
+          } catch {}
+        })()
+        return () => { cancelled = true }
+      }, [coordinatorSessionId])
+
+      useEffect(() => {
+        if (!coordinatorArchived || !coordinatorSessionId || !threadApi) return
+        void threadApi.restoreSession(coordinatorSessionId).catch(() => {})
+      }, [coordinatorArchived, coordinatorSessionId])
+
+      // Reset project-local buffers when switching projects.
+      useEffect(() => {
+        goalDirtyRef.current = false
+        setGoalDirty(false)
+        setMemoryPreview(null)
+        setMemoryEditor(null)
+        setExecForceOpen(false)
+        setExecTarget((cur) => (cur ? null : cur))
+      }, [projectId])
+
+      useEffect(() => {
+        if (project && !goalDirtyRef.current) setGoalText(project.goal || '')
+      }, [project])
+
+      // Publish live project snapshot for in-chat `projects_dispatch` cards.
+      useEffect(() => {
+        projectSnapshot.set(project ? { projectId: project.id, project } : null)
+      }, [project])
+      useEffect(() => () => projectSnapshot.set(null), [])
+
+      const run = useCallback(async (action) => {
+        setBusy(true)
         try {
-          if (action === 'archive') {
-            const detail = await readDetail(project.id), activity = detail.project.activity;
-            if (!(activity?.coordinatorRunning || activity?.running || activity?.queued || activity?.provisioning || activity?.state === 'stopping')) { await command(project.id, 'archive'); return; }
+          const msg = await action()
+          if (msg) showToast(msg, { tone: 'success' })
+        } catch (err) {
+          showToast(`${t('errorPrefix')}${messageOf(err)}`, { holdMs: null })
+        } finally {
+          setBusy(false)
+        }
+      }, [showToast, t])
+
+      const applyTaskLocally = useCallback((nextTask) => {
+        if (!nextTask || !nextTask.id) return
+        setDetail((cur) => {
+          if (!cur || !cur.project) return cur
+          const tasks = (cur.project.tasks || []).map((item) => (item.id === nextTask.id ? nextTask : item))
+          return { ...cur, project: { ...cur.project, tasks } }
+        })
+      }, [])
+
+      const openTaskDetail = useCallback((task) => {
+        if (!task) return
+        // Ephemerally reveal the Threads column for detail inspection without
+        // permanently persisting an override to localStorage.
+        setExecForceOpen(true)
+        setLastOpenedSide('exec')
+        void run(async () => {
+          if (!task.childSessionId) {
+            setExecTarget({ taskId: task.id, title: task.title, sessionId: '', reference: null })
+            return ''
           }
-          viewInstance.actions.setLifecycle({ projectId, action });
-        } catch (failure) { viewInstance.actions.setLifecycle({ projectId, action, error: errorText(failure) }); }
-      };
-      ctx.effect(() => ctx.uiWorkspace.registerSessionActions('project', {
-        rename: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); void openLifecycle(project?.id, 'rename'); },
-        archive: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); void openLifecycle(project?.id, 'archive'); },
-        restore: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); if (project) return command(project.id, 'restore'); },
-      }), 'dsh-project: Project lifecycle commands');
-      ctx.effect(() => {
-        const entries = createSnapshotStore([]);
-        const sync = () => entries.set(snapshot.getSnapshot().projects.map(project => ({ sessionId: project.coordinatorSessionId,
-          workingDirectory: project.canonicalWorkingDirectory, archived: project.lifecycle === 'archived' })));
-        sync();
-        const off = snapshot.subscribe(sync);
-        const unregister = ctx.uiWorkspace.registerSessionNavigation('project', entries);
-        return () => { off(); unregister(); };
-      }, 'dsh-project: workspace navigation');
-      const sendUserRequest = async (projectId, text) => {
-        const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
-        if (!project || project.lifecycle !== 'ready' || project.archiving) throw new Error(t('unavailable'));
-        const scope = ctx.sessions.scope(project.coordinatorSessionId);
-        if (!scope) throw new Error(t('unavailable'));
-        await scope.get('conversation').send(text);
-      };
-      const setRequestMode = (sessionId, id, mode, completed = false) => {
-        const before = requestModes.getSnapshot();
-        requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: { ...before[sessionId]?.requests, [id]: { ...before[sessionId]?.requests?.[id], mode, completed } } } });
-      };
-      const setRequestTab = (sessionId, id, tab) => {
-        const before = requestModes.getSnapshot();
-        requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: { ...before[sessionId]?.requests, [id]: { ...before[sessionId]?.requests?.[id], tab } } } });
-      };
-      const rememberRequestModes = (sessionId, cards) => {
-        const before = requestModes.getSnapshot(), rows = { ...before[sessionId]?.requests };
-        let changed = false;
-        for (const card of cards) if (!rows[card.id]) { rows[card.id] = { mode: card.id === snapshot.getSnapshot().projects.find(project => project.coordinatorSessionId === sessionId)?.queue?.active?.id ? 'card' : 'strip' }; changed = true; }
-        if (changed) requestModes.set({ ...before, [sessionId]: { ...before[sessionId], requests: rows } });
-      };
-      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, requestPanels, dismissals, ...(teamScopes ? { teamTaskScopes: teamScopes.source, teamActivity: teamScopes.activitySource } : {}) }, ...(teamScopes ? { teamT: (key, params) => ctx.locale.bind('project-team')(key, params) } : {}), read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, openMember, openTeamMember,
-        setRequestMode, setRequestTab, rememberRequestModes, setRequestPanel, pinRequests, collapseEmptyObserver,
-        trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
-        openModelSettings: () => ctx.settingsNavigation.open('models'),
-        showMaterials: (projectId, workstreamId, context) => { const view = viewInstance.getSnapshot(); if (!workstreamId && view.materialsPreview && view.modal?.projectId === projectId) viewInstance.actions.returnMaterials(projectId); else show('materials', projectId, workstreamId, context); }, showProcess: (projectId, workstreamId, member = false, context = {}) => { viewInstance.actions.setModal({ kind: 'process', projectId, ...(member ? { workerSessionId: workstreamId } : { workstreamId }), ...context }); }, showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
-        showReport: (projectId, workstreamId, context) => show('report', projectId, workstreamId, context), showRequestDiff: (projectId, requestId) => show('requestDiff', projectId, undefined, { requestId }),
-        trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
-        retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: work.parentSessionId ?? project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
-      });
-      ctx.inject(['sidebarRight', 'sidebarRightTabs'], scope => {
-        scope.effect(() => scope.sidebarRightTabs.register({ id: 'dsh-project-requests', kind: 'project-requests', priority: 'extension', title: () => t('requirements') }), 'dsh-project: Request observer');
-        scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({ name: 'sidebar.right.pane.tab', key: 'dsh-project-requests', locale: NS, inject: face }, ProjectRequestSidebar));
-      });
-      ctx.slots.inject('conversation.hero.options', () => ctx.slots.register({ name: 'conversation.hero.options', id: NS, locale: NS, inject: face }, ProjectHeroOption));
-      ctx.slots.inject('sidebar.session.row.badge', () => ctx.slots.register({ name: 'sidebar.session.row.badge', id: NS, locale: NS, inject: face }, ProjectRowBadge));
-      ctx.slots.inject('conversation.composer', () => {
-        const mounted = new Map();
-        const sync = () => {
-          const projects = snapshot.getSnapshot().projects.filter(project => archiveRequests.has(project.id) || project.archiving || project.lifecycle === 'archived');
-          for (const [id, dispose] of mounted) if (!projects.some(project => project.id === id)) { dispose(); mounted.delete(id); }
-          for (const project of projects) if (!mounted.has(project.id)) mounted.set(project.id, ctx.slots.register({ name: 'conversation.composer', id: NS + '-' + project.id, priority: 100, locale: NS, inject: face, select: owner => owner.sessionId === project.coordinatorSessionId ? { projectId: project.id } : null }, ProjectArchiveComposer));
-        };
-        const off = snapshot.subscribe(sync); sync();
-        return () => { off(); for (const dispose of mounted.values()) dispose(); };
-      });
-      ctx.slots.inject('conversation.composer', () => ctx.slots.register({ name: 'conversation.composer', id: NS + '-member', priority: 90, locale: NS,
-        inject: () => ({ ...face(), openLead }),
-        select: owner => {
-          const parent = owner.session?.subagent?.address.parentSessionId;
-          const project = parent && snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === parent);
-          return project ? { projectId: project.id, workerSessionId: owner.sessionId } : null;
-        } }, ProjectMemberComposer));
-      ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({ name: 'conversation.session.header.actions', id: NS, order: -20, locale: NS, inject: face }, ProjectHeader));
-      ctx.slots.inject('conversation.approval.actions', () => ctx.slots.register({ name: 'conversation.approval.actions', id: NS, locale: NS, inject: face }, ProjectApprovalStop));
-      ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS, locale: NS, store: viewStore, inject: face }, ProjectOverlay));
-      ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS + '-lifecycle', locale: NS, store: viewStore, inject: face }, ProjectLifecycleDialog));
-      ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS + '-errors', locale: NS, inject: face }, ProjectErrorNotice));
-      ctx.effect(() => {
-        const style = document.createElement('style'); style.dataset.dshProject = ''; style.textContent = CSS; document.head.append(style);
-        const offLocale = ctx.locale.subscribe(registerAction), offReset = ctx.on('connection/reset', () => {
-          if (viewInstance.getSnapshot().modal?.kind !== 'materials') viewInstance.actions.setModal(null);
-          refreshGeneration++;
-          snapshot.set({ ...snapshot.getSnapshot(), available: false }); registerAction(); void refresh();
-        });
-        const timer = setInterval(() => { if (!document.hidden) void refresh(); }, 5000);
-        void refresh();
-        return () => { alive = false; disposeAction?.(); offLocale(); offReset(); clearInterval(timer); style.remove(); };
-      }, 'dsh-project: local conversation entry and progress');
-    },
-  };
-} });
+          if (!threadApi || typeof threadApi.retainWorker !== 'function') {
+            throw new Error(t('sessionUnavailable'))
+          }
+          const archived = Array.isArray(archivedSessionIds) ? archivedSessionIds : []
+          if (project && project.coordinatorSessionId && archived.includes(project.coordinatorSessionId)) {
+            await threadApi.restoreSession(project.coordinatorSessionId)
+          }
+          if (archived.includes(task.childSessionId)) {
+            await threadApi.restoreSession(task.childSessionId)
+          }
+          const reference = threadApi.retainWorker(task.childSessionId, project && project.coordinatorSessionId)
+          setExecTarget({ taskId: task.id, title: task.title, sessionId: task.childSessionId, reference })
+          return ''
+        })
+      }, [archivedSessionIds, project, run, t, threadApi])
+
+      // Handle clicks on `projects_dispatch` cards from coordinator conversation.
+      useEffect(() => {
+        return openTaskRequest.subscribe((req) => {
+          if (!req) return
+          if (req.projectId && req.projectId !== selectedRef.current) {
+            if (!projects.some((p) => p && p.id === req.projectId)) return
+            pendingOpenRef.current = req
+            selectedRef.current = req.projectId
+            setSelectedId(req.projectId)
+            void refresh(req.projectId).catch((err) => showToast(`${t('errorPrefix')}${messageOf(err)}`, { holdMs: null }))
+            return
+          }
+          const tasks = project && project.id === req.projectId ? (project.tasks || []) : []
+          const found = tasks.find((item) => item && item.id === req.taskId)
+          if (found) {
+            openTaskDetail(found)
+          } else if (!project || project.id !== req.projectId) {
+            pendingOpenRef.current = req
+          }
+        })
+      }, [openTaskDetail, project, projects, refresh, showToast, t])
+
+      useEffect(() => {
+        const pending = pendingOpenRef.current
+        if (!pending || !project || project.id !== pending.projectId) return
+        const found = (project.tasks || []).find((item) => item && item.id === pending.taskId)
+        if (!found) return
+        pendingOpenRef.current = null
+        openTaskDetail(found)
+      }, [openTaskDetail, project])
+
+      // Project & task actions
+      const commitSwitchProject = (entry) => {
+        goalDirtyRef.current = false
+        setGoalDirty(false)
+        selectedRef.current = entry.id
+        setSelectedId(entry.id)
+        void loadDetail(entry.id).catch((err) => showToast(`${t('errorPrefix')}${messageOf(err)}`, { holdMs: null }))
+      }
+
+      const handleSelectProject = (entry) => {
+        if (!entry || entry.id === selectedId) return
+        if (goalDirtyRef.current) {
+          setConfirmState({
+            title: t('switchDiscardTitle'),
+            description: t('switchDiscardDesc'),
+            tone: 'warning',
+            confirmLabel: t('discardAndSwitch'),
+            cancelLabel: t('keepEditing'),
+            onConfirm: () => {
+              setConfirmState(null)
+              commitSwitchProject(entry)
+            },
+          })
+          return
+        }
+        commitSwitchProject(entry)
+      }
+
+      const handleCreateProject = (payload) =>
+        void run(async () => {
+          if (!payload.name) throw new Error(t('nameRequired'))
+          const created = await api('/projects', { method: 'POST', body: JSON.stringify(payload) })
+          setShowNewProject(false)
+          await refresh(created.project && created.project.id)
+          return ''
+        })
+
+      const handlePatchProject = (patch) =>
+        void run(async () => {
+          if (!projectId) return ''
+          await api(`/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(patch) })
+          await refresh(projectId)
+          return ''
+        })
+
+      const handleSaveGoal = () =>
+        void run(async () => {
+          if (!projectId) return ''
+          await api(`/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify({ goal: goalText }) })
+          goalDirtyRef.current = false
+          setGoalDirty(false)
+          await refresh(projectId)
+          return ''
+        })
+
+      const handleOpenWorkspace = (proj) =>
+        void run(async () => {
+          if (!proj || !proj.workspace) return ''
+          await api('/open-path', { method: 'POST', body: JSON.stringify({ path: proj.workspace, projectId: proj.id }) })
+          return ''
+        })
+
+      const handleStartCoordinator = () =>
+        void run(async () => {
+          if (!project) return ''
+          if (!threadApi || typeof threadApi.ensure !== 'function') throw new Error(t('sessionUnavailable'))
+          if (coordinatorArchived && project.coordinatorSessionId) {
+            await threadApi.restoreSession(project.coordinatorSessionId)
+          }
+          const result = await threadApi.ensure(project, coordinatorBoard(project))
+          setThread({ sessionId: result.sessionId, reference: result.reference })
+          if (result.created) {
+            try { await refresh(project.id) } catch {}
+          }
+          return ''
+        })
+
+      const handleRestoreCoordinator = () =>
+        void run(async () => {
+          if (!project || !project.coordinatorSessionId || !threadApi) return ''
+          await threadApi.restoreSession(project.coordinatorSessionId)
+          return ''
+        })
+
+      const handleApproveTask = (task) =>
+        void run(async () => {
+          const data = await api(`/projects/${projectId}/tasks/${task.id}/approve`, { method: 'POST', body: '{}' })
+          if (data && data.task) applyTaskLocally(data.task)
+          return ''
+        })
+
+      const handleStopTask = (task) =>
+        void run(async () => {
+          const data = await api(`/projects/${projectId}/tasks/${task.id}/stop`, { method: 'POST', body: '{}' })
+          if (data && data.task) applyTaskLocally(data.task)
+          await refresh(projectId)
+          return t('taskStopped')
+        })
+
+      const handleRetryTask = (task) =>
+        void run(async () => {
+          const data = await api(`/projects/${projectId}/tasks/${task.id}/retry`, { method: 'POST', body: '{}' })
+          if (data && data.task) applyTaskLocally(data.task)
+          await refresh(projectId)
+          return data && data.dispatched ? t('taskRetriedDispatched') : t('taskRetriedQueued')
+        })
+
+      const handleResolveTask = (task) =>
+        void run(async () => {
+          const nextStatus = task.status === 'resolved' ? 'review' : 'resolved'
+          const data = await api(`/projects/${projectId}/tasks/${task.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: nextStatus }),
+          })
+          if (data && data.task) applyTaskLocally(data.task)
+          await refresh(projectId)
+          return ''
+        })
+
+      const handleDeleteTask = (taskId, options) =>
+        void run(async () => {
+          const archive = Boolean(options && options.archive)
+          let data
+          try {
+            data = await api(`/projects/${projectId}/tasks/${taskId}${archive ? '?session=archive' : ''}`, {
+              method: 'DELETE',
+              body: '{}',
+            })
+          } catch (err) {
+            throw new Error(taskDeleteFailure(err, t, archive))
+          }
+          if (execTarget && execTarget.taskId === taskId) setExecTarget(null)
+          await refresh(projectId)
+          return archive && data && data.session && data.session.archived ? t('deleteArchived') : ''
+        })
+
+      const handleCopyBranch = (branch) =>
+        void run(async () => {
+          if (typeof Primitives.writeClipboard === 'function') {
+            await Primitives.writeClipboard(branch)
+            return t('branchCopied')
+          }
+          const clip = globalThis.navigator && globalThis.navigator.clipboard
+          if (!clip || typeof clip.writeText !== 'function') throw new Error(t('copyFailed'))
+          await clip.writeText(branch)
+          return t('branchCopied')
+        })
+
+      const handleRequestMergeWorktree = (task) => {
+        setConfirmState({
+          title: t('worktreeMergeTitle'),
+          description: formatCopy(t('worktreeMergeDesc'), { branch: task.branch || task.id }),
+          confirmLabel: t('worktreeMerge'),
+          onConfirm: () => {
+            setConfirmState(null)
+            void run(async () => {
+              await api(`/projects/${projectId}/tasks/${task.id}/worktree/merge`, { method: 'POST', body: '{}' })
+              setDiffRefreshToken((n) => n + 1)
+              await refresh(projectId)
+              return t('worktreeMerged')
+            })
+          },
+        })
+      }
+
+      const handleRequestCleanupWorktree = (task) => {
+        setConfirmState({
+          title: t('worktreeCleanupTitle'),
+          description: t('worktreeCleanupDesc'),
+          tone: 'warning',
+          confirmLabel: t('worktreeCleanup'),
+          onConfirm: () => {
+            setConfirmState(null)
+            void run(async () => {
+              await api(`/projects/${projectId}/tasks/${task.id}/worktree`, { method: 'DELETE', body: '{}' })
+              setDiffRefreshToken((n) => n + 1)
+              await refresh(projectId)
+              return t('worktreeCleaned')
+            })
+          },
+        })
+      }
+
+      // Memory preview / edit / delete
+      const openMemoryPreview = (file) => {
+        if (!file || !projectId) return
+        setMemoryPreview({ ...file, text: '', loading: true, error: '' })
+        void api(`/projects/${projectId}/memory/${encodeURIComponent(file.name)}`)
+          .then((data) => {
+            setMemoryPreview((cur) => (cur && cur.name === file.name ? { ...cur, ...data, description: cur.description || data.description, loading: false, error: '' } : cur))
+          })
+          .catch((err) => {
+            setMemoryPreview((cur) => (cur && cur.name === file.name ? { ...cur, loading: false, error: `${t('memoryLoadFailed')}: ${messageOf(err)}` } : cur))
+          })
+      }
+
+      const openMemoryEditorForFile = (file) => {
+        setMemoryPreview(null)
+        setMemoryEditor({ ...file, isNew: false, loading: false })
+      }
+
+      const handleSaveMemory = ({ name, description, type, text }) =>
+        void run(async () => {
+          if (!projectId) return ''
+          if (!name) throw new Error(t('memoryNameRequired'))
+          if (!text || !text.trim()) throw new Error(t('memoryTextRequired'))
+          await api(`/projects/${projectId}/memory`, {
+            method: 'POST',
+            body: JSON.stringify({ name, description, type, text }),
+          })
+          setMemoryEditor(null)
+          await refresh(projectId)
+          return ''
+        })
+
+      const handleDeleteMemory = (file) =>
+        void run(async () => {
+          if (!projectId || !file || file.isIndex || file.readOnly) return ''
+          await api(`/projects/${projectId}/memory/${encodeURIComponent(file.name)}`, { method: 'DELETE', body: '{}' })
+          setMemoryPreview(null)
+          await refresh(projectId)
+          return t('memoryDeleted')
+        })
+
+      // Layout computation & drag resizing
+      const layout = computeColumnLayout({
+        containerWidth,
+        listChoice,
+        execChoice,
+        execForceOpen,
+        lastOpenedSide,
+        listWidth,
+        execWidth,
+      })
+
+      const startResize = (which, event) => {
+        if (!event || (typeof event.button === 'number' && event.button !== 0)) return
+        event.preventDefault?.()
+        if (typeof window === 'undefined') return
+        const startX = Number(event.clientX) || 0
+        const from = which === 'list' ? layout.list : layout.exec
+        const min = which === 'list' ? LIST_MIN_WIDTH : EXEC_MIN_WIDTH
+        const max = columnDragCeiling({ containerWidth, layout, which })
+        let latest = from
+        setResizing(which)
+        const onMove = (ev) => {
+          const delta = (Number(ev.clientX) || 0) - startX
+          const raw = which === 'list' ? from + delta : from - delta
+          latest = Math.round(clamp(raw, min, max))
+          if (which === 'list') setListWidth(latest)
+          else setExecWidth(latest)
+        }
+        const onEnd = () => {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onEnd)
+          window.removeEventListener('pointercancel', onEnd)
+          setResizing(null)
+          writeStored(which === 'list' ? 'listWidth' : 'execWidth', latest)
+        }
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerup', onEnd)
+        window.addEventListener('pointercancel', onEnd)
+      }
+
+      const nudgeWidth = (which, event) => {
+        const step = event && event.shiftKey ? 48 : 16
+        const delta = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
+        if (!delta) return
+        event.preventDefault?.()
+        const max = columnDragCeiling({ containerWidth, layout, which })
+        if (which === 'list') {
+          const next = Math.round(clamp(layout.list + delta, LIST_MIN_WIDTH, max))
+          setListWidth(next)
+          writeStored('listWidth', next)
+        } else {
+          const next = Math.round(clamp(layout.exec - delta, EXEC_MIN_WIDTH, max))
+          setExecWidth(next)
+          writeStored('execWidth', next)
+        }
+      }
+
+      return h(
+        'div',
+        { ref: pageRef, className: `pj-page${resizing ? ' pj-resizing' : ''}`, 'data-projects-page': 'true' },
+        h('style', { dangerouslySetInnerHTML: { __html: PAGE_CSS } }),
+        h(ProjectListColumn, {
+          projects,
+          selectedId,
+          collapsed: layout.listCollapsed,
+          width: layout.list,
+          busy,
+          onSelect: handleSelectProject,
+          onNewProject: () => setShowNewProject(true),
+          onToggleCollapse: () => {
+            if (layout.listCollapsed) {
+              setLastOpenedSide('list')
+              setExecForceOpen(false)
+              setListChoice('0')
+            } else {
+              setListChoice('1')
+            }
+          },
+          newProjectBtnRef,
+          t,
+        }),
+        !layout.listCollapsed &&
+          h('div', {
+            className: 'pj-resizer',
+            role: 'separator',
+            'aria-orientation': 'vertical',
+            'aria-label': t('resizeColumns'),
+            'aria-valuenow': layout.list,
+            'aria-valuemin': LIST_MIN_WIDTH,
+            'aria-valuemax': columnDragCeiling({ containerWidth, layout, which: 'list' }),
+            tabIndex: 0,
+            onPointerDown: (e) => startResize('list', e),
+            onKeyDown: (e) => nudgeWidth('list', e),
+          }),
+        h(CoordinatorColumn, {
+          project,
+          thread,
+          coordinatorArchived,
+          busy,
+          onOpenWorkspace: handleOpenWorkspace,
+          onToggleAutonomy: () => project && handlePatchProject({ autonomy: project.autonomy === 'auto' ? 'manual' : 'auto' }),
+          onTogglePaused: () => project && handlePatchProject({ paused: !project.paused }),
+          onOpenSettings: () => setShowSettings(true),
+          onStartCoordinator: handleStartCoordinator,
+          onRestoreCoordinator: handleRestoreCoordinator,
+          settingsBtnRef,
+          SessionProvider,
+          renderSlot,
+          t,
+        }),
+        !layout.execCollapsed &&
+          h('div', {
+            className: 'pj-resizer',
+            role: 'separator',
+            'aria-orientation': 'vertical',
+            'aria-label': t('resizeColumns'),
+            'aria-valuenow': layout.exec,
+            'aria-valuemin': EXEC_MIN_WIDTH,
+            'aria-valuemax': columnDragCeiling({ containerWidth, layout, which: 'exec' }),
+            tabIndex: 0,
+            onPointerDown: (e) => startResize('exec', e),
+            onKeyDown: (e) => nudgeWidth('exec', e),
+          }),
+        h(ThreadsColumn, {
+          project,
+          catalog,
+          collapsed: layout.execCollapsed,
+          width: layout.exec,
+          busy,
+          execTarget,
+          diffRefreshToken,
+          onToggleCollapse: () => {
+            setExecForceOpen(false)
+            if (layout.execCollapsed) {
+              setLastOpenedSide('exec')
+              setExecChoice('0')
+            } else {
+              setExecChoice('1')
+            }
+          },
+          onSelectTask: openTaskDetail,
+          onCloseDetail: () => {
+            setExecForceOpen(false)
+            setExecTarget(null)
+          },
+          onApproveTask: handleApproveTask,
+          onStopTask: handleStopTask,
+          onRetryTask: handleRetryTask,
+          onResolveTask: handleResolveTask,
+          onDeleteTask: handleDeleteTask,
+          onCopyBranch: handleCopyBranch,
+          onRequestMergeWorktree: handleRequestMergeWorktree,
+          onRequestCleanupWorktree: handleRequestCleanupWorktree,
+          SessionProvider,
+          renderSlot,
+          activeLocale: getLocale,
+          t,
+        }),
+        h(NewProjectModal, {
+          open: showNewProject,
+          busy,
+          onClose: () => setShowNewProject(false),
+          onCreate: handleCreateProject,
+          pickFolder,
+          t,
+        }),
+        h(ProjectSettingsModal, {
+          open: showSettings,
+          project,
+          memory: detail && detail.memory,
+          catalog,
+          goalText,
+          goalDirty,
+          busy,
+          onGoalChange: (val) => {
+            goalDirtyRef.current = true
+            setGoalDirty(true)
+            setGoalText(val)
+          },
+          onSaveGoal: handleSaveGoal,
+          onPatchProject: handlePatchProject,
+          onChooseWorkspace: () =>
+            void run(async () => {
+              const dir = await pickFolder()
+              if (dir && projectId) {
+                await api(`/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify({ workspace: dir }) })
+                await refresh(projectId)
+              }
+              return ''
+            }),
+          onClearWorkspace: () => handlePatchProject({ workspace: '' }),
+          onArchiveToggle: (archived) => handlePatchProject({ archived }),
+          onOpenMemoryPreview: openMemoryPreview,
+          onNewMemoryTopic: () => setMemoryEditor({ isNew: true, name: '', description: '', type: 'reference', text: '', loading: false }),
+          onClose: () => setShowSettings(false),
+          t,
+        }),
+        h(MemoryPreviewModal, {
+          file: memoryPreview,
+          busy,
+          onClose: () => setMemoryPreview(null),
+          onEdit: openMemoryEditorForFile,
+          onDelete: handleDeleteMemory,
+          t,
+        }),
+        h(MemoryEditorModal, {
+          editor: memoryEditor,
+          busy,
+          onClose: () => setMemoryEditor(null),
+          onSave: handleSaveMemory,
+          t,
+        }),
+        h(ConfirmModal, {
+          state: confirmState,
+          busy,
+          onClose: () => setConfirmState(null),
+          t,
+        }),
+        toast &&
+          h(UIToast, {
+            key: toast.seq,
+            text: toast.text,
+            tone: toast.tone,
+            holdMs: toast.holdMs,
+            onDone: () => setToast((cur) => (cur && cur.seq === toast.seq ? null : cur)),
+          }),
+      )
+    }
+
+    // =========================================================================
+    // Plugin Export (Strictly 4 Client Slots, Zero Legacy UI Surfaces)
+    // =========================================================================
+
+    return {
+      inject: ['slots', 'locale', 'uiWorkspace', 'sessions'],
+      apply(ctx) {
+        const localeStore = createStore(0)
+        const activeLocale = () => {
+          try {
+            return String(ctx.locale.getLocale().active || 'zh')
+          } catch {
+            return 'zh'
+          }
+        }
+        const translate = (key) => {
+          const dict = activeLocale().toLowerCase().startsWith('zh') ? ZH : EN
+          return dict[key] || EN[key] || key
+        }
+
+        try {
+          ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'dsh-project: dictionaries')
+        } catch {}
+
+        if (ctx.locale && typeof ctx.locale.subscribe === 'function') {
+          try {
+            ctx.effect(() => ctx.locale.subscribe(() => localeStore.set(localeStore.get() + 1)), 'dsh-project: locale watch')
+          } catch {}
+        }
+
+        const pickFolder = async () => {
+          const ws = ctx.get('uiWorkspace')
+          if (!ws || typeof ws.pickDirectory !== 'function') throw new Error(translate('pickerUnavailable'))
+          return ws.pickDirectory()
+        }
+
+        const restoreSession = async (sessionId) => {
+          if (!sessionId) return false
+          const ws = ctx.get('uiWorkspace')
+          if (ws && typeof ws.unarchiveSession === 'function') {
+            await ws.unarchiveSession(sessionId)
+            return true
+          }
+          await api('/sessions/restore', { method: 'POST', body: JSON.stringify({ sessionId }) })
+          return true
+        }
+
+        const threadApi = {
+          restoreSession,
+          async ensure(project, prompt, options = {}) {
+            const sessions = ctx.get('sessions')
+            if (!sessions || typeof sessions.create !== 'function') {
+              throw new Error(translate('sessionUnavailable'))
+            }
+            const existing = typeof project.coordinatorSessionId === 'string' ? project.coordinatorSessionId : ''
+            let sessionId = existing
+            let created = false
+            let reference
+            if (sessionId) {
+              try {
+                reference = sessions.retain(sessionId, { source: 'projects' })
+                await reference.ready
+              } catch {
+                reference = undefined
+                sessionId = ''
+              }
+            }
+            if (!sessionId) {
+              if (options.create === false) return null
+              sessionId = await sessions.create(project.workspace ? { cwd: project.workspace } : {})
+              created = true
+              reference = sessions.retain(sessionId, { source: 'projects' })
+              await reference.ready
+            }
+            const needsBind = existing !== sessionId
+            if (needsBind) {
+              await api(`/projects/${project.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ coordinatorSessionId: sessionId }),
+              })
+            }
+            if (created) {
+              const result = await reference.binding.session.prompt([{ type: 'text', text: prompt }], 'queue')
+              if (!result || result.ok !== true) {
+                try { reference.release() } catch {}
+                if (needsBind) {
+                  try {
+                    await api(`/projects/${project.id}`, {
+                      method: 'PATCH',
+                      body: JSON.stringify({ coordinatorSessionId: '' }),
+                    })
+                  } catch {}
+                }
+                throw new Error((result && result.error && result.error.message) || translate('promptRejected'))
+              }
+            }
+            return { sessionId, reference, created }
+          },
+          retainWorker(childSessionId, parentSessionId) {
+            const sessions = ctx.get('sessions')
+            if (!sessions || typeof sessions.retain !== 'function') {
+              throw new Error(translate('sessionUnavailable'))
+            }
+            if (parentSessionId) {
+              try {
+                return sessions.retain(
+                  { parentSessionId, childSessionId, mode: 'continuable' },
+                  { source: 'projects' },
+                )
+              } catch {}
+            }
+            return sessions.retain(childSessionId, { source: 'projects' })
+          },
+        }
+
+        // Slot 1: Left sidebar panel entry (order: 30, after plugins / schedules / dsh-whale)
+        ctx.slots.inject('sidebar.panellist', () =>
+          ctx.slots.register(
+            { name: 'sidebar.panellist', id: PANEL_ID, order: 30, label: () => translate('nav') },
+            ProjectsIcon,
+          ),
+        )
+
+        // Slot 2: Main full-page three-column board with session-scoped conversation child slot
+        ctx.slots.inject('main', () =>
+          ctx.slots.register(
+            {
+              name: 'main',
+              key: PANEL_ID,
+              children: { 'projects.conversation': { kind: 'single', scope: 'session' } },
+            },
+            (props) =>
+              h(ProjectsPage, {
+                ...props,
+                translate,
+                getLocale: activeLocale,
+                localeStore,
+                pickFolder,
+                threadApi,
+              }),
+          ),
+        )
+
+        // Slot 3: Embedded native DSH conversation host
+        ctx.slots.inject('projects.conversation', () =>
+          ctx.slots.register({ name: 'projects.conversation' }, EmbeddedConversation),
+        )
+
+        // Slot 4: In-chat clickable task dispatch card
+        ctx.slots.inject('tool.call.toolview', () =>
+          ctx.slots.register(
+            {
+              name: 'tool.call.toolview',
+              key: 'projects_dispatch',
+              inject: () => ({ translate, activeLocale }),
+            },
+            ProjectsDispatchRow,
+          ),
+        )
+      },
+    }
+  },
+})

@@ -127,8 +127,17 @@ interface ProjectLeadServices {
  */
 export function apply(ctx: ClientContext): void {
   const settingsNavigation = new SettingsNavigationService(ctx)
-  // Turning Project off restarts Harness without it, so a Lead left open
-  // would come back unlisted: leave it for its directory's New Session first.
+  // Turning Project off restarts Harness without it, so leaving the Projects
+  // panel or a legacy Project Lead avoids stranding the user on an unlisted view.
+  const leaveProjectPanel = (): void => {
+    const layout = ctx.get('layout' as never) as {
+      panelInfo?: { getSnapshot(): { activePanelId: string | null } }
+      selectPanel?: (panelId: string | null) => void
+    } | undefined
+    if (layout?.panelInfo?.getSnapshot().activePanelId === 'projects') {
+      layout.selectPanel?.(null)
+    }
+  }
   let leaveProjectLead: (() => Promise<void>) | undefined
   ctx.inject(['sessions', 'workspaces', 'uiWorkspace'], (scope: ClientContext) => {
     const services = scope as unknown as ProjectLeadServices
@@ -431,7 +440,12 @@ export function apply(ctx: ClientContext): void {
       id: 'project',
       order: 79,
       locale: NS,
-      inject: (): ProjectRowInjected => ({ leaveProjectLead: () => leaveProjectLead?.() ?? Promise.resolve() }),
+      inject: (): ProjectRowInjected => ({
+        leaveProjectLead: async () => {
+          leaveProjectPanel()
+          await leaveProjectLead?.()
+        },
+      }),
     }, ProjectRow))
     ctx.slots.inject('settings.features.item', () => ctx.slots.register({
       name: 'settings.features.item',

@@ -107,6 +107,24 @@ function conversationTarget(
   return { provider: agent.options.provider, model: agent.options.model }
 }
 
+function isUnconfiguredModelError(error: unknown): boolean {
+  if (error instanceof LlmError) {
+    if (
+      error.code === 'UNKNOWN_MODEL'
+      || error.code === 'INVALID_CONFIG'
+      || error.code === 'NO_ADAPTER'
+      || error.code === 'MODEL_UNSUPPORTED'
+      || error.code === 'PROVIDER_NOT_FOUND'
+      || error.code === 'UNKNOWN_PROVIDER'
+    ) return true
+    if (error.code !== 'UNKNOWN' && error.code !== 'PI_AI_ERROR') return false
+  }
+  if (error instanceof Error) {
+    return /has no configured model|provider .* not found|no adapter registered|unknown model/i.test(error.message)
+  }
+  return false
+}
+
 const thresholdRatioSchema = z.number()
 const headroomTokensSchema = z.number().step(1).min(0)
 const retainRatioSchema = z.number()
@@ -163,6 +181,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   private readonly stepCompactionFailures = new WeakMap<Session, Map<string, StepCompactionFailureState>>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
+  private readonly switchTargets = new WeakMap<Agent, Pick<LlmCallConfig, 'provider' | 'model'>>()
 
   constructor(ctx: Context, config: BasicCompactionConfig = {}) {
     super(ctx)
@@ -212,6 +231,7 @@ export class BasicCompactionEngine extends CompactionEngine {
       const previous = agent.session.requestHeader()
       if (signal.aborted || previous === undefined || config.provider === '' || config.model === ''
         || (previous.config.provider === config.provider && previous.config.model === config.model)) return config
+      this.switchTargets.set(agent, { provider: config.provider, model: config.model })
       try {
         const header = { ...previous, config }
         const result = await this.compactPressure(agent, header, signal, true)
@@ -225,6 +245,8 @@ export class BasicCompactionEngine extends CompactionEngine {
           'MODEL_SWITCH_COMPACTION_FAILED',
           { cause: error },
         )
+      } finally {
+        this.switchTargets.delete(agent)
       }
       return config
     }, { prepend: true })
@@ -349,17 +371,91 @@ export class BasicCompactionEngine extends CompactionEngine {
     agent: Agent,
     signal?: AbortSignal,
   ): Promise<SummaryResult> {
-    const target = conversationTarget(agent)
-    if (target !== undefined && this.ctx.llm.listProviders().some(provider => provider.id === target.provider)) {
-      const info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+    const primary = conversationTarget(agent)
+    const primaryPolicy = primary === undefined
+      ? this.config
+      : resolveTargetPolicy(this.config, primary)
+    const hasExplicitSummarizer = primaryPolicy.summarizationProvider.length > 0
+      && primaryPolicy.summarizationModel.length > 0
+    const selected = (agent as { model?: { current?: () => { provider?: string; model?: string } } }).model?.current?.()
+    const currentSelection = selected !== undefined
+      && typeof selected.provider === 'string' && selected.provider.length > 0
+      && typeof selected.model === 'string' && selected.model.length > 0
+      ? { provider: selected.provider, model: selected.model }
+      : undefined
+    const candidateFallback = this.switchTargets.get(agent) ?? currentSelection
+    const providers = this.ctx.llm.listProviders()
+    const fallback = candidateFallback !== undefined
+      && (primary === undefined
+        || candidateFallback.provider !== primary.provider
+        || candidateFallback.model !== primary.model)
+      && providers.some(provider => provider.id === candidateFallback.provider)
+      ? candidateFallback
+      : undefined
+
+    let effectiveTarget = primary
+    let targetOverride: Pick<LlmCallConfig, 'provider' | 'model'> | undefined
+    const activateFallback = async (
+      unavailable: Pick<LlmCallConfig, 'provider' | 'model'>,
+      replacement: Pick<LlmCallConfig, 'provider' | 'model'>,
+      reason: string,
+    ): Promise<void> => {
+      if (signal?.aborted) return
+      const info = await this.ctx.llm.resolveModelInfo(replacement.provider, replacement.model, signal)
       if (info.contextManagement === 'provider') {
         throw new Error('This agent manages its own context; harness transcript summarization is unavailable.')
       }
+      this.ctx.logger.warn(
+        `summarization target ${unavailable.provider}/${unavailable.model} is unavailable (${reason}); `
+        + `falling back to ${replacement.provider}/${replacement.model}`,
+      )
+      effectiveTarget = replacement
+      targetOverride = replacement
     }
-    const config = target === undefined
+
+    if (primary !== undefined && providers.some(provider => provider.id === primary.provider)) {
+      try {
+        const info = await this.ctx.llm.resolveModelInfo(primary.provider, primary.model, signal)
+        if (info.contextManagement === 'provider') {
+          throw new Error('This agent manages its own context; harness transcript summarization is unavailable.')
+        }
+      } catch (error: unknown) {
+        if (!signal?.aborted && isUnconfiguredModelError(error)) {
+          if (hasExplicitSummarizer) {
+            // An explicitly configured summarization model does not depend on the retired conversation model.
+          } else if (fallback !== undefined) {
+            await activateFallback(primary, fallback, error instanceof Error ? error.message : String(error))
+          } else {
+            throw error
+          }
+        } else {
+          throw error
+        }
+      }
+    } else if (primary !== undefined && !hasExplicitSummarizer && !signal?.aborted && fallback !== undefined) {
+      await activateFallback(primary, fallback, `provider "${primary.provider}" is not registered`)
+    }
+
+    const config = effectiveTarget === undefined
       ? this.config
-      : resolveTargetPolicy(this.config, target)
-    return summarizeWithLlm(this.ctx, config, input, agent, signal)
+      : resolveTargetPolicy(this.config, effectiveTarget)
+    try {
+      return await summarizeWithLlm(this.ctx, config, input, agent, signal, targetOverride)
+    } catch (error: unknown) {
+      if (
+        targetOverride === undefined
+        && !hasExplicitSummarizer
+        && !signal?.aborted
+        && primary !== undefined
+        && fallback !== undefined
+        && isUnconfiguredModelError(error)
+      ) {
+        await activateFallback(primary, fallback, error instanceof Error ? error.message : String(error))
+        const fallbackConfig = resolveTargetPolicy(this.config, fallback)
+        return summarizeWithLlm(this.ctx, fallbackConfig, input, agent, signal, fallback)
+      }
+      throw error
+    }
   }
 
   /**

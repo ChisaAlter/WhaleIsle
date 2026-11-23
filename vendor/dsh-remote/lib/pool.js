@@ -1,12 +1,18 @@
 // Persistent SSH/SFTP connection pool (one identity → one live client).
-import ssh2 from 'ssh2'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { toSftpPath, truncate } from './paths.js'
 import { createHostKeyGuard } from './hostkey.js'
 
-const { Client } = ssh2
+let sshClientCtor = null
+async function loadSshClient() {
+  if (!sshClientCtor) {
+    const mod = await import('ssh2')
+    sshClientCtor = (mod.default || mod).Client
+  }
+  return sshClientCtor
+}
 
 export function resolveAgentSocket(env = process.env, platform = process.platform) {
   return env.SSH_AUTH_SOCK || (platform === 'win32' ? '\\\\.\\pipe\\openssh-ssh-agent' : '')
@@ -16,7 +22,7 @@ export class SshPool {
   constructor(config, opts = {}) {
     this.config = config
     this._knownHostsFile = opts.knownHostsFile
-    this._Client = opts.Client || Client
+    this._Client = opts.Client || null
     this._platform = opts.platform || process.platform
     this._env = opts.env || process.env
     this.client = null
@@ -86,7 +92,9 @@ export class SshPool {
     const isCurrent = () => this.epoch === epoch
     const knownHostsFile = typeof this._knownHostsFile === 'function' ? this._knownHostsFile() : this._knownHostsFile
     const guard = createHostKeyGuard(this.config, knownHostsFile)
-    const client = new this._Client()
+    const Client = this._Client || await loadSshClient()
+    if (!isCurrent()) throw new Error('ssh target changed during connect')
+    const client = new Client()
     let settled = false
     const fail = (err) => {
       if (settled) return

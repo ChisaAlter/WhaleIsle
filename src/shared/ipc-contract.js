@@ -133,14 +133,6 @@ const IPC_CONTRACT = Object.freeze([
     validate: prependAuth(firstArg) },
   { channel: 'shell:window-material', kind: 'send', roles: HARNESS_ONLY, authorize: OWNED,
     validate: prependAuth(stringArg) },
-  { channel: 'shell:proactive', kind: 'invoke', roles: HARNESS_ONLY,
-    validate(args) {
-      const [action, payload] = args;
-      if (typeof action !== 'string' || (payload !== undefined && !isPlainObject(payload))) {
-        throw new Error('expected a proactive action and optional payload');
-      }
-      return [action, payload];
-    } },
 
   // --- Boot page -----------------------------------------------------------
   { channel: 'shell:get-state', kind: 'invoke', roles: BOOT_ONLY, validate: noArgs },

@@ -46,7 +46,8 @@ export async function watchConfig(
   const { cwd: _cwd, ignored: _ignored, ...watchOptions } = options
   const watcher = watch(target.root, {
     // Stabilized events bypass Chokidar's lossy 50 ms change-event throttle.
-    awaitWriteFinish: true, ...watchOptions, depth: target.depth, ignoreInitial: false,
+    // Existing config files were already read for the running boot; ignore initial scan events.
+    awaitWriteFinish: true, ...watchOptions, depth: target.depth, ignoreInitial: true,
     ignored: (path) => {
       const remainder = relative(resolve(path), target.filename)
       return remainder === '..' || remainder.startsWith(`..${sep}`)

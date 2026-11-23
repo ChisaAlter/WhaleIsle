@@ -1664,6 +1664,64 @@ test('a spawn error while the start time is still being read is not lost and no 
   assert.deepEqual(h.calls.writePid, [], 'a child that failed before its start time was read must not be recorded');
 });
 
+test('ensureOwnedPort matches a local-offset legacy startTime against a UTC startTime for the same instant', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const first = await occupiedPortFixture(t);
+  const killed = [];
+  const port = await ensureOwnedPort('127.0.0.1', first.wanted, () => {}, {
+    readPidFile: () => ({ pid: 5555, port: first.wanted, startTime: '2026-11-22T23:42:51.8663146+08:00' }),
+    clearPidFile: () => {},
+    processAlive: () => true,
+    processStartTime: async () => '2026-11-22T15:42:51.8663146Z',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => {
+      killed.push(pid);
+      for (const socket of first.sockets) socket.destroy();
+      await new Promise((resolve) => first.server.close(resolve));
+    },
+    sleep: async () => {},
+  });
+  assert.equal(port, first.wanted);
+  assert.deepEqual(killed, [5555]);
+
+  const second = await occupiedPortFixture(t);
+  const killedMismatch = [];
+  const nextPort = await ensureOwnedPort('127.0.0.1', second.wanted, () => {}, {
+    readPidFile: () => ({ pid: 5555, port: second.wanted, startTime: '2026-11-22T23:42:51.8663147+08:00' }),
+    clearPidFile: () => {},
+    processAlive: () => true,
+    processStartTime: async () => '2026-11-22T15:42:51.8663146Z',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => { killedMismatch.push(pid); },
+    sleep: async () => {},
+  });
+  assert.notEqual(nextPort, second.wanted);
+  assert.deepEqual(killedMismatch, [], '100ns difference must still reject recycled PID');
+});
+
+test('a rejecting processStartTime does not produce an unhandledRejection when spawn fails', async (t) => {
+  const unhandled = [];
+  const onUnhandled = (error) => unhandled.push(error);
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => process.off('unhandledRejection', onUnhandled));
+
+  const h = makeHarness({
+    deps: {
+      processStartTime: () => Promise.reject(new Error('start-time-unavailable')),
+    },
+  });
+  t.after(h.cleanup);
+  const spawnError = Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+  const outcome = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1);
+  h.lastChild().emit('error', spawnError);
+  const result = await outcome;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, spawnError);
+  assert.deepEqual(unhandled, []);
+});
+
 test('attachOutput buffers split dsh web readiness URLs and split UTF-8 characters', async (t) => {
   const { createLineBuffer } = require('./dsh-output-buffer');
   const h = makeHarness({ announceReady: false });
@@ -1707,10 +1765,12 @@ test('parsePidFile retains optional shell marker and isOwnedHarnessCommandLine v
 
 test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated cmd.exe', { skip: process.platform !== 'win32' }, async () => {
   const { killTree } = require('./dsh');
+  // Use an unallocated synthetic PID so waitTreeDeath does not collide with a real OS PID when taskkill is mocked.
+  const deadPid = 2 ** 30;
   const killedCmds = [];
-  const ownedOk = await killTree(CHILD_PID, (command, args, _opts, cb) => {
+  const ownedOk = await killTree(deadPid, (command, args, _opts, cb) => {
     killedCmds.push(command);
-    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
     if (command === 'powershell.exe') return cb(null, 'cmd.exe /d /s /c "C:\\npm\\dsh.cmd" web --port 3080');
     if (command === 'taskkill') return cb(null, '');
     return cb(null, '');
@@ -1719,9 +1779,9 @@ test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated
   assert.deepEqual(killedCmds, ['tasklist', 'powershell.exe', 'taskkill']);
 
   const unrelatedCmds = [];
-  const unrelatedOk = await killTree(CHILD_PID, (command, _args, _opts, cb) => {
+  const unrelatedOk = await killTree(deadPid, (command, _args, _opts, cb) => {
     unrelatedCmds.push(command);
-    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
     if (command === 'powershell.exe') return cb(null, 'C:\\Windows\\System32\\cmd.exe /c calc.exe');
     return cb(new Error('must not kill unrelated cmd.exe'));
   }, { confirmedManagedShell: true });
@@ -1729,9 +1789,9 @@ test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated
   assert.deepEqual(unrelatedCmds, ['tasklist', 'powershell.exe']);
 
   const fallbackCmds = [];
-  const confirmedFallback = await killTree(CHILD_PID, (command, _args, _opts, cb) => {
+  const confirmedFallback = await killTree(deadPid, (command, _args, _opts, cb) => {
     fallbackCmds.push(command);
-    if (command === 'tasklist') return cb(null, '"cmd.exe","4242"');
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
     if (command === 'powershell.exe') return cb(null, '');
     if (command === 'taskkill') return cb(null, '');
     return cb(null, '');

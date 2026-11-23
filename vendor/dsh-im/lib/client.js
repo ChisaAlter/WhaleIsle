@@ -37,12 +37,16 @@ __export(index_exports, {
   IMSettingsTab: () => IMSettingsTab,
   IM_PLUGIN_VERSION: () => IM_PLUGIN_VERSION,
   LoopbackRecoveryNotice: () => LoopbackRecoveryNotice,
+  SINGLE_OWNER_ACCESS_CHANNEL: () => SINGLE_OWNER_ACCESS_CHANNEL,
+  SINGLE_OWNER_CLIENT_CHANNELS: () => SINGLE_OWNER_CLIENT_CHANNELS,
+  SingleOwnerPairingPanel: () => SingleOwnerPairingPanel,
   apply: () => apply,
   inject: () => inject,
+  isSingleOwnerClientChannel: () => isSingleOwnerClientChannel,
   name: () => name
 });
 module.exports = __toCommonJS(index_exports);
-var React21 = __toESM(require("react"), 1);
+var React22 = __toESM(require("react"), 1);
 
 // plugin-src/client/feedback.js
 var React2 = __toESM(require("react"), 1);
@@ -620,7 +624,34 @@ var EN = Object.freeze({
   "WhatsApp \u670D\u52A1\u6CA1\u6709\u8FD4\u56DE\u626B\u7801\u8FDB\u5EA6": "WhatsApp did not return QR setup progress",
   "WhatsApp \u670D\u52A1\u6CA1\u6709\u8FD4\u56DE\u6709\u6548\u7684\u626B\u7801\u4EFB\u52A1": "WhatsApp did not return a valid setup attempt",
   "WhatsApp \u670D\u52A1\u6CA1\u6709\u8FD4\u56DE\u6709\u6548\u7684\u673A\u5668\u4EBA\u5217\u8868": "WhatsApp did not return a valid account list",
-  "\u7528\u4E8E\u5173\u8054 WhatsApp \u8BBE\u5907\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801": "One-time QR code for linking a WhatsApp device"
+  "\u7528\u4E8E\u5173\u8054 WhatsApp \u8BBE\u5907\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801": "One-time QR code for linking a WhatsApp device",
+  "\u5355\u4EBA\u79C1\u4EBA\u52A9\u7406\u914D\u5BF9": "Single-owner private assistant pairing",
+  "\u4EC5\u5141\u8BB8\u552F\u4E00\u5DF2\u914D\u5BF9\u4E3B\u4EBA\u5728\u79C1\u804A\u4E2D\u4F7F\u7528\u9CB8\u9C7C\u5A18\uFF1B\u754C\u9762\u4EC5\u5C55\u793A\u8131\u654F\u79F0\u547C\u4E0E\u914D\u5BF9\u77ED\u7801\uFF0C\u4E0D\u66B4\u9732\u539F\u59CB\u5E73\u53F0 ID\u3002": "Only the single paired owner can message Whale Girl in private chat; masked display names and short codes are shown without exposing raw platform IDs.",
+  "\u5237\u65B0": "Refresh",
+  "\u6B63\u5728\u8BFB\u53D6\u5355\u4EBA\u914D\u5BF9\u72B6\u6001\u2026": "Loading single-owner pairing status\u2026",
+  "\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u914D\u5BF9\u72B6\u6001\uFF0C\u8BF7\u7A0D\u540E\u70B9\u51FB\u5237\u65B0\u3002": "Unable to load pairing status right now. Click Refresh to try again.",
+  "\u5DF2\u914D\u5BF9\u552F\u4E00\u4E3B\u4EBA": "Owner paired",
+  "\u5F85\u914D\u5BF9": "Unpaired",
+  "\u64A4\u9500\u552F\u4E00\u4E3B\u4EBA": "Revoke owner",
+  "\u5C1A\u672A\u914D\u5BF9\u552F\u4E00\u4E3B\u4EBA\u3002\u8BF7\u4F7F\u7528\u672C\u4EBA\u8D26\u53F7\u79C1\u804A\u8BE5\u673A\u5668\u4EBA\u83B7\u53D6\u914D\u5BF9\u77ED\u7801\uFF0C\u6216\u5728\u4E0B\u65B9\u76F4\u63A5\u8F93\u5165\u77ED\u7801\u6279\u51C6\u3002": "No owner paired yet. Message this bot privately from your own account to receive a pairing code, or enter a code below.",
+  "\u6279\u51C6\u914D\u5BF9": "Approve",
+  "\u62D2\u7EDD": "Reject",
+  "\u914D\u5BF9\u77ED\u7801": "Pairing code",
+  "\u8F93\u5165\u79C1\u804A\u6536\u5230\u7684\u914D\u5BF9\u77ED\u7801": "Enter the pairing code from DM",
+  "\u901A\u8FC7\u77ED\u7801\u6279\u51C6": "Approve code",
+  "\u64A4\u9500\u552F\u4E00\u4E3B\u4EBA\u7ED1\u5B9A\uFF1F": "Revoke single owner?",
+  "\u786E\u8BA4\u64A4\u9500": "Confirm revoke",
+  "\u914D\u5BF9\u72B6\u6001\u5DF2\u5237\u65B0\u3002": "Pairing status refreshed.",
+  "\u5DF2\u62D2\u7EDD\u8BE5\u914D\u5BF9\u8BF7\u6C42\u3002": "Pairing request rejected.",
+  "\u5DF2\u901A\u8FC7\u77ED\u7801\u5B8C\u6210\u552F\u4E00\u4E3B\u4EBA\u914D\u5BF9\u3002": "Owner paired via short code.",
+  "\u5DF2\u64A4\u9500\u552F\u4E00\u4E3B\u4EBA\u7ED1\u5B9A\u3002": "Single-owner binding revoked.",
+  "\u8BF7\u8F93\u5165 4-12 \u4F4D\u5B57\u6BCD\u6216\u6570\u5B57\u914D\u5BF9\u77ED\u7801\u3002": "Enter a 4-12 character alphanumeric pairing code.",
+  "\u5386\u53F2\u8FC1\u79FB": "Migrated",
+  "\u624B\u52A8\u7ED1\u5B9A": "Manual",
+  "\u77ED\u7801\u914D\u5BF9": "Paired",
+  "\u5DF2\u914D\u5BF9\u4E3B\u4EBA": "Paired owner",
+  "\u5F85\u914D\u5BF9\u7528\u6237": "Pending user",
+  "\u5DF2\u8FC7\u671F": "Expired"
 });
 var en = EN;
 var zh = Object.freeze(Object.fromEntries(
@@ -11515,6 +11546,159 @@ var CSS11 = String.raw`
 .dim-confirmDialog button:disabled { opacity: .5; cursor: not-allowed; }
 @keyframes dim-feedback-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dim-controlSpinner { animation: none; } }
+.dim-panel .dim-pairingCard {
+  margin-top: 14px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 12px;
+}
+.dim-panel .dim-pairingHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dim-panel .dim-pairingHeaderCopy { min-width: 0; display: grid; gap: 4px; }
+.dim-panel .dim-pairingTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.dim-panel .dim-pairingSubtitle,
+.dim-panel .dim-pairingHint {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.dim-panel .dim-pairingFeedback {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.dim-panel .dim-pairingFeedback--success {
+  color: var(--dsw-alias-state-success-primary, #1f7a4c);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #1f7a4c) 10%, transparent);
+}
+.dim-panel .dim-pairingFeedback--error {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);
+}
+.dim-panel .dim-pairingBotList { display: grid; gap: 10px; }
+.dim-panel .dim-pairingBotItem {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.dim-panel .dim-pairingBotHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dim-panel .dim-pairingBotMeta { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dim-panel .dim-pairingBotId {
+  font: 600 13px/18px var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--dsw-alias-label-primary);
+}
+.dim-panel .dim-pairingState,
+.dim-panel .dim-pairingBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+.dim-panel .dim-pairingState.is-paired {
+  color: var(--dsw-alias-state-success-primary, #1f7a4c);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary, #1f7a4c) 35%, var(--dsw-alias-border-l2));
+}
+.dim-panel .dim-pairingOwnerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.dim-panel .dim-pairingOwnerName { font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dim-panel .dim-pairingTime { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dim-panel .dim-pairingPendingBlock { display: grid; gap: 10px; }
+.dim-panel .dim-pairingPendingList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dim-panel .dim-pairingPendingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dim-panel .dim-pairingPendingInfo { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dim-panel .dim-pairingCode {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--dim-blue-soft);
+  color: var(--dim-blue);
+  font: 700 13px/18px var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0.08em;
+}
+.dim-panel .dim-pairingPendingName { font-size: 13px; font-weight: 500; color: var(--dsw-alias-label-primary); }
+.dim-panel .dim-pairingPendingActions { display: inline-flex; align-items: center; gap: 6px; }
+.dim-panel .dim-pairingRefreshBtn,
+.dim-panel .dim-pairingApproveBtn,
+.dim-panel .dim-pairingRejectBtn,
+.dim-panel .dim-pairingDangerBtn,
+.dim-panel .dim-pairingCodeSubmit {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 15px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dim-panel .dim-pairingApproveBtn {
+  border: none;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+.dim-panel .dim-pairingDangerBtn { color: var(--dsw-alias-state-error-primary); }
+.dim-panel .dim-pairingCodeForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dim-panel .dim-pairingCodeInput {
+  flex: 1 1 180px;
+  min-width: 140px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: 13px/18px var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  text-transform: uppercase;
+}
 `;
 function installImStyles() {
   if (typeof document === "undefined") return () => {
@@ -11528,6 +11712,474 @@ function installImStyles() {
   style.textContent = CSS11;
   document.head.appendChild(style);
   return () => style.remove();
+}
+
+// plugin-src/client/single-owner-pairing.js
+var React21 = __toESM(require("react"), 1);
+var SINGLE_OWNER_ACCESS_CHANNEL = "/dsh-im";
+var SINGLE_OWNER_ACCESS_ENDPOINTS = Object.freeze({
+  status: "access/status",
+  approve: "access/approve",
+  reject: "access/reject",
+  revoke: "access/revoke"
+});
+var SINGLE_OWNER_CLIENT_CHANNELS = Object.freeze([
+  "weixin",
+  "feishu",
+  "dingtalk",
+  "wecom",
+  "qq",
+  "slack",
+  "telegram",
+  "discord",
+  "whatsapp"
+]);
+var SINGLE_OWNER_CHANNEL_SET = new Set(SINGLE_OWNER_CLIENT_CHANNELS);
+var DEFAULT_REFRESH_MS = 15e3;
+function isSingleOwnerClientChannel(channel4) {
+  return typeof channel4 === "string" && SINGLE_OWNER_CHANNEL_SET.has(channel4);
+}
+function isRecord8(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function cleanText(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : "";
+}
+function unwrapAccessResult(result) {
+  const payload = isRecord8(result?.result) && typeof result.result.ok === "boolean" ? result.result : result;
+  if (!isRecord8(payload) || typeof payload.ok !== "boolean") {
+    throw new Error("\u5355\u4EBA\u52A9\u7406\u914D\u5BF9\u670D\u52A1\u8FD4\u56DE\u4E86\u65E0\u6CD5\u8BC6\u522B\u7684\u54CD\u5E94");
+  }
+  if (!payload.ok) {
+    const message = cleanText(payload.error?.message) || "\u5355\u4EBA\u52A9\u7406\u914D\u5BF9\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002";
+    const error = new Error(message);
+    error.code = cleanText(payload.error?.code) || "access-operation-failed";
+    throw error;
+  }
+  return payload.value;
+}
+function normalizeSingleOwnerBot(raw) {
+  if (!isRecord8(raw)) return null;
+  const channel4 = cleanText(raw.channel);
+  const botId = cleanText(raw.botId);
+  if (!channel4 || !botId) return null;
+  const owner = isRecord8(raw.owner) && cleanText(raw.owner.senderKey) ? Object.freeze({
+    senderKey: cleanText(raw.owner.senderKey),
+    displayName: cleanText(raw.owner.displayName) || "\u5DF2\u914D\u5BF9\u4E3B\u4EBA",
+    pairedAt: cleanText(raw.owner.pairedAt) || null,
+    source: cleanText(raw.owner.source) || "paired"
+  }) : null;
+  const pending = Array.isArray(raw.pending) ? raw.pending.filter((item) => isRecord8(item) && cleanText(item.requestId) && cleanText(item.code)).map((item) => Object.freeze({
+    requestId: cleanText(item.requestId),
+    code: cleanText(item.code).toUpperCase(),
+    displayName: cleanText(item.displayName) || "\u5F85\u914D\u5BF9\u7528\u6237",
+    requestedAt: cleanText(item.requestedAt) || null,
+    lastSeenAt: cleanText(item.lastSeenAt) || null,
+    expiresAt: cleanText(item.expiresAt) || null
+  })) : [];
+  return Object.freeze({
+    channel: channel4,
+    botId,
+    mode: cleanText(raw.mode) || "single-owner",
+    owner,
+    pending: Object.freeze(pending),
+    ttlMs: typeof raw.ttlMs === "number" && Number.isFinite(raw.ttlMs) ? raw.ttlMs : 36e5,
+    maxPending: typeof raw.maxPending === "number" && Number.isFinite(raw.maxPending) ? raw.maxPending : 3
+  });
+}
+function sourceBadgeLabel(source) {
+  if (source === "migrated") return "\u5386\u53F2\u8FC1\u79FB";
+  if (source === "manual") return "\u624B\u52A8\u7ED1\u5B9A";
+  return "\u77ED\u7801\u914D\u5BF9";
+}
+function formatIsoTime(iso) {
+  if (!iso) return "";
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "";
+  try {
+    return new Date(ts).toLocaleString([], {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return iso;
+  }
+}
+function formatExpiryRemaining(iso, now = Date.now()) {
+  if (!iso) return "";
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "";
+  const diffMs = ts - now;
+  if (diffMs <= 0) return "\u5DF2\u8FC7\u671F";
+  const minutes = Math.max(1, Math.ceil(diffMs / 6e4));
+  return `\u5269\u4F59 ${minutes} \u5206\u949F`;
+}
+function upsertBotRow(rows, updated) {
+  if (!updated) return rows;
+  const idx = rows.findIndex((row) => row.channel === updated.channel && row.botId === updated.botId);
+  if (idx < 0) return [...rows, updated];
+  return rows.map((row, index) => index === idx ? updated : row);
+}
+function SingleOwnerPairingPanel({
+  channel: channel4,
+  channelLabel,
+  rpcCall,
+  refreshIntervalMs = DEFAULT_REFRESH_MS
+}) {
+  const [bots, setBots] = React21.useState([]);
+  const [loading, setLoading] = React21.useState(true);
+  const [refreshing, setRefreshing] = React21.useState(false);
+  const [passiveLoadError, setPassiveLoadError] = React21.useState("");
+  const [busyKey, setBusyKey] = React21.useState("");
+  const [codeInputs, setCodeInputs] = React21.useState({});
+  const [feedback, setFeedback] = React21.useState(null);
+  const [revokeTarget, setRevokeTarget] = React21.useState(null);
+  const mountedRef = React21.useRef(true);
+  React21.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const loadStatus = React21.useCallback(async ({ manual = false, signal } = {}) => {
+    if (typeof rpcCall !== "function" || !isSingleOwnerClientChannel(channel4)) {
+      if (mountedRef.current) setLoading(false);
+      return;
+    }
+    if (manual && mountedRef.current) setRefreshing(true);
+    try {
+      const raw = await rpcCall(SINGLE_OWNER_ACCESS_ENDPOINTS.status, { channel: channel4 }, signal);
+      if (!mountedRef.current || signal?.aborted) return;
+      const value = unwrapAccessResult(raw);
+      const list = Array.isArray(value?.bots) ? value.bots.map(normalizeSingleOwnerBot).filter(Boolean) : [];
+      setBots(list);
+      setPassiveLoadError("");
+      if (manual) {
+        setFeedback({ tone: "success", text: "\u914D\u5BF9\u72B6\u6001\u5DF2\u5237\u65B0\u3002" });
+      }
+    } catch (error) {
+      if (!mountedRef.current || signal?.aborted) return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (manual) {
+        setFeedback({ tone: "error", text: message });
+      } else {
+        setPassiveLoadError(message);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false);
+        if (manual) setRefreshing(false);
+      }
+    }
+  }, [channel4, rpcCall]);
+  React21.useEffect(() => {
+    setBots([]);
+    setLoading(true);
+    setPassiveLoadError("");
+    setFeedback(null);
+    setRevokeTarget(null);
+    const controller = new AbortController();
+    void loadStatus({ manual: false, signal: controller.signal });
+    const interval = refreshIntervalMs > 0 ? setInterval(() => {
+      void loadStatus({ manual: false, signal: controller.signal });
+    }, refreshIntervalMs) : null;
+    return () => {
+      controller.abort();
+      if (interval !== null) clearInterval(interval);
+    };
+  }, [channel4, loadStatus, refreshIntervalMs]);
+  const runMutation = React21.useCallback(async (actionKey, endpoint, payload, successText) => {
+    if (typeof rpcCall !== "function") return false;
+    setBusyKey(actionKey);
+    setFeedback(null);
+    try {
+      const raw = await rpcCall(endpoint, payload);
+      if (!mountedRef.current) return false;
+      const updated = normalizeSingleOwnerBot(unwrapAccessResult(raw));
+      if (updated) {
+        setBots((current) => upsertBotRow(current, updated));
+      } else {
+        await loadStatus({ manual: false });
+      }
+      setPassiveLoadError("");
+      setFeedback({ tone: "success", text: successText });
+      return true;
+    } catch (error) {
+      if (!mountedRef.current) return false;
+      setFeedback({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error)
+      });
+      return false;
+    } finally {
+      if (mountedRef.current) setBusyKey("");
+    }
+  }, [loadStatus, rpcCall]);
+  const handleApproveRequest = (bot, item) => {
+    void runMutation(
+      `approve:${bot.botId}:${item.requestId}`,
+      SINGLE_OWNER_ACCESS_ENDPOINTS.approve,
+      {
+        channel: bot.channel,
+        botId: bot.botId,
+        requestId: item.requestId,
+        confirm: true
+      },
+      `\u5DF2\u6279\u51C6\u300C${item.displayName}\u300D\u6210\u4E3A\u552F\u4E00\u4E3B\u4EBA\u3002`
+    );
+  };
+  const handleRejectRequest = (bot, item) => {
+    void runMutation(
+      `reject:${bot.botId}:${item.requestId}`,
+      SINGLE_OWNER_ACCESS_ENDPOINTS.reject,
+      {
+        channel: bot.channel,
+        botId: bot.botId,
+        requestId: item.requestId,
+        confirm: true
+      },
+      "\u5DF2\u62D2\u7EDD\u8BE5\u914D\u5BF9\u8BF7\u6C42\u3002"
+    );
+  };
+  const handleApproveCode = async (event, bot) => {
+    event.preventDefault();
+    const rawCode = cleanText(codeInputs[bot.botId] ?? "").toUpperCase();
+    if (!/^[A-Z0-9]{4,12}$/.test(rawCode)) {
+      setFeedback({ tone: "error", text: "\u8BF7\u8F93\u5165 4-12 \u4F4D\u5B57\u6BCD\u6216\u6570\u5B57\u914D\u5BF9\u77ED\u7801\u3002" });
+      return;
+    }
+    const ok = await runMutation(
+      `approve-code:${bot.botId}`,
+      SINGLE_OWNER_ACCESS_ENDPOINTS.approve,
+      {
+        channel: bot.channel,
+        botId: bot.botId,
+        code: rawCode,
+        confirm: true
+      },
+      "\u5DF2\u901A\u8FC7\u77ED\u7801\u5B8C\u6210\u552F\u4E00\u4E3B\u4EBA\u914D\u5BF9\u3002"
+    );
+    if (ok && mountedRef.current) {
+      setCodeInputs((current) => ({ ...current, [bot.botId]: "" }));
+    }
+  };
+  const handleConfirmRevoke = async () => {
+    if (!revokeTarget) return;
+    const target = revokeTarget;
+    const ok = await runMutation(
+      `revoke:${target.botId}`,
+      SINGLE_OWNER_ACCESS_ENDPOINTS.revoke,
+      {
+        channel: target.channel,
+        botId: target.botId,
+        senderKey: target.owner.senderKey,
+        confirm: true
+      },
+      "\u5DF2\u64A4\u9500\u552F\u4E00\u4E3B\u4EBA\u7ED1\u5B9A\u3002"
+    );
+    if (ok && mountedRef.current) {
+      setRevokeTarget(null);
+    }
+  };
+  if (!isSingleOwnerClientChannel(channel4) || typeof rpcCall !== "function") {
+    return null;
+  }
+  const label = channelLabel || channel4;
+  return h(
+    "section",
+    {
+      className: "dim-surfaceCard dim-pairingCard",
+      "data-single-owner-panel": channel4,
+      "aria-label": "\u5355\u4EBA\u79C1\u4EBA\u52A9\u7406\u914D\u5BF9"
+    },
+    h(
+      "div",
+      { className: "dim-pairingHeader" },
+      h(
+        "div",
+        { className: "dim-pairingHeaderCopy" },
+        h("h3", { className: "dim-pairingTitle" }, "\u5355\u4EBA\u79C1\u4EBA\u52A9\u7406\u914D\u5BF9"),
+        h(
+          "p",
+          { className: "dim-pairingSubtitle" },
+          "\u4EC5\u5141\u8BB8\u552F\u4E00\u5DF2\u914D\u5BF9\u4E3B\u4EBA\u5728\u79C1\u804A\u4E2D\u4F7F\u7528\u9CB8\u9C7C\u5A18\uFF1B\u754C\u9762\u4EC5\u5C55\u793A\u8131\u654F\u79F0\u547C\u4E0E\u914D\u5BF9\u77ED\u7801\uFF0C\u4E0D\u66B4\u9732\u539F\u59CB\u5E73\u53F0 ID\u3002"
+        )
+      ),
+      h(ActionButton, {
+        className: "dim-pairingRefreshBtn",
+        "data-pairing-action": "refresh",
+        loading: refreshing,
+        disabled: busyKey !== "",
+        onClick: () => {
+          void loadStatus({ manual: true });
+        }
+      }, "\u5237\u65B0")
+    ),
+    feedback ? h("p", {
+      className: `dim-pairingFeedback dim-pairingFeedback--${feedback.tone}`,
+      "data-pairing-feedback": feedback.tone,
+      role: "status"
+    }, feedback.text) : null,
+    loading ? h("p", { className: "dim-pairingHint" }, "\u6B63\u5728\u8BFB\u53D6\u5355\u4EBA\u914D\u5BF9\u72B6\u6001\u2026") : bots.length === 0 ? h(
+      "p",
+      { className: "dim-pairingHint", "data-pairing-empty": "true" },
+      passiveLoadError ? localizeText("\u6682\u65F6\u65E0\u6CD5\u8BFB\u53D6\u914D\u5BF9\u72B6\u6001\uFF0C\u8BF7\u7A0D\u540E\u70B9\u51FB\u5237\u65B0\u3002") : `${localizeText(label)} \u5C1A\u672A\u4EA7\u751F\u914D\u5BF9\u8BB0\u5F55\u3002\u63A5\u5165\u673A\u5668\u4EBA\u540E\uFF0C\u7528\u672C\u4EBA\u8D26\u53F7\u79C1\u804A\u673A\u5668\u4EBA\u5373\u53EF\u5728\u6B64\u6279\u51C6\u552F\u4E00\u4E3B\u4EBA\u3002`
+    ) : h(
+      "div",
+      { className: "dim-pairingBotList" },
+      bots.map((bot) => {
+        const codeValue = codeInputs[bot.botId] ?? "";
+        const revokingThis = busyKey === `revoke:${bot.botId}`;
+        const approvingCodeThis = busyKey === `approve-code:${bot.botId}`;
+        return h(
+          "article",
+          {
+            key: `${bot.channel}:${bot.botId}`,
+            className: "dim-pairingBotItem",
+            "data-pairing-bot": bot.botId
+          },
+          h(
+            "div",
+            { className: "dim-pairingBotHead" },
+            h(
+              "div",
+              { className: "dim-pairingBotMeta" },
+              h("strong", { className: "dim-pairingBotId" }, bot.botId),
+              h("span", {
+                className: `dim-pairingState ${bot.owner ? "is-paired" : "is-unpaired"}`
+              }, bot.owner ? "\u5DF2\u914D\u5BF9\u552F\u4E00\u4E3B\u4EBA" : "\u5F85\u914D\u5BF9")
+            ),
+            bot.owner ? h(ActionButton, {
+              className: "dim-pairingDangerBtn",
+              "data-kind": "danger",
+              "data-pairing-action": "revoke",
+              loading: revokingThis,
+              disabled: busyKey !== "",
+              onClick: () => setRevokeTarget(bot)
+            }, "\u64A4\u9500\u552F\u4E00\u4E3B\u4EBA") : null
+          ),
+          bot.owner ? h(
+            "div",
+            { className: "dim-pairingOwnerRow", "data-pairing-owner": "true" },
+            h("span", { className: "dim-pairingOwnerName" }, bot.owner.displayName),
+            h("span", { className: "dim-pairingBadge" }, sourceBadgeLabel(bot.owner.source)),
+            bot.owner.pairedAt ? h("span", { className: "dim-pairingTime" }, formatIsoTime(bot.owner.pairedAt)) : null
+          ) : h(
+            "div",
+            { className: "dim-pairingPendingBlock" },
+            bot.pending.length === 0 ? h(
+              "p",
+              { className: "dim-pairingHint" },
+              "\u5C1A\u672A\u914D\u5BF9\u552F\u4E00\u4E3B\u4EBA\u3002\u8BF7\u4F7F\u7528\u672C\u4EBA\u8D26\u53F7\u79C1\u804A\u8BE5\u673A\u5668\u4EBA\u83B7\u53D6\u914D\u5BF9\u77ED\u7801\uFF0C\u6216\u5728\u4E0B\u65B9\u76F4\u63A5\u8F93\u5165\u77ED\u7801\u6279\u51C6\u3002"
+            ) : h(
+              "ul",
+              { className: "dim-pairingPendingList" },
+              bot.pending.map((item) => {
+                const approveBusy = busyKey === `approve:${bot.botId}:${item.requestId}`;
+                const rejectBusy = busyKey === `reject:${bot.botId}:${item.requestId}`;
+                return h(
+                  "li",
+                  {
+                    key: item.requestId,
+                    className: "dim-pairingPendingRow",
+                    "data-pairing-request": item.requestId
+                  },
+                  h(
+                    "div",
+                    { className: "dim-pairingPendingInfo" },
+                    h("code", { className: "dim-pairingCode" }, item.code),
+                    h("span", { className: "dim-pairingPendingName" }, item.displayName),
+                    item.expiresAt ? h("span", { className: "dim-pairingTime" }, formatExpiryRemaining(item.expiresAt)) : null
+                  ),
+                  h(
+                    "div",
+                    { className: "dim-pairingPendingActions" },
+                    h(ActionButton, {
+                      className: "dim-pairingApproveBtn",
+                      "data-kind": "primary",
+                      "data-pairing-action": "approve",
+                      loading: approveBusy,
+                      disabled: busyKey !== "",
+                      onClick: () => handleApproveRequest(bot, item)
+                    }, "\u6279\u51C6\u914D\u5BF9"),
+                    h(ActionButton, {
+                      className: "dim-pairingRejectBtn",
+                      "data-pairing-action": "reject",
+                      loading: rejectBusy,
+                      disabled: busyKey !== "",
+                      onClick: () => handleRejectRequest(bot, item)
+                    }, "\u62D2\u7EDD")
+                  )
+                );
+              })
+            ),
+            h(
+              "form",
+              {
+                className: "dim-pairingCodeForm",
+                onSubmit: (event) => {
+                  void handleApproveCode(event, bot);
+                }
+              },
+              h("input", {
+                type: "text",
+                className: "dim-pairingCodeInput",
+                "aria-label": "\u914D\u5BF9\u77ED\u7801",
+                placeholder: "\u8F93\u5165\u79C1\u804A\u6536\u5230\u7684\u914D\u5BF9\u77ED\u7801",
+                maxLength: 12,
+                value: codeValue,
+                disabled: busyKey !== "",
+                onChange: (event) => {
+                  const nextValue = event.target.value;
+                  setCodeInputs((current) => ({ ...current, [bot.botId]: nextValue }));
+                }
+              }),
+              h(ActionButton, {
+                type: "submit",
+                className: "dim-pairingCodeSubmit",
+                "data-pairing-action": "approve-code",
+                loading: approvingCodeThis,
+                disabled: busyKey !== "" || cleanText(codeValue).length === 0
+              }, "\u901A\u8FC7\u77ED\u7801\u6279\u51C6")
+            )
+          )
+        );
+      })
+    ),
+    revokeTarget?.owner ? h(
+      ConfirmDialog,
+      {
+        busy: busyKey === `revoke:${revokeTarget.botId}`,
+        onClose: () => setRevokeTarget(null)
+      },
+      h("strong", null, "\u64A4\u9500\u552F\u4E00\u4E3B\u4EBA\u7ED1\u5B9A\uFF1F"),
+      h(
+        "p",
+        null,
+        `\u64A4\u9500\u300C${revokeTarget.owner.displayName}\u300D\u540E\uFF0C\u8BE5\u8D26\u53F7\u5C06\u7ACB\u5373\u5931\u53BB\u6B64\u673A\u5668\u4EBA\u7684\u9CB8\u9C7C\u5A18\u8BBF\u95EE\u6743\u9650\uFF0C\u540E\u7EED\u9700\u91CD\u65B0\u79C1\u804A\u5E76\u5728\u6B64\u6279\u51C6\u914D\u5BF9\u77ED\u7801\u3002`
+      ),
+      h(
+        "div",
+        { className: "dim-viewActions" },
+        h("button", {
+          type: "button",
+          disabled: busyKey !== "",
+          onClick: () => setRevokeTarget(null)
+        }, "\u53D6\u6D88"),
+        h("button", {
+          type: "button",
+          "data-kind": "danger",
+          "data-pairing-action": "confirm-revoke",
+          disabled: busyKey !== "",
+          onClick: () => {
+            void handleConfirmRevoke();
+          }
+        }, "\u786E\u8BA4\u64A4\u9500")
+      )
+    ) : null
+  );
 }
 
 // plugin-src/client/index.js
@@ -11628,6 +12280,7 @@ function LoopbackRecoveryNotice({ recovery, onNavigate = replacePageLocation }) 
   });
 }
 function IMSettingsTab({
+  accessRpcCall,
   dingtalkRpcCall,
   discordRpcCall,
   feishuRpcCall,
@@ -11642,13 +12295,14 @@ function IMSettingsTab({
   browserLocation = globalThis.location,
   navigateToRecoveryUrl = replacePageLocation
 }) {
-  const [selected, setSelected] = React21.useState("weixin");
-  const [loopbackRecovery, setLoopbackRecovery] = React21.useState(null);
+  const [selected, setSelected] = React22.useState("weixin");
+  const [loopbackRecovery, setLoopbackRecovery] = React22.useState(null);
   const active = CHANNELS.find((channel4) => channel4.id === selected) ?? CHANNELS[0];
-  const reportLoopbackRecovery = React21.useCallback((recovery) => {
+  const reportLoopbackRecovery = React22.useCallback((recovery) => {
     setLoopbackRecovery((current) => current?.url === recovery.url ? current : recovery);
   }, []);
-  const rpcCalls = React21.useMemo(() => createLoopbackAwareRpcCalls({
+  const rpcCalls = React22.useMemo(() => createLoopbackAwareRpcCalls({
+    accessRpcCall,
     dingtalkRpcCall,
     discordRpcCall,
     feishuRpcCall,
@@ -11663,6 +12317,7 @@ function IMSettingsTab({
     location: browserLocation,
     onRecovery: reportLoopbackRecovery
   }), [
+    accessRpcCall,
     browserLocation,
     dingtalkRpcCall,
     discordRpcCall,
@@ -11722,7 +12377,13 @@ function IMSettingsTab({
             recovery: loopbackRecovery,
             onNavigate: navigateToRecoveryUrl
           }) : null,
-          active.id === "weixin" ? h(WeixinSettingsTab, { rpcCall: rpcCalls.weixinRpcCall }) : active.id === "feishu" ? h(FeishuSettingsTab, { rpcCall: rpcCalls.feishuRpcCall }) : active.id === "dingtalk" ? h(DingtalkSettingsTab, { rpcCall: rpcCalls.dingtalkRpcCall }) : active.id === "wecom" ? h(WecomSettingsTab, { rpcCall: rpcCalls.wecomRpcCall }) : active.id === "qq" ? h(QqSettingsTab, { rpcCall: rpcCalls.qqRpcCall }) : active.id === "slack" ? h(SlackSettingsTab, { rpcCall: rpcCalls.slackRpcCall }) : active.id === "telegram" ? h(TelegramSettingsTab, { rpcCall: rpcCalls.telegramRpcCall }) : active.id === "discord" ? h(DiscordSettingsTab, { rpcCall: rpcCalls.discordRpcCall }) : active.id === "whatsapp" ? h(WhatsappSettingsTab, { rpcCall: rpcCalls.whatsappRpcCall }) : h(OfficeSettingsTab, { rpcCall: rpcCalls.officeRpcCall })
+          active.id === "weixin" ? h(WeixinSettingsTab, { rpcCall: rpcCalls.weixinRpcCall }) : active.id === "feishu" ? h(FeishuSettingsTab, { rpcCall: rpcCalls.feishuRpcCall }) : active.id === "dingtalk" ? h(DingtalkSettingsTab, { rpcCall: rpcCalls.dingtalkRpcCall }) : active.id === "wecom" ? h(WecomSettingsTab, { rpcCall: rpcCalls.wecomRpcCall }) : active.id === "qq" ? h(QqSettingsTab, { rpcCall: rpcCalls.qqRpcCall }) : active.id === "slack" ? h(SlackSettingsTab, { rpcCall: rpcCalls.slackRpcCall }) : active.id === "telegram" ? h(TelegramSettingsTab, { rpcCall: rpcCalls.telegramRpcCall }) : active.id === "discord" ? h(DiscordSettingsTab, { rpcCall: rpcCalls.discordRpcCall }) : active.id === "whatsapp" ? h(WhatsappSettingsTab, { rpcCall: rpcCalls.whatsappRpcCall }) : h(OfficeSettingsTab, { rpcCall: rpcCalls.officeRpcCall }),
+          isSingleOwnerClientChannel(active.id) && typeof rpcCalls.accessRpcCall === "function" ? h(SingleOwnerPairingPanel, {
+            key: `pairing:${active.id}`,
+            channel: active.id,
+            channelLabel: active.label,
+            rpcCall: rpcCalls.accessRpcCall
+          }) : null
         )
       )
     )
@@ -11752,6 +12413,7 @@ function apply(ctx) {
       for (const dispose of disposers.reverse()) dispose();
     };
   }, "im-settings: install combined channel styles");
+  const accessRpcCall = (endpoint, payload, signal) => ctx.connection.rpc.call(SINGLE_OWNER_ACCESS_CHANNEL, endpoint, payload, signal);
   const feishuRpcCall = (endpoint, payload, signal) => ctx.connection.rpc.call(FEISHU_RPC_CHANNEL, endpoint, payload, signal);
   const weixinRpcCall = (endpoint, payload, signal) => ctx.connection.rpc.call(WEIXIN_RPC_CHANNEL, endpoint, payload, signal);
   const dingtalkRpcCall = (endpoint, payload, signal) => ctx.connection.rpc.call(DINGTALK_RPC_CHANNEL, endpoint, payload, signal);
@@ -11773,6 +12435,7 @@ function apply(ctx) {
     label: () => ctx.locale.getLocale().active === "en" ? "Channels" : "\u6D88\u606F\u6E20\u9053",
     locale: IM_LOCALE_NAMESPACE,
     inject: () => ({
+      accessRpcCall,
       dingtalkRpcCall,
       discordRpcCall,
       feishuRpcCall,

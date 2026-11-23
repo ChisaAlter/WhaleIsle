@@ -26,11 +26,14 @@ const SCHEDULE_MAX = 40;
 const TICK_MS = 30_000;
 const SNIPPET_MAX = 160;
 const WAKE_TEXT_MAX = 2000;
+export const SCHEDULE_STALE_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 const WATCHES_FILE = 'watches.json';
 const SCHEDULES_FILE = 'schedules.json';
 
 const state = {
+  /** @type {any} */
+  ctx: null,
   home: '',
   events: [],
   watches: null,
@@ -61,9 +64,15 @@ function writeJson(name, value) {
   const target = file(name);
   if (!target) return;
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = `${target}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  fs.renameSync(tmp, target);
+  const tmp = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    fs.renameSync(tmp, target);
+  } finally {
+    if (fs.existsSync(tmp)) {
+      try { fs.unlinkSync(tmp); } catch { /* Best-effort temp cleanup after rename or failure. */ }
+    }
+  }
 }
 
 function ensureLoaded() {
@@ -81,6 +90,34 @@ function selfSessionId() {
   } catch {
     return '';
   }
+}
+
+/** @param {string} sessionId */
+function liveAgentFor(sessionId) {
+  try {
+    return state.ctx?.get?.('agents')?.get?.(sessionId) ?? state.ctx?.agents?.get?.(sessionId);
+  } catch {
+    return undefined;
+  }
+}
+
+/** @param {string} sessionId */
+function hasActiveTreeWork(sessionId) {
+  const agent = liveAgentFor(sessionId);
+  if (!agent) return false;
+  try {
+    return state.ctx?.get?.('subagents')?.hasTreeWork?.(agent) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** @param {string} sessionId */
+function isLiveSessionIdle(sessionId) {
+  const agent = liveAgentFor(sessionId);
+  if (!agent) return false;
+  const hasQueued = (agent.inbox?.nextTurn?.length ?? 0) > 0 || (agent.inbox?.nextStep?.length ?? 0) > 0;
+  return agent.status !== 'running' && !hasQueued && !hasActiveTreeWork(sessionId);
 }
 
 /** One-line description of a session event worth remembering. */
@@ -153,12 +190,15 @@ export function addWatch({ sessionId, note = '', once = true }) {
   ensureLoaded();
   const id = String(sessionId ?? '').trim();
   if (!id) return { ok: false, error: 'missing-sessionId' };
+  const selfId = selfSessionId();
+  if (selfId && id === selfId) return { ok: false, error: 'cannot-watch-self' };
+  const alreadyIdle = isLiveSessionIdle(id);
   const existing = state.watches.find((w) => w.sessionId === id);
   if (existing) {
     existing.note = trimTo(note, 300);
     existing.once = once === true;
     writeJson(WATCHES_FILE, state.watches);
-    return { ok: true, watch: { ...existing }, detail: 'updated' };
+    return { ok: true, watch: { ...existing }, detail: 'updated', alreadyIdle };
   }
   if (state.watches.length >= WATCH_MAX) return { ok: false, error: 'watch-list-full' };
   const watch = {
@@ -170,7 +210,7 @@ export function addWatch({ sessionId, note = '', once = true }) {
   };
   state.watches.push(watch);
   writeJson(WATCHES_FILE, state.watches);
-  return { ok: true, watch: { ...watch } };
+  return { ok: true, watch: { ...watch }, alreadyIdle };
 }
 
 export function removeWatch(sessionId) {
@@ -188,6 +228,8 @@ function maybeFireWatches(sessionId, event) {
   if (sessionId === selfSessionId()) return;
   const hit = state.watches.filter((w) => w.sessionId === sessionId);
   if (!hit.length) return;
+  // Wait for managed subagent children before reporting a completed turn.
+  if (event?.data?.reason?.kind === 'completed' && hasActiveTreeWork(sessionId)) return;
   const detail = describeEvent(event);
   for (const watch of hit) {
     // Keep the report on disk until the assistant inbox has accepted it.
@@ -278,9 +320,26 @@ export function removeSchedule(id) {
   return { ok: true };
 }
 
+/** @param {string} sessionId */
+function isManagedTaskOrSubagent(sessionId) {
+  if (!sessionId) return false;
+  if (/^session-whale-todo-/u.test(sessionId) || /^task-[a-f0-9]{32}-worker-r\d+$/u.test(sessionId)) return true;
+  const agent = liveAgentFor(sessionId);
+  if (agent?.session?.header?.origin === 'subagent') return true;
+  const todos = state.ctx?.get?.('whaleTodos');
+  if (todos?.activeBySession?.has?.(sessionId)) return true;
+  const tasks = state.ctx?.get?.('whaleTasks');
+  if (tasks?.workerAgents?.has?.(sessionId)) return true;
+  return false;
+}
+
 async function wake(text) {
   const deliver = state.wake;
   if (typeof deliver !== 'function') throw new Error('assistant-unavailable');
+  const targetId = selfSessionId();
+  if (targetId && isManagedTaskOrSubagent(targetId)) {
+    throw new Error('refusing-pulse-into-task-or-subagent-session');
+  }
   const result = await deliver(trimTo(text, WAKE_TEXT_MAX));
   if (result?.ok === false || result?.accepted === false) throw new Error(result.error || 'prompt-not-accepted');
 }
@@ -309,14 +368,42 @@ async function deliverWatches() {
   }
 }
 
+/**
+ * @param {any} schedule
+ * @param {number} now
+ */
+function expireStaleSchedule(schedule, now) {
+  if (schedule.kind === 'once') {
+    schedule.enabled = false;
+    schedule.lastError = 'expired-stale';
+  } else {
+    schedule.nextRunAt = nextRunAt(schedule, now);
+    delete schedule.lastError;
+  }
+  schedule.lastSkippedAt = now;
+  writeJson(SCHEDULES_FILE, state.schedules);
+}
+
 // Exported so tests can drive the scheduler without waiting on TICK_MS.
+// Once `schedules.json` has been migrated to native `@deepseek-ai/dsh-schedule`
+// (`schedules.json.migrated` exists and `schedules.json` is absent), legacy
+// schedule ticking stays inert while watches and event buffering continue.
 export async function tick(now = Date.now()) {
   ensureLoaded();
   await deliverWatches();
+  const legacyFile = file(SCHEDULES_FILE);
+  if (legacyFile && !fs.existsSync(legacyFile) && fs.existsSync(`${legacyFile}.migrated`)) {
+    state.schedules = [];
+    return;
+  }
   const due = state.schedules.filter((s) => s.enabled !== false && Number(s.nextRunAt) > 0 && s.nextRunAt <= now);
   if (!due.length) return;
   for (const s of due) {
     if (state.delivering.has(s.id)) continue;
+    if (now - s.nextRunAt > SCHEDULE_STALE_WINDOW_MS) {
+      expireStaleSchedule(s, now);
+      continue;
+    }
     state.delivering.add(s.id);
     try {
       await wake(`（定时任务 ${s.id} 到点）${s.text}`);
@@ -347,6 +434,7 @@ export function startPulse(ctx, { home, getSelfId, wake: deliver, logger } = {})
     state.schedules = null;
     state.events = [];
   }
+  state.ctx = ctx ?? null;
   state.home = String(home ?? '');
   state.getSelfId = typeof getSelfId === 'function' ? getSelfId : null;
   state.wake = typeof deliver === 'function' ? deliver : null;

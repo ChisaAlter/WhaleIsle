@@ -1,46 +1,31 @@
 # Feature: Local Projects
 
-Project 保留完整普通对话，在右侧提供默认收起的悬浮任务栏。Super Agent 理解目标、排期、分发、协调、检查及交付；原生 Team/Subagent 成员执行实际工作。[设计](../superpowers/specs/2026-11-13-project-superagent-redesign.md) · [实施计划](../superpowers/plans/2026-11-13-project-superagent-redesign-plan.md) · [Issue #388](https://github.com/ChisaAlter/WhaleIsle/issues/388)。
+Project 以左侧边栏独立入口打开主区三栏全页项目看板（项目列表 | 嵌入式协调者对话 | 执行者 Threads 面板），采用「项目 → 协调者会话 → 并行 Worker 子会话」的轻量化编排模型，完整复用原生 DSH 对话、模型切换、审批、文件预览与 Git Worktree 隔离。
 
 ## 入口与可用性
 
-Settings › Interface › Project 默认开启；未保存过该设置的配置自动启用，已明确保存的关闭设置继续生效。切换开关会挂载或移除插件并重启 Harness，取消或拒绝重启会恢复开关。关闭保留磁盘数据，不改变普通会话的标准 Agent。源码可用 `WHALE_PROJECT=1` 强制开启。
+- **侧栏入口**：注册在 `sidebar.panellist`（`id: 'projects'`，`order: 30`），点击在主区 `main` 槽位（`key: 'projects'`）挂载三栏项目看板，落在 `AppFrame` 的 `mainPanel` 内容行，不侵入 48px 标题栏与窗口控件。不再在普通侧栏挂 Project 标签、不再在新会话首屏放置 Project 按钮、不再使用 312px 悬浮栏。
+- **开关与平滑退出**：Settings › Built-in Features › Project 默认开启（`projectEnabled: true`，源码可用 `WHALE_PROJECT=1` 强制开启）。关闭前 `ui-settings-general` 的 `leaveProjectPanel()` 会将当前处于 `'projects'` 面板的主区切回普通对话，再写入配置并重启 Harness；关闭保留 `$DSH_HOME/projects/` 磁盘数据。
 
-新会话 Project 按钮使用当前目录，携带未发送的草稿与附件，不自动发送。工作区菜单提供新建或打开 Project。同一规范目录复用原主对话；磁盘根、主目录、受保护配置/数据目录及其祖先不能创建。主对话在普通侧栏目录下显示 Project 标签，目录按钮打开实际文件夹。
+## 三栏看板与核心交互
 
-## 普通对话与任务卡
+1. **左栏（项目列表）**：默认 248px / 最小 188px，可折叠为 44px 图标轨；展示项目名、工作区简称与实时状态计数，支持新建项目弹窗与底部折叠展示已归档项目。
+2. **中栏（协调者主对话）**：最小 400px，通过 `SessionProvider` + `conversation.content`（`variant: 'embedded'`）直接嵌入真实 DSH 会话，享受完整原生输入栏、模型/思考强度切换、附件、权限与停止能力。顶栏精简为项目名、可点击工作区胶囊、手动审批/自动派发一键切换、暂停/恢复一键切换与设置齿轮；未启动时提供「启动协调者」主按钮，协调者会话归档时提供恢复横幅。对话内的 `projects_dispatch` 工具调用卡（`tool.call.toolview`）点击可直接定位右栏对应任务详情。
+3. **右栏（执行者 Threads 面板）**：默认 380px / 最小 280px，可折叠为 44px 计数轨；经 `EventSource('/projects-api/events')` 毫秒级 SSE 实时同步（断线自动重连并补拉）。固定 5 个可折叠分组：`执行中 (running)`、`待验收 (review)`、`等你处理 (blocked + failed)`、`待开始 (queued)`、`已解决 (resolved，默认折叠)`。
+   - 卡片支持悬浮快捷停止/批准、右键菜单（验收/取消验收、停止、重试、二段防误触删除：「只删任务」或「删除并归档会话」）。
+   - 点击卡片在右栏原位切换为 **任务详情**：粘性顶栏提供返回、批准/停止/重试/Resolve 操作及分支/降级提示；双子标签支持「对话」（原位嵌入 Worker 真实持续会话）与「改动」（查看 Diff 变更列表、安全合并 Worktree 到主分支与清理 Worktree）。
+4. **共享右栏文件预览**：`ui-sidebar-right` 在 `activePanelId === 'projects'` 下默认收起不占宽；当用户在项目页嵌入对话中点击文件路径（`workspaces.openPath`）时，自动按需挂载该会话并展开右栏文件预览，关闭即收起。
 
-复用原生聊天、模型控件、附件、输入、停止、历史和文件预览，不另造聊天引擎。原生 Team 界面继续可用，不为 Project 隐藏或禁用。顶部 Tasks 打开 312px 右侧悬浮栏；宽聊天列预留空间，实际聊天列不足 920px 时覆盖显示，底部避开实测输入框。文件与原生右栏仍独立工作。
+## 数据模型、共享记忆与执行治理
 
-折叠不停止任务，并保留展开和阅读位置。正在看的卡完成后原位更新，用户显式重开或切组才重新归类。当前、已完成、已取消和归档列表使用真实分页。
+- **统一任务状态机**：`queued | running | review | failed | blocked | resolved`，支持 `dependsOn` DAG 依赖环路校验、并发上限（1–8）、手动/自动审批与项目暂停。
+- **8 个协调者/执行者工具**：`projects_list`、`projects_get`、`projects_create`、`projects_update`、`projects_add_task`、`projects_update_task`、`projects_memory`、`projects_dispatch`，全部在 `src/shared/model-tool-effects.js` 登记并与静态扫描双向对账。
+- **分文件共享记忆**：存储在 `$DSH_HOME/projects/<projectId>/memory/<slug>.md`（配只读 `MEMORY.md` 索引与 `memory/archive/`），支持超预算单飞自动归档与应用内双栏设置弹窗预览/编辑/删除。
+- **Git Worktree 与工作区权威**：开启 `worktreeIsolation` 时在 `$DSH_HOME/project-worktrees/<projectId>/<taskId>` 创建隔离工作树（分支 `project/<taskId>`），非 Git 仓库自动优雅降级。`src/main/workspace-authority.js` 校验并授权 `$DSH_HOME/projects/<projectId>/project.json` 中的 `workspace` 与位于 `$DSH_HOME/project-worktrees/<projectId>/<taskId>` 的任务工作树，同时保留对旧版 `storages/whale_project_local` 与 `desktop-workspaces` 回执的只读兼容。
+- **宿主流控与大肥鱼桥接**：`ProjectService` 通过 `ctx.provide('projects', service)` 暴露 `available`、`inspect()`、`schedule()`（对接 `dsh-task-control` 退出/更新准入锁）以及 `listBridgeSummaries()`、`inspectBridgeProject()`、`acceptAuthorizedHandoff()`（对接 `dsh-whale` 跨项目移交工具）。
 
-一张卡代表一个完整目标。卡片显示实际成员工作、状态及等待原因；展开提供目标、约束、完成条件、版本、证据、文件与报告。成员入口打开原生持续对话，嵌套成员使用真实直接父会话；返回主对话只关闭当前成员页，空右栏收起，其他文件和成员页保留。保留单工作停止、目标取消/继续、完成卡归档/恢复、变更及安全还原。还原提交精确目标版本，依据已记录基线，拒绝活跃写入；冲突交由用户决定，不覆盖后续修改。资料保留项目规则、笔记、偏好、研究网站、文档和历史报告。汇总失败保留原成果，重试使用普通用户消息，不替换输入草稿。
+## 实现与兼容说明
 
-## 原生执行与多目标调度
-
-- Project 只为自己的主会话启用原生 Team，使用原生 spawn/fork、消息、后代与任务身份。普通会话默认值、实验 Team 用户配置不变。原生工具启动前的小型接点关联 Project 授权；其他会话仍走标准路径。
-- 主 Agent 只有调度、协调和有界只读证据工具，没有命令、仓库修改或测试执行工具。成员继承有效用户要求、范围、文档路径、规范目录和原生审批。research 可读网络，不可写文件或跑命令。嵌套工作继承范围并归入同一目标；父成员需等待后代完成后报告。
-- 多个已接受目标可同时活跃。只读和不同精确文档路径可并行；development/shell 预留重叠规范目录。显式依赖、实际资源及原生活跃成员容量只阻塞相关工作，不把整个目标串行化。旧 queued 记录可读，恢复后须显式继续。
-- 原生 task ID 与 Project work ID 分开持久映射。结构化报告、对应成功结算和自有 Jobs 排空后才完成原生任务。原生 task board 上限计入已完成历史；停止或完成不会偷偷删除任务释放容量。它与 activation 容量不同。
-- 依赖等待当前精确报告被验收；准备目录后、创建成员前重新核对依据。`project_review` 带检查证据接受或退回结果；持久化的 completed 最终交付也记录最终验收。partial 汇总和未提交草稿不放行依赖；已退回报告需明确重新验收。
-- 要求版本、委派、运行、报告和交付保留来源身份。依据变化标明旧成果适用性，不改历史、不自动重跑。讨论、成员消息和运行时通知不是新执行授权。
-
-## 停止、恢复与交付
-
-输入框取消只停主 Agent 当前回合。单项停止排空该成员和登记后代，其他目标继续。停止后台工作取消主会话、成员及自有 Jobs，挂起所有未完成的已接受目标；继续只恢复选中目标。实际排空前仍保留目录占用。
-
-冷恢复、恢复归档、读取详情和开启插件不自动执行旧任务。原主/成员会话、草稿、报告、资料、决策及授权继续保留；缺失或冲突授权明确报错，不能从摘要重建。用户可汇总已停止成果，不必恢复工作。
-
-成员报告不等于目标完成。completed 要求当前完整目标、精确成功结果、检查证据且无未满足条件；partial 保留未完成项。交付必须成功声明、同回合可见最终回复、成功回合结束并通过原生持久化检查点才提交。失败保留原报告和恢复入口；既有有界临时模型服务汇总重试与执行调度分开。
-
-## 实现与当前证据
-
-[插件说明](../../vendor/dsh-project/README.md)列出模块、RPC 和检查入口。桌面装配在 `src/main/dsh-project-desktop.js`；目录/Git 权威在 `project-environment.js`、`workspace-authority.js`。
-
-原生工具检查 52/52、Host composition 44/44、Project 单元检查 89/89 通过，覆盖原生委派、嵌套后代、多目标、依赖验收、目录预留时序、停止及 v1/v2 迁移和冷恢复。Host 使用脚本模型与真实工具、会话、任务板、文件写入和生命周期；这些结果不证明真实模型的调度质量。
-
-独立临时 profile 的源码 Electron 已观察新建 Project、完整聊天及默认折叠/展开任务栏；代表性卡片使用明确标注的界面示例，检查宽/窄聊天列、亮/暗主题、滚动、底部操作及输入框避让，未调用模型。客户端定向检查另覆盖断连保留数据、授权缺失、凭据设置恢复和汇总重试状态。本次真实模型与打包安装验收尚未完成；历史观察只归属于原候选，见 [docs/history/projects.md](../history/projects.md)。
-
-现有 `project-composer-stability.e2e.ts` 已迁移到原生任务板与新悬浮栏，不再装配实验 Team。7 个 Chromium 场景分组验证通过，覆盖 1680/800/390px 的状态稳定、断连恢复、归档、折叠保留、成员阅读/返回、问题回答及静默通知；发现并修复未知计数的横向位移和返回最后成员后空右栏遮挡。390px 是浏览器布局检查，不是原生桌面窗口验收。桌面差异位置与夹具同步，15/15 检查通过。
-
-历史验证与变更记录见 [docs/history/projects.md](../history/projects.md)。
+- 后端与前端实现位于 `vendor/dsh-project/`（HTTP + SSE 前缀 `/projects-api`，插件说明见 [vendor/dsh-project/README.md](../../vendor/dsh-project/README.md)）。
+- 桌面装配与运行时暂存位于 `src/main/dsh-project-desktop.js`；工作区与工作树权威位于 `src/main/workspace-authority.js`；旧数据位于 `$DSH_HOME/storages/whale_project_local/` 与 `$DSH_HOME/projects/<id>/`，重做版本保留原有历史会话与磁盘文件不覆盖。
+- 历史架构与早期验证记录保留在 [docs/history/projects.md](../history/projects.md)。

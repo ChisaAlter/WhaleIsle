@@ -18,7 +18,7 @@ export type WhaleAssistantRowProps =
  * @returns the preference row.
  */
 export function WhaleAssistantRow({ t }: WhaleAssistantRowProps) {
-  const [enabled, setEnabled] = useState(false)
+  const [enabled, setEnabled] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)
@@ -29,8 +29,8 @@ export function WhaleAssistantRow({ t }: WhaleAssistantRowProps) {
     let cancelled = false
     if (shell?.getConfig) setBusy(true)
     void shell?.getConfig?.().then((config: DesktopConfig | null) => {
-      if (!cancelled && typeof config?.whaleAssistantEnabled === 'boolean') {
-        setEnabled(config.whaleAssistantEnabled)
+      if (!cancelled) {
+        setEnabled(config?.whaleAssistantEnabled !== false)
       }
     }).catch((caught: unknown) => {
       if (cancelled) return

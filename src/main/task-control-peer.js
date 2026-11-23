@@ -12,7 +12,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { randomBytes, randomUUID } = require('crypto');
-const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { atomicWriteFile } = require('../shared/fs-safe');
 const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
 
 const PEER_FILENAME = 'task-control-peer.json';
@@ -44,11 +44,11 @@ async function readBody(req, res) {
   }
 }
 
-function writePeerFile(stateDir, peer) {
+async function writePeerFile(stateDir, peer) {
   const file = path.join(stateDir, PEER_FILENAME);
   const contents = JSON.stringify({ ...peer, schemaVersion: 1 }, null, 2);
-  fs.mkdirSync(stateDir, { recursive: true });
-  atomicWriteFileSync(file, contents, { encoding: 'utf8' });
+  await fs.promises.mkdir(stateDir, { recursive: true });
+  await atomicWriteFile(file, contents, { encoding: 'utf8' });
   return file;
 }
 
@@ -79,6 +79,8 @@ function createTaskControlPeer(options = {}) {
   const startedAt = Date.now();
   let server = null;
   let url = '';
+  /** @type {Promise<any> | null} */
+  let pendingWrite = null;
 
   const handler = async (req, res) => {
     const auth = req.headers.authorization || '';
@@ -132,36 +134,57 @@ function createTaskControlPeer(options = {}) {
         (options.log || (() => {}))(`peer handler failed: ${error && error.message ? error.message : error}`);
       });
     });
+    const listeningServer = server;
     return new Promise((resolve) => {
-      server.once('error', (error) => {
-        server = null;
+      /** @param {any} error */
+      const onError = (error) => {
+        if (server === listeningServer) server = null;
         resolve({ ok: false, error: error.message });
-      });
-      server.listen(0, '127.0.0.1', () => {
-        server.off('error', () => {});
-        url = `http://127.0.0.1:${server.address().port}`;
-        try {
-          const file = writePeerFile(stateDir, {
-            url, token, pid: process.pid, generation, startedAt,
-          });
-          resolve({ ok: true, url, file });
-        } catch (error) {
-          resolve({ ok: false, error: `peer-file: ${error.message}` });
+      };
+      listeningServer.once('error', onError);
+      listeningServer.listen(0, '127.0.0.1', () => {
+        listeningServer.off('error', onError);
+        if (server !== listeningServer) {
+          resolve({ ok: false, error: 'stopped' });
+          return;
         }
+        const address = listeningServer.address();
+        url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+        const write = writePeerFile(stateDir, {
+          url, token, pid: process.pid, generation, startedAt,
+        }).then(
+          (file) => {
+            if (server !== listeningServer) {
+              removePeerFile(stateDir, generation);
+              return { ok: false, error: 'stopped' };
+            }
+            return { ok: true, url, file };
+          },
+          (error) => ({ ok: false, error: `peer-file: ${error.message}` }),
+        ).finally(() => {
+          if (pendingWrite === write) pendingWrite = null;
+        });
+        pendingWrite = write;
+        void write.then(resolve);
       });
     });
   }
 
   async function stop() {
     const stateDir = typeof options.stateDir === 'function' ? options.stateDir() : '';
-    if (stateDir) removePeerFile(stateDir, generation);
-    if (server === null) return;
     const closing = server;
     server = null;
-    await new Promise((resolve) => {
-      closing.close(() => resolve());
-      closing.closeAllConnections?.();
-    });
+    const inflightWrite = pendingWrite;
+    if (closing !== null) {
+      await new Promise((resolve) => {
+        closing.close(() => resolve());
+        closing.closeAllConnections?.();
+      });
+    }
+    if (inflightWrite) {
+      await inflightWrite.catch(() => { /* Pending write failure is reported by its own start() rejection. */ });
+    }
+    if (stateDir) removePeerFile(stateDir, generation);
   }
 
   return {

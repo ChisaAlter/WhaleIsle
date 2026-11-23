@@ -2,23 +2,32 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { sharedWhaleSessionId, currentWhaleSessionResolution } from '../../../../src/channels/shared/whale-session.mjs';
+import { resolveLegacyOwnerCandidates } from '../../../../src/channels/shared/single-owner-gate.mjs';
 import { stageInboundFiles } from '../../../../src/channels/shared/inbound-file.mjs';
 import { extractInboundMessage } from '../../../../src/channels/feishu/message-utils.mjs';
 
 const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, configStore }) {
+export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, configStore, accessGate = null }) {
   const incarnation = hash([botId, botConfig.appId, botConfig.createdAt, botConfig.connectedAt]);
+  const isSingleOwner = (actor, current) => {
+    if (typeof actor !== 'string' || !actor.trim() || actor.trim() === '*') return false;
+    if (accessGate && typeof accessGate.isOwner === 'function') {
+      return accessGate.isOwner(actor);
+    }
+    const legacy = resolveLegacyOwnerCandidates('feishu', current);
+    return Boolean(legacy.singleCandidate && legacy.singleCandidate === actor);
+  };
   return {
     attach({ client, signal, allowedSenderOpenIds }) {
       let service;
       let dispose;
+      let disposeGateSync;
       const currentRouteStatus = route => {
         const current = configStore.list().find(row => row.id === botId);
         if (route.channel !== 'feishu' || route.botId !== botId || route.incarnation !== incarnation || !current
           || hash([botId, current.appId, current.createdAt, current.connectedAt]) !== route.incarnation
           || !workspaces.has(botId) || current.deletionPending) return 'revoked';
-        const owners = current.ownerOpenIds ?? [];
-        if (!owners.includes(route.actor) && !owners.includes('*')) return 'revoked';
+        if (!isSingleOwner(route.actor, current)) return 'revoked';
         if (signal.aborted) return 'offline';
         const preset = workspaces.agentPresetFor(botId);
         if (preset && preset !== 'whale-girl') return 'revoked';
@@ -61,18 +70,62 @@ export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, con
           }
         },
       };
+      const syncPairedOwner = async (targetService) => {
+        if (!targetService?.available || typeof targetService.setOwner !== 'function') return;
+        const status = typeof accessGate?.gate?.publicStatus === 'function'
+          ? accessGate.gate.publicStatus({ channel: 'feishu', botId })
+          : null;
+        if (!status?.owner) return;
+        const currentOwnerId = typeof accessGate?.getOwnerPlatformUserId === 'function'
+          ? accessGate.getOwnerPlatformUserId()
+          : null;
+        if (currentOwnerId && targetService.store?.owners?.get?.(`feishu:${botId}`)?.actor !== currentOwnerId) {
+          await targetService.setOwner(botId, currentOwnerId).catch(() => undefined);
+        }
+      };
       const connect = () => {
         const current = ctx.get('whaleTasks');
         if (current?.available && current !== service) {
-          dispose?.(); service = current;
+          dispose?.(); disposeGateSync?.(); service = current;
           dispose = current.registerChannel(`feishu:${botId}`, channel);
+          void syncPairedOwner(current);
+          if (typeof accessGate?.gate?.onOwnerChange === 'function') {
+            disposeGateSync = accessGate.gate.onOwnerChange(async (change) => {
+              if (change?.channel !== 'feishu' || change?.botId !== botId) return;
+              if (change.action === 'approve' && change.platformUserId && typeof current.setOwner === 'function') {
+                await current.setOwner(botId, change.platformUserId);
+              } else if (change.action === 'revoke' && typeof current.revokeOwner === 'function') {
+                await current.revokeOwner(botId);
+              }
+            });
+          }
         }
       };
       connect();
       const off = ctx.on('internal/service', name => { if (name === 'whaleTasks') connect(); });
       const readyOff = ctx.on('whale-tasks/ready', connect);
-      const close = () => { dispose?.(); off?.(); readyOff?.(); };
+      const close = () => { dispose?.(); disposeGateSync?.(); off?.(); readyOff?.(); };
       signal.addEventListener('abort', close, { once: true });
+      const parseNaturalControl = (rawText) => {
+        const body = rawText.slice('/task'.length).trim();
+        if (!body) return null;
+        if (body.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(body);
+            return parsed && typeof parsed === 'object' ? { json: true, command: parsed } : null;
+          } catch { return null; }
+        }
+        if (/^(?:list|列表)$/iu.test(body)) return { json: false, command: { action: 'list' } };
+        const m = /^(status|stop|resume|查询|查看|停止|取消|继续|恢复)\s+(\S+)$/iu.exec(body);
+        if (!m) return null;
+        const verb = m[1].toLowerCase();
+        const action = ['stop', '停止', '取消'].includes(verb)
+          ? 'stop'
+          : ['resume', '继续', '恢复'].includes(verb)
+            ? 'resume'
+            : 'status';
+        return { json: false, command: { action, taskId: m[2] } };
+      };
       return {
         async handle(event, message, harness) {
           connect();
@@ -80,15 +133,32 @@ export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, con
           if (!/^\/task(?:\s|$)/u.test(text)) return null;
           if (!service?.available) return '后台任务服务不可用，未接纳。';
           const actor = event.sender?.sender_id?.open_id;
-          if (!actor || (!allowedSenderOpenIds.has(actor) && !allowedSenderOpenIds.has('*'))) return '当前用户不能提交后台任务。';
+          const current = configStore.list().find(row => row.id === botId);
+          if (!actor || !isSingleOwner(actor, current) || (!accessGate && !allowedSenderOpenIds.has(actor))) {
+            return '当前用户不能提交后台任务。';
+          }
           if (!await sharedWhaleSessionId(harness)) return '当前机器人未进入鲸鱼娘共享对话，未接纳后台任务。';
+          // Auto-align owner record for an already paired single-owner IM user so
+          // users do not need a separate multi-tenant owners registration step.
+          if (accessGate && typeof accessGate.isOwner === 'function' && accessGate.isOwner(actor)) {
+            if (service.store?.owners?.get?.(`feishu:${botId}`)?.actor !== actor && typeof service.setOwner === 'function') {
+              await service.setOwner(botId, actor);
+            }
+          }
           const route = { channel: 'feishu', botId, incarnation, actor, chatId: event.message.chat_id, messageId: event.message.message_id };
           if (await routeStatus(route) !== 'ready') return '原渠道已失效，未接纳任务。';
           const owner = service.store.owners.get(`feishu:${botId}`);
-          if (!owner || owner.actor !== actor) return '请先在桌面鲸鱼娘设置的后台任务中，授权此飞书 botId 和个人 open_id。';
+          if (!owner || owner.actor !== actor) return '请先在桌面设置完成当前 IM 机器人的唯一主人配对授权。';
           let staged;
           try {
-            const command = JSON.parse(text.slice('/task'.length).trim());
+            const rawBody = text.slice('/task'.length).trim();
+            let command;
+            if (rawBody.startsWith('{')) {
+              command = JSON.parse(rawBody);
+            } else {
+              if (!rawBody) return '请写明要整理的目标，例如：/task 帮我整理这份会议纪要的行动项';
+              command = { goal: rawBody, natural: true };
+            }
             const eventId = `feishu-${hash([botId, incarnation, event.message.message_id])}`;
             const prior = service.store.tasks.get(`task-${crypto.createHash('sha256').update(JSON.stringify([eventId])).digest('hex').slice(0, 32)}`);
             if (prior) return `此消息已接纳 ${prior.id}，状态：${prior.state}；未重复执行。`;
@@ -108,39 +178,64 @@ export function createFeishuTaskBinding(ctx, { botId, botConfig, workspaces, con
                 return value;
               } })) };
             staged = await stageInboundFiles(inputMessage, { workspace: path.join(home, 'data', 'whale-task-inbound'), signal });
-            if (!staged?.files?.length) return '请回复自己在此会话发送的文本文件，写 /task JSON；或用含文件块的富文本提交，不能读取任意本地路径。';
-            const selected = command.files;
+            if (!staged?.files?.length) return '请回复自己在此会话发送的文本文件并输入 /task 目标说明，或附带文本文件发送；不能读取任意本地路径。';
+            const selected = command.natural
+              ? staged.files.map(file => file.name)
+              : command.files;
             if (!Array.isArray(selected) || !selected.length) return 'files 必须写本条消息附件的文件名。';
             const files = selected.map(name => {
               const file = staged.files.find(file => file.name === name);
               if (!file) throw new Error('files 包含本条消息未附带的文件。');
               return path.join(home, 'data', 'whale-task-inbound', file.path);
             });
+            const normalizedCommand = command.natural
+              ? { goal: command.goal, files }
+              : { ...command, files };
             const origin = { eventId, kind: 'im', rpcId: eventId, messageId: `im-${hash(eventId)}`,
               sessionId: service.scope.get().sessionId, actor, route, files,
-              text: `/task ${JSON.stringify({ ...command, files })}` };
+              text: `/task ${JSON.stringify(normalizedCommand)}` };
             await service.recordInbound(origin, text);
             const task = await service.accept(origin);
             service.schedule(task.id);
-            return `已接纳 ${task.id}，正在后台整理；完成后回到本飞书会话。\n这是接纳回执，尚未完成。可发 /task {"action":"status","taskId":"${task.id}"} 查询。`;
+            return `已接纳 ${task.id}，正在后台整理；完成后回到本飞书会话。\n这是接纳回执，尚未完成。可发 /task status ${task.id} 查询，或 /task stop ${task.id} 停止。`;
           } catch (error) { return `未接纳后台任务：${error.message}`; }
           finally { await staged?.cleanup(); }
         },
         async command(event, message) {
           connect();
           const text = String(message.content ?? '').trim();
-          if (!/^\/task\s+\{/u.test(text)) return null;
-          let command; try { command = JSON.parse(text.slice(5)); } catch { return null; }
-          if (!command.action) return null;
-          if (!['status', 'stop', 'resume'].includes(command.action) || Object.keys(command).some(key => !['action', 'taskId'].includes(key))) return 'action 仅支持 status、stop、resume，不接受模型或资料修改。';
+          const parsed = /^\/task(?:\s|$)/u.test(text) ? parseNaturalControl(text) : null;
+          if (!parsed?.command?.action) return null;
+          const command = parsed.command;
+          if (parsed.json && (!['status', 'stop', 'resume'].includes(command.action) || Object.keys(command).some(key => !['action', 'taskId'].includes(key)))) {
+            return 'action 仅支持 status、stop、resume，不接受模型或资料修改。';
+          }
           const actor = event.sender?.sender_id?.open_id;
           if (!service?.available || !actor) return '后台任务服务不可用。';
+          if (accessGate && typeof accessGate.isOwner === 'function' && accessGate.isOwner(actor)) {
+            if (service.store?.owners?.get?.(`feishu:${botId}`)?.actor !== actor && typeof service.setOwner === 'function') {
+              await service.setOwner(botId, actor);
+            }
+          }
+          if (command.action === 'list') {
+            const current = configStore.list().find(row => row.id === botId);
+            if (!isSingleOwner(actor, current) || (!accessGate && !allowedSenderOpenIds.has(actor))) {
+              return '当前用户不能查询后台任务。';
+            }
+            const own = service.list()
+              .filter(task => task.origin?.actor === actor && task.origin?.route?.botId === botId && task.origin?.route?.incarnation === incarnation)
+              .slice(0, 10);
+            if (!own.length) return '当前会话暂无后台资料整理任务。';
+            return own.map(task => `- ${task.id} [${task.state}] ${task.goal}`).join('\n');
+          }
           let sendingStatus = false;
           try {
             const task = service.store.get(command.taskId); const route = task.origin.route;
             const validate = () => {
+              const current = configStore.list().find(row => row.id === botId);
               if (task.origin.actor !== actor || route?.botId !== botId || route?.chatId !== event.message.chat_id || route?.incarnation !== incarnation
-                || (!allowedSenderOpenIds.has(actor) && !allowedSenderOpenIds.has('*')) || currentRouteStatus(route) !== 'ready') throw new Error('任务授权或原会话已失效。');
+                || !isSingleOwner(actor, current) || (!accessGate && !allowedSenderOpenIds.has(actor))
+                || currentRouteStatus(route) !== 'ready') throw new Error('任务授权或原会话已失效。');
             };
             validate();
             if (await routeStatus(route) !== 'ready') throw new Error('任务路线不可用。');

@@ -225,3 +225,122 @@ test('desktop parity: only Workspace members and scratch-cwd tasks are listed; d
     ['orphan-archived', 'task-archived', 'ghost'],
   );
 });
+
+test('mobile catalog lists dsh-whale:assistant and dsh-whale:todo outside workspaces and scratchCwd', () => {
+  const catalog = {
+    items: [
+      {
+        sessionId: 'whale-main',
+        blank: false,
+        cwd: 'C:\\dsh-home\\data\\whale',
+        projections: { values: { title: '鲸鱼娘', presentation: { owner: 'dsh-whale:assistant' } } },
+      },
+      {
+        sessionId: 'whale-todo-1',
+        blank: false,
+        cwd: 'C:\\Users\\alice\\Documents\\WhaleIsle-Tasks\\todo-1',
+        projections: { values: { title: '整理资料', sessionListMetadata: { presentation: { owner: 'dsh-whale:todo' } } } },
+      },
+      {
+        sessionId: 'whale-todo-blank',
+        blank: true,
+        cwd: 'C:\\Users\\alice\\Documents\\WhaleIsle-Tasks\\todo-blank',
+        projections: { values: { presentation: { owner: 'dsh-whale:todo' } } },
+      },
+      {
+        sessionId: 'whale-todo-archived',
+        blank: false,
+        cwd: 'C:\\Users\\alice\\Documents\\WhaleIsle-Tasks\\todo-arch',
+        projections: { values: { title: '已归档任务', presentation: { owner: 'dsh-whale:todo' } } },
+      },
+      {
+        sessionId: 'unrelated-orphan',
+        blank: false,
+        cwd: 'C:\\elsewhere',
+        projections: { values: { title: '未登记会话', presentation: { owner: 'other-plugin' } } },
+      },
+    ],
+  };
+  const reg = {
+    items: [{ workspaceId: 'ws-1', title: 'proj', path: 'C:\\proj', sessionIds: [] }],
+    archivedSessionIds: ['whale-todo-archived'],
+    scratchCwd: 'C:\\dsh-home\\no-workspace',
+  };
+  const live = liveSessionRows({ sessions: catalog, workspaces: reg });
+  assert.deepEqual(live.map((row) => row.sessionId).sort(), ['whale-main', 'whale-todo-1']);
+  assert.equal(live.find((row) => row.sessionId === 'whale-main').presentationOwner, 'dsh-whale:assistant');
+  assert.equal(live.find((row) => row.sessionId === 'whale-todo-1').presentationOwner, 'dsh-whale:todo');
+
+  const archived = archivedSessionRows({ sessions: catalog, workspaces: reg });
+  assert.deepEqual(archived.map((row) => row.sessionId), ['whale-todo-archived']);
+  assert.equal(archived[0].presentationOwner, 'dsh-whale:todo');
+});
+
+test('mobile catalog lists dsh-bots:* sessions outside workspaces and scratchCwd', () => {
+  const catalog = {
+    items: [
+      {
+        sessionId: 'bot-home',
+        blank: false,
+        cwd: 'C:\\dsh-home\\data\\bots\\alpha',
+        projections: { values: { title: 'Home Chat', presentation: { owner: 'dsh-bots:home' } } },
+      },
+      {
+        sessionId: 'bot-chat',
+        blank: false,
+        cwd: 'C:\\dsh-home\\data\\bots\\alpha',
+        projections: { values: { title: 'Side Chat', presentation: { owner: 'dsh-bots:chat' } } },
+      },
+      {
+        sessionId: 'bot-group',
+        blank: false,
+        cwd: 'C:\\dsh-home\\data\\bots\\alpha',
+        projections: { values: { title: 'Release Room', presentation: { owner: 'dsh-bots:group' } } },
+      },
+      {
+        sessionId: 'bot-work',
+        blank: false,
+        cwd: 'C:\\projects\\app',
+        projections: { values: { title: 'Fix bug', presentation: { owner: 'dsh-bots:work' } } },
+      },
+      {
+        sessionId: 'bot-auto',
+        blank: false,
+        cwd: 'C:\\dsh-home\\data\\bots\\alpha',
+        projections: { values: { title: 'Daily Digest', presentation: { owner: 'dsh-bots:automation' } } },
+      },
+      {
+        sessionId: 'bot-blank',
+        blank: true,
+        cwd: 'C:\\dsh-home\\data\\bots\\alpha',
+        projections: { values: { presentation: { owner: 'dsh-bots:home' } } },
+      },
+      {
+        sessionId: 'bot-archived',
+        blank: false,
+        cwd: 'C:\\dsh-home\\data\\bots\\alpha',
+        projections: { values: { title: '旧机器人对话', presentation: { owner: 'dsh-bots:chat' } } },
+      },
+      {
+        sessionId: 'other-owner',
+        blank: false,
+        cwd: 'C:\\elsewhere',
+        projections: { values: { title: '外部插件', presentation: { owner: 'third-party:bot' } } },
+      },
+    ],
+  };
+  const reg = {
+    items: [],
+    archivedSessionIds: ['bot-archived'],
+    scratchCwd: 'C:\\dsh-home\\no-workspace',
+  };
+  const live = liveSessionRows({ sessions: catalog, workspaces: reg });
+  assert.deepEqual(
+    live.map((row) => row.sessionId).sort(),
+    ['bot-auto', 'bot-chat', 'bot-group', 'bot-home', 'bot-work'],
+  );
+  const archived = archivedSessionRows({ sessions: catalog, workspaces: reg });
+  assert.deepEqual(archived.map((row) => row.sessionId), ['bot-archived']);
+  assert.equal(archived[0].presentationOwner, 'dsh-bots:chat');
+});
+

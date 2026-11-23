@@ -32,7 +32,7 @@ function SessionView({ view, visible, SessionProvider, renderSlot, mountView, wi
  * @returns the foreground and retained background Sidebars.
  */
 export function RightbarRoot({ usePanelInfo, useViews, ...props }: RootProps) {
-  const visible = usePanelInfo(info => info.activePanelId === null)
+  const visible = usePanelInfo(info => info.activePanelId === null || info.activePanelId === 'projects')
   const views = useViews(value => value)
   return <>{views.map(view => <SessionView key={view.sessionId} {...props} view={view} visible={visible} />)}</>
 }

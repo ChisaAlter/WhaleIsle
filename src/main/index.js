@@ -7,8 +7,6 @@ preserveUserDataPath(app, LEGACY_DESKTOP_USER_DATA);
 const { loadConfig, saveConfig, REMOTE_FEATURE_ENABLED, parkRemoteSnapshot, normalizeRemotePatch } = require('./config');
 const { DshManager } = require('./dsh');
 const { DshdRemote, resolveDesktopChisaCodeHome } = require('./dshd-remote');
-const git = require('./git');
-const { invokeTrayAction } = require('./tray');
 const {
   onHarnessOriginChange,
   getHarnessOrigin,
@@ -19,8 +17,6 @@ const {
 const { createMainFailureReporter } = require('./crash-report');
 const { qaFlag, qaRemoteMode: readRemoteMode } = require('./qa-gate');
 const { createProjectEnvironment } = require('./project-environment');
-const { createProactiveService } = require('./proactive/service');
-const { createGitHubApiSource } = require('./proactive/github-source');
 const { createShellState } = require('./app-shell-state');
 const { createShellDialogs } = require('./app-dialogs');
 const { createAppWindows } = require('./app-windows');
@@ -29,7 +25,6 @@ const { createAppHarness } = require('./app-harness');
 const { createAppLifecycle } = require('./app-lifecycle');
 const { createUpdateFlow } = require('./app-updates');
 const { registerAppEvents } = require('./app-events');
-const { runAppReady } = require('./app-ready');
 
 /**
  * Packaged-gated QA flag (see qa-gate.js).
@@ -82,7 +77,7 @@ const remote = new DshdRemote(/** @type {any} */ ({
   log: (/** @type {string} */ line) => dsh.log(line, 'app'),
   getHarnessOrigin,
   getSessionCookie: () => dsh.sessionCookie || '',
-  git,
+  git: () => require('./git'),
 }));
 
 onHarnessOriginChange((/** @type {any} */ origin) => {
@@ -176,13 +171,6 @@ const updates = createUpdateFlow({
   startDesktopFromLauncher: lifecycle.startDesktopFromLauncher,
 });
 const projectEnvironment = createProjectEnvironment({ getGithubToken: () => loadConfig().githubToken });
-const proactiveService = createProactiveService(/** @type {any} */ ({
-  userDataPath: app.getPath('userData'),
-  githubSource: /** @type {any} */ (createGitHubApiSource(/** @type {any} */ ({
-    repository: process.env.WHALEISLE_GITHUB_REPOSITORY || 'ChisaAlter/WhaleIsle',
-    tokenProvider: () => loadConfig().githubToken,
-  }))),
-}));
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -195,6 +183,7 @@ if (!gotLock) {
   app.setAppUserModelId('ai.deepseek.harness.gui');
 
   app.whenReady().then(async () => {
+    const { runAppReady } = require('./app-ready');
     await runAppReady({
       state,
       dsh,
@@ -204,7 +193,6 @@ if (!gotLock) {
       ignoreFailure,
       quitApp,
       projectEnvironment,
-      proactiveService,
       openLauncher: windows.openLauncher,
       bindLauncherClose: windows.bindLauncherClose,
       showForeground: windows.showForeground,
@@ -229,6 +217,7 @@ if (!gotLock) {
       // QA / smoke orchestration lives in ./smoke and is only required inside
       // this gate: a production start never loads the QA drivers.
       const { createSmokeRunner } = require('./smoke');
+      const { invokeTrayAction } = require('./tray');
       const smoke = createSmokeRunner({
         qaEnv,
         qaRemoteMode,

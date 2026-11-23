@@ -158,4 +158,25 @@ describe('createScrollHandoff', () => {
     const handoff = createScrollHandoff()
     expect(handoff.useSectionScroller()).toBe(handoff.useSectionScroller())
   })
+
+  it('yields wheel events to a nested independent scroller until it hits its boundary', () => {
+    const { viewport, scroller } = bound()
+    const nested = scrollable(120, 180)
+    nested.setAttribute('data-sidebar-nested-scroller', '')
+    const child = document.createElement('div')
+    nested.append(child)
+    viewport.insertBefore(nested, scroller)
+
+    // Still scrollable downward: keep native scrolling on the nested container.
+    expect(wheel(child, { deltaY: 40 }, 100).defaultPrevented).toBe(false)
+    expect(viewport.scrollTop).toBe(0)
+
+    // Once at the bottom of the nested scroller, downward scroll hands off to viewport.
+    nested.scrollTop = 120
+    expect(wheel(child, { deltaY: 40 }, 300).defaultPrevented).toBe(true)
+    expect(viewport.scrollTop).toBe(40)
+
+    // Scrolling upward inside the nested scroller while scrollTop > 0 stays native.
+    expect(wheel(child, { deltaY: -30 }, 1000).defaultPrevented).toBe(false)
+  })
 })

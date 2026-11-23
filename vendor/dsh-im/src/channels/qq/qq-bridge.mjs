@@ -22,6 +22,11 @@ import {
 import { askInWorkspaceSession } from '../shared/workspace-session.mjs';
 import { sharedWhaleSessionId } from '../shared/whale-session.mjs';
 import {
+  attachImmutableSpeaker,
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from '../shared/single-owner-gate.mjs';
+import {
   BatchInputManager,
   batchInputBusyMessage,
   batchInputGroupUnsupportedMessage,
@@ -378,6 +383,7 @@ export class QqHarnessBridge {
   #commandTasks = new Set();
   #approvals;
   #batchInputs = new BatchInputManager();
+  #accessGate;
 
   constructor({
     bot,
@@ -390,6 +396,7 @@ export class QqHarnessBridge {
     signal,
     fetchImpl = fetch,
     fileUploadTimeoutMs = DEFAULT_FILE_UPLOAD_TIMEOUT_MS,
+    accessGate = null,
   }) {
     if (!bot || typeof bot.sendText !== 'function') throw new TypeError('QQ bot client is required');
     if (!ownerUserOpenid) throw new TypeError('QQ scanner identity is required');
@@ -408,6 +415,7 @@ export class QqHarnessBridge {
     this.#signal = signal;
     this.#fetchImpl = fetchImpl;
     this.#fileUploadTimeoutMs = Math.min(fileUploadTimeoutMs, DEFAULT_FILE_UPLOAD_TIMEOUT_MS);
+    this.#accessGate = accessGate ?? harness?.accessGate ?? null;
     this.#approvals = new HarnessApprovalQueue({ label: 'qq', logger });
   }
 
@@ -425,15 +433,51 @@ export class QqHarnessBridge {
       || this.#acceptedMessageIds.has(messageId)) return Promise.resolve();
     const key = conversationKey(message);
     this.#acceptedMessageIds.add(messageId);
+    const gate = this.#accessGate;
+    const chatType = message.kind === 'c2c' ? 'private' : 'group';
+    if (gate && typeof gate.evaluateInbound === 'function') {
+      return Promise.resolve().then(async () => {
+        const decision = await gate.evaluateInbound({
+          senderId: sender,
+          displayName: nonEmptyString(message?.senderName),
+          chatType,
+          harness: this.#harness,
+        });
+        if (!decision.allowed) {
+          this.#acceptedMessageIds.delete(messageId);
+          await this.#state.markSeen(messageId).catch(() => undefined);
+          this.#status.messagesRejected += 1;
+          this.#status.lastRejectedAt = new Date().toISOString();
+          if (decision.replyText && message.replyTarget) {
+            await this.#bot.sendText(message.replyTarget, decision.replyText).catch(() => undefined);
+          }
+          return;
+        }
+        const stamped = { ...message };
+        attachImmutableSpeaker(stamped, decision.speaker);
+        return this.#acceptAuthorized(stamped, messageId, sender, key, decision.enforced);
+      }).catch((error) => {
+        this.#acceptedMessageIds.delete(messageId);
+        throw error;
+      });
+    }
+    const stamped = { ...message };
+    attachImmutableSpeaker(stamped, { role: 'guest', chat: chatType });
+    return this.#acceptAuthorized(stamped, messageId, sender, key, false);
+  }
+
+  #acceptAuthorized(message, messageId, sender, key, gateEnforced) {
+    const allowed = gateEnforced
+      ? message.speaker?.role === 'owner'
+      : (this.#ownerUserOpenid === '*' || sender === this.#ownerUserOpenid);
     if (message.kind === 'c2c'
-      && (this.#ownerUserOpenid === '*' || sender === this.#ownerUserOpenid)
+      && allowed
       && message.replyTarget?.scope === 'c2c'
       && nonEmptyString(message.replyTarget.targetId) === sender) {
       rememberConnectionTestTarget(this.#state, message.replyTarget);
     }
     const pending = this.#pendingInteractions.get(key);
     const commandText = safeText(message);
-    const allowed = this.#ownerUserOpenid === '*' || sender === this.#ownerUserOpenid;
     const addressed = message.kind !== 'group'
       || message.rawEventType === 'GROUP_AT_MESSAGE_CREATE';
     const batchCommand = isBatchInputCommand(commandText);
@@ -710,7 +754,7 @@ export class QqHarnessBridge {
       await this.#state.markSeen(messageId);
       messageRecorded = true;
     };
-    if (this.#ownerUserOpenid !== '*' && sender !== this.#ownerUserOpenid) {
+    if (message.speaker?.role !== 'owner' && this.#ownerUserOpenid !== '*' && sender !== this.#ownerUserOpenid) {
       this.#status.messagesRejected += 1;
       this.#status.lastRejectedAt = new Date().toISOString();
       return;
@@ -744,8 +788,8 @@ export class QqHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness)) {
-          await this.#bot.sendText(target, t('鲸鱼娘只有一条常驻对话，继续发送消息即可。'));
+        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+          await this.#bot.sendText(target, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(key);
           await this.#bot.sendText(target, t('已开启新会话。请发送你的问题。'));
@@ -795,6 +839,7 @@ export class QqHarnessBridge {
           state: this.#state,
           key,
           ...(hasImages ? { content } : { text }),
+          speaker: message.speaker,
           createOptions: { signal: this.#signal },
           existsOptions: { signal: this.#signal },
           askOptions: {

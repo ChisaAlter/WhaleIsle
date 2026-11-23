@@ -54,6 +54,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Rows of the panel list's More menu; the sidebar shows More only while this list has registrations. */
     'sidebar.panellist.actions': { kind: 'list'; scope: 'root'; owner: SidebarPanelActionsOwnerProps }
     /**
+     * Additive sidebar sections rendered above the workspace browser inside
+     * the shared scrollport while the sessions tab is active.
+     */
+    'sidebar.sections.before': { kind: 'list'; scope: 'root'; owner: SidebarSectionOwnerProps }
+    /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
      * package's 'sidebar' entry (declaring is claiming); ui-workspace
@@ -69,6 +74,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       hookContext: SidebarSectionHookContext
       inject: SidebarSectionInjected
     }
+    /**
+     * Additive sidebar sections rendered below the workspace browser inside
+     * the shared scrollport while the sessions tab is active.
+     */
+    'sidebar.sections.after': { kind: 'list'; scope: 'root'; owner: SidebarSectionOwnerProps }
     /**
      * Additive region tabs. Occupancy is the only signal that draws the tab
      * strip; zero entries keep the shipped chrome (New Session + workspaces)
@@ -280,7 +290,9 @@ export type SidebarRootComponentProps =
     | 'sidebar.brand.name'
     | 'sidebar.toggle.badge'
     | 'sidebar.panellist.actions'
+    | 'sidebar.sections.before'
     | 'sidebar.workspaces'
+    | 'sidebar.sections.after'
     | 'sidebar.nav.tab'
     | 'sidebar.page'
     | 'sidebar.settings'

@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
+require('../../scripts/lib/harness-peer-hook.cjs');
 const { gateTests, harnessWorkspace } = require('../../scripts/lib/test-prerequisites.cjs');
 const root = path.resolve('.');
 const harness = path.join(root, 'vendor/deepseek-harness');

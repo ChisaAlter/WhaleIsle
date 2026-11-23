@@ -490,10 +490,22 @@ export function SidebarRoot({
             </nav>
           )}
           <div className={css.regionArea}>
-            {pluginPage ? renderSlot('sidebar.page', { wide, expandSidebar }, { entryKey: activeTab }) : renderSlot('sidebar.workspaces', {
-              wide,
-              expandSidebar: () => { if (collapsed) toggleSidebar() },
-            }, { hookContext: sectionHookContext })}
+            {pluginPage ? renderSlot('sidebar.page', { wide, expandSidebar }, { entryKey: activeTab }) : (
+              <>
+                <div className={css.sectionsBefore} data-sidebar-sections-before>
+                  {renderSlot('sidebar.sections.before', { wide, expandSidebar })}
+                </div>
+                <div className={css.workspacesSlot} data-sidebar-workspaces>
+                  {renderSlot('sidebar.workspaces', {
+                    wide,
+                    expandSidebar: () => { if (collapsed) toggleSidebar() },
+                  }, { hookContext: sectionHookContext })}
+                </div>
+                <div className={css.sectionsAfter} data-sidebar-sections-after>
+                  {renderSlot('sidebar.sections.after', { wide, expandSidebar })}
+                </div>
+              </>
+            )}
           </div>
         </div>
         <span className={css.scrollFade} aria-hidden="true" />

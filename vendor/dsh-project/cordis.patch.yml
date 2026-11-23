@@ -1,4 +1,5 @@
-# Project consumes the native Team/Subagent tree without replacing their UI.
+# WhaleIsle Projects: Host plugin (store, /projects-api HTTP+SSE, 8 projects_* tools)
+# and Client module (three-column Projects board discovered through dsh.client).
 - insert:
     - id: dsh-project
       name: dsh-project

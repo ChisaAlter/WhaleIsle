@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
-const { spawnTreeOptions, killProcessTree } = require('./process-tree');
+const { spawnTreeOptions, killProcessTree, windowsProcessStartTime } = require('./process-tree');
 
 const posixOnly = { skip: process.platform === 'win32' ? 'POSIX process-group semantics' : false };
 
@@ -153,4 +153,16 @@ test('win32 reports PROCESS_TREE_STOP_FAILED when the tree outlives the grace wi
     killProcessTree(process.pid, { platform: 'win32', run, graceMs: 100 }),
     (error) => error.code === 'PROCESS_TREE_STOP_FAILED',
   );
+});
+
+test('windowsProcessStartTime returns empty string for invalid pids without throwing', () => {
+  for (const pid of [0, -3, 1.5, 'x', null, undefined, 2 ** 32]) {
+    assert.equal(windowsProcessStartTime(pid), '');
+  }
+});
+
+test('windowsProcessStartTime returns UTC ISO timestamp for the current process', { skip: process.platform !== 'win32' }, () => {
+  const ts = windowsProcessStartTime(process.pid);
+  assert.match(ts, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/);
+  assert.equal(windowsProcessStartTime(DEAD_PID), '');
 });

@@ -34,11 +34,22 @@ export function sessionIdFromRow(row) {
   return String(row?.sessionId ?? row?.id ?? '').trim();
 }
 
+/**
+ * @param {any} row
+ * @param {any} presentation
+ */
+function titleFromRow(row, presentation) {
+  const projected = row?.projections?.values?.title;
+  if (presentation.title) return String(presentation.title);
+  if (typeof projected === 'string' && projected) return projected;
+  return String(row?.title ?? row?.name ?? '');
+}
+
 export function rowSummary(row) {
   const presentation = row?.projections?.values?.sessionListMetadata?.presentation ?? {};
   return {
     sessionId: sessionIdFromRow(row),
-    title: String(presentation.title ?? row?.title ?? row?.name ?? ''),
+    title: titleFromRow(row, presentation),
     owner: String(presentation.owner ?? ''),
     cwd: String(row?.cwd ?? ''),
     updatedAt: row?.updatedAt ?? row?.lastActiveAt ?? 0,
@@ -47,15 +58,17 @@ export function rowSummary(row) {
 }
 
 export const genericOutput = {
-  schema: {
+  schema: /** @type {const} */ ({
     type: 'object',
     additionalProperties: false,
     properties: {
       ok: { type: 'boolean', required: true },
       detail: { type: 'string', required: true },
     },
-  },
-  render: (_args, value) => [{ type: 'text', text: value.detail }],
+  }),
+  render: (/** @type {any} */ _args, /** @type {{ ok: boolean, detail: string }} */ value) => [
+    { type: /** @type {const} */ ('text'), text: value.detail },
+  ],
 };
 
 /** Text of one durable message event (content blocks or a bare string). */

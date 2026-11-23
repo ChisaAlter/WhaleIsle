@@ -30,14 +30,41 @@ function scratchCwdOf(workspaces) {
   return typeof workspaces?.scratchCwd === 'string' ? workspaces.scratchCwd : '';
 }
 
+const WHALE_LISTED_OWNERS = new Set([
+  'dsh-whale:assistant',
+  'dsh-whale:todo',
+  'dsh-bots:home',
+  'dsh-bots:chat',
+  'dsh-bots:group',
+  'dsh-bots:work',
+  'dsh-bots:automation',
+]);
+
+function isListedPresentationOwner(owner) {
+  return WHALE_LISTED_OWNERS.has(owner) || owner.startsWith('dsh-bots:');
+}
+
+function presentationOwner(session) {
+  const values = session?.projections?.values;
+  const raw = values?.presentation?.owner
+    ?? values?.sessionListMetadata?.presentation?.owner
+    ?? session?.presentation?.owner
+    ?? session?.owner
+    ?? '';
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
 /**
- * Same listing rule as the desktop sidebar: a Session shows only when a
- * registered Workspace accounts it, or when it is a no-directory task living
- * in the Host scratch cwd. Members of a deleted Workspace registration are
- * listed nowhere until that directory is added again.
+ * Same listing rule as the desktop sidebar: a Session shows when a
+ * registered Workspace accounts it, when it is a Whale/Bots managed
+ * session (`dsh-bots:*` / `dsh-whale:assistant` / `dsh-whale:todo`), or when
+ * it is a no-directory task living in the Host scratch cwd. Members of a
+ * deleted Workspace registration are listed nowhere until that directory is
+ * added again.
  */
 function isListed(session, workspace, scratchCwd) {
   if (workspace) return true;
+  if (isListedPresentationOwner(presentationOwner(session))) return true;
   return Boolean(scratchCwd) && session?.cwd === scratchCwd;
 }
 
@@ -50,6 +77,7 @@ function toRow(session, workspace, archived) {
     running: session.running === true,
     parentSessionId: typeof session.parentSessionId === 'string' ? session.parentSessionId : '',
     origin: typeof session.origin === 'string' ? session.origin : '',
+    presentationOwner: presentationOwner(session),
     workspaceId: workspace?.workspaceId || '',
     workspaceTitle: workspace?.title || '',
     workspacePath: path,

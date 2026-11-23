@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ESLint } from 'eslint'
@@ -140,7 +140,7 @@ async function listLintedFiles(root) {
   const eslint = new ESLint({ cwd: root, overrideConfigFile: join(root, 'eslint.config.mjs') })
   const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split('\n')
-    .filter(file => /\.(?:js|mjs|cjs)$/.test(file))
+    .filter(file => /\.(?:js|mjs|cjs)$/.test(file) && existsSync(join(root, file)))
   const linted = []
   for (const file of tracked) {
     if (await eslint.isPathIgnored(file)) continue

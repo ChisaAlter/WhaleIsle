@@ -1,7 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { ipcMain, dialog, app } = require('electron');
-const { formatBootLogDump, saveBootLog } = require('./boot-log-dump');
 const {
   REMOTE_FEATURE_ENABLED,
   loadConfig,
@@ -16,18 +15,6 @@ const { registerLauncherChannels, configPayload } = require('./ipc-launcher');
 const ipcComponents = require('./ipc-components');
 const ipcDelta = require('./ipc-delta');
 const { getTaskProtection } = require('./task-protection');
-const { listMarketplace } = require('./marketplace-catalog');
-const { checkMarketplaceUpdates } = require('./marketplace-updates');
-const { getMarketplaceDetails } = require('./marketplace-details');
-const { listMarketplaceState, setMarketplaceFavorite, recordMarketplaceOperation, redactMarketLog } = require('./marketplace-state');
-const {
-  listInstalledPlugins,
-  installPlugin,
-  installMarketplacePlugin,
-  updateMarketplacePlugin,
-  updateMarketplacePlugins,
-  uninstallPlugin,
-} = require('./marketplace-install');
 const { applyRendererConfigPatch } = require('./profile-ops');
 const importGuard = require('./import-guard');
 const { readImportJournal, journalIsBlocked } = require('./data-import');
@@ -35,19 +22,12 @@ const { recordLastDesktopStart, kernelLogTail } = require('./launcher-gate');
 const { createLauncherService } = require('../launcher/launcher-service');
 const { withUpdateCenter } = require('./update-center/legacy');
 const { createLauncherConfirm } = require('../launcher/launcher-confirm');
-const { listWallpaperCatalog, downloadWallpaper } = require('./wallpaper-catalog');
-const { gitBranchList, gitCheckLargeFiles, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStagePatch, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, gitUnstagePatch, openWorkspacePath } = require('./git');
 const { gitIpcNull, guardGitIpc } = require('./git-ipc-guard');
 const { watchWorkspaceRegistrations } = require('./git-workspace-watch');
 const { registerPreviewIpc } = require('./preview');
 const { registerPtyIpc } = require('./pty');
-const { listDir, readFile, readFileMedia, writeFile } = require('./workspace-fs');
-const { listAvailableEditors, openInEditor, revealInFolder, openWithSystemDefault } = require('./editors');
 const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
 const { registerIpc: registerChannel } = require('./ipc-register');
-const { openExternalHttp } = require('./open-external');
-const { openDesktopDshHome } = require('./open-dsh-home');
-const { openuiViewer, openuiApi, openuiBundle } = require('./openui');
 
 const HARNESS_ONLY = [IPC_ROLES.HARNESS];
 // Boot page and harness may summon the launcher window; the launcher itself
@@ -56,6 +36,7 @@ const OPEN_LAUNCHER_SURFACES = [IPC_ROLES.BOOT, IPC_ROLES.HARNESS];
 
 function sendPluginProgress(event, payload) {
   if (event?.sender && !event.sender.isDestroyed()) {
+    const { redactMarketLog } = require('./marketplace-state');
     event.sender.send('shell:plugin-progress', { ...payload, line: redactMarketLog(payload.line) });
   }
 }
@@ -101,7 +82,7 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 
 function registerIpc({
   dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
-  getLive2dPet, proactiveService = null, updateCenter = null, openUpdateCenter = () => {},
+  getLive2dPet, updateCenter = null, openUpdateCenter = () => {},
   onConfigChanged = /** @type {((next: Record<string, any>, patch?: Record<string, any>) => void) | undefined} */ (undefined),
 }) {
   // Every channel mounts through the shared wrapper: the IPC contract
@@ -119,12 +100,6 @@ function registerIpc({
   });
   handle('shell:claim-minimal-suggestion', () => renderMode.claimMinimalSuggestion());
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
-  handle('shell:proactive', (_event, action, payload = {}) => {
-    if (!proactiveService || typeof proactiveService.dispatch !== 'function') {
-      throw new Error('Proactive service unavailable');
-    }
-    return proactiveService.dispatch(action, payload);
-  });
   let pendingWorkspaceDirectoryDialog = null;
   // Launcher orchestration lives in the service; handlers below stay thin
   // authorization + renderer-transport delegates so the same service can sit
@@ -167,15 +142,15 @@ function registerIpc({
   });
 
   handle('shell:open-external', async (_event, url) => {
-    if (!await openExternalHttp(url)) {
+    if (!await require('./open-external').openExternalHttp(url)) {
       throw new Error('Invalid URL');
     }
     return true;
   });
 
-  handle('shell:openui-viewer', () => openuiViewer());
-  handle('shell:openui-api', (_event, input) => openuiApi(input));
-  handle('shell:openui-bundle', (_event, input) => openuiBundle(input));
+  handle('shell:openui-viewer', () => require('./openui').openuiViewer());
+  handle('shell:openui-api', (_event, input) => require('./openui').openuiApi(input));
+  handle('shell:openui-bundle', (_event, input) => require('./openui').openuiBundle(input));
 
   // Boot-page restarts are full desktop starts: record their outcome in
   // last-desktop-start.json so the next cold-start gate sees the truth.
@@ -242,6 +217,7 @@ function registerIpc({
   ));
 
   handle('shell:save-boot-log', async () => {
+    const { formatBootLogDump, saveBootLog } = require('./boot-log-dump');
     const snapshot = harness ? harness.snapshot() : dsh.snapshot();
     const dump = formatBootLogDump({
       version: currentVersion(),
@@ -339,39 +315,39 @@ function registerIpc({
     return { ok: true };
   });
 
-  handle('shell:open-dsh-home', () => openDesktopDshHome());
+  handle('shell:open-dsh-home', () => require('./open-dsh-home').openDesktopDshHome());
 
   handle('shell:list-marketplace', async (_event, options = {}) => {
-    return listMarketplace({
+    return require('./marketplace-catalog').listMarketplace({
       refresh: Boolean(options && options.refresh),
       locale: options?.locale,
     });
   });
 
   handle('shell:refresh-marketplace', async (_event, options = {}) => {
-    return listMarketplace({
+    return require('./marketplace-catalog').listMarketplace({
       refresh: true,
       locale: options?.locale,
     });
   });
 
   handle('shell:list-wallpaper-catalog', async (_event, query = {}) => (
-    listWallpaperCatalog(wallpaperCatalogQuery(query))
+    require('./wallpaper-catalog').listWallpaperCatalog(wallpaperCatalogQuery(query))
   ));
 
   handle('shell:download-wallpaper', async (_event, url) => {
     if (typeof url !== 'string') return { error: '壁纸地址无效' };
-    return downloadWallpaper(url);
+    return require('./wallpaper-catalog').downloadWallpaper(url);
   });
 
-  handle('shell:list-installed-plugins', () => listInstalledPlugins());
-  handle('shell:marketplace-state', () => listMarketplaceState());
-  handle('shell:marketplace-details', (_event, id, options = {}) => getMarketplaceDetails(id, { force: options?.force === true }));
-  handle('shell:marketplace-favorite', (_event, id, favorite) => setMarketplaceFavorite(id, favorite));
+  handle('shell:list-installed-plugins', () => require('./marketplace-install').listInstalledPlugins());
+  handle('shell:marketplace-state', () => require('./marketplace-state').listMarketplaceState());
+  handle('shell:marketplace-details', (_event, id, options = {}) => require('./marketplace-details').getMarketplaceDetails(id, { force: options?.force === true }));
+  handle('shell:marketplace-favorite', (_event, id, favorite) => require('./marketplace-state').setMarketplaceFavorite(id, favorite));
 
   handle('shell:check-marketplace-updates', (_event, options = {}) => {
     const config = loadConfig();
-    return checkMarketplaceUpdates({
+    return require('./marketplace-updates').checkMarketplaceUpdates({
       force: Boolean(options?.force),
       refresh: Boolean(options?.refresh),
       token: config.githubToken,
@@ -380,7 +356,7 @@ function registerIpc({
 
   handle('shell:install-plugin', async (event, spec, options = {}) => {
     const config = loadConfig();
-    const result = await installPlugin(spec, {
+    const result = await require('./marketplace-install').installPlugin(spec, {
       token: config.githubToken,
       allowBuilds: Array.isArray(options?.allowBuilds) ? options.allowBuilds : [],
       onProgress: (payload) => sendPluginProgress(event, payload),
@@ -390,6 +366,8 @@ function registerIpc({
 
   handle('shell:install-marketplace-plugin', async (event, id, options = {}) => {
     const config = loadConfig();
+    const { recordMarketplaceOperation } = require('./marketplace-state');
+    const { installMarketplacePlugin } = require('./marketplace-install');
     return recordMarketplaceOperation('install', id, async record => {
       const result = await installMarketplacePlugin(id, {
         token: config.githubToken,
@@ -402,6 +380,8 @@ function registerIpc({
 
   handle('shell:update-marketplace-plugin', async (event, id, options = {}) => {
     const config = loadConfig();
+    const { recordMarketplaceOperation } = require('./marketplace-state');
+    const { updateMarketplacePlugin } = require('./marketplace-install');
     return recordMarketplaceOperation('update', id, async record => {
       const result = await updateMarketplacePlugin(id, {
         token: config.githubToken,
@@ -414,6 +394,8 @@ function registerIpc({
 
   handle('shell:update-marketplace-plugins', async (event, ids) => {
     const config = loadConfig();
+    const { recordMarketplaceOperation } = require('./marketplace-state');
+    const { updateMarketplacePlugins } = require('./marketplace-install');
     return recordMarketplaceOperation('batch', Array.isArray(ids) ? ids.join(', ') : '', async record => {
       const result = await updateMarketplacePlugins(ids, {
         token: config.githubToken,
@@ -426,6 +408,8 @@ function registerIpc({
   });
 
   handle('shell:uninstall-plugin', async (event, name) => {
+    const { recordMarketplaceOperation } = require('./marketplace-state');
+    const { uninstallPlugin } = require('./marketplace-install');
     return recordMarketplaceOperation('uninstall', name, async record => {
       const result = await uninstallPlugin(name, {
         onProgress: payload => { record(payload); sendPluginProgress(event, payload); },
@@ -441,51 +425,52 @@ function registerIpc({
   // which would strand the titlebar progress toast in the loading state.
   // The webContents id owns the refresh read context: the three sibling reads
   // of one titlebar refresh share it, and no other window can pick it up.
-  handle('shell:git-status', guardGitIpc((event, cwd) => gitStatus(cwd, event.sender.id), gitIpcNull));
-  handle('shell:git-fetch-status', guardGitIpc((event, cwd) => gitFetchForStatus(cwd, event.sender.id), gitIpcNull));
-  handle('shell:git-pull-request', guardGitIpc((event, cwd) => gitReadPullRequest(cwd, event.sender.id)));
-  handle('shell:git-init', guardGitIpc((_event, cwd) => gitInit(cwd)));
-  handle('shell:git-diff', guardGitIpc((_event, cwd, options) => gitDiff(cwd, options), gitIpcNull));
+  const git = () => require('./git');
+  handle('shell:git-status', guardGitIpc((event, cwd) => git().gitStatus(cwd, event.sender.id), gitIpcNull));
+  handle('shell:git-fetch-status', guardGitIpc((event, cwd) => git().gitFetchForStatus(cwd, event.sender.id), gitIpcNull));
+  handle('shell:git-pull-request', guardGitIpc((event, cwd) => git().gitReadPullRequest(cwd, event.sender.id)));
+  handle('shell:git-init', guardGitIpc((_event, cwd) => git().gitInit(cwd)));
+  handle('shell:git-diff', guardGitIpc((_event, cwd, options) => git().gitDiff(cwd, options), gitIpcNull));
   // Read-only pre-commit size probe for the commit dialog. Same guard as the
   // other Git reads so a cwd outside the authorized roots cannot be scanned.
-  handle('shell:git-check-large-files', guardGitIpc((_event, cwd) => gitCheckLargeFiles(cwd), gitIpcNull));
+  handle('shell:git-check-large-files', guardGitIpc((_event, cwd) => git().gitCheckLargeFiles(cwd), gitIpcNull));
   const sendGitProgress = (event, actionId) => (progress) => {
     if (actionId == null || event.sender.isDestroyed()) return;
     event.sender.send('shell:git-progress', { actionId, ...progress });
   };
   handle('shell:git-commit', guardGitIpc((event, cwd, message, filePaths, actionId, options) => (
-    gitCommit(cwd, message, filePaths, sendGitProgress(event, actionId), options)
+    git().gitCommit(cwd, message, filePaths, sendGitProgress(event, actionId), options)
   )));
-  handle('shell:git-push', guardGitIpc((event, cwd, actionId) => gitPush(cwd, sendGitProgress(event, actionId))));
-  handle('shell:git-pull', guardGitIpc((event, cwd, actionId) => gitPull(cwd, sendGitProgress(event, actionId))));
+  handle('shell:git-push', guardGitIpc((event, cwd, actionId) => git().gitPush(cwd, sendGitProgress(event, actionId))));
+  handle('shell:git-pull', guardGitIpc((event, cwd, actionId) => git().gitPull(cwd, sendGitProgress(event, actionId))));
   handle('shell:git-create-change-request', guardGitIpc((event, cwd, input, actionId) => (
-    gitCreateChangeRequest(cwd, input, sendGitProgress(event, actionId))
+    git().gitCreateChangeRequest(cwd, input, sendGitProgress(event, actionId))
   )));
   handle('shell:git-publish', guardGitIpc((event, cwd, input, actionId) => (
-    gitPublishRepository(cwd, input, sendGitProgress(event, actionId))
+    git().gitPublishRepository(cwd, input, sendGitProgress(event, actionId))
   )));
   // Not a git channel, but ui-git consumes it as the same `{ ok, message }`
   // failure payload from the commit dialog's file rows.
-  handle('shell:open-workspace-path', guardGitIpc((_event, cwd, relativePath) => openWorkspacePath(cwd, relativePath)));
-  handle('shell:list-dir', (_event, cwd, relativePath) => listDir(cwd, relativePath));
-  handle('shell:read-file', (_event, cwd, relativePath) => readFile(cwd, relativePath));
-  handle('shell:read-file-media', (_event, cwd, relativePath) => readFileMedia(cwd, relativePath));
-  handle('shell:write-file', (_event, cwd, relativePath, text) => writeFile(cwd, relativePath, text));
-  handle('shell:list-editors', () => listAvailableEditors());
-  handle('shell:open-in-editor', (_event, input) => openInEditor(input));
-  handle('shell:show-item-in-folder', (_event, cwd, relativePath) => revealInFolder(cwd, relativePath));
+  handle('shell:open-workspace-path', guardGitIpc((_event, cwd, relativePath) => git().openWorkspacePath(cwd, relativePath)));
+  handle('shell:list-dir', (_event, cwd, relativePath) => require('./workspace-fs').listDir(cwd, relativePath));
+  handle('shell:read-file', (_event, cwd, relativePath) => require('./workspace-fs').readFile(cwd, relativePath));
+  handle('shell:read-file-media', (_event, cwd, relativePath) => require('./workspace-fs').readFileMedia(cwd, relativePath));
+  handle('shell:write-file', (_event, cwd, relativePath, text) => require('./workspace-fs').writeFile(cwd, relativePath, text));
+  handle('shell:list-editors', () => require('./editors').listAvailableEditors());
+  handle('shell:open-in-editor', (_event, input) => require('./editors').openInEditor(input));
+  handle('shell:show-item-in-folder', (_event, cwd, relativePath) => require('./editors').revealInFolder(cwd, relativePath));
   handle('shell:open-with-default', (_event, cwd, relativePath) => (
-    openWithSystemDefault({ cwd, relativePath })
+    require('./editors').openWithSystemDefault({ cwd, relativePath })
   ));
-  handle('shell:git-stage', guardGitIpc((_event, cwd, relativePath) => gitStage(cwd, relativePath)));
-  handle('shell:git-stage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => gitStagePatch(cwd, patchText)));
-  handle('shell:git-unstage', guardGitIpc((_event, cwd, relativePath) => gitUnstage(cwd, relativePath)));
-  handle('shell:git-unstage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => gitUnstagePatch(cwd, patchText)));
-  handle('shell:git-discard', guardGitIpc((_event, cwd, relativePath) => gitDiscard(cwd, relativePath)));
-  handle('shell:git-status-entries', guardGitIpc((_event, cwd) => gitStatusEntries(cwd)));
-  handle('shell:git-branch-list', guardGitIpc((_event, cwd) => gitBranchList(cwd)));
-  handle('shell:git-switch-branch', guardGitIpc((_event, cwd, ref) => gitSwitchBranch(cwd, ref)));
-  handle('shell:git-create-branch', guardGitIpc((_event, cwd, name) => gitCreateBranch(cwd, name)));
+  handle('shell:git-stage', guardGitIpc((_event, cwd, relativePath) => git().gitStage(cwd, relativePath)));
+  handle('shell:git-stage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => git().gitStagePatch(cwd, patchText)));
+  handle('shell:git-unstage', guardGitIpc((_event, cwd, relativePath) => git().gitUnstage(cwd, relativePath)));
+  handle('shell:git-unstage-patch', guardGitIpc((/** @type {unknown} */ _event, /** @type {unknown} */ cwd, /** @type {unknown} */ patchText) => git().gitUnstagePatch(cwd, patchText)));
+  handle('shell:git-discard', guardGitIpc((_event, cwd, relativePath) => git().gitDiscard(cwd, relativePath)));
+  handle('shell:git-status-entries', guardGitIpc((_event, cwd) => git().gitStatusEntries(cwd)));
+  handle('shell:git-branch-list', guardGitIpc((_event, cwd) => git().gitBranchList(cwd)));
+  handle('shell:git-switch-branch', guardGitIpc((_event, cwd, ref) => git().gitSwitchBranch(cwd, ref)));
+  handle('shell:git-create-branch', guardGitIpc((_event, cwd, name) => git().gitCreateBranch(cwd, name)));
   // The harness registers a newly opened workspace asynchronously, so the
   // titlebar's first git status read can race that write and come back
   // unauthorized. Push a signal when the registry changes so ui-git refreshes

@@ -272,7 +272,7 @@ function createLive2dPetManager(options = {}) {
   };
   const whaleEnabled = () => {
     try {
-      return loadConfig()?.whaleAssistantEnabled === true;
+      return loadConfig()?.whaleAssistantEnabled !== false;
     } catch {
       return false;
     }

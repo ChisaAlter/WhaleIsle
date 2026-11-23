@@ -46,6 +46,21 @@ import {
 import { runWorkspaceCommand, resolveSessionListWorkspace, workspacePathSnapshot } from '../shared/workspace-command.mjs';
 import { askInWorkspaceSession } from '../shared/workspace-session.mjs';
 import { sharedWhaleSessionId } from '../shared/whale-session.mjs';
+import {
+  attachImmutableSpeaker,
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from '../shared/single-owner-gate.mjs';
+
+function isWhaleRestrictedFeishuAction(action) {
+  return typeof action === 'string' && (
+    ['workspace_pick', 'session_pick', 'preset_pick', 'preset_default', 'new', 'sessions', 'workspaces', 'presets'].includes(action)
+    || action.startsWith('workspace:')
+    || action.startsWith('use:')
+    || action.startsWith('preset:')
+    || action.startsWith('sessions:')
+  );
+}
 import { deliverOutboundArtifacts } from '../shared/semantic/artifact-delivery.mjs';
 import {
   createDeliveryReceipt,
@@ -413,6 +428,7 @@ export class FeishuHarnessBridge {
   #approvals;
   #status;
   #allowedSenderOpenIds;
+  #accessGate;
   #replyTimeoutMs;
   #logger;
   #signal;
@@ -461,6 +477,7 @@ export class FeishuHarnessBridge {
     replyTimeoutMs = 600_000,
     logger = console,
     signal,
+    accessGate = null,
   }) {
     if (!client || !harness || !state || !status) {
       throw new TypeError('Feishu bridge dependencies are required');
@@ -487,6 +504,7 @@ export class FeishuHarnessBridge {
     this.#state = state;
     this.#status = status;
     this.#allowedSenderOpenIds = allowedSenderOpenIds;
+    this.#accessGate = accessGate ?? harness?.accessGate ?? null;
     this.#botId = nonEmptyString(botId);
     this.#appId = nonEmptyString(appId);
     this.#botOpenId = nonEmptyString(botOpenId);
@@ -523,7 +541,56 @@ export class FeishuHarnessBridge {
     if (this.#signal?.aborted) return Promise.resolve();
     const messageId = nonEmptyString(event?.message?.message_id);
     if (!messageId || isBotSender(event)) return Promise.resolve();
+    const senderOpenId = nonEmptyString(event?.sender?.sender_id?.open_id);
+    const chatType = event?.message?.chat_type === 'p2p' ? 'private' : 'group';
+    const gate = this.#accessGate;
+    if (gate && typeof gate.evaluateInbound === 'function') {
+      if (this.#state.hasSeen(messageId) || this.#acceptedMessageIds.has(messageId)) {
+        return Promise.resolve();
+      }
+      this.#acceptedMessageIds.add(messageId);
+      return Promise.resolve().then(async () => {
+        const decision = await gate.evaluateInbound({
+          senderId: senderOpenId,
+          chatType,
+          harness: this.#harness,
+        });
+        if (!decision.allowed) {
+          this.#acceptedMessageIds.delete(messageId);
+          await this.#state.markSeen(messageId).catch(() => undefined);
+          this.#status.messagesRejected += 1;
+          this.#status.lastRejectedAt = new Date().toISOString();
+          if (decision.replyText && nonEmptyString(event?.message?.chat_id)) {
+            await this.#send(event.message.chat_id, decision.replyText).catch(() => undefined);
+          }
+          return;
+        }
+        const stamped = { ...event };
+        attachImmutableSpeaker(stamped, decision.speaker);
+        return this.#acceptAuthorized(stamped, messageId, decision.enforced);
+      }).catch((error) => {
+        this.#acceptedMessageIds.delete(messageId);
+        throw error;
+      });
+    }
     if (!isAllowedSender(event, this.#allowedSenderOpenIds)) {
+      this.#status.messagesRejected += 1;
+      this.#status.lastRejectedAt = new Date().toISOString();
+      this.#logger.warn?.('[dsh-feishu] ignored a message from a sender outside the allowlist');
+      return Promise.resolve();
+    }
+    if (this.#state.hasSeen(messageId) || this.#acceptedMessageIds.has(messageId)) {
+      return Promise.resolve();
+    }
+    this.#acceptedMessageIds.add(messageId);
+    const stamped = { ...event };
+    attachImmutableSpeaker(stamped, { role: 'guest', chat: chatType });
+    return this.#acceptAuthorized(stamped, messageId, false);
+  }
+
+  #acceptAuthorized(event, messageId, gateEnforced) {
+    if (!gateEnforced && !isAllowedSender(event, this.#allowedSenderOpenIds)) {
+      this.#acceptedMessageIds.delete(messageId);
       this.#status.messagesRejected += 1;
       this.#status.lastRejectedAt = new Date().toISOString();
       this.#logger.warn?.('[dsh-feishu] ignored a message from a sender outside the allowlist');
@@ -533,9 +600,7 @@ export class FeishuHarnessBridge {
     if (event?.message?.chat_type !== 'p2p'
       && this.#groupResponseMode === FEISHU_GROUP_RESPONSE_MODES.MENTION
       && !addressed) {
-      return Promise.resolve();
-    }
-    if (this.#state.hasSeen(messageId) || this.#acceptedMessageIds.has(messageId)) {
+      this.#acceptedMessageIds.delete(messageId);
       return Promise.resolve();
     }
 
@@ -543,6 +608,7 @@ export class FeishuHarnessBridge {
     try {
       key = conversationKey(event);
     } catch {
+      this.#acceptedMessageIds.delete(messageId);
       this.#status.messagesRejected += 1;
       this.#status.lastRejectedAt = new Date().toISOString();
       return Promise.resolve();
@@ -553,7 +619,6 @@ export class FeishuHarnessBridge {
       if (chatId) rememberConnectionTestTarget(this.#state, { chatId });
     }
 
-    this.#acceptedMessageIds.add(messageId);
     const processingReaction = this.#beginReaction(messageId);
     const commandMessage = extractInboundMessage(event, this.#client);
     const commandText = nonEmptyString(commandMessage.content) ?? '';
@@ -972,8 +1037,8 @@ export class FeishuHarnessBridge {
       return;
     }
     if (commandText === '/new') {
-      if (await sharedWhaleSessionId(this.#harness)) {
-        await this.#send(event.message.chat_id, t('鲸鱼娘只有一条常驻对话，继续发送消息即可。'));
+      if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+        await this.#send(event.message.chat_id, whaleRestrictedCommandReply('/new'));
         return;
       }
       if (this.#queues.has(key) || this.#hasPendingInteraction(key)) {
@@ -1000,11 +1065,19 @@ export class FeishuHarnessBridge {
       return;
     }
     if (SESSION_LIST_PREFIX.test(commandText)) {
+      if (await isWhaleEnforcedForHarness(this.#harness)) {
+        await this.#send(event.message.chat_id, whaleRestrictedCommandReply(commandText));
+        return;
+      }
       const selector = commandText.slice('/sessionlist'.length).trim() || null;
       await this.#showSessions({ chatId: event.message.chat_id, key }, selector, 0);
       return;
     }
     if (WORKSPACE_LIST_COMMAND.test(commandText)) {
+      if (await isWhaleEnforcedForHarness(this.#harness)) {
+        await this.#send(event.message.chat_id, whaleRestrictedCommandReply(commandText));
+        return;
+      }
       await this.#showWorkspaces({ chatId: event.message.chat_id, key });
       return;
     }
@@ -1482,8 +1555,10 @@ export class FeishuHarnessBridge {
       ?? nonEmptyString(event?.operator?.operator_id?.user_id)
       ?? nonEmptyString(event?.open_id)
       ?? nonEmptyString(event?.user_id);
-    const operatorAllowed = operatorOpenId !== null
-      && (this.#allowedSenderOpenIds.has('*') || this.#allowedSenderOpenIds.has(operatorOpenId));
+    const whaleEnforced = this.#accessGate?.isWhaleEnforcedSync?.() === true;
+    const operatorAllowed = operatorOpenId !== null && (whaleEnforced
+      ? this.#accessGate.isOwner(operatorOpenId)
+      : (this.#allowedSenderOpenIds.has('*') || this.#allowedSenderOpenIds.has(operatorOpenId)));
     if (!operatorAllowed) {
       this.#logger.warn?.('[dsh-feishu] ignoring card action from an unallowed sender');
       return Promise.resolve();
@@ -1493,6 +1568,10 @@ export class FeishuHarnessBridge {
     const action = nonEmptyString(actionValue.action)
       ?? nonEmptyString(event?.action?.action);
     if (!action) return Promise.resolve();
+    if (whaleEnforced && isWhaleRestrictedFeishuAction(action)) {
+      this.#logger.warn?.('[dsh-feishu] blocked restricted card action in Whale single-owner mode');
+      return Promise.resolve();
+    }
     // select_static dropdown: resolve pickers to their target actions
     const option = callbackSingleOption(event?.action?.option)
       ?? (action.endsWith('_pick') ? callbackMultiOptionValues(event?.action?.options)[0] : null);
@@ -1523,6 +1602,10 @@ export class FeishuHarnessBridge {
       ?? nonEmptyString(event?.open_message_id)
       ?? nonEmptyString(event?.message_id);
     const route = messageId ? this.#cardKeys.get(messageId) : null;
+    if (whaleEnforced && route?.key && !route.key.startsWith('p2p:')) {
+      this.#logger.warn?.('[dsh-feishu] blocked group card action in Whale single-owner mode');
+      return Promise.resolve();
+    }
     if (!route) {
       // The card predates this process (the in-memory mapping resets on
       // restart) or never came from us: nudge instead of staying silent.
@@ -1745,6 +1828,10 @@ export class FeishuHarnessBridge {
     sessionPage = 0,
     selections = [],
   }) {
+    if (isWhaleRestrictedFeishuAction(action) && await isWhaleEnforcedForHarness(this.#harness)) {
+      await this.#send(chatId, whaleRestrictedCommandReply(action === 'new' ? '/new' : `/${action}`));
+      return;
+    }
     if (action === 'sessions' || /^sessions:\d+$/.test(action)) {
       const page = action === 'sessions' ? 0 : Number(action.slice('sessions:'.length));
       await this.#showSessions(
@@ -3163,6 +3250,7 @@ export class FeishuHarnessBridge {
         key,
         text,
         content,
+        speaker: event.speaker,
         createOptions: { signal: this.#signal },
         existsOptions: { signal: this.#signal },
         askOptions: this.#interactionAskOptions(event, key, message.files),
@@ -3221,6 +3309,7 @@ export class FeishuHarnessBridge {
             key,
             text,
             content,
+            speaker: event.speaker,
             createOptions: { signal: this.#signal },
             existsOptions: { signal: this.#signal },
             askOptions,
@@ -3283,6 +3372,7 @@ export class FeishuHarnessBridge {
         key,
         text,
         content,
+        speaker: event.speaker,
         createOptions: { signal: this.#signal },
         existsOptions: { signal: this.#signal },
         askOptions: this.#interactionAskOptions(event, key, message.files),

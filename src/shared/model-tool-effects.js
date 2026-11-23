@@ -49,7 +49,14 @@ const TOOLS = Object.freeze({
   whale_usage_today: { level: 'read', confirm: false, reason: '只读用量快照。' },
   whale_notify: { level: 'local', confirm: false, reason: '桌宠气泡通知，可随时关闭。' },
   whale_pet_say: { level: 'local', confirm: false, reason: '桌宠气泡台词。' },
-  whale_remember: { level: 'local', confirm: false, reason: '向 MEMORY.md 追加一行，可逆。' },
+  whale_remember: { level: 'local', confirm: false, reason: '写原子记忆文件并维护窄索引，可逆。' },
+  whale_memory_search: { level: 'read', confirm: false, reason: '按需检索分层记忆文件。' },
+  whale_memory_read: { level: 'read', confirm: false, reason: '读取单个原子记忆文件。' },
+  whale_memory_supersede: { level: 'local', confirm: false, reason: '将过期记忆标记为 superseded 归档，不物理删除。' },
+  whale_list_workspaces: { level: 'read', confirm: false, reason: '只读已登记工作区列表。' },
+  whale_list_models: { level: 'read', confirm: false, reason: '只读可用模型目录。' },
+  whale_list_presets: { level: 'read', confirm: false, reason: '只读可见 Agent 预设列表。' },
+  whale_archive_session: { level: 'local', confirm: false, reason: '归档已完成普通会话，可恢复且不删数据。' },
   whale_search_sessions: { level: 'read', confirm: false, reason: '跨会话全文检索。' },
   whale_read_session: { level: 'read', confirm: false, reason: '读会话消息历史。' },
   whale_session_queue: { level: 'read', confirm: false, reason: '读排队消息与后台任务。' },
@@ -74,8 +81,21 @@ const TOOLS = Object.freeze({
       remove: { level: 'local', reason: '丢弃一条未送达的排队消息。' },
     },
   },
-  whale_todo_create: { level: 'local', confirm: false, reason: '创建任务卡，不执行。' },
-  whale_todo_list: { level: 'read', confirm: false, reason: '读任务卡。' },
+  whale_todo_create: { level: 'local', confirm: false, reason: '创建统一受管任务卡，不自动执行。' },
+  whale_todo_list: { level: 'read', confirm: false, reason: '读受管任务卡列表。' },
+  whale_todo_inspect: { level: 'read', confirm: false, reason: '读单张任务卡详情、尝试记录与产物。' },
+  whale_todo_update: { level: 'local', confirm: false, reason: '修改待执行任务卡字段或置顶/归档。' },
+  whale_todo_start: { level: 'harness-governed', confirm: false, reason: '在独立隔离会话启动任务卡；其审批通过 Harness 委托审批直通主对话。' },
+  whale_todo_stop: { level: 'local', confirm: false, reason: '停止正在执行的任务卡并排空 jobs，历史保留。' },
+  whale_todo_continue: { level: 'harness-governed', confirm: false, reason: '在原任务会话续接追问修订；仍受 Harness 沙箱与委托审批管理。' },
+  whale_list_projects: { level: 'read', confirm: false, reason: '只读桌面已绑定 Project 摘要列表。' },
+  whale_inspect_project: { level: 'read', confirm: false, reason: '只读单个 Project 的状态与最近交付。' },
+  whale_handoff_to_project: {
+    level: 'code', confirm: true, reason: '经桌面显式确认后将任务移交给目录绑定型 Project 协调员执行。',
+    actions: {
+      handoff: { level: 'code', reason: '向目标 Project 协调会话投递用户授权需求并在其绑定目录内推进。' },
+    },
+  },
   whale_task_start: { level: 'local', confirm: false, reason: '接纳资料整理任务；worker 无 shell/fs/网络工具。' },
   whale_task_list: { level: 'read', confirm: false, reason: '读后台任务列表。' },
   whale_task_status: { level: 'read', confirm: false, reason: '读单个后台任务结果。' },
@@ -142,20 +162,14 @@ const TOOLS = Object.freeze({
   pad_report_failure: { level: 'local', confirm: false, reason: '面板刷新代理上报失败原因。' },
 
   // ---------- dsh-project ----------
-  project_read: { level: 'read', confirm: false, reason: '固定 worker cwd 内只读。' },
-  project_search: { level: 'read', confirm: false, reason: '固定目录内文本检索。' },
-  project_write_document: { level: 'local', confirm: false, reason: '写当前文档任务声明的单个路径。' },
-  project_read_store: { level: 'read', confirm: false, reason: '读 Project 记录与文档。' },
-  project_report: { level: 'local', confirm: false, reason: 'worker 提交报告并结束。' },
-  project_write_artifact: { level: 'local', confirm: false, reason: '写 Project docs 或内部 notes（仓库外）。' },
-  project_review: { level: 'local', confirm: false, reason: '接受或退回成员报告。' },
-  project_request: { level: 'local', confirm: false, reason: '登记用户需求与授权上限。' },
-  project_queue: { level: 'local', confirm: false, reason: '调整需求队列（含 cancel，保留记录）。' },
-  project_ask: { level: 'local', confirm: false, reason: '向用户提一个问题。' },
-  project_standby: { level: 'local', confirm: false, reason: '静默结束协调回合。' },
-  project_deliver: { level: 'local', confirm: false, reason: '声明交付并回复用户。' },
-  project_delegate: { level: 'harness-governed', confirm: false, reason: '委派给 Project worker；其 shell/fs 由 Harness 沙箱与审批管理。' },
-  project_stop: { level: 'local', confirm: false, reason: '停止 workstream，记录保留。' },
+  projects_list: { level: 'read', confirm: false, reason: '只读列出本机 Project 列表与状态摘要。' },
+  projects_get: { level: 'read', confirm: false, reason: '只读查看单个 Project 详情、任务列表与记忆索引。' },
+  projects_create: { level: 'local', confirm: false, reason: '在本机 Project 目录中创建新项目记录。' },
+  projects_update: { level: 'local', confirm: false, reason: '更新项目指令、并发、模型、审批模式、暂停或归档状态。' },
+  projects_add_task: { level: 'local', confirm: false, reason: '在项目内登记新任务及依赖，不直接执行外部命令。' },
+  projects_update_task: { level: 'local', confirm: false, reason: '更新任务描述、备注、依赖、路由或验收状态。' },
+  projects_memory: { level: 'local', confirm: false, reason: '读写或整理项目专属共享记忆目录内的主题文件。' },
+  projects_dispatch: { level: 'harness-governed', confirm: false, reason: '派发或续跑 Project 子任务；子会话的 shell/fs 由 Harness 沙箱与审批管理。' },
 
   // ---------- dsh-deepseek-tools ----------
   deepseek_tts: {
@@ -262,6 +276,67 @@ const ENDPOINTS = Object.freeze({
   'POST /desktop/html-preview': { level: 'local', confirm: false, reason: '本地渲染 HTML 预览截图。' },
 });
 
+// New Orca-ported Bots native tools (registered in dsh-whale's bots runtime).
+// Kept in a dedicated table while Wave 2 wires the tool modules so /desktop/confirm
+// enforces authoritative side-effect levels immediately without flagging unregistered
+// entries as stale during incremental rollout.
+/** @type {Readonly<Record<string, ToolEffect>>} */
+const BOT_TOOLS = Object.freeze({
+  bot_work_start: {
+    level: 'harness-governed',
+    confirm: false,
+    reason: '在目标项目工作目录启动受 Harness 沙箱与聊天内审批管理的编码 Worker 子会话。',
+    actions: {
+      start: { level: 'harness-governed', reason: '在目标工作目录启动由 Harness 沙箱与聊天内审批管理的编码 Worker 子会话。' },
+    },
+  },
+  bot_send: {
+    level: 'harness-governed',
+    confirm: false,
+    reason: '在本机大肥鱼队友间传递协作消息，目标队友会话仍受 Harness 沙箱与审批管理。',
+    actions: {
+      send: { level: 'harness-governed', reason: '在本机大肥鱼队友间传递协作消息并由 Harness 治理目标会话。' },
+    },
+  },
+  bot_tools_manage: {
+    level: 'read',
+    confirm: true,
+    reason: 'list 只读；add/update 接入可在本机执行命令或访问外部服务的 MCP 工具，remove 卸载工具。',
+    actions: {
+      list: { level: 'read', reason: '列出当前机器人配置的 MCP 工具。' },
+      add: { level: 'code', reason: '为机器人新增 MCP 工具服务器（可能在本机执行命令或携带凭据）。' },
+      update: { level: 'code', reason: '修改机器人 MCP 工具服务器配置或命令。' },
+      remove: { level: 'destructive', reason: '移除机器人 MCP 工具服务器配置。' },
+    },
+  },
+  bot_automation_create: {
+    level: 'local',
+    confirm: false,
+    reason: '创建、修改或删除本机队友定时自动化，可逆；触发后的会话由 Harness 沙箱与审批管理。',
+    actions: {
+      create: { level: 'local', reason: '创建本机队友定时或事件驱动自动化任务，可随时修改或删除。' },
+      update: { level: 'local', reason: '修改本机队友自动化任务配置。' },
+      delete: { level: 'local', reason: '删除本机队友自动化任务配置。' },
+    },
+  },
+  bot_reply: {
+    level: 'external',
+    confirm: true,
+    reason: '经外部连接器或 IM 渠道对外发送机器人回复。',
+    actions: {
+      reply: { level: 'external', reason: '通过外部连接器或 IM 渠道向外部对话发送消息。' },
+    },
+  },
+  bot_new_chat: {
+    level: 'harness-governed',
+    confirm: false,
+    reason: '为当前队友创建新的本地支线会话，其内部工具执行由 Harness 沙箱与审批管理。',
+    actions: {
+      create: { level: 'harness-governed', reason: '为当前队友创建新的本地支线会话，工具执行由 Harness 治理。' },
+    },
+  },
+});
+
 // Ordering used when an action the registry does not know has to fall back
 // to the strictest level the tool can reach.
 /** @type {Readonly<Record<string, number>>} */
@@ -284,7 +359,7 @@ const NEVER_ALWAYS_LEVELS = new Set(['destructive', 'code']);
  * @returns {string | undefined}
  */
 function effectOf(toolName, action) {
-  const entry = TOOLS[toolName] ?? LEGACY_TOOLS[toolName];
+  const entry = TOOLS[toolName] ?? BOT_TOOLS[toolName] ?? LEGACY_TOOLS[toolName];
   if (!entry) return undefined;
   if (action === undefined) return entry.level;
   const actionEntry = entry.actions?.[action];
@@ -301,4 +376,4 @@ function effectOf(toolName, action) {
   );
 }
 
-module.exports = { LEVELS, TOOLS, LEGACY_TOOLS, ENDPOINTS, effectOf, NEVER_ALWAYS_LEVELS };
+module.exports = { LEVELS, TOOLS, BOT_TOOLS, LEGACY_TOOLS, ENDPOINTS, effectOf, NEVER_ALWAYS_LEVELS };

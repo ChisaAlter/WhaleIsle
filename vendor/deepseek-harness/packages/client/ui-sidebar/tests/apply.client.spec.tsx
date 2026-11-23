@@ -83,6 +83,8 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.entries('sidebar')).toHaveLength(1)
     expect(b.slots.spec('sidebar.brand.mark')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.brand.name')).toEqual({ kind: 'single', scope: 'root' })
+    expect(b.slots.spec('sidebar.sections.before')).toEqual({ kind: 'list', scope: 'root' })
+    expect(b.slots.spec('sidebar.sections.after')).toEqual({ kind: 'list', scope: 'root' })
     const section = b.slots.spec('sidebar.workspaces') as { kind: string; scope: string; inject: SidebarSectionInjected }
     expect(section).toMatchObject({ kind: 'single', scope: 'root' })
     // The section occupant's scroller hook is the one each sidebar render supplies.

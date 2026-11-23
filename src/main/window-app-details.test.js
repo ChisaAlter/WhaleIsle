@@ -109,6 +109,8 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
     rendererFile: name => name,
     preloadFile: () => 'isolated-preload.js',
     hideHarnessView() {},
+    getHarnessView: () => null,
+    scheduleHarnessPrewarm() {},
     mainWindowListeners: { emit() {} },
     isBootLoaded: () => false,
     paintBackground() {},

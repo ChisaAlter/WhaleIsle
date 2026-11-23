@@ -711,9 +711,9 @@ test('personality mirror parks while the assistant is disabled', async (t) => {
   const { deps } = growthDeps(t, {
     getHarnessOrigin: () => 'http://127.0.0.1:9',
     getSessionCookie: () => 'sess=1',
-    // No whaleAssistantEnabled → her /dsh-whale route is unmounted; posting
+    // Explicit whaleAssistantEnabled: false → her /dsh-whale route is unmounted; posting
     // would be a guaranteed miss, so the value waits for a later retry.
-    loadConfig: () => ({ live2dPet: { growth: { baseline: 0 } } }),
+    loadConfig: () => ({ whaleAssistantEnabled: false, live2dPet: { growth: { baseline: 0 } } }),
   });
   const manager = createLive2dPetManager(deps);
   t.after(() => manager.dispose());
@@ -931,7 +931,7 @@ test('live2d-look with a provider but assistant disabled reports assistant-off',
     endpointResult: { ok: true, value: { ok: true, reply: 'x' } },
     // Assistant off → no whale route; a catalog provider can never be
     // reached by the legacy baseUrl call, so it must not even try.
-    loadConfig: () => ({ apiKey: 'k', live2dPet: { growth: { baseline: 0 } } }),
+    loadConfig: () => ({ whaleAssistantEnabled: false, apiKey: 'k', live2dPet: { growth: { baseline: 0 } } }),
   });
   const manager = createLive2dPetManager(deps);
   t.after(() => manager.dispose());

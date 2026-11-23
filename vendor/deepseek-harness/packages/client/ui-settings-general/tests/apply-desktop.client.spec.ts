@@ -130,11 +130,17 @@ describe('ui-settings-general desktop close-behavior row', () => {
       },
       openNoDirectory: async () => { opened.push('no-directory') },
     } as never)
+    const selectedPanels: Array<string | null> = []
+    b.ctx.provide('layout', {
+      panelInfo: { getSnapshot: () => ({ activePanelId: 'projects' }), subscribe: () => () => {} },
+      selectPanel: (id: string | null) => { selectedPanels.push(id) },
+    } as never)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const row = b.slots.entries('settings.features.item').find(entry => entry.options.id === 'project')!
     const leave = () => (row.inject as unknown as () => { leaveProjectLead(): Promise<void> })().leaveProjectLead()
     await leave()
+    expect(selectedPanels).toEqual([null])
     expect(opened).toEqual(['workspace:ws-repo'])
     expect(settled).toEqual(['blank'])
     byId = { lead: { id: 'lead', cwd: '/elsewhere', retainedBy: { mainView: 1 }, presentation: { owner: 'project', workingDirectory: '/elsewhere' } } }

@@ -632,7 +632,8 @@ export class WhatsappRuntime {
           });
           if (!message || outboundIds.has(message.providerMessageId) || !this.#bridge) return;
           this.#status.lastCheckedAt = Date.now();
-          if (!whatsappInboundAllowed(message, {
+          const whaleEnforced = this.#harness?.accessGate?.isWhaleEnforcedSync?.() === true;
+          if (!whaleEnforced && !whatsappInboundAllowed(message, {
             accessMode: this.#accessMode,
             allowedNumbers: this.#allowedPrivateNumbers,
           })) {

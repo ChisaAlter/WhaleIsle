@@ -12,23 +12,314 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { whaleHomeDir, appendPetOutbox } from './preset.js';
 import { createWhaleScope } from './scope.js';
 import { controllerFrom, genericOutput, rowSummary, sessionRowsFrom } from './shared.js';
-import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+import {
+  ABORTED_TEXT,
+  CONFIRM_TOOL_TIMEOUT_MS,
+  confirmModelAction,
+  refusalTextFor,
+} from './desktop-confirm.js';
+import { validateTaskCwd } from './task-paths.js';
+import { TAINTED_SESSION_REFUSAL_TEXT, isSessionTainted } from './call-origin.js';
 import { registerSessionTools } from './session-tools.js';
 import { registerDesktopTools } from './desktop-tools.js';
 import { registerStickerTools } from './sticker-tools.js';
 import { registerProfileTools } from './profile-tools.js';
 import { registerTaskTools } from './task-tools.js';
+import { registerProjectBridgeTools } from './project-bridge-tools.js';
+import { registerMemoryTools } from './memory-tools.js';
+import { registerDiscoveryTools } from './discovery-tools.js';
+import { registerBotTools } from './bots/bot-tools-registry.js';
 
 export const name = 'dsh-whale-tools';
 export const inject = ['tools', 'agents'];
 
 export const Config = z.object({});
 
-const WAKE_SOURCE = Object.freeze({ kind: 'plugin', plugin: 'dsh-whale', form: 'relay' });
+const WAKE_SOURCE = Object.freeze({ kind: 'dsh-whale:relay', form: 'relay' });
 const SEND_MAX_CHARS = 4000;
-const REMEMBER_MAX_CHARS = 40000;
+const FORBIDDEN_PRESETS = new Set(['whale-girl', 'whale-task-reader', 'project-worker', 'project-coordinator']);
+
+/** @param {string} value */
+const pathKey = (value) => {
+  try {
+    const real = fs.realpathSync.native(path.resolve(value));
+    return process.platform === 'win32' ? real.toLowerCase() : real;
+  } catch {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  }
+};
+
+/**
+ * @param {any} ctx
+ * @param {string} presetId
+ */
+async function isHiddenPreset(ctx, presetId) {
+  if (!presetId) return false;
+  if (FORBIDDEN_PRESETS.has(presetId)) return true;
+  const presets = ctx.get?.('agentPresets');
+  if (!presets) return false;
+  const direct = typeof presets.get === 'function' ? await presets.get(presetId) : undefined;
+  if (direct?.hidden === true) return true;
+  if (typeof presets.list === 'function') {
+    const raw = await presets.list();
+    const rows = Array.isArray(raw) ? raw : (Array.isArray(raw?.presets) ? raw.presets : []);
+    const found = rows.find((/** @type {any} */ entry) => entry?.id === presetId);
+    if (found?.hidden === true) return true;
+  }
+  return false;
+}
+
+const INTERNAL_OWNER_PREFIXES = ['dsh-whale:task', 'project:', 'dsh-project:'];
+const INTERNAL_OWNERS = new Set(['dsh-whale:assistant', 'project']);
+
+function isInternalPresentationOwner(owner) {
+  return INTERNAL_OWNERS.has(owner) || INTERNAL_OWNER_PREFIXES.some((prefix) => owner.startsWith(prefix));
+}
+
+function presentationOwnerFromEvents(owner, events) {
+  const direct = String(owner ?? '');
+  if (direct || !Array.isArray(events) || !events.length) return direct;
+  const pres = events.findLast((/** @type {any} */ ev) => ev?.type === 'session/presentation')?.data;
+  return String(pres?.owner ?? '');
+}
+
+/**
+ * Check internal-worker restrictions using read-only header + presentation
+ * metadata so dormant ordinary sessions are NEVER hydrated before confirmation.
+ * @param {any} ctx
+ * @param {{ header?: any, owner?: string, events?: any[] }} meta
+ */
+async function internalWorkerReasonFromMeta(ctx, { header = {}, owner = '', events = [] }) {
+  if (header?.origin === 'subagent') return 'Cannot relay messages directly to an internal subagent session.';
+  const preset = String(header?.agentPreset ?? '');
+  if (preset && await isHiddenPreset(ctx, preset)) {
+    return `Cannot relay messages to internal worker preset "${preset}".`;
+  }
+  const resolvedOwner = presentationOwnerFromEvents(owner, events);
+  if (isInternalPresentationOwner(resolvedOwner)) {
+    return `Cannot relay messages to internal session owned by "${resolvedOwner}".`;
+  }
+  return '';
+}
+
+/**
+ * @param {any} ctx
+ * @param {any} agent
+ */
+async function internalWorkerReason(ctx, agent) {
+  const header = agent?.session?.header ?? {};
+  const events = typeof agent?.session?.snapshotEvents === 'function' ? agent.session.snapshotEvents() : [];
+  return internalWorkerReasonFromMeta(ctx, { header, events });
+}
+
+/** @param {any} s */
+function formatSessionRow(s) {
+  const updated = s.updatedAt ? new Date(s.updatedAt).toISOString() : '-';
+  const parts = [
+    `${s.title || '(untitled)'} [${s.sessionId}]`,
+    `status=${s.status || 'idle'}`,
+    `owner=${s.owner || 'user'}`,
+    `cwd=${s.cwd || '-'}`,
+    `updated=${updated}`,
+  ];
+  return `- ${parts.join(' | ')}`;
+}
+
+/**
+ * @param {any} registry
+ * @param {string} workspaceId
+ * @param {string} dshHome
+ */
+function resolveWorkspaceById(registry, workspaceId, dshHome) {
+  const workspace = typeof registry?.get === 'function' ? registry.get(workspaceId) : undefined;
+  if (registry && !workspace) return { error: `Workspace not found: ${workspaceId}` };
+  const wsPath = workspace?.path;
+  if (wsPath) {
+    try { validateTaskCwd(wsPath, { dshHome, requireExisting: true }); }
+    catch (/** @type {any} */ error) { return { error: String(error?.message ?? error) }; }
+  }
+  return { request: { workspaceId }, displayTarget: wsPath ? `${workspaceId} (${wsPath})` : workspaceId };
+}
+
+/**
+ * @param {any} registry
+ * @param {string} rawCwd
+ * @param {string} dshHome
+ */
+function resolveWorkspaceByCwd(registry, rawCwd, dshHome) {
+  let safeCwd;
+  try { safeCwd = validateTaskCwd(rawCwd, { dshHome, requireExisting: true }); }
+  catch (/** @type {any} */ error) { return { error: String(error?.message ?? error) }; }
+  if (typeof registry?.list === 'function') {
+    const key = pathKey(safeCwd);
+    const matched = registry.list().find((/** @type {any} */ ws) => ws?.path && pathKey(ws.path) === key);
+    if (matched?.id) return { request: { workspaceId: matched.id }, displayTarget: safeCwd };
+  }
+  return { request: { cwd: safeCwd }, displayTarget: safeCwd };
+}
+
+/**
+ * @param {any} ctx
+ * @param {any} args
+ */
+function resolveWorkspaceCreateRequest(ctx, args) {
+  const rawCwd = String(args.cwd ?? '').trim();
+  const workspaceId = String(args.workspaceId ?? '').trim();
+  if (rawCwd && workspaceId) return { error: 'Provide either cwd or workspaceId, not both.' };
+  if (!rawCwd && !workspaceId) return { error: 'Either cwd or workspaceId is required.' };
+  const dshHome = process.env.DSH_HOME || '';
+  const registry = ctx.get?.('workspaceRegistry');
+  return workspaceId
+    ? resolveWorkspaceById(registry, workspaceId, dshHome)
+    : resolveWorkspaceByCwd(registry, rawCwd, dshHome);
+}
+
+function validateRelayArgs(args, exec, getSelfId) {
+  if (isSessionTainted(exec?.agent)) return { error: TAINTED_SESSION_REFUSAL_TEXT };
+  const sessionId = String(args.sessionId ?? '').trim();
+  const text = String(args.text ?? '').trim().slice(0, SEND_MAX_CHARS);
+  const mode = args.mode === undefined ? 'queue' : String(args.mode).trim();
+  if (!sessionId || !text) return { error: 'sessionId and text are required.' };
+  if (mode !== 'queue' && mode !== 'steer') return { error: 'mode must be queue or steer.' };
+  if (sessionId === getSelfId() || sessionId === exec?.agent?.id) {
+    return { error: 'Cannot send a relay message to her own resident conversation.' };
+  }
+  return { sessionId, text, mode };
+}
+
+async function precheckViaSessionQuery(ctx, querySvc, sessionId, signal) {
+  let observation;
+  try {
+    observation = await querySvc.observeSession(sessionId, {
+      ...(signal ? { signal } : {}),
+      projectionMode: 'none',
+    });
+    if (!observation?.header) return `Session ${sessionId} cannot be reached: not found.`;
+    return await internalWorkerReasonFromMeta(ctx, {
+      header: observation.header,
+      events: observation.events ?? [],
+    });
+  } catch (/** @type {any} */ error) {
+    return `Session ${sessionId} cannot be reached: ${error?.message ?? 'not found'}.`;
+  } finally {
+    observation?.[Symbol.dispose]?.();
+  }
+}
+
+async function precheckViaControllerInspect(ctx, controller, sessionId, signal) {
+  try {
+    const info = await controller.inspect(sessionId, signal);
+    if (!info) return `Session ${sessionId} cannot be reached: not found.`;
+    return await internalWorkerReasonFromMeta(ctx, {
+      header: info.meta ?? info.header ?? {},
+      owner: info.presentation?.owner ?? '',
+      events: info.events ?? [],
+    });
+  } catch (/** @type {any} */ error) {
+    return `Session ${sessionId} cannot be reached: ${error?.message ?? 'not found'}.`;
+  }
+}
+
+async function precheckViaControllerList(ctx, controller, sessionId) {
+  try {
+    const rows = sessionRowsFrom(await controller.list({}));
+    const found = rows.find((row) => String(row?.sessionId ?? row?.id ?? '') === sessionId);
+    if (!found) return `Session ${sessionId} cannot be reached: not found.`;
+    const pres = found?.projections?.values?.sessionListMetadata?.presentation ?? found?.presentation;
+    return await internalWorkerReasonFromMeta(ctx, {
+      header: {
+        origin: found.origin,
+        agentPreset: found.agentPreset ?? found?.projections?.values?.agentPreset?.preset,
+      },
+      owner: pres?.owner ?? found.owner ?? '',
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read-only precheck before popping a human confirmation dialog:
+ * inspects persisted metadata via `sessionQuery.observeSession(..., { projectionMode: 'none' })`,
+ * `controller.inspect`, or `controller.list` — NEVER calling `controller.resolveAgent`
+ * when read-only APIs exist so declining confirmation never hydrates a dormant session.
+ * @param {any} ctx
+ * @param {string} sessionId
+ * @param {AbortSignal | null | undefined} [signal]
+ */
+async function precheckRelayTarget(ctx, sessionId, signal) {
+  const querySvc = ctx.get?.('sessionQuery');
+  if (typeof querySvc?.observeSession === 'function') {
+    return precheckViaSessionQuery(ctx, querySvc, sessionId, signal);
+  }
+  const controller = controllerFrom(ctx);
+  if (typeof controller?.inspect === 'function') {
+    return precheckViaControllerInspect(ctx, controller, sessionId, signal);
+  }
+  if (typeof controller?.list === 'function') {
+    const listed = await precheckViaControllerList(ctx, controller, sessionId);
+    if (listed !== null) return listed;
+  }
+  if (typeof controller?.resolveAgent !== 'function') return '';
+  const precheck = await controller.resolveAgent(sessionId);
+  if (precheck == null || 'error' in precheck || !precheck.agent) {
+    return `Session ${sessionId} cannot be reached: ${precheck?.error?.message ?? 'not found'}.`;
+  }
+  return internalWorkerReason(ctx, precheck.agent);
+}
+
+/**
+ * @param {any} ctx
+ * @param {{ sessionId: string, text: string, mode: string, signal?: AbortSignal | null }} opts
+ */
+async function deliverToResolvedSession(ctx, { sessionId, text, mode, signal }) {
+  const controller = controllerFrom(ctx);
+  if (typeof controller?.resolveAgent !== 'function') {
+    return { ok: false, messageId: '', detail: `Session ${sessionId} cannot be resolved (controller unavailable).` };
+  }
+  const result = await controller.resolveAgent(sessionId);
+  if (result == null || 'error' in result || !result.agent) {
+    return { ok: false, messageId: '', detail: `Session ${sessionId} cannot be reached: ${result?.error?.message ?? 'not found'}.` };
+  }
+  const agent = result.agent;
+  const blocked = await internalWorkerReason(ctx, agent);
+  if (blocked) return { ok: false, messageId: '', detail: blocked };
+  const deliverFn = mode === 'steer' ? agent.steer : agent.followup;
+  if (typeof deliverFn !== 'function') {
+    return { ok: false, messageId: '', detail: `Session ${sessionId} does not support ${mode} delivery.` };
+  }
+  if (signal?.aborted) return { ok: false, messageId: '', detail: ABORTED_TEXT };
+  const message = createUserMessage({ content: [{ type: 'text', text }], source: WAKE_SOURCE });
+  await deliverFn.call(agent, message);
+  const messageId = String(message.id ?? '');
+  return { ok: true, messageId, detail: `Message ${messageId} delivered to ${sessionId} (${mode}).` };
+}
+
+/** @param {any} created */
+function createdSessionId(created) {
+  return String(created?.sessionId ?? created?.id ?? created?.session?.id ?? '').trim();
+}
+
+/**
+ * @param {any} ctx
+ * @param {string} preset
+ */
+async function validateNewPreset(ctx, preset) {
+  if (preset === 'whale-girl') {
+    return 'The whale assistant has one resident conversation. Open her existing session instead.';
+  }
+  if (preset && await isHiddenPreset(ctx, preset)) {
+    return `Preset "${preset}" is internal/hidden and cannot be used to open a session.`;
+  }
+  return '';
+}
 
 export function apply(ctx) {
+  const getSelfId = () => (process.env.DSH_HOME
+    ? createWhaleScope(process.env.DSH_HOME).get().sessionId
+    : '');
+
   ctx.tools.register(defineTool({
     name: 'whale_list_sessions',
     description:
@@ -66,11 +357,14 @@ export function apply(ctx) {
       },
       render: (_args, value) => [{
         type: 'text',
-        text: value.sessions.map((s) => `- ${s.title || '(untitled)'} [${s.sessionId}]`).join('\n') || value.detail,
+        text: value.sessions.map(formatSessionRow).join('\n') || value.detail,
       }],
     },
     presentCall: () => ({ card: 'generic', title: 'List sessions', kind: 'other', content: [] }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, sessions: [], detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const controller = controllerFrom(ctx);
       if (typeof controller?.list !== 'function') {
         return { ok: false, sessions: [], detail: 'Session controller is unavailable.' };
@@ -86,14 +380,26 @@ export function apply(ctx) {
     name: 'whale_send_to_session',
     description:
       'Deliver a text message into another Harness session by sessionId — it arrives as a user message '
-      + 'and wakes that session if idle. You are speaking in the user\'s name inside that session, so '
-      + 'keep to what they asked you to pass on.',
-    timeoutMs: 30_000,
+      + 'and wakes that session if idle (mode="queue") or steers an active turn (mode="steer"). '
+      + 'Cannot target herself or internal read-only/project workers.',
+    timeoutMs: CONFIRM_TOOL_TIMEOUT_MS,
     parameters: {
       sessionId: { type: 'string', required: true, description: 'Target session id.' },
       text: { type: 'string', required: true, description: 'Message body (plain text).' },
+      mode: { type: 'string', description: 'Delivery mode: queue (default) | steer.' },
     },
-    output: genericOutput,
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          messageId: { type: 'string', required: true },
+          detail: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.detail }],
+    },
     presentCall: (args) => ({
       card: 'generic',
       title: 'Deliver to session',
@@ -105,50 +411,36 @@ export function apply(ctx) {
       title: 'Delivered',
       content: [{ type: 'text', text: String(result.value?.detail ?? '') }],
     }),
-    async execute(args) {
-      const sessionId = String(args.sessionId ?? '').trim();
-      const text = String(args.text ?? '').trim().slice(0, SEND_MAX_CHARS);
-      if (!sessionId || !text) return { ok: false, detail: 'sessionId and text are required.' };
+    async execute(args, exec) {
+      const parsed = validateRelayArgs(args, exec, getSelfId);
+      if (parsed.error) return { ok: false, messageId: '', detail: parsed.error };
+      const { sessionId, text, mode } = parsed;
+      const preBlocked = await precheckRelayTarget(ctx, sessionId, exec?.signal);
+      if (preBlocked) return { ok: false, messageId: '', detail: preBlocked };
       const confirmation = await confirmModelAction({
         tool: 'whale_send_to_session',
         action: 'send',
         effect: 'external',
-        summary: `以你的名义向会话 ${sessionId} 发送一条消息`,
+        summary: `以你的名义向会话 ${sessionId} 发送一条消息（${mode}）`,
         details: text,
-      });
-      if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
-      let agent = ctx.agents?.get?.(sessionId);
-      if (!agent) {
-        const controller = controllerFrom(ctx);
-        if (typeof controller?.resolveAgent !== 'function') {
-          return { ok: false, detail: `Session ${sessionId} is offline and cannot be resumed.` };
-        }
-        const result = await controller.resolveAgent(sessionId);
-        if (result == null || 'error' in result) {
-          return { ok: false, detail: `Session ${sessionId} cannot be reached: ${result?.error?.message ?? 'not found'}.` };
-        }
-        agent = result.agent;
+      }, exec?.signal, exec);
+      if (confirmation.ok !== true || exec?.signal?.aborted) {
+        return { ok: false, messageId: '', detail: refusalTextFor(confirmation, exec?.signal) };
       }
-      if (typeof agent?.followup !== 'function') {
-        return { ok: false, detail: `Session ${sessionId} cannot accept a message.` };
-      }
-      await agent.followup(createUserMessage({
-        content: [{ type: 'text', text }],
-        source: WAKE_SOURCE,
-      }));
-      return { ok: true, detail: `Message delivered to ${sessionId}.` };
+      return deliverToResolvedSession(ctx, { sessionId, text, mode, signal: exec?.signal });
     },
   }));
 
   ctx.tools.register(defineTool({
     name: 'whale_new_session',
     description:
-      'Open a fresh Harness session in a workspace directory. Returns the new session id; '
-      + 'use whale_send_to_session to give it a first task.',
-    timeoutMs: 15_000,
+      'Open a fresh Harness session in a workspace directory (cwd) or registered workspaceId '
+      + '(mutually exclusive). Returns the new session id; use whale_send_to_session to give it a first task.',
+    timeoutMs: CONFIRM_TOOL_TIMEOUT_MS,
     parameters: {
-      cwd: { type: 'string', required: true, description: 'Absolute workspace path for the new session.' },
-      agentPreset: { type: 'string', description: 'Optional agent preset id (default: host standard).' },
+      cwd: { type: 'string', description: 'Absolute workspace path for the new session (mutually exclusive with workspaceId).' },
+      workspaceId: { type: 'string', description: 'Registered workspace id (mutually exclusive with cwd).' },
+      agentPreset: { type: 'string', description: 'Optional visible agent preset id (default: host standard).' },
     },
     output: {
       schema: {
@@ -166,36 +458,36 @@ export function apply(ctx) {
       card: 'generic',
       title: 'New session',
       kind: 'other',
-      content: [{ type: 'text', text: String(args.cwd ?? '') }],
+      content: [{ type: 'text', text: String(args.cwd ?? args.workspaceId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, sessionId: '', detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const controller = controllerFrom(ctx);
       if (typeof controller?.create !== 'function') {
         return { ok: false, sessionId: '', detail: 'Session controller is unavailable.' };
       }
-      const cwd = String(args.cwd ?? '').trim();
-      if (!cwd || !path.isAbsolute(cwd)) return { ok: false, sessionId: '', detail: 'cwd must be an absolute path.' };
-      if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) {
-        return { ok: false, sessionId: '', detail: `Directory does not exist: ${cwd}` };
-      }
-      const request = { cwd };
       const preset = String(args.agentPreset ?? '').trim();
-      if (preset === 'whale-girl') {
-        return { ok: false, sessionId: '', detail: 'The whale assistant has one resident conversation. Open her existing session instead.' };
-      }
-      if (preset) request.agentPreset = preset;
+      const presetError = await validateNewPreset(ctx, preset);
+      if (presetError) return { ok: false, sessionId: '', detail: presetError };
+      const resolved = resolveWorkspaceCreateRequest(ctx, args);
+      if (resolved.error) return { ok: false, sessionId: '', detail: resolved.error };
+      const request = { ...resolved.request, ...(preset ? { agentPreset: preset } : {}) };
       const confirmation = await confirmModelAction({
         tool: 'whale_new_session',
         action: 'create',
         effect: 'code',
-        summary: `在 ${cwd} 打开一个新的工作会话`,
-        details: preset ? `目录：${cwd}\n预设：${preset}` : `目录：${cwd}`,
-      });
-      if (confirmation.ok !== true) return { ok: false, sessionId: '', detail: DECLINED_TEXT };
+        summary: `在 ${resolved.displayTarget} 打开一个新的工作会话`,
+        details: preset ? `目标：${resolved.displayTarget}\n预设：${preset}` : `目标：${resolved.displayTarget}`,
+      }, exec?.signal, exec);
+      if (confirmation.ok !== true || exec?.signal?.aborted) {
+        return { ok: false, sessionId: '', detail: refusalTextFor(confirmation, exec?.signal) };
+      }
       const created = await controller.create(request);
-      const sessionId = String(created?.sessionId ?? created?.id ?? created?.session?.id ?? '').trim();
+      const sessionId = createdSessionId(created);
       if (!sessionId) return { ok: false, sessionId: '', detail: 'Session was created without an id.' };
-      return { ok: true, sessionId, detail: `Session ${sessionId} opened in ${cwd}.` };
+      return { ok: true, sessionId, detail: `Session ${sessionId} opened in ${resolved.displayTarget}.` };
     },
   }));
 
@@ -267,7 +559,8 @@ export function apply(ctx) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.text ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const home = process.env.DSH_HOME || '';
       if (!home) return { ok: false, detail: 'DSH home is unavailable.' };
       const text = String(args.text ?? '').trim().slice(0, 240);
@@ -293,7 +586,8 @@ export function apply(ctx) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.text ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const home = process.env.DSH_HOME || '';
       if (!home) return { ok: false, detail: 'DSH home is unavailable.' };
       const text = String(args.text ?? '').trim().slice(0, 240);
@@ -303,48 +597,13 @@ export function apply(ctx) {
     },
   }));
 
-  ctx.tools.register(defineTool({
-    name: 'whale_remember',
-    description:
-      'Append a fact to MEMORY.md in the whale home — her long-term memory across sessions. '
-      + 'Store user preferences, decisions, and durable facts; never store secrets or instructions to obey.',
-    timeoutMs: 10_000,
-    parameters: {
-      text: { type: 'string', required: true, description: 'One memory line (a fact, ≤ 500 chars).' },
-    },
-    output: genericOutput,
-    presentCall: (args) => ({
-      card: 'generic',
-      title: 'Remember',
-      kind: 'other',
-      content: [{ type: 'text', text: String(args.text ?? '') }],
-    }),
-    async execute(args) {
-      const home = process.env.DSH_HOME || '';
-      if (!home) return { ok: false, detail: 'DSH home is unavailable.' };
-      const line = String(args.text ?? '').trim().slice(0, 500);
-      if (!line) return { ok: false, detail: 'Empty memory line; nothing was stored.' };
-      const file = path.join(whaleHomeDir(home), 'MEMORY.md');
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '# 鲸鱼娘的长期记忆\n';
-      if (existing.length + line.length > REMEMBER_MAX_CHARS) {
-        return { ok: false, detail: 'MEMORY.md is full; ask the user to tidy it in settings.' };
-      }
-      const body = existing.endsWith('\n') ? existing : `${existing}\n`;
-      const tmp = `${file}.tmp`;
-      fs.writeFileSync(tmp, `${body}- ${line}\n`, 'utf8');
-      fs.renameSync(tmp, file);
-      return { ok: true, detail: 'Remembered.' };
-    },
-  }));
-
-  registerSessionTools(ctx, {
-    getSelfId: () => process.env.DSH_HOME
-      ? createWhaleScope(process.env.DSH_HOME).get().sessionId
-      : '',
-  });
+  registerMemoryTools(ctx);
+  registerSessionTools(ctx, { getSelfId });
+  registerDiscoveryTools(ctx, { getSelfId });
   registerTaskTools(ctx);
+  registerProjectBridgeTools(ctx, { getSelfId });
   registerDesktopTools(ctx);
   registerProfileTools(ctx);
   registerStickerTools(ctx);
+  registerBotTools(ctx, { defineTool });
 }

@@ -12,8 +12,15 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { resolveHarnessPeerPath } = require('../../scripts/lib/harness-peer-hook.cjs');
 const { constantTimeEqual, storeInternalSecrets, INTERNAL_SECRETS_KEY } = require('../shared/secret');
 const { harnessWorkspace, requirePrerequisite } = require('../../scripts/lib/test-prerequisites.cjs');
+
+const importHarnessPeer = (specifier) => {
+  const resolved = resolveHarnessPeerPath(specifier);
+  assert.ok(resolved, `expected ${specifier} inside vendor/deepseek-harness`);
+  return import(pathToFileURL(resolved).href);
+};
 
 // Real prompt assembly runs the built SystemPrompt plugin over vendored cordis.
 const SYSTEM_PROMPT = harnessWorkspace({ entries: ['packages/core/system-prompt/lib/index.js'] });
@@ -131,7 +138,7 @@ test('configured whale name survives prompt assembly instead of a blank complete
   assert.doesNotMatch(bundledPersona, /^\s+complete:\s+true\s*$/m);
   const [{ default: SystemPrompt, renderPrompt }, { Context }] = await Promise.all([
     import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'core', 'system-prompt', 'lib', 'index.js')).href),
-    import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js')).href),
+    importHarnessPeer('@deepseek-ai/cordis'),
   ]);
   const ctx = new Context();
   try {
@@ -206,7 +213,7 @@ test('apply() registers the persona section so real assembly carries her setting
   });
   const [{ default: SystemPrompt, renderPrompt }, { Context }] = await Promise.all([
     import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'core', 'system-prompt', 'lib', 'index.js')).href),
-    import(pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js')).href),
+    importHarnessPeer('@deepseek-ai/cordis'),
   ]);
   const ctx = new Context();
   try {
@@ -324,8 +331,8 @@ test('pulse buffers notable events and fires once-watches on turn/end', async ()
   assert.equal(wakes.length, 1);
   assert.equal(observe.listWatches().some((w) => w.sessionId === 's-watch'), false);
 
-  // Her own session's turn/end never fires a watch on itself.
-  observe.addWatch({ sessionId: 'self-session', once: true });
+  // Her own session cannot be watched, and self-session events never wake her.
+  assert.equal(observe.addWatch({ sessionId: 'self-session', once: true }).error, 'cannot-watch-self');
   emit({ id: 'self-session' }, { type: 'turn/end', time: 4, data: { turn: 1, reason: { kind: 'completed' } } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(wakes.length, 1, 'self-session events do not wake her');
@@ -336,8 +343,11 @@ test('pulse buffers notable events and fires once-watches on turn/end', async ()
   assert.ok(events.some((e) => e.type === 'assistant/message'));
 
   // Watches persisted under the whale home.
+  assert.equal(observe.addWatch({ sessionId: 's-persisted', note: 'persist', once: false }).ok, true);
   const disk = JSON.parse(fs.readFileSync(path.join(tmpHome, 'watches.json'), 'utf8'));
-  assert.equal(disk.some((w) => w.sessionId === 'self-session'), true);
+  assert.equal(disk.some((w) => w.sessionId === 's-persisted'), true);
+  assert.equal(disk.some((w) => w.sessionId === 'self-session'), false);
+  observe.removeWatch('s-persisted');
 });
 
 test('schedule kinds validate inputs and due entries wake her via tick', async () => {
@@ -446,22 +456,30 @@ test('whale_search_sessions maps controller hits', async () => {
   assert.deepEqual(result.items, [{ sessionId: 's-9', snippet: '…部署脚本…' }]);
 });
 
-test('whale_session_queue reads the control baseline and update_queue maps actions', async (t) => {
+test('whale_session_queue reads controller.state and host jobs, and update_queue maps actions', async (t) => {
   await allowDesktopConfirm(t);
   const seen = [];
   const controller = makeController({
-    control: () => frameStream([{
-      type: 'baseline',
-      value: {
-        queues: {
-          's-1': [{ id: 'q-1', placement: 'queued', message: { content: [{ type: 'text', text: '接着做' }] } }],
-        },
-        jobs: { 's-1': [{ kind: 'command', status: 'running' }] },
-      },
-    }]),
+    state: async ({ sessionId }, signal) => {
+      assert.ok(signal instanceof AbortSignal);
+      if (sessionId !== 's-1') return { active: false, running: false, queue: null, pendingInput: [] };
+      return {
+        cursor: 10,
+        active: true,
+        running: true,
+        queue: [{ id: 'q-1', placement: 'queued', content: [{ type: 'text', text: '接着做' }] }],
+        pendingInput: [],
+      };
+    },
     updateQueue: async (request) => { seen.push(request); return { ok: true }; },
   });
   const { ctx, tools } = stubCtx(controller);
+  ctx.get = (name) => {
+    if (name === 'sessionController') return controller;
+    if (name === 'agents') return { list: () => [{ id: 's-1' }] };
+    if (name === 'jobs') return { list: (sid) => (sid === 's-1' ? [{ kind: 'command', status: 'running' }] : []) };
+    return undefined;
+  };
   sessionTools.registerSessionTools(ctx);
 
   const queue = await tools.get('whale_session_queue').execute({});

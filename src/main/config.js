@@ -63,8 +63,8 @@ const DEFAULTS = {
   downloadRoute: '',
   disabledPlugins: [],
   projectEnabled: true,
-  // Built-in assistant is opt-in; persisted choices win.
-  whaleAssistantEnabled: false,
+  // Built-in Bots (Whale assistant) — on by default; only an explicit `false` disables it.
+  whaleAssistantEnabled: true,
   // Remote workspaces (SSH) — on by default; toggling restarts Harness so
   // the dsh-remote overlay composes or drops on the next start. Distinct
   // from `remoteEnabled`, which gates the phone/LAN remote pairing daemon.

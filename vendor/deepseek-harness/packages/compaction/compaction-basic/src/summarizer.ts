@@ -15,7 +15,7 @@ import {
 import { estimateContent, estimateMessage, estimateToolsTokens, ROLE_OVERHEAD } from '@deepseek-ai/dsh-token-meter/estimate'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
-  ContentBlock, FinishReason, GenerateOptions, Message, RequestMessage, TokenUsage, ToolSchema,
+  ContentBlock, FinishReason, GenerateOptions, LlmCallConfig, Message, RequestMessage, TokenUsage, ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
@@ -152,6 +152,7 @@ export type SummaryResult = {
  * @param input - replayed conversation prefix (system, tools, and leading messages) to condense.
  * @param agent - supplies routed-model history, fallback model, and session id.
  * @param signal - optional cancellation forwarded to the adapter.
+ * @param overrideTarget - optional fallback provider/model when the routed model is unavailable.
  * @returns safe text-only summary blocks and the exact call envelope and output.
  */
 function trimText(text: string, maxChars: number): string {
@@ -423,6 +424,7 @@ export async function summarizeWithLlm(
   input: SummarizationInput,
   agent: Agent,
   signal?: AbortSignal,
+  overrideTarget?: Pick<LlmCallConfig, 'provider' | 'model'>,
 ): Promise<SummaryResult> {
   const latest = agent.session.requestHeader()?.config
   const configured = config.summarizationProvider.length === 0
@@ -434,7 +436,7 @@ export async function summarizeWithLlm(
     && agent.options.model.length > 0
     ? { provider: agent.options.provider, model: agent.options.model }
     : undefined
-  const target = configured ?? latest ?? agentTarget
+  const target = configured ?? overrideTarget ?? latest ?? agentTarget
   if (target === undefined) {
     throw new Error(
       'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',

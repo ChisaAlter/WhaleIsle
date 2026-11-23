@@ -16,7 +16,7 @@ import {
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage, LlmError } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter, LlmError, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
@@ -1962,6 +1962,251 @@ describe('model-switch pressure', () => {
     await fiber.dispose()
     const selected = { provider: 'missing', model: 'missing' }
     await expect(request(ctx, conversation(4), selected)).resolves.toEqual(selected)
+  })
+})
+
+describe('retired model compaction fallback', () => {
+  const PROVIDER = 'magpie'
+  const RETIRED_MODEL = 'codex/gpt-6.1-sol'
+  const ACTIVE_MODEL = 'devin/swe-2'
+
+  class RetiredModelAdapter extends ScriptedAdapter {
+    readonly streamCalls: GenerateOptions[] = []
+
+    constructor(
+      private readonly retiredModels: ReadonlySet<string>,
+      private readonly contextWindow = 2_000,
+      private readonly resolveErrors: ReadonlyMap<string, Error> = new Map(),
+      private readonly streamErrors: ReadonlyMap<string, Extract<StreamChunk, { type: 'finish' }>['reason']> = new Map(),
+    ) {
+      super([{ type: 'text', text: 'checkpoint' }])
+    }
+
+    override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+      const injected = this.resolveErrors.get(model)
+      if (injected !== undefined) return Promise.reject(injected)
+      if (this.retiredModels.has(model)) {
+        return Promise.reject(new LlmError(
+          `pi-ai provider "${provider}" has no configured model "${model}"`,
+          'UNKNOWN_MODEL',
+        ))
+      }
+      return Promise.resolve({
+        provider,
+        id: model,
+        name: model,
+        context: { contextWindow: this.contextWindow },
+      })
+    }
+
+    override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+      this.streamCalls.push(options)
+      const finishError = this.streamErrors.get(options.model)
+      if (finishError !== undefined) {
+        yield { type: 'finish', reason: finishError }
+        return
+      }
+      if (this.retiredModels.has(options.model)) {
+        throw new LlmError(
+          `pi-ai provider "${options.provider}" has no configured model "${options.model}"`,
+          'UNKNOWN_MODEL',
+        )
+      }
+      yield* super.stream(options)
+    }
+  }
+
+  function retiredSession(provider = PROVIDER, model = RETIRED_MODEL, closed = false): Session {
+    const session = conversation(4, 'fixture '.repeat(80))
+    session.append('request/header', {
+      header: { config: { provider, model } },
+      reason: 'resume',
+    })
+    if (closed) {
+      session.append('turn/end', { turn: 5, reason: { kind: 'completed' } })
+    }
+    return session
+  }
+
+  function fallbackHarness(
+    adapter: RetiredModelAdapter,
+    config: BasicCompactionConfig = {},
+  ) {
+    const ctx = new Context()
+    void new LlmRuntime(ctx)
+    void new SessionStore(ctx)
+    new SessionProjectionRegistry(ctx)
+    void new TokenMeter(ctx)
+    onTestFinished(() => ctx.fiber.dispose())
+    ctx.llm.registerAdapter([PROVIDER], adapter)
+    vi.spyOn(ctx.sessions, 'flush').mockResolvedValue(false)
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+    const compact = new BasicCompactionEngine(ctx, {
+      headroomTokens: 0,
+      maxTokens: 32,
+      thresholdRatio: 0.25,
+      retainTokens: 100,
+      ...config,
+    })
+    return { ctx, compact, warnings }
+  }
+
+  function switchRequest(ctx: Context, owner: Agent, config: LlmCallConfig, signal = SIGNAL) {
+    return agentEvents(ctx, owner).waterfall(
+      'agent/request', { turn: 5, step: 1, signal }, () => Promise.resolve(config),
+    )
+  }
+
+  it('falls back to the destination model during model-switch compaction when the previous routed model is retired', async () => {
+    const adapter = new RetiredModelAdapter(new Set([RETIRED_MODEL]))
+    const { ctx, warnings } = fallbackHarness(adapter)
+    const session = retiredSession()
+    const owner = agent(session, RETIRED_MODEL)
+    const destination = { provider: PROVIDER, model: ACTIVE_MODEL }
+
+    await expect(switchRequest(ctx, owner, destination)).resolves.toEqual(destination)
+
+    expect(adapter.streamCalls).toHaveLength(1)
+    expect(adapter.streamCalls[0]).toMatchObject({
+      provider: PROVIDER,
+      model: ACTIVE_MODEL,
+      purpose: 'compaction',
+    })
+    expect(ctx.tokenMeter.measure(session, { config: destination }).totalTokens).toBeLessThan(500)
+    expect(session.snapshotEvents().findLast(event => event.type === 'compaction/summary')?.data).toMatchObject({
+      provider: PROVIDER,
+      model: ACTIVE_MODEL,
+    })
+    expect(warnings).toContainEqual(expect.stringContaining(
+      `summarization target ${PROVIDER}/${RETIRED_MODEL} is unavailable`,
+    ))
+  })
+
+  it('falls back to the destination model when the previous routed provider is no longer registered', async () => {
+    const adapter = new RetiredModelAdapter(new Set())
+    const { ctx } = fallbackHarness(adapter)
+    const session = retiredSession('retired-provider', RETIRED_MODEL)
+    const owner = agent(session, RETIRED_MODEL)
+    const destination = { provider: PROVIDER, model: ACTIVE_MODEL }
+
+    await expect(switchRequest(ctx, owner, destination)).resolves.toEqual(destination)
+
+    expect(adapter.streamCalls).toHaveLength(1)
+    expect(adapter.streamCalls[0]).toMatchObject({ provider: PROVIDER, model: ACTIVE_MODEL })
+  })
+
+  it('falls back to agent.model.current() during manual compactNow() when the last routed model is retired', async () => {
+    const adapter = new RetiredModelAdapter(new Set([RETIRED_MODEL]))
+    const { compact, warnings } = fallbackHarness(adapter, { auto: false })
+    const session = retiredSession(PROVIDER, RETIRED_MODEL, true)
+    const owner = {
+      session,
+      options: { provider: PROVIDER, model: RETIRED_MODEL },
+      model: {
+        current: () => ({ provider: PROVIDER, model: ACTIVE_MODEL }),
+      },
+      runMaintenance<T>(task: (abort: AbortSignal) => Promise<T>): Promise<T> {
+        return task(new AbortController().signal)
+      },
+    } as unknown as Agent
+
+    const result = await compact.compactNow(owner, SIGNAL)
+
+    expect(result).not.toBeNull()
+    expect(adapter.streamCalls).toHaveLength(1)
+    expect(adapter.streamCalls[0]).toMatchObject({
+      provider: PROVIDER,
+      model: ACTIVE_MODEL,
+      purpose: 'compaction',
+    })
+    expect(session.snapshotEvents().findLast(event => event.type === 'compaction/summary')?.data).toMatchObject({
+      provider: PROVIDER,
+      model: ACTIVE_MODEL,
+    })
+    expect(warnings).toContainEqual(expect.stringContaining(`falling back to ${PROVIDER}/${ACTIVE_MODEL}`))
+  })
+
+  it.each([
+    [
+      'rate limit during model resolution',
+      new Map([[RETIRED_MODEL, new LlmError('429 rate limit exceeded', 'RATE_LIMIT', { status: 429 })]]),
+      new Map<string, Extract<StreamChunk, { type: 'finish' }>['reason']>(),
+      /429 rate limit exceeded/,
+    ],
+    [
+      'rate limit during summary stream',
+      new Map<string, Error>(),
+      new Map([[RETIRED_MODEL, { kind: 'error' as const, failure: { code: 'RATE_LIMIT', message: 'HTTP 429 too many requests', status: 429 } }]]),
+      /HTTP 429 too many requests/,
+    ],
+    [
+      'network transport failure during summary stream',
+      new Map<string, Error>(),
+      new Map([[RETIRED_MODEL, { kind: 'error' as const, failure: { code: 'TRANSPORT', message: 'ECONNRESET network error' } }]]),
+      /ECONNRESET network error/,
+    ],
+  ])('does not fall back or swallow %s', async (_label, resolveErrors, streamErrors, pattern) => {
+    const adapter = new RetiredModelAdapter(new Set(), 2_000, resolveErrors, streamErrors)
+    const { ctx, compact, warnings } = fallbackHarness(adapter)
+    const session = retiredSession()
+    const previous = session.requestHeader()
+    const nodes = [...session.surface.nodes]
+    const owner = agent(session, RETIRED_MODEL)
+    const destination = { provider: PROVIDER, model: ACTIVE_MODEL }
+
+    const switching = switchRequest(ctx, owner, destination)
+    await expect(switching).rejects.toMatchObject({ code: 'MODEL_SWITCH_COMPACTION_FAILED' })
+    await expect(switching).rejects.toThrow(pattern)
+
+    expect(adapter.streamCalls.some(call => call.model === ACTIVE_MODEL)).toBe(false)
+    expect(warnings).toEqual([])
+    expect(session.requestHeader()).toEqual(previous)
+    expect(session.surface.nodes).toEqual(nodes)
+
+    // Verify switchTargets was cleaned up in finally: a subsequent direct compaction
+    // on a retired model without agent.model.current() must not reuse the failed switch target.
+    const retiredAfterFailure = new RetiredModelAdapter(new Set([RETIRED_MODEL]))
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => retiredAfterFailure.resolveModel(provider, model))
+    const range = selectCompactableRange(session, ctx.tokenMeter.measure(session), 100)
+    expect(range).not.toBeNull()
+    await expect(compact.compactRegion(range!.start, range!.end, owner, SIGNAL))
+      .rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
+  })
+
+  it('preserves an explicitly configured summarization model even when the previous routed model is retired', async () => {
+    const adapter = new RetiredModelAdapter(new Set([RETIRED_MODEL]))
+    const summaryAdapter = new RetiredModelAdapter(new Set(), 10_000)
+    const { ctx, compact, warnings } = fallbackHarness(adapter, {
+      summarizationProvider: 'summary',
+      summarizationModel: 'summary-model',
+    })
+    ctx.llm.registerAdapter(['summary'], summaryAdapter)
+
+    const switchSession = retiredSession()
+    const destination = { provider: PROVIDER, model: ACTIVE_MODEL }
+    await expect(switchRequest(ctx, agent(switchSession, RETIRED_MODEL), destination)).resolves.toEqual(destination)
+    expect(summaryAdapter.streamCalls).toHaveLength(1)
+    expect(summaryAdapter.streamCalls[0]).toMatchObject({
+      provider: 'summary',
+      model: 'summary-model',
+    })
+    expect(adapter.streamCalls).toHaveLength(0)
+    expect(warnings).toEqual([])
+
+    // Manual compactNow() also succeeds with explicit summarization config even without any distinct fallback.
+    const idleSession = retiredSession(PROVIDER, RETIRED_MODEL, true)
+    const idleOwner = {
+      session: idleSession,
+      options: { provider: PROVIDER, model: RETIRED_MODEL },
+      runMaintenance<T>(task: (abort: AbortSignal) => Promise<T>): Promise<T> {
+        return task(new AbortController().signal)
+      },
+    } as unknown as Agent
+    await expect(compact.compactNow(idleOwner, SIGNAL)).resolves.not.toBeNull()
+    expect(summaryAdapter.streamCalls).toHaveLength(2)
+    expect(adapter.streamCalls).toHaveLength(0)
+    expect(warnings).toEqual([])
   })
 })
 

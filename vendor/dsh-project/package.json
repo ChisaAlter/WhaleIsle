@@ -1,53 +1,50 @@
 {
   "name": "dsh-project",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
   "license": "MIT",
-  "description": "WhaleIsle local Project conversations with stable continuing workers.",
+  "description": "WhaleIsle Projects board: one goal, a coordinator session, parallel task workers, topic-file shared memory, and opt-in Git worktree isolation.",
   "exports": {
     ".": "./lib/index.js",
-    "./lead": "./lib/lead.js",
-    "./worker": "./lib/worker.js",
-    "./readonly": "./lib/readonly.js",
     "./client": "./client/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "*",
-    "@deepseek-ai/dsh-compaction-basic": "*",
-    "@deepseek-ai/dsh-command-compact": "*",
-    "@deepseek-ai/dsh-compaction-tool-result-pruner": "*",
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-llm": "*",
     "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/schemastery": "^3.18.2",
-    "zod": "^4.0.0",
-    "@deepseek-ai/dsh-agent-team": "*",
-    "@deepseek-ai/dsh-subagent": "*"
+    "@deepseek-ai/dsh-subagent": "*",
+    "@deepseek-ai/schemastery": "^3.18.2"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
     "client": {
+      "platform": "web",
+      "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-sidebar",
         "@deepseek-ai/dsh-client-ui-workspace",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-settings-general",
-        "@deepseek-ai/dsh-client-ui-subagent"
-      ],
-      "platform": "web"
+        "@deepseek-ai/dsh-client-ui-tool"
+      ]
     }
   },
   "files": [
     "lib",
     "client",
+    "locale",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md"
   ]

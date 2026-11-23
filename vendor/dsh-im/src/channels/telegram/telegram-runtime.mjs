@@ -806,10 +806,11 @@ export class TelegramRuntime {
           loadFile: (fileId, options) => this.#api.downloadFile({ fileId, ...options }),
           loadFileStream: (fileId, options) => this.#api.downloadFileStream({ fileId, ...options }),
         });
-        if (message && telegramInboundAllowed(message, {
+        const whaleEnforced = this.#harness?.accessGate?.isWhaleEnforcedSync?.() === true;
+        if (message && (whaleEnforced || telegramInboundAllowed(message, {
           accessMode: this.#accessMode,
           allowedPrivateUserIds: this.#allowedPrivateUserIds,
-        })) {
+        }))) {
           void this.#bridge.accept(message).catch((error) => {
             if (signal.aborted) return;
             this.#logger.error?.(

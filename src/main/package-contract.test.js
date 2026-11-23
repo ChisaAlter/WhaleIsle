@@ -22,6 +22,7 @@ test('manifest keeps the documented npm entry points', () => {
     'setup:harness',
     'sync:harness',
     'prepare:dshd-remote',
+    'prepare:dsh-whale-client',
     'pack',
     'installer:assets',
     'smoke:source',
@@ -77,6 +78,8 @@ test('manifest keeps the packaging contract after-pack depends on', () => {
     'src/shared/dshd-mux-sse.js',
     'src/main/pet-growth.js',
     'src/main/pet-growth-scan-worker.js',
+    'src/renderer/whale-ui/host.cjs',
+    'src/renderer/whale-ui/host-validator.cjs',
   ]) {
     assert.equal(
       build.asarUnpack?.includes(unpack),
@@ -129,7 +132,7 @@ test('manifest packages the built-in dsh-remote vendor tree', () => {
     ?.find((entry) => entry.from === 'vendor' && entry.to === 'vendor')
     ?.filter;
   assert.equal(Array.isArray(vendorFilter), true, 'vendor extraResources entry is missing');
-  for (const pattern of ['dsh-usage-panel/**', 'dsh-im/**', 'dsh-whale/**', 'dsh-remote/**', 'dsh-task-control/**', 'dsh-platform-session/**', 'dsh-project/**']) {
+  for (const pattern of ['dsh-usage-panel/**', 'dsh-im/**', 'dsh-whale/**', 'dsh-whale/assets/**', '!dsh-whale/src/client/**', '!dsh-whale/**/*.test.*', 'dsh-remote/**', 'dsh-task-control/**', 'dsh-platform-session/**', 'dsh-project/**']) {
     assert.equal(vendorFilter.includes(pattern), true, `vendor filter lost ${pattern}`);
   }
   assert.equal(vendorFilter.includes('dshbot/**'), false, 'retired bots runtime must not be packaged');

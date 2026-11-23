@@ -25,6 +25,46 @@ const DEFAULT_TEXT = {
   technicalDetails: '技术细节',
 };
 
+const VALID_TONES = new Set(['danger', 'warning', 'info', 'neutral']);
+
+/** @param {unknown} raw @returns {'danger' | 'warning' | 'info' | 'neutral' | ''} */
+function normalizeTone(raw) {
+  return typeof raw === 'string' && VALID_TONES.has(raw) ? /** @type {any} */ (raw) : '';
+}
+
+/** @param {Record<string, any>} options */
+function resolveDialogTone(options) {
+  const explicit = normalizeTone(options.tone);
+  if (explicit) return explicit;
+  if (options.type === 'warning') return 'warning';
+  if (options.type === 'info') return 'info';
+  return '';
+}
+
+/** @param {unknown} raw */
+function normalizeAttribution(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const record = /** @type {Record<string, unknown>} */ (raw);
+  return {
+    source: String(record.source || ''),
+    level: String(record.level || ''),
+    tone: normalizeTone(record.tone) || 'neutral',
+  };
+}
+
+/** @param {unknown} raw */
+function normalizeRequestSection(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const record = /** @type {Record<string, unknown>} */ (raw);
+  return {
+    caption: String(record.caption || ''),
+    summary: String(record.summary || ''),
+    details: String(record.details || ''),
+    hint: String(record.hint || ''),
+    isSecret: Boolean(record.isSecret),
+  };
+}
+
 /**
  * One fading backdrop with replaceable confirmation content; a response from
  * an older prompt is rejected via revision.
@@ -82,7 +122,7 @@ class ShellConfirmDialog {
 
   /**
    * @param {any} parent - window blocked by this confirmation.
-   * @param {object} options - main-owned localized content + response choices
+   * @param {Record<string, any>} options - main-owned localized content + response choices
    *   (+ optional `signal` AbortSignal, `technicalDetails` string).
    * @returns Promise<{response:number}> cancellation on replace/abort/close/load failure.
    */
@@ -107,7 +147,10 @@ class ShellConfirmDialog {
       title: options.title ?? '',
       message: options.message ?? '', detail: options.detail ?? '',
       kind: options.kind === 'update' ? 'update' : 'confirmation',
+      tone: resolveDialogTone(options),
       context: options.context ?? '',
+      attribution: normalizeAttribution(options.attribution),
+      requestSection: normalizeRequestSection(options.requestSection),
       detailTabs: options.kind === 'update' && Array.isArray(options.detailTabs) ? options.detailTabs : [],
       downloadMethods: Array.isArray(options.downloadMethods) ? options.downloadMethods : [],
       buttons, cancelId, closeLabel: this.text.close,

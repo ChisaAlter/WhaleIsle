@@ -1,0 +1,299 @@
+/**
+ * Chat lifecycle deletion, worker stop/cancel resolution, and chat/activity
+ * view projections for `session-runtime.js`.
+ */
+import { orderBotChats } from '../../src/shared/index.js';
+
+const freshSignal = () => new AbortController().signal;
+
+/** @param {string} state */
+export function liveKindFromDot(state) {
+  if (state === 'permission' || state === 'blocked' || state === 'waiting') return 'needs-you';
+  if (state === 'working' || state === 'monitoring') return 'replying';
+  return 'idle';
+}
+
+/** @param {any} chat @param {any} work @param {string} sid @param {any} matchedChat */
+function chatMatchesStopTarget(chat, work, sid, matchedChat) {
+  if (chat.kind !== 'worker') return false;
+  if (sid && chat.sessionId === sid) return true;
+  if (matchedChat && chat.sessionId === matchedChat.sessionId) return true;
+  if (!work) return false;
+  return chat.dispatchId === work.dispatchId
+    || chat.workId === work.id
+    || chat.taskId === work.taskId
+    || chat.sessionId === work.taskId
+    || chat.sessionId === work.dispatchId;
+}
+
+/**
+ * Create chat/work management and view projection helpers bound to a session runtime.
+ * @param {{
+ *   botsStore: any,
+ *   workStore: any,
+ *   eventBus: any,
+ *   liveBySession: Map<string, { state: string, updatedAt: number, preview: string | null, lastBotId: string | null }>,
+ *   startingSessions: Set<string>,
+ *   inFlightTurns: Map<string, Set<{ abort: () => void }>>,
+ *   controllerOf: () => any,
+ *   requireBot: (botId: string) => any,
+ *   cancelSession: (sessionId: string) => Promise<any>,
+ *   getAutomations?: (botId: string) => any[],
+ *   getLookAroundUpNext?: (botId: string) => any[],
+ * }} deps
+ */
+export function createSessionWorkOps(deps) {
+  const {
+    botsStore,
+    workStore,
+    eventBus,
+    liveBySession,
+    startingSessions,
+    inFlightTurns,
+    controllerOf,
+    requireBot,
+    cancelSession,
+  } = deps;
+
+  /** @param {string} botId @param {string} wid @param {string} sid */
+  function resolveWorkForStop(botId, wid, sid) {
+    const direct = wid ? (workStore.getWorkById(wid) ?? workStore.getWorkByDispatch(wid)) : null;
+    if (direct && direct.botId === botId) return { work: direct, matchedChat: null };
+
+    const lookupSid = sid || wid;
+    const chat = lookupSid ? botsStore.getChat(lookupSid) : null;
+    const ownedChat = chat && chat.botId === botId ? chat : null;
+    if (ownedChat) {
+      const fromChat = (ownedChat.workId ? workStore.getWorkById(ownedChat.workId) : null)
+        ?? (ownedChat.dispatchId ? workStore.getWorkByDispatch(ownedChat.dispatchId) : null);
+      if (fromChat && fromChat.botId === botId) return { work: fromChat, matchedChat: ownedChat };
+    }
+
+    const allWork = workStore.listWork({ botId, limit: 200 });
+    const matched = allWork.find((/** @type {any} */ w) => (
+      w.taskId === wid
+      || (lookupSid && (w.taskId === lookupSid || w.dispatchId === lookupSid || w.id === lookupSid))
+      || (ownedChat?.taskId && w.taskId === ownedChat.taskId)
+    )) ?? null;
+    return { work: matched, matchedChat: ownedChat };
+  }
+
+  /** @param {string} botId @param {any} work @param {string} sid @param {any} matchedChat @param {number} now */
+  async function cancelMatchedWorkerSessions(botId, work, sid, matchedChat, now) {
+    /** @type {string[]} */
+    const cancelledSessionIds = [];
+    /** @type {Set<string>} */
+    const seenSessions = new Set();
+
+    const chats = botsStore.listChats(botId, { includeClosed: true });
+    for (const chat of chats) {
+      if (!chatMatchesStopTarget(chat, work, sid, matchedChat)) continue;
+      seenSessions.add(chat.sessionId);
+      await cancelSession(chat.sessionId);
+      cancelledSessionIds.push(chat.sessionId);
+      if (!chat.closedAt) botsStore.closeChat(chat.sessionId, now);
+    }
+
+    for (const extraSid of [sid, work?.taskId].filter(Boolean)) {
+      if (!seenSessions.has(extraSid) && inFlightTurns.has(extraSid)) {
+        await cancelSession(extraSid);
+        cancelledSessionIds.push(extraSid);
+      }
+    }
+    return cancelledSessionIds;
+  }
+
+  /** @param {string} botId @param {string} workId @param {{ sessionId?: string | null }} [options] */
+  async function stopWork(botId, workId, options = {}) {
+    const bot = requireBot(botId);
+    const wid = String(workId ?? '').trim();
+    const sid = String(options?.sessionId ?? '').trim();
+    if (!wid && !sid) {
+      throw Object.assign(new Error('workId or sessionId is required'), { code: 'invalid_argument' });
+    }
+    const { work, matchedChat } = resolveWorkForStop(bot.id, wid, sid);
+    if (!work && (!matchedChat || matchedChat.kind !== 'worker')) {
+      throw Object.assign(new Error(`Work not found: ${wid || sid}`), { code: 'not_found' });
+    }
+
+    const now = Date.now();
+    const cancelledSessionIds = await cancelMatchedWorkerSessions(bot.id, work, sid, matchedChat, now);
+    const closedWork = !work
+      ? null
+      : (work.closedAt ? work : (workStore.closeWork(work.id, { reason: 'owner_reset', now }) ?? workStore.getWorkById(work.id) ?? work));
+
+    eventBus.emit({ botIds: [bot.id], kinds: ['workers', 'chats', 'status'] });
+    return {
+      ok: true,
+      stopped: true,
+      botId: bot.id,
+      workId: work?.id ?? null,
+      dispatchId: work?.dispatchId ?? null,
+      cancelledSessionIds,
+      work: closedWork,
+    };
+  }
+
+  /** @param {string} botId @param {string} sessionId */
+  async function deleteChat(botId, sessionId) {
+    const bot = requireBot(botId);
+    const sid = String(sessionId ?? '').trim();
+    if (!sid) {
+      throw Object.assign(new Error('sessionId is required'), { code: 'invalid_argument' });
+    }
+    if (bot.chatSessionId && bot.chatSessionId === sid) {
+      throw Object.assign(
+        new Error('Cannot delete the active Home Chat. Reset Home Chat first if you want a fresh conversation.'),
+        { code: 'cannot_delete_home_chat' },
+      );
+    }
+    const chat = botsStore.getChat(sid);
+    if (!chat || chat.botId !== bot.id) {
+      throw Object.assign(new Error(`Chat not found: ${sid}`), { code: 'not_found' });
+    }
+
+    const now = Date.now();
+    await cancelSession(sid);
+
+    const chatWorkers = workStore.listChatWorkersByBot(bot.id, { chatIds: [sid], openOnly: true }).get(sid) ?? [];
+    for (const w of chatWorkers) {
+      await stopWork(bot.id, w.id).catch(() => null);
+    }
+
+    liveBySession.delete(sid);
+    startingSessions.delete(sid);
+    try { workStore.deleteActsFor?.(sid); } catch { /* Best-effort acts_for cleanup. */ }
+
+    const controller = controllerOf();
+    if (typeof controller?.delete === 'function') {
+      await controller.delete({ sessionId: sid }, freshSignal()).catch(() => null);
+    } else if (typeof controller?.close === 'function') {
+      await controller.close({ sessionId: sid }, freshSignal()).catch(() => null);
+    }
+
+    botsStore.deleteChat(sid);
+    eventBus.emit({ botIds: [bot.id], kinds: ['chats', 'workers', 'status'] });
+    return { ok: true, deleted: true, botId: bot.id, sessionId: sid, deletedAt: now };
+  }
+
+  /** @param {any} chat @param {any} bot @param {any[] | null} [preloadedWorkers] */
+  function decorateChatRow(chat, bot, preloadedWorkers = null) {
+    const live = liveBySession.get(chat.sessionId);
+    const dotState = live?.state ?? 'idle';
+    const lastActiveAt = Math.max(chat.updatedAt ?? 0, live?.updatedAt ?? 0);
+    const unread = Boolean(live?.updatedAt && (!chat.seenAt || live.updatedAt > chat.seenAt));
+    const workers = Array.isArray(preloadedWorkers)
+      ? preloadedWorkers
+      : (workStore.listChatWorkersByBot(bot.id, { chatIds: [chat.sessionId] }).get(chat.sessionId) ?? []);
+    const running = workers.filter((/** @type {any} */ w) => !w.closedAt).map((/** @type {any} */ w) => ({
+      id: w.id, dispatchId: w.dispatchId, taskId: w.taskId, state: 'running', createdAt: w.createdAt,
+    }));
+    const finished = workers.filter((/** @type {any} */ w) => Boolean(w.closedAt)).map((/** @type {any} */ w) => ({
+      id: w.id, dispatchId: w.dispatchId, taskId: w.taskId, state: w.closeReason === 'start_failed' ? 'failed' : 'done',
+      closedAt: w.closedAt,
+    }));
+    return {
+      ...chat,
+      id: chat.sessionId,
+      isHome: bot.chatSessionId === chat.sessionId,
+      closed: Boolean(chat.closedAt),
+      dotState,
+      live: liveKindFromDot(dotState),
+      preview: live?.preview ?? chat.preview ?? null,
+      lastActiveAt,
+      unread,
+      running,
+      runningTotal: running.length,
+      finished,
+    };
+  }
+
+  /** @param {string} botId @param {{ includeClosed?: boolean, preloadedWorkersByChat?: Map<string, any[]> | null }} [opts] */
+  function listChats(botId, { includeClosed = true, preloadedWorkersByChat = null } = {}) {
+    const bot = requireBot(botId);
+    const rows = botsStore.listChats(bot.id, { includeClosed });
+    if (rows.length === 0) return [];
+    const workersByChat = preloadedWorkersByChat instanceof Map
+      ? preloadedWorkersByChat
+      : workStore.listChatWorkersByBot(bot.id, { chatIds: rows.map((/** @type {any} */ r) => r.sessionId) });
+    return orderBotChats(rows.map((/** @type {any} */ row) => decorateChatRow(row, bot, workersByChat.get(row.sessionId) ?? [])));
+  }
+
+  /** @param {{ botId?: string | null, query?: string, limit?: number }} [opts] */
+  function searchChats({ botId = null, query = '', limit = 50 } = {}) {
+    const needle = String(query ?? '').trim().toLowerCase();
+    const bots = botId ? [requireBot(botId)] : botsStore.listBots();
+    const workersByBot = workStore.listChatWorkersByBots(bots.map((/** @type {any} */ b) => b.id));
+    const matches = [];
+    for (const bot of bots) {
+      const preloaded = workersByBot.get(bot.id) ?? new Map();
+      for (const chat of listChats(bot.id, { includeClosed: true, preloadedWorkersByChat: preloaded })) {
+        const hay = `${chat.title ?? ''} ${chat.preview ?? ''} ${bot.name}`.toLowerCase();
+        if (!needle || hay.includes(needle)) {
+          matches.push({ ...chat, botName: bot.name });
+        }
+      }
+    }
+    return matches.sort((a, b) => b.lastActiveAt - a.lastActiveAt).slice(0, Math.min(200, Math.max(1, limit)));
+  }
+
+  /** @param {string} sessionId */
+  function markSeen(sessionId) {
+    const now = Date.now();
+    const chat = botsStore.getChat(sessionId);
+    botsStore.markChatSeen(sessionId, now);
+    if (chat?.botId) eventBus.emit({ botIds: [chat.botId], kinds: ['chats', 'status'] });
+    return { ok: true, sessionId, seenAt: now };
+  }
+
+  /** @param {string} sessionId */
+  function markUnseen(sessionId) {
+    const chat = botsStore.getChat(sessionId);
+    if (chat) {
+      botsStore.upsertChat({ ...chat, seenAt: null, updatedAt: Date.now() });
+      const live = liveBySession.get(sessionId);
+      liveBySession.set(sessionId, {
+        state: live?.state ?? 'idle',
+        updatedAt: Date.now(),
+        preview: live?.preview ?? null,
+        lastBotId: chat.botId,
+      });
+      eventBus.emit({ botIds: [chat.botId], kinds: ['chats', 'status'] });
+    }
+    return { ok: true, sessionId };
+  }
+
+  /** @param {string} botId */
+  function buildChatTree(botId) {
+    const bot = requireBot(botId);
+    const chats = listChats(bot.id, { includeClosed: true });
+    return { botId: bot.id, homeSessionId: bot.chatSessionId ?? null, chats };
+  }
+
+  /** @param {string} botId */
+  function buildActivity(botId) {
+    const bot = requireBot(botId);
+    const allWork = workStore.listWork({ botId: bot.id, limit: 100 });
+    const workers = allWork.filter((/** @type {any} */ w) => !w.closedAt);
+    const completed = allWork.filter((/** @type {any} */ w) => Boolean(w.closedAt)).slice(0, 20);
+    const automations = typeof deps.getAutomations === 'function'
+      ? deps.getAutomations(bot.id)
+      : workStore.listAutomations({ botId: bot.id });
+    const waits = automations.filter((/** @type {any} */ a) => a.once && a.enabled);
+    const regularAutomations = automations.filter((/** @type {any} */ a) => !a.once);
+    const upNext = typeof deps.getLookAroundUpNext === 'function' ? deps.getLookAroundUpNext(bot.id) : [];
+    const inProgress = listChats(bot.id, { includeClosed: false }).filter((/** @type {any} */ c) => c.live !== 'idle');
+    return { workers, inProgress, completed, automations: regularAutomations, waits, upNext };
+  }
+
+  return {
+    deleteChat,
+    stopWork,
+    listChats,
+    searchChats,
+    markSeen,
+    markUnseen,
+    buildChatTree,
+    buildActivity,
+  };
+}

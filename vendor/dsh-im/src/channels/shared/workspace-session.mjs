@@ -1,6 +1,7 @@
 import { withSessionBindingLock } from './session-binding-lock.mjs';
 import { whaleSessionResolution } from './whale-session.mjs';
 import { selectConversationSession } from './session-binding.mjs';
+import { normalizeSpeakerMetadata } from './single-owner-gate.mjs';
 
 export const WORKSPACE_SESSION_STALE = 'workspace-session-stale';
 
@@ -44,10 +45,17 @@ export async function askInWorkspaceSession({
   key,
   text,
   content,
+  speaker,
   createOptions,
   existsOptions,
   askOptions,
 }) {
+  const effectiveSpeaker = normalizeSpeakerMetadata(speaker ?? askOptions?.speaker);
+  if (effectiveSpeaker && effectiveSpeaker.role === 'none') {
+    const denied = new Error('Speaker is not authorized to send prompts to this session.');
+    denied.code = 'speaker-not-authorized';
+    throw denied;
+  }
   while (true) {
     try {
       const binding = await withSessionBindingLock(state, key, async () => {
@@ -79,6 +87,7 @@ export async function askInWorkspaceSession({
       const artifactOptions = typeof askOptions === 'number'
         ? { timeoutMs: askOptions }
         : { ...askOptions };
+      if (effectiveSpeaker) artifactOptions.speaker = effectiveSpeaker;
       artifactOptions.onArtifact = async (artifact) => {
         artifacts.push(artifact);
         await originalOnArtifact?.(artifact);

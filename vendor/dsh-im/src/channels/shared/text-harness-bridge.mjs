@@ -19,6 +19,11 @@ import {
 } from './preset-command.mjs';
 import { askInWorkspaceSession } from './workspace-session.mjs';
 import { sharedWhaleSessionId } from './whale-session.mjs';
+import {
+  attachImmutableSpeaker,
+  isWhaleEnforcedForHarness,
+  whaleRestrictedCommandReply,
+} from './single-owner-gate.mjs';
 import { HarnessApprovalQueue } from './harness-approval.mjs';
 import {
   BatchInputManager,
@@ -139,6 +144,7 @@ export class TextHarnessBridge {
   #commandTasks = new Set();
   #approvals;
   #batches = new BatchInputManager();
+  #accessGate;
 
   constructor({
     descriptor,
@@ -149,6 +155,7 @@ export class TextHarnessBridge {
     logger = console,
     replyTimeoutMs = 600_000,
     signal,
+    accessGate = null,
   }) {
     if (!descriptor?.key || !descriptor?.label) throw new TypeError('A channel descriptor is required');
     if (!bot || typeof bot.sendText !== 'function') throw new TypeError('A bot client is required');
@@ -161,6 +168,7 @@ export class TextHarnessBridge {
     this.#logger = logger;
     this.#replyTimeoutMs = replyTimeoutMs;
     this.#signal = signal;
+    this.#accessGate = accessGate ?? harness?.accessGate ?? null;
     this.#approvals = new HarnessApprovalQueue({
       label: descriptor.key,
       logger,
@@ -183,6 +191,42 @@ export class TextHarnessBridge {
       return Promise.resolve();
     }
     this.#acceptedMessageIds.add(messageId);
+    const gate = this.#accessGate;
+    const chatType = kind === 'direct' ? 'private' : 'group';
+    if (gate && typeof gate.evaluateInbound === 'function') {
+      return Promise.resolve().then(async () => {
+        const decision = await gate.evaluateInbound({
+          senderId,
+          senderAlternateIds: normalized.senderAlternateId ? [normalized.senderAlternateId] : [],
+          displayName: normalized.senderName ?? normalized.displayName,
+          chatType,
+          harness: this.#harness,
+        });
+        if (!decision.allowed) {
+          this.#acceptedMessageIds.delete(messageId);
+          await this.#state.markSeen(messageId).catch(() => undefined);
+          this.#status.messagesRejected += 1;
+          this.#status.lastRejectedAt = new Date().toISOString();
+          if (decision.replyText && normalized.replyTarget) {
+            await this.#bot.sendText(normalized.replyTarget, decision.replyText).catch(() => undefined);
+          }
+          return;
+        }
+        attachImmutableSpeaker(normalized, decision.speaker);
+        return this.#acceptWithReaction(normalized, messageId, senderId);
+      }).catch((error) => {
+        this.#acceptedMessageIds.delete(messageId);
+        throw error;
+      });
+    }
+    attachImmutableSpeaker(normalized, {
+      role: 'guest',
+      chat: chatType,
+    });
+    return this.#acceptWithReaction(normalized, messageId, senderId);
+  }
+
+  #acceptWithReaction(normalized, messageId, senderId) {
     const statusReaction = beginStatusReaction({
       adapter: this.#bot,
       target: normalized.kind === 'direct' || normalized.addressed === true
@@ -569,8 +613,8 @@ export class TextHarnessBridge {
         return;
       }
       if (!hasImages && !hasFiles && command === '/new') {
-        if (await sharedWhaleSessionId(this.#harness)) {
-          await this.#bot.sendText(target, t('鲸鱼娘只有一条常驻对话，继续发送消息即可。'));
+        if (await sharedWhaleSessionId(this.#harness) || await isWhaleEnforcedForHarness(this.#harness)) {
+          await this.#bot.sendText(target, whaleRestrictedCommandReply('/new'));
         } else {
           await this.#state.clearSession(conversationKey);
           await this.#bot.sendText(target, t('已开启新会话。请发送你的问题。'));
@@ -624,6 +668,7 @@ export class TextHarnessBridge {
         key: conversationKey,
         text,
         content,
+        speaker: message.speaker,
         createOptions: this.#signal ? { signal: this.#signal } : undefined,
         existsOptions: this.#signal ? { signal: this.#signal } : undefined,
         askOptions: {

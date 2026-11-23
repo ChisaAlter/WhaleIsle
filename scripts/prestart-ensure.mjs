@@ -95,6 +95,7 @@ if (buildReason) {
 preparePreviewGuestPreload();
 run(process.execPath, ['scripts/prepare-dshd-remote.mjs'], root, { shell: false });
 run(process.execPath, ['scripts/prepare-dsh-remote-client.mjs'], root, { shell: false });
+run(process.execPath, ['scripts/build-dsh-whale-client.mjs'], root, { shell: false });
 run(process.execPath, ['scripts/prepare-dsh-feedback-clients.mjs'], root, { shell: false });
 
 const remotePkg = path.join(root, 'vendor', 'deepseek-harness', 'packages', 'client', 'ui-settings-remote');

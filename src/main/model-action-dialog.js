@@ -48,6 +48,13 @@ function effectLevelName(messages, effect) {
   return messages[EFFECT_LEVEL_KEY[effect]] || messages.confirmLevelUnknown;
 }
 
+/** @param {string} effect @returns {'danger' | 'warning' | 'neutral'} */
+function effectTone(effect) {
+  if (effect === 'destructive') return 'danger';
+  if (effect === 'code' || effect === 'external') return 'warning';
+  return 'neutral';
+}
+
 /**
  * The fixed attribution line: `Request from {source}` plus a server-owned
  * second fragment (assessed level for confirms, category for secrets).
@@ -75,8 +82,16 @@ function modelActionConfirmOptions(request, messages, locale) {
   const offerAlways = !NEVER_ALWAYS_LEVELS.has(effect);
   const title = effectTitle(messages, effect);
   const level = fill(messages.confirmAssessedLevel, 'level', effectLevelName(messages, effect));
+  const sourceLabel = fill(
+    messages.confirmRequestFrom,
+    'source',
+    action ? `${tool} / ${action}` : (tool || messages.confirmSourceAssistant),
+  );
+  const tone = effectTone(effect);
+  const resolvedSummary = summary || messages.confirmFallbackSummary;
   return {
     type: 'warning',
+    tone,
     buttons: offerAlways
       ? [messages.confirmDeny, messages.confirmAllowOnce, messages.confirmAllowAlways]
       : [messages.confirmDeny, messages.confirmAllowOnce],
@@ -87,9 +102,15 @@ function modelActionConfirmOptions(request, messages, locale) {
     message: title,
     locale,
     context: attributionContext(messages, action ? `${tool} / ${action}` : (tool || messages.confirmSourceAssistant), level),
+    attribution: { source: sourceLabel, level, tone },
+    requestSection: {
+      caption: messages.confirmRequestContent,
+      summary: resolvedSummary,
+      details,
+    },
     detail: [
       messages.confirmRequestContent,
-      summary || messages.confirmFallbackSummary,
+      resolvedSummary,
       details || null,
     ].filter(Boolean).join('\n\n'),
     noLink: true,
@@ -113,8 +134,10 @@ function secretDialogOptions(request, messages, locale) {
     String(request?.label || '').slice(0, 200) || messages.confirmSecretDefaultLabel,
   ].filter(Boolean).join('\n');
   const hint = String(request?.hint || '').slice(0, 500);
+  const sourceLabel = fill(messages.confirmRequestFrom, 'source', tool || messages.confirmSourceAssistant);
   return {
     type: 'info',
+    tone: 'info',
     buttons: [messages.confirmSecretCopy, messages.confirmSecretClose],
     defaultId: 1,
     cancelId: 1,
@@ -122,6 +145,14 @@ function secretDialogOptions(request, messages, locale) {
     message: messages.confirmSecretTitle,
     locale,
     context: attributionContext(messages, tool || messages.confirmSourceAssistant, messages.confirmSecretCategory),
+    attribution: { source: sourceLabel, level: messages.confirmSecretCategory, tone: 'info' },
+    requestSection: {
+      caption: messages.confirmRequestContent,
+      summary: callerText,
+      details: secret,
+      hint,
+      isSecret: true,
+    },
     detail: [
       messages.confirmRequestContent,
       callerText || null,

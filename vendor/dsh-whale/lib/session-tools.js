@@ -7,8 +7,6 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import {
   controllerFrom,
-  controlBaseline,
-  eventText,
   genericOutput,
   sessionSnapshot,
   trimTo,
@@ -22,84 +20,54 @@ import {
   removeSchedule,
   removeWatch,
 } from './observe.js';
-import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+import {
+  ABORTED_TEXT,
+  CONFIRM_TOOL_TIMEOUT_MS,
+  confirmModelAction,
+  refusalTextFor,
+} from './desktop-confirm.js';
+import { TAINTED_SESSION_REFUSAL_TEXT, isSessionTainted } from './call-origin.js';
+import {
+  buildQueueAction,
+  collectQueueSessionIds,
+  collectWhaleOwnedSessionIds,
+  contentBlocksText,
+  detectAlreadyIdle,
+  formatEventTime,
+  formatRecords,
+  readJobsForSession,
+  renderTailBounded,
+  searchWhaleOwnedSessions,
+} from './session-helpers.js';
 
-const READ_LINE_MAX = 400;
-const READ_TOTAL_MAX = 8000;
 const READ_DEFAULT_MESSAGES = 30;
 
 function unavailable() {
   return { ok: false, detail: 'Session controller is unavailable.' };
 }
 
+/** @param {any} error */
 function failed(error) {
   return { ok: false, detail: String(error?.message ?? error ?? 'unknown error') };
 }
 
-function messageSourceLabel(source) {
-  const kind = source?.kind;
-  if (!kind || kind === 'user') return '用户';
-  if (kind === 'plugin') return `${source.plugin || 'plugin'} 代投`;
-  return String(kind);
-}
-
 /**
- * Render one history page into `[#seq] actor: text` lines. Events the
- * model cannot act on (context folds, request internals) are dropped;
- * everything the session surface shows stays visible.
+ * @param {string} action
+ * @param {string} sessionId
+ * @param {string} itemId
  */
-function formatRecords(records) {
-  const lines = [];
-  for (const rec of records ?? []) {
-    const ev = rec?.event ?? rec;
-    const seq = Number(ev?.seq) || 0;
-    const tag = `[#${seq}]`;
-    switch (ev?.type) {
-      case 'user/message': {
-        const text = trimTo(eventText(ev).trim(), READ_LINE_MAX);
-        lines.push(`${tag} ${messageSourceLabel(ev?.data?.source)}: ${text || '(非文本消息)'}`);
-        break;
-      }
-      case 'assistant/message': {
-        const text = trimTo(eventText(ev).trim(), READ_LINE_MAX);
-        if (text) lines.push(`${tag} 助手: ${text}`);
-        break;
-      }
-      case 'tool/call':
-        lines.push(`${tag} 工具调用 ${String(ev?.data?.name ?? '?')}`);
-        break;
-      case 'tool/result': {
-        const msg = ev?.data?.message ?? {};
-        const status = msg.isError === true ? 'error' : 'ok';
-        lines.push(`${tag} 工具结果 ${String(msg.callId ?? '')}（${status}）`);
-        break;
-      }
-      case 'turn/start':
-        lines.push(`${tag} ── 回合 #${ev?.data?.turn ?? '?'} 开始`);
-        break;
-      case 'turn/end': {
-        const kind = String(ev?.data?.reason?.kind ?? 'unknown');
-        lines.push(`${tag} ── 回合 #${ev?.data?.turn ?? '?'} 结束（${kind}）`);
-        break;
-      }
-      case 'session/presentation': {
-        const title = String(ev?.data?.presentation?.title ?? '');
-        if (title) lines.push(`${tag} 标题: ${trimTo(title, 120)}`);
-        break;
-      }
-      default:
-        break;
-    }
-  }
-  return lines;
+function queueConfirmSummary(action, sessionId, itemId) {
+  return action === 'steer'
+    ? `把会话 ${sessionId} 的排队消息 ${itemId} 以你的名义并入当前回合`
+    : `改写会话 ${sessionId} 的排队消息 ${itemId} 文本，它将作为你的原话送达`;
 }
 
 export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
   ctx.tools.register(defineTool({
     name: 'whale_search_sessions',
     description:
-      'Full-text search across every session\'s message contents. Returns session ids with '
-      + 'matching snippets — the way to find which conversation talked about something.',
+      'Full-text search across every session\'s message contents (including Whale\'s resident '
+      + 'conversation and task-card sessions). Returns session ids with matching snippets.',
     timeoutMs: 20_000,
     parameters: {
       query: { type: 'string', required: true, description: 'Literal search text.' },
@@ -137,17 +105,25 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.query ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, items: [], hasMore: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const controller = controllerFrom(ctx);
       if (typeof controller?.search !== 'function') return { ...unavailable(), items: [], hasMore: false };
       const query = String(args.query ?? '').trim();
       if (!query) return { ok: false, items: [], hasMore: false, detail: 'query is required.' };
       try {
-        const result = await controller.search({ query }, AbortSignal.timeout(15_000));
+        const signal = AbortSignal.timeout(15_000);
+        const result = await controller.search({ query }, signal);
         const items = (result?.items ?? []).map((item) => ({
           sessionId: String(item.sessionId ?? ''),
           snippet: trimTo(item.snippet ?? '', 240),
         }));
+        const seen = new Set(items.map((/** @type {any} */ i) => i.sessionId));
+        const ownedIds = await collectWhaleOwnedSessionIds(ctx, controller, getSelfId);
+        const extra = await searchWhaleOwnedSessions(ctx, controller, query, ownedIds, seen, signal);
+        items.push(...extra);
         return {
           ok: true,
           items,
@@ -164,13 +140,14 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
     name: 'whale_read_session',
     description:
       'Read one session\'s message history as [#seq] actor: text lines (newest page by '
-      + 'default, beforeSeq to page further back). This is the cross-session read the user '
-      + 'granted — use it to check progress, outcomes, and what was asked.',
+      + 'default, beforeSeq to page further back). Tail-preserving when truncated so newest '
+      + 'replies stay visible. Set includeToolDetails=true to inspect tool call arguments and results.',
     timeoutMs: 20_000,
     parameters: {
       sessionId: { type: 'string', required: true, description: 'Target session id.' },
       beforeSeq: { type: 'number', description: 'Page further back: only events before this seq.' },
       maxMessages: { type: 'number', description: 'Page budget (default 30).' },
+      includeToolDetails: { type: 'boolean', description: 'Include tool/call argument summaries and tool/result text.' },
     },
     output: {
       schema: {
@@ -187,7 +164,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       },
       render: (_args, value) => [{
         type: 'text',
-        text: value.lines.join('\n').slice(0, READ_TOTAL_MAX)
+        text: renderTailBounded(value.lines)
           + (value.hasMore ? `\n…更早历史：whale_read_session(sessionId, beforeSeq=${value.oldestSeq})` : ''),
       }],
     },
@@ -197,44 +174,37 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      const emptyRead = (detail, sessionId = '') => ({ ok: false, sessionId, lines: [], hasMore: false, oldestSeq: 0, detail });
+      if (isSessionTainted(exec?.agent)) return emptyRead(TAINTED_SESSION_REFUSAL_TEXT);
       const controller = controllerFrom(ctx);
       if (typeof controller?.follow !== 'function' || typeof controller?.page !== 'function') {
         return { ...unavailable(), sessionId: '', lines: [], hasMore: false, oldestSeq: 0 };
       }
       const sessionId = String(args.sessionId ?? '').trim();
-      if (!sessionId) return { ok: false, sessionId: '', lines: [], hasMore: false, oldestSeq: 0, detail: 'sessionId is required.' };
+      if (!sessionId) return emptyRead('sessionId is required.');
       const maxMessages = Math.max(5, Math.min(100, Number(args.maxMessages) || READ_DEFAULT_MESSAGES));
       try {
         const snapshot = await sessionSnapshot(controller, sessionId, maxMessages);
-        if (!snapshot) {
-          return { ok: false, sessionId, lines: [], hasMore: false, oldestSeq: 0, detail: `Session ${sessionId} is not readable (missing or not yet visible).` };
-        }
-        let records = snapshot.records;
-        let hasMore = snapshot.hasMore === true;
+        if (!snapshot) return emptyRead(`Session ${sessionId} is not readable (missing or not yet visible).`, sessionId);
         const beforeSeq = Number(args.beforeSeq);
-        if (Number.isFinite(beforeSeq) && beforeSeq > 0) {
-          const page = await controller.page({
-            address: { kind: 'session', sessionId },
-            throughSeq: snapshot.cursor,
-            beforeSeq,
-            maxMessages,
-          }, AbortSignal.timeout(15_000));
-          records = page?.records ?? [];
-          hasMore = page?.hasMore === true;
-        }
-        const lines = formatRecords(records);
-        const oldestSeq = Number(records?.[0]?.event?.seq ?? 0);
+        const paged = Number.isFinite(beforeSeq) && beforeSeq > 0
+          ? await controller.page({ address: { kind: 'session', sessionId }, throughSeq: snapshot.cursor, beforeSeq, maxMessages }, AbortSignal.timeout(15_000))
+          : snapshot;
+        const records = (paged && paged.records) || [];
+        const hasMore = Boolean(paged && paged.hasMore === true);
+        const lines = formatRecords(records, { includeToolDetails: args.includeToolDetails === true });
+        const firstSeq = records.length > 0 && records[0].event ? Number(records[0].event.seq) || 0 : 0;
         return {
           ok: true,
           sessionId,
           lines,
           hasMore,
-          oldestSeq,
+          oldestSeq: firstSeq,
           detail: `${lines.length} line(s)${hasMore ? ', earlier history available' : ''}.`,
         };
       } catch (error) {
-        return { ok: false, sessionId, lines: [], hasMore: false, oldestSeq: 0, detail: String(error?.message ?? error) };
+        return emptyRead(String(error instanceof Error ? error.message : error), sessionId);
       }
     },
   }));
@@ -242,8 +212,8 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
   ctx.tools.register(defineTool({
     name: 'whale_session_queue',
     description:
-      'Live queue + background-job overview from the host control stream. With sessionId, '
-      + 'shows that session\'s pending messages and jobs; without, every session that has any. '
+      'Live queue + background-job overview from controller.state and host jobs. With sessionId, '
+      + 'shows that session\'s pending messages and jobs; without, every live session that has any. '
       + 'Queue item ids from here feed whale_update_queue.',
     timeoutMs: 15_000,
     parameters: {
@@ -293,31 +263,36 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       }],
     },
     presentCall: () => ({ card: 'generic', title: 'Session queues', kind: 'other', content: [] }),
-    async execute(args) {
-      const controller = controllerFrom(ctx);
-      if (typeof controller?.control !== 'function') return { ...unavailable(), queues: [] };
-      const wanted = String(args.sessionId ?? '').trim();
-      const baseline = await controlBaseline(controller);
-      if (!baseline) return { ok: false, queues: [], detail: 'Control stream is unavailable.' };
-      const queues = [];
-      const sessionIds = wanted ? [wanted] : Object.keys(baseline.queues ?? {});
-      for (const sessionId of sessionIds) {
-        const items = (baseline.queues?.[sessionId] ?? []).map((item) => ({
-          id: String(item.id ?? ''),
-          placement: String(item.placement ?? 'queued'),
-          text: trimTo(
-            (item.message?.content ?? [])
-              .map((b) => (b?.type === 'text' ? String(b.text ?? '') : ''))
-              .join(' ')
-              .trim(),
-            160,
-          ),
-        }));
-        const jobs = (baseline.jobs?.[sessionId] ?? []).map((job) =>
-          `${job.kind ?? job.label ?? 'job'} ${job.status ?? ''}`.trim());
-        if (wanted || items.length || jobs.length) queues.push({ sessionId, items, jobs });
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, queues: [], detail: TAINTED_SESSION_REFUSAL_TEXT };
       }
-      return { ok: true, queues, detail: `${queues.length} session(s) with pending work.` };
+      const controller = controllerFrom(ctx);
+      if (typeof controller?.state !== 'function') return { ...unavailable(), queues: [] };
+      const wanted = String(args.sessionId ?? '').trim();
+      try {
+        const sessionIds = await collectQueueSessionIds(ctx, controller, wanted);
+        const queues = [];
+        for (const sessionId of sessionIds) {
+          let st = null;
+          try {
+            st = await controller.state({ sessionId }, AbortSignal.timeout(10_000));
+          } catch (/** @type {any} */ error) {
+            if (wanted) return { ok: false, queues: [], detail: String(error?.message ?? error) };
+            continue;
+          }
+          const items = (Array.isArray(st?.queue) ? st.queue : []).map((/** @type {any} */ item) => ({
+            id: String(item?.id ?? ''),
+            placement: String(item?.placement ?? 'queued'),
+            text: contentBlocksText(item?.content ?? item?.message?.content),
+          }));
+          const jobs = readJobsForSession(ctx, sessionId);
+          if (wanted || items.length || jobs.length) queues.push({ sessionId, items, jobs });
+        }
+        return { ok: true, queues, detail: `${queues.length} session(s) with pending work.` };
+      } catch (/** @type {any} */ error) {
+        return { ok: false, queues: [], detail: String(error?.message ?? error) };
+      }
     },
   }));
 
@@ -357,11 +332,14 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       },
       render: (_args, value) => [{
         type: 'text',
-        text: value.events.map((e) => `- [${e.sessionId}] ${e.detail}`).join('\n') || value.detail,
+        text: value.events.map((e) => `- [${formatEventTime(e.at)}] [${e.sessionId}] (${e.type}) ${e.detail}`).join('\n') || value.detail,
       }],
     },
     presentCall: () => ({ card: 'generic', title: 'Recent events', kind: 'other', content: [] }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) {
+        return { ok: false, events: [], detail: TAINTED_SESSION_REFUSAL_TEXT };
+      }
       const events = recentEvents({
         sessionId: String(args.sessionId ?? ''),
         limit: Number(args.limit) || 30,
@@ -390,7 +368,8 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const action = String(args.action ?? '').trim();
       if (action === 'list') {
         const watches = listWatches();
@@ -401,14 +380,19 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
             : 'No active watches.',
         };
       }
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       if (action === 'add') {
-        const result = addWatch({
-          sessionId: String(args.sessionId ?? ''),
-          note: String(args.note ?? ''),
-          once: args.once !== false,
-        });
+        const sessionId = String(args.sessionId ?? '').trim();
+        if (sessionId && sessionId === getSelfId()) {
+          return { ok: false, detail: 'Watch failed: cannot-watch-self' };
+        }
+        const result = addWatch({ sessionId, note: String(args.note ?? ''), once: args.once !== false });
         if (!result.ok) return { ok: false, detail: `Watch failed: ${result.error}` };
-        return { ok: true, detail: `Watching ${result.watch.sessionId}${result.watch.once ? ' (once)' : ''}.` };
+        const idle = await detectAlreadyIdle(ctx, controllerFrom(ctx), result.watch.sessionId, Boolean(result.alreadyIdle));
+        const idleNote = idle
+          ? ' 注意：该会话当前已处于空闲状态（无进行中回合），建议直接用 whale_read_session 查看结果；观察仍已登记以监听后续回合。'
+          : '';
+        return { ok: true, detail: `Watching ${result.watch.sessionId}${result.watch.once ? ' (once)' : ''}.${idleNote}` };
       }
       if (action === 'remove') {
         const result = removeWatch(String(args.sessionId ?? ''));
@@ -443,7 +427,8 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.text ?? args.id ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const action = String(args.action ?? '').trim();
       if (action === 'list') {
         const schedules = listSchedules();
@@ -457,6 +442,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
             : 'No schedules.',
         };
       }
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       if (action === 'add') {
         const result = addSchedule(args);
         if (!result.ok) return { ok: false, detail: `Schedule failed: ${result.error}` };
@@ -489,7 +475,9 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.cancel !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -518,7 +506,9 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.title ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.rename !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -562,7 +552,9 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, sessionId: '', detail: TAINTED_SESSION_REFUSAL_TEXT };
+      if (exec?.signal?.aborted) return { ok: false, sessionId: '', detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.fork !== 'function') return { ...unavailable(), sessionId: '' };
       const sessionId = String(args.sessionId ?? '').trim();
@@ -590,7 +582,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
     description:
       'Permanently delete an ARCHIVED session and its subagent children. Only archived '
       + 'sessions can be deleted — this is irreversible, so say what you are deleting first.',
-    timeoutMs: 20_000,
+    timeoutMs: CONFIRM_TOOL_TIMEOUT_MS,
     parameters: {
       sessionId: { type: 'string', required: true, description: 'Archived session id to delete.' },
     },
@@ -601,7 +593,8 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.sessionId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.delete !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -612,8 +605,10 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
         effect: 'destructive',
         summary: `永久删除已归档会话 ${sessionId} 及其子代理，不可恢复`,
         details: sessionId,
-      });
-      if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
+      }, exec?.signal, exec);
+      if (confirmation.ok !== true || exec?.signal?.aborted) {
+        return { ok: false, detail: refusalTextFor(confirmation, exec?.signal) };
+      }
       try {
         const result = await controller.delete({ sessionId });
         const count = result?.deletedSessionIds?.length ?? 0;
@@ -643,7 +638,9 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: `${String(args.provider ?? '')}/${String(args.model ?? '')}` }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
+      if (exec?.signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.selectModel !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -674,7 +671,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
     description:
       'Mutate one still-pending queued message: remove it, steer it into the running turn, '
       + 'or edit its text. Item ids come from whale_session_queue.',
-    timeoutMs: 15_000,
+    timeoutMs: CONFIRM_TOOL_TIMEOUT_MS,
     parameters: {
       sessionId: { type: 'string', required: true },
       itemId: { type: 'string', required: true, description: 'Queue item id.' },
@@ -688,7 +685,8 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.itemId ?? '') }],
     }),
-    async execute(args) {
+    async execute(args, exec) {
+      if (isSessionTainted(exec?.agent)) return { ok: false, detail: TAINTED_SESSION_REFUSAL_TEXT };
       const controller = controllerFrom(ctx);
       if (typeof controller?.updateQueue !== 'function') return unavailable();
       const sessionId = String(args.sessionId ?? '').trim();
@@ -697,34 +695,31 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
       if (!sessionId || !itemId || !action) {
         return { ok: false, detail: 'sessionId, itemId and action are required.' };
       }
-      let queueAction;
-      if (action === 'remove') queueAction = { kind: 'remove' };
-      else if (action === 'steer') queueAction = { kind: 'steer' };
-      else if (action === 'edit') {
-        const text = String(args.text ?? '').trim();
-        if (!text) return { ok: false, detail: 'edit needs a non-empty text.' };
-        queueAction = { kind: 'edit', content: [{ type: 'text', text }] };
-      } else {
-        return { ok: false, detail: 'action must be edit | remove | steer.' };
-      }
+      const built = buildQueueAction(action, args.text);
+      if (built.error) return { ok: false, detail: built.error };
       if (action !== 'remove') {
         const confirmation = await confirmModelAction({
           tool: 'whale_update_queue',
           action,
           effect: 'external',
-          summary: action === 'steer'
-            ? `把会话 ${sessionId} 的排队消息 ${itemId} 以你的名义并入当前回合`
-            : `改写会话 ${sessionId} 的排队消息 ${itemId} 文本，它将作为你的原话送达`,
+          summary: queueConfirmSummary(action, sessionId, itemId),
           details: String(args.text ?? ''),
-        });
-        if (confirmation.ok !== true) return { ok: false, detail: DECLINED_TEXT };
+        }, exec?.signal, exec);
+        if (confirmation.ok !== true || exec?.signal?.aborted) {
+          return { ok: false, detail: refusalTextFor(confirmation, exec?.signal) };
+        }
       }
-      try {
-        await controller.updateQueue({ sessionId, itemId, action: queueAction });
-        return { ok: true, detail: `Queue item ${itemId} ${action} applied.` };
-      } catch (error) {
-        return failed(error);
-      }
+      return applyQueueUpdate(controller, { sessionId, itemId, action, queueAction: built.queueAction }, exec?.signal);
     },
   }));
+}
+
+async function applyQueueUpdate(controller, { sessionId, itemId, action, queueAction }, signal) {
+  if (signal?.aborted) return { ok: false, detail: ABORTED_TEXT };
+  try {
+    await controller.updateQueue({ sessionId, itemId, action: queueAction });
+    return { ok: true, detail: `Queue item ${itemId} ${action} applied.` };
+  } catch (error) {
+    return failed(error);
+  }
 }
