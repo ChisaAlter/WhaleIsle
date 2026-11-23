@@ -335,6 +335,31 @@ const BOT_TOOLS = Object.freeze({
       create: { level: 'harness-governed', reason: '为当前队友创建新的本地支线会话，工具执行由 Harness 治理。' },
     },
   },
+  bot_memory_search: {
+    level: 'read',
+    confirm: false,
+    reason: '按三层作用域（bot/team/project）只读检索本机记忆索引。',
+    actions: {
+      search: { level: 'read', reason: '只读检索本机记忆全文索引。' },
+    },
+  },
+  bot_decision_append: {
+    level: 'local',
+    confirm: false,
+    reason: '向当前工作项的本地 decisions/<itemUid>.tsv 追加一条审计决策记录，只追加不删改历史。',
+    actions: {
+      append: { level: 'local', reason: '向工作项本地决策日志追加一条可追溯记录。' },
+    },
+  },
+  bot_crew_adopt: {
+    level: 'local',
+    confirm: false,
+    reason: '将已有本地普通会话登记或解除为当前队友的船员映射，不修改原会话权限或内容。',
+    actions: {
+      adopt: { level: 'local', reason: '登记已有本地普通会话为船员映射。' },
+      release: { level: 'local', reason: '解除普通会话的船员映射，保留原会话数据。' },
+    },
+  },
 });
 
 // Ordering used when an action the registry does not know has to fall back

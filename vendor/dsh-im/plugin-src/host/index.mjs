@@ -14,6 +14,11 @@ import {
   isSingleOwnerChannel,
   sharedSingleOwnerGate,
 } from '../../src/channels/shared/single-owner-gate.mjs';
+import {
+  createBotOutboundBridge,
+  getActiveBotOutboundBridge,
+  setActiveBotOutboundBridge,
+} from '../../src/channels/shared/bot-outbound-bridge.mjs';
 import { installSingleOwnerRpc } from './channels/shared/single-owner-rpc.mjs';
 
 export const name = 'dsh-im-host';
@@ -97,6 +102,17 @@ export function createImHostPlugin(internals = {}) {
       const logger = typeof ctx?.logger === 'function'
         ? ctx.logger(name)
         : (ctx?.logger ?? console);
+      const outboundBridge = internals.botOutboundBridge
+        ?? config.botOutboundBridge
+        ?? createBotOutboundBridge(scopedCtx, { dshHome: config.dshHome, logger });
+      setActiveBotOutboundBridge(outboundBridge);
+      if (typeof ctx?.effect === 'function') {
+        ctx.effect(() => () => {
+          if (getActiveBotOutboundBridge() === outboundBridge) {
+            setActiveBotOutboundBridge(null);
+          }
+        }, 'dsh-im: bot outbound bridge');
+      }
       const failures = [];
       for (const [channel, start] of channels) {
         try {
@@ -116,3 +132,5 @@ export function createImHostPlugin(internals = {}) {
 export async function apply(ctx, config = {}) {
   return createImHostPlugin().apply(ctx, config);
 }
+
+export { createBotOutboundBridge, getActiveBotOutboundBridge };

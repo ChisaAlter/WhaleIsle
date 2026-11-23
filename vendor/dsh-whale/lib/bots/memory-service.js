@@ -1,18 +1,14 @@
 /**
- * Bot Memory Service (`MEMORY.md`, `memory/<topic>.md`, `memory/archive.md`,
- * `memory/journal/YYYY-MM.md`, and `_meta/bot-memory-history/<encodedBotId>.json`).
+ * Bot Memory Service (`MEMORY.md`, `memory/<topic>.md`, `memory/YYYY-MM-DD.md`,
+ * `memory/archive.md`, `memory/journal/YYYY-MM.md`, `_meta/team-memory/<groupId>.md`,
+ * FTS5 index, and `_meta/bot-memory-history/<encodedBotId>.json`).
  *
- * Implements Memory 2.0 guardrails:
- * - 200-line prompt window with truncation notice
- * - Code-fence-aware & non-bullet fact parsing
- * - Turn-end tamper protection (auto-reinsert lines deleted without `forgetFact`, logged as `kept`)
- * - 14-day Re-add Guard (intercepts stale re-adds from long sessions into `memory/archive.md` with `· kept out YYYY-MM-DD`)
- * - External source auto-tagging (` · from: <source>`) + anti-spoofing sanitization
- * - 90-day / 1000-entry history with secret redaction (`undoable: false` when redacted)
- * - Supersede-aware `undoChange`
- * - Zero-LLM monthly journal (`memory/journal/YYYY-MM.md`) with 3x CAS & 24h startup backfill
- * - Pre-tidy status-line migration to monthly journal (with salvage candidates)
- * - Deadlock-free `applyTidyUpResult` & `applyTidyUpOpsResult` with concurrent addition merging
+ * Combines Memory 2.0 guardrails (200-line prompt window, fence-aware parsing,
+ * turn-end tamper restore, 14-day Re-add Guard, provenance tagging, secret
+ * redaction, supersede-aware undo, zero-LLM monthly journal + 24h backfill,
+ * pre-tidy status migration, and Ops/Draft tidy-up) with SQLite FTS5
+ * incremental indexing (BM25 x time decay), daily logs, pre-compaction flush,
+ * and team shared memory.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -24,7 +20,16 @@ import {
   isStandingOwnerRule,
   scanBotMemoryLines,
 } from '../../src/shared/bot-memory-lines.js';
-import { sha256Hex, writeAtomicFile } from './fs-home.js';
+import {
+  appendDailyMemory,
+  dailyMemoryRelPath,
+  readDailyMemory,
+  readTeamMemory as readTeamMemoryFile,
+  sha256Hex,
+  writeAtomicFile,
+  writeTeamMemory as writeTeamMemoryFile,
+} from './fs-home.js';
+import { createMemoryFtsAccess, syncDocumentToFts } from './memory-fts.js';
 import {
   BotMemoryError,
   MEMORY_MAX_LOADED_LINES,
@@ -105,15 +110,13 @@ export {
  */
 function insertRestoredLine(working, beforeLines, origIdx, rawLine) {
   for (let i = origIdx - 1; i >= 0; i -= 1) {
-    const anchor = beforeLines[i];
-    const pos = working.indexOf(anchor);
+    const pos = working.indexOf(beforeLines[i]);
     if (pos !== -1) {
       working.splice(pos + 1, 0, rawLine);
       return;
     }
   }
-  const pos = Math.min(origIdx, working.length);
-  working.splice(pos, 0, rawLine);
+  working.splice(Math.min(origIdx, working.length), 0, rawLine);
 }
 
 /** @param {string[]} entries */
@@ -186,11 +189,41 @@ function collectAndTagAddedFacts(workingLines, beforeKeySet, safeSource, at) {
   return candidateAdded;
 }
 
+/** @param {string[]} beforeLines @param {string[]} workingLines @param {string[]} forgottenKeys */
+function restoreRemovedFacts(beforeLines, workingLines, forgottenKeys) {
+  const beforeFacts = collectFactEntries(beforeLines);
+  const beforeKeySet = new Set(beforeFacts.map((f) => f.key));
+  const afterKeySet = new Set(collectFactEntries(workingLines).map((f) => f.key));
+  const forgottenSet = new Set((forgottenKeys ?? []).map(normalizeFactKey));
+  const kept = [];
+  for (const fact of beforeFacts) {
+    if (afterKeySet.has(fact.key) || forgottenSet.has(fact.key)) continue;
+    insertRestoredLine(workingLines, beforeLines, fact.index, fact.raw);
+    afterKeySet.add(fact.key);
+    kept.push(fact.raw);
+  }
+  return { kept, beforeKeySet };
+}
+
+/** @param {string[]} workingLines @param {Set<string>} beforeKeySet @param {string | null} safeSource @param {number} at */
+function tagAddedFacts(workingLines, beforeKeySet, safeSource, at) {
+  const added = [];
+  for (let i = 0; i < workingLines.length; i += 1) {
+    const parsed = parseMemoryLine(workingLines[i]);
+    if (!parsed.isFact || !parsed.key || beforeKeySet.has(parsed.key)) continue;
+    const bodyRaw = parsed.source ? `${parsed.body} - from: ${parsed.source}` : parsed.body;
+    const cleanLine = formatFactLine({ bullet: parsed.bullet, date: parsed.date ?? isoDate(at), body: bodyRaw, source: safeSource });
+    workingLines[i] = cleanLine;
+    added.push(cleanLine);
+  }
+  return added;
+}
+
 /**
- * Create a memory service bound to `_meta` root.
- * @param {{ metaRoot: string, now?: () => number }} options
+ * Create a memory service bound to `_meta` root and optional SQLite `db` for FTS5.
+ * @param {{ metaRoot: string, db?: any, now?: () => number }} options
  */
-export function createMemoryService({ metaRoot, now = () => Date.now() }) {
+export function createMemoryService({ metaRoot, db = null, now = () => Date.now() }) {
   if (!metaRoot) throw new BotMemoryError('invalid_argument', 'metaRoot is required');
 
   /** @param {string} botId */
@@ -213,8 +246,7 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
       return [];
     }
     const cutoff = at - HISTORY_RETENTION_MS;
-    const pruned = entries.filter((e) => Number(e?.at ?? 0) >= cutoff);
-    return pruned.slice(-HISTORY_MAX_ENTRIES);
+    return entries.filter((e) => Number(e?.at ?? 0) >= cutoff).slice(-HISTORY_MAX_ENTRIES);
   }
 
   /** @param {string} botId @param {any[]} entries @param {number} [at] */
@@ -231,7 +263,6 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     const removedRes = redactList(draft.removed);
     const keptRes = redactList(draft.kept);
     const redacted = addedRes.anyRedacted || removedRes.anyRedacted || keptRes.anyRedacted;
-    const undoable = redacted ? false : Boolean(draft.undoable);
     const entry = {
       id: crypto.randomUUID(),
       kind: draft.kind,
@@ -245,7 +276,7 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
       ...(draft.topicsWritten ? { topicsWritten: draft.topicsWritten } : {}),
       ...(draft.archivedCount !== undefined ? { archivedCount: draft.archivedCount } : {}),
       redacted,
-      undoable,
+      undoable: redacted ? false : Boolean(draft.undoable),
     };
     const list = loadHistory(botId, at);
     list.push(entry);
@@ -253,15 +284,72 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     return entry;
   }
 
+  const { indexBotMemory, indexTeamMemory, indexProjectMemory, searchMemory } = createMemoryFtsAccess({
+    db, metaRoot, readMemoryRaw, readTeamMemoryFile, now,
+  });
+
+  /** @param {{ botId?: string, homeDir: string, text: string, date?: string | null, sourceLabel?: string | null, at?: number }} args */
+  function appendDailyLog({ botId, homeDir, text, date = null, sourceLabel = null, at = now() }) {
+    const body = sanitizeFactBody(text);
+    if (!body) throw new BotMemoryError('invalid_argument', 'Daily log text cannot be empty');
+    const dateStr = typeof date === 'string' && date.trim() ? date.trim() : isoDate(at);
+    const line = formatFactLine({ bullet: '- ', date: dateStr, body, source: sourceLabel });
+    const res = appendDailyMemory(homeDir, line, { date: dateStr, botId });
+    const relPath = dailyMemoryRelPath(dateStr);
+    if (db && botId) {
+      syncDocumentToFts(db, {
+        scope: 'bot', scopeId: String(botId), botId: String(botId), sourceFile: relPath,
+        content: readDailyMemory(homeDir, dateStr), defaultDate: dateStr, at,
+      });
+    }
+    return { path: res.path, relPath, line: res.line, date: dateStr };
+  }
+
+  /** @param {{ homeDir: string, date?: string | null, at?: number }} args */
+  function readDailyLog({ homeDir, date = null, at = now() }) {
+    const dateStr = typeof date === 'string' && date.trim() ? date.trim() : isoDate(at);
+    const content = readDailyMemory(homeDir, dateStr);
+    return { date: dateStr, relPath: dailyMemoryRelPath(dateStr), content, lines: splitLines(content) };
+  }
+
+  /** @param {{ botId?: string, homeDir: string, facts?: string[], summary?: string, date?: string | null, sourceLabel?: string | null, at?: number }} args */
+  function flushBeforeCompaction({ botId, homeDir, facts = [], summary = '', date = null, sourceLabel = 'compaction-flush', at = now() }) {
+    const dateStr = typeof date === 'string' && date.trim() ? date.trim() : isoDate(at);
+    const existing = readDailyLog({ homeDir, date: dateStr, at });
+    const existingKeys = new Set(collectFactEntries(existing.lines).map((f) => f.key));
+    const candidates = [
+      ...(Array.isArray(facts) ? facts : []),
+      ...(typeof summary === 'string' && summary.trim() ? [summary.trim()] : []),
+    ];
+    const writtenLines = [];
+    for (const raw of candidates) {
+      const cleaned = redactSecrets(sanitizeFactBody(raw)).text;
+      const key = normalizeFactKey(cleaned);
+      if (!key || existingKeys.has(key)) continue;
+      existingKeys.add(key);
+      const res = appendDailyLog({ botId, homeDir, text: cleaned, date: dateStr, sourceLabel, at });
+      writtenLines.push(res.line);
+    }
+    return { ok: true, date: dateStr, relPath: dailyMemoryRelPath(dateStr), flushedCount: writtenLines.length, lines: writtenLines };
+  }
+
+  /** @param {string} groupId */
+  function readTeamMemory(groupId) {
+    const content = readTeamMemoryFile(metaRoot, groupId);
+    return { groupId: String(groupId), content, lines: splitLines(content) };
+  }
+
+  /** @param {string} groupId @param {string} content @param {{ at?: number }} [opts] */
+  function writeTeamMemory(groupId, content, { at = now() } = {}) {
+    const res = writeTeamMemoryFile(metaRoot, groupId, content);
+    const indexed = indexTeamMemory({ groupId, content, at });
+    return { groupId: String(groupId), path: res.path, bytes: res.bytes, indexed };
+  }
+
   /** @param {string} homeDir @param {number} [at] */
   function snapshotMemory(homeDir, at = now()) {
     const text = readMemoryRaw(homeDir);
-    return {
-      text,
-      signature: sha256Hex(text),
-      lines: splitLines(text),
-      at,
-    };
+    return { text, signature: sha256Hex(text), lines: splitLines(text), at };
   }
 
   /**
@@ -360,12 +448,14 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
         undoable: true,
       }, at).id);
     }
+    const changed = changedOnDisk || added.length > 0 || kept.length > 0 || keptOut.length > 0;
+    if (changed && db) indexBotMemory({ botId, homeDir, at });
     return {
       text: finalText,
       kept,
       added,
       keptOut,
-      changed: changedOnDisk || added.length > 0 || kept.length > 0 || keptOut.length > 0,
+      changed,
       historyIds,
     };
   }
@@ -387,7 +477,6 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     const remaining = [];
     /** @type {string[]} */
     const forgottenKeys = [];
-
     for (const entry of scanned.entries) {
       const line = entry.raw;
       if (entry.fact) {
@@ -415,6 +504,7 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     }
     writeMemoryRaw(homeDir, joinLines(remaining));
     const entry = appendHistory(botId, { kind: 'forget', actor, removed, undoable: true }, at);
+    if (db) indexBotMemory({ botId, homeDir, at });
     return { removed, forgottenKeys, changeId: entry.id };
   }
 
@@ -425,15 +515,11 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     const body = sanitizeFactBody(text);
     if (!body) throw new BotMemoryError('invalid_argument', 'Fact text cannot be empty');
     const lines = splitLines(readMemoryRaw(homeDir));
-    const line = formatFactLine({
-      bullet: '- ',
-      date: date ?? isoDate(at),
-      body,
-      source: sourceLabel,
-    });
+    const line = formatFactLine({ bullet: '- ', date: date ?? isoDate(at), body, source: sourceLabel });
     lines.push(line);
     writeMemoryRaw(homeDir, joinLines(lines));
     const entry = appendHistory(botId, { kind: 'add', actor, added: [line], sourceLabel, undoable: true }, at);
+    if (db) indexBotMemory({ botId, homeDir, at });
     return { line, changeId: entry.id };
   }
 
@@ -459,13 +545,8 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     });
     lines[idx] = newLine;
     writeMemoryRaw(homeDir, joinLines(lines));
-    const entry = appendHistory(botId, {
-      kind: 'edit',
-      actor,
-      removed: [oldLine],
-      added: [newLine],
-      undoable: true,
-    }, at);
+    const entry = appendHistory(botId, { kind: 'edit', actor, removed: [oldLine], added: [newLine], undoable: true }, at);
+    if (db) indexBotMemory({ botId, homeDir, at });
     return { oldLine, newLine, changeId: entry.id };
   }
 
@@ -474,8 +555,7 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
    * @param {{ limit?: number, at?: number }} [opts]
    */
   function listHistory(botId, { limit = 100, at = now() } = {}) {
-    const entries = loadHistory(botId, at);
-    return entries.slice(-Math.max(1, Number(limit) || 100)).reverse();
+    return loadHistory(botId, at).slice(-Math.max(1, Number(limit) || 100)).reverse();
   }
 
   /**
@@ -486,11 +566,8 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     const targetIdx = history.findIndex((e) => e.id === changeId);
     if (targetIdx === -1) throw new BotMemoryError('not_found', `History change not found: ${changeId}`);
     const target = history[targetIdx];
-    if (!target.undoable) {
-      throw new BotMemoryError('not_undoable', `Change ${changeId} cannot be undone (redacted or non-undoable)`);
-    }
-    const alreadyUndone = history.slice(targetIdx + 1).some((e) => e.kind === 'undo' && e.of === changeId);
-    if (alreadyUndone) {
+    if (!target.undoable) throw new BotMemoryError('not_undoable', `Change ${changeId} cannot be undone (redacted or non-undoable)`);
+    if (history.slice(targetIdx + 1).some((e) => e.kind === 'undo' && e.of === changeId)) {
       throw new BotMemoryError('already_undone', `Change ${changeId} was already undone`);
     }
 
@@ -499,7 +576,6 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     for (const newer of history.slice(targetIdx + 1)) {
       for (const key of extractEntryFactKeys(newer)) supersededKeys.add(key);
     }
-
     const lines = splitLines(readMemoryRaw(homeDir));
     /** @type {string[]} */
     const skippedKeys = [];
@@ -507,49 +583,26 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     const revertedAdded = [];
     /** @type {string[]} */
     const revertedRemoved = [];
-
     for (const addedLine of target.added ?? []) {
       const parsed = parseMemoryLine(addedLine);
-      if (parsed.key && supersededKeys.has(parsed.key)) {
-        skippedKeys.push(parsed.key);
-        continue;
-      }
+      if (parsed.key && supersededKeys.has(parsed.key)) { skippedKeys.push(parsed.key); continue; }
       const pos = lines.findIndex((l) => l === addedLine || (parsed.key && parseMemoryLine(l).key === parsed.key));
-      if (pos !== -1) {
-        lines.splice(pos, 1);
-        revertedAdded.push(addedLine);
-      }
+      if (pos !== -1) { lines.splice(pos, 1); revertedAdded.push(addedLine); }
     }
-
     const existingKeys = new Set(collectFactEntries(lines).map((f) => f.key));
     for (const removedLine of target.removed ?? []) {
       const parsed = parseMemoryLine(removedLine);
-      if (parsed.key && supersededKeys.has(parsed.key)) {
-        skippedKeys.push(parsed.key);
-        continue;
-      }
+      if (parsed.key && supersededKeys.has(parsed.key)) { skippedKeys.push(parsed.key); continue; }
       if (!parsed.key || !existingKeys.has(parsed.key)) {
         lines.push(removedLine);
         if (parsed.key) existingKeys.add(parsed.key);
         revertedRemoved.push(removedLine);
       }
     }
-
     writeMemoryRaw(homeDir, joinLines(lines));
-    const undoEntry = appendHistory(botId, {
-      kind: 'undo',
-      of: changeId,
-      added: revertedRemoved,
-      removed: revertedAdded,
-      undoable: false,
-    }, at);
-    return {
-      ok: true,
-      changeId: undoEntry.id,
-      revertedAdded,
-      revertedRemoved,
-      skippedKeys: [...new Set(skippedKeys)],
-    };
+    const undoEntry = appendHistory(botId, { kind: 'undo', of: changeId, added: revertedRemoved, removed: revertedAdded, undoable: false }, at);
+    if (db) indexBotMemory({ botId, homeDir, at });
+    return { ok: true, changeId: undoEntry.id, revertedAdded, revertedRemoved, skippedKeys: [...new Set(skippedKeys)] };
   }
 
   /**
@@ -603,6 +656,7 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
       removed: migrated,
       undoable: true,
     }, at);
+    if (db) indexBotMemory({ botId, homeDir, at });
     return {
       migrated,
       salvage,
@@ -625,11 +679,14 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
    * }} params
    */
   function applyTidyUpResult(params) {
-    return executeTidyUpDraft({
+    const at = params.at ?? now();
+    const res = executeTidyUpDraft({
       ...params,
-      at: params.at ?? now(),
+      at,
       appendHistory,
     });
+    if (db) indexBotMemory({ botId: params.botId, homeDir: params.homeDir, at });
+    return res;
   }
 
   /**
@@ -644,11 +701,14 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
    * }} params
    */
   function applyTidyUpOpsResult(params) {
-    return executeTidyUpOps({
+    const at = params.at ?? now();
+    const res = executeTidyUpOps({
       ...params,
-      at: params.at ?? now(),
+      at,
       appendHistory,
     });
+    if (db) indexBotMemory({ botId: params.botId, homeDir: params.homeDir, at });
+    return res;
   }
 
   return {
@@ -666,5 +726,14 @@ export function createMemoryService({ metaRoot, now = () => Date.now() }) {
     migrateStatusLinesToJournal,
     applyTidyUpResult,
     applyTidyUpOpsResult,
+    indexBotMemory,
+    indexTeamMemory,
+    indexProjectMemory,
+    searchMemory,
+    appendDailyLog,
+    readDailyLog,
+    flushBeforeCompaction,
+    readTeamMemory,
+    writeTeamMemory,
   };
 }

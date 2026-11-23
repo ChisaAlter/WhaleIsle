@@ -887,6 +887,382 @@ test('legacy-migration.js: lossless read-only migration from data/whale/ and ide
   });
 });
 
+test('db.js v2 migration: fresh v0->v2 and v1->v2 idempotent upgrade with FTS5 and all v2 tables', async () => {
+  const { DatabaseSync } = require('node:sqlite');
+  const { openBotsDatabase, botsDbPath, BOTS_SCHEMA_VERSION } = await importBotsModule('db.js');
+  assert.equal(BOTS_SCHEMA_VERSION, 2);
+
+  const v2Tables = [
+    'automation_claims', 'webhook_events', 'memory_index_meta', 'memory_fts',
+    'tool_wal', 'bot_budgets', 'bot_usage_daily', 'crew_adoptions',
+  ];
+
+  // 1. Fresh v0 -> v2 migration + FTS5 query check
+  await withTempWorkspace('db-v0-v2', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+
+    assert.equal(handle.db.prepare('PRAGMA user_version').get().user_version, 2);
+    const tables = handle.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .all()
+      .map((r) => r.name);
+    for (const t of v2Tables) {
+      assert.ok(tables.includes(t), `v0->v2 missing table ${t}`);
+    }
+
+    handle.db.prepare(
+      'INSERT INTO memory_fts (entry_id, scope, scope_id, bot_id, source_file, fact_date, body) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run('e1', 'bot', 'b1', 'b1', 'MEMORY.md', '2026-11-22', 'Prefer pnpm and zero regressions');
+    const hit = handle.db.prepare("SELECT entry_id FROM memory_fts WHERE memory_fts MATCH 'pnpm'").get();
+    assert.equal(hit.entry_id, 'e1');
+  });
+
+  // 2. Existing v1 -> v2 upgrade preserves v1 data and is idempotent on re-open
+  await withTempWorkspace('db-v1-v2', async ({ root, registerClose }) => {
+    const dbFile = botsDbPath(root);
+    fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+    const legacy = new DatabaseSync(dbFile);
+    legacy.exec(`
+      CREATE TABLE bots (id TEXT PRIMARY KEY, folder TEXT NOT NULL UNIQUE, name TEXT NOT NULL, record TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE bot_global_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE bot_chats (
+        session_id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'side',
+        title TEXT, origin TEXT NOT NULL DEFAULT 'side', external_source TEXT, external_id TEXT,
+        record TEXT NOT NULL DEFAULT '{}', closed_at INTEGER, seen_at INTEGER,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      INSERT INTO bots (id, folder, name, record, created_at, updated_at)
+      VALUES ('b-old', 'old-bot', 'Old Bot', '{"id":"b-old","folder":"old-bot","name":"Old Bot"}', 100, 100);
+      PRAGMA user_version = 1;
+    `);
+    legacy.close();
+
+    const upgraded = openBotsDatabase({ dshHome: root });
+    try {
+      assert.equal(upgraded.db.prepare('PRAGMA user_version').get().user_version, 2);
+      assert.equal(upgraded.bots.getBot('b-old').name, 'Old Bot');
+      const tables = upgraded.db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .all()
+        .map((r) => r.name);
+      for (const t of v2Tables) {
+        assert.ok(tables.includes(t), `v1->v2 missing table ${t}`);
+      }
+    } finally {
+      upgraded.close();
+    }
+
+    // Second open at v2 is a no-op
+    const reopened = openBotsDatabase({ dshHome: root });
+    registerClose(() => reopened.close());
+    assert.equal(reopened.db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(reopened.bots.getBot('b-old').name, 'Old Bot');
+  });
+});
+
+test('launch-route.js: resolves flat UI shape, legacy nested shape, slash prefix, and fallback default', async () => {
+  const { resolveBotLaunchRoute } = await importBotsModule('launch-route.js');
+
+  // Flat UI format
+  assert.deepEqual(
+    resolveBotLaunchRoute({ provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high' }),
+    { provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high' },
+  );
+  // Flat with redundant provider/ prefix
+  assert.deepEqual(
+    resolveBotLaunchRoute({ provider: 'deepseek', model: 'deepseek/deepseek-chat', effort: 'medium' }),
+    { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'medium' },
+  );
+  // Legacy nested format (provider/model + options.reasoningEffort)
+  assert.deepEqual(
+    resolveBotLaunchRoute({ model: 'openai/gpt-5', options: { reasoningEffort: 'high' } }),
+    { provider: 'openai', model: 'gpt-5', reasoningEffort: 'high' },
+  );
+  // Legacy nested format (options.provider + options.effort)
+  assert.deepEqual(
+    resolveBotLaunchRoute({ model: 'claude-sonnet', options: { provider: 'anthropic', effort: 'low' } }),
+    { provider: 'anthropic', model: 'claude-sonnet', reasoningEffort: 'low' },
+  );
+  // Launch only overrides effort; provider/model come from fallbackDefault
+  assert.deepEqual(
+    resolveBotLaunchRoute({ reasoningEffort: 'high' }, { provider: 'deepseek', model: 'deepseek-chat', defaultEffort: 'low' }),
+    { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' },
+  );
+  // Null launch uses fallbackDefault (including string spec)
+  assert.deepEqual(
+    resolveBotLaunchRoute(null, 'deepseek/deepseek-chat'),
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  );
+  // Incomplete without fallback returns null
+  assert.equal(resolveBotLaunchRoute({ provider: 'deepseek', model: '' }), null);
+  assert.equal(resolveBotLaunchRoute({ model: 'bare-model-without-provider' }), null);
+  assert.equal(resolveBotLaunchRoute(null, null), null);
+});
+
+test('work-store.js v2: ACCESS_DECISIONS normalization + claims, webhooks, tool_wal, budgets/usage, crew_adoptions', async () => {
+  const { openBotsDatabase } = await importBotsModule('db.js');
+  const {
+    createWorkStore,
+    ACCESS_DECISIONS,
+    normalizeAccessDecision,
+  } = await importBotsModule('work-store.js');
+
+  assert.deepEqual([...ACCESS_DECISIONS], ['granted', 'declined']);
+  assert.equal(normalizeAccessDecision('denied'), 'declined');
+  assert.equal(normalizeAccessDecision(' DENIED '), 'declined');
+  assert.equal(normalizeAccessDecision('granted'), 'granted');
+
+  await withTempWorkspace('work-v2', async ({ root, registerClose }) => {
+    const handle = openBotsDatabase({ dshHome: root });
+    registerClose(() => handle.close());
+    const store = createWorkStore(handle.db);
+
+    // 1. ACCESS_DECISIONS entry normalization ('denied' -> 'declined')
+    const acc1 = store.createAccessRequest({ botId: 'b1', source: 'im', requesterId: 'u1' }, 100);
+    const dec1 = store.decideAccessRequest(acc1.id, { decision: 'denied', now: 110 });
+    assert.equal(dec1.status, 'declined');
+    const acc2 = store.createAccessRequest({ botId: 'b1', source: 'im', requesterId: 'u2' }, 120);
+    const dec2 = store.redeemAccessToken(acc2.token, { decision: 'DENIED', now: 130 });
+    assert.equal(dec2.status, 'declined');
+
+    // 2. automation_claims: unique (automation_id, slot_at) + startup interrupted recovery
+    const c1 = store.claimAutomationSlot({ automationId: 'a1', botId: 'b1', slotAt: 1000, triggerKind: 'schedule' }, 1005);
+    assert.equal(c1.claimed, true);
+    assert.equal(c1.claim.status, 'claimed');
+    const c1Dup = store.claimAutomationSlot({ automationId: 'a1', botId: 'b1', slotAt: 1000, triggerKind: 'schedule' }, 1006);
+    assert.equal(c1Dup.claimed, false);
+    assert.equal(c1Dup.claim.claimId, c1.claim.claimId);
+    const running = store.updateAutomationClaim(c1.claim.claimId, { status: 'running', runId: 'r1', sessionId: 's1' }, 1010);
+    assert.equal(running.status, 'running');
+    assert.equal(running.finishedAt, null);
+    const recovered = store.markInterruptedAutomationClaims(2000);
+    assert.equal(recovered.count, 1);
+    assert.deepEqual(recovered.claimIds, [c1.claim.claimId]);
+    assert.equal(store.getAutomationClaim(c1.claim.claimId).status, 'interrupted');
+    assert.equal(store.getAutomationClaim(c1.claim.claimId).finishedAt, 2000);
+
+    // 3. webhook_events: idempotency on (webhook_id, event_id) + pruning
+    const w1 = store.recordWebhookEvent({
+      botId: 'b1', webhookId: 'wh-1', eventId: 'ev-1', signatureTs: 1700, payloadSha256: 'abc123',
+    }, 10_000);
+    assert.equal(w1.duplicate, false);
+    const w1Dup = store.recordWebhookEvent({
+      botId: 'b1', webhookId: 'wh-1', eventId: 'ev-1', signatureTs: 1700, payloadSha256: 'abc123',
+    }, 10_005);
+    assert.equal(w1Dup.duplicate, true);
+    assert.equal(w1Dup.event.id, w1.event.id);
+    const dispatched = store.updateWebhookEventStatus(w1.event.id, 'dispatched', { automationId: 'a1' });
+    assert.equal(dispatched.status, 'dispatched');
+    assert.equal(dispatched.automationId, 'a1');
+    assert.equal(store.pruneWebhookEvents(1000, 12_000), 1);
+    assert.equal(store.listWebhookEvents({ botId: 'b1' }).length, 0);
+
+    // 4. tool_wal: idempotency + stale intent -> unknown (never replays)
+    const wal1 = store.appendToolWalIntent({
+      botId: 'b1', sessionId: 's1', toolName: 'bot_reply', action: 'reply',
+      idempotencyKey: 'idem-1', effect: 'external', argsDigest: 'sha-1',
+    }, 3000);
+    assert.equal(wal1.deduplicated, false);
+    const wal1Dup = store.appendToolWalIntent({
+      botId: 'b1', sessionId: 's1', toolName: 'bot_reply', action: 'reply',
+      idempotencyKey: 'idem-1', effect: 'external', argsDigest: 'sha-1',
+    }, 3001);
+    assert.equal(wal1Dup.deduplicated, true);
+    assert.equal(wal1Dup.entry.walId, wal1.entry.walId);
+    const wal2 = store.appendToolWalIntent({
+      botId: 'b1', sessionId: 's1', toolName: 'bot_tools_manage', action: 'add',
+      effect: 'code', argsDigest: 'sha-2',
+    }, 3002);
+    store.resolveToolWal(wal1.entry.walId, { status: 'committed', resultSummary: 'sent' }, 3010);
+    const stale = store.markStaleToolWalUnknown(4000);
+    assert.equal(stale.count, 1);
+    assert.deepEqual(stale.walIds, [wal2.entry.walId]);
+    assert.equal(store.getToolWal(wal2.entry.walId).status, 'unknown');
+
+    // 5. bot_budgets & bot_usage_daily
+    const budget = store.setBotBudget('b1', { dailyLimitUsd: 5.5, dailyLimitTokens: 200_000, offPeakOnly: true }, 5000);
+    assert.equal(budget.dailyLimitUsd, 5.5);
+    assert.equal(budget.offPeakOnly, true);
+    assert.equal(budget.pauseOnExceed, true);
+    assert.equal(budget.alertThresholdPct, 80);
+    store.upsertBotUsageDaily({
+      dayUtc: '2026-11-22', botId: 'b1', sourceKind: 'bot_chats',
+      inputTokens: 1000, cacheReadTokens: 500, outputTokens: 200, costUsd: 0.25, peakCostUsd: 0.25,
+    }, 5100);
+    store.upsertBotUsageDaily({
+      dayUtc: '2026-11-22', botId: 'b1', sourceKind: 'bot_chats', mode: 'add',
+      inputTokens: 500, outputTokens: 100, costUsd: 0.1, offPeakCostUsd: 0.1,
+    }, 5200);
+    store.upsertBotUsageDaily({
+      dayUtc: '2026-11-22', botId: 'b1', sourceKind: 'bot_work',
+      inputTokens: 2000, outputTokens: 400, costUsd: 0.5, offPeakCostUsd: 0.5,
+    }, 5300);
+    const sum = store.sumBotUsageForDay('b1', '2026-11-22');
+    assert.equal(sum.inputTokens, 3500);
+    assert.equal(sum.cacheReadTokens, 500);
+    assert.equal(sum.outputTokens, 700);
+    assert.equal(sum.totalTokens, 4700);
+    assert.ok(Math.abs(sum.costUsd - 0.85) < 1e-9);
+    assert.equal(store.deleteBotBudget('b1'), true);
+
+    // 6. crew_adoptions
+    const adopted = store.adoptCrewSession({
+      sessionId: 'sess-normal-1', botId: 'b1', workspaceId: 'ws-1', cwd: '/repo', title: 'Fix API',
+    }, 6000);
+    assert.equal(adopted.status, 'active');
+    assert.equal(store.listCrewAdoptions({ botId: 'b1' }).length, 1);
+    const released = store.releaseCrewSession('sess-normal-1', 6100);
+    assert.equal(released.status, 'released');
+    assert.equal(store.listCrewAdoptions({ botId: 'b1', status: 'active' }).length, 0);
+    assert.equal(store.listCrewAdoptions({ botId: 'b1', status: 'all' }).length, 1);
+  });
+});
+
+test('fs-home.js v2: decisions TSV, CREW/plan docs, daily memory, meta paths, and path-traversal guards', async () => {
+  const fsHome = await importBotsModule('fs-home.js');
+
+  await withTempWorkspace('fshome-v2', async ({ root }) => {
+    const botsRoot = fsHome.botsRootDir(root);
+    const metaRoot = fsHome.botMetaDir(root);
+    const { homeDir } = fsHome.reserveBotFolder(botsRoot, 'Captain');
+    const bot = { id: 'bot-cap-1', name: 'Captain', agent: 'dsh', members: [] };
+    fsHome.initBotHome(homeDir, bot);
+
+    // 1. decisions/<itemUid>.tsv append, tab/newline sanitization & traversal guard
+    fsHome.appendDecisionTsv(homeDir, 'item_42', {
+      ts: '2026-11-22T01:00:00.000Z',
+      actor: 'bot',
+      phase: 'verify',
+      decision: 'pass',
+      evidence: 'exit=0\t12 tests',
+      notes: 'line1\nline2',
+    }, { botId: bot.id });
+    fsHome.appendDecisionTsv(homeDir, 'item_42', {
+      ts: '2026-11-22T02:00:00.000Z',
+      actor: 'owner',
+      phase: 'ship',
+      decision: 'approved',
+      evidence: 'pr#99',
+      notes: 'lgtm',
+    }, { botId: bot.id });
+    const tsv = fsHome.readDecisionTsv(homeDir, 'item_42');
+    assert.equal(tsv.header, fsHome.DECISIONS_TSV_HEADER);
+    assert.equal(tsv.rows.length, 2);
+    assert.equal(tsv.rows[0].evidence, 'exit=0 12 tests');
+    assert.equal(tsv.rows[0].notes, 'line1 line2');
+    assert.equal(tsv.rows[1].decision, 'approved');
+    assert.throws(() => fsHome.resolveDecisionTsvPath(homeDir, '../escape'), (err) => err.code === 'path_traversal');
+    assert.throws(() => fsHome.appendDecisionTsv(homeDir, 'a/b', { decision: 'x' }), (err) => err.code === 'path_traversal');
+
+    // 2. CREW.md & plan.md
+    assert.equal(fsHome.readCrewMd(homeDir), '');
+    fsHome.writeCrewMd(homeDir, '# Crew\n- Worker A\n', { botId: bot.id });
+    fsHome.writePlanMd(homeDir, '# Plan\n1. Ship Wave 1\n', { botId: bot.id });
+    assert.match(fsHome.readCrewMd(homeDir), /Worker A/);
+    assert.match(fsHome.readPlanMd(homeDir), /Ship Wave 1/);
+
+    // 3. memory/YYYY-MM-DD.md
+    fsHome.appendDailyMemory(homeDir, 'Verified schema v2', { date: '2026-11-22', botId: bot.id });
+    assert.equal(fsHome.readDailyMemory(homeDir, '2026-11-22'), '- Verified schema v2\n');
+    assert.throws(() => fsHome.dailyMemoryRelPath('../2026-11-22'), (err) => err.code === 'invalid_argument');
+
+    // 4. _meta paths: team-memory, webhook credentials, im-routes, prompt snapshots ring buffer, worktrees
+    fsHome.writeTeamMemory(metaRoot, 'grp-1', '# Team Memory\n- Shared fact\n');
+    assert.match(fsHome.readTeamMemory(metaRoot, 'grp-1'), /Shared fact/);
+    assert.throws(() => fsHome.teamMemoryPath(metaRoot, '../escape'), (err) => err.code === 'path_traversal');
+
+    fsHome.writeWebhookCredentials(metaRoot, { wh1: { secret: 's3cr3t' } });
+    assert.equal(fsHome.readWebhookCredentials(metaRoot).wh1.secret, 's3cr3t');
+
+    fsHome.writeImRoutes(metaRoot, { routes: { 'feishu:acc1': bot.id } });
+    assert.equal(fsHome.readImRoutes(metaRoot).routes['feishu:acc1'], bot.id);
+
+    const snaps = Array.from({ length: 15 }, (_, i) => ({ seq: i + 1, hash: `h${i + 1}` }));
+    fsHome.writePromptSnapshots(metaRoot, 'bot/with:chars', snaps, { maxEntries: 10 });
+    const storedSnaps = fsHome.readPromptSnapshots(metaRoot, 'bot/with:chars');
+    assert.equal(storedSnaps.length, 10);
+    assert.equal(storedSnaps[0].seq, 6);
+    assert.equal(storedSnaps[9].seq, 15);
+
+    const wtPath = fsHome.resolveWorktreePath(metaRoot, 'disp-abc123');
+    assert.ok(wtPath.endsWith(path.join('_meta', 'worktrees', 'disp-abc123')));
+    assert.throws(() => fsHome.resolveWorktreePath(metaRoot, '..\\outside'), (err) => err.code === 'path_traversal');
+  });
+});
+
+test('preset.js, package.json exports, shared RPC/constants, and model-tool-effects v2 contracts', async () => {
+  const whaleRoot = path.resolve(__dirname, '../../vendor/dsh-whale');
+  const pkg = JSON.parse(fs.readFileSync(path.join(whaleRoot, 'package.json'), 'utf8'));
+  assert.equal(pkg.exports['./bot-tools'], './lib/bots/bot-tools-plugin.js');
+  assert.equal(pkg.exports['./worker-tools'], './lib/bots/worker-tools-plugin.js');
+  assert.equal(fs.existsSync(path.join(whaleRoot, pkg.exports['./bot-tools'])), true);
+  assert.equal(fs.existsSync(path.join(whaleRoot, pkg.exports['./worker-tools'])), true);
+
+  const preset = await import(pathToFileURL(path.join(whaleRoot, 'lib', 'preset.js')).href);
+  const home = path.resolve(os.tmpdir(), 'fake-dsh-home');
+
+  // whale-girl stays backward compatible
+  const whaleDef = preset.whalePresetDefinition(home);
+  assert.equal(whaleDef.id, 'whale-girl');
+  assert.ok(whaleDef.plugins.some((p) => p.name === 'dsh-whale/tools'));
+
+  // dsh-bot switches to dsh-whale/bot-tools & includes _meta/bot-linked-skills
+  const botDef = preset.botPresetDefinition(home);
+  assert.equal(botDef.id, 'dsh-bot');
+  assert.equal(botDef.order, 91);
+  assert.ok(botDef.plugins.some((p) => p.name === 'dsh-whale/bot-tools'));
+  assert.ok(!botDef.plugins.some((p) => p.name === 'dsh-whale/tools'));
+  const botSkillsPlugin = botDef.plugins.find((p) => p.id === 'skill-filesystem');
+  assert.ok(botSkillsPlugin.config.customSkillDirs.some((d) => d.endsWith(path.join('_meta', 'bot-linked-skills'))));
+
+  // dsh-bot-worker hidden preset (order: 92) with fs, fs-search, shell, worker-tools
+  const workerDef = preset.botWorkerPresetDefinition(home);
+  assert.equal(workerDef.id, 'dsh-bot-worker');
+  assert.equal(workerDef.order, 92);
+  assert.equal(workerDef.hidden, true);
+  for (const requiredPlugin of [
+    '@deepseek-ai/dsh-tool-fs',
+    '@deepseek-ai/dsh-tool-fs-search',
+    '@deepseek-ai/dsh-tool-shell',
+    'dsh-whale/worker-tools',
+  ]) {
+    assert.ok(workerDef.plugins.some((p) => p.name === requiredPlugin), `missing worker plugin ${requiredPlugin}`);
+  }
+  assert.ok(!workerDef.plugins.some((p) => p.name === 'dsh-whale/bot-tools' || p.name === 'dsh-whale/tools'));
+
+  // Shared RPC methods & domain constants
+  const shared = await import(pathToFileURL(path.join(whaleRoot, 'src', 'shared', 'index.js')).href);
+  for (const [key, method] of [
+    ['PROMPT_INSPECT', 'bots.prompt.inspect'],
+    ['PROMPT_DIFF', 'bots.prompt.diff'],
+    ['BUDGET_GET', 'bots.budget.get'],
+    ['BUDGET_SET', 'bots.budget.set'],
+    ['CREW_ADOPT', 'bots.crew.adopt'],
+    ['CREW_RELEASE', 'bots.crew.release'],
+    ['CREW_LIST', 'bots.crew.list'],
+    ['DECISIONS_READ', 'bots.decisions.read'],
+    ['GROUPS_APPROVE_PLAN', 'bots.groups.approvePlan'],
+    ['MEMORY_SEARCH', 'bots.memory.search'],
+    ['CONNECTORS_SET_ROUTE', 'bots.connectors.setRoute'],
+    ['SKILL_RECORD_DRAFT', 'bots.skill.recordDraft'],
+  ]) {
+    assert.equal(shared.RPC_METHODS[key], method);
+  }
+  assert.equal(shared.BOT_IM_CHANNELS.length, 9);
+  assert.deepEqual([...shared.BOT_MEMORY_SCOPES], ['bot', 'team', 'project']);
+  assert.deepEqual([...shared.BOT_PERMISSION_MODES], ['read-only', 'workspace-write', 'auto-review', 'full-access']);
+
+  // model-tool-effects safety levels for new bot tools
+  const { effectOf, BOT_TOOLS } = require('../shared/model-tool-effects');
+  assert.equal(effectOf('bot_memory_search', 'search'), 'read');
+  assert.equal(effectOf('bot_decision_append', 'append'), 'local');
+  assert.equal(effectOf('bot_crew_adopt', 'adopt'), 'local');
+  assert.equal(effectOf('bot_crew_adopt', 'release'), 'local');
+  assert.equal(BOT_TOOLS.bot_tools_manage.actions.add.level, 'code');
+  assert.equal(BOT_TOOLS.bot_reply.actions.reply.level, 'external');
+});
+
 test('db.js read-only downgrade guard: user_version > BOTS_SCHEMA_VERSION allows reads and blocks all writes', async () => {
   const { openBotsDatabase, withTransaction, isDatabaseReadOnly, BOTS_SCHEMA_VERSION } = await importBotsModule('db.js');
   const { createItemsStore } = await importBotsModule('items-store.js');

@@ -1,5 +1,5 @@
-// Complete catalog of all 24 WhaleIsle built-in bot templates across 6 categories
-// (coding: 6, releases: 4, support: 4, planning: 4, ops: 2, personal: 4).
+// Complete catalog of WhaleIsle built-in bot templates across 6 categories
+// (24 classic templates + 3 ready-to-use Captain/Steward templates).
 
 export {
   BOT_TEMPLATES_CODING,
@@ -12,3 +12,126 @@ export {
   BOT_TEMPLATES_OPS,
   BOT_TEMPLATES_PERSONAL,
 } from './bot-template-catalog-b.js';
+
+export const BOT_TEMPLATES_CAPTAIN = Object.freeze([
+  {
+    id: 'engineering-captain',
+    category: 'coding',
+    name: 'Engineering captain',
+    titleZh: '研发大总管',
+    line: 'Dispatches isolated coding workers, runs dual-track verification, and sends ketchup digests.',
+    summaryZh: '统筹仓库研发任务：隔离工作树派发 Worker、双路实跑审校、TSV 决策留痕与三段精炼战报。',
+    descriptionZh: '面向工程团队的开箱船长模板，结合 CREW.md/plan.md 作战盘与预算治理，将重活交给隔离 Worker，只把需要你拍板的关键决定推到面前。',
+    firstChat: 'Asks which repos and verification commands to guard, drafts CREW.md & plan.md, and dispatches isolated workers for your first task.',
+    firstMessageZh: '先确认要负责的仓库与验收命令，随后帮你立好 CREW.md 与 plan.md，并按隔离工作树派发首位编码船员。',
+    mascot: 'W1',
+    watches: 'Active repos, open Work Items, worker dispatches, and CI checks',
+    watchesZh: '所选代码仓库、进行中的工作项、编码船员与 CI 校验结果',
+    does: 'Breaks tasks into worker dispatches with worktree isolation, runs interrogate-lite verification, logs TSV decisions, and escalates blockers.',
+    doesZh: '拆解任务并派发隔离 Worker、按需执行双路实跑审校、追加 TSV 决策轨，并在遇阻时生成结构化拍板卡。',
+    reports: 'Here, as concise ketchup digests or immediate needs-you cards',
+    reportsZh: '在此以三段式 ketchup 简报汇报，遇关键决策即时推送拍板卡',
+    connectors: ['github'],
+    schedules: [
+      {
+        id: 'captain-morning-digest',
+        when: 'Weekdays at 9:30 AM',
+        whenZh: '工作日 09:30',
+        what: 'Fleet engineering digest',
+        whatZh: '研发舰队三段式晨报',
+        rrule: '30 9 * * 1-5',
+        prompt: 'Compile a ketchup + unslop status-brief across active Work Items and worker dispatches. Highlight anything needing owner approval first.',
+      },
+    ],
+    events: [],
+    skills: ['status-brief', 'context-recall', 'decision-trail', 'interrogate-lite', 'review-and-reflect'],
+    example: [
+      'Needs decision: #18 schema migration rollback plan (recommended: keep dual-write 48h).',
+      'Handled: 3 worker PRs verified green via interrogate-lite; decisions logged.',
+    ],
+    exampleZh: [
+      '待拍板：#18 表结构迁移回滚策略（推荐：保留双写 48 小时）。',
+      '自动搞定：3 个编码船员 PR 已通过双路审校并写入决策轨。',
+    ],
+  },
+  {
+    id: 'ops-steward',
+    category: 'ops',
+    name: 'Operations steward',
+    titleZh: '巡航总管鱼',
+    line: 'Runs off-peak sweeps, guards budgets & webhooks, and maintains incident timelines.',
+    summaryZh: '值守日常巡检、谷段后台任务、Webhook 告警与故障时间线，严控费用上限。',
+    descriptionZh: '适合长期驻守的运维大总管，优先在谷段执行重度整理与巡检，异常自动记入 TSV 决策轨并发起 needs_you 拍板。',
+    firstChat: 'Confirms your alert channels, daily budget limits, and off-peak sweep cadence before starting quiet background monitoring.',
+    firstMessageZh: '先和你确认需要值守的告警来源、日预算上限与谷段巡检窗口，确认后开始静默后台巡航。',
+    mascot: 'W4',
+    watches: 'Inbound webhooks, scheduled checks, bot budgets, and incident threads',
+    watchesZh: '入站 Webhook 事件、定时巡检任务、费用预算水位与故障线程',
+    does: 'Triages alerts, records timestamped incident timelines, defers heavy sweeps to off-peak windows, and proposes rule refinements when corrections repeat.',
+    doesZh: '分诊告警、维护故障时间线、将重任务错峰至谷段，并在重复纠错 ≥2 次时提出 SOUL.md 反思提案。',
+    reports: 'Here or via bound IM channel when action is required',
+    reportsZh: '异常或需拍板时在此及绑定 IM 渠道推送，无事则静默 NO_REPLY',
+    connectors: ['slack', 'github'],
+    schedules: [
+      {
+        id: 'off-peak-hygiene',
+        when: 'Nightly at 10 PM',
+        whenZh: '每晚 22:00（谷段）',
+        what: 'Off-peak ops & budget digest',
+        whatZh: '谷段巡航与费用汇总',
+        rrule: '0 22 * * *',
+        prompt: 'Review today’s alerts, webhook deliveries, and budget usage. Write a status-brief and end with NO_REPLY if everything is nominal.',
+      },
+    ],
+    events: [],
+    skills: ['status-brief', 'incident-timeline', 'decision-trail', 'review-and-reflect'],
+    example: [
+      'Handled: 14 webhook events deduplicated; nightly tidy-up ran in off-peak window ($0.12).',
+      'Blocked: Staging deploy hook failed signature check twice — rotate secret?',
+    ],
+    exampleZh: [
+      '自动搞定：去重处理 14 条 Webhook 事件；谷段记忆整理完成（费用 $0.12）。',
+      '阻塞待决：预发部署 Hook 连续两次验签失败，是否需要轮换密钥？',
+    ],
+  },
+  {
+    id: 'chief-of-staff',
+    category: 'planning',
+    name: 'Fleet chief of staff',
+    titleZh: '舰队幕僚长',
+    line: 'Coordinates multi-bot groups with plan gates, context capsules, and executive briefs.',
+    summaryZh: '跨队友群聊总调度：先出计划待批再派活、维护 4 段恢复胶囊与跨项目决策简报。',
+    descriptionZh: '面向多 Bot 协作与个人大总管场景，擅长先拟定分工 Plan 请你拍板，再协调多位专家鱼并行推进并汇总交付。',
+    firstChat: 'Maps your existing teammates into CREW.md, sets up a concise daily ketchup digest, and turns messy discussions into one-page specs.',
+    firstMessageZh: '先帮你梳理现有队友分工写入 CREW.md，开启精炼三段式战报，并把零散讨论整理成一页式方案规格书。',
+    mascot: 'W7',
+    watches: 'Multi-bot group threads, open decisions, and cross-project milestones',
+    watchesZh: '多鱼群聊协作、跨项目里程碑与所有待拍板工作项',
+    does: 'Coordinates specialist bots behind plan-gate approval, builds 4-part context-recall capsules, and distills executive status briefs.',
+    doesZh: '在群聊中以 Plan-Gate 机制统筹专家鱼分工、输出 4 段上下文恢复胶囊，并汇总高层决策简报。',
+    reports: 'Here, weekday mornings and after major milestones',
+    reportsZh: '每个工作日早间及关键节点后在此汇报',
+    connectors: ['slack', 'linear'],
+    schedules: [
+      {
+        id: 'weekday-exec-brief',
+        when: 'Weekdays at 9 AM',
+        whenZh: '工作日 09:00',
+        what: 'Cross-fleet ketchup digest',
+        whatZh: '全舰队高层决策简报',
+        rrule: '0 9 * * 1-5',
+        prompt: 'Summarize fleet-wide progress with status-brief (ketchup + unslop) and attach a 4-part context-recall capsule for top active items.',
+      },
+    ],
+    events: [],
+    skills: ['status-brief', 'context-recall', 'spec-format', 'review-and-reflect'],
+    example: [
+      'Needs decision: Group plan for Q4 launch (3 specialists ready, awaiting approval).',
+      'Handled: Synced CREW.md and context-recall capsules across 4 active items.',
+    ],
+    exampleZh: [
+      '待拍板：Q4 发布群聊协作计划（3 位专家鱼已就绪，等待批准执行）。',
+      '自动搞定：已同步 CREW.md 与 4 个活跃工作项的恢复胶囊。',
+    ],
+  },
+]);

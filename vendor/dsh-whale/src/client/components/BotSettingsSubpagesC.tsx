@@ -11,14 +11,27 @@ import {
   validateBotToolServer,
 } from '../../shared/bot-tools-schema.js';
 import { botsStore, useBotsLocale } from '../store/bots-store';
-import { RPC_METHODS, callBotRpc, type BotRecord } from '../store/rpc';
+import {
+  RPC_METHODS,
+  callBotRpc,
+  listBotToolProblems,
+  recordSkillDraft,
+  saveRecordedSkill,
+  type BotRecord,
+  type BotSkillRecordDraftResult,
+  type BotToolProblem,
+} from '../store/rpc';
+import { BotChevron, BotDisclosure } from './BotDisclosure';
 import type { SubpageProps } from './BotSettingsSubpagesA';
 import {
+  IconAlertTriangle,
+  IconCheck,
   IconCopy,
   IconDownload,
   IconEdit,
   IconPlus,
   IconRefresh,
+  IconSparkles,
   IconTrash,
 } from './Icons';
 
@@ -34,6 +47,8 @@ export function BotToolsSubpage({ bot }: SubpageProps) {
   const { locale } = useBotsLocale();
   const zh = locale === 'zh-CN';
   const [servers, setServers] = useState<ToolServerRow[]>([]);
+  const [problems, setProblems] = useState<BotToolProblem[]>([]);
+  const [problemsOpen, setProblemsOpen] = useState(true);
   const [pasteInput, setPasteInput] = useState('');
   const [manualMode, setManualMode] = useState<'http' | 'stdio'>('http');
   const [name, setName] = useState('');
@@ -44,11 +59,23 @@ export function BotToolsSubpage({ bot }: SubpageProps) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try {
-      const res = await callBotRpc<{ servers?: ToolServerRow[] }>(RPC_METHODS.TOOLS_LIST, { botId: bot.id });
-      setServers(Array.isArray(res?.servers) ? res.servers : []);
-    } catch (err) {
+    const [listRes, probRes] = await Promise.allSettled([
+      callBotRpc<{ servers?: ToolServerRow[] }>(RPC_METHODS.TOOLS_LIST, { botId: bot.id }),
+      listBotToolProblems(bot.id),
+    ]);
+    if (listRes.status === 'fulfilled') {
+      setServers(Array.isArray(listRes.value?.servers) ? listRes.value.servers : []);
+    } else {
+      const err = listRes.reason;
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    }
+    if (probRes.status === 'fulfilled') {
+      setProblems(probRes.value);
+      if (probRes.value.length > 0) {
+        setProblemsOpen(true);
+      }
+    } else {
+      setProblems([]);
     }
   }, [bot.id]);
 
@@ -97,6 +124,56 @@ export function BotToolsSubpage({ bot }: SubpageProps) {
 
   return (
     <div className="dsh-bots-psection">
+      {/* Real-time per-bot MCP diagnostics from bots.tools.problems */}
+      <div className="dsh-bots-pcard" data-dsh-bots-tools-problems={bot.id}>
+        <div className="dsh-bots-row">
+          <button
+            type="button"
+            className="dsh-bots-item-group-btn"
+            style={{ width: 'auto', flex: 1 }}
+            onClick={() => setProblemsOpen((prev) => !prev)}
+          >
+            <BotChevron open={problemsOpen} size={12} />
+            {problems.length > 0 ? <IconAlertTriangle size={13} /> : <IconCheck size={13} />}
+            <span>{zh ? 'MCP 诊断状态' : 'MCP diagnostics'}</span>
+            <span className={`dsh-bots-badge ${problems.length > 0 ? 'dsh-bots-badge-danger' : 'dsh-bots-badge-success'}`}>
+              {problems.length > 0 ? problems.length : (zh ? '正常' : 'OK')}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon"
+            title={zh ? '刷新诊断' : 'Refresh diagnostics'}
+            onClick={() => void load()}
+          >
+            <IconRefresh size={11} />
+          </button>
+        </div>
+        <BotDisclosure open={problemsOpen}>
+          {problems.length === 0 ? (
+            <div className="dsh-bots-muted">
+              {zh ? '未检测到 MCP 配置或连接问题。' : 'No MCP configuration or connection problems detected.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+              {problems.map((prob, idx) => (
+                <div key={`${prob.server ?? prob.name ?? idx}-${idx}`} className="dsh-bots-timeline-entry">
+                  <div className="dsh-bots-row">
+                    <span style={{ fontWeight: 600, fontSize: 12 }}>
+                      {prob.server || prob.name || (zh ? '未命名工具' : 'Tool server')}
+                    </span>
+                    <span className={`dsh-bots-badge ${prob.severity === 'warn' ? 'dsh-bots-badge-warn' : 'dsh-bots-badge-danger'}`}>
+                      {prob.code || prob.severity || 'error'}
+                    </span>
+                  </div>
+                  <div className="dsh-bots-muted">{prob.message}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </BotDisclosure>
+      </div>
+
       <div className="dsh-bots-pcard" style={{ gap: 7 }}>
         <div style={{ fontWeight: 600 }}>{zh ? '快速粘贴 MCP 地址或启动命令' : 'Quick paste MCP URL or command'}</div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -264,6 +341,53 @@ export function BotSkillsSubpage({ bot }: SubpageProps) {
   const [scanned, setScanned] = useState<SkillProjectInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [customDir, setCustomDir] = useState('');
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const [recordGoal, setRecordGoal] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [savingSkill, setSavingSkill] = useState(false);
+  const [recordResult, setRecordResult] = useState<BotSkillRecordDraftResult | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [draftMarkdown, setDraftMarkdown] = useState('');
+
+  const handleRecordSkill = async () => {
+    setRecording(true);
+    setRecordResult(null);
+    try {
+      const res = await recordSkillDraft(bot.id, {
+        ...(recordGoal.trim() ? { goal: recordGoal.trim() } : {}),
+      });
+      setRecordResult(res);
+      if (res.ok !== false && (res.skillMd || res.markdown)) {
+        setDraftName(res.name || 'recorded-skill');
+        setDraftMarkdown(res.skillMd || res.markdown || '');
+      }
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setRecording(false);
+    }
+  };
+
+  const handleSaveRecordedSkill = async () => {
+    const nameVal = draftName.trim();
+    const mdVal = draftMarkdown.trim();
+    if (!nameVal || !mdVal || savingSkill) return;
+    setSavingSkill(true);
+    try {
+      await saveRecordedSkill(bot.id, { name: nameVal, skillMd: mdVal });
+      botsStore.pushToast({ message: zh ? `已保存技能「${nameVal}」` : `Saved skill "${nameVal}"`, tone: 'success' });
+      setRecordResult(null);
+      setRecordGoal('');
+      setDraftName('');
+      setDraftMarkdown('');
+      setRecorderOpen(false);
+      await scan();
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setSavingSkill(false);
+    }
+  };
 
   const scan = useCallback(async () => {
     setScanning(true);
@@ -299,6 +423,112 @@ export function BotSkillsSubpage({ bot }: SubpageProps) {
 
   return (
     <div className="dsh-bots-psection">
+      {/* Record screen to learn a skill (gracefully handles capture_unavailable) */}
+      <div className="dsh-bots-pcard" data-dsh-bots-skill-recorder={bot.id}>
+        <button
+          type="button"
+          className="dsh-bots-item-group-btn"
+          onClick={() => setRecorderOpen((prev) => !prev)}
+        >
+          <BotChevron open={recorderOpen} size={12} />
+          <IconSparkles size={13} />
+          <span style={{ fontWeight: 600 }}>{zh ? '录屏学技能' : 'Learn skill from screen'}</span>
+          <span className="dsh-bots-badge dsh-bots-badge-accent">{zh ? '自动脱敏' : 'Redacted'}</span>
+        </button>
+        <BotDisclosure open={recorderOpen}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+            <div className="dsh-bots-muted">
+              {zh
+                ? '低频抽帧观察你的操作步骤，自动脱敏并生成 SKILL.md 草稿（需经你审核确认后才保存，绝不保留原始截图坐标或凭据）。'
+                : 'Captures low-FPS steps, strips secrets/coordinates, and drafts a SKILL.md for your review.'}
+            </div>
+            <div className="dsh-bots-row">
+              <input
+                type="text"
+                className="dsh-bots-pinput"
+                placeholder={zh ? '描述要录制的流程目标（可选，如：导出周报）' : 'Describe workflow goal (optional)…'}
+                value={recordGoal}
+                onChange={(e) => setRecordGoal(e.target.value)}
+              />
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-primary"
+                disabled={recording}
+                onClick={() => void handleRecordSkill()}
+              >
+                <IconSparkles size={12} />
+                <span>{recording ? (zh ? '采集中…' : 'Recording…') : (zh ? '开始录制草稿' : 'Record draft')}</span>
+              </button>
+            </div>
+
+            {recordResult && (recordResult.ok === false || recordResult.reason === 'capture_unavailable') && (
+              <div className="dsh-bots-timeline-entry" data-dsh-bots-capture-unavailable="true">
+                <div style={{ fontWeight: 500, fontSize: 12 }}>
+                  {zh ? '当前环境暂不支持屏幕采集' : 'Screen capture is unavailable in this environment'}
+                </div>
+                <div className="dsh-bots-muted">
+                  {recordResult.message
+                    || (zh
+                      ? '未检测到桌面录屏权限或处于无头模式，可改为直接手动关联下方工作区技能目录。'
+                      : 'Desktop capture permission or display is unavailable. You can link a local skill folder below.')}
+                </div>
+              </div>
+            )}
+
+            {recordResult && recordResult.ok !== false && draftMarkdown && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="dsh-bots-row">
+                  <span className="dsh-bots-muted">
+                    {zh
+                      ? `已生成草稿（采样 ${recordResult.framesCaptured ?? 0} 帧）`
+                      : `Draft ready (${recordResult.framesCaptured ?? 0} frames)`}
+                  </span>
+                  {(recordResult.redactedCount ?? 0) > 0 && (
+                    <span className="dsh-bots-badge dsh-bots-badge-warn">
+                      {zh ? `已脱敏 ${recordResult.redactedCount} 处` : `${recordResult.redactedCount} redacted`}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  className="dsh-bots-pinput"
+                  placeholder={zh ? '技能名称（英文短标识）' : 'Skill name'}
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                />
+                <textarea
+                  className="dsh-bots-ptextarea dsh-bots-ptextarea-mono"
+                  rows={5}
+                  value={draftMarkdown}
+                  onChange={(e) => setDraftMarkdown(e.target.value)}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+                    onClick={() => {
+                      setRecordResult(null);
+                      setDraftMarkdown('');
+                    }}
+                  >
+                    {zh ? '丢弃' : 'Discard'}
+                  </button>
+                  <button
+                    type="button"
+                    className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
+                    disabled={!draftName.trim() || !draftMarkdown.trim() || savingSkill}
+                    onClick={() => void handleSaveRecordedSkill()}
+                  >
+                    <IconCheck size={11} />
+                    <span>{savingSkill ? (zh ? '保存中…' : 'Saving…') : (zh ? '确认保存 SKILL.md' : 'Save SKILL.md')}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </BotDisclosure>
+      </div>
+
       <div className="dsh-bots-row">
         <span className="dsh-bots-muted">
           {zh ? `已关联工作区技能目录：${linked.length} / ${BOT_LIMITS.maxSkillProjects}` : `Linked skill projects: ${linked.length} / ${BOT_LIMITS.maxSkillProjects}`}

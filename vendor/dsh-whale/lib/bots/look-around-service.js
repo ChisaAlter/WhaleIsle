@@ -352,13 +352,15 @@ function recordSweepFailure(state, bot, botsStore, maxFailures, now) {
  *   botsStore: any,
  *   sessionRuntime: any,
  *   eventBus: any,
+ *   budgetService?: any,
+ *   onError?: (error: unknown, context?: Record<string, any>) => void,
  *   runSweep?: (bot: any, prompt: string) => Promise<{ ok: boolean, summary?: string }>,
  *   maxConsecutiveFailures?: number,
  *   enableScheduler?: boolean,
  * }} deps
  */
 export function createLookAroundService(deps) {
-  const { dshHome, botsStore, sessionRuntime, eventBus } = deps;
+  const { dshHome, botsStore, sessionRuntime, eventBus, budgetService = null } = deps;
   const maxConsecutiveFailures = Number.isInteger(deps.maxConsecutiveFailures) && Number(deps.maxConsecutiveFailures) > 0
     ? Number(deps.maxConsecutiveFailures)
     : LOOK_AROUND_MAX_CONSECUTIVE_FAILURES;
@@ -366,6 +368,18 @@ export function createLookAroundService(deps) {
   const file = stateFilePath(metaRoot);
   /** @type {Set<string>} */
   const runningBots = new Set();
+  /** @type {Map<string, number>} */
+  const deferredUntil = new Map();
+
+  /** @param {unknown} error @param {Record<string, any>} [context] */
+  function reportError(error, context = {}) {
+    const message = error instanceof Error ? error.message : String(error ?? 'unknown_error');
+    if (typeof deps.onError === 'function') {
+      deps.onError(error, { ...context, message });
+      return;
+    }
+    console.error('[dsh-bots:look-around]', message, context);
+  }
 
   /** @param {string} botId @param {number} [now] */
   function readBotState(botId, now = Date.now()) {
@@ -526,13 +540,50 @@ export function createLookAroundService(deps) {
     return { ok: Boolean(res.ok), summary: res.error || 'completed' };
   }
 
-  /** @param {string} botId @param {number} [now] */
-  async function lookNow(botId, now = Date.now()) {
+  /** @param {string} botId @param {number} now @param {{ isBackground?: boolean }} options */
+  function checkBudgetGate(botId, now, options) {
+    if (!budgetService || typeof budgetService.checkExecutionAllowed !== 'function') return null;
+    const gate = budgetService.checkExecutionAllowed(botId, { isBackground: options.isBackground === true, at: now });
+    return gate.allowed
+      ? null
+      : { ok: false, skipped: true, reason: gate.reason || 'budget_exceeded', deferUntilMs: gate.deferUntilMs ?? null, botId };
+  }
+
+  /** @param {any} bot @param {string} runId @param {{ ok?: boolean, summary?: string } | null} outcome @param {Set<string>} priorOpenIds @param {number} now */
+  function settleLookNowOutcome(bot, runId, outcome, priorOpenIds, now) {
+    const state = readBotState(bot.id, now);
+    let replacedCount = 0;
+    let circuitTripped = false;
+    if (outcome?.ok) {
+      state.consecutiveFailures = 0;
+      state.trippedAt = null;
+      state.trippedReason = null;
+      replacedCount = replacePriorOpenSuggestions(state, priorOpenIds, now);
+    } else {
+      circuitTripped = recordSweepFailure(state, bot, botsStore, maxConsecutiveFailures, now);
+    }
+    state.runs = [...(state.runs ?? []), { id: runId, at: now, ok: Boolean(outcome?.ok), summary: outcome?.summary ?? '' }];
+    writeBotState(bot.id, state, now);
+    eventBus.emit({ botIds: [bot.id], kinds: circuitTripped ? ['lookAround', 'bot'] : ['lookAround'] });
+    return {
+      ok: Boolean(outcome?.ok),
+      runId,
+      botId: bot.id,
+      summary: outcome?.summary ?? '',
+      replacedCount,
+      consecutiveFailures: state.consecutiveFailures,
+      circuitTripped,
+    };
+  }
+
+  /** @param {string} botId @param {number} [now] @param {{ isBackground?: boolean }} [options] */
+  async function lookNow(botId, now = Date.now(), options = {}) {
     const bot = botsStore.getBot(botId);
     if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
-    if (runningBots.has(bot.id)) {
-      return { ok: true, alreadyRunning: true, botId: bot.id };
-    }
+    if (runningBots.has(bot.id)) return { ok: true, alreadyRunning: true, botId: bot.id };
+    const blocked = checkBudgetGate(bot.id, now, options);
+    if (blocked) return blocked;
+
     runningBots.add(bot.id);
     const runId = `look-${crypto.randomUUID().slice(0, 8)}`;
     const beforeState = readBotState(bot.id, now);
@@ -546,35 +597,12 @@ export function createLookAroundService(deps) {
     try {
       outcome = await executeSweepTurn(bot, prompt);
     } catch (error) {
+      reportError(error, { phase: 'lookNow', botId: bot.id, runId });
       outcome = { ok: false, summary: String(/** @type {any} */ (error)?.message ?? error) };
     } finally {
       runningBots.delete(bot.id);
     }
-
-    const state = readBotState(bot.id, now);
-    let replacedCount = 0;
-    let circuitTripped = false;
-    if (outcome?.ok) {
-      state.consecutiveFailures = 0;
-      state.trippedAt = null;
-      state.trippedReason = null;
-      replacedCount = replacePriorOpenSuggestions(state, priorOpenIds, now);
-    } else {
-      circuitTripped = recordSweepFailure(state, bot, botsStore, maxConsecutiveFailures, now);
-    }
-
-    state.runs = [...(state.runs ?? []), { id: runId, at: now, ok: Boolean(outcome?.ok), summary: outcome?.summary ?? '' }];
-    writeBotState(bot.id, state, now);
-    eventBus.emit({ botIds: [bot.id], kinds: circuitTripped ? ['lookAround', 'bot'] : ['lookAround'] });
-    return {
-      ok: Boolean(outcome?.ok),
-      runId,
-      botId: bot.id,
-      summary: outcome?.summary ?? '',
-      replacedCount,
-      consecutiveFailures: state.consecutiveFailures,
-      circuitTripped,
-    };
+    return settleLookNowOutcome(bot, runId, outcome, priorOpenIds, now);
   }
 
   /** @param {string} botId @param {string} suggestionId @param {{ chat?: string, now?: number }} [opts] */
@@ -593,9 +621,34 @@ export function createLookAroundService(deps) {
       ? await sessionRuntime.startSideChat(bot.id, { title: entry.title })
       : await sessionRuntime.openHomeChat(bot.id);
     const prompt = entry.link ? `${entry.ask}\n\nLink: ${entry.link}` : entry.ask;
-    await sessionRuntime.runSingleTurn(target.sessionId, prompt, { timeoutMs: 30_000 }).catch(() => null);
+    let turnError = null;
+    try {
+      const turnRes = await sessionRuntime.runSingleTurn(target.sessionId, prompt, { timeoutMs: 30_000 });
+      if (turnRes && turnRes.ok === false) {
+        turnError = String(turnRes.error ?? 'turn_failed');
+        reportError(new Error(turnError), {
+          phase: 'startSuggestion',
+          botId: bot.id,
+          suggestionId,
+          sessionId: target.sessionId,
+        });
+      }
+    } catch (error) {
+      turnError = error instanceof Error ? error.message : String(error ?? 'turn_failed');
+      reportError(error, {
+        phase: 'startSuggestion',
+        botId: bot.id,
+        suggestionId,
+        sessionId: target.sessionId,
+      });
+    }
     eventBus.emit({ botIds: [bot.id], kinds: ['lookAround', 'chats'] });
-    return { ok: true, suggestion: entry, sessionId: target.sessionId };
+    return {
+      ok: true,
+      suggestion: entry,
+      sessionId: target.sessionId,
+      ...(turnError ? { turnError } : {}),
+    };
   }
 
   /** @param {string} botId @param {string} suggestionId @param {number} [now] */
@@ -659,12 +712,15 @@ export function createLookAroundService(deps) {
    * Single scheduler sweep over all bots. Respects the `armedAt` gate so
    * newly created bots never run periodic sweeps before their first owner chat.
    * @param {number} [now]
+   * @param {{ isBackground?: boolean }} [options]
    */
-  async function tick(now = Date.now()) {
+  async function tick(now = Date.now(), options = {}) {
     const triggered = [];
     const skippedUnarmed = [];
+    const isBackground = options.isBackground === true;
     for (const bot of botsStore.listBots()) {
       if (bot.paused || runningBots.has(bot.id)) continue;
+      if (isBackground && (deferredUntil.get(bot.id) ?? 0) > now) continue;
       const cfg = botLookAround(bot);
       if (!cfg.on) continue;
       const state = readBotState(bot.id, now);
@@ -676,7 +732,14 @@ export function createLookAroundService(deps) {
       const dueAt = nextLookAroundAt(cfg, lastAt);
       if (dueAt !== null && dueAt <= now) {
         triggered.push(bot.id);
-        void lookNow(bot.id, now).catch(() => null);
+        void lookNow(bot.id, now, isBackground ? { isBackground: true } : {}).then((res) => {
+          const r = /** @type {any} */ (res);
+          if (r?.skipped) {
+            deferredUntil.set(bot.id, r.deferUntilMs ?? (now + TICK_MS));
+          }
+        }).catch((error) => {
+          reportError(error, { phase: 'scheduler', botId: bot.id });
+        });
       }
     }
     return { triggered, skippedUnarmed };
@@ -685,7 +748,9 @@ export function createLookAroundService(deps) {
   let timer = null;
   if (deps.enableScheduler !== false) {
     timer = setInterval(() => {
-      void tick(Date.now()).catch(() => null);
+      void tick(Date.now(), { isBackground: true }).catch((error) => {
+        reportError(error, { phase: 'scheduler' });
+      });
     }, TICK_MS);
     timer.unref?.();
   }
@@ -693,6 +758,7 @@ export function createLookAroundService(deps) {
   function close() {
     if (timer) clearInterval(timer);
     timer = null;
+    deferredUntil.clear();
   }
 
   return {

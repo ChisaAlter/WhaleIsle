@@ -1,6 +1,7 @@
-// Right-panel Chats tab: split Chats/Workers search, '+ New chat', full active & closed
-// conversation tree with hover '⋯' & context menu (Open / Delete side chat), live 1s Worker
-// elapsed timing + hover Stop + hover detail tooltip, skeleton loading, error retry & Show fewer.
+// Right-panel Chats tab: split Chats/Workers search, '+ New chat', 'Adopt ordinary session as crew…' modal,
+// adopted crew list with release action, full active & closed conversation tree with hover '⋯' &
+// context menu (Open / Delete side chat), live 1s Worker elapsed timing + hover Stop + detail tooltip,
+// skeleton loading, error retry & Show fewer.
 
 import {
   useCallback,
@@ -24,6 +25,7 @@ import {
   RPC_METHODS,
   callBotRpc,
   type BotChatRow,
+  type BotCrewAdoption,
   type BotRecord,
   type BotWorkerRow,
 } from '../store/rpc';
@@ -39,6 +41,7 @@ import {
   IconSpinner,
   IconStopSquare,
   IconTrash,
+  IconUsers,
   IconX,
   IconZap,
 } from './Icons';
@@ -185,7 +188,6 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
   const activeSessionId = useBotsState((state) => state.activeSessionId);
   const cachedTree = useBotsState((state) => state.chatsByBot[bot.id]);
   const changeSeq = useBotsState((state) => state.changeSeq);
-
   const [query, setQuery] = useState('');
   const [remoteChats, setRemoteChats] = useState<BotChatRow[] | null>(null);
   const [remoteWorkers, setRemoteWorkers] = useState<ExtendedWorkerRow[] | null>(null);
@@ -197,6 +199,17 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
   const [visibleLimit, setVisibleLimit] = useState(INITIAL_CHATS_SHOWN);
   const [starting, setStarting] = useState(false);
 
+  // Crew adoption state
+  const [crewList, setCrewList] = useState<BotCrewAdoption[]>([]);
+  const [crewOpen, setCrewOpen] = useState(true);
+  const [adoptModalOpen, setAdoptModalOpen] = useState(false);
+  const [adoptSessionId, setAdoptSessionId] = useState('');
+  const [adoptTitle, setAdoptTitle] = useState('');
+  const [adoptCwd, setAdoptCwd] = useState('');
+  const [adoptRole, setAdoptRole] = useState('crew');
+  const [adopting, setAdopting] = useState(false);
+  const [releasingId, setReleasingId] = useState<string | null>(null);
+
   const [menuState, setMenuState] = useState<ChatContextMenuState | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BotChatRow | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -205,6 +218,11 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hoverTimerRef = useRef<number | null>(null);
+
+  const loadCrew = useCallback(async () => {
+    const rows = await botsStore.listCrew(bot.id);
+    setCrewList(rows);
+  }, [bot.id]);
 
   const loadChatTree = useCallback(async (showSkeleton = false) => {
     if (showSkeleton) {
@@ -231,6 +249,19 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
     setTooltip(null);
     void loadChatTree(!cachedTree);
   }, [bot.id]);
+
+  useEffect(() => {
+    void loadCrew();
+  }, [bot.id, changeSeq, loadCrew]);
+
+  useEffect(() => {
+    if (!adoptModalOpen) return undefined;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAdoptModalOpen(false);
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [adoptModalOpen]);
 
   useEffect(() => {
     if (changeSeq > 0) {
@@ -397,6 +428,46 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
       await botsStore.startSideChat(bot.id);
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handleAdoptSubmit = async () => {
+    const sid = adoptSessionId.trim();
+    if (!sid || adopting) return;
+    setAdopting(true);
+    try {
+      await botsStore.adoptCrew({
+        botId: bot.id,
+        sessionId: sid,
+        ...(adoptTitle.trim() ? { title: adoptTitle.trim() } : {}),
+        ...(adoptCwd.trim() ? { cwd: adoptCwd.trim() } : {}),
+        role: adoptRole || 'crew',
+      });
+      setAdoptModalOpen(false);
+      setAdoptSessionId('');
+      setAdoptTitle('');
+      setAdoptCwd('');
+      setAdoptRole('crew');
+      await loadCrew();
+      botsStore.pushToast({ message: zh ? '已将普通会话收编为船员' : 'Session adopted as crew', tone: 'success' });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setAdopting(false);
+    }
+  };
+
+  const handleReleaseCrew = async (sessionId: string) => {
+    if (releasingId) return;
+    setReleasingId(sessionId);
+    try {
+      await botsStore.releaseCrew(sessionId, bot.id);
+      await loadCrew();
+      botsStore.pushToast({ message: zh ? '已释放该船员会话' : 'Crew session released', tone: 'info' });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setReleasingId(null);
     }
   };
 
@@ -777,6 +848,82 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
         </button>
       </div>
 
+      {/* Crew Adoption Toolbar & Collapsible Adopted Crew List */}
+      <div className="dsh-bots-pcard" data-dsh-bots-crew-section={bot.id}>
+        <div className="dsh-bots-row">
+          <button
+            type="button"
+            className="dsh-bots-item-group-btn"
+            style={{ width: 'auto', flex: 1 }}
+            onClick={() => setCrewOpen((prev) => !prev)}
+          >
+            <BotChevron open={crewOpen} size={12} />
+            <IconUsers size={12} />
+            <span>{zh ? '已收编船员' : 'Adopted crew'}</span>
+            <span className="dsh-bots-badge">{crewList.length}</span>
+          </button>
+          <button
+            type="button"
+            className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+            data-dsh-bots-adopt-trigger=""
+            onClick={() => {
+              if (!adoptSessionId && activeSessionId) {
+                setAdoptSessionId(activeSessionId);
+              }
+              setAdoptModalOpen(true);
+            }}
+          >
+            <IconPlus size={11} />
+            <span>{zh ? '收编普通会话为船员…' : 'Adopt session…'}</span>
+          </button>
+        </div>
+        <BotDisclosure open={crewOpen}>
+          {crewList.length === 0 ? (
+            <div className="dsh-bots-muted" style={{ marginTop: 4 }}>
+              {zh
+                ? '暂无收编的普通会话。可把已有开发/调研会话纳入当前队友麾下协同调度。'
+                : 'No adopted crew sessions yet.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+              {crewList.map((crew) => (
+                <div
+                  key={crew.sessionId}
+                  className="dsh-bots-tree-row"
+                  data-dsh-bots-crew-row={crew.sessionId}
+                  onClick={() => botsStore.openBotChat(bot.id, crew.sessionId)}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="dsh-bots-row">
+                      <span className="dsh-bots-ellipsis" style={{ fontWeight: 500, fontSize: 12 }}>
+                        {crew.title || crew.sessionId}
+                      </span>
+                      <span className="dsh-bots-badge dsh-bots-badge-accent">{crew.role || 'crew'}</span>
+                    </div>
+                    {crew.cwd && (
+                      <div className="dsh-bots-muted dsh-bots-ellipsis dsh-bots-tsv-mono" style={{ fontSize: 11 }}>
+                        {crew.cwd}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+                    disabled={releasingId === crew.sessionId}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleReleaseCrew(crew.sessionId);
+                    }}
+                  >
+                    {zh ? '释放' : 'Release'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </BotDisclosure>
+      </div>
+
       {/* Inline confirmation when deleting a running chat */}
       {confirmDelete && (
         <div className="dsh-bots-inline-confirm" role="alertdialog" aria-label={zh ? '确认删除运行中的对话' : 'Confirm delete running chat'}>
@@ -1041,6 +1188,97 @@ export function BotChatsTab({ bot }: BotChatsTabProps) {
             </div>
           );
         })(),
+        document.body,
+      )}
+
+      {/* Lightweight Adopt Ordinary Session as Crew Modal */}
+      {adoptModalOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          className="dsh-bots-backdrop"
+          data-dsh-bots-adopt-modal=""
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAdoptModalOpen(false);
+          }}
+        >
+          <div role="dialog" aria-modal="true" className="dsh-bots-modal dsh-bots-modal-sm">
+            <div className="dsh-bots-modal-header">
+              <div className="dsh-bots-modal-title">
+                {zh ? '收编普通会话为船员' : 'Adopt ordinary session as crew'}
+              </div>
+              <button
+                type="button"
+                className="dsh-bots-icon-btn"
+                aria-label={zh ? '关闭' : 'Close'}
+                onClick={() => setAdoptModalOpen(false)}
+              >
+                <IconX size={15} />
+              </button>
+            </div>
+            <div className="dsh-bots-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="dsh-bots-muted">
+                {zh
+                  ? `将已有普通会话纳入「${bot.name}」的船员编队，随时可一键释放，不会修改原会话历史。`
+                  : `Link an existing session under "${bot.name}" as a crew member. Reversible at any time.`}
+              </div>
+              <label className="dsh-bots-field">
+                <span className="dsh-bots-muted">{zh ? '会话 ID (sessionId)' : 'Session ID'}</span>
+                <input
+                  type="text"
+                  className="dsh-bots-input"
+                  placeholder={zh ? '输入或粘贴会话 ID…' : 'Enter or paste session ID…'}
+                  value={adoptSessionId}
+                  onChange={(e) => setAdoptSessionId(e.target.value)}
+                />
+              </label>
+              <label className="dsh-bots-field">
+                <span className="dsh-bots-muted">{zh ? '船员标题（可选）' : 'Title (optional)'}</span>
+                <input
+                  type="text"
+                  className="dsh-bots-input"
+                  placeholder={zh ? '例如：前端重构线程' : 'e.g. Frontend refactor'}
+                  value={adoptTitle}
+                  onChange={(e) => setAdoptTitle(e.target.value)}
+                />
+              </label>
+              <label className="dsh-bots-field">
+                <span className="dsh-bots-muted">{zh ? '工作目录（可选）' : 'Working directory (optional)'}</span>
+                <input
+                  type="text"
+                  className="dsh-bots-input"
+                  placeholder="C:/repo/path"
+                  value={adoptCwd}
+                  onChange={(e) => setAdoptCwd(e.target.value)}
+                />
+              </label>
+              <label className="dsh-bots-field">
+                <span className="dsh-bots-muted">{zh ? '编队角色' : 'Crew role'}</span>
+                <select
+                  className="dsh-bots-select"
+                  value={adoptRole}
+                  onChange={(e) => setAdoptRole(e.target.value)}
+                >
+                  <option value="crew">{zh ? '执行船员 (crew)' : 'Crew'}</option>
+                  <option value="reviewer">{zh ? '审校员 (reviewer)' : 'Reviewer'}</option>
+                  <option value="researcher">{zh ? '调研员 (researcher)' : 'Researcher'}</option>
+                </select>
+              </label>
+            </div>
+            <div className="dsh-bots-modal-footer" style={{ justifyContent: 'flex-end' }}>
+              <button type="button" className="dsh-bots-btn" onClick={() => setAdoptModalOpen(false)} disabled={adopting}>
+                {zh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                className="dsh-bots-btn"
+                data-variant="primary"
+                disabled={!adoptSessionId.trim() || adopting}
+                onClick={() => void handleAdoptSubmit()}
+              >
+                {adopting ? (zh ? '收编中…' : 'Adopting…') : (zh ? '确认收编' : 'Adopt crew')}
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body,
       )}
     </div>

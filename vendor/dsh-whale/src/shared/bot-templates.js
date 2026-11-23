@@ -11,6 +11,7 @@ import {
   BOT_TEMPLATES_PLANNING,
   BOT_TEMPLATES_OPS,
   BOT_TEMPLATES_PERSONAL,
+  BOT_TEMPLATES_CAPTAIN,
 } from './bot-template-catalog.js';
 
 export const BOT_SHARED_SETUP_FILE = 'shared-setup.md';
@@ -52,11 +53,16 @@ export const BOT_TEMPLATES = Object.freeze([
   ...BOT_TEMPLATES_PERSONAL,
 ]);
 
+export const BOT_ALL_TEMPLATES = Object.freeze([
+  ...BOT_TEMPLATES,
+  ...BOT_TEMPLATES_CAPTAIN,
+]);
+
 export function botTemplate(id) {
   if (typeof id !== 'string' || !id) {
     return null;
   }
-  return BOT_TEMPLATES.find((entry) => entry.id === id) ?? null;
+  return BOT_ALL_TEMPLATES.find((entry) => entry.id === id) ?? null;
 }
 
 export function isLegacyBotTemplateId(id) {
@@ -139,12 +145,15 @@ export function botTemplateKickoff(template, locale = 'zh-CN') {
 
 export function listTemplatesByCategory(category = 'all') {
   if (!category || category === 'all') {
-    return [...BOT_TEMPLATES];
+    return [...BOT_ALL_TEMPLATES];
+  }
+  if (category === 'captain') {
+    return [...BOT_TEMPLATES_CAPTAIN];
   }
   if (category === 'ops-personal') {
-    return [...BOT_TEMPLATES_OPS, ...BOT_TEMPLATES_PERSONAL];
+    return BOT_ALL_TEMPLATES.filter((entry) => entry.category === 'ops' || entry.category === 'personal');
   }
-  return BOT_TEMPLATES.filter((entry) => entry.category === category);
+  return BOT_ALL_TEMPLATES.filter((entry) => entry.category === category);
 }
 
 export function searchTemplates(query, category = 'all') {

@@ -2,6 +2,7 @@
 import { BOT_BUILTIN_SKILLS_PART_A } from './bot-builtin-skills-a.js';
 import { BOT_BUILTIN_SKILLS_PART_B } from './bot-builtin-skills-b.js';
 
+/** Classic 13 template skill IDs (kept stable for backward compatibility). */
 export const BOT_BUILTIN_SKILL_IDS = Object.freeze([
   'pr-review-checklist',
   'bug-reproduction',
@@ -18,6 +19,19 @@ export const BOT_BUILTIN_SKILL_IDS = Object.freeze([
   'workspace-hygiene',
 ]);
 
+/** Extended Captain / Steward workflow skills. */
+export const BOT_CAPTAIN_SKILL_IDS = Object.freeze([
+  'context-recall',
+  'decision-trail',
+  'review-and-reflect',
+  'interrogate-lite',
+]);
+
+export const ALL_BOT_BUILTIN_SKILL_IDS = Object.freeze([
+  ...BOT_BUILTIN_SKILL_IDS,
+  ...BOT_CAPTAIN_SKILL_IDS,
+]);
+
 export const BOT_BUILTIN_SKILLS = Object.freeze({
   ...BOT_BUILTIN_SKILLS_PART_A,
   ...BOT_BUILTIN_SKILLS_PART_B,
@@ -32,7 +46,7 @@ export function getBuiltinSkill(id) {
 }
 
 export function listBuiltinSkills() {
-  return BOT_BUILTIN_SKILL_IDS.map((id) => ({
+  return ALL_BOT_BUILTIN_SKILL_IDS.map((id) => ({
     id,
     content: BOT_BUILTIN_SKILLS[id],
   }));

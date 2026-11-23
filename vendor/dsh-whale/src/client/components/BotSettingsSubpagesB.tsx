@@ -5,12 +5,18 @@
 // Re-exports BotToolsSubpage, BotSkillsSubpage, BotSharingSubpage from BotSettingsSubpagesC.
 
 import { useCallback, useEffect, useState } from 'react';
-import { BOT_LIMITS } from '../../shared/bot-types.js';
+import { BOT_IM_CHANNELS, BOT_LIMITS } from '../../shared/bot-types.js';
 import { botsStore, useBotsLocale } from '../store/bots-store';
-import { RPC_METHODS, callBotRpc, type BotRecord } from '../store/rpc';
+import {
+  RPC_METHODS,
+  callBotRpc,
+  searchBotMemory,
+  type BotMemorySearchHit,
+  type BotRecord,
+} from '../store/rpc';
 import { BotConnectorsTab } from './BotConnectorsTab';
 import type { SubpageProps } from './BotSettingsSubpagesA';
-import { IconCheck, IconEdit, IconFileText, IconPlus, IconTrash, IconUndo } from './Icons';
+import { IconCheck, IconEdit, IconFileText, IconPlus, IconSearch, IconTrash, IconUndo } from './Icons';
 
 export {
   BotSharingSubpage,
@@ -91,7 +97,34 @@ export function BotMemorySubpage({
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [topicPreview, setTopicPreview] = useState<{ name: string; content: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchScope, setSearchScope] = useState<'all' | 'bot' | 'team' | 'project'>('all');
+  const [searchHits, setSearchHits] = useState<BotMemorySearchHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const runMemorySearch = async () => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchHits(null);
+      return;
+    }
+    setSearching(true);
+    try {
+      const hits = await searchBotMemory({
+        botId: bot.id,
+        query: q,
+        ...(searchScope !== 'all' ? { scope: searchScope } : {}),
+        limit: 20,
+      });
+      setSearchHits(hits);
+    } catch (err) {
+      console.warn('[dsh-bots] memory.search failed', err);
+      setSearchHits([]);
+    } finally {
+      setSearching(false);
+    }
+  };
 
   const loadFacts = useCallback(async () => {
     try {
@@ -215,6 +248,79 @@ export function BotMemorySubpage({
 
       {tab === 'facts' ? (
         <>
+          <div className="dsh-bots-row">
+            <input
+              type="text"
+              className="dsh-bots-pinput"
+              placeholder={zh ? '全文检索记忆（本队友 / 团队 / 项目）…' : 'Search memory (bot / team / project)…'}
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                if (!e.target.value.trim()) setSearchHits(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void runMemorySearch();
+                }
+              }}
+            />
+            <select
+              className="dsh-bots-pselect"
+              style={{ width: 92, flexShrink: 0 }}
+              value={searchScope}
+              aria-label={zh ? '记忆检索作用域' : 'Memory search scope'}
+              onChange={(e) => setSearchScope(e.target.value as 'all' | 'bot' | 'team' | 'project')}
+            >
+              <option value="all">{zh ? '全部' : 'All'}</option>
+              <option value="bot">{zh ? '队友' : 'Bot'}</option>
+              <option value="team">{zh ? '团队' : 'Team'}</option>
+              <option value="project">{zh ? '项目' : 'Project'}</option>
+            </select>
+            <button
+              type="button"
+              className="dsh-bots-pbtn"
+              disabled={!searchQuery.trim() || searching}
+              onClick={() => void runMemorySearch()}
+            >
+              <IconSearch size={12} />
+              <span>{searching ? (zh ? '检索中' : '…') : (zh ? '检索' : 'Search')}</span>
+            </button>
+          </div>
+
+          {searchHits !== null && (
+            <div className="dsh-bots-pcard" data-dsh-bots-memory-search-results="">
+              <div className="dsh-bots-row">
+                <span className="dsh-bots-section-title">
+                  {zh ? `检索结果 (${searchHits.length})` : `Search results (${searchHits.length})`}
+                </span>
+                <button
+                  type="button"
+                  className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchHits(null);
+                  }}
+                >
+                  {zh ? '清除' : 'Clear'}
+                </button>
+              </div>
+              {searchHits.length === 0 ? (
+                <div className="dsh-bots-muted">{zh ? '未命中相关记忆条目。' : 'No matching memories.'}</div>
+              ) : (
+                searchHits.map((hit, idx) => (
+                  <div key={hit.entryId ?? idx} className="dsh-bots-timeline-entry">
+                    <div className="dsh-bots-row">
+                      <span className="dsh-bots-badge">{hit.scope || 'bot'}</span>
+                      <span className="dsh-bots-muted">{[hit.factDate, hit.sourceFile].filter(Boolean).join(' · ')}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: '19px' }}>{hit.body}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
           <div className="dsh-bots-row">
             <input
               type="text"
@@ -502,11 +608,11 @@ export function BotWhoCanAskSubpage({ bot }: SubpageProps) {
                   type="button"
                   className="dsh-bots-pbtn dsh-bots-pbtn-xs"
                   onClick={async () => {
-                    await callBotRpc(RPC_METHODS.ACCESS_DECIDE, { id: req.id, decision: 'denied' });
+                    await callBotRpc(RPC_METHODS.ACCESS_DECIDE, { id: req.id, decision: 'declined' });
                     void loadRequests();
                   }}
                 >
-                  {zh ? '拒绝' : 'Deny'}
+                  {zh ? '拒绝' : 'Decline'}
                 </button>
               </div>
             </div>
@@ -526,11 +632,9 @@ export function BotWhoCanAskSubpage({ bot }: SubpageProps) {
             value={newSource}
             onChange={(e) => setNewSource(e.target.value)}
           >
-            <option value="feishu">Feishu</option>
-            <option value="slack">Slack</option>
-            <option value="github">GitHub</option>
-            <option value="linear">Linear</option>
-            <option value="telegram">Telegram</option>
+            {[...BOT_IM_CHANNELS, 'github', 'linear'].map((src) => (
+              <option key={src} value={src}>{src}</option>
+            ))}
           </select>
           <input
             type="text"

@@ -258,7 +258,7 @@ domTest('GlobalBotsSettings exposes global switches and desktop-pet bound bot se
   const rootEl = mounted.dom.window.document.querySelector('[data-dsh-bots-global-settings]');
   assert.ok(rootEl, 'GlobalBotsSettings root must render');
   const switches = rootEl.querySelectorAll('button[role="switch"]');
-  assert.equal(switches.length, 3);
+  assert.equal(switches.length, 4);
   assert.equal(mounted.dom.window.document.documentElement.dataset.dshHideBotWorkspaces, 'true');
 
   // Toggle "Hide bot-created workspaces" off -> RPC bots.settings.set + dataset removed.

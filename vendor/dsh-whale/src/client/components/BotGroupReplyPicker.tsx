@@ -4,20 +4,18 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useBotsLocale } from '../store/bots-store';
-import type { BotRecord } from '../store/rpc';
+import type { BotGroupReplyMode, BotRecord } from '../store/rpc';
 import { BotAvatar } from './BotAvatar';
 import {
   IconAlertTriangle,
   IconCheck,
   IconChevronDown,
   IconMessageSquare,
+  IconShield,
   IconUsers,
 } from './Icons';
 
-export type BotGroupReplyModeValue =
-  | { kind: 'all' }
-  | { kind: 'mentions' }
-  | { kind: 'bot'; botId: string };
+export type BotGroupReplyModeValue = BotGroupReplyMode;
 
 export type BotGroupDraftAudience =
   | 'invalid'
@@ -85,6 +83,9 @@ export function BotGroupReplyPicker({
     }
     if (!isAddressed && replyMode.kind === 'bot') {
       return memberBots.find((b) => b.id === replyMode.botId) ?? null;
+    }
+    if (!isAddressed && replyMode.kind === 'coordinator') {
+      return memberBots.find((b) => b.id === replyMode.coordinatorBotId) ?? memberBots[0] ?? null;
     }
     return null;
   })();
@@ -158,6 +159,8 @@ export function BotGroupReplyPicker({
           />
         ) : (!isAddressed && replyMode.kind === 'mentions') ? (
           <IconMessageSquare size={13} />
+        ) : (!isAddressed && replyMode.kind === 'coordinator') ? (
+          <IconShield size={13} />
         ) : (
           <IconUsers size={13} />
         )}
@@ -225,14 +228,42 @@ export function BotGroupReplyPicker({
             {replyMode.kind === 'mentions' && <IconCheck size={13} className="dsh-bots-pmenu-check" />}
           </button>
 
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={replyMode.kind === 'coordinator'}
+            className="dsh-bots-pmenu-item"
+            onClick={() => void handleSelect({
+              kind: 'coordinator',
+              coordinatorBotId: replyMode.kind === 'coordinator'
+                ? (replyMode.coordinatorBotId || memberBots[0]?.id)
+                : memberBots[0]?.id,
+            })}
+          >
+            <IconShield size={14} style={{ opacity: 0.8 }} />
+            <span className="dsh-bots-reply-option-text">
+              <span className="dsh-bots-pmenu-item-label">
+                {zh ? '协调者计划审批' : 'Coordinator plan-gate'}
+              </span>
+              <span className="dsh-bots-reply-option-desc">
+                {zh ? '先由协调者拟定计划并经你批准后分派' : 'Coordinator drafts plan for approval'}
+              </span>
+            </span>
+            {replyMode.kind === 'coordinator' && <IconCheck size={13} className="dsh-bots-pmenu-check" />}
+          </button>
+
           {memberBots.length > 0 && (
             <>
               <div className="dsh-bots-pmenu-sep" />
               <div className="dsh-bots-menu-section">
-                {zh ? '指定默认回复队友' : 'Default specific teammate'}
+                {replyMode.kind === 'coordinator'
+                  ? (zh ? '指定协调者队友' : 'Select coordinator teammate')
+                  : (zh ? '指定默认回复队友' : 'Default specific teammate')}
               </div>
               {memberBots.map((bot) => {
-                const selected = replyMode.kind === 'bot' && replyMode.botId === bot.id;
+                const selected = replyMode.kind === 'coordinator'
+                  ? (replyMode.coordinatorBotId ?? memberBots[0]?.id) === bot.id
+                  : (replyMode.kind === 'bot' && replyMode.botId === bot.id);
                 return (
                   <button
                     key={bot.id}
@@ -240,7 +271,11 @@ export function BotGroupReplyPicker({
                     role="menuitemradio"
                     aria-checked={selected}
                     className="dsh-bots-pmenu-item"
-                    onClick={() => void handleSelect({ kind: 'bot', botId: bot.id })}
+                    onClick={() => void handleSelect(
+                      replyMode.kind === 'coordinator'
+                        ? { kind: 'coordinator', coordinatorBotId: bot.id }
+                        : { kind: 'bot', botId: bot.id },
+                    )}
                   >
                     <BotAvatar
                       botId={bot.id}

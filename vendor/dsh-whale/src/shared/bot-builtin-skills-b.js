@@ -53,25 +53,25 @@ Biggest theme first. Then a short "new this time" line for themes that weren't t
 `,
   "status-brief": `---
 name: status-brief
-description: Write a short status brief, what changed, what is blocked, what needs a decision, in under ten lines.
+description: Write a ketchup + unslop three-part status brief (in progress, auto-handled, needs your decision) in under ten lines.
 ---
 
-# Status brief
+# Status brief (ketchup + unslop)
 
-A brief is read in under a minute. Under ten lines, always.
+A brief is read in under 30 seconds. Always under ten lines, zero filler.
 
-## Three parts
+## Three parts (ketchup digest)
 
-1. **Changed:** what moved since the last brief. Merged pull requests, closed issues, finished work. Group small items ("6 issues closed").
-2. **Blocked:** what can't move, and on whom or what. Include how long it has been blocked.
-3. **Needs a decision:** questions only a person can answer, with a link to where the question is.
+1. **Needs your decision (lead first if any):** questions only the owner can call, with a recommended option, key risk, and direct link/item ID.
+2. **Auto-handled:** finished work, merged PRs, resolved checks. Group routine counts ("6 issues closed") with verifiable evidence links.
+3. **In progress / blocked:** active workers or items, what is blocking them, and how long.
 
-## Rules
+## Unslop rules
 
-- Lead with the part that needs action, if there is one.
-- Links instead of descriptions. Numbers instead of adjectives.
+- Cut throat-clearing, apologies, hype, and vague adjectives ("robust", "seamlessly", "comprehensive").
+- Numbers, exit codes, and file/PR links over prose.
 - Leave out anything unchanged since the last brief.
-- If nothing changed, say so in one line.
+- If nothing changed, say so in one line (or \`NO_REPLY\` during background sweeps).
 `,
   "spec-format": `---
 name: spec-format
@@ -143,5 +143,49 @@ Never remove a workspace with uncommitted or unpushed work unless your owner nam
 ## Report
 
 A list: workspace, why it looks done or abandoned, and anything from the checks above. Remove only the ones your owner picks, with \`orca worktree rm\`.
+`,
+  "context-recall": `---
+name: context-recall
+description: Produce a four-part recovery capsule before compaction or handoff so any captain or worker resumes with zero lost context.
+---
+
+# Context recall (4-part recovery capsule)
+
+Before context compaction, shift handoff, or worker delegation, distill current state into exactly four compact sections.
+
+## Four sections
+
+1. **Goal & Done-Means:** one sentence on the target outcome and objective pass condition.
+2. **Verified Progress & Evidence:** what is already done, with file paths, commit hashes, or exact command/test results.
+3. **Open Blockers & Risks:** unresolved decisions, failing checks, or constraints that must not be violated.
+4. **Single Next Action:** the exact next step and owner (self, worker, or owner \`needs_you\`).
+
+## Rules
+
+- Keep the whole capsule under 20 lines; flush durable facts to \`memory/YYYY-MM-DD.md\`.
+- Never store credentials, tokens, or unverified guesses.
+`,
+  "decision-trail": `---
+name: decision-trail
+description: Maintain an append-only TSV decision audit trail (decisions/<itemUid>.tsv) for key choices, verification evidence, and rollback anchors.
+---
+
+# Decision trail (TSV)
+
+For every Work Item with non-trivial trade-offs or verification gates, append structured rows to \`decisions/<itemUid>.tsv\` using \`bot_decision_append\`.
+
+## Schema
+
+\`ts\\tactor\\tphase\\tdecision\\tevidence\\tnotes\`
+
+- **phase:** e.g. \`plan\`, \`dispatch\`, \`verify\`, \`approve\`, \`rollback\`.
+- **decision:** concise action or choice taken (\`approved\`, \`worktree-dispatched\`, \`verify-passed\`, \`verify-failed\`).
+- **evidence:** command exit code, test summary, PR/commit link, or file path.
+- **notes:** brief rationale or rollback anchor (single line, no tabs/newlines).
+
+## Rules
+
+- Append only; never rewrite or delete earlier decision rows.
+- Every failed verification or owner \`needs_you\` escalation must leave a decision row with evidence.
 `,
 });

@@ -29,7 +29,8 @@ import {
   useBotsLocale,
   useNow,
 } from '../store/bots-store';
-import { RPC_METHODS, callBotRpc } from '../store/rpc';
+import { RPC_METHODS, callBotRpc, readItemDecisions, type BotDecisionRow } from '../store/rpc';
+import { BotChevron, BotDisclosure } from './BotDisclosure';
 import {
   BotItemQuestionStep,
   type AskQuestionShape,
@@ -47,6 +48,7 @@ import {
   IconMessageSquare,
   IconRefresh,
   IconSend,
+  IconShield,
   IconUpload,
   IconX,
 } from './Icons';
@@ -266,6 +268,10 @@ export function BotItemDetailView({
   const [item, setItem] = useState<WorkItemFull | null>(null);
   const [events, setEvents] = useState<WorkItemEvent[]>([]);
   const [links, setLinks] = useState<WorkItemLink[]>([]);
+  const [decisionRows, setDecisionRows] = useState<BotDecisionRow[]>([]);
+  const [decisionsPath, setDecisionsPath] = useState<string>('');
+  const [decisionsOpen, setDecisionsOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState(() => readBotItemDraft(botId, itemUid));
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -322,19 +328,38 @@ export function BotItemDetailView({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await callBotRpc<{
-        item?: WorkItemFull;
-        events?: WorkItemEvent[];
-        links?: WorkItemLink[];
-      } & Partial<WorkItemFull>>(RPC_METHODS.ITEMS_OWNER_SHOW, {
-        botId,
-        uid: itemUid,
-        id: itemUid,
-      });
-      const resolved = res?.item ?? (res?.uid || res?.id ? (res as WorkItemFull) : null);
-      setItem(resolved);
-      setEvents(Array.isArray(res?.events) ? res.events : (resolved?.events ?? []));
-      setLinks(Array.isArray(res?.links) ? res.links : (resolved?.links ?? []));
+      const [showRes, decRes] = await Promise.allSettled([
+        callBotRpc<{
+          item?: WorkItemFull;
+          events?: WorkItemEvent[];
+          links?: WorkItemLink[];
+        } & Partial<WorkItemFull>>(RPC_METHODS.ITEMS_OWNER_SHOW, {
+          botId,
+          uid: itemUid,
+          id: itemUid,
+        }),
+        readItemDecisions(botId, itemUid),
+      ]);
+      if (showRes.status === 'fulfilled') {
+        const res = showRes.value;
+        const resolved = res?.item ?? (res?.uid || res?.id ? (res as WorkItemFull) : null);
+        setItem(resolved);
+        setEvents(Array.isArray(res?.events) ? res.events : (resolved?.events ?? []));
+        setLinks(Array.isArray(res?.links) ? res.links : (resolved?.links ?? []));
+      } else {
+        throw showRes.reason;
+      }
+      if (decRes.status === 'fulfilled') {
+        const rows = decRes.value.rows ?? [];
+        setDecisionRows(rows);
+        setDecisionsPath(decRes.value.path ?? `decisions/${itemUid}.tsv`);
+        if (rows.length > 0) {
+          setDecisionsOpen(true);
+        }
+      } else {
+        setDecisionRows([]);
+        setDecisionsPath(`decisions/${itemUid}.tsv`);
+      }
       void callBotRpc(RPC_METHODS.ITEMS_OWNER_OPENED, { botId, uid: itemUid, id: itemUid }).catch((err) => {
         console.warn('[dsh-bots] items.owner.opened failed', err);
       });
@@ -768,6 +793,33 @@ export function BotItemDetailView({
 
   const snoozePresets = botItemSnoozePickerPresets(now);
 
+  const workerEvidenceEntries = [
+    ...decisionRows
+      .filter((row) => Boolean(row.evidence?.trim() || /verify|done|check|worker/i.test(String(row.phase ?? ''))))
+      .map((row, idx) => ({
+        id: `tsv-${idx}`,
+        source: row.actor || 'worker',
+        phase: row.phase || 'verify',
+        decision: row.decision || '',
+        evidence: row.evidence || row.notes || '',
+        ts: row.ts || '',
+      })),
+    ...events
+      .filter((ev) => Boolean(ev.data && (ev.data.verifyCmd || ev.data.evidence || ev.data.exitCode !== undefined)))
+      .map((ev) => ({
+        id: `ev-${ev.id}`,
+        source: ev.actor?.kind || 'worker',
+        phase: ev.kind,
+        decision: ev.data?.exitCode !== undefined ? `exit=${String(ev.data.exitCode)}` : '',
+        evidence: [
+          typeof ev.data?.verifyCmd === 'string' ? `$ ${ev.data.verifyCmd}` : '',
+          typeof ev.data?.evidence === 'string' ? ev.data.evidence : '',
+          typeof ev.data?.outputTail === 'string' ? ev.data.outputTail : '',
+        ].filter(Boolean).join('\n'),
+        ts: ev.createdAt ? formatRelativeTime(ev.createdAt, now, locale) : '',
+      })),
+  ];
+
   return (
     <div ref={rootRef} className="dsh-bots-panel-scroll dsh-bots-item-detail" tabIndex={-1}>
       <div className="dsh-bots-row">
@@ -1081,6 +1133,99 @@ export function BotItemDetailView({
               />
             </div>
           )}
+
+          {/* Embedded Decision Audit Trail (decisions/<itemUid>.tsv) */}
+          <div className="dsh-bots-psection" data-dsh-bots-decisions-section={itemUid}>
+            <button
+              type="button"
+              className="dsh-bots-item-group-btn"
+              onClick={() => setDecisionsOpen((prev) => !prev)}
+            >
+              <BotChevron open={decisionsOpen} size={12} />
+              <IconFileText size={12} />
+              <span>{zh ? '决策审计表 (decisions TSV)' : 'Decision audit (TSV)'}</span>
+              <span className="dsh-bots-badge">{decisionRows.length}</span>
+            </button>
+            <BotDisclosure open={decisionsOpen}>
+              <div className="dsh-bots-pcard">
+                <div className="dsh-bots-muted" style={{ fontFamily: 'var(--ds-font-family-code)', fontSize: 11 }}>
+                  {decisionsPath || `decisions/${itemUid}.tsv`}
+                </div>
+                {decisionRows.length === 0 ? (
+                  <div className="dsh-bots-muted">
+                    {zh ? '暂无决策审计记录。' : 'No decision trail recorded yet.'}
+                  </div>
+                ) : (
+                  <div className="dsh-bots-tsv-wrap">
+                    <table className="dsh-bots-tsv-table">
+                      <thead>
+                        <tr>
+                          <th>{zh ? '时间' : 'Time'}</th>
+                          <th>{zh ? '执行者' : 'Actor'}</th>
+                          <th>{zh ? '阶段' : 'Phase'}</th>
+                          <th>{zh ? '决策' : 'Decision'}</th>
+                          <th>{zh ? '证据' : 'Evidence'}</th>
+                          <th>{zh ? '备注' : 'Notes'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {decisionRows.map((row, idx) => (
+                          <tr key={`${row.ts ?? idx}-${idx}`}>
+                            <td className="dsh-bots-tsv-mono">{row.ts || '—'}</td>
+                            <td>{row.actor || '—'}</td>
+                            <td><span className="dsh-bots-badge">{row.phase || '—'}</span></td>
+                            <td><strong>{row.decision || '—'}</strong></td>
+                            <td className="dsh-bots-tsv-mono">{row.evidence || '—'}</td>
+                            <td>{row.notes || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </BotDisclosure>
+          </div>
+
+          {/* Embedded Worker Verified Evidence */}
+          <div className="dsh-bots-psection" data-dsh-bots-evidence-section={itemUid}>
+            <button
+              type="button"
+              className="dsh-bots-item-group-btn"
+              onClick={() => setEvidenceOpen((prev) => !prev)}
+            >
+              <BotChevron open={evidenceOpen} size={12} />
+              <IconShield size={12} />
+              <span>{zh ? 'Worker 实证结单证据' : 'Worker verification evidence'}</span>
+              <span className="dsh-bots-badge dsh-bots-badge-accent">{workerEvidenceEntries.length}</span>
+            </button>
+            <BotDisclosure open={evidenceOpen}>
+              {workerEvidenceEntries.length === 0 ? (
+                <div className="dsh-bots-pcard">
+                  <div className="dsh-bots-muted">
+                    {zh ? '尚未收集到 Worker 验证命令或实证结单证据。' : 'No worker verification evidence yet.'}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {workerEvidenceEntries.map((entry) => (
+                    <div key={entry.id} className="dsh-bots-pcard">
+                      <div className="dsh-bots-row">
+                        <span className="dsh-bots-row-left">
+                          <span className="dsh-bots-badge">{entry.phase}</span>
+                          <span style={{ fontWeight: 500, fontSize: 12 }}>{entry.source}</span>
+                        </span>
+                        <span className="dsh-bots-muted">{entry.decision || entry.ts}</span>
+                      </div>
+                      {entry.evidence && (
+                        <pre className="dsh-bots-code-pre">{entry.evidence}</pre>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </BotDisclosure>
+          </div>
 
           <div className="dsh-bots-psection">
             <span className="dsh-bots-section-title">{zh ? '动态时间线' : 'Activity timeline'}</span>

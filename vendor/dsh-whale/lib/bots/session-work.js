@@ -2,9 +2,45 @@
  * Chat lifecycle deletion, worker stop/cancel resolution, and chat/activity
  * view projections for `session-runtime.js`.
  */
+import crypto from 'node:crypto';
 import { orderBotChats } from '../../src/shared/index.js';
 
 const freshSignal = () => new AbortController().signal;
+
+/** @param {any} bot @param {(b: any) => string} homeDirFor @param {Record<string, any>} options @param {number} now @param {{ ownerChat: string, defaultPreset: string }} defaults */
+export function buildSideChatSpec(bot, homeDirFor, options, now, { ownerChat, defaultPreset }) {
+  const sessionId = options.sessionId || `bot-chat-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+  const title = String(options.title ?? '').trim() || `${bot.name} · 支线聊天`;
+  return {
+    sessionId,
+    title,
+    ensureInput: {
+      sessionId,
+      cwd: options.cwd || homeDirFor(bot),
+      title,
+      owner: options.owner || ownerChat,
+      preset: options.preset ?? defaultPreset,
+      launch: options.launch ?? bot.launch,
+      permissionMode: options.permissionMode ?? bot.permissionMode,
+      botId: bot.id,
+    },
+    chatRecord: {
+      sessionId,
+      botId: bot.id,
+      kind: options.kind || 'side',
+      origin: options.origin || 'side',
+      title,
+      externalSource: options.externalSource ?? null,
+      externalId: options.externalId ?? null,
+      ...(options.groupId ? { groupId: options.groupId } : {}),
+      ...(options.dispatchId ? { dispatchId: options.dispatchId } : {}),
+      ...(options.taskId ? { taskId: options.taskId } : {}),
+      ...(options.workId ? { workId: options.workId } : {}),
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
 
 /** @param {string} state */
 export function liveKindFromDot(state) {

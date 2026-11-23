@@ -4,28 +4,56 @@
  *
  * Delegates pet state, pet chat, model selection, and assistant ensure to the
  * globally bound `petBotId` bot's Home Chat (falling back to the first bot),
- * and projects `sessionId` / `imDefault` / `name` / model choice into
- * `$DSH_HOME/data/whale/settings.json` so `dsh-im` continues to work with zero
- * code changes.
+ * projects `sessionId` / `imDefault` / `name` / model choice into
+ * `$DSH_HOME/data/whale/settings.json`, and keeps `_meta/im-routes.json`
+ * synchronized when a routed bot's Home session or status changes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { appendPetOutbox, whaleHomeDir } from '../preset.js';
-import { writeAtomicFile } from './fs-home.js';
-import { parseLaunchModel } from './session-runtime.js';
+import { botMetaDir, readImRoutes, writeAtomicFile, writeImRoutes } from './fs-home.js';
+import { resolveBotLaunchRoute } from './launch-route.js';
+
+/** @param {unknown} value */
+function cleanStr(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
 
 /** @param {any} launch */
 function extractLegacyModel(launch) {
-  const parsed = parseLaunchModel(launch);
-  if (parsed) {
+  const route = resolveBotLaunchRoute(launch);
+  if (route) {
     return {
-      modelProvider: parsed.provider,
-      modelModel: parsed.model,
-      modelReasoningEffort: parsed.reasoningEffort ?? '',
+      modelProvider: route.provider,
+      modelModel: route.model,
+      modelReasoningEffort: route.reasoningEffort ?? '',
     };
   }
-  const effort = String(launch?.options?.reasoningEffort ?? launch?.options?.effort ?? '').trim();
+  const effort = cleanStr(
+    launch?.reasoningEffort
+    ?? launch?.effort
+    ?? launch?.options?.reasoningEffort
+    ?? launch?.options?.effort,
+  );
   return { modelProvider: '', modelModel: '', modelReasoningEffort: effort };
+}
+
+/** @param {any} modelPatch */
+function buildLaunchFromLegacyModelPatch(modelPatch) {
+  const route = resolveBotLaunchRoute(modelPatch);
+  if (route) {
+    return {
+      provider: route.provider,
+      model: route.model,
+      ...(route.reasoningEffort ? { reasoningEffort: route.reasoningEffort } : {}),
+      options: {
+        provider: route.provider,
+        ...(route.reasoningEffort ? { reasoningEffort: route.reasoningEffort } : {}),
+      },
+    };
+  }
+  const effort = cleanStr(modelPatch?.reasoningEffort ?? modelPatch?.effort);
+  return effort ? { reasoningEffort: effort, options: { reasoningEffort: effort } } : null;
 }
 
 /**
@@ -47,17 +75,74 @@ export function createLegacyCompat(deps) {
       if (explicit) return explicit;
     }
     const all = botsStore.listBots();
-    return all.find((b) => !b.paused) ?? all[0] ?? null;
+    return all.find((/** @type {any} */ b) => !b.paused) ?? all[0] ?? null;
+  }
+
+  /**
+   * Resolve which bot owns a given IM `(channel, accountId)` route using
+   * `_meta/im-routes.json`, falling back seamlessly to `resolvePetBot()`.
+   * @param {{ channel?: string, accountId?: string }} [options]
+   */
+  function resolveImBot({ channel = '', accountId = '' } = {}) {
+    const normChannel = cleanStr(channel).toLowerCase();
+    const normAccount = cleanStr(accountId);
+    if (dshHome && normChannel) {
+      const doc = readImRoutes(botMetaDir(dshHome));
+      const routes = doc.routes && typeof doc.routes === 'object' ? doc.routes : {};
+      const keys = normAccount ? [`${normChannel}:${normAccount}`, normChannel] : [normChannel];
+      for (const routeKey of keys) {
+        const entry = routes[routeKey];
+        if (!entry || entry.enabled === false || !entry.botId) continue;
+        const matched = botsStore.getBot(entry.botId);
+        if (matched && !matched.paused) return matched;
+      }
+    }
+    return resolvePetBot();
+  }
+
+  /**
+   * Keep `_meta/im-routes.json` entries referencing `bot.id` synchronized with
+   * the bot's live `chatSessionId`, `name`, and `paused` state.
+   * @param {any} bot
+   */
+  function syncImRoutesForBot(bot) {
+    if (!dshHome || !bot?.id) return false;
+    const metaRoot = botMetaDir(dshHome);
+    const doc = readImRoutes(metaRoot);
+    const routes = doc.routes && typeof doc.routes === 'object' ? { ...doc.routes } : {};
+    let changed = false;
+    for (const [key, entry] of Object.entries(routes)) {
+      if (!entry || entry.botId !== bot.id) continue;
+      const nextSessionId = bot.chatSessionId || '';
+      const nextEnabled = !bot.paused;
+      if (entry.sessionId !== nextSessionId || entry.enabled !== nextEnabled || entry.botName !== bot.name) {
+        routes[key] = {
+          ...entry,
+          botName: bot.name,
+          sessionId: nextSessionId,
+          enabled: nextEnabled,
+          updatedAt: Date.now(),
+        };
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    writeImRoutes(metaRoot, { version: 1, routes, updatedAt: Date.now() });
+    return true;
   }
 
   /**
    * Project the active pet/IM bot into `$DSH_HOME/data/whale/settings.json`
-   * without clobbering unrelated legacy keys so `dsh-im` resolves it seamlessly.
+   * without clobbering unrelated legacy keys, and synchronize any `_meta/im-routes.json`
+   * bindings referencing this bot so `dsh-im` resolves both seamlessly.
    * @param {any} bot
    */
   function syncLegacySettingsProjection(bot) {
     if (!dshHome || !bot) return false;
+    syncImRoutesForBot(bot);
+
     const file = path.join(whaleHomeDir(dshHome), 'settings.json');
+    /** @type {Record<string, any>} */
     let existing = {};
     if (fs.existsSync(file)) {
       try {
@@ -115,24 +200,18 @@ export function createLegacyCompat(deps) {
     };
   }
 
+  /** @param {Record<string, any>} [patch] */
   async function updateLegacySettings(patch = {}) {
     const bot = resolvePetBot();
     if (!bot) return null;
+    /** @type {Record<string, any>} */
     const botPatch = {};
     if (typeof patch.name === 'string' && patch.name.trim()) botPatch.name = patch.name.trim();
     if (typeof patch.imDefault === 'boolean') botPatch.imDefault = patch.imDefault;
 
     const changesModel = Boolean(patch.model && typeof patch.model === 'object');
     if (changesModel) {
-      const provider = String(patch.model.provider ?? '').trim();
-      const model = String(patch.model.model ?? '').trim();
-      const reasoningEffort = String(patch.model.reasoningEffort ?? '').trim();
-      botPatch.launch = provider && model
-        ? {
-          model,
-          options: { provider, ...(reasoningEffort ? { reasoningEffort } : {}) },
-        }
-        : (reasoningEffort ? { options: { reasoningEffort } } : null);
+      botPatch.launch = buildLaunchFromLegacyModelPatch(patch.model);
       if (bot.chatSessionId) {
         await sessionRuntime.applyLaunchModel(null, bot.chatSessionId, botPatch.launch, {
           strict: true,
@@ -153,6 +232,7 @@ export function createLegacyCompat(deps) {
     return getLegacySettings();
   }
 
+  /** @param {string} kind @param {string} text @param {any} [extra] */
   function notifyPet(kind, text, extra) {
     if (!dshHome) return;
     appendPetOutbox(dshHome, kind, text, extra);
@@ -160,6 +240,8 @@ export function createLegacyCompat(deps) {
 
   return {
     resolvePetBot,
+    resolveImBot,
+    syncImRoutesForBot,
     syncLegacySettingsProjection,
     ensurePetSession,
     getLegacySettings,

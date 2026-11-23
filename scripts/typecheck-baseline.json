@@ -10556,38 +10556,10 @@
         "Parameter 'caller' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/bot-tools-registry.js": {
-      "TS7005": {
-        "Variable 'activeBotsRuntimeSource' implicitly has an 'any' type.": 3,
-        "Variable 'disposers' implicitly has an 'any[]' type.": 1
-      },
-      "TS7006": {
-        "Parameter 'detail' implicitly has an 'any' type.": 2,
-        "Parameter 'exec' implicitly has an 'any' type.": 2,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'spec' implicitly has an 'any' type.": 1
-      },
-      "TS7034": {
-        "Variable 'activeBotsRuntimeSource' implicitly has type 'any' in some locations where its type cannot be determined.": 1,
-        "Variable 'disposers' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/connectors-service.js": {
-      "TS2339": {
-        "Property 'im' does not exist on type '{}'.": 3,
-        "Property 'imDefault' does not exist on type '{ connectors: any; }'.": 1,
-        "Property 'imDefault' does not exist on type '{}'.": 2,
-        "Property 'webhooks' does not exist on type '{}'.": 2
-      },
-      "TS7006": {
-        "Parameter 'botId' implicitly has an 'any' type.": 4,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'w' implicitly has an 'any' type.": 1
-      },
-      "TS7031": {
-        "Binding element 'decision' implicitly has an 'any' type.": 1,
-        "Binding element 'id' implicitly has an 'any' type.": 1,
-        "Binding element 'token' implicitly has an 'any' type.": 1
+    "vendor/dsh-whale/lib/bots/bot-tools-plugin.js": {
+      "TS2307": {
+        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
+        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/db.js": {
@@ -10615,49 +10587,9 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/event-bus.js": {
-      "TS7006": {
-        "Parameter 'data' implicitly has an 'any' type.": 1,
-        "Parameter 'eventName' implicitly has an 'any' type.": 1,
-        "Parameter 'fn' implicitly has an 'any' type.": 1,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'res' implicitly has an 'any' type.": 1
-      }
-    },
     "vendor/dsh-whale/lib/bots/fs-home.js": {
       "TS2339": {
         "Property 'code' does not exist on type '{}'.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/groups-service.js": {
-      "TS2339": {
-        "Property 'afterSequence' does not exist on type '{}'.": 1,
-        "Property 'avatar' does not exist on type '{}'.": 1,
-        "Property 'avatarColor' does not exist on type '{}'.": 1,
-        "Property 'beforeSequence' does not exist on type '{}'.": 1,
-        "Property 'botId' does not exist on type '{}'.": 2,
-        "Property 'botIds' does not exist on type '{}'.": 2,
-        "Property 'expectedRevision' does not exist on type '{}'.": 1,
-        "Property 'frozenItemsByBot' does not exist on type '{}'.": 1,
-        "Property 'groupId' does not exist on type '{}'.": 5,
-        "Property 'id' does not exist on type '{}'.": 6,
-        "Property 'limit' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 1,
-        "Property 'replyMode' does not exist on type '{}'.": 1,
-        "Property 'revision' does not exist on type '{}'.": 1,
-        "Property 'sequence' does not exist on type '{}'.": 2,
-        "Property 'threadId' does not exist on type '{}'.": 3,
-        "Property 'title' does not exist on type '{}'.": 1
-      },
-      "TS7006": {
-        "Parameter 'b' implicitly has an 'any' type.": 3,
-        "Parameter 'bot' implicitly has an 'any' type.": 1,
-        "Parameter 'group' implicitly has an 'any' type.": 1,
-        "Parameter 'orderedIds' implicitly has an 'any' type.": 1,
-        "Parameter 'threadId' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 3
       }
     },
     "vendor/dsh-whale/lib/bots/groups-store.js": {
@@ -10742,21 +10674,6 @@
         "Parameter 'opt' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/legacy-compat.js": {
-      "TS2339": {
-        "Property 'bigFishEnabled' does not exist on type '{}'.": 2,
-        "Property 'imDefault' does not exist on type '{}'.": 3,
-        "Property 'model' does not exist on type '{}'.": 5,
-        "Property 'name' does not exist on type '{}'.": 4,
-        "Property 'sessionId' does not exist on type '{}'.": 1
-      },
-      "TS7006": {
-        "Parameter 'b' implicitly has an 'any' type.": 1,
-        "Parameter 'extra' implicitly has an 'any' type.": 1,
-        "Parameter 'kind' implicitly has an 'any' type.": 1,
-        "Parameter 'text' implicitly has an 'any' type.": 1
-      }
-    },
     "vendor/dsh-whale/lib/bots/legacy-migration.js": {
       "TS2345": {
         "Argument of type 'null' is not assignable to parameter of type 'undefined'.": 1
@@ -10778,41 +10695,25 @@
     },
     "vendor/dsh-whale/lib/bots/prompt-engine.js": {
       "TS7006": {
-        "Parameter 'event' implicitly has an 'any' type.": 4,
+        "Parameter 'event' implicitly has an 'any' type.": 3,
         "Parameter 'hint' implicitly has an 'any' type.": 1,
         "Parameter 'keys' implicitly has an 'any' type.": 1,
-        "Parameter 'resolved' implicitly has an 'any' type.": 3,
-        "Parameter 'runtime' implicitly has an 'any' type.": 3,
+        "Parameter 'resolved' implicitly has an 'any' type.": 2,
+        "Parameter 'runtime' implicitly has an 'any' type.": 2,
         "Parameter 'session' implicitly has an 'any' type.": 2,
-        "Parameter 'sessionId' implicitly has an 'any' type.": 3,
+        "Parameter 'sessionId' implicitly has an 'any' type.": 2,
         "Parameter 'sessionOrCtx' implicitly has an 'any' type.": 1,
         "Parameter 'sid' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/rpc-router.js": {
-      "TS2339": {
-        "Property 'code' does not exist on type '{}'.": 2,
-        "Property 'data' does not exist on type '{}'.": 2,
-        "Property 'message' does not exist on type '{}'.": 2,
-        "Property 'status' does not exist on type '{}'.": 1
-      },
       "TS7006": {
-        "Parameter 'filename' implicitly has an 'any' type.": 1,
-        "Parameter 'i' implicitly has an 'any' type.": 1,
-        "Parameter 'method' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 94,
-        "Parameter 'params' implicitly has an 'any' type.": 1,
-        "Parameter 'req' implicitly has an 'any' type.": 2,
-        "Parameter 'res' implicitly has an 'any' type.": 3,
+        "Parameter 'p' implicitly has an 'any' type.": 1,
         "Parameter 'w' implicitly has an 'any' type.": 1
-      },
-      "TS7053": {
-        "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ 'bots.list': () => any; 'bots.settings.get': () => any; 'bots.settings.set': (p: any) => any; 'bots.settings.update': (p: any) => any; 'bots.roster': () => any; 'bots.models': () => any; 'bots.agentChoices': () => any; ... <n> more ...; 'bots.import.execute': (p: any) => any; }'.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/runtime.js": {
       "TS2339": {
-        "Property 'allowLegacyMigration' does not exist on type '{ home: string; }'.": 1,
         "Property 'forceForBotPreset' does not exist on type 'never'.": 1
       },
       "TS7005": {
@@ -10899,25 +10800,12 @@
       }
     },
     "vendor/dsh-whale/lib/bots/share-import-service.js": {
-      "TS2339": {
-        "Property 'includeMemory' does not exist on type '{}'.": 1,
-        "Property 'includeMemoryTopics' does not exist on type '{}'.": 1,
-        "Property 'includeSkills' does not exist on type '{}'.": 1,
-        "Property 'manifest' does not exist on type '{}'.": 1,
-        "Property 'name' does not exist on type '{}'.": 1,
-        "Property 'packageJson' does not exist on type '{}'.": 1,
-        "Property 'sourceId' does not exist on type '{}'.": 2,
-        "Property 'sourcePath' does not exist on type '{}'.": 2
-      },
       "TS7006": {
         "Parameter 'a' implicitly has an 'any' type.": 2,
         "Parameter 'botId' implicitly has an 'any' type.": 2,
         "Parameter 'destHome' implicitly has an 'any' type.": 1,
-        "Parameter 'fallbackName' implicitly has an 'any' type.": 1,
         "Parameter 'idx' implicitly has an 'any' type.": 2,
-        "Parameter 'params' implicitly has an 'any' type.": 1,
         "Parameter 'rawInput' implicitly has an 'any' type.": 1,
-        "Parameter 'rel' implicitly has an 'any' type.": 1,
         "Parameter 's' implicitly has an 'any' type.": 2,
         "Parameter 'srcPath' implicitly has an 'any' type.": 1
       }
@@ -10927,7 +10815,6 @@
         "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
       },
       "TS7006": {
-        "Parameter 'b' implicitly has an 'any' type.": 2,
         "Parameter 'botId' implicitly has an 'any' type.": 4,
         "Parameter 'next' implicitly has an 'any' type.": 1
       }
@@ -10938,7 +10825,9 @@
         "Property 'source' does not exist on type '{ openOnly?: boolean | undefined; limit?: number | undefined; }'.": 1
       },
       "TS2345": {
-        "Argument of type 'Record<string, SQLOutputValue>[]' is not assignable to parameter of type '{ from_bot_id: string | null; to_bot_id: string; }[]'.": 1
+        "Argument of type 'Record<string, SQLOutputValue>[]' is not assignable to parameter of type '{ from_bot_id: string | null; to_bot_id: string; }[]'.": 1,
+        "Argument of type 'SQLOutputValue' is not assignable to parameter of type 'string'.": 1,
+        "Argument of type 'string | number | bigint | NonSharedUint8Array' is not assignable to parameter of type 'string'.": 1
       },
       "TS7006": {
         "Parameter 'actsFor' implicitly has an 'any' type.": 1,
@@ -10961,6 +10850,12 @@
       "TS7031": {
         "Binding element 'decision' implicitly has an 'any' type.": 2,
         "Binding element 'reason' implicitly has an 'any' type.": 1
+      }
+    },
+    "vendor/dsh-whale/lib/bots/worker-tools-plugin.js": {
+      "TS2307": {
+        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
+        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-whale/lib/desktop-tools.js": {
@@ -11062,9 +10957,6 @@
       },
       "TS2345": {
         "Argument of type '{ ensureRuntime: () => any; getRuntimeIfReady: (hint?: null) => any; close: () => void; readonly instance: any; } | null' is not assignable to parameter of type 'null | undefined'.": 1
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'allowLegacyMigration' does not exist in type '{ home: string; }'.": 1
       },
       "TS7005": {
         "Variable 'off' implicitly has an 'any' type.": 1,

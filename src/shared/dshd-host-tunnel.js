@@ -4,89 +4,71 @@
 const HARNESS_DOWN_MESSAGE = '桌面端未启动';
 
 const HOST_RPC_METHODS = new Set([
-  'host.describe',
-  'host.listDirectory',
-  'host.createDirectory',
-  'session.list',
-  'session.search',
-  'session.create',
-  'session.history',
-  'session.projections',
-  'session.models',
-  'session.selectModel',
-  'session.rename',
-  'session.fork',
-  'session.prompt',
-  'session.attachment',
-  'session.updateQueue',
-  'session.cancel',
-  'session.delete',
-  'subagent.list',
-  'subagent.history',
-  'subagent.prompt',
-  'subagent.interrupt',
-  'workspace.list',
-  'workspace.create',
-  'workspace.rename',
-  'workspace.delete',
-  'workspace.insertBefore',
-  'workspace.insertSessionBefore',
-  'workspace.archiveSession',
-  'workspace.unarchiveSession',
-  'skill.list',
-  'agentPreset.list',
-  'llm.models',
-  'llm.providers',
-  'workspaceFiles.list',
-  'workspaceFiles.read',
-  'workspaceFiles.stat',
-  'workspaceFiles.readImage',
-  'mcpServers.list',
-  'mcpServers.upsert',
-  'mcpServers.delete',
-  'mcpServers.setEnabled',
-  'mcpServers.retry',
-  'mcpServers.test',
-  'mcpServers.authorize',
-  'skillInventory.list',
-  'skillInventory.get',
-  'skillInventory.create',
-  'skillInventory.update',
-  'skillInventory.delete',
-  'skillInventory.setInvocation',
-  'skillInventory.searchHub',
-  'skillInventory.installHub',
-  'pluginInventory.list',
-  'pluginManager.listPlugins',
-  'pluginManager.listBundles',
-  'pluginManager.registries',
-  'pluginManager.inspect',
-  'pluginManager.setPluginEnabled',
-  'pluginManager.setBundleEnabled',
-  'pluginManager.installBundle',
-  'pluginManager.removeBundle',
-  'pluginManager.cancelInstall',
-  'pluginManager.waitForInstall',
-  'settings.describe',
-  'settings.update',
-  'settings.replace',
-  'settings.mutate',
-  'credentials.describe',
-  'credentials.set',
-  'credentials.unset',
-  'account.getState',
-  'account.getProfile',
-  'account.getBalance',
-  'account.getUnnotifiedBonuses',
-  'account.ackBonusNotified',
-  'account.hasRunningAccountTasks',
-  'account.cancelSignIn',
-  'account.signOut',
-  'account.startSignIn',
-  'account.completeSignIn',
-  'commands/list',
-  'commands/execute',
+  'host.describe', 'host.listDirectory', 'host.createDirectory',
+  'session.list', 'session.search', 'session.create', 'session.history', 'session.projections',
+  'session.models', 'session.selectModel', 'session.rename', 'session.fork', 'session.prompt',
+  'session.attachment', 'session.updateQueue', 'session.cancel', 'session.delete',
+  'subagent.list', 'subagent.history', 'subagent.prompt', 'subagent.interrupt',
+  'workspace.list', 'workspace.create', 'workspace.rename', 'workspace.delete',
+  'workspace.insertBefore', 'workspace.insertSessionBefore',
+  'workspace.archiveSession', 'workspace.unarchiveSession',
+  'skill.list', 'agentPreset.list', 'llm.models', 'llm.providers',
+  'workspaceFiles.list', 'workspaceFiles.read', 'workspaceFiles.stat', 'workspaceFiles.readImage',
+  'mcpServers.list', 'mcpServers.upsert', 'mcpServers.delete', 'mcpServers.setEnabled',
+  'mcpServers.retry', 'mcpServers.test', 'mcpServers.authorize',
+  'skillInventory.list', 'skillInventory.get', 'skillInventory.create', 'skillInventory.update',
+  'skillInventory.delete', 'skillInventory.setInvocation', 'skillInventory.searchHub', 'skillInventory.installHub',
+  'pluginInventory.list', 'pluginManager.listPlugins', 'pluginManager.listBundles',
+  'pluginManager.registries', 'pluginManager.inspect', 'pluginManager.setPluginEnabled',
+  'pluginManager.setBundleEnabled', 'pluginManager.installBundle', 'pluginManager.removeBundle',
+  'pluginManager.cancelInstall', 'pluginManager.waitForInstall',
+  'settings.describe', 'settings.update', 'settings.replace', 'settings.mutate',
+  'credentials.describe', 'credentials.set', 'credentials.unset',
+  'account.getState', 'account.getProfile', 'account.getBalance', 'account.getUnnotifiedBonuses',
+  'account.ackBonusNotified', 'account.hasRunningAccountTasks', 'account.cancelSignIn',
+  'account.signOut', 'account.startSignIn', 'account.completeSignIn',
+  'commands/list', 'commands/execute',
+  'dshBots.rpc',
 ]);
+
+/** Safe read/review/reply subset allowed over Mobile E2EE -> loopback `/dsh-bots/rpc`. */
+const DSH_BOTS_RPC_METHODS = new Set([
+  'bots.list', 'bots.roster', 'bots.activity',
+  'bots.items.list', 'bots.items.detail', 'bots.items.show',
+  'bots.items.owner.list', 'bots.items.owner.show', 'bots.items.owner.opened',
+  'bots.items.ownerComment', 'bots.items.ownerStatus', 'bots.items.ownerSnooze',
+  'bots.items.owner.comment', 'bots.items.owner.status', 'bots.items.owner.snooze',
+  'bots.access.list', 'bots.access.decide',
+  'bots.groups.list', 'bots.groups.messages', 'bots.groups.read',
+  'bots.groups.send', 'bots.groups.approvePlan',
+  'bots.budget.get', 'bots.budget.usage',
+  'bots.decisions.read',
+]);
+
+/** @type {Record<string, string>} */
+const DSH_BOTS_RPC_WIRE_ALIAS = {
+  'bots.items.detail': 'bots.items.owner.show',
+  'bots.items.ownerComment': 'bots.items.owner.comment',
+  'bots.items.ownerStatus': 'bots.items.owner.status',
+  'bots.items.ownerSnooze': 'bots.items.owner.snooze',
+  'bots.groups.messages': 'bots.groups.read',
+};
+
+/**
+ * @param {unknown} method
+ * @returns {boolean}
+ */
+function isAllowedDshBotsMethod(method) {
+  return typeof method === 'string' && DSH_BOTS_RPC_METHODS.has(method);
+}
+
+/**
+ * @param {string} method
+ * @returns {string}
+ */
+function resolveDshBotsWireMethod(method) {
+  return DSH_BOTS_RPC_WIRE_ALIAS[method] || method;
+}
 
 /**
  * @param {unknown} method
@@ -206,42 +188,19 @@ function hostRpcTarget(method) {
 /** 0.1.2 Typert wire names. `session.list` is `_request` because the Host method is `list(_request, signal)`. */
 /** @type {Record<string, string>} */
 const HOST_RPC_ARG_WIRE = {
-  'session.list': '_request',
-  'session.search': 'request',
-  'session.create': 'request',
-  'session.selectModel': 'request',
-  'session.rename': 'request',
-  'session.fork': 'request',
-  'session.delete': 'request',
-  'session.prompt': 'request',
-  'session.attachment': 'request',
-  'session.updateQueue': 'request',
-  'session.cancel': 'request',
-  'session.history': 'request',
-  'session.projections': 'request',
-  'workspace.list': 'request',
-  'workspace.create': 'request',
-  'workspace.rename': 'request',
-  'workspace.delete': 'request',
-  'workspace.insertBefore': 'request',
-  'workspace.insertSessionBefore': 'request',
-  'workspace.archiveSession': 'request',
-  'workspace.unarchiveSession': 'request',
-  'host.describe': '_request',
-  'mcpServers.upsert': 'request',
-  'mcpServers.delete': 'request',
-  'mcpServers.setEnabled': 'request',
-  'mcpServers.retry': 'request',
-  'mcpServers.test': 'request',
-  'mcpServers.authorize': 'request',
-  'skillInventory.list': 'request',
-  'skillInventory.get': 'request',
-  'skillInventory.create': 'request',
-  'skillInventory.update': 'request',
-  'skillInventory.delete': 'request',
-  'skillInventory.setInvocation': 'request',
-  'skillInventory.searchHub': 'request',
-  'skillInventory.installHub': 'request',
+  'session.list': '_request', 'host.describe': '_request',
+  'session.search': 'request', 'session.create': 'request', 'session.selectModel': 'request',
+  'session.rename': 'request', 'session.fork': 'request', 'session.delete': 'request',
+  'session.prompt': 'request', 'session.attachment': 'request', 'session.updateQueue': 'request',
+  'session.cancel': 'request', 'session.history': 'request', 'session.projections': 'request',
+  'workspace.list': 'request', 'workspace.create': 'request', 'workspace.rename': 'request',
+  'workspace.delete': 'request', 'workspace.insertBefore': 'request', 'workspace.insertSessionBefore': 'request',
+  'workspace.archiveSession': 'request', 'workspace.unarchiveSession': 'request',
+  'mcpServers.upsert': 'request', 'mcpServers.delete': 'request', 'mcpServers.setEnabled': 'request',
+  'mcpServers.retry': 'request', 'mcpServers.test': 'request', 'mcpServers.authorize': 'request',
+  'skillInventory.list': 'request', 'skillInventory.get': 'request', 'skillInventory.create': 'request',
+  'skillInventory.update': 'request', 'skillInventory.delete': 'request',
+  'skillInventory.setInvocation': 'request', 'skillInventory.searchHub': 'request', 'skillInventory.installHub': 'request',
 };
 
 const REMOTE_STREAM_MUX_PATH = '/api/remote.mux';
@@ -603,6 +562,45 @@ async function postHarnessJson({ origin, path, body, cookie, fetchImpl, signal }
 }
 
 /**
+ * Forward a whitelisted `dshBots.rpc` call to loopback `POST /dsh-bots/rpc`.
+ * Rejects any non-whitelisted bot RPC method before touching the network.
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {unknown} [options.payload]
+ * @param {string | null | undefined} [options.cookie]
+ * @param {unknown} [options.fetchImpl]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<{ ok: boolean, rpcId: string, value?: unknown, error?: unknown }>}
+ */
+async function forwardDshBotsRpc({ origin, payload, cookie, fetchImpl, signal }) {
+  const raw = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? /** @type {Record<string, unknown>} */ (payload) : {};
+  const args = raw.args && typeof raw.args === 'object' && !Array.isArray(raw.args)
+    ? /** @type {Record<string, unknown>} */ (raw.args) : raw;
+  const botMethod = typeof args.method === 'string' ? args.method.trim() : '';
+  if (!isAllowedDshBotsMethod(botMethod)) {
+    throw new Error(`dshBots 方法不允许转发：${botMethod || '(empty)'}`);
+  }
+  const params = args.params && typeof args.params === 'object' && !Array.isArray(args.params)
+    ? args.params : {};
+  const rpcId = mintRpcId();
+  const full = /** @type {{ ok?: unknown, result?: unknown, error?: unknown } | undefined} */ (
+    await postHarnessJson({
+      origin,
+      path: '/dsh-bots/rpc',
+      cookie,
+      body: { method: resolveDshBotsWireMethod(botMethod), params },
+      fetchImpl,
+      signal,
+    })
+  );
+  if (full?.ok !== true) {
+    return { ok: false, rpcId, error: full?.error || { code: 'internal', message: 'dshBots request failed' } };
+  }
+  return { ok: true, rpcId, value: full.result };
+}
+
+/**
  * @param {object} options
  * @param {string} options.origin
  * @param {unknown} options.method
@@ -610,12 +608,11 @@ async function postHarnessJson({ origin, path, body, cookie, fetchImpl, signal }
  * @param {string | null | undefined} [options.cookie]
  * @param {unknown} [options.fetchImpl]
  * @param {AbortSignal} [options.signal]
- * @param {unknown} [options.WebSocketImpl]
- * @returns {Promise<unknown>}
+ * @returns {Promise<unknown> | null}
  */
-async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, signal, WebSocketImpl }) {
-  if (!isAllowedHostMethod(method)) {
-    throw new Error(`host 方法不允许转发：${method}`);
+function tryForwardSpecialHostRpc({ origin, method, payload, cookie, fetchImpl, signal }) {
+  if (method === 'dshBots.rpc') {
+    return forwardDshBotsRpc({ origin, payload, cookie, fetchImpl, signal });
   }
   if (method === 'workspaceFiles.readImage') {
     const { forwardWorkspaceImage } = require('./dshd-workspace-image.js');
@@ -631,6 +628,26 @@ async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, sign
       payload: /** @type {{ code?: unknown, state?: unknown }} */ (wrapped.args),
       fetchImpl: /** @type {typeof fetch | undefined} */ (fetchImpl), signal });
   }
+  return null;
+}
+
+/**
+ * @param {object} options
+ * @param {string} options.origin
+ * @param {unknown} options.method
+ * @param {unknown} [options.payload]
+ * @param {string | null | undefined} [options.cookie]
+ * @param {unknown} [options.fetchImpl]
+ * @param {AbortSignal} [options.signal]
+ * @param {unknown} [options.WebSocketImpl]
+ * @returns {Promise<unknown>}
+ */
+async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, signal, WebSocketImpl }) {
+  if (!isAllowedHostMethod(method)) {
+    throw new Error(`host 方法不允许转发：${method}`);
+  }
+  const special = tryForwardSpecialHostRpc({ origin, method, payload, cookie, fetchImpl, signal });
+  if (special) return special;
   const rpcId = mintRpcId();
   const target = hostRpcTarget(method);
   /** @type {{ type?: unknown, rpcId?: unknown, result?: unknown } | undefined} */
@@ -759,15 +776,8 @@ async function forwardRemoteEventResult({ origin, cookie, clientId, eventId, out
 }
 
 module.exports = {
-  HARNESS_DOWN_MESSAGE,
-  HOST_RPC_METHODS,
-  isAllowedHostMethod,
-  assertLoopbackHarnessOrigin,
-  hostRpcTarget,
-  hostRpcPayload,
-  sanitizeHarnessCookie,
-  forwardHostRpc,
-  forwardHostRespond,
-  forwardRemoteEventResult,
-  slimHostRpcValue,
+  HARNESS_DOWN_MESSAGE, HOST_RPC_METHODS, DSH_BOTS_RPC_METHODS,
+  isAllowedHostMethod, isAllowedDshBotsMethod, resolveDshBotsWireMethod,
+  assertLoopbackHarnessOrigin, hostRpcTarget, hostRpcPayload, sanitizeHarnessCookie,
+  forwardHostRpc, forwardDshBotsRpc, forwardHostRespond, forwardRemoteEventResult, slimHostRpcValue,
 };

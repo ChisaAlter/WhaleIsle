@@ -95,6 +95,40 @@ export const DEFAULT_TIDY_UP = Object.freeze({
 
 export const BOT_ITEMS_STALE_CHOICES = Object.freeze([3, 5, 7, 14, 'never']);
 
+export const BOT_PERMISSION_MODES = Object.freeze([
+  'read-only',
+  'workspace-write',
+  'auto-review',
+  'full-access',
+]);
+
+export const BOT_IM_CHANNELS = Object.freeze([
+  'feishu',
+  'wecom',
+  'dingtalk',
+  'telegram',
+  'discord',
+  'slack',
+  'qq',
+  'weixin',
+  'whatsapp',
+]);
+
+export const BOT_MEMORY_SCOPES = Object.freeze(['bot', 'team', 'project']);
+
+export const DEFAULT_BOT_BUDGET = Object.freeze({
+  dailyLimitUsd: null,
+  dailyLimitTokens: null,
+  offPeakOnly: false,
+  pauseOnExceed: true,
+  alertThresholdPct: 80,
+});
+
+export const BOT_WORKER_MAX_CONCURRENCY = 3;
+export const BOT_PROMPT_SNAPSHOT_LIMIT = 10;
+export const BOT_WEBHOOK_MAX_SKEW_SEC = 300;
+export const BOT_WEBHOOK_RATE_LIMIT_PER_MIN = 30;
+
 export const BOT_CREATED_KICKOFF = '鲸屿：你刚刚加入团队，请完成首次初始化并简短打个招呼。';
 export const WHALE_BOT_CREATED_KICKOFF_PREFIX = '鲸屿：你刚刚加入团队';
 export const LEGACY_BOT_CREATED_KICKOFF_PREFIX = 'Orca: you were just created';
@@ -124,6 +158,14 @@ export const BOT_RUNTIME_CAPABILITIES = Object.freeze([
   'bots.session-links.v1',
   'bots.avatar-color.v1',
   'bots.home-pin.v1',
+  'bots.prompt-inspector.v1',
+  'bots.budgets.v1',
+  'bots.crew-adoption.v1',
+  'bots.decisions-tsv.v1',
+  'bots.memory-fts.v1',
+  'bots.group-plan-gate.v1',
+  'bots.im-multi-route.v1',
+  'bots.webhooks-hmac.v1',
 ]);
 
 export const BOT_ERROR_CODES = Object.freeze([

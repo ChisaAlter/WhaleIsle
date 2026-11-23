@@ -1,22 +1,17 @@
 /**
  * Multi-Bot Group Chat runtime service.
- * Combines `groups-store.js` (6 SQLite tables) with Orca's shared mention parser,
- * target resolver, and <=24KB `<quoted_room_history>` builder from `src/shared/bot-groups.js`.
- *
- * Enhancements:
- * - Per-group serialized operation queue eliminating send/update/stop/handoff races
- * - Startup crash recovery (`resumePending`) + dead `Starting…` turn cleanup
- * - Real in-flight turn cancellation in `stop()` via `sessionRuntime.cancelSession`
- * - Anti-injection `<quoted_room_history>` group turn prompt with Home-history isolation
- * - Bot-to-bot `@Name` mention handoffs (ignoring fenced/inline code & blockquotes,
- *   idempotent `handoff:<opId>:<botId>`, mention-centered excerpt window, handoff metadata)
+ * Combines `groups-store.js` (6 SQLite tables) with shared mention parsing,
+ * <=24KB `<quoted_room_history>`, attachment image passthrough, two-phase
+ * Coordinator Plan-Gate (`awaiting_approval` -> bounded DAG <=3, `depth <= 6`),
+ * per-group serialized operation queue, startup crash recovery (`resumePending`),
+ * real in-flight turn cancellation in `stop()`, and `@Name` bot handoffs.
  */
 import crypto from 'node:crypto';
 import {
   BOT_GROUP_MEMBER_SESSION_PREFIX,
   buildQuotedRoomHistory,
   isQuietResult,
-  resolveGroupTargets,
+  parseGroupMentions,
   stripQuietMarker,
   suggestGroupName,
 } from '../../src/shared/index.js';
@@ -43,68 +38,99 @@ import {
   toSharedGroupShape,
   updateMessageTurn,
 } from './groups-handoff.js';
+import {
+  COORDINATOR_META_KEY,
+  MAX_PLAN_CONCURRENCY,
+  MAX_PLAN_DEPTH,
+  cleanStr,
+  createCoordinatorPlanGate,
+  firstText,
+  formatImageLines,
+  normalizeGroupImages,
+  parseCoordinatorReplyMode,
+  resolveStoredCoordinatorId,
+  validatePlanSteps,
+} from './groups-plan-gate.js';
 
 export {
   HANDOFF_EXCERPT_AFTER,
   HANDOFF_EXCERPT_BEFORE,
   HANDOFF_EXCERPT_LIMIT,
+  MAX_PLAN_CONCURRENCY,
+  MAX_PLAN_DEPTH,
   buildGroupTurnPrompt,
   excerptAroundMention,
   extractHandoffMentions,
   maskGroupHandoffProse,
+  validatePlanSteps,
 };
 
 /**
  * Create the multi-bot groups runtime service.
- * @param {{
- *   botsStore: any,
- *   groupsStore: any,
- *   sessionRuntime: any,
- *   eventBus: any,
- * }} deps
+ * @param {{ botsStore: any, groupsStore: any, sessionRuntime: any, eventBus: any, logger?: any }} deps
  */
 export function createGroupsService(deps) {
-  const { botsStore, groupsStore, sessionRuntime, eventBus } = deps;
+  const { botsStore, groupsStore, sessionRuntime, eventBus, logger = console } = deps;
 
   const enqueueGroupOp = createGroupOpQueue();
   /** @type {Map<string, { operationId: string, groupId: string, botId: string, sessionId: string, messageId: string, rootSequence: number }>} */
   const activeTurns = new Map();
 
   /** @param {any} group */
-  const enrichGroup = (group) => enrichGroupRecord(group, botsStore);
-
-  function list() {
-    return groupsStore.listGroups().map(enrichGroup);
+  function enrichGroup(group) {
+    if (!group) return null;
+    const coordId = resolveStoredCoordinatorId(group);
+    const cleanedSessions = { ...(group.memberSessionIds ?? {}) };
+    delete cleanedSessions[COORDINATOR_META_KEY];
+    const enriched = enrichGroupRecord({ ...group, memberSessionIds: cleanedSessions }, botsStore);
+    const replyMode = coordId ? { kind: 'coordinator', coordinatorBotId: coordId } : enriched.replyMode;
+    return { ...enriched, replyMode };
   }
 
+  const list = () => groupsStore.listGroups().map(enrichGroup);
+
+  /** @param {Record<string, any>} [params] */
   function create(params = {}) {
     const botIds = Array.isArray(params.botIds) ? params.botIds : [];
     const memberBots = botIds.map((/** @type {string} */ id) => botsStore.getBot(id)).filter(Boolean);
     if (memberBots.length < 2) {
       throw Object.assign(new Error('A group requires at least 2 existing bots'), { code: 'invalid_argument' });
     }
+    const validIds = memberBots.map((/** @type {any} */ b) => b.id);
+    const coordMode = parseCoordinatorReplyMode(params.replyMode, validIds);
     const name = String(params.name ?? '').trim()
       || suggestGroupName(memberBots.map((/** @type {any} */ b) => b.name))
       || 'Bot Group';
     const created = groupsStore.createGroup({
       id: params.id,
       name,
-      botIds: memberBots.map((/** @type {any} */ b) => b.id),
-      replyMode: params.replyMode,
+      botIds: validIds,
+      replyMode: coordMode ? { kind: 'bot', botId: coordMode.coordinatorBotId } : params.replyMode,
       avatar: params.avatar ?? null,
       avatarColor: params.avatarColor ?? null,
+      ...(coordMode ? { memberSessionIds: { [COORDINATOR_META_KEY]: coordMode.coordinatorBotId } } : {}),
     });
     eventBus.emit({ kinds: ['groups'] });
     return enrichGroup(created);
   }
 
+  /** @param {Record<string, any>} [params] */
   function update(params = {}) {
     const id = String(params.groupId ?? params.id ?? '').trim();
     if (!id) throw Object.assign(new Error('groupId is required'), { code: 'invalid_argument' });
     return enqueueGroupOp(id, () => {
+      const existing = groupsStore.getGroup(id);
+      if (!existing) throw Object.assign(new Error(`Group not found: ${id}`), { code: 'not_found' });
+      const nextBotIds = Array.isArray(params.botIds) ? params.botIds : existing.botIds;
+      /** @type {Record<string, any>} */
       const patch = {};
-      for (const key of ['name', 'botIds', 'replyMode', 'avatar', 'avatarColor']) {
+      for (const key of ['name', 'botIds', 'avatar', 'avatarColor']) {
         if (params[key] !== undefined) patch[key] = params[key];
+      }
+      if (params.replyMode !== undefined) {
+        const coordMode = parseCoordinatorReplyMode(params.replyMode, nextBotIds);
+        patch.replyMode = coordMode ? { kind: 'bot', botId: coordMode.coordinatorBotId } : params.replyMode;
+        patch.memberSessionIds = { [COORDINATOR_META_KEY]: coordMode ? coordMode.coordinatorBotId : null };
       }
       const updated = groupsStore.updateGroup(id, patch, {
         expectedRevision: params.expectedRevision ?? params.revision,
@@ -115,6 +141,7 @@ export function createGroupsService(deps) {
     });
   }
 
+  /** @param {string | Record<string, any>} [params] */
   function remove(params = {}) {
     const id = typeof params === 'string' ? params : String(params?.groupId ?? params?.id ?? '');
     if (!id) return Promise.resolve({ deleted: false });
@@ -126,6 +153,7 @@ export function createGroupsService(deps) {
     });
   }
 
+  /** @param {string[]} orderedIds */
   function reorder(orderedIds) {
     const listRes = groupsStore.reorderGroups(orderedIds).map(enrichGroup);
     eventBus.emit({ kinds: ['groups'] });
@@ -146,6 +174,7 @@ export function createGroupsService(deps) {
     return cleaned;
   }
 
+  /** @param {Record<string, any>} [params] */
   function read(params = {}) {
     const groupId = String(params.groupId ?? params.id ?? '').trim();
     const group = groupsStore.getGroup(groupId);
@@ -161,6 +190,7 @@ export function createGroupsService(deps) {
     return { group: enrichGroup(group), ...page };
   }
 
+  /** @param {Record<string, any>} [params] */
   function newThread(params = {}) {
     const groupId = String(params.groupId ?? params.id ?? '').trim();
     if (!groupId) throw Object.assign(new Error('groupId is required'), { code: 'invalid_argument' });
@@ -174,22 +204,17 @@ export function createGroupsService(deps) {
     });
   }
 
+  /** @param {any} group @param {any} bot @param {string} threadId */
   async function ensureMemberSession(group, bot, threadId) {
     const key = memberSessionKey(bot.id, threadId);
     let sessionId = group.memberSessionIds?.[key];
     if (!sessionId) {
       sessionId = `${BOT_GROUP_MEMBER_SESSION_PREFIX}${crypto.randomUUID()}`;
       const started = await sessionRuntime.startSideChat(bot.id, {
-        sessionId,
-        title: `${group.name} · ${bot.name}`,
-        kind: 'group-member',
-        origin: 'group',
-        owner: BOT_OWNER_GROUP_MEMBER,
+        sessionId, title: `${group.name} · ${bot.name}`, kind: 'group-member', origin: 'group', owner: BOT_OWNER_GROUP_MEMBER,
       });
       sessionId = started.sessionId;
-      groupsStore.updateGroup(group.id, {
-        memberSessionIds: { [key]: sessionId },
-      });
+      groupsStore.updateGroup(group.id, { memberSessionIds: { [key]: sessionId } });
     }
     return sessionId;
   }
@@ -375,9 +400,9 @@ export function createGroupsService(deps) {
 
   /**
    * Execute a single session turn while tracking activeTurns and pending cleanup.
-   * @param {{ operationId: string, groupId: string, botId: string, sessionId: string, ownerMessage: any, prompt: string }} ctx
+   * @param {{ operationId: string, groupId: string, botId: string, sessionId: string, ownerMessage: any, prompt: string, images?: any[] }} ctx
    */
-  async function executeTrackedGroupTurn({ operationId, groupId, botId, sessionId, ownerMessage, prompt }) {
+  async function executeTrackedGroupTurn({ operationId, groupId, botId, sessionId, ownerMessage, prompt, images = [] }) {
     activeTurns.set(operationId, {
       operationId,
       groupId,
@@ -387,7 +412,8 @@ export function createGroupsService(deps) {
       rootSequence: ownerMessage.sequence,
     });
     try {
-      return await sessionRuntime.runSingleTurn(sessionId, prompt, { timeoutMs: 120_000 });
+      const turnOpts = images.length > 0 ? { timeoutMs: 120_000, images } : { timeoutMs: 120_000 };
+      return await sessionRuntime.runSingleTurn(sessionId, prompt, turnOpts);
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error), reply: '' };
     } finally {
@@ -396,46 +422,16 @@ export function createGroupsService(deps) {
     }
   }
 
-  /**
-   * @param {{
-   *   groupId: string,
-   *   threadId: string,
-   *   ownerMessage: any,
-   *   bot: any,
-   *   sessionId: string,
-   *   operationId: string,
-   *   quotedHistory: string,
-   *   triggerText?: string | null,
-   *   authorName?: string | null,
-   *   handoff?: any,
-   * }} args
-   * @returns {Promise<any>}
-   */
-  async function driveMemberReply({
-    groupId,
-    threadId,
-    ownerMessage,
-    bot,
-    sessionId,
-    operationId,
-    quotedHistory,
-    triggerText = null,
-    authorName = null,
-    handoff = null,
-  }) {
-    const groupNow = groupsStore.getGroup(groupId);
-    if (!groupNow || isStoppedAt(groupNow, bot.id, ownerMessage.sequence)) {
-      groupsStore.deletePending(operationId);
-      return finishStoppedMemberTurn(ownerMessage.id, operationId, bot.id);
-    }
-
+  /** @param {any} groupNow @param {any} bot @param {any} ownerMessage @param {string} quotedHistory @param {{ triggerText?: string | null, authorName?: string | null, handoff?: any, customPrompt?: string | null }} opts */
+  function buildMemberReplyInput(groupNow, bot, ownerMessage, quotedHistory, { triggerText, authorName, handoff, customPrompt }) {
     const teammateNames = (groupNow.botIds ?? [])
       .filter((/** @type {string} */ id) => id !== bot.id)
       .map((/** @type {string} */ id) => botsStore.getBot(id)?.name)
       .filter(Boolean);
-
-    const prompt = buildGroupTurnPrompt({
-      groupName: groupNow.name ?? groupId,
+    const images = normalizeGroupImages(ownerMessage.images);
+    if (customPrompt) return { prompt: customPrompt, images };
+    const basePrompt = buildGroupTurnPrompt({
+      groupName: groupNow.name ?? groupNow.id,
       botName: bot.name,
       teammateNames,
       quotedHistory,
@@ -443,134 +439,98 @@ export function createGroupsService(deps) {
       messageText: triggerText ?? ownerMessage.text ?? '',
       handoff,
     });
+    const imgLine = formatImageLines(images);
+    return { prompt: imgLine ? `${basePrompt}\n${imgLine}` : basePrompt, images };
+  }
 
-    const turn = await executeTrackedGroupTurn({
-      operationId,
-      groupId,
-      botId: bot.id,
-      sessionId,
-      ownerMessage,
-      prompt,
-    });
+  /** @param {string} groupId @param {any} ownerMessage @param {any} bot @param {string} operationId @param {any} outcome */
+  function persistMemberOutcome(groupId, ownerMessage, bot, operationId, outcome) {
+    updateMessageTurn(groupsStore, ownerMessage.id, operationId, (t) => ({
+      ...t, status: outcome.status, reply: outcome.reply, error: outcome.error, finishedAt: Date.now(),
+    }));
+    if (outcome.status === 'done' && outcome.cleanReply) {
+      groupsStore.updateSidebarLatest(groupId, {
+        authorName: bot.name, text: outcome.cleanReply, at: Date.now(), sequence: ownerMessage.sequence, tie: 1,
+      });
+    } else if (outcome.status === 'error') {
+      logger?.warn?.(`[dsh-bots:groups] turn ${operationId} failed:`, outcome.error);
+    }
+    eventBus.emit({ kinds: ['groups'] });
+  }
+
+  /** @param {Record<string, any>} args @returns {Promise<any>} */
+  async function driveMemberReply({
+    groupId, threadId = '', ownerMessage, bot, sessionId, operationId, quotedHistory,
+    triggerText = null, authorName = null, handoff = null, customPrompt = null, enableHandoff = true,
+  }) {
+    const groupNow = groupsStore.getGroup(groupId);
+    if (!groupNow || isStoppedAt(groupNow, bot.id, ownerMessage.sequence)) {
+      groupsStore.deletePending(operationId);
+      return finishStoppedMemberTurn(ownerMessage.id, operationId, bot.id);
+    }
+    const { prompt, images } = buildMemberReplyInput(groupNow, bot, ownerMessage, quotedHistory, { triggerText, authorName, handoff, customPrompt });
+    const turn = await executeTrackedGroupTurn({ operationId, groupId, botId: bot.id, sessionId, ownerMessage, prompt, images });
 
     const latestGroup = groupsStore.getGroup(groupId);
     if (!latestGroup || isStoppedAt(latestGroup, bot.id, ownerMessage.sequence)) {
       return finishStoppedMemberTurn(ownerMessage.id, operationId, bot.id);
     }
-
     const outcome = normalizeGroupTurnOutcome(turn);
-    updateMessageTurn(groupsStore, ownerMessage.id, operationId, (t) => ({
-      ...t,
-      status: outcome.status,
-      reply: outcome.reply,
-      error: outcome.error,
-      finishedAt: Date.now(),
-    }));
-    if (outcome.status === 'done' && outcome.cleanReply) {
-      groupsStore.updateSidebarLatest(groupId, {
-        authorName: bot.name,
-        text: outcome.cleanReply,
-        at: Date.now(),
-        sequence: ownerMessage.sequence,
-        tie: 1,
-      });
-    }
-    eventBus.emit({ kinds: ['groups'] });
+    persistMemberOutcome(groupId, ownerMessage, bot, operationId, outcome);
 
-    const handoffs = outcome.status === 'done' && outcome.cleanReply
-      ? await scheduleMentionHandoffs({
-        groupId,
-        threadId,
-        ownerMessage,
-        senderBot: bot,
-        sourceOperationId: operationId,
-        cleanReply: outcome.cleanReply,
-      })
+    const handoffs = enableHandoff && outcome.status === 'done' && outcome.cleanReply
+      ? await scheduleMentionHandoffs({ groupId, threadId, ownerMessage, senderBot: bot, sourceOperationId: operationId, cleanReply: outcome.cleanReply })
       : [];
-
-    return { botId: bot.id, status: outcome.status, reply: outcome.cleanReply, handoffs };
+    return { botId: bot.id, status: outcome.status, reply: outcome.cleanReply, error: outcome.error, handoffs };
   }
+
+  const { findGroupMessage, driveCoordinatorPhase1, prepareCoordinatorDispatch, prepareDirectDispatch, approveGroupPlan } = createCoordinatorPlanGate({
+    botsStore, groupsStore, eventBus, enrichGroup, ensureMemberSession, driveMemberReply,
+  });
 
   /** @param {Record<string, any>} [params] */
   async function send(params = {}) {
-    const groupId = String(params.groupId ?? params.id ?? '').trim();
+    const groupId = firstText(params, ['groupId', 'id']);
     const threadId = String(params.threadId ?? '').trim();
     const text = String(params.text ?? '').trim();
-    const images = Array.isArray(params.images) ? params.images.slice(0, 20) : [];
+    const images = normalizeGroupImages(params.images);
     if (!text && images.length === 0) {
       throw Object.assign(new Error('Message text or images are required'), { code: 'invalid_argument' });
     }
 
-    const prepared = await enqueueGroupOp(groupId, async () => {
-      const group = groupsStore.getGroup(groupId);
-      if (!group) throw Object.assign(new Error(`Group not found: ${groupId}`), { code: 'not_found' });
-
-      const allBots = botsStore.listBots();
-      const sharedShape = toSharedGroupShape(group, threadId);
-      const targetBotIds = resolveGroupTargets(text, sharedShape, allBots);
-      const activeTargets = targetBotIds
-        .map((/** @type {string} */ id) => botsStore.getBot(id))
-        .filter((/** @type {any} */ bot) => bot && !bot.paused);
-
-      const historyBefore = groupsStore.readMessages(groupId, { threadId, limit: 40 }).messages;
-      const msgId = params.messageId || crypto.randomUUID();
-      const rootRequestId = params.rootRequestId || msgId;
-      const turnsMeta = [];
-      const dispatchPlans = [];
-      for (const bot of activeTargets) {
-        const sessionId = await ensureMemberSession(groupsStore.getGroup(groupId), bot, threadId);
-        const opId = `gop-${crypto.randomUUID()}`;
-        const quotedHistory = buildQuotedRoomHistory(historyBefore, null, { botId: bot.id, sessionId });
-        turnsMeta.push({
-          operationId: opId,
-          botId: bot.id,
-          botName: bot.name,
-          sessionId,
-          status: 'running',
-          reply: null,
-          rootRequestId,
-        });
-        dispatchPlans.push({ bot, sessionId, operationId: opId, quotedHistory });
+    const prepared = /** @type {any} */ (await enqueueGroupOp(groupId, async () => {
+      const rawGroup = groupsStore.getGroup(groupId);
+      if (!rawGroup) throw Object.assign(new Error(`Group not found: ${groupId}`), { code: 'not_found' });
+      const group = enrichGroup(rawGroup);
+      const memberBots = (group.botIds ?? []).map((/** @type {string} */ id) => botsStore.getBot(id)).filter(Boolean);
+      const explicitMentions = parseGroupMentions(text, memberBots, group.botIds ?? []).flatMap((m) => m.ids);
+      if (group.replyMode?.kind === 'coordinator' && explicitMentions.length === 0) {
+        return prepareCoordinatorDispatch({ groupId, threadId, text, images, params });
       }
-
-      const appended = groupsStore.appendMessage(groupId, {
-        id: msgId,
-        rootRequestId,
-        threadId,
-        author: { kind: 'owner' },
-        authorName: String(params.authorName ?? '你'),
-        text,
-        images,
-        targetBotIds: activeTargets.map((b) => b.id),
-        turns: turnsMeta,
-      }, { operationId: dispatchPlans[0]?.operationId ?? null });
-
-      if (appended.deduplicated) {
-        return { appended, dispatchPlans: [], targetBotIds: activeTargets.map((b) => b.id), deduplicated: true };
-      }
-
-      for (const plan of dispatchPlans) {
-        groupsStore.enqueuePending(plan.operationId, groupId, {
-          messageId: appended.message.id,
-          rootRequestId,
-          rootSequence: appended.message.sequence,
-          botId: plan.bot.id,
-          sessionId: plan.sessionId,
-          threadId,
-          quotedHistory: plan.quotedHistory,
-          triggerText: text,
-          authorName: appended.message.authorName,
-        });
-      }
-      eventBus.emit({ kinds: ['groups'] });
-      return { appended, dispatchPlans, targetBotIds: activeTargets.map((b) => b.id), deduplicated: false };
-    });
+      return prepareDirectDispatch({ group, groupId, threadId, text, images, params, toSharedGroupShape });
+    }));
 
     if (prepared.deduplicated) {
       return { message: prepared.appended.message, deduplicated: true, targetBotIds: prepared.targetBotIds };
     }
 
-    const jobs = prepared.dispatchPlans.map((plan) => driveMemberReply({
+    if (prepared.kind === 'coordinator') {
+      const job = driveCoordinatorPhase1({
+        group: prepared.group,
+        ownerMessage: prepared.appended.message,
+        coordinatorBot: prepared.coordinatorBot,
+        sessionId: prepared.sessionId,
+        operationId: prepared.opId,
+        quotedHistory: prepared.quotedHistory,
+      }).catch(() => null);
+      if (params.waitForReplies === true) {
+        await job;
+        return { message: findGroupMessage(groupId, prepared.appended.message.id, threadId).message, deduplicated: false, targetBotIds: prepared.targetBotIds };
+      }
+      return { message: prepared.appended.message, deduplicated: false, targetBotIds: prepared.targetBotIds };
+    }
+
+    const jobs = prepared.dispatchPlans.map((/** @type {any} */ plan) => driveMemberReply({
       groupId,
       threadId,
       ownerMessage: prepared.appended.message,
@@ -761,6 +721,7 @@ export function createGroupsService(deps) {
     };
   }
 
+  /** @param {string | Record<string, any>} [params] */
   function stop(params = {}) {
     const rawParams = typeof params === 'string' ? { groupId: params } : (params ?? {});
     const groupId = String(rawParams.groupId ?? rawParams.id ?? '').trim();
@@ -792,6 +753,8 @@ export function createGroupsService(deps) {
     read,
     newThread,
     send,
+    approveGroupPlan,
+    approvePlan: approveGroupPlan,
     stop,
     resumePending,
     postAutomationResult,

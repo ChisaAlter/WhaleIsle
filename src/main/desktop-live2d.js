@@ -8,21 +8,15 @@ const { createPetChat } = require('./pet-chat');
 const petStats = require('./pet-stats');
 const petSettings = require('./pet-settings');
 const { createRegisterIpc } = require('./ipc-register');
+const { createLive2dVoiceBridge } = require('./pet-voice-session');
 
-// The pet renderer needs a secure, standard scheme so that WebGPU and ES
-// module workers (onnxruntime-web's JSEP backend) work — file:// blocks both.
-// Privileged schemes must be declared before `app` is ready; this module is
-// required during main-process bootstrap, which satisfies that.
+// Register privileged pet:// scheme before app ready so WebGPU & ES workers work.
 try {
   require('electron').protocol.registerSchemesAsPrivileged([
-    {
-      scheme: 'pet',
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
-    },
+    { scheme: 'pet', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   ]);
 } catch {
-  // `electron.protocol` is unavailable in unit-test stubs; the scheme check
-  // below keeps everything working when no real session exists.
+  // `electron.protocol` is unavailable in unit-test stubs.
 }
 
 // Desktop pet window: a transparent, frameless, always-on-top BrowserWindow
@@ -145,6 +139,15 @@ function createLive2dPetManager(options = {}) {
 
   let state = normalizeLive2dPetState(loadConfig()?.live2dPet);
   let win = null;
+  const getWindow = () => win;
+  const voice = createLive2dVoiceBridge({
+    voiceOptions: /** @type {any} */ (options).voiceSession,
+    sendDshEvent: (/** @type {Record<string, unknown>} */ event) => {
+      const current = getWindow();
+      if (!current || current.isDestroyed?.()) return;
+      try { current.webContents.send('shell:live2d-dsh', event); } catch { /* overlay closing */ }
+    },
+  });
   let petRendererReady = false;
   let dshActivityState = 'idle';
   let interactive = false;
@@ -848,6 +851,7 @@ function createLive2dPetManager(options = {}) {
       rescanGrowth();
       pushGrowth(growth.snapshot());
       win.webContents.send('shell:live2d-dsh', { state: dshActivityState });
+      voice.pushCurrentState();
     });
     win.webContents.on?.('render-process-gone', (_e, details) => {
       dbg(`pet: render-process-gone ${JSON.stringify(details)}`);
@@ -1354,6 +1358,7 @@ function createLive2dPetManager(options = {}) {
     clearTimeout(mirrorTimer);
     mirrorTimer = 0;
     stopCursorPump();
+    voice.dispose();
     hide();
     let watcherClosed;
     if (stopDshWatch) {
@@ -1391,32 +1396,14 @@ function createLive2dPetManager(options = {}) {
   }
 
   registerHandlers();
-  // Usage belongs to the assistant even while its visual pet is hidden.
   if (options.sessionsDir) stopDshWatch = dshWatch.start(2000) || null;
-  // One-shot heal on startup: an assistant catalog written before the
-  // unified control (or while the pet was off) may hold a divergent
-  // personality — re-asserting the pet value closes the gap. Harness not
-  // up yet → the retry loop delivers it later.
+  // Re-assert pet personality into assistant catalog on startup (retries if harness is down).
   queuePersonalityMirror(state.settings?.personality);
   return {
-    show,
-    hide,
-    setEnabled,
-    applySettings,
-    getSettings: settingsPayload,
-    setInteractive,
-    moveTo,
-    commitPosition,
-    pollCursor,
-    dispose,
-    getState: () => ({ ...state }),
-    isEnabled: () => state.enabled,
-    getWindow: () => win,
-    recreateWindow,
-    isInteractive: () => interactive,
-    // Opt-in counters for scripts/measure-whale-cdp.mjs: separates renderer
-    // requests from applied native changes so identical geometry is not
-    // mistaken for shape churn.
+    show, hide, setEnabled, applySettings, getSettings: settingsPayload, setInteractive,
+    moveTo, commitPosition, pollCursor, dispose, recreateWindow, getWindow,
+    voice, getVoiceState: voice.getState, toggleVoice: voice.toggle, interruptVoice: voice.interrupt,
+    getState: () => ({ ...state }), isEnabled: () => state.enabled, isInteractive: () => interactive,
     getDiagnostics: () => ({ ...shapeStats }),
   };
 }

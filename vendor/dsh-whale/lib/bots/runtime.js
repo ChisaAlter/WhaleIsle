@@ -1,8 +1,10 @@
 /**
  * Top-level Bots Runtime assembly (`createBotsRuntime`).
- * Wires SQLite stores, legacy Whale read-only migration, memory service,
- * event bus, session runtime, Look Around, Tidy-up, Groups, Automations,
- * Connectors, Share/Import, Legacy compat, and the `/dsh-bots` HTTP router.
+ * Wires SQLite stores, legacy Whale read-only migration, FTS5 memory service,
+ * Tool WAL, Worktree runner, Per-Bot MCP manager, Budget service, Mail reconciler,
+ * IM Outbound bridge, event bus, session runtime, Look Around, Tidy-up, Groups,
+ * Automations, Connectors, Share/Import, Legacy compat, safe desktop bridges,
+ * and the `/dsh-bots` HTTP router.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,10 +25,181 @@ import { createAutomationsService } from './automations-service.js';
 import { createConnectorsService } from './connectors-service.js';
 import { createShareImportService } from './share-import-service.js';
 import { createLegacyCompat } from './legacy-compat.js';
+import { createToolWalManager } from './tool-wal.js';
+import { createWorktreeRunner } from './worktree-runner.js';
+import { createMcpManager } from './mcp-manager.js';
+import { createBudgetService } from './budget-service.js';
+import { createMailReconciler } from './mail-reconciler.js';
 import { createBotsHttpHandler } from './rpc-router.js';
 import { installBotPromptAndTurnHooks } from './prompt-engine.js';
 import { setActiveBotsRuntime } from './bot-tools-registry.js';
-import { botPresetDefinition } from '../preset.js';
+import { botPresetDefinition, botWorkerPresetDefinition } from '../preset.js';
+
+const IM_OUTBOUND_BRIDGE_SYMBOL = Symbol.for('whaleisle.dsh-im.bot-outbound-bridge');
+const SKILL_RECORDER_SYMBOL = Symbol.for('whaleisle.desktop.skill-recorder');
+const PET_VOICE_BRIDGE_SYMBOL = Symbol.for('whaleisle.desktop.pet-voice');
+
+/**
+ * Create a lazy IM outbound bridge facade that dynamically resolves
+ * `dsh-im`'s registered bridge via `Symbol.for('whaleisle.dsh-im.bot-outbound-bridge')`
+ * (or `ctx`/`options`), adapting `deliverReply` for `sendText`/`deliver` consumers.
+ * @param {{ explicitBridge?: any, ctx?: any }} params
+ */
+function createLazyImOutboundBridge({ explicitBridge = null, ctx = null }) {
+  const resolveRaw = () => (
+    explicitBridge
+    ?? ctx?.get?.('dshImOutboundBridge')
+    ?? /** @type {Record<symbol, any>} */ (globalThis)[IM_OUTBOUND_BRIDGE_SYMBOL]
+    ?? null
+  );
+
+  /** @param {any} raw */
+  const adaptSend = (raw) => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    if (typeof raw.sendText === 'function') return (/** @type {any} */ payload) => raw.sendText(payload);
+    if (typeof raw.deliver === 'function') return (/** @type {any} */ payload) => raw.deliver(payload);
+    if (typeof raw.deliverReply === 'function') {
+      return (/** @type {any} */ payload) => raw.deliverReply({
+        botId: payload?.botId,
+        channel: payload?.channel,
+        accountId: payload?.accountId,
+        targetId: payload?.targetId ?? payload?.chatId ?? payload?.sessionId ?? '',
+        text: payload?.text,
+        card: payload?.card,
+        replyTo: payload?.replyTo ?? payload?.replyToMessageId,
+        signal: payload?.signal,
+      });
+    }
+    return undefined;
+  };
+
+  return {
+    get current() { return resolveRaw(); },
+    get sendText() { return adaptSend(resolveRaw()); },
+    get deliver() { return adaptSend(resolveRaw()); },
+    get deliverReply() {
+      const raw = resolveRaw();
+      return typeof raw?.deliverReply === 'function' ? raw.deliverReply.bind(raw) : undefined;
+    },
+    get sendNeedsYouCard() {
+      const raw = resolveRaw();
+      return typeof raw?.sendNeedsYouCard === 'function' ? raw.sendNeedsYouCard.bind(raw) : undefined;
+    },
+  };
+}
+
+/**
+ * Create safe desktop bridge methods (`recordSkillDraft`, `voiceState`, `voiceToggle`)
+ * that gracefully degrade to `capture_unavailable` / `voice_unavailable` in headless
+ * or hardware-absent environments.
+ * @param {{ ctx?: any, options?: any }} params
+ */
+function createDesktopCapabilityBridges({ ctx = null, options = {} }) {
+  async function recordSkillDraft(params = {}) {
+    const provider = options.recordSkillDraft
+      ?? ctx?.get?.('desktopSkillRecorder')
+      ?? /** @type {Record<symbol, any>} */ (globalThis)[SKILL_RECORDER_SYMBOL]
+      ?? null;
+    const fn = typeof provider === 'function'
+      ? provider
+      : (typeof provider?.recordSkillDraft === 'function' ? provider.recordSkillDraft.bind(provider) : null);
+    if (!fn) {
+      return {
+        ok: false,
+        reason: 'capture_unavailable',
+        message: 'Desktop screen capture is unavailable in this environment.',
+      };
+    }
+    try {
+      const res = await fn(params ?? {});
+      if (res && typeof res === 'object') return res;
+      return { ok: false, reason: 'capture_unavailable', message: 'Empty skill recording draft response.' };
+    } catch (error) {
+      const err = /** @type {any} */ (error);
+      return {
+        ok: false,
+        reason: String(err?.code || 'capture_unavailable'),
+        message: String(err?.message ?? err),
+      };
+    }
+  }
+
+  function resolveVoiceBridge() {
+    return options.voiceBridge
+      ?? ctx?.get?.('petVoiceBridge')
+      ?? /** @type {Record<symbol, any>} */ (globalThis)[PET_VOICE_BRIDGE_SYMBOL]
+      ?? null;
+  }
+
+  function voiceUnavailable(message = 'Desktop pet voice is unavailable in this environment.') {
+    return {
+      ok: false,
+      available: false,
+      enabled: false,
+      state: 'unavailable',
+      reason: 'voice_unavailable',
+      message,
+    };
+  }
+
+  async function voiceState() {
+    const bridge = resolveVoiceBridge();
+    const fn = typeof bridge?.getVoiceState === 'function'
+      ? bridge.getVoiceState.bind(bridge)
+      : (typeof bridge?.getState === 'function' ? bridge.getState.bind(bridge) : null);
+    if (!fn) return voiceUnavailable();
+    try {
+      const raw = await fn();
+      if (!raw || typeof raw !== 'object') return voiceUnavailable();
+      const available = raw.available !== false && raw.reason !== 'voice_unavailable';
+      return {
+        ok: available,
+        available,
+        enabled: Boolean(raw.enabled),
+        state: available ? (raw.state ?? 'idle') : 'unavailable',
+        ...(!available ? { reason: raw.reason ?? 'voice_unavailable' } : {}),
+        ...raw,
+      };
+    } catch (error) {
+      const err = /** @type {any} */ (error);
+      return voiceUnavailable(String(err?.message ?? err));
+    }
+  }
+
+  /** @param {boolean} enabled */
+  async function voiceToggle(enabled) {
+    const bridge = resolveVoiceBridge();
+    const fn = typeof bridge?.toggleVoice === 'function'
+      ? bridge.toggleVoice.bind(bridge)
+      : (typeof bridge?.toggle === 'function' ? bridge.toggle.bind(bridge) : null);
+    if (!fn) return voiceUnavailable();
+    try {
+      const raw = await fn(Boolean(enabled));
+      if (!raw || typeof raw !== 'object') return voiceUnavailable();
+      if (raw.ok === false || raw.reason === 'voice_unavailable' || raw.available === false) {
+        return {
+          ...voiceUnavailable(raw.message),
+          ...raw,
+          ok: false,
+          available: false,
+          reason: raw.reason ?? 'voice_unavailable',
+        };
+      }
+      return {
+        ok: true,
+        available: true,
+        enabled: raw.enabled !== undefined ? Boolean(raw.enabled) : Boolean(enabled),
+        state: raw.state ?? (enabled ? 'listening' : 'idle'),
+        ...raw,
+      };
+    } catch (error) {
+      const err = /** @type {any} */ (error);
+      return voiceUnavailable(String(err?.message ?? err));
+    }
+  }
+
+  return { recordSkillDraft, voiceState, voiceToggle };
+}
 
 /**
  * Boot the complete Bots runtime for a given `$DSH_HOME`.
@@ -34,12 +207,20 @@ import { botPresetDefinition } from '../preset.js';
  *   ctx?: any,
  *   dshHome: string,
  *   userHomeDir?: string,
- *   enableSchedulers?: boolean,
  *   allowLegacyMigration?: boolean,
+ *   enableSchedulers?: boolean,
+ *   enableFolderWatcher?: boolean,
+ *   reconcileMailOnStart?: boolean,
  *   autoRecovery?: boolean,
  *   imService?: any,
  *   imSender?: any,
  *   getController?: () => any,
+ *   imOutboundBridge?: any,
+ *   probeMcpServer?: any,
+ *   wakeBot?: any,
+ *   recordSkillDraft?: any,
+ *   voiceBridge?: any,
+ *   onError?: (error: unknown, context?: Record<string, any>) => void,
  *   getRecentOwnerMessages?: (bot: any, opts?: any) => Promise<any[]> | any[],
  *   runLookAroundSweep?: (bot: any, prompt: string) => Promise<{ ok: boolean, summary?: string }>,
  *   runTidyUpModel?: (bot: any, prompt: string) => Promise<string | null>,
@@ -49,12 +230,23 @@ export function createBotsRuntime(options) {
   const { ctx = null, dshHome } = options;
   if (!dshHome) throw new Error('createBotsRuntime requires dshHome');
 
+  let closed = false;
+  /** @param {string} phase @param {unknown} error */
+  const reportRuntimeError = (phase, error) => {
+    if (typeof options.onError === 'function') {
+      options.onError(error, { phase });
+      return;
+    }
+    console.error(`[dsh-bots:runtime:${phase}]`, error instanceof Error ? error.message : String(error ?? 'unknown_error'));
+  };
+
+  const metaRoot = botMetaDir(dshHome);
   const dbHandle = openBotsDatabase({ dshHome });
   const { db, bots: botsStore } = dbHandle;
   const itemsStore = createItemsStore(db);
   const groupsStore = createGroupsStore(db);
   const workStore = createWorkStore(db);
-  const memoryService = createMemoryService({ metaRoot: botMetaDir(dshHome) });
+  const memoryService = createMemoryService({ metaRoot, db });
 
   // Zero-LLM monthly journal hook: append closed Work Items to memory/journal/YYYY-MM.md
   itemsStore.onItemClosed((/** @type {any} */ item) => {
@@ -80,6 +272,14 @@ export function createBotsRuntime(options) {
     getNeedsYou: () => itemsStore.needsYouCounts(botsStore.listBots(), Date.now()),
   });
 
+  const toolWal = createToolWalManager({ workStore });
+  const toolWalRecovery = toolWal.recoverStaleIntents();
+  const worktreeRunner = createWorktreeRunner({ metaRoot, workStore });
+  const mcpManager = createMcpManager({ dshHome, botsStore, probeServer: options.probeMcpServer });
+  const budgetService = createBudgetService({ workStore, botsStore, itemsStore, eventBus });
+  const imOutboundBridge = createLazyImOutboundBridge({ explicitBridge: options.imOutboundBridge, ctx });
+  const desktopBridges = createDesktopCapabilityBridges({ ctx, options });
+
   /** @type {any} */
   const runtime = {
     ctx,
@@ -93,7 +293,20 @@ export function createBotsRuntime(options) {
     memoryService,
     eventBus,
     migration,
+    toolWal,
+    worktreeRunner,
+    mcpManager,
+    budgetService,
+    imOutboundBridge,
     imService: options.imService ?? options.imSender ?? null,
+    hadImService: Boolean(options.imService ?? options.imSender),
+    hasCustomWakeBot: typeof options.wakeBot === 'function',
+    startupRecovery: { toolWal: toolWalRecovery },
+    onError: options.onError ?? null,
+    isClosed: () => closed,
+    recordSkillDraft: desktopBridges.recordSkillDraft,
+    voiceState: desktopBridges.voiceState,
+    voiceToggle: desktopBridges.voiceToggle,
   };
 
   runtime.sessionRuntime = createSessionRuntime({
@@ -103,6 +316,7 @@ export function createBotsRuntime(options) {
     itemsStore,
     workStore,
     eventBus,
+    budgetService,
     getController: options.getController,
     getLookAroundUpNext: (botId) => runtime.lookAroundService?.listUpNext(botId) ?? [],
     getAutomations: (botId) => runtime.automationsService?.list({ botId }) ?? [],
@@ -129,11 +343,20 @@ export function createBotsRuntime(options) {
     onPetBotChanged: (bot) => { runtime.legacyCompat?.syncLegacySettingsProjection(bot); },
   });
 
+  runtime.legacyCompat = createLegacyCompat({
+    dshHome,
+    botsStore,
+    botsService: runtime.botsService,
+    sessionRuntime: runtime.sessionRuntime,
+  });
+
   runtime.lookAroundService = createLookAroundService({
     dshHome,
     botsStore,
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
+    budgetService,
+    onError: options.onError,
     runSweep: options.runLookAroundSweep,
     enableScheduler: options.enableSchedulers !== false,
   });
@@ -145,9 +368,11 @@ export function createBotsRuntime(options) {
     memoryService,
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
+    itemsStore,
+    budgetService,
+    enableScheduler: options.enableSchedulers !== false,
     runModel: options.runTidyUpModel,
     getRecentOwnerMessages: options.getRecentOwnerMessages,
-    enableScheduler: false,
   });
 
   runtime.groupsService = createGroupsService({
@@ -162,8 +387,17 @@ export function createBotsRuntime(options) {
     workStore,
     sessionRuntime: runtime.sessionRuntime,
     eventBus,
+    itemsStore,
+    imOutboundBridge,
+    legacyCompat: runtime.legacyCompat,
     getGroupsService: () => runtime.groupsService,
+    budgetGuard: (/** @type {{ botId: string, triggerKind: string, now: number }} */ { botId, triggerKind, now }) => budgetService.checkExecutionAllowed(botId, {
+      isBackground: triggerKind !== 'manual',
+      at: now,
+    }),
     enableScheduler: options.enableSchedulers !== false,
+    enableFolderWatcher: options.enableFolderWatcher !== false,
+    onError: options.onError,
   });
 
   runtime.connectorsService = createConnectorsService({
@@ -186,16 +420,22 @@ export function createBotsRuntime(options) {
     botsService: runtime.botsService,
   });
 
-  runtime.legacyCompat = createLegacyCompat({
-    dshHome,
+  runtime.mailReconciler = createMailReconciler({
+    itemsStore,
     botsStore,
-    botsService: runtime.botsService,
     sessionRuntime: runtime.sessionRuntime,
+    eventBus,
+    wakeBot: options.wakeBot,
   });
 
   runtime.http = createBotsHttpHandler(runtime);
 
-  let closed = false;
+  if (options.reconcileMailOnStart !== false && typeof options.wakeBot === 'function' && itemsStore.owedMail().length > 0) {
+    void Promise.resolve()
+      .then(() => (closed ? null : runtime.mailReconciler.reconcileOwedMail()))
+      .catch((error) => { reportRuntimeError('mail_reconciler_startup', error); });
+  }
+
   /** @type {Promise<any>} */
   let recoveryChain = Promise.resolve();
 
@@ -269,10 +509,17 @@ export function createBotsRuntime(options) {
   }
 
   runtime.close = () => {
+    if (closed) return;
     closed = true;
     runtime.tidyUpService.stopScheduler();
     runtime.automationsService.close();
     runtime.lookAroundService.close();
+    runtime.tidyUpService.stopScheduler?.();
+    runtime.tidyUpService.close();
+    runtime.mcpManager.close();
+    void Promise.resolve(runtime.worktreeRunner.cleanupAll()).catch((error) => {
+      reportRuntimeError('worktree_cleanup', error);
+    });
     runtime.sessionRuntime.close();
     runtime.eventBus.close();
     dbHandle.close();
@@ -287,7 +534,7 @@ export function createBotsRuntime(options) {
  * `dsh-bot` session, or an already-persisted `bots.db` is actually accessed.
  * On first open, `migrateLegacyWhaleIfNeeded` runs automatically.
  * @param {any} ctx
- * @param {{ home: string }} options
+ * @param {{ home: string, allowLegacyMigration?: boolean }} options
  */
 export function mountBotsIntoHost(ctx, { home, allowLegacyMigration = true }) {
   if (!home) return null;
@@ -342,9 +589,14 @@ export function mountBotsIntoHost(ctx, { home, allowLegacyMigration = true }) {
     },
   }), 'dsh-bots:http');
 
-  ctx.inject?.(['agentPresets'], (host) => host.effect(async () => (
-    host.agentPresets.register(botPresetDefinition(home))
-  )));
+  ctx.inject?.(['agentPresets'], (host) => host.effect(async () => {
+    const disposeBot = await host.agentPresets.register(botPresetDefinition(home));
+    const disposeWorker = await host.agentPresets.register(botWorkerPresetDefinition(home));
+    return () => {
+      try { disposeWorker?.(); } catch { /* Best-effort worker preset teardown. */ }
+      try { disposeBot?.(); } catch { /* Best-effort bot preset teardown. */ }
+    };
+  }));
 
   return {
     ensureRuntime,
@@ -373,4 +625,3 @@ export async function delegateLegacyWhaleEndpoint(botsRuntime, endpoint, input) 
   if (endpoint === 'settings/update') return compat.updateLegacySettings(input);
   return undefined;
 }
-

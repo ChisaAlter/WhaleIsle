@@ -1,8 +1,10 @@
 // Multi-Bot Group Room View mounted in Harness `main` keyed slot `'dsh-bots:group'`.
-// Features group collage header, threads switcher, safe lightweight Markdown rendering inside
-// member bubbles, collapsible thinking/tool step summaries, live elapsed timing & granular turn
-// states, centered `@Name` peer handoff divider lines, earlier-message pagination, floating
-// jump-to-latest button, instant stop feedback, and bottom-left BotGroupReplyPicker.
+// Multi-Bot Group Room View mounted in Harness `main` keyed slot `'dsh-bots:group'`.
+// Features group collage header, threads switcher, Coordinator Plan approval card (`awaiting_approval`),
+// safe lightweight Markdown rendering inside member bubbles, collapsible thinking/tool step summaries,
+// live elapsed timing & granular turn states, centered `@Name` peer handoff divider lines,
+// earlier-message pagination, floating jump-to-latest button, instant stop feedback,
+// clipboard image paste & file upload, and bottom-left BotGroupReplyPicker (including coordinator plan-gate).
 
 import {
   Fragment,
@@ -11,10 +13,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
+  type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
 import {
+  BOT_GROUP_LIMITS,
   botGroupDraftAudience,
   botGroupMentionSegments,
   botGroupReplyDraft,
@@ -49,10 +54,13 @@ import {
   IconMessageSquare,
   IconPlus,
   IconSend,
+  IconShield,
   IconSpinner,
   IconStopSquare,
+  IconUpload,
   IconUsers,
   IconWrench,
+  IconX,
 } from './Icons';
 
 interface GroupTurnStep {
@@ -82,7 +90,7 @@ interface GroupTurnRecord {
   botName?: string;
   operationId?: string;
   sessionId?: string;
-  status?: 'queued' | 'running' | 'thinking' | 'replying' | 'streaming' | 'done' | 'quiet' | 'stopped' | 'removed' | 'error';
+  status?: 'queued' | 'running' | 'thinking' | 'replying' | 'streaming' | 'done' | 'quiet' | 'stopped' | 'removed' | 'error' | 'awaiting_approval';
   reply?: string | null;
   error?: string | null;
   revoked?: boolean;
@@ -99,6 +107,31 @@ interface GroupTurnRecord {
   triggeredByBotName?: string;
 }
 
+interface GroupPlanStep {
+  botId?: string;
+  botName?: string;
+  task?: string;
+  summary?: string;
+}
+
+interface GroupPlanRecord {
+  status?: 'awaiting_approval' | 'approved' | 'running' | 'completed' | 'rejected';
+  coordinatorBotId?: string;
+  summary?: string;
+  steps?: GroupPlanStep[];
+  depth?: number;
+  maxConcurrency?: number;
+}
+
+interface GroupImageItem {
+  id?: string;
+  name: string;
+  mimeType?: string;
+  dataUrl?: string;
+  path?: string;
+  url?: string;
+}
+
 interface GroupMessageRecord {
   id: string;
   sequence?: number;
@@ -107,6 +140,10 @@ interface GroupMessageRecord {
   author?: { kind?: string; id?: string; name?: string };
   authorName?: string;
   text: string;
+  status?: string;
+  planStatus?: string;
+  plan?: GroupPlanRecord | null;
+  images?: GroupImageItem[];
   turns?: GroupTurnRecord[];
   handoff?: GroupHandoffMeta | null;
   handoffStopped?: boolean | { count?: number; reason?: string };
@@ -126,12 +163,18 @@ function normalizeReplyMode(raw: unknown, fallbackBotId?: string): BotGroupReply
     if (obj.kind === 'bot') {
       return { kind: 'bot', botId: obj.botId || fallbackBotId || '' };
     }
+    if (obj.kind === 'coordinator') {
+      return { kind: 'coordinator', coordinatorBotId: obj.coordinatorBotId || fallbackBotId || '' };
+    }
   }
   if (raw === 'all') {
     return { kind: 'all' };
   }
   if (raw === 'bot' && fallbackBotId) {
     return { kind: 'bot', botId: fallbackBotId };
+  }
+  if (raw === 'coordinator') {
+    return { kind: 'coordinator', coordinatorBotId: fallbackBotId || '' };
   }
   return { kind: 'mentions' };
 }
@@ -145,6 +188,28 @@ function findMentionQuery(text: string, caret: number): { start: number; query: 
   const query = match[1] ?? '';
   const start = caret - query.length - 1;
   return { start, query };
+}
+
+function readFileAsDataUrl(file: File): Promise<GroupImageItem> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        id: `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name: file.name || 'pasted-image.png',
+        mimeType: file.type || 'image/png',
+        dataUrl: typeof reader.result === 'string' ? reader.result : '',
+      });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function isMessageAwaitingPlanApproval(msg: GroupMessageRecord): boolean {
+  if (msg.plan?.status === 'awaiting_approval') return true;
+  if (msg.planStatus === 'awaiting_approval' || msg.status === 'awaiting_approval') return true;
+  return (msg.turns ?? []).some((t) => t.status === 'awaiting_approval');
 }
 
 function isTurnLive(turn: GroupTurnRecord): boolean {
@@ -599,10 +664,12 @@ export function BotGroupRoomView() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [draft, setDraft] = useState('');
+  const [pendingImages, setPendingImages] = useState<GroupImageItem[]>([]);
   const [caret, setCaret] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [approvingMsgId, setApprovingMsgId] = useState<string | null>(null);
   const [stopNotice, setStopNotice] = useState<string | null>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [unseenCount, setUnseenCount] = useState(0);
@@ -610,6 +677,7 @@ export function BotGroupRoomView() {
   const feedRef = useRef<HTMLDivElement | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nearBottomRef = useRef(true);
   const lastLatestSeqRef = useRef<number>(0);
 
@@ -834,9 +902,62 @@ export function BotGroupRoomView() {
     );
   }
 
-  const sharedGroup = { ...group, replyMode: replyModeObj };
+  const sharedGroup = {
+    ...group,
+    replyMode: replyModeObj.kind === 'coordinator'
+      ? { kind: 'bot' as const, botId: replyModeObj.coordinatorBotId || memberBots[0]?.id || '' }
+      : replyModeObj,
+  };
   const draftAudience = botGroupDraftAudience(draft, sharedGroup, memberBots) as 'invalid' | { ids: string[]; addressed: boolean };
-  const audienceLabel = formatBotGroupAudience(draftAudience, sharedGroup, memberBots, tr);
+  const coordBotName = replyModeObj.kind === 'coordinator'
+    ? (memberBots.find((b) => b.id === replyModeObj.coordinatorBotId)?.name ?? memberBots[0]?.name ?? '')
+    : '';
+  const audienceLabel = replyModeObj.kind === 'coordinator' && draftAudience !== 'invalid' && !draftAudience.addressed
+    ? (zh ? `协调者：${coordBotName}（先出计划再审批）` : `Coordinator: ${coordBotName} (plan-gate)`)
+    : formatBotGroupAudience(draftAudience, sharedGroup, memberBots, tr);
+
+  const appendImageFiles = async (files: File[]) => {
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    const room = Math.max(0, BOT_GROUP_LIMITS.maxImages - pendingImages.length);
+    if (room === 0) {
+      botsStore.pushToast({
+        message: zh ? `单条消息最多附加 ${BOT_GROUP_LIMITS.maxImages} 张图片` : `Max ${BOT_GROUP_LIMITS.maxImages} images`,
+        tone: 'error',
+      });
+      return;
+    }
+    try {
+      const loaded = await Promise.all(imageFiles.slice(0, room).map(readFileAsDataUrl));
+      setPendingImages((prev) => [...prev, ...loaded.filter((img) => Boolean(img.dataUrl))]);
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    }
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      event.preventDefault();
+      void appendImageFiles(files);
+    }
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const list = event.target.files ? Array.from(event.target.files) : [];
+    if (list.length > 0) {
+      void appendImageFiles(list);
+    }
+    event.target.value = '';
+  };
 
   const handleUpdateReplyMode = async (next: BotGroupReplyModeValue) => {
     try {
@@ -855,7 +976,7 @@ export function BotGroupRoomView() {
 
   const handleSend = async () => {
     const text = draft.trim();
-    if (!text || sending || draftAudience === 'invalid') {
+    if ((!text && pendingImages.length === 0) || sending || draftAudience === 'invalid') {
       return;
     }
     setSending(true);
@@ -865,8 +986,18 @@ export function BotGroupRoomView() {
         groupId: group.id,
         threadId: threadId || undefined,
         text,
+        ...(pendingImages.length > 0
+          ? {
+            images: pendingImages.map((img) => ({
+              name: img.name,
+              mimeType: img.mimeType,
+              dataUrl: img.dataUrl,
+            })),
+          }
+          : {}),
       });
       setDraft('');
+      setPendingImages([]);
       setCaret(0);
       nearBottomRef.current = true;
       setIsNearBottom(true);
@@ -876,6 +1007,20 @@ export function BotGroupRoomView() {
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleApprovePlan = async (messageId: string) => {
+    if (approvingMsgId) return;
+    setApprovingMsgId(messageId);
+    try {
+      await botsStore.approveGroupPlan(group.id, messageId, threadId || undefined);
+      await loadMessages();
+      botsStore.pushToast({ message: zh ? '已批准计划，开始分派执行' : 'Plan approved and dispatched', tone: 'success' });
+    } catch (err) {
+      botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setApprovingMsgId(null);
     }
   };
 
@@ -1009,6 +1154,9 @@ export function BotGroupRoomView() {
         </>
       );
     }
+    if (turn.status === 'awaiting_approval') {
+      return <span className="dsh-bots-badge dsh-bots-badge-warn">{zh ? '待批准计划' : 'Awaiting approval'}</span>;
+    }
     if (turn.status === 'stopped') {
       return <span className="dsh-bots-badge">{zh ? '已停止' : 'Stopped'}</span>;
     }
@@ -1125,8 +1273,8 @@ export function BotGroupRoomView() {
           {messages.length === 0 ? (
             <div className="dsh-bots-empty" style={{ maxWidth: 460, margin: '40px auto' }}>
               {zh
-                ? '输入消息开始多鱼协作，输入 @ 可精准呼叫指定大肥鱼队友或 @everyone。'
-                : 'Send a message to start collaborating. Type @ to mention a bot or @everyone.'}
+                ? '输入消息开始多鱼协作，输入 @ 可精准呼叫指定大肥鱼队友或 @everyone，支持直接粘贴或上传图片。'
+                : 'Send a message to start collaborating. Type @ to mention a bot or paste/upload images.'}
             </div>
           ) : (
             messages.map((msg) => {
@@ -1147,18 +1295,84 @@ export function BotGroupRoomView() {
               }
 
               const stoppedMeta = msg.handoffStopped || msg.handoffPaused;
+              const awaitingPlan = isMessageAwaitingPlanApproval(msg);
+              const planSteps = msg.plan?.steps ?? [];
 
               return (
                 <div key={msg.id} className="dsh-bots-group-msg">
-                  {msg.text && (
+                  {(msg.text || (msg.images?.length ?? 0) > 0) && (
                     <div className="dsh-bots-group-user-bubble">
-                      {(botGroupMentionSegments(msg.text, memberNames, true) as Array<{ text: string; mention: boolean }>).map((seg, i) => (
+                      {msg.text && (botGroupMentionSegments(msg.text, memberNames, true) as Array<{ text: string; mention: boolean }>).map((seg, i) => (
                         seg.mention
                           ? <span key={i} className="dsh-bots-group-mention">{seg.text}</span>
                           : <span key={i}>{seg.text}</span>
                       ))}
+                      {(msg.images?.length ?? 0) > 0 && (
+                        <div className="dsh-bots-group-msg-images">
+                          {(msg.images ?? []).map((img, idx) => (
+                            <div key={`${msg.id}-img-${idx}`} className="dsh-bots-group-img-chip">
+                              {(img.dataUrl || img.url) ? (
+                                <img src={img.dataUrl || img.url} alt={img.name} className="dsh-bots-group-img-thumb" />
+                              ) : (
+                                <span className="dsh-bots-badge">{img.name}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <div className="dsh-bots-muted" style={{ textAlign: 'right', marginTop: 4, fontSize: 10.5 }}>
                         {formatRelativeTime(msg.createdAt, now, locale)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Coordinator Plan-Gate Approval Card */}
+                  {awaitingPlan && (
+                    <div className="dsh-bots-pcard dsh-bots-pcard-warn" data-dsh-bots-plan-card={msg.id}>
+                      <div className="dsh-bots-row">
+                        <span className="dsh-bots-row-left" style={{ fontWeight: 600 }}>
+                          <IconShield size={13} />
+                          <span>{zh ? '协调者执行计划 · 待你批准' : 'Coordinator plan · Awaiting approval'}</span>
+                        </span>
+                        <span className="dsh-bots-badge dsh-bots-badge-warn">awaiting_approval</span>
+                      </div>
+                      {msg.plan?.summary && (
+                        <div style={{ fontSize: 13, lineHeight: '20px', whiteSpace: 'pre-wrap' }}>
+                          {msg.plan.summary}
+                        </div>
+                      )}
+                      {planSteps.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {planSteps.map((step, sIdx) => (
+                            <div key={`step-${sIdx}`} className="dsh-bots-timeline-entry">
+                              <div className="dsh-bots-row">
+                                <span style={{ fontWeight: 600, fontSize: 12 }}>
+                                  {step.botName || step.botId || `${zh ? '步骤' : 'Step'} ${sIdx + 1}`}
+                                </span>
+                              </div>
+                              <div className="dsh-bots-muted">{step.task || step.summary || ''}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="dsh-bots-row">
+                        <span className="dsh-bots-muted">
+                          {zh ? '批准后按并发 ≤3、深度 ≤6 与防环规则分派执行。' : 'Dispatches with max concurrency 3 and loop guards upon approval.'}
+                        </span>
+                        <button
+                          type="button"
+                          className="dsh-bots-pbtn dsh-bots-pbtn-primary"
+                          data-dsh-bots-approve-plan={msg.id}
+                          disabled={approvingMsgId === msg.id}
+                          onClick={() => void handleApprovePlan(msg.id)}
+                        >
+                          <IconCheck size={12} />
+                          <span>
+                            {approvingMsgId === msg.id
+                              ? (zh ? '批准中…' : 'Approving…')
+                              : (zh ? '批准并执行计划' : 'Approve & run plan')}
+                          </span>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1349,12 +1563,33 @@ export function BotGroupRoomView() {
         )}
 
         <div className="dsh-bots-group-composer">
+          {pendingImages.length > 0 && (
+            <div className="dsh-bots-group-attachments" data-dsh-bots-group-attachments="">
+              {pendingImages.map((img, idx) => (
+                <div key={img.id ?? idx} className="dsh-bots-group-attach-item">
+                  {img.dataUrl && (
+                    <img src={img.dataUrl} alt={img.name} className="dsh-bots-group-img-thumb" />
+                  )}
+                  <button
+                    type="button"
+                    className="dsh-bots-group-attach-remove"
+                    aria-label={zh ? `移除 ${img.name}` : `Remove ${img.name}`}
+                    onClick={() => setPendingImages((prev) => prev.filter((_, i) => i !== idx))}
+                  >
+                    <IconX size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <textarea
             ref={textareaRef}
             className="dsh-bots-group-composer-input"
             rows={2}
-            placeholder={zh ? '发消息给鱼群成员… 输入 @ 提及大肥鱼队友，Enter 发送，Shift+Enter 换行' : 'Message the group… Type @ to mention, Enter to send'}
+            placeholder={zh ? '发消息给鱼群成员… 输入 @ 提及大肥鱼队友，支持 Ctrl+V 粘贴图片' : 'Message the group… Type @ to mention or paste images'}
             value={draft}
+            onPaste={handlePaste}
             onChange={(e) => {
               setDraft(e.target.value);
               setCaret(e.target.selectionStart ?? e.target.value.length);
@@ -1365,14 +1600,34 @@ export function BotGroupRoomView() {
             onKeyDown={handleKeyDown}
           />
           <div className="dsh-bots-row">
-            <BotGroupReplyPicker
-              replyMode={replyModeObj}
-              memberBots={memberBots}
-              draftAudience={draftAudience}
-              audienceLabel={audienceLabel}
-              disabled={sending}
-              onChange={handleUpdateReplyMode}
-            />
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <BotGroupReplyPicker
+                replyMode={replyModeObj}
+                memberBots={memberBots}
+                draftAudience={draftAudience}
+                audienceLabel={audienceLabel}
+                disabled={sending}
+                onChange={handleUpdateReplyMode}
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                data-dsh-bots-group-image-input=""
+                onChange={handleFileChange}
+              />
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon"
+                title={zh ? '上传图片' : 'Upload image'}
+                aria-label={zh ? '上传图片' : 'Upload image'}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <IconUpload size={13} />
+              </button>
+            </div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {hasRunningTurns && (
                 <button
@@ -1390,7 +1645,7 @@ export function BotGroupRoomView() {
                 className="dsh-bots-group-send-btn"
                 aria-label={sending ? (zh ? '发送中…' : 'Sending…') : (zh ? '发送' : 'Send')}
                 title={sending ? (zh ? '发送中…' : 'Sending…') : (zh ? '发送' : 'Send')}
-                disabled={!draft.trim() || sending || draftAudience === 'invalid'}
+                disabled={(!draft.trim() && pendingImages.length === 0) || sending || draftAudience === 'invalid'}
                 onClick={() => void handleSend()}
               >
                 {sending ? <IconSpinner size={15} /> : <IconSend size={15} />}

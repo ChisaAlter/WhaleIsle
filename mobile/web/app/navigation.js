@@ -1,6 +1,8 @@
 // app/navigation.js — split from app.js (#442).
 import { createNavigation, backTarget } from '../ui/navigation.js?v=20261115-subagents';
 import { hasOfferFragment } from '../chisacode/session.js';
+// @ts-expect-error cache-busting query string on browser ESM sibling import
+import { getBotsOverlayElement, hasBotsSubView, stepBackBotsView } from './bots-view.js?v=20261117-app-split';
 import { accessChip, backdrop, dialogRoot, el, focusScope, lightboxRoot, menuPositioner, modelChip, phone, sessionsPage, settings, sheetRoot, state, toastRoot } from './context.js?v=20261117-app-split';
 import { renderDialog, renderLightbox } from './dialogs.js?v=20261117-app-split';
 import { updateNewSession } from './new-session.js?v=20261117-app-split';
@@ -14,10 +16,21 @@ let navigationQueued = false;
 
 let lastSurfaceKey = '';
 
+const CONFIRM_TARGETS = new Set([
+  'sessionConfirm', 'workspaceRename', 'folderCreate', 'sessionRename', 'queueEdit', 'confirmAction',
+]);
+
+/** @param {any} current */
+function effectiveBackTarget(current) {
+  const base = backTarget(current);
+  if (base !== 'root') return base;
+  return current.botsOpen ? 'bots' : 'root';
+}
+
 export const navigation = createNavigation({
   history: window.history,
   listen: (handler) => window.addEventListener('popstate', handler),
-  hasSurface: () => backTarget(state) !== 'root',
+  hasSurface: () => effectiveBackTarget(state) !== 'root',
   getSurfaceKey: () => `${state.sessionEpoch}:${surfaceIdentity()}`,
   canTrack: () => !hasOfferFragment(location.hash),
   isBlocked: navigationBusy,
@@ -27,39 +40,49 @@ export const navigation = createNavigation({
 window.__dshdNavigation = Object.freeze({ back: () => navigation.back() });
 
 export function navigationBusy() {
-  const target = backTarget(state);
-  if (['sessionConfirm', 'workspaceRename', 'folderCreate', 'sessionRename', 'queueEdit', 'confirmAction'].includes(target)) return Boolean(state[target]?.busy);
+  const target = effectiveBackTarget(state);
+  if (CONFIRM_TARGETS.has(target)) return Boolean(state[target]?.busy);
+  if (target === 'bots') return Boolean(state.botsView?.busy);
   return (target === 'git' && state.gitBusy) || Boolean(state.newSession?.creating);
 }
 
-function backOneSurface() {
-  const target = backTarget(state);
-  const pickerPage = state.pickerSheet === 'model' ? state.pickerPage : '';
-  if (target === 'lightbox') state.lightbox = null;
-  else if (['sessionConfirm', 'workspaceRename', 'folderCreate', 'sessionRename', 'queueEdit', 'confirmAction'].includes(target)) state[target] = null;
-  else if (target === 'git') {
-    state.gitError = '';
-    if (state.gitDialog === 'create-branch') state.gitDialog = state.gitConfirmAction ? 'confirm' : 'branch';
-    else {
-      state.gitDialog = state.gitDialog === 'menu' ? '' : 'menu';
-      state.gitConfirmAction = '';
-      state.gitConfirmExtra = {};
-    }
-  } else if (target === 'directory') updateNewSession({ step: 'workspace', loading: false, error: '' });
+function dismissGitBack() {
+  state.gitError = '';
+  if (state.gitDialog === 'create-branch') {
+    state.gitDialog = state.gitConfirmAction ? 'confirm' : 'branch';
+    return;
+  }
+  state.gitDialog = state.gitDialog === 'menu' ? '' : 'menu';
+  state.gitConfirmAction = '';
+  state.gitConfirmExtra = {};
+}
+
+/** @param {string} target */
+function dismissBasicSurface(target) {
+  if (target === 'directory') updateNewSession({ step: 'workspace', loading: false, error: '' });
   else if (target === 'newSession') state.newSession = null;
   else if (target === 'history') state.history = null;
   else if (target === 'picker') {
     if (state.pickerSheet === 'model' && state.pickerPage) state.pickerPage = '';
     else state.pickerSheet = '';
-  }
-  else if (target === 'attachment') state.attachOpen = false;
+  } else if (target === 'attachment') state.attachOpen = false;
   else if (target === 'settingsPane') state.settingsPane = '';
   else if (target === 'settings') state.settingsOpen = false;
   else if (target === 'drawer') setDrawerOpen(false);
-  else if (target === 'scan') { closeScan(); return; }
   else if (target === 'sessionMenu' || target === 'workspaceMenu') state[target] = '';
   else if (target === 'subagents') state.subagentSheet = false;
   else if (target === 'sessions') state.sessionsOpen = false;
+  else if (target === 'bots') stepBackBotsView(state);
+}
+
+function backOneSurface() {
+  const target = effectiveBackTarget(state);
+  const pickerPage = state.pickerSheet === 'model' ? state.pickerPage : '';
+  if (target === 'scan') { closeScan(); return; }
+  if (target === 'lightbox') state.lightbox = null;
+  else if (CONFIRM_TARGETS.has(target)) state[target] = null;
+  else if (target === 'git') dismissGitBack();
+  else dismissBasicSurface(target);
   renderSheet(); renderDialog(); renderLightbox(); renderScreen();
   if (pickerPage && state.pickerSheet === 'model' && !state.pickerPage) {
     queueMicrotask(() => sheetRoot.querySelector(`[data-picker-page="${pickerPage}"]`)?.focus({ preventScroll: true }));
@@ -67,22 +90,34 @@ function backOneSurface() {
   if (state.settingsOpen) renderSettings();
 }
 
+function activeSurfaceElement() {
+  const top = lightboxRoot.firstElementChild || dialogRoot.firstElementChild || sheetRoot.firstElementChild;
+  if (top) return top;
+  if (state.settingsOpen) return settings;
+  if (state.sessionsOpen) return sessionsPage;
+  if (state.botsOpen) return getBotsOverlayElement(phone);
+  return state.drawerOpen ? el('drawer') : null;
+}
+
+/** @param {any} active */
+function syncSurfaceInert(active) {
+  for (const child of phone.children) {
+    child.inert = Boolean(active && child !== toastRoot && child !== active && !child.contains(active));
+  }
+  if (active === el('drawer')) backdrop.inert = false;
+  if (!state.drawerOpen) el('drawer').inert = true;
+}
+
 export function scheduleNavigation() {
   if (navigationQueued) return;
   navigationQueued = true;
   queueMicrotask(() => {
     navigationQueued = false;
-    const active = lightboxRoot.firstElementChild || dialogRoot.firstElementChild || sheetRoot.firstElementChild
-      || (state.settingsOpen ? settings : state.sessionsOpen ? sessionsPage : state.drawerOpen ? el('drawer') : null);
-    for (const child of phone.children) {
-      child.inert = Boolean(active && child !== toastRoot && child !== active && !child.contains(active));
-    }
-    if (active === el('drawer')) backdrop.inert = false;
-    if (!state.drawerOpen) el('drawer').inert = true;
+    const active = activeSurfaceElement();
+    syncSurfaceInert(active);
     el('attach-toggle').setAttribute('aria-expanded', String(state.attachOpen));
     accessChip.setAttribute('aria-expanded', String(state.pickerSheet === 'mode'));
     modelChip.setAttribute('aria-expanded', String(state.pickerSheet === 'model'));
-    const target = backTarget(state);
     const menu = active?.matches('.menu-layer') ? active : null;
     menuPositioner.sync(menu, menu ? sheetTrigger() : null, {
       preferAbove: menu?.dataset.anchor === 'composer', alignEnd: Boolean(state.pickerSheet),
@@ -96,7 +131,8 @@ export function scheduleNavigation() {
 }
 
 function surfaceIdentity() {
-  return `${backTarget(state)}:${state.gitDialog}:${state.settingsPane}:${state.pickerSheet}:${state.pickerPage}:${state.newSession?.step || ''}`;
+  const botsKey = state.botsOpen ? (hasBotsSubView(state) ? 'bots:sub' : 'bots') : '';
+  return `${effectiveBackTarget(state)}:${state.gitDialog}:${state.settingsPane}:${state.pickerSheet}:${state.pickerPage}:${state.newSession?.step || ''}:${botsKey}`;
 }
 
 export function preserveSurfaceInput(root) {
@@ -124,7 +160,7 @@ export function preserveSurfaceInput(root) {
 }
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && backTarget(state) !== 'root') {
+  if (event.key === 'Escape' && effectiveBackTarget(state) !== 'root') {
     event.preventDefault(); navigation.back();
   }
 });

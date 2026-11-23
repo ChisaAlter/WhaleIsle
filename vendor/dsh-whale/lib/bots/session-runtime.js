@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import {
   BOT_CREATED_KICKOFF,
+  BOT_PERMISSION_MODES,
   botTemplateKickoff,
   isBotCreatedKickoff,
   resolveBotRowActivityLine,
@@ -21,9 +22,10 @@ import {
   trimTo,
 } from '../shared.js';
 import { botsRootDir, readSoul } from './fs-home.js';
+import { resolveBotLaunchRoute } from './launch-route.js';
 import { BOT_PRESET_ID } from './prompt-engine.js';
 import { createOwedMailDrainer } from './session-mail.js';
-import { createSessionWorkOps } from './session-work.js';
+import { buildSideChatSpec, createSessionWorkOps } from './session-work.js';
 
 export const BOT_OWNER_HOME = 'dsh-bots:home';
 export const BOT_OWNER_CHAT = 'dsh-bots:chat';
@@ -72,21 +74,14 @@ function isRealOwnerMessageEvent(event, chat) {
 
 /** @param {any} launch */
 export function parseLaunchModel(launch) {
-  if (!launch || typeof launch !== 'object') return null;
-  const rawModel = String(launch.model ?? '').trim();
-  const optProvider = String(launch.options?.provider ?? '').trim();
-  const reasoningEffort = String(launch.options?.reasoningEffort ?? launch.options?.effort ?? '').trim();
-  let provider = optProvider;
-  let model = rawModel;
-  if (provider && model.startsWith(`${provider}/`)) {
-    model = model.slice(provider.length + 1).trim();
-  } else if (!provider && rawModel.includes('/')) {
-    const slash = rawModel.indexOf('/');
-    provider = rawModel.slice(0, slash).trim();
-    model = rawModel.slice(slash + 1).trim();
-  }
-  if (!provider || !model) return null;
-  return { provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) };
+  return resolveBotLaunchRoute(launch, null);
+}
+
+/** @param {unknown} mode */
+function normalizePermissionMode(mode) {
+  if (typeof mode !== 'string') return null;
+  const clean = mode.trim();
+  return BOT_PERMISSION_MODES.includes(clean) ? clean : null;
 }
 
 /** @param {any} catalog */
@@ -129,15 +124,15 @@ function nextLiveStateFromEvent(event, prev) {
 
 /** @param {any} ctrl @param {any} launch @param {boolean} fallbackDefault @param {boolean} strictRequire */
 async function resolveRouteToApply(ctrl, launch, fallbackDefault, strictRequire) {
-  const direct = parseLaunchModel(launch);
+  const direct = resolveBotLaunchRoute(launch, null);
   if (direct || !fallbackDefault) return direct;
-  const def = (await ctrl?.modelCatalog?.())?.default;
-  if (!def?.provider || !def?.model) {
+  const def = (await ctrl?.modelCatalog?.())?.default ?? null;
+  const resolved = resolveBotLaunchRoute(launch, def);
+  if (!resolved) {
     if (strictRequire) throw new Error('default-model-unavailable');
     return null;
   }
-  const effort = String(launch?.options?.reasoningEffort ?? launch?.options?.effort ?? '').trim();
-  return { provider: def.provider, model: def.model, ...(effort ? { reasoningEffort: effort } : {}) };
+  return resolved;
 }
 
 const KICKOFF_STEPS = Object.freeze(['create', 'start', 'first-message', 'done']);
@@ -165,6 +160,8 @@ function formatKickoffView(entry) {
  *   workStore: any,
  *   eventBus: any,
  *   getController?: () => any,
+ *   budgetService?: any,
+ *   getBudgetService?: () => any,
  *   getLookAroundUpNext?: (botId: string) => any[],
  *   getAutomations?: (botId: string) => any[],
  *   onFirstOwnerChat?: (botId: string) => any,
@@ -173,6 +170,15 @@ function formatKickoffView(entry) {
 export function createSessionRuntime(deps) {
   const { ctx, dshHome, botsStore, itemsStore, workStore, eventBus } = deps;
   const controllerOf = () => (typeof deps.getController === 'function' ? deps.getController() : controllerFrom(ctx));
+  const budgetOf = () => (typeof deps.getBudgetService === 'function' ? deps.getBudgetService() : (deps.budgetService ?? null));
+
+  /** @param {string} botId @param {{ isBackground?: boolean }} [opts] */
+  function checkBudgetGate(botId, { isBackground = false } = {}) {
+    if (!botId) return { allowed: true };
+    const svc = budgetOf();
+    if (!svc || typeof svc.checkExecutionAllowed !== 'function') return { allowed: true };
+    return svc.checkExecutionAllowed(botId, { isBackground });
+  }
 
   /** @type {Map<string, { state: string, updatedAt: number, preview: string | null, lastBotId: string | null }>} */
   const liveBySession = new Map();
@@ -234,7 +240,32 @@ export function createSessionRuntime(deps) {
     }
   }
 
-  async function ensureControllerSession({ sessionId, cwd, title, owner, preset = BOT_PRESET_ID, launch = null }) {
+  async function ensureControllerSession({
+    sessionId,
+    cwd,
+    title,
+    owner,
+    preset = BOT_PRESET_ID,
+    launch = null,
+    permissionMode = null,
+    botId = null,
+    isBackground = false,
+    checkBudget = false,
+  }) {
+    if (checkBudget && botId) {
+      const gate = checkBudgetGate(botId, { isBackground });
+      if (!gate.allowed) {
+        return {
+          ok: false,
+          sessionId,
+          created: false,
+          blocked: true,
+          code: gate.reason,
+          deferUntilMs: gate.deferUntilMs ?? null,
+          error: gate.reason,
+        };
+      }
+    }
     const controller = controllerOf();
     if (!controller || typeof controller.create !== 'function') {
       return {
@@ -250,6 +281,7 @@ export function createSessionRuntime(deps) {
       const rows = sessionRowsFrom(await controller.list({}, freshSignal()));
       existing = rows.some((row) => sessionIdFromRow(row) === sessionId);
     }
+    const validPerm = normalizePermissionMode(permissionMode);
     if (!existing) {
       startingSessions.add(sessionId);
       try {
@@ -257,6 +289,7 @@ export function createSessionRuntime(deps) {
           sessionId,
           cwd,
           agentPreset: preset,
+          ...(validPerm ? { permissionMode: validPerm } : {}),
           presentation: { owner, title },
         }, freshSignal());
       } finally {
@@ -284,6 +317,8 @@ export function createSessionRuntime(deps) {
       title: bot.name,
       owner: BOT_OWNER_HOME,
       launch: bot.launch,
+      permissionMode: bot.permissionMode,
+      botId: bot.id,
     });
     const now = Date.now();
     botsStore.upsertChat({
@@ -316,6 +351,8 @@ export function createSessionRuntime(deps) {
       title: bot.name,
       owner: BOT_OWNER_HOME,
       launch: bot.launch,
+      permissionMode: bot.permissionMode,
+      botId: bot.id,
     });
     botsStore.upsertChat({
       sessionId: nextSessionId,
@@ -331,38 +368,26 @@ export function createSessionRuntime(deps) {
     return { ok: true, botId: bot.id, sessionId: nextSessionId, previousSessionId };
   }
 
-  /** @param {string} botId @param {any} [options] */
+  /** @param {string} botId @param {Record<string, any>} [options] */
   async function startSideChat(botId, options = {}) {
     const bot = requireBot(botId);
+    const isBackground = options.isBackground === true || options.owner === BOT_OWNER_AUTOMATION;
+    const gate = checkBudgetGate(bot.id, { isBackground });
+    if (!gate.allowed) {
+      return {
+        ok: false, botId: bot.id, sessionId: null, blocked: true,
+        code: gate.reason, deferUntilMs: gate.deferUntilMs ?? null, error: gate.reason,
+      };
+    }
     const now = Date.now();
-    const sessionId = options.sessionId || `bot-chat-${bot.id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
-    const title = String(options.title ?? '').trim() || `${bot.name} · 支线聊天`;
-    const owner = options.owner || BOT_OWNER_CHAT;
-    const cwd = options.cwd || homeDirFor(bot);
-    await ensureControllerSession({
-      sessionId,
-      cwd,
-      title,
-      owner,
-      launch: options.launch ?? bot.launch,
+    const spec = buildSideChatSpec(bot, homeDirFor, options, now, {
+      ownerChat: BOT_OWNER_CHAT,
+      defaultPreset: BOT_PRESET_ID,
     });
-    const chat = botsStore.upsertChat({
-      sessionId,
-      botId: bot.id,
-      kind: options.kind || 'side',
-      origin: options.origin || 'side',
-      title,
-      externalSource: options.externalSource ?? null,
-      externalId: options.externalId ?? null,
-      ...(options.groupId ? { groupId: options.groupId } : {}),
-      ...(options.dispatchId ? { dispatchId: options.dispatchId } : {}),
-      ...(options.taskId ? { taskId: options.taskId } : {}),
-      ...(options.workId ? { workId: options.workId } : {}),
-      createdAt: now,
-      updatedAt: now,
-    }, now);
+    await ensureControllerSession(spec.ensureInput);
+    const chat = botsStore.upsertChat(spec.chatRecord, now);
     eventBus.emit({ botIds: [bot.id], kinds: ['chats'] });
-    return { ok: true, botId: bot.id, sessionId, chat };
+    return { ok: true, botId: bot.id, sessionId: spec.sessionId, chat };
   }
 
   async function sendKickoff(bot, { template = null, note = null } = {}) {
@@ -495,8 +520,26 @@ export function createSessionRuntime(deps) {
     return { ok: true, sessionId: sid, cancelled };
   }
 
-  /** @param {string} sessionId @param {string} promptText @param {{ timeoutMs?: number }} [opts] */
-  function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS } = {}) {
+  /**
+   * @param {string} sessionId
+   * @param {string} promptText
+   * @param {{ timeoutMs?: number, botId?: string | null, isBackground?: boolean, images?: any[] }} [opts]
+   */
+  function runSingleTurn(sessionId, promptText, { timeoutMs = TURN_TIMEOUT_DEFAULT_MS, botId = null, isBackground = false } = {}) {
+    const resolvedBotId = botId || botsStore.getChat(String(sessionId))?.botId || null;
+    if (resolvedBotId) {
+      const gate = checkBudgetGate(resolvedBotId, { isBackground });
+      if (!gate.allowed) {
+        return Promise.resolve({
+          ok: false,
+          blocked: true,
+          code: gate.reason,
+          deferUntilMs: gate.deferUntilMs ?? null,
+          error: gate.reason,
+          reply: '',
+        });
+      }
+    }
     const controller = controllerOf();
     if (!controller || (typeof controller.prompt !== 'function' && typeof controller.runTurnForTest !== 'function')) {
       return Promise.resolve({

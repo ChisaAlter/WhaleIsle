@@ -2,13 +2,137 @@
 
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const { isValidGithubSpec, normalizeAllowBuilds } = require('../host/install-dsh-plugin-client.js');
 const { effectOf, NEVER_ALWAYS_LEVELS } = require('../shared/model-tool-effects.js');
 const { constantTimeEqual, readBodyLimited } = require('../shared/secret');
+const { tryGetDesktopDshHome } = require('../shared/dsh-home');
 
 const RESTART_DELAY_MS = 500;
 const MAX_BODY_BYTES = 64 * 1024;
+const AUDIT_TEXT_LIMIT = 1000;
+const AUDIT_REDACTED = '[REDACTED]';
+
+const AUDIT_SECRET_KEY_RE = /(?:secret|token|password|passwd|apikey|api_key|authorization|cookie|private_?key|credential)/i;
+const AUDIT_SECRET_PATTERNS = [
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+  /\bsk-(?:proj-|live-|test-)?[A-Za-z0-9_-]{16,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|webhook[_-]?secret|secret|token|password|passwd|cookie)\b\s*[:=]\s*['"]?)([^\s'",;]{6,})(['"]?)/gi,
+];
+
+/**
+ * Redact credential-like strings before persisting confirmation audit records.
+ * @param {string} raw
+ * @returns {string}
+ */
+function redactAuditString(raw) {
+  let out = raw;
+  for (const pattern of AUDIT_SECRET_PATTERNS) {
+    out = out.replace(pattern, (...args) => {
+      if (args.length >= 6 && typeof args[1] === 'string' && typeof args[3] === 'string') {
+        return `${args[1]}${AUDIT_REDACTED}${args[3]}`;
+      }
+      return AUDIT_REDACTED;
+    });
+  }
+  return out;
+}
+
+/**
+ * Recursively redact secrets from strings, arrays and plain objects.
+ * @param {unknown} value
+ * @param {number} [depth]
+ * @returns {unknown}
+ */
+function redactAuditSecrets(value, depth = 0) {
+  if (depth > 6 || value === null || value === undefined) return value;
+  if (typeof value === 'string') return redactAuditString(value).slice(0, AUDIT_TEXT_LIMIT);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    return value.slice(0, 50).map((item) => redactAuditSecrets(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = AUDIT_SECRET_KEY_RE.test(key)
+        ? AUDIT_REDACTED
+        : redactAuditSecrets(entry, depth + 1);
+    }
+    return out;
+  }
+  return redactAuditString(String(value)).slice(0, AUDIT_TEXT_LIMIT);
+}
+
+let activeAuditLogPath = '';
+
+/**
+ * Resolve `$DSH_HOME/logs/confirm-audit.jsonl` (or an explicit override path).
+ * Returns empty string when DSH home is not configured.
+ * @param {unknown} [overridePath]
+ * @returns {string}
+ */
+function resolveConfirmAuditPath(overridePath) {
+  const explicit = typeof overridePath === 'string' && overridePath.trim()
+    ? overridePath.trim()
+    : activeAuditLogPath;
+  if (explicit) {
+    return path.resolve(explicit);
+  }
+  const home = tryGetDesktopDshHome();
+  if (!home) return '';
+  return path.join(home, 'logs', 'confirm-audit.jsonl');
+}
+
+/**
+ * Best-effort JSONL audit append for `/desktop/confirm` and `/desktop/plugin`.
+ * Never throws or blocks the confirmation response path.
+ * @param {Record<string, unknown>} entry
+ * @param {unknown} [overridePath]
+ */
+function appendConfirmAudit(entry, overridePath) {
+  try {
+    const filePath = resolveConfirmAuditPath(overridePath);
+    if (!filePath) return;
+    const record = /** @type {Record<string, unknown>} */ (redactAuditSecrets({
+      ts: new Date().toISOString(),
+      ...entry,
+    }));
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+  } catch (error) {
+    console.warn('[desktop-install-control] confirm audit log write failed', error);
+  }
+}
+
+/**
+ * Run plugin confirmation and persist a redacted audit record.
+ * @param {any} res
+ * @param {any} confirmModelAction
+ * @param {{ action: string, target: unknown, allowBuilds: string[] }} request
+ */
+async function confirmPluginAction(res, confirmModelAction, request) {
+  const confirmation = await confirmForRequest(res, confirmModelAction, request);
+  appendConfirmAudit({
+    route: '/desktop/plugin',
+    decision: confirmation.allowed ? 'allowed' : 'declined',
+    allowed: confirmation.allowed,
+    action: request.action,
+    target: request.target,
+    allowBuilds: request.allowBuilds,
+    reason: confirmation.error || '',
+  });
+  return confirmation;
+}
 
 let active = null;
 
@@ -228,7 +352,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
         badRequest(res, '仅支持 github:owner/repo[#ref] 安装规格');
         return;
       }
-      const confirmation = await confirmForRequest(res, confirmModelAction, {
+      const confirmation = await confirmPluginAction(res, confirmModelAction, {
         action: 'install',
         target: id || spec,
         allowBuilds,
@@ -254,7 +378,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
         badRequest(res, '缺少包名');
         return;
       }
-      const confirmation = await confirmForRequest(res, confirmModelAction, {
+      const confirmation = await confirmPluginAction(res, confirmModelAction, {
         action: 'remove',
         target: name,
         allowBuilds,
@@ -276,7 +400,7 @@ async function handleDesktopPlugin(req, res, desktop, { installPlugin, startHarn
       const names = Array.isArray(payload.names)
         ? payload.names
         : [payload.name];
-      const confirmation = await confirmForRequest(res, confirmModelAction, {
+      const confirmation = await confirmPluginAction(res, confirmModelAction, {
         action,
         target: action === 'disable' && names.length > 1 ? names : names[0],
         allowBuilds,
@@ -334,6 +458,70 @@ function buildConfirmRequest(payload, tool, action, level) {
   };
 }
 
+/**
+ * Persist an audit record for a `/desktop/confirm` decision.
+ * @param {{
+ *   decision: string,
+ *   allowed: boolean,
+ *   always?: boolean,
+ *   remembered?: boolean,
+ *   unattended?: boolean,
+ *   tool: string,
+ *   action: string,
+ *   effect: string,
+ *   scope: string,
+ *   summary?: string,
+ *   details?: string,
+ *   reason?: string,
+ * }} meta
+ */
+function recordConfirmDecision(meta) {
+  appendConfirmAudit({
+    route: '/desktop/confirm',
+    decision: meta.decision,
+    allowed: meta.allowed,
+    always: Boolean(meta.always),
+    remembered: Boolean(meta.remembered),
+    unattended: Boolean(meta.unattended),
+    tool: meta.tool,
+    action: meta.action,
+    effect: meta.effect,
+    scope: meta.scope,
+    summary: meta.summary || '',
+    details: meta.details || '',
+    reason: meta.reason || '',
+  });
+}
+
+/**
+ * Determine the normalized audit decision label for an interactive confirmation.
+ * @param {{ allowed: boolean, always: boolean }} confirmation
+ * @param {boolean} rememberable
+ * @returns {string}
+ */
+function interactiveConfirmDecision(confirmation, rememberable) {
+  if (!confirmation.allowed) return 'declined';
+  return confirmation.always && rememberable ? 'allowed_always' : 'allowed_once';
+}
+
+/**
+ * Record an audit entry from a built confirm request and decision outcome.
+ * @param {{ tool: string, action: string, effect: string, summary: string, details: string }} request
+ * @param {string} scope
+ * @param {{ decision: string, allowed: boolean, always?: boolean, remembered?: boolean, unattended?: boolean, reason?: string }} outcome
+ */
+function auditConfirmOutcome(request, scope, outcome) {
+  recordConfirmDecision({
+    ...outcome,
+    tool: request.tool,
+    action: request.action,
+    effect: request.effect,
+    scope,
+    summary: request.summary,
+    details: request.details,
+  });
+}
+
 async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllowed }) {
   let payload;
   try {
@@ -348,24 +536,34 @@ async function handleDesktopConfirm(req, res, { confirmModelAction, sessionAllow
     badRequest(res, 'missing tool or effect');
     return;
   }
-  if (payload?.unattended === true) {
-    sendJson(res, 200, declinedBody('无人值守回合禁止自动执行需要人工确认的操作'));
-    return;
-  }
   const action = String(payload?.action || '').slice(0, 200);
   const scope = normalizeConfirmScope(payload?.scope);
   const level = effectOf(tool, action) || 'code';
+  const request = buildConfirmRequest(payload, tool, action, level);
+  if (payload?.unattended === true) {
+    const reason = '无人值守回合禁止自动执行需要人工确认的操作';
+    auditConfirmOutcome(request, scope, { decision: 'declined_unattended', allowed: false, unattended: true, reason });
+    sendJson(res, 200, declinedBody(reason));
+    return;
+  }
   const rememberable = !NEVER_ALWAYS_LEVELS.has(level);
   const memoryKey = `${tool} ${action} ${scope}`;
   if (rememberable && sessionAllowed.has(memoryKey)) {
+    auditConfirmOutcome(request, scope, { decision: 'allowed_remembered', allowed: true, always: true, remembered: true });
     sendJson(res, 200, { ok: true });
     return;
   }
-  const request = buildConfirmRequest(payload, tool, action, level);
   const confirmation = await confirmForRequest(res, confirmModelAction, request, ACTION_WORDING);
-  if (confirmation.allowed && confirmation.always && rememberable) {
+  const grantedAlways = confirmation.allowed && confirmation.always && rememberable;
+  if (grantedAlways) {
     sessionAllowed.add(memoryKey);
   }
+  auditConfirmOutcome(request, scope, {
+    decision: interactiveConfirmDecision(confirmation, rememberable),
+    allowed: confirmation.allowed,
+    always: grantedAlways,
+    reason: confirmation.error,
+  });
   sendJson(res, 200, confirmation.allowed ? { ok: true } : declinedBody(confirmation.error));
 }
 
@@ -535,6 +733,10 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs, c
 
 function startDesktopInstallControl(options = {}) {
   stopDesktopInstallControl();
+  const auditOption = /** @type {{ auditLogPath?: unknown }} */ (options).auditLogPath;
+  activeAuditLogPath = typeof auditOption === 'string' && auditOption.trim()
+    ? auditOption.trim()
+    : '';
   const token = crypto.randomBytes(32).toString('hex');
   const server = http.createServer(createHandler(options));
   const ready = new Promise((resolve, reject) => {
@@ -560,6 +762,7 @@ function startDesktopInstallControl(options = {}) {
 }
 
 function stopDesktopInstallControl() {
+  activeAuditLogPath = '';
   if (!active) {
     return;
   }
@@ -580,4 +783,6 @@ module.exports = {
   desktopInstallReady,
   startDesktopInstallControl,
   stopDesktopInstallControl,
+  redactAuditSecrets,
+  resolveConfirmAuditPath,
 };

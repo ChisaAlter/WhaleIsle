@@ -1,16 +1,9 @@
 /**
- * Orchestration, Worker binding, Automations, and Access Requests SQLite store.
- * Manages 7 tables in `bots.db`:
- * - `bot_work`
- * - `bot_requests`
- * - `bot_conversation_acts_for`
- * - `bot_run_resends`
- * - `bot_request_outcomes`
- * - `bot_automations`
- * - `bot_access_requests`
+ * Orchestration, Worker binding, Automations, Claims, Webhooks, WAL, Budgets,
+ * Crew Adoptions, and Access Requests SQLite store (`bots.db`).
  */
 import crypto from 'node:crypto';
-import { assertDatabaseWritable, withTransaction } from './db.js';
+import { assertDatabaseWritable, isDatabaseReadOnly, withTransaction } from './db.js';
 import {
   ACCESS_DECISIONS,
   BotWorkError,
@@ -30,18 +23,45 @@ import {
   wouldCreateCycle,
 } from './work-store-helpers.js';
 
+import {
+  CLAIM_STATUSES,
+  CLAIM_TRIGGER_KINDS,
+  CREW_ADOPTION_STATUSES,
+  TOOL_WAL_STATUSES,
+  WEBHOOK_EVENT_STATUSES,
+  buildWhere,
+  clampLimit,
+  createBudgetAccess,
+  createClaimsAccess,
+  createCrewAdoptionAccess,
+  createToolWalAccess,
+  createWebhookEventsAccess,
+} from './work-store-governance.js';
+
 export {
   ACCESS_DECISIONS,
   BotWorkError,
+  CLAIM_STATUSES,
+  CLAIM_TRIGGER_KINDS,
+  CREW_ADOPTION_STATUSES,
   DEFAULT_MAX_REQUEST_DEPTH,
   REQUEST_PURPOSES,
+  TOOL_WAL_STATUSES,
+  WEBHOOK_EVENT_STATUSES,
   WORK_CLOSE_REASONS,
 };
 
-/** @param {import('node:sqlite').DatabaseSync} db */
-export function createWorkStore(db) {
-  // ---- bot_work ----
+/**
+ * Normalize access decisions, mapping legacy `'denied'` -> `'declined'`.
+ * @param {unknown} decision
+ */
+export function normalizeAccessDecision(decision) {
+  const raw = trimStr(decision).toLowerCase();
+  return raw === 'denied' ? 'declined' : raw;
+}
 
+/** @param {import('node:sqlite').DatabaseSync} db */
+function createCoreWorkAccess(db) {
   const selectCurrentWorkStmt = db.prepare(
     'SELECT * FROM bot_work WHERE bot_id = ? AND source = ? AND external_id = ? AND closed_at IS NULL AND current = 1 LIMIT 1',
   );
@@ -174,22 +194,13 @@ export function createWorkStore(db) {
   }
 
   function listWork({ botId, source, openOnly = false, limit = 100 } = {}) {
-    const clauses = [];
-    const params = [];
-    if (botId) {
-      clauses.push('bot_id = ?');
-      params.push(String(botId));
-    }
-    if (source) {
-      clauses.push('source = ?');
-      params.push(String(source));
-    }
-    if (openOnly) clauses.push('closed_at IS NULL');
-    const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const safeLimit = Math.min(Math.max(1, Number(limit) || 100), 500);
+    const { whereSql, params } = buildWhere([
+      ['bot_id = ?', botId ? String(botId) : null],
+      ['source = ?', source ? String(source) : null],
+      ['closed_at IS NULL', openOnly ? true : null],
+    ]);
     return db.prepare(`SELECT * FROM bot_work ${whereSql} ORDER BY created_at DESC LIMIT ?`)
-      .all(...params, safeLimit)
-      .map(mapWorkRow);
+      .all(...params, clampLimit(limit, 100)).map(mapWorkRow);
   }
 
   /**
@@ -317,63 +328,55 @@ export function createWorkStore(db) {
     return closeWork(String(row.id), { reason: validReason, generation, now });
   }
 
-  // ---- bot_requests ----
+  return {
+    bindWork,
+    bind: bindWork,
+    startWork,
+    replaceWork,
+    replace: replaceWork,
+    getCurrentWork,
+    getWorkById,
+    getWorkByDispatch,
+    listWork,
+    listChatWorkersByBot,
+    listChatWorkersByBots,
+    forgetWork,
+    closeWork,
+    closeWorkByDispatch,
+  };
+}
 
-  const selectReqByIdStmt = db.prepare('SELECT * FROM bot_requests WHERE message_id = ?');
-  const selectReqBySendKeyStmt = db.prepare('SELECT * FROM bot_requests WHERE send_key = ?');
-  const selectEdgesByRootStmt = db.prepare('SELECT from_bot_id, to_bot_id FROM bot_requests WHERE root_key = ?');
+/** @param {import('node:sqlite').DatabaseSync} db */
+function createRequestsAccess(db) {
+  const byId = db.prepare('SELECT * FROM bot_requests WHERE message_id = ?');
+  const byKey = db.prepare('SELECT * FROM bot_requests WHERE send_key = ?');
+  const edgesByRoot = db.prepare('SELECT from_bot_id, to_bot_id FROM bot_requests WHERE root_key = ?');
 
   function createRequest(input, now = Date.now()) {
     const p = parseRequestInput(input);
     return withTransaction(db, () => {
       if (p.sendKey) {
-        const existing = selectReqBySendKeyStmt.get(p.sendKey);
+        const existing = byKey.get(p.sendKey);
         if (existing) return { request: mapRequestRow(existing), deduplicated: true };
       }
       if (p.depth > p.maxDepth) {
-        throw new BotWorkError('depth_exceeded', `Request depth ${p.depth} exceeds max depth ${p.maxDepth}`, {
-          depth: p.depth, maxDepth: p.maxDepth,
-        });
+        throw new BotWorkError('depth_exceeded', `Request depth ${p.depth} exceeds max depth ${p.maxDepth}`, { depth: p.depth, maxDepth: p.maxDepth });
       }
-      const edges = selectEdgesByRootStmt.all(p.rootKey);
-      if (wouldCreateCycle(edges, p.fromBotId, p.toBotId)) {
+      if (wouldCreateCycle(edgesByRoot.all(p.rootKey), p.fromBotId, p.toBotId)) {
         throw new BotWorkError('loop_detected', `Cross-bot request cycle detected: ${p.fromBotId} -> ${p.toBotId}`, {
           rootKey: p.rootKey, fromBotId: p.fromBotId, toBotId: p.toBotId,
         });
       }
-      db.prepare(`
-        INSERT INTO bot_requests (message_id, root_key, from_bot_id, to_bot_id, purpose, depth, record, created_at, send_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        p.messageId, p.rootKey, p.fromBotId, p.toBotId, p.purpose, p.depth,
-        JSON.stringify(p.record), now, p.sendKey,
-      );
-      return { request: mapRequestRow(selectReqByIdStmt.get(p.messageId)), deduplicated: false };
+      db.prepare('INSERT INTO bot_requests (message_id, root_key, from_bot_id, to_bot_id, purpose, depth, record, created_at, send_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(p.messageId, p.rootKey, p.fromBotId, p.toBotId, p.purpose, p.depth, JSON.stringify(p.record), now, p.sendKey);
+      return { request: mapRequestRow(byId.get(p.messageId)), deduplicated: false };
     });
   }
 
-  function getRequest(messageId) {
-    return mapRequestRow(selectReqByIdStmt.get(String(messageId)));
+  function getActsFor(sessionId) {
+    const row = db.prepare('SELECT * FROM bot_conversation_acts_for WHERE session_id = ?').get(String(sessionId));
+    return row ? { sessionId: row.session_id, actsFor: JSON.parse(row.acts_for), triggeredBy: row.triggered_by ? JSON.parse(row.triggered_by) : null, createdAt: row.created_at } : null;
   }
-
-  function getRequestBySendKey(sendKey) {
-    return mapRequestRow(selectReqBySendKeyStmt.get(String(sendKey)));
-  }
-
-  function listRequestsByRoot(rootKey) {
-    return db.prepare('SELECT * FROM bot_requests WHERE root_key = ? ORDER BY created_at ASC')
-      .all(String(rootKey))
-      .map(mapRequestRow);
-  }
-
-  function listRequestsForBot(toBotId, { limit = 50 } = {}) {
-    const safeLimit = Math.min(Math.max(1, Number(limit) || 50), 200);
-    return db.prepare('SELECT * FROM bot_requests WHERE to_bot_id = ? ORDER BY created_at DESC LIMIT ?')
-      .all(String(toBotId), safeLimit)
-      .map(mapRequestRow);
-  }
-
-  // ---- bot_conversation_acts_for ----
 
   function setActsFor(sessionId, actsFor, triggeredBy = null, now = Date.now()) {
     assertDatabaseWritable(db, 'db_read_only');
@@ -395,18 +398,6 @@ export function createWorkStore(db) {
     return getActsFor(sessionId);
   }
 
-  function getActsFor(sessionId) {
-    const row = db.prepare('SELECT * FROM bot_conversation_acts_for WHERE session_id = ?')
-      .get(String(sessionId));
-    if (!row) return null;
-    return {
-      sessionId: row.session_id,
-      actsFor: JSON.parse(String(row.acts_for)),
-      triggeredBy: row.triggered_by ? JSON.parse(String(row.triggered_by)) : null,
-      createdAt: row.created_at,
-    };
-  }
-
   function deleteActsFor(sessionId) {
     assertDatabaseWritable(db, 'db_read_only');
     const info = db.prepare('DELETE FROM bot_conversation_acts_for WHERE session_id = ?')
@@ -414,26 +405,14 @@ export function createWorkStore(db) {
     return Number(info.changes ?? 0) > 0;
   }
 
-  // ---- bot_run_resends & bot_request_outcomes ----
-
   function recordRunResend(runId, sessionId, now = Date.now()) {
-    if (!runId || !sessionId) {
-      throw new BotWorkError('invalid_argument', 'runId and sessionId are required');
-    }
+    if (!runId || !sessionId) throw new BotWorkError('invalid_argument', 'runId and sessionId are required');
     return withTransaction(db, () => {
       const existing = db.prepare('SELECT * FROM bot_run_resends WHERE run_id = ?').get(String(runId));
-      if (existing) {
-        return { recorded: false, runId: existing.run_id, sessionId: existing.session_id, createdAt: existing.created_at };
-      }
-      db.prepare('INSERT INTO bot_run_resends (run_id, session_id, created_at) VALUES (?, ?, ?)')
-        .run(String(runId), String(sessionId), now);
+      if (existing) return { recorded: false, runId: existing.run_id, sessionId: existing.session_id, createdAt: existing.created_at };
+      db.prepare('INSERT INTO bot_run_resends (run_id, session_id, created_at) VALUES (?, ?, ?)').run(String(runId), String(sessionId), now);
       return { recorded: true, runId: String(runId), sessionId: String(sessionId), createdAt: now };
     });
-  }
-
-  function getRunResend(runId) {
-    const row = db.prepare('SELECT * FROM bot_run_resends WHERE run_id = ?').get(String(runId));
-    return row ? { runId: row.run_id, sessionId: row.session_id, createdAt: row.created_at } : null;
   }
 
   function setRequestOutcome(messageId, outcome, now = Date.now()) {
@@ -448,14 +427,31 @@ export function createWorkStore(db) {
     return { messageId: String(messageId), outcome: String(outcome), updatedAt: now };
   }
 
-  function getRequestOutcome(messageId) {
-    const row = db.prepare('SELECT * FROM bot_request_outcomes WHERE message_id = ?').get(String(messageId));
-    return row ? { messageId: row.message_id, outcome: row.outcome, updatedAt: row.updated_at } : null;
-  }
+  return {
+    createRequest,
+    getRequest: (messageId) => mapRequestRow(byId.get(String(messageId))),
+    getRequestBySendKey: (sendKey) => mapRequestRow(byKey.get(String(sendKey))),
+    listRequestsByRoot: (rootKey) => db.prepare('SELECT * FROM bot_requests WHERE root_key = ? ORDER BY created_at ASC').all(String(rootKey)).map(mapRequestRow),
+    listRequestsForBot: (toBotId, { limit = 50 } = {}) => db.prepare('SELECT * FROM bot_requests WHERE to_bot_id = ? ORDER BY created_at DESC LIMIT ?').all(String(toBotId), clampLimit(limit, 50, 200)).map(mapRequestRow),
+    setActsFor, getActsFor, deleteActsFor,
+    recordRunResend,
+    getRunResend: (runId) => {
+      const row = db.prepare('SELECT * FROM bot_run_resends WHERE run_id = ?').get(String(runId));
+      return row ? { runId: row.run_id, sessionId: row.session_id, createdAt: row.created_at } : null;
+    },
+    setRequestOutcome,
+    getRequestOutcome: (messageId) => {
+      const row = db.prepare('SELECT * FROM bot_request_outcomes WHERE message_id = ?').get(String(messageId));
+      return row ? { messageId: row.message_id, outcome: row.outcome, updatedAt: row.updated_at } : null;
+    },
+  };
+}
 
-  // ---- bot_automations ----
-
-  const selectAutoByIdStmt = db.prepare('SELECT * FROM bot_automations WHERE id = ?');
+/** @param {import('node:sqlite').DatabaseSync} db */
+function createAutomationsAndAccess(db) {
+  const autoById = db.prepare('SELECT * FROM bot_automations WHERE id = ?');
+  const accessById = db.prepare('SELECT * FROM bot_access_requests WHERE id = ?');
+  const accessByToken = db.prepare('SELECT * FROM bot_access_requests WHERE token = ?');
 
   function upsertAutomation(input, now = Date.now()) {
     assertDatabaseWritable(db, 'db_read_only');
@@ -463,46 +459,26 @@ export function createWorkStore(db) {
       throw new BotWorkError('invalid_argument', 'automation requires botId');
     }
     const id = trimStr(input.id) || crypto.randomUUID();
-    const existing = mapAutomationRow(selectAutoByIdStmt.get(id));
-    const norm = normalizeAutomationInput(input, existing, now);
-
-    db.prepare(`
-      INSERT INTO bot_automations (
-        id, bot_id, enabled, record, next_run_at, last_run_at, last_status, last_error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        bot_id = excluded.bot_id,
-        enabled = excluded.enabled,
-        record = excluded.record,
-        next_run_at = excluded.next_run_at,
-        last_run_at = excluded.last_run_at,
-        last_status = excluded.last_status,
-        last_error = excluded.last_error,
-        updated_at = excluded.updated_at
-    `).run(
-      id, norm.botId, norm.enabled, JSON.stringify(norm.rest),
-      norm.nextRunAt, norm.lastRunAt, norm.lastStatus, norm.lastError, norm.createdAt, now,
-    );
-
-    return mapAutomationRow(selectAutoByIdStmt.get(id));
+    const norm = normalizeAutomationInput(input, mapAutomationRow(autoById.get(id)), now);
+    db.prepare(
+      `INSERT INTO bot_automations (id, bot_id, enabled, record, next_run_at, last_run_at, last_status, last_error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET bot_id = excluded.bot_id, enabled = excluded.enabled, record = excluded.record,
+         next_run_at = excluded.next_run_at, last_run_at = excluded.last_run_at, last_status = excluded.last_status, last_error = excluded.last_error, updated_at = excluded.updated_at`,
+    ).run(id, norm.botId, norm.enabled, JSON.stringify(norm.rest), norm.nextRunAt, norm.lastRunAt, norm.lastStatus, norm.lastError, norm.createdAt, now);
+    return mapAutomationRow(autoById.get(id));
   }
 
   function getAutomation(id) {
-    return mapAutomationRow(selectAutoByIdStmt.get(String(id)));
+    return mapAutomationRow(autoById.get(String(id)));
   }
 
   function listAutomations({ botId = null, enabledOnly = false } = {}) {
-    const clauses = [];
-    const params = [];
-    if (botId) {
-      clauses.push('bot_id = ?');
-      params.push(String(botId));
-    }
-    if (enabledOnly) clauses.push('enabled = 1');
-    const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    return db.prepare(`SELECT * FROM bot_automations ${whereSql} ORDER BY updated_at DESC`)
-      .all(...params)
-      .map(mapAutomationRow);
+    const { whereSql, params } = buildWhere([
+      ['bot_id = ?', botId ? String(botId) : null],
+      ['enabled = 1', enabledOnly ? true : null],
+    ]);
+    return db.prepare(`SELECT * FROM bot_automations ${whereSql} ORDER BY updated_at DESC`).all(...params).map(mapAutomationRow);
   }
 
   function updateAutomationRunState(id, patch, now = Date.now()) {
@@ -516,115 +492,72 @@ export function createWorkStore(db) {
     const info = db.prepare('DELETE FROM bot_automations WHERE id = ?').run(String(id));
     return Number(info.changes ?? 0) > 0;
   }
-
-  // ---- bot_access_requests ----
-
-  const selectAccessByIdStmt = db.prepare('SELECT * FROM bot_access_requests WHERE id = ?');
-  const selectAccessByTokenStmt = db.prepare('SELECT * FROM bot_access_requests WHERE token = ?');
-
   function createAccessRequest(input, now = Date.now()) {
     assertDatabaseWritable(db, 'db_read_only');
     const p = parseAccessRequestInput(input);
-    db.prepare(`
-      INSERT INTO bot_access_requests (
-        id, token, bot_id, source, workspace_id, requester_id, requester_name,
-        status, payload, decided_by, decided_at, expires_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?)
-    `).run(
-      p.id, p.token, p.botId, p.source, p.workspaceId, p.requesterId, p.requesterName,
-      JSON.stringify(p.payload), p.expiresAt, now,
-    );
-    return mapAccessRow(selectAccessByIdStmt.get(p.id));
-  }
-
-  function getAccessRequest(id) {
-    return mapAccessRow(selectAccessByIdStmt.get(String(id)));
-  }
-
-  function getAccessRequestByToken(token) {
-    return mapAccessRow(selectAccessByTokenStmt.get(String(token)));
+    db.prepare(
+      "INSERT INTO bot_access_requests (id, token, bot_id, source, workspace_id, requester_id, requester_name, status, payload, decided_by, decided_at, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?)",
+    ).run(p.id, p.token, p.botId, p.source, p.workspaceId, p.requesterId, p.requesterName, JSON.stringify(p.payload), p.expiresAt, now);
+    return mapAccessRow(accessById.get(p.id));
   }
 
   function listAccessRequests({ botId = null, status = null } = {}) {
-    const clauses = [];
-    const params = [];
-    if (botId) {
-      clauses.push('bot_id = ?');
-      params.push(String(botId));
-    }
-    if (status) {
-      clauses.push('status = ?');
-      params.push(String(status));
-    }
-    const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    return db.prepare(`SELECT * FROM bot_access_requests ${whereSql} ORDER BY created_at DESC`)
-      .all(...params)
-      .map(mapAccessRow);
+    const { whereSql, params } = buildWhere([
+      ['bot_id = ?', botId ? String(botId) : null],
+      ['status = ?', status ? String(status) : null],
+    ]);
+    return db.prepare(`SELECT * FROM bot_access_requests ${whereSql} ORDER BY created_at DESC`).all(...params).map(mapAccessRow);
   }
 
   function decideAccessRequest(id, { decision, decidedBy = 'owner', now = Date.now() }) {
-    if (!ACCESS_DECISIONS.includes(decision)) {
-      throw new BotWorkError('invalid_argument', `decision must be granted or declined`);
-    }
+    const normalized = normalizeAccessDecision(decision);
+    if (!ACCESS_DECISIONS.includes(normalized)) throw new BotWorkError('invalid_argument', 'decision must be granted or declined');
     return withTransaction(db, () => {
-      const current = getAccessRequest(id);
+      const current = mapAccessRow(accessById.get(String(id)));
       if (!current) throw new BotWorkError('not_found', `Access request not found: ${id}`);
-      if (current.status !== 'pending') {
-        throw new BotWorkError('already_decided', `Access request already ${current.status}`, { status: current.status });
-      }
+      if (current.status !== 'pending') throw new BotWorkError('already_decided', `Access request already ${current.status}`, { status: current.status });
       if (current.expiresAt !== null && current.expiresAt <= now) {
         db.prepare("UPDATE bot_access_requests SET status = 'expired' WHERE id = ?").run(current.id);
         throw new BotWorkError('already_decided', 'Access request has expired', { status: 'expired' });
       }
       db.prepare('UPDATE bot_access_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?')
-        .run(decision, String(decidedBy), now, current.id);
-      return getAccessRequest(current.id);
+        .run(normalized, String(decidedBy), now, current.id);
+      return mapAccessRow(accessById.get(current.id));
     });
   }
 
   function redeemAccessToken(token, { decision, decidedBy = 'owner', now = Date.now() }) {
-    const row = getAccessRequestByToken(token);
+    const row = mapAccessRow(accessByToken.get(String(token)));
     if (!row) throw new BotWorkError('not_found', 'Access token not found');
     return decideAccessRequest(row.id, { decision, decidedBy, now });
   }
 
   return {
-    bindWork,
-    bind: bindWork,
-    startWork,
-    replaceWork,
-    replace: replaceWork,
-    getCurrentWork,
-    getWorkById,
-    getWorkByDispatch,
-    listWork,
-    listChatWorkersByBot,
-    listChatWorkersByBots,
-    forgetWork,
-    closeWork,
-    closeWorkByDispatch,
-    createRequest,
-    getRequest,
-    getRequestBySendKey,
-    listRequestsByRoot,
-    listRequestsForBot,
-    setActsFor,
-    getActsFor,
-    deleteActsFor,
-    recordRunResend,
-    getRunResend,
-    setRequestOutcome,
-    getRequestOutcome,
     upsertAutomation,
     getAutomation,
     listAutomations,
     updateAutomationRunState,
     deleteAutomation,
     createAccessRequest,
-    getAccessRequest,
-    getAccessRequestByToken,
+    getAccessRequest: (id) => mapAccessRow(accessById.get(String(id))),
+    getAccessRequestByToken: (token) => mapAccessRow(accessByToken.get(String(token))),
     listAccessRequests,
     decideAccessRequest,
     redeemAccessToken,
+  };
+}
+
+/** @param {import('node:sqlite').DatabaseSync} db */
+export function createWorkStore(db) {
+  return {
+    get isReadOnly() { return isDatabaseReadOnly(db); },
+    ...createCoreWorkAccess(db),
+    ...createRequestsAccess(db),
+    ...createAutomationsAndAccess(db),
+    ...createClaimsAccess(db),
+    ...createWebhookEventsAccess(db),
+    ...createToolWalAccess(db),
+    ...createBudgetAccess(db),
+    ...createCrewAdoptionAccess(db),
   };
 }
