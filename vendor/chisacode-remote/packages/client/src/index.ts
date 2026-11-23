@@ -21,7 +21,12 @@ import type {
   SessionOutboundMessage,
   WorkspaceDescriptorPayload,
 } from "@chisacode/protocol/messages";
-import { DaemonClient } from "./daemon-client.js";
+import {
+  DaemonClient,
+  type IceServerConfig,
+  type RtcPeerConnectionFactory,
+  type TransportMode,
+} from "./daemon-client.js";
 import type {
   FetchAgentTimelineCursor,
   FetchAgentTimelineDirection,
@@ -33,9 +38,38 @@ export { DaemonClient };
 export type {
   DaemonClientConfig,
   DaemonEvent,
+  IceServerConfig,
+  RtcDataChannelLike,
+  RtcIceCandidateInitLike,
+  RtcPeerConnectionFactory,
+  RtcPeerConnectionLike,
+  RtcSessionDescriptionLike,
+  TransportMode,
   WebSocketFactory,
   WebSocketLike,
 } from "./daemon-client.js";
+export {
+  AdaptiveConnectionOfferV2Schema,
+  DEFAULT_STUN_ICE_SERVERS,
+  RtcChunkReassembler,
+  SequencedCiphertextReorderBuffer,
+  SerialSend,
+  chunkRtcPayload,
+  createRtcMessageIdGenerator,
+  mergeIceServers,
+  normalizeIceServers,
+  orderIceServers,
+  parseConnectionOfferV2FromUrl,
+  unwrapDshuFrame,
+  wrapDshuFrame,
+  type AdaptiveConnectionOfferV2,
+} from "./rtc-chunking.js";
+export {
+  buildLanWebSocketUrl,
+  createAdaptiveTransport,
+  createAdaptiveTransportFactory,
+  defaultRtcPeerConnectionFactory,
+} from "./daemon-client-adaptive-transport.js";
 
 export type ConnectionState =
   | { status: "idle" }
@@ -70,6 +104,12 @@ export interface ChisaCodeClientConfig {
     baseDelayMs?: number;
     maxDelayMs?: number;
   };
+  lanEndpoints?: string[];
+  lanUseTls?: boolean;
+  iceServers?: IceServerConfig[];
+  rtcPeerConnectionFactory?: RtcPeerConnectionFactory;
+  webrtcUpgrade?: boolean;
+  onTransportModeChange?: (mode: TransportMode) => void;
   runtimeMetricsIntervalMs?: number;
   runtimeMetricsWindowMs?: number;
 }
@@ -375,6 +415,7 @@ export interface ChisaCodeClient {
   close(): Promise<void>;
   ensureConnected(): void;
   getConnectionState(): ConnectionState;
+  getTransportMode(): TransportMode | null;
 }
 
 export function createChisaCodeClient(config: ChisaCodeClientConfig): ChisaCodeClient {
@@ -451,6 +492,7 @@ export function createChisaCodeClient(config: ChisaCodeClientConfig): ChisaCodeC
     close: () => daemonClient.close(),
     ensureConnected: () => daemonClient.ensureConnected(),
     getConnectionState: () => daemonClient.getConnectionState(),
+    getTransportMode: () => daemonClient.getTransportMode(),
   };
 }
 

@@ -1,6 +1,8 @@
 export { createClientChannel, createDaemonChannel, EncryptedChannel } from "./encrypted-channel.js";
 export type {
   Transport,
+  BinaryDataChannelTransport,
+  ActivateWebRtcLegParams,
   EncryptedChannelEvents,
   EncryptedChannelSecurityContext,
 } from "./encrypted-channel.js";
@@ -20,6 +22,9 @@ export {
   verifyRelayServerAuth,
   encrypt,
   decrypt,
+  encryptToBytes,
+  decryptFromBytes,
+  extractSeqFromBundle,
   deriveSharedKey,
   SALT_LENGTH,
   SEQ_LENGTH,

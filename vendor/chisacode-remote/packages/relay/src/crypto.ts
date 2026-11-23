@@ -85,8 +85,14 @@ function decodeBase64(base64: string): Uint8Array {
   return toByteArray(base64);
 }
 
-function toUint8(data: string | ArrayBuffer): Uint8Array {
-  return typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+function toUint8(data: string | ArrayBuffer | Uint8Array): Uint8Array {
+  if (typeof data === "string") {
+    return new TextEncoder().encode(data);
+  }
+  if (data instanceof Uint8Array) {
+    return data;
+  }
+  return new Uint8Array(data);
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -289,6 +295,44 @@ export interface DecryptResult {
 }
 
 /**
+ * Extracts the 8-byte little-endian sequence counter embedded in a raw
+ * ciphertext bundle `[0..16) salt | [16..24) uint64_le seq | [24..) ciphertext`.
+ */
+export function extractSeqFromBundle(bundle: Uint8Array | ArrayBuffer): bigint {
+  const bytes = bundle instanceof Uint8Array ? bundle : new Uint8Array(bundle);
+  if (bytes.byteLength < NONCE_LENGTH) {
+    throw new Error("Ciphertext bundle too short");
+  }
+  return seqFromLEBytes(bytes.subarray(SALT_LENGTH, NONCE_LENGTH));
+}
+
+/**
+ * Encrypts data and returns the raw binary bundle as a Uint8Array:
+ *   [salt (16)] [seq_le (8)] [ciphertext + 16B MAC]
+ */
+export function encryptToBytes(
+  sharedKey: SharedKey,
+  data: string | ArrayBuffer | Uint8Array,
+  seq: bigint,
+  salt: Uint8Array,
+): Uint8Array {
+  if (!(salt instanceof Uint8Array) || salt.byteLength !== SALT_LENGTH) {
+    throw new Error(`Invalid salt length (expected ${SALT_LENGTH})`);
+  }
+  if (seq < 0n) {
+    throw new Error("seq must be a non-negative BigInt");
+  }
+  ensurePrng();
+  const nonce = buildNonce(salt, seq);
+  const plaintext = toUint8(data);
+  const ciphertext = nacl.box.after(plaintext, nonce, sharedKey);
+  const out = new Uint8Array(nonce.byteLength + ciphertext.byteLength);
+  out.set(nonce, 0);
+  out.set(ciphertext, nonce.byteLength);
+  return out;
+}
+
+/**
  * Encrypts data with a per-direction salt and monotonic sequence counter and
  * returns the binary bundle:
  *   [nonce (24)] [ciphertext...]
@@ -311,34 +355,18 @@ export function encrypt(
   seq: bigint,
   salt: Uint8Array,
 ): ArrayBuffer {
-  if (!(salt instanceof Uint8Array) || salt.byteLength !== SALT_LENGTH) {
-    throw new Error(`Invalid salt length (expected ${SALT_LENGTH})`);
-  }
-  if (seq < 0n) {
-    throw new Error("seq must be a non-negative BigInt");
-  }
-  ensurePrng();
-  const nonce = buildNonce(salt, seq);
-  const plaintext = toUint8(data);
-  const ciphertext = nacl.box.after(plaintext, nonce, sharedKey);
-  const out = new Uint8Array(nonce.byteLength + ciphertext.byteLength);
-  out.set(nonce, 0);
-  out.set(ciphertext, nonce.byteLength);
-  return toArrayBuffer(out);
+  return toArrayBuffer(encryptToBytes(sharedKey, data, seq, salt));
 }
 
 /**
- * Decrypts a binary bundle and returns the plaintext plus the seq and salt
- * extracted from the nonce, so the caller can enforce replay protection
- * (strict monotonic seq and stable per-direction salt).
- *
- * @param sharedKey The ECDH-derived shared key
- * @param data ArrayBuffer bundle [nonce(24)][ciphertext]
- * @returns DecryptResult with plaintext, seq, and salt
- * @throws If the bundle is too short or Poly1305 authentication fails
+ * Decrypts a raw binary bundle (Uint8Array or ArrayBuffer) and returns the
+ * plaintext plus the seq and salt extracted from the nonce.
  */
-export function decrypt(sharedKey: SharedKey, data: ArrayBuffer): DecryptResult {
-  const bytes = new Uint8Array(data);
+export function decryptFromBytes(
+  sharedKey: SharedKey,
+  data: Uint8Array | ArrayBuffer,
+): DecryptResult {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   if (bytes.byteLength < NONCE_LENGTH) {
     throw new Error("Ciphertext bundle too short");
   }
@@ -360,4 +388,18 @@ export function decrypt(sharedKey: SharedKey, data: ArrayBuffer): DecryptResult 
     plaintext = plaintextBuffer;
   }
   return { plaintext, seq, salt };
+}
+
+/**
+ * Decrypts a binary bundle and returns the plaintext plus the seq and salt
+ * extracted from the nonce, so the caller can enforce replay protection
+ * (strict monotonic seq and stable per-direction salt).
+ *
+ * @param sharedKey The ECDH-derived shared key
+ * @param data ArrayBuffer bundle [nonce(24)][ciphertext]
+ * @returns DecryptResult with plaintext, seq, and salt
+ * @throws If the bundle is too short or Poly1305 authentication fails
+ */
+export function decrypt(sharedKey: SharedKey, data: ArrayBuffer): DecryptResult {
+  return decryptFromBytes(sharedKey, data);
 }

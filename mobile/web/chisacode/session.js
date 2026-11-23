@@ -4,7 +4,155 @@
  */
 
 const SECRET_KEY = 'dsh-chisacode-device-secrets';
+const CUSTOM_ICE_SERVERS_KEY = 'dsh-chisacode-ice-servers';
 const DEFAULT_COMPUTER_NAME = '我的电脑';
+const DEFAULT_PUBLIC_STUN_SERVERS = [
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.l.google.com:19302' },
+];
+
+/** @param {unknown} endpoints @returns {string[]} */
+function normalizeLanEndpoints(endpoints) {
+  if (!Array.isArray(endpoints)) return [];
+  const seen = new Set();
+  /** @type {string[]} */
+  const out = [];
+  for (const item of endpoints) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
+ * @typedef {{ urls: string | string[], username?: string, credential?: string }} IceServerEntry
+ */
+
+/** @param {unknown} servers @returns {IceServerEntry[]} */
+function normalizeIceServerList(servers) {
+  if (!Array.isArray(servers)) return [];
+  /** @type {IceServerEntry[]} */
+  const out = [];
+  const seen = new Set();
+  for (const entry of servers) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rawEntry = /** @type {{ urls?: unknown, username?: unknown, credential?: unknown }} */ (entry);
+    const rawUrls = Array.isArray(rawEntry.urls) ? rawEntry.urls : [rawEntry.urls];
+    const urls = rawUrls
+      .filter((/** @type {unknown} */ u) => typeof u === 'string')
+      .map((/** @type {string} */ u) => u.trim())
+      .filter((/** @type {string} */ u) => /^(?:stuns?|turns?):/i.test(u));
+    if (!urls.length) continue;
+    /** @type {IceServerEntry} */
+    const normalized = {
+      urls: urls.length === 1 ? urls[0] : urls,
+      ...(typeof rawEntry.username === 'string' && rawEntry.username.trim()
+        ? { username: rawEntry.username.trim() }
+        : {}),
+      ...(typeof rawEntry.credential === 'string' && rawEntry.credential.trim()
+        ? { credential: rawEntry.credential.trim() }
+        : {}),
+    };
+    const key = JSON.stringify([
+      Array.isArray(normalized.urls) ? normalized.urls : [normalized.urls],
+      normalized.username || '',
+      normalized.credential || '',
+    ]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function loadCustomIceServers() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_ICE_SERVERS_KEY);
+    if (!raw) return [];
+    return normalizeIceServerList(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+/** @param {unknown} servers @returns {IceServerEntry[]} */
+function saveCustomIceServers(servers) {
+  const normalized = normalizeIceServerList(servers);
+  if (!normalized.length) {
+    localStorage.removeItem(CUSTOM_ICE_SERVERS_KEY);
+    return [];
+  }
+  localStorage.setItem(CUSTOM_ICE_SERVERS_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+/**
+ * Parse user-entered STUN/TURN lines:
+ *   stun:stun.example.com:3478
+ *   turn:turn.example.com:3478?transport=tcp | username | credential
+ * Also accepts a JSON array of RTCIceServer objects.
+ * @param {string} text
+ * @returns {IceServerEntry[]}
+ */
+function parseCustomIceServersText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  if (raw.startsWith('[')) {
+    return normalizeIceServerList(JSON.parse(raw));
+  }
+  /** @type {IceServerEntry[]} */
+  const parsed = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const parts = trimmed.split('|').map((p) => p.trim());
+    const urls = parts[0];
+    if (!/^(?:stuns?|turns?):/i.test(urls)) {
+      throw new Error(`无效的 STUN/TURN 地址：${urls}`);
+    }
+    parsed.push({
+      urls,
+      ...(parts[1] ? { username: parts[1] } : {}),
+      ...(parts[2] ? { credential: parts[2] } : {}),
+    });
+  }
+  return normalizeIceServerList(parsed);
+}
+
+/** @param {unknown} servers @returns {string} */
+function formatCustomIceServersText(servers) {
+  return normalizeIceServerList(servers)
+    .map((entry) => {
+      const url = Array.isArray(entry.urls) ? entry.urls[0] : entry.urls;
+      if (entry.username || entry.credential) {
+        return [url, entry.username || '', entry.credential || ''].join(' | ');
+      }
+      return url;
+    })
+    .join('\n');
+}
+
+/** @param {unknown} offerIceServers @returns {IceServerEntry[] | undefined} */
+function resolveEffectiveIceServers(offerIceServers) {
+  const offerList = normalizeIceServerList(offerIceServers);
+  const customList = loadCustomIceServers();
+  if (!offerList.length && !customList.length) {
+    return undefined;
+  }
+  return normalizeIceServerList([
+    ...offerList,
+    ...customList,
+    ...DEFAULT_PUBLIC_STUN_SERVERS,
+  ]);
+}
+
+/** @param {{ relayEndpoint?: unknown, lanEndpoints?: unknown } | null | undefined} record */
+function hasConnectableEndpoint(record) {
+  return Boolean(record?.relayEndpoint) || normalizeLanEndpoints(record?.lanEndpoints).length > 0;
+}
 
 function loadSecrets() {
   try {
@@ -74,14 +222,14 @@ function listStickyServerIds() {
     all[id]?.deviceId
     && all[id]?.deviceSecret
     && all[id]?.daemonPublicKeyB64
-    && all[id]?.relayEndpoint
+    && hasConnectableEndpoint(all[id])
   ));
 }
 
 /**
  * Rows for the connect screen "已保存的电脑" chooser: complete sticky records
  * only, most recently saved first. Pure local state — no daemon RPC.
- * @param {Record<string, object>} secrets loadSecrets() shape
+ * @param {Record<string, any>} secrets loadSecrets() shape
  * @returns {Array<{ serverId: string, computerName: string, relayEndpoint: string, savedAt: number }>}
  */
 function savedComputerRows(secrets) {
@@ -90,14 +238,17 @@ function savedComputerRows(secrets) {
       record?.deviceId
       && record?.deviceSecret
       && record?.daemonPublicKeyB64
-      && record?.relayEndpoint
+      && hasConnectableEndpoint(record)
     ))
-    .map(([serverId, record]) => ({
-      serverId,
-      computerName: normalizeComputerName(record.computerName, serverId) || DEFAULT_COMPUTER_NAME,
-      relayEndpoint: String(record.relayEndpoint),
-      savedAt: Number(record.savedAt) || 0,
-    }))
+    .map(([serverId, record]) => {
+      const lanEndpoints = normalizeLanEndpoints(record.lanEndpoints);
+      return {
+        serverId,
+        computerName: normalizeComputerName(record.computerName, serverId) || DEFAULT_COMPUTER_NAME,
+        relayEndpoint: String(record.relayEndpoint || lanEndpoints[0] || ''),
+        savedAt: Number(record.savedAt) || 0,
+      };
+    })
     .sort((a, b) => b.savedAt - a.savedAt);
 }
 
@@ -110,7 +261,7 @@ function getMostRecentStickyServerId() {
       !record?.deviceId
       || !record?.deviceSecret
       || !record?.daemonPublicKeyB64
-      || !record?.relayEndpoint
+      || !hasConnectableEndpoint(record)
     ) {
       continue;
     }
@@ -256,9 +407,9 @@ function deviceNameFromUa(userAgent) {
 /**
  * @param {typeof import('./daemon-client.bundle.js')} api
  * @param {string} offerUrl
- * @returns {Promise<{ client: import('@chisacode/client').DaemonClient, offer: object, serverId: string }>}
  */
-export async function pairFromOfferUrl(api, offerUrl, { signal } = {}) {
+function parseAndValidateOffer(api, offerUrl) {
+  /** @type {any} */
   let offer;
   try {
     offer = api.parseConnectionOfferFromUrl(offerUrl);
@@ -268,53 +419,122 @@ export async function pairFromOfferUrl(api, offerUrl, { signal } = {}) {
   if (!offer || !offer.serverId) {
     throw new Error('无效的配对链接（需要 dshd offer）');
   }
-
-  const stored = loadSecrets()[offer.serverId];
-  const deviceId = stored?.deviceId || api.createRelayDeviceId();
   const pairingToken = offer.authBootstrap?.pairingToken;
   const expiresAt = offer.authBootstrap?.expiresAtMs;
   if (pairingToken && Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
     throw new Error('配对码已过期，请在电脑端刷新配对码后重新扫码');
   }
-  const relayEndpoint = offer.relay?.endpoint;
-  if (!relayEndpoint) {
-    throw new Error('配对 offer 缺少中继主机');
+  const relayEndpoint = typeof offer.relay?.endpoint === 'string' ? offer.relay.endpoint.trim() : '';
+  const lanEndpoints = normalizeLanEndpoints(offer.lan?.endpoints);
+  if (!relayEndpoint && !lanEndpoints.length) {
+    throw new Error('配对 offer 缺少中继主机或局域网地址');
   }
+  const offerIceServers = normalizeIceServerList(offer.iceServers);
+  return {
+    offer,
+    pairingToken,
+    relayEndpoint,
+    useTls: offer.relay?.useTls === true,
+    lanEndpoints,
+    lanUseTls: offer.lan?.useTls === true,
+    offerIceServers,
+    effectiveIceServers: resolveEffectiveIceServers(offerIceServers),
+  };
+}
 
-  const useTls = offer.relay?.useTls === true;
-
-  let relayDeviceAuth;
+/**
+ * @param {typeof import('./daemon-client.bundle.js')} api
+ * @param {string} serverId
+ * @param {string | undefined} pairingToken
+ * @param {{ deviceId?: string, deviceSecret?: string } | undefined} stored
+ */
+function buildInitialRelayDeviceAuth(api, serverId, pairingToken, stored) {
   // A freshly scanned offer must use its one-time token. This lets a desktop
   // revocation recover even when the phone still has the now-invalid secret.
   if (pairingToken) {
-    relayDeviceAuth = {
+    const deviceId = stored?.deviceId || api.createRelayDeviceId();
+    return {
       version: 1,
-      serverId: offer.serverId,
+      serverId,
       deviceId,
       pairingToken,
       // Report a real device name at first pairing; the desktop stores it as
       // the device label (renamable later from device management).
       deviceName: deviceNameFromUa(typeof navigator === 'undefined' ? '' : navigator.userAgent),
     };
-  } else if (stored?.deviceId && stored?.deviceSecret) {
-    relayDeviceAuth = {
+  }
+  if (stored?.deviceId && stored?.deviceSecret) {
+    return {
       version: 1,
-      serverId: offer.serverId,
+      serverId,
       deviceId: stored.deviceId,
       deviceSecret: stored.deviceSecret,
     };
-  } else {
-    throw new Error('需要扫码配对或已保存的设备密钥');
   }
+  throw new Error('需要扫码配对或已保存的设备密钥');
+}
 
-  const url = buildClientRelayUrl(api, {
-    endpoint: relayEndpoint,
-    useTls,
-    serverId: offer.serverId,
-  });
+/**
+ * @param {any} offer
+ * @param {Record<string, any>} relayDeviceAuth
+ * @param {{ relayEndpoint: string, useTls: boolean, lanEndpoints: string[], lanUseTls: boolean, offerIceServers: IceServerEntry[] }} meta
+ * @param {(err: Error) => void} setAuthError
+ * @param {() => any} getClient
+ */
+function createPairAuthResultHandler(offer, relayDeviceAuth, meta, setAuthError, getClient) {
+  return (/** @type {any} */ result) => {
+    if (result?.ok === false) {
+      setAuthError(new Error('配对授权已失效，请在电脑端刷新配对码后重新扫码'));
+      getClient()?.setReconnectEnabled(false);
+      return;
+    }
+    if (!result?.ok || !result.deviceId || !result.deviceSecret) {
+      return;
+    }
+    // The controller retains this credential record across transports.
+    // Replace the consumed bootstrap before any automatic reconnect.
+    relayDeviceAuth.deviceId = result.deviceId;
+    relayDeviceAuth.deviceSecret = result.deviceSecret;
+    delete relayDeviceAuth.pairingToken;
+    delete relayDeviceAuth.deviceName;
+    try {
+      saveSecret(offer.serverId, {
+        deviceId: result.deviceId,
+        deviceSecret: result.deviceSecret,
+        daemonPublicKeyB64: offer.daemonPublicKeyB64,
+        relayEndpoint: meta.relayEndpoint,
+        useTls: meta.useTls,
+        ...(meta.lanEndpoints.length ? { lanEndpoints: meta.lanEndpoints, lanUseTls: meta.lanUseTls } : {}),
+        ...(meta.offerIceServers.length ? { iceServers: meta.offerIceServers } : {}),
+      });
+    } catch {
+      setAuthError(new Error('无法保存配对密钥，请检查浏览器存储权限后重试'));
+    }
+  };
+}
 
+/**
+ * @param {typeof import('./daemon-client.bundle.js')} api
+ * @param {string} offerUrl
+ * @param {{ signal?: AbortSignal, onTransportModeChange?: (mode: string) => void }} [options]
+ * @returns {Promise<{ client: import('@chisacode/client').DaemonClient, offer: object, serverId: string, transportMode: string, getTransportMode: () => string, computerName: string, refreshComputerName: () => string, getAuthError: () => Error | null }>}
+ */
+export async function pairFromOfferUrl(api, offerUrl, options = {}) {
+  const { signal, onTransportModeChange } = options;
+  const parsed = parseAndValidateOffer(api, offerUrl);
+  const { offer, pairingToken, relayEndpoint, useTls, lanEndpoints, lanUseTls, offerIceServers, effectiveIceServers } = parsed;
+  const stored = loadSecrets()[offer.serverId];
+  const relayDeviceAuth = buildInitialRelayDeviceAuth(api, offer.serverId, pairingToken, stored);
+  const url = relayEndpoint
+    ? buildClientRelayUrl(api, { endpoint: relayEndpoint, useTls, serverId: offer.serverId })
+    : '';
+
+  /** @type {Error | null} */
   let authError = null;
-  const client = new api.DaemonClient({
+  let transportMode = '';
+  /** @type {any} */
+  let client;
+  client = new api.DaemonClient({
     clientId: clientId(),
     clientType: 'mobile',
     url,
@@ -324,39 +544,30 @@ export async function pairFromOfferUrl(api, offerUrl, { signal } = {}) {
     },
     relayDeviceAuth,
     reconnect: { enabled: false },
-    onRelayDeviceAuthResult: (result) => {
-      if (result?.ok === false) {
-        authError = new Error('配对授权已失效，请在电脑端刷新配对码后重新扫码');
-        client.setReconnectEnabled(false);
-        return;
-      }
-      if (!result?.ok || !result.deviceId || !result.deviceSecret) {
-        return;
-      }
-      // The controller retains this credential record across transports.
-      // Replace the consumed bootstrap before any automatic reconnect.
-      relayDeviceAuth.deviceId = result.deviceId;
-      relayDeviceAuth.deviceSecret = result.deviceSecret;
-      delete relayDeviceAuth.pairingToken;
-      delete relayDeviceAuth.deviceName;
-      try { saveSecret(offer.serverId, {
-        deviceId: result.deviceId,
-        deviceSecret: result.deviceSecret,
-        daemonPublicKeyB64: offer.daemonPublicKeyB64,
-        relayEndpoint,
-        useTls,
-      }); } catch {
-        authError = new Error('无法保存配对密钥，请检查浏览器存储权限后重试');
-      }
+    ...(lanEndpoints.length ? { lanEndpoints, lanUseTls } : {}),
+    ...(effectiveIceServers ? { iceServers: effectiveIceServers } : {}),
+    onTransportModeChange: (/** @type {string} */ mode) => {
+      transportMode = mode || '';
+      onTransportModeChange?.(transportMode);
     },
+    onRelayDeviceAuthResult: createPairAuthResultHandler(
+      offer,
+      relayDeviceAuth,
+      { relayEndpoint, useTls, lanEndpoints, lanUseTls, offerIceServers },
+      (err) => { authError = err; },
+      () => client,
+    ),
   });
 
   await connectInitial(client, signal, () => authError);
+  transportMode = client.getTransportMode?.() || transportMode;
   const computerNameState = computerNameSession(client, offer.serverId);
   return {
     client,
     offer,
     serverId: offer.serverId,
+    transportMode,
+    getTransportMode: () => client.getTransportMode?.() || transportMode,
     ...computerNameState,
     getAuthError: () => authError,
   };
@@ -366,24 +577,37 @@ export async function pairFromOfferUrl(api, offerUrl, { signal } = {}) {
  * Reconnect with sticky deviceSecret (no new QR).
  * @param {typeof import('./daemon-client.bundle.js')} api
  * @param {string} serverId
+ * @param {{ signal?: AbortSignal, onTransportModeChange?: (mode: string) => void }} [options]
  */
-export async function reconnectSticky(api, serverId, { signal } = {}) {
+export async function reconnectSticky(api, serverId, options = {}) {
+  const { signal, onTransportModeChange } = options;
   const stored = loadSecrets()[serverId];
   if (
     !stored?.deviceId
     || !stored?.deviceSecret
     || !stored.daemonPublicKeyB64
-    || !stored.relayEndpoint
+    || !hasConnectableEndpoint(stored)
   ) {
     throw new Error('没有已保存的配对；请重新扫码');
   }
+  const relayEndpoint = typeof stored.relayEndpoint === 'string' ? stored.relayEndpoint.trim() : '';
+  const lanEndpoints = normalizeLanEndpoints(stored.lanEndpoints);
+  const lanUseTls = stored.lanUseTls === true;
   const useTls = stored.useTls === true;
-  const url = buildClientRelayUrl(api, {
-    endpoint: stored.relayEndpoint,
-    useTls,
-    serverId,
-  });
+  const effectiveIceServers = resolveEffectiveIceServers(stored.iceServers);
+  const url = relayEndpoint
+    ? buildClientRelayUrl(api, {
+      endpoint: relayEndpoint,
+      useTls,
+      serverId,
+    })
+    : '';
   let authError = null;
+  let transportMode = '';
+  const handleTransportModeChange = (/** @type {string} */ mode) => {
+    transportMode = mode || '';
+    onTransportModeChange?.(transportMode);
+  };
   const client = new api.DaemonClient({
     clientId: clientId(),
     clientType: 'mobile',
@@ -399,6 +623,9 @@ export async function reconnectSticky(api, serverId, { signal } = {}) {
       deviceSecret: stored.deviceSecret,
     },
     reconnect: { enabled: false },
+    ...(lanEndpoints.length ? { lanEndpoints, lanUseTls } : {}),
+    ...(effectiveIceServers ? { iceServers: effectiveIceServers } : {}),
+    onTransportModeChange: handleTransportModeChange,
     onRelayDeviceAuthResult: (result) => {
       if (result?.ok !== false) return;
       authError = new Error('这台设备的配对授权已失效，请重新扫码配对');
@@ -406,16 +633,29 @@ export async function reconnectSticky(api, serverId, { signal } = {}) {
     },
   });
   await connectInitial(client, signal, () => authError);
+  transportMode = client.getTransportMode?.() || transportMode;
   const computerNameState = computerNameSession(client, serverId);
-  return { client, serverId, ...computerNameState, getAuthError: () => authError };
+  return {
+    client,
+    serverId,
+    transportMode,
+    getTransportMode: () => client.getTransportMode?.() || transportMode,
+    ...computerNameState,
+    getAuthError: () => authError,
+  };
 }
 
+/**
+ * @param {any} client
+ * @param {AbortSignal | undefined} signal
+ * @param {() => Error | null} [getAuthError]
+ */
 async function connectInitial(client, signal, getAuthError = () => null) {
   let onAbort;
   try {
     if (signal?.aborted) throw signal.reason || new Error('连接已取消');
     const cancelled = new Promise((_, reject) => {
-      onAbort = () => reject(signal.reason || new Error('连接已取消'));
+      onAbort = () => reject(signal?.reason || new Error('连接已取消'));
       signal?.addEventListener('abort', onAbort, { once: true });
     });
     // Retry only established sessions; otherwise connect() never rejects on
@@ -445,4 +685,9 @@ export {
   hasOfferFragment,
   normalizeOfferUrl,
   agentRows,
+  loadCustomIceServers,
+  saveCustomIceServers,
+  parseCustomIceServersText,
+  formatCustomIceServersText,
+  resolveEffectiveIceServers,
 };

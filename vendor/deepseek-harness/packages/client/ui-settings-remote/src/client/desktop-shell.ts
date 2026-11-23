@@ -23,6 +23,15 @@ export type RemoteDevice = {
   detail?: string
 }
 
+/** Optional STUN/TURN ICE server configuration for WebRTC P2P/TURN connections. */
+export type RemoteIceServer = {
+  urls: string | string[]
+  username?: string
+  credential?: string
+}
+
+export type RemoteTransportMode = 'lan' | 'p2p' | 'turn' | 'relay'
+
 /** Snapshot returned by `window.shell.getRemote`. */
 export type RemoteSnapshot = {
   protocol?: string
@@ -37,6 +46,8 @@ export type RemoteSnapshot = {
   port?: number
   token?: string
   mode?: 'lan' | 'relay'
+  /** True in pure LAN mode when local SPA + loopback E2EE WS bridge are ready (zero external server). */
+  lanReady?: boolean
   /** Gateway listen address: `0.0.0.0`, `127.0.0.1`, or one NIC IPv4. */
   bindAddress?: string
   /** Whether the LAN listener serves self-signed HTTPS. */
@@ -45,6 +56,12 @@ export type RemoteSnapshot = {
   tlsFingerprint?: string
   /** Every LAN IPv4 the desktop currently has (bind-scope options). */
   addresses?: string[]
+  /** Optional user-configured STUN/TURN servers (empty = built-in public STUN). */
+  iceServers?: RemoteIceServer[]
+  /** Best active client transport mode across connected clients. */
+  activeTransportMode?: RemoteTransportMode | ''
+  /** Active transport modes for all currently connected clients. */
+  activeTransportModes?: RemoteTransportMode[]
   relayUrl?: string
   /** Built-in public relay origin (may be HTTP for the desktop default host). */
   defaultRelayUrl?: string
@@ -73,6 +90,8 @@ export type RemotePatch = {
   remoteRelayUrl?: string
   /** Host token for the outbound relay; empty string clears the stored secret. */
   remoteRelayToken?: string
+  /** Optional STUN/TURN ICE server list; empty array restores default public STUN. */
+  remoteIceServers?: RemoteIceServer[]
 }
 
 /** The preload-exposed desktop API used by the Remote popup. */

@@ -5,7 +5,9 @@ import {
   connectionPhase,
   createDraftStore,
   resyncAfterReconnect,
+  transportModeLabel,
   watchConnection,
+  watchTransportMode,
 } from './controller.js';
 
 test('foreground recovery probes stale sockets twice so the client reconnects', async () => {
@@ -231,4 +233,31 @@ test('draft store degrades to memory when storage is unavailable', () => {
   assert.equal(store.load('agent-1'), 'memory draft');
   store.clearAll();
   assert.equal(store.load('agent-1'), '');
+});
+
+test('transportModeLabel formats real transport modes accurately', () => {
+  assert.equal(transportModeLabel('lan'), '局域网直连 · 端到端加密');
+  assert.equal(transportModeLabel('p2p'), 'P2P 直连 · 端到端加密');
+  assert.equal(transportModeLabel('turn'), 'TURN 中继 · 端到端加密');
+  assert.equal(transportModeLabel('relay'), '服务器中继 · 端到端加密');
+  assert.equal(transportModeLabel(''), 'dshd · 端到端加密');
+  assert.equal(transportModeLabel(null), 'dshd · 端到端加密');
+});
+
+test('watchTransportMode subscribes to transport mode updates and cleans up on dispose', () => {
+  const listeners = new Set();
+  const client = {
+    subscribeTransportMode(fn) {
+      listeners.add(fn);
+      fn('relay');
+      return () => listeners.delete(fn);
+    },
+  };
+  const seen = [];
+  const dispose = watchTransportMode(client, (mode) => seen.push(mode));
+  assert.deepEqual(seen, ['relay']);
+  for (const fn of listeners) fn('p2p');
+  assert.deepEqual(seen, ['relay', 'p2p']);
+  dispose();
+  assert.equal(listeners.size, 0);
 });

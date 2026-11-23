@@ -1,6 +1,8 @@
 package ai.deepseek.harness.mobile
 
+import ai.deepseek.harness.mobile.remote.WebRtcPeerFactory
 import ai.deepseek.harness.mobile.store.EncryptedDeviceStore
+import ai.deepseek.harness.mobile.webrtc.AndroidWebRtcPeerFactory
 import ai.deepseek.harness.mobile.ui.DshRoot
 import ai.deepseek.harness.mobile.ui.NativeRemoteScreen
 import ai.deepseek.harness.mobile.ui.NativeDialog
@@ -38,7 +40,8 @@ import kotlinx.coroutines.withTimeout
 
 class MainActivity : ComponentActivity() {
     private val store by lazy { EncryptedDeviceStore(applicationContext) }
-    private val vm: DshViewModel by viewModels { DshVmFactory(store) }
+    private val webRtcFactory by lazy { AndroidWebRtcPeerFactory(applicationContext) }
+    private val vm: DshViewModel by viewModels { DshVmFactory(store, webRtcFactory) }
     private val interfacePreferences by lazy { MobilePreferences(applicationContext) }
     private lateinit var images: NativeImagePicker
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -121,7 +124,11 @@ class MainActivity : ComponentActivity() {
         else cameraPermission.launch(Manifest.permission.CAMERA)
     }
 }
-class DshVmFactory(private val store: EncryptedDeviceStore) : ViewModelProvider.Factory {
+class DshVmFactory(
+    private val store: EncryptedDeviceStore,
+    private val webRtcPeerFactory: WebRtcPeerFactory? = null,
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = DshViewModel(store) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        DshViewModel(store, webRtcPeerFactory = webRtcPeerFactory) as T
 }

@@ -9,409 +9,41 @@ const { EventEmitter } = require('events');
 const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
-const { applyOfficialDeepSeekSpawnEnv } = require('../shared/official-deepseek-env');
-const {
-  DEFAULT_PUBLIC_APP_BASE_URL,
-  DEFAULT_RELAY_ENDPOINT,
-  DEFAULT_RELAY_USE_TLS,
-  listLanAddresses,
-  normalizePublicAppBaseUrl,
-  preferredLanIp,
-  publicUrl,
-} = require('../shared/lan');
+const { listLanAddresses, preferredLanIp } = require('../shared/lan');
 const { createMobileWebServer, listenMobileWebServer, MOBILE_WEB_PORT } = require('./mobile-web-server');
 const { startGitTunnelServer } = require('./dshd-git-tunnel');
 const { spawnTreeOptions, killProcessTree } = require('../shared/process-tree');
 const { passSecretToChild } = require('../shared/secret');
-
-function resolveVendorRoot() {
-  // Packaged: extraResources -> resources/vendor/dshd-remote
-  // Dev: upstream source tree remains vendor/chisacode-remote.
-  try {
-    const { app } = require('electron');
-    if (app && app.isPackaged) {
-      return path.join(process.resourcesPath, 'vendor', 'dshd-remote');
-    }
-  } catch {
-    // electron unavailable in plain node tests
-  }
-  return path.join(__dirname, '..', '..', 'vendor', 'chisacode-remote');
-}
-
-const VENDOR_ROOT = resolveVendorRoot();
-const SERVER_EXPORT = path.join(
+const {
   VENDOR_ROOT,
-  'node_modules',
-  '@chisacode',
-  'server',
-  'dist',
-  'server',
-  'server',
-  'exports.js',
-);
-const SERVER_DIR = path.dirname(SERVER_EXPORT);
-// Narrow main-process entries next to the barrel (see loadServerApi).
-const PAIRING_OFFER_EXPORT = path.join(SERVER_DIR, 'pairing-offer.js');
-const DEVICE_STORE_EXPORT = path.join(SERVER_DIR, 'relay-device-credential-store.js');
-const PAIRING_LINK_STORE_EXPORT = path.join(SERVER_DIR, 'relay-pairing-link-store.js');
-
-/**
- * Plain-node children cannot read app.asar; the runner ships via asarUnpack.
- * @param {string} file
- * @returns {string}
- */
-function unpackedPath(file) {
-  return file.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
-}
-
-const RUNNER_PATH = unpackedPath(path.join(__dirname, 'dshd-daemon-runner.mjs'));
-
-/** Ready wait for the daemon child (cold dist import + port bind). */
-const DAEMON_READY_TIMEOUT_MS = 30_000;
-/** Graceful-stop wait before the child is force-killed. */
-const DAEMON_STOP_TIMEOUT_MS = 5_000;
-/** Startup stderr kept for the failure message. */
-const DAEMON_STDERR_TAIL_LIMIT = 8_192;
-
-function defaultHarnessRoot() {
-  try {
-    // Packaged: extracted harness runtime; dev: repo vendor tree.
-    return require('./paths').harnessRoot();
-  } catch {
-    // Plain-node tests: same fallback shape as resolveVendorRoot above.
-    return path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness');
-  }
-}
-
-/**
- * Bundled-harness plugin tree that can serve as `CHISACODE_DSH_VENDOR_DIR`.
- * Complete only when every dsh vendor package is present AND built
- * (`lib/index.js` — the managed cordis.yml points plugin URLs there, so a
- * source-only checkout must not qualify).
- * @param {{ root?: string, packages?: readonly string[] }} [options]
- * @returns {string | null}
- */
-function desktopDshVendorDir(options = {}) {
-  const packages = options.packages;
-  if (!Array.isArray(packages) || packages.length === 0) {
-    return null;
-  }
-  const root = options.root || defaultHarnessRoot();
-  const candidate = path.join(root, 'node_modules', '@deepseek-ai');
-  const complete = packages.every((pkg) => fs.existsSync(path.join(candidate, pkg, 'lib', 'index.js')));
-  return complete ? candidate : null;
-}
-
-/**
- * Product Away defaults — always from hardcoded `lan.js` constants so Setup.exe
- * works with zero user config (no reliance on defaults.json surviving the pack).
- */
-function readDefaults() {
-  return {
-    relayEndpoint: DEFAULT_RELAY_ENDPOINT,
-    relayUseTls: DEFAULT_RELAY_USE_TLS,
-    relayEnabled: true,
-    // Documented default origin only — never used as QR SPA landing.
-    appBaseUrl: '',
-    listen: '127.0.0.1:6767',
-  };
-}
-
-/**
- * Mirror of upstream `DSH_VENDOR_PACKAGES` (vendored
- * `packages/server/src/server/agent/providers/dsh-agent.ts`). Importing that
- * module pulls the provider graph into the main process; a parity test in
- * dshd-remote.test.js pins this list to the vendored source.
- */
-const DSH_VENDOR_PACKAGES = [
-  'dsh-llm-deepseek',
-  'dsh-sandbox-local',
-  'dsh-sandbox-policy',
-  'dsh-subprocess-local',
-  'dsh-bash-sandbox',
-  'dsh-user-approval',
-  'dsh-fs-sandbox',
-  'dsh-fs-observation-policy',
-  'dsh-tool-fs',
-  'dsh-token-meter',
-  'dsh-compaction-basic',
-  'dsh-repeat-tool-reminder',
-];
-
-/**
- * Load the narrow dshd-remote slice of @chisacode/server: pairing offers and
- * the device store are file-backed against the same chisacode home (the
- * upstream `daemon pair` shape). `SERVER_EXPORT` is the whole daemon graph —
- * tens of thousands of ESM modules loaded synchronously on the calling
- * thread, which freezes the Electron main process on a cold install. It
- * stays the completeness canary and the daemon child's entry; never import
- * it here.
- * @returns {Promise<{ generateLocalPairingOffer: Function, RelayDeviceCredentialStore: Function, RelayPairingLinkStore: Function, DSH_VENDOR_PACKAGES: readonly string[] }>}
- */
-async function loadServerApi() {
-  if (!fs.existsSync(SERVER_EXPORT)) {
-    throw new Error(
-      `dshd remote runtime missing at ${SERVER_EXPORT}. Run vendor sync / build packages/server.`,
-    );
-  }
-  const [pairing, store, links] = await Promise.all([
-    import(pathToFileURL(PAIRING_OFFER_EXPORT).href),
-    import(pathToFileURL(DEVICE_STORE_EXPORT).href),
-    import(pathToFileURL(PAIRING_LINK_STORE_EXPORT).href),
-  ]);
-  return {
-    generateLocalPairingOffer: pairing.generateLocalPairingOffer,
-    RelayDeviceCredentialStore: store.RelayDeviceCredentialStore,
-    RelayPairingLinkStore: links.RelayPairingLinkStore,
-    DSH_VENDOR_PACKAGES,
-  };
-}
-
-function modeIsAway(config) {
-  return config.remoteMode !== 'lan';
-}
-
-function resolvedAppBaseUrl(config) {
-  if (modeIsAway(config)) {
-    return normalizePublicAppBaseUrl(config.remoteAppBaseUrl, {
-      relayEndpoint: (config.remoteRelayEndpoint || DEFAULT_RELAY_ENDPOINT).trim(),
-    }) || DEFAULT_PUBLIC_APP_BASE_URL;
-  }
-  const bind = mobileBindAddress(config);
-  const ip = bind === '0.0.0.0' ? (preferredLanIp() || '127.0.0.1') : bind;
-  return publicUrl(ip, MOBILE_WEB_PORT).replace(/\/$/, '');
-}
-
-function mobileBindAddress(config = {}) {
-  return config.remoteBindAddress || '127.0.0.1';
-}
-
-/** The unauthenticated daemon stays loopback; the visible port control owns its port. */
-function daemonListen(config = {}) {
-  const port = Number(config.remotePort);
-  return `127.0.0.1:${Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 6767}`;
-}
-
-function relayUseTls(config, endpoint) {
-  if (typeof config.remoteRelayUseTls === 'boolean') {
-    return config.remoteRelayUseTls;
-  }
-  if (endpoint === DEFAULT_RELAY_ENDPOINT) {
-    return DEFAULT_RELAY_USE_TLS;
-  }
-  return /:443$/.test(endpoint);
-}
-
-function publicDevicesFromStore(store) {
-  if (!store || typeof store.listDevices !== 'function') {
-    return [];
-  }
-  return store.listDevices()
-    .filter((device) => !device.revokedAt)
-    .map((device) => ({
-      id: device.deviceId,
-      name: device.label || device.deviceId,
-      createdAt: device.createdAt || '',
-      boundAt: device.createdAt || '',
-      lastSeenAt: device.lastUsedAt || device.createdAt || '',
-      shortId: String(device.deviceId || '').slice(-4),
-    }));
-}
-
-/**
- * Relay control state from one parsed daemon log record. Replaces the old
- * in-process logger-wrapping probe (`attachRelayStatusProbe`): the daemon now
- * runs in a child process whose pino JSON lines are the same stable upstream
- * identifiers, read at the process boundary instead of by monkey-patching the
- * logger.
- * @param {{ msg?: unknown, err?: { message?: unknown } | null, reason?: unknown }} record
- * @param {{ connected?: boolean, lastError?: string } | null} [previous]
- * @returns {{ connected: boolean, lastError: string } | null}
- */
-function relayStatusFromLogRecord(record, previous) {
-  if (!record || typeof record !== 'object') {
-    return null;
-  }
-  const msg = typeof record.msg === 'string' ? record.msg : '';
-  if (msg === 'relay_control_connected') {
-    return { connected: true, lastError: '' };
-  }
-  if (msg === 'relay_error' || msg === 'relay_control_disconnected') {
-    const err = record.err;
-    const detail = (err && typeof err === 'object' && err.message) || record.reason || '';
-    const lastError = String(detail || msg);
-    const prior = previous && previous.lastError ? String(previous.lastError) : '';
-    const keepPrior = lastError === 'relay_control_disconnected'
-      && prior
-      && prior !== 'relay_control_disconnected';
-    return { connected: false, lastError: keepPrior ? prior : lastError };
-  }
-  return null;
-}
-
-/**
- * Line-buffered reader over a child stdio pipe.
- * @param {import('stream').Readable | null} stream
- * @param {(line: string) => void} onLine
- */
-function wireLineReader(stream, onLine) {
-  if (!stream) {
-    return;
-  }
-  let buffer = '';
-  stream.setEncoding('utf8');
-  stream.on('data', (chunk) => {
-    buffer += chunk;
-    let newline = buffer.indexOf('\n');
-    while (newline !== -1) {
-      const line = buffer.slice(0, newline).replace(/\r$/, '');
-      buffer = buffer.slice(newline + 1);
-      if (line) {
-        onLine(line);
-      }
-      newline = buffer.indexOf('\n');
-    }
-  });
-  stream.on('error', () => {});
-}
-
-/**
- * @param {import('child_process').ChildProcess} child
- * @param {number} timeoutMs
- * @returns {Promise<boolean>} true when the child exited within the window
- */
-function waitForExit(child, timeoutMs) {
-  if (child.exitCode !== null || child.signalCode) {
-    return Promise.resolve(true);
-  }
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      child.removeListener('exit', onExit);
-      resolve(false);
-    }, timeoutMs);
-    const onExit = () => {
-      clearTimeout(timer);
-      resolve(true);
-    };
-    child.once('exit', onExit);
-  });
-}
-
-function daemonStartCancelled() {
-  const error = new Error('远程守护进程启动已取消');
-  error.code = 'DSHD_REMOTE_CANCELLED';
-  return error;
-}
-
-/**
- * Desktop-facing home override (naming: `DSHD_*`, the desktop env family —
- * `CHISACODE_HOME` never appears in the shell's own environment). Mirrors the
- * dsh-home law: packaged builds ignore an inherited `DSHD_CHISACODE_HOME`
- * unless `DSHD_ALLOW_ENV_HOME=1` explicitly opts in.
- * @param {{ defaultDir: string, env?: NodeJS.ProcessEnv, isPackaged?: boolean }} options
- * @returns {string}
- */
-function resolveDesktopChisaCodeHome({ defaultDir, env = process.env, isPackaged = false }) {
-  const value = typeof env.DSHD_CHISACODE_HOME === 'string' ? env.DSHD_CHISACODE_HOME.trim() : '';
-  if (!value) {
-    return defaultDir;
-  }
-  if (isPackaged && env.DSHD_ALLOW_ENV_HOME !== '1') {
-    return defaultDir;
-  }
-  return value;
-}
-
-/**
- * dsh provider plugin tree for the daemon child. Precedence: desktop-facing
- * `DSHD_DSH_VENDOR_DIR` > inherited upstream `CHISACODE_DSH_VENDOR_DIR`
- * (compat) > bundled harness when complete > null (the child falls back to
- * the stdio-hardened npm-global probe).
- * @param {{ DSH_VENDOR_PACKAGES?: readonly string[] } | null} api
- * @param {NodeJS.ProcessEnv} [env]
- * @param {{ root?: string }} [options]
- * @returns {string | null}
- */
-function dshVendorDirForChild(api, env = process.env, options = {}) {
-  const desktop = typeof env.DSHD_DSH_VENDOR_DIR === 'string' ? env.DSHD_DSH_VENDOR_DIR.trim() : '';
-  if (desktop) {
-    return desktop;
-  }
-  const upstream = typeof env.CHISACODE_DSH_VENDOR_DIR === 'string' ? env.CHISACODE_DSH_VENDOR_DIR.trim() : '';
-  if (upstream) {
-    return upstream;
-  }
-  return desktopDshVendorDir({ packages: api && api.DSH_VENDOR_PACKAGES, root: options.root });
-}
-
-/**
- * Materialize a `dsh-acp-demo` PATH shim so the daemon's dsh provider can
- * launch the bundled harness ACP server (there is no npm-global install on a
- * desktop machine). Upstream resolves the binary via PATH lookup and its
- * spawn util handles Windows `.cmd` shims, so no vendor changes are needed.
- * Returns null (and materializes nothing) when the bundled harness has no
- * built ACP entry — the provider then reports unavailable instead of lying.
- * @param {{ home: string, harnessRoot?: string, execPath?: string }} options
- * @returns {string | null} shim bin dir for PATH prepend
- */
-function ensureDshAcpShim({ home, harnessRoot = defaultHarnessRoot(), execPath = process.execPath }) {
-  const entry = path.join(harnessRoot, 'packages', 'examples', 'acp-demo', 'lib', 'bin.js');
-  if (!fs.existsSync(entry)) {
-    return null;
-  }
-  const binDir = path.join(home, 'bin');
-  fs.mkdirSync(binDir, { recursive: true });
-  const sh = [
-    '#!/bin/sh',
-    'export ELECTRON_RUN_AS_NODE=1',
-    `exec "${execPath}" "${entry}" "$@"`,
-    '',
-  ].join('\n');
-  fs.writeFileSync(path.join(binDir, 'dsh-acp-demo'), sh, { encoding: 'utf8', mode: 0o755 });
-  const cmd = [
-    '@echo off',
-    'set ELECTRON_RUN_AS_NODE=1',
-    `"${execPath}" "${entry}" %*`,
-    '',
-  ].join('\r\n');
-  fs.writeFileSync(path.join(binDir, 'dsh-acp-demo.cmd'), cmd, { encoding: 'utf8' });
-  return binDir;
-}
-
-/**
- * Environment for the daemon child. This is the ONLY place `CHISACODE_*`
- * names exist on the desktop — a controlled bridge at the process boundary;
- * the shell's own env and every other child (PTY, `dsh web`) stay clean.
- * @param {object} options
- * @param {NodeJS.ProcessEnv} options.baseEnv
- * @param {string} options.home - resolved chisacode runtime home (userData)
- * @param {string | null} options.vendorDir - dsh plugin tree (see dshVendorDirForChild)
- * @param {string | null} options.shimDir - dsh-acp-demo bin dir for PATH prepend
- * @param {{ apiKey?: string, baseUrl?: string }} options.config - desktop shell config
- * @returns {NodeJS.ProcessEnv}
- */
-function buildDaemonChildEnv({
-  baseEnv, home, vendorDir, shimDir, config, harnessOrigin, gitTunnelUrl,
-}) {
-  const env = { ...baseEnv };
-  env.ELECTRON_RUN_AS_NODE = '1';
-  // Bridge: dsh provider managed homes land under userData, never ~/.chisacode.
-  env.CHISACODE_HOME = home;
-  if (vendorDir) {
-    env.CHISACODE_DSH_VENDOR_DIR = vendorDir;
-  }
-  if (shimDir) {
-    const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH') || 'PATH';
-    const current = env[pathKey] || '';
-    env[pathKey] = current ? `${shimDir}${path.delimiter}${current}` : shimDir;
-  }
-  if (harnessOrigin) env.DSHD_HARNESS_ORIGIN = harnessOrigin;
-  if (gitTunnelUrl) env.DSHD_GIT_TUNNEL_URL = gitTunnelUrl;
-  // Same credential law as `dsh web` children: official https host only.
-  applyOfficialDeepSeekSpawnEnv(env, { apiKey: config.apiKey, baseUrl: config.baseUrl });
-  return env;
-}
+  SERVER_EXPORT,
+  RUNNER_PATH,
+  DAEMON_READY_TIMEOUT_MS,
+  DAEMON_STOP_TIMEOUT_MS,
+  DAEMON_STDERR_TAIL_LIMIT,
+  desktopDshVendorDir,
+  readDefaults,
+  DSH_VENDOR_PACKAGES,
+  loadServerApi,
+  modeIsAway,
+  resolvedAppBaseUrl,
+  mobileBindAddress,
+  TRANSPORT_MODE_RANK,
+  lanPairingEndpoints,
+  iceServersFromConfig,
+  bestActiveTransportMode,
+  daemonListen,
+  relayUseTls,
+  publicDevicesFromStore,
+  relayStatusFromLogRecord,
+  wireLineReader,
+  waitForExit,
+  daemonStartCancelled,
+  resolveDesktopChisaCodeHome,
+  dshVendorDirForChild,
+  ensureDshAcpShim,
+  buildDaemonChildEnv,
+} = require('./dshd-remote-helpers');
 
 /**
  * Product remote controller — process manager for the vendored daemon child
@@ -463,6 +95,7 @@ class DshdRemote extends EventEmitter {
     this.pairing = { relayEnabled: false, url: null, qr: null };
     this.pairingOperation = null;
     this.relayState = { connected: false, lastError: '' };
+    this.clientTransportModes = new Map();
     this.error = '';
     this.starting = null;
     this.startGeneration = 0;
@@ -546,7 +179,11 @@ class DshdRemote extends EventEmitter {
       return;
     }
     const bind = mobileBindAddress(config);
-    const server = createMobileWebServer({ bindAddress: bind, port: MOBILE_WEB_PORT });
+    const server = createMobileWebServer({
+      bindAddress: bind,
+      port: MOBILE_WEB_PORT,
+      lanWsTarget: () => (this.daemon ? `ws://${daemonListen(this.getConfig() || {})}/lan-ws` : ''),
+    });
     const listening = listenMobileWebServer(server, bind, MOBILE_WEB_PORT);
     this.mobileWebStarting = listening;
     try {
@@ -609,6 +246,11 @@ class DshdRemote extends EventEmitter {
       }
     }
 
+    const lanReady = !away && listening && Boolean(this.mobileWebServer);
+    const iceServers = iceServersFromConfig(config);
+    const activeTransportModes = Array.from(this.clientTransportModes.values());
+    const activeTransportMode = bestActiveTransportMode(this.clientTransportModes);
+
     return {
       available: true,
       protocol: 'chisacode-v2',
@@ -618,10 +260,14 @@ class DshdRemote extends EventEmitter {
       port: Number(daemonListen(config).split(':').pop()),
       token: '',
       mode: away ? 'relay' : 'lan',
+      lanReady,
       bindAddress: this.mobileWebServer?.address()?.address || mobileBindAddress(config),
       lanTls: false,
       tlsFingerprint: '',
       addresses,
+      iceServers,
+      activeTransportMode,
+      activeTransportModes,
       relayUrl: relayEndpoint,
       defaultRelayUrl: defaults.relayEndpoint,
       relayTokenSet: true,
@@ -674,9 +320,12 @@ class DshdRemote extends EventEmitter {
     assertCurrent();
     const config = this.getConfig() || {};
     const defaults = readDefaults();
+    const away = modeIsAway(config);
     const relayEndpoint = (config.remoteRelayEndpoint || config.remoteRelayUrl || defaults.relayEndpoint || '').trim();
     const useTls = relayUseTls(config, relayEndpoint);
     const appBaseUrl = this.pairingAppBaseUrl();
+    const lanEndpoints = away ? [] : lanPairingEndpoints(config);
+    const iceServers = iceServersFromConfig(config);
     if (revokeLink) {
       new api.RelayPairingLinkStore(this.homeDir()).revoke();
       // Never publish a revoked link if creating its replacement fails.
@@ -685,11 +334,15 @@ class DshdRemote extends EventEmitter {
 
     const pairing = await api.generateLocalPairingOffer({
       chisacodeHome: this.homeDir(),
-      relayEnabled: true,
-      relayEndpoint,
-      relayPublicEndpoint: relayEndpoint,
-      relayUseTls: useTls,
-      relayPublicUseTls: useTls,
+      relayEnabled: away,
+      ...(away ? {
+        relayEndpoint,
+        relayPublicEndpoint: relayEndpoint,
+        relayUseTls: useTls,
+        relayPublicUseTls: useTls,
+      } : {}),
+      ...(lanEndpoints.length > 0 ? { lanEndpoints, lanUseTls: false } : {}),
+      ...(iceServers.length > 0 ? { iceServers } : {}),
       appBaseUrl,
       includeQr: false,
       includePersistentLink: true,
@@ -783,31 +436,38 @@ class DshdRemote extends EventEmitter {
       const agentStoragePath = path.join(home, 'agents');
       fs.mkdirSync(agentStoragePath, { recursive: true });
 
-      if (modeIsAway(config)) {
+      const away = modeIsAway(config);
+      const iceServers = iceServersFromConfig(config);
+      if (away) {
         await this.stopMobileWebServer();
       } else {
         await this.ensureMobileWebServer(config);
       }
       assertCurrent();
       this.relayState = { connected: false, lastError: '' };
+      this.clientTransportModes.clear();
 
       const daemonConfig = {
         listen,
         chisacodeHome: home,
         // The daemon has no password on loopback, so a browser page from any
         // other site must not reach it. Phones and the pairing page use the
-        // encrypted relay; the daemon itself still admits its own loopback
-        // origins and Origin-less local clients.
+        // encrypted relay (or loopback /lan-ws E2EE bridge in pure LAN mode);
+        // the daemon itself still admits its own loopback origins and Origin-less local clients.
         corsAllowedOrigins: [],
         staticDir: fs.existsSync(staticDir) ? staticDir : home,
         mcpDebug: false,
         agentClients: {},
         agentStoragePath,
-        relayEnabled: true,
-        relayEndpoint,
-        relayPublicEndpoint: relayEndpoint,
-        relayUseTls: useTls,
-        relayPublicUseTls: useTls,
+        relayEnabled: away,
+        lanE2eeEnabled: true,
+        ...(away ? {
+          relayEndpoint,
+          relayPublicEndpoint: relayEndpoint,
+          relayUseTls: useTls,
+          relayPublicUseTls: useTls,
+        } : {}),
+        ...(iceServers.length > 0 ? { iceServers } : {}),
         appBaseUrl: this.pairingAppBaseUrl(),
         // Loopback listen: empty auth is allowed. Non-loopback requires a password
         // or CHISACODE_ALLOW_WILDCARD_NO_AUTH=1 (see ChisaCode assertWildcardAuth).
@@ -949,9 +609,41 @@ class DshdRemote extends EventEmitter {
   }
 
   /**
+   * @param {string} msg
+   * @param {{ level?: unknown }} record
+   * @returns {boolean}
+   */
+  isOperatorDaemonLog(msg, record) {
+    return msg.startsWith('dshd_daemon_')
+      || msg === 'remote_client_transport_mode'
+      || msg === 'webrtc_upgrade_activated'
+      || msg === 'lan_e2ee_transport_ready'
+      || (typeof record.level === 'number' && record.level >= 40);
+  }
+
+  /**
+   * @param {string} msg
+   * @param {Record<string, any>} record
+   */
+  applyClientTransportRecord(msg, record) {
+    const connectionId = typeof record.connectionId === 'string' ? record.connectionId : '';
+    if (!connectionId) return;
+    if (msg === 'remote_client_transport_mode') {
+      const mode = typeof record.mode === 'string' ? record.mode : '';
+      if (Object.prototype.hasOwnProperty.call(TRANSPORT_MODE_RANK, mode)
+        && this.clientTransportModes.get(connectionId) !== mode) {
+        this.clientTransportModes.set(connectionId, mode);
+        this.emit('listening', this.snapshot());
+      }
+    } else if (msg === 'remote_client_disconnected' && this.clientTransportModes.delete(connectionId)) {
+      this.emit('listening', this.snapshot());
+    }
+  }
+
+  /**
    * One parsed stdout line from the daemon child: lifecycle control lines,
    * relay status transitions, and warn+ log forwarding into the dsh log.
-   * @param {{ readyResolve: () => void, readyReject: (err: Error) => void }} handle
+   * @param {any} handle
    * @param {string} line
    */
   handleDaemonLogLine(handle, line) {
@@ -966,21 +658,25 @@ class DshdRemote extends EventEmitter {
     if (!record || typeof record !== 'object') {
       return;
     }
+    const isCurrentChild = !handle.stopping && (this.daemon === handle || this.pendingDaemon === handle);
     const status = relayStatusFromLogRecord(record, this.relayState);
     // exit can precede stdio drain. An old child's final log must not hide a
     // replacement daemon's QR after its one connected notification has arrived.
-    if (status && !handle.stopping && (this.daemon === handle || this.pendingDaemon === handle)) {
+    if (status && isCurrentChild) {
       this.setRelayState(status);
     }
     const msg = typeof record.msg === 'string' ? record.msg : '';
+    if (isCurrentChild) {
+      this.applyClientTransportRecord(msg, record);
+    }
     if (msg === 'dshd_daemon_ready') {
       handle.readyResolve();
     } else if (msg === 'dshd_daemon_start_failed') {
       handle.readyReject(new Error(`远程守护进程启动失败：${record.error || 'unknown'}`));
     }
-    // Info-level daemon chatter stays out of the dsh log; lifecycle lines and
-    // warn+ records are the operator-relevant slice.
-    if (msg.startsWith('dshd_daemon_') || (typeof record.level === 'number' && record.level >= 40)) {
+    // Info-level daemon chatter stays out of the dsh log; lifecycle lines,
+    // transport upgrades, and warn+ records are the operator-relevant slice.
+    if (this.isOperatorDaemonLog(msg, record)) {
       this.log?.(`[dshd-daemon] ${line}`);
     }
   }
@@ -1000,6 +696,7 @@ class DshdRemote extends EventEmitter {
     }
     this.daemon = null;
     this.runtimeKey = '';
+    this.clientTransportModes.clear();
     if (!handle.stopping) {
       this.error = `远程守护进程异常退出（${signal || `code ${code}`}），点「开启」重试`;
       this.relayState = { connected: false, lastError: this.error };
@@ -1104,6 +801,7 @@ class DshdRemote extends EventEmitter {
       if (this.pendingDaemon === handle) this.pendingDaemon = null;
     }
     this.relayState = { connected: false, lastError: '' };
+    this.clientTransportModes.clear();
     this.error = '';
     this.runtimeKey = '';
     this.pairing = { relayEnabled: false, url: null, qr: null };
@@ -1179,6 +877,7 @@ class DshdRemote extends EventEmitter {
       mobileBind: mobileBindAddress(config),
       mode: modeIsAway(config) ? 'relay' : 'lan',
       appBaseUrl: resolvedAppBaseUrl(config),
+      iceServers: iceServersFromConfig(config),
     });
   }
 }

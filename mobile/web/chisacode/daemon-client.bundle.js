@@ -40,9 +40,9 @@ var require_crypto = __commonJS({
   }
 });
 
-// ../../vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js
+// vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js
 var require_nacl_fast = __commonJS({
-  "../../vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js"(exports, module) {
+  "vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js"(exports, module) {
     (function(nacl3) {
       "use strict";
       var gf = function(init) {
@@ -2264,9 +2264,9 @@ var require_nacl_fast = __commonJS({
   }
 });
 
-// ../../vendor/chisacode-remote/node_modules/base64-js/index.js
+// vendor/chisacode-remote/node_modules/base64-js/index.js
 var require_base64_js = __commonJS({
-  "../../vendor/chisacode-remote/node_modules/base64-js/index.js"(exports) {
+  "vendor/chisacode-remote/node_modules/base64-js/index.js"(exports) {
     "use strict";
     exports.byteLength = byteLength;
     exports.toByteArray = toByteArray3;
@@ -2365,7 +2365,7 @@ var require_base64_js = __commonJS({
   }
 });
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/external.js
+// vendor/chisacode-remote/node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -2477,7 +2477,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/helpers/util.js
+// vendor/chisacode-remote/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -2611,7 +2611,7 @@ var getParsedType = (data) => {
   }
 };
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/ZodError.js
+// vendor/chisacode-remote/node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -2729,7 +2729,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/locales/en.js
+// vendor/chisacode-remote/node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -2832,7 +2832,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/errors.js
+// vendor/chisacode-remote/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -2841,7 +2841,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/helpers/parseUtil.js
+// vendor/chisacode-remote/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -2951,14 +2951,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/helpers/errorUtil.js
+// vendor/chisacode-remote/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// ../../vendor/chisacode-remote/node_modules/zod/v3/types.js
+// vendor/chisacode-remote/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -15512,7 +15512,13 @@ function decodeBase64(base64) {
   return (0, import_base64_js.toByteArray)(base64);
 }
 function toUint8(data) {
-  return typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+  if (typeof data === "string") {
+    return new TextEncoder().encode(data);
+  }
+  if (data instanceof Uint8Array) {
+    return data;
+  }
+  return new Uint8Array(data);
 }
 function toArrayBuffer(bytes) {
   const out = new Uint8Array(bytes.byteLength);
@@ -15567,7 +15573,7 @@ function buildNonce(salt, seq) {
   nonce.set(seqToLEBytes(seq), SALT_LENGTH);
   return nonce;
 }
-function encrypt(sharedKey, data, seq, salt) {
+function encryptToBytes(sharedKey, data, seq, salt) {
   if (!(salt instanceof Uint8Array) || salt.byteLength !== SALT_LENGTH) {
     throw new Error(`Invalid salt length (expected ${SALT_LENGTH})`);
   }
@@ -15581,10 +15587,13 @@ function encrypt(sharedKey, data, seq, salt) {
   const out = new Uint8Array(nonce.byteLength + ciphertext.byteLength);
   out.set(nonce, 0);
   out.set(ciphertext, nonce.byteLength);
-  return toArrayBuffer(out);
+  return out;
 }
-function decrypt(sharedKey, data) {
-  const bytes = new Uint8Array(data);
+function encrypt(sharedKey, data, seq, salt) {
+  return toArrayBuffer(encryptToBytes(sharedKey, data, seq, salt));
+}
+function decryptFromBytes(sharedKey, data) {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   if (bytes.byteLength < NONCE_LENGTH) {
     throw new Error("Ciphertext bundle too short");
   }
@@ -15605,416 +15614,1724 @@ function decrypt(sharedKey, data) {
   }
   return { plaintext, seq, salt };
 }
+function decrypt(sharedKey, data) {
+  return decryptFromBytes(sharedKey, data);
+}
 
 // vendor/chisacode-remote/packages/relay/src/encrypted-channel.ts
 var import_tweetnacl2 = __toESM(require_nacl_fast(), 1);
 
 // vendor/chisacode-remote/packages/relay/src/base64.ts
 var import_base64_js2 = __toESM(require_base64_js(), 1);
-function arrayBufferToBase64(buffer) {
-  return (0, import_base64_js2.fromByteArray)(new Uint8Array(buffer));
+
+// vendor/chisacode-remote/packages/relay/src/rtc-leg.ts
+var DSHU_MAGIC = new Uint8Array([68, 83, 72, 85]);
+var E2EE_MIN_BUNDLE_BYTES = SALT_LENGTH + SEQ_LENGTH + 16;
+var RTCH_MAGIC = new Uint8Array([82, 84, 67, 72]);
+var RTC_CHUNK_PAYLOAD_BYTES = 8 * 1024;
+var RTC_CHUNK_MAX_MESSAGE_BYTES = 4 * 1024 * 1024;
+var RTC_CHUNK_MAX_TOTAL = RTC_CHUNK_MAX_MESSAGE_BYTES / RTC_CHUNK_PAYLOAD_BYTES;
+var REORDER_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+
+// vendor/chisacode-remote/packages/protocol/dist/relay-device-auth.js
+var RELAY_DEVICE_AUTH_VERSION = 1;
+var RelayAuthBootstrapSchema = external_exports.object({
+  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION),
+  /**
+   * Enrollment credential from a one-time QR or a revocable persistent link.
+   * Both exchange for an independent device secret over the encrypted channel.
+   */
+  pairingToken: external_exports.string().min(16).max(256),
+  /**
+   * Absolute expiry as unix epoch milliseconds.
+   */
+  expiresAtMs: external_exports.number().int().positive(),
+  /** Missing means a short-lived one-time QR. Persistent links require explicit revocation. */
+  kind: external_exports.enum(["persistent"]).optional()
+});
+var RelayDeviceAuthChallengeSchema = external_exports.object({
+  type: external_exports.literal("relay_device_auth_challenge"),
+  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION),
+  challenge: external_exports.string().min(16).max(256),
+  serverId: external_exports.string().min(1)
+});
+var RelayDeviceAuthProofSchema = external_exports.object({
+  type: external_exports.literal("relay_device_auth_proof"),
+  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION),
+  deviceId: external_exports.string().min(8).max(128),
+  /**
+   * Base64url HMAC-SHA256 over the canonical transcript.
+   */
+  proof: external_exports.string().min(16).max(256),
+  /**
+   * When set, this is a first-time pairing exchange consuming the bootstrap token.
+   */
+  pairingToken: external_exports.string().min(16).max(256).optional()
+});
+var RelayDeviceAuthResultSchema = external_exports.object({
+  type: external_exports.literal("relay_device_auth_result"),
+  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION),
+  ok: external_exports.boolean(),
+  /**
+   * Issued only on successful first pairing. Never logged by callers.
+   */
+  deviceSecret: external_exports.string().min(32).max(256).optional(),
+  reason: external_exports.string().max(200).optional(),
+  securityLevel: external_exports.enum(["v2", "legacy"]).optional()
+});
+
+// vendor/chisacode-remote/packages/protocol/dist/connection-offer.js
+var IceServerConfigSchema = external_exports.object({
+  urls: external_exports.union([external_exports.string().min(1), external_exports.array(external_exports.string().min(1)).min(1)]),
+  username: external_exports.string().optional(),
+  credential: external_exports.string().optional()
+});
+var ConnectionOfferLanSchema = external_exports.object({
+  endpoints: external_exports.array(external_exports.string().min(1)).min(1),
+  useTls: external_exports.boolean().optional()
+});
+var ConnectionOfferRelaySchema = external_exports.object({
+  endpoint: external_exports.string().min(1),
+  useTls: external_exports.boolean().optional()
+});
+var ConnectionOfferV2Schema = external_exports.object({
+  v: external_exports.literal(2),
+  serverId: external_exports.string().min(1),
+  daemonPublicKeyB64: external_exports.string().min(1),
+  relayAuthPublicKeyB64: external_exports.string().min(1).optional(),
+  /**
+   * Optional client-auth bootstrap for handshake v2. Old parsers ignore this
+   * field (optional missing keys remain valid; unknown keys are stripped).
+   */
+  authBootstrap: RelayAuthBootstrapSchema.optional(),
+  relay: ConnectionOfferRelaySchema.optional(),
+  lan: ConnectionOfferLanSchema.optional(),
+  iceServers: external_exports.array(IceServerConfigSchema).optional()
+}).refine((offer) => Boolean(offer.relay?.endpoint) || (offer.lan?.endpoints?.length ?? 0) > 0, {
+  message: "Connection offer must provide either relay.endpoint or at least one lan.endpoints entry"
+});
+var ConnectionOfferSchema = ConnectionOfferV2Schema;
+function decodeBase64UrlToUtf8(input) {
+  const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, "=");
+  const binary = globalThis.atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
-function base64ToArrayBuffer(base64) {
-  const normalized = (() => {
-    const trimmed = base64.trim();
-    const standard = trimmed.replace(/-/g, "+").replace(/_/g, "/");
-    const padLen = (4 - standard.length % 4) % 4;
-    return standard + "=".repeat(padLen);
-  })();
-  const bytes = (0, import_base64_js2.toByteArray)(normalized);
-  const out = new Uint8Array(bytes.byteLength);
-  out.set(bytes);
-  return out.buffer;
+function decodeOfferFragmentPayload(encoded) {
+  const json = decodeBase64UrlToUtf8(encoded);
+  return JSON.parse(json);
 }
 
-// vendor/chisacode-remote/packages/relay/src/encrypted-channel.ts
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+// vendor/chisacode-remote/packages/client/dist/rtc-chunking.js
+var RTC_CHUNK_MAGIC = new Uint8Array([82, 84, 67, 72]);
+var RTC_CHUNK_HEADER_BYTES = 12;
+var RTC_CHUNK_PAYLOAD_BYTES2 = 8 * 1024;
+var RTC_CHUNK_MAX_MESSAGE_BYTES2 = 4 * 1024 * 1024;
+var RTC_CHUNK_MAX_CHUNKS = 512;
+var RTC_CHUNK_MAX_IN_FLIGHT = 8;
+var RTC_CHUNK_MAX_ASSEMBLY_AGE_MS = 3e4;
+var DSHU_MAGIC2 = new Uint8Array([68, 83, 72, 85]);
+var DSHU_HEADER_BYTES = 12;
+var NACL_SALT_BYTES = 16;
+var NACL_SEQ_BYTES = 8;
+var NACL_NONCE_BYTES = NACL_SALT_BYTES + NACL_SEQ_BYTES;
+var NACL_MAC_BYTES = 16;
+var NACL_MIN_BUNDLE_BYTES = NACL_NONCE_BYTES + NACL_MAC_BYTES;
+var REORDER_MAX_BUFFERED_FRAMES = 256;
+var REORDER_MAX_BUFFERED_BYTES2 = 4 * 1024 * 1024;
+var REORDER_GAP_TIMEOUT_MS = 5e3;
+var SERIAL_SEND_MAX_QUEUED_BYTES = 8 * 1024 * 1024;
+var SERIAL_SEND_MAX_QUEUED_FRAMES = 256;
+var DEFAULT_STUN_ICE_SERVERS = Object.freeze([
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:stun.l.google.com:19302" }
+]);
+var TRANSPORT_MODE_PRIORITY = Object.freeze({
+  lan: 3,
+  p2p: 2,
+  turn: 1,
+  relay: 0
+});
+function readUint64BE(bytes, offset) {
+  let value = 0n;
+  for (let i = 0; i < 8; i += 1) {
+    value = value << 8n | BigInt(bytes[offset + i]);
+  }
+  return value;
 }
-function isE2EEHelloMessage(value) {
-  return isRecord(value) && value.type === "e2ee_hello" && typeof value.key === "string" && value.key.trim().length > 0;
+function writeUint64BE(bytes, offset, value) {
+  const masked = value & 0xffffffffffffffffn;
+  for (let i = 7; i >= 0; i -= 1) {
+    bytes[offset + i] = Number(masked >> BigInt((7 - i) * 8) & 0xffn);
+  }
 }
-function isE2EEReadyMessage(value) {
-  return isRecord(value) && value.type === "e2ee_ready" && (value.authChallenge === void 0 || typeof value.authChallenge === "string" && value.authChallenge.trim().length > 0);
+function readUint64LE(bytes, offset) {
+  let value = 0n;
+  for (let i = 0; i < 8; i += 1) {
+    value |= BigInt(bytes[offset + i]) << BigInt(i * 8);
+  }
+  return value;
 }
-var HANDSHAKE_RETRY_MS = 1e3;
-var MAX_PENDING_SENDS = 200;
-var REHANDSHAKE_KEY_MISMATCH_CLOSE_CODE = 1008;
-var REHANDSHAKE_KEY_MISMATCH_CLOSE_REASON = "E2EE re-handshake key mismatch";
-var REPLAY_PROTECTION_CLOSE_CODE = 1011;
-var REPLAY_PROTECTION_CLOSE_REASON = "E2EE replay protection violation";
-function hasUnref(timeout) {
-  return typeof timeout === "object" && timeout !== null && "unref" in timeout && typeof timeout.unref === "function";
+function readBundleSeqLE(bundle) {
+  if (bundle.byteLength < NACL_MIN_BUNDLE_BYTES) {
+    throw new Error(`Encrypted bundle too short (${bundle.byteLength} < ${NACL_MIN_BUNDLE_BYTES})`);
+  }
+  return readUint64LE(bundle, NACL_SALT_BYTES);
 }
-async function createClientChannel(transport, daemonPublicKeyB64, events = {}) {
-  const keyPair = generateKeyPair();
-  const daemonPublicKey = importPublicKey(daemonPublicKeyB64);
-  const sharedKey = deriveSharedKey(keyPair.secretKey, daemonPublicKey);
-  const ourPublicKeyB64 = exportPublicKey(keyPair.publicKey);
-  const channel = new EncryptedChannel(transport, sharedKey, events, {
-    securityContext: { clientPublicKeyB64: ourPublicKeyB64 }
-  });
-  const hello = { type: "e2ee_hello", key: ourPublicKeyB64 };
-  const helloText = JSON.stringify(hello);
-  let retry = null;
-  const emitSendError = (error) => {
-    const err = error instanceof Error ? error : new Error(String(error));
-    events.onerror?.(err);
+function isDshuFrame(frame) {
+  return frame.byteLength >= 4 && frame[0] === DSHU_MAGIC2[0] && frame[1] === DSHU_MAGIC2[1] && frame[2] === DSHU_MAGIC2[2] && frame[3] === DSHU_MAGIC2[3];
+}
+function wrapDshuFrame(seq, bundle) {
+  if (seq < 0n) {
+    throw new Error("DSHU sequence must be non-negative");
+  }
+  const bundleSeq = readBundleSeqLE(bundle);
+  if (bundleSeq !== seq) {
+    throw new Error(`DSHU sequence mismatch (header=${seq.toString()}, bundle=${bundleSeq.toString()})`);
+  }
+  const out = new Uint8Array(DSHU_HEADER_BYTES + bundle.byteLength);
+  out.set(DSHU_MAGIC2, 0);
+  writeUint64BE(out, 4, seq);
+  out.set(bundle, DSHU_HEADER_BYTES);
+  return out;
+}
+function unwrapDshuFrame(frame) {
+  if (frame.byteLength < DSHU_HEADER_BYTES + NACL_MIN_BUNDLE_BYTES) {
+    throw new Error(`DSHU frame too short (${frame.byteLength} bytes)`);
+  }
+  if (!isDshuFrame(frame)) {
+    throw new Error("Invalid DSHU magic header");
+  }
+  const headerSeq = readUint64BE(frame, 4);
+  const bundle = frame.slice(DSHU_HEADER_BYTES);
+  const bundleSeq = readBundleSeqLE(bundle);
+  if (headerSeq !== bundleSeq) {
+    throw new Error(`DSHU sequence mismatch (header=${headerSeq.toString()}, bundle=${bundleSeq.toString()})`);
+  }
+  return { seq: headerSeq, bundle };
+}
+function isRtchFrame(frame) {
+  return frame.byteLength >= 4 && frame[0] === RTC_CHUNK_MAGIC[0] && frame[1] === RTC_CHUNK_MAGIC[1] && frame[2] === RTC_CHUNK_MAGIC[2] && frame[3] === RTC_CHUNK_MAGIC[3];
+}
+function createRtcMessageIdGenerator(initial = 1) {
+  let next = (initial - 1 >>> 0) + 1;
+  if (next === 0)
+    next = 1;
+  return () => {
+    const id = next;
+    next = next >= 4294967295 ? 1 : next + 1;
+    return id;
   };
-  const sendHello = () => {
-    try {
-      transport.send(helloText);
-      return true;
-    } catch (error) {
-      emitSendError(error);
-      return false;
-    }
-  };
-  const clearRetry = () => {
-    if (retry) {
-      clearInterval(retry);
-      retry = null;
-    }
-  };
-  channel.onTransitionToOpen(() => clearRetry());
-  channel.onClose(() => clearRetry());
-  sendHello();
-  try {
-    retry = setInterval(() => {
-      if (channel.isOpen()) {
-        clearRetry();
-        return;
-      }
-      sendHello();
-    }, HANDSHAKE_RETRY_MS);
-    if (hasUnref(retry)) {
-      retry.unref();
-    }
-    return channel;
-  } catch (error) {
-    clearRetry();
-    throw error;
-  }
 }
-var EncryptedChannel = class {
-  constructor(transport, sharedKey, events = {}, options = {}) {
-    this.state = "handshaking";
-    this.pendingSends = [];
-    this.onOpenCallbacks = [];
-    this.onCloseCallbacks = [];
-    // Replay protection state, maintained per channel direction.
-    // Each side has its own send counter + send salt (random, generated when
-    // the channel transitions to open) and tracks the peer's receive counter +
-    // receive salt (locked to the first encrypted frame observed).
-    this.sendSeq = 0n;
-    this.recvSeq = null;
-    this.sendSalt = null;
-    this.recvSalt = null;
-    this.transport = transport;
-    this.sharedKey = sharedKey;
-    this.events = events;
-    this.options = options;
-    this.securityContext = options.securityContext ? { ...options.securityContext } : null;
-    Object.assign(transport, {
-      onmessage: (data) => this.handleMessage(data),
-      onclose: (code, reason) => {
-        this.state = "closed";
-        this.events.onclose?.(code, reason);
-        for (const cb of this.onCloseCallbacks) cb();
-      },
-      onerror: (error) => {
-        this.events.onerror?.(error);
-      }
-    });
+function chunkRtcPayload(payload, nextMessageId) {
+  if (payload.byteLength > RTC_CHUNK_MAX_MESSAGE_BYTES2) {
+    throw new Error(`RTC payload exceeds max message size (${payload.byteLength} > ${RTC_CHUNK_MAX_MESSAGE_BYTES2})`);
   }
-  setState(state) {
-    this.state = state;
-    if (state === "open") {
-      ensurePrng();
-      this.sendSalt = import_tweetnacl2.default.randomBytes(SALT_LENGTH);
-      this.sendSeq = 0n;
+  if (payload.byteLength <= RTC_CHUNK_PAYLOAD_BYTES2) {
+    if (isRtchFrame(payload)) {
+      throw new Error("Unchunked RTC payload must not start with RTCH magic");
     }
+    return [payload];
   }
-  async handleMessage(data) {
-    if (this.state === "handshaking") {
-      try {
-        const text = typeof data === "string" ? data : new TextDecoder().decode(data);
-        const parsed = JSON.parse(text);
-        if (isE2EEReadyMessage(parsed)) {
-          if (this.securityContext && parsed.authChallenge) {
-            this.securityContext.authChallenge = parsed.authChallenge;
-          }
-          this.setState("open");
-          this.events.onopen?.();
-          for (const cb of this.onOpenCallbacks) cb();
-          await this.flushPendingSends();
+  const total = Math.ceil(payload.byteLength / RTC_CHUNK_PAYLOAD_BYTES2);
+  if (total < 2 || total > RTC_CHUNK_MAX_CHUNKS) {
+    throw new Error(`Invalid RTC chunk count (${total})`);
+  }
+  const messageId = nextMessageId() >>> 0;
+  if (messageId === 0) {
+    throw new Error("RTC chunk messageId must be in 1..0xFFFFFFFF");
+  }
+  const chunks = [];
+  for (let index = 0; index < total; index += 1) {
+    const start = index * RTC_CHUNK_PAYLOAD_BYTES2;
+    const end = Math.min(payload.byteLength, start + RTC_CHUNK_PAYLOAD_BYTES2);
+    const slice = payload.subarray(start, end);
+    const chunk = new Uint8Array(RTC_CHUNK_HEADER_BYTES + slice.byteLength);
+    chunk.set(RTC_CHUNK_MAGIC, 0);
+    const view = new DataView(chunk.buffer, chunk.byteOffset, RTC_CHUNK_HEADER_BYTES);
+    view.setUint32(4, messageId, false);
+    view.setUint16(8, index, false);
+    view.setUint16(10, total, false);
+    chunk.set(slice, RTC_CHUNK_HEADER_BYTES);
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+var RtcChunkReassembler = class {
+  constructor(options = {}) {
+    this.inFlight = /* @__PURE__ */ new Map();
+    this.maxMessageBytes = options.maxMessageBytes ?? RTC_CHUNK_MAX_MESSAGE_BYTES2;
+    this.maxChunks = options.maxChunks ?? RTC_CHUNK_MAX_CHUNKS;
+    this.maxInFlight = options.maxInFlight ?? RTC_CHUNK_MAX_IN_FLIGHT;
+    this.maxAssemblyAgeMs = options.maxAssemblyAgeMs ?? RTC_CHUNK_MAX_ASSEMBLY_AGE_MS;
+    this.now = options.now ?? (() => Date.now());
+  }
+  push(frame, nowMs = this.now()) {
+    if (!isRtchFrame(frame)) {
+      if (frame.byteLength > this.maxMessageBytes) {
+        throw new Error(`RTC frame exceeds max message size (${frame.byteLength} > ${this.maxMessageBytes})`);
+      }
+      return frame;
+    }
+    if (frame.byteLength <= RTC_CHUNK_HEADER_BYTES) {
+      throw new Error(`RTCH chunk too short (${frame.byteLength} bytes)`);
+    }
+    const view = new DataView(frame.buffer, frame.byteOffset, RTC_CHUNK_HEADER_BYTES);
+    const messageId = view.getUint32(4, false);
+    const index = view.getUint16(8, false);
+    const total = view.getUint16(10, false);
+    const chunkPayload = frame.slice(RTC_CHUNK_HEADER_BYTES);
+    if (messageId === 0) {
+      throw new Error("RTCH chunk messageId cannot be 0");
+    }
+    if (total < 2 || total > this.maxChunks) {
+      throw new Error(`RTCH chunk total out of bounds (${total})`);
+    }
+    if (index >= total) {
+      throw new Error(`RTCH chunk index out of bounds (${index} >= ${total})`);
+    }
+    const isLast = index === total - 1;
+    if (!isLast && chunkPayload.byteLength !== RTC_CHUNK_PAYLOAD_BYTES2) {
+      throw new Error(`RTCH non-final chunk must be ${RTC_CHUNK_PAYLOAD_BYTES2} bytes (got ${chunkPayload.byteLength})`);
+    }
+    if (isLast && (chunkPayload.byteLength < 1 || chunkPayload.byteLength > RTC_CHUNK_PAYLOAD_BYTES2)) {
+      throw new Error(`RTCH final chunk size invalid (${chunkPayload.byteLength} bytes)`);
+    }
+    let assembly = this.inFlight.get(messageId);
+    if (assembly) {
+      if (nowMs - assembly.createdAt > this.maxAssemblyAgeMs) {
+        this.inFlight.delete(messageId);
+        throw new Error(`RTCH assembly expired for messageId=${messageId}`);
+      }
+      if (assembly.total !== total) {
+        this.inFlight.delete(messageId);
+        throw new Error(`RTCH chunk total mismatch for messageId=${messageId} (${total} !== ${assembly.total})`);
+      }
+      if (index !== assembly.nextIndex) {
+        this.inFlight.delete(messageId);
+        throw new Error(`RTCH chunk out-of-order or duplicate for messageId=${messageId} (expected=${assembly.nextIndex}, got=${index})`);
+      }
+    } else {
+      for (const [id, entry] of this.inFlight) {
+        if (nowMs - entry.createdAt > this.maxAssemblyAgeMs) {
+          this.inFlight.delete(id);
         }
-      } catch {
       }
-      return;
-    }
-    if (this.state !== "open") return;
-    try {
-      const ciphertext = await (async () => {
-        try {
-          const text = typeof data === "string" ? data : new TextDecoder().decode(data);
-          if (text.trim().startsWith("{")) {
-            const parsed = JSON.parse(text);
-            if (isE2EEHelloMessage(parsed)) {
-              if (this.options.daemonKeyPair) {
-                await this.handleDaemonRehello(parsed.key);
-              }
-              return null;
-            }
-            if (isE2EEReadyMessage(parsed)) {
-              return null;
-            }
-            throw new Error("Received plaintext frame on encrypted channel");
-          }
-        } catch (error) {
-          if (error instanceof Error && error.message.includes("plaintext frame")) {
-            throw error;
-          }
-        }
-        if (typeof data === "string") {
-          return base64ToArrayBuffer(data);
-        }
-        try {
-          const decoded = new TextDecoder().decode(data);
-          return base64ToArrayBuffer(decoded);
-        } catch {
-          return data;
-        }
-      })();
-      if (ciphertext) {
-        const { plaintext, seq, salt } = decrypt(this.sharedKey, ciphertext);
-        this.enforceReplayProtection(seq, salt);
-        this.events.onmessage?.(plaintext);
+      if (index !== 0) {
+        throw new Error(`RTCH chunk arrived out-of-order without initial chunk (index=${index})`);
       }
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      try {
-        this.transport.close(
-          err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_CODE : 1011,
-          err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_REASON : err.message
-        );
-      } catch {
+      if (this.inFlight.size >= this.maxInFlight) {
+        throw new Error(`RTCH max in-flight assemblies exceeded (${this.maxInFlight})`);
       }
+      assembly = {
+        total,
+        nextIndex: 0,
+        chunks: [],
+        totalBytes: 0,
+        createdAt: nowMs
+      };
+      this.inFlight.set(messageId, assembly);
     }
+    const nextTotalBytes = assembly.totalBytes + chunkPayload.byteLength;
+    if (nextTotalBytes > this.maxMessageBytes) {
+      this.inFlight.delete(messageId);
+      throw new Error(`RTCH reassembled message exceeds max size (${nextTotalBytes} > ${this.maxMessageBytes})`);
+    }
+    assembly.chunks.push(chunkPayload);
+    assembly.totalBytes = nextTotalBytes;
+    assembly.nextIndex += 1;
+    if (assembly.nextIndex < assembly.total) {
+      return null;
+    }
+    this.inFlight.delete(messageId);
+    const out = new Uint8Array(assembly.totalBytes);
+    let offset = 0;
+    for (const part of assembly.chunks) {
+      out.set(part, offset);
+      offset += part.byteLength;
+    }
+    return out;
   }
-  /**
-   * Rejects replayed or out-of-order frames. The first received frame locks
-   * the per-direction salt and seeds the recv counter; every subsequent frame
-   * must carry the same salt and a strictly greater seq. A violation closes
-   * the channel fatally so the peer must re-handshake.
-   */
-  enforceReplayProtection(seq, salt) {
-    if (this.recvSalt === null || this.recvSeq === null) {
-      this.recvSalt = salt;
-      this.recvSeq = seq;
-      return;
-    }
-    if (salt.byteLength !== this.recvSalt.byteLength) {
-      throw new Error("E2EE replay protection violation: salt length changed");
-    }
-    let saltMismatch = 0;
-    for (let i = 0; i < this.recvSalt.byteLength; i += 1) {
-      saltMismatch |= salt[i] ^ this.recvSalt[i];
-    }
-    if (saltMismatch !== 0) {
-      throw new Error("E2EE replay protection violation: salt changed");
-    }
-    if (seq <= this.recvSeq) {
-      throw new Error("E2EE replay protection violation: seq not strictly increasing");
-    }
-    this.recvSeq = seq;
+  getInFlightCount() {
+    return this.inFlight.size;
   }
-  async send(data) {
-    if (this.state === "handshaking") {
-      if (this.pendingSends.length >= MAX_PENDING_SENDS) {
-        this.pendingSends.shift();
-      }
-      this.pendingSends.push(data);
-      return;
-    }
-    if (this.state !== "open") {
-      throw new Error("Channel not open");
-    }
-    if (!this.sendSalt) {
-      throw new Error("Channel open without send salt initialised");
-    }
-    const seq = this.sendSeq;
-    this.sendSeq += 1n;
-    const ciphertext = encrypt(this.sharedKey, data, seq, this.sendSalt);
-    this.transport.send(arrayBufferToBase64(ciphertext));
-  }
-  async flushPendingSends() {
-    if (this.state !== "open") return;
-    const pending = this.pendingSends;
-    this.pendingSends = [];
-    for (const item of pending) {
-      await this.send(item);
-    }
-  }
-  async handleDaemonRehello(clientKeyB64) {
-    if (!this.options.daemonKeyPair) return;
-    const clientPublicKey = importPublicKey(clientKeyB64);
-    const nextSharedKey = deriveSharedKey(this.options.daemonKeyPair.secretKey, clientPublicKey);
-    if (keysEqual(nextSharedKey, this.sharedKey)) {
-      this.transport.send(
-        JSON.stringify({
-          type: "e2ee_ready",
-          ...this.securityContext?.authChallenge ? { authChallenge: this.securityContext.authChallenge } : {}
-        })
-      );
-      return;
-    }
-    this.state = "closed";
-    this.transport.close(
-      REHANDSHAKE_KEY_MISMATCH_CLOSE_CODE,
-      REHANDSHAKE_KEY_MISMATCH_CLOSE_REASON
-    );
-  }
-  close(code = 1e3, reason = "Normal closure") {
-    this.state = "closed";
-    this.transport.close(code, reason);
-  }
-  isOpen() {
-    return this.state === "open";
-  }
-  /**
-   * Returns the E2EE handshake values that relay device auth must bind to.
-   * @returns A defensive copy of the channel security context, or null before setup
-   */
-  getSecurityContext() {
-    return this.securityContext ? { ...this.securityContext } : null;
-  }
-  onTransitionToOpen(cb) {
-    this.onOpenCallbacks.push(cb);
-  }
-  onClose(cb) {
-    this.onCloseCallbacks.push(cb);
+  reset() {
+    this.inFlight.clear();
   }
 };
-function keysEqual(a, b) {
-  if (a.byteLength !== b.byteLength) return false;
-  let difference = 0;
-  for (let i = 0; i < a.byteLength; i += 1) {
-    difference |= a[i] ^ b[i];
+var SequencedCiphertextReorderBuffer = class {
+  constructor(options = {}) {
+    this.nextExpectedSeq = 0n;
+    this.buffered = /* @__PURE__ */ new Map();
+    this.bufferedBytes = 0;
+    this.gapTimer = null;
+    this.disposed = false;
+    this.maxFrames = options.maxFrames ?? REORDER_MAX_BUFFERED_FRAMES;
+    this.maxBytes = options.maxBytes ?? REORDER_MAX_BUFFERED_BYTES2;
+    this.gapTimeoutMs = options.gapTimeoutMs ?? REORDER_GAP_TIMEOUT_MS;
+    this.onGapTimeout = options.onGapTimeout;
   }
-  return difference === 0;
+  setNextExpectedSeq(seq) {
+    if (seq < 0n) {
+      throw new Error("nextExpectedSeq must be non-negative");
+    }
+    this.nextExpectedSeq = seq;
+  }
+  getNextExpectedSeq() {
+    return this.nextExpectedSeq;
+  }
+  getBufferedCount() {
+    return this.buffered.size;
+  }
+  getBufferedBytes() {
+    return this.bufferedBytes;
+  }
+  push(seq, bundle) {
+    if (this.disposed) {
+      throw new Error("Reorder buffer is disposed");
+    }
+    if (seq < this.nextExpectedSeq) {
+      throw new Error(`E2EE replay protection violation: seq ${seq.toString()} < expected ${this.nextExpectedSeq.toString()}`);
+    }
+    if (seq === this.nextExpectedSeq) {
+      const ready = [bundle];
+      this.nextExpectedSeq += 1n;
+      while (this.buffered.has(this.nextExpectedSeq)) {
+        const nextBundle = this.buffered.get(this.nextExpectedSeq);
+        this.buffered.delete(this.nextExpectedSeq);
+        this.bufferedBytes -= nextBundle.byteLength;
+        ready.push(nextBundle);
+        this.nextExpectedSeq += 1n;
+      }
+      this.clearGapTimer();
+      if (this.buffered.size > 0) {
+        this.armGapTimer();
+      }
+      return ready;
+    }
+    if (this.buffered.has(seq)) {
+      throw new Error(`E2EE replay protection violation: duplicate buffered seq ${seq.toString()}`);
+    }
+    if (this.buffered.size + 1 > this.maxFrames) {
+      throw new Error(`Reorder buffer frame limit exceeded (${this.buffered.size + 1} > ${this.maxFrames})`);
+    }
+    if (this.bufferedBytes + bundle.byteLength > this.maxBytes) {
+      throw new Error(`Reorder buffer byte limit exceeded (${this.bufferedBytes + bundle.byteLength} > ${this.maxBytes})`);
+    }
+    this.buffered.set(seq, bundle);
+    this.bufferedBytes += bundle.byteLength;
+    if (!this.gapTimer) {
+      this.armGapTimer();
+    }
+    return [];
+  }
+  reset() {
+    this.clearGapTimer();
+    this.buffered.clear();
+    this.bufferedBytes = 0;
+  }
+  dispose() {
+    this.disposed = true;
+    this.reset();
+  }
+  armGapTimer() {
+    if (this.gapTimer || this.disposed)
+      return;
+    this.gapTimer = setTimeout(() => {
+      this.gapTimer = null;
+      if (this.disposed || this.buffered.size === 0)
+        return;
+      const err = new Error(`Reorder buffer gap timed out after ${this.gapTimeoutMs}ms waiting for seq ${this.nextExpectedSeq.toString()}`);
+      this.onGapTimeout?.(err);
+    }, this.gapTimeoutMs);
+    unrefTimer(this.gapTimer);
+  }
+  clearGapTimer() {
+    if (!this.gapTimer)
+      return;
+    clearTimeout(this.gapTimer);
+    this.gapTimer = null;
+  }
+};
+var SerialSend = class {
+  constructor(options = {}) {
+    this.queuedFrames = 0;
+    this.queuedBytes = 0;
+    this.tail = null;
+    this.maxQueuedBytes = options.maxQueuedBytes ?? SERIAL_SEND_MAX_QUEUED_BYTES;
+    this.maxQueuedFrames = options.maxQueuedFrames ?? SERIAL_SEND_MAX_QUEUED_FRAMES;
+  }
+  getQueuedFrames() {
+    return this.queuedFrames;
+  }
+  getQueuedBytes() {
+    return this.queuedBytes;
+  }
+  enqueue(byteLength, task) {
+    const normalizedBytes = Math.max(0, Math.floor(byteLength));
+    if (this.queuedFrames + 1 > this.maxQueuedFrames) {
+      return Promise.reject(new Error(`Send queue frame limit exceeded (${this.queuedFrames + 1} > ${this.maxQueuedFrames})`));
+    }
+    if (this.queuedBytes + normalizedBytes > this.maxQueuedBytes) {
+      return Promise.reject(new Error(`Send queue byte limit exceeded (${this.queuedBytes + normalizedBytes} > ${this.maxQueuedBytes})`));
+    }
+    this.queuedFrames += 1;
+    this.queuedBytes += normalizedBytes;
+    const release = () => {
+      this.queuedFrames = Math.max(0, this.queuedFrames - 1);
+      this.queuedBytes = Math.max(0, this.queuedBytes - normalizedBytes);
+    };
+    if (!this.tail) {
+      try {
+        const result = task();
+        if (result && typeof result.then === "function") {
+          const chained = Promise.resolve(result).finally(release);
+          const marker2 = chained.then(() => {
+            if (this.tail === marker2)
+              this.tail = null;
+          }, () => {
+            if (this.tail === marker2)
+              this.tail = null;
+          });
+          this.tail = marker2;
+          return chained;
+        }
+        release();
+        return Promise.resolve(result);
+      } catch (error) {
+        release();
+        return Promise.reject(error);
+      }
+    }
+    const run = async () => {
+      try {
+        return await task();
+      } finally {
+        release();
+      }
+    };
+    const resultPromise = this.tail.then(run, run);
+    const marker = resultPromise.then(() => {
+      if (this.tail === marker)
+        this.tail = null;
+    }, () => {
+      if (this.tail === marker)
+        this.tail = null;
+    });
+    this.tail = marker;
+    return resultPromise;
+  }
+};
+function iceUrlRank(rawUrl) {
+  const url = rawUrl.trim().toLowerCase();
+  if (url.startsWith("stun:") || url.startsWith("stuns:"))
+    return 0;
+  const isTurns = url.startsWith("turns:");
+  const isTurn = url.startsWith("turn:");
+  if (!isTurns && !isTurn)
+    return 60;
+  const hasTcp = /[?&]transport=tcp(?:&|$)/.test(url);
+  const hasUdp = /[?&]transport=udp(?:&|$)/.test(url);
+  if (isTurn && hasTcp)
+    return 10;
+  if (isTurns && hasTcp)
+    return 20;
+  if (isTurn && hasUdp)
+    return 30;
+  if (isTurns)
+    return 40;
+  return 50;
+}
+function iceServerRank(server) {
+  const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+  let best = 100;
+  for (const url of urls) {
+    const r = iceUrlRank(url);
+    if (r < best)
+      best = r;
+  }
+  return best;
+}
+function normalizeIceServers(servers) {
+  if (!Array.isArray(servers))
+    return [];
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const entry of servers) {
+    if (!entry || typeof entry !== "object")
+      continue;
+    const rawUrls = Array.isArray(entry.urls) ? entry.urls : [entry.urls];
+    const urls = rawUrls.filter((u) => typeof u === "string").map((u) => u.trim()).filter((u) => u.length > 0);
+    if (urls.length === 0)
+      continue;
+    const normalized = {
+      urls: urls.length === 1 ? urls[0] : urls,
+      ...typeof entry.username === "string" && entry.username.length > 0 ? { username: entry.username } : {},
+      ...typeof entry.credential === "string" && entry.credential.length > 0 ? { credential: entry.credential } : {}
+    };
+    const key = JSON.stringify([
+      Array.isArray(normalized.urls) ? normalized.urls : [normalized.urls],
+      normalized.username ?? "",
+      normalized.credential ?? ""
+    ]);
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+}
+function orderIceServers(servers) {
+  return normalizeIceServers(servers).map((server, idx) => ({ server, idx, rank: iceServerRank(server) })).sort((a, b) => a.rank !== b.rank ? a.rank - b.rank : a.idx - b.idx).map((item) => item.server);
+}
+function mergeIceServers(offerServers, customServers, options = {}) {
+  const combined = [
+    ...offerServers ?? [],
+    ...customServers ?? []
+  ];
+  const includeDefaults = options.includeDefaults ?? combined.length === 0;
+  if (includeDefaults) {
+    combined.push(...DEFAULT_STUN_ICE_SERVERS);
+  }
+  return orderIceServers(combined);
+}
+var IceServerConfigSchema2 = external_exports.object({
+  urls: external_exports.union([external_exports.string().min(1), external_exports.array(external_exports.string().min(1)).min(1)]),
+  username: external_exports.string().optional(),
+  credential: external_exports.string().optional()
+});
+var AdaptiveConnectionOfferV2Schema = external_exports.object({
+  v: external_exports.literal(2),
+  serverId: external_exports.string().min(1),
+  daemonPublicKeyB64: external_exports.string().min(1),
+  relayAuthPublicKeyB64: external_exports.string().min(1).optional(),
+  authBootstrap: RelayAuthBootstrapSchema.optional(),
+  relay: external_exports.object({
+    endpoint: external_exports.string().min(1),
+    useTls: external_exports.boolean().optional()
+  }).optional(),
+  lan: external_exports.object({
+    endpoints: external_exports.array(external_exports.string().min(1)).min(1),
+    useTls: external_exports.boolean().optional()
+  }).optional(),
+  iceServers: external_exports.array(IceServerConfigSchema2).optional()
+}).refine((offer) => Boolean(offer.relay?.endpoint) || Boolean(offer.lan && offer.lan.endpoints.length > 0), { message: "Connection offer requires relay.endpoint or non-empty lan.endpoints" });
+var OFFER_FRAGMENT_PREFIX = "#offer=";
+function parseConnectionOfferV2FromUrl(input) {
+  const trimmed = input.trim();
+  if (!trimmed)
+    return null;
+  const fragmentIndex = trimmed.indexOf(OFFER_FRAGMENT_PREFIX);
+  if (fragmentIndex === -1)
+    return null;
+  const encoded = trimmed.slice(fragmentIndex + OFFER_FRAGMENT_PREFIX.length).trim();
+  if (!encoded)
+    return null;
+  const payload = decodeOfferFragmentPayload(encoded);
+  return AdaptiveConnectionOfferV2Schema.parse(payload);
+}
+function unrefTimer(timer) {
+  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
+    timer.unref();
+  }
 }
 
-// vendor/chisacode-remote/packages/client/dist/daemon-client-relay-e2ee-transport.js
-function createRelayE2eeTransportFactory(args) {
-  return ({ url, headers }) => {
-    const base = args.baseFactory({ url, headers });
-    return createEncryptedTransport(base, args.daemonPublicKeyB64, args.logger);
+// vendor/chisacode-remote/packages/client/dist/daemon-client-adaptive-transport.js
+var LAN_CONNECT_TIMEOUT_MS = 2500;
+var HANDSHAKE_RETRY_MS = 1e3;
+var RTC_NEGOTIATE_TIMEOUT_MS = 8e3;
+var RTC_NEGOTIATE_HOST_ONLY_TIMEOUT_MS = 4e3;
+var RTC_ACTIVATE_TIMEOUT_MS = 6e3;
+var RTC_ATTEMPT_TTL_MS = 2e4;
+var RTC_DRAIN_TIMEOUT_MS2 = 3e3;
+var RTC_MAX_SDP_BYTES = 128 * 1024;
+var RTC_DATA_CHANNEL_LABEL = "dsh";
+var MAX_PENDING_SENDS = 200;
+var REPLAY_PROTECTION_CLOSE_CODE = 1011;
+var REPLAY_PROTECTION_CLOSE_REASON = "E2EE replay protection violation";
+function createAdaptiveTransportFactory(options) {
+  return ({ url, headers, protocols }) => createAdaptiveTransport({
+    ...options,
+    relayUrl: url,
+    headers,
+    protocols
+  });
+}
+function buildLanWebSocketUrl(endpoint, serverId, useTls = false) {
+  const trimmed = endpoint.trim();
+  if (/^wss?:\/\//i.test(trimmed)) {
+    const parsed = new URL(trimmed);
+    if (serverId && !parsed.searchParams.has("serverId")) {
+      parsed.searchParams.set("serverId", serverId);
+    }
+    if (!parsed.searchParams.has("role")) {
+      parsed.searchParams.set("role", "client");
+    }
+    if (!parsed.searchParams.has("v")) {
+      parsed.searchParams.set("v", "2");
+    }
+    return parsed.toString();
+  }
+  const protocol = useTls ? "wss" : "ws";
+  const url = new URL(`${protocol}://${trimmed}/ws`);
+  if (serverId) {
+    url.searchParams.set("serverId", serverId);
+  }
+  url.searchParams.set("role", "client");
+  url.searchParams.set("v", "2");
+  return url.toString();
+}
+function defaultRtcPeerConnectionFactory() {
+  const ctor = globalThis.RTCPeerConnection;
+  if (typeof ctor !== "function") {
+    return null;
+  }
+  return (config) => {
+    const pc = new ctor({ iceServers: config.iceServers });
+    const rawAddIceCandidate = pc.addIceCandidate.bind(pc);
+    return {
+      get iceConnectionState() {
+        return pc.iceConnectionState;
+      },
+      get connectionState() {
+        return pc.connectionState;
+      },
+      get signalingState() {
+        return pc.signalingState;
+      },
+      createDataChannel: (label, opts) => pc.createDataChannel(label, opts),
+      createOffer: () => pc.createOffer(),
+      setLocalDescription: (desc) => pc.setLocalDescription(desc),
+      setRemoteDescription: (desc) => pc.setRemoteDescription(desc),
+      addIceCandidate: async (candidate) => {
+        if (candidate === null) {
+          try {
+            await rawAddIceCandidate(null);
+          } catch {
+          }
+          return;
+        }
+        await rawAddIceCandidate(candidate);
+      },
+      close: () => pc.close(),
+      get onicecandidate() {
+        return pc.onicecandidate;
+      },
+      set onicecandidate(handler) {
+        pc.onicecandidate = handler;
+      },
+      get oniceconnectionstatechange() {
+        return pc.oniceconnectionstatechange ?? null;
+      },
+      set oniceconnectionstatechange(handler) {
+        pc.oniceconnectionstatechange = handler;
+      },
+      get onconnectionstatechange() {
+        return pc.onconnectionstatechange ?? null;
+      },
+      set onconnectionstatechange(handler) {
+        pc.onconnectionstatechange = handler;
+      }
+    };
   };
 }
-function createEncryptedTransport(base, daemonPublicKeyB64, logger) {
-  let channel = null;
-  let opened = false;
-  let closed = false;
+function createAdaptiveTransport(input) {
+  const { baseFactory, daemonPublicKeyB64, logger, relayUrl, headers, protocols, lanUseTls = false, webrtcUpgrade = true } = input;
+  const lanEndpoints = (input.lanEndpoints ?? []).map((ep) => typeof ep === "string" ? ep.trim() : "").filter((ep) => ep.length > 0);
+  const serverId = resolveServerId(input.serverId, relayUrl);
+  const lanConnectTimeoutMs = input.lanConnectTimeoutMs ?? LAN_CONNECT_TIMEOUT_MS;
+  const activateTimeoutMs = input.activateTimeoutMs ?? RTC_ACTIVATE_TIMEOUT_MS;
+  const attemptTtlMs = input.attemptTtlMs ?? RTC_ATTEMPT_TTL_MS;
+  const drainTimeoutMs = input.drainTimeoutMs ?? RTC_DRAIN_TIMEOUT_MS2;
   const openHandlers = /* @__PURE__ */ new Set();
   const closeHandlers = /* @__PURE__ */ new Set();
   const errorHandlers = /* @__PURE__ */ new Set();
   const messageHandlers = /* @__PURE__ */ new Set();
-  const emitOpen = () => {
-    if (opened || closed) {
-      return;
+  const modeHandlers = /* @__PURE__ */ new Set();
+  if (input.onTransportModeChange) {
+    modeHandlers.add(input.onTransportModeChange);
+  }
+  let channelState = "connecting";
+  let opened = false;
+  let closed = false;
+  let transportMode = null;
+  let wsTransport = null;
+  let wsCleanup = [];
+  let relayDrained = false;
+  let lanRaceTimer = null;
+  const lanPendingCleanups = /* @__PURE__ */ new Set();
+  let sharedKey = null;
+  let securityContext = null;
+  let handshakeRetry = null;
+  let sendSalt = null;
+  let sendSeq = 0n;
+  let recvSalt = null;
+  let recvSeq = null;
+  let pendingSends = [];
+  let activatingSends = [];
+  let activatingBytes = 0;
+  const serialSend = new SerialSend();
+  let activeSendLeg = "ws";
+  const nextRtcMessageId = createRtcMessageIdGenerator(1);
+  const rtchReassembler = new RtcChunkReassembler();
+  const reorderBuffer = new SequencedCiphertextReorderBuffer({
+    ...input.reorderGapTimeoutMs !== void 0 ? { gapTimeoutMs: input.reorderGapTimeoutMs } : {},
+    onGapTimeout: (err) => {
+      logger.warn({ err: normalizeError(err) }, "adaptive_reorder_gap_timeout");
+      fatalProtocolClose(REPLAY_PROTECTION_CLOSE_CODE, err.message);
     }
+  });
+  let upgradeState = "idle";
+  let currentAttemptId = null;
+  let pc = null;
+  let dc = null;
+  let offerSent = false;
+  let remoteDescriptionSet = false;
+  let pendingLocalIce = [];
+  let pendingRemoteIce = [];
+  let negotiateTimer = null;
+  let activateTimer = null;
+  let attemptTtlTimer = null;
+  let drainTimer = null;
+  let hostPreviousLegEndSeq = null;
+  const setTransportMode = (mode) => {
+    if (transportMode === mode)
+      return;
+    transportMode = mode;
+    emitHandlers(modeHandlers, mode);
+  };
+  const emitOpen = () => {
+    if (opened || closed)
+      return;
     opened = true;
     emitHandlers(openHandlers);
   };
   const emitClose = (event) => {
-    if (closed) {
+    if (closed)
       return;
-    }
     closed = true;
+    channelState = "closed";
+    cleanupAllResources();
     emitHandlers(closeHandlers, event);
   };
   const emitError = (event) => {
-    if (closed) {
+    if (closed)
       return;
-    }
     emitHandlers(errorHandlers, event);
   };
   const emitMessage = (data) => {
-    if (closed) {
+    if (closed)
       return;
-    }
     emitHandlers(messageHandlers, data);
   };
-  const relayTransport = {
-    send: (data) => {
-      if (typeof data === "string") {
-        base.send(data);
-        return;
-      }
-      if (ArrayBuffer.isView(data)) {
-        base.send(normalizeTransportPayload(data));
-        return;
-      }
-      if (data instanceof ArrayBuffer) {
-        base.send(data);
-        return;
-      }
-      base.send(String(data));
-    },
-    close: (code, reason) => base.close(code, reason),
-    onmessage: null,
-    onclose: null,
-    onerror: null
-  };
-  const startHandshake = async () => {
-    try {
-      channel = await createClientChannel(relayTransport, daemonPublicKeyB64, {
-        onopen: emitOpen,
-        onmessage: (data) => emitMessage(data),
-        onclose: (code, reason) => emitClose({ code, reason }),
-        onerror: (error) => emitError(error)
-      });
-    } catch (error) {
-      logger.warn({ err: normalizeTransportError(error) }, "relay_e2ee_handshake_failed");
-      emitError(error);
-      base.close(4001, "E2EE handshake failed");
+  const clearHandshakeRetry = () => {
+    if (handshakeRetry) {
+      clearInterval(handshakeRetry);
+      handshakeRetry = null;
     }
   };
-  base.onOpen(() => {
-    void startHandshake();
-  });
-  base.onMessage((event) => {
-    relayTransport.onmessage?.(extractRelayMessageData(event));
-  });
-  base.onClose((event) => {
-    const record = event;
-    relayTransport.onclose?.(record?.code ?? 0, record?.reason ?? "");
-    emitClose(event);
-  });
-  base.onError((event) => {
-    relayTransport.onerror?.(event instanceof Error ? event : new Error(String(event)));
-    emitError(event);
-  });
+  const clearUpgradeTimers = () => {
+    if (negotiateTimer) {
+      clearTimeout(negotiateTimer);
+      negotiateTimer = null;
+    }
+    if (activateTimer) {
+      clearTimeout(activateTimer);
+      activateTimer = null;
+    }
+    if (attemptTtlTimer) {
+      clearTimeout(attemptTtlTimer);
+      attemptTtlTimer = null;
+    }
+  };
+  const clearDrainTimer = () => {
+    if (drainTimer) {
+      clearTimeout(drainTimer);
+      drainTimer = null;
+    }
+  };
+  const closeRtcResources = () => {
+    const channel = dc;
+    dc = null;
+    if (channel) {
+      channel.onopen = null;
+      channel.onclose = null;
+      channel.onerror = null;
+      channel.onmessage = null;
+      try {
+        channel.close();
+      } catch {
+      }
+    }
+    const peer = pc;
+    pc = null;
+    if (peer) {
+      peer.onicecandidate = null;
+      if ("oniceconnectionstatechange" in peer) {
+        peer.oniceconnectionstatechange = null;
+      }
+      if ("onconnectionstatechange" in peer) {
+        peer.onconnectionstatechange = null;
+      }
+      try {
+        peer.close();
+      } catch {
+      }
+    }
+    rtchReassembler.reset();
+    pendingLocalIce = [];
+    pendingRemoteIce = [];
+    offerSent = false;
+    remoteDescriptionSet = false;
+  };
+  const detachWsHandlers = () => {
+    for (const unsub of wsCleanup) {
+      try {
+        unsub();
+      } catch {
+      }
+    }
+    wsCleanup = [];
+  };
+  const cancelLanRace = () => {
+    if (lanRaceTimer) {
+      clearTimeout(lanRaceTimer);
+      lanRaceTimer = null;
+    }
+    for (const cleanup of lanPendingCleanups) {
+      try {
+        cleanup();
+      } catch {
+      }
+    }
+    lanPendingCleanups.clear();
+  };
+  const cleanupAllResources = () => {
+    cancelLanRace();
+    clearHandshakeRetry();
+    clearUpgradeTimers();
+    clearDrainTimer();
+    activatingSends = [];
+    activatingBytes = 0;
+    reorderBuffer.dispose();
+    closeRtcResources();
+    detachWsHandlers();
+    const ws = wsTransport;
+    wsTransport = null;
+    if (ws) {
+      try {
+        ws.close(1e3, "Transport closed");
+      } catch {
+      }
+    }
+  };
+  const fatalProtocolClose = (code, reason) => {
+    if (closed)
+      return;
+    if (activeSendLeg === "webrtc" && dc) {
+      closeRtcResources();
+    }
+    const ws = wsTransport;
+    if (ws && !relayDrained) {
+      try {
+        ws.close(code, reason);
+      } catch {
+      }
+    }
+    emitClose({ code, reason });
+  };
+  const peekNextSendSeq = () => Number(sendSeq);
+  const sendEncryptedImmediate = (payload, forceLeg) => {
+    if (channelState !== "open" || !sharedKey || !sendSalt) {
+      throw new Error("Encrypted channel not ready");
+    }
+    const seq = sendSeq;
+    sendSeq += 1n;
+    const bundleBuffer = encrypt(sharedKey, payload, seq, sendSalt);
+    const leg = forceLeg ?? activeSendLeg;
+    if (leg === "webrtc") {
+      if (!dc || dc.readyState !== "open") {
+        throw new Error("WebRTC DataChannel is not open");
+      }
+      const dshuFrame = wrapDshuFrame(seq, new Uint8Array(bundleBuffer));
+      const chunks = chunkRtcPayload(dshuFrame, nextRtcMessageId);
+      for (const chunk of chunks) {
+        dc.send(toIndependentArrayBuffer(chunk));
+      }
+      return;
+    }
+    if (!wsTransport || relayDrained) {
+      throw new Error("WebSocket transport is not available");
+    }
+    wsTransport.send(bytesToBase64(new Uint8Array(bundleBuffer)));
+  };
+  const queueActivatingSend = (payload) => {
+    const byteLength = typeof payload === "string" ? payload.length * 2 : payload.byteLength;
+    if (activatingSends.length + 1 > SERIAL_SEND_MAX_QUEUED_FRAMES || activatingBytes + byteLength > SERIAL_SEND_MAX_QUEUED_BYTES) {
+      throw new Error(`WebRTC activating send queue limit exceeded (${SERIAL_SEND_MAX_QUEUED_FRAMES} frames / ${SERIAL_SEND_MAX_QUEUED_BYTES} bytes)`);
+    }
+    activatingSends.push(payload);
+    activatingBytes += byteLength;
+  };
+  const flushActivatingSends = (leg) => {
+    if (activatingSends.length === 0)
+      return;
+    const queued = activatingSends;
+    activatingSends = [];
+    activatingBytes = 0;
+    for (const item of queued) {
+      void enqueueEncryptedSend(item, leg).catch((error) => {
+        logger.warn({ err: normalizeError(error) }, "rtc_activating_flush_send_failed");
+        emitError(error);
+      });
+    }
+  };
+  const enqueueEncryptedSend = (payload, forceLeg) => {
+    const byteLength = typeof payload === "string" ? payload.length * 2 : payload.byteLength;
+    return serialSend.enqueue(byteLength, () => {
+      if (!forceLeg && upgradeState === "activating") {
+        queueActivatingSend(payload);
+        return;
+      }
+      sendEncryptedImmediate(payload, forceLeg);
+    });
+  };
+  const sendSignalingControl = (msg) => {
+    if (closed || channelState !== "open" || relayDrained || !wsTransport)
+      return;
+    const text = JSON.stringify(msg);
+    void enqueueEncryptedSend(text, "ws").catch((error) => {
+      logger.warn({ err: normalizeError(error) }, "rtc_signaling_send_failed");
+    });
+  };
+  const finishRelayDrain = () => {
+    if (relayDrained)
+      return;
+    relayDrained = true;
+    clearDrainTimer();
+    const ws = wsTransport;
+    wsTransport = null;
+    detachWsHandlers();
+    if (ws) {
+      try {
+        ws.close(1e3, "upgraded_to_webrtc");
+      } catch {
+      }
+    }
+  };
+  const checkRelayDrain = () => {
+    if (relayDrained || upgradeState !== "active" || hostPreviousLegEndSeq === null) {
+      return;
+    }
+    if (recvSeq !== null && recvSeq >= hostPreviousLegEndSeq) {
+      finishRelayDrain();
+    }
+  };
+  const abortUpgrade = (reason, opts) => {
+    if (upgradeState === "active" || upgradeState === "aborted" || upgradeState === "idle") {
+      return;
+    }
+    const attemptId = currentAttemptId;
+    upgradeState = "aborted";
+    currentAttemptId = null;
+    clearUpgradeTimers();
+    activeSendLeg = "ws";
+    closeRtcResources();
+    logger.warn({ reason, attemptId }, "rtc_upgrade_aborted_fallback_relay");
+    if (opts.sendAbort && attemptId && wsTransport && !relayDrained && channelState === "open") {
+      sendSignalingControl({ type: "rtc_upgrade_abort", attemptId, reason });
+    }
+    flushActivatingSends("ws");
+    setTransportMode("relay");
+  };
+  const handleActiveDataChannelClosed = (reason) => {
+    if (closed)
+      return;
+    if (upgradeState !== "active") {
+      abortUpgrade(reason, { sendAbort: true });
+      return;
+    }
+    emitClose({ code: 1006, reason });
+  };
+  const sendRtcActivateAndSwitchLeg = (attemptId) => {
+    void serialSend.enqueue(128, () => {
+      if (closed || upgradeState !== "negotiating" || currentAttemptId !== attemptId || !wsTransport || relayDrained || !dc || dc.readyState !== "open") {
+        return;
+      }
+      const clientPreviousLegEndSeq = peekNextSendSeq();
+      const activateMsg = JSON.stringify({
+        type: "rtc_upgrade_activate",
+        attemptId,
+        clientPreviousLegEndSeq
+      });
+      sendEncryptedImmediate(activateMsg, "ws");
+      upgradeState = "activating";
+    }).catch((error) => {
+      logger.warn({ err: normalizeError(error) }, "rtc_upgrade_activate_failed");
+      abortUpgrade("activate_send_failed", { sendAbort: true });
+    });
+  };
+  const startWebRtcUpgrade = () => {
+    if (closed || !webrtcUpgrade || transportMode !== "relay" || upgradeState !== "idle" || channelState !== "open") {
+      return;
+    }
+    const factory = input.rtcPeerConnectionFactory ?? defaultRtcPeerConnectionFactory();
+    if (!factory) {
+      return;
+    }
+    const orderedIceServers = input.iceServers !== void 0 ? orderIceServers(input.iceServers) : orderIceServers([...DEFAULT_STUN_ICE_SERVERS]);
+    const isHostOnly = orderedIceServers.length === 0;
+    const negotiateTimeoutMs = isHostOnly ? input.hostOnlyNegotiateTimeoutMs ?? RTC_NEGOTIATE_HOST_ONLY_TIMEOUT_MS : input.negotiateTimeoutMs ?? RTC_NEGOTIATE_TIMEOUT_MS;
+    const attemptId = createAttemptId();
+    upgradeState = "negotiating";
+    currentAttemptId = attemptId;
+    offerSent = false;
+    remoteDescriptionSet = false;
+    pendingLocalIce = [];
+    pendingRemoteIce = [];
+    try {
+      const peer = factory({ iceServers: orderedIceServers });
+      pc = peer;
+      const channel = peer.createDataChannel(RTC_DATA_CHANNEL_LABEL, { ordered: true });
+      channel.binaryType = "arraybuffer";
+      dc = channel;
+      negotiateTimer = setTimeout(() => {
+        if (upgradeState === "negotiating" && currentAttemptId === attemptId) {
+          abortUpgrade("negotiate_timeout", { sendAbort: true });
+        }
+      }, negotiateTimeoutMs);
+      unrefTimer2(negotiateTimer);
+      attemptTtlTimer = setTimeout(() => {
+        if ((upgradeState === "negotiating" || upgradeState === "activating") && currentAttemptId === attemptId) {
+          abortUpgrade("attempt_ttl_expired", { sendAbort: true });
+        }
+      }, attemptTtlMs);
+      unrefTimer2(attemptTtlTimer);
+      peer.onicecandidate = (event) => {
+        if (closed || currentAttemptId !== attemptId || upgradeState !== "negotiating")
+          return;
+        const normalized = normalizeCandidate(event?.candidate ?? null);
+        if (offerSent) {
+          sendSignalingControl({
+            type: "rtc_upgrade_ice",
+            attemptId,
+            candidate: normalized
+          });
+        } else {
+          pendingLocalIce.push(normalized);
+        }
+      };
+      const checkPeerFailure = () => {
+        if (closed || pc !== peer)
+          return;
+        const iceState = peer.iceConnectionState;
+        const connState = peer.connectionState;
+        if (iceState === "failed" || iceState === "closed" || connState === "failed" || connState === "closed") {
+          if (upgradeState === "active") {
+            handleActiveDataChannelClosed("WebRTC peer connection failed");
+          } else if (currentAttemptId === attemptId) {
+            abortUpgrade("ice_connection_failed", { sendAbort: true });
+          }
+        }
+      };
+      peer.oniceconnectionstatechange = checkPeerFailure;
+      peer.onconnectionstatechange = checkPeerFailure;
+      channel.onopen = () => {
+        if (closed || dc !== channel || currentAttemptId !== attemptId)
+          return;
+        if (negotiateTimer) {
+          clearTimeout(negotiateTimer);
+          negotiateTimer = null;
+        }
+        activateTimer = setTimeout(() => {
+          if ((upgradeState === "negotiating" || upgradeState === "activating") && currentAttemptId === attemptId) {
+            abortUpgrade("activate_timeout", { sendAbort: true });
+          }
+        }, activateTimeoutMs);
+        unrefTimer2(activateTimer);
+        sendRtcActivateAndSwitchLeg(attemptId);
+      };
+      channel.onmessage = (event) => {
+        if (closed || dc !== channel)
+          return;
+        handleDataChannelMessage(event?.data);
+      };
+      channel.onerror = () => {
+        if (closed || dc !== channel)
+          return;
+        if (upgradeState === "active") {
+          handleActiveDataChannelClosed("WebRTC DataChannel error");
+        } else if (currentAttemptId === attemptId) {
+          abortUpgrade("data_channel_error", { sendAbort: true });
+        }
+      };
+      channel.onclose = () => {
+        if (closed || dc !== channel)
+          return;
+        handleActiveDataChannelClosed("WebRTC DataChannel closed");
+      };
+      void (async () => {
+        try {
+          const offer = await peer.createOffer();
+          if (closed || pc !== peer || currentAttemptId !== attemptId)
+            return;
+          if (typeof offer?.sdp !== "string" || offer.sdp.length === 0 || offer.sdp.length > RTC_MAX_SDP_BYTES) {
+            abortUpgrade("invalid_local_sdp", { sendAbort: false });
+            return;
+          }
+          await peer.setLocalDescription(offer);
+          if (closed || pc !== peer || currentAttemptId !== attemptId)
+            return;
+          sendSignalingControl({
+            type: "rtc_upgrade_offer",
+            attemptId,
+            sdp: offer.sdp
+          });
+          offerSent = true;
+          const queued = pendingLocalIce;
+          pendingLocalIce = [];
+          for (const candidate of queued) {
+            sendSignalingControl({
+              type: "rtc_upgrade_ice",
+              attemptId,
+              candidate
+            });
+          }
+        } catch (error) {
+          logger.warn({ err: normalizeError(error) }, "rtc_upgrade_offer_failed");
+          if (currentAttemptId === attemptId) {
+            abortUpgrade("offer_creation_failed", { sendAbort: false });
+          }
+        }
+      })();
+    } catch (error) {
+      logger.warn({ err: normalizeError(error) }, "rtc_upgrade_init_failed");
+      abortUpgrade("rtc_init_failed", { sendAbort: false });
+    }
+  };
+  const processDataChannelBytes = (bytes) => {
+    try {
+      if (closed)
+        return;
+      if (bytes.byteLength > RTC_CHUNK_MAX_MESSAGE_BYTES2 + 12) {
+        throw new Error(`DataChannel frame too large (${bytes.byteLength} bytes)`);
+      }
+      const assembled = rtchReassembler.push(bytes);
+      if (!assembled)
+        return;
+      const { seq, bundle } = unwrapDshuFrame(assembled);
+      handleEncryptedBundle(seq, bundle, "webrtc");
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      logger.warn({ err: normalizeError(err) }, "rtc_datachannel_frame_error");
+      if (upgradeState !== "active") {
+        abortUpgrade("datachannel_protocol_error", { sendAbort: true });
+      } else {
+        fatalProtocolClose(REPLAY_PROTECTION_CLOSE_CODE, err.message);
+      }
+    }
+  };
+  const handleDataChannelMessage = (rawData) => {
+    const syncBytes = extractSyncBinaryBytes(rawData);
+    if (syncBytes) {
+      processDataChannelBytes(syncBytes);
+      return;
+    }
+    if (typeof Blob !== "undefined" && rawData instanceof Blob && typeof rawData.arrayBuffer === "function") {
+      void rawData.arrayBuffer().then((buf) => {
+        if (!closed)
+          processDataChannelBytes(new Uint8Array(buf));
+      }).catch((error) => {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.warn({ err: normalizeError(err) }, "rtc_datachannel_blob_error");
+        if (upgradeState !== "active") {
+          abortUpgrade("datachannel_blob_error", { sendAbort: true });
+        } else {
+          fatalProtocolClose(REPLAY_PROTECTION_CLOSE_CODE, err.message);
+        }
+      });
+    }
+  };
+  const handleSignalingMessage = (parsed) => {
+    const type = parsed.type;
+    if (type === "rtc_upgrade_answer") {
+      const attemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
+      const sdp = typeof parsed.sdp === "string" ? parsed.sdp : "";
+      if (upgradeState !== "negotiating" || attemptId !== currentAttemptId || !pc || sdp.length === 0 || sdp.length > RTC_MAX_SDP_BYTES) {
+        return true;
+      }
+      const activePc = pc;
+      void (async () => {
+        try {
+          await activePc.setRemoteDescription({ type: "answer", sdp });
+          if (closed || pc !== activePc || currentAttemptId !== attemptId)
+            return;
+          remoteDescriptionSet = true;
+          const queued = pendingRemoteIce;
+          pendingRemoteIce = [];
+          for (const candidate of queued) {
+            try {
+              await activePc.addIceCandidate(candidate);
+            } catch (iceErr) {
+              logger.warn({ err: normalizeError(iceErr) }, "rtc_pending_ice_add_failed");
+            }
+          }
+        } catch (error) {
+          logger.warn({ err: normalizeError(error) }, "rtc_set_remote_description_failed");
+          if (currentAttemptId === attemptId) {
+            abortUpgrade("set_remote_description_failed", { sendAbort: true });
+          }
+        }
+      })();
+      return true;
+    }
+    if (type === "rtc_upgrade_ice") {
+      const attemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
+      if (attemptId !== currentAttemptId || !pc || upgradeState === "aborted") {
+        return true;
+      }
+      const candidate = normalizeCandidate(parsed.candidate);
+      if (!remoteDescriptionSet) {
+        pendingRemoteIce.push(candidate);
+      } else {
+        void pc.addIceCandidate(candidate).catch((iceErr) => {
+          logger.warn({ err: normalizeError(iceErr) }, "rtc_remote_ice_add_failed");
+        });
+      }
+      return true;
+    }
+    if (type === "rtc_upgrade_activated") {
+      const attemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
+      const mode = parsed.mode;
+      const endSeq = parsed.hostPreviousLegEndSeq;
+      if (attemptId !== currentAttemptId || upgradeState === "aborted") {
+        return true;
+      }
+      if (mode !== "lan" && mode !== "p2p" && mode !== "turn" || typeof endSeq !== "number" || !Number.isSafeInteger(endSeq) || endSeq < 0) {
+        abortUpgrade("invalid_activated_message", { sendAbort: true });
+        return true;
+      }
+      clearUpgradeTimers();
+      upgradeState = "active";
+      activeSendLeg = "webrtc";
+      hostPreviousLegEndSeq = BigInt(endSeq);
+      flushActivatingSends("webrtc");
+      setTransportMode(mode);
+      checkRelayDrain();
+      if (!relayDrained) {
+        drainTimer = setTimeout(() => {
+          finishRelayDrain();
+        }, drainTimeoutMs);
+        unrefTimer2(drainTimer);
+      }
+      return true;
+    }
+    if (type === "rtc_upgrade_abort") {
+      const attemptId = typeof parsed.attemptId === "string" ? parsed.attemptId : "";
+      if (!attemptId || attemptId === currentAttemptId) {
+        const reason = typeof parsed.reason === "string" ? parsed.reason : "peer_aborted";
+        abortUpgrade(reason, { sendAbort: false });
+      }
+      return true;
+    }
+    return false;
+  };
+  const enforceReplayProtection = (seq, salt) => {
+    if (recvSalt === null || recvSeq === null) {
+      recvSalt = salt;
+      recvSeq = seq;
+      return;
+    }
+    if (salt.byteLength !== recvSalt.byteLength) {
+      throw new Error("E2EE replay protection violation: salt length changed");
+    }
+    let saltMismatch = 0;
+    for (let i = 0; i < recvSalt.byteLength; i += 1) {
+      saltMismatch |= salt[i] ^ recvSalt[i];
+    }
+    if (saltMismatch !== 0) {
+      throw new Error("E2EE replay protection violation: salt changed");
+    }
+    if (seq <= recvSeq) {
+      throw new Error("E2EE replay protection violation: seq not strictly increasing");
+    }
+    recvSeq = seq;
+  };
+  const dispatchPlaintext = (plaintext) => {
+    if (typeof plaintext === "string") {
+      let parsed = null;
+      if (plaintext.trim().startsWith("{")) {
+        try {
+          parsed = JSON.parse(plaintext);
+        } catch {
+          parsed = null;
+        }
+      }
+      if (isRecord(parsed)) {
+        if (handleSignalingMessage(parsed)) {
+          return;
+        }
+        if (parsed.type === "relay_device_auth_result") {
+          emitMessage(plaintext);
+          if (parsed.ok === true) {
+            startWebRtcUpgrade();
+          }
+          return;
+        }
+        if (isServerInfoMessage(parsed)) {
+          emitMessage(plaintext);
+          startWebRtcUpgrade();
+          return;
+        }
+      }
+    }
+    emitMessage(plaintext);
+  };
+  const handleEncryptedBundle = (seq, bundle, source) => {
+    if (closed || channelState !== "open" || !sharedKey)
+      return;
+    if (recvSalt === null && recvSeq === null && source === "ws" && upgradeState === "idle") {
+      reorderBuffer.setNextExpectedSeq(seq);
+    }
+    const readyBundles = reorderBuffer.push(seq, bundle);
+    for (const readyBundle of readyBundles) {
+      if (closed)
+        return;
+      const { plaintext, seq: decryptedSeq, salt } = decrypt(sharedKey, toIndependentArrayBuffer(readyBundle));
+      enforceReplayProtection(decryptedSeq, salt);
+      dispatchPlaintext(plaintext);
+      checkRelayDrain();
+    }
+  };
+  const handleWsRawMessage = (rawEvent) => {
+    if (closed || relayDrained)
+      return;
+    const data = extractRelayMessageData(rawEvent);
+    if (channelState === "handshaking") {
+      try {
+        const text = typeof data === "string" ? data : new TextDecoder().decode(data);
+        const parsed = JSON.parse(text);
+        if (isE2EEReadyMessage(parsed)) {
+          clearHandshakeRetry();
+          if (securityContext && parsed.authChallenge) {
+            securityContext.authChallenge = parsed.authChallenge;
+          }
+          sendSalt = randomBytes(SALT_LENGTH);
+          sendSeq = 0n;
+          channelState = "open";
+          emitOpen();
+          const queued = pendingSends;
+          pendingSends = [];
+          for (const item of queued) {
+            void enqueueEncryptedSend(item).catch((error) => {
+              logger.warn({ err: normalizeError(error) }, "relay_e2ee_flush_send_failed");
+              emitError(error);
+            });
+          }
+        }
+      } catch {
+      }
+      return;
+    }
+    if (channelState !== "open")
+      return;
+    try {
+      try {
+        const text = typeof data === "string" ? data : new TextDecoder().decode(data);
+        if (text.trim().startsWith("{")) {
+          const parsed = JSON.parse(text);
+          if (isE2EEHelloMessage(parsed) || isE2EEReadyMessage(parsed)) {
+            return;
+          }
+          throw new Error("Received plaintext frame on encrypted channel");
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("plaintext frame")) {
+          throw error;
+        }
+      }
+      let bundleBytes;
+      if (typeof data === "string") {
+        bundleBytes = base64ToBytes(data);
+      } else {
+        try {
+          const decodedText = new TextDecoder().decode(data);
+          bundleBytes = base64ToBytes(decodedText);
+        } catch {
+          bundleBytes = new Uint8Array(data);
+        }
+      }
+      const seq = readBundleSeqLE(bundleBytes);
+      handleEncryptedBundle(seq, bundleBytes, "ws");
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      fatalProtocolClose(err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_CODE : 1011, err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_REASON : err.message);
+    }
+  };
+  const startE2eeHandshakeOnWs = (ws, mode) => {
+    if (closed) {
+      try {
+        ws.close(1e3, "Transport closed");
+      } catch {
+      }
+      return;
+    }
+    wsTransport = ws;
+    setTransportMode(mode);
+    channelState = "handshaking";
+    wsCleanup = [
+      ws.onMessage((event) => handleWsRawMessage(event)),
+      ws.onClose((event) => {
+        if (wsTransport !== ws)
+          return;
+        if (relayDrained || upgradeState === "active") {
+          relayDrained = true;
+          clearDrainTimer();
+          detachWsHandlers();
+          wsTransport = null;
+          return;
+        }
+        emitClose(event);
+      }),
+      ws.onError((event) => {
+        if (wsTransport !== ws)
+          return;
+        if (relayDrained || upgradeState === "active") {
+          return;
+        }
+        emitError(event);
+      })
+    ];
+    try {
+      const keyPair = generateKeyPair();
+      const daemonPublicKey = importPublicKey(daemonPublicKeyB64);
+      sharedKey = deriveSharedKey(keyPair.secretKey, daemonPublicKey);
+      const clientPublicKeyB64 = exportPublicKey(keyPair.publicKey);
+      securityContext = { clientPublicKeyB64 };
+      const helloText = JSON.stringify({ type: "e2ee_hello", key: clientPublicKeyB64 });
+      const sendHello = () => {
+        if (closed || channelState !== "handshaking" || wsTransport !== ws) {
+          clearHandshakeRetry();
+          return;
+        }
+        try {
+          ws.send(helloText);
+        } catch (error) {
+          emitError(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
+      sendHello();
+      handshakeRetry = setInterval(() => {
+        if (closed || channelState !== "handshaking") {
+          clearHandshakeRetry();
+          return;
+        }
+        sendHello();
+      }, HANDSHAKE_RETRY_MS);
+      unrefTimer2(handshakeRetry);
+    } catch (error) {
+      logger.warn({ err: normalizeError(error) }, "relay_e2ee_handshake_failed");
+      emitError(error);
+      try {
+        ws.close(4001, "E2EE handshake failed");
+      } catch {
+      }
+      emitClose({ code: 4001, reason: "E2EE handshake failed" });
+    }
+  };
+  const connectRelay = () => {
+    if (closed)
+      return;
+    if (!relayUrl) {
+      const error = new Error("LAN direct connection failed and no relay URL configured");
+      emitError(error);
+      emitClose({ code: 1006, reason: error.message });
+      return;
+    }
+    let ws;
+    try {
+      ws = baseFactory({
+        url: relayUrl,
+        headers,
+        ...protocols ? { protocols } : {}
+      });
+    } catch (error) {
+      emitError(error);
+      emitClose({
+        code: 1006,
+        reason: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
+    let openHandled = false;
+    const preOpenCleanups = [];
+    const clearPreOpen = () => {
+      for (const unsub of preOpenCleanups) {
+        try {
+          unsub();
+        } catch {
+        }
+      }
+      preOpenCleanups.length = 0;
+    };
+    preOpenCleanups.push(ws.onOpen(() => {
+      if (openHandled || closed)
+        return;
+      openHandled = true;
+      clearPreOpen();
+      startE2eeHandshakeOnWs(ws, "relay");
+    }), ws.onClose((event) => {
+      if (openHandled || closed)
+        return;
+      openHandled = true;
+      clearPreOpen();
+      emitClose(event);
+    }), ws.onError((event) => {
+      if (openHandled || closed)
+        return;
+      emitError(event);
+    }));
+  };
+  const connectLanFirst = () => {
+    let settled = false;
+    let remaining = lanEndpoints.length;
+    const candidateTransports = [];
+    const closeLosers = (winner) => {
+      for (const item of candidateTransports) {
+        for (const unsub of item.unsubs) {
+          try {
+            unsub();
+          } catch {
+          }
+        }
+        item.unsubs.length = 0;
+        if (item.ws !== winner) {
+          try {
+            item.ws.close(1e3, "LAN race finished");
+          } catch {
+          }
+        }
+      }
+      candidateTransports.length = 0;
+    };
+    const failLanRace = () => {
+      if (settled || closed)
+        return;
+      settled = true;
+      cancelLanRace();
+      closeLosers();
+      connectRelay();
+    };
+    lanPendingCleanups.add(() => {
+      settled = true;
+      closeLosers();
+    });
+    lanRaceTimer = setTimeout(() => {
+      failLanRace();
+    }, lanConnectTimeoutMs);
+    unrefTimer2(lanRaceTimer);
+    for (const endpoint of lanEndpoints) {
+      if (settled || closed)
+        break;
+      let lanUrl;
+      try {
+        lanUrl = buildLanWebSocketUrl(endpoint, serverId, lanUseTls);
+      } catch {
+        remaining -= 1;
+        if (remaining <= 0) {
+          failLanRace();
+        }
+        continue;
+      }
+      let ws;
+      try {
+        ws = baseFactory({
+          url: lanUrl,
+          headers,
+          ...protocols ? { protocols } : {}
+        });
+      } catch {
+        remaining -= 1;
+        if (remaining <= 0) {
+          failLanRace();
+        }
+        continue;
+      }
+      let candidateFailed = false;
+      const unsubs = [];
+      candidateTransports.push({ ws, unsubs });
+      const markCandidateFailed = () => {
+        if (candidateFailed || settled || closed)
+          return;
+        candidateFailed = true;
+        for (const unsub of unsubs) {
+          try {
+            unsub();
+          } catch {
+          }
+        }
+        unsubs.length = 0;
+        try {
+          ws.close(1e3, "LAN candidate failed");
+        } catch {
+        }
+        remaining -= 1;
+        if (remaining <= 0) {
+          failLanRace();
+        }
+      };
+      unsubs.push(ws.onOpen(() => {
+        if (settled || closed) {
+          try {
+            ws.close(1e3, "LAN race already settled");
+          } catch {
+          }
+          return;
+        }
+        settled = true;
+        if (lanRaceTimer) {
+          clearTimeout(lanRaceTimer);
+          lanRaceTimer = null;
+        }
+        lanPendingCleanups.clear();
+        closeLosers(ws);
+        startE2eeHandshakeOnWs(ws, "lan");
+      }), ws.onError(() => markCandidateFailed()), ws.onClose(() => markCandidateFailed()));
+    }
+  };
+  if (lanEndpoints.length > 0) {
+    connectLanFirst();
+  } else {
+    connectRelay();
+  }
   return {
     send: (data) => {
-      if (!channel) {
+      if (closed) {
+        const error = new Error("Transport is closed");
+        emitError(error);
+        throw error;
+      }
+      const normalized = normalizeTransportPayload(data);
+      if (channelState === "handshaking") {
+        if (pendingSends.length >= MAX_PENDING_SENDS) {
+          pendingSends.shift();
+        }
+        pendingSends.push(normalized);
+        return;
+      }
+      if (channelState !== "open") {
         logger.warn({}, "relay_e2ee_send_before_ready");
         const error = new Error("Encrypted channel not ready");
         emitError(error);
         throw error;
       }
-      void channel.send(normalizeTransportPayload(data)).catch((error) => {
-        logger.warn({ err: normalizeTransportError(error) }, "relay_e2ee_send_failed");
+      void enqueueEncryptedSend(normalized).catch((error) => {
+        logger.warn({ err: normalizeError(error) }, "relay_e2ee_send_failed");
         emitError(error);
       });
     },
-    close: (code, reason) => {
-      if (channel) {
-        channel.close(code, reason);
-      } else {
-        base.close(code, reason);
-      }
+    close: (code = 1e3, reason = "Normal closure") => {
       emitClose({ code, reason });
     },
     onMessage: (handler) => {
@@ -16039,8 +17356,126 @@ function createEncryptedTransport(base, daemonPublicKeyB64, logger) {
       errorHandlers.add(handler);
       return () => errorHandlers.delete(handler);
     },
-    getRelaySecurityContext: () => channel?.getSecurityContext() ?? null
+    getRelaySecurityContext: () => securityContext ? { ...securityContext } : null,
+    getTransportMode: () => transportMode,
+    onTransportModeChange: (handler) => {
+      modeHandlers.add(handler);
+      if (transportMode !== null) {
+        invokeHandler(handler, transportMode);
+      }
+      return () => modeHandlers.delete(handler);
+    }
   };
+}
+function resolveServerId(explicitServerId, relayUrl) {
+  if (typeof explicitServerId === "string" && explicitServerId.trim().length > 0) {
+    return explicitServerId.trim();
+  }
+  if (relayUrl) {
+    try {
+      const parsed = new URL(relayUrl);
+      const id = parsed.searchParams.get("serverId");
+      if (id && id.trim().length > 0)
+        return id.trim();
+    } catch {
+    }
+  }
+  return "";
+}
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isServerInfoMessage(value) {
+  if (value.type === "status" && isRecord(value.payload) && value.payload.status === "server_info") {
+    return true;
+  }
+  if (value.type === "session" && isRecord(value.message) && value.message.type === "status" && isRecord(value.message.payload) && value.message.payload.status === "server_info") {
+    return true;
+  }
+  return false;
+}
+function isE2EEHelloMessage(value) {
+  return isRecord(value) && value.type === "e2ee_hello" && typeof value.key === "string" && value.key.trim().length > 0;
+}
+function isE2EEReadyMessage(value) {
+  return isRecord(value) && value.type === "e2ee_ready" && (value.authChallenge === void 0 || typeof value.authChallenge === "string" && value.authChallenge.trim().length > 0);
+}
+function normalizeSdpMLineIndex(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 65535) {
+    return value;
+  }
+  return null;
+}
+function normalizeCandidate(raw) {
+  if (raw === null || raw === void 0)
+    return null;
+  if (typeof raw !== "object")
+    return null;
+  const rec = raw;
+  if (typeof rec.candidate !== "string")
+    return null;
+  return {
+    candidate: rec.candidate,
+    sdpMid: typeof rec.sdpMid === "string" ? rec.sdpMid : null,
+    sdpMLineIndex: normalizeSdpMLineIndex(rec.sdpMLineIndex)
+  };
+}
+function extractSyncBinaryBytes(rawData) {
+  if (rawData instanceof ArrayBuffer) {
+    return new Uint8Array(rawData.slice(0));
+  }
+  if (ArrayBuffer.isView(rawData)) {
+    const copy = copyArrayBufferViewToBuffer(rawData);
+    return new Uint8Array(copy);
+  }
+  return null;
+}
+function toIndependentArrayBuffer(bytes) {
+  const out = new Uint8Array(bytes.byteLength);
+  out.set(bytes);
+  return out.buffer;
+}
+function bytesToBase64(bytes) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+  }
+  const chunkSize = 32768;
+  const parts = [];
+  for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+    const slice = bytes.subarray(i, Math.min(bytes.byteLength, i + chunkSize));
+    parts.push(String.fromCharCode(...slice));
+  }
+  return globalThis.btoa(parts.join(""));
+}
+function base64ToBytes(b64) {
+  if (typeof Buffer !== "undefined") {
+    const buf = Buffer.from(b64, "base64");
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength).slice();
+  }
+  const binary = globalThis.atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return out;
+}
+function randomBytes(length) {
+  const out = new Uint8Array(length);
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(out);
+    return out;
+  }
+  const kp = generateKeyPair();
+  out.set(kp.secretKey.subarray(0, length));
+  return out;
+}
+function createAttemptId() {
+  const bytes = randomBytes(16);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
 }
 function emitHandlers(handlers, ...args) {
   for (const handler of handlers) {
@@ -16053,7 +17488,7 @@ function invokeHandler(handler, ...args) {
   } catch {
   }
 }
-function normalizeTransportError(error) {
+function normalizeError(error) {
   if (error instanceof Error) {
     return {
       name: error.name,
@@ -16062,6 +17497,11 @@ function normalizeTransportError(error) {
     };
   }
   return { message: String(error) };
+}
+function unrefTimer2(timer) {
+  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
+    timer.unref();
+  }
 }
 
 // vendor/chisacode-remote/packages/client/dist/daemon-client-websocket-transport.js
@@ -16370,7 +17810,7 @@ function randomBase64UrlChallenge() {
 }
 
 // vendor/chisacode-remote/packages/client/dist/relay-device-credentials.js
-var RELAY_DEVICE_AUTH_VERSION = 1;
+var RELAY_DEVICE_AUTH_VERSION2 = 1;
 function utf8Bytes(input) {
   if (typeof TextEncoder !== "undefined") {
     return new TextEncoder().encode(input);
@@ -16467,7 +17907,7 @@ function createRelayDeviceId() {
 }
 function computeClientRelayDeviceAuthProof(deviceSecret, transcriptFields) {
   const transcript = buildRelayDeviceAuthTranscript({
-    version: transcriptFields.version ?? RELAY_DEVICE_AUTH_VERSION,
+    version: transcriptFields.version ?? RELAY_DEVICE_AUTH_VERSION2,
     serverId: transcriptFields.serverId,
     daemonPublicKeyB64: transcriptFields.daemonPublicKeyB64,
     clientPublicKeyB64: transcriptFields.clientPublicKeyB64,
@@ -16491,6 +17931,8 @@ var DaemonConnectionController = class {
     this.transport = null;
     this.transportCleanup = [];
     this.connectionListeners = /* @__PURE__ */ new Set();
+    this.transportModeListeners = /* @__PURE__ */ new Set();
+    this.transportMode = null;
     this.reconnectTimeout = null;
     this.connectTimeout = null;
     this.pendingGenericTransportErrorTimeout = null;
@@ -16508,14 +17950,15 @@ var DaemonConnectionController = class {
       throw new Error("Daemon client requires a non-empty clientId");
     }
     this.config = { ...config, clientId };
-    this.connectionPath = isRelayClientWebSocketUrl(config.url) ? "relay" : "direct";
+    const hasLanEndpoints = (config.lanEndpoints?.length ?? 0) > 0;
+    this.connectionPath = isRelayClientWebSocketUrl(config.url) || hasLanEndpoints ? "relay" : "direct";
     let parsedUrl = null;
     try {
       parsedUrl = new URL(config.url);
     } catch {
       parsedUrl = null;
     }
-    this.serverId = normalizeClientId(parsedUrl?.searchParams.get("serverId")) ?? parsedUrl?.host ?? null;
+    this.serverId = normalizeClientId(parsedUrl?.searchParams.get("serverId")) ?? normalizeClientId(config.relayDeviceAuth?.serverId) ?? parsedUrl?.host ?? null;
     this.clientIdHash = hashForLog(clientId);
     this.generation = typeof config.runtimeGeneration === "number" && Number.isFinite(config.runtimeGeneration) ? config.runtimeGeneration : null;
   }
@@ -16547,6 +17990,7 @@ var DaemonConnectionController = class {
     }
     this.resetConnectTimeout();
     this.disposeTransport(1e3, "Client closed");
+    this.transportMode = null;
     this.rejectLivenessProbe(error);
     this.callbacks.onReset(error, true);
     this.updateConnectionState({ status: "disposed" }, { event: "DISPOSE", reason: "Client closed", reasonCode: "disposed" });
@@ -16580,6 +18024,20 @@ var DaemonConnectionController = class {
     this.connectionListeners.add(listener);
     listener(this.connectionState);
     return () => this.connectionListeners.delete(listener);
+  }
+  getTransportMode() {
+    return this.transport?.getTransportMode?.() ?? this.transportMode;
+  }
+  subscribeTransportMode(listener) {
+    this.transportModeListeners.add(listener);
+    const current = this.getTransportMode();
+    if (current !== null) {
+      try {
+        listener(current);
+      } catch {
+      }
+    }
+    return () => this.transportModeListeners.delete(listener);
   }
   get isConnected() {
     return this.connectionState.status === "connected";
@@ -16705,15 +18163,22 @@ var DaemonConnectionController = class {
       this.disposeTransport();
       const baseTransportFactory = this.config.transportFactory ?? createWebSocketTransportFactory(this.config.webSocketFactory ?? defaultWebSocketFactory);
       let transportFactory = baseTransportFactory;
-      if (this.config.e2ee?.enabled === true && isRelayClientWebSocketUrl(this.config.url)) {
+      const hasLanEndpoints = (this.config.lanEndpoints?.length ?? 0) > 0;
+      if (this.config.e2ee?.enabled === true && (isRelayClientWebSocketUrl(this.config.url) || hasLanEndpoints)) {
         const daemonPublicKeyB64 = this.config.e2ee.daemonPublicKeyB64;
         if (!daemonPublicKeyB64) {
           throw new Error("daemonPublicKeyB64 is required for relay E2EE");
         }
-        transportFactory = createRelayE2eeTransportFactory({
+        transportFactory = createAdaptiveTransportFactory({
           baseFactory: baseTransportFactory,
           daemonPublicKeyB64,
-          logger: this.logger
+          logger: this.logger,
+          ...this.serverId ? { serverId: this.serverId } : {},
+          ...this.config.lanEndpoints ? { lanEndpoints: this.config.lanEndpoints } : {},
+          ...this.config.lanUseTls !== void 0 ? { lanUseTls: this.config.lanUseTls } : {},
+          ...this.config.iceServers !== void 0 ? { iceServers: this.config.iceServers } : {},
+          ...this.config.rtcPeerConnectionFactory ? { rtcPeerConnectionFactory: this.config.rtcPeerConnectionFactory } : {},
+          ...this.config.webrtcUpgrade !== void 0 ? { webrtcUpgrade: this.config.webrtcUpgrade } : {}
         });
       }
       const transport = transportFactory({
@@ -16806,6 +18271,28 @@ var DaemonConnectionController = class {
       }),
       transport.onMessage((data) => this.handleTransportData(data, transport))
     ];
+    if (typeof transport.onTransportModeChange === "function") {
+      this.transportCleanup.push(transport.onTransportModeChange((mode) => {
+        if (this.transport !== transport)
+          return;
+        this.updateTransportMode(mode);
+      }));
+    }
+  }
+  updateTransportMode(mode) {
+    if (this.transportMode === mode)
+      return;
+    this.transportMode = mode;
+    try {
+      this.config.onTransportModeChange?.(mode);
+    } catch {
+    }
+    for (const listener of this.transportModeListeners) {
+      try {
+        listener(mode);
+      } catch {
+      }
+    }
   }
   handleTransportData(data, expectedTransport) {
     if (this.transport !== expectedTransport)
@@ -17607,6 +19094,12 @@ var DaemonClient = class {
   }
   subscribeConnectionStatus(listener) {
     return this.connection.subscribe(listener);
+  }
+  getTransportMode() {
+    return this.connection.getTransportMode();
+  }
+  subscribeTransportMode(listener) {
+    return this.connection.subscribeTransportMode(listener);
   }
   get isConnected() {
     return this.connection.isConnected;
@@ -18414,7 +19907,8 @@ function createChisaCodeClient(config) {
     connect: () => daemonClient.connect(),
     close: () => daemonClient.close(),
     ensureConnected: () => daemonClient.ensureConnected(),
-    getConnectionState: () => daemonClient.getConnectionState()
+    getConnectionState: () => daemonClient.getConnectionState(),
+    getTransportMode: () => daemonClient.getTransportMode()
   };
 }
 function createWorkspaceHandleFactory(daemonClient) {
@@ -18527,111 +20021,23 @@ function createGeneratedClientId() {
   const randomId = typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2);
   return `chisacode-sdk-${randomId}`;
 }
-
-// vendor/chisacode-remote/packages/protocol/dist/relay-device-auth.js
-var RELAY_DEVICE_AUTH_VERSION2 = 1;
-var RelayAuthBootstrapSchema = external_exports.object({
-  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION2),
-  /**
-   * Enrollment credential from a one-time QR or a revocable persistent link.
-   * Both exchange for an independent device secret over the encrypted channel.
-   */
-  pairingToken: external_exports.string().min(16).max(256),
-  /**
-   * Absolute expiry as unix epoch milliseconds.
-   */
-  expiresAtMs: external_exports.number().int().positive(),
-  /** Missing means a short-lived one-time QR. Persistent links require explicit revocation. */
-  kind: external_exports.enum(["persistent"]).optional()
-});
-var RelayDeviceAuthChallengeSchema = external_exports.object({
-  type: external_exports.literal("relay_device_auth_challenge"),
-  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION2),
-  challenge: external_exports.string().min(16).max(256),
-  serverId: external_exports.string().min(1)
-});
-var RelayDeviceAuthProofSchema = external_exports.object({
-  type: external_exports.literal("relay_device_auth_proof"),
-  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION2),
-  deviceId: external_exports.string().min(8).max(128),
-  /**
-   * Base64url HMAC-SHA256 over the canonical transcript.
-   */
-  proof: external_exports.string().min(16).max(256),
-  /**
-   * When set, this is a first-time pairing exchange consuming the bootstrap token.
-   */
-  pairingToken: external_exports.string().min(16).max(256).optional()
-});
-var RelayDeviceAuthResultSchema = external_exports.object({
-  type: external_exports.literal("relay_device_auth_result"),
-  version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION2),
-  ok: external_exports.boolean(),
-  /**
-   * Issued only on successful first pairing. Never logged by callers.
-   */
-  deviceSecret: external_exports.string().min(32).max(256).optional(),
-  reason: external_exports.string().max(200).optional(),
-  securityLevel: external_exports.enum(["v2", "legacy"]).optional()
-});
-
-// vendor/chisacode-remote/packages/protocol/dist/connection-offer.js
-var ConnectionOfferV2Schema = external_exports.object({
-  v: external_exports.literal(2),
-  serverId: external_exports.string().min(1),
-  daemonPublicKeyB64: external_exports.string().min(1),
-  relayAuthPublicKeyB64: external_exports.string().min(1).optional(),
-  /**
-   * Optional client-auth bootstrap for handshake v2. Old parsers ignore this
-   * field (optional missing keys remain valid; unknown keys are stripped).
-   */
-  authBootstrap: RelayAuthBootstrapSchema.optional(),
-  relay: external_exports.object({
-    endpoint: external_exports.string().min(1),
-    useTls: external_exports.boolean().optional()
-  })
-});
-var ConnectionOfferSchema = ConnectionOfferV2Schema;
-function decodeBase64UrlToUtf8(input) {
-  const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, "=");
-  const binary = globalThis.atob(padded);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-}
-function decodeOfferFragmentPayload(encoded) {
-  const json = decodeBase64UrlToUtf8(encoded);
-  return JSON.parse(json);
-}
-var OFFER_FRAGMENT_PREFIX = "#offer=";
-function extractOfferFragmentEncoded(input) {
-  const trimmed = input.trim();
-  if (!trimmed)
-    return null;
-  const fragmentIndex = trimmed.indexOf(OFFER_FRAGMENT_PREFIX);
-  if (fragmentIndex === -1)
-    return null;
-  const encoded = trimmed.slice(fragmentIndex + OFFER_FRAGMENT_PREFIX.length).trim();
-  return encoded.length > 0 ? encoded : null;
-}
-function parseConnectionOfferFromUrl(input) {
-  const encoded = extractOfferFragmentEncoded(input);
-  if (!encoded)
-    return null;
-  const payload = decodeOfferFragmentPayload(encoded);
-  return ConnectionOfferSchema.parse(payload);
-}
 export {
+  AdaptiveConnectionOfferV2Schema,
   ConnectionOfferSchema,
+  DEFAULT_STUN_ICE_SERVERS,
   DaemonClient,
   MemoryRelayDeviceCredentialStore,
   RelayDeviceCredentialClient,
   buildDaemonWebSocketUrl,
+  buildLanWebSocketUrl,
   buildRelayWebSocketUrl,
   computeClientRelayDeviceAuthProof,
   createChisaCodeClient,
   createRelayDeviceId,
   decodeOfferFragmentPayload,
-  parseConnectionOfferFromUrl
+  mergeIceServers,
+  orderIceServers,
+  parseConnectionOfferV2FromUrl as parseConnectionOfferFromUrl,
+  parseConnectionOfferV2FromUrl
 };
 //# sourceMappingURL=daemon-client.bundle.js.map

@@ -150,6 +150,13 @@
         "Variable 'sockets' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
+    "mobile/web/app/connection-details.js": {
+      "TS2307": {
+        "Cannot find module './chrome.js?v=20261117-app-split' or its corresponding type declarations.": 1,
+        "Cannot find module './context.js?v=20261117-app-split' or its corresponding type declarations.": 1,
+        "Cannot find module './nodes.js?v=20261117-app-split' or its corresponding type declarations.": 1
+      }
+    },
     "mobile/web/app/context.js": {
       "TS18047": {
         "'phone' is possibly 'null'.": 2
@@ -788,6 +795,7 @@
         "Cannot find module './chrome.js?v=20261117-app-split' or its corresponding type declarations.": 1,
         "Cannot find module './composer.js?v=20261117-app-split' or its corresponding type declarations.": 1,
         "Cannot find module './connect.js?v=20261117-app-split' or its corresponding type declarations.": 1,
+        "Cannot find module './connection-details.js?v=20261117-app-split' or its corresponding type declarations.": 1,
         "Cannot find module './context.js?v=20261117-app-split' or its corresponding type declarations.": 1,
         "Cannot find module './dialogs.js?v=20261117-app-split' or its corresponding type declarations.": 1,
         "Cannot find module './files.js?v=20261117-app-split' or its corresponding type declarations.": 1,
@@ -1119,35 +1127,22 @@
       "TS2307": {
         "Cannot find module '@chisacode/client' or its corresponding type declarations.": 1
       },
-      "TS2339": {
-        "Property 'computerName' does not exist on type 'object'.": 1,
-        "Property 'daemonPublicKeyB64' does not exist on type 'object'.": 1,
-        "Property 'deviceId' does not exist on type 'object'.": 1,
-        "Property 'deviceSecret' does not exist on type 'object'.": 1,
-        "Property 'relayEndpoint' does not exist on type 'object'.": 2,
-        "Property 'savedAt' does not exist on type 'object'.": 1,
-        "Property 'signal' does not exist on type '{}'.": 2
-      },
-      "TS2353": {
-        "Object literal may only specify known properties, and 'getAuthError' does not exist in type '{ client: any; offer: object; serverId: string; }'.": 1
-      },
       "TS7005": {
-        "Variable 'authError' implicitly has an 'any' type.": 4
+        "Variable 'authError' implicitly has an 'any' type.": 2
       },
       "TS7006": {
-        "Parameter 'client' implicitly has an 'any' type.": 3,
+        "Parameter 'client' implicitly has an 'any' type.": 2,
         "Parameter 'computerName' implicitly has an 'any' type.": 1,
         "Parameter 'currentUrl' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
         "Parameter 'payload' implicitly has an 'any' type.": 1,
         "Parameter 'record' implicitly has an 'any' type.": 1,
-        "Parameter 'result' implicitly has an 'any' type.": 2,
+        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 'serverId' implicitly has an 'any' type.": 5,
-        "Parameter 'signal' implicitly has an 'any' type.": 1,
         "Parameter 'value' implicitly has an 'any' type.": 3
       },
       "TS7034": {
-        "Variable 'authError' implicitly has type 'any' in some locations where its type cannot be determined.": 2
+        "Variable 'authError' implicitly has type 'any' in some locations where its type cannot be determined.": 1
       }
     },
     "mobile/web/chisacode/timeline.js": {
@@ -5103,51 +5098,39 @@
       "TS18046": {
         "'err' is of type 'unknown'.": 1
       },
-      "TS2322": {
-        "Type 'readonly string[] | null | undefined' is not assignable to type 'readonly string[] | undefined'.": 1
-      },
       "TS2339": {
         "Property 'address' does not exist on type 'string | AddressInfo'.": 1,
         "Property 'assertCurrent' does not exist on type '{ api: { DSH_VENDOR_PACKAGES?: readonly string[] | undefined; }; home: string; config: object; daemonConfig: object; }'.": 1,
-        "Property 'code' does not exist on type 'Error'.": 2,
+        "Property 'code' does not exist on type 'Error'.": 1,
         "Property 'code' does not exist on type '{}'.": 4,
         "Property 'expiresAtMs' does not exist on type '{ relayEnabled: boolean; url: null; qr: null; }'.": 3,
         "Property 'getHarnessOrigin' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 2,
         "Property 'getSessionCookie' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 2,
         "Property 'git' does not exist on type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }'.": 1,
-        "Property 'gitTunnelUrl' does not exist on type '{ baseEnv: ProcessEnv; home: string; vendorDir: string | null; shimDir: string | null; config: { apiKey?: string | undefined; baseUrl?: string | undefined; }; }'.": 1,
-        "Property 'harnessOrigin' does not exist on type '{ baseEnv: ProcessEnv; home: string; vendorDir: string | null; shimDir: string | null; config: { apiKey?: string | undefined; baseUrl?: string | undefined; }; }'.": 1,
         "Property 'linkUrl' does not exist on type '{ relayEnabled: boolean; url: null; qr: null; }'.": 1,
         "Property 'message' does not exist on type '{}'.": 1,
         "Property 'readyReject' does not exist on type '{ child: ChildProcess; stopping: boolean; }'.": 1,
         "Property 'readyReject' does not exist on type '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; }'.": 3,
         "Property 'readyResolve' does not exist on type '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; }'.": 1,
-        "Property 'remoteBindAddress' does not exist on type '{}'.": 1,
         "Property 'remoteEnabled' does not exist on type 'object'.": 2,
-        "Property 'remotePort' does not exist on type '{}'.": 1,
         "Property 'remoteRelayEndpoint' does not exist on type 'object'.": 4,
         "Property 'remoteRelayToken' does not exist on type 'object'.": 1,
         "Property 'remoteRelayUrl' does not exist on type 'object'.": 4,
-        "Property 'stopPromise' does not exist on type '{ child: ChildProcess; stopping: boolean; }'.": 5,
-        "Property 'stopping' does not exist on type '{ readyResolve: () => void; readyReject: (err: Error) => void; }'.": 1
+        "Property 'stopPromise' does not exist on type '{ child: ChildProcess; stopping: boolean; }'.": 5
       },
       "TS2345": {
         "Argument of type '{ child: ChildProcess; stopping: boolean; } | null' is not assignable to parameter of type '{ child: ChildProcess; stopping: boolean; }'.": 1,
-        "Argument of type '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; }' is not assignable to parameter of type '{ child: ChildProcess; stopping: boolean; readyReject: (err: Error) => void; }'.": 1,
-        "Argument of type '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; }' is not assignable to parameter of type '{ readyResolve: () => void; readyReject: (err: Error) => void; }'.": 1
+        "Argument of type '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; }' is not assignable to parameter of type '{ child: ChildProcess; stopping: boolean; readyReject: (err: Error) => void; }'.": 1
       },
       "TS2351": {
         "This expression is not constructable.": 2
       },
       "TS2353": {
         "Object literal may only specify known properties, and 'assertCurrent' does not exist in type '{ api: { DSH_VENDOR_PACKAGES?: readonly string[] | undefined; }; home: string; config: object; daemonConfig: object; }'.": 1,
-        "Object literal may only specify known properties, and 'harnessOrigin' does not exist in type '{ baseEnv: ProcessEnv; home: string; vendorDir: string | null; shimDir: string | null; config: { apiKey?: string | undefined; baseUrl?: string | undefined; }; }'.": 1,
         "Object literal may only specify known properties, and 'linkUrl' does not exist in type '{ relayEnabled: boolean; url: null; qr: null; }'.": 1
       },
       "TS2367": {
-        "This comparison appears to be unintentional because the types '{ child: ChildProcess; stopping: boolean; } | null' and '{ readyResolve: () => void; readyReject: (err: Error) => void; }' have no overlap.": 1,
-        "This comparison appears to be unintentional because the types '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; } | null' and '{ child: ChildProcess; stopping: boolean; readyReject: (err: Error) => void; }' have no overlap.": 1,
-        "This comparison appears to be unintentional because the types '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; } | null' and '{ readyResolve: () => void; readyReject: (err: Error) => void; }' have no overlap.": 1
+        "This comparison appears to be unintentional because the types '{ child: ChildProcessWithoutNullStreams; stopping: boolean; stderrTail: string; } | null' and '{ child: ChildProcess; stopping: boolean; readyReject: (err: Error) => void; }' have no overlap.": 1
       },
       "TS2739": {
         "Type '{}' is missing the following properties from type '{ getConfig: () => object; saveConfig: (patch: object) => object; getHomeDir: () => string; safeStorage?: SafeStorage | null | undefined; log?: ((line: string) => void) | undefined; ... <n> more ...; execFile?: typeof execFile | undefined; }': getConfig, saveConfig, getHomeDir": 1
@@ -5160,17 +5143,13 @@
         "Variable 'readyResolve' implicitly has an 'any' type.": 1
       },
       "TS7006": {
-        "Parameter 'config' implicitly has an 'any' type.": 3,
-        "Parameter 'device' implicitly has an 'any' type.": 2,
-        "Parameter 'endpoint' implicitly has an 'any' type.": 1,
         "Parameter 'err' implicitly has an 'any' type.": 1,
         "Parameter 'handle' implicitly has an 'any' type.": 1,
         "Parameter 'id' implicitly has an 'any' type.": 2,
         "Parameter 'name' implicitly has an 'any' type.": 1,
         "Parameter 'next' implicitly has an 'any' type.": 1,
         "Parameter 'origin' implicitly has an 'any' type.": 1,
-        "Parameter 'pairing' implicitly has an 'any' type.": 1,
-        "Parameter 'store' implicitly has an 'any' type.": 1
+        "Parameter 'pairing' implicitly has an 'any' type.": 1
       },
       "TS7022": {
         "'gitTunnelStarting' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.": 1,

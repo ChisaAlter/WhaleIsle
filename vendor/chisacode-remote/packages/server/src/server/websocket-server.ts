@@ -1,6 +1,7 @@
 import equal from "fast-deep-equal";
 import { WebSocket, WebSocketServer } from "ws";
-import type { IncomingMessage, Server as HTTPServer } from "http";
+import { Server as HttpServer, type IncomingMessage, type Server as HTTPServer } from "http";
+import type { Duplex } from "node:stream";
 import { basename, join } from "path";
 import { hostname as getHostname } from "node:os";
 import type { AgentManager } from "./agent/agent-manager.js";
@@ -82,6 +83,8 @@ export interface ExternalSocketMetadata {
   serverId?: string;
   relayClientPublicKeyB64?: string;
   relayAuthChallenge?: string;
+  /** Invoked once device auth in `hello` succeeds (enables in-band WebRTC upgrade). */
+  onAuthenticated?: (deviceId: string | null) => void;
 }
 
 interface PendingConnection {
@@ -94,6 +97,7 @@ interface PendingConnection {
   serverId?: string;
   relayClientPublicKeyB64?: string;
   relayAuthChallenge?: string;
+  onAuthenticated?: (deviceId: string | null) => void;
   /**
    * Device id proven for this connection (relay auth). Used to gate session resume.
    */
@@ -578,8 +582,9 @@ export class VoiceAssistantWebSocketServer {
   ): WebSocketServer {
     const { allowedOrigins, hostnames, allowUpgradeRequest } = wsConfig;
     const password = auth?.password;
+    const isRealHttpServer = server instanceof HttpServer;
     const wss = new WebSocketServer({
-      server,
+      ...(isRealHttpServer ? { noServer: true } : { server }),
       path: "/ws",
       handleProtocols: (protocols) => selectWebSocketProtocol(protocols, password),
       verifyClient: ({ req }, callback) => {
@@ -587,6 +592,39 @@ export class VoiceAssistantWebSocketServer {
       },
       maxPayload: WEBSOCKET_MAX_PAYLOAD_BYTES,
     });
+    if (isRealHttpServer) {
+      const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+        const rawUrl = req.url ?? "/";
+        const queryIndex = rawUrl.indexOf("?");
+        const pathname = queryIndex !== -1 ? rawUrl.slice(0, queryIndex) : rawUrl;
+        if (pathname === "/lan-ws") {
+          // Delegated to loopback-only LAN E2EE transport sharing this HTTP server.
+          return;
+        }
+        if (!wss.shouldHandle(req)) {
+          try {
+            socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+          } catch {
+            // ignore
+          }
+          try {
+            socket.destroy();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          wss.emit("connection", ws, req);
+        });
+      };
+      server.on("upgrade", handleUpgrade);
+      if (typeof wss.once === "function") {
+        wss.once("close", () => {
+          server.off("upgrade", handleUpgrade);
+        });
+      }
+    }
     wss.on("connection", (ws, request) => {
       void this.attachAuthenticatedSocket(ws, request, password);
     });
@@ -884,6 +922,7 @@ export class VoiceAssistantWebSocketServer {
       serverId: metadata?.serverId,
       relayClientPublicKeyB64: metadata?.relayClientPublicKeyB64,
       relayAuthChallenge: metadata?.relayAuthChallenge,
+      onAuthenticated: metadata?.onAuthenticated,
     };
     const timeout = setTimeout(() => {
       if (this.pendingConnections.get(ws) !== pending) {
@@ -1234,6 +1273,7 @@ export class VoiceAssistantWebSocketServer {
     }
 
     const authenticatedDeviceId = pending.authenticatedDeviceId ?? null;
+    pending.onAuthenticated?.(authenticatedDeviceId);
     const transport = pending.transport;
     this.clearPendingConnection(ws);
     const existing = this.externalSessionsByKey.get(

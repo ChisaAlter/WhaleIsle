@@ -60,4 +60,45 @@ class RelayInteropTest {
             assertFalse(client.connected)
         } finally { client?.close(); process.destroyForcibly() }
     }
+
+    @Test fun dshuAndRtchBinaryFramingInteroperatesByteExactWithNode() {
+        val crypto = RelayCrypto("B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9/AsrhtHHw=")
+        val process = peer("webrtc_framing")
+        try {
+            val largeText = "K".repeat(72 * 1024)
+            val (seq, rawBundle) = crypto.encryptToBytesWithSeq(largeText)
+            assertEquals(0L, seq)
+            assertEquals(1L, crypto.peekNextSendSeq())
+            val dshu = DshuFrameCodec.encode(seq, rawBundle)
+            val idGen = RtcMessageIdGenerator()
+            val chunks = RtcChunkCodec.encode(dshu, idGen::next)
+            assertTrue("Expected >1 chunk for 72 KiB payload", chunks.size >= 9)
+
+            val b64Chunks = chunks.map { Base64.getEncoder().encodeToString(it) }
+            process.outputStream.bufferedWriter().use {
+                it.write(obj("key" to crypto.publicKeyB64, "chunks" to b64Chunks, "replySeq" to 5).toString())
+                it.newLine()
+            }
+
+            val result = Json.parseToJsonElement(process.inputStream.bufferedReader().readLine()).objectValue()
+            assertEquals(largeText.length, result["plainLength"].number()?.toInt())
+            assertEquals(0L, result["headerSeq"].number())
+
+            val nodeChunks = result["chunks"].arrayValue().map { Base64.getDecoder().decode(it.text()) }
+            assertTrue("Expected >1 chunk from Node", nodeChunks.size >= 9)
+            val decoder = RtcChunkDecoder()
+            var reassembled: ByteArray? = null
+            for (chunk in nodeChunks) {
+                reassembled = decoder.feed(chunk)
+            }
+            assertNotNull(reassembled)
+            val decodedDshu = DshuFrameCodec.decode(reassembled!!)
+            assertEquals(5L, decodedDshu.seq)
+            val decodedPlain = crypto.decryptFromBytes(decodedDshu.bundle)
+            assertEquals(result["replyPlainLength"].number()?.toInt(), decodedPlain.length)
+            assertTrue(decodedPlain.startsWith("node-ack:${largeText.length}:"))
+        } finally {
+            process.destroyForcibly()
+        }
+    }
 }

@@ -101,6 +101,7 @@ internal data class NativeChatState(
     val connected: Boolean = false,
     val hostName: String = "",
     val connLabel: String = "",
+    val transportLabel: String = "",
     val sessions: List<NativeSession> = emptyList(),
     val sessionId: String = "",
     val title: String = "新会话",

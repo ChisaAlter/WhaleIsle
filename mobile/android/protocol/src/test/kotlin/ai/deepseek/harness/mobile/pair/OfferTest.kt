@@ -1,7 +1,11 @@
 package ai.deepseek.harness.mobile.pair
 
+import ai.deepseek.harness.mobile.remote.SavedComputer
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.util.Base64
 
@@ -109,5 +113,99 @@ class OfferTest {
                 b64url("""{"v":2,"serverId":"s","daemonPublicKeyB64":"key","relay":{"endpoint":"relay:443"},"authBootstrap":{"version":1,"pairingToken":"short","expiresAtMs":1}}"""),
             ),
         )
+        assertNull(
+            OfferCodec.decode(
+                b64url("""{"v":2,"serverId":"s","daemonPublicKeyB64":"key"}"""),
+            ),
+        )
+        assertNull(
+            OfferCodec.decode(
+                b64url("""{"v":2,"serverId":"s","daemonPublicKeyB64":"key","lan":{"endpoints":[]}}"""),
+            ),
+        )
+        assertNull(
+            OfferCodec.decode(
+                b64url("""{"v":2,"serverId":"s","daemonPublicKeyB64":"key","lan":{"endpoints":["192.168.1.10:3180"],"useTls":"no"}}"""),
+            ),
+        )
+        assertNull(
+            OfferCodec.decode(
+                b64url("""{"v":2,"serverId":"s","daemonPublicKeyB64":"key","relay":{"endpoint":"relay:443"},"iceServers":[{"urls":123}]}"""),
+            ),
+        )
+    }
+
+    @Test
+    fun decodeSupportsLanOnlyAndIceServersStringOrArrayUrls() {
+        val lanOnly = OfferCodec.decode(
+            b64url(
+                """{"v":2,"serverId":"lan-srv","daemonPublicKeyB64":"daemon-key","lan":{"endpoints":["192.168.1.10:3180","10.0.0.5:3180"],"useTls":false}}""",
+            ),
+        )
+        assertNotNull(lanOnly)
+        assertNull(lanOnly?.relay)
+        assertEquals(listOf("192.168.1.10:3180", "10.0.0.5:3180"), lanOnly?.lan?.endpoints)
+        assertEquals(false, lanOnly?.lan?.useTls)
+
+        val full = OfferCodec.decode(
+            b64url(
+                """{"v":2,"serverId":"hybrid-srv","daemonPublicKeyB64":"daemon-key","relay":{"endpoint":"ayase.cn:443","useTls":true},"lan":{"endpoints":["192.168.1.10:3180"],"useTls":true},"iceServers":[{"urls":"stun:stun.cloudflare.com:3478"},{"urls":["turn:turn.example:3478?transport=tcp","turns:turn.example:5349"],"username":"u1","credential":"p1"}]}""",
+            ),
+        )
+        assertNotNull(full)
+        assertEquals("ayase.cn:443", full?.relay?.endpoint)
+        assertEquals(listOf("192.168.1.10:3180"), full?.lan?.endpoints)
+        assertEquals(true, full?.lan?.useTls)
+        assertEquals(2, full?.iceServers?.size)
+        assertEquals(listOf("stun:stun.cloudflare.com:3478"), full?.iceServers?.get(0)?.urls)
+        assertEquals(listOf("turn:turn.example:3478?transport=tcp", "turns:turn.example:5349"), full?.iceServers?.get(1)?.urls)
+        assertEquals("u1", full?.iceServers?.get(1)?.username)
+        assertEquals("p1", full?.iceServers?.get(1)?.credential)
+    }
+
+    @Test
+    fun savedComputerDeserializesLegacyJsonAndPreservesLanOnlyOffer() {
+        val legacyJson = """{"serverId":"s1","deviceId":"d1","deviceSecret":"sec","daemonPublicKeyB64":"key","relayEndpoint":"ayase.cn:443","relayUseTls":true,"computerName":"Desktop","savedAt":100}"""
+        val legacy = Json.decodeFromString(SavedComputer.serializer(), legacyJson)
+        assertEquals("ayase.cn:443", legacy.relayEndpoint)
+        assertEquals(emptyList<String>(), legacy.lanEndpoints)
+        assertEquals(emptyList<IceServerConfig>(), legacy.iceServers)
+        assertNull(legacy.offer().lan)
+        assertEquals("ayase.cn:443", legacy.offer().relay?.endpoint)
+
+        val lanSaved = SavedComputer(
+            serverId = "s-lan",
+            deviceId = "d2",
+            deviceSecret = "sec2",
+            daemonPublicKeyB64 = "key2",
+            relayEndpoint = "",
+            relayUseTls = false,
+            lanEndpoints = listOf("192.168.1.20:3180"),
+            lanUseTls = false,
+            iceServers = listOf(IceServerConfig(listOf("stun:stun.l.google.com:19302"))),
+        )
+        val lanOffer = lanSaved.offer()
+        assertNull(lanOffer.relay)
+        assertEquals(listOf("192.168.1.20:3180"), lanOffer.lan?.endpoints)
+        assertEquals(1, lanOffer.iceServers.size)
+    }
+
+    @Test
+    fun iceServerConfigCodecParsesJsonAndPlainUrlsAndRejectsInvalidSchemes() {
+        val fromJson = IceServerConfigCodec.parseUserInput(
+            """[{"urls":"stun:stun.cloudflare.com:3478"},{"urls":["turn:t.example:3478"],"username":"u","credential":"c"}]""",
+        )
+        assertEquals(2, fromJson.size)
+        assertEquals(listOf("stun:stun.cloudflare.com:3478"), fromJson[0].urls)
+        assertEquals("u", fromJson[1].username)
+
+        val fromLines = IceServerConfigCodec.parseUserInput("stun:stun.cloudflare.com:3478\nturn:t.example:3478")
+        assertEquals(1, fromLines.size)
+        assertEquals(listOf("stun:stun.cloudflare.com:3478", "turn:t.example:3478"), fromLines[0].urls)
+
+        assertEquals(emptyList<IceServerConfig>(), IceServerConfigCodec.parseUserInput("   "))
+        assertThrows(IllegalArgumentException::class.java) {
+            IceServerConfigCodec.parseUserInput("http://not-stun.example")
+        }
     }
 }

@@ -6,13 +6,16 @@ import {
 import { isRelayClientWebSocketUrl } from "@chisacode/protocol/daemon-endpoints";
 
 import {
-  createRelayE2eeTransportFactory,
+  createAdaptiveTransportFactory,
   createWebSocketTransportFactory,
   defaultWebSocketFactory,
   describeTransportClose,
   describeTransportError,
   type DaemonTransport,
   type DaemonTransportFactory,
+  type IceServerConfig,
+  type RtcPeerConnectionFactory,
+  type TransportMode,
   type WebSocketFactory,
 } from "./daemon-client-transport.js";
 import { computeClientRelayDeviceAuthProof } from "./relay-device-credentials.js";
@@ -89,6 +92,18 @@ export interface DaemonClientConfig {
     baseDelayMs?: number;
     maxDelayMs?: number;
   };
+  /** Optional LAN host:port endpoints tried directly before falling back to relay. */
+  lanEndpoints?: string[];
+  /** Whether direct LAN WebSocket connections use TLS (default false). */
+  lanUseTls?: boolean;
+  /** Optional ICE servers (STUN/TURN) for in-band WebRTC upgrade. */
+  iceServers?: IceServerConfig[];
+  /** Optional injectable RTCPeerConnection factory (defaults to globalThis.RTCPeerConnection). */
+  rtcPeerConnectionFactory?: RtcPeerConnectionFactory;
+  /** Enable/disable automatic in-band WebRTC upgrade over relay (default true). */
+  webrtcUpgrade?: boolean;
+  /** Called whenever the active transport mode changes ('lan' | 'p2p' | 'turn' | 'relay'). */
+  onTransportModeChange?: (mode: TransportMode) => void;
   runtimeMetricsIntervalMs?: number;
   runtimeMetricsWindowMs?: number;
 }
@@ -118,6 +133,8 @@ export class DaemonConnectionController {
   private transport: DaemonTransport | null = null;
   private transportCleanup: Array<() => void> = [];
   private readonly connectionListeners = new Set<(status: ConnectionState) => void>();
+  private readonly transportModeListeners = new Set<(mode: TransportMode) => void>();
+  private transportMode: TransportMode | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private connectTimeout: ReturnType<typeof setTimeout> | null = null;
   private pendingGenericTransportErrorTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -146,7 +163,9 @@ export class DaemonConnectionController {
       throw new Error("Daemon client requires a non-empty clientId");
     }
     this.config = { ...config, clientId };
-    this.connectionPath = isRelayClientWebSocketUrl(config.url) ? "relay" : "direct";
+    const hasLanEndpoints = (config.lanEndpoints?.length ?? 0) > 0;
+    this.connectionPath =
+      isRelayClientWebSocketUrl(config.url) || hasLanEndpoints ? "relay" : "direct";
     let parsedUrl: URL | null = null;
     try {
       parsedUrl = new URL(config.url);
@@ -154,7 +173,10 @@ export class DaemonConnectionController {
       parsedUrl = null;
     }
     this.serverId =
-      normalizeClientId(parsedUrl?.searchParams.get("serverId")) ?? parsedUrl?.host ?? null;
+      normalizeClientId(parsedUrl?.searchParams.get("serverId")) ??
+      normalizeClientId(config.relayDeviceAuth?.serverId) ??
+      parsedUrl?.host ??
+      null;
     this.clientIdHash = hashForLog(clientId);
     this.generation =
       typeof config.runtimeGeneration === "number" && Number.isFinite(config.runtimeGeneration)
@@ -189,6 +211,7 @@ export class DaemonConnectionController {
     }
     this.resetConnectTimeout();
     this.disposeTransport(1_000, "Client closed");
+    this.transportMode = null;
     this.rejectLivenessProbe(error);
     this.callbacks.onReset(error, true);
     this.updateConnectionState(
@@ -229,6 +252,23 @@ export class DaemonConnectionController {
     this.connectionListeners.add(listener);
     listener(this.connectionState);
     return () => this.connectionListeners.delete(listener);
+  }
+
+  getTransportMode(): TransportMode | null {
+    return this.transport?.getTransportMode?.() ?? this.transportMode;
+  }
+
+  subscribeTransportMode(listener: (mode: TransportMode) => void): () => void {
+    this.transportModeListeners.add(listener);
+    const current = this.getTransportMode();
+    if (current !== null) {
+      try {
+        listener(current);
+      } catch {
+        // no-op
+      }
+    }
+    return () => this.transportModeListeners.delete(listener);
   }
 
   get isConnected(): boolean {
@@ -363,15 +403,29 @@ export class DaemonConnectionController {
         this.config.transportFactory ??
         createWebSocketTransportFactory(this.config.webSocketFactory ?? defaultWebSocketFactory);
       let transportFactory = baseTransportFactory;
-      if (this.config.e2ee?.enabled === true && isRelayClientWebSocketUrl(this.config.url)) {
+      const hasLanEndpoints = (this.config.lanEndpoints?.length ?? 0) > 0;
+      if (
+        this.config.e2ee?.enabled === true &&
+        (isRelayClientWebSocketUrl(this.config.url) || hasLanEndpoints)
+      ) {
         const daemonPublicKeyB64 = this.config.e2ee.daemonPublicKeyB64;
         if (!daemonPublicKeyB64) {
           throw new Error("daemonPublicKeyB64 is required for relay E2EE");
         }
-        transportFactory = createRelayE2eeTransportFactory({
+        transportFactory = createAdaptiveTransportFactory({
           baseFactory: baseTransportFactory,
           daemonPublicKeyB64,
           logger: this.logger,
+          ...(this.serverId ? { serverId: this.serverId } : {}),
+          ...(this.config.lanEndpoints ? { lanEndpoints: this.config.lanEndpoints } : {}),
+          ...(this.config.lanUseTls !== undefined ? { lanUseTls: this.config.lanUseTls } : {}),
+          ...(this.config.iceServers !== undefined ? { iceServers: this.config.iceServers } : {}),
+          ...(this.config.rtcPeerConnectionFactory
+            ? { rtcPeerConnectionFactory: this.config.rtcPeerConnectionFactory }
+            : {}),
+          ...(this.config.webrtcUpgrade !== undefined
+            ? { webrtcUpgrade: this.config.webrtcUpgrade }
+            : {}),
         });
       }
       const transport = transportFactory({
@@ -463,6 +517,31 @@ export class DaemonConnectionController {
       }),
       transport.onMessage((data) => this.handleTransportData(data, transport)),
     ];
+    if (typeof transport.onTransportModeChange === "function") {
+      this.transportCleanup.push(
+        transport.onTransportModeChange((mode) => {
+          if (this.transport !== transport) return;
+          this.updateTransportMode(mode);
+        }),
+      );
+    }
+  }
+
+  private updateTransportMode(mode: TransportMode): void {
+    if (this.transportMode === mode) return;
+    this.transportMode = mode;
+    try {
+      this.config.onTransportModeChange?.(mode);
+    } catch {
+      // no-op
+    }
+    for (const listener of this.transportModeListeners) {
+      try {
+        listener(mode);
+      } catch {
+        // no-op
+      }
+    }
   }
 
   private handleTransportData(data: unknown, expectedTransport: DaemonTransport): void {

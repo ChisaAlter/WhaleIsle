@@ -379,4 +379,25 @@ describe('GatewaySettingsTab', () => {
     expect(screen.queryByRole('button', { name: en.retry })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
   })
+
+  it('saves and resets optional STUN/TURN iceServers via saveRemote', async () => {
+    const saveRemote = vi.fn(async (patch: RemotePatch) => ({
+      ...SNAP,
+      iceServers: patch.remoteIceServers ?? [],
+    }))
+    renderGateway({ saveRemote })
+    const input = await screen.findByLabelText(en.iceServers)
+    fireEvent.change(input, { target: { value: 'stun:stun.cloudflare.com:3478' } })
+    const saveButtons = screen.getAllByRole('button', { name: en.save })
+    fireEvent.click(saveButtons[saveButtons.length - 1]!)
+    await waitFor(() => {
+      expect(saveRemote).toHaveBeenCalledWith({
+        remoteIceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+      })
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.iceServersReset }))
+    await waitFor(() => {
+      expect(saveRemote).toHaveBeenCalledWith({ remoteIceServers: [] })
+    })
+  })
 })
