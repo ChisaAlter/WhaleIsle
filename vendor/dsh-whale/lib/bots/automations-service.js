@@ -1,54 +1,42 @@
 /**
  * Bot Automations & one-shot Waits runtime service.
+ * Persists schedules and waits in `bot_automations` (via `workStore`) and
+ * guarantees idempotent failure retries via `bot_run_resends` and
+ * `automation_claims`.
  *
- * Features:
- * - Standard 5-field Cron, RRule, timezone, interval, and one-shot `once.by` scheduling
- * - Claim-before-dispatch ledger via `workStore.claimAutomationSlot`
- * - Startup interrupted-claim reconciliation via `markInterruptedAutomationClaims`
- * - Sleep/wake missed-slot coalescing (`coalescedCount`)
- * - Local folder change watcher (`folder` trigger) and inbound `webhook` trigger dispatch
- * - Optional `budgetGuard` enforcement (daily budget / `off_peak_only` deferral -> `skipped_budget`)
- * - Honest `resultsTo` routing (`chat`, `home`, `item`, `pet`, `im`)
+ * Combines:
+ * - RFC 5545 RRULE & 5-field Cron + IANA timezone scheduling (`automations-schedule.js`)
+ * - Claim-before-dispatch ledger, startup interrupted-claim reconciliation,
+ *   sleep/wake missed-slot coalescing (`coalescedCount`), optional `missedRunGraceMs`
+ * - Local folder change watcher (`folder-watcher.js`) & inbound `webhook` triggers
+ * - Optional `budgetGuard` enforcement (`skipped_budget`)
+ * - `NO_REPLY` suppression, Home/Group/`item`/`pet`/`im` result routing, and
+ *   shared-turn merged answer settlement
  */
 import crypto from 'node:crypto';
 import { isQuietResult, stripQuietMarker } from '../../src/shared/index.js';
-import { collectDueScheduleSlots, computeNextScheduleAt, parseScheduleExpression } from './cron-rrule.js';
+import { collectDueScheduleSlots } from './cron-rrule.js';
 import { createFolderWatcher } from './folder-watcher.js';
 import { BOT_OWNER_AUTOMATION } from './session-runtime.js';
+import {
+  computeNextRunAt,
+  computeSafeNextRunAt,
+  invalidArg,
+  isSharedTurnCompleted,
+  isSharedTurnMerged,
+  normalizeAutomationCreate,
+  parseScheduleExpression,
+  resolveGroupDestination,
+  shouldAutoDeleteOnce,
+  validateIntervalMinutes,
+  validateTimezone,
+} from './automations-schedule.js';
+
+export { computeNextRunAt, parseScheduleExpression };
 
 const SCHEDULER_TICK_MS = 60_000;
-
-/** @param {any} input */
-function extractScheduleExpr(input) {
-  if (typeof input?.schedule === 'string' && input.schedule.trim()) return input.schedule.trim();
-  if (typeof input?.rrule === 'string' && input.rrule.trim()) return input.rrule.trim();
-  return '';
-}
-
-/**
- * Compute next run timestamp from explicit `nextRunAt`, `once.by`, Cron/RRule `schedule`,
- * or `intervalMinutes`. Pass `{ recalculate: true }` to ignore any existing `input.nextRunAt`.
- * @param {any} input
- * @param {number} [now]
- * @param {{ recalculate?: boolean }} [options]
- * @returns {number | null}
- */
-export function computeNextRunAt(input, now = Date.now(), options = {}) {
-  if (!options.recalculate && Number.isFinite(input?.nextRunAt)) return Math.trunc(input.nextRunAt);
-  if (Number.isFinite(input?.once?.by)) return Math.trunc(input.once.by);
-  const scheduleExpr = extractScheduleExpr(input);
-  if (scheduleExpr) {
-    return computeNextScheduleAt(scheduleExpr, {
-      afterMs: now,
-      timezone: input?.timezone ?? null,
-      anchorMs: Number.isFinite(input?.createdAt) ? input.createdAt : now,
-    });
-  }
-  if (Number.isFinite(input?.intervalMinutes) && input.intervalMinutes > 0) {
-    return Math.trunc(now + Math.round(input.intervalMinutes) * 60_000);
-  }
-  return null;
-}
+export const DEFAULT_MISSED_RUN_GRACE_MS = 15 * 60_000;
+const MAX_SUMMARY_CHARS = 8_000;
 
 /** @param {any} triggers */
 function normalizeTriggers(triggers) {
@@ -61,49 +49,6 @@ function normalizeTriggers(triggers) {
     out.push({ ...item, kind });
   }
   return out;
-}
-
-/** @param {string | null} schedule */
-function assertValidScheduleIfPresent(schedule) {
-  if (!schedule) return;
-  try {
-    parseScheduleExpression(schedule);
-  } catch (error) {
-    throw Object.assign(new Error(`Invalid automation schedule: ${/** @type {any} */ (error)?.message ?? error}`), {
-      code: 'invalid_argument',
-    });
-  }
-}
-
-/** @param {any} params @param {string} botId @param {number} now */
-function normalizeAutomationCreate(params, botId, now) {
-  const p = params ?? {};
-  const prompt = String(p.prompt ?? '').trim();
-  if (!prompt) {
-    throw Object.assign(new Error('Automation prompt is required'), { code: 'invalid_argument' });
-  }
-  const scheduleRaw = p.schedule ?? p.rrule ?? null;
-  const schedule = typeof scheduleRaw === 'string' && scheduleRaw.trim() ? scheduleRaw.trim() : null;
-  assertValidScheduleIfPresent(schedule);
-  const enabled = p.enabled !== false;
-  const normalized = {
-    id: p.id || crypto.randomUUID(),
-    botId,
-    name: String(p.name ?? '').trim() || (p.once ? 'One-shot wait' : 'Scheduled task'),
-    prompt,
-    schedule,
-    intervalMinutes: Number.isFinite(p.intervalMinutes) && p.intervalMinutes > 0 ? p.intervalMinutes : null,
-    timezone: typeof p.timezone === 'string' && p.timezone.trim() ? p.timezone.trim() : null,
-    triggers: normalizeTriggers(p.triggers),
-    once: p.once ?? null,
-    runsIn: p.runsIn === 'new' ? 'new' : 'chat',
-    resultsTo: p.resultsTo ?? 'chat',
-    enabled,
-  };
-  return {
-    ...normalized,
-    nextRunAt: enabled ? computeNextRunAt({ ...normalized, nextRunAt: p.nextRunAt }, now) : null,
-  };
 }
 
 /** @param {any} budgetGuard @param {{ botId: string, automation: any, triggerKind: string, now: number }} ctx */
@@ -136,7 +81,10 @@ async function evaluateBudgetGuard(budgetGuard, ctx) {
 
 /** @param {any} auto @param {{ triggerKind: string, coalescedCount: number, triggerContext?: any }} meta */
 function buildAutomationPrompt(auto, meta) {
-  const lines = [`[WhaleIsle: Automation "${auto.name}" (${meta.triggerKind})]`];
+  const header = meta.triggerKind === 'manual' && !meta.triggerContext && meta.coalescedCount <= 1
+    ? `[WhaleIsle: Automation "${auto.name}"]`
+    : `[WhaleIsle: Automation "${auto.name}" (${meta.triggerKind})]`;
+  const lines = [header];
   if (meta.coalescedCount > 1) {
     lines.push(`[Coalesced ${meta.coalescedCount} missed scheduled slots into this single run.]`);
   }
@@ -213,15 +161,25 @@ async function routeResultToIm(deps, bot, target, sessionId, clean) {
   return { routed: ok, kind: 'im', delivered: ok, reason: delivery?.error ?? delivery?.reason ?? null };
 }
 
-/** @param {any} deps @param {any} bot @param {any} auto @param {string} sessionId @param {string} reply */
-async function routeAutomationResult(deps, bot, auto, sessionId, reply) {
-  const clean = stripQuietMarker(reply).trim();
-  if (!clean || isQuietResult(reply)) return { routed: false, kind: 'quiet' };
-  const target = parseResultsTo(auto.resultsTo);
-  if (target.kind === 'pet') return routeResultToPet(deps, clean);
-  if (target.kind === 'item' && deps.itemsStore) return routeResultToItem(deps, bot, auto, target, sessionId, clean);
-  if (target.kind === 'im') return routeResultToIm(deps, bot, target, sessionId, clean);
-  return { routed: true, kind: target.kind };
+/** @param {Record<string, any>} nextPatch */
+function hasScheduleFieldChanges(nextPatch) {
+  return (
+    nextPatch.schedule !== undefined
+    || nextPatch.rrule !== undefined
+    || nextPatch.timezone !== undefined
+    || nextPatch.intervalMinutes !== undefined
+    || nextPatch.once !== undefined
+  );
+}
+
+/** @param {any} merged @param {Record<string, any>} nextPatch @param {number} now */
+function resolveUpdatedNextRunAt(merged, nextPatch, now) {
+  if (merged.enabled === false) return null;
+  if (nextPatch.nextRunAt !== undefined) return nextPatch.nextRunAt;
+  if (hasScheduleFieldChanges(nextPatch) || (nextPatch.enabled === true && !merged.nextRunAt)) {
+    return computeNextRunAt(merged, now);
+  }
+  return merged.nextRunAt;
 }
 
 /**
@@ -236,6 +194,9 @@ async function routeAutomationResult(deps, bot, auto, sessionId, reply) {
  *   notifyPet?: (kind: string, text: string) => void,
  *   legacyCompat?: any,
  *   budgetGuard?: any,
+ *   groupsService?: any,
+ *   getGroupsService?: () => any,
+ *   missedRunGraceMs?: number,
  *   enableScheduler?: boolean,
  *   enableFolderWatcher?: boolean,
  *   folderDebounceMs?: number,
@@ -251,7 +212,14 @@ export function createAutomationsService(deps) {
   const reportError = typeof deps.onError === 'function'
     ? deps.onError
     : (err, ctx) => { console.error('[dsh-bots:automations]', ctx?.phase ?? '', err); };
-
+  const missedRunGraceMs = typeof deps.missedRunGraceMs === 'number'
+    && Number.isFinite(deps.missedRunGraceMs)
+    && deps.missedRunGraceMs >= 0
+    ? deps.missedRunGraceMs
+    : null;
+  const groupsServiceOf = () => (
+    typeof deps.getGroupsService === 'function' ? deps.getGroupsService() : (deps.groupsService ?? null)
+  );
   /** @type {Set<string>} */
   const runningIds = new Set();
   let lastManualSlot = 0;
@@ -263,7 +231,6 @@ export function createAutomationsService(deps) {
   if (startupRecovery.count > 0) {
     eventBus.emit({ botIds: [], kinds: ['automations'] });
   }
-
   /** @param {string} botId */
   function requireBot(botId) {
     const bot = botsStore.getBot(botId);
@@ -303,34 +270,56 @@ export function createAutomationsService(deps) {
   /** @param {any} params @param {number} [now] */
   function create(params, now = nowFn()) {
     const bot = requireBot(params?.botId);
-    const saved = workStore.upsertAutomation(normalizeAutomationCreate(params, bot.id, now), now);
+    const normalized = normalizeAutomationCreate(params, bot.id, now);
+    if (params?.triggers !== undefined) {
+      normalized.triggers = normalizeTriggers(params.triggers);
+    }
+    const saved = workStore.upsertAutomation(normalized, now);
     syncFolderWatches();
     eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
     return saved;
+  }
+
+  /** @param {any} current @param {Record<string, any>} patch @param {number} now */
+  function persistAutomationState(current, patch, now) {
+    const merged = {
+      ...current,
+      ...patch,
+      id: current.id,
+      botId: current.botId,
+      createdAt: current.createdAt,
+    };
+    const needsNullClear = (
+      (Object.prototype.hasOwnProperty.call(patch, 'nextRunAt') && patch.nextRunAt === null && current.nextRunAt !== null)
+      || (Object.prototype.hasOwnProperty.call(patch, 'lastError') && patch.lastError === null && current.lastError !== null)
+    );
+    if (needsNullClear && typeof workStore.deleteAutomation === 'function') {
+      workStore.deleteAutomation(current.id);
+      return workStore.upsertAutomation(merged, now);
+    }
+    return workStore.upsertAutomation(merged, now);
   }
 
   /** @param {string} id @param {Record<string, any>} [patch] @param {number} [now] */
   function update(id, patch = {}, now = nowFn()) {
     const current = workStore.getAutomation(id);
     if (!current) throw Object.assign(new Error(`Automation not found: ${id}`), { code: 'not_found' });
-    const nextSchedule = patch.schedule !== undefined
-      ? (typeof patch.schedule === 'string' && patch.schedule.trim() ? patch.schedule.trim() : null)
-      : (patch.rrule !== undefined ? (typeof patch.rrule === 'string' && patch.rrule.trim() ? patch.rrule.trim() : null) : current.schedule);
-    assertValidScheduleIfPresent(nextSchedule);
-    const merged = {
-      ...current,
-      ...patch,
-      schedule: nextSchedule,
-      triggers: patch.triggers !== undefined ? normalizeTriggers(patch.triggers) : (current.triggers ?? []),
-      id: current.id,
-      botId: current.botId,
-    };
-    const scheduleChanged = patch.schedule !== undefined || patch.rrule !== undefined
-      || patch.intervalMinutes !== undefined || patch.timezone !== undefined || patch.once !== undefined;
-    if (merged.enabled && (scheduleChanged || (patch.enabled === true && !merged.nextRunAt))) {
-      merged.nextRunAt = computeNextRunAt(merged, now, { recalculate: scheduleChanged });
+    /** @type {Record<string, any>} */
+    const nextPatch = { ...patch };
+    if (nextPatch.rrule !== undefined && nextPatch.schedule === undefined) {
+      nextPatch.schedule = nextPatch.rrule;
     }
-    const saved = workStore.upsertAutomation(merged, now);
+    if (nextPatch.triggers !== undefined) {
+      nextPatch.triggers = normalizeTriggers(nextPatch.triggers);
+    }
+    const merged = { ...current, ...nextPatch, id: current.id, botId: current.botId };
+    if (merged.timezone !== undefined) merged.timezone = validateTimezone(merged.timezone);
+    if (typeof merged.schedule === 'string' && merged.schedule.trim()) {
+      parseScheduleExpression(merged.schedule);
+    }
+    validateIntervalMinutes(merged.intervalMinutes);
+    merged.nextRunAt = resolveUpdatedNextRunAt(merged, nextPatch, now);
+    const saved = persistAutomationState(current, merged, now);
     syncFolderWatches();
     eventBus.emit({ botIds: [saved.botId], kinds: ['automations'] });
     return saved;
@@ -348,10 +337,72 @@ export function createAutomationsService(deps) {
     return { deleted };
   }
 
-  /** @param {any} auto @param {any} bot @param {any} claim @param {any} opts */
-  async function executeClaimedAutomation(auto, bot, claim, opts) {
-    const { now, runId, triggerKind, coalescedCount, nextRunAtOverride, triggerContext } = opts;
-    workStore.updateAutomationClaim?.(claim.claimId, { status: 'running', runId }, now);
+  /** @param {{ auto: any, bot: any, sourceSessionId: string | null, cleanReply: string }} args */
+  async function deliverResult({ auto, bot, sourceSessionId, cleanReply }) {
+    if (!cleanReply) return null;
+    const summary = cleanReply.length > MAX_SUMMARY_CHARS
+      ? `${cleanReply.slice(0, MAX_SUMMARY_CHARS)}…`
+      : cleanReply;
+    const deliveryPrompt = `[WhaleIsle: Automation "${auto.name}" result]\n${summary}`;
+    const groupDest = resolveGroupDestination(auto);
+
+    if (groupDest) {
+      const groupsSvc = groupsServiceOf();
+      if (groupsSvc && typeof groupsSvc.postAutomationResult === 'function') {
+        const res = await groupsSvc.postAutomationResult({
+          groupId: groupDest.groupId,
+          threadId: groupDest.threadId,
+          botId: bot.id,
+          automation: auto,
+          text: summary,
+        });
+        return { kind: 'group', groupId: groupDest.groupId, threadId: groupDest.threadId, messageId: res?.message?.id ?? null };
+      }
+      if (groupsSvc && typeof groupsSvc.send === 'function') {
+        const res = await groupsSvc.send({
+          groupId: groupDest.groupId,
+          threadId: groupDest.threadId,
+          text: deliveryPrompt,
+          authorName: bot.name,
+        });
+        return { kind: 'group', groupId: groupDest.groupId, threadId: groupDest.threadId, messageId: res?.message?.id ?? null };
+      }
+      return null;
+    }
+
+    if (auto.resultsTo === 'chat') {
+      const home = await sessionRuntime.openHomeChat(bot.id);
+      if (!home?.sessionId || home.sessionId === sourceSessionId) return null;
+      if (typeof sessionRuntime.deliverAutomationResult === 'function') {
+        await sessionRuntime.deliverAutomationResult(home.sessionId, deliveryPrompt, {
+          botId: bot.id,
+          automationId: auto.id,
+          automationName: auto.name,
+        });
+      } else {
+        await sessionRuntime.runSingleTurn(home.sessionId, deliveryPrompt, {
+          timeoutMs: 60_000,
+          origin: 'automation-result',
+        });
+      }
+      return { kind: 'chat', sessionId: home.sessionId };
+    }
+    return null;
+  }
+
+  /** @param {any} auto @param {any} bot @param {{ groupId: string, threadId: string } | null} groupDest @param {string} prompt @param {string | null} [claimId] */
+  async function executeAutomationTurn(auto, bot, groupDest, prompt, claimId = null) {
+    const groupsSvc = groupsServiceOf();
+    if (auto.runsIn === 'chat' && groupDest && typeof groupsSvc?.runAutomationInGroup === 'function') {
+      const groupRun = await groupsSvc.runAutomationInGroup({
+        groupId: groupDest.groupId,
+        threadId: groupDest.threadId,
+        botId: bot.id,
+        automation: auto,
+        prompt,
+      });
+      return { targetSessionId: groupRun?.sessionId ?? null, turn: groupRun };
+    }
     const target = auto.runsIn === 'new'
       ? await sessionRuntime.startSideChat(bot.id, {
         title: auto.name || 'Automation',
@@ -360,44 +411,104 @@ export function createAutomationsService(deps) {
         owner: BOT_OWNER_AUTOMATION,
       })
       : await sessionRuntime.openHomeChat(bot.id);
+    const targetSessionId = target.sessionId;
+    if (claimId) {
+      workStore.updateAutomationClaim?.(claimId, { status: 'running', sessionId: targetSessionId }, nowFn());
+    }
+    const turn = await sessionRuntime.runSingleTurn(targetSessionId, prompt, { timeoutMs: 120_000 });
+    return { targetSessionId, turn };
+  }
 
-    workStore.updateAutomationClaim?.(claim.claimId, { status: 'running', sessionId: target.sessionId }, now);
-    const prompt = buildAutomationPrompt(auto, { triggerKind, coalescedCount, triggerContext });
-    const turn = await sessionRuntime.runSingleTurn(target.sessionId, prompt, { timeoutMs: 120_000 });
-    const nextEnabled = auto.once ? false : auto.enabled;
+  /** @param {any} auto @param {boolean} ok @param {string | null} lastError @param {number} now @param {number | null | undefined} [nextRunAtOverride] */
+  function settleAutomationAfterRun(auto, ok, lastError, now, nextRunAtOverride = undefined) {
+    const isOnce = Boolean(auto.once);
+    const nextEnabled = isOnce ? false : auto.enabled;
     const nextRunAt = nextEnabled
-      ? (nextRunAtOverride !== undefined ? nextRunAtOverride : computeNextRunAt(auto, now, { recalculate: true }))
+      ? (nextRunAtOverride !== undefined ? nextRunAtOverride : computeNextRunAt({ ...auto, lastRunAt: now }, now))
       : null;
+    const lastStatus = ok ? 'completed' : 'failed';
 
-    const routed = turn.ok
-      ? await routeAutomationResult(deps, bot, auto, target.sessionId, turn.reply ?? '')
-      : { routed: false, kind: 'failed' };
-
-    workStore.updateAutomationClaim?.(claim.claimId, {
-      status: turn.ok ? 'completed' : 'failed',
-      sessionId: target.sessionId,
-      error: turn.ok ? null : (turn.error || 'turn-failed'),
-    }, now);
-
-    workStore.updateAutomationRunState(auto.id, {
+    if (ok && shouldAutoDeleteOnce(auto)) {
+      const cleanedUp = workStore.deleteAutomation(auto.id);
+      return { lastStatus, nextRunAt, cleanedUp };
+    }
+    const latestAuto = workStore.getAutomation(auto.id) ?? auto;
+    persistAutomationState(latestAuto, {
       enabled: nextEnabled,
       lastRunAt: now,
-      lastStatus: turn.ok ? 'ok' : 'failed',
-      lastError: turn.ok ? null : (turn.error || 'turn-failed'),
+      lastStatus,
+      lastError,
       nextRunAt,
     }, now);
+    return { lastStatus, nextRunAt, cleanedUp: false };
+  }
+
+  /** @param {any} auto @param {any} bot @param {string} runId @param {any} claim @param {unknown} error @param {number} now */
+  function handleAutomationRunFailure(auto, bot, runId, claim, error, now) {
+    const msg = error instanceof Error ? error.message : String(error);
+    workStore.updateAutomationClaim?.(claim.claimId, { status: 'failed', error: msg }, now);
+    const isOnce = Boolean(auto.once);
+    const nextEnabled = isOnce ? false : auto.enabled;
+    const nextRunAt = nextEnabled ? computeSafeNextRunAt({ ...auto, lastRunAt: now }, now) : null;
+    const latestAuto = workStore.getAutomation(auto.id) ?? auto;
+    persistAutomationState(latestAuto, {
+      enabled: nextEnabled,
+      lastRunAt: now,
+      lastStatus: 'failed',
+      lastError: msg,
+      nextRunAt,
+    }, now);
+    eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
+    return { ok: false, runId, claimId: claim.claimId, automationId: auto.id, status: 'failed', error: msg };
+  }
+
+  /** @param {any} input */
+  async function routeClaimedOutcome({ auto, bot, targetSessionId, groupDest, ok, quiet, cleanReply }) {
+    if (!ok) return { routed: { routed: false, kind: 'failed' }, deliveredTo: null };
+    if (quiet || !cleanReply) return { routed: { routed: false, kind: quiet ? 'quiet' : 'chat' }, deliveredTo: null };
+    const target = parseResultsTo(auto.resultsTo);
+    if (groupDest || auto.runsIn === 'new') {
+      const deliveredTo = await deliverResult({ auto, bot, sourceSessionId: targetSessionId, cleanReply }).catch(() => null);
+      return {
+        deliveredTo,
+        routed: { routed: Boolean(deliveredTo), kind: groupDest ? 'group' : target.kind },
+      };
+    }
+    if (target.kind === 'pet') return { deliveredTo: null, routed: routeResultToPet(deps, cleanReply) };
+    if (target.kind === 'item' && deps.itemsStore) return { deliveredTo: null, routed: routeResultToItem(deps, bot, auto, target, targetSessionId, cleanReply) };
+    if (target.kind === 'im') return { deliveredTo: null, routed: await routeResultToIm(deps, bot, target, targetSessionId, cleanReply) };
+    return { deliveredTo: null, routed: { routed: true, kind: target.kind } };
+  }
+
+  /** @param {any} auto @param {any} bot @param {any} claim @param {any} opts */
+  async function executeClaimedAutomation(auto, bot, claim, opts) {
+    const { now, runId, triggerKind, coalescedCount, nextRunAtOverride, triggerContext } = opts;
+    workStore.updateAutomationClaim?.(claim.claimId, { status: 'running', runId }, now);
+
+    const groupDest = resolveGroupDestination(auto);
+    const prompt = buildAutomationPrompt(auto, { triggerKind, coalescedCount, triggerContext });
+    const { targetSessionId, turn } = await executeAutomationTurn(auto, bot, groupDest, prompt, claim.claimId);
+    const merged = isSharedTurnMerged(turn);
+    const ok = isSharedTurnCompleted(turn);
+    const rawReply = String(turn?.reply ?? '').trim();
+    const quiet = ok && isQuietResult(rawReply);
+    const cleanReply = quiet ? stripQuietMarker(rawReply).trim() : rawReply;
+    const lastError = ok ? null : (turn?.error || 'turn-failed');
+
+    const { routed, deliveredTo } = await routeClaimedOutcome({ auto, bot, targetSessionId, groupDest, ok, quiet, cleanReply });
+
+    workStore.updateAutomationClaim?.(claim.claimId, {
+      status: ok ? 'completed' : 'failed',
+      sessionId: targetSessionId,
+      error: lastError,
+    }, now);
+
+    const { lastStatus, nextRunAt, cleanedUp } = settleAutomationAfterRun(auto, ok, lastError, now, nextRunAtOverride);
     eventBus.emit({ botIds: [bot.id], kinds: ['automations', 'chats'] });
     return {
-      ok: Boolean(turn.ok),
-      runId,
-      claimId: claim.claimId,
-      coalescedCount,
-      triggerKind,
-      automationId: auto.id,
-      sessionId: target.sessionId,
-      reply: turn.reply ?? '',
-      routed,
-      error: turn.ok ? null : (turn.error || 'turn-failed'),
+      ok, runId, claimId: claim.claimId, coalescedCount, triggerKind, automationId: auto.id,
+      sessionId: targetSessionId, reply: cleanReply, quiet, merged, status: lastStatus,
+      routed, delivered: Boolean(deliveredTo), deliveredTo, cleanedUp, nextRunAt, error: lastError,
     };
   }
 
@@ -405,12 +516,12 @@ export function createAutomationsService(deps) {
   function recordBudgetSkip(auto, bot, claim, budgetCheck, options, now) {
     const fallbackNext = options.nextRunAtOverride !== undefined
       ? options.nextRunAtOverride
-      : computeNextRunAt(auto, now, { recalculate: true });
+      : computeNextRunAt({ ...auto, lastRunAt: now }, now);
     const deferredNext = budgetCheck.deferUntilMs && budgetCheck.deferUntilMs > now
       ? budgetCheck.deferUntilMs
       : fallbackNext;
     workStore.updateAutomationClaim?.(claim.claimId, { status: 'skipped_budget', error: budgetCheck.reason }, now);
-    workStore.updateAutomationRunState(auto.id, {
+    persistAutomationState(auto, {
       lastStatus: 'skipped_budget',
       lastError: budgetCheck.reason,
       nextRunAt: auto.enabled ? deferredNext : auto.nextRunAt,
@@ -472,27 +583,34 @@ export function createAutomationsService(deps) {
         triggerContext: options.triggerContext,
       });
     } catch (error) {
-      const msg = String(/** @type {any} */ (error)?.message ?? error);
-      workStore.updateAutomationClaim?.(claimRes.claim.claimId, { status: 'failed', error: msg }, now);
-      workStore.updateAutomationRunState(auto.id, {
-        lastRunAt: now,
-        lastStatus: 'failed',
-        lastError: msg,
-      }, now);
-      eventBus.emit({ botIds: [bot.id], kinds: ['automations'] });
-      return { ok: false, runId, claimId: claimRes.claim.claimId, automationId: auto.id, error: msg };
+      return handleAutomationRunFailure(auto, bot, runId, claimRes.claim, error, now);
     } finally {
       runningIds.delete(auto.id);
     }
   }
 
-  async function tick(now = nowFn()) {
-    const results = [];
-    for (const auto of workStore.listAutomations({ enabledOnly: true })) {
-      if (!auto.nextRunAt || auto.nextRunAt > now || runningIds.has(auto.id)) continue;
-      const bot = botsStore.getBot(auto.botId);
-      if (!bot || bot.paused) continue;
-      const plan = collectDueScheduleSlots({
+  /** @param {any} auto @param {number} lateMs @param {number} now */
+  function skipMissedRun(auto, lateMs, now) {
+    const isOnce = Boolean(auto.once);
+    const nextRunAt = isOnce ? null : computeSafeNextRunAt(auto, now);
+    if (shouldAutoDeleteOnce(auto)) {
+      workStore.deleteAutomation(auto.id);
+    } else {
+      persistAutomationState(auto, {
+        enabled: isOnce ? false : auto.enabled,
+        lastStatus: 'missed',
+        lastError: null,
+        nextRunAt,
+      }, now);
+    }
+    eventBus.emit({ botIds: [auto.botId], kinds: ['automations'] });
+    return { automationId: auto.id, botId: auto.botId, lateMs, nextRunAt };
+  }
+
+  /** @param {any} auto @param {number} now */
+  function resolveDuePlan(auto, now) {
+    try {
+      return collectDueScheduleSlots({
         schedule: auto.schedule,
         intervalMinutes: auto.intervalMinutes,
         timezone: auto.timezone,
@@ -501,6 +619,36 @@ export function createAutomationsService(deps) {
         anchorMs: auto.createdAt ?? auto.nextRunAt,
         once: auto.once,
       });
+    } catch {
+      return {
+        slotAt: Math.trunc(auto.nextRunAt),
+        coalescedCount: 1,
+        nextRunAt: auto.once ? null : computeSafeNextRunAt({ ...auto, lastRunAt: now }, now),
+      };
+    }
+  }
+
+  /** @param {number} [now] */
+  async function tick(now = nowFn()) {
+    /** @type {any[] & { triggered?: string[], skippedMissed?: any[] }} */
+    const results = [];
+    /** @type {string[]} */
+    const triggered = [];
+    /** @type {Array<{ automationId: string, botId: string, lateMs: number, nextRunAt: number | null }>} */
+    const skippedMissed = [];
+
+    for (const auto of workStore.listAutomations({ enabledOnly: true })) {
+      if (!auto.nextRunAt || auto.nextRunAt > now || runningIds.has(auto.id)) continue;
+      const bot = botsStore.getBot(auto.botId);
+      if (!bot || bot.paused) continue;
+
+      const lateMs = now - auto.nextRunAt;
+      if (missedRunGraceMs !== null && lateMs > missedRunGraceMs) {
+        skippedMissed.push(skipMissedRun(auto, lateMs, now));
+        continue;
+      }
+
+      const plan = resolveDuePlan(auto, now);
       if (plan.slotAt === null) continue;
       const res = await runNow(auto.id, {
         now,
@@ -509,8 +657,11 @@ export function createAutomationsService(deps) {
         coalescedCount: plan.coalescedCount,
         nextRunAtOverride: plan.nextRunAt,
       });
+      triggered.push(auto.id);
       results.push(res);
     }
+    results.triggered = triggered;
+    results.skippedMissed = skippedMissed;
     return results;
   }
 
@@ -557,7 +708,7 @@ export function createAutomationsService(deps) {
     if (!wait || wait.botId !== bot.id) {
       throw Object.assign(new Error(`Wait not found: ${waitId}`), { code: 'not_found' });
     }
-    workStore.updateAutomationRunState(wait.id, { enabled: false, lastStatus: 'canceled' }, now);
+    persistAutomationState(wait, { enabled: false, nextRunAt: null, lastStatus: 'canceled' }, now);
     const cancelledWaits = [...(bot.cancelledWaits ?? []).slice(-49), { id: wait.id, name: wait.name, at: now }];
     botsStore.updateBot(bot.id, { cancelledWaits }, now);
     syncFolderWatches();
@@ -568,7 +719,7 @@ export function createAutomationsService(deps) {
   /** @param {{ runId: string, automationId: string }} params @param {number} [now] */
   async function sendRunAgain({ runId, automationId }, now = nowFn()) {
     if (!runId || !automationId) {
-      throw Object.assign(new Error('runId and automationId are required'), { code: 'invalid_argument' });
+      throw invalidArg('runId and automationId are required');
     }
     const auto = workStore.getAutomation(automationId);
     if (!auto) throw Object.assign(new Error(`Automation not found: ${automationId}`), { code: 'not_found' });

@@ -15,16 +15,15 @@ import {
   botMetaDir,
   botsRootDir,
   deleteBotHome,
-  initBotHome,
   listHomeFiles,
   readAvatar,
   readBotToolsConfig,
   readDecisionTsv,
   readHomeFile,
   readSoul,
-  reserveBotFolder,
   saveAvatar,
   syncLinkedSkills,
+  writeAtomicFile,
   writeBotToolsConfig,
   writeHomeFile,
   writeManagedFiles,
@@ -33,12 +32,8 @@ import {
 import { MEMORY_MAX_LOADED_LINES, parseMemoryLine } from './memory-service.js';
 import {
   applyBotFieldPatch,
-  buildNewBotRecord,
+  createBotFromTemplateWithRollback,
   decodePngBase64,
-  provisionPackageAssets,
-  provisionTemplateAssets,
-  resolveInitialSoul,
-  resolveNewBotName,
   scanProjectSkillDirs,
 } from './service-helpers.js';
 
@@ -66,28 +61,95 @@ function readGlobalSettingsMap(botsStore) {
   };
 }
 
+/** @param {string} root @param {string} target */
+function isStrictChildPath(root, target) {
+  const r = path.resolve(root);
+  const t = path.resolve(target);
+  const a = process.platform === 'win32' ? r.toLowerCase() : r;
+  const b = process.platform === 'win32' ? t.toLowerCase() : t;
+  if (a === b) return false;
+  const prefix = a.endsWith(path.sep) ? a : `${a}${path.sep}`;
+  return b.startsWith(prefix);
+}
+
+/**
+ * Safely remove a directory tree owned inside `metaRoot`, unlinking symlinks/junctions
+ * without ever following external targets.
+ * @param {string} metaRoot
+ * @param {string} targetPath
+ */
+function safeRemoveMetaEntry(metaRoot, targetPath) {
+  if (!isStrictChildPath(metaRoot, targetPath)) return false;
+  if (!fs.existsSync(targetPath)) {
+    try {
+      const lstat = fs.lstatSync(targetPath);
+      if (lstat.isSymbolicLink()) {
+        fs.unlinkSync(targetPath);
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }
+  const stat = fs.lstatSync(targetPath);
+  if (stat.isSymbolicLink()) {
+    fs.unlinkSync(targetPath);
+    return true;
+  }
+  if (stat.isDirectory()) {
+    for (const entry of fs.readdirSync(targetPath)) {
+      safeRemoveMetaEntry(metaRoot, path.join(targetPath, entry));
+    }
+    fs.rmdirSync(targetPath);
+    return true;
+  }
+  fs.unlinkSync(targetPath);
+  return true;
+}
+
+/** @param {string} filePath @param {string} botId */
+function removeBotKeyFromMetaJson(filePath, botId) {
+  if (!fs.existsSync(filePath)) return false;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || !Object.prototype.hasOwnProperty.call(parsed, botId)) {
+      return false;
+    }
+    delete parsed[botId];
+    writeAtomicFile(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Create the core BotsService.
  * @param {any} deps
  */
 export function createBotsService(deps) {
-  const { dshHome, botsStore, itemsStore, workStore, memoryService, sessionRuntime, eventBus } = deps;
+  const { dshHome, db, botsStore, itemsStore, groupsStore, workStore, memoryService, sessionRuntime, eventBus } = deps;
   const botsRoot = botsRootDir(dshHome);
   const metaRoot = botMetaDir(dshHome);
+  /** @type {Promise<any>} */
   let queue = Promise.resolve();
 
+  /** @template T @param {() => T | Promise<T>} fn @returns {Promise<T>} */
   function serialize(fn) {
     const run = queue.then(fn, fn);
     queue = run.catch(() => null);
     return run;
   }
 
+  /** @param {string} botId */
   function requireBot(botId) {
     const bot = botsStore.getBot(botId);
     if (!bot) throw Object.assign(new Error(`Bot not found: ${botId}`), { code: 'bot_not_found' });
     return bot;
   }
 
+  /** @param {any} bot */
   function homeDirFor(bot) {
     return path.join(botsRoot, bot.folder);
   }
@@ -117,17 +179,34 @@ export function createBotsService(deps) {
     const rawBots = botsStore.listBots();
     const needs = itemsStore.needsYouCounts(rawBots, Date.now());
     const models = await sessionRuntime.listModels();
+    const botIds = rawBots.map((b) => b.id);
+    const workersByBot = typeof workStore.listChatWorkersByBots === 'function'
+      ? workStore.listChatWorkersByBots(botIds)
+      : new Map();
+    const waitsByBot = new Map();
+    for (const auto of workStore.listAutomations({ enabledOnly: true })) {
+      if (!auto?.once) continue;
+      const list = waitsByBot.get(auto.botId) ?? [];
+      list.push(auto);
+      waitsByBot.set(auto.botId, list);
+    }
+
     /** @type {Record<string, any[]>} */
     const chatsByBot = {};
 
     const bots = rawBots.map((bot) => {
-      chatsByBot[bot.id] = sessionRuntime.listChats(bot.id, { includeClosed: false });
-      const waits = workStore.listAutomations({ botId: bot.id, enabledOnly: true }).filter((a) => Boolean(a.once));
+      const chats = sessionRuntime.listChats(bot.id, {
+        includeClosed: false,
+        preloadedWorkersByChat: workersByBot.get(bot.id) ?? new Map(),
+      });
+      chatsByBot[bot.id] = chats;
+      const waits = waitsByBot.get(bot.id) ?? [];
       const upNextCount = typeof deps.getLookAroundUpNextCount === 'function' ? deps.getLookAroundUpNextCount(bot.id) : 0;
       return sessionRuntime.computeBotSummary(bot, {
         needsYouCount: needs.counts[bot.id] ?? 0,
         upNextCount,
         waits,
+        chats,
       });
     });
 
@@ -159,45 +238,59 @@ export function createBotsService(deps) {
     }), now);
   }
 
+  /** @param {any} [params] */
   async function createBot(params = {}) {
     return serialize(async () => {
       const dedup = findAcceptedOfferBot(params.fromOffer);
       if (dedup) return { bot: dedup, deduplicated: true };
 
-      const existing = botsStore.listBots();
-      const template = params.fromTemplate ? botTemplate(params.fromTemplate.templateId ?? params.fromTemplate) : null;
-      const name = resolveNewBotName(params, template, existing);
-      const { folder, homeDir } = reserveBotFolder(botsRoot, name, existing.map((b) => b.folder));
       const now = Date.now();
-      const botRecord = buildNewBotRecord({ params, name, folder, template, existing, now });
+      const rawTemplateRef = params.fromTemplate ?? params.templateId ?? null;
+      const templateId = typeof rawTemplateRef === 'string'
+        ? rawTemplateRef
+        : (rawTemplateRef?.templateId ?? null);
+      const template = templateId ? botTemplate(templateId) : null;
+      const prevPetBotId = getGlobalSettings().petBotId;
+      /** @type {string | null} */
+      let petBotAssignedTo = null;
 
-      initBotHome(homeDir, botRecord, { starterSoul: resolveInitialSoul(params, name, template) });
-      if (template) {
-        provisionTemplateAssets(
-          homeDir,
-          botRecord,
-          template,
-          params.fromTemplate?.skills ?? params.selectedSkills ?? null,
+      let provisioned;
+      try {
+        provisioned = await createBotFromTemplateWithRollback({
+          botsRoot,
+          metaRoot,
+          botsStore,
           workStore,
-        );
+          sessionRuntime,
+          now,
+          onBeforeCommit: typeof params._onBeforeCommit === 'function' ? params._onBeforeCommit : undefined,
+          onAfterInsert: ({ bot }) => {
+            recordAcceptedOffer(params.fromOffer, bot.id, now);
+            if (!prevPetBotId) {
+              botsStore.setSetting('petBotId', bot.id, now);
+              petBotAssignedTo = bot.id;
+            }
+          },
+        }, params);
+      } catch (error) {
+        if (petBotAssignedTo && getGlobalSettings().petBotId === petBotAssignedTo) {
+          try { botsStore.setSetting('petBotId', prevPetBotId ?? null, Date.now()); } catch { /* Best-effort restore. */ }
+        }
+        throw error;
       }
-      if (params.fromPackage) provisionPackageAssets(homeDir, metaRoot, botRecord, params.fromPackage, workStore);
 
-      const saved = botsStore.insertBot(botRecord, now);
-      recordAcceptedOffer(params.fromOffer, saved.id, now);
-      if (!getGlobalSettings().petBotId) botsStore.setSetting('petBotId', saved.id, now);
-
-      const opened = await sessionRuntime.openHomeChat(saved.id);
+      const savedId = provisioned.bot.id;
       if (params.skipKickoff !== true) {
         const note = params.fromPackage ? 'You were imported from a shared bot package.' : null;
-        void sessionRuntime.sendKickoff(botsStore.getBot(saved.id), { template, note }).catch(() => null);
+        void sessionRuntime.sendKickoff(botsStore.getBot(savedId), { template, note }).catch(() => null);
       }
-      const latest = botsStore.getBot(saved.id);
+      const latest = botsStore.getBot(savedId);
       if (getGlobalSettings().petBotId === latest.id) deps.onPetBotChanged?.(latest);
       eventBus.emit({ botIds: [latest.id], kinds: ['bot', 'chats'] });
       return {
         bot: sessionRuntime.computeBotSummary(latest, { needsYouCount: 0, upNextCount: 0, waits: [] }),
-        sessionId: opened.sessionId,
+        sessionId: provisioned.sessionId,
+        setup: provisioned.setup ?? null,
         kickoffHint: template ? botTemplateKickoff(template) : null,
       };
     });
@@ -232,6 +325,7 @@ export function createBotsService(deps) {
       }
       if (existing.paused && saved.paused === false) {
         eventBus.emit({ botIds: [saved.id], kinds: ['status', 'items'] });
+        void sessionRuntime.sendOwedMail?.().catch(() => null);
       }
       if (getGlobalSettings().petBotId === saved.id || patch.imDefault !== undefined) {
         deps.onPetBotChanged?.(saved);
@@ -243,22 +337,103 @@ export function createBotsService(deps) {
     });
   }
 
+  /** @param {string} botId */
+  async function cleanupBotGroupMemberships(botId) {
+    let updatedGroups = 0;
+    let deletedGroups = 0;
+    if (!groupsStore || typeof groupsStore.listGroups !== 'function') {
+      return { updatedGroups, deletedGroups };
+    }
+    const groupsSvc = typeof deps.getGroupsService === 'function' ? deps.getGroupsService() : null;
+    for (const group of groupsStore.listGroups()) {
+      if (!Array.isArray(group.botIds) || !group.botIds.includes(botId)) continue;
+      const remaining = group.botIds.filter((/** @type {string} */ id) => id !== botId);
+      if (remaining.length === 0) {
+        if (typeof groupsSvc?.delete === 'function') await groupsSvc.delete({ groupId: group.id });
+        else groupsStore.deleteGroup(group.id);
+        deletedGroups += 1;
+      } else {
+        groupsStore.updateGroup(group.id, { botIds: remaining });
+        updatedGroups += 1;
+      }
+    }
+    return { updatedGroups, deletedGroups };
+  }
+
+  /** @param {string} botId @param {any[]} chats */
+  function cleanupBotStorageAndMeta(botId, chats) {
+    const safeId = encodeURIComponent(botId);
+    for (const chat of chats) {
+      try { workStore.deleteActsFor?.(chat.sessionId); } catch { /* Best-effort acts_for cleanup. */ }
+    }
+    if (db) {
+      try { db.prepare('DELETE FROM bot_work WHERE bot_id = ?').run(botId); } catch { /* Best-effort cleanup. */ }
+      try { db.prepare('DELETE FROM bot_access_requests WHERE bot_id = ?').run(botId); } catch { /* Best-effort cleanup. */ }
+      try { db.prepare('DELETE FROM bot_requests WHERE from_bot_id = ? OR to_bot_id = ?').run(botId, botId); } catch { /* Best-effort cleanup. */ }
+    }
+    removeBotKeyFromMetaJson(path.join(metaRoot, 'bot-look-around.json'), botId);
+    removeBotKeyFromMetaJson(path.join(metaRoot, 'bot-tidy-up-state.json'), botId);
+    safeRemoveMetaEntry(metaRoot, path.join(metaRoot, 'bot-memory-history', `${safeId}.json`));
+    safeRemoveMetaEntry(metaRoot, path.join(metaRoot, 'bot-credentials', `${safeId}.json`));
+    safeRemoveMetaEntry(metaRoot, path.join(metaRoot, 'bot-linked-skills', safeId));
+    for (const chat of chats) {
+      botsStore.deleteChat(chat.sessionId);
+    }
+  }
+
+  /** @param {string} botId @param {{ deleteFolder?: boolean }} [opts] */
   async function deleteBot(botId, { deleteFolder = false } = {}) {
     return serialize(async () => {
       const existing = requireBot(botId);
       const folderPath = homeDirFor(existing);
+
+      const chats = botsStore.listChats(existing.id, { includeClosed: true });
+      for (const chat of chats) {
+        await sessionRuntime.cancelSession?.(chat.sessionId).catch(() => null);
+      }
+
+      let deletedAutomations = 0;
+      for (const auto of workStore.listAutomations({ botId: existing.id })) {
+        if (workStore.deleteAutomation(auto.id)) deletedAutomations += 1;
+      }
+
+      const { updatedGroups, deletedGroups } = await cleanupBotGroupMemberships(existing.id);
+      cleanupBotStorageAndMeta(existing.id, chats);
       deleteBotHome(folderPath, existing.id, { deleteFolder });
       botsStore.deleteBot(existing.id);
 
-      const settings = getGlobalSettings();
-      if (settings.petBotId === existing.id) {
+      if (getGlobalSettings().petBotId === existing.id) {
         const nextFirst = botsStore.listBots()[0] ?? null;
         botsStore.setSetting('petBotId', nextFirst?.id ?? null);
         if (nextFirst) deps.onPetBotChanged?.(nextFirst);
       }
-      eventBus.emit({ botIds: [existing.id], kinds: ['bot', 'chats', 'settings'] });
-      return { deleted: true, botId: existing.id, folderPath, folderPreserved: !deleteFolder };
+      eventBus.emit({
+        botIds: [existing.id],
+        kinds: ['bot', 'chats', 'workers', 'automations', 'groups', 'lookAround', 'settings'],
+      });
+      return {
+        deleted: true,
+        botId: existing.id,
+        folderPath,
+        folderPreserved: !deleteFolder,
+        cleaned: {
+          chats: chats.length,
+          automations: deletedAutomations,
+          updatedGroups,
+          deletedGroups,
+        },
+      };
     });
+  }
+
+  /** @param {string} botId @param {string} sessionId */
+  async function deleteChat(botId, sessionId) {
+    return serialize(() => sessionRuntime.deleteChat(botId, sessionId));
+  }
+
+  /** @param {string} botId @param {string} workId @param {{ sessionId?: string | null }} [options] */
+  async function stopWork(botId, workId, options = {}) {
+    return sessionRuntime.stopWork(botId, workId, options);
   }
 
   function roster() {
@@ -399,43 +574,67 @@ export function createBotsService(deps) {
     return res;
   }
 
+  /** @param {string} botId */
   function toolsList(botId) {
-    const bot = requireBot(botId);
-    return { botId: bot.id, ...readBotToolsConfig(homeDirFor(bot)) };
-  }
-
-  function toolsAdd(botId, server) {
-    const bot = requireBot(botId);
-    const current = readBotToolsConfig(homeDirFor(bot)).servers;
-    const saved = writeBotToolsConfig(homeDirFor(bot), metaRoot, bot.id, {
-      servers: [...current.filter((s) => s.name !== server?.name), server],
+    return serialize(() => {
+      const bot = requireBot(botId);
+      return { botId: bot.id, ...readBotToolsConfig(homeDirFor(bot), metaRoot, bot.id) };
     });
-    eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
-    return saved;
   }
 
-  function toolsUpdate(botId, name, patch) {
-    const bot = requireBot(botId);
-    const current = readBotToolsConfig(homeDirFor(bot)).servers;
-    const saved = writeBotToolsConfig(homeDirFor(bot), metaRoot, bot.id, {
-      servers: current.map((s) => (s.name === name ? { ...s, ...patch, name: patch?.name ?? s.name } : s)),
+  /** @param {string} botId @param {any} server @param {{ expectedVersion?: string }} [options] */
+  function toolsAdd(botId, server, options = {}) {
+    return serialize(() => {
+      const bot = requireBot(botId);
+      const homeDir = homeDirFor(bot);
+      const expectedVersion = options?.expectedVersion ?? server?.expectedVersion;
+      const cleanServer = server && typeof server === 'object' ? { ...server } : server;
+      if (cleanServer && typeof cleanServer === 'object') delete cleanServer.expectedVersion;
+      const current = readBotToolsConfig(homeDir, metaRoot, bot.id).servers;
+      const saved = writeBotToolsConfig(homeDir, metaRoot, bot.id, {
+        servers: [...current.filter((/** @type {any} */ s) => s.name !== cleanServer?.name), cleanServer],
+      }, { expectedVersion });
+      eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
+      return saved;
     });
-    eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
-    return saved;
   }
 
-  function toolsRemove(botId, name) {
-    const bot = requireBot(botId);
-    const current = readBotToolsConfig(homeDirFor(bot)).servers;
-    const saved = writeBotToolsConfig(homeDirFor(bot), metaRoot, bot.id, {
-      servers: current.filter((s) => s.name !== name),
+  /** @param {string} botId @param {string} name @param {any} patch @param {{ expectedVersion?: string }} [options] */
+  function toolsUpdate(botId, name, patch, options = {}) {
+    return serialize(() => {
+      const bot = requireBot(botId);
+      const homeDir = homeDirFor(bot);
+      const expectedVersion = options?.expectedVersion ?? patch?.expectedVersion;
+      const cleanPatch = patch && typeof patch === 'object' ? { ...patch } : patch;
+      if (cleanPatch && typeof cleanPatch === 'object') delete cleanPatch.expectedVersion;
+      const current = readBotToolsConfig(homeDir, metaRoot, bot.id).servers;
+      const saved = writeBotToolsConfig(homeDir, metaRoot, bot.id, {
+        servers: current.map((/** @type {any} */ s) => (s.name === name ? { ...s, ...cleanPatch, name: cleanPatch?.name ?? s.name } : s)),
+      }, { expectedVersion });
+      eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
+      return saved;
     });
-    eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
-    return saved;
   }
 
-  function toolsDetails(botId, name) {
-    return toolsList(botId).servers.find((s) => s.name === name) ?? null;
+  /** @param {string} botId @param {string} name @param {{ expectedVersion?: string }} [options] */
+  function toolsRemove(botId, name, options = {}) {
+    return serialize(() => {
+      const bot = requireBot(botId);
+      const homeDir = homeDirFor(bot);
+      const expectedVersion = options?.expectedVersion;
+      const current = readBotToolsConfig(homeDir, metaRoot, bot.id).servers;
+      const saved = writeBotToolsConfig(homeDir, metaRoot, bot.id, {
+        servers: current.filter((/** @type {any} */ s) => s.name !== name),
+      }, { expectedVersion });
+      eventBus.emit({ botIds: [bot.id], kinds: ['bot'] });
+      return saved;
+    });
+  }
+
+  /** @param {string} botId @param {string} name */
+  async function toolsDetails(botId, name) {
+    const list = await toolsList(botId);
+    return list.servers.find((/** @type {any} */ s) => s.name === name) ?? null;
   }
 
   function scanSkillProjects(workspaceDirs = []) {
@@ -507,6 +706,8 @@ export function createBotsService(deps) {
     createBot,
     updateBot,
     deleteBot,
+    deleteChat,
+    stopWork,
     roster,
     avatarRead,
     avatarUpload,

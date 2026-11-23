@@ -1,10 +1,11 @@
 /**
- * Bot Sharing (`BotPackageV1` export/review) and External Bot Discovery/Import
- * (`~/.orca/bots/`, `~/.openclaw/`, `~/.hermes/`, `$DSH_HOME/data/whale/`).
+ * Bot Sharing (`BotPackageV1` export/review with `scanBotText` security scanning)
+ * and External Bot Discovery/Import (`~/.orca/bots/`, `~/.openclaw/`, `~/.hermes/`,
+ * `$DSH_HOME/data/whale/`).
  *
  * Security invariants:
  * - Hard-blocks export and package import whenever plaintext credentials/tokens
- *   are detected (`code: 'secret_detected'`), never silently passing secrets.
+ *   are detected (`code: 'secret_detected'` / `'package_blocked_secret'`), never silently passing secrets.
  * - Forces all imported automations/schedules to `enabled: false` so external
  *   packages can never auto-execute on import.
  * - Supports selective memory import via `memoryIndices`.
@@ -17,11 +18,13 @@ import {
   BOT_PACKAGE_MANIFEST_PATH,
   BOT_PACKAGE_SCHEMA_VERSION,
   BOT_PACKAGE_SOUL_PATH,
+  isSafeBotPackageToolUrl,
   parseBotPackage,
   planBotFromPackage,
   redactBotText,
-  soulDescription,
-} from '../../src/shared/index.js';
+  scanBotText,
+} from '../../src/shared/bot-package.js';
+import { soulDescription } from '../../src/shared/index.js';
 import {
   botsRootDir,
   readBotToolsConfig,
@@ -142,7 +145,42 @@ function safeReadFile(dir, rel) {
   }
 }
 
-/** @param {string} dir @param {string} sourceKind @param {string} fallbackName */
+/**
+ * Run `scanBotText` across all files, prompts, and notes in a bot package.
+ * @param {any} manifest
+ * @param {Record<string, string>} files
+ */
+function scanPackageContents(manifest, files) {
+  const findings = [];
+  for (const [filePath, content] of Object.entries(files ?? {})) {
+    if (typeof content !== 'string') continue;
+    findings.push(...scanBotText(content, { file: filePath }).findings);
+  }
+  for (const sched of manifest?.schedules ?? []) {
+    if (typeof sched?.prompt === 'string') {
+      findings.push(...scanBotText(sched.prompt, { file: `schedule:${sched.id}` }).findings);
+    }
+  }
+  for (const ev of manifest?.eventSuggestions ?? []) {
+    if (typeof ev?.prompt === 'string') {
+      findings.push(...scanBotText(ev.prompt, { file: `event:${ev.id}` }).findings);
+    }
+  }
+  if (typeof manifest?.setupNote === 'string') {
+    findings.push(...scanBotText(manifest.setupNote, { file: 'setupNote' }).findings);
+  }
+  const blocks = findings.filter((f) => f.severity === 'block');
+  const warnings = findings.filter((f) => f.severity === 'warn');
+  return {
+    ok: blocks.length === 0,
+    blocked: blocks.length > 0,
+    findings,
+    blocks,
+    warnings,
+  };
+}
+
+/** @param {string} dir @param {string} sourceKind @param {string} [fallbackName] */
 function inspectBotDirectory(dir, sourceKind, fallbackName) {
   if (!fs.existsSync(dir)) return null;
   const botJsonRaw = safeReadFile(dir, 'bot.json') ?? safeReadFile(dir, 'settings.json');
@@ -343,7 +381,7 @@ export function createShareImportService(deps) {
     }
 
     const tools = (toolsCfg.servers ?? [])
-      .filter((s) => typeof s.url === 'string' && /^https?:\/\//i.test(s.url))
+      .filter((s) => isSafeBotPackageToolUrl(s?.url))
       .slice(0, 32)
       .map((s, idx) => ({
         id: `tool-${idx + 1}`,
@@ -383,11 +421,19 @@ export function createShareImportService(deps) {
     };
 
     const validated = parseBotPackage(manifest);
+    const scan = scanPackageContents(validated.bot, files);
+    if (scan.blocked && /** @type {any} */ (options).allowBlocked !== true) {
+      throw Object.assign(new Error('Share blocked: secret detected in exported bot files'), {
+        code: 'share_blocked_secret',
+        scan,
+      });
+    }
     return {
       manifestPath: BOT_PACKAGE_MANIFEST_PATH,
       manifest: validated.bot,
       files,
       redactedCount,
+      scan,
       packageJson: JSON.stringify({ manifest: validated.bot, files }, null, 2),
     };
   }
@@ -396,20 +442,20 @@ export function createShareImportService(deps) {
     const parsedObj = typeof rawInput === 'string' ? JSON.parse(rawInput) : rawInput;
     const manifestObj = parsedObj?.manifest ?? parsedObj;
     const filesObj = parsedObj?.files && typeof parsedObj.files === 'object' ? parsedObj.files : {};
-    const scanTarget = collectPackageTextsForSecretScan(parsedObj, manifestObj, filesObj);
-    assertNoPlaintextSecrets(scanTarget.files, scanTarget.extra, 'Bot package review');
 
     const { bot, droppedKeys } = parseBotPackage(manifestObj);
     const inventory = Object.keys(filesObj)
       .filter((p) => p !== 'MEMORY.md')
       .map((p) => ({ path: p, executable: false }));
     const plan = planBotFromPackage(bot, inventory, { agent: 'deepseek-harness', toolIds: bot.tools.map((t) => t.id) });
+    const scan = scanPackageContents(bot, filesObj);
     return {
       ok: true,
       manifest: bot,
       droppedKeys,
       fileCount: Object.keys(filesObj).length,
       plan,
+      scan,
     };
   }
 
@@ -440,14 +486,18 @@ export function createShareImportService(deps) {
     }
   }
 
-  async function importFromPackage(params) {
-    const rawObj = typeof params.packageJson === 'string'
-      ? JSON.parse(params.packageJson)
-      : (params.packageJson ?? params);
-    const reviewed = reviewPackage(rawObj);
-    const filesObj = { ...(rawObj?.files && typeof rawObj.files === 'object' ? rawObj.files : {}) };
+  /** @param {any} rawObj @param {any} reviewed @param {any} params */
+  function preparePackageImportInputs(rawObj, reviewed, params) {
+    const filesObjRaw = rawObj?.files && typeof rawObj.files === 'object' ? rawObj.files : {};
+    if (params.allowSecrets !== true) {
+      const scanTarget = collectPackageTextsForSecretScan(rawObj, reviewed.manifest, filesObjRaw);
+      assertNoPlaintextSecrets(scanTarget.files, scanTarget.extra, 'Bot package import');
+      if (reviewed.scan?.blocked) {
+        throw Object.assign(new Error('Import blocked: secret detected in bot package'), { code: 'secret_detected', scan: reviewed.scan });
+      }
+    }
+    const filesObj = { ...filesObjRaw };
     let manifest = reviewed.manifest;
-
     if (Array.isArray(params.memoryIndices)) {
       const idxSet = new Set(params.memoryIndices.map(Number));
       const keptTopics = (manifest.memory ?? []).filter((/** @type {any} */ _m, /** @type {number} */ i) => idxSet.has(i));
@@ -457,27 +507,30 @@ export function createShareImportService(deps) {
       }
       manifest = { ...manifest, memory: keptTopics };
     }
-
     const memoryFileRaw = typeof filesObj['MEMORY.md'] === 'string' ? filesObj['MEMORY.md'] : null;
     delete filesObj['MEMORY.md'];
+    return { manifest, filesObj, memoryFileRaw };
+  }
+
+  /** @param {any} params */
+  async function importFromPackage(params) {
+    const rawObj = typeof params.packageJson === 'string' ? JSON.parse(params.packageJson) : (params.packageJson ?? params);
+    const reviewed = reviewPackage(rawObj);
+    const { manifest, filesObj, memoryFileRaw } = preparePackageImportInputs(rawObj, reviewed, params);
 
     const created = await botsService.createBot({
       name: params.name || manifest.name,
       fromPackage: { manifest, files: filesObj, toolIds: params.selectedToolIds },
       skipKickoff: params.skipKickoff,
     });
-
     if (memoryFileRaw !== null) {
       const destHome = path.join(botsRootDir(dshHome), created.bot.folder);
-      const selectedMem = Array.isArray(params.memoryIndices)
-        ? filterMemoryByIndices(memoryFileRaw, params.memoryIndices)
-        : memoryFileRaw;
+      const selectedMem = Array.isArray(params.memoryIndices) ? filterMemoryByIndices(memoryFileRaw, params.memoryIndices) : memoryFileRaw;
       writeAtomicFile(path.join(destHome, 'MEMORY.md'), redactBotText(selectedMem).text);
     }
-
     importExtraAutomationsDisabled(created.bot.id, rawObj?.automations);
     disableAllBotAutomations(created.bot.id);
-    return { ok: true, bot: created.bot, sourceKind: 'package' };
+    return { ok: true, bot: created.bot, sourceKind: 'package', scan: reviewed.scan };
   }
 
   /** @param {Record<string, any>} [params] */

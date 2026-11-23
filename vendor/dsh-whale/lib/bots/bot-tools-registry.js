@@ -12,6 +12,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  BOT_GROUP_MEMBER_SESSION_PREFIX,
+  BOT_REPLY_TOOL_SCHEMA,
+  validateBotName,
+  validateBotReplyArgs,
+} from '../../src/shared/index.js';
 import { isNonOwnerImTurn } from '../call-origin.js';
 import {
   CONFIRM_TOOL_TIMEOUT_MS,
@@ -22,7 +28,14 @@ import {
 import { BOT_WORKER_PRESET_ID } from '../preset.js';
 import { genericOutput } from '../shared.js';
 import { buildBotItemTools } from './bot-tools-items.js';
+import {
+  executeBotReply,
+  executeBotSend,
+  formatReplyConfirmDetails,
+  resolveDshImSender,
+} from './bot-tools-reply.js';
 import { appendDecisionTsv, botMetaDir, botsRootDir } from './fs-home.js';
+import { evaluateLookAroundToolPolicy } from './look-around-service.js';
 import { resolveBotForSession } from './prompt-engine.js';
 import { BOT_OWNER_WORK } from './session-runtime.js';
 import { createToolWalManager } from './tool-wal.js';
@@ -73,15 +86,98 @@ const okOut = (detail) => ({ ok: true, detail });
 /** @param {string} detail */
 const errOut = (detail) => ({ ok: false, detail });
 
+/** @param {any} runtime @param {string} sessionId @param {any} chat */
+function resolveGroupIdForSession(runtime, sessionId, chat) {
+  if (chat?.groupId) return String(chat.groupId);
+  const sid = String(sessionId ?? '').trim();
+  const isGroupLike = (
+    chat?.kind === 'group-member'
+    || chat?.kind === 'group'
+    || chat?.origin === 'group'
+    || sid.startsWith(BOT_GROUP_MEMBER_SESSION_PREFIX)
+  );
+  if (!isGroupLike) return null;
+  const groups = runtime?.groupsStore?.listGroups?.() ?? [];
+  for (const g of groups) {
+    const memberVals = Object.values(g.memberSessionIds ?? {});
+    if (memberVals.includes(sid)) return g.id;
+    const formerVals = Object.values(g.formerSessionIds ?? {}).flat();
+    if (formerVals.includes(sid)) return g.id;
+  }
+  return 'group';
+}
+
+/** @param {any} runtime @param {any} bot @param {string} sessionId @param {any} chat @param {any} exec */
+function buildCallerInfo(runtime, bot, sessionId, chat, exec) {
+  const resolvedChat = chat ?? runtime.botsStore?.getChat?.(sessionId) ?? null;
+  const explicitKind = exec?.caller?.kind ?? exec?.sessionKind ?? null;
+  const explicitGroupId = exec?.caller?.groupId ?? exec?.groupId ?? null;
+  const kind = explicitKind || resolvedChat?.kind || (bot.chatSessionId === sessionId ? 'home' : 'side');
+  const groupId = explicitGroupId || resolveGroupIdForSession(runtime, sessionId, resolvedChat);
+  return { bot, sessionId, chat: resolvedChat, kind, groupId };
+}
+
 /** @param {any} runtime @param {any} exec */
 function resolveCallerBot(runtime, exec) {
   if (!runtime) return null;
   const resolved = resolveBotForSession(runtime, exec);
   if (resolved?.bot) {
-    return { bot: resolved.bot, sessionId: resolved.sessionId || resolved.bot.chatSessionId || 'unknown' };
+    const sessionId = resolved.sessionId || resolved.bot.chatSessionId || 'unknown';
+    return buildCallerInfo(runtime, resolved.bot, sessionId, resolved.chat, exec);
   }
   const fallback = runtime.legacyCompat?.resolvePetBot?.() ?? runtime.botsStore?.listBots?.()?.[0] ?? null;
-  return fallback ? { bot: fallback, sessionId: fallback.chatSessionId || 'unknown' } : null;
+  if (!fallback) return null;
+  return buildCallerInfo(runtime, fallback, fallback.chatSessionId || 'unknown', null, exec);
+}
+
+/** @param {any} caller @param {any} exec */
+function isLookAroundContext(caller, exec) {
+  return (
+    caller?.kind === 'look-around'
+    || caller?.chat?.kind === 'look-around'
+    || exec?.caller?.kind === 'look-around'
+    || exec?.sessionKind === 'look-around'
+  );
+}
+
+/** @param {any} caller */
+function isGroupContext(caller) {
+  return Boolean(
+    caller?.groupId
+    || caller?.kind === 'group'
+    || caller?.kind === 'group-member'
+    || caller?.chat?.kind === 'group-member'
+    || caller?.chat?.origin === 'group',
+  );
+}
+
+/** @param {any} caller */
+function isWorkerContext(caller) {
+  return (
+    caller?.kind === 'worker'
+    || caller?.chat?.kind === 'worker'
+    || caller?.chat?.origin === 'work'
+  );
+}
+
+/** @param {any} toolDef @param {() => any} getRuntime */
+function wrapWithLookAroundPolicy(toolDef, getRuntime) {
+  const originalExecute = toolDef.execute;
+  return {
+    ...toolDef,
+    /** @param {any} args @param {any} exec */
+    async execute(args, exec) {
+      const runtime = getRuntime();
+      const caller = runtime ? resolveCallerBot(runtime, exec) : null;
+      if (isLookAroundContext(caller, exec)) {
+        const policy = evaluateLookAroundToolPolicy(toolDef.name, args);
+        if (!policy.allowed) {
+          return errOut(`Look Around read-only policy blocked ${toolDef.name}: ${policy.reason}`);
+        }
+      }
+      return originalExecute(args, exec);
+    },
+  };
 }
 
 /** @param {any} runtime @param {any} bot */
@@ -145,11 +241,6 @@ function resolveToolWal(runtime, options) {
   }
   return wal;
 }
-
-/** @param {any} runtime @param {any} options */
-const resolveImOutboundBridge = (runtime, options) => (
-  options?.imOutboundBridge ?? runtime?.imOutboundBridge ?? runtime?.ctx?.get?.('dshImOutboundBridge') ?? null
-);
 
 /** @param {string} name @param {string} description @param {Record<string, any>} parameters @param {(args: any, exec: any) => Promise<any>} execute @param {number} [timeoutMs] */
 function makeTool(name, description, parameters, execute, timeoutMs = 20_000) {
@@ -221,86 +312,6 @@ function executeMemorySearch(runtime, caller, args) {
   return okOut(JSON.stringify({ query, scope: scopeRaw, results: [] }));
 }
 
-/** @param {any} entry */
-function formatDeduplicatedReply(entry) {
-  if (entry.status === 'committed') {
-    return okOut(JSON.stringify({
-      ok: true, deduplicated: true, delivered: true, walId: entry.walId, resultSummary: entry.resultSummary,
-    }));
-  }
-  const status = entry.status === 'failed' ? 'FAILED' : 'UNKNOWN';
-  return errOut(JSON.stringify({
-    ok: false, deduplicated: true, delivered: false, status, walId: entry.walId,
-    reason: status === 'UNKNOWN' ? 'previous_execution_unknown_no_replay' : 'previous_execution_failed',
-  }));
-}
-
-/** @param {any} sendFn @param {any} ctx */
-async function deliverReplyViaBridge(sendFn, { caller, args, text, channel, wal, walId }) {
-  const delivery = await sendFn({
-    botId: caller.bot.id, sessionId: caller.sessionId, channel,
-    accountId: args.accountId ?? null, chatId: args.chatId ?? null,
-    replyToMessageId: args.replyToMessageId ?? null, text,
-  });
-  const delivered = Boolean(delivery?.ok || delivery?.delivered);
-  if (delivered) {
-    wal?.commit(walId, { transport: 'im', channel: delivery.channel ?? channel, messageId: delivery.messageId ?? null });
-    return okOut(JSON.stringify({
-      ok: true, delivered: true, transport: 'im', channel: delivery.channel ?? channel ?? 'im',
-      messageId: delivery.messageId ?? null, chars: text.length, walId,
-    }));
-  }
-  const reason = String(delivery?.error ?? delivery?.reason ?? 'im_delivery_failed');
-  wal?.fail(walId, reason);
-  return okOut(JSON.stringify({ ok: true, delivered: false, transport: 'im', channel: channel ?? 'external', reason, chars: text.length, walId }));
-}
-
-/** @param {any} runtime @param {any} caller @param {any} text @param {string | null} channel @param {any} wal @param {string | null} walId */
-function handleMissingImBridge(runtime, caller, text, channel, wal, walId) {
-  const petFallback = caller.bot.replyFallback === 'pet';
-  if (petFallback) runtime.legacyCompat?.notifyPet?.('say', text.slice(0, 240));
-  wal?.fail(walId, 'im_bridge_unavailable');
-  return okOut(JSON.stringify({
-    ok: true, delivered: false, reason: 'im_bridge_unavailable',
-    petNotified: petFallback, channel: channel ?? 'external', chars: text.length, walId,
-  }));
-}
-
-/** @param {any} runtime @param {any} caller @param {any} args @param {any} options */
-async function executeBotReply(runtime, caller, args, options) {
-  const text = String(args.text ?? '').trim();
-  const channel = args.channel ? String(args.channel).trim() : null;
-  const wal = resolveToolWal(runtime, options);
-  let walId = null;
-  if (wal) {
-    const intent = wal.beginIntent({
-      botId: caller.bot.id, sessionId: caller.sessionId, toolName: 'bot_reply', action: 'reply', effect: 'external',
-      idempotencyKey: args.idempotencyKey ? String(args.idempotencyKey).trim() : null,
-      args: { text, channel, accountId: args.accountId ?? null, chatId: args.chatId ?? null },
-    });
-    if (intent.deduplicated) return formatDeduplicatedReply(intent.entry);
-    walId = intent.entry.walId;
-  }
-
-  try {
-    if (channel === 'pet') {
-      runtime.legacyCompat?.notifyPet?.('say', text.slice(0, 240));
-      wal?.commit(walId, { transport: 'pet', chars: text.length });
-      return okOut(JSON.stringify({ ok: true, delivered: true, transport: 'pet', channel: 'pet', chars: text.length, walId }));
-    }
-    const bridge = resolveImOutboundBridge(runtime, options);
-    const sendFn = bridge?.sendText ?? bridge?.deliver;
-    if (typeof sendFn === 'function') {
-      return await deliverReplyViaBridge(sendFn, { caller, args, text, channel, wal, walId });
-    }
-    return handleMissingImBridge(runtime, caller, text, channel, wal, walId);
-  } catch (error) {
-    const msg = String(/** @type {any} */ (error)?.message ?? error);
-    wal?.fail(walId, msg);
-    return errOut(`bot_reply delivery error: ${msg}`);
-  }
-}
-
 /** @param {any} runtime @param {any} caller @param {any} args @param {any} options */
 async function executeWorkStart(runtime, caller, args, options) {
   const cwd = String(args.cwd ?? '').trim();
@@ -339,7 +350,9 @@ async function executeWorkStart(runtime, caller, args, options) {
     botId: caller.bot.id, source: 'app', externalId: caller.sessionId, taskId, dispatchId,
   });
   const itemUid = args.itemUid ? resolveItemUid(runtime.itemsStore, args.itemUid) : null;
-  if (itemUid) runtime.itemsStore.linkStartedWorker(itemUid, dispatchId, caller.sessionId);
+  if (itemUid) {
+    runtime.itemsStore.linkStartedWorker(itemUid, dispatchId, { chatId: caller.sessionId, botId: caller.bot.id });
+  }
   runtime.eventBus.emit({ botIds: [caller.bot.id], kinds: ['workers', 'items', 'chats'] });
 
   const lifecycle = executeDispatchedWorker({
@@ -474,25 +487,52 @@ function buildBasicBotTools(getRuntime) {
       return okOut(JSON.stringify(runtime.lookAroundService.setConfig(caller.bot.id, args)));
     }),
 
-    makeTool('bot_create_offer', 'Propose creating a new specialist bot as an owner-approved card.', {
-      name: { type: 'string', description: 'Suggested bot name.', required: true },
-      purpose: { type: 'string', description: 'One-line purpose.', required: true },
-      watches: { type: 'string', description: 'What the bot monitors.' },
-      does: { type: 'string', description: 'What the bot does.' },
-      reports: { type: 'string', description: 'How/where the bot reports.' },
-      templateId: { type: 'string', description: 'Optional template id.' },
-    }, async (args, exec) => {
-      const runtime = getRuntime();
-      const caller = resolveCallerBot(runtime, exec);
-      if (!caller) return errOut('Caller bot context unavailable.');
-      const offer = {
-        offerId: crypto.randomUUID(), proposerBotId: caller.bot.id,
-        name: String(args.name ?? '').trim(), purpose: String(args.purpose ?? '').trim(),
-        watches: args.watches ?? null, does: args.does ?? null,
-        reports: args.reports ?? null, templateId: args.templateId ?? null, createdAt: Date.now(),
-      };
-      return okOut(JSON.stringify({ kind: 'bot-create-offer', offer }));
-    }),
+    makeTool(
+      'bot_create_offer',
+      'Propose creating a new specialist bot as an owner-approved card (never creates the bot directly).',
+      {
+        name: { type: 'string', description: 'Suggested bot name.', required: true },
+        purpose: { type: 'string', description: 'One-line purpose.', required: true },
+        watches: { type: 'string', description: 'What the bot monitors.' },
+        does: { type: 'string', description: 'What the bot does.' },
+        reports: { type: 'string', description: 'How/where the bot reports.' },
+        templateId: { type: 'string', description: 'Optional template id.' },
+      },
+      async (args, exec) => {
+        const runtime = getRuntime();
+        const caller = resolveCallerBot(runtime, exec);
+        if (!caller) return errOut('Caller bot context unavailable.');
+        if (isGroupContext(caller)) {
+          return errOut('bot_create_offer is not allowed inside a multi-bot group chat. Propose creating a new bot in your direct Home Chat with the owner instead.');
+        }
+        if (isLookAroundContext(caller, exec)) {
+          return errOut('bot_create_offer is not allowed during read-only Look Around sweeps.');
+        }
+        const existingBots = runtime.botsStore.listBots();
+        const nameCheck = validateBotName(args.name, { existingBots });
+        if (!nameCheck.ok) {
+          const dupBot = existingBots.find((/** @type {any} */ b) => b.name.toLowerCase() === String(args.name ?? '').trim().toLowerCase());
+          if (dupBot) {
+            return errOut(`A bot named "${dupBot.name}" already exists on this machine. Reuse that teammate or pick a distinct name.`);
+          }
+          return errOut(`Invalid bot name: ${nameCheck.reason}`);
+        }
+        const purpose = String(args.purpose ?? '').trim();
+        if (!purpose) return errOut('purpose is required for bot_create_offer.');
+        const offer = {
+          offerId: crypto.randomUUID(),
+          proposerBotId: caller.bot.id,
+          name: nameCheck.name,
+          purpose,
+          watches: args.watches ?? null,
+          does: args.does ?? null,
+          reports: args.reports ?? null,
+          templateId: args.templateId ?? null,
+          createdAt: Date.now(),
+        };
+        return okOut(JSON.stringify({ kind: 'bot-create-offer', offer }));
+      },
+    ),
   ];
 }
 
@@ -539,41 +579,13 @@ function buildGuardedBotTools(getRuntime, options) {
       if (blocked) return blocked;
       const runtime = getRuntime();
       const caller = resolveCallerBot(runtime, exec);
-      if (!caller) return errOut('Caller bot context unavailable.');
-      const target = runtime.botsStore.getBot(args.toBotId) ?? runtime.botsStore.getBotByName(args.toBotId);
-      if (!target) return errOut(`Target bot not found: ${args.toBotId}`);
-      const text = String(args.text ?? '').trim();
-      if (!text) return errOut('text is required.');
-
-      const reqRes = runtime.workStore.createRequest({
-        rootKey: args.rootKey || `root-${caller.sessionId}`, fromBotId: caller.bot.id, toBotId: target.id,
-        purpose: args.purpose, depth: Number.isInteger(args.depth) ? args.depth : 1,
-        sendKey: args.sendKey ?? null, record: { text, fromName: caller.bot.name },
-      });
-      if (!reqRes.deduplicated) {
-        const home = await runtime.sessionRuntime.openHomeChat(target.id);
-        const msgText = `[From bot ${caller.bot.name} (${args.purpose})]\n${text}`;
-        runtime.workStore.setRequestOutcome(reqRes.request.messageId, 'posted');
-        const deliver = Promise.resolve()
-          .then(() => runtime.sessionRuntime.runSingleTurn(home.sessionId, msgText))
-          .then((turn) => {
-            const ok = turn?.ok !== false;
-            runtime.workStore.setRequestOutcome(reqRes.request.messageId, ok ? 'delivered' : 'failed');
-            if (!ok) reportToolAsyncError(runtime, 'bot_send', turn?.error || 'turn-failed', { messageId: reqRes.request.messageId, toBotId: target.id });
-            return { ok, reply: turn?.reply ?? '', error: ok ? null : (turn?.error || 'turn-failed') };
-          }, (err) => {
-            runtime.workStore.setRequestOutcome(reqRes.request.messageId, 'failed');
-            reportToolAsyncError(runtime, 'bot_send', err, { messageId: reqRes.request.messageId, toBotId: target.id });
-            return { ok: false, reply: '', error: String(err?.message ?? err) };
-          });
-        if (args.awaitReply === true) return okOut(JSON.stringify({ ...reqRes, delivery: await deliver }));
-      }
-      return okOut(JSON.stringify(reqRes));
+      return caller ? executeBotSend(runtime, caller, args, isWorkerContext, reportToolAsyncError) : errOut('Caller bot context unavailable.');
     }),
 
     makeTool('bot_tools_manage', 'List, add, update, or remove per-bot MCP tool servers (mutations require desktop confirmation).', {
       action: { type: 'string', description: 'list | add | update | remove.', required: true },
       name: { type: 'string', description: 'Server name (for update/remove).' },
+      expectedVersion: { type: 'string', description: 'Optional optimistic version token from tools list.' },
       server: {
         type: 'object', description: 'Server spec (for add/update).', additionalProperties: true,
         properties: { name: { type: 'string' }, transport: { type: 'string' }, url: { type: 'string' }, command: { type: 'string' } },
@@ -583,7 +595,7 @@ function buildGuardedBotTools(getRuntime, options) {
       const caller = resolveCallerBot(runtime, exec);
       if (!caller) return errOut('Caller bot context unavailable.');
       const action = String(args.action ?? '').trim();
-      if (action === 'list') return okOut(JSON.stringify(runtime.botsService.toolsList(caller.bot.id)));
+      if (action === 'list') return okOut(JSON.stringify(await runtime.botsService.toolsList(caller.bot.id)));
       if (!['add', 'update', 'remove'].includes(action)) return errOut(`Unknown bot_tools_manage action: ${action}`);
       const refused = await requireConfirm({
         tool: 'bot_tools_manage', action, effect: action === 'remove' ? 'destructive' : 'code',
@@ -591,9 +603,10 @@ function buildGuardedBotTools(getRuntime, options) {
         details: JSON.stringify(args.server ?? { name: args.name }).slice(0, 400),
       }, exec);
       if (refused) return refused;
-      if (action === 'add') return okOut(JSON.stringify(runtime.botsService.toolsAdd(caller.bot.id, args.server)));
-      if (action === 'update') return okOut(JSON.stringify(runtime.botsService.toolsUpdate(caller.bot.id, args.name, args.server)));
-      return okOut(JSON.stringify(runtime.botsService.toolsRemove(caller.bot.id, args.name)));
+      const opts = args.expectedVersion ? { expectedVersion: args.expectedVersion } : {};
+      if (action === 'add') return okOut(JSON.stringify(await runtime.botsService.toolsAdd(caller.bot.id, args.server, opts)));
+      if (action === 'update') return okOut(JSON.stringify(await runtime.botsService.toolsUpdate(caller.bot.id, args.name, args.server, opts)));
+      return okOut(JSON.stringify(await runtime.botsService.toolsRemove(caller.bot.id, args.name, opts)));
     }, CONFIRM_TOOL_TIMEOUT_MS),
 
     makeTool('bot_automation_create', 'Create, update, or delete local scheduled automations or one-shot waits.', {
@@ -619,25 +632,23 @@ function buildGuardedBotTools(getRuntime, options) {
       return errOut(`Invalid automation action: ${action}`);
     }),
 
-    makeTool('bot_reply', 'Send a reply to the external connector or IM thread that woke this turn (requires desktop confirmation & WAL).', {
-      text: { type: 'string', description: 'Reply text.', required: true },
-      channel: { type: 'string', description: 'Optional external channel/thread identifier (or "pet").' },
-      accountId: { type: 'string', description: 'Optional IM account identifier.' },
-      chatId: { type: 'string', description: 'Optional IM chat/thread identifier.' },
-      replyToMessageId: { type: 'string', description: 'Optional message id to reply to.' },
-      idempotencyKey: { type: 'string', description: 'Optional WAL idempotency key.' },
-    }, async (args, exec) => {
+    makeTool('bot_reply', 'Send a reply (text, optional quick choices, files, or emoji reaction) to the external IM channel or thread (requires desktop confirmation & WAL).', BOT_REPLY_TOOL_SCHEMA, async (args, exec) => {
+      const blocked = refuseNonOwnerIm(exec);
+      if (blocked) return blocked;
       const runtime = getRuntime();
       const caller = resolveCallerBot(runtime, exec);
       if (!caller) return errOut('Caller bot context unavailable.');
-      const text = String(args.text ?? '').trim();
-      if (!text) return errOut('Reply text is required.');
+      const validated = validateBotReplyArgs(args);
+      if (!validated.ok) return errOut(`${validated.code}: ${validated.reason}`);
+      const payload = validated.data;
+      const targetChannel = payload.channel ?? caller.chat?.externalSource ?? null;
       const refused = await requireConfirm({
         tool: 'bot_reply', action: 'reply', effect: 'external',
-        summary: `${caller.bot.name} 请求向外部渠道发送回复`,
-        details: text.slice(0, 400),
+        summary: `${caller.bot.name} 请求向外部渠道${targetChannel ? ` (${targetChannel})` : ''}发送回复`,
+        details: formatReplyConfirmDetails(payload),
       }, exec);
-      return refused ?? executeBotReply(runtime, caller, args, options);
+      if (refused) return refused;
+      return executeBotReply(runtime, caller, args, payload, targetChannel, options, resolveToolWal);
     }, CONFIRM_TOOL_TIMEOUT_MS),
 
     makeTool('bot_new_chat', 'Start a new independent side chat session for this bot.', {
@@ -723,7 +734,7 @@ export function buildBotToolDefinitions(getRuntime = getActiveBotsRuntime, optio
     ...buildBasicBotTools(getRuntime),
     ...buildBotItemTools(getRuntime, resolveCallerBot),
     ...buildGuardedBotTools(getRuntime, options),
-  ];
+  ].map((def) => wrapWithLookAroundPolicy(def, getRuntime));
   return allDefs.map((def) => ({
     ...def,
     /** @param {any} args @param {any} exec */

@@ -7,6 +7,7 @@ export const ITEM_STATUSES = Object.freeze(['planned', 'working', 'needs_you', '
 export const OPEN_ITEM_STATUSES = Object.freeze(['planned', 'working', 'needs_you']);
 export const CLOSED_ITEM_STATUSES = Object.freeze(['done', 'canceled']);
 export const ITEM_LINK_KINDS = Object.freeze(['dispatch', 'pr', 'url', 'file']);
+export const CROSS_BOT_ATTACH_LINK_KINDS = Object.freeze(['dispatch', 'pr', 'url']);
 export const ITEM_EVENT_KINDS = Object.freeze([
   'made', 'edited', 'status', 'commented', 'linked', 'snoozed', 'unsnoozed',
 ]);
@@ -252,17 +253,23 @@ export function validateAsk(ask) {
   if (!Array.isArray(rawQuestions) || rawQuestions.length === 0 || rawQuestions.length > ITEM_LIMITS.maxQuestions) {
     throw new BotItemError('invalid_argument', `ask must include 1..${ITEM_LIMITS.maxQuestions} questions`);
   }
+  const context = !Array.isArray(ask) && ask?.context !== undefined
+    ? normalizeOptionalText(ask.context, 'ask.context', ITEM_LIMITS.text)
+    : null;
   const seenPrompts = new Set();
   const questions = rawQuestions.map((q) => validateAskQuestion(q, seenPrompts));
-  return { questions };
+  return context ? { context, questions } : { questions };
 }
 
 /**
  * Render readable fallback comment text from a validated `ask` payload.
- * @param {{ questions: Array<{ prompt: string, options: Array<{ label: string, detail?: string }>, recommended?: number }> }} ask
+ * @param {{ context?: string, questions: Array<{ prompt: string, options: Array<{ label: string, detail?: string }>, recommended?: number }> }} ask
  */
 export function formatAskAsText(ask) {
   const lines = [];
+  if (ask.context) {
+    lines.push(ask.context, '');
+  }
   for (const q of ask.questions) {
     lines.push(q.prompt);
     q.options.forEach((opt, idx) => {
@@ -322,13 +329,84 @@ export function mapEventRow(row) {
 
 /**
  * Determine whether a write should queue mail back to the item's owning chat.
- * @param {{ chatId: string }} item
- * @param {{ kind: string, chatId?: string }} actor
+ * @param {{ chatId: string, ownerBotId?: string }} item
+ * @param {{ kind: string, botId?: string, chatId?: string }} actor
  */
 export function shouldQueueMail(item, actor) {
   if (actor.kind === 'owner') return true;
-  if (actor.kind === 'bot' && actor.chatId !== item.chatId) return true;
+  if (actor.kind === 'bot') {
+    if (item.ownerBotId && actor.botId !== item.ownerBotId) return true;
+    if (actor.chatId !== item.chatId) return true;
+  }
   return false;
+}
+
+/**
+ * Parse a pagination cursor from `{ lastActivityAt, number }`, `"<ts>:<num>"`, or JSON string.
+ * @param {unknown} raw
+ * @returns {{ lastActivityAt: number, number: number } | null}
+ */
+export function parseItemCursor(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'object') {
+    const obj = /** @type {any} */ (raw);
+    if (Number.isFinite(obj.lastActivityAt) && Number.isFinite(obj.number)) {
+      return { lastActivityAt: Number(obj.lastActivityAt), number: Number(obj.number) };
+    }
+    throw new BotItemError('invalid_argument', 'Invalid item cursor object');
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const colon = /^(\d+):(\d+)$/.exec(trimmed);
+    if (colon) {
+      return { lastActivityAt: Number(colon[1]), number: Number(colon[2]) };
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && Number.isFinite(parsed.lastActivityAt) && Number.isFinite(parsed.number)) {
+        return { lastActivityAt: Number(parsed.lastActivityAt), number: Number(parsed.number) };
+      }
+    } catch {
+      // Fall through to error.
+    }
+  }
+  throw new BotItemError('invalid_argument', `Invalid item cursor: ${String(raw)}`);
+}
+
+/**
+ * Parse a `link` filter (object `{ kind, ref }` or string `kind:ref` / URL / ref).
+ * @param {unknown} raw
+ * @returns {{ kind: string | null, ref: string, altPrRef?: string | null } | null}
+ */
+export function parseLinkFilter(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'object') {
+    const obj = /** @type {any} */ (raw);
+    const kind = obj.kind ? String(obj.kind).trim() : null;
+    if (kind && !ITEM_LINK_KINDS.includes(kind)) {
+      throw new BotItemError('invalid_argument', `Invalid link kind: ${kind}`);
+    }
+    const ref = requireString(obj.ref, 'link.ref', 2000);
+    return { kind, ref, altPrRef: null };
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const prefixed = /^(dispatch|pr|url|file):(.+)$/i.exec(trimmed);
+    if (prefixed && !/^https?:\/\//i.test(trimmed)) {
+      return { kind: prefixed[1].toLowerCase(), ref: prefixed[2].trim(), altPrRef: null };
+    }
+    const ghPr = /^https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)(?:[/?#].*)?$/i.exec(trimmed);
+    if (ghPr) {
+      return { kind: null, ref: trimmed, altPrRef: `${ghPr[1]}#${ghPr[2]}` };
+    }
+    if (/^https?:\/\//i.test(trimmed)) {
+      return { kind: 'url', ref: trimmed, altPrRef: null };
+    }
+    return { kind: null, ref: trimmed, altPrRef: null };
+  }
+  throw new BotItemError('invalid_argument', 'Invalid link filter');
 }
 
 /**

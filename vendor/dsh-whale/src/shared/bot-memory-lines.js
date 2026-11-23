@@ -1,5 +1,10 @@
-// MEMORY.md line-level parsing, provenance tagging, anti-forgery sanitization,
-// unauthorized-delete restoration, and secret redaction for 90-day undo history.
+// MEMORY.md line-level parsing (with code-fence skipping and non-bullet fact support),
+// provenance tagging, anti-forgery sanitization, unauthorized-delete restoration,
+// and secret redaction for 90-day undo history.
+
+import { parseMemoryLineKind } from './bot-memory-line-kinds.js';
+
+export * from './bot-memory-line-kinds.js';
 
 /** Lines of MEMORY.md a session loads at start; the rest stays on disk. */
 export const MEMORY_LOAD_LIMIT = 200;
@@ -8,8 +13,27 @@ export const BOT_MEMORY_SOURCE_SEPARATOR = ' · from: ';
 export const BOT_MEMORY_HISTORY_DAYS = 90;
 export const BOT_MEMORY_HISTORY_MAX_ROWS = 1000;
 
-const FACT_LINE = /^(\s*[-*]\s+)(.*)$/;
+const BULLET_LINE = /^(\s*[-*+]\s+)(.*)$/;
+const NUMBERED_LINE = /^(\s*\d+[.)]\s+)(.*)$/;
+const PLAIN_INDENT = /^(\s*)(.*)$/;
 const DATED_TEXT = /^(\d{4}-\d{2}-\d{2})(?:\s*[:\u2013\u2014-]\s*|\s+)(.*)$/;
+
+const FENCE_OPEN_RE = /^\s{0,3}(`{3,}|~{3,})/;
+const HEADING_RE = /^\s*#{1,6}(?:\s|$)/;
+const HR_RE = /^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
+const TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+const TABLE_SEP_RE = /^\s*\|?\s*:?-{3,}:?(?:\s*\|\s*:?-{3,}:?)+\s*\|?\s*$/;
+const HTML_COMMENT_SINGLE_RE = /^\s*<!--[\s\S]*-->\s*$/;
+const HTML_COMMENT_OPEN_RE = /^\s*<!--/;
+const HTML_COMMENT_CLOSE_RE = /-->\s*$/;
+
+const STARTER_GUIDANCE_PATTERNS = [
+  /^_?\s*notes\s+(?:i|we)\s+keep\s+across\s+conversations\.?\s*_?$/i,
+  /^_?\s*one\s+dated\s+fact\s+per\s+line\b.*$/i,
+  /^_?\s*things\s+worth\s+remembering\s+across\s+conversations\.?\s*_?$/i,
+  /^_?\s*write\s+(?:only\s+)?durable\s+facts\s+here\b.*$/i,
+  /^_?\s*(?:跨对话保留的笔记|每行一条带日期的事实|这里记录长期记忆|在这里记录长期记忆|长期记忆笔记)[。.!]?\s*_?$/u,
+];
 
 const SECRET_PATTERNS = [
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
@@ -51,23 +75,146 @@ function factLine(prefix, date, text, source = null) {
   return `${prefix}${datePart}${text}${sourcePart}`;
 }
 
+/**
+ * True when a line is a known MEMORY.md starter guidance placeholder rather than a fact.
+ * @param {unknown} raw
+ */
+export function isMemoryStarterGuidance(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return false;
+  return STARTER_GUIDANCE_PATTERNS.some((re) => re.test(trimmed));
+}
+
+/** @param {unknown} raw */
+function isNonFactStructuralLine(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return true;
+  if (HEADING_RE.test(trimmed)) return true;
+  if (HR_RE.test(trimmed)) return true;
+  if (TABLE_ROW_RE.test(trimmed) || TABLE_SEP_RE.test(trimmed)) return true;
+  if (HTML_COMMENT_SINGLE_RE.test(trimmed)) return true;
+  if (isMemoryStarterGuidance(trimmed)) return true;
+  return false;
+}
+
+/**
+ * @param {unknown} raw
+ * @param {{ char: string, len: number }} fence
+ */
+function isFenceClose(raw, fence) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed || trimmed[0] !== fence.char) return false;
+  let count = 0;
+  while (count < trimmed.length && trimmed[count] === fence.char) {
+    count += 1;
+  }
+  return count >= fence.len && trimmed.slice(count).trim() === '';
+}
+
+/** @param {unknown} raw */
 function factParts(raw) {
-  const listed = FACT_LINE.exec(raw);
-  const body = listed?.[2]?.trim();
-  if (!listed || !body) {
+  if (typeof raw !== 'string' || isNonFactStructuralLine(raw)) {
+    return null;
+  }
+  const bullet = BULLET_LINE.exec(raw);
+  const numbered = !bullet ? NUMBERED_LINE.exec(raw) : null;
+  let prefix = '';
+  let body = '';
+  if (bullet) {
+    prefix = bullet[1];
+    body = bullet[2].trim();
+  } else if (numbered) {
+    prefix = numbered[1];
+    body = numbered[2].trim();
+  } else {
+    const plain = PLAIN_INDENT.exec(raw);
+    prefix = plain?.[1] ?? '';
+    body = (plain?.[2] ?? '').trim();
+  }
+  if (!body) {
     return null;
   }
   const dated = DATED_TEXT.exec(body);
   const text = dated ? dated[2].trim() : body;
+  if (!text) {
+    return null;
+  }
   const at = text.lastIndexOf(BOT_MEMORY_SOURCE_SEPARATOR);
+  const cleanText = at > 0 ? text.slice(0, at).trim() : text;
+  if (!cleanText) {
+    return null;
+  }
+  const source = at > 0 ? text.slice(at + BOT_MEMORY_SOURCE_SEPARATOR.length).trim() || null : null;
+  const kindInfo = parseMemoryLineKind(cleanText);
   return {
-    prefix: listed[1],
+    prefix,
     date: dated?.[1] ?? null,
-    text: at > 0 ? text.slice(0, at).trim() : text,
-    source: at > 0 ? text.slice(at + BOT_MEMORY_SOURCE_SEPARATOR.length).trim() || null : null,
+    text: cleanText,
+    source,
+    kind: kindInfo.kind,
   };
 }
 
+/**
+ * Scans all lines of `text`, tracking ```` ``` ```` and `~~~` code fences as well as
+ * multi-line HTML comments so enclosed lines are never misparsed as memory facts.
+ * @param {string} text
+ */
+export function scanBotMemoryLines(text) {
+  const { lines, eol } = splitLines(text);
+  /** @type {{ char: string, len: number } | null} */
+  let fence = null;
+  let inHtmlComment = false;
+  const entries = [];
+
+  for (let line = 0; line < lines.length; line += 1) {
+    const raw = lines[line];
+    if (fence) {
+      if (isFenceClose(raw, fence)) {
+        fence = null;
+      }
+      entries.push({ line, raw, inFence: true, fact: null });
+      continue;
+    }
+    const openFence = FENCE_OPEN_RE.exec(raw);
+    if (openFence) {
+      const marker = openFence[1];
+      // Backtick info strings must not contain backticks (CommonMark)
+      const rest = raw.slice(openFence[0].length);
+      if (!(marker[0] === '`' && rest.includes('`'))) {
+        fence = { char: marker[0], len: marker.length };
+        entries.push({ line, raw, inFence: true, fact: null });
+        continue;
+      }
+    }
+    if (inHtmlComment) {
+      if (HTML_COMMENT_CLOSE_RE.test(raw)) {
+        inHtmlComment = false;
+      }
+      entries.push({ line, raw, inFence: false, fact: null });
+      continue;
+    }
+    if (HTML_COMMENT_OPEN_RE.test(raw) && !HTML_COMMENT_SINGLE_RE.test(raw)) {
+      inHtmlComment = true;
+      entries.push({ line, raw, inFence: false, fact: null });
+      continue;
+    }
+    const fact = factParts(raw);
+    entries.push({ line, raw, inFence: false, fact });
+  }
+
+  return { lines, eol, entries };
+}
+
+/**
+ * Parses a single standalone memory line (outside of a code fence).
+ * @param {unknown} raw
+ */
+export function parseBotMemoryLine(raw) {
+  return factParts(raw);
+}
+
+/** @param {unknown} raw */
 function rawFactKey(raw) {
   const fact = factParts(raw);
   return fact ? factKey(fact.text) : null;
@@ -112,60 +259,70 @@ export function countBotMemoryLines(text) {
   return trimmed === '' ? 0 : trimmed.split(/\r?\n/).length;
 }
 
-/** Parses every list-item fact line with 0-based line number, date, text, and source. */
+/** Parses every non-fenced fact line (bullet, numbered, or plain body) with 0-based line number. */
 export function parseBotMemoryFacts(text) {
   const facts = [];
-  splitLines(text).lines.forEach((raw, line) => {
-    const fact = factParts(raw);
-    if (fact) {
-      facts.push({ line, date: fact.date, text: fact.text, source: fact.source });
+  for (const entry of scanBotMemoryLines(text).entries) {
+    if (entry.fact) {
+      facts.push({
+        line: entry.line,
+        date: entry.fact.date,
+        text: entry.fact.text,
+        source: entry.fact.source,
+        prefix: entry.fact.prefix,
+        kind: entry.fact.kind,
+      });
     }
-  });
+  }
   return facts;
 }
 
 /**
  * Applies host provenance marks (` · from: <label>`) to new fact lines introduced in `after`
  * compared to `before`. Existing facts keep their prior mark; forged ` · from:` claims are defused.
+ * Lines inside fenced code blocks are never treated as facts or tagged.
  */
 export function tagBotMemoryChanges(before, after, label = null) {
   const earlier = new Map();
   const known = new Map();
-  for (const line of splitLines(before).lines) {
-    earlier.set(line, (earlier.get(line) ?? 0) + 1);
-    const fact = factParts(line);
-    if (fact && !known.has(factKey(fact.text))) {
-      known.set(factKey(fact.text), fact.source);
+  for (const entry of scanBotMemoryLines(before).entries) {
+    earlier.set(entry.raw, (earlier.get(entry.raw) ?? 0) + 1);
+    if (entry.fact && !known.has(factKey(entry.fact.text))) {
+      known.set(factKey(entry.fact.text), entry.fact.source);
     }
   }
-  const { lines, eol } = splitLines(after);
-  return lines
-    .map((raw) => {
+  const scannedAfter = scanBotMemoryLines(after);
+  return scannedAfter.entries
+    .map(({ raw, fact }) => {
       const seen = earlier.get(raw) ?? 0;
       earlier.set(raw, seen - 1);
-      const fact = seen > 0 ? null : factParts(raw);
-      const cleanText = fact ? stripForgedFromSuffix(fact.text) : '';
-      if (!fact || !cleanText) {
+      const targetFact = seen > 0 ? null : fact;
+      const cleanText = targetFact ? stripForgedFromSuffix(targetFact.text) : '';
+      if (!targetFact || !cleanText) {
         return raw;
       }
-      const kept = known.get(factKey(fact.text));
-      return factLine(fact.prefix, fact.date, cleanText, kept === undefined ? label : kept);
+      const kept = known.get(factKey(targetFact.text));
+      return factLine(targetFact.prefix, targetFact.date, cleanText, kept === undefined ? label : kept);
     })
-    .join(eol);
+    .join(scannedAfter.eol);
 }
 
-/** Computes added and removed fact lines with their preceding anchor line. */
+/** Computes added and removed fact lines with their preceding anchor line (skipping code fences). */
 export function diffMemoryLines(before, after) {
   const only = (from, other) => {
-    const keys = new Set(splitLines(other).lines.map(rawFactKey));
+    const keys = new Set(
+      scanBotMemoryLines(other).entries
+        .map((e) => (e.fact ? factKey(e.fact.text) : null))
+        .filter((k) => k !== null),
+    );
     const lines = [];
     let previous = null;
-    for (const raw of splitLines(from).lines) {
-      const key = rawFactKey(raw);
+    for (const entry of scanBotMemoryLines(from).entries) {
+      const key = entry.fact ? factKey(entry.fact.text) : null;
       if (key !== null && !keys.has(key)) {
-        lines.push({ line: raw, after: previous });
+        lines.push({ line: entry.raw, after: previous });
       }
-      previous = raw.trim() === '' ? previous : raw;
+      previous = entry.raw.trim() === '' ? previous : entry.raw;
     }
     return lines;
   };
@@ -179,10 +336,11 @@ export function isEmptyBotMemoryChange(change) {
 }
 
 export function botMemoryFactKeys(text) {
-  return new Set(splitLines(text).lines.flatMap((raw) => {
-    const key = rawFactKey(raw);
-    return key === null ? [] : [key];
-  }));
+  return new Set(
+    scanBotMemoryLines(text).entries.flatMap((entry) => (
+      entry.fact ? [factKey(entry.fact.text)] : []
+    )),
+  );
 }
 
 export function botMemoryLineKey(entry) {
@@ -209,7 +367,9 @@ export function mergeBotMemoryChanges(a, b) {
 
 export function onlyBotMemoryFactsChanged(before, after) {
   const nonFacts = (text) =>
-    splitLines(text).lines.flatMap((raw) => (raw.trim() !== '' && rawFactKey(raw) === null ? [raw.trim()] : []));
+    scanBotMemoryLines(text).entries.flatMap((entry) => (
+      entry.raw.trim() !== '' && entry.fact === null ? [entry.raw.trim()] : []
+    ));
   const a = nonFacts(before);
   const b = nonFacts(after);
   return a.length === b.length && a.every((line, index) => line === b[index]);
@@ -218,12 +378,18 @@ export function onlyBotMemoryFactsChanged(before, after) {
 /** Applies a fact diff (`removed` then `added` after anchor lines) to `text`. */
 export function applyBotMemoryChange(text, change) {
   const gone = new Set((change?.removed ?? []).map(({ line }) => rawFactKey(line)));
-  const { lines, eol } = splitLines(text);
-  const kept = lines.filter((raw) => {
-    const key = rawFactKey(raw);
-    return key === null || !gone.has(key);
-  });
-  const present = new Set(kept.map(rawFactKey));
+  const scanned = scanBotMemoryLines(text);
+  const kept = scanned.entries
+    .filter((entry) => {
+      const key = entry.fact ? factKey(entry.fact.text) : null;
+      return key === null || !gone.has(key);
+    })
+    .map((entry) => entry.raw);
+  const present = new Set(
+    scanBotMemoryLines(kept.join(scanned.eol)).entries
+      .map((entry) => (entry.fact ? factKey(entry.fact.text) : null))
+      .filter((k) => k !== null),
+  );
   for (const { line, after } of change?.added ?? []) {
     const key = rawFactKey(line);
     if (key === null || present.has(key)) {
@@ -234,7 +400,7 @@ export function applyBotMemoryChange(text, change) {
     const end = findLastNonBlankIndex(kept) + 1;
     kept.splice(after === null || anchor !== -1 ? anchor + 1 : end, 0, line);
   }
-  return kept.join(eol);
+  return kept.join(scanned.eol);
 }
 
 function findLastNonBlankIndex(lines) {
@@ -256,15 +422,14 @@ export function applyMemoryForget(text, fact) {
     const next = applyMemoryEdit(text, found, '');
     return { text: next, dropped: 1 };
   }
-  const clean = String(fact ?? '').trim().replace(/^[-*]\s+/, '');
+  const clean = String(fact ?? '').trim().replace(/^[-*+]\s+/, '');
   const wanted = factParts(`- ${clean}`);
   const key = wanted ? factKey(wanted.text) : '';
-  const { lines, eol } = splitLines(text);
-  const kept = lines.filter((raw) => {
-    const parts = factParts(raw);
-    return key === '' || !parts || factKey(parts.text) !== key;
-  });
-  return { text: kept.join(eol), dropped: lines.length - kept.length };
+  const scanned = scanBotMemoryLines(text);
+  const kept = scanned.entries
+    .filter((entry) => key === '' || !entry.fact || factKey(entry.fact.text) !== key)
+    .map((entry) => entry.raw);
+  return { text: kept.join(scanned.eol), dropped: scanned.lines.length - kept.length };
 }
 
 export const dropBotMemoryFact = applyMemoryForget;
@@ -275,7 +440,7 @@ export function findBotMemoryFact(text, fact) {
   return facts.find((entry) => same(entry) && entry.line === fact.line) ?? facts.find(same) ?? null;
 }
 
-/** Edits a single fact keeping its bullet, date, and source; empty `nextText` removes the line. */
+/** Edits a single fact keeping its prefix (bullet/number/plain), date, and source; empty `nextText` removes the line. */
 export function applyMemoryEdit(text, fact, nextText) {
   const { lines, eol } = splitLines(text);
   const target = typeof fact === 'string'
@@ -288,7 +453,8 @@ export function applyMemoryEdit(text, fact, nextText) {
   if (next === '') {
     lines.splice(target.line, 1);
   } else {
-    const prefix = FACT_LINE.exec(lines[target.line] ?? '')?.[1] ?? '- ';
+    const existing = factParts(lines[target.line] ?? '');
+    const prefix = existing ? existing.prefix : (target.prefix ?? '- ');
     lines[target.line] = factLine(prefix, target.date ?? null, next, target.source ?? null);
   }
   return lines.join(eol);
@@ -334,7 +500,7 @@ export function botMemorySourceLink(source) {
 }
 
 /**
- * Orca turn-end tamper protection: restores any fact lines removed from `before` -> `after`
+ * Turn-end tamper protection: restores any fact lines removed from `before` -> `after`
  * without going through `forget`, applies external source tagging to genuinely added lines,
  * and returns `{ text, kept, restoredCount }`.
  */

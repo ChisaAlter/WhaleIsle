@@ -39,6 +39,7 @@ export * from './bot-tidy-up.js';
 export * from './bot-quiet-result.js';
 export * from './bot-sidebar-logic.js';
 export * from './bot-items.js';
+export * from './bot-item-ask-advice.js';
 export * from './bot-groups.js';
 export * from './bot-template-catalog.js';
 export * from './bot-builtin-skills.js';
@@ -57,6 +58,9 @@ export {
   BOT_PACKAGE_EVENT_RESULTS,
   BOT_PACKAGE_CONNECTORS,
   BOT_PACKAGE_EVENT_KINDS,
+  BOT_TEXT_SCAN_KINDS,
+  botToolUrlAuthority,
+  isSafeBotPackageToolUrl,
   validateSkillPackageName,
   parseBotPackage,
   botPackagePartOf,
@@ -68,6 +72,7 @@ export {
   hasUnsafeText,
   withoutUnsafeText,
   redactBotText,
+  scanBotText,
 } from './bot-package.js';
 export * from './bot-tools-schema.js';
 export * from './connector-prompt.js';

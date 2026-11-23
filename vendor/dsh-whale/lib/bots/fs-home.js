@@ -15,6 +15,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { computeBotToolsVersion, createBotToolsConfigOps } from './fs-tools-config.js';
+
+export { computeBotToolsVersion };
 
 export const AVATAR_MIN_PX = 512;
 export const AVATAR_MAX_PX = 2000;
@@ -519,83 +522,17 @@ export function syncLinkedSkills(metaRoot, botId, skillSources = []) {
   };
 }
 
-/** @param {string} homeDir */
-function botToolsConfigPath(homeDir) {
-  return path.join(homeDir, '.whale', 'bot-tools.json');
-}
+const botToolsConfigOps = createBotToolsConfigOps({
+  BotFsError,
+  writeAtomicFile,
+  assertFolderOwnedByBot,
+});
 
-/** @param {string} metaRoot @param {string} botId */
-function botCredentialsPath(metaRoot, botId) {
-  return path.join(metaRoot, 'bot-credentials', `${safeIdSegment(botId)}.json`);
-}
-
-/** @param {string} metaRoot @param {string} botId */
-export function readBotToolCredentials(metaRoot, botId) {
-  const file = botCredentialsPath(metaRoot, botId);
-  if (!fs.existsSync(file)) return {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Read `<homeDir>/.whale/bot-tools.json` (credentials stay isolated in `_meta/bot-credentials`).
- * @param {string} homeDir
- */
-export function readBotToolsConfig(homeDir) {
-  const file = botToolsConfigPath(homeDir);
-  if (!fs.existsSync(file)) return { servers: [] };
-  const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const servers = Array.isArray(parsed?.servers) ? parsed.servers : [];
-  return { servers };
-}
-
-/**
- * Write `<homeDir>/.whale/bot-tools.json`, stripping sensitive HTTP headers into
- * `<metaRoot>/bot-credentials/<botId>.json` and leaving only `credential` IDs in bot home.
- * @param {string} homeDir
- * @param {string} metaRoot
- * @param {string} botId
- * @param {{ servers: Array<Record<string, any>> }} config
- */
-export function writeBotToolsConfig(homeDir, metaRoot, botId, config) {
-  assertFolderOwnedByBot(homeDir, botId);
-  const inputServers = Array.isArray(config?.servers) ? config.servers : [];
-  const existingCreds = readBotToolCredentials(metaRoot, botId);
-  /** @type {Record<string, any>} */
-  const nextCreds = {};
-  const sanitizedServers = [];
-
-  for (const server of inputServers) {
-    if (!server || typeof server !== 'object') continue;
-    const copy = { ...server };
-    const hasHeaders = copy.headers && typeof copy.headers === 'object' && Object.keys(copy.headers).length > 0;
-    if (hasHeaders) {
-      const credId = typeof copy.credential === 'string' && copy.credential.trim()
-        ? copy.credential.trim()
-        : `cred_${sha256Hex(`${botId}:${copy.name ?? copy.url ?? crypto.randomUUID()}`).slice(0, 16)}`;
-      nextCreds[credId] = { headers: { ...copy.headers } };
-      delete copy.headers;
-      copy.credential = credId;
-    } else if (typeof copy.credential === 'string' && existingCreds[copy.credential]) {
-      nextCreds[copy.credential] = existingCreds[copy.credential];
-      delete copy.headers;
-    }
-    sanitizedServers.push(copy);
-  }
-
-  writeAtomicFile(botToolsConfigPath(homeDir), `${JSON.stringify({ servers: sanitizedServers }, null, 2)}\n`);
-  const credsFile = botCredentialsPath(metaRoot, botId);
-  if (Object.keys(nextCreds).length > 0) {
-    writeAtomicFile(credsFile, `${JSON.stringify(nextCreds, null, 2)}\n`);
-  } else if (fs.existsSync(credsFile)) {
-    fs.unlinkSync(credsFile);
-  }
-  return { servers: sanitizedServers, credentialIds: Object.keys(nextCreds) };
-}
+export const {
+  readBotToolCredentials,
+  readBotToolsConfig,
+  writeBotToolsConfig,
+} = botToolsConfigOps;
 
 /**
  * Delete a bot home directory ONLY when `deleteFolder: true` AND ownership matches `botId`.
