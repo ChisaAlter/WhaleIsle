@@ -12,7 +12,9 @@
 
 ## 架构要点
 
-- 配对：vendored ChisaCode offer v2 / sticky / 中继 E2EE。短期二维码到期或已使用时自动补发；复制链接使用独立可撤销的长期凭证，不随二维码轮换失效，撤销不解除既有设备。QR 落地页局域网 `:3180`、外出 `https://ayase.cn/dshd/`；传输走 `ayase.cn:443` 的 `/ws`，不把中继路由当页面。成功握手的 `server_info.hostname` 作为可选 `computerName` 写入手机 sticky，供保存电脑行与已连接主机名称使用；旧 sticky 无此字段时显示「我的电脑」，不得展示内部 `serverId`。
+- 配对与传输：vendored ChisaCode offer v2（兼容可选 `lan`、`iceServers` 与可空 `relay`）/ sticky / 端到端加密。短期二维码到期或已使用时自动补发；复制链接使用独立可撤销的长期凭证，不随二维码轮换失效，撤销不解除既有设备。成功握手的 `server_info.hostname` 作为可选 `computerName` 写入手机 sticky，供保存电脑行与已连接主机名称使用；旧 sticky 无此字段时显示「我的电脑」，不得展示内部 `serverId`。
+  - **纯局域网模式（`remoteMode === 'lan'`，零外部服务器）**：桌面端不连 `ayase.cn`（`relayEnabled = false`），`mobile-web-server.js`（`:3180`，遵循 `remoteBindAddress`）同时分发静态 SPA 并桥接 `/ws` Upgrade 到 daemon loopback `/lan-ws` 专用 E2EE 入口（强制 Curve25519 E2EE + `requireDeviceAuth: true`，绝不暴露未认证 Express API）；客户端存在 `lan.endpoints` 时竞速直连（2500ms 超时），成功即 `lan` 模式，离线局域网无需等待外网中继即可扫码配对。
+  - **公网模式（`remoteMode === 'relay'`，WebRTC P2P 优先 + Relay 兜底）**：QR 落地页为 `https://ayase.cn/dshd/`，先经 `ayase.cn:443` 的 `/ws` 建立 E2EE 并完成设备认证（初始 `relay` 模式），认证后自动在已认证 E2EE 通道内发起 WebRTC DataChannel（`dsh`，ordered）升级（Desktop Host 使用纯 JS `werift`，Web 使用浏览器原生 WebRTC，Android 使用 `stream-webrtc-android` 原生 WebRTC；二进制帧使用 `DSHU` 12B 头 + `RTCH` 8192B 分片与 `SequencedCiphertextReorderBuffer` 跨链重排）。升级成功后按 `getStats()` 权威判定 `lan | p2p | turn`，排空并关闭旧 Relay 数据 WS（`1000, "upgraded_to_webrtc"`），数据面直连不走中转；协商失败或超时无感保留 Relay WS 兜底。默认公共 STUN 为 Cloudflare / Google，支持三端配置可选自定义 STUN/TURN。
 - 已配对 host：daemon 白名单 unary 转发 loopback `dsh web`（剥 Origin / sec-fetch，Host 钉 loopback）。当前 Gateway 审批从 `$events` waterfall 转换为手机审批帧，回复保留 clientId/eventId 经 `/api/$events/result` 返回；旧格式 rpcId 仍走原 `/api/respond`。
 - Android 使用 `session.projections` 读取完整模型、权限及 Plan 投影；历史页不携带这些状态。原生 Files、MCP、技能、插件与账户设置使用已配对管理白名单和正式服务；密钥只写不读、配置带 revision、文件读取保留会话作用域。图片预览有 2 MiB 界限，OAuth 回调经 E2EE 送到 Host 的固定端点。具体方法与权限边界由 Feature 卡维护。
 - 会话与工作区：`session.list` / `workspace.list` 是目录真相，`session.history` 供时间线；新会话走 `session.create`，目录浏览/创建/登记走 `host.listDirectory` / `host.createDirectory` / `workspace.create`。模型/思考走 `session.models` / `session.selectModel`，权限、Plan 和斜杠走 Typert `commands/execute`，不回退 ACP agents。
@@ -24,11 +26,12 @@
 
 ## 实现入口
 
-- `src/main/dshd-remote.js`、`dshd-daemon-runner.mjs`、`dshd-daemon-hooks.mjs`、`dshd-git-tunnel.js`、`mobile-web-server.js`
+- `src/main/dshd-remote.js`、`dshd-daemon-runner.mjs`、`dshd-daemon-hooks.mjs`、`dshd-git-tunnel.js`、`mobile-web-server.js`、`remote-patch.js`
+- `vendor/chisacode-remote/packages/{protocol,relay,server,client}/src/` 下的 `webrtc-signaling.ts`、`rtc-chunking.ts`、`rtc-leg.ts`、`lan-e2ee-transport.ts`、`webrtc-host.ts`、`daemon-client-adaptive-transport.ts`
 - `src/shared/dshd-host-tunnel.js`、`src/main/dshd-git-dispatch.js`
-- `mobile/web/app.js`、`mobile/web/native-bridge.js`、`mobile/web/host/`、`mobile/web/git/`
+- `mobile/web/app.js`、`mobile/web/app/connection-details.js`、`mobile/web/chisacode/{session,controller,entry}.js`、`mobile/web/native-bridge.js`、`mobile/web/host/`、`mobile/web/git/`
 - `mobile/web/ui/navigation.js`、`mobile/web/ui/surfaces.js`；交互动效见 [motion 手机 inventory](../../motion.md#手机交互-inventory)
-- `mobile/android/app/src/main/java/ai/deepseek/harness/mobile/` 下的 `DshViewModel.kt`、`ui/NativeChatScreen.kt`、`ui/NativeHistory.kt`、`ui/NativeRemoteScreen.kt`、`NativeImagePicker.kt`、`LegacyStorageMigration.kt`；`mobile/android/protocol/src/main/kotlin/ai/deepseek/harness/mobile/remote/`；`mobile/android/app/build.gradle.kts`
+- `mobile/android/app/src/main/java/ai/deepseek/harness/mobile/` 下的 `DshViewModel.kt`、`webrtc/AndroidWebRtcPeerFactory.kt`、`ui/NativeChatScreen.kt`、`ui/NativeHistory.kt`、`ui/NativeRemoteScreen.kt`、`ui/NativeSettingsScreen.kt`、`NativeImagePicker.kt`、`LegacyStorageMigration.kt`；`mobile/android/protocol/src/main/kotlin/ai/deepseek/harness/mobile/remote/`（含 `RtcChunkCodec.kt`、`AdaptiveUpgradeController.kt`、`WebRtcPeer.kt`、`TransportMode.kt`）；`mobile/android/app/build.gradle.kts`
 - `tools/mobile-web-qa/server.mjs`（支持动态端口与 `/dshd/` 的本地 fixture）、`runtime-assets.mjs`（资源清单/审计）
 - 全量启动内容搜索 overlay：`src/main/session-search-overlay.js`（`--patch`，产品契约见 desktop-launcher）
 - [mobile/README.md](../../../mobile/README.md)
@@ -45,7 +48,7 @@
 
 ## 安全边界（LAN 模式）
 
-LAN 配对静态页使用 HTTP 3180，只分发 `mobile/web` 应用文件；offer 留在 URL fragment，手机会话仍经 offer v2 中继使用端到端加密。中继传输默认 TLS，自定义中继的 TLS 由中继主机配置决定。HTTP 静态页本身没有 TLS，仍只适合可信网络；不可信网络使用 HTTPS 公网页或 原生 Android 客户端。
+LAN 配对静态页使用 HTTP 3180，分发 `mobile/web` 应用文件并通过 `/ws` 1:1 桥接到 daemon loopback `/lan-ws` E2EE 入口；offer 留在 URL fragment，LAN 直连与公网 WebRTC/Relay 会话均强制使用 Curve25519 E2EE 与设备认证（`requireDeviceAuth: true`），绝不暴露未认证 Express API。中继传输默认 TLS，自定义中继的 TLS 由中继主机配置决定。HTTP 静态页本身没有 TLS，仍只适合可信网络；不可信网络使用 HTTPS 公网页或原生 Android 客户端。
 
 - **监听范围**（`remoteBindAddress`）：全部网卡 / 仅本机 `127.0.0.1`（默认）/ 指定网卡 IPv4。仅本机不得转换成通配地址；配对 URL 使用 loopback、所选 NIC 或通配监听下的可达 LAN IP，快照与监听一致。
 - **监听端口**（`remotePort`）：loopback daemon 端口，默认 6767；更改后重启 daemon，静态页仍用 3180。静态页监听范围不会开放无鉴权 daemon。

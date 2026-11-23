@@ -323,6 +323,7 @@ export const state = {
   confirmAction: null,
   scanSupport: { supported: false, reason: '' },
   transport: '',
+  transportMode: '',
   chisacode: null,
 };
 

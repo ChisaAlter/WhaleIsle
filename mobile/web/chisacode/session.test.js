@@ -5,12 +5,18 @@ import {
   buildClientRelayUrl,
   currentClientId,
   deviceNameFromUa,
+  formatCustomIceServersText,
+  loadCustomIceServers,
   normalizeOfferUrl,
   pairFromOfferUrl,
+  parseCustomIceServersText,
   reconnectSticky,
+  resolveEffectiveIceServers,
   rotateClientId,
+  saveCustomIceServers,
   savedComputerRows,
 } from './session.js';
+import * as bundleApi from './daemon-client.bundle.js';
 
 if (!globalThis.localStorage) {
   const bag = new Map();
@@ -441,4 +447,124 @@ test('agentRows maps the upstream directory payload into the mobile session list
       cwd: '/workspace',
     },
   }]);
+});
+
+test('pairFromOfferUrl and reconnectSticky support LAN-only offers without relay and persist lanEndpoints + iceServers', async () => {
+  localStorage.removeItem('dsh-chisacode-device-secrets');
+  localStorage.removeItem('dsh-chisacode-ice-servers');
+
+  const lanOnlyOffer = {
+    v: 2,
+    serverId: 'srv_lan_only',
+    daemonPublicKeyB64: 'pk_lan_only',
+    authBootstrap: {
+      version: 1,
+      pairingToken: 'tok_lan_1234567890abcdef',
+      expiresAtMs: Date.now() + 600_000,
+    },
+    lan: { endpoints: ['192.168.1.55:3180'], useTls: false },
+    iceServers: [{ urls: 'turn:turn.example:3478?transport=tcp', username: 'u', credential: 'p' }],
+  };
+  const encoded = Buffer.from(JSON.stringify(lanOnlyOffer), 'utf8').toString('base64url');
+  const offerUrl = `http://192.168.1.55:3180/#offer=${encoded}`;
+
+  // Verify bundled parser accepts LAN-only offer v2 (without relay)
+  const parsedByBundle = bundleApi.parseConnectionOfferFromUrl(offerUrl);
+  assert.equal(parsedByBundle.serverId, 'srv_lan_only');
+  assert.equal(parsedByBundle.relay, undefined);
+  assert.deepEqual(parsedByBundle.lan.endpoints, ['192.168.1.55:3180']);
+
+  let pairClientOpts;
+  const modeUpdates = [];
+  class MockDaemonClient {
+    constructor(opts) {
+      pairClientOpts = opts;
+    }
+
+    setReconnectEnabled() {}
+    getTransportMode() { return 'lan'; }
+    async connect() {
+      pairClientOpts.onTransportModeChange?.('lan');
+      pairClientOpts.onRelayDeviceAuthResult?.({
+        ok: true,
+        deviceId: pairClientOpts.relayDeviceAuth.deviceId,
+        deviceSecret: 'z'.repeat(64),
+      });
+    }
+
+    getLastServerInfoMessage() { return { hostname: 'Office-PC' }; }
+  }
+
+  const paired = await pairFromOfferUrl(
+    {
+      parseConnectionOfferFromUrl: bundleApi.parseConnectionOfferFromUrl,
+      createRelayDeviceId: () => 'dev_lan_1',
+      buildRelayWebSocketUrl: () => { throw new Error('must not build relay URL for LAN-only offer'); },
+      DaemonClient: MockDaemonClient,
+    },
+    offerUrl,
+    { onTransportModeChange: (mode) => modeUpdates.push(mode) },
+  );
+
+  assert.equal(pairClientOpts.url, '');
+  assert.deepEqual(pairClientOpts.lanEndpoints, ['192.168.1.55:3180']);
+  assert.equal(pairClientOpts.lanUseTls, false);
+  assert.equal(paired.transportMode, 'lan');
+  assert.equal(paired.getTransportMode(), 'lan');
+  assert.deepEqual(modeUpdates, ['lan']);
+
+  const saved = JSON.parse(localStorage.getItem('dsh-chisacode-device-secrets'));
+  assert.deepEqual(saved.srv_lan_only.lanEndpoints, ['192.168.1.55:3180']);
+  assert.equal(saved.srv_lan_only.iceServers.length, 1);
+
+  const rows = savedComputerRows(saved);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].serverId, 'srv_lan_only');
+  assert.equal(rows[0].relayEndpoint, '192.168.1.55:3180');
+
+  let reconnectOpts;
+  const reconnected = await reconnectSticky(
+    {
+      buildRelayWebSocketUrl: () => { throw new Error('must not build relay URL'); },
+      DaemonClient: class {
+        constructor(opts) { reconnectOpts = opts; }
+        setReconnectEnabled() {}
+        getTransportMode() { return 'lan'; }
+        async connect() {}
+        getLastServerInfoMessage() { return { hostname: 'Office-PC' }; }
+      },
+    },
+    'srv_lan_only',
+  );
+  assert.equal(reconnectOpts.url, '');
+  assert.deepEqual(reconnectOpts.lanEndpoints, ['192.168.1.55:3180']);
+  assert.equal(reconnected.transportMode, 'lan');
+});
+
+test('custom STUN/TURN servers persist in localStorage and merge with offer iceServers', () => {
+  localStorage.removeItem('dsh-chisacode-ice-servers');
+  assert.deepEqual(loadCustomIceServers(), []);
+  assert.equal(resolveEffectiveIceServers(undefined), undefined);
+
+  const parsed = parseCustomIceServersText([
+    'stun:stun.example.org:3478',
+    'turn:turn.example.org:3478?transport=tcp | alice | secret123',
+  ].join('\n'));
+  assert.deepEqual(parsed, [
+    { urls: 'stun:stun.example.org:3478' },
+    { urls: 'turn:turn.example.org:3478?transport=tcp', username: 'alice', credential: 'secret123' },
+  ]);
+
+  saveCustomIceServers(parsed);
+  assert.deepEqual(loadCustomIceServers(), parsed);
+  assert.match(formatCustomIceServersText(loadCustomIceServers()), /alice \| secret123/);
+
+  const merged = resolveEffectiveIceServers([{ urls: 'turn:offer.example:3478', username: 'o', credential: 'k' }]);
+  assert.ok(merged.some((s) => s.urls === 'turn:offer.example:3478'));
+  assert.ok(merged.some((s) => s.urls === 'turn:turn.example.org:3478?transport=tcp'));
+  assert.ok(merged.some((s) => s.urls === 'stun:stun.cloudflare.com:3478'));
+
+  assert.throws(() => parseCustomIceServersText('https://not-ice.example'), /无效的 STUN\/TURN 地址/);
+  saveCustomIceServers([]);
+  assert.deepEqual(loadCustomIceServers(), []);
 });

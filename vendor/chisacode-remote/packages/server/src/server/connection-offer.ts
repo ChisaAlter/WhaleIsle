@@ -4,6 +4,8 @@ import type { RelayAuthBootstrap } from "@chisacode/protocol/relay-device-auth";
 import {
   ConnectionOfferV2Schema,
   type ConnectionOffer,
+  type ConnectionOfferLan,
+  type IceServerConfig,
 } from "@chisacode/protocol/connection-offer";
 
 interface BuildOfferEndpointsArgs {
@@ -35,16 +37,20 @@ export async function createConnectionOfferV2(args: {
   serverId: string;
   daemonPublicKeyB64: string;
   relayAuthPublicKeyB64?: string;
-  relay: { endpoint: string; useTls?: boolean };
+  relay?: { endpoint: string; useTls?: boolean };
+  lan?: ConnectionOfferLan;
+  iceServers?: IceServerConfig[];
   authBootstrap?: RelayAuthBootstrap;
 }): Promise<ConnectionOffer> {
   return ConnectionOfferV2Schema.parse({
     v: 2,
     serverId: args.serverId,
     daemonPublicKeyB64: args.daemonPublicKeyB64,
-    relayAuthPublicKeyB64: args.relayAuthPublicKeyB64,
+    ...(args.relayAuthPublicKeyB64 ? { relayAuthPublicKeyB64: args.relayAuthPublicKeyB64 } : {}),
     ...(args.authBootstrap ? { authBootstrap: args.authBootstrap } : {}),
-    relay: args.relay,
+    ...(args.relay ? { relay: args.relay } : {}),
+    ...(args.lan && args.lan.endpoints.length > 0 ? { lan: args.lan } : {}),
+    ...(args.iceServers && args.iceServers.length > 0 ? { iceServers: args.iceServers } : {}),
   });
 }
 

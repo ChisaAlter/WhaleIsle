@@ -3,9 +3,55 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, DisclosureRow, IconWarningOutline16, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
+import type { RemoteIceServer, RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
 import { ipcErrorMessage } from './relay-copy.ts'
 import css from './GatewaySettingsTab.module.css'
+
+const ICE_URL_RE = /^(?:stuns?|turns?):[^\s\r\n\0]{1,512}$/i
+
+function formatIceServersDraft(servers: readonly RemoteIceServer[] | undefined): string {
+  if (!Array.isArray(servers) || servers.length === 0) return ''
+  const hasCredentials = servers.some(s => Boolean(s.username || s.credential || Array.isArray(s.urls)))
+  if (hasCredentials) return JSON.stringify(servers, null, 2)
+  return servers.map(s => (Array.isArray(s.urls) ? s.urls.join('\n') : s.urls)).join('\n')
+}
+
+function parseIceServersDraft(raw: string): RemoteIceServer[] | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return []
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed)
+      if (!Array.isArray(parsed)) return null
+      const out: RemoteIceServer[] = []
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+        const rec = item as Record<string, unknown>
+        const urls = rec.urls
+        const urlList = typeof urls === 'string'
+          ? [urls.trim()]
+          : Array.isArray(urls) && urls.every(u => typeof u === 'string')
+            ? urls.map(u => (u as string).trim())
+            : null
+        if (!urlList || urlList.length === 0 || urlList.some(u => !ICE_URL_RE.test(u))) return null
+        const next: RemoteIceServer = { urls: urlList.length === 1 ? urlList[0]! : urlList }
+        if (typeof rec.username === 'string' && rec.username) next.username = rec.username
+        if (typeof rec.credential === 'string' && rec.credential) next.credential = rec.credential
+        out.push(next)
+      }
+      return out
+    } catch {
+      return null
+    }
+  }
+  const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const out: RemoteIceServer[] = []
+  for (const line of lines) {
+    if (!ICE_URL_RE.test(line)) return null
+    out.push({ urls: line })
+  }
+  return out
+}
 
 /** Desktop callbacks used by the gateway tab. */
 export interface GatewaySettingsTabInjected {
@@ -20,7 +66,7 @@ export type GatewaySettingsTabProps =
   & PropsLocale<'settings.remote'>
   & InjectFace<GatewaySettingsTabInjected>
 
-type GatewayAction = 'load' | 'relayUrl' | 'relayDefault' | 'relayToken' | 'relayClear' | 'modeLan' | 'modeRelay' | 'port' | 'bind' | 'rotate'
+type GatewayAction = 'load' | 'relayUrl' | 'relayDefault' | 'relayToken' | 'relayClear' | 'iceServers' | 'iceServersReset' | 'modeLan' | 'modeRelay' | 'port' | 'bind' | 'rotate'
 type Notice = { id: number; text: string }
 
 /**
@@ -59,6 +105,7 @@ export function GatewaySettingsTab({
   const [portDraft, setPortDraft] = useState('')
   const [relayUrlDraft, setRelayUrlDraft] = useState('')
   const [relayTokenDraft, setRelayTokenDraft] = useState('')
+  const [iceServersDraft, setIceServersDraft] = useState('')
   const [legacyOpen, setLegacyOpen] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const noticeId = useRef(0)
@@ -75,6 +122,7 @@ export function GatewaySettingsTab({
     setValidation(null)
     setPortDraft(String(next.port ?? 3180))
     setRelayUrlDraft(next.relayUrl || '')
+    setIceServersDraft(formatIceServersDraft(next.iceServers))
   }, [])
 
   const load = useCallback(async () => {
@@ -366,6 +414,56 @@ export function GatewaySettingsTab({
               if (id !== bindAddress) void save({ remoteBindAddress: id }, 'bind')
             }}
           />
+        </div>
+      </div>
+
+      <div className={css.row}>
+        <div className={css.rowText}>
+          <div className={css.title}>{t('iceServers')}</div>
+          <div className={css.desc}>{t('iceServersHint')}</div>
+        </div>
+        <div className={css.control}>
+          <textarea
+            className={css.input}
+            style={{ height: 64, padding: '6px 10px', resize: 'vertical' }}
+            spellCheck={false}
+            placeholder={t('iceServersPlaceholder')}
+            aria-label={t('iceServers')}
+            value={iceServersDraft}
+            disabled={busy}
+            onChange={(event) => { setIceServersDraft(event.target.value) }}
+          />
+          <div className={css.actions}>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy}
+              loading={pending === 'iceServers'}
+              onClick={() => {
+                const parsed = parseIceServersDraft(iceServersDraft)
+                if (parsed === null) {
+                  setError(t('iceServersInvalid'))
+                  showNotice(t('iceServersInvalid'))
+                  return
+                }
+                void save({ remoteIceServers: parsed }, 'iceServers')
+              }}
+            >
+              {t('save')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy || (!iceServersDraft.trim() && !(snap.iceServers && snap.iceServers.length > 0))}
+              loading={pending === 'iceServersReset'}
+              onClick={() => {
+                setIceServersDraft('')
+                void save({ remoteIceServers: [] }, 'iceServersReset')
+              }}
+            >
+              {t('iceServersReset')}
+            </Button>
+          </div>
         </div>
       </div>
 

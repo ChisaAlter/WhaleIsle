@@ -1,5 +1,6 @@
 // app/chrome.js — split from app.js (#442).
 import { sessionTitle } from '../conversation/title.js';
+import { transportModeLabel } from '../chisacode/controller.js';
 import { schemeIsDark, channelLabel } from '../ui/settings-hub.js?v=20261028-mobile';
 import { sessionOwner } from '../ui/session-owner.js?v=20260906-interaction';
 import { clearButtonBusy, buttonBusy } from '../ui/button-busy.js?v=20261021-button-feedback';
@@ -128,7 +129,7 @@ export function composerOffline() {
 
 export function connectionLabel() {
   return state.transport === 'chisacode'
-    ? 'dshd · 端到端加密'
+    ? transportModeLabel(state.transportMode)
     : channelLabel(origin);
 }
 

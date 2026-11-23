@@ -13,6 +13,9 @@ android {
         targetSdk = 36
         versionCode = 5
         versionName = "0.3.11"
+        providers.gradleProperty("dshTestApplicationId").orNull?.takeIf { it.isNotBlank() }?.let {
+            testApplicationId = it
+        }
         testInstrumentationRunner = providers.gradleProperty("dshTestRunner")
             .orElse("ai.deepseek.harness.mobile.NativeUpgradeInstrumentation").get()
     }
@@ -69,6 +72,7 @@ tasks.named("preBuild") {
 
 dependencies {
     implementation(project(":protocol"))
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("io.noties.markwon:core:4.6.2")

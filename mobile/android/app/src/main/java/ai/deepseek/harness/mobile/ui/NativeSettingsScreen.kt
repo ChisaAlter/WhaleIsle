@@ -52,6 +52,9 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
     var chosenModel by remember { mutableStateOf<NativeModelOption?>(null) }
     var removing by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<NativeSession?>(null) }
+    var iceDraft by rememberSaveable(vm.iceConfigJson) { mutableStateOf(vm.iceConfigJson) }
+    var iceFeedback by remember { mutableStateOf("") }
+    var iceFeedbackError by remember { mutableStateOf(false) }
     val available = vm.route == Route.Chat && !vm.chat.offline && !vm.chat.loading && !vm.chat.busy && !vm.panelBusy
     val currentEditable = available && vm.chat.readOnly.isBlank() && vm.chat.sessionId.isNotBlank()
     val scroll = rememberScrollState()
@@ -79,12 +82,27 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
                 when (section) {
                     "devices" -> {
                         NativeChoiceRow("配对新电脑", detail = "扫描二维码或粘贴桌面端的配对链接", glyph = NativeGlyph.Plus, onClick = vm::beginPairing)
+                        if (vm.route == Route.Chat) {
+                            val modeLabel = vm.transportMode?.displayLabel ?: if (vm.chat.offline) "连接已断开" else "正在协商"
+                            SettingsLabel("当前传输方式 · $modeLabel")
+                        }
                         if (vm.computers.isEmpty()) SettingsNote("尚未保存电脑。配对成功后会在这里显示。")
                         vm.computers.sortedByDescending { it.savedAt }.forEach { computer ->
                             val current = vm.selectedComputerId == computer.serverId && vm.route == Route.Chat
+                            val endpointLabel = listOfNotNull(
+                                computer.lanEndpoints.firstOrNull()?.let { "LAN $it" },
+                                computer.relayEndpoint.takeIf { it.isNotBlank() },
+                            ).joinToString(" / ")
+                            val modeSuffix = if (current) {
+                                if (vm.chat.offline) "连接已断开 · "
+                                else {
+                                    val label = vm.transportMode?.displayLabel
+                                    if (label != null) "当前电脑 · $label · " else "当前电脑 · "
+                                }
+                            } else ""
                             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.bgModule).padding(4.dp)) {
                                 NativeChoiceRow(computer.computerName.ifBlank { "我的电脑" }, selected = current,
-                                    detail = (if (current) if (vm.chat.offline) "连接已断开 · " else "当前电脑 · " else "") + computer.relayEndpoint,
+                                    detail = modeSuffix + endpointLabel,
                                     onClick = { vm.reopenComputer(computer.serverId) })
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                     TextButton(onClick = { vm.reopenComputer(computer.serverId) }) { Text(if (current) "重新连接" else "连接") }
@@ -95,6 +113,44 @@ internal fun NativeSettingsScreen(vm: DshViewModel, onClose: () -> Unit) {
                         if (vm.route == Route.Chat) {
                             NativeChoiceRow("同步目录与会话", enabled = !vm.chat.offline && !vm.chat.loading, onClick = vm::onForeground)
                             NativeChoiceRow("断开当前电脑", detail = "保留配对和草稿，稍后可继续连接", danger = true, onClick = vm::leaveComputer)
+                        }
+                        SettingsLabel("STUN / TURN 服务器（可选）")
+                        SettingsNote("留空时优先局域网直连，公网自动使用默认公共 STUN 尝试 P2P 直连。可填写 stun:/turn: 地址或 JSON 数组（凭据加密保存在本机），重新连接后生效。")
+                        NativeField(
+                            value = iceDraft,
+                            onValueChange = { iceDraft = it; iceFeedback = ""; iceFeedbackError = false },
+                            label = "ICE 配置（stun:/turn: 地址或 JSON 数组）",
+                            minLines = 2,
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            if (vm.iceConfigJson.isNotBlank() || iceDraft.isNotBlank()) {
+                                TextButton(onClick = {
+                                    iceDraft = ""
+                                    vm.saveIceConfig("")
+                                    iceFeedback = "已恢复默认公共 STUN 配置"
+                                    iceFeedbackError = false
+                                }) { Text("恢复默认") }
+                            }
+                            TextButton(onClick = {
+                                val err = vm.saveIceConfig(iceDraft)
+                                if (err == null) {
+                                    iceDraft = vm.iceConfigJson
+                                    iceFeedback = if (vm.iceConfigJson.isBlank()) "已恢复默认公共 STUN 配置" else "已保存 STUN/TURN 配置（重新连接后生效）"
+                                    iceFeedbackError = false
+                                } else {
+                                    iceFeedback = err
+                                    iceFeedbackError = true
+                                }
+                            }) { Text("保存配置") }
+                        }
+                        if (iceFeedback.isNotBlank()) {
+                            Text(
+                                iceFeedback,
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                                color = if (iceFeedbackError) colors.error else colors.labelSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                            )
                         }
                     }
                     "appearance" -> {
