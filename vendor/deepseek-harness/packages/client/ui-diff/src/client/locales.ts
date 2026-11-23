@@ -37,9 +37,16 @@ export const zh = {
   'view.wrapAria': '切换折行',
   'file.renamed': '重命名自 {from}',
   'file.binary': '二进制或过大文件，无逐行差异',
+  'file.tooLarge': '未追踪文本文件超过大小限制，已省略逐行差异',
   'file.omitted': '超出面板渲染预算，折叠其他文件后再展开',
   'file.truncated': '仅显示前 {count} 行',
+  'file.loading': '正在加载单文件差异…',
   'diff.highlightSkipped': '部分内容过大，未语法高亮',
+  'hunk.stage': '暂存此块',
+  'hunk.unstage': '取消暂存此块',
+  'line.comment': '添加到对话',
+  'diff.showMore': '显示更多 {next} 行（剩余 {remaining} 行）',
+  'diff.expandRemaining': '展开剩余（{remaining} 行）',
 } satisfies Record<string, string>
 
 /** The diff namespace key union. */
@@ -82,9 +89,16 @@ export const en = {
   'view.wrapAria': 'Toggle line wrapping',
   'file.renamed': 'Renamed from {from}',
   'file.binary': 'Binary or oversized file; no line diff',
+  'file.tooLarge': 'Untracked text file exceeds size limit; line diff omitted',
   'file.omitted': 'Over the panel render budget; collapse other files first',
   'file.truncated': 'Showing the first {count} lines',
+  'file.loading': 'Loading file diff…',
   'diff.highlightSkipped': 'Some content is too large to syntax-highlight',
+  'hunk.stage': 'Stage hunk',
+  'hunk.unstage': 'Unstage hunk',
+  'line.comment': 'Add to chat',
+  'diff.showMore': 'Show {next} more lines ({remaining} remaining)',
+  'diff.expandRemaining': 'Expand remaining ({remaining} lines)',
 } satisfies Record<DiffKey, string>
 
 /** Dictionary namespace owned by this plugin. */

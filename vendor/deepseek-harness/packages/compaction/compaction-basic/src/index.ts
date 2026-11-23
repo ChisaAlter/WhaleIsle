@@ -45,6 +45,36 @@ export type {
   ResolvedTargetPolicy,
 } from './types.ts'
 
+const STEP_COMPACTION_WARN_COOLDOWN_MS = 60_000
+
+interface StepCompactionFailureState {
+  lastWarnAt: number
+  suppressed: number
+}
+
+function stepFailureType(error: unknown): string {
+  if (error instanceof TargetPressureConfigError) return 'TargetPressureConfigError'
+  if (error instanceof ManualCompactionError) return 'ManualCompactionError'
+  if (error instanceof LlmError) return `LlmError(${error.code})`
+  if (error instanceof Error) return error.name
+  return 'non-error'
+}
+
+function formatStepCompactionWarning(context: {
+  sessionId: string
+  turn: number
+  step: number
+  target: string
+  errorType: string
+  message: string
+  suppressedCount: number
+}): string {
+  const suppressed = context.suppressedCount > 0 ? ` suppressed=${context.suppressedCount}` : ''
+  return `step compaction failed [session=${context.sessionId} turn=${context.turn} step=${context.step} `
+    + `target=${context.target} errorType=${context.errorType}${suppressed}]: ${context.message}; `
+    + 'context compaction skipped for this step, continuing the turn'
+}
+
 /** Resolve the exact provider/model durably routed for the latest request. */
 function routedTarget(
   session: Session,
@@ -148,6 +178,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   readonly config: ResolvedConfig
 
   private readonly warnedPressureConfigTargets = new Set<string>()
+  private readonly stepCompactionFailures = new WeakMap<Session, Map<string, StepCompactionFailureState>>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
   private readonly switchTargets = new WeakMap<Agent, Pick<LlmCallConfig, 'provider' | 'model'>>()
@@ -174,20 +205,16 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
 
     ctx.on('agent/pre-step', async (
-      { agent, signal },
+      { agent, turn, step, signal },
       next,
     ): Promise<PreStepDecision> => {
       if (!signal.aborted) {
         try {
           const result = await this.compactIfNeeded(agent, 'pressure', signal)
+          this.stepCompactionFailures.delete(agent.session)
           if (result !== null) logResult(result, 'step pressure')
         } catch (error: unknown) {
-          if (error instanceof TargetPressureConfigError) {
-            if (this.warnedPressureConfigTargets.has(error.targetKey)) return next()
-            this.warnedPressureConfigTargets.add(error.targetKey)
-          }
-          const message = error instanceof Error ? error.message : String(error)
-          ctx.logger.warn(`step compaction failed: ${message}; continuing the turn`)
+          this.logPreStepCompactionFailure(agent, turn, step, error)
         }
       }
       return next()
@@ -277,6 +304,56 @@ export class BasicCompactionEngine extends CompactionEngine {
       this.overflowRetries.set(agent, retries + 1)
       return { kind: 'retry' }
     })
+  }
+
+  private logPreStepCompactionFailure(agent: Agent, turn: number, step: number, error: unknown): void {
+    const routed = routedTarget(agent.session)
+    const target = error instanceof TargetPressureConfigError
+      ? error.targetKey
+      : routed === undefined
+        ? 'unrouted'
+        : `${routed.provider}/${routed.model}`
+    const errorType = stepFailureType(error)
+    const message = error instanceof Error ? error.message : String(error)
+
+    if (error instanceof TargetPressureConfigError) {
+      if (this.warnedPressureConfigTargets.has(error.targetKey)) return
+      this.warnedPressureConfigTargets.add(error.targetKey)
+      this.ctx.logger.warn(formatStepCompactionWarning({
+        sessionId: agent.session.header.id,
+        turn,
+        step,
+        target,
+        errorType,
+        message,
+        suppressedCount: 0,
+      }))
+      return
+    }
+
+    let sessionFailures = this.stepCompactionFailures.get(agent.session)
+    if (sessionFailures === undefined) {
+      sessionFailures = new Map()
+      this.stepCompactionFailures.set(agent.session, sessionFailures)
+    }
+    const failureKey = `${target}|${errorType}|${message}`
+    const now = Date.now()
+    const previous = sessionFailures.get(failureKey)
+    if (previous !== undefined && now >= previous.lastWarnAt && now - previous.lastWarnAt < STEP_COMPACTION_WARN_COOLDOWN_MS) {
+      previous.suppressed += 1
+      return
+    }
+    const suppressedCount = previous?.suppressed ?? 0
+    sessionFailures.set(failureKey, { lastWarnAt: now, suppressed: 0 })
+    this.ctx.logger.warn(formatStepCompactionWarning({
+      sessionId: agent.session.header.id,
+      turn,
+      step,
+      target,
+      errorType,
+      message,
+      suppressedCount,
+    }))
   }
 
   /**
@@ -407,11 +484,25 @@ export class BasicCompactionEngine extends CompactionEngine {
           const info = await this.ctx.llm.resolveModelInfo(header.config.provider, header.config.model, signal)
           if (info.contextManagement === 'provider') return null
         }
-        this.ctx.get('toolResultPruner')?.pruneSession(agent.session)
+        const pruner = this.ctx.get('toolResultPruner')
+        if (pruner !== undefined) {
+          const pruned = pruner.pruneSession(agent.session)
+          if (pruned.pruned.length === 0) {
+            pruner.pruneSession(agent.session, { protectRecentToolResults: 0 })
+          }
+        }
         const measurement = this.ctx.tokenMeter.measure(agent.session)
         const range = selectCompactableRange(agent.session, measurement, 0)
         if (range === null) return null
-        return this.compactRegion(range.start, range.end, agent, signal)
+        return compactSurfaceRegion(
+          this.regionDependencies(),
+          agent.session,
+          range.start,
+          range.end,
+          agent,
+          { owner: 'current-turn', stability: 'whole-surface', overflowFallback: true },
+          signal,
+        )
       }
       /* v8 ignore next -- closed-union exhaustiveness guard */
       default:

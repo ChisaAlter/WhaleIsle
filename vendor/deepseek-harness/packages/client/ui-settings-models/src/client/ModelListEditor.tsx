@@ -18,7 +18,7 @@
  * description retain the failure while the rows can still be filled by hand.
  */
 
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { AnimatedRows, Button, Checkbox, IconPlusOutlineRegular, Input, Modal, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -226,6 +226,12 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   }, [catalogProvider, operations, probe.settingsNs])
   const catalog = inheritedCatalog?.provider === catalogProvider ? inheritedCatalog?.models : undefined
   const inputDefaults = useMemo(() => new Map(catalog?.map(model => [model.id, model.inputModalities])), [catalog])
+  const mountedRef = useRef(true)
+  const enrichEpochRef = useRef(0)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const [candidates, setCandidates] = useState<readonly EnrichedDiscoveredModel[] | undefined>(undefined)
   // Candidates whose checkbox the user flipped from its default. The default
   // is read from the list at render, so a row drafted while the fetch was in
@@ -268,6 +274,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   }
 
   const fetchModels = async (): Promise<void> => {
+    enrichEpochRef.current += 1
     setFailureDismissed(false)
     setFailureSequence(sequence => sequence + 1)
     setBusy(true)
@@ -289,13 +296,18 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         setFailure(t('fetchEmpty'))
         return
       }
-      // Fill missing capacities and thinking levels from models.dev when a
-      // record matches; a failed or unmatched catalog leaves rows as discovered.
-      const enriched = await enrichDiscoveredModelsBestEffort(found)
+      // A listing may repeat an id; the picker and the list hold each model once.
+      const deduped: EnrichedDiscoveredModel[] = [...new Map(found.map(model => [model.id, { ...model }])).values()]
       setCandidateQuery('')
       setFlipped(new Set())
-      // A listing may repeat an id; the picker and the list hold each model once.
-      setCandidates([...new Map(enriched.map(model => [model.id, model])).values()])
+      setCandidates(deduped)
+      // Fill missing capacities and thinking levels from models.dev in the
+      // background so slow or unreachable metadata never delays listing rows.
+      const enrichSeq = ++enrichEpochRef.current
+      void enrichDiscoveredModelsBestEffort(deduped, { baseURL: probe.baseURL }).then((enriched) => {
+        if (!mountedRef.current || enrichEpochRef.current !== enrichSeq) return
+        setCandidates(prev => (prev === undefined ? undefined : enriched))
+      })
     } catch (error) {
       // The transport rejected rather than answering; without this the button
       // would stay busy with nothing shown.
@@ -306,6 +318,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   }
 
   const closePicker = (): void => {
+    enrichEpochRef.current += 1
     setCandidates(undefined)
     setFlipped(new Set())
     setCandidateQuery('')

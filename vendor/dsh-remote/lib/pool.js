@@ -1,17 +1,30 @@
 // Persistent SSH/SFTP connection pool (one identity → one live client).
-import ssh2 from 'ssh2'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { toSftpPath, truncate } from './paths.js'
 import { createHostKeyGuard } from './hostkey.js'
 
-const { Client } = ssh2
+let sshClientCtor = null
+async function loadSshClient() {
+  if (!sshClientCtor) {
+    const mod = await import('ssh2')
+    sshClientCtor = (mod.default || mod).Client
+  }
+  return sshClientCtor
+}
+
+export function resolveAgentSocket(env = process.env, platform = process.platform) {
+  return env.SSH_AUTH_SOCK || (platform === 'win32' ? '\\\\.\\pipe\\openssh-ssh-agent' : '')
+}
 
 export class SshPool {
   constructor(config, opts = {}) {
     this.config = config
     this._knownHostsFile = opts.knownHostsFile
+    this._Client = opts.Client || null
+    this._platform = opts.platform || process.platform
+    this._env = opts.env || process.env
     this.client = null
     this.connecting = null
     this.proxyPool = null
@@ -79,6 +92,8 @@ export class SshPool {
     const isCurrent = () => this.epoch === epoch
     const knownHostsFile = typeof this._knownHostsFile === 'function' ? this._knownHostsFile() : this._knownHostsFile
     const guard = createHostKeyGuard(this.config, knownHostsFile)
+    const Client = this._Client || await loadSshClient()
+    if (!isCurrent()) throw new Error('ssh target changed during connect')
     const client = new Client()
     let settled = false
     const fail = (err) => {
@@ -150,7 +165,7 @@ export class SshPool {
         }
         if (sock) opts.sock = sock
         if (this.config.useAgent) {
-          const sockPath = process.env.SSH_AUTH_SOCK
+          const sockPath = resolveAgentSocket(this._env, this._platform)
           if (sockPath) opts.agent = sockPath
         }
         let password = this.config.password || ''
@@ -185,8 +200,9 @@ export class SshPool {
       buildOpts().then(
         (opts) => {
           if (opts.tryKeyboard) {
+            const kbdPassword = opts.password || ''
             client.on('keyboard-interactive', (name, instructions, lang, prompts, finish) => {
-              finish(prompts.map(() => this.config.password || ''))
+              finish(prompts.map(() => kbdPassword))
             })
           }
           client.connect(opts)

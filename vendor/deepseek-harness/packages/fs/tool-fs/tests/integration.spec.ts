@@ -11,15 +11,16 @@ import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { mountAgentLoopTestDependencies, provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult, type PtcRunSpec } from '@deepseek-ai/dsh-ptc-runtime'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { FsVersion } from '@deepseek-ai/dsh-fs'
+import { MessageId, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { FsObservation, FsVersion } from '@deepseek-ai/dsh-fs'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
@@ -661,6 +662,177 @@ describe('current working directory', () => {
       expect(session.header.cwd).toBe(dir)
     } finally {
       await ctx.fiber.dispose()
+    }
+  })
+})
+
+describe('partial-read observation and cross-session resume backfill', () => {
+  const tempRoots: string[] = []
+  afterEach(() => {
+    while (tempRoots.length > 0) {
+      const root = tempRoots.pop()
+      if (root !== undefined) rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('marks partial: true on offset/limit/truncation reads, blocks write overwrite, and lazily reconstructs on resume', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-tool-fs-partial-resume-'))
+    tempRoots.push(workspace)
+    await writeFile(join(workspace, 'multi.txt'), 'l1\nl2\nl3\nl4\nl5\n')
+    await writeFile(join(workspace, 'full.txt'), 'alpha\nbeta\n')
+    await writeFile(join(workspace, 'long.txt'), `${'x'.repeat(20)}\n`)
+    await writeFile(join(workspace, 'unread.txt'), 'secret\n')
+
+    const mountStack = async () => {
+      const stack = new Context()
+      provideWorkingDirectoryFixture(stack)
+      await stack.plugin(SystemPrompt)
+      await stack.plugin(ToolRuntime)
+      await stack.plugin(NativeToolExecutor)
+      await stack.plugin(LocalFileSystem, { cwd: workspace })
+      await stack.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: workspace })
+      await stack.plugin(FsPolicy)
+      await stack.plugin(ToolFs, { readMaxLineLength: 8 })
+      return stack
+    }
+
+    const ctx1 = await mountStack()
+    const events: { path: string; observation: FsObservation }[] = []
+    ctx1.on('fs/observed', (target, observation) => {
+      events.push({ path: target.displayPath, observation })
+    })
+    const session1 = Session.create(SessionId('s-orig'), [], {
+      version: SESSION_FORMAT_VERSION,
+      id: SessionId('s-orig'),
+      createdAt: Date.now(),
+      cwd: workspace,
+      isSeeded: false,
+      delegationDepth: 0,
+    })
+    const agent1 = { session: session1 }
+    try {
+      const partialRes = await executeToolFixture(ctx1, {
+        signal: testToolSignal, callId: ToolCallId('r-partial'), name: 'read',
+        arguments: { file_path: 'multi.txt', offset: 2, limit: 2 }, agent: agent1 as never,
+      })
+      expect(partialRes.isError).toBe(false)
+
+      const truncRes = await executeToolFixture(ctx1, {
+        signal: testToolSignal, callId: ToolCallId('r-trunc'), name: 'read',
+        arguments: { file_path: 'long.txt' }, agent: agent1 as never,
+      })
+      expect(truncRes.isError).toBe(false)
+
+      const fullRes = await executeToolFixture(ctx1, {
+        signal: testToolSignal, callId: ToolCallId('r-full'), name: 'read',
+        arguments: { file_path: 'full.txt' }, agent: agent1 as never,
+      })
+      expect(fullRes.isError).toBe(false)
+
+      expect(events.map(e => ({ path: e.path, partial: e.observation.kind === 'present' ? e.observation.partial : undefined }))).toEqual([
+        { path: join(workspace, 'multi.txt'), partial: true },
+        { path: join(workspace, 'long.txt'), partial: true },
+        { path: join(workspace, 'full.txt'), partial: undefined },
+      ])
+
+      // Partial read blocks blind write overwrite, while edit still succeeds.
+      const blockedWrite = await executeToolFixture(ctx1, {
+        signal: testToolSignal, callId: ToolCallId('w-partial'), name: 'write',
+        arguments: { file_path: 'multi.txt', content: 'clobbered\n' }, agent: agent1 as never,
+      })
+      expect(blockedWrite.isError).toBe(true)
+      expect(blockedWrite.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
+
+      const allowedEdit = await executeToolFixture(ctx1, {
+        signal: testToolSignal, callId: ToolCallId('e-partial'), name: 'edit',
+        arguments: { file_path: 'multi.txt', old_string: 'l2', new_string: 'L2' }, agent: agent1 as never,
+      })
+      expect(allowedEdit.isError).toBe(false)
+
+      // Persist assistant + tool/result events matching what the live session log captures.
+      session1.append('turn/start', { turn: 1 })
+      session1.append('step/start', { turn: 1, step: 1 })
+      session1.append('assistant/message', {
+        turn: 1,
+        step: 1,
+        message: {
+          id: MessageId('m-a1'),
+          role: 'assistant',
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+          content: [
+            { type: 'tool-call', id: ToolCallId('r-partial'), name: 'read', arguments: '{"file_path":"multi.txt","offset":2,"limit":2}' },
+            { type: 'tool-call', id: ToolCallId('r-full'), name: 'read', arguments: '{"file_path":"full.txt"}' },
+          ],
+        },
+        usage: { inputTokens: 1, outputTokens: 1 },
+        stream: [],
+      }, { surfaceOp: 'append' })
+      session1.append('tool/result', {
+        turn: 1,
+        step: 1,
+        message: {
+          id: MessageId('m-t1'),
+          role: 'tool',
+          source: { kind: 'tool', callId: ToolCallId('r-partial') },
+          toolCallId: ToolCallId('r-partial'),
+          isError: false,
+          content: partialRes.content.filter(b => b.type === 'text'),
+        },
+      }, { surfaceOp: 'append', sourceEventSeqs: [session1.seq - 1] as never })
+      session1.append('tool/result', {
+        turn: 1,
+        step: 1,
+        message: {
+          id: MessageId('m-t2'),
+          role: 'tool',
+          source: { kind: 'tool', callId: ToolCallId('r-full') },
+          toolCallId: ToolCallId('r-full'),
+          isError: false,
+          content: fullRes.content.filter(b => b.type === 'text'),
+        },
+      }, { surfaceOp: 'append', sourceEventSeqs: [session1.seq - 2] as never })
+    } finally {
+      await ctx1.fiber.dispose()
+    }
+
+    // Resume in a fresh Context with an empty WeakMap; reconstruct strictly from persisted Session events.
+    const ctx2 = await mountStack()
+    const resumedSession = Session.create(SessionId('s-orig'), session1.snapshotEvents(), session1.header)
+    const agent2 = { session: resumedSession }
+    try {
+      // Full-read target works for both edit and write immediately on resume.
+      const resumedWriteFull = await executeToolFixture(ctx2, {
+        signal: testToolSignal, callId: ToolCallId('w-full-resume'), name: 'write',
+        arguments: { file_path: 'full.txt', content: 'replaced-after-resume\n' }, agent: agent2 as never,
+      })
+      expect(resumedWriteFull.isError).toBe(false)
+
+      // Partial-read target still allows targeted edit, and still blocks blind write overwrite.
+      const resumedWritePartial = await executeToolFixture(ctx2, {
+        signal: testToolSignal, callId: ToolCallId('w-partial-resume'), name: 'write',
+        arguments: { file_path: 'multi.txt', content: 'nope\n' }, agent: agent2 as never,
+      })
+      expect(resumedWritePartial.isError).toBe(true)
+      expect(resumedWritePartial.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
+
+      const resumedEditPartial = await executeToolFixture(ctx2, {
+        signal: testToolSignal, callId: ToolCallId('e-partial-resume'), name: 'edit',
+        arguments: { file_path: 'multi.txt', old_string: 'l3', new_string: 'L3' }, agent: agent2 as never,
+      })
+      expect(resumedEditPartial.isError).toBe(false)
+
+      // Unread target stays protected.
+      const resumedEditUnread = await executeToolFixture(ctx2, {
+        signal: testToolSignal, callId: ToolCallId('e-unread-resume'), name: 'edit',
+        arguments: { file_path: 'unread.txt', old_string: 'secret', new_string: 'nope' }, agent: agent2 as never,
+      })
+      expect(resumedEditUnread.isError).toBe(true)
+      expect(resumedEditUnread.error).toMatchObject({ info: { code: 'FS_NOT_OBSERVED' } })
+
+      // Confirm no side-effect temporary files were created in workspace.
+      expect(readdirSync(workspace).sort()).toEqual(['full.txt', 'long.txt', 'multi.txt', 'unread.txt'])
+    } finally {
+      await ctx2.fiber.dispose()
     }
   })
 })

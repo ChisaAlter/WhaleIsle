@@ -1,3 +1,54 @@
+export type TransportMode = "lan" | "p2p" | "turn" | "relay";
+
+export interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface RtcSessionDescriptionLike {
+  type: string;
+  sdp?: string;
+}
+
+export interface RtcIceCandidateInitLike {
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+}
+
+export interface RtcDataChannelLike {
+  label?: string;
+  readyState: string;
+  binaryType: string;
+  bufferedAmount?: number;
+  send(data: ArrayBuffer | Uint8Array | string): void;
+  close(): void;
+  onopen: ((event?: unknown) => void) | null;
+  onclose: ((event?: unknown) => void) | null;
+  onerror: ((event?: unknown) => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+}
+
+export interface RtcPeerConnectionLike {
+  iceConnectionState?: string;
+  connectionState?: string;
+  signalingState?: string;
+  createDataChannel(label: string, options?: { ordered?: boolean }): RtcDataChannelLike;
+  createOffer(): Promise<RtcSessionDescriptionLike>;
+  setLocalDescription(desc: RtcSessionDescriptionLike): Promise<void>;
+  setRemoteDescription(desc: RtcSessionDescriptionLike): Promise<void>;
+  addIceCandidate(candidate: RtcIceCandidateInitLike | null): Promise<void>;
+  close(): void;
+  onicecandidate: ((event: { candidate: RtcIceCandidateInitLike | null }) => void) | null;
+  oniceconnectionstatechange?: (() => void) | null;
+  onconnectionstatechange?: (() => void) | null;
+}
+
+export type RtcPeerConnectionFactory = (config: {
+  iceServers: IceServerConfig[];
+}) => RtcPeerConnectionLike;
+
 export interface DaemonTransport {
   send: (data: string | Uint8Array | ArrayBuffer) => void;
   close: (code?: number, reason?: string) => void;
@@ -6,6 +57,8 @@ export interface DaemonTransport {
   onClose: (handler: (event?: unknown) => void) => () => void;
   onError: (handler: (event?: unknown) => void) => () => void;
   getRelaySecurityContext?: () => RelaySecurityContext | null;
+  getTransportMode?: () => TransportMode | null;
+  onTransportModeChange?: (handler: (mode: TransportMode) => void) => () => void;
 }
 
 /** Values from the encrypted relay handshake used to bind device authentication. */

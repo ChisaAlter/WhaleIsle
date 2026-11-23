@@ -142,14 +142,10 @@ class BoundConversation implements ConversationBinding {
     if (publication === 'none') return
     if (publication === 'animation-frame' && typeof requestAnimationFrame === 'function') {
       if (this.frame !== undefined) return
-      // Cross three paint opportunities before publishing high-frequency stream updates.
+      // Coalesce burst stream updates to publish on the next animation frame.
       this.frame = requestAnimationFrame(() => {
-        this.frame = requestAnimationFrame(() => {
-          this.frame = requestAnimationFrame(() => {
-            this.frame = undefined
-            this.flush()
-          })
-        })
+        this.frame = undefined
+        this.flush()
       })
       return
     }

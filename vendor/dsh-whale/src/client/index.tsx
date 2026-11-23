@@ -275,20 +275,44 @@ function openSessionViaHost(
     return;
   }
   const uiWorkspace = readOptionalService<{ openSession?: (sid: string) => Promise<void> | void }>(ctx, 'uiWorkspace');
-  const openPromise = typeof uiWorkspace?.openSession === 'function'
-    ? Promise.resolve(uiWorkspace.openSession(id))
-    : typeof sessions?.open === 'function'
-      ? Promise.resolve(sessions.open(id))
-      : Promise.resolve();
-  void openPromise
-    .then(() => {
-      try {
-        ctx.layout?.selectPanel?.(null);
-      } catch (err) {
-        console.warn('[dsh-whale] Failed to clear active panel after opening session', err);
-      }
-    })
+  const tryOpen = () => Promise.resolve().then(() => {
+    if (typeof uiWorkspace?.openSession === 'function') {
+      return uiWorkspace.openSession(id);
+    }
+    if (typeof sessions?.open === 'function') {
+      return sessions.open(id);
+    }
+    return undefined;
+  });
+  const clearPanel = () => {
+    try {
+      ctx.layout?.selectPanel?.(null);
+    } catch (err) {
+      console.warn('[dsh-whale] Failed to clear active panel after opening session', err);
+    }
+  };
+  void tryOpen()
+    .then(clearPanel)
     .catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/unknown session/i.test(msg) && typeof sessions?.list?.subscribe === 'function') {
+        void new Promise<void>((resolve) => {
+          const timer = setTimeout(() => { unsub?.(); resolve(); }, 1500);
+          const unsub = sessions.list?.subscribe?.(() => {
+            if (sessions.list?.getSnapshot?.()?.byId?.[id]) {
+              clearTimeout(timer);
+              unsub?.();
+              resolve();
+            }
+          });
+        })
+          .then(() => tryOpen())
+          .then(clearPanel)
+          .catch((retryErr) => {
+            console.warn('[dsh-whale] Failed to open session', id, retryErr);
+          });
+        return;
+      }
       console.warn('[dsh-whale] Failed to open session', id, err);
     });
 }

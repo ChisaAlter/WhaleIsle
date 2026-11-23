@@ -1,7 +1,7 @@
 import Schema from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { DEFAULT_BASE_URL, requestApi, jsonResponse, readUpload, wavChunks } from './api.js';
-import { confirmModelAction, DECLINED_TEXT } from './desktop-confirm.js';
+import { confirmFailureMessage, confirmModelAction } from './desktop-confirm.js';
 
 export const name = 'dsh-deepseek-tools';
 export const inject = ['tools', 'settings', 'credentials', 'fs', 'workingDirectory', 'attachments'];
@@ -28,10 +28,10 @@ export function apply(ctx, config) {
     return requestApi({ baseURL: read('baseURL'), apiKeyEnv: read('apiKeyEnv'), credentials: ctx.credentials, operation, body, signal });
   };
   // Uploading content to the paid API is an external side effect the desktop
-  // confirms first; a declined or missing channel aborts before any request.
+  // confirms first; a declined or broken channel aborts before any request.
   const confirmUpload = async (tool, summary, details) => {
     const confirmation = await confirmModelAction({ tool, action: 'request', effect: 'external', summary, details });
-    if (confirmation.ok !== true) throw new Error(DECLINED_TEXT);
+    if (confirmation.ok !== true) throw new Error(confirmFailureMessage(confirmation));
   };
   const definitions = {
     tts: defineTool({

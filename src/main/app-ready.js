@@ -54,33 +54,33 @@ const {
   stopDesktopInstallControl,
   desktopInstallReady,
 } = require('./desktop-install-control');
-const { installPlugin, installMarketplacePlugin, uninstallPlugin } = require('./marketplace-install');
-const { listMarketplace } = require('./marketplace-catalog');
-const { recordMarketplaceOperation } = require('./marketplace-state');
-const { listInstalledPlugins } = require('./plugins');
 const { isLauncherPackage } = require('../launcher/product');
-const { createDesktopUpdateCenter } = require('./update-center');
-const { registerUpdateCenterIpc } = require('./update-center/ipc');
-const { registerIpc } = require('./ipc');
-const { installShortcutService, getShortcutService } = require('./shortcuts');
-const { buildMenu } = require('./menu');
-const { createTray, getBaseTrayIcon, setTrayBadge, refreshTrayMenu } = require('./tray');
-const { createApprovalMonitor } = require('./approval-monitor');
-const { createUpdatesState } = require('./updates-state');
-const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
-const { DesktopPlatformView } = require('./platform-view');
-const { fetchPlatformSession } = require('./platform-session');
-const { registerPlatformIpc } = require('./platform-ipc');
-const { installMediaPermissions } = require('./media-permissions');
-const { pruneCrashReports } = require('./crash-report');
-const { downloadSavePath } = require('./download-path');
-const { ipcSenderRole } = require('./ipc-authorization');
+
+const YIELD_BUDGET_MS = 8;
+let lastYieldAt = Date.now();
+const yieldTurn = () => {
+  if (Date.now() - lastYieldAt < YIELD_BUDGET_MS) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(() => { lastYieldAt = Date.now(); resolve(undefined); }, 0));
+};
+const listInstalledPlugins = () => require('./plugins').listInstalledPlugins();
+/** @param {any} spec @param {any} options */
+const installPlugin = (spec, options) => require('./marketplace-install').installPlugin(spec, options);
+/** @param {any} id @param {any} options */
+const installMarketplacePlugin = (id, options) => require('./marketplace-install').installMarketplacePlugin(id, options);
+/** @param {any} name @param {any} options */
+const uninstallPlugin = (name, options) => require('./marketplace-install').uninstallPlugin(name, options);
+/** @param {any} options */
+const listMarketplace = (options) => require('./marketplace-catalog').listMarketplace(options);
+/** @param {any} kind @param {any} target @param {any} run */
+const recordMarketplaceOperation = (kind, target, run) => require('./marketplace-state').recordMarketplaceOperation(kind, target, run);
 
 /**
  * @param {import('./app-shell-state').ShellState} state
  * @param {import('./dsh').DshManager} dsh
  */
 function installApprovalMonitor(state, dsh) {
+  const { createApprovalMonitor } = require('./approval-monitor');
+  const { getBaseTrayIcon, setTrayBadge } = require('./tray');
   const monitor = createApprovalMonitor({
     getMainWindow,
     openHarnessSession,
@@ -181,6 +181,7 @@ async function runAppReady({
   if (shortcutMigration.status === 'migrated' || shortcutMigration.status === 'failed') {
     dsh.log(`[legacy-notification-shortcut] ${shortcutMigration.status}`, 'app');
   }
+  lastYieldAt = Date.now();
   const homeEnv = sanitizePackagedDshHomeEnv({ isPackaged: app.isPackaged });
   setRenderHintsSource(detectGpuTier(app).then((tier) => {
     dsh.log(`显卡：${tier.device || '未知'}（${tier.reason}）${tier.lowPower ? '，默认关闭重渲染特效' : ''}`, 'app');
@@ -192,8 +193,6 @@ async function runAppReady({
   const desktopHome = setDesktopDshHome(desktopDshHomeFromUserData(app.getPath('userData')));
   fs.mkdirSync(desktopHome, { recursive: true });
 
-  const stopWhaleBridgeNotifications = require('./whalebridge-notifications').startWhaleBridgeNotifications();
-  app.once('will-quit', stopWhaleBridgeNotifications);
   dsh.log(`Harness 家目录 ${desktopHome}`, 'app');
   const config = loadConfig();
   configureDesktopPet({ loadConfig, saveConfig, currentTheme });
@@ -252,10 +251,11 @@ async function runAppReady({
       // Hide paths that bypass the tray (pet panel 隐藏, settings page)
       // still funnel through setEnabled — refresh rebuilds the checkbox
       // snapshot so the tray never shows a stale check.
-      onEnabledChange: () => refreshTrayMenu(),
+      onEnabledChange: () => require('./tray').refreshTrayMenu(),
     });
     getLive2dPet()?.show();
   }
+  await yieldTurn();
   fs.mkdirSync(config.workspace, { recursive: true });
   saveConfig({ workspace: config.workspace });
   app.setLoginItemSettings({ openAtLogin: Boolean(config.openAtLogin) });
@@ -364,6 +364,7 @@ async function runAppReady({
     stopDesktopInstallControl();
     dsh.log(`桌面安装控制通道启动失败：${/** @type {any} */ (error).message || String(error)}`, 'error');
   }
+  lastYieldAt = Date.now();
   // Slim-launcher handshake endpoint: publishing the peer file lets a
   // launcher-driven install/stop run through task protection instead of
   // touching the process directly.
@@ -377,11 +378,15 @@ async function runAppReady({
       dsh.log(`任务保护握手端点启动失败：${error.message || String(error)}`, 'error');
     });
 
+  await yieldTurn();
   if (!isLauncherPackage()) {
+    const { createDesktopUpdateCenter } = require('./update-center');
     state.updateCenter = createDesktopUpdateCenter(/** @type {any} */ ({
       app, loadConfig, saveConfig, taskProtection, log: (/** @type {string} */ line) => dsh.log(line, 'app'),
     }));
   }
+  await yieldTurn();
+  const { registerIpc } = require('./ipc');
   state.desktopResources = registerIpc(/** @type {any} */ ({
     updateCenter: state.updateCenter,
     openUpdateCenter,
@@ -403,6 +408,8 @@ async function runAppReady({
       }
     },
   }));
+  await yieldTurn();
+  const { installShortcutService, getShortcutService } = require('./shortcuts');
   installShortcutService({
     ipcMain,
     userData: app.getPath('userData'),
@@ -415,6 +422,7 @@ async function runAppReady({
   });
   const existingView = getHarnessView();
   if (existingView) getShortcutService().attach(existingView);
+  const { buildMenu } = require('./menu');
   const rebuildMenu = () => buildMenu({
     onOpenWorkspace: () => ignoreFailure(pickWorkspace()),
     onOpenLauncher: () => ignoreFailure(openLauncher()),
@@ -423,6 +431,8 @@ async function runAppReady({
     shortcuts: getShortcutService(),
   });
   rebuildMenu();
+  await yieldTurn();
+  const { createTray, refreshTrayMenu } = require('./tray');
   createTray(/** @type {any} */ ({
     onShow: showForeground,
     onOpenLauncher: () => ignoreFailure(openLauncher()),
@@ -452,13 +462,17 @@ async function runAppReady({
 
   installApprovalMonitor(state, dsh);
   watchSystemTheme();
+  await yieldTurn();
 
   // In-app update indicator backend (upstream dshDesktop.updates): the Web
   // chip reads status() and open() joins the shell-owned check→confirm→
   // install flow — identical gates to the launcher ask.
+  const { createUpdatesState } = require('./updates-state');
   const updatesState = createUpdatesState({ onOpen: openDesktopUpdate });
   if (state.updateCenter) {
     let lastPhase = '';
+    const { registerUpdateCenterIpc } = require('./update-center/ipc');
+    const { ipcSenderRole } = require('./ipc-authorization');
     registerUpdateCenterIpc({
       ipcMain,
       center: state.updateCenter,
@@ -492,10 +506,12 @@ async function runAppReady({
       if (wc) updatesState.broadcast([wc]);
     });
   }
+  await yieldTurn();
 
   // Sidebar browser guests (upstream webview model): lease-checked
   // will-attach-webview, per-workspace locked-down partitions, Host origin
   // unreachable from guests.
+  const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
   installBrowserGuests(new BrowserGuests(() => getHarnessOrigin()), {
     ipcMain,
     getView: () => getHarnessView(),
@@ -505,6 +521,9 @@ async function runAppReady({
   // Embedded Platform documents (usage/top-up): an isolated WebContentsView
   // child with account-scoped partitions and main-owned credential header
   // injection. Session snapshots arrive from the loopback publisher route.
+  const { DesktopPlatformView } = require('./platform-view');
+  const { fetchPlatformSession } = require('./platform-session');
+  const { registerPlatformIpc } = require('./platform-ipc');
   state.platformView = new DesktopPlatformView(
     require('node:path').join(__dirname, '..', 'preload', 'platform.js'),
     () => getWelcomeLocaleId() === 'zh-CN' ? 'zh_CN' : 'en_US',
@@ -530,18 +549,22 @@ async function runAppReady({
 
   // Microphone stays scoped to the owned harness main frame, audio only
   // (upstream microphone-permissions policy, adapted to the loopback origin).
+  const { installMediaPermissions } = require('./media-permissions');
   installMediaPermissions(session.defaultSession, () => {
     const view = getHarnessView();
     return view && !view.webContents.isDestroyed() ? view.webContents : undefined;
   }, systemPreferences);
 
+  const { pruneCrashReports } = require('./crash-report');
   void pruneCrashReports(crashLogDir()).catch((error) => console.warn('dshd: crash report prune failed', error));
 
   session.defaultSession.on('will-download', (/** @type {any} */ event, /** @type {any} */ item) => {
+    const { downloadSavePath } = require('./download-path');
     const dest = downloadSavePath(app.getPath('downloads'), item.getFilename());
     item.setSavePath(dest);
   });
 
+  await yieldTurn();
   const launcherWin = await prepareLauncher();
   bindLauncherClose(launcherWin);
   const startupOptions = { activate: !state.backgroundStartup };

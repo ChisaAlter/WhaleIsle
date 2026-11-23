@@ -14,9 +14,14 @@ import type { LspLocalServerConfig } from '@deepseek-ai/dsh-lsp-stdio'
 import { LspConnection } from '../src/connection.ts'
 
 const fixtureServer = fileURLToPath(new URL('./fixture-server.ts', import.meta.url))
+const originalConnectionRequest = Object.getOwnPropertyDescriptor(
+  LspConnection.prototype,
+  'request',
+)?.value as LspConnection['request']
 
 let root: string
 let ws: string
+const liveContexts: Context[] = []
 
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'lsp-local-')))
@@ -26,6 +31,13 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.restoreAllMocks()
+  const contexts = liveContexts.splice(0)
+  for (const owned of contexts) {
+    await owned.fiber.dispose().catch(() => {
+      // Test assertions already captured any expected teardown failure.
+    })
+  }
   await rm(root, { recursive: true, force: true })
 })
 
@@ -48,6 +60,7 @@ async function mount(
   configureSubprocess?: (ctx: Context) => void,
 ): Promise<Context> {
   const ctx = new Context()
+  liveContexts.push(ctx)
   await ctx.plugin(Lsp)
   await ctx.plugin(LocalSubprocessRuntime)
   configureSubprocess?.(ctx)
@@ -78,7 +91,7 @@ function locationJson(line: number): unknown {
   return { uri: pathToFileURL(join(ws, 'a.ts')).href, range: { start: { line, character: 0 }, end: { line, character: 3 } } }
 }
 
-describe('lsp-stdio end to end over a fake server', () => {
+describe('lsp-stdio end to end over a fake server', { timeout: 30_000 }, () => {
   it('routes different extensions to independent configured servers', async () => {
     await writeFile(join(ws, 'a.py'), 'x = 1\n')
     const ctx = new Context()
@@ -270,7 +283,7 @@ describe('lsp-stdio end to end over a fake server', () => {
     let restoreFirstWait: (() => void) | undefined
     const ctx = await mount(
       { LSP_FAKE_DEF: 'null' },
-      { shutdownTimeoutMs: 100, killGraceMs: 100 },
+      { shutdownTimeoutMs: 100, killGraceMs: 100, keepDocumentsOpen: false },
       (registered) => { provider = registered },
       (mounted) => {
         const spawn = mounted.subprocess.spawn.bind(mounted.subprocess)
@@ -358,15 +371,14 @@ describe('lsp-stdio end to end over a fake server', () => {
     const ctx = await mount({
       LSP_FAKE_DEF: 'null',
       LSP_FAKE_OPEN_MARKER: marker,
-    }, {}, (registered) => { provider = registered })
+    }, { keepDocumentsOpen: false }, (registered) => { provider = registered })
     const firstReply = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
-    const request = Object.getOwnPropertyDescriptor(LspConnection.prototype, 'request')?.value as LspConnection['request']
     let holdFirst = true
     const requestSpy = vi.spyOn(LspConnection.prototype, 'request').mockImplementation(async function (this: LspConnection, method, params) {
       const hold = method === 'textDocument/definition' && holdFirst
       if (hold) holdFirst = false
-      const result = await request.call(this, method, params)
+      const result = await originalConnectionRequest.call(this, method, params)
       if (hold) {
         firstReply.resolve(undefined)
         await release.promise
@@ -655,7 +667,94 @@ describe('lsp-stdio end to end over a fake server', () => {
     })).rejects.toThrow(/was not found on PATH/)
     await ctx.fiber.dispose()
   })
+
+  it('queued query reads latest disk edits and sends didChange in persistent mode', async () => {
+    const changeMarker = join(root, 'queued-changes.jsonl')
+    let provider: LspProvider | undefined
+    const ctx = await mount({
+      LSP_FAKE_DEF: 'null',
+      LSP_FAKE_CHANGE_MARKER: changeMarker,
+    }, {}, (registered) => { provider = registered })
+    const firstReply = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let holdFirst = true
+    const requestSpy = vi.spyOn(LspConnection.prototype, 'request').mockImplementation(async function (this: LspConnection, method, params) {
+      const hold = method === 'textDocument/definition' && holdFirst
+      if (hold) holdFirst = false
+      const result = await originalConnectionRequest.call(this, method, params)
+      if (hold) {
+        firstReply.resolve(undefined)
+        await release.promise
+      }
+      return result
+    })
+    const pending: Promise<unknown>[] = []
+    try {
+      const first = ctx.lsp.query(query('goToDefinition'))
+      pending.push(Promise.allSettled([first]))
+      await Promise.race([firstReply.promise, first])
+      if (provider === undefined) throw new Error('expected provider')
+      const queues = Reflect.get(provider, 'queues') as ReadonlyMap<unknown, Promise<void>>
+      const firstTail = [...queues.values()][0]
+      const second = ctx.lsp.query(query('goToDefinition'))
+      pending.push(Promise.allSettled([second]))
+      await vi.waitFor(() => { expect([...queues.values()][0]).not.toBe(firstTail) }, { timeout: 3000 })
+      await writeFile(join(ws, 'a.ts'), 'const updated = 42\n')
+      release.resolve(undefined)
+      await Promise.all([first, second])
+      const lines = (await readFile(changeMarker, 'utf8')).trim().split('\n').map(l => JSON.parse(l) as { version: number; text: string })
+      expect(lines).toEqual([{ uri: pathToFileURL(join(ws, 'a.ts')).href, version: 2, text: 'const updated = 42\n' }])
+    } finally {
+      release.resolve(undefined)
+      await Promise.all(pending)
+      requestSpy.mockRestore()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('evicts and shuts down an idle instance after idleTimeoutMs while keeping active queries intact', async () => {
+    const exitMarker = join(root, 'idle-exit.log')
+    let provider: LspProvider | undefined
+    const ctx = await mount({
+      LSP_FAKE_DEF: JSON.stringify(locationJson(0)),
+      LSP_FAKE_EXIT_MARKER: exitMarker,
+    }, { idleTimeoutMs: 120, shutdownTimeoutMs: 500 }, (registered) => { provider = registered })
+    if (provider === undefined) throw new Error('expected provider')
+    const instances = Reflect.get(provider, 'instances') as ReadonlyMap<string, unknown>
+
+    // Run a query that holds open longer than idleTimeoutMs: it must NOT be evicted while active.
+    const requestSpy = vi.spyOn(LspConnection.prototype, 'request').mockImplementation(async function (this: LspConnection, method, params) {
+      if (method === 'textDocument/definition') {
+        await new Promise<void>(resolve => setTimeout(resolve, 200))
+      }
+      return await originalConnectionRequest.call(this, method, params)
+    })
+    try {
+      await expect(ctx.lsp.query(query('goToDefinition'))).resolves.toMatchObject({ kind: 'locations' })
+    } finally {
+      requestSpy.mockRestore()
+    }
+    expect(instances.size).toBe(1)
+
+    // Once idle past idleTimeoutMs, the pool shuts down and evicts the child process.
+    await waitFor(async () => instances.size === 0, 3_000)
+    await waitFor(async () => (await markerText(exitMarker)).includes('CLEAN'), 3_000)
+
+    // A subsequent query lazily spawns a fresh instance and succeeds.
+    await expect(ctx.lsp.query(query('goToDefinition'))).resolves.toMatchObject({ kind: 'locations' })
+    expect(instances.size).toBe(1)
+    await ctx.fiber.dispose()
+  })
 })
+
+async function markerText(path: string): Promise<string> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+    throw error
+  }
+}
 
 /** Read the fixture's JSON-lines didOpen marker, returning no entries before it exists. */
 async function markerLines(path: string): Promise<string[]> {

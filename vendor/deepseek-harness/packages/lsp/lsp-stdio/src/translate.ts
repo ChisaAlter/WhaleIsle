@@ -6,6 +6,8 @@
  */
 
 import type {
+  LspDiagnostic,
+  LspDiagnosticSeverity,
   LspHover,
   LspLocation,
   LspOperation,
@@ -24,10 +26,13 @@ import type {
   WireTextDocumentSyncKind,
 } from './protocol.ts'
 
+/** Maximum diagnostics retained per document from a `textDocument/publishDiagnostics` push. */
+export const MAX_DIAGNOSTICS_PER_FILE = 200
+
 /**
- * The `textDocument/*` request method for each LSP operation.
+ * The `textDocument/*` request or notification method for each LSP operation.
  * @param operation - the LSP operation to map.
- * @returns the LSP request method name.
+ * @returns the LSP method name.
  */
 export function requestMethod(operation: LspOperation): string {
   switch (operation) {
@@ -35,19 +40,23 @@ export function requestMethod(operation: LspOperation): string {
     case 'findReferences': return 'textDocument/references'
     case 'goToImplementation': return 'textDocument/implementation'
     case 'hover': return 'textDocument/hover'
+    case 'diagnostics': return 'textDocument/publishDiagnostics'
     /* v8 ignore next -- exhaustive over the closed LspOperation union; unreachable. */
     default: return assertNever(operation, 'requestMethod')
   }
 }
 
-/** The `ServerCapabilities` provider field backing each operation. */
-function capabilityValue(capabilities: WireServerCapabilities, operation: LspOperation): WireProviderCapability {
+/** The `ServerCapabilities` provider field backing each cursor operation. */
+function capabilityValue(
+  capabilities: WireServerCapabilities,
+  operation: Exclude<LspOperation, 'diagnostics'>,
+): WireProviderCapability {
   switch (operation) {
     case 'goToDefinition': return capabilities.definitionProvider
     case 'findReferences': return capabilities.referencesProvider
     case 'goToImplementation': return capabilities.implementationProvider
     case 'hover': return capabilities.hoverProvider
-    /* v8 ignore next -- exhaustive over the closed LspOperation union; unreachable. */
+    /* v8 ignore next -- exhaustive over cursor operations; unreachable. */
     default: return assertNever(operation, 'capabilityValue')
   }
 }
@@ -60,13 +69,26 @@ function supportsCapability(value: WireProviderCapability): boolean {
 }
 
 /**
- * Whether the server advertises the requested operation.
+ * Whether the server advertises the requested operation. Push-based `diagnostics` relies on
+ * document synchronization rather than an explicit pull-diagnostics server capability.
  * @param capabilities - the server's `initialize` capabilities.
  * @param operation - the LSP operation to check.
- * @returns true when the corresponding provider capability is present.
+ * @returns true when the operation is supported.
  */
 export function supportsOperation(capabilities: WireServerCapabilities, operation: LspOperation): boolean {
+  if (operation === 'diagnostics') return true
   return supportsCapability(capabilityValue(capabilities, operation))
+}
+
+/**
+ * Whether `textDocumentSync` accepts `textDocument/didChange` full-content updates.
+ * @param sync - the server's advertised `textDocumentSync` capability.
+ * @returns true when full or incremental change notifications are supported.
+ */
+export function supportsDocumentChange(sync: WireServerCapabilities['textDocumentSync']): boolean {
+  if (sync === undefined) return false
+  if (typeof sync === 'number') return isOpenCloseKind(sync)
+  return sync.openClose === true && sync.change !== 0
 }
 
 /**
@@ -254,4 +276,89 @@ function isMarkedString(value: unknown): value is WireMarkedString {
 /** Create the stable structured error used for malformed server result payloads. */
 function malformedResponse(message: string): LspError {
   return new LspError(message, 'LSP_MALFORMED_RESPONSE')
+}
+
+/**
+ * Canonicalize a document URI for in-memory caching so servers emitting percent-encoded or
+ * lowercase Windows drive letters (`file:///c%3A/...`) match `pathToFileURL()` (`file:///C:/...`).
+ * @param uri - raw document URI.
+ * @returns normalized cache-key URI.
+ */
+export function normalizeDocumentUri(uri: string): string {
+  if (!uri.startsWith('file:')) return uri
+  try {
+    const parsed = new URL(uri)
+    parsed.pathname = parsed.pathname.replace(/^\/([a-zA-Z])(?:%3A|:)/, (_, drive: string) => `/${drive.toLowerCase()}:`)
+    if (parsed.hostname.length > 0) parsed.hostname = parsed.hostname.toLowerCase()
+    return parsed.href
+  } catch {
+    // Keep malformed URIs verbatim so they can still be matched literally.
+    return uri
+  }
+}
+
+/** Normalized `publishDiagnostics` notification payload. */
+export interface NormalizedPublishDiagnostics {
+  readonly uri: string
+  readonly version?: number
+  readonly diagnostics: readonly LspDiagnostic[]
+}
+
+/**
+ * Parse and bound an untrusted `textDocument/publishDiagnostics` notification payload.
+ * Malformed notifications return `undefined` so a noisy server does not tear down the stream;
+ * valid entries are capped at `maxDiagnosticsPerFile` (default 200).
+ * @param params - raw JSON-RPC notification `params`.
+ * @param maxDiagnosticsPerFile - maximum entries retained per push.
+ * @returns normalized diagnostics or `undefined` when the payload lacks a valid URI/array.
+ */
+export function normalizePublishDiagnostics(
+  params: unknown,
+  maxDiagnosticsPerFile = MAX_DIAGNOSTICS_PER_FILE,
+): NormalizedPublishDiagnostics | undefined {
+  if (params === null || typeof params !== 'object') return undefined
+  const record = params as Record<string, unknown>
+  if (typeof record.uri !== 'string' || !Array.isArray(record.diagnostics)) return undefined
+  const version = typeof record.version === 'number' && Number.isInteger(record.version)
+    ? record.version
+    : undefined
+  const diagnostics: LspDiagnostic[] = []
+  for (const raw of record.diagnostics) {
+    if (diagnostics.length >= maxDiagnosticsPerFile) break
+    const normalized = normalizeDiagnostic(raw)
+    if (normalized !== undefined) diagnostics.push(normalized)
+  }
+  return {
+    uri: record.uri,
+    ...version !== undefined ? { version } : {},
+    diagnostics,
+  }
+}
+
+/** Normalize one wire Diagnostic entry, skipping malformed objects. */
+function normalizeDiagnostic(raw: unknown): LspDiagnostic | undefined {
+  if (raw === null || typeof raw !== 'object') return undefined
+  const item = raw as Record<string, unknown>
+  if (!isRange(item.range) || typeof item.message !== 'string') return undefined
+  const code = typeof item.code === 'string' || typeof item.code === 'number' ? item.code : undefined
+  const source = typeof item.source === 'string' && item.source.length > 0 ? item.source : undefined
+  return {
+    range: toRange(item.range),
+    severity: mapDiagnosticSeverity(item.severity),
+    message: item.message,
+    ...code !== undefined ? { code } : {},
+    ...source !== undefined ? { source } : {},
+  }
+}
+
+/** Map numeric LSP DiagnosticSeverity (1..4) to normalized labels, defaulting omitted severity to error. */
+function mapDiagnosticSeverity(severity: unknown): LspDiagnosticSeverity {
+  switch (severity) {
+    case 2: return 'warning'
+    case 3: return 'information'
+    case 4: return 'hint'
+    case 1:
+    default:
+      return 'error'
+  }
 }

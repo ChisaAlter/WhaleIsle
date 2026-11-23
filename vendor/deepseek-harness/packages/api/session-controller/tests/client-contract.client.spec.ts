@@ -182,4 +182,45 @@ describe('Client Session contracts', () => {
     })
   })
 
+  it('keeps high-volume segmented appends flat and preserves earlier unmaterialized snapshots', () => {
+    const feed = new MutableSessionEventSource()
+    const total = 1200
+    const deferred: ReturnType<MutableSessionEventSource['getSnapshot']>[] = []
+
+    for (let index = 1; index <= total; index += 1) {
+      feed.append(entry(SessionSeq(index + 10)))
+      if (index === 1 || index === 255 || index === 256 || index === 257 || index === 600) {
+        deferred.push(feed.getSnapshot())
+      }
+    }
+
+    const prepended = entry(SessionSeq(1))
+    feed.prepend([prepended], true)
+    const afterPrepend = feed.getSnapshot()
+
+    const transientTail = transient('attempt-flat', 12000)
+    feed.append(transientTail)
+    const settled = assistantSettlement(SessionSeq(12000))
+    feed.settleAssistant(LlmAttemptId('attempt-flat'), settled)
+    const afterSettle = feed.getSnapshot()
+
+    const expectedLengths = [1, 255, 256, 257, 600]
+    for (let i = 0; i < expectedLengths.length; i += 1) {
+      const snap = deferred[i]
+      const expected = expectedLengths[i]
+      if (snap === undefined || expected === undefined) throw new Error('missing deferred snapshot')
+      expect(snap.entries).toHaveLength(expected)
+      expect(snap.entries[0]?.event.seq).toBe(11)
+      expect(snap.entries[expected - 1]?.event.seq).toBe(expected + 10)
+    }
+
+    expect(afterPrepend.entries).toHaveLength(total + 1)
+    expect(afterPrepend.entries[0]).toBe(prepended)
+    expect(afterPrepend.entries[total]?.event.seq).toBe(total + 10)
+
+    expect(afterSettle.entries).toHaveLength(total + 2)
+    expect(afterSettle.entries[0]).toBe(prepended)
+    expect(afterSettle.entries[total + 1]).toBe(settled)
+  })
+
 })

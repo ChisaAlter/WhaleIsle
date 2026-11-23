@@ -28,10 +28,10 @@
     "src/host/**",
     // 全部 preload 均按路径注入 webPreferences
     "src/preload/**",
-    // renderer：<script src>（boot/launcher/pet/file-preview/update-dialog/
+    // renderer：<script src>（boot/launcher/magpie-shell/pet/file-preview/update-dialog/
     // update-center/welcome/pet-live2d HTML）、vm 测试夹具（*.child.cjs）、
     // readFileSync 注入与 wasm 载荷——knip 不解析 HTML
-    "src/renderer/{approval-popup,boot,feedback,file-preview,launcher-components,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher,launcher-core,launcher-versions,launcher-plugins,launcher-routes,launcher-home,launcher-import}.js",
+    "src/renderer/{approval-popup,boot,feedback,file-preview,launcher-components,magpie-shell,pet,pet-physics,pet-live2d,theme,update-dialog,update-center,window-controls,pet-dialogue,pet-wander,boot-recovery,launcher,launcher-core,launcher-versions,launcher-plugins,launcher-routes,launcher-home,launcher-import}.js",
     "src/renderer/pet-live2d-*.js",
     "src/renderer/**/*.child.cjs",
     // 测试按路径打包/装载的渲染夹具
@@ -43,7 +43,7 @@
     "mobile/web/chisacode/entry.mjs",
     // whale-ui 独立子包（自带 package.json/pnpm-lock）：esbuild 入口来自
     // scripts/prepare-whale-ui.mjs
-    "src/whale-ui/runtime/{guide,host}.ts",
+    "src/whale-ui/runtime/{guide,host,host-validator}.ts",
     "src/whale-ui/viewer/{index.tsx,document.cjs}",
     "src/whale-ui/resources/route.mjs",
     "src/whale-ui/genui/client/{asset-mermaid,asset-three,asset-echarts-core,asset-echarts,asset-maplibre,embed,file-address,svg-fence}.{ts,tsx}",
@@ -110,7 +110,7 @@
     // main-launcher、主进程 ipc.js/dsh.js/app-ready.js/release-ui-walk.js、测试）使用；
     // 已逐项确认，按文件保留。
     "src/launcher/{components/{lifecycle,registry,store},delta/{manifest,zip},forensics-log,install-detect,release-source,runtime-install,task-control-client,whalebridge}.js": ["exports"],
-    "src/main/{dsh-whale-desktop,git-exec,html-preview,import-guard,ipc-components,ipc-delta,pet-settings,pet-stats,marketplace-install,release-ui-window-controls,update-dialog,whale-ui-host}.js": ["exports"],
+    "src/main/{dsh-im-desktop,dsh-whale-desktop,editors,git-exec,html-preview,import-guard,ipc-components,ipc-delta,marketplace-updates,pet-settings,pet-stats,marketplace-install,platform-session-overlay,plugins,release-ui-window-controls,update-dialog,whale-ui-host}.js": ["exports"],
     "src/main/approval-monitor/index.js": ["exports"],
     // module.exports 本体在 knip 中记为 default 导出，CJS 单导出模块属误报
     "src/{main/{browser-guests,preview-session,updates-state},shared/{ipc-contract,launcher-recovery}}.js": ["exports"],
@@ -131,6 +131,8 @@
     // whale-ui 由 esbuild 别名（@whale-ui/*、@openuidev/*）装载，knip 无法
     // 还原别名消费方；exports/types 报告不属于真实死代码
     "src/whale-ui/**": ["unlisted", "exports", "types"],
+    // host.cjs keeps host-validator.cjs external so validation stays lazy until render_ui runs.
+    "src/whale-ui/runtime/host.ts": ["unresolved"],
     "vendor/dsh-whale/src/**": ["exports", "types", "duplicates"],
     "dsh-acp/tools/runtime-build/**": ["unlisted"],
     "{dsh-acp/client,dsh-acp/client-src,vendor/dsh-deepseek-tools/client,vendor/dsh-project/client,vendor/dsh-whale/client}/**": ["unlisted"],

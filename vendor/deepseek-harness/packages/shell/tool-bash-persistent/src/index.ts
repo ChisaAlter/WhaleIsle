@@ -14,8 +14,7 @@ import type { TerminalReadResult, TerminalSessionId } from '@deepseek-ai/dsh-ter
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { defineTool, ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 
-// TODO: Replace the file-search advice; arbitrary command output need not come from a searchable file.
-const TRUNCATED_MESSAGE = '<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>'
+const TRUNCATED_MESSAGE = '<response clipped><NOTE>Command output exceeded the inline limit and was truncated (showing head and tail). Narrow the command or redirect full output to a file if you need the omitted middle.</NOTE>'
 const LOST_PREFIX_MESSAGE = '<response clipped><NOTE>The beginning of this command output was dropped by the terminal scrollback limit. The following text is the earliest retained output.</NOTE>\n'
 const SHELL_RESET_MESSAGE = 'The persistent bash shell was reset; the next bash call starts from the workspace with a fresh current directory and environment.'
 // Status trailer for a command that never reported an exit code; settled
@@ -57,11 +56,21 @@ interface PersistentShells {
   reset(owner: Agent, reason: string): Promise<void>
 }
 
+function tailWithoutSplittingSurrogatePair(text: string, maxChars: number): string {
+  if (maxChars <= 0) return ''
+  if (text.length <= maxChars) return text
+  const tail = text.slice(text.length - maxChars)
+  return /^[\uDC00-\uDFFF]/.test(tail) ? tail.slice(1) : tail
+}
+
 function maybeTruncate(content: string, maxOutputChars: number, incomplete = false): string {
   if (content.length <= maxOutputChars && !incomplete) return content
-  return content.length <= maxOutputChars
-    ? content + TRUNCATED_MESSAGE
-    : truncateWithoutSplittingSurrogatePair(content, maxOutputChars) + TRUNCATED_MESSAGE
+  if (content.length <= maxOutputChars) return content + TRUNCATED_MESSAGE
+  const headChars = Math.floor((maxOutputChars * 6) / 16)
+  const tailChars = maxOutputChars - headChars
+  const head = truncateWithoutSplittingSurrogatePair(content, headChars)
+  const tail = tailWithoutSplittingSurrogatePair(content, tailChars)
+  return `${head}\n${TRUNCATED_MESSAGE}\n${tail}`
 }
 
 function markers(): CommandMarkers {

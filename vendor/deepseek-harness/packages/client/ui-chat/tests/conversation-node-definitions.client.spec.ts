@@ -1685,6 +1685,71 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 
+  it('batches text and reasoning deltas without mutating earlier snapshot blocks', () => {
+    type TrackedState = ReturnType<typeof assistantDefinition.start>
+    const states: TrackedState[] = []
+    const wrappedAssistant: ConversationNodeDefinition<TrackedState> = {
+      ...assistantDefinition,
+      update: (ctx, match) => {
+        const next = assistantDefinition.update(ctx, match)
+        states.push(next)
+        return next
+      },
+    }
+    const value = new ConversationNodeAssembler(
+      {
+        entries: () => [
+          ...DEFINITIONS.filter(def => def.kind !== 'assistant-step'),
+          wrappedAssistant as ConversationNodeDefinition,
+        ],
+        fallbackEntry: () => unknownFallbackDefinition,
+      },
+      new TestViewDefinitions(),
+    )
+    value.replaceWindow([at(1, 'turn/start', { turn: 1 }), at(2, 'step/start', { turn: 1, step: 1 })], false)
+    value.activateTarget('chat')
+
+    const pushChunk = (seq: number, chunk: StreamChunk): void => {
+      value.append({
+        type: 'transient',
+        event: {
+          type: 'assistant/live-chunk',
+          seq,
+          time: 1_700_000_000_000 + seq,
+          data: { attemptId: LlmAttemptId('batch-attempt'), turn: 1, step: 1, chunk },
+        },
+      })
+    }
+
+    pushChunk(3, { type: 'text-delta', index: 0, text: 'hello' })
+    pushChunk(4, { type: 'text-delta', index: 0, text: ' world' })
+    pushChunk(5, { type: 'text-delta', index: 0, text: '' })
+    expect(states[2]).toBe(states[1])
+
+    value.flush()
+    const snapBefore = (node(snapshot(value), 'assistant-step')?.data as AssistantChatData).blocks
+
+    pushChunk(6, { type: 'reasoning-delta', index: 1, text: 'think' })
+    pushChunk(7, { type: 'text-delta', index: 0, text: '!' })
+    pushChunk(8, { type: 'text-delta', index: 1, text: 'override' })
+    value.flush()
+
+    const snapAfter = (node(snapshot(value), 'assistant-step')?.data as AssistantChatData).blocks
+    expect(snapBefore).toEqual([{ kind: 'text', text: 'hello world' }])
+    expect(snapAfter).toEqual([
+      { kind: 'text', text: 'hello world!' },
+      { kind: 'text', text: 'override' },
+    ])
+    expect(states[0]?.blocks).toEqual([{ kind: 'text', text: 'hello' }])
+    expect(states[1]?.blocks).toEqual([{ kind: 'text', text: 'hello world' }])
+    expect(states[3]?.blocks).toEqual([
+      { kind: 'text', text: 'hello world' },
+      { kind: 'reasoning', text: 'think' },
+    ])
+    expect(states[0]?.blocks).not.toBe(states[1]?.blocks)
+    expect(states[0]?.blocks[0]).not.toBe(states[1]?.blocks[0])
+  })
+
   it('keeps one keyed Tool node from running through settlement and replays nested dispatch after prepend', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),

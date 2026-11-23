@@ -1663,3 +1663,148 @@ test('a spawn error while the start time is still being read is not lost and no 
   assert.equal(h.manager.failure.phase, 'startup');
   assert.deepEqual(h.calls.writePid, [], 'a child that failed before its start time was read must not be recorded');
 });
+
+test('ensureOwnedPort matches a local-offset legacy startTime against a UTC startTime for the same instant', async (t) => {
+  const { ensureOwnedPort } = require('./dsh');
+  const first = await occupiedPortFixture(t);
+  const killed = [];
+  const port = await ensureOwnedPort('127.0.0.1', first.wanted, () => {}, {
+    readPidFile: () => ({ pid: 5555, port: first.wanted, startTime: '2026-11-22T23:42:51.8663146+08:00' }),
+    clearPidFile: () => {},
+    processAlive: () => true,
+    processStartTime: async () => '2026-11-22T15:42:51.8663146Z',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => {
+      killed.push(pid);
+      for (const socket of first.sockets) socket.destroy();
+      await new Promise((resolve) => first.server.close(resolve));
+    },
+    sleep: async () => {},
+  });
+  assert.equal(port, first.wanted);
+  assert.deepEqual(killed, [5555]);
+
+  const second = await occupiedPortFixture(t);
+  const killedMismatch = [];
+  const nextPort = await ensureOwnedPort('127.0.0.1', second.wanted, () => {}, {
+    readPidFile: () => ({ pid: 5555, port: second.wanted, startTime: '2026-11-22T23:42:51.8663147+08:00' }),
+    clearPidFile: () => {},
+    processAlive: () => true,
+    processStartTime: async () => '2026-11-22T15:42:51.8663146Z',
+    isSafeToKill: async () => true,
+    killTree: async (pid) => { killedMismatch.push(pid); },
+    sleep: async () => {},
+  });
+  assert.notEqual(nextPort, second.wanted);
+  assert.deepEqual(killedMismatch, [], '100ns difference must still reject recycled PID');
+});
+
+test('a rejecting processStartTime does not produce an unhandledRejection when spawn fails', async (t) => {
+  const unhandled = [];
+  const onUnhandled = (error) => unhandled.push(error);
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => process.off('unhandledRejection', onUnhandled));
+
+  const h = makeHarness({
+    deps: {
+      processStartTime: () => Promise.reject(new Error('start-time-unavailable')),
+    },
+  });
+  t.after(h.cleanup);
+  const spawnError = Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+  const outcome = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1);
+  h.lastChild().emit('error', spawnError);
+  const result = await outcome;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, spawnError);
+  assert.deepEqual(unhandled, []);
+});
+
+test('attachOutput buffers split dsh web readiness URLs and split UTF-8 characters', async (t) => {
+  const { createLineBuffer } = require('./dsh-output-buffer');
+  const h = makeHarness({ announceReady: false });
+  t.after(h.cleanup);
+  h.setReachable(false, false);
+  const starting = settle(h.manager.start());
+  await waitFor(() => h.spawned.length === 1);
+  const child = h.lastChild();
+  const utf8Line = Buffer.from('日志：中文日志与就绪行\ndsh web: http://127.0.0.', 'utf8');
+  // Slice right inside a 3-byte Chinese UTF-8 sequence ("中" starts at byte 9).
+  child.stdout.emit('data', utf8Line.subarray(0, 10));
+  child.stdout.emit('data', utf8Line.subarray(10));
+  child.stdout.emit('data', Buffer.from('1:3080/?token=split-tok\n', 'utf8'));
+  h.setReachable(true, false);
+  const res = await starting;
+  assert.equal(res.ok, true);
+  assert.equal(res.value, 'http://127.0.0.1:3080/?token=split-tok');
+  assert.ok(h.manager.logs.some((entry) => entry.includes('中文日志与就绪行')));
+  assert.equal(h.manager.logs.some((entry) => entry.includes('\uFFFD')), false);
+
+  const lines = [];
+  const lb = createLineBuffer((line) => lines.push(line));
+  const raw = Buffer.from('第一行\r\n无换行结尾的最后一行', 'utf8');
+  lb.push(raw.subarray(0, 4));
+  lb.push(raw.subarray(4));
+  lb.flush();
+  assert.deepEqual(lines, ['第一行', '无换行结尾的最后一行']);
+});
+
+test('parsePidFile retains optional shell marker and isOwnedHarnessCommandLine validates cmd wrappers', () => {
+  const { parsePidFile } = require('./dsh');
+  const { isOwnedHarnessCommandLine } = require('./dsh-win-process');
+  assert.deepEqual(
+    parsePidFile('{"pid":4242,"port":3080,"startTime":"winft:1","shell":true}'),
+    { pid: 4242, port: 3080, startTime: 'winft:1', shell: true },
+  );
+  assert.equal(isOwnedHarnessCommandLine('cmd.exe /d /s /c "C:\\npm\\dsh.cmd" web --port 3080'), true);
+  assert.equal(isOwnedHarnessCommandLine('cmd.exe /d /s /c npx.cmd @deepseek-ai/dsh web'), true);
+  assert.equal(isOwnedHarnessCommandLine('cmd.exe /c notepad.exe'), false);
+});
+
+test('Windows killTree permits owned dsh cmd.exe wrappers and protects unrelated cmd.exe', { skip: process.platform !== 'win32' }, async () => {
+  const { killTree } = require('./dsh');
+  // Use an unallocated synthetic PID so waitTreeDeath does not collide with a real OS PID when taskkill is mocked.
+  const deadPid = 2 ** 30;
+  const killedCmds = [];
+  const ownedOk = await killTree(deadPid, (command, args, _opts, cb) => {
+    killedCmds.push(command);
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
+    if (command === 'powershell.exe') return cb(null, 'cmd.exe /d /s /c "C:\\npm\\dsh.cmd" web --port 3080');
+    if (command === 'taskkill') return cb(null, '');
+    return cb(null, '');
+  });
+  assert.equal(ownedOk, true);
+  assert.deepEqual(killedCmds, ['tasklist', 'powershell.exe', 'taskkill']);
+
+  const unrelatedCmds = [];
+  const unrelatedOk = await killTree(deadPid, (command, _args, _opts, cb) => {
+    unrelatedCmds.push(command);
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
+    if (command === 'powershell.exe') return cb(null, 'C:\\Windows\\System32\\cmd.exe /c calc.exe');
+    return cb(new Error('must not kill unrelated cmd.exe'));
+  }, { confirmedManagedShell: true });
+  assert.equal(unrelatedOk, false);
+  assert.deepEqual(unrelatedCmds, ['tasklist', 'powershell.exe']);
+
+  const fallbackCmds = [];
+  const confirmedFallback = await killTree(deadPid, (command, _args, _opts, cb) => {
+    fallbackCmds.push(command);
+    if (command === 'tasklist') return cb(null, `"cmd.exe","${deadPid}"`);
+    if (command === 'powershell.exe') return cb(null, '');
+    if (command === 'taskkill') return cb(null, '');
+    return cb(null, '');
+  }, { confirmedManagedShell: true });
+  assert.equal(confirmedFallback, true);
+  assert.deepEqual(fallbackCmds, ['tasklist', 'powershell.exe', 'taskkill']);
+});
+
+test('Windows processStartTime uses non-blocking Koffi GetProcessTimes without spawning PowerShell', { skip: process.platform !== 'win32' }, async () => {
+  const { processStartTime } = require('./dsh');
+  const t0 = Date.now();
+  const mark = await processStartTime(process.pid);
+  assert.ok(Date.now() - t0 < 500, 'native GetProcessTimes must avoid 3s PowerShell startup overhead');
+  assert.match(mark, /^winft:\d+$/);
+  assert.equal(await processStartTime(2 ** 29), '');
+});

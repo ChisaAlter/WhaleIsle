@@ -62,7 +62,7 @@ test('lint config and its suppression ledger select product and tools checks', (
     { product: true, vendor: false, tools: true, motion: false })
 })
 test('tool test edits run independently and manual builds have full scope', () => {
-  assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', '.github/workflows/cnb-mirror.yml']),
+  assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', 'scripts/sync-magpie-cnb.mjs', '.github/workflows/cnb-mirror.yml', '.github/workflows/magpie-cnb-mirror.yml']),
     { product: false, tools: true, vendor: false, motion: false })
   assert.ok(Object.values(selectChecks([], { manual: true })).every(Boolean))
 })

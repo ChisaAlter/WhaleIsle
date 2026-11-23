@@ -35,7 +35,41 @@ export const ENV_OVERRIDES = {
   NO_COLOR: '1',
   PAGER: 'cat',
   GIT_PAGER: 'cat',
+  PYTHONUTF8: '1',
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'never',
+  PIP_NO_INPUT: '1',
+  NPM_CONFIG_YES: 'true',
+  CI: '1',
 } as const
+
+/** Skip leading whitespace, block comments, and ordinary line comments (not `#requires`) to inspect the first directive. */
+function hasLeadingScriptDeclaration(command: string): boolean {
+  let index = 0
+  if (command.startsWith('\uFEFF')) index = 1
+  while (index < command.length) {
+    while (index < command.length && /\s/.test(command.charAt(index))) index++
+    if (command.startsWith('<#', index)) {
+      const close = command.indexOf('#>', index + 2)
+      if (close === -1) return false
+      index = close + 2
+      continue
+    }
+    if (command.charAt(index) === '#' && !/^#requires\b/i.test(command.slice(index))) {
+      const newline = command.indexOf('\n', index)
+      if (newline === -1) return false
+      index = newline + 1
+      continue
+    }
+    break
+  }
+  return /^(?:param\b|using\b|#requires\b)/i.test(command.slice(index))
+}
+
+function shouldInjectEncodingPreamble(spec: ShellExecSpec): boolean {
+  if (spec.sandboxPolicy?.mode === 'read-only') return false
+  return !hasLeadingScriptDeclaration(spec.command)
+}
 
 /**
  * UTF-8 output pinning prepended to every command. The subprocess collector
@@ -191,7 +225,10 @@ export class PwshLocalExecutor extends ShellExecutor {
    * `@deepseek-ai/dsh-pwsh-sandbox`).
    */
   protected argv(spec: ShellExecSpec): string[] {
-    return [this.pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${ENCODING_PREAMBLE}${spec.command}`]
+    const command = shouldInjectEncodingPreamble(spec)
+      ? `${ENCODING_PREAMBLE}${spec.command}`
+      : spec.command
+    return [this.pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command]
   }
 
   /** Map one resolved spec plus its argv onto a fully-specified subprocess spawn. */

@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import Lsp, { LspError, LspProviderId, type LspProvider, type LspProviderQuery, type LspQueryResult } from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import { DEFAULT_LSP_TOOL_TIMEOUT_MS, LSP_PROMPT_TEXT } from '@deepseek-ai/dsh-tool-lsp'
@@ -87,10 +87,10 @@ describe('tool-lsp registration', () => {
     expect(ctx.tools.get('lsp')?.timeoutMs).toBe(5000)
   })
 
-  it('exposes exactly the four operations in the schema enum', async () => {
+  it('exposes the five operations in the schema enum', async () => {
     const { ctx } = await mount(stubProvider(() => okLocations))
     const schema = ctx.tools.get('lsp')?.parameters as { properties: { operation: { enum: string[] } } }
-    expect(schema.properties.operation.enum).toEqual(['goToDefinition', 'findReferences', 'goToImplementation', 'hover'])
+    expect(schema.properties.operation.enum).toEqual(['goToDefinition', 'findReferences', 'goToImplementation', 'hover', 'diagnostics'])
   })
 
   it('has no default export (namespace plugin shape)', () => {
@@ -262,5 +262,235 @@ describe('tool-lsp execution', () => {
       title: 'LSP hover a.ts:2:3',
       locations: [{ path: 'a.ts', line: 2 }],
     })
+  })
+
+  it('executes diagnostics without line/character and formats diagnostics cleanly', async () => {
+    const diagResult: LspQueryResult = {
+      kind: 'diagnostics',
+      uri: pathToFileURL(join(workspaceRoot, 'src', 'a.ts')).href,
+      diagnostics: [
+        {
+          range: { start: { line: 1, character: 6 }, end: { line: 1, character: 10 } },
+          severity: 'error',
+          source: 'ts',
+          code: 2322,
+          message: 'Type string is not assignable to number',
+        },
+        {
+          range: { start: { line: 4, character: 0 }, end: { line: 4, character: 3 } },
+          severity: 'warning',
+          message: 'Unused variable',
+        },
+      ],
+      resolvedWorkspaceUri: pathToFileURL(workspaceRoot).href,
+    }
+    const provider = stubProvider(() => diagResult)
+    const { ctx } = await mount(provider)
+    const result = await call(ctx, { operation: 'diagnostics', file_path: 'src/a.ts' }, workspaceRoot)
+    expect(result.isError).toBe(false)
+    expect(provider.seen[0]).toMatchObject({
+      operation: 'diagnostics',
+      filePath: 'src/a.ts',
+      position: { line: 0, character: 0 },
+      workspaceRoot,
+    })
+    expect(result.content[0]).toEqual({
+      type: 'text',
+      text: 'src/a.ts:2:7 [error] (ts/2322) Type string is not assignable to number\nsrc/a.ts:5:1 [warning] Unused variable',
+    })
+    expect(result).toMatchObject({ isError: false, value: diagResult })
+  })
+})
+
+describe('tool-lsp autoDiagnosticsAfterEdit', () => {
+  function registerMutationStubs(ctx: Context): void {
+    ctx.tools.register(defineTool({
+      name: 'edit',
+      description: 'edit stub',
+      parameters: {
+        file_path: { type: 'string', required: true },
+        fail: { type: 'boolean' },
+      },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true } } },
+        render: (_args, value) => [{ type: 'text', text: `The file ${value.path} has been updated successfully.` }],
+      },
+      async execute(args) {
+        if (args.fail) throw new Error('edit failed')
+        return { path: join(workspaceRoot, args.file_path) }
+      },
+    }))
+    ctx.tools.register(defineTool({
+      name: 'write',
+      description: 'write stub',
+      parameters: { file_path: { type: 'string', required: true } },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true } } },
+        render: (_args, value) => [{ type: 'text', text: `Created ${value.path}` }],
+      },
+      async execute(args) {
+        return { path: join(workspaceRoot, args.file_path) }
+      },
+    }))
+    ctx.tools.register(defineTool({
+      name: 'str_replace_editor',
+      description: 'editor stub',
+      parameters: {
+        command: { type: 'string', required: true },
+        path: { type: 'string', required: true },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        return `Ran ${args.command} on ${args.path}`
+      },
+    }))
+    ctx.tools.register(defineTool({
+      name: 'apply_patch',
+      description: 'patch stub',
+      parameters: { input: { type: 'string', required: true } },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            operations: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  kind: { type: 'string', required: true },
+                  path: { type: 'string', required: true },
+                  status: { type: 'string', required: true },
+                },
+              },
+            },
+          },
+        },
+        render: () => [{ type: 'text', text: 'Success. Updated the following files:\nM a.ts' }],
+      },
+      async execute() {
+        return { operations: [{ kind: 'update', path: 'a.ts', status: 'completed' }] }
+      },
+    }))
+  }
+
+  function invoke(ctx: Context, name: string, args: unknown) {
+    return executeToolFixture(ctx, {
+      signal: testToolSignal,
+      callId: `auto-${++seq}` as never,
+      name,
+      arguments: args,
+      agent: { session: { header: { cwd: workspaceRoot } } } as never,
+    })
+  }
+
+  it('appends Error and Warning diagnostics after edit, write, apply_patch, and mutating str_replace_editor while filtering Info/Hint', async () => {
+    const provider = stubProvider(request => ({
+      kind: 'diagnostics',
+      uri: pathToFileURL(join(workspaceRoot, request.filePath.endsWith('a.ts') ? 'a.ts' : 'b.ts')).href,
+      diagnostics: [
+        { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } }, severity: 'error', source: 'ts', code: 1005, message: 'Syntax error' },
+        { range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } }, severity: 'warning', message: 'Deprecated call' },
+        { range: { start: { line: 2, character: 0 }, end: { line: 2, character: 1 } }, severity: 'information', message: 'Info hidden' },
+        { range: { start: { line: 3, character: 0 }, end: { line: 3, character: 1 } }, severity: 'hint', message: 'Hint hidden' },
+      ],
+      resolvedWorkspaceUri: pathToFileURL(workspaceRoot).href,
+    }))
+    const { ctx } = await mount(provider)
+    registerMutationStubs(ctx)
+
+    const editRes = await invoke(ctx, 'edit', { file_path: 'a.ts' })
+    expect(editRes.isError).toBe(false)
+    expect(editRes.content[0]).toEqual({
+      type: 'text',
+      text: `The file ${join(workspaceRoot, 'a.ts')} has been updated successfully.\n\nLSP diagnostics:\na.ts:1:1 [error] (ts/1005) Syntax error\na.ts:2:3 [warning] Deprecated call`,
+    })
+    if (!editRes.isError) expect(editRes.value).toEqual({ path: join(workspaceRoot, 'a.ts') })
+
+    const writeRes = await invoke(ctx, 'write', { file_path: 'b.ts' })
+    expect((writeRes.content[0] as { text: string }).text).toContain('LSP diagnostics:')
+
+    const patchRes = await invoke(ctx, 'apply_patch', { input: '*** Begin Patch\n*** End Patch' })
+    expect((patchRes.content[0] as { text: string }).text).toContain('LSP diagnostics:')
+
+    const editorRes = await invoke(ctx, 'str_replace_editor', { command: 'str_replace', path: join(workspaceRoot, 'a.ts') })
+    expect((editorRes.content[0] as { text: string }).text).toContain('LSP diagnostics:')
+    expect(provider.seen).toHaveLength(4)
+  })
+
+  it('skips diagnostics for unmatched extensions, failed edits, read-only view, or when autoDiagnosticsAfterEdit is false', async () => {
+    const provider = stubProvider(() => ({
+      kind: 'diagnostics',
+      uri: pathToFileURL(join(workspaceRoot, 'a.ts')).href,
+      diagnostics: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, severity: 'error', message: 'should not appear' }],
+      resolvedWorkspaceUri: pathToFileURL(workspaceRoot).href,
+    }))
+    const { ctx } = await mount(provider)
+    registerMutationStubs(ctx)
+
+    const mdRes = await invoke(ctx, 'write', { file_path: 'README.md' })
+    expect((mdRes.content[0] as { text: string }).text).not.toContain('LSP diagnostics')
+
+    const failedEdit = await invoke(ctx, 'edit', { file_path: 'a.ts', fail: true })
+    expect(failedEdit.isError).toBe(true)
+
+    const viewRes = await invoke(ctx, 'str_replace_editor', { command: 'view', path: join(workspaceRoot, 'a.ts') })
+    expect((viewRes.content[0] as { text: string }).text).toBe(`Ran view on ${join(workspaceRoot, 'a.ts')}`)
+    expect(provider.seen).toHaveLength(0)
+
+    const { ctx: disabledCtx } = await mount(provider, { autoDiagnosticsAfterEdit: false })
+    registerMutationStubs(disabledCtx)
+    const disabledRes = await invoke(disabledCtx, 'edit', { file_path: 'a.ts' })
+    expect((disabledRes.content[0] as { text: string }).text).not.toContain('LSP diagnostics')
+    expect(provider.seen).toHaveLength(0)
+  })
+
+  it('does not append diagnostics when only info/hint diagnostics exist', async () => {
+    const provider = stubProvider(() => ({
+      kind: 'diagnostics',
+      uri: pathToFileURL(join(workspaceRoot, 'a.ts')).href,
+      diagnostics: [
+        { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, severity: 'hint', message: 'Hint only' },
+      ],
+      resolvedWorkspaceUri: pathToFileURL(workspaceRoot).href,
+    }))
+    const { ctx } = await mount(provider)
+    registerMutationStubs(ctx)
+
+    const res = await invoke(ctx, 'edit', { file_path: 'a.ts' })
+    expect((res.content[0] as { text: string }).text).toBe(`The file ${join(workspaceRoot, 'a.ts')} has been updated successfully.`)
+  })
+
+  it('silently ignores provider errors and non-cooperative timeouts without failing or stalling the edit tool', async () => {
+    const failingProvider = stubProvider(() => {
+      throw new LspError('server crashed', 'LSP_SERVER_EXITED')
+    })
+    const { ctx: failCtx } = await mount(failingProvider)
+    registerMutationStubs(failCtx)
+    const okAfterErr = await invoke(failCtx, 'edit', { file_path: 'a.ts' })
+    expect(okAfterErr.isError).toBe(false)
+    expect((okAfterErr.content[0] as { text: string }).text).toBe(`The file ${join(workspaceRoot, 'a.ts')} has been updated successfully.`)
+
+    // Non-cooperative provider that ignores AbortSignal and never settles for 5s.
+    const hangingProvider: LspProvider = {
+      id: LspProviderId('hang'),
+      extensionToLanguage: { '.ts': 'typescript' },
+      query() {
+        return new Promise(() => {
+          // Intentionally never settles to verify autoDiagnosticsTimeoutMs non-blocking bound.
+        })
+      },
+    }
+    const { ctx: hangCtx } = await mount(hangingProvider, { autoDiagnosticsTimeoutMs: 60 })
+    registerMutationStubs(hangCtx)
+    const started = Date.now()
+    const okAfterTimeout = await invoke(hangCtx, 'edit', { file_path: 'a.ts' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(okAfterTimeout.isError).toBe(false)
+    expect((okAfterTimeout.content[0] as { text: string }).text).toBe(`The file ${join(workspaceRoot, 'a.ts')} has been updated successfully.`)
   })
 })

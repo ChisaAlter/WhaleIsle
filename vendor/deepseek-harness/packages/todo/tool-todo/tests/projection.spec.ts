@@ -99,6 +99,25 @@ describe('todos projection provider', () => {
     expect(cleared?.asOfSeq).toBe(session.seq - 1)
   })
 
+  it('preserves incomplete todos across turn/start and clears empty or completed plans', async () => {
+    const bench = await harness(true)
+    const session = bench.session
+    seedMessage(session)
+    const activeList: TodoItem[] = [
+      { content: 'finished', status: 'completed' },
+      { content: 'working', status: 'in_progress' },
+      { content: 'queued', status: 'pending' },
+    ]
+    session.append('turn/start', { turn: 1 })
+    session.append('todo/write', { todos: activeList })
+    session.append('turn/start', { turn: 2 })
+    expect((await bench.tailProjections())?.values.todos).toEqual(activeList)
+
+    session.append('todo/write', { todos: [] })
+    session.append('turn/start', { turn: 3 })
+    expect((await bench.tailProjections())?.values.todos).toBeNull()
+  })
+
   it('has no todos key when tool-todo is not composed', async () => {
     const bench = await harness(false)
     seedMessage(bench.session)

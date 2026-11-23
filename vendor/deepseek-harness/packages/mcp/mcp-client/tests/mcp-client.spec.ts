@@ -1216,18 +1216,34 @@ describe('tool execution — non-object args fallback', () => {
     )
   })
 
-  it('coerces primitive string args to empty object for callTool', async () => {
+  it('coerces non-string primitive args to empty object for callTool', async () => {
     const client = createMockClient(
       [{ name: 'coerce2', inputSchema: { type: 'object' } }],
       { content: [{ type: 'text', text: 'ok' }] },
     )
 
     await syncTools(client as never, ctx, defaultOpts, new Map())
-    await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce2', arguments: 'bad' })
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce2', arguments: 42 })
 
+    expect(result.isError).toBe(false)
     expect(client.callTool).toHaveBeenCalledWith(
       { name: 'coerce2', arguments: {} },
       expect.anything(),
     )
+  })
+
+  it('rejects bare malformed JSON string args in the pipeline with ToolArgsError without calling callTool', async () => {
+    const client = createMockClient(
+      [{ name: 'coerce2', inputSchema: { type: 'object' } }],
+      { content: [{ type: 'text', text: 'ok' }] },
+    )
+
+    await syncTools(client as never, ctx, defaultOpts, new Map())
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce2', arguments: 'bad' })
+
+    expect(result.isError).toBe(true)
+    expect(result.error?.info).toMatchObject({ name: 'ToolArgsError', code: 'INVALID_ARGS' })
+    expect(result.error?.message).toContain('invalid arguments')
+    expect(client.callTool).not.toHaveBeenCalled()
   })
 })

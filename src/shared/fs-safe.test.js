@@ -7,6 +7,8 @@ const { pathToFileURL } = require('node:url');
 const {
   atomicWriteFile,
   atomicWriteFileSync,
+  atomicWriteFileIfChanged,
+  atomicWriteFileIfChangedSync,
   renameWithRetry,
   renameWithRetrySync,
   safeRemove,
@@ -291,4 +293,24 @@ test('withOwnedTempDir refuses to delete a path replaced by an outside link', as
   assert.equal(fs.readFileSync(path.join(outside, 'sentinel'), 'utf8'), 'keep');
   // The guard leaves the planted link untouched; the test reclaims it here (#478).
   fs.rmSync(leasedDir, { force: true });
+});
+
+test('atomicWriteFileIfChangedSync and atomicWriteFileIfChanged skip identical writes and update on diff', async (t) => {
+  const dir = workspace(t);
+  const syncFile = path.join(dir, 'sync.yml');
+  assert.equal(atomicWriteFileIfChangedSync(syncFile, 'alpha\n', { encoding: 'utf8' }), true);
+  const syncBefore = fs.statSync(syncFile);
+  assert.equal(atomicWriteFileIfChangedSync(syncFile, 'alpha\n', { encoding: 'utf8' }), false);
+  assert.equal(fs.statSync(syncFile).ino, syncBefore.ino);
+  assert.equal(atomicWriteFileIfChangedSync(syncFile, 'beta\n', { encoding: 'utf8' }), true);
+  assert.equal(fs.readFileSync(syncFile, 'utf8'), 'beta\n');
+
+  const asyncFile = path.join(dir, 'async.yml');
+  assert.equal(await atomicWriteFileIfChanged(asyncFile, 'one\n', { encoding: 'utf8' }), true);
+  const asyncBefore = fs.statSync(asyncFile);
+  assert.equal(await atomicWriteFileIfChanged(asyncFile, 'one\n', { encoding: 'utf8' }), false);
+  assert.equal(fs.statSync(asyncFile).ino, asyncBefore.ino);
+  assert.equal(await atomicWriteFileIfChanged(asyncFile, 'two\n', { encoding: 'utf8' }), true);
+  assert.equal(fs.readFileSync(asyncFile, 'utf8'), 'two\n');
+  assert.deepEqual(strayTemps(dir), []);
 });

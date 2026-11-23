@@ -17,6 +17,7 @@ import {
   estimateContent,
   estimateMessage,
   estimateSystemMessage,
+  estimateTextTokens,
   estimateToolsTokens,
 } from '../src/estimate.ts'
 
@@ -565,5 +566,43 @@ describe('shared estimator', () => {
     expect(estimateToolsTokens({ config: CONFIG, tools: [] })).toBe(0)
     expect(estimateToolsTokens({ config: CONFIG, tools: TOOLS }))
       .toBe(Math.ceil(JSON.stringify(TOOLS).length / 4) + 4)
+  })
+
+  it('weights CJK and non-ASCII text significantly higher than ASCII / 4 to prevent Chinese context undercounting', () => {
+    expect(estimateTextTokens('')).toBe(0)
+    // Pure ASCII preserves exact ceil(chars / 4).
+    expect(estimateTextTokens('abcdefgh')).toBe(2)
+
+    // 100 Chinese characters -> 120 tokens (1.2 tokens/char), not 25 tokens (4 chars/token).
+    const chinese100 = '测'.repeat(100)
+    expect(estimateTextTokens(chinese100)).toBe(120)
+
+    // CJK punctuation and fullwidth forms are priced at CJK density too.
+    expect(estimateTextTokens('你好，世界！')).toBe(Math.ceil(6 * 1.2))
+
+    // Mixed ASCII + CJK text weights each script separately before rounding.
+    // 11 ASCII chars (11 * 0.25 = 2.75) + 4 CJK chars (4 * 1.2 = 4.8) = 7.55 -> 8 tokens.
+    expect(estimateTextTokens('check 状态变量 path')).toBe(8)
+    // 12 ASCII chars (12 * 0.25 = 3) + 5 CJK chars (5 * 1.2 = 6) = 9 exact tokens.
+    expect(estimateTextTokens('check 状态变量值 paths')).toBe(9)
+
+    // Astral CJK (Extension B) counts as 1 CJK code point (1.2), astral emoji as 1.5.
+    expect(estimateTextTokens('\u{20000}'.repeat(5))).toBe(6)
+    expect(estimateTextTokens('\u{1F680}'.repeat(2))).toBe(3)
+
+    // Message, system message, and tool-schema estimators all route through script-aware weighting.
+    expect(estimateContent([{ type: 'text', text: chinese100 }])).toBe(124)
+    expect(estimateSystemMessage(createSystemMessage(chinese100))).toBe(124)
+    expect(estimateMessage(createMessage({
+      role: 'user',
+      content: [{ type: 'text', text: chinese100 }],
+      source: { kind: 'user' },
+    }))).toBe(128)
+    // Multi-block system prompt sums text weights before rounding.
+    expect(estimateSystemMessage(createMessage({
+      role: 'system',
+      content: [{ type: 'text', text: 'ab' }, { type: 'text', text: 'cd' }],
+      source: SYSTEM_SOURCE,
+    }))).toBe(5)
   })
 })

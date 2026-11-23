@@ -43,14 +43,16 @@ describe('applyHunks', () => {
     { name: 'repeated anchors use the advancing cursor', before: 'fn\nx\nfn\nx\n', body: ['@@ fn', '-x', '+first', '@@ fn', '-x', '+second'], after: 'fn\nfirst\nfn\nsecond\n' },
     { name: 'anchors also use punctuation tolerance', before: 'fn “a”\nx\n', body: ['@@ fn "a"', '-x', '+X'], after: 'fn “a”\nX\n' },
     { name: 'empty-file insertion', before: '', body: ['+hello'], after: 'hello\n' },
-    { name: 'insertion after an unterminated final line', before: 'hello', body: ['+world'], after: 'hello\nworld\n' },
+    { name: 'insertion after an unterminated final line keeps missing newline', before: 'hello', body: ['+world'], after: 'hello\nworld' },
     { name: 'insertion before the final empty source line', before: 'hello\n\n', body: ['+world'], after: 'hello\nworld\n' },
     { name: 'insertion into a one-newline file', before: '\n', body: ['+hello'], after: 'hello\n' },
     { name: 'anchored pure insertion still appends at EOF', before: 'fn\nx\ny\n', body: ['@@ fn', '+last'], after: 'fn\nx\ny\nlast\n' },
     { name: 'multiple pure insertions retain patch order', before: 'x\n', body: ['+first', '@@', '+second'], after: 'x\nfirst\nsecond\n' },
     { name: 'pure deletion retains surrounding lines', before: 'a\nb\nc\n', body: ['-b'], after: 'a\nc\n' },
     { name: 'deletion to empty text', before: 'a\n', body: ['-a'], after: '' },
-    { name: 'replacement adds a missing final newline', before: 'a', body: ['-a', '+b'], after: 'b\n' },
+    { name: 'replacement preserves missing final newline', before: 'a', body: ['-a', '+b'], after: 'b' },
+    { name: 'earlier replacement does not append missing final newline', before: 'a\nb', body: ['-a', '+A'], after: 'A\nb' },
+    { name: 'replacement adds final newline when patch explicitly adds trailing blank line', before: 'a', body: ['-a', '+b', '+'], after: 'b\n' },
     { name: 'EOF prefers the tail over an earlier exact match', before: 'x\nx \n', body: ['-x', '+X', '*** End of File'], after: 'x\nX\n' },
     { name: 'EOF may search before the sequential cursor', before: 'x\n', body: ['@@ x', '-x', '+X', '*** End of File'], after: 'X\n' },
     { name: 'overlapping EOF hunks retain upstream replacement order', before: 'x\n', body: ['-x', '+first', '@@', '-x', '+second', '*** End of File'], after: 'first\n' },
@@ -111,8 +113,8 @@ describe('applyHunks', () => {
   })
 
   it.each([
-    ['', ''], ['a', 'a\n'], ['a\n', 'a\n'], ['a\n\n', 'a\n'],
-  ])('empty hunk list applies NormalizeToLf reconstruction to %j', (before, after) => {
+    ['', ''], ['a', 'a'], ['a\n', 'a\n'], ['a\n\n', 'a\n'],
+  ])('empty hunk list preserves trailing-newline contract for %j', (before, after) => {
     const operations = parsePatch('*** Begin Patch\n*** End Patch')
     const hunks = operations.flatMap(operation => operation.kind === 'update' ? operation.hunks : [])
     expect(applyHunks(before, hunks)).toEqual({ ok: true, after })

@@ -16,7 +16,7 @@
 // roles uses the IPC_ROLES surface names (boot/harness/launcher) for
 // role-authorized rows and the preload surface name for window-owned rows
 // (welcome, update-dialog, update-center, file-preview, pet, pet-live2d,
-// platform, whalebridge).
+// platform, magpie-shell).
 
 const { IPC_ROLES } = require('../main/ipc-authorization');
 const {
@@ -39,7 +39,7 @@ const SURFACES = Object.freeze({
   UPDATE_CENTER: 'update-center',
   FILE_PREVIEW: 'file-preview',
   PLATFORM: 'platform',
-  WHALEBRIDGE: 'whalebridge',
+  MAGPIE_SHELL: 'magpie-shell',
   PREVIEW_GUEST: 'preview-guest',
   APPROVAL_POPUP: 'approval-popup',
 });
@@ -292,7 +292,9 @@ const IPC_CONTRACT = Object.freeze([
     validate: /** @type {(args: unknown[]) => unknown[]} */ (args) => [asString(args[0]), asObject(args[1]), args[2]] },
   { channel: 'shell:open-workspace-path', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
   { channel: 'shell:git-stage', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
+  { channel: 'shell:git-stage-patch', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
   { channel: 'shell:git-unstage', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
+  { channel: 'shell:git-unstage-patch', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
   { channel: 'shell:git-discard', kind: 'invoke', roles: HARNESS_ONLY, validate: stringPair },
   { channel: 'shell:git-status-entries', kind: 'invoke', roles: HARNESS_ONLY, validate: stringArg },
   { channel: 'shell:git-branch-list', kind: 'invoke', roles: HARNESS_ONLY, validate: stringArg },
@@ -548,12 +550,19 @@ const IPC_CONTRACT = Object.freeze([
   { channel: 'dshd-preview-element-picked', kind: 'send', roles: [SURFACES.PREVIEW_GUEST],
     transport: 'webContents' },
 
-  // --- WhaleBridge windows (own contents.ipc transport, not registerIpc) ---------------------
-  { channel: 'whalebridge:window', kind: 'send', roles: [SURFACES.WHALEBRIDGE],
+  // --- Magpie shell windows (own contents.ipc transport, not registerIpc) ------------------
+  { channel: 'magpie:window', kind: 'send', roles: [SURFACES.MAGPIE_SHELL],
     transport: 'webContents' },
-  { channel: 'whalebridge:window-state', kind: 'invoke', roles: [SURFACES.WHALEBRIDGE],
+  { channel: 'magpie:window-state', kind: 'invoke', roles: [SURFACES.MAGPIE_SHELL],
     transport: 'webContents' },
-  { channel: 'whalebridge:window-state', kind: 'event', roles: [SURFACES.WHALEBRIDGE] },
+  { channel: 'magpie:window-state', kind: 'event', roles: [SURFACES.MAGPIE_SHELL] },
+  { channel: 'magpie:shell-meta', kind: 'invoke', roles: [SURFACES.MAGPIE_SHELL],
+    transport: 'webContents' },
+  { channel: 'magpie:shell-meta', kind: 'event', roles: [SURFACES.MAGPIE_SHELL] },
+  { channel: 'magpie:reload', kind: 'send', roles: [SURFACES.MAGPIE_SHELL],
+    transport: 'webContents' },
+  { channel: 'magpie:open-external-update', kind: 'invoke', roles: [SURFACES.MAGPIE_SHELL],
+    transport: 'webContents' },
 
   // --- Minimized approval popup window ------------------------------------------------------
   { channel: 'shell:approval-popup-state', kind: 'invoke', roles: [SURFACES.APPROVAL_POPUP],

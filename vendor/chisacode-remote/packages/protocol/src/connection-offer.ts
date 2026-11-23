@@ -3,26 +3,92 @@ import { z } from "zod/v3";
 import { RelayAuthBootstrapSchema } from "./relay-device-auth.js";
 
 /**
- * Relay-only pairing offer.
+ * Default public STUN servers used when neither the pairing offer nor user
+ * settings configure custom ICE servers.
+ */
+export const DEFAULT_PUBLIC_STUN_URLS = [
+  "stun:stun.cloudflare.com:3478",
+  "stun:stun.l.google.com:19302",
+] as const;
+
+export const IceServerConfigSchema = z.object({
+  urls: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+  username: z.string().optional(),
+  credential: z.string().optional(),
+});
+
+export type IceServerConfig = z.infer<typeof IceServerConfigSchema>;
+
+export const ConnectionOfferLanSchema = z.object({
+  endpoints: z.array(z.string().min(1)).min(1),
+  useTls: z.boolean().optional(),
+});
+
+export type ConnectionOfferLan = z.infer<typeof ConnectionOfferLanSchema>;
+
+export const ConnectionOfferRelaySchema = z.object({
+  endpoint: z.string().min(1),
+  useTls: z.boolean().optional(),
+});
+
+export type ConnectionOfferRelay = z.infer<typeof ConnectionOfferRelaySchema>;
+
+/**
+ * Returns default public STUN server entries when no custom ICE servers are configured.
+ */
+export function getDefaultIceServers(): IceServerConfig[] {
+  return DEFAULT_PUBLIC_STUN_URLS.map((urls) => ({ urls }));
+}
+
+/**
+ * Resolves effective ICE servers from optional offer + user overrides,
+ * falling back to `getDefaultIceServers()` when both are empty.
+ */
+export function resolveOfferIceServers(
+  offerIceServers?: readonly IceServerConfig[] | null,
+  extraIceServers?: readonly IceServerConfig[] | null,
+): IceServerConfig[] {
+  const combined: IceServerConfig[] = [];
+  if (Array.isArray(extraIceServers)) {
+    for (const server of extraIceServers) {
+      combined.push(server);
+    }
+  }
+  if (Array.isArray(offerIceServers)) {
+    for (const server of offerIceServers) {
+      combined.push(server);
+    }
+  }
+  return combined.length > 0 ? combined : getDefaultIceServers();
+}
+
+/**
+ * Pairing offer v2 (supports relay, pure LAN without external servers, or both).
  *
  * `serverId` is a stable daemon identifier scoped to `CHISACODE_HOME`, and is also
  * used as the relay session identifier.
  */
-export const ConnectionOfferV2Schema = z.object({
-  v: z.literal(2),
-  serverId: z.string().min(1),
-  daemonPublicKeyB64: z.string().min(1),
-  relayAuthPublicKeyB64: z.string().min(1).optional(),
-  /**
-   * Optional client-auth bootstrap for handshake v2. Old parsers ignore this
-   * field (optional missing keys remain valid; unknown keys are stripped).
-   */
-  authBootstrap: RelayAuthBootstrapSchema.optional(),
-  relay: z.object({
-    endpoint: z.string().min(1),
-    useTls: z.boolean().optional(),
-  }),
-});
+export const ConnectionOfferV2Schema = z
+  .object({
+    v: z.literal(2),
+    serverId: z.string().min(1),
+    daemonPublicKeyB64: z.string().min(1),
+    relayAuthPublicKeyB64: z.string().min(1).optional(),
+    /**
+     * Optional client-auth bootstrap for handshake v2. Old parsers ignore this
+     * field (optional missing keys remain valid; unknown keys are stripped).
+     */
+    authBootstrap: RelayAuthBootstrapSchema.optional(),
+    relay: ConnectionOfferRelaySchema.optional(),
+    lan: ConnectionOfferLanSchema.optional(),
+    iceServers: z.array(IceServerConfigSchema).optional(),
+  })
+  .refine(
+    (offer) => Boolean(offer.relay?.endpoint) || (offer.lan?.endpoints?.length ?? 0) > 0,
+    {
+      message: "Connection offer must provide either relay.endpoint or at least one lan.endpoints entry",
+    },
+  );
 
 export type ConnectionOfferV2 = z.infer<typeof ConnectionOfferV2Schema>;
 

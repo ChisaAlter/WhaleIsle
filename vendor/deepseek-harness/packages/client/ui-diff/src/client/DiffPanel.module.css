@@ -159,3 +159,27 @@
     color: var(--dsw-alias-label-primary);
   }
 }
+
+.hunkAction {
+  padding: 1px 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-sans);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.hunkAction:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .hunkAction:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
+}

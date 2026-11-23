@@ -5,12 +5,13 @@
  * is mocked; native access checks live in sandbox-windows-acl's runner suite.
  */
 
-import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
+import type { Config } from '@deepseek-ai/dsh-sandbox-local'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 
@@ -59,16 +60,19 @@ vi.mock('@deepseek-ai/dsh-sandbox-windows-acl', () => {
       const temp = realpathSync.native(tempRoot)
       return temp === workspace || temp.startsWith(`${workspace}${process.platform === 'win32' ? '\\' : '/'}`)
     },
-    workspaceWriteSid: () => 'S-1-4-42-42',
+    workspaceWriteSid: (path: string) => {
+      const tag = basename(path)
+      return tag.startsWith('dsh-acl-grants-extra-') ? `S-1-4-43-${tag.slice(-4)}` : 'S-1-4-42-42'
+    },
     tempWriteSid: (path: string) => `TEMP:${path}`,
   }
 })
 
 const WORKSPACE_SID = 'S-1-4-42-42'
 
-async function setup() {
+async function setup(config: Config = {}) {
   const ctx = new Context()
-  const fiber = await ctx.plugin(LocalSandboxProvider, {})
+  const fiber = await ctx.plugin(LocalSandboxProvider, config)
   const sandbox = ctx.sandbox as LocalSandboxProvider
   sandbox.internals = { platform: 'win32', windowsAclRunnerArgs: ['node', 'windows-acl-runner.js'] }
   return { ctx, sandbox, fiber }
@@ -76,6 +80,10 @@ async function setup() {
 
 function workspaceRoot(): string {
   return realpathSync(mkdtempSync(join(tmpdir(), 'dsh-acl-grants-ws-')))
+}
+
+function extraRoot(): string {
+  return realpathSync(mkdtempSync(join(tmpdir(), 'dsh-acl-grants-extra-')))
 }
 
 function flag(argv: readonly string[], name: string): string | undefined {
@@ -147,13 +155,36 @@ describe('windows-acl write grants (LocalSandboxProvider)', () => {
       ])
       expect(existsSync(tempDir ?? '')).toBe(true)
 
-      const extra = workspaceRoot()
-      scratch.push(extra)
+      const extra = extraRoot()
+      const extra2 = extraRoot()
+      scratch.push(extra, extra2)
+      const withExtra = await sandbox.confine(['pwsh', '/Command', 'x'], {
+        ...policy, additionalWritableRoots: [extra, extra2],
+      })
+      const extraSid = `S-1-4-43-${basename(extra).slice(-4)}`
+      const extraSid2 = `S-1-4-43-${basename(extra2).slice(-4)}`
+      expect(withExtra.argv).toEqual([
+        'node', 'windows-acl-runner.js',
+        '--workspace', ws,
+        '--temp', tempDir,
+        '--mode', 'workspace-write',
+        '--write-sid', WORKSPACE_SID,
+        '--temp-write-sid', tempSid,
+        '--extra-dir', extra,
+        '--extra-sid', extraSid,
+        '--extra-dir', extra2,
+        '--extra-sid', extraSid2,
+        '--',
+        'pwsh', '/Command', 'x',
+      ])
+      expect(mockState.grants).toHaveLength(4)
+      expect(mockState.grants.flatMap(grant => grant.added.map(added => added.path))).toEqual([ws, tempDir, extra, extra2])
+
+      // Re-confining reuses existing workspace, extra, and temp grants without creating duplicates.
       expect((await sandbox.confine(['pwsh', '/Command', 'x'], {
-        ...policy, additionalWritableRoots: [extra],
-      })).argv).toEqual(confined.argv)
-      expect(mockState.grants).toHaveLength(2)
-      expect(mockState.grants.flatMap(grant => grant.added.map(added => added.path))).toEqual([ws, tempDir])
+        ...policy, additionalWritableRoots: [extra, extra2],
+      })).argv).toEqual(withExtra.argv)
+      expect(mockState.grants).toHaveLength(4)
 
       await fiber.dispose()
       expect(mockState.grants.every(grant => grant.disposed)).toBe(true)
@@ -417,5 +448,75 @@ describe('windows-acl write grants (LocalSandboxProvider)', () => {
     } finally {
       cleanup()
     }
+  })
+
+  describe('additionalWritableRoots validation and revokeWorkspaceAclOnDispose', () => {
+    const ownedDirs: string[] = []
+    afterEach(() => {
+      for (const dir of ownedDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+    })
+
+    it('rejects symlinks, files, missing directories, and temp-overlapping extra roots before any grant', async () => {
+      const { sandbox, fiber } = await setup()
+      const ws = mkdtempSync(join(tmpdir(), 'dsh-acl-grants-ws-'))
+      const validExtra = mkdtempSync(join(tmpdir(), 'dsh-acl-grants-extra-'))
+      ownedDirs.push(ws, validExtra)
+      const regularFile = join(validExtra, 'file.txt')
+      writeFileSync(regularFile, 'x')
+      const junction = join(validExtra, 'junction')
+      symlinkSync(ws, junction, process.platform === 'win32' ? 'junction' : 'dir')
+
+      try {
+        await expect(sandbox.confine(['true'], {
+          mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('bad-symlink'),
+          additionalWritableRoots: [junction],
+        })).rejects.toMatchObject({ code: 'SANDBOX_INVALID_ROOT' })
+        await expect(sandbox.confine(['true'], {
+          mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('bad-file'),
+          additionalWritableRoots: [regularFile],
+        })).rejects.toMatchObject({ code: 'SANDBOX_INVALID_ROOT' })
+        await expect(sandbox.confine(['true'], {
+          mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('bad-missing'),
+          additionalWritableRoots: [join(validExtra, 'missing')],
+        })).rejects.toMatchObject({ code: 'SANDBOX_INVALID_ROOT' })
+        await expect(sandbox.confine(['true'], {
+          mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('bad-temp-overlap'),
+          additionalWritableRoots: [realpathSync.native(tmpdir())],
+        })).rejects.toMatchObject({ code: 'SANDBOX_INVALID_TEMP_ROOT' })
+        expect(mockState.grants).toHaveLength(0)
+
+        // Create session private temp, then reject an extra root nested inside that private temp.
+        const first = await sandbox.confine(['true'], {
+          mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('nested-temp-check'),
+        })
+        const sessionTemp = flag(first.argv, '--temp') ?? ''
+        const nestedInPrivateTemp = mkdtempSync(join(sessionTemp, 'nested-'))
+        await expect(sandbox.confine(['true'], {
+          mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('nested-temp-check'),
+          additionalWritableRoots: [nestedInPrivateTemp],
+        })).rejects.toMatchObject({ code: 'SANDBOX_INVALID_TEMP_ROOT' })
+      } finally {
+        await fiber.dispose()
+      }
+    })
+
+    it('passes standing=false for workspace and extra grants when revokeWorkspaceAclOnDispose is true', async () => {
+      const { sandbox, fiber } = await setup({ revokeWorkspaceAclOnDispose: true })
+      const ws = mkdtempSync(join(tmpdir(), 'dsh-acl-grants-ws-'))
+      const extra = mkdtempSync(join(tmpdir(), 'dsh-acl-grants-extra-'))
+      ownedDirs.push(ws, extra)
+
+      const confined = await sandbox.confine(['true'], {
+        mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('revoke-on-dispose'),
+        additionalWritableRoots: [extra],
+      })
+      const sessionTemp = flag(confined.argv, '--temp') ?? ''
+      expect(mockState.grants).toHaveLength(3)
+      expect(mockState.grants.every(grant => grant.added.every(added => !added.standing))).toBe(true)
+
+      await fiber.dispose()
+      expect(mockState.grants.every(grant => grant.disposed)).toBe(true)
+      expect(existsSync(sessionTemp)).toBe(false)
+    })
   })
 })

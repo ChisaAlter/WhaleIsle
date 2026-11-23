@@ -270,8 +270,8 @@ const COMPLETIONS_COMPAT_GATE = {
   zaiToolStream: 'withhold',
   supportsOpenAIGrammarTools: 'withhold',
   sendSessionAffinityHeaders: 'withhold',
-  supportsMidConvoSystemMessages: 'withhold',
-  supportsMidConvoToolAdditions: 'withhold',
+  supportsMidConvoSystemMessages: 'offer',
+  supportsMidConvoToolAdditions: 'offer',
   sessionAffinityFormat: 'withhold',
 } as const satisfies Record<keyof OpenAICompletionsCompat, CompatDisposition>
 
@@ -283,10 +283,10 @@ const RESPONSES_COMPAT_GATE = {
   supportsLongCacheRetention: 'offer',
   sessionAffinityFormat: 'withhold',
   supportsOpenAIGrammarTools: 'withhold',
-  supportsAdditionalTools: 'withhold',
+  supportsAdditionalTools: 'offer',
   supportsToolSearch: 'withhold',
   supportsExplicitPromptCacheMode: 'withhold',
-  supportsMidConvoSystemMessages: 'withhold',
+  supportsMidConvoSystemMessages: 'offer',
   supportsMidConvoEffort: 'withhold',
 } as const satisfies Record<keyof OpenAIResponsesCompat, CompatDisposition>
 
@@ -301,8 +301,8 @@ const ANTHROPIC_COMPAT_GATE = {
   supportsStrictTools: 'offer',
   sendSessionAffinityHeaders: 'withhold',
   sessionAffinityFormat: 'withhold',
-  supportsMidConvoSystemMessages: 'withhold',
-  supportsMidConvoToolChanges: 'withhold',
+  supportsMidConvoSystemMessages: 'offer',
+  supportsMidConvoToolChanges: 'offer',
   supportsMidConvoEffort: 'withhold',
   allowedFallbackModels: 'withhold',
 } as const satisfies Record<keyof AnthropicMessagesCompat, CompatDisposition>
@@ -314,7 +314,7 @@ const BEDROCK_COMPAT_GATE = {
 
 /** Disposition of every `MistralConversationsCompat` field. */
 const MISTRAL_COMPAT_GATE = {
-  supportsMidConvoSystemMessages: 'withhold',
+  supportsMidConvoSystemMessages: 'offer',
 } as const satisfies Record<keyof MistralConversationsCompat, CompatDisposition>
 
 /**
@@ -365,7 +365,6 @@ type OfferedCompatField =
   | OfferedIn<typeof RESPONSES_COMPAT_GATE>
   | OfferedIn<typeof ANTHROPIC_COMPAT_GATE>
   | OfferedIn<typeof BEDROCK_COMPAT_GATE>
-  // oxlint-disable-next-line typescript/no-redundant-type-constituents -- Include gates whose current offering is empty.
   | OfferedIn<typeof MISTRAL_COMPAT_GATE>
 
 /**
@@ -458,6 +457,17 @@ export interface PiAiCompatProfile {
   allowEmptySignature?: boolean
   /** Whether the endpoint accepts Anthropic strict tool schemas; `anthropic-messages`. */
   supportsStrictTools?: boolean
+  /**
+   * Whether mid-conversation system/developer messages are supported;
+   * `openai-completions`, `openai-responses`, `anthropic-messages`, `mistral-conversations`.
+   */
+  supportsMidConvoSystemMessages?: boolean
+  /** Whether mid-conversation tool additions are supported; `openai-completions`. */
+  supportsMidConvoToolAdditions?: boolean
+  /** Whether mid-conversation tool-set changes are supported; `anthropic-messages`. */
+  supportsMidConvoToolChanges?: boolean
+  /** Whether deferred/additional tools are supported on follow-up turns; `openai-responses`. */
+  supportsAdditionalTools?: boolean
 }
 
 /** Compile-time constraint that `T` is `never`. */
@@ -796,6 +806,44 @@ type ModelCompat = OpenAICompletionsCompat | OpenAIResponsesCompat | AnthropicMe
  * @param api - the model's resolved wire protocol.
  * @returns a `compat` field to spread into the model, or nothing.
  */
+const DEEPSEEK_COMPLETIONS_SAFE_COMPAT: Readonly<Pick<
+  OpenAICompletionsCompat,
+  'supportsStore' | 'supportsDeveloperRole' | 'requiresReasoningContentOnAssistantMessages'
+>> = {
+  supportsStore: false,
+  supportsDeveloperRole: false,
+  requiresReasoningContentOnAssistantMessages: true,
+}
+
+function isDeepSeekModelId(modelId: string): boolean {
+  return modelId.toLowerCase().includes('deepseek')
+}
+
+function missingDeepSeekCompatDefaults(
+  existing: Record<string, unknown>,
+): Record<string, unknown> {
+  const additions: Record<string, unknown> = {}
+  for (const [field, value] of Object.entries(DEEPSEEK_COMPLETIONS_SAFE_COMPAT)) {
+    if (existing[field] === undefined) additions[field] = value
+  }
+  return additions
+}
+
+/**
+ * Apply safe DeepSeek compatibility defaults for `openai-completions` routes
+ * without overwriting catalog- or user-configured values.
+ */
+export function applyDeepSeekCompletionsSafeCompat<A extends Api>(model: Model<A>): Model<A> {
+  if (model.api !== 'openai-completions' || !isDeepSeekModelId(model.id)) return model
+  const existing = (model.compat ?? {}) as Record<string, unknown>
+  const additions = missingDeepSeekCompatDefaults(existing)
+  if (Object.keys(additions).length === 0) return model
+  return {
+    ...model,
+    compat: { ...additions, ...existing } as NonNullable<Model<A>['compat']>,
+  }
+}
+
 function resolveModelCompat(
   provider: string,
   entry: PiAiModelProfile,
@@ -818,7 +866,6 @@ function resolveModelCompat(
     }
     configured[field] = value
   }
-  if (Object.keys(configured).length === 0) return {}
   // The installed entry's compat matches the entry's OWN api — a route-level
   // `api` repoint (an anthropic catalog served through an OpenAI-compatible
   // gateway) leaves `base.compat` in the other protocol's shape, so it is
@@ -826,7 +873,11 @@ function resolveModelCompat(
   // model starts from pi-ai's baseURL-derived detection instead, which is
   // what a protocol change means for every other compat field too.
   const inherited = base?.api === api ? base.compat : undefined
-  return { compat: { ...inherited, ...configured } as ModelCompat }
+  const safeDefaults = api === 'openai-completions' && isDeepSeekModelId(entry.id)
+    ? missingDeepSeekCompatDefaults({ ...inherited, ...configured })
+    : {}
+  if (Object.keys(configured).length === 0 && Object.keys(safeDefaults).length === 0) return {}
+  return { compat: { ...safeDefaults, ...inherited, ...configured } as ModelCompat }
 }
 
 /** One route's materialized catalog, plus the request caps its profile chose. */

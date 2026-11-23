@@ -1321,7 +1321,34 @@ describe('processOutcome', () => {
     expect(deniedWithoutEscalation.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')}`)
     const runnerFailed = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: false, runnerFailed: true } }))
     expect(runnerFailed.detail).toContain('the sandbox runner itself failed under read-only mode')
+    const initFailed = processOutcome(settled({ exitCode: 3221225794, sandbox: { mode: 'workspace-write', denied: false } }))
+    expect(initFailed.detail).toContain('0xC0000142')
+    expect(initFailed.detail).toContain('do not retry identical pwsh commands; use read/edit tools or switch permission mode')
     expect(processOutcome(settled({ sandbox: { mode: 'read-only', denied: false } })).detail).toBe('exit code: 0')
+  })
+
+  it('fails loudly with isError=true on exitCode 3221225794 (0xC0000142) in both direct and job-backed foreground paths', async () => {
+    const direct = await setup()
+    direct.bash.handler = () => runResult('', {
+      exitCode: 3221225794,
+      sandbox: { mode: 'workspace-write', denied: false },
+    })
+    const directResult = await call(direct.ctx, 'pwsh', { command: 'Get-ChildItem', description: 'probe dir' })
+    expect(directResult.isError).toBe(true)
+    expect(text(directResult)).toContain('Windows workspace-write sandbox restricted process failed to initialize')
+    expect(text(directResult)).toContain('do not retry identical pwsh commands; use read/edit tools or switch permission mode')
+    expect(directResult.error?.info).toMatchObject({ code: 'SANDBOX_PROCESS_INIT_FAILED' })
+
+    const withJobs = await setupWithJobs()
+    withJobs.bash.handler = () => runResult('', {
+      exitCode: -1073741502,
+      sandbox: { mode: 'workspace-write', denied: false },
+    })
+    const jobResult = await call(withJobs.ctx, 'pwsh', { command: 'Get-ChildItem', description: 'probe dir' })
+    expect(jobResult.isError).toBe(true)
+    expect(text(jobResult)).toContain('Windows workspace-write sandbox restricted process failed to initialize')
+    expect(text(jobResult)).toContain('do not retry identical pwsh commands; use read/edit tools or switch permission mode')
+    expect(jobResult.error?.info).toMatchObject({ code: 'SANDBOX_PROCESS_INIT_FAILED' })
   })
 })
 

@@ -142,13 +142,33 @@ describe('multimodal spill', () => {
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('no readable attachment path'))
   })
 
-  it('keeps original images when the route has no visual token calculator', async () => {
+  it('falls back to conservative image token estimation when the route has no visual token calculator', async () => {
     const { ctx, execute } = await setup([text('A'.repeat(4000)), image()], 200)
     vi.spyOn(ctx.llm, 'imageRequestPricing').mockReturnValue(undefined)
     const warning = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const result = await execute()
+    expect(result.content.some(block => block.type === 'image')).toBe(false)
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0]).toMatchObject({ type: 'text' })
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toContain('Omitted 1 images')
+    expect(warning).not.toHaveBeenCalled()
+  })
+
+  it('spills oversized image-only results even without a visual token calculator', async () => {
+    const { ctx, execute } = await setup([image()], 200)
+    vi.spyOn(ctx.llm, 'imageRequestPricing').mockReturnValue(undefined)
+    const result = await execute()
+    expect(result.content.some(block => block.type === 'image')).toBe(false)
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0]).toMatchObject({ type: 'text' })
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toContain('Omitted 1 images')
+  })
+
+  it('keeps images inline when fallback token estimate fits within maxInlineTokens', async () => {
+    const { ctx, execute } = await setup([image()], 2000)
+    vi.spyOn(ctx.llm, 'imageRequestPricing').mockReturnValue(undefined)
+    const result = await execute()
     expect(result.content.some(block => block.type === 'image')).toBe(true)
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('no image token calculator'))
   })
 
   it('preserves images after the execution filesystem is unmounted', async () => {
@@ -171,7 +191,7 @@ describe('multimodal spill', () => {
     const result = await executeToolFixture(ctx, { signal: new AbortController().signal,
       callId: ToolCallId('offline'), name: 'offline_image', arguments: {} })
     expect(result.content).toEqual([{ type: 'image', attachment }])
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('no image token calculator'))
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('no session owner'))
   })
 
   it('preserves content when the image calculator loses an occurrence', async () => {

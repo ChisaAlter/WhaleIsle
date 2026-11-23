@@ -4,23 +4,6 @@ const { app } = require('electron');
 const { DshManager, ensureOwnedPort } = require('./dsh');
 const { HarnessController } = require('./harness-controller');
 const { loadConfig, saveConfig, readConfigSnapshot, configRevision } = require('./config');
-const { stripDroppedPlugins, healDanglingBundles, ensureDesktopInstallPlugin, applyDisabledBundles } = require('./plugins');
-const { removeDshMarketPreset } = require('./dshmarket-preset');
-const { ensureUsagePanelPlugin } = require('./usage-panel-preset');
-const { ensureSessionSearchOverlay } = require('./session-search-overlay');
-const { ensureDshImPlugin } = require('./dsh-im-desktop');
-const { ensureDesktopDshProject, projectAvailable } = require('./dsh-project-desktop');
-const { ensureDesktopTaskControl } = require('./task-control-overlay');
-const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
-const { ensureDesktopAcpAgents } = require('./dsh-acp-agents-desktop');
-const { ensureDesktopDshWhale } = require('./dsh-whale-desktop');
-const { ensureDesktopDshRemote } = require('./dsh-remote-desktop');
-const { ensureDesktopDshPad } = require('./dsh-pad-desktop');
-const { ensureDesktopDeepSeekTools } = require('./deepseek-tools-desktop');
-const { ensureDesktopMarket } = require('./dsh-market-desktop');
-const { ensureDesktopOfficeRuntime } = require('./office-runtime');
-const { removeLegacyDshbotPreset } = require('./legacy-dshbot-preset');
-const { ensureWorkspace } = require('./workspace-rpc');
 const {
   getMainWindow,
   showBoot,
@@ -80,30 +63,30 @@ function createAppHarness({ state, dsh, remote, createMainWindow, initializeDesk
     resolveLaunchTarget,
     readConfigSnapshot,
     currentConfigRevision: configRevision,
-    stripDroppedPlugins,
-    ensureDesktopInstallPlugin,
-    removeDshMarketPreset,
-    ensureUsagePanelPlugin,
-    ensureSessionSearchOverlay,
-    ensureDshImPlugin,
-    ensureDshProjectPlugin: ensureDesktopDshProject,
-    projectAvailable,
-    ensureTaskControlPlugin: ensureDesktopTaskControl,
-    ensureDesktopPlatformSession,
-    ensureDesktopAcpAgents,
-    ensureDshWhalePlugin: ensureDesktopDshWhale,
-    ensureDshRemotePlugin: ensureDesktopDshRemote,
-    ensureDshPadPlugin: ensureDesktopDshPad,
-    ensureDeepSeekToolsPlugin: ensureDesktopDeepSeekTools,
-    ensureDesktopMarket,
-    ensureDesktopOfficeRuntime: async () => ensureDesktopOfficeRuntime(),
-    removeLegacyDshbotPreset,
-    applyDisabledBundles,
-    healDanglingBundles,
+    stripDroppedPlugins: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./plugins')).stripDroppedPlugins(...args),
+    ensureDesktopInstallPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./plugins')).ensureDesktopInstallPlugin(...args),
+    removeDshMarketPreset: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dshmarket-preset')).removeDshMarketPreset(...args),
+    ensureUsagePanelPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./usage-panel-preset')).ensureUsagePanelPlugin(...args),
+    ensureSessionSearchOverlay: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./session-search-overlay')).ensureSessionSearchOverlay(...args),
+    ensureDshImPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-im-desktop')).ensureDshImPlugin(...args),
+    ensureDshProjectPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-project-desktop')).ensureDesktopDshProject(...args),
+    projectAvailable: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-project-desktop')).projectAvailable(...args),
+    ensureTaskControlPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./task-control-overlay')).ensureDesktopTaskControl(...args),
+    ensureDesktopPlatformSession: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./platform-session-overlay')).ensureDesktopPlatformSession(...args),
+    ensureDesktopAcpAgents: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-acp-agents-desktop')).ensureDesktopAcpAgents(...args),
+    ensureDshWhalePlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-whale-desktop')).ensureDesktopDshWhaleAsync(...args),
+    ensureDshRemotePlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-remote-desktop')).ensureDesktopDshRemote(...args),
+    ensureDshPadPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-pad-desktop')).ensureDesktopDshPad(...args),
+    ensureDeepSeekToolsPlugin: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./deepseek-tools-desktop')).ensureDesktopDeepSeekTools(...args),
+    ensureDesktopMarket: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./dsh-market-desktop')).ensureDesktopMarket(...args),
+    ensureDesktopOfficeRuntime: async () => require('./office-runtime').ensureDesktopOfficeRuntime(),
+    removeLegacyDshbotPreset: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./legacy-dshbot-preset')).removeLegacyDshbotPreset(...args),
+    applyDisabledBundles: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./plugins')).applyDisabledBundles(...args),
+    healDanglingBundles: (/** @type {any[]} */ ...args) => /** @type {any} */ (require('./plugins')).healDanglingBundles(...args),
     saveConfig,
     appVersion: app.getVersion(),
     ensureWorkspace: (/** @type {any} */ url, /** @type {any} */ workspace, /** @type {any} */ fetchImpl, /** @type {any} */ options) => (
-      ensureWorkspace(url, workspace, fetchImpl, { cookie: dsh.sessionCookie, ...options })
+      require('./workspace-rpc').ensureWorkspace(url, workspace, fetchImpl, { cookie: dsh.sessionCookie, ...options })
     ),
   });
 }

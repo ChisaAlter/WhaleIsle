@@ -243,6 +243,35 @@ describe('spawn construction (pure, every platform)', () => {
     expect(ENCODING_PREAMBLE).toContain('$OutputEncoding')
   })
 
+  it('omits ::new($false) preamble in read-only sandbox and for param/using/#requires headers, while passing non-interactive env', async () => {
+    const ctx = createContext()
+    const subprocess = new CapturingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+
+    await run(ctx.shell, ctx.shell.resolve({
+      command: 'Get-ChildItem',
+      sandboxPolicy: { mode: 'read-only', workspaceRoot: process.cwd() },
+    }))
+    await run(ctx.shell, ctx.shell.resolve({ command: 'param($x) Write-Output $x' }))
+    await run(ctx.shell, ctx.shell.resolve({ command: '# header comment\nusing namespace System.IO\nWrite-Output ok' }))
+    await run(ctx.shell, ctx.shell.resolve({ command: '  #requires -Version 5.1\nWrite-Output ok' }))
+
+    expect(subprocess.specs[0]!.argv[5]).toBe('Get-ChildItem')
+    expect(subprocess.specs[1]!.argv[5]).toBe('param($x) Write-Output $x')
+    expect(subprocess.specs[2]!.argv[5]).toBe('# header comment\nusing namespace System.IO\nWrite-Output ok')
+    expect(subprocess.specs[3]!.argv[5]).toBe('  #requires -Version 5.1\nWrite-Output ok')
+    for (const spec of subprocess.specs) {
+      expect(spec.env).toMatchObject({
+        PYTHONUTF8: '1',
+        GIT_TERMINAL_PROMPT: '0',
+        GCM_INTERACTIVE: 'never',
+        PIP_NO_INPUT: '1',
+        NPM_CONFIG_YES: 'true',
+        CI: '1',
+      })
+    }
+  })
+
   it('reports both unread stderr and an asynchronous provider rejection exactly once', async () => {
     const ctx = createContext()
     const subprocess = new CapturingSubprocessRuntime(ctx)

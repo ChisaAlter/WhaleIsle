@@ -6,7 +6,7 @@ import { callShell, UnauthorizedError } from '../shell/remote-shell.js';
 import { muxPatch } from '../conversation/live.js';
 import { applyHostFrame } from '../host/frames.js';
 import { removeApproval } from '../chisacode/approvals.js';
-import { resyncAfterReconnect, checkForegroundConnection, watchConnection, createDraftStore } from '../chisacode/controller.js';
+import { resyncAfterReconnect, checkForegroundConnection, watchConnection, watchTransportMode, createDraftStore } from '../chisacode/controller.js';
 import { switchDraft } from '../conversation/draft-switch.js';
 import { classifyScan } from '../pair/scan.js';
 import { composerOffline, operationError, renderConnBanner, setToast, showBanner, showError } from './chrome.js?v=20261117-app-split';
@@ -190,6 +190,7 @@ export function forceLogout(message, { forget = true } = {}) {
   state.sessionsOpen = false;
   state.settingsOpen = false;
   state.transport = '';
+  state.transportMode = '';
   state.chisacode = null;
   state.route = 'connect';
   state.sessions = [];
@@ -395,14 +396,8 @@ export async function resumeRemoteConnection() {
   }
 }
 
-async function finishChisaCodeConnect(paired, reconnected, signal) {
-  if (signal?.aborted) {
-    await paired.client.close();
-    return;
-  }
-  state.chisacode = paired;
-  const closeOnAbort = () => { void paired.client.close().catch(() => { /* The pairing abort owns the outcome; the client may already be closed. */ }); };
-  signal?.addEventListener('abort', closeOnAbort, { once: true });
+/** @param {any} paired */
+function attachChisaCodeSubscriptions(paired) {
   const disposeEvents = bindChisaCodeEvents(paired);
   const disposeWatch = watchConnection(paired.client, {
     onStatus: (phase) => {
@@ -423,15 +418,26 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
       void runReconnectResync();
     },
   });
+  const disposeTransportMode = watchTransportMode(paired.client, (mode) => {
+    if (state.chisacode !== paired) return;
+    state.transportMode = mode || '';
+    if (state.settingsOpen) renderSettings();
+  });
   paired.dispose = () => {
     disposeEvents();
     disposeWatch();
+    disposeTransportMode();
     stopHistoryPoll();
     stopMux();
   };
+}
+
+/** @param {any} paired */
+function applyChisaCodeConnectedState(paired) {
   draftStore = createDraftStore(localStorage, paired.serverId);
   state.chisacode = paired;
   state.transport = 'chisacode';
+  state.transportMode = paired.getTransportMode?.() || paired.transportMode || state.transportMode || '';
   state.connected = true;
   state.route = 'chat';
   state.host = { protocol: 'chisacode-v2', serverId: paired.serverId };
@@ -439,6 +445,18 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
   resetWorkPanes();
   state.extPane = { mcp: null, skills: null, plugins: null };
   state.hostName = paired.computerName;
+}
+
+async function finishChisaCodeConnect(paired, reconnected, signal) {
+  if (signal?.aborted) {
+    await paired.client.close();
+    return;
+  }
+  state.chisacode = paired;
+  const closeOnAbort = () => { void paired.client.close().catch(() => { /* The pairing abort owns the outcome; the client may already be closed. */ }); };
+  signal?.addEventListener('abort', closeOnAbort, { once: true });
+  attachChisaCodeSubscriptions(paired);
+  applyChisaCodeConnectedState(paired);
   let loadError = '';
   deviceLine.textContent = '已连接，正在同步会话…';
   try {

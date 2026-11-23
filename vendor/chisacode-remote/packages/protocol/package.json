@@ -9,6 +9,10 @@
   ],
   "type": "module",
   "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./agent-attention-notification": {
       "types": "./dist/agent-attention-notification.d.ts",
       "default": "./dist/agent-attention-notification.js"
@@ -104,6 +108,14 @@
     "./relay-device-auth": {
       "types": "./dist/relay-device-auth.d.ts",
       "default": "./dist/relay-device-auth.js"
+    },
+    "./rtc-chunking": {
+      "types": "./dist/rtc-chunking.d.ts",
+      "default": "./dist/rtc-chunking.js"
+    },
+    "./webrtc-signaling": {
+      "types": "./dist/webrtc-signaling.d.ts",
+      "default": "./dist/webrtc-signaling.js"
     },
     "./daemon-endpoints": {
       "types": "./dist/daemon-endpoints.d.ts",

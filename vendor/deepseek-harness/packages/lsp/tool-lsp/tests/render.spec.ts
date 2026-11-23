@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { pathToFileURL } from 'node:url'
 import { join, resolve } from 'node:path'
 import {
+  appendDiagnosticsContent,
   DEFAULT_MAX_LOCATIONS,
   DEFAULT_MAX_RESULT_CHARS,
+  extractEditedFilePaths,
+  formatDiagnostics,
   formatHover,
   formatLocations,
   LSP_OPERATIONS,
@@ -11,7 +14,7 @@ import {
   presentLspCall,
   renderUri,
 } from '@deepseek-ai/dsh-tool-lsp'
-import type { LspLocation } from '@deepseek-ai/dsh-lsp'
+import type { LspDiagnostic, LspLocation } from '@deepseek-ai/dsh-lsp'
 
 const WS = resolve('/home/u/proj')
 const WS_URI = pathToFileURL(WS).href
@@ -21,12 +24,28 @@ function loc(uri: string, line: number, character = 0): LspLocation {
 }
 
 describe('parseLspArgs', () => {
-  it('accepts the four operations and converts one-based to zero-based', () => {
+  it('accepts all operations and converts one-based to zero-based', () => {
     for (const operation of LSP_OPERATIONS) {
       const input = parseLspArgs({ operation, file_path: 'a.ts', line: 3, character: 5 })
       expect(input.operation).toBe(operation)
       expect(input.position).toEqual({ line: 2, character: 4 })
     }
+  })
+
+  it('allows diagnostics without line/character and defaults to zero-based 0:0', () => {
+    const input = parseLspArgs({ operation: 'diagnostics', file_path: 'src/a.ts' })
+    expect(input).toEqual({
+      operation: 'diagnostics',
+      filePath: 'src/a.ts',
+      position: { line: 0, character: 0 },
+    })
+  })
+
+  it('requires line and character for cursor-based operations', () => {
+    expect(() => parseLspArgs({ operation: 'goToDefinition', file_path: 'a.ts' }))
+      .toThrow(expect.objectContaining({ name: 'ToolArgsError', code: 'INVALID_ARGS', message: expect.stringMatching(/line must be/) as string }))
+    expect(() => parseLspArgs({ operation: 'hover', file_path: 'a.ts', line: 1 }))
+      .toThrow(expect.objectContaining({ name: 'ToolArgsError', code: 'INVALID_ARGS', message: expect.stringMatching(/character must be/) as string }))
   })
 
   it('rejects an unknown operation', () => {
@@ -168,5 +187,96 @@ describe('presentLspCall', () => {
       title: 'LSP findReferences a.ts:3:7',
       locations: [{ path: 'a.ts', line: 3 }],
     })
+  })
+
+  it('renders a positionless call title for diagnostics without coordinates', () => {
+    expect(presentLspCall({ operation: 'diagnostics', file_path: 'a.ts' })).toEqual({
+      card: 'generic',
+      kind: 'search',
+      title: 'LSP diagnostics a.ts',
+      locations: [{ path: 'a.ts' }],
+    })
+  })
+})
+
+describe('formatDiagnostics', () => {
+  function diag(
+    line: number,
+    character: number,
+    severity: LspDiagnostic['severity'],
+    message: string,
+    extra: Partial<Pick<LspDiagnostic, 'source' | 'code'>> = {},
+  ): LspDiagnostic {
+    return {
+      range: { start: { line, character }, end: { line, character: character + 1 } },
+      severity,
+      message,
+      ...extra,
+    }
+  }
+
+  it('renders a distinct no-diagnostics line when empty', () => {
+    const uri = pathToFileURL(join(WS, 'a.ts')).href
+    expect(formatDiagnostics([], uri, WS_URI, DEFAULT_MAX_LOCATIONS, DEFAULT_MAX_RESULT_CHARS)).toBe('No diagnostics.')
+  })
+
+  it('formats file:line:col [severity] (source/code) message with optional source/code combinations', () => {
+    const uri = pathToFileURL(join(WS, 'src', 'a.ts')).href
+    const rendered = formatDiagnostics([
+      diag(2, 4, 'error', 'Type mismatch', { source: 'ts', code: 2322 }),
+      diag(4, 0, 'warning', 'Unused symbol', { source: 'eslint' }),
+      diag(5, 1, 'information', 'Info note', { code: 'I100' }),
+      diag(6, 2, 'hint', 'Consider const'),
+    ], uri, WS_URI, DEFAULT_MAX_LOCATIONS, DEFAULT_MAX_RESULT_CHARS)
+
+    expect(rendered).toBe([
+      'src/a.ts:3:5 [error] (ts/2322) Type mismatch',
+      'src/a.ts:5:1 [warning] (eslint) Unused symbol',
+      'src/a.ts:6:2 [information] (I100) Info note',
+      'src/a.ts:7:3 [hint] Consider const',
+    ].join('\n'))
+  })
+
+  it('caps items and characters cleanly', () => {
+    const uri = pathToFileURL(join(WS, 'a.ts')).href
+    const items = [diag(0, 0, 'error', 'first'), diag(1, 0, 'warning', 'second'), diag(2, 0, 'error', 'third')]
+    const limited = formatDiagnostics(items, uri, WS_URI, 1, DEFAULT_MAX_RESULT_CHARS)
+    expect(limited).toBe('a.ts:1:1 [error] first\n… 2 more diagnostics omitted (limit 1).')
+
+    const charCapped = formatDiagnostics(items, uri, WS_URI, 10, 50)
+    expect(charCapped).toHaveLength(50)
+    expect(charCapped).toContain('diagnostics truncated')
+  })
+})
+
+describe('extractEditedFilePaths & appendDiagnosticsContent', () => {
+  it('extracts edited paths for edit, write, str_replace_editor, and apply_patch while ignoring view/delete', () => {
+    expect(extractEditedFilePaths('edit', { file_path: 'a.ts' }, { path: '/ws/a.ts' })).toEqual(['/ws/a.ts'])
+    expect(extractEditedFilePaths('write', { file_path: 'b.ts' }, undefined)).toEqual(['b.ts'])
+    expect(extractEditedFilePaths('str_replace_editor', { command: 'view', path: '/ws/a.ts' }, undefined)).toEqual([])
+    expect(extractEditedFilePaths('str_replace_editor', { command: 'str_replace', path: '/ws/a.ts' }, undefined)).toEqual(['/ws/a.ts'])
+    expect(extractEditedFilePaths('str_replace_editor', { command: 'create', path: '/ws/c.ts' }, undefined)).toEqual(['/ws/c.ts'])
+    expect(extractEditedFilePaths('str_replace_editor', { command: 'insert', path: '/ws/d.ts' }, undefined)).toEqual(['/ws/d.ts'])
+    expect(extractEditedFilePaths('apply_patch', {}, {
+      operations: [
+        { kind: 'add', path: 'added.ts', status: 'completed' },
+        { kind: 'update', path: 'updated.ts', status: 'completed' },
+        { kind: 'move', path: 'old.ts', destination: 'moved.ts', status: 'completed' },
+        { kind: 'delete', path: 'deleted.ts', status: 'completed' },
+        { kind: 'update', path: 'skipped.ts', status: 'skipped' },
+      ],
+    })).toEqual(['added.ts', 'updated.ts', 'moved.ts'])
+    expect(extractEditedFilePaths('apply_patch', {
+      input: '*** Begin Patch\n*** Update File: old.ts\n*** Move to: new.ts\n*** Delete File: gone.ts\n*** Add File: fresh.ts\n*** End Patch',
+    }, undefined)).toEqual(['new.ts', 'fresh.ts'])
+    expect(extractEditedFilePaths('read', { file_path: 'a.ts' }, undefined)).toEqual([])
+  })
+
+  it('appends diagnostics text without mutating existing content blocks', () => {
+    const original = [{ type: 'text' as const, text: 'Edited file.' }]
+    const updated = appendDiagnosticsContent(original, 'LSP diagnostics:\na.ts:1:1 [error] bad')
+    expect(original[0]?.text).toBe('Edited file.')
+    expect(updated).toEqual([{ type: 'text', text: 'Edited file.\n\nLSP diagnostics:\na.ts:1:1 [error] bad' }])
+    expect(appendDiagnosticsContent([], 'LSP diagnostics:\nx')).toEqual([{ type: 'text', text: 'LSP diagnostics:\nx' }])
   })
 })

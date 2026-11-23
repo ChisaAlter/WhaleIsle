@@ -48,18 +48,30 @@ const timeContextStateSchema = zod.object({
 /** The agent registry that owns pre-step processing. */
 export const inject = ['agents', 'sessionProjections']
 
+/** Scheduling policy for appending durable time-context messages across turns and steps. */
+export type TimeInjectionPolicy = 'periodic' | 'turn-start' | 'session-start'
+
+const VALID_INJECTION_POLICIES: readonly string[] = ['periodic', 'turn-start', 'session-start']
+
 /** Request-preparation clock formatting and append scheduling. Invalid values fail plugin load. */
 export interface Config {
   /** Fallback display zone when the open turn has no unique browser zone. Omit to use the process zone. */
   timeZone?: string
   /** Minimum milliseconds between durable injections in one session. Defaults to 600000 (10 minutes); 0 injects at every eligible step. */
   refreshIntervalMs?: number
+  /** KV-cache scheduling policy: `'periodic'` (default), `'turn-start'`, or `'session-start'`. */
+  injectionPolicy?: TimeInjectionPolicy
 }
 
 /** Schemastery validation for {@link Config}. */
 export const Config: z<Config> = z.object({
   timeZone: z.string(),
   refreshIntervalMs: z.number(),
+  injectionPolicy: z.union([
+    z.const('periodic'),
+    z.const('turn-start'),
+    z.const('session-start'),
+  ]).default('periodic'),
 })
 
 /**
@@ -121,19 +133,49 @@ function validateRefreshInterval(refreshIntervalMs: number): void {
   }
 }
 
+/** Reject unrecognized durable injection policies before plugin activation completes. */
+function validateInjectionPolicy(injectionPolicy: TimeInjectionPolicy): void {
+  if (!VALID_INJECTION_POLICIES.includes(injectionPolicy)) {
+    throw new TypeError(
+      `time-context: injectionPolicy must be one of ${VALID_INJECTION_POLICIES.join(', ')}, got ${injectionPolicy}`,
+    )
+  }
+}
+
+function shouldSkipInjection(
+  policy: TimeInjectionPolicy,
+  refreshIntervalMs: number,
+  now: number,
+  state: { lastInjectionTime: number | null; lastTurnInjectionTime: number | null },
+): boolean {
+  switch (policy) {
+    case 'periodic': {
+      if (refreshIntervalMs === 0) return false
+      const lastInjection = state.lastInjectionTime
+      return lastInjection !== null && now >= lastInjection && now - lastInjection < refreshIntervalMs
+    }
+    case 'turn-start':
+      return state.lastTurnInjectionTime !== null
+    case 'session-start':
+      return state.lastInjectionTime !== null
+  }
+}
+
 /**
  * Register a prepended pre-step listener for the lifetime of `ctx`.
  * Steps admitted during activation await the projection registration; a
  * registration failure or owner disposal prevents the request from proceeding.
  * @param ctx - plugin context; the listener is disposed with it.
  * @param config - time zone and durable refresh scheduling configuration.
- * @throws when the refresh interval is invalid or the configured or process time zone cannot be resolved.
+ * @throws when the refresh interval or injection policy is invalid, or the configured or process time zone cannot be resolved.
  * @returns when the plugin is ready.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const timeZone = config.timeZone
   const refreshIntervalMs = config.refreshIntervalMs ?? 600_000
+  const injectionPolicy = config.injectionPolicy ?? 'periodic'
   validateRefreshInterval(refreshIntervalMs)
+  validateInjectionPolicy(injectionPolicy)
   let fallbackFormatter: Intl.DateTimeFormat
   try {
     fallbackFormatter = createTimestampFormatter(timeZone)
@@ -206,12 +248,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (decision.kind === 'reject' || signal.aborted) return decision
     const now = Date.now()
     const state = timeContextProjectionHandle.stateOf(agent.session)
-    if (refreshIntervalMs > 0) {
-      const lastInjection = state.lastInjectionTime
-      if (lastInjection != null
-        && now >= lastInjection
-        && now - lastInjection < refreshIntervalMs) return decision
-    }
+    if (shouldSkipInjection(injectionPolicy, refreshIntervalMs, now, state)) return decision
     /* v8 ignore next 3 -- every later step follows a recorded injection in the same turn */
     const previous = step === 1
       ? state.lastMessageTime ?? undefined

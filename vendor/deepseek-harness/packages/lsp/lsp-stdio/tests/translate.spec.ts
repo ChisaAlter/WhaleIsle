@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CLIENT_CAPABILITIES,
+  MAX_DIAGNOSTICS_PER_FILE,
   negotiatePositionEncoding,
+  normalizeDocumentUri,
   normalizeHover,
   normalizeLocations,
+  normalizePublishDiagnostics,
   requestMethod,
+  supportsDocumentChange,
   supportsOperation,
   supportsTransientOpen,
 } from '@deepseek-ai/dsh-lsp-stdio'
@@ -12,16 +17,17 @@ import type { WireServerCapabilities } from '@deepseek-ai/dsh-lsp-stdio/src/prot
 const RANGE = { start: { line: 1, character: 2 }, end: { line: 1, character: 5 } }
 
 describe('requestMethod', () => {
-  it('maps each operation to its textDocument request', () => {
+  it('maps each operation to its textDocument request or notification method', () => {
     expect(requestMethod('goToDefinition')).toBe('textDocument/definition')
     expect(requestMethod('findReferences')).toBe('textDocument/references')
     expect(requestMethod('goToImplementation')).toBe('textDocument/implementation')
     expect(requestMethod('hover')).toBe('textDocument/hover')
+    expect(requestMethod('diagnostics')).toBe('textDocument/publishDiagnostics')
   })
 })
 
 describe('supportsOperation', () => {
-  it('reads the provider slot for each operation (boolean and options forms)', () => {
+  it('reads the provider slot for cursor operations and always allows push diagnostics', () => {
     const caps: WireServerCapabilities = {
       definitionProvider: true,
       referencesProvider: { workDoneProgress: true },
@@ -31,6 +37,30 @@ describe('supportsOperation', () => {
     expect(supportsOperation(caps, 'findReferences')).toBe(true)
     expect(supportsOperation(caps, 'goToImplementation')).toBe(false)
     expect(supportsOperation(caps, 'hover')).toBe(false)
+    expect(supportsOperation(caps, 'diagnostics')).toBe(true)
+  })
+})
+
+describe('supportsDocumentChange', () => {
+  it('accepts full/incremental sync and rejects None/absent/change:0', () => {
+    expect(supportsDocumentChange(1)).toBe(true)
+    expect(supportsDocumentChange(2)).toBe(true)
+    expect(supportsDocumentChange({ openClose: true })).toBe(true)
+    expect(supportsDocumentChange({ openClose: true, change: 1 })).toBe(true)
+    expect(supportsDocumentChange({ openClose: true, change: 2 })).toBe(true)
+    expect(supportsDocumentChange({ openClose: true, change: 0 })).toBe(false)
+    expect(supportsDocumentChange({ openClose: false, change: 1 })).toBe(false)
+    expect(supportsDocumentChange(0)).toBe(false)
+    expect(supportsDocumentChange(undefined)).toBe(false)
+  })
+})
+
+describe('CLIENT_CAPABILITIES', () => {
+  it('advertises textDocument.publishDiagnostics support', () => {
+    expect(CLIENT_CAPABILITIES.textDocument.publishDiagnostics).toEqual({
+      relatedInformation: true,
+      versionSupport: true,
+    })
   })
 })
 
@@ -173,5 +203,61 @@ describe('normalizeHover', () => {
   it('rejects a malformed range instead of silently dropping it', () => {
     expect(() => normalizeHover({ contents: 'x', range: { start: { line: 1 } } }))
       .toThrow(expect.objectContaining({ code: 'LSP_MALFORMED_RESPONSE' }))
+  })
+})
+
+describe('normalizeDocumentUri', () => {
+  it('normalizes Windows drive encoding/case while leaving POSIX and non-file URIs intact', () => {
+    expect(normalizeDocumentUri('file:///c%3A/Repo/src/A.ts')).toBe('file:///c:/Repo/src/A.ts')
+    expect(normalizeDocumentUri('file:///C:/Repo/src/A.ts')).toBe('file:///c:/Repo/src/A.ts')
+    expect(normalizeDocumentUri('file:///home/user/src/A.ts')).toBe('file:///home/user/src/A.ts')
+    expect(normalizeDocumentUri('untitled:Untitled-1')).toBe('untitled:Untitled-1')
+    expect(normalizeDocumentUri('file://[')).toBe('file://[')
+  })
+})
+
+describe('normalizePublishDiagnostics', () => {
+  it('parses valid diagnostics with severity mapping and optional source/code/version', () => {
+    const parsed = normalizePublishDiagnostics({
+      uri: 'file:///ws/a.ts',
+      version: 3,
+      diagnostics: [
+        { range: RANGE, severity: 1, source: 'ts', code: 2322, message: 'type mismatch' },
+        { range: RANGE, severity: 2, code: 'unused', message: 'unused var' },
+        { range: RANGE, severity: 3, message: 'info' },
+        { range: RANGE, severity: 4, message: 'hint' },
+        { range: RANGE, message: 'default severity' },
+      ],
+    })
+    expect(parsed).toEqual({
+      uri: 'file:///ws/a.ts',
+      version: 3,
+      diagnostics: [
+        { range: RANGE, severity: 'error', source: 'ts', code: 2322, message: 'type mismatch' },
+        { range: RANGE, severity: 'warning', code: 'unused', message: 'unused var' },
+        { range: RANGE, severity: 'information', message: 'info' },
+        { range: RANGE, severity: 'hint', message: 'hint' },
+        { range: RANGE, severity: 'error', message: 'default severity' },
+      ],
+    })
+  })
+
+  it('ignores malformed payloads/entries and caps per-file diagnostics at MAX_DIAGNOSTICS_PER_FILE', () => {
+    expect(normalizePublishDiagnostics(null)).toBeUndefined()
+    expect(normalizePublishDiagnostics({ uri: 123, diagnostics: [] })).toBeUndefined()
+    expect(normalizePublishDiagnostics({ uri: 'file:///ws/a.ts', diagnostics: 'nope' })).toBeUndefined()
+
+    const raw = Array.from({ length: MAX_DIAGNOSTICS_PER_FILE + 25 }, (_, i) => ({
+      range: RANGE,
+      severity: 1,
+      message: `err-${i}`,
+    }))
+    const parsed = normalizePublishDiagnostics({
+      uri: 'file:///ws/a.ts',
+      diagnostics: [null, { range: { start: { line: -1, character: 0 }, end: RANGE.end }, message: 'bad' }, ...raw],
+    })
+    expect(parsed?.diagnostics).toHaveLength(MAX_DIAGNOSTICS_PER_FILE)
+    expect(parsed?.diagnostics[0]?.message).toBe('err-0')
+    expect(parsed?.diagnostics[MAX_DIAGNOSTICS_PER_FILE - 1]?.message).toBe(`err-${MAX_DIAGNOSTICS_PER_FILE - 1}`)
   })
 })

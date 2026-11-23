@@ -1,5 +1,8 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { imageOffloadProjection } from '@deepseek-ai/dsh-compaction-image-offload/projection'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -24,15 +27,31 @@ const SMALL: ToolResultPruneConfig = {
   thresholdChars: 50,
   headChars: 4,
   tailChars: 3,
+  protectRecentToolResults: 0,
 }
 
-function service(config: ToolResultPruneConfig = SMALL): ToolResultPruner {
+const tempDirs: string[] = []
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+function makeTempDir(prefix = 'dsh-pruner-test-'): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+function service(config: ToolResultPruneConfig = SMALL, spillRoot?: string): ToolResultPruner {
   const ctx = new Context()
   // Service constructors self-register, so `ctx.tokenMeter` resolves for the
   // shadow-price pricing without a full plugin boot.
   new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
-  return new ToolResultPruner(ctx, config)
+  if (spillRoot !== undefined) ctx.provide('spillStore' as never, { root: spillRoot } as never)
+  const effectiveConfig = config.archiveDir !== undefined || spillRoot !== undefined
+    ? config
+    : { ...config, archiveDir: makeTempDir() }
+  return new ToolResultPruner(ctx, effectiveConfig)
 }
 
 /** Pricing oracle mirroring the service's estimator for expectations. */
@@ -100,9 +119,19 @@ describe('tool-result pruning configuration', () => {
     const raw = { thresholdChars: 100, headChars: 20, tailChars: 10 }
     const resolved = resolveConfig(raw)
     raw.headChars = 1
-    expect(resolved).toEqual({ thresholdChars: 100, headChars: 20, tailChars: 10 })
+    expect(resolved).toEqual({
+      thresholdChars: 100,
+      headChars: 20,
+      tailChars: 10,
+      protectRecentToolResults: 2,
+    })
     expect(Object.isFrozen(resolved)).toBe(true)
-    expect(DEFAULTS).toEqual({ thresholdChars: 8192, headChars: 4096, tailChars: 1024 })
+    expect(DEFAULTS).toEqual({
+      thresholdChars: 8192,
+      headChars: 4096,
+      tailChars: 1024,
+      protectRecentToolResults: 2,
+    })
     expect(Object.isFrozen(DEFAULTS)).toBe(true)
   })
 
@@ -111,6 +140,8 @@ describe('tool-result pruning configuration', () => {
       [{ thresholdChars: 0 }, /thresholdChars .* positive integer/],
       [{ headChars: -1 }, /headChars .* non-negative integer/],
       [{ tailChars: 1.5 }, /tailChars .* non-negative integer/],
+      [{ protectRecentToolResults: -1 }, /protectRecentToolResults .* non-negative integer/],
+      [{ archiveDir: '   ' }, /archiveDir/],
       [{ thresholdChars: 50, headChars: 20, tailChars: 20 }, /headChars \+ marker \+ tailChars/],
       [{ threshold: 10 }, /unknown key "threshold"/],
     ] as Array<[unknown, RegExp]>
@@ -276,5 +307,81 @@ describe('ToolResultPruner session transaction', () => {
     const replay = Session.create(session.id, session.snapshotEvents())
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
     expect(replay.surface.replaceGeneration).toBe(session.surface.replaceGeneration)
+  })
+
+  it('protects the newest protectRecentToolResults (default 2) tool results unless overridden', () => {
+    const session = Session.create(SessionId('hot-tail'))
+    appendToolStep(session, 1, 'old-1', [{ type: 'text', text: '1'.repeat(400) }])
+    appendToolStep(session, 2, 'old-2', [{ type: 'text', text: '2'.repeat(400) }])
+    appendToolStep(session, 3, 'recent-3', [{ type: 'text', text: '3'.repeat(400) }])
+    appendToolStep(session, 4, 'recent-4', [{ type: 'text', text: '4'.repeat(400) }])
+    session.append('turn/start', { turn: 5 })
+
+    const pruner = service({ thresholdChars: 250, headChars: 20, tailChars: 10 })
+    expect(pruner.config.protectRecentToolResults).toBe(2)
+
+    const pass1 = pruner.pruneSession(session)
+    expect(pass1.pruned.map(entry => entry.callId)).toEqual([ToolCallId('old-1'), ToolCallId('old-2')])
+    const messagesAfter1 = session.deriveMessages()
+    const recent3Text = JSON.stringify(messagesAfter1.find(m => m.role === 'tool' && m.toolCallId === ToolCallId('recent-3')))
+    const recent4Text = JSON.stringify(messagesAfter1.find(m => m.role === 'tool' && m.toolCallId === ToolCallId('recent-4')))
+    expect(recent3Text).toContain('3'.repeat(400))
+    expect(recent4Text).toContain('4'.repeat(400))
+
+    // Emergency override can prune the hot tail when explicitly requested (e.g. context-overflow).
+    const emergency = pruner.pruneSession(session, { protectRecentToolResults: 0 })
+    expect(emergency.pruned.map(entry => entry.callId)).toEqual([ToolCallId('recent-3'), ToolCallId('recent-4')])
+  })
+
+  it('archives full output to spillStore pruned-results/ and includes the readable file path in the replacement', () => {
+    const spillRoot = makeTempDir('dsh-spill-root-')
+    const session = Session.create(SessionId('archive-ok'))
+    const originalBody = `HEAD-${'Z'.repeat(500)}-TAIL`
+    appendToolStep(session, 1, 'big-read', [{ type: 'text', text: originalBody }])
+    appendToolStep(session, 2, 'recent-1', [{ type: 'text', text: 'ok' }])
+    appendToolStep(session, 3, 'recent-2', [{ type: 'text', text: 'ok' }])
+    session.append('turn/start', { turn: 4 })
+
+    const pruner = service({ thresholdChars: 260, headChars: 20, tailChars: 10 }, spillRoot)
+    const first = pruner.pruneSession(session)
+    expect(first.pruned).toHaveLength(1)
+    const archivePath = first.pruned[0]!.archivePath
+    expect(archivePath).toBeDefined()
+    expect(archivePath!.startsWith(join(spillRoot, 'pruned-results'))).toBe(true)
+    expect(readFileSync(archivePath!, 'utf8')).toBe(originalBody)
+
+    const replacedMsg = session.deriveMessages().find(m => m.role === 'tool' && m.toolCallId === ToolCallId('big-read'))
+    const replacedText = replacedMsg?.content.find(b => b.type === 'text')?.text ?? ''
+    expect(replacedText).toContain('tool result middle pruned')
+    expect(replacedText).toContain(archivePath!)
+    expect(codePointLength(replacedText)).toBeLessThanOrEqual(260)
+
+    // Converges in one pass even with archive note attached.
+    expect(pruner.pruneSession(session)).toEqual({ pruned: [], charsRemoved: 0 })
+  })
+
+  it('skips pruning and preserves original output verbatim when archiving to disk fails', () => {
+    const dir = makeTempDir('dsh-archive-fail-')
+    const blockingFile = join(dir, 'not-a-directory')
+    writeFileSync(blockingFile, 'occupied', 'utf8')
+
+    const session = Session.create(SessionId('archive-fail'))
+    const originalBody = 'Q'.repeat(400)
+    const seq = appendToolStep(session, 1, 'failing-archive', [{ type: 'text', text: originalBody }])
+    session.append('turn/start', { turn: 2 })
+
+    const pruner = service({
+      thresholdChars: 250,
+      headChars: 20,
+      tailChars: 10,
+      protectRecentToolResults: 0,
+      archiveDir: blockingFile,
+    })
+    const result = pruner.pruneSession(session)
+    expect(result).toEqual({ pruned: [], charsRemoved: 0 })
+    expect(session.surface.nodes).toContain(seq)
+    expect(session.snapshotEvents().some(e => e.type === 'compaction/prune')).toBe(false)
+    const preserved = session.deriveMessages().find(m => m.role === 'tool' && m.toolCallId === ToolCallId('failing-archive'))
+    expect(preserved?.content).toEqual([{ type: 'text', text: originalBody }])
   })
 })

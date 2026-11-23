@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { IceServerConfig } from "@chisacode/protocol/connection-offer";
 
 import { createConnectionOfferV2, encodeOfferToFragmentUrl } from "./connection-offer.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
@@ -9,6 +10,7 @@ import { getOrCreateServerId } from "./server-id.js";
 
 export interface LocalPairingOffer {
   relayEnabled: boolean;
+  lanEnabled?: boolean;
   url: string | null;
   qr: string | null;
   /** One-time QR expiry; the raw token stays only in the private offer URL. */
@@ -24,6 +26,9 @@ export async function generateLocalPairingOffer(args: {
   relayPublicEndpoint?: string;
   relayUseTls?: boolean;
   relayPublicUseTls?: boolean;
+  lanEndpoints?: string[];
+  lanUseTls?: boolean;
+  iceServers?: IceServerConfig[];
   appBaseUrl?: string;
   includeQr?: boolean;
   /** Desktop copy-link action uses a separately revocable enrollment credential. */
@@ -33,9 +38,12 @@ export async function generateLocalPairingOffer(args: {
   logger?: Logger;
 }): Promise<LocalPairingOffer> {
   const relayEnabled = args.relayEnabled ?? true;
-  if (!relayEnabled) {
+  const lanEndpoints = (args.lanEndpoints ?? []).map((ep) => ep.trim()).filter(Boolean);
+  const lanEnabled = lanEndpoints.length > 0;
+  if (!relayEnabled && !lanEnabled) {
     return {
       relayEnabled: false,
+      lanEnabled: false,
       url: null,
       qr: null,
     };
@@ -53,16 +61,29 @@ export async function generateLocalPairingOffer(args: {
   // Old clients ignore authBootstrap; new clients use it for first device bind.
   const deviceStore = new RelayDeviceCredentialStore(args.chisacodeHome);
   const pairing = deviceStore.issuePairingToken(10 * 60_000);
+  const relayBlock = relayEnabled
+    ? { endpoint: relayPublicEndpoint, useTls: relayPublicUseTls }
+    : undefined;
+  const lanBlock = lanEnabled
+    ? {
+        endpoints: lanEndpoints,
+        ...(args.lanUseTls !== undefined ? { useTls: args.lanUseTls } : {}),
+      }
+    : undefined;
+  const iceServers =
+    args.iceServers && args.iceServers.length > 0 ? args.iceServers : undefined;
   const offer = await createConnectionOfferV2({
     serverId,
     daemonPublicKeyB64: daemonKeyPair.publicKeyB64,
-    relayAuthPublicKeyB64: daemonKeyPair.relayAuthPublicKeyB64,
+    ...(relayEnabled ? { relayAuthPublicKeyB64: daemonKeyPair.relayAuthPublicKeyB64 } : {}),
     authBootstrap: {
       version: 1,
       pairingToken: pairing.token,
       expiresAtMs: pairing.expiresAtMs,
     },
-    relay: { endpoint: relayPublicEndpoint, useTls: relayPublicUseTls },
+    ...(relayBlock ? { relay: relayBlock } : {}),
+    ...(lanBlock ? { lan: lanBlock } : {}),
+    ...(iceServers ? { iceServers } : {}),
   });
   const url = encodeOfferToFragmentUrl({ offer, appBaseUrl });
   let linkUrl: string | undefined;
@@ -74,14 +95,16 @@ export async function generateLocalPairingOffer(args: {
     const linkOffer = await createConnectionOfferV2({
       serverId,
       daemonPublicKeyB64: daemonKeyPair.publicKeyB64,
-      relayAuthPublicKeyB64: daemonKeyPair.relayAuthPublicKeyB64,
+      ...(relayEnabled ? { relayAuthPublicKeyB64: daemonKeyPair.relayAuthPublicKeyB64 } : {}),
       authBootstrap: {
         version: 1,
         kind: "persistent",
         pairingToken: link.token,
         expiresAtMs: link.expiresAtMs,
       },
-      relay: { endpoint: relayPublicEndpoint, useTls: relayPublicUseTls },
+      ...(relayBlock ? { relay: relayBlock } : {}),
+      ...(lanBlock ? { lan: lanBlock } : {}),
+      ...(iceServers ? { iceServers } : {}),
     });
     linkUrl = encodeOfferToFragmentUrl({ offer: linkOffer, appBaseUrl });
   }
@@ -89,7 +112,8 @@ export async function generateLocalPairingOffer(args: {
 
   if (args.includeQr === false) {
     return {
-      relayEnabled: true,
+      relayEnabled,
+      lanEnabled,
       url,
       qr: null,
       ...metadata,
@@ -104,7 +128,8 @@ export async function generateLocalPairingOffer(args: {
   }
 
   return {
-    relayEnabled: true,
+    relayEnabled,
+    lanEnabled,
     url,
     qr,
     ...metadata,

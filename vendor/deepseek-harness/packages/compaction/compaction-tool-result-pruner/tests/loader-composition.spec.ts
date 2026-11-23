@@ -59,6 +59,7 @@ describe('compaction-tool-result-pruner real Loader composition', () => {
       thresholdChars: 100,
       headChars: 20,
       tailChars: 10,
+      protectRecentToolResults: 2,
     })
   })
 

@@ -280,4 +280,61 @@ describe('SessionController idle release wiring', () => {
     watch.mockRestore()
     await ctx.fiber.dispose()
   })
+
+  it('excludes agents inside releasingIds from liveAgent and awaits in-flight release before resuming', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const sessionId = SessionId('releasing-race')
+    const header: SessionHeader = {
+      version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
+    }
+    const disposeGate = Promise.withResolvers<void>()
+    let disposed = false
+    const resumedAgent = {
+      id: sessionId,
+      session: { id: sessionId, header: {} },
+      ctx,
+      status: 'idle',
+    } as unknown as Agent
+    const dyingAgent = {
+      id: sessionId,
+      session: { id: sessionId, header: {} },
+      ctx,
+      status: 'idle',
+    } as unknown as Agent
+    ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
+      list: () => Promise.resolve([header]),
+      inspect: () => Promise.resolve({ meta: header, inheritedEventCount: SessionLogOffset(0), events: [] }),
+    }) as never)
+    const controller = await createSessionTestController(ctx, defaults)
+    const agents = (controller as unknown as { agents: ApiSessionAgentController }).agents
+    vi.spyOn(ctx.agents, 'get').mockImplementation(id => (id === sessionId && !disposed ? dyingAgent : undefined))
+    const resumeSpy = vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
+      expect(disposed).toBe(true)
+      return { agent: resumedAgent, dispose: async () => {} }
+    })
+
+    const lifecycle = ctx.sessionLifecycle
+    expect(lifecycle).toBeDefined()
+    expect((agents as unknown as { liveAgent(id: SessionId): unknown }).liveAgent(sessionId)).toEqual({ agent: dyingAgent })
+    const releaseDone = lifecycle!.trackRelease(sessionId, disposeGate.promise.then(() => { disposed = true }))
+    expect((agents as unknown as { liveAgent(id: SessionId): unknown }).liveAgent(sessionId)).toBeUndefined()
+
+    let resolved: unknown
+    const resolving = agents.resolveAgent(sessionId).then((value) => {
+      resolved = value
+      return value
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(resolved).toBeUndefined()
+    expect(resumeSpy).not.toHaveBeenCalled()
+
+    disposeGate.resolve()
+    await releaseDone
+    await expect(resolving).resolves.toEqual({ agent: resumedAgent })
+    expect(resumeSpy).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
 })

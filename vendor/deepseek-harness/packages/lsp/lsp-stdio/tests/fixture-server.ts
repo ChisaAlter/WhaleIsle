@@ -34,6 +34,8 @@ const hang = process.env.LSP_FAKE_HANG === '1'
 const crashOnOpen = process.env.LSP_FAKE_CRASH_ON_OPEN === '1'
 const exitAfterReply = process.env.LSP_FAKE_EXIT_AFTER_REPLY === '1'
 const openMarker = process.env.LSP_FAKE_OPEN_MARKER
+const changeMarker = process.env.LSP_FAKE_CHANGE_MARKER
+const closeMarker = process.env.LSP_FAKE_CLOSE_MARKER
 const initializedMarker = process.env.LSP_FAKE_INITIALIZED_MARKER
 const pauseStdinAfterInitialized = process.env.LSP_FAKE_PAUSE_STDIN_AFTER_INITIALIZED === '1'
 const exitDelayMs = Number(process.env.LSP_FAKE_EXIT_DELAY_MS ?? 0)
@@ -42,6 +44,9 @@ const noShutdown = process.env.LSP_FAKE_NO_SHUTDOWN === '1'
 const onOpen = process.env.LSP_FAKE_ON_OPEN
 const errorReply = process.env.LSP_FAKE_ERROR === '1'
 const garbage = process.env.LSP_FAKE_GARBAGE === '1'
+const fakeDiagnostics = process.env.LSP_FAKE_DIAGNOSTICS
+const fakeDiagnosticsDelayMs = Number(process.env.LSP_FAKE_DIAGNOSTICS_DELAY_MS ?? 0)
+const fakeDiagnosticsOmitVersion = process.env.LSP_FAKE_DIAGNOSTICS_OMIT_VERSION === '1'
 
 let serverRequestId = 10_000
 const pendingServerRequests = new Map<number, string>()
@@ -136,11 +141,24 @@ function handle(message: { id?: number; method?: string; params?: unknown; resul
   }
   if (method === 'textDocument/didOpen') {
     if (crashOnOpen) process.exit(1)
+    const params = message.params as { textDocument?: { uri?: string; version?: number; text?: unknown } } | undefined
     if (openMarker !== undefined) {
-      const params = message.params as { textDocument?: { text?: unknown } } | undefined
       appendFileSync(openMarker, `${JSON.stringify(params?.textDocument?.text)}\n`)
     }
     if (onOpen !== undefined) emitServerRequest(onOpen)
+    maybePublishDiagnostics(params?.textDocument?.uri, params?.textDocument?.version, params?.textDocument?.text)
+    return
+  }
+  if (method === 'textDocument/didChange') {
+    const params = message.params as {
+      textDocument?: { uri?: string; version?: number }
+      contentChanges?: Array<{ text?: unknown }>
+    } | undefined
+    const changedText = params?.contentChanges?.[0]?.text
+    if (changeMarker !== undefined) {
+      appendFileSync(changeMarker, `${JSON.stringify({ uri: params?.textDocument?.uri, version: params?.textDocument?.version, text: changedText })}\n`)
+    }
+    maybePublishDiagnostics(params?.textDocument?.uri, params?.textDocument?.version, changedText)
     return
   }
   if (method === 'initialized') {
@@ -148,7 +166,13 @@ function handle(message: { id?: number; method?: string; params?: unknown; resul
     if (initializedMarker !== undefined) appendFileSync(initializedMarker, 'INITIALIZED\n')
     return
   }
-  if (method === 'textDocument/didClose') return
+  if (method === 'textDocument/didClose') {
+    if (closeMarker !== undefined) {
+      const params = message.params as { textDocument?: { uri?: string } } | undefined
+      appendFileSync(closeMarker, `${JSON.stringify(params?.textDocument?.uri)}\n`)
+    }
+    return
+  }
   if (method?.startsWith('textDocument/')) {
     if (hang) return
     if (errorReply) {
@@ -168,6 +192,31 @@ function handle(message: { id?: number; method?: string; params?: unknown; resul
 /** Append one teardown event when the fixture is configured to expose process ordering. */
 function markExit(event: string): void {
   if (exitMarker !== undefined) appendFileSync(exitMarker, `${event}\n`)
+}
+
+/** Publish scripted diagnostics after didOpen/didChange when LSP_FAKE_DIAGNOSTICS is configured. */
+function maybePublishDiagnostics(uri: string | undefined, version: number | undefined, text: unknown): void {
+  if (fakeDiagnostics === undefined || uri === undefined) return
+  const payload = fakeDiagnostics === 'auto'
+    ? (typeof text === 'string' && text.includes('ERROR')
+      ? [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } }, severity: 1, source: 'fake', code: 'E1', message: 'error token' }]
+      : [])
+    : JSON.parse(fakeDiagnostics) as unknown[]
+  const emit = (): void => {
+    send({
+      method: 'textDocument/publishDiagnostics',
+      params: {
+        uri,
+        ...(!fakeDiagnosticsOmitVersion && version !== undefined ? { version } : {}),
+        diagnostics: payload,
+      },
+    })
+  }
+  if (fakeDiagnosticsDelayMs > 0) {
+    setTimeout(emit, fakeDiagnosticsDelayMs)
+  } else {
+    emit()
+  }
 }
 
 /** Emit a server→client request and log the client's reply to stderr for the test to assert. */

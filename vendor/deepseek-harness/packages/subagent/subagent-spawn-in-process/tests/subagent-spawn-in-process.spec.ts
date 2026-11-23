@@ -22,12 +22,15 @@ type Script = ConstructorParameters<typeof MockAdapter>[0]
  * The parent is a real config agent; the spawn provider creates a real child
  * agent on the same context and we assert its output.
  */
-async function setup(script: Script) {
+async function setup(script: Script, options: { maxTokensRecoveryLimit?: number } = {}) {
   const ctx = new Context()
   const adapter = new MockAdapter(script)
   await mountAgentLoopTestDependencies(ctx)
   await mountLocalActivations(ctx)
-  await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(AgentLoop, {
+    agents: [],
+    ...(options.maxTokensRecoveryLimit === undefined ? {} : { maxTokensRecoveryLimit: options.maxTokensRecoveryLimit }),
+  })
   await mountWorkingDirectoryFixture(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(spawn, { providerName: 'spawn' })
@@ -135,7 +138,7 @@ describe('dsh-subagent-spawn-in-process', () => {
   })
 
   it('maps a child that hit its token ceiling to stopReason "max-tokens"', async () => {
-    const { ctx, parent } = await setup([maxTokensResponse('cut off')])
+    const { ctx, parent } = await setup([maxTokensResponse('cut off')], { maxTokensRecoveryLimit: 0 })
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
     const result = await run.result
     expect(result.stopReason).toBe('max-tokens')

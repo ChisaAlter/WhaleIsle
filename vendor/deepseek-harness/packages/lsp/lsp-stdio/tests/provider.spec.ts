@@ -116,7 +116,7 @@ describe('lsp-stdio provider resolution', () => {
     await ctx.fiber.dispose()
   })
 
-  it.each(['shutdownTimeoutMs', 'killGraceMs'] as const)('rejects %s above Node timer range at load', async (name) => {
+  it.each(['shutdownTimeoutMs', 'killGraceMs', 'idleTimeoutMs'] as const)('rejects %s above Node timer range at load', async (name) => {
     const ctx = new Context()
     await ctx.plugin(Lsp)
     await ctx.plugin(LocalSubprocessRuntime)
@@ -127,6 +127,26 @@ describe('lsp-stdio provider resolution', () => {
       extensionToLanguage: { '.ts': 'typescript' },
       [name]: MAX_TIMER_DELAY_MS + 1,
     }))).rejects.toThrow(new RegExp(`servers\\.bad-timer\\.${name}`))
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects nonpositive maxOpenDocuments and negative diagnosticsWaitMs at load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(Lsp)
+    await ctx.plugin(LocalSubprocessRuntime)
+    await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
+    await expect(ctx.plugin(LspLocal, config('bad-lru', {
+      command: process.execPath,
+      args: ['-e', ''],
+      extensionToLanguage: { '.ts': 'typescript' },
+      maxOpenDocuments: 0,
+    }))).rejects.toThrow(/servers\.bad-lru\.maxOpenDocuments must be a positive integer/)
+    await expect(ctx.plugin(LspLocal, config('bad-wait', {
+      command: process.execPath,
+      args: ['-e', ''],
+      extensionToLanguage: { '.ts': 'typescript' },
+      diagnosticsWaitMs: -1,
+    }))).rejects.toThrow(/servers\.bad-wait\.diagnosticsWaitMs must be a non-negative integer/)
     await ctx.fiber.dispose()
   })
 

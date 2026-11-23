@@ -7,6 +7,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Chat from '../src/index.ts'
 import { OPENUI_GUIDE } from '../src/openui-guide.ts'
+import { WHALE_UI_COMPACT_GUIDE } from '../src/whale-ui-guide.ts'
 
 const HOST = fileURLToPath(new URL('../../../../../../src/renderer/whale-ui/host.cjs', import.meta.url))
 const contexts: Context[] = []
@@ -37,11 +38,22 @@ describe('Whale UI host opt-in and result projection', () => {
   it('registers the real built validator and guide, projects replayable metadata, and removes both on reload', async () => {
     const h = await setup(true)
     const assembly = await h.ctx.systemPrompt.assemble()
-    expect(h.ctx.tools.schemas().map(tool => tool.name)).toEqual(['render_ui'])
-    expect(assembly.tools.map(tool => tool.name)).toEqual(['render_ui'])
-    expect(assembly.sections.filter(section => section.name === 'whale-ui')).toEqual([
-      expect.objectContaining({ text: OPENUI_GUIDE }),
+    expect(h.ctx.tools.schemas().map(tool => tool.name)).toEqual(['render_ui', 'whale_ui_guide'])
+    expect(assembly.tools.map(tool => tool.name)).toEqual(['render_ui', 'whale_ui_guide'])
+    const whaleSection = assembly.sections.filter(section => section.name === 'whale-ui')
+    expect(whaleSection).toEqual([
+      expect.objectContaining({ text: WHALE_UI_COMPACT_GUIDE }),
     ])
+    expect(whaleSection[0]!.text.length).toBeLessThanOrEqual(1500)
+    expect(whaleSection[0]!.text).toContain('whale_ui_guide')
+
+    const fullGuideCall = (await h.ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: ToolCallId('whale-ui-guide-1'), name: 'whale_ui_guide', arguments: '{}' }],
+      signal: new AbortController().signal,
+    })).results[0]!.result
+    expect(fullGuideCall.isError).toBe(false)
+    expect(fullGuideCall.content).toEqual([{ type: 'text', text: OPENUI_GUIDE }])
+    expect((fullGuideCall.value as { guide: string }).guide).toBe(OPENUI_GUIDE)
     const program = 'root = Col([Text("Working interface")])'
     const result = await h.execute({ program })
     const value = { version: 1, language: 'whale-ui', program }

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
@@ -28,6 +31,7 @@ import type {
 import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import { estimateContent, ROLE_OVERHEAD } from '@deepseek-ai/dsh-token-meter/estimate'
 import { agentEvents, type Agent, type RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 
@@ -39,6 +43,15 @@ declare module '@deepseek-ai/dsh-llm' {
 
 const SIGNAL = new AbortController().signal
 const MODEL = 'test-model'
+
+function makePruner(
+  ctx: Context,
+  config: { thresholdChars: number; headChars: number; tailChars: number; protectRecentToolResults?: number },
+): ToolResultPruner {
+  const archiveDir = mkdtempSync(join(tmpdir(), 'dsh-compact-basic-pruner-'))
+  onTestFinished(() => { rmSync(archiveDir, { recursive: true, force: true }) })
+  return new ToolResultPruner(ctx, { ...config, archiveDir })
+}
 
 class ContextAdapter extends LlmAdapter {
   constructor(private readonly contextWindow: number, private readonly compactionThreshold?: number) {
@@ -975,11 +988,11 @@ describe('pressure measurement and retention', () => {
 })
 
 describe('optional model-free tool-result pruning', () => {
-  const pruneConfig = { thresholdChars: 100, headChars: 20, tailChars: 10 }
+  const pruneConfig = { thresholdChars: 100, headChars: 20, tailChars: 10, protectRecentToolResults: 0 }
 
   it('does not prune a below-pressure session opportunistically', async () => {
     const ctx = createContext(10_000)
-    const prune = new ToolResultPruner(ctx, pruneConfig)
+    const prune = makePruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
       headroomTokens: 0,
       maxTokens: 8192,
@@ -998,7 +1011,7 @@ describe('optional model-free tool-result pruning', () => {
 
   it('skips LLM summarization when pruning alone clears pressure', async () => {
     const ctx = createContext(1_000)
-    void new ToolResultPruner(ctx, pruneConfig)
+    makePruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
       headroomTokens: 0,
       maxTokens: 8192,
@@ -1017,7 +1030,7 @@ describe('optional model-free tool-result pruning', () => {
 
   it('summarizes the pruned surface when pruning is insufficient', async () => {
     const ctx = createContext(2_000)
-    void new ToolResultPruner(ctx, pruneConfig)
+    makePruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
       headroomTokens: 0,
       maxTokens: 8192,
@@ -1962,7 +1975,7 @@ describe('retired model compaction fallback', () => {
 
     constructor(
       private readonly retiredModels: ReadonlySet<string>,
-      private readonly contextWindow = 1_000,
+      private readonly contextWindow = 2_000,
       private readonly resolveErrors: ReadonlyMap<string, Error> = new Map(),
       private readonly streamErrors: ReadonlyMap<string, Extract<StreamChunk, { type: 'finish' }>['reason']> = new Map(),
     ) {
@@ -2032,7 +2045,7 @@ describe('retired model compaction fallback', () => {
     const compact = new BasicCompactionEngine(ctx, {
       headroomTokens: 0,
       maxTokens: 32,
-      thresholdRatio: 0.5,
+      thresholdRatio: 0.25,
       retainTokens: 100,
       ...config,
     })
@@ -2134,7 +2147,7 @@ describe('retired model compaction fallback', () => {
       /ECONNRESET network error/,
     ],
   ])('does not fall back or swallow %s', async (_label, resolveErrors, streamErrors, pattern) => {
-    const adapter = new RetiredModelAdapter(new Set(), 1_000, resolveErrors, streamErrors)
+    const adapter = new RetiredModelAdapter(new Set(), 2_000, resolveErrors, streamErrors)
     const { ctx, compact, warnings } = fallbackHarness(adapter)
     const session = retiredSession()
     const previous = session.requestHeader()
@@ -2389,7 +2402,7 @@ describe('automatic listener and loader composition', () => {
 
   it('authorizes overflow retry when pruning alone advances an indivisible surface', async () => {
     const ctx = createContext(10_000)
-    void new ToolResultPruner(ctx, {
+    makePruner(ctx, {
       thresholdChars: 100,
       headChars: 20,
       tailChars: 10,
@@ -2410,7 +2423,7 @@ describe('automatic listener and loader composition', () => {
 
   it('continues overflow recovery with summarization on the pruned surface', async () => {
     const ctx = createContext(10_000)
-    void new ToolResultPruner(ctx, {
+    makePruner(ctx, {
       thresholdChars: 100,
       headChars: 20,
       tailChars: 10,
@@ -2433,7 +2446,7 @@ describe('automatic listener and loader composition', () => {
     const ctx = createContext(10_000)
     const warnings: string[] = []
     ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
-    void new ToolResultPruner(ctx, {
+    makePruner(ctx, {
       thresholdChars: 100,
       headChars: 20,
       tailChars: 10,
@@ -2458,7 +2471,7 @@ describe('automatic listener and loader composition', () => {
   it('lets cancellation win when summary throws after a durable prune', async () => {
     const ctx = createContext(10_000)
     const controller = new AbortController()
-    void new ToolResultPruner(ctx, {
+    makePruner(ctx, {
       thresholdChars: 100,
       headChars: 20,
       tailChars: 10,
@@ -2858,5 +2871,429 @@ describe('route-priced image pressure', () => {
       .filter(node => result?.shadowedSeqs.includes(node.seq))
       .reduce((total, node) => total + node.heuristicTokens, 0)
     expect(summaryEvent?.data.shadowedTokenCount).toBe(shadowedHeuristic)
+  })
+})
+
+describe('baseline instruction preservation and overflow deadlock recovery', () => {
+  function recoverOverflow(ctx: Context, owner: Agent): Promise<boolean> {
+    const turn = owner.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn ?? 1
+    return agentEvents(ctx, owner).waterfall(
+      'agent/request-error',
+      {
+        turn,
+        step: 1,
+        provider: 'test',
+        failure: { message: 'provider overflow', code: CONTEXT_WINDOW_EXCEEDED_CODE },
+        retryPolicy: undefined,
+        signal: SIGNAL,
+      },
+      () => Promise.resolve(undefined),
+    ).then(action => action?.kind === 'retry')
+  }
+
+  it('protects agent-instructions and <available_skills> baseline nodes across compaction passes', async () => {
+    const ctx = createContext(10_000)
+    const compact = new TestCompactionEngine(ctx, {
+      headroomTokens: 0,
+      maxTokens: 8192,
+      thresholdRatio: 1,
+      retainTokens: 10,
+      auto: false,
+    })
+    const session = Session.create(SessionId('baseline-protected'))
+    session.append('turn/start', { turn: 1 })
+    session.append('system/message', {
+      turn: 1,
+      step: 1,
+      message: createSystemMessage('System prompt'),
+    }, { surfaceOp: 'append' })
+    const user1 = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'first prompt' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const instrSeq = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '# AGENTS.md baseline rules\n'.repeat(40) }],
+      source: { kind: 'agent-instructions', form: 'instructions', baseline: true, changes: [] } as never,
+    }), { surfaceOp: 'append' }).seq
+    const skillSeq = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '<system-reminder>\n<available_skills>\n- skill-a\n</available_skills>\n</system-reminder>' }],
+      source: { kind: 'skill-catalog', form: 'catalog', update: true, entries: [] } as never,
+    }), { surfaceOp: 'append' }).seq
+    const turn2Start = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'turn 2 payload '.repeat(200) }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' }).seq
+    session.append('step/start', { turn: 1, step: 1 })
+    const turn2Reply = session.append('assistant/message', {
+      stream: [],
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'turn 2 answer '.repeat(200) }],
+        source: { kind: 'model', provider: MODEL, model: MODEL },
+      }),
+    }, { surfaceOp: 'append' }).seq
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'recent tail question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const measured = ctx.tokenMeter.measure(session)
+    const range = selectCompactableRange(session, measured, 10)
+    expect(range).toEqual({ start: turn2Start, end: turn2Reply })
+    expect(user1.seq).toBeLessThan(instrSeq)
+    expect(range!.start).toBeGreaterThan(skillSeq)
+
+    // Compacting under an open turn preserves both protected baseline nodes on the surface.
+    session.append('turn/start', { turn: 2 })
+    await compact.compactRegion(range!.start, range!.end, agent(session, MODEL), SIGNAL)
+    expect(session.surface.nodes).toContain(instrSeq)
+    expect(session.surface.nodes).toContain(skillSeq)
+  })
+
+  it('caps overflowing summarization input to safe model window (0.65x) via trimming and segmented chunks', async () => {
+    const requests: GenerateOptions[] = []
+    class OverflowPreflightAdapter extends LlmAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider,
+          id: model,
+          name: model,
+          context: { contextWindow: 2_000 },
+        })
+      }
+
+      override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        requests.push(options)
+        const payloadTokens = options.messages.reduce(
+          (sum, m) => sum + estimateContent(m.content) + ROLE_OVERHEAD,
+          0,
+        )
+        expect(payloadTokens).toBeLessThanOrEqual(Math.floor(2_000 * 0.65))
+        yield { type: 'block-start', index: 0, blockType: 'text' }
+        yield { type: 'block-end', index: 0, block: { type: 'text', text: `chunk-${requests.length}` } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+
+    const ctx = createContext(2_000)
+    ctx.llm.registerAdapter(['bounded'], new OverflowPreflightAdapter())
+    void new BasicCompactionEngine(ctx, {
+      headroomTokens: 0,
+      maxTokens: 256,
+      thresholdRatio: 1,
+      retainTokens: 20,
+      auto: true,
+    })
+
+    const session = Session.create(SessionId('chunked-summary'))
+    session.append('turn/start', { turn: 1 })
+    session.append('request/header', {
+      header: { config: { provider: 'bounded', model: 'bounded' } },
+      reason: 'initial',
+    })
+    for (let turn = 1; turn <= 12; turn += 1) {
+      const callId = ToolCallId(`c-${turn}`)
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `turn ${turn} prompt `.repeat(80) }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      session.append('step/start', { turn, step: 1 })
+      session.append('assistant/message', {
+        stream: [],
+        turn,
+        step: 1,
+        message: createMessage({
+          role: 'assistant',
+          content: [{ type: 'tool-call', id: callId, name: 'read', arguments: '{}' }],
+          source: { kind: 'model', provider: 'bounded', model: 'bounded' },
+        }),
+      }, { surfaceOp: 'append' })
+      session.append('tool/call', { turn, step: 1, callId, name: 'read', arguments: '{}' })
+      session.append('tool/result', {
+        turn,
+        step: 1,
+        message: createToolResultMessage({
+          callId,
+          content: [{ type: 'text', text: `huge output ${turn} `.repeat(150) }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append' })
+      session.append('step/end', { turn, step: 1 })
+    }
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'final turn question' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const tokensBefore = ctx.tokenMeter.measure(session).totalTokens
+    expect(tokensBefore).toBeGreaterThan(2_000)
+    const retry = await recoverOverflow(ctx, agent(session, 'bounded'))
+    expect(retry).toBe(true)
+    expect(requests.length).toBeGreaterThanOrEqual(2)
+    expect(ctx.tokenMeter.measure(session).totalTokens).toBeLessThan(tokensBefore)
+  })
+
+  it('falls back to zero-LLM deterministic sliding-window eviction when summarization triggers CONTEXT_WINDOW_EXCEEDED or fails to shrink', async () => {
+    class AlwaysOverflowingSummaryAdapter extends LlmAdapter {
+      summaryCalls = 0
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider,
+          id: model,
+          name: model,
+          context: { contextWindow: 4_000 },
+        })
+      }
+
+      override async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+        this.summaryCalls += 1
+        yield {
+          type: 'finish',
+          reason: {
+            kind: 'error',
+            failure: { message: 'context_window_exceeded during summary', code: CONTEXT_WINDOW_EXCEEDED_CODE },
+          },
+        }
+      }
+    }
+
+    const ctx = createContext(4_000)
+    const failingAdapter = new AlwaysOverflowingSummaryAdapter()
+    ctx.llm.registerAdapter(['always-overflow'], failingAdapter)
+    void new BasicCompactionEngine(ctx, {
+      headroomTokens: 0,
+      maxTokens: 256,
+      thresholdRatio: 1,
+      retainTokens: 20,
+      auto: true,
+    })
+
+    const session = Session.create(SessionId('zero-llm-fallback'))
+    session.append('turn/start', { turn: 1 })
+    session.append('request/header', {
+      header: { config: { provider: 'always-overflow', model: 'always-overflow' } },
+      reason: 'initial',
+    })
+    for (let turn = 1; turn <= 4; turn += 1) {
+      const callId = ToolCallId(`fc-${turn}`)
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `request ${turn} `.repeat(60) }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      session.append('step/start', { turn, step: 1 })
+      session.append('assistant/message', {
+        stream: [],
+        turn,
+        step: 1,
+        message: createMessage({
+          role: 'assistant',
+          content: [{ type: 'tool-call', id: callId, name: 'read', arguments: '{}' }],
+          source: { kind: 'model', provider: 'always-overflow', model: 'always-overflow' },
+        }),
+      }, { surfaceOp: 'append' })
+      session.append('tool/call', { turn, step: 1, callId, name: 'read', arguments: '{}' })
+      session.append('tool/result', {
+        turn,
+        step: 1,
+        message: createToolResultMessage({
+          callId,
+          content: [{ type: 'text', text: `tool data ${turn} `.repeat(60) }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append' })
+      session.append('step/end', { turn, step: 1 })
+    }
+    const tailUser = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'latest question kept alive' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const beforeTokens = ctx.tokenMeter.measure(session).totalTokens
+    const decision = await recoverOverflow(ctx, agent(session, 'always-overflow'))
+    expect(decision).toBe(true)
+    expect(failingAdapter.summaryCalls).toBeGreaterThanOrEqual(1)
+    expect(ctx.tokenMeter.measure(session).totalTokens).toBeLessThan(beforeTokens)
+    expect(session.surface.nodes).toContain(tailUser.seq)
+    const checkpointSeq = session.surface.nodes[0]!
+    expect(toolPairingBalancedBefore(session, checkpointSeq)).toBe(true)
+    expect(toolPairingBalancedAfter(session, checkpointSeq)).toBe(true)
+    expect(toolPairingBalancedAfter(session, tailUser.seq)).toBe(true)
+    const survivingCallIds = new Set<string>()
+    const survivingResultIds = new Set<string>()
+    for (const msg of session.deriveMessages()) {
+      for (const block of msg.content) {
+        if (block.type === 'tool-call') survivingCallIds.add(block.id)
+      }
+      if (msg.role === 'tool') survivingResultIds.add(msg.toolCallId)
+    }
+    expect(survivingCallIds).toEqual(survivingResultIds)
+    const summaryEvent = session.snapshotEvents().findLast(e => e.type === 'compaction/summary')
+    expect(summaryEvent?.data).toMatchObject({
+      provider: 'deterministic-fallback',
+      model: 'sliding-window-eviction',
+    })
+
+    // Non-shrinking summary on overflow recovery also falls back deterministically rather than deadlocking.
+    const ctxNoShrink = createContext(10_000)
+    const verboseCompact = new TestCompactionEngine(ctxNoShrink, {
+      headroomTokens: 0,
+      maxTokens: 8192,
+      thresholdRatio: 1,
+      retainTokens: 20,
+      auto: true,
+    })
+    verboseCompact.summary = [{ type: 'text', text: 'bloated summary '.repeat(1_000) }]
+    const session2 = conversation(3)
+    const tokens2Before = ctxNoShrink.tokenMeter.measure(session2).totalTokens
+    const retry2 = await recoverOverflow(ctxNoShrink, agent(session2, MODEL))
+    expect(retry2).toBe(true)
+    expect(ctxNoShrink.tokenMeter.measure(session2).totalTokens).toBeLessThan(tokens2Before)
+    expect(session2.snapshotEvents().findLast(e => e.type === 'compaction/summary')?.data).toMatchObject({
+      provider: 'deterministic-fallback',
+      model: 'sliding-window-eviction',
+    })
+  })
+
+  it('does not swallow AbortSignal cancellation during chunked summarization consolidation', async () => {
+    const controller = new AbortController()
+    let calls = 0
+    class AbortingConsolidationAdapter extends LlmAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider,
+          id: model,
+          name: model,
+          context: { contextWindow: 1_500 },
+        })
+      }
+
+      override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        calls += 1
+        // Only abort on the final consolidation call (input mentions "### Segment"), never during chunks.
+        const isConsolidation = options.messages.some(m =>
+          m.content.some(b => b.type === 'text' && b.text.includes('### Segment 1')))
+        if (isConsolidation) {
+          controller.abort('user cancelled compaction')
+          throw new Error('aborted during consolidation')
+        }
+        yield { type: 'block-start', index: 0, blockType: 'text' }
+        yield { type: 'block-end', index: 0, block: { type: 'text', text: `seg-${calls}` } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+
+    const ctx = createContext(1_500)
+    ctx.llm.registerAdapter(['abort-chunk'], new AbortingConsolidationAdapter())
+    const compact = new BasicCompactionEngine(ctx, {
+      headroomTokens: 0,
+      maxTokens: 256,
+      thresholdRatio: 1,
+      retainTokens: 20,
+      auto: false,
+    })
+
+    const session = Session.create(SessionId('abort-chunk-merge'))
+    session.append('turn/start', { turn: 1 })
+    session.append('request/header', {
+      header: { config: { provider: 'abort-chunk', model: 'abort-chunk' } },
+      reason: 'initial',
+    })
+    for (let turn = 1; turn <= 20; turn += 1) {
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `turn ${turn} `.repeat(100) }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+    }
+    const tail = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'keep me' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const nodes = session.surface.nodes
+    await expect(compact.compactRegion(nodes[0]!, nodes[nodes.indexOf(tail.seq) - 1]!, agent(session, 'abort-chunk'), controller.signal))
+      .rejects.toThrow()
+    expect(calls).toBeGreaterThanOrEqual(3)
+    expect(controller.signal.aborted).toBe(true)
+  })
+})
+
+describe('pre-step compaction observability', () => {
+  function runPreStep(ctx: Context, owner: Agent, turn: number, step: number) {
+    return agentEvents(ctx, owner).waterfall(
+      'agent/pre-step',
+      { modelSelection: { provider: MODEL, model: MODEL }, messages: [], turn, step, signal: SIGNAL },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    )
+  }
+
+  it('logs structured session, turn, step, target, and errorType context and throttles identical repeats', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    try {
+      const ctx = createContext()
+      const warnings: string[] = []
+      ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+      const compact = new TestCompactionEngine(ctx, {
+        headroomTokens: 0,
+        maxTokens: 8192,
+        thresholdRatio: 0.5,
+        retainTokens: 180,
+      })
+      const session = conversation(4)
+      const owner = agent(session, MODEL)
+
+      const spy = vi.spyOn(compact, 'compactIfNeeded')
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockRejectedValueOnce('raw non-error rejection')
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new LlmError('rate limit hit', 'RATE_LIMIT'))
+
+      // Step 1: emits immediately with structured fields.
+      await expect(runPreStep(ctx, owner, 2, 1)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain(`session=${session.header.id}`)
+      expect(warnings[0]).toContain('turn=2')
+      expect(warnings[0]).toContain('step=1')
+      expect(warnings[0]).toContain(`target=${MODEL}/${MODEL}`)
+      expect(warnings[0]).toContain('errorType=LlmError(RATE_LIMIT)')
+      expect(warnings[0]).toContain('rate limit hit')
+      expect(warnings[0]).toContain('context compaction skipped')
+
+      // Steps 2 & 3 within 60s cooldown with identical failure are throttled.
+      vi.advanceTimersByTime(10_000)
+      await expect(runPreStep(ctx, owner, 2, 2)).resolves.toEqual({ kind: 'enter', messages: [] })
+      await expect(runPreStep(ctx, owner, 2, 3)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(1)
+
+      // Distinct failure emits immediately without waiting for cooldown.
+      await expect(runPreStep(ctx, owner, 2, 4)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(2)
+      expect(warnings[1]).toContain('errorType=non-error')
+      expect(warnings[1]).toContain('raw non-error rejection')
+
+      // Once cooldown expires, same failure emits again and reports suppressed count.
+      vi.advanceTimersByTime(60_000)
+      await expect(runPreStep(ctx, owner, 3, 1)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(3)
+      expect(warnings[2]).toContain('suppressed=2')
+      expect(warnings[2]).toContain('turn=3')
+      expect(warnings[2]).toContain('step=1')
+
+      // A clean pre-step clears failure cooldown so a later regression logs immediately.
+      await expect(runPreStep(ctx, owner, 3, 2)).resolves.toEqual({ kind: 'enter', messages: [] })
+      await expect(runPreStep(ctx, owner, 3, 3)).resolves.toEqual({ kind: 'enter', messages: [] })
+      expect(warnings).toHaveLength(4)
+      expect(warnings[3]).not.toContain('suppressed=')
+      expect(spy).toHaveBeenCalledTimes(7)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

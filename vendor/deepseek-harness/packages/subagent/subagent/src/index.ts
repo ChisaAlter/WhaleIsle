@@ -27,6 +27,7 @@
  *
  * @module @deepseek-ai/dsh-subagent
  */
+import { isAbsolute, resolve } from 'node:path'
 import { deliverSubagentPrompt } from './internal.ts'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { SubagentDelivery } from './control-types.ts'
@@ -60,6 +61,7 @@ import type {
   SubagentActivation,
   SubagentActivationSpec,
   SubagentInterruptAuthority,
+  SubagentInterruptOptions,
   SubagentMemberNames,
   SubagentProvider,
   SubagentRunEndInfo,
@@ -93,6 +95,7 @@ export type {
   SubagentActivation,
   SubagentActivationSpec,
   SubagentInterruptAuthority,
+  SubagentInterruptOptions,
   SubagentMemberNames,
   SubagentProvider,
   SubagentResult,
@@ -102,7 +105,16 @@ export type {
   ResolvedSubagentStartRequest,
   SubagentStopReason,
   SubagentStopReasonMap,
+  SubagentWorktreeOutcome,
+  SubagentWorktreeSpec,
 } from './types.ts'
+export {
+  createIsolatedSubagentWorktree,
+  finalizeIsolatedSubagentWorktree,
+  formatWorktreeOutcomeNotice,
+  rollbackIsolatedSubagentWorktree,
+} from './worktree.ts'
+export type { CreateSubagentWorktreeOptions } from './worktree.ts'
 export {
   foldSubagentDescriptor,
   snapshotSubagentDescriptor,
@@ -326,6 +338,28 @@ export class SubagentRuntime extends TypertRemoteService {
   }
 
   /**
+   * Resolve a prospective child directory relative to the caller's active
+   * working directory (or session origin when no working-directory service is mounted).
+   * @param parent - delegating parent agent.
+   * @param cwd - optional caller-supplied child directory override.
+   * @param signal - cancellation signal for directory resolution.
+   * @returns resolved absolute child directory path.
+   */
+  async resolveDirectory(parent: Agent, cwd: string | undefined, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted()
+    if (cwd !== undefined && isAbsolute(cwd)) return cwd
+    const workingDirectory = this.ctx.get('workingDirectory')
+    const base = workingDirectory !== undefined
+      ? await workingDirectory.ensure(parent, signal)
+      : parent.session.header.cwd
+    signal.throwIfAborted()
+    if (base === undefined) {
+      throw new SubagentError('cannot resolve child working directory without a base directory', 'WORKTREE_UNAVAILABLE')
+    }
+    return resolve(base, cwd ?? '.')
+  }
+
+  /**
    * Report the model-facing names of a live tree member and its direct creator.
    * The root is `lead`; a descendant is the slash-separated path of names from
    * the root, or its Session id when it or a creator below the root has no name.
@@ -405,19 +439,26 @@ export class SubagentRuntime extends TypertRemoteService {
    * Interrupt one live child's current execution under a trusted user
    * operation or an exact live ancestor Agent. Fire-and-return: the cancel
    * signal is issued before this returns, but the target may keep running
-   * until it observes the signal. Unclaimed pending inbox work, the Activation,
-   * and published descendants are preserved; claimed work is not requeued.
+   * until it observes the signal. Unclaimed pending inbox work and the Activation
+   * are preserved; claimed work is not requeued. By default (`cascade: true`),
+   * live resident descendants are interrupted leaf-to-root before the target;
+   * pass `{ cascade: false }` to keep descendants running.
    * Once the interrupted Agent is idle, a waking send resumes the parked FIFO
    * queue. External backends stop their single execution. An absent target
    * is an accepted no-op, as is a manager-less composition, which cannot own a
    * live Activation.
    * @param targetSessionId - the durable child session id to interrupt.
    * @param authority - a trusted user operation or exact live ancestor Agent.
+   * @param options - cascade control; defaults to `{ cascade: true }`.
    * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
    *   live target.
    */
-  interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
-    this.manager?.interrupt(targetSessionId, authority)
+  interrupt(
+    targetSessionId: SessionId,
+    authority: SubagentInterruptAuthority,
+    options?: SubagentInterruptOptions,
+  ): void {
+    this.manager?.interrupt(targetSessionId, authority, options)
   }
 
   /**

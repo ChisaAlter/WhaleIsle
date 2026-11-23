@@ -143,6 +143,16 @@ jobs:
       - name: Malformed tool recovery
         if: needs.scope.outputs.vendor == 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t "replays malformed-tool-call-retry"
+      - name: Hardening & maturity suites
+        if: needs.scope.outputs.vendor == 'true'
+        env:
+          DSH_COVERAGE_TEST_TIMEOUT_MS: '15000'
+        run: |
+          node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/compaction/compaction-basic packages/compaction/compaction-image-offload packages/compaction/compaction-tool-result-pruner packages/spill/spill-policy packages/fs/fs-observation-policy packages/fs/tool-fs-search packages/fs/tool-str-replace-editor packages/plan/plan-mode packages/todo/tool-todo packages/mcp/mcp-client packages/lsp/lsp packages/lsp/lsp-stdio packages/lsp/tool-lsp packages/subagent/tool-subagent packages/subagent/tool-subagent-control packages/subagent/subagent-dsh-sdk packages/team/tool-agent-team packages/context/time-context packages/skill/skill-filesystem packages/subprocess/subprocess-local/tests/native-windows.spec.ts packages/subprocess/subprocess-local/tests/windows-inspector.spec.ts packages/sandbox/sandbox-windows-acl/tests/acl-failure-paths.spec.ts packages/sandbox/sandbox-windows-acl/tests/acl-skill.spec.ts packages/sandbox/sandbox-windows-acl/tests/ffi.spec.ts packages/sandbox/sandbox-windows-acl/tests/grant-failure-paths.spec.ts packages/sandbox/sandbox-windows-acl/tests/index-failure-paths.spec.ts packages/sandbox/sandbox-windows-acl/tests/path-boundary.spec.ts packages/sandbox/sandbox-windows-acl/tests/provider-chain.spec.ts packages/sandbox/sandbox-windows-acl/tests/workspace-sid.spec.ts --maxWorkers 2
+      - name: Maturity eval harness
+        run: |
+          npm run test:eval-harness
+          node scripts/eval-harness.mjs --mode offline
       - name: Built desktop composition
         if: needs.scope.outputs.vendor == 'true'
         run: node scripts/check-skip-compose-contract.js vendor/deepseek-harness
@@ -258,6 +268,16 @@ jobs:
           path: work/source-ui-walk
           if-no-files-found: warn
           retention-days: 14
+      - name: Hardening & maturity suites
+        if: needs.scope.outputs.vendor == 'true'
+        env:
+          DSH_COVERAGE_TEST_TIMEOUT_MS: '15000'
+        run: |
+          node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/compaction/compaction-basic packages/compaction/compaction-image-offload packages/compaction/compaction-tool-result-pruner packages/spill/spill-policy packages/fs/fs-observation-policy packages/fs/tool-fs-search packages/fs/tool-str-replace-editor packages/plan/plan-mode packages/todo/tool-todo packages/mcp/mcp-client packages/lsp/lsp packages/lsp/lsp-stdio packages/lsp/tool-lsp packages/subagent/tool-subagent packages/subagent/tool-subagent-control packages/subagent/subagent-dsh-sdk packages/team/tool-agent-team packages/context/time-context packages/skill/skill-filesystem --maxWorkers 2
+      - name: Maturity eval harness
+        run: |
+          npm run test:eval-harness
+          node scripts/eval-harness.mjs --mode offline
   macos-tests:
     needs: scope
     if: needs.scope.outputs.product == 'true'

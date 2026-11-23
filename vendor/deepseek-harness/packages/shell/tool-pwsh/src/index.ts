@@ -174,6 +174,24 @@ function resolveWorkdir(modelWorkdir: string | undefined, sessionCwd: string | u
   return modelWorkdir
 }
 
+const STATUS_DLL_INIT_FAILED_U32 = 3221225794
+const STATUS_DLL_INIT_FAILED_I32 = -1073741502
+
+function isSandboxDllInitFailure(exitCode: number | null): boolean {
+  return exitCode === STATUS_DLL_INIT_FAILED_U32 || exitCode === STATUS_DLL_INIT_FAILED_I32
+}
+
+function assertNoSandboxInitFailure(result: ShellRunResult): void {
+  if (!isSandboxDllInitFailure(result.exitCode)) return
+  const modeLabel = result.sandbox?.mode ?? 'workspace-write'
+  throw new HarnessError(
+    `Windows ${modeLabel} sandbox restricted process failed to initialize `
+      + `(STATUS_DLL_INIT_FAILED / exit code ${result.exitCode}); `
+      + 'do not retry identical pwsh commands; use read/edit tools or switch permission mode',
+    'SANDBOX_PROCESS_INIT_FAILED',
+  )
+}
+
 /** Detach the executor DTO from readonly Service Definition types into plain JSON data. */
 function canonicalPwshResult(result: ShellRunResult, cwd: string): PwshForegroundResult {
   const output = (stream: ShellRunResult['stdout']) => ({
@@ -416,6 +434,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         throw failure === undefined ? new Error(view.detail) : launchFailure(failure.error, exec.signal)
       }
       const result = await process.result().catch((error: unknown) => { throw launchFailure(error, exec.signal) })
+      assertNoSandboxInitFailure(result)
       const stopped = attached.stopped()
       return { ...canonicalPwshResult(result, spec.workdir), ...stopped !== undefined ? { stopped } : {} }
     }
@@ -598,6 +617,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           throw launchFailure(error, exec.signal)
         }
         if (result.aborted) throw toolAborted()
+        assertNoSandboxInitFailure(result)
         return canonicalPwshResult(result, spec.workdir)
       },
       /* jscpd:ignore-end */

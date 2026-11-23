@@ -164,6 +164,7 @@ export class OutputCollector {
     if (spill !== undefined && !this.spillDisabled && (overflows || this.spillFd !== undefined)) this.spillAll(spill, chunk)
     this.chunks.push(chunk)
     this.bytes += chunk.length
+    let trimmedHead = false
     while (this.bytes > this.maxBytes) {
       const head = this.chunks[0] as Buffer
       const excess = this.bytes - this.maxBytes
@@ -172,13 +173,30 @@ export class OutputCollector {
         this.chunks.shift()
         this.bytes -= head.length
       } else {
-        // Trim the head so the retained window is byte-exact at the cap — a
-        // diagnostic tail (an LSP server's stderr) must hold the LAST
-        // maxBytes regardless of how the stream was chunked.
+        // Trim the head so the retained window is capped at maxBytes.
         this.chunks[0] = head.subarray(excess)
         this.bytes -= excess
       }
       this.dropped = true
+      trimmedHead = true
+    }
+    if (trimmedHead) {
+      // Advance past any UTF-8 continuation bytes (10xxxxxx) at the trimmed head
+      // so the retained window never starts mid-character with \uFFFD.
+      while (this.chunks.length > 0) {
+        const head = this.chunks[0] as Buffer
+        let offset = 0
+        while (offset < head.length && ((head[offset] ?? 0) & 0xc0) === 0x80) offset++
+        if (offset === 0) break
+        if (offset >= head.length) {
+          this.chunks.shift()
+          this.bytes -= head.length
+        } else {
+          this.chunks[0] = head.subarray(offset)
+          this.bytes -= offset
+          break
+        }
+      }
     }
   }
 

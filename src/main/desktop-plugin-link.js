@@ -21,7 +21,7 @@ function directoryLinkMatches(source, target) {
     // Compare directory identities, not case-sensitive spellings on Windows.
     return actual.isDirectory() && expected.isDirectory()
       && ((actual.ino > 0 && actual.ino === expected.ino && actual.dev === expected.dev)
-        || fs.realpathSync(target) === fs.realpathSync(source));
+        || fs.realpathSync.native(target) === fs.realpathSync.native(source));
   } catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; return false; }
 }
 
@@ -31,7 +31,7 @@ function directoryLinkMatches(source, target) {
  * @returns {boolean} whether a new link was created.
  */
 function ensureDirectoryLink(source, target) {
-  const sourceReal = fs.realpathSync(source);
+  const sourceReal = fs.realpathSync.native(source);
   if (!fs.statSync(sourceReal).isDirectory()) throw new Error(`Plugin source is not a directory: ${source}`);
   if (directoryLinkMatches(sourceReal, target)) return false;
   const info = linkInfo(target);

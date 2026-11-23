@@ -38,22 +38,42 @@ import {
   selectHookGroups,
   type HookOutput,
   type MergedHookOutcome,
+  type RunHookOptions,
 } from '@deepseek-ai/dsh-hook-protocol'
 import { parseCodexConfig, type CodexHookConfig } from './config.ts'
+import { createCodexProjectHookResolver } from './project-hooks.ts'
 /* jscpd:ignore-end */
 
 export const name = 'hooks-codex'
 export const inject = ['shell', 'agents', 'workingDirectory']
 
-/** Plugin config: where the Codex hooks.json lives + the model name for payloads. */
+/* jscpd:ignore-start */
+type HookSandboxPolicy = NonNullable<RunHookOptions['sandboxPolicy']>
+
+interface OptionalSandboxPolicyService {
+  resolve(request?: { session?: Agent['session'] }): HookSandboxPolicy
+}
+
+/** Resolve optional `sandboxPolicy` service without forcing a required Cordis injection. */
+function resolveHookSandboxPolicy(ctx: Context, agent: Agent | undefined): HookSandboxPolicy | undefined {
+  const service = ctx.get('sandboxPolicy') as OptionalSandboxPolicyService | undefined
+  return service?.resolve(agent === undefined ? {} : { session: agent.session })
+}
+/* jscpd:ignore-end */
+
+/** Plugin config: optional global Codex hooks.json path, per-session discovery, and model name. */
 export interface Config {
   /**
-   * Path to a Codex `hooks.json`. Process-level: read once at load, a relative
-   * path resolves against the process launch cwd.
-   * TODO(per-session-hook-config): per-session project-local discovery from each
-   * `session/new.cwd`.
+   * Optional path to a Codex `hooks.json`. A relative path resolves against the
+   * process launch cwd.
    */
-  configPath: string
+  configPath?: string
+  /**
+   * Dynamically discover and cache project-local hooks at `<cwd>/.codex/hooks.json`.
+   * Defaults to `true` when `configPath` is omitted, and `false` when `configPath`
+   * is explicitly provided.
+   */
+  discoverProjectHooks?: boolean
   /** The model name stamped on every payload (Codex includes `model` on each event). */
   model?: string
   /** Default per-hook timeout in ms when a hook sets none (Codex default: 600000). */
@@ -63,7 +83,8 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  configPath: z.string().required(),
+  configPath: z.string(),
+  discoverProjectHooks: z.boolean(),
   model: z.string().default(''),
   defaultTimeoutMs: z.number().default(DEFAULT_HOOK_TIMEOUT_MS),
   stderrSummaryMaxChars: z.number().default(DEFAULT_STDERR_SUMMARY_MAX_CHARS),
@@ -88,18 +109,27 @@ export function apply(ctx: Context, config: Config): void {
   const stderrSummaryMaxChars = config.stderrSummaryMaxChars ?? DEFAULT_STDERR_SUMMARY_MAX_CHARS
   assertPositiveInteger('stderrSummaryMaxChars', stderrSummaryMaxChars)
   const defaultTimeoutMs = config.defaultTimeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
+  const discoverProject = config.discoverProjectHooks ?? (config.configPath === undefined)
   let parsed: CodexHookConfig = {}
-  try {
-    const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
-    const result = parseCodexConfig(raw)
-    parsed = result.config
-    for (const s of result.skipped) {
-      ctx.logger.warn(`hooks-codex: skipping ${s.reason} on ${s.event} (only sync command hooks run)`)
+  if (config.configPath !== undefined) {
+    try {
+      const raw: unknown = JSON.parse(readFileSync(config.configPath, 'utf8'))
+      const result = parseCodexConfig(raw)
+      parsed = result.config
+      for (const s of result.skipped) {
+        ctx.logger.warn(`hooks-codex: skipping ${s.reason} on ${s.event} (only sync command hooks run)`)
+      }
+    } catch (error: unknown) {
+      ctx.logger.warn(`hooks-codex: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
+      if (!discoverProject) return
     }
-  } catch (error: unknown) {
-    ctx.logger.warn(`hooks-codex: could not load hook config "${config.configPath}": ${String(error)} — no hooks registered`)
-    return
   }
+
+  const projectHooks = discoverProject
+    ? createCodexProjectHookResolver({
+      onWarn: (message) => { ctx.logger.warn(message) },
+    })
+    : undefined
 
   const model = config.model ?? ''
 
@@ -107,7 +137,10 @@ export function apply(ctx: Context, config: Config): void {
   // run chains so disposal aborts a still-running hook process and drains the
   // continuation (docs/defensive-patterns/general.md: dispose must reach quiescence).
   const detached = createDetachedRuns()
-  ctx.effect(() => () => detached.drain(), 'hooks-codex: drain detached hook runs')
+  ctx.effect(() => () => {
+    projectHooks?.clear()
+    return detached.drain()
+  }, 'hooks-codex: drain detached hook runs')
 
   /**
    * Run and fold one configured Codex hook point.
@@ -126,7 +159,16 @@ export function apply(ctx: Context, config: Config): void {
       plainStdoutAsContext?: boolean
     },
   ): Promise<MergedHookOutcome> {
-    const groups = selectHookGroups(parsed[point], matchQuery, 'codex')
+    const staticGroups = selectHookGroups(parsed[point], matchQuery, 'codex')
+    const lookupCwd = projectHooks === undefined
+      ? undefined
+      : opts.agent === undefined ? process.cwd() : ctx.workingDirectory.get(opts.agent.session)
+    const projectGroups = projectHooks !== undefined && lookupCwd !== undefined
+      ? selectHookGroups(projectHooks.resolve(lookupCwd)[point], matchQuery, 'codex')
+      : []
+    const groups = staticGroups.length === 0
+      ? projectGroups
+      : projectGroups.length === 0 ? staticGroups : [...staticGroups, ...projectGroups]
     if (groups.length === 0) return mergeHookOutputs([])
     const outputs: HookOutput[] = []
     const workdir = opts.agent === undefined ? undefined : await ctx.workingDirectory.ensure(opts.agent, opts.signal)
@@ -140,10 +182,12 @@ export function apply(ctx: Context, config: Config): void {
             matcher: group.matcher,
           })
         }
+        const sandboxPolicy = resolveHookSandboxPolicy(ctx, opts.agent)
         const { output, durationMs } = await runHook(ctx.shell, hook, {
           payload: { ...payload, cwd: workdir ?? process.cwd() },
           defaultTimeoutMs,
           ...workdir !== undefined ? { cwd: workdir } : {},
+          ...sandboxPolicy !== undefined ? { sandboxPolicy } : {},
           signal: opts.signal,
           trailingNewline: false, // Codex writes stdin without a trailing newline.
           // Discard a `hookSpecificOutput` block naming a different event.

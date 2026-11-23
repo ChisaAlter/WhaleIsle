@@ -40,6 +40,62 @@ function validateConfig(config: Config): void {
 export interface RetryInternals {
   /** Random sample in the inclusive zero-to-one range used for jitter. */
   random?: () => number
+  /** Upper bound in ms for provider Retry-After delays honored by normal mode. */
+  maxRetryAfterMs?: number
+}
+
+/** Default ceiling for honoring a provider-supplied Retry-After delay in normal mode. */
+export const DEFAULT_MAX_RETRY_AFTER_MS = 60_000
+
+const FATAL_ALWAYS_CODES: ReadonlySet<string> = new Set([
+  'ABORTED',
+  'ACCOUNT_QUOTA',
+  'ACCOUNT_SIGN_IN_REQUIRED',
+  'ACCOUNT_TOKEN_INVALID',
+  'AUTH',
+  'CLIENT_UPGRADE_REQUIRED',
+  'CONTEXT_WINDOW_EXCEEDED',
+  'DISCOVERY_FAILED',
+  'DISCOVERY_UNSUPPORTED',
+  'DUPLICATE_ADAPTER',
+  'DUPLICATE_DIRECTORY',
+  'DUPLICATE_DISCOVERY',
+  'IMAGE_OFFLOAD_REQUIRED',
+  'INVALID_ADAPTER',
+  'INVALID_CATALOG',
+  'INVALID_CONFIG',
+  'INVALID_CREDENTIAL',
+  'INVALID_DIRECTORY',
+  'INVALID_DISCOVERY',
+  'INVALID_MODEL_CONTEXT',
+  'INVALID_MODEL_INFO',
+  'INVALID_MODEL_MAX_TOKENS',
+  'INVALID_MODEL_REASONING',
+  'INVALID_PREPARED_CALL',
+  'INVALID_REPLAY_STATE',
+  'INVALID_REQUEST',
+  'INVALID_RESPONSE',
+  'MISSING_CREDENTIAL',
+  'MODEL_SWITCH_COMPACTION_FAILED',
+  'MODEL_UNSUPPORTED',
+  'NO_ADAPTER',
+  'NO_CREDENTIAL_STORE',
+  'NO_DISCOVERY',
+  'QUOTA',
+  'REGISTRATION_DISPOSED',
+  'REQUEST_EXTENSION',
+  'REQUEST_HEADERS',
+  'UNKNOWN_MODEL',
+  'UNSTORABLE_PROVIDER_ID',
+  'UNSUPPORTED_CONTENT',
+  'UNSUPPORTED_OPTION',
+  'UNSUPPORTED_REASONING_EFFORT',
+])
+
+const FATAL_ALWAYS_HTTP_STATUS = /^HTTP_4(?:0[0-7]|1[0-7]|2[1268]|31|51)$/
+
+function isFatalInAlwaysMode(code: string): boolean {
+  return FATAL_ALWAYS_CODES.has(code) || FATAL_ALWAYS_HTTP_STATUS.test(code)
 }
 
 type DownstreamOutcome =
@@ -209,6 +265,9 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
       if (downstream.type === 'decision' && downstream.decision?.kind === 'retry') {
         return downstream.decision
       }
+      if (isFatalInAlwaysMode(failure.code)) {
+        return downstream.type === 'decision' ? downstream.decision : undefined
+      }
     } else if (!policy.retryableCodes.includes(failure.code)) {
       return next()
     }
@@ -224,8 +283,13 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
     if (failure.providerRetryAfterMs !== undefined
       && Number.isFinite(failure.providerRetryAfterMs)
       && failure.providerRetryAfterMs > 0) {
-      if (failure.providerRetryAfterMs > policy.maxDelayMs) {
-        if (policy.mode === 'normal') return next()
+      if (policy.mode === 'normal') {
+        const retryAfterCapMs = internals.maxRetryAfterMs ?? Math.max(policy.maxDelayMs, DEFAULT_MAX_RETRY_AFTER_MS)
+        if (failure.providerRetryAfterMs > retryAfterCapMs) {
+          return next()
+        }
+        delayMs = failure.providerRetryAfterMs
+      } else if (failure.providerRetryAfterMs > policy.maxDelayMs) {
         delayMs = localDelay(policy, retry, random)
       } else {
         delayMs = failure.providerRetryAfterMs

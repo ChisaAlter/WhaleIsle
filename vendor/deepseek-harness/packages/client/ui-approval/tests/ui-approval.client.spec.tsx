@@ -418,22 +418,50 @@ describe('ApprovalPanel', () => {
     expect(pending.reason).toBe('audit reason')
   })
 
-  it.each([['Enter', 'allowed-once'], ['Escape', 'rejected']] as const)(
-    'answers the focused container with %s through the pending request', async (key, outcome) => {
-      const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
-      render(<ApprovalPanel {...panelProps(pending)} />)
-      const group = screen.getByRole('group', { name: 'Approval details' })
-      group.focus()
-      const bubbled = vi.fn()
-      window.addEventListener('keydown', bubbled)
-      try {
-        fireEvent.keyDown(group, { key, code: key })
-        await expect(pending.result).resolves.toBe(outcome)
-        expect(bubbled).not.toHaveBeenCalled()
-        expect(pending.answerable).toBe(false)
-      } finally { window.removeEventListener('keydown', bubbled) }
-    },
-  )
+  it('answers the focused container with Enter and does not reject on single Escape', async () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    const group = screen.getByRole('group', { name: 'Approval details' })
+    group.focus()
+    const bubbled = vi.fn()
+    window.addEventListener('keydown', bubbled)
+    try {
+      fireEvent.keyDown(group, { key: 'Escape', code: 'Escape' })
+      expect(pending.answerable).toBe(true)
+      expect(bubbled).toHaveBeenCalledOnce()
+
+      bubbled.mockClear()
+      fireEvent.keyDown(group, { key: 'Enter', code: 'Enter' })
+      await expect(pending.result).resolves.toBe('allowed-once')
+      expect(bubbled).not.toHaveBeenCalled()
+      expect(pending.answerable).toBe(false)
+    } finally { window.removeEventListener('keydown', bubbled) }
+  })
+
+  it('displays an error banner inside the card and unlocks buttons when submission rejects', async () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'bash' })
+    let failNext = true
+    const originalAnswer = pending.answer.bind(pending)
+    vi.spyOn(pending, 'answer').mockImplementation(async (decision) => {
+      if (failNext) {
+        failNext = false
+        throw new Error('network timeout')
+      }
+      return originalAnswer(decision)
+    })
+
+    render(<ApprovalPanel {...panelProps(pending)} />)
+    const allow = screen.getByRole('button', { name: 'Allow once' })
+    fireEvent.click(allow)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('submitFailed')
+    expect(alert.textContent).toContain('network timeout')
+    expect(allow.hasAttribute('disabled')).toBe(false)
+    expect(pending.answerable).toBe(true)
+
+    fireEvent.click(allow)
+    await expect(pending.result).resolves.toBe('allowed-once')
+  })
 
   it('leaves button Enter to its native click and rejects from the reject button', async () => {
     const pending = new PendingApproval(id('s1'), { toolName: 'bash' })

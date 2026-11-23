@@ -8,28 +8,69 @@
  * acl.spec.ts and runner.spec.ts (win32 only).
  */
 
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { ERROR_BROKEN_PIPE } from '@deepseek-ai/dsh-win32-process/src/abi.ts'
 import { processInformationType } from '@deepseek-ai/dsh-win32-process/src/ffi.ts'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
+import { allocBytes, ptrAddress } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
-import { AclSandbox } from '../src/index.ts'
+import { AclSandbox, revokeWorkspaceGrant, workspaceWriteSid } from '../src/index.ts'
 import * as abi from '../src/win32-abi.ts'
 
 const PVOID = koffi.pointer('void')
+
+function craftEmptyAcl(): NativePtr {
+  const acl = allocBytes(8)
+  koffi.encode(acl, 'uint8', 2)
+  koffi.encode(acl, 2, 'uint16', 8)
+  koffi.encode(acl, 4, 'uint16', 0)
+  return acl
+}
+
+function craftSidBytes(authorityByte: number): NativePtr {
+  const sid = allocBytes(8)
+  koffi.encode(sid, 'uint8', 1)
+  koffi.encode(sid, 1, 'uint8', 0)
+  for (let i = 0; i < 5; i++) koffi.encode(sid, 2 + i, 'uint8', 0)
+  koffi.encode(sid, 7, 'uint8', authorityByte)
+  return sid
+}
+
+function craftGrantedAclWithWorldDeny(sidPtr: NativePtr, worldPtr: NativePtr): NativePtr {
+  const acl = allocBytes(64)
+  koffi.encode(acl, 'uint8', 2)
+  koffi.encode(acl, 2, 'uint16', 40)
+  koffi.encode(acl, 4, 'uint16', 2)
+  // Entry 0: Everyone FILE_DELETE_CHILD deny (CONTAINER_INHERIT_ACE)
+  koffi.encode(acl, 8, 'uint8', abi.ACCESS_DENIED_ACE_TYPE)
+  koffi.encode(acl, 9, 'uint8', abi.CONTAINER_INHERIT_ACE)
+  koffi.encode(acl, 10, 'uint16', 16)
+  koffi.encode(acl, 12, 'uint32', abi.FILE_DELETE_CHILD)
+  for (let i = 0; i < 8; i++) koffi.encode(acl, 16 + i, 'uint8', koffi.decode(worldPtr, i, 'uint8') as number)
+  // Entry 1: Capability GRANT_MASK allow (SUB_CONTAINERS_AND_OBJECTS_INHERIT)
+  koffi.encode(acl, 24, 'uint8', abi.ACCESS_ALLOWED_ACE_TYPE)
+  koffi.encode(acl, 25, 'uint8', abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT)
+  koffi.encode(acl, 26, 'uint16', 16)
+  koffi.encode(acl, 28, 'uint32', abi.GRANT_MASK)
+  for (let i = 0; i < 8; i++) koffi.encode(acl, 32 + i, 'uint8', koffi.decode(sidPtr, i, 'uint8') as number)
+  return acl
+}
 
 type MockFn = ReturnType<typeof vi.fn>
 
 /** The stub binding table plus the mocks the assertions inspect directly. */
 interface HappyStubs {
   api: Win32Bindings
-  setNamedSecurityInfoW: MockFn
+  createWellKnownSid: MockFn
   convertStringSidToSidW: MockFn
+  setEntriesInAclW: MockFn
+  deleteAce: MockFn
+  setNamedSecurityInfoW: MockFn
   closeHandle: MockFn
   localFree: MockFn
   createRestrictedToken: MockFn
@@ -90,12 +131,13 @@ function happyStubs(): HappyStubs {
     buffer.write(temp, 'utf16le')
     return temp.length
   })
+  const defaultDacl = craftEmptyAcl()
   const createFileW = vi.fn(() => fresh())
   const getNamedSecurityInfoW = vi.fn((
     _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
     dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
   ) => {
-    koffi.encode(dacl, PVOID, 0n)
+    koffi.encode(dacl, PVOID, ptrAddress(defaultDacl))
     koffi.encode(sacl, PVOID, 0n)
     koffi.encode(descriptor, PVOID, 0n)
     return 0
@@ -104,6 +146,7 @@ function happyStubs(): HappyStubs {
     koffi.encode(newAcl, PVOID, fresh())
     return 0
   })
+  const deleteAce = vi.fn(() => 1)
   const setNamedSecurityInfoW = vi.fn(() => 0)
   const localAlloc = vi.fn(() => fresh())
   const initializeAcl = vi.fn(() => 1)
@@ -168,7 +211,7 @@ function happyStubs(): HappyStubs {
   const api = stubBindings({
     openProcess, openProcessToken, convertStringSidToSidW, getTempPathW, createFileW,
     lockFileEx: vi.fn(() => 1), unlockFileEx: vi.fn(() => 1),
-    getNamedSecurityInfoW, setEntriesInAclW, setNamedSecurityInfoW, getTokenInformation,
+    getNamedSecurityInfoW, setEntriesInAclW, setNamedSecurityInfoW, deleteAce, getTokenInformation,
     localAlloc, initializeAcl, addMandatoryAce,
     getLengthSid, copySid, createWellKnownSid, isValidSid, createRestrictedToken,
     setTokenInformation, createPipe, setHandleInformation, createProcessAsUserW,
@@ -178,7 +221,7 @@ function happyStubs(): HappyStubs {
     localFree, closeHandle, getLastError, formatMessageW,
   })
   return {
-    api, setNamedSecurityInfoW, convertStringSidToSidW, closeHandle, localFree,
+    api, createWellKnownSid, setEntriesInAclW, deleteAce, setNamedSecurityInfoW, convertStringSidToSidW, closeHandle, localFree,
     createRestrictedToken, createJobObjectW, getNamedSecurityInfoW, setTokenInformation, addMandatoryAce,
   }
 }
@@ -348,12 +391,13 @@ describe('AclSandbox init', () => {
       return 0
     })
     localFree.mockImplementation(() => (inCleanup ? 1n : 0n))
+    const cleanDacl = craftEmptyAcl()
     getNamedSecurityInfoW.mockImplementation((
       _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
       dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
     ) => {
       if (inCleanup) return 2 // the cleanup's revocation read fails too
-      koffi.encode(dacl, PVOID, 0n)
+      koffi.encode(dacl, PVOID, ptrAddress(cleanDacl))
       koffi.encode(sacl, PVOID, 0n)
       koffi.encode(descriptor, PVOID, 0n)
       return 0
@@ -478,5 +522,221 @@ describe('AclSandbox dispose', () => {
     closeHandle.mockImplementation((handle: NativePtr) => (handle === restrictedToken ? 0 : 1))
     await sandbox.init()
     expect(() => { sandbox.dispose() }).toThrow(AggregateError)
+  })
+})
+
+describe('AclSandbox extraDirs, extraWriteSids, and revokeWorkspaceAclOnDispose', () => {
+  const ownedDirs: string[] = []
+  afterEach(() => {
+    for (const dir of ownedDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function tempDir(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix))
+    ownedDirs.push(dir)
+    return dir
+  }
+
+  it('merges validated extraDirs and extraWriteSids into writableDirs and writeSids and passes all SIDs to CreateRestrictedToken', async () => {
+    const { createRestrictedToken } = state.stubs as HappyStubs
+    const ws = tempDir('dsh-acl-ws-')
+    const extra1 = tempDir('dsh-acl-extra1-')
+    const extra2 = tempDir('dsh-acl-extra2-')
+    const sandbox = new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra1, extra2],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      extraWriteSids: ['S-1-4-9100-1', 'S-1-4-9100-2'],
+      mode: 'workspace-write',
+    })
+    expect(sandbox.extraDirs).toEqual([resolve(extra1), resolve(extra2)])
+    expect(sandbox.writableDirs).toEqual([resolve(ws), resolve(extra1), resolve(extra2)])
+    expect(sandbox.extraWriteSids).toEqual(['S-1-4-9100-1', 'S-1-4-9100-2'])
+    expect(sandbox.writeSids).toEqual([workspaceWriteSid(ws), 'S-1-4-9100-1', 'S-1-4-9100-2'])
+    await sandbox.init()
+    // 1 workspace SID + 2 extra SIDs + 2 baseline SIDs (logon + Everyone) = 5 restricting SIDs
+    expect(createRestrictedToken.mock.calls[0]?.[6]).toBe(5)
+    sandbox.dispose()
+  })
+
+  it('derives extraWriteSids via workspaceWriteSid when omitted and rejects symlinks/non-dirs/mismatches', () => {
+    const ws = tempDir('dsh-acl-ws-')
+    const extra = tempDir('dsh-acl-extra-')
+    const file = join(ws, 'file.txt')
+    writeFileSync(file, 'x')
+    const linkDir = join(ws, 'link-dir')
+    symlinkSync(extra, linkDir, process.platform === 'win32' ? 'junction' : 'dir')
+
+    const derived = new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      mode: 'workspace-write',
+    })
+    const canonicalExtra = realpathSync.native(extra)
+    expect(derived.extraWriteSids).toEqual([workspaceWriteSid(canonicalExtra)])
+    expect(derived.writeSids).toEqual([workspaceWriteSid(ws), workspaceWriteSid(canonicalExtra)])
+
+    expect(() => new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [linkDir],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      mode: 'workspace-write',
+    })).toThrow(/symbolic link/u)
+
+    expect(() => new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [file],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      mode: 'workspace-write',
+    })).toThrow(/not a directory/u)
+
+    expect(() => new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      extraWriteSids: ['S-1-4-9100-1', 'S-1-4-9100-2'],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      mode: 'workspace-write',
+    })).toThrow(/length must match/u)
+
+    expect(() => new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      extraWriteSids: ['S-1-4-9100-1'],
+      tempDir: null,
+      mode: 'read-only',
+    })).toThrow(/read-only does not accept write SIDs/u)
+  })
+
+  it('revokes workspace and extra grants plus world-deny ACEs when revokeWorkspaceAclOnDispose is true', async () => {
+    const {
+      createWellKnownSid, convertStringSidToSidW, getNamedSecurityInfoW,
+      setEntriesInAclW, deleteAce, setNamedSecurityInfoW,
+    } = state.stubs as HappyStubs
+    const ws = tempDir('dsh-acl-ws-')
+    const extra = tempDir('dsh-acl-extra-')
+    const sid = craftSidBytes(5)
+    const world = craftSidBytes(1)
+    const grantedAcl = craftGrantedAclWithWorldDeny(sid, world)
+    createWellKnownSid.mockImplementation((type: number, _domain: unknown, outSid: NativePtr) => {
+      koffi.encode(outSid, 0, 'uint8', 1)
+      koffi.encode(outSid, 1, 'uint8', 0)
+      for (let i = 2; i < 7; i++) koffi.encode(outSid, i, 'uint8', 0)
+      koffi.encode(outSid, 7, 'uint8', type === abi.WinLowLabelSid ? 16 : 1)
+      return 1
+    })
+    convertStringSidToSidW.mockImplementation((_sid: string, slot: NativePtr) => {
+      koffi.encode(slot, PVOID, ptrAddress(sid))
+      return 1
+    })
+
+    const sandbox = new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      revokeWorkspaceAclOnDispose: true,
+      mode: 'workspace-write',
+    })
+    await sandbox.init()
+    const mergeCallsBeforeDispose = setEntriesInAclW.mock.calls.length
+
+    getNamedSecurityInfoW.mockImplementation((
+      _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
+      dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
+    ) => {
+      koffi.encode(dacl, PVOID, ptrAddress(grantedAcl))
+      koffi.encode(sacl, PVOID, 0n)
+      koffi.encode(descriptor, PVOID, 0n)
+      return 0
+    })
+    setEntriesInAclW.mockImplementation((_count: unknown, _entries: unknown, _old: unknown, newAcl: NativePtr) => {
+      koffi.encode(newAcl, PVOID, ptrAddress(grantedAcl))
+      return 0
+    })
+
+    sandbox.dispose()
+    const disposeMerges = setEntriesInAclW.mock.calls.slice(mergeCallsBeforeDispose)
+    expect(disposeMerges.length).toBe(2) // ws + extra
+    expect(disposeMerges.map(call => Number(call[0]))).toEqual([1, 1])
+    expect(deleteAce).toHaveBeenCalledTimes(2)
+    expect(setNamedSecurityInfoW.mock.calls.slice(-2).every(
+      call => ((call[2] as number) & abi.LABEL_SECURITY_INFORMATION) !== 0,
+    )).toBe(true)
+  })
+
+  it('keeps workspace grants standing on dispose when revokeWorkspaceAclOnDispose defaults to false', async () => {
+    const { setEntriesInAclW } = state.stubs as HappyStubs
+    const ws = tempDir('dsh-acl-ws-')
+    const extra = tempDir('dsh-acl-extra-')
+    const sandbox = new AclSandbox({
+      writableDirs: [ws],
+      extraDirs: [extra],
+      tempDir: null,
+      writeSid: workspaceWriteSid(ws),
+      mode: 'workspace-write',
+    })
+    await sandbox.init()
+    const mergeCallsBeforeDispose = setEntriesInAclW.mock.calls.length
+    sandbox.dispose()
+    expect(setEntriesInAclW.mock.calls.length).toBe(mergeCallsBeforeDispose)
+  })
+
+  it('revokeWorkspaceGrant revokes explicit or derived capability grants and aggregates cleanup failures', () => {
+    const {
+      api, createWellKnownSid, convertStringSidToSidW, getNamedSecurityInfoW,
+      setEntriesInAclW, deleteAce, localFree,
+    } = state.stubs as HappyStubs
+    const ws = tempDir('dsh-acl-ws-')
+    const sid = craftSidBytes(5)
+    const world = craftSidBytes(1)
+    const grantedAcl = craftGrantedAclWithWorldDeny(sid, world)
+    createWellKnownSid.mockImplementation((type: number, _domain: unknown, outSid: NativePtr) => {
+      koffi.encode(outSid, 0, 'uint8', 1)
+      koffi.encode(outSid, 1, 'uint8', 0)
+      for (let i = 2; i < 7; i++) koffi.encode(outSid, i, 'uint8', 0)
+      koffi.encode(outSid, 7, 'uint8', type === abi.WinLowLabelSid ? 16 : 1)
+      return 1
+    })
+    convertStringSidToSidW.mockImplementation((_sid: string, slot: NativePtr) => {
+      koffi.encode(slot, PVOID, ptrAddress(sid))
+      return 1
+    })
+
+    getNamedSecurityInfoW.mockImplementationOnce((
+      _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
+      dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
+    ) => {
+      koffi.encode(dacl, PVOID, 0n)
+      koffi.encode(sacl, PVOID, 0n)
+      koffi.encode(descriptor, PVOID, 0n)
+      return 0
+    })
+    expect(revokeWorkspaceGrant(ws, undefined, api)).toBe(false)
+
+    getNamedSecurityInfoW.mockImplementation((
+      _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
+      dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
+    ) => {
+      koffi.encode(dacl, PVOID, ptrAddress(grantedAcl))
+      koffi.encode(sacl, PVOID, 0n)
+      koffi.encode(descriptor, PVOID, 0n)
+      return 0
+    })
+    setEntriesInAclW.mockImplementation((_count: unknown, _entries: unknown, _old: unknown, newAcl: NativePtr) => {
+      koffi.encode(newAcl, PVOID, ptrAddress(grantedAcl))
+      return 0
+    })
+    expect(revokeWorkspaceGrant(ws, 'S-1-4-9200-1', api)).toBe(true)
+    expect(setEntriesInAclW.mock.calls.at(-1)?.[0]).toBe(1)
+    expect(deleteAce).toHaveBeenCalledTimes(1)
+
+    localFree.mockReturnValue(1n)
+    expect(() => revokeWorkspaceGrant(ws, undefined, api)).toThrow(AggregateError)
   })
 })

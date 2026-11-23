@@ -1840,17 +1840,38 @@ export function apply(ctx, config = {}) {
   const manager = createAcpAgentsManager(ctx, config);
   ctx.on('agent/created', ({ agent }) => manager.ownConnection(agent), { global: true });
   ctx.inject(['subagents', 'tools'], (scope) => { manager.tasks.install(scope); registerDelegation(scope, manager); });
-  // Surface vendored-runtime problems at startup rather than first turn —
-  // deferred a tick so the ~250ms vendor parse does not sit inside the cordis
-  // startup sequence where it would delay other plugins' route registration.
+  // Surface vendored-runtime problems after boot settles rather than mid-boot
+  // or first turn — parsing the ~3.2MB vendor bundle on setTimeout(0) lands
+  // inside Cordis's async plugin-import turns and delays web readiness.
   ctx.effect(() => {
-    const timer = setTimeout(() => {
-      void initAgentRuntime().catch((err) => {
-        appendAcpErrorLog('initAgentRuntime', err, {});
-      });
-    }, 0);
-    timer.unref?.();
-    return () => clearTimeout(timer);
+    let timer = null;
+    let disposed = false;
+    const schedule = (delayMs) => {
+      if (disposed || timer !== null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (disposed) return;
+        void initAgentRuntime().catch((err) => {
+          appendAcpErrorLog('initAgentRuntime', err, {});
+        });
+      }, delayMs);
+      timer.unref?.();
+    };
+    const appReady = typeof ctx.get === 'function' ? ctx.get('appReady') : undefined;
+    let unsubscribe = null;
+    if (typeof appReady?.onReady === 'function') {
+      unsubscribe = appReady.onReady(() => schedule(1500));
+    } else {
+      schedule(0);
+    }
+    return () => {
+      disposed = true;
+      if (typeof unsubscribe === 'function') unsubscribe();
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
   });
 
   // The adapter registration is an effect owned by this plugin's fiber: on

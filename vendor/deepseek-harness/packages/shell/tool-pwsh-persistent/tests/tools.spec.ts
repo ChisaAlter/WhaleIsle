@@ -456,20 +456,26 @@ describe('tool-pwsh-persistent', () => {
     const session = stub.sessions[0]!
 
     session.mode = 'idle-then-normal'
-    expect(text(await call(ctx, owner, 'silent then complete'))).toContain('hello from')
+    const idleResult = text(await call(ctx, owner, 'silent then complete'))
+    expect(idleResult).toContain('hel\n<response clipped>')
+    expect(idleResult).toContain('\nom stub')
 
     session.mode = 'incremental-fallback'
     session.scrollback = ''
-    expect(text(await call(ctx, owner, 'incremental fallback'))).toContain('increment')
+    const incrementalResult = text(await call(ctx, owner, 'incremental fallback'))
+    expect(incrementalResult).toContain('inc\n<response clipped>')
+    expect(incrementalResult).toContain('\nstub> ')
 
     session.mode = 'prompt-only'
     const promptFallback = text(await call(ctx, owner, 'bad {'))
-    expect(promptFallback).toContain('pwsh: synt')
+    expect(promptFallback).toContain('pws\n<response clipped>')
+    expect(promptFallback).toContain('\nstub> ')
 
     session.mode = 'prompt-crlf'
     session.scrollback = ''
     const crlfPromptFallback = text(await call(ctx, owner, 'bad {'))
-    expect(crlfPromptFallback).toContain('pwsh: synt')
+    expect(crlfPromptFallback).toContain('pws\n<response clipped>')
+    expect(crlfPromptFallback).toContain('\nstub> ')
 
     // The stdin_read fallback returns captured output without resetting the
     // shell, so later calls keep the same session; the README names the
@@ -480,9 +486,9 @@ describe('tool-pwsh-persistent', () => {
     session.mode = 'end-only'
     session.scrollback = ''
     const missingStart = text(await call(ctx, owner, 'recover marker'))
-    expect(missingStart).toContain('recovered')
+    expect(missingStart).toContain('rec\n<response clipped>')
+    expect(missingStart).toContain('\n output')
     expect(missingStart).toContain('beginning of this command output was dropped')
-    expect(missingStart).toContain('<response clipped>')
 
     session.mode = 'large'
     expect(text(await call(ctx, owner, 'large'))).toContain('<response clipped>')
@@ -492,7 +498,8 @@ describe('tool-pwsh-persistent', () => {
 
     session.mode = 'exit'
     const exited = text(await call(ctx, owner, 'exit'))
-    expect(exited).toContain('hello from')
+    expect(exited).toContain('hel\n<response clipped>')
+    expect(exited).toContain('\nom stub')
     expect(exited).toContain('[shell exited: code 9]')
     expect(exited).not.toContain('[exit code: 9]')
     expect(exited).toContain('next pwsh call starts from the workspace')
@@ -514,18 +521,39 @@ describe('tool-pwsh-persistent', () => {
     expect(stub.sessions[2]?.closed).toEqual(['external cleanup'])
   })
 
-  it('clips a split surrogate pair instead of leaving a lone half', async () => {
-    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 10 })
+  it('truncates oversized output with balanced head+tail (6:10), drops surrogate halves cleanly, and omits fake Select-String file guidance', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 16 })
     await call(ctx, owner, 'warm up')
     const session = stub.sessions[0]!
     session.mode = 'large'
-    // The tenth code unit is the emoji's high surrogate.
-    session.largeOutput = `${'x'.repeat(9)}😀tail`
+    // Head budget is 6 (code unit 5 is high surrogate of first 😀); tail budget is 10 (start lands on low surrogate of second 😀).
+    session.largeOutput = `${'a'.repeat(5)}😀${'M'.repeat(20)}😀${'z'.repeat(9)}`
 
     const rendered = text(await call(ctx, owner, 'emoji'))
 
-    expect(rendered.startsWith(`${'x'.repeat(9)}<response clipped>`)).toBe(true)
+    expect(rendered).toContain('<response clipped>')
+    expect(rendered).not.toContain('Select-String')
+    expect(rendered.startsWith('aaaaa\n<response clipped>')).toBe(true)
+    expect(rendered.endsWith('\nzzzzzzzzz')).toBe(true)
     expect(rendered).not.toContain('\uD83D')
+    expect(rendered).not.toContain('\uDE00')
+  })
+
+  it('uses 6000 head + 10000 tail balance at the default 16000 char budget', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'large'
+    session.largeOutput = `HEAD_START${'a'.repeat(7000)}${'b'.repeat(7000)}${'c'.repeat(5000)}TAIL_END`
+
+    const rendered = text(await call(ctx, owner, 'default-budget'))
+    const [headPart, tailPart] = rendered.split('\n')
+      .filter(part => part.startsWith('HEAD_START') || part.endsWith('TAIL_END'))
+    expect(headPart).toHaveLength(6_000)
+    expect(tailPart).toHaveLength(10_000)
+    expect(rendered).toContain('HEAD_START')
+    expect(rendered).toContain('TAIL_END')
+    expect(rendered).not.toContain('Select-String')
   })
 
   it('waits for status digits after a torn completion marker', async () => {

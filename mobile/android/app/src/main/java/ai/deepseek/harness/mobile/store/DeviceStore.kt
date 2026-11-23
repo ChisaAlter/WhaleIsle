@@ -10,5 +10,8 @@ interface DeviceStore {
     var catalogCacheJson: String
         get() = ""
         set(_) {}
+    var iceConfigJson: String
+        get() = ""
+        set(_) {}
     fun clearLegacyHttpCredentials()
 }

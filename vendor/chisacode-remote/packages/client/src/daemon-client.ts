@@ -161,6 +161,7 @@ import {
   type DaemonClientConfig,
   type Logger,
 } from "./daemon-client-connection-controller.js";
+import type { TransportMode } from "./daemon-client-transport.js";
 import {
   DaemonClientInboundController,
   type DaemonEventHandler,
@@ -188,6 +189,13 @@ const consoleLogger: Logger = {
 export type {
   DaemonTransport,
   DaemonTransportFactory,
+  IceServerConfig,
+  RtcDataChannelLike,
+  RtcIceCandidateInitLike,
+  RtcPeerConnectionFactory,
+  RtcPeerConnectionLike,
+  RtcSessionDescriptionLike,
+  TransportMode,
   WebSocketFactory,
   WebSocketLike,
 } from "./daemon-client-transport.js";
@@ -702,6 +710,14 @@ export class DaemonClient {
 
   subscribeConnectionStatus(listener: (status: ConnectionState) => void): () => void {
     return this.connection.subscribe(listener);
+  }
+
+  getTransportMode(): TransportMode | null {
+    return this.connection.getTransportMode();
+  }
+
+  subscribeTransportMode(listener: (mode: TransportMode) => void): () => void {
+    return this.connection.subscribeTransportMode(listener);
   }
 
   get isConnected(): boolean {

@@ -6,7 +6,7 @@ const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { pathToFileURL } = require('url');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir, stripBlockFromFile } = require('./plugins');
-const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { atomicWriteFileIfChangedSync } = require('../shared/fs-safe');
 
 /** npm package name (also the profile node_modules junction name). */
 const DSH_REMOTE_PACKAGE = 'dsh-remote';
@@ -67,12 +67,23 @@ function removeLinkOrDir(target) {
 
 /**
  * Remove any stale copy under desktop-plugins so Loader cannot prefer an
- * old tree over vendor/dsh-remote. The overlay file is rewritten below,
- * after the dir is reclaimed.
+ * old tree over vendor/dsh-remote, while retaining the current overlay file
+ * so unchanged warm starts can skip rewriting and fsyncing it.
  * @param {string} profileDir
  */
 function removeStaleDesktopCopy(profileDir) {
-  removeLinkOrDir(path.join(profileDir, 'desktop-plugins', DSH_REMOTE_PACKAGE));
+  const destDir = path.join(profileDir, 'desktop-plugins', DSH_REMOTE_PACKAGE);
+  let info;
+  try { info = fs.lstatSync(destDir); } catch { return; }
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    removeLinkOrDir(destDir);
+    return;
+  }
+  for (const name of fs.readdirSync(destDir)) {
+    if (name !== DSH_REMOTE_OVERLAY_FILENAME) {
+      removeLinkOrDir(path.join(destDir, name));
+    }
+  }
 }
 
 /**
@@ -180,7 +191,7 @@ function ensureDesktopDshRemote(options = {}) {
     `      name: ${JSON.stringify(DSH_REMOTE_PACKAGE)}`,
     '',
   ].join('\n');
-  atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
+  atomicWriteFileIfChangedSync(overlayFile, overlayContents, { encoding: 'utf8' });
   return {
     ok: true,
     added: !existed,

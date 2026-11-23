@@ -5,15 +5,17 @@ const path = require('path');
 const {
   resolveHarnessPeerDirectories,
   stageDesktopPluginRuntime,
+  stageDesktopPluginRuntimeAsync,
 } = require('./desktop-plugin-runtime');
 const { pathToFileURL } = require('url');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
 const { webProfileDir, stripBlockFromFile } = require('./plugins');
-const { atomicWriteFileSync } = require('../shared/fs-safe');
+const { atomicWriteFileIfChanged, atomicWriteFileIfChangedSync } = require('../shared/fs-safe');
 
 /** npm package name (also the profile node_modules junction name). */
 const DSH_WHALE_PACKAGE = 'dsh-whale';
-const DSH_WHALE_ENTRIES = ['package.json', 'lib', 'client', 'assets', 'src/shared', 'presets', 'stickers', 'cordis.patch.yml', 'README.md'];
+const DSH_WHALE_ENTRIES = ['package.json', 'lib', 'src/shared', 'cordis.patch.yml', 'README.md'];
+const DSH_WHALE_LINKED_ENTRIES = ['client', 'assets', 'presets', 'stickers'];
 const DSH_WHALE_KEEP_ENTRIES = new Set(['runtime', 'dsh-shared', 'desktop-dsh-whale.patch.yml']);
 /** Loader insert id — matches the plugin's own cordis.patch.yml so a
  * surviving stale managed block next to the overlay is caught as a
@@ -102,6 +104,133 @@ function whalePeerDirectories(harnessRoot, manifest) {
   return resolveHarnessPeerDirectories(harnessRoot, manifest, { label: 'Whale' });
 }
 
+/** @param {string | undefined | null} root */
+function canonicalHarnessRoot(root) {
+  if (!root) return null;
+  try { return fs.realpathSync.native(path.resolve(root)); }
+  catch { return path.resolve(root); }
+}
+
+function whaleOverlayContents() {
+  return [
+    '# Desktop-managed overlay passed to EVERY start (full and skip) via',
+    '# --patch: only the built-in dsh-whale insert, never the profile user layer.',
+    '# Regenerated on every start; do not edit.',
+    '- insert:',
+    `    - id: ${DSH_WHALE_INSERT_ID}`,
+    `      name: ${JSON.stringify(DSH_WHALE_PACKAGE)}`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * Shared validation and staging inputs for sync and async `dsh-whale` setup.
+ * @param {{ sourceDir?: string, profileDir?: string, harnessRoot?: string, enabled?: boolean }} [options]
+ * @returns {{ done: true, result: any } | {
+ *   done: false,
+ *   sourceDir: string,
+ *   profileDir: string,
+ *   patchFile: string,
+ *   patchChanged: boolean,
+ *   manifest: Record<string, any>,
+ *   destDir: string,
+ *   overlayFile: string,
+ *   existed: boolean,
+ *   resolvedHarness: string,
+ *   harnessReady: boolean,
+ *   peersHarnessRoot: string|null,
+ * }}
+ */
+function prepareWhaleInstall(options = {}) {
+  const sourceDir = options.sourceDir || defaultSourceDir();
+  const profileDir = options.profileDir || webProfileDir();
+  const patchFile = path.join(profileDir, 'cordis.patch.yml');
+  const patchChanged = stripBlockFromFile(patchFile, DSH_WHALE_BEGIN, DSH_WHALE_END);
+
+  if (options.enabled === false) {
+    // Toggled off: drop the overlay so the next start composes no
+    // dsh-whale row. The profile node_modules junction stays — harmless
+    // without an insert — and the vendor copy is not validated while
+    // disabled.
+    removeLinkOrDir(path.join(profileDir, 'desktop-plugins', DSH_WHALE_PACKAGE, DSH_WHALE_OVERLAY_FILENAME));
+    return { done: true, result: { ok: true, added: false, disabled: true, sourceDir, patchFile, patchChanged } };
+  }
+
+  const pkgFile = path.join(sourceDir, 'package.json');
+  if (!fs.existsSync(pkgFile)) {
+    return { done: true, result: { ok: false, added: false, sourceDir: null, error: 'missing-source:package.json' } };
+  }
+
+  let manifest = null;
+  try {
+    manifest = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
+  } catch {
+    // An unreadable manifest cannot declare entries; reported below.
+  }
+  const missingEntries = manifest ? missingDeclaredEntries(sourceDir, manifest) : ['package.json'];
+  const missingDeps = missingRuntimeFiles(sourceDir);
+  if (missingEntries.length || missingDeps.length) {
+    // Broken vendor runtime is desktop damage — caller must fail the start
+    // (skip cannot fix it); never pretend success with a stale mount.
+    return {
+      done: true,
+      result: {
+        ok: false,
+        added: false,
+        sourceDir,
+        error: `missing-source:${[...missingEntries, ...missingDeps].join(',')}`,
+      },
+    };
+  }
+
+  const destDir = path.join(profileDir, 'desktop-plugins', DSH_WHALE_PACKAGE);
+  const overlayFile = path.join(destDir, DSH_WHALE_OVERLAY_FILENAME);
+  const existed = fs.existsSync(overlayFile);
+
+  const explicitHarness = options.harnessRoot;
+  const resolvedHarness = explicitHarness || defaultHarnessRoot();
+  const harnessReady = Boolean(
+    explicitHarness
+    || (resolvedHarness
+      && (fs.existsSync(path.join(resolvedHarness, 'apps', 'cli', 'package.json'))
+        || fs.existsSync(path.join(resolvedHarness, 'package.json')))),
+  );
+
+  removeLegacyDesktopArtifacts(destDir);
+  return {
+    done: false,
+    sourceDir,
+    profileDir,
+    patchFile,
+    patchChanged,
+    manifest,
+    destDir,
+    overlayFile,
+    existed,
+    resolvedHarness,
+    harnessReady,
+    peersHarnessRoot: harnessReady ? canonicalHarnessRoot(resolvedHarness) : null,
+  };
+}
+
+/**
+ * @param {any} prep
+ * @param {string} runtimeDir
+ */
+function buildWhaleResult(prep, runtimeDir) {
+  return {
+    ok: true,
+    added: !prep.existed,
+    sourceDir: prep.sourceDir,
+    runtimeDir,
+    href: pathToFileURL(runtimeDir).href,
+    patchFile: prep.patchFile,
+    overlayFile: prep.overlayFile,
+    patchChanged: prep.patchChanged,
+    peersHarnessRoot: prep.peersHarnessRoot,
+  };
+}
+
 /**
  * Wire first-party `dsh-whale` from vendor (or packaged resources): stage a
  * profile-owned runtime copy with linked Harness peers + sibling `dsh-shared`,
@@ -120,94 +249,53 @@ function whalePeerDirectories(harnessRoot, manifest) {
  *   patchFile?: string,
  *   overlayFile?: string,
  *   patchChanged?: boolean,
+ *   peersHarnessRoot?: string|null,
  *   error?: string,
  * }}
  */
 function ensureDesktopDshWhale(options = {}) {
-  const sourceDir = options.sourceDir || defaultSourceDir();
-  const profileDir = options.profileDir || webProfileDir();
-  const patchFile = path.join(profileDir, 'cordis.patch.yml');
-  const patchChanged = stripBlockFromFile(patchFile, DSH_WHALE_BEGIN, DSH_WHALE_END);
-
-  if (options.enabled === false) {
-    // Toggled off: drop the overlay so the next start composes no
-    // dsh-whale row. The profile node_modules junction stays — harmless
-    // without an insert — and the vendor copy is not validated while
-    // disabled.
-    removeLinkOrDir(path.join(profileDir, 'desktop-plugins', DSH_WHALE_PACKAGE, DSH_WHALE_OVERLAY_FILENAME));
-    return { ok: true, added: false, disabled: true, sourceDir, patchFile, patchChanged };
-  }
-
-  const pkgFile = path.join(sourceDir, 'package.json');
-  if (!fs.existsSync(pkgFile)) {
-    return { ok: false, added: false, sourceDir: null, error: 'missing-source:package.json' };
-  }
-
-  let manifest = null;
-  try {
-    manifest = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
-  } catch {
-    // An unreadable manifest cannot declare entries; reported below.
-  }
-  const missingEntries = manifest ? missingDeclaredEntries(sourceDir, manifest) : ['package.json'];
-  const missingDeps = missingRuntimeFiles(sourceDir);
-  if (missingEntries.length || missingDeps.length) {
-    // Broken vendor runtime is desktop damage — caller must fail the start
-    // (skip cannot fix it); never pretend success with a stale mount.
-    return {
-      ok: false,
-      added: false,
-      sourceDir,
-      error: `missing-source:${[...missingEntries, ...missingDeps].join(',')}`,
-    };
-  }
-
-  const destDir = path.join(profileDir, 'desktop-plugins', DSH_WHALE_PACKAGE);
-  const overlayFile = path.join(destDir, DSH_WHALE_OVERLAY_FILENAME);
-  const existed = fs.existsSync(overlayFile);
-
-  const explicitHarness = options.harnessRoot;
-  const resolvedHarness = explicitHarness || defaultHarnessRoot();
-  const harnessReady = Boolean(
-    explicitHarness
-    || (resolvedHarness
-      && (fs.existsSync(path.join(resolvedHarness, 'apps', 'cli', 'package.json'))
-        || fs.existsSync(path.join(resolvedHarness, 'package.json')))),
-  );
-
-  removeLegacyDesktopArtifacts(destDir);
+  const prep = prepareWhaleInstall(options);
+  if (prep.done) return prep.result;
   const { runtimeDir } = stageDesktopPluginRuntime({
     packageName: DSH_WHALE_PACKAGE,
-    sourceDir,
-    profileDir,
-    harnessRoot: resolvedHarness,
-    manifest,
+    sourceDir: prep.sourceDir,
+    profileDir: prep.profileDir,
+    harnessRoot: prep.resolvedHarness,
+    manifest: prep.manifest,
     entries: DSH_WHALE_ENTRIES,
+    linkedEntries: DSH_WHALE_LINKED_ENTRIES,
     label: 'Whale',
-    linkPeers: harnessReady,
+    linkPeers: prep.harnessReady,
   });
 
-  fs.mkdirSync(destDir, { recursive: true });
-  const overlayContents = [
-    '# Desktop-managed overlay passed to EVERY start (full and skip) via',
-    '# --patch: only the built-in dsh-whale insert, never the profile user layer.',
-    '# Regenerated on every start; do not edit.',
-    '- insert:',
-    `    - id: ${DSH_WHALE_INSERT_ID}`,
-    `      name: ${JSON.stringify(DSH_WHALE_PACKAGE)}`,
-    '',
-  ].join('\n');
-  atomicWriteFileSync(overlayFile, overlayContents, { encoding: 'utf8' });
-  return {
-    ok: true,
-    added: !existed,
-    sourceDir,
-    runtimeDir,
-    href: pathToFileURL(runtimeDir).href,
-    patchFile,
-    overlayFile,
-    patchChanged,
-  };
+  fs.mkdirSync(prep.destDir, { recursive: true });
+  atomicWriteFileIfChangedSync(prep.overlayFile, whaleOverlayContents(), { encoding: 'utf8' });
+  return buildWhaleResult(prep, runtimeDir);
+}
+
+/**
+ * Async variant of {@link ensureDesktopDshWhale} that stages the runtime files
+ * off the Electron main thread during startup.
+ * @param {{ sourceDir?: string, profileDir?: string, harnessRoot?: string, enabled?: boolean }} [options]
+ */
+async function ensureDesktopDshWhaleAsync(options = {}) {
+  const prep = prepareWhaleInstall(options);
+  if (prep.done) return prep.result;
+  const { runtimeDir } = await stageDesktopPluginRuntimeAsync({
+    packageName: DSH_WHALE_PACKAGE,
+    sourceDir: prep.sourceDir,
+    profileDir: prep.profileDir,
+    harnessRoot: prep.resolvedHarness,
+    manifest: prep.manifest,
+    entries: DSH_WHALE_ENTRIES,
+    linkedEntries: DSH_WHALE_LINKED_ENTRIES,
+    label: 'Whale',
+    linkPeers: prep.harnessReady,
+  });
+
+  await fs.promises.mkdir(prep.destDir, { recursive: true });
+  await atomicWriteFileIfChanged(prep.overlayFile, whaleOverlayContents(), { encoding: 'utf8' });
+  return buildWhaleResult(prep, runtimeDir);
 }
 
 /** @param {unknown} list */
@@ -247,5 +335,6 @@ module.exports = {
   whalePeerDirectories,
   withoutDshWhaleAliases,
   ensureDesktopDshWhale,
+  ensureDesktopDshWhaleAsync,
   assertPackagedDshWhale,
 };

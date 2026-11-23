@@ -26,9 +26,22 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   }
 }
 
+type StreamTextKind = 'text' | 'reasoning'
+
+interface PendingDelta {
+  readonly index: number
+  readonly kind: StreamTextKind
+  readonly baseText: string
+  /** Append-only chunk list; earlier snapshots cap reads via `chunkCount`. */
+  readonly chunks: string[]
+  readonly chunkCount: number
+}
+
 interface AssistantState {
   readonly turn: number
   readonly step: number
+  readonly rawBlocks: readonly (AssistantBlock | undefined)[]
+  readonly pending: PendingDelta | undefined
   readonly blocks: readonly (AssistantBlock | undefined)[]
   /** Missing indices are invisible; same-kind appends preserve already-visible blocks. */
   readonly visibleByIndex: readonly boolean[]
@@ -40,11 +53,51 @@ interface AssistantState {
   readonly usage: unknown
 }
 
-function initialState(turn: number, step: number): AssistantState {
+function materializePending(
+  rawBlocks: readonly (AssistantBlock | undefined)[],
+  pending: PendingDelta | undefined,
+): readonly (AssistantBlock | undefined)[] {
+  if (pending === undefined) return rawBlocks
+  const tail = pending.chunkCount === 1
+    ? (pending.chunks[0] ?? '')
+    : (pending.chunkCount === pending.chunks.length
+      ? pending.chunks
+      : pending.chunks.slice(0, pending.chunkCount)).join('')
+  const text = pending.baseText === '' ? tail : pending.baseText + tail
+  const next = [...rawBlocks]
+  next[pending.index] = pending.kind === 'text'
+    ? { kind: 'text', text }
+    : { kind: 'reasoning', text }
+  return next
+}
+
+function makeState(fields: Omit<AssistantState, 'blocks'>): AssistantState {
+  let materialized: readonly (AssistantBlock | undefined)[] | undefined
   return {
+    turn: fields.turn,
+    step: fields.step,
+    rawBlocks: fields.rawBlocks,
+    pending: fields.pending,
+    visibleByIndex: fields.visibleByIndex,
+    visibleBlocks: fields.visibleBlocks,
+    firstVisibleSeq: fields.firstVisibleSeq,
+    firstVisibleTime: fields.firstVisibleTime,
+    firstTokenTime: fields.firstTokenTime,
+    final: fields.final,
+    usage: fields.usage,
+    get blocks(): readonly (AssistantBlock | undefined)[] {
+      materialized ??= materializePending(fields.rawBlocks, fields.pending)
+      return materialized
+    },
+  }
+}
+
+function initialState(turn: number, step: number): AssistantState {
+  return makeState({
     turn,
     step,
-    blocks: [],
+    rawBlocks: [],
+    pending: undefined,
     visibleByIndex: [],
     visibleBlocks: 0,
     firstVisibleSeq: undefined,
@@ -52,11 +105,16 @@ function initialState(turn: number, step: number): AssistantState {
     firstTokenTime: undefined,
     final: undefined,
     usage: undefined,
-  }
+  })
 }
 
-function compactBlocks(blocks: readonly (AssistantBlock | undefined)[]): AssistantBlock[] {
-  return blocks.filter((block): block is AssistantBlock => block !== undefined)
+function compactBlocks(blocks: readonly (AssistantBlock | undefined)[]): readonly AssistantBlock[] {
+  for (let i = 0; i < blocks.length; i += 1) {
+    if (blocks[i] === undefined) {
+      return blocks.filter((block): block is AssistantBlock => block !== undefined)
+    }
+  }
+  return blocks as readonly AssistantBlock[]
 }
 
 function blockIsVisible(block: AssistantBlock | undefined): boolean {
@@ -77,10 +135,107 @@ function hasInterruptionEvidence(blocks: readonly AssistantBlock[]): boolean {
 }
 
 function resetForRetry(state: AssistantState): AssistantState {
-  return {
-    ...initialState(state.turn, state.step),
+  return makeState({
+    turn: state.turn,
+    step: state.step,
+    rawBlocks: [],
+    pending: undefined,
+    visibleByIndex: [],
+    visibleBlocks: 0,
+    firstVisibleSeq: undefined,
+    firstVisibleTime: undefined,
     firstTokenTime: state.firstTokenTime,
+    final: undefined,
+    usage: undefined,
+  })
+}
+
+function nextVisibility(
+  state: AssistantState,
+  changedIndex: number,
+  previousVisible: boolean,
+  nextVisible: boolean,
+): { readonly visibleByIndex: readonly boolean[]; readonly visibleBlocks: number } {
+  const visibleBlocks = state.visibleBlocks
+    - Number(previousVisible)
+    + Number(nextVisible)
+  if (previousVisible === nextVisible) {
+    return { visibleByIndex: state.visibleByIndex, visibleBlocks }
   }
+  const visibleByIndex = [...state.visibleByIndex]
+  visibleByIndex[changedIndex] = nextVisible
+  return { visibleByIndex, visibleBlocks }
+}
+
+function appendTextDelta(
+  state: AssistantState,
+  kind: StreamTextKind,
+  index: number,
+  text: string,
+  seq: number,
+  time: number,
+): AssistantState {
+  const active = state.pending
+  if (active !== undefined && active.index === index && active.kind === kind) {
+    if (text === '') return state
+    let chunks = active.chunks
+    if (chunks.length === active.chunkCount) {
+      chunks.push(text)
+    } else {
+      chunks = chunks.slice(0, active.chunkCount)
+      chunks.push(text)
+    }
+    const previousVisible = state.visibleByIndex[index] === true
+    const nextVisible = previousVisible || text.trim() !== ''
+    const { visibleByIndex, visibleBlocks } = nextVisibility(state, index, previousVisible, nextVisible)
+    return makeState({
+      turn: state.turn,
+      step: state.step,
+      rawBlocks: state.rawBlocks,
+      pending: {
+        index,
+        kind,
+        baseText: active.baseText,
+        chunks,
+        chunkCount: active.chunkCount + 1,
+      },
+      visibleByIndex,
+      visibleBlocks,
+      firstVisibleSeq: state.firstVisibleSeq ?? (visibleBlocks > 0 ? seq : undefined),
+      firstVisibleTime: state.firstVisibleTime ?? (visibleBlocks > 0 ? time : undefined),
+      firstTokenTime: state.firstTokenTime ?? time,
+      final: state.final,
+      usage: state.usage,
+    })
+  }
+
+  const rawBlocks = active === undefined || active.index === index
+    ? state.rawBlocks
+    : materializePending(state.rawBlocks, active)
+  const previous = active?.index === index ? undefined : rawBlocks[index]
+  if (previous?.kind === kind && text === '') return state
+  const previousVisible = state.visibleByIndex[index] === true
+  const nextVisible = (previous?.kind === kind && previousVisible) || text.trim() !== ''
+  const { visibleByIndex, visibleBlocks } = nextVisibility(state, index, previousVisible, nextVisible)
+  return makeState({
+    turn: state.turn,
+    step: state.step,
+    rawBlocks,
+    pending: {
+      index,
+      kind,
+      baseText: previous?.kind === kind ? previous.text : '',
+      chunks: [text],
+      chunkCount: 1,
+    },
+    visibleByIndex,
+    visibleBlocks,
+    firstVisibleSeq: state.firstVisibleSeq ?? (visibleBlocks > 0 ? seq : undefined),
+    firstVisibleTime: state.firstVisibleTime ?? (visibleBlocks > 0 ? time : undefined),
+    firstTokenTime: state.firstTokenTime ?? (text !== '' ? time : undefined),
+    final: state.final,
+    usage: state.usage,
+  })
 }
 
 function updateChunk(
@@ -89,45 +244,52 @@ function updateChunk(
   seq: number,
   time: number,
 ): AssistantState {
+  if (chunk.type === 'text-delta') {
+    return appendTextDelta(state, 'text', chunk.index, chunk.text, seq, time)
+  }
+  if (chunk.type === 'reasoning-delta') {
+    return appendTextDelta(state, 'reasoning', chunk.index, chunk.text, seq, time)
+  }
+  if (chunk.type === 'usage') {
+    return makeState({
+      turn: state.turn,
+      step: state.step,
+      rawBlocks: state.rawBlocks,
+      pending: state.pending,
+      visibleByIndex: state.visibleByIndex,
+      visibleBlocks: state.visibleBlocks,
+      firstVisibleSeq: state.firstVisibleSeq,
+      firstVisibleTime: state.firstVisibleTime,
+      firstTokenTime: state.firstTokenTime,
+      final: state.final,
+      usage: chunk.usage,
+    })
+  }
   if (chunk.type === 'tool-call-delta') {
-    const previous = state.blocks[chunk.index]
+    const previous = state.pending?.index === chunk.index ? undefined : state.rawBlocks[chunk.index]
     if (previous?.kind === 'tool-call' && previous.callId !== ''
       && (chunk.name === undefined || chunk.name === previous.name)
       && (state.firstTokenTime !== undefined || !isTokenDelta(chunk))) return state
   }
-  const blocks = [...state.blocks]
-  let changedIndex = -1
-  let previousVisible = false
+  if (chunk.type !== 'block-start' && chunk.type !== 'tool-call-delta' && chunk.type !== 'block-end') {
+    return state
+  }
+  const baseBlocks = state.pending === undefined || state.pending.index === chunk.index
+    ? state.rawBlocks
+    : materializePending(state.rawBlocks, state.pending)
+  const blocks = [...baseBlocks]
+  const changedIndex = chunk.index
+  const previousVisible = state.visibleByIndex[changedIndex] === true
   let nextVisible = false
   switch (chunk.type) {
     case 'block-start':
-      changedIndex = chunk.index
-      previousVisible = state.visibleByIndex[chunk.index] === true
-      blocks[chunk.index] = emptyAssistantBlock(chunk.blockType)
-      nextVisible = blockIsVisible(blocks[chunk.index])
+      blocks[changedIndex] = emptyAssistantBlock(chunk.blockType)
+      nextVisible = blockIsVisible(blocks[changedIndex])
       break
-    case 'text-delta': {
-      const previous = blocks[chunk.index]
-      changedIndex = chunk.index
-      previousVisible = state.visibleByIndex[chunk.index] === true
-      blocks[chunk.index] = { kind: 'text', text: (previous?.kind === 'text' ? previous.text : '') + chunk.text }
-      nextVisible = (previous?.kind === 'text' && previousVisible) || chunk.text.trim() !== ''
-      break
-    }
-    case 'reasoning-delta': {
-      const previous = blocks[chunk.index]
-      changedIndex = chunk.index
-      previousVisible = state.visibleByIndex[chunk.index] === true
-      blocks[chunk.index] = { kind: 'reasoning', text: (previous?.kind === 'reasoning' ? previous.text : '') + chunk.text }
-      nextVisible = (previous?.kind === 'reasoning' && previousVisible) || chunk.text.trim() !== ''
-      break
-    }
     case 'tool-call-delta': {
-      const previous = blocks[chunk.index]
-      changedIndex = chunk.index
-      previousVisible = state.visibleByIndex[chunk.index] === true
+      const previous = state.pending?.index === changedIndex ? undefined : baseBlocks[changedIndex]
       // Tool Nodes own streamed arguments; Assistant protocol blocks retain identity until full settlement.
-      blocks[chunk.index] = {
+      blocks[changedIndex] = {
         kind: 'tool-call',
         callId: (previous?.kind === 'tool-call' ? previous.callId : '') || String(chunk.id),
         name: chunk.name ?? (previous?.kind === 'tool-call' ? previous.name : ''),
@@ -136,38 +298,24 @@ function updateChunk(
       break
     }
     case 'block-end':
-      changedIndex = chunk.index
-      previousVisible = state.visibleByIndex[chunk.index] === true
-      blocks[chunk.index] = toAssistantBlock(chunk.block)
-      nextVisible = blockIsVisible(blocks[chunk.index])
+      blocks[changedIndex] = toAssistantBlock(chunk.block)
+      nextVisible = blockIsVisible(blocks[changedIndex])
       break
-    case 'usage':
-      return { ...state, usage: chunk.usage }
-    default:
-      return state
   }
-  const visibleBlocks = state.visibleBlocks
-    - Number(previousVisible)
-    + Number(nextVisible)
-  let visibleByIndex = state.visibleByIndex
-  if (previousVisible !== nextVisible) {
-    const next = [...visibleByIndex]
-    next[changedIndex] = nextVisible
-    visibleByIndex = next
-  }
-  const firstToken = isTokenDelta(chunk)
-  return {
-    ...state,
-    blocks,
+  const { visibleByIndex, visibleBlocks } = nextVisibility(state, changedIndex, previousVisible, nextVisible)
+  return makeState({
+    turn: state.turn,
+    step: state.step,
+    rawBlocks: blocks,
+    pending: undefined,
     visibleByIndex,
     visibleBlocks,
-    ...visibleBlocks > 0 && state.firstVisibleSeq === undefined
-      ? { firstVisibleSeq: seq, firstVisibleTime: time }
-      : {},
-    ...firstToken && state.firstTokenTime === undefined
-      ? { firstTokenTime: time }
-      : {},
-  }
+    firstVisibleSeq: state.firstVisibleSeq ?? (visibleBlocks > 0 ? seq : undefined),
+    firstVisibleTime: state.firstVisibleTime ?? (visibleBlocks > 0 ? time : undefined),
+    firstTokenTime: state.firstTokenTime ?? (isTokenDelta(chunk) ? time : undefined),
+    final: state.final,
+    usage: state.usage,
+  })
 }
 
 function settleMessage(
@@ -177,14 +325,19 @@ function settleMessage(
 ): AssistantState {
   const blocks = toAssistantBlocks(event.data.message.content)
   const visibleByIndex = blocks.map(blockIsVisible)
-  return {
-    ...state,
-    blocks,
+  return makeState({
+    turn: state.turn,
+    step: state.step,
+    rawBlocks: blocks,
+    pending: undefined,
     visibleByIndex,
     visibleBlocks: visibleByIndex.reduce((count, visible) => count + Number(visible), 0),
+    firstVisibleSeq: state.firstVisibleSeq,
+    firstVisibleTime: state.firstVisibleTime,
+    firstTokenTime: state.firstTokenTime,
     final: match,
     usage: event.data.usage,
-  }
+  })
 }
 
 function closedBoundary(location: ConversationLocation): { seq: number; time: number } | undefined {
@@ -212,7 +365,9 @@ function finalNode(
       time: event.time,
       turn: state.turn,
       step: state.step,
-      blocks: toAssistantBlocks(event.data.message.content),
+      blocks: state.pending === undefined
+        ? state.rawBlocks as readonly AssistantBlock[]
+        : toAssistantBlocks(event.data.message.content),
       usage: event.data.usage,
       timing: {
         stepStartTime: context.start?.event.time ?? null,

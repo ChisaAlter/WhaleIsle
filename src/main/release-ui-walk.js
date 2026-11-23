@@ -1730,13 +1730,13 @@ async function runReleaseUiWalk(wc, helpers) {
   await dismiss();
   await sleep(300);
 
-  // Bots is removed: the Built-in features page lists no Bots switch.
+  // Legacy dshbot is removed (match retired Bots / 机器人（Bots） only, not Whale Bots).
   const featuresOpened = await openSettings('features');
   const botsSetting = await waitUntil(() => pageEval(wc, () => {
     const dialog = dshDialogNamed('^设置$|^settings$');
     const nav = document.querySelector('[data-dsh-settings-section="features"]');
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
-      .find((el) => /(bots|机器人)/i.test(dshLabel(el)));
+      .find((el) => /^(?:bots|机器人(?:\s*[（(]bots[）)])?)$/i.test(dshLabel(el).trim()));
     return {
       nav: Boolean(dialog && nav?.getAttribute('aria-current') === 'true'),
       switchPresent: Boolean(control),

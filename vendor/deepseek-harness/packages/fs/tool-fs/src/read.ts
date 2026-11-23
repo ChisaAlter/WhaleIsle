@@ -157,10 +157,18 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
         lines: window.lines,
         totalLines: window.totalLines,
       }
+      const endLine = window.lines.at(-1)?.number ?? Math.max(0, input.offset - 1)
+      const lineTruncated = window.lines.some(line => line.text.endsWith(`... (line truncated to ${caps.maxLineLength} chars)`))
+      const partial = input.offset > 1 || endLine < window.totalLines || window.truncatedByBytes || lineTruncated
       // Record the present observation (a no-op when no policy plugin listens). The
       // read already succeeded; an fs/observed listener is contractually a
       // synchronous, side-effect-only recorder.
-      ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
+      ctx.emit(
+        'fs/observed',
+        target,
+        partial ? { kind: 'present', version: info.version, partial: true } : { kind: 'present', version: info.version },
+        exec,
+      )
       return outcome
     },
     // Result-time display: a `read` card carrying the structured line window a

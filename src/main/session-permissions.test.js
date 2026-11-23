@@ -14,7 +14,7 @@ const MAIN_DIR = __dirname;
  * setPermissionRequestHandler / setPermissionCheckHandler calls.
  */
 const PARTITION_PERMISSION_OWNERS = new Map([
-  ['persist:whalebridge', 'whalebridge-window.js'],
+  ['persist:magpie', 'magpie-window.js'],
   ['persist:dshd-preview-', 'preview-session.js'],
   ['persist:dsh-platform-', 'platform-view.js'],
   ['dsh-platform-', 'platform-view.js'],

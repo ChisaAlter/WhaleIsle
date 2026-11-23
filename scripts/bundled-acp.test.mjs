@@ -56,7 +56,7 @@ test('Electron resource copy ships a self-contained default ACP plugin, not its 
     const result = ensureDesktopAcpAgents({ sourceDir, profileDir });
     assert.equal(result.ok, true);
     assert.equal(result.added, run === 0);
-    assert.equal(fs.realpathSync(path.join(profileDir, 'node_modules/dsh-acp-agents')), fs.realpathSync(sourceDir));
+    assert.equal(fs.realpathSync.native(path.join(profileDir, 'node_modules/dsh-acp-agents')), fs.realpathSync.native(sourceDir));
     assert.match(fs.readFileSync(result.overlayFile, 'utf8'), /name: "dsh-acp-agents"/);
   }
   // A partial resource copy must not be mistaken for a loadable bundled plugin.

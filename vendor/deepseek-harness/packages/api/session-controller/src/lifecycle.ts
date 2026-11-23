@@ -18,6 +18,7 @@ export class SessionLifecycle {
   /** Session ids whose idle Agent is being released; the Session stays listed. */
   readonly releasingIds = new Set<SessionId>()
   private readonly handles = new Map<SessionId, AgentHandle>()
+  private readonly releasePromises = new Map<SessionId, Promise<void>>()
 
   /** @param ctx - Host context whose Agent registry is wrapped. */
   constructor(ctx: Context) {
@@ -70,5 +71,27 @@ export class SessionLifecycle {
    */
   retained(): [SessionId, AgentHandle][] {
     return [...this.handles]
+  }
+
+  /**
+   * Track an in-flight idle release until cleanup finishes and clear `releasingIds`.
+   */
+  trackRelease(id: SessionId, release: Promise<void>): Promise<void> {
+    this.releasingIds.add(id)
+    const settled = release.finally(() => {
+      this.releasingIds.delete(id)
+      if (this.releasePromises.get(id) === settled) {
+        this.releasePromises.delete(id)
+      }
+    })
+    this.releasePromises.set(id, settled)
+    return settled
+  }
+
+  /** Wait for any in-flight idle release of `id` to complete before resuming. */
+  async waitForRelease(id: SessionId): Promise<void> {
+    while (this.releasePromises.has(id)) {
+      await this.releasePromises.get(id)
+    }
   }
 }

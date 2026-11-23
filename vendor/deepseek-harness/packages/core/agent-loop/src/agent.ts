@@ -19,16 +19,23 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed, GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   HarnessError,
   MALFORMED_RESPONSE_CODE,
   LlmError,
   createAssistantMessage,
   createDeveloperMessage,
+  createUserMessage,
   errorChain,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'max-tokens-recovery': { kind: 'max-tokens-recovery' } & ContextFormed
+  }
+}
 import { assertNever, deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -64,6 +71,7 @@ type Phase =
   | { kind: 'running'; abort: AbortController; turn: number; step: number; wakeRequested: boolean }
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
+type StepOutcome = StepEndReason | 'max-tokens-recovered' | null
 
 /** Optional image-to-text service; the loop does not require the vision plugin. */
 interface VisionMessageRewriter {
@@ -462,9 +470,21 @@ export class ReactLoopAgent implements Agent {
     const { signal } = phase.abort
     let turnEnds: TurnEndReason | null = initialTurnEnds
     let target: InboxTarget = initialTarget
+    let consecutiveMaxTokensRecoveries = 0
     try {
       while (true) {
         signal.throwIfAborted()
+        const maxStepsPerTurn = this.loopCtx.agentLoop.config.maxStepsPerTurn.get()
+        if (phase.step >= maxStepsPerTurn) {
+          if (this.inbox.nextStep.length > 0) {
+            this.inbox.splice('next-step', 0, this.inbox.nextStep.length, [])
+          }
+          if (this.inbox.nextTurn.length === 0) phase.wakeRequested = false
+          throw LlmError.fromFailure({
+            message: `Turn ${turn} exceeded maxStepsPerTurn (${maxStepsPerTurn})`,
+            code: 'MAX_STEPS_EXCEEDED',
+          })
+        }
         const step = phase.step + 1
         const decision = await this.preStep(target, { turn, step })
         if (decision.kind === 'reject') {
@@ -487,12 +507,18 @@ export class ReactLoopAgent implements Agent {
             if (session === this.session) toolRecovery.observe(event)
           })
           try {
-            // max-tokens is sticky: once any step hits the ceiling, later steps
-            // that complete normally must not downgrade the turn outcome.
-            const stepEnd = await this.step(decision)
-            // max-tokens stays sticky: a later completed step must not
-            // downgrade the turn outcome.
-            if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
+            // max-tokens is sticky: once any unrecovered step hits the ceiling,
+            // later steps that complete normally must not downgrade the turn outcome.
+            const maxTokensRecoveryLimit = this.loopCtx.agentLoop.config.maxTokensRecoveryLimit.get()
+            const stepOutcome = await this.step(decision, consecutiveMaxTokensRecoveries < maxTokensRecoveryLimit)
+            if (stepOutcome === 'max-tokens-recovered') {
+              consecutiveMaxTokensRecoveries += 1
+            } else {
+              consecutiveMaxTokensRecoveries = 0
+              // max-tokens stays sticky: a later completed step must not
+              // downgrade the turn outcome.
+              if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepOutcome
+            }
           } catch (error: unknown) {
             try {
               for (const event of toolRecovery.results()) {
@@ -554,7 +580,10 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
+  private async step(
+    decision: Extract<PreparedStep, { kind: 'enter' }>,
+    canRecoverMaxTokens = false,
+  ): Promise<StepOutcome> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
@@ -608,6 +637,7 @@ export class ReactLoopAgent implements Agent {
         (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) },
       )
       let started = false
+      let sawToolCallInStream = false
       try {
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
@@ -615,49 +645,87 @@ export class ReactLoopAgent implements Agent {
         started = true
         for await (const chunk of stream) {
           signal.throwIfAborted()
+          if (
+            (chunk.type === 'block-start' && chunk.blockType === 'tool-call')
+            || chunk.type === 'tool-call-delta'
+            || (chunk.type === 'block-end' && chunk.block.type === 'tool-call')
+          ) {
+            sawToolCallInStream = true
+          }
           live.push(chunk)
         }
         signal.throwIfAborted()
       } catch (error: unknown) {
         if (!started) throw error
-        try {
-          if (signal.aborted) {
-            const content = live.interruptedBlocks()
-            if (content.length > 0) {
-              live.settle('assistant/message', () => this.session.append('assistant/message', {
-                turn,
-                step,
-                message: createAssistantMessage({
-                  content,
-                  source: {
-                    provider: request.provider,
-                    model: request.model,
-                    ...live.replayState === undefined ? {} : { replayState: live.replayState },
-                  },
-                }),
-                interrupted: true,
-                ...live.usage === undefined ? {} : { usage: live.usage },
-                stream: live.stream,
-              }, { surfaceOp: 'append' }).seq)
-            } else {
-              live.settle(
-                'assistant/attempt',
-                () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
-              )
-            }
-          } else {
-            live.settle(
-              'assistant/attempt',
-              () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
-            )
-          }
-        } catch (settlementError: unknown) {
-          throw new AggregateError(
-            [error, settlementError],
-            'Assistant stream failed and its durable settlement was rejected',
-            { cause: error },
+        const settleAttempt = (): void => {
+          live.settle(
+            'assistant/attempt',
+            () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
           )
         }
+        const settlePartialOrAttempt = (): void => {
+          const content = live.interruptedBlocks()
+          if (content.length > 0) {
+            const replayState = live.replayState !== undefined
+              && (live.replayState.blocks === undefined || live.replayState.blocks.length === content.length)
+              ? live.replayState
+              : undefined
+            live.settle('assistant/message', () => this.session.append('assistant/message', {
+              turn,
+              step,
+              message: createAssistantMessage({
+                content,
+                source: {
+                  provider: request.provider,
+                  model: request.model,
+                  ...replayState === undefined ? {} : { replayState },
+                },
+              }),
+              interrupted: true,
+              ...live.usage === undefined ? {} : { usage: live.usage },
+              stream: live.stream,
+            }, { surfaceOp: 'append' }).seq)
+          } else {
+            settleAttempt()
+          }
+        }
+        const settleWithCause = (settle: () => void): void => {
+          try {
+            settle()
+          } catch (settlementError: unknown) {
+            throw new AggregateError(
+              [error, settlementError],
+              'Assistant stream failed and its durable settlement was rejected',
+              { cause: error },
+            )
+          }
+        }
+        if (!signal.aborted && error instanceof LlmError) {
+          const action = await this.dispatch.waterfall(
+            'agent/request-error', {
+              turn,
+              step,
+              provider: request.provider,
+              failure: error.failure,
+              retryPolicy: preparedCall?.retryPolicy,
+              signal,
+            },
+            () => Promise.resolve<RequestErrorAction>(undefined),
+          )
+          try {
+            signal.throwIfAborted()
+          } catch (abortError: unknown) {
+            settleWithCause(settleAttempt)
+            throw abortError
+          }
+          if (action?.kind === 'retry') {
+            settleWithCause(settleAttempt)
+            continue
+          }
+          settleWithCause(settlePartialOrAttempt)
+          throw error
+        }
+        settleWithCause(signal.aborted ? settlePartialOrAttempt : settleAttempt)
         throw error
       }
       try {
@@ -712,7 +780,23 @@ export class ReactLoopAgent implements Agent {
             stream: live.stream,
           }, { surfaceOp: 'append' }).seq,
         )
-        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+        if (finish.kind === 'max-tokens') {
+          if (!canRecoverMaxTokens) return { kind: 'max-tokens' }
+          const recoveryText = sawToolCallInStream
+            ? '输出因 max_tokens 截断导致工具参数未闭合，请缩小每次修改幅度或分步调用'
+            : 'Output was truncated due to max_tokens limit. Continue from where you stopped.'
+          this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [
+            createUserMessage({
+              content: [{ type: 'text', text: recoveryText }],
+              source: {
+                kind: 'max-tokens-recovery',
+                form: 'notice',
+                summary: sawToolCallInStream ? 'truncated tool-call recovery' : 'truncated text continuation',
+              },
+            }),
+          ])
+          return 'max-tokens-recovered'
+        }
 
         const toolCalls = message.content.filter(block => block.type === 'tool-call')
         if (toolCalls.length === 0) return { kind: 'completed' }

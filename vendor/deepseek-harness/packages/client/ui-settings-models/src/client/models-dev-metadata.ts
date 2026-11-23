@@ -33,6 +33,63 @@ export interface EnrichedDiscoveredModel extends LlmDiscoveredModel {
 }
 
 const MODELS_DEV_METADATA_URL = 'https://models.dev/api.json'
+const MODELS_DEV_TIMEOUT_MS = 2_000
+
+function isPrivateIPv4Octets(a: number, b: number): boolean {
+  if (a === 127 || a === 10 || a === 0) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  if (a === 100 && b >= 64 && b <= 127) return true
+  return false
+}
+
+function isPrivateOrLocalHost(rawHost: string): boolean {
+  const host = rawHost.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '').split('%')[0] ?? ''
+  if (host.length === 0) return false
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
+
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (ipv4 !== null) {
+    const octets = ipv4.slice(1).map(Number)
+    const [a = -1, b = -1] = octets
+    return octets.every(n => n >= 0 && n <= 255) && isPrivateIPv4Octets(a, b)
+  }
+
+  if (host === '::' || host === '::1' || host === '0:0:0:0:0:0:0:0' || host === '0:0:0:0:0:0:0:1') return true
+  const mappedDotted = /^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (mappedDotted !== null) {
+    const octets = mappedDotted.slice(1).map(Number)
+    const [a = -1, b = -1] = octets
+    return octets.every(n => n >= 0 && n <= 255) && isPrivateIPv4Octets(a, b)
+  }
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host)
+  if (mappedHex?.[1] !== undefined) {
+    const hi = Number.parseInt(mappedHex[1], 16)
+    return isPrivateIPv4Octets(hi >> 8, hi & 0xff)
+  }
+  const firstHextet = /^([0-9a-f]{1,4}):/.exec(host)
+  if (firstHextet?.[1] !== undefined) {
+    const first = Number.parseInt(firstHextet[1], 16)
+    if ((first & 0xfe00) === 0xfc00) return true // fc00::/7 unique local
+    if ((first & 0xffc0) === 0xfe80) return true // fe80::/10 link-local
+  }
+  return false
+}
+
+/**
+ * Return `true` when `baseURL` points at loopback or a private network address
+ * so local gateways (for example Magpie) do not stall waiting on external models.dev lookups.
+ */
+export function isPrivateOrLocalBaseUrl(baseURL?: string): boolean {
+  if (typeof baseURL !== 'string' || baseURL.trim().length === 0) return false
+  try {
+    return isPrivateOrLocalHost(new URL(baseURL.trim()).hostname)
+  } catch {
+    // Unparseable or incomplete draft URLs do not count as a verified local/private gateway.
+    return false
+  }
+}
 
 let modelsDevMetadataPromise: Promise<ModelsDevMetadata> | undefined
 
@@ -63,7 +120,10 @@ export function setModelsDevEnrichmentDisabledForTests(disabled: boolean): void 
  */
 export function loadModelsDevMetadata(): Promise<ModelsDevMetadata> {
   if (modelsDevMetadataPromise === undefined) {
-    modelsDevMetadataPromise = fetch(MODELS_DEV_METADATA_URL, { cache: 'force-cache' }).then(async (response) => {
+    modelsDevMetadataPromise = fetch(MODELS_DEV_METADATA_URL, {
+      cache: 'force-cache',
+      signal: AbortSignal.timeout(MODELS_DEV_TIMEOUT_MS),
+    }).then(async (response) => {
       if (!response.ok) throw new Error(`models.dev returned HTTP ${response.status}`)
       return response.json() as Promise<ModelsDevMetadata>
     }).catch((error: unknown) => {
@@ -292,14 +352,16 @@ export function enrichDiscoveredModels(
  */
 export async function enrichDiscoveredModelsBestEffort(
   candidates: readonly LlmDiscoveredModel[],
+  options?: { baseURL?: string | undefined },
 ): Promise<EnrichedDiscoveredModel[]> {
-  if (enrichmentDisabledForTests) {
+  if (enrichmentDisabledForTests || isPrivateOrLocalBaseUrl(options?.baseURL)) {
     return candidates.map(candidate => ({ ...candidate }))
   }
   try {
     const metadata = await loadModelsDevMetadata()
     return enrichDiscoveredModels(candidates, metadata)
   } catch {
+    // Metadata enrichment is best-effort; return discovered rows unchanged on network/timeout/parse failure.
     return candidates.map(candidate => ({ ...candidate }))
   }
 }

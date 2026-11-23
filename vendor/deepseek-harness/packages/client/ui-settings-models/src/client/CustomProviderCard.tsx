@@ -30,7 +30,10 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { Input, SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { apiKeyFailure } from './apiKey.ts'
 import { ApiKeyInput } from './ApiKeyInput.tsx'
+import { CompatEditor, filterCompatForProtocol } from './CompatEditor.tsx'
+import { ConnectionTestControl } from './ConnectionTestControl.tsx'
 import { EditorFooter } from './EditorFooter.tsx'
+import { HeadersEditor } from './HeadersEditor.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
 import { validateDeclaredModels } from './ModelReasoningEfforts.tsx'
@@ -117,6 +120,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const [baseURL, setBaseURL] = useState('')
   const [protocol, setProtocol] = useState(protocols[0] ?? '')
   const [keyDraft, setKeyDraft] = useState('')
+  const [headers, setHeaders] = useState<Readonly<Record<string, string>> | undefined>(undefined)
+  const [headersError, setHeadersError] = useState<string | undefined>(undefined)
+  const [compat, setCompat] = useState<Record<string, unknown> | undefined>(undefined)
   const [models, setModels] = useState<readonly ModelDraft[]>([])
   const [busy, setBusy] = useState(false)
   const [listBusy, setListBusy] = useState(false)
@@ -153,13 +159,14 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const keyValue = keyDraft.trim()
   const ready = route.length > 0 && !routeInvalid && !routeTaken
     && normalizedBaseURL.length > 0 && !baseUrlInvalid && models.length > 0 && modelFailure === undefined
-    && keyFailure === undefined
+    && keyFailure === undefined && headersError === undefined
   // The first unmet gate explains the disabled commit action in its tooltip.
   const hint = failure !== undefined || ready
     // The key field prints its own failure directly beneath itself, so a card
     // blocked only by the key stays silent here rather than answering with the
     // next unmet gate — which is satisfied, and reads as a second, false fault.
     || keyFailure !== undefined
+    || headersError !== undefined
     // Same for the route id, and it must be tested rather than assumed: the
     // fallback arm below reads "no models yet", so an unmet route gate would
     // fall through to it and contradict the filled-in list right above.
@@ -176,6 +183,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
     const keyRef = deriveKeyRef(route)
     const storesKey = keyValue.length > 0
     if (!committed) {
+      const effectiveCompat = filterCompatForProtocol(compat, protocol)
       const profile = {
         ...displayName.length === 0 ? {} : { displayName },
         // The profile names the conventional reference only when this card is
@@ -185,6 +193,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         ...storesKey ? { apiKeyEnv: keyRef } : {},
         api: protocol,
         baseURL: normalizedBaseURL,
+        ...headers === undefined ? {} : { headers },
+        ...effectiveCompat === undefined ? {} : { compat: effectiveCompat },
         models: models.map(model => ({ ...model })),
       }
       // `taken` is a snapshot too, so the id check alone cannot see a route
@@ -317,6 +327,38 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           ? null
           : <span className={styles['visuallyHidden']} id={`${errorId}-key`}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</span>}
       </div>
+      <ConnectionTestControl
+        probe={{
+          settingsNs: NS,
+          baseURL: normalizedBaseURL,
+          api: protocol,
+          ...keyValue.length === 0 ? {} : { apiKey: keyValue },
+        }}
+        blockedReason={normalizedBaseURL.length === 0
+          ? 'customNeedsBaseUrl'
+          : baseUrlInvalid
+            ? 'customBaseUrlInvalid'
+            : keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure}
+        disabled={profileDisabled}
+        operations={operations}
+        t={t}
+      />
+      <HeadersEditor
+        headers={headers}
+        t={t}
+        disabled={profileDisabled}
+        onChange={(next, err) => {
+          setHeaders(next)
+          setHeadersError(err)
+        }}
+      />
+      <CompatEditor
+        compat={compat}
+        protocol={protocol}
+        t={t}
+        disabled={profileDisabled}
+        onChange={setCompat}
+      />
       <ModelListEditor
         models={models}
         onChange={setModels}
@@ -349,7 +391,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         submitBusyLabelKey="creating"
         submitHint={failure ?? (routeInvalid || routeTaken ? t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')
           : baseUrlInvalid ? t('customBaseUrlInvalid')
-            : keyFailure !== undefined ? t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure) : hint)}
+            : keyFailure !== undefined ? t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)
+              : headersError ?? hint)}
         onCancel={() => { props.onClose(committed) }}
         onSubmit={() => { void create() }}
       />

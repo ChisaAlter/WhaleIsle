@@ -843,3 +843,63 @@ test('task-control inspection tracks active dsh-project work, fails closed on pr
   assert.equal(scheduled, 1, 'releasing maintenance lock re-drives projects.schedule()');
   ctx.dispose();
 });
+
+test('wrapRouteEntry leaves WebResourceRoute without synthetic handler while preserving route admission', async () => {
+  const { createControlState, acquireLock, releaseLock } = await load('state.js');
+  const { wrapWebServer, disposeGuards } = await load('wrap.js');
+  const state = createControlState();
+  const preResource = async () => new Response('pre-bundle');
+  const preRoute = { kind: 'exact', path: '/client/pre.js', resource: preResource };
+  const apiRoute = {
+    kind: 'exact',
+    path: '/api/write',
+    handler(_req, res) {
+      res.statusCode = 200;
+      res.end('written');
+    },
+  };
+  const webServer = {
+    prefixes: new Map(),
+    exact: new Map([[preRoute.path, preRoute], [apiRoute.path, apiRoute]]),
+    upgrades: new Map(),
+    register(route) {
+      this.exact.set(route.path, route);
+      return () => { this.exact.delete(route.path); };
+    },
+  };
+
+  assert.equal(wrapWebServer(state, webServer), true);
+  assert.equal('handler' in preRoute, false);
+  assert.equal(preRoute.resource, preResource);
+
+  const dynResource = async () => new Response('dyn-asset');
+  const dynRoute = { kind: 'prefix', path: '/assets', resource: dynResource };
+  webServer.register(dynRoute);
+  assert.equal('handler' in dynRoute, false);
+  assert.equal(dynRoute.resource, dynResource);
+
+  // Regular handler routes keep admission & drain semantics under lock.
+  const locked = await acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 50 });
+  assert.equal(locked.ok, true);
+  const blockedRes = {
+    headersSent: false,
+    status: 0,
+    body: '',
+    once() {},
+    off() {},
+    writeHead(status) { this.status = status; },
+    end(body) { this.body = body; },
+  };
+  await apiRoute.handler({ method: 'POST', url: '/api/write' }, blockedRes);
+  assert.equal(blockedRes.status, 503);
+  assert.equal(JSON.parse(blockedRes.body).error.code, 'dshd/admission-locked');
+
+  // Resource routes remain callable and unpolluted during lock.
+  assert.equal(await (await preRoute.resource()).text(), 'pre-bundle');
+  assert.equal(await (await dynRoute.resource()).text(), 'dyn-asset');
+
+  releaseLock(state, { lockId: locked.lockId, owner: 'desktop-update' });
+  disposeGuards(state);
+  assert.equal('handler' in preRoute, false);
+  assert.equal('handler' in dynRoute, false);
+});

@@ -207,6 +207,61 @@ function atomicWriteFileSync(file, data, options = {}) {
 }
 
 /**
+ * Async equivalent of {@link atomicWriteFileIfChangedSync}: skips writing and
+ * fsyncing when the destination already holds identical bytes/text, and runs
+ * the atomic write + fsync on the libuv threadpool when it differs.
+ * @param {string} file
+ * @param {string | Buffer} data
+ * @param {{ encoding?: BufferEncoding | null, mode?: number, fsync?: boolean }} [options]
+ * @returns {Promise<boolean>}
+ */
+async function atomicWriteFileIfChanged(file, data, options = {}) {
+  try {
+    if (typeof data === 'string') {
+      const encoding = options.encoding === undefined ? 'utf8' : options.encoding;
+      if (await fs.promises.readFile(file, encoding || 'utf8') === data) {
+        return false;
+      }
+    } else if (Buffer.isBuffer(data)) {
+      if ((await fs.promises.readFile(file)).equals(data)) {
+        return false;
+      }
+    }
+  } catch {
+    // Missing or unreadable destination falls through to the atomic write.
+  }
+  await atomicWriteFile(file, data, options);
+  return true;
+}
+
+/**
+ * Write `data` atomically only when `file` is missing or its contents differ,
+ * avoiding redundant fsync/rename churn for regenerated overlays on warm boots.
+ * @param {string} file
+ * @param {string | Buffer} data
+ * @param {{ encoding?: BufferEncoding | null, mode?: number, fsync?: boolean }} [options]
+ * @returns {boolean} true when the file was written, false when already identical.
+ */
+function atomicWriteFileIfChangedSync(file, data, options = {}) {
+  try {
+    if (typeof data === 'string') {
+      const encoding = options.encoding === undefined ? 'utf8' : options.encoding;
+      if (fs.readFileSync(file, encoding || 'utf8') === data) {
+        return false;
+      }
+    } else if (Buffer.isBuffer(data)) {
+      if (fs.readFileSync(file).equals(data)) {
+        return false;
+      }
+    }
+  } catch {
+    // Missing or unreadable destination falls through to the atomic write.
+  }
+  atomicWriteFileSync(file, data, options);
+  return true;
+}
+
+/**
  * Remove a file or directory tree without throwing. Intended for cleanup
  * paths where a removal failure must not overwrite an otherwise good result
  * or corrupt long-lived service state.
@@ -327,6 +382,8 @@ function createUniqueDir(parent, prefix) {
 module.exports = {
   atomicWriteFile,
   atomicWriteFileSync,
+  atomicWriteFileIfChanged,
+  atomicWriteFileIfChangedSync,
   renameWithRetry,
   renameWithRetrySync,
   safeRemove,

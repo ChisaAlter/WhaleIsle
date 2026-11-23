@@ -84,7 +84,7 @@ afterEach(async () => {
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
 async function setupWith(
   adapter: LlmAdapter,
-  options: { persistence?: boolean; sessionQuery?: boolean; maxActiveSubagents?: number } = {},
+  options: { persistence?: boolean; sessionQuery?: boolean; maxActiveSubagents?: number; maxTokensRecoveryLimit?: number } = {},
 ) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
@@ -100,7 +100,10 @@ async function setupWith(
       rmSync(persistedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     })
   }
-  const loop = await ctx.plugin(AgentLoop, { agents: [] })
+  const loop = await ctx.plugin(AgentLoop, {
+    agents: [],
+    ...(options.maxTokensRecoveryLimit === undefined ? {} : { maxTokensRecoveryLimit: options.maxTokensRecoveryLimit }),
+  })
   if (options.sessionQuery !== false) await ctx.plugin(TestSessionQuery)
   await mountWorkingDirectoryFixture(ctx)
   if (ctx.get('sessionProjections') === undefined) await ctx.plugin(SessionProjectionRegistry)
@@ -113,7 +116,7 @@ async function setupWith(
   return { ctx, parent, disposePersistence, root, loop }
 }
 
-async function setup(script: Script, options: { persistence?: boolean } = {}) {
+async function setup(script: Script, options: { persistence?: boolean; maxTokensRecoveryLimit?: number } = {}) {
   const adapter = new MockAdapter(script)
   const booted = await setupWith(adapter, options)
   return { ...booted, adapter }
@@ -2095,7 +2098,7 @@ describe('continuable review regressions', () => {
         { type: 'text-delta', index: 0, text: 'partial' },
         { type: 'block-end', index: 0, block: { type: 'text', text: 'partial' } },
         { type: 'finish', reason: { kind: 'max-tokens' } }],
-    ]))
+    ]), { maxTokensRecoveryLimit: 0 })
     const ends: SubagentRunEndInfo[] = []
     ctx.on('subagent/end', (info) => { ends.push(info) })
 
@@ -2273,7 +2276,7 @@ describe('continuable review regressions', () => {
         { type: 'usage', usage: { inputTokens: 20, outputTokens: 5 } },
         { type: 'finish', reason: { kind: 'max-tokens' } },
       ],
-    ])
+    ], { maxTokensRecoveryLimit: 0 })
     ctx.tools.register(defineTool({
       name: 'noop',
       description: 'does nothing',
@@ -3119,7 +3122,7 @@ describe('continuable settlement delivery', () => {
   })
 
   it('delivers the terminal reason when the child never had a chance to report', async () => {
-    const { ctx, parent } = await setup([maxTokensResponse('half an ans'), textResponse('parent ack')])
+    const { ctx, parent } = await setup([maxTokensResponse('half an ans'), textResponse('parent ack')], { maxTokensRecoveryLimit: 0 })
     const started = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
     await waitNoActivation(ctx, started.childId)
 
@@ -4062,7 +4065,7 @@ describe('SubagentRuntime.interrupt', () => {
     const childCancel = vi.spyOn(child, 'cancel')
     const grandchildCancel = vi.spyOn(grandchildAgent, 'cancel')
 
-    ctx.subagents.interrupt(started.childId, { kind: 'user' })
+    ctx.subagents.interrupt(started.childId, { kind: 'user' }, { cascade: false })
 
     expect(childCancel).toHaveBeenCalledTimes(1)
     releaseChild.resolve(undefined)
@@ -4218,6 +4221,184 @@ describe('SubagentRuntime.interrupt', () => {
 
     hold.resolve(undefined)
     await drained
+  })
+
+  it('cascades interrupts leaf-to-root across multi-level subtrees by default while keeping siblings alive', async () => {
+    const releaseChild = Promise.withResolvers<undefined>()
+    const releaseSibling = Promise.withResolvers<undefined>()
+    const releaseGrandchild = Promise.withResolvers<undefined>()
+    const releaseGreatGrandchild = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('child'), gate: releaseChild.promise },
+      { chunks: textResponse('sibling'), gate: releaseSibling.promise },
+      { chunks: textResponse('grandchild'), gate: releaseGrandchild.promise },
+      { chunks: textResponse('great-grandchild'), gate: releaseGreatGrandchild.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const childRun = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
+    const siblingRun = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    const child = ctx.agents.get(childRun.childId)!
+    const sibling = ctx.agents.get(siblingRun.childId)!
+
+    const grandchildRun = await ctx.subagents.startActivation({ ...startSpec(child), delivery: 'parent' })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(3) })
+    const grandchild = ctx.agents.get(grandchildRun.childId)!
+
+    const greatRun = await ctx.subagents.startActivation({ ...startSpec(grandchild), delivery: 'parent' })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(4) })
+    const great = ctx.agents.get(greatRun.childId)!
+
+    const cancelOrder: string[] = []
+    const origChildCancel = child.cancel.bind(child)
+    const origGrandchildCancel = grandchild.cancel.bind(grandchild)
+    const origGreatCancel = great.cancel.bind(great)
+    vi.spyOn(child, 'cancel').mockImplementation((reason, opts) => {
+      cancelOrder.push('child')
+      origChildCancel(reason, opts)
+    })
+    vi.spyOn(grandchild, 'cancel').mockImplementation((reason, opts) => {
+      cancelOrder.push('grandchild')
+      origGrandchildCancel(reason, opts)
+    })
+    vi.spyOn(great, 'cancel').mockImplementation((reason, opts) => {
+      cancelOrder.push('great')
+      // Reentrant interrupt from inside a leaf hook must not cause double-cancel or invert order.
+      ctx.subagents.interrupt(childRun.childId, { kind: 'ancestor', agent: parent })
+      origGreatCancel(reason, opts)
+    })
+    const siblingCancel = vi.spyOn(sibling, 'cancel')
+
+    ctx.subagents.interrupt(childRun.childId, { kind: 'ancestor', agent: parent })
+    expect(cancelOrder).toEqual(['great', 'grandchild', 'child'])
+    expect(siblingCancel).not.toHaveBeenCalled()
+
+    releaseGreatGrandchild.resolve(undefined)
+    releaseGrandchild.resolve(undefined)
+    releaseChild.resolve(undefined)
+    releaseSibling.resolve(undefined)
+    await waitNoActivation(ctx, greatRun.childId)
+    await waitNoActivation(ctx, grandchildRun.childId)
+    await waitNoActivation(ctx, childRun.childId)
+    await waitNoActivation(ctx, siblingRun.childId)
+  })
+
+  it('stops mixed local and external descendants without double-dispose races', async () => {
+    const releaseBranch = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('branch'), gate: releaseBranch.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    let externalDisposeCalls = 0
+    const externalResult = Promise.withResolvers<{ output: ContentBlock[]; stopReason: 'aborted' }>()
+    const externalRunId = SessionId('ext-cascade-leaf')
+    ctx.subagents.registerProvider({
+      name: 'ext-cascade',
+      inheritsParentContext: false,
+      capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false },
+      start: async ({ signal }) => {
+        const abortListener = () => {
+          // Simulating a backend that triggers run completion immediately on abort.
+          externalResult.resolve({ output: [], stopReason: 'aborted' })
+        }
+        signal.addEventListener('abort', abortListener, { once: true })
+        return {
+          id: externalRunId,
+          result: externalResult.promise,
+          dispose: async () => {
+            externalDisposeCalls += 1
+            externalResult.resolve({ output: [], stopReason: 'aborted' })
+          },
+        }
+      },
+    })
+
+    const branchRun = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const branch = ctx.agents.get(branchRun.childId)!
+    const branchCancel = vi.spyOn(branch, 'cancel')
+
+    const extRun = await ctx.subagents.startActivation({
+      provider: 'ext-cascade',
+      label: 'external leaf',
+      prompt: message('work'),
+      parent: branch,
+      signal: testSignal,
+      delivery: 'parent',
+    })
+
+    ctx.subagents.interrupt(branchRun.childId, { kind: 'user' })
+    // Second cascade interrupt after external leaf started closing remains race-free.
+    ctx.subagents.interrupt(branchRun.childId, { kind: 'user' }, { cascade: true })
+
+    await extRun.result
+    await waitNoActivation(ctx, extRun.childId)
+    expect(externalDisposeCalls).toBe(1)
+    expect(branchCancel).toHaveBeenCalled()
+
+    releaseBranch.resolve(undefined)
+    await waitNoActivation(ctx, branchRun.childId)
+  })
+
+  it('aborts in-flight descendant materialization when cascade is true and keeps it when false', async () => {
+    const releaseBranch = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('branch'), gate: releaseBranch.promise },
+      { chunks: textResponse('leaf-kept') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const prepEntered = Promise.withResolvers<undefined>()
+    const prepGate = Promise.withResolvers<undefined>()
+    let prepareAborted = false
+    ctx.subagents.registerProvider({
+      name: 'gated-local',
+      inheritsParentContext: false,
+      capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false },
+      prepareContinuable: async ({ signal }) => {
+        prepEntered.resolve(undefined)
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            prepareAborted = true
+            reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))
+          }
+          if (signal.aborted) {
+            onAbort()
+            return
+          }
+          signal.addEventListener('abort', onAbort, { once: true })
+          void prepGate.promise.then(() => {
+            signal.removeEventListener('abort', onAbort)
+            resolve()
+          })
+        })
+        return {}
+      },
+    })
+
+    const branchRun = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const branch = ctx.agents.get(branchRun.childId)!
+
+    const pendingController = new AbortController()
+    const pendingStart = ctx.subagents.startActivation({
+      provider: 'gated-local',
+      label: 'starting leaf',
+      prompt: message('start'),
+      parent: branch,
+      signal: pendingController.signal,
+      delivery: 'parent',
+    })
+    await prepEntered.promise
+
+    // cascade: false leaves the descendant startup untouched.
+    ctx.subagents.interrupt(branchRun.childId, { kind: 'user' }, { cascade: false })
+    expect(prepareAborted).toBe(false)
+
+    // cascade: true aborts the in-flight descendant materialization.
+    ctx.subagents.interrupt(branchRun.childId, { kind: 'user' }, { cascade: true })
+    await expect(pendingStart).rejects.toThrow(/Aborted/i)
+    expect(prepareAborted).toBe(true)
+
+    releaseBranch.resolve(undefined)
+    await waitNoActivation(ctx, branchRun.childId)
   })
 })
 

@@ -78,6 +78,8 @@ test('manifest keeps the packaging contract after-pack depends on', () => {
     'src/shared/dshd-mux-sse.js',
     'src/main/pet-growth.js',
     'src/main/pet-growth-scan-worker.js',
+    'src/renderer/whale-ui/host.cjs',
+    'src/renderer/whale-ui/host-validator.cjs',
   ]) {
     assert.equal(
       build.asarUnpack?.includes(unpack),

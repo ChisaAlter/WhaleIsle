@@ -11,8 +11,9 @@ import {
   exportPublicKey,
   importPublicKey,
   deriveSharedKey,
-  encrypt,
-  decrypt,
+  encryptToBytes,
+  decryptFromBytes,
+  extractSeqFromBundle,
   ensurePrng,
   type KeyPair,
   type SharedKey,
@@ -20,6 +21,26 @@ import {
 } from "./crypto.js";
 import nacl from "tweetnacl";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "./base64.js";
+import {
+  type BinaryDataChannelTransport,
+  RTC_DRAIN_TIMEOUT_MS,
+  RTC_UPGRADED_CLOSE_CODE,
+  RTC_UPGRADED_CLOSE_REASON,
+  RelayReorderBuffer,
+  RelayRtcChunkReassembler,
+  RelayRtcChunker,
+  decodeDshuFrame,
+  encodeDshuFrame,
+} from "./rtc-leg.js";
+
+export type { BinaryDataChannelTransport } from "./rtc-leg.js";
+
+export interface ActivateWebRtcLegParams {
+  dcTransport: BinaryDataChannelTransport;
+  buildFinalPrimaryLegMessage?: (seq: bigint) => string | ArrayBuffer;
+  peerPreviousLegEndSeq?: bigint | number | null;
+  drainTimeoutMs?: number;
+}
 
 export interface Transport {
   send(data: string | ArrayBuffer): void;
@@ -322,6 +343,15 @@ export class EncryptedChannel {
   private recvSeq: bigint | null = null;
   private sendSalt: Uint8Array | null = null;
   private recvSalt: Uint8Array | null = null;
+  // WebRTC DataChannel hot-cutover state
+  private activeSendLeg: "primary" | "webrtc" = "primary";
+  private dcTransport: BinaryDataChannelTransport | null = null;
+  private rtcChunker: RelayRtcChunker | null = null;
+  private rtcReassembler: RelayRtcChunkReassembler | null = null;
+  private reorderBuffer: RelayReorderBuffer | null = null;
+  private peerPreviousLegEndSeq: bigint | null = null;
+  private primaryLegDrained = false;
+  private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     transport: Transport,
@@ -338,14 +368,66 @@ export class EncryptedChannel {
     Object.assign(transport, {
       onmessage: (data: string | ArrayBuffer) => this.handleMessage(data),
       onclose: (code: number, reason: string) => {
-        this.state = "closed";
-        this.events.onclose?.(code, reason);
-        for (const cb of this.onCloseCallbacks) cb();
+        if (this.activeSendLeg === "webrtc") {
+          // Once upgraded to WebRTC, closing the drained Relay WS must not
+          // trigger an upper-layer disconnect.
+          this.primaryLegDrained = true;
+          this.clearDrainTimer();
+          return;
+        }
+        this.emitChannelClosed(code, reason);
       },
       onerror: (error: Error) => {
+        if (this.activeSendLeg === "webrtc" || this.primaryLegDrained) {
+          return;
+        }
         this.events.onerror?.(error);
       },
     });
+  }
+
+  private emitChannelClosed(code: number, reason: string): void {
+    if (this.state === "closed") return;
+    this.state = "closed";
+    this.clearDrainTimer();
+    this.reorderBuffer?.dispose();
+    this.reorderBuffer = null;
+    this.rtcReassembler?.clear();
+    this.events.onclose?.(code, reason);
+    for (const cb of this.onCloseCallbacks) cb();
+  }
+
+  private clearDrainTimer(): void {
+    if (this.drainTimer !== null) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = null;
+    }
+  }
+
+  private failChannelFatally(err: Error): void {
+    const closeCode = err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_CODE : 1011;
+    const closeReason = err.message.includes("replay")
+      ? REPLAY_PROTECTION_CLOSE_REASON
+      : err.message;
+    this.clearDrainTimer();
+    this.reorderBuffer?.dispose();
+    this.reorderBuffer = null;
+    this.rtcReassembler?.clear();
+    if (this.dcTransport) {
+      try {
+        this.dcTransport.close(closeCode, closeReason);
+      } catch {
+        // ignore
+      }
+    }
+    if (!this.primaryLegDrained) {
+      try {
+        this.transport.close(closeCode, closeReason);
+      } catch {
+        // ignore
+      }
+    }
+    this.emitChannelClosed(closeCode, closeReason);
   }
 
   setState(state: ChannelState): void {
@@ -429,9 +511,7 @@ export class EncryptedChannel {
       })();
 
       if (ciphertext) {
-        const { plaintext, seq, salt } = decrypt(this.sharedKey, ciphertext);
-        this.enforceReplayProtection(seq, salt);
-        this.events.onmessage?.(plaintext);
+        this.processEncryptedBundle(new Uint8Array(ciphertext));
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -439,14 +519,208 @@ export class EncryptedChannel {
       // Treat decryption/protocol errors as fatal so the peer can reconnect and
       // re-handshake. Emitting an error event here can cause higher-level code
       // to tear down the session without triggering a clean reconnect.
-      try {
-        this.transport.close(
-          err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_CODE : 1011,
-          err.message.includes("replay") ? REPLAY_PROTECTION_CLOSE_REASON : err.message,
-        );
-      } catch {
-        // ignore
+      this.failChannelFatally(err);
+    }
+  }
+
+  private processEncryptedBundle(bundle: Uint8Array): void {
+    if (this.state !== "open") return;
+    if (this.reorderBuffer) {
+      const seq = extractSeqFromBundle(bundle);
+      const ready = this.reorderBuffer.push(seq, bundle);
+      for (const item of ready) {
+        if (this.state !== "open") return;
+        this.decryptAndDispatch(item.bundle);
       }
+      return;
+    }
+    this.decryptAndDispatch(bundle);
+  }
+
+  private decryptAndDispatch(bundle: Uint8Array): void {
+    const { plaintext, seq, salt } = decryptFromBytes(this.sharedKey, bundle);
+    this.enforceReplayProtection(seq, salt);
+    this.maybeCompletePrimaryLegDrain();
+    this.events.onmessage?.(plaintext);
+  }
+
+  private handleWebRtcMessage(raw: ArrayBuffer | Uint8Array): void {
+    if (this.state !== "open") return;
+    try {
+      const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+      const reassembler = this.rtcReassembler ?? (this.rtcReassembler = new RelayRtcChunkReassembler());
+      const assembled = reassembler.push(bytes);
+      if (!assembled) return;
+      const { bundle } = decodeDshuFrame(assembled);
+      this.processEncryptedBundle(bundle);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.failChannelFatally(err);
+    }
+  }
+
+  private maybeCompletePrimaryLegDrain(): void {
+    if (
+      this.primaryLegDrained ||
+      this.activeSendLeg !== "webrtc" ||
+      this.peerPreviousLegEndSeq === null ||
+      this.recvSeq === null
+    ) {
+      return;
+    }
+    if (this.recvSeq >= this.peerPreviousLegEndSeq) {
+      this.completePrimaryLegDrain();
+    }
+  }
+
+  private completePrimaryLegDrain(): void {
+    if (this.primaryLegDrained) return;
+    this.primaryLegDrained = true;
+    this.clearDrainTimer();
+    Object.assign(this.transport, {
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    });
+    try {
+      this.transport.close(RTC_UPGRADED_CLOSE_CODE, RTC_UPGRADED_CLOSE_REASON);
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Returns the exact sequence counter that will be assigned to the next
+   * outbound encrypted frame.
+   */
+  peekNextSendSeq(): bigint {
+    return this.sendSeq;
+  }
+
+  /** Returns the highest sequence counter successfully decrypted so far. */
+  getLastRecvSeq(): bigint | null {
+    return this.recvSeq;
+  }
+
+  /** Returns true once outbound frames have been cut over to the WebRTC leg. */
+  isWebRtcActive(): boolean {
+    return this.activeSendLeg === "webrtc";
+  }
+
+  /**
+   * Attaches a WebRTC DataChannel leg for early receive buffering before
+   * outbound cutover. Closing this pre-activation leg does NOT disconnect the
+   * channel.
+   */
+  attachWebRtcReceiveLeg(dcTransport: BinaryDataChannelTransport): void {
+    if (this.state !== "open") {
+      throw new Error("Channel not open");
+    }
+    if (this.dcTransport === dcTransport) {
+      return;
+    }
+    this.dcTransport = dcTransport;
+    if (!this.rtcChunker) {
+      this.rtcChunker = new RelayRtcChunker();
+    }
+    if (!this.rtcReassembler) {
+      this.rtcReassembler = new RelayRtcChunkReassembler();
+    }
+    if (!this.reorderBuffer) {
+      const initialExpected = this.recvSeq !== null ? this.recvSeq + 1n : null;
+      this.reorderBuffer = new RelayReorderBuffer(initialExpected, (err) => {
+        this.failChannelFatally(err);
+      });
+    }
+    dcTransport.onmessage = (data) => {
+      if (this.dcTransport !== dcTransport) return;
+      this.handleWebRtcMessage(data);
+    };
+    dcTransport.onclose = (code, reason) => {
+      if (this.dcTransport !== dcTransport) return;
+      if (this.activeSendLeg === "webrtc") {
+        this.emitChannelClosed(code, reason);
+      } else {
+        this.dcTransport = null;
+      }
+    };
+    dcTransport.onerror = (error) => {
+      if (this.dcTransport !== dcTransport) return;
+      if (this.activeSendLeg === "webrtc") {
+        this.events.onerror?.(error);
+      }
+    };
+  }
+
+  /** Detaches a pre-activation WebRTC receive leg without disturbing the primary leg. */
+  detachWebRtcReceiveLeg(dcTransport?: BinaryDataChannelTransport): void {
+    if (this.activeSendLeg === "webrtc") return;
+    if (dcTransport && this.dcTransport !== dcTransport) return;
+    if (this.dcTransport) {
+      this.dcTransport.onmessage = null;
+      this.dcTransport.onclose = null;
+      this.dcTransport.onerror = null;
+      this.dcTransport = null;
+    }
+    this.rtcReassembler?.clear();
+  }
+
+  /**
+   * Atomically sends the optional final control frame on the primary Relay WS
+   * leg, switches all subsequent outbound sends to the WebRTC DataChannel leg
+   * (`DSHU` + `RTCH`), and begins draining the primary leg when
+   * `peerPreviousLegEndSeq` is provided.
+   */
+  activateWebRtcLeg(params: ActivateWebRtcLegParams): { finalPrimaryLegSeq: bigint | null } {
+    if (this.state !== "open") {
+      throw new Error("Channel not open");
+    }
+    if (!this.sendSalt) {
+      throw new Error("Channel open without send salt initialised");
+    }
+
+    let finalPrimaryLegSeq: bigint | null = null;
+    if (params.buildFinalPrimaryLegMessage) {
+      const seq = this.sendSeq;
+      const finalPayload = params.buildFinalPrimaryLegMessage(seq);
+      this.sendSeq += 1n;
+      const bundle = encryptToBytes(this.sharedKey, finalPayload, seq, this.sendSalt);
+      const copy = new Uint8Array(bundle.byteLength);
+      copy.set(bundle);
+      this.transport.send(arrayBufferToBase64(copy.buffer));
+      finalPrimaryLegSeq = seq;
+    }
+
+    this.attachWebRtcReceiveLeg(params.dcTransport);
+    this.activeSendLeg = "webrtc";
+
+    if (params.peerPreviousLegEndSeq !== undefined && params.peerPreviousLegEndSeq !== null) {
+      this.beginPrimaryLegDrain(params.peerPreviousLegEndSeq, params.drainTimeoutMs);
+    }
+
+    return { finalPrimaryLegSeq };
+  }
+
+  /**
+   * Starts (or completes) draining the primary Relay WS leg up to
+   * `peerPreviousLegEndSeq`, with a fallback timeout (default 3000ms) after
+   * which the old Relay WS is closed cleanly without disconnecting the channel.
+   */
+  beginPrimaryLegDrain(
+    peerPreviousLegEndSeq: bigint | number,
+    drainTimeoutMs = RTC_DRAIN_TIMEOUT_MS,
+  ): void {
+    this.peerPreviousLegEndSeq = BigInt(peerPreviousLegEndSeq);
+    if (this.primaryLegDrained) return;
+    this.maybeCompletePrimaryLegDrain();
+    if (this.primaryLegDrained) return;
+    this.clearDrainTimer();
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null;
+      this.completePrimaryLegDrain();
+    }, drainTimeoutMs);
+    if (hasUnref(this.drainTimer)) {
+      this.drainTimer.unref();
     }
   }
 
@@ -497,9 +771,20 @@ export class EncryptedChannel {
 
     const seq = this.sendSeq;
     this.sendSeq += 1n;
-    const ciphertext = encrypt(this.sharedKey, data, seq, this.sendSalt);
+    const bundle = encryptToBytes(this.sharedKey, data, seq, this.sendSalt);
+    if (this.activeSendLeg === "webrtc" && this.dcTransport) {
+      const dshu = encodeDshuFrame(seq, bundle);
+      const chunker = this.rtcChunker ?? (this.rtcChunker = new RelayRtcChunker());
+      const chunks = chunker.chunk(dshu);
+      for (const chunk of chunks) {
+        this.dcTransport.send(chunk);
+      }
+      return;
+    }
     // Send as base64 for WebSocket text compatibility
-    this.transport.send(arrayBufferToBase64(ciphertext));
+    const copy = new Uint8Array(bundle.byteLength);
+    copy.set(bundle);
+    this.transport.send(arrayBufferToBase64(copy.buffer));
   }
 
   private async flushPendingSends(): Promise<void> {
@@ -543,7 +828,29 @@ export class EncryptedChannel {
 
   close(code = 1000, reason = "Normal closure"): void {
     this.state = "closed";
-    this.transport.close(code, reason);
+    this.clearDrainTimer();
+    this.reorderBuffer?.dispose();
+    this.reorderBuffer = null;
+    this.rtcReassembler?.clear();
+    if (this.dcTransport) {
+      const dc = this.dcTransport;
+      this.dcTransport = null;
+      dc.onmessage = null;
+      dc.onclose = null;
+      dc.onerror = null;
+      try {
+        dc.close(code, reason);
+      } catch {
+        // ignore
+      }
+    }
+    if (!this.primaryLegDrained) {
+      try {
+        this.transport.close(code, reason);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   isOpen(): boolean {

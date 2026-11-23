@@ -115,11 +115,11 @@ export type { ReadBlockProps, ReadBlockLine, ReadBlockLabels } from './ReadBlock
 export { DiffBlock, DEFAULT_DIFF_MAX_LINES, diffTotals } from './DiffBlock.tsx'
 export type { DiffBlockProps, DiffHunk, DiffBlockLabels } from './DiffBlock.tsx'
 export {
-  ReviewDiff, MAX_RENDERED_LINES, hunkRows, splitRows, renderedHunks, hunkLineCount,
+  ReviewDiff, MAX_RENDERED_LINES, DEFAULT_PROGRESSIVE_CHUNK_LINES, hunkRows, splitRows, renderedHunks, hunkLineCount,
   useReviewHighlights,
   HIGHLIGHT_SLICE_MS, HIGHLIGHT_CHUNK_LINES, HIGHLIGHT_MAX_LINES, HIGHLIGHT_MAX_CHARS, HIGHLIGHT_MAX_LINE_CHARS,
 } from './ReviewDiff.tsx'
-export type { ReviewHunk, ReviewNote, DiffRow, SplitRow, HunkHighlights } from './ReviewDiff.tsx'
+export type { ReviewHunk, ReviewNote, DiffRow, SplitRow, HunkHighlights, ReviewLineCommentTarget, ReviewDiffProps } from './ReviewDiff.tsx'
 export { SearchBlock, DEFAULT_SEARCH_MAX_LINES } from './SearchBlock.tsx'
 export type {
   SearchBlockProps, SearchMatchesBlockProps, SearchPathsBlockProps, SearchFileGroup, SearchBlockLineMatch,

@@ -11,12 +11,15 @@ export const DEFAULTS: ResolvedConfig = deepFreeze({
   thresholdChars: 8192,
   headChars: 4096,
   tailChars: 1024,
+  protectRecentToolResults: 2,
 })
 
 const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'thresholdChars',
   'headChars',
   'tailChars',
+  'protectRecentToolResults',
+  'archiveDir',
 ])
 
 /**
@@ -38,8 +41,15 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
     if (!CONFIG_KEYS.has(key)) {
       throw new Error(
         `ToolResultPruneConfig: unknown key "${key}" `
-        + '(allowed: thresholdChars, headChars, tailChars)',
+        + '(allowed: thresholdChars, headChars, tailChars, protectRecentToolResults, archiveDir)',
       )
+    }
+  }
+
+  const archiveDir = config.archiveDir
+  if (archiveDir !== undefined) {
+    if (typeof archiveDir !== 'string' || archiveDir.trim().length === 0 || archiveDir.includes('\0')) {
+      throw new Error('ToolResultPruneConfig: archiveDir must be a non-empty path without NUL bytes')
     }
   }
 
@@ -47,10 +57,13 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
     thresholdChars: config.thresholdChars ?? DEFAULTS.thresholdChars,
     headChars: config.headChars ?? DEFAULTS.headChars,
     tailChars: config.tailChars ?? DEFAULTS.tailChars,
+    protectRecentToolResults: config.protectRecentToolResults ?? DEFAULTS.protectRecentToolResults,
+    ...(archiveDir === undefined ? {} : { archiveDir }),
   }
   assertPositiveInteger('thresholdChars', resolved.thresholdChars)
   assertNonNegativeInteger('headChars', resolved.headChars)
   assertNonNegativeInteger('tailChars', resolved.tailChars)
+  assertNonNegativeInteger('protectRecentToolResults', resolved.protectRecentToolResults)
 
   const emittedChars = resolved.headChars
     + codePointLength(PRUNE_MARKER)
