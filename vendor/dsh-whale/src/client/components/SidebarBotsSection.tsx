@@ -1,4 +1,6 @@
 // Orca-faithful Sidebar "Bots" section mounted in Harness `sidebar.sections.before`.
+// Enhanced with keyboard search navigation (ArrowDown to first result, Enter to open first match),
+// clickable collapsed +N overflow button with hidden attention/working/unread dot propagation and full tooltip.
 
 import {
   useCallback,
@@ -207,7 +209,17 @@ function CreateMenuPopover({
   );
 }
 
-function CollapsedPreviewStrip({ bots, needsYou, activeBotId }: { bots: BotRecord[]; needsYou: Record<string, number>; activeBotId: string | null }) {
+function CollapsedPreviewStrip({
+  bots,
+  needsYou,
+  activeBotId,
+}: {
+  bots: BotRecord[];
+  needsYou: Record<string, number>;
+  activeBotId: string | null;
+}) {
+  const { locale } = useBotsLocale();
+  const zh = locale === 'zh-CN';
   const stripRef = useRef<HTMLDivElement | null>(null);
   const [stripWidth, setStripWidth] = useState(120);
 
@@ -236,6 +248,41 @@ function CollapsedPreviewStrip({ bots, needsYou, activeBotId }: { bots: BotRecor
     return selectPreview(items, botPreviewCapacity(stripWidth, items.length), current);
   }, [activeBotId, bots, needsYou, stripWidth]);
 
+  // Propagate highest-priority alert dot from hidden overflow bots and build full roster tooltip.
+  const hiddenOverflow = useMemo(() => {
+    if (preview.hidden.length === 0) {
+      return { signal: null as 'attention' | 'working' | 'unread' | null, tooltip: '' };
+    }
+    let signal: 'attention' | 'working' | 'unread' | null = null;
+    const lines = preview.hidden.map((item) => {
+      const itemSig = botPreviewSignal(item) as 'attention' | 'working' | 'unread' | null;
+      if (itemSig === 'attention') {
+        signal = 'attention';
+      } else if (itemSig === 'working' && signal !== 'attention') {
+        signal = 'working';
+      } else if (itemSig === 'unread' && !signal) {
+        signal = 'unread';
+      }
+      const tag = itemSig === 'attention'
+        ? (zh ? '（待处理）' : ' (needs you)')
+        : itemSig === 'working'
+          ? (zh ? '（运行中）' : ' (working)')
+          : itemSig === 'unread'
+            ? (zh ? '（未读）' : ' (unread)')
+            : item.paused
+              ? (zh ? '（已暂停）' : ' (paused)')
+              : '';
+      return `${item.bot.name}${tag}`;
+    });
+    const header = zh
+      ? `点击展开其余 ${preview.hidden.length} 位队友：`
+      : `Click to expand ${preview.hidden.length} more bots:`;
+    return {
+      signal,
+      tooltip: `${header}\n${lines.join('\n')}`,
+    };
+  }, [preview.hidden, zh]);
+
   return (
     <div ref={stripRef} className="dsh-bots-preview-strip">
       {preview.shown.map((item) => (
@@ -258,7 +305,28 @@ function CollapsedPreviewStrip({ bots, needsYou, activeBotId }: { bots: BotRecor
           />
         </button>
       ))}
-      {preview.hidden.length > 0 && <span className="dsh-bots-preview-more">+{preview.hidden.length}</span>}
+      {preview.hidden.length > 0 && (
+        <button
+          type="button"
+          className="dsh-bots-preview-more dsh-bots-preview-more-btn"
+          data-signal={hiddenOverflow.signal ?? undefined}
+          title={hiddenOverflow.tooltip}
+          aria-label={hiddenOverflow.tooltip}
+          onClick={(e) => {
+            e.stopPropagation();
+            botsStore.setSectionCollapsed(false);
+          }}
+        >
+          <span>+{preview.hidden.length}</span>
+          {hiddenOverflow.signal && (
+            <span
+              className="dsh-bots-preview-more-dot"
+              data-signal={hiddenOverflow.signal}
+              aria-hidden="true"
+            />
+          )}
+        </button>
+      )}
     </div>
   );
 }
@@ -447,6 +515,37 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
   const activeOptionsAnchor = optionsAnchor ?? lastOptionsAnchorRef.current;
   const activeCreateAnchor = createAnchor ?? lastCreateAnchorRef.current;
 
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSearchQuery('');
+      setSearchOpen(false);
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      if (visibleRows.length > 0 && listRef.current) {
+        event.preventDefault();
+        const firstFocusable = listRef.current.querySelector<HTMLElement>(
+          '.dsh-bots-card[tabindex], .dsh-bots-card button, [role="button"], button',
+        );
+        firstFocusable?.focus();
+      }
+      return;
+    }
+    if (event.key === 'Enter' && visibleRows.length > 0) {
+      event.preventDefault();
+      const first = visibleRows[0].entry;
+      if (first.kind === 'group') {
+        botsStore.openGroup(first.group.id);
+      } else {
+        void botsStore.openBotHome(first.bot.id);
+      }
+    }
+  };
+
   return (
     <section
       className="dsh-bots-section"
@@ -548,7 +647,7 @@ export function SidebarBotsSection({ wide = true, expandSidebar }: SidebarBotsSe
               value={searchQuery}
               placeholder={tr('bots.search.label', 'Search bots')}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') { setSearchQuery(''); setSearchOpen(false); } }}
+              onKeyDown={handleSearchKeyDown}
             />
             {searchQuery && (
               <button type="button" className="dsh-bots-icon-btn dsh-bots-icon-btn-sm" aria-label={tr('bots.search.clear', 'Clear search')} onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}>

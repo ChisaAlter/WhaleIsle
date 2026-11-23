@@ -1,5 +1,6 @@
 // Orca-faithful NewBotDialog with 84px adaptive color banner, drag/paste avatar upload,
-// template prefill (skills/schedules/events), workspace takeover fields, and model selector.
+// compact template chips (N skills / N schedules / N events / Needs X) with toggle popovers,
+// non-intrusive focus when prefilled from a template, workspace takeover fields, and model selector.
 
 import {
   useCallback,
@@ -34,7 +35,16 @@ import {
   type AvatarPickerValue,
 } from './AvatarPicker';
 import { BotAvatar } from './BotAvatar';
-import { IconCheck, IconDownload, IconSparkles, IconX } from './Icons';
+import {
+  IconCalendar,
+  IconChevronDown,
+  IconDownload,
+  IconPlug,
+  IconSparkles,
+  IconWrench,
+  IconX,
+  IconZap,
+} from './Icons';
 
 export interface NewBotDialogProps {
   open: boolean;
@@ -42,11 +52,27 @@ export interface NewBotDialogProps {
   onClose: () => void;
 }
 
+type TemplateChipKind = 'skills' | 'schedules' | 'events' | 'setup';
+
+interface TemplateScheduleItem {
+  id?: string;
+  when: string;
+  what?: string;
+}
+
+interface TemplateEventItem {
+  id?: string;
+  name?: string;
+  source?: string;
+  summary?: string;
+}
+
 const NAME_MAX = 64;
 const PURPOSE_MAX = 200;
 
 export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   const { locale, tr } = useBotsLocale();
+  const zh = locale === 'zh-CN';
   const models = useBotsState((s) => s.models);
 
   const template = useMemo(() => {
@@ -64,6 +90,9 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   const [selectedModel, setSelectedModel] = useState('');
   const [reasoningEffort, setReasoningEffort] = useState('');
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [includeSchedules, setIncludeSchedules] = useState(true);
+  const [includeEvents, setIncludeEvents] = useState(true);
+  const [activeChipPopover, setActiveChipPopover] = useState<TemplateChipKind | null>(null);
   const [watches, setWatches] = useState('');
   const [doesText, setDoesText] = useState('');
   const [reports, setReports] = useState('');
@@ -76,6 +105,20 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
 
   const nameRef = useRef<HTMLInputElement | null>(null);
   const purposeRef = useRef<HTMLTextAreaElement | null>(null);
+  const chipsBarRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!activeChipPopover) {
+      return undefined;
+    }
+    const handleOutside = (e: MouseEvent) => {
+      if (chipsBarRef.current && !chipsBarRef.current.contains(e.target as Node)) {
+        setActiveChipPopover(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [activeChipPopover]);
 
   useEffect(() => {
     if (!open) {
@@ -84,6 +127,12 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     setError(null);
     setSubmitting(false);
     setPickerAnchor(null);
+    setActiveChipPopover(null);
+    setIncludeSchedules(true);
+    setIncludeEvents(true);
+
+    const hasPrefilledName = Boolean(template || draft?.initialName || draft?.takeOverWorkspace?.name);
+
     if (template) {
       setName(draft?.initialName ?? template.name ?? '');
       setPurpose(draft?.initialPurpose ?? template.line ?? '');
@@ -125,7 +174,10 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     if (models.length === 0) {
       void botsStore.refreshModels();
     }
-    window.setTimeout(() => nameRef.current?.focus(), 30);
+    // Only auto-focus the name input when starting blank; avoid hijacking cursor on template prefill.
+    if (!hasPrefilledName) {
+      window.setTimeout(() => nameRef.current?.focus(), 30);
+    }
   }, [draft, models.length, open, template]);
 
   useEffect(() => {
@@ -248,8 +300,12 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
             fromTemplate: {
               templateId: template.id,
               skills: selectedSkills,
+              includeSchedules,
+              includeEvents,
             },
             selectedSkills,
+            includeSchedules,
+            includeEvents,
             watches: (watches.trim() || template.watches || '').trim(),
             does: (doesText.trim() || template.does || '').trim(),
             reports: (reports.trim() || template.reports || '').trim(),
@@ -281,8 +337,15 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape' && !pickerAnchor) {
-      onClose();
+    if (event.key === 'Escape') {
+      if (activeChipPopover) {
+        event.stopPropagation();
+        setActiveChipPopover(null);
+        return;
+      }
+      if (!pickerAnchor) {
+        onClose();
+      }
     } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void handleSubmit();
@@ -297,6 +360,26 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
     ? avatarVal.uploadedImage.edgeColor
     : avatarVal.avatarColor;
   const isTakeOver = Boolean(draft?.takeOverWorkspace);
+
+  const templateSkills: string[] = Array.isArray(template?.skills) ? template.skills : [];
+  const templateSchedules: TemplateScheduleItem[] = Array.isArray(template?.schedules)
+    ? (template.schedules as TemplateScheduleItem[])
+    : [];
+  const templateEvents: TemplateEventItem[] = Array.isArray(template?.events)
+    ? (template.events as TemplateEventItem[])
+    : [];
+  const templateConnectors: string[] = Array.isArray(template?.connectors)
+    ? (template.connectors as string[])
+    : [];
+  const templateNeedsSetup: string = typeof template?.needsSetup === 'string' ? template.needsSetup.trim() : '';
+  const connectorLabels = templateConnectors.map(
+    (c) => BOT_CONNECTOR_NAMES[c as keyof typeof BOT_CONNECTOR_NAMES] ?? c,
+  );
+  const setupSummary = templateNeedsSetup || connectorLabels.join(' / ');
+  const hasTemplateParts = Boolean(
+    template
+    && (templateSkills.length > 0 || templateSchedules.length > 0 || templateEvents.length > 0 || setupSummary),
+  );
 
   return createPortal(
     <div
@@ -388,7 +471,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
               />
               {template && (
                 <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', marginTop: 2 }}>
-                  {locale === 'zh-CN' ? `基于模板：${template.name}` : `From template: ${template.name}`}
+                  {zh ? `基于模板：${template.name}` : `From template: ${template.name}`}
                 </div>
               )}
             </div>
@@ -399,7 +482,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <IconDownload size={14} />
                 <span>
-                  {locale === 'zh-CN'
+                  {zh
                     ? `检测到 ${importCount} 位本地可导入的大肥鱼队友`
                     : `${importCount} local bot${importCount > 1 ? 's' : ''} ready to import`}
                 </span>
@@ -409,7 +492,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
                 className="dsh-bots-link-btn"
                 onClick={() => botsStore.openModal({ kind: 'import', initialTab: 'apps' })}
               >
-                {locale === 'zh-CN' ? '导入' : 'Import'}
+                {zh ? '导入' : 'Import'}
               </button>
             </div>
           )}
@@ -445,7 +528,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
               <div style={{ display: 'grid', gridTemplateColumns: activeModelObj?.reasoningEfforts?.length ? '1fr 140px' : '1fr', gap: 8 }}>
                 <div>
                   <label className="dsh-bots-field-label">
-                    {locale === 'zh-CN' ? '模型' : 'Model'}
+                    {zh ? '模型' : 'Model'}
                   </label>
                   <select
                     className="dsh-bots-select"
@@ -462,7 +545,7 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
                 {activeModelObj?.reasoningEfforts && activeModelObj.reasoningEfforts.length > 0 && (
                   <div>
                     <label className="dsh-bots-field-label">
-                      {locale === 'zh-CN' ? '推理强度' : 'Effort'}
+                      {zh ? '推理强度' : 'Effort'}
                     </label>
                     <select
                       className="dsh-bots-select"
@@ -501,47 +584,167 @@ export function NewBotDialog({ open, draft, onClose }: NewBotDialogProps) {
               </div>
             )}
 
-            {template && (
-              <div className="dsh-bots-modal-card">
-                <div style={{ fontSize: 12, lineHeight: '18px', fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>
-                  {tr('bots.templates.comesWith', 'Comes with')}
-                </div>
-                {(template.skills?.length ?? 0) > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {template.skills.map((skillId: string) => {
-                      const checked = selectedSkills.includes(skillId);
-                      return (
-                        <button
-                          key={skillId}
-                          type="button"
-                          className="dsh-bots-chip"
-                          data-active={checked ? 'true' : 'false'}
-                          onClick={() => setSelectedSkills((prev) => (
-                            prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]
+            {hasTemplateParts && (
+              <div ref={chipsBarRef} className="dsh-bots-tpl-chips-wrap">
+                <div className="dsh-bots-tpl-chips-row">
+                  {templateSkills.length > 0 && (
+                    <div className="dsh-bots-tpl-chip-slot">
+                      <button
+                        type="button"
+                        className="dsh-bots-tpl-chip"
+                        data-active={activeChipPopover === 'skills' ? 'true' : 'false'}
+                        aria-expanded={activeChipPopover === 'skills'}
+                        onClick={() => setActiveChipPopover((prev) => (prev === 'skills' ? null : 'skills'))}
+                      >
+                        <IconWrench size={11} />
+                        <span>
+                          {zh
+                            ? `${selectedSkills.length} 项技能`
+                            : `${selectedSkills.length} skill${selectedSkills.length === 1 ? '' : 's'}`}
+                        </span>
+                        <IconChevronDown size={11} />
+                      </button>
+                      {activeChipPopover === 'skills' && (
+                        <div className="dsh-bots-tpl-popover" role="dialog" aria-label={zh ? '模板技能开关' : 'Template skills'}>
+                          <div className="dsh-bots-tpl-popover-title">
+                            {zh ? '随模板安装的技能' : 'Included skills'}
+                          </div>
+                          {templateSkills.map((skillId) => {
+                            const checked = selectedSkills.includes(skillId);
+                            return (
+                              <label key={skillId} className="dsh-bots-tpl-popover-row">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => setSelectedSkills((prev) => (
+                                    prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]
+                                  ))}
+                                />
+                                <span>{skillId}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {templateSchedules.length > 0 && (
+                    <div className="dsh-bots-tpl-chip-slot">
+                      <button
+                        type="button"
+                        className="dsh-bots-tpl-chip"
+                        data-active={activeChipPopover === 'schedules' ? 'true' : 'false'}
+                        data-muted={!includeSchedules ? 'true' : 'false'}
+                        aria-expanded={activeChipPopover === 'schedules'}
+                        onClick={() => setActiveChipPopover((prev) => (prev === 'schedules' ? null : 'schedules'))}
+                      >
+                        <IconCalendar size={11} />
+                        <span>
+                          {zh
+                            ? `${includeSchedules ? templateSchedules.length : 0} 项定时`
+                            : `${includeSchedules ? templateSchedules.length : 0} schedule${templateSchedules.length === 1 ? '' : 's'}`}
+                        </span>
+                        <IconChevronDown size={11} />
+                      </button>
+                      {activeChipPopover === 'schedules' && (
+                        <div className="dsh-bots-tpl-popover" role="dialog" aria-label={zh ? '模板定时任务' : 'Template schedules'}>
+                          <div className="dsh-bots-row">
+                            <span className="dsh-bots-tpl-popover-title">{zh ? '随模板创建定时（默认暂停）' : 'Create schedules (paused)'}</span>
+                            <button
+                              type="button"
+                              role="switch"
+                              className="dsh-bots-switch"
+                              aria-checked={includeSchedules}
+                              onClick={() => setIncludeSchedules((prev) => !prev)}
+                            >
+                              <span className="dsh-bots-switch-thumb" />
+                            </button>
+                          </div>
+                          {templateSchedules.map((sched, i) => (
+                            <div key={sched.id ?? i} className="dsh-bots-tpl-popover-detail">
+                              <div style={{ fontWeight: 500 }}>{sched.when}</div>
+                              {sched.what && <div className="dsh-bots-muted">{sched.what}</div>}
+                            </div>
                           ))}
-                        >
-                          {checked && <IconCheck size={12} />}
-                          <span>{skillId}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {(template.schedules?.length ?? 0) > 0 && (
-                  <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>
-                    {locale === 'zh-CN'
-                      ? `定时任务（默认关闭）：${template.schedules.map((s: { when: string }) => s.when).join('、')}`
-                      : `Schedules (off by default): ${template.schedules.map((s: { when: string }) => s.when).join(', ')}`}
-                  </div>
-                )}
-                {(template.connectors?.length ?? 0) > 0 && (
-                  <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>
-                    {locale === 'zh-CN' ? '连接器：' : 'Connectors: '}
-                    {template.connectors
-                      .map((c: string) => BOT_CONNECTOR_NAMES[c as keyof typeof BOT_CONNECTOR_NAMES] ?? c)
-                      .join(', ')}
-                  </div>
-                )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {templateEvents.length > 0 && (
+                    <div className="dsh-bots-tpl-chip-slot">
+                      <button
+                        type="button"
+                        className="dsh-bots-tpl-chip"
+                        data-active={activeChipPopover === 'events' ? 'true' : 'false'}
+                        data-muted={!includeEvents ? 'true' : 'false'}
+                        aria-expanded={activeChipPopover === 'events'}
+                        onClick={() => setActiveChipPopover((prev) => (prev === 'events' ? null : 'events'))}
+                      >
+                        <IconZap size={11} />
+                        <span>
+                          {zh
+                            ? `${includeEvents ? templateEvents.length : 0} 项事件`
+                            : `${includeEvents ? templateEvents.length : 0} event${templateEvents.length === 1 ? '' : 's'}`}
+                        </span>
+                        <IconChevronDown size={11} />
+                      </button>
+                      {activeChipPopover === 'events' && (
+                        <div className="dsh-bots-tpl-popover" role="dialog" aria-label={zh ? '模板事件监听' : 'Template events'}>
+                          <div className="dsh-bots-row">
+                            <span className="dsh-bots-tpl-popover-title">{zh ? '保留事件触发建议' : 'Include event triggers'}</span>
+                            <button
+                              type="button"
+                              role="switch"
+                              className="dsh-bots-switch"
+                              aria-checked={includeEvents}
+                              onClick={() => setIncludeEvents((prev) => !prev)}
+                            >
+                              <span className="dsh-bots-switch-thumb" />
+                            </button>
+                          </div>
+                          {templateEvents.map((ev, i) => (
+                            <div key={ev.id ?? i} className="dsh-bots-tpl-popover-detail">
+                              <div style={{ fontWeight: 500 }}>{ev.name || ev.source || `Event ${i + 1}`}</div>
+                              {ev.summary && <div className="dsh-bots-muted">{ev.summary}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {setupSummary && (
+                    <div className="dsh-bots-tpl-chip-slot">
+                      <button
+                        type="button"
+                        className="dsh-bots-tpl-chip dsh-bots-tpl-chip-warn"
+                        data-active={activeChipPopover === 'setup' ? 'true' : 'false'}
+                        aria-expanded={activeChipPopover === 'setup'}
+                        onClick={() => setActiveChipPopover((prev) => (prev === 'setup' ? null : 'setup'))}
+                      >
+                        <IconPlug size={11} />
+                        <span className="dsh-bots-ellipsis" style={{ maxWidth: 160 }}>
+                          {zh ? `需配置 ${setupSummary}` : `Needs ${setupSummary}`}
+                        </span>
+                        <IconChevronDown size={11} />
+                      </button>
+                      {activeChipPopover === 'setup' && (
+                        <div className="dsh-bots-tpl-popover" role="dialog" aria-label={zh ? '需要配置的项目' : 'Setup required'}>
+                          <div className="dsh-bots-tpl-popover-title">
+                            {zh ? '创建后需完成配置' : 'Requires setup after creation'}
+                          </div>
+                          <div className="dsh-bots-muted">
+                            {templateNeedsSetup || (zh
+                              ? `建议在队友设置 → 连接器中接入：${connectorLabels.join('、')}`
+                              : `Connect in Bot Settings → Connectors: ${connectorLabels.join(', ')}`)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

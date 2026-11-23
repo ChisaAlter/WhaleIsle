@@ -1,8 +1,10 @@
 // Dual-host BotSettingsView (host="panel" inline in right sidebar | host="page" max-width 680px centered).
-// Supports breadcrumb navigation + Esc step-back, Ctrl+V image paste avatar with 8s undo bar,
-// overview card with inline rename, core toggles, all 12 drill-down subpages, and destructive delete.
+// Supports breadcrumb navigation + Esc step-back with subpage leave guard,
+// restores root scroll position & originating trigger row focus on return,
+// Ctrl+V image paste avatar with 8s undo bar, overview card with inline rename, core toggles,
+// all 12 drill-down subpages, and destructive delete.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DEFAULT_BOT_AVATAR_COLOR } from '../../shared/bot-avatar-color.js';
 import { BOT_ITEMS_STALE_CHOICES, DEFAULT_BOT_NOTIFICATIONS } from '../../shared/bot-types.js';
 import {
@@ -31,6 +33,7 @@ import {
   BotPermissionsSubpage,
   BotSoulSubpage,
   BotTidyUpSubpage,
+  type BotSettingsLeaveGuard,
 } from './BotSettingsSubpagesA';
 import {
   BotConnectorsSubpage,
@@ -125,14 +128,19 @@ function renderSubpageIcon(id: SubpageId) {
   }
 }
 
-function renderSubpageBody(page: SubpageId, bot: BotRecord, memoryTab?: 'facts' | 'history') {
+function renderSubpageBody(
+  page: SubpageId,
+  bot: BotRecord,
+  memoryTab: 'facts' | 'history' | undefined,
+  onRegisterLeaveGuard: (guard: BotSettingsLeaveGuard | null) => void,
+) {
   switch (page) {
     case 'agent': return <BotAgentSubpage bot={bot} />;
     case 'permissions': return <BotPermissionsSubpage bot={bot} />;
     case 'computer': return <BotComputerSubpage bot={bot} />;
     case 'look-around': return <BotLookAroundSubpage bot={bot} />;
     case 'tidy-up': return <BotTidyUpSubpage bot={bot} />;
-    case 'soul': return <BotSoulSubpage bot={bot} />;
+    case 'soul': return <BotSoulSubpage bot={bot} onRegisterLeaveGuard={onRegisterLeaveGuard} />;
     case 'memory': return <BotMemorySubpage bot={bot} initialTab={memoryTab} />;
     case 'connectors': return <BotConnectorsSubpage bot={bot} />;
     case 'who-can-ask': return <BotWhoCanAskSubpage bot={bot} />;
@@ -159,7 +167,16 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
   const [pickerRect, setPickerRect] = useState<DOMRect | null>(null);
   const [undoAvatar, setUndoAvatar] = useState<{ avatar: string | null; avatarColor: string | null } | null>(null);
   const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const undoTimerRef = useRef<number | null>(null);
+  const leaveGuardRef = useRef<BotSettingsLeaveGuard | null>(null);
+  const savedRootScrollRef = useRef<number>(0);
+  const returnFocusSubpageRef = useRef<SubpageId | null>(null);
+  const prevSubpageRef = useRef<SubpageId | null>(subpage);
+
+  const registerLeaveGuard = useCallback((guard: BotSettingsLeaveGuard | null) => {
+    leaveGuardRef.current = guard;
+  }, []);
 
   useEffect(() => {
     setSubpage((route?.page as SubpageId | null) ?? null);
@@ -171,7 +188,47 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
     }
   }, []);
 
-  // Step back on Escape: subpage -> overview -> close panel/page
+  // Restore saved root scroll position and originating trigger row focus when returning from a subpage.
+  useEffect(() => {
+    const prev = prevSubpageRef.current;
+    prevSubpageRef.current = subpage;
+    if (prev !== null && subpage === null) {
+      const targetRowId = returnFocusSubpageRef.current ?? prev;
+      const targetScrollTop = savedRootScrollRef.current;
+      returnFocusSubpageRef.current = null;
+      window.requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = targetScrollTop;
+        }
+        const rowBtn = scrollContainerRef.current?.querySelector<HTMLButtonElement>(
+          `[data-settings-subpage-row="${targetRowId}"]`,
+        );
+        rowBtn?.focus({ preventScroll: true });
+      });
+    } else if (prev === null && subpage !== null && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [subpage]);
+
+  const openSubpage = useCallback((target: SubpageId) => {
+    if (scrollContainerRef.current) {
+      savedRootScrollRef.current = scrollContainerRef.current.scrollTop;
+    }
+    returnFocusSubpageRef.current = target;
+    setSubpage(target);
+  }, []);
+
+  const navigateWithGuard = useCallback(async (action: () => void) => {
+    if (leaveGuardRef.current) {
+      const ok = await leaveGuardRef.current();
+      if (!ok) {
+        return;
+      }
+    }
+    action();
+  }, []);
+
+  // Step back on Escape: subpage -> overview (guarded) -> close panel/page
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') {
@@ -183,7 +240,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
       }
       event.preventDefault();
       if (subpage) {
-        setSubpage(null);
+        void navigateWithGuard(() => setSubpage(null));
       } else if (host === 'panel') {
         botsStore.closeBotSettings();
       } else {
@@ -193,7 +250,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [host, onClosePage, subpage]);
+  }, [host, navigateWithGuard, onClosePage, subpage]);
 
   // Ctrl+V direct image paste to update avatar with 8-second undo bar
   useEffect(() => {
@@ -275,7 +332,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
         className="dsh-bots-settings-crumb-link"
         onClick={() => {
           if (subpage) {
-            setSubpage(null);
+            void navigateWithGuard(() => setSubpage(null));
           } else {
             botsStore.closeBotSettings();
             if (host === 'page') {
@@ -293,7 +350,11 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
       <button
         type="button"
         className={`dsh-bots-settings-crumb-link ${!subpage ? 'dsh-bots-settings-crumb-current' : ''}`.trim()}
-        onClick={() => setSubpage(null)}
+        onClick={() => {
+          if (subpage) {
+            void navigateWithGuard(() => setSubpage(null));
+          }
+        }}
       >
         {tr('bots.panel.settings.title', 'Settings')}
       </button>
@@ -331,7 +392,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
       )}
 
       {subpage ? (
-        renderSubpageBody(subpage, bot, route?.memoryTab)
+        renderSubpageBody(subpage, bot, route?.memoryTab, registerLeaveGuard)
       ) : (
         <>
           {/* Hero profile card */}
@@ -496,8 +557,9 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
               <button
                 key={item.id}
                 type="button"
+                data-settings-subpage-row={item.id}
                 className="dsh-bots-settings-nav-row"
-                onClick={() => setSubpage(item.id)}
+                onClick={() => openSubpage(item.id)}
               >
                 <div className="dsh-bots-row-left" style={{ gap: 9 }}>
                   {renderSubpageIcon(item.id)}
@@ -543,7 +605,11 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
 
   if (host === 'page') {
     return (
-      <div className="dsh-bots-settings-page" data-dsh-bots-settings-host="page">
+      <div
+        ref={scrollContainerRef}
+        className="dsh-bots-settings-page"
+        data-dsh-bots-settings-host="page"
+      >
         <div className="dsh-bots-settings-page-inner">
           {breadcrumb}
           {innerContent}
@@ -555,7 +621,7 @@ export function BotSettingsView({ host, botId: propBotId, onClosePage }: BotSett
   return (
     <div className="dsh-bots-settings-panel" data-dsh-bots-settings-host="panel">
       {breadcrumb}
-      <div className="dsh-bots-settings-body">{innerContent}</div>
+      <div ref={scrollContainerRef} className="dsh-bots-settings-body">{innerContent}</div>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 // Right-panel Home / Activity tab:
-// 3-section Ketchup Rolling Digest (In progress / Auto-handled / Needs You decision cards
-// with recommendation, risk, and evidence links) -> Work Items (5 smooth collapsible groups) ->
-// BotActivityUpcoming -> Lightweight today's cost & peak/off-peak summary strip.
+// Filter strip -> All Clear banner -> 3-section Ketchup Rolling Digest (In progress / Auto-handled /
+// Needs You decision cards with recommendation, risk, evidence links, and Stepper Ask) ->
+// Work Items (5 smooth collapsible groups, sticky floating bulk pill) -> BotActivityUpcoming ->
+// Lightweight today's cost & peak/off-peak summary strip.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  BOT_ITEM_STATUSES,
   botItemPrUrl,
   botItemQuestionShape,
   botItemSnoozePickerPresets,
@@ -32,11 +34,23 @@ import {
   type AutomationRow,
   type SuggestionRow,
 } from './BotActivityUpcoming';
+import { BotAvatar } from './BotAvatar';
 import { BotChevron, BotDisclosure } from './BotDisclosure';
-import { BotItemDetailView, type WorkItemFull, type WorkItemLink } from './BotItemDetailView';
+import {
+  BotItemDetailView,
+  writeBotItemDraft,
+  type WorkItemFull,
+  type WorkItemLink,
+} from './BotItemDetailView';
+import {
+  BotItemQuestionStep,
+  type AskQuestionShape,
+  type AskSubmitPayload,
+} from './BotItemQuestionStep';
 import {
   IconAlertTriangle,
   IconCheck,
+  IconChevronDown,
   IconClock,
   IconExternalLink,
   IconLink,
@@ -62,24 +76,6 @@ interface AccessRequestRow {
   createdAt?: number;
 }
 
-interface AskReplyOption {
-  label: string;
-  detail?: string;
-  recommended?: boolean;
-  risk?: string;
-}
-
-interface AskDecisionItem {
-  question: string;
-  multi: boolean;
-  replies: AskReplyOption[];
-}
-
-interface AskQuestionShape {
-  body: string;
-  decisions: AskDecisionItem[];
-}
-
 type DigestWorkItem = WorkItemFull & {
   chatId?: string;
   risk?: string | null;
@@ -87,7 +83,6 @@ type DigestWorkItem = WorkItemFull & {
   evidenceLinks?: WorkItemLink[];
   othersLastEventId?: number;
 };
-
 const STATUS_GROUPS: Array<WorkItemFull['status']> = [
   'needs_you',
   'working',
@@ -172,6 +167,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
   const [budgetUsage, setBudgetUsage] = useState<BotBudgetUsageSummary | null>(null);
   const [digestInProgressOpen, setDigestInProgressOpen] = useState(true);
   const [digestAutoDoneOpen, setDigestAutoDoneOpen] = useState(false);
+  const [upNextSeenAt, setUpNextSeenAt] = useState<number | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({
     done: true,
     canceled: true,
@@ -179,7 +175,10 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
   const [selectedUids, setSelectedUids] = useState<string[]>([]);
   const [snoozeTargetUid, setSnoozeTargetUid] = useState<string | null>(null);
   const [customSnoozeVal, setCustomSnoozeVal] = useState('');
-  const [askPicks, setAskPicks] = useState<Record<string, Record<number, number[]>>>({});
+  const [bulkStatusMenuOpen, setBulkStatusMenuOpen] = useState(false);
+  const [bulkSnoozeMenuOpen, setBulkSnoozeMenuOpen] = useState(false);
+  const [bulkCustomSnooze, setBulkCustomSnooze] = useState('');
+  const [submittingAskUid, setSubmittingAskUid] = useState<string | null>(null);
 
   const reloadAll = useCallback(async () => {
     const [itemsRes, autoRes, accessRes, upNextRes, budgetRes] = await Promise.allSettled([
@@ -189,7 +188,10 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
         botId: bot.id,
         status: 'pending',
       }),
-      callBotRpc<SuggestionRow[] | { suggestions?: SuggestionRow[] }>('bots.upNext.list', { botId: bot.id }),
+      callBotRpc<
+        SuggestionRow[]
+        | { openSuggestions?: SuggestionRow[]; suggestions?: SuggestionRow[]; seenAt?: number | null }
+      >('bots.upNext.list', { botId: bot.id }),
       getBotBudgetUsage(bot.id),
     ]);
 
@@ -207,7 +209,29 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
     }
     if (upNextRes.status === 'fulfilled') {
       const val = upNextRes.value;
-      setSuggestions(Array.isArray(val) ? val : (val?.suggestions ?? []));
+      const hasSeenAt = !Array.isArray(val) && val !== null && typeof val === 'object' && 'seenAt' in val;
+      const seenAt = !Array.isArray(val) && typeof val?.seenAt === 'number'
+        ? val.seenAt
+        : (hasSeenAt && val.seenAt === null ? 0 : null);
+      const rawList = Array.isArray(val)
+        ? val
+        : Array.isArray(val?.openSuggestions)
+          ? val.openSuggestions
+          : (val?.suggestions ?? []);
+      const openOnly = rawList
+        .filter((s) => !s.status || s.status === 'open')
+        .map((s) => {
+          if (typeof s.unread === 'boolean' || typeof s.seen === 'boolean') {
+            return s;
+          }
+          if (typeof seenAt === 'number' && typeof s.createdAt === 'number') {
+            const unread = s.createdAt > seenAt;
+            return { ...s, seen: !unread, unread, seenAt };
+          }
+          return seenAt !== null ? { ...s, seenAt } : s;
+        });
+      setUpNextSeenAt(seenAt);
+      setSuggestions(openOnly);
     }
     if (budgetRes.status === 'fulfilled') {
       setBudgetUsage(budgetRes.value);
@@ -248,11 +272,22 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
     () => filteredItems.filter((item) => item.status === 'done'),
     [filteredItems],
   );
+  const workingItems = useMemo(
+    () => filteredItems.filter((item) => item.status === 'working'),
+    [filteredItems],
+  );
   const staleItems = useMemo(
     () => (staleDays === 'never' ? [] : filteredItems.filter((item) => isBotItemStale(item, staleDays, now))),
     [filteredItems, now, staleDays],
   );
   const orderedUids = useMemo(() => filteredItems.map((i) => i.uid), [filteredItems]);
+
+  const showAllClear = !bot.paused
+    && needsYouItems.length === 0
+    && accessRequests.length === 0
+    && workingItems.length === 0
+    && (bot.workers?.working ?? 0) === 0
+    && (bot.workers?.permission ?? 0) === 0;
 
   if (selectedItemId) {
     return (
@@ -271,6 +306,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
     if (uids.length === 0) {
       return;
     }
+    setBulkStatusMenuOpen(false);
     try {
       await callBotRpc(RPC_METHODS.ITEMS_OWNER_STATUS, { botId: bot.id, uids, uid: uids[0], status });
       setSelectedUids((prev) => prev.filter((id) => !uids.includes(id)));
@@ -280,56 +316,57 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
     }
   };
 
-  const snoozeItem = async (uid: string, until: number | null) => {
+  const batchSnooze = async (uids: string[], until: number | null) => {
+    if (uids.length === 0) {
+      return;
+    }
     setSnoozeTargetUid(null);
-    const targetItem = items.find((entry) => entry.uid === uid);
+    setBulkSnoozeMenuOpen(false);
     try {
-      await callBotRpc(RPC_METHODS.ITEMS_OWNER_SNOOZE, {
-        botId: bot.id,
-        items: [{
+      const batchItems = uids.map((uid) => {
+        const targetItem = items.find((entry) => entry.uid === uid) as (WorkItemFull & { othersLastEventId?: number }) | undefined;
+        return {
           uid,
           ...(targetItem?.othersLastEventId !== undefined ? { othersLastEventId: targetItem.othersLastEventId } : {}),
-        }],
+        };
+      });
+      await callBotRpc(RPC_METHODS.ITEMS_OWNER_SNOOZE, {
+        botId: bot.id,
+        items: batchItems,
         until,
       });
+      setSelectedUids((prev) => prev.filter((id) => !uids.includes(id)));
       void reloadAll();
     } catch (err) {
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     }
   };
 
-  const submitQuickAsk = async (item: DigestWorkItem) => {
-    const askData = item.question?.data ?? (item.question?.ask ? { ask: item.question.ask } : null);
-    if (!askData) {
+  const submitQuickAsk = async (item: DigestWorkItem, payload: AskSubmitPayload) => {
+    if (!payload.text || submittingAskUid) {
       return;
     }
-    const shape = botItemQuestionShape(askData) as AskQuestionShape;
-    const picksMap = askPicks[item.uid] ?? {};
-    const lines: string[] = [];
-    const decisions = shape.decisions.map((dec: AskDecisionItem, qIdx: number) => {
-      const picks = picksMap[qIdx] ?? [];
-      const labels = picks.map((i) => dec.replies[i]?.label).filter(Boolean).join(', ');
-      if (labels) {
-        lines.push(shape.decisions.length > 1 ? `${dec.question} → ${labels}` : labels);
-      }
-      return { picks };
-    });
-    const text = lines.join('\n').trim();
-    if (!text) {
-      return;
-    }
+    setSubmittingAskUid(item.uid);
     try {
       await callBotRpc(RPC_METHODS.ITEMS_OWNER_COMMENT, {
         botId: bot.id,
         uid: item.uid,
-        text,
-        decisions,
+        text: payload.text,
+        decisions: payload.decisions,
+        ...(item.question?.eventId !== undefined ? { questionEventId: item.question.eventId } : {}),
         requestId: `ask-${Date.now().toString(36)}`,
       });
       void reloadAll();
     } catch (err) {
       botsStore.pushToast({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    } finally {
+      setSubmittingAskUid(null);
     }
+  };
+
+  const handleInlineFillComment = (itemUid: string, text: string) => {
+    writeBotItemDraft(bot.id, itemUid, text);
+    botsStore.setRightPanelItemId(itemUid);
   };
 
   const decideAccess = async (id: string, decision: 'granted' | 'declined') => {
@@ -349,7 +386,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
     : null;
 
   return (
-    <div className="dsh-bots-panel-scroll">
+    <div className="dsh-bots-panel-scroll dsh-bots-activity-scroll">
       {filterOpen && (
         <div className="dsh-bots-filter-bar">
           {([['all', zh ? '全部' : 'All'], ['home', zh ? '主对话' : 'Home Chat'], ['side', zh ? '支线' : 'Side']] as const).map(([key, label]) => (
@@ -371,6 +408,30 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
           >
             {zh ? '仅看需要你处理' : 'Only needs you'}
           </button>
+        </div>
+      )}
+
+      {showAllClear && (
+        <div className="dsh-bots-all-clear" role="status">
+          <BotAvatar
+            botId={bot.id}
+            avatar={bot.avatar}
+            avatarColor={bot.avatarColor}
+            name={bot.name}
+            size={32}
+            radius={9}
+            status={bot.dotState ?? undefined}
+          />
+          <div className="dsh-bots-all-clear-body">
+            <div className="dsh-bots-all-clear-title">
+              {zh ? '当前一切顺利' : 'All clear'}
+            </div>
+            <div className="dsh-bots-muted">
+              {zh
+                ? `${bot.name} 暂无待你处理或正在运行的工作条目`
+                : `No pending questions or active runs for ${bot.name}.`}
+            </div>
+          </div>
         </div>
       )}
 
@@ -581,46 +642,14 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
                   )}
 
                   {shape && shape.decisions.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                      {shape.decisions.map((dec: AskDecisionItem, qIdx: number) => (
-                        <div key={dec.question} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          <div style={{ fontSize: 12, fontWeight: 500 }}>{dec.question}</div>
-                          {dec.replies.map((opt: AskReplyOption, optIdx: number) => {
-                            const picks = askPicks[item.uid]?.[qIdx] ?? [];
-                            const picked = picks.includes(optIdx);
-                            return (
-                              <button
-                                key={opt.label}
-                                type="button"
-                                className="dsh-bots-ask-option"
-                                data-selected={picked ? 'true' : 'false'}
-                                onClick={() => setAskPicks((prev) => {
-                                  const cur = prev[item.uid]?.[qIdx] ?? [];
-                                  const next = dec.multi
-                                    ? (cur.includes(optIdx) ? cur.filter((x) => x !== optIdx) : [...cur, optIdx])
-                                    : [optIdx];
-                                  return { ...prev, [item.uid]: { ...(prev[item.uid] ?? {}), [qIdx]: next } };
-                                })}
-                              >
-                                <span style={{ flex: 1 }}>{opt.label}</span>
-                                {opt.recommended && (
-                                  <span className="dsh-bots-badge dsh-bots-badge-accent">
-                                    {tr('bots.items.recommended', '推荐')}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
-                        onClick={() => void submitQuickAsk(item)}
-                      >
-                        {zh ? '提交拍板' : 'Submit decision'}
-                      </button>
-                    </div>
+                    <BotItemQuestionStep
+                      questionKey={`inline:${item.uid}:${item.question?.eventId ?? '0'}`}
+                      shape={shape}
+                      compact
+                      submitting={submittingAskUid === item.uid}
+                      onSubmit={(payload) => void submitQuickAsk(item, payload)}
+                      onFillComment={(text) => handleInlineFillComment(item.uid, text)}
+                    />
                   ) : (
                     <div className="dsh-bots-muted">
                       {item.question?.text || item.summary || (zh ? '等待你的确认或回复' : 'Waiting for your input')}
@@ -650,35 +679,6 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
             </button>
           )}
         </div>
-
-        {selectedUids.length > 0 && (
-          <div className="dsh-bots-bulk-bar">
-            <span>{zh ? `已选 ${selectedUids.length} 项` : `${selectedUids.length} selected`}</span>
-            <div style={{ display: 'inline-flex', gap: 4 }}>
-              <button
-                type="button"
-                className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
-                onClick={() => void batchStatus(selectedUids, 'done')}
-              >
-                {tr('bots.items.status.done', 'Done')}
-              </button>
-              <button
-                type="button"
-                className="dsh-bots-pbtn dsh-bots-pbtn-xs"
-                onClick={() => void batchStatus(selectedUids, 'canceled')}
-              >
-                {tr('bots.items.status.canceled', 'Canceled')}
-              </button>
-              <button
-                type="button"
-                className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-ghost"
-                onClick={() => setSelectedUids([])}
-              >
-                <IconX size={11} />
-              </button>
-            </div>
-          </div>
-        )}
 
         {filteredItems.length === 0 ? (
           <div className="dsh-bots-empty">{tr('bots.items.empty', 'No items yet.')}</div>
@@ -711,6 +711,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
                         <div
                           key={item.uid}
                           className="dsh-bots-item-row"
+                          data-selected={checked ? 'true' : 'false'}
                           onClick={() => botsStore.setRightPanelItemId(item.uid)}
                         >
                           <input
@@ -755,7 +756,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
                                       key={preset.id}
                                       type="button"
                                       className="dsh-bots-pmenu-item"
-                                      onClick={() => void snoozeItem(item.uid, preset.at)}
+                                      onClick={() => void batchSnooze([item.uid], preset.at)}
                                     >
                                       {botItemSnoozePresetName(preset, tr)}
                                     </button>
@@ -776,7 +777,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
                                       onClick={() => {
                                         const ts = Date.parse(customSnoozeVal);
                                         if (Number.isFinite(ts) && ts > Date.now()) {
-                                          void snoozeItem(item.uid, ts);
+                                          void batchSnooze([item.uid], ts);
                                         }
                                       }}
                                     >
@@ -823,6 +824,7 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
         now={now}
         automations={automations}
         suggestions={suggestions}
+        upNextSeenAt={upNextSeenAt}
         onReload={() => void reloadAll()}
       />
 
@@ -849,6 +851,119 @@ export function BotActivityTab({ bot, filterOpen }: BotActivityTabProps) {
           {budgetUsage?.exceeded ? (zh ? '已超额' : 'Exceeded') : (zh ? '预算 ›' : 'Budget ›')}
         </span>
       </button>
+
+      {selectedUids.length > 0 && (
+        <div className="dsh-bots-bulk-pill" role="toolbar" aria-label={zh ? '批量操作' : 'Bulk actions'}>
+          <span className="dsh-bots-bulk-pill-count">
+            {zh ? `已选 ${selectedUids.length} 项` : `${selectedUids.length} selected`}
+          </span>
+
+          <div className="dsh-bots-bulk-pill-actions">
+            <div className="dsh-bots-pmenu-wrap">
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
+                onClick={() => {
+                  setBulkSnoozeMenuOpen(false);
+                  setBulkStatusMenuOpen((prev) => !prev);
+                }}
+              >
+                <span>{zh ? '移至状态' : 'Move to'}</span>
+                <IconChevronDown size={11} />
+              </button>
+              {bulkStatusMenuOpen && (
+                <div className="dsh-bots-pmenu dsh-bots-pmenu-up" role="menu">
+                  {BOT_ITEM_STATUSES.map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className="dsh-bots-pmenu-item"
+                      role="menuitem"
+                      onClick={() => void batchStatus(selectedUids, st as WorkItemFull['status'])}
+                    >
+                      {tr(`bots.items.status.${st}`, st)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="dsh-bots-pmenu-wrap">
+              <button
+                type="button"
+                className="dsh-bots-pbtn dsh-bots-pbtn-xs"
+                onClick={() => {
+                  setBulkStatusMenuOpen(false);
+                  setBulkSnoozeMenuOpen((prev) => !prev);
+                }}
+              >
+                <IconClock size={11} />
+                <span>{zh ? '延后' : 'Snooze'}</span>
+              </button>
+              {bulkSnoozeMenuOpen && (
+                <div className="dsh-bots-pmenu dsh-bots-pmenu-up" role="menu">
+                  {snoozePresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className="dsh-bots-pmenu-item"
+                      role="menuitem"
+                      onClick={() => void batchSnooze(selectedUids, preset.at)}
+                    >
+                      {botItemSnoozePresetName(preset, tr)}
+                    </button>
+                  ))}
+                  <div className="dsh-bots-pmenu-sep" />
+                  <div style={{ padding: '4px 6px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <input
+                      type="datetime-local"
+                      className="dsh-bots-pinput"
+                      style={{ fontSize: 11, padding: '3px 5px' }}
+                      value={bulkCustomSnooze}
+                      onChange={(e) => setBulkCustomSnooze(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-primary"
+                      disabled={!bulkCustomSnooze}
+                      onClick={() => {
+                        const ts = Date.parse(bulkCustomSnooze);
+                        if (Number.isFinite(ts) && ts > Date.now()) {
+                          void batchSnooze(selectedUids, ts);
+                        }
+                      }}
+                    >
+                      {zh ? '应用自定义时间' : 'Apply custom time'}
+                    </button>
+                  </div>
+                  <div className="dsh-bots-pmenu-sep" />
+                  <button
+                    type="button"
+                    className="dsh-bots-pmenu-item"
+                    role="menuitem"
+                    onClick={() => void batchSnooze(selectedUids, null)}
+                  >
+                    {zh ? '取消延后' : 'Clear snooze'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="dsh-bots-pbtn dsh-bots-pbtn-xs dsh-bots-pbtn-icon dsh-bots-pbtn-ghost"
+              aria-label={zh ? '清空选择' : 'Clear selection'}
+              onClick={() => {
+                setBulkStatusMenuOpen(false);
+                setBulkSnoozeMenuOpen(false);
+                setSelectedUids([]);
+              }}
+            >
+              <IconX size={12} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
