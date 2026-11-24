@@ -756,7 +756,9 @@ function CatalogDropdown(props: CatalogDropdownProps) {
           onKeyDown={(event) => {
             if (event.key !== 'ArrowDown') return
             event.preventDefault()
-            if (variant === 'count' && !allowsHoverOpen()) pinnedRef.current = true
+            cancelHoverOpen()
+            cancelHoverClose()
+            pinnedRef.current = true
             if (!open) changeOpen(true)
             prepareLevel(rootSessionId)
             queueMicrotask(() => { focusAt(0) })
