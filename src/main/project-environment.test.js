@@ -452,3 +452,83 @@ test('requirement tracking uses the registered workstream directory and rejects 
   assert.equal((await environment.revert({ ...scoped, base: start.tree, end: end.end })).applied, true);
   assert.equal(fs.readFileSync(path.join(workspace.canonicalPath, 'file.txt'), 'utf8'), 'baseline\n');
 });
+
+test('v2 open-path authorizes project memory and registered task worktrees while still blocking project.json and untrusted dirs', async t => {
+  const { home } = await fixture(t, false);
+  const projectId = 'p-v2open01';
+  const taskId = 't-wt000001';
+  const projectDir = path.join(home, 'projects', projectId);
+  const memoryDir = path.join(projectDir, 'memory');
+  const wtDir = path.join(home, 'project-worktrees', projectId, taskId);
+  const outsideDir = path.join(home, 'project-worktrees', projectId, 't-unregistered');
+  fs.mkdirSync(memoryDir, { recursive: true });
+  fs.mkdirSync(wtDir, { recursive: true });
+  fs.mkdirSync(outsideDir, { recursive: true });
+
+  const memoryFile = path.join(memoryDir, 'architecture.md');
+  const wtFile = path.join(wtDir, 'result.txt');
+  const outsideFile = path.join(outsideDir, 'leak.txt');
+  const projectFile = path.join(projectDir, 'project.json');
+  fs.writeFileSync(memoryFile, '# Memory\n');
+  fs.writeFileSync(wtFile, 'ok\n');
+  fs.writeFileSync(outsideFile, 'no\n');
+  fs.writeFileSync(projectFile, JSON.stringify({
+    id: projectId,
+    name: 'V2 OpenPath',
+    tasks: [{ id: taskId, worktreePath: fs.realpathSync.native(wtDir) }],
+  }));
+
+  const opened = [];
+  const environment = createProjectEnvironment({
+    home,
+    authority: createWorkspaceAuthority({ workspace: '' }),
+    openPath: async target => { opened.push(target); return ''; },
+  });
+
+  const memRes = await environment.dispatch({ action: 'open-path', projectId, path: memoryFile });
+  assert.equal(memRes.ok, true);
+  assert.equal(memRes.canonicalPath, fs.realpathSync.native(memoryFile));
+
+  const wtRes = await environment.dispatch({ action: 'open-path', projectId, taskId, path: wtFile });
+  assert.equal(wtRes.ok, true);
+  assert.equal(wtRes.canonicalPath, fs.realpathSync.native(wtFile));
+
+  await assert.rejects(
+    environment.dispatch({ action: 'open-path', projectId, path: projectFile }),
+    /不属于/,
+  );
+  await assert.rejects(
+    environment.dispatch({ action: 'open-path', projectId, path: outsideFile }),
+    /不属于/,
+  );
+  assert.equal(opened.length, 2);
+
+  // Registered library.json reference & artifact files are authorized, while library.json itself and tampered internal DSH files stay blocked!
+  const externalRefDir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-env-libref-'));
+  t.after(() => fs.rmSync(externalRefDir, { recursive: true, force: true }));
+  const refFile = path.join(externalRefDir, 'design-ref.md');
+  fs.writeFileSync(refFile, '# Design Ref\n');
+  const libraryFile = path.join(projectDir, 'library.json');
+  fs.writeFileSync(libraryFile, JSON.stringify({
+    version: 1,
+    references: [
+      { id: 'ref-1', path: fs.realpathSync.native(refFile), title: 'design-ref.md' },
+      { id: 'ref-tampered', path: fs.realpathSync.native(projectFile), title: 'project.json' },
+    ],
+    artifacts: [],
+  }));
+
+  const refRes = await environment.dispatch({ action: 'open-path', projectId, path: refFile });
+  assert.equal(refRes.ok, true);
+  assert.equal(refRes.canonicalPath, fs.realpathSync.native(refFile));
+  assert.equal(opened.length, 3);
+
+  await assert.rejects(
+    environment.dispatch({ action: 'open-path', projectId, path: libraryFile }),
+    /不属于/,
+  );
+  await assert.rejects(
+    environment.dispatch({ action: 'open-path', projectId, path: projectFile }),
+    /不属于/,
+  );
+});

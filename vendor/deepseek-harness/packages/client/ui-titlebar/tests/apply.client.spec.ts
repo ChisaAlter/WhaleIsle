@@ -37,7 +37,9 @@ async function bench() {
   const declaration = declare(slots)
   const layout = { toggleTerminalDrawer: vi.fn(), toggleSurfaces: vi.fn() }
   const sidebarRight = { isExpanded: vi.fn(() => false), toggleExpanded: vi.fn() }
-  const shortcuts = { register: vi.fn(() => () => {}) }
+  const shortcuts = {
+    register: vi.fn((_command: { id: string; resolve: () => { status: string; run?: () => void } }) => () => {}),
+  }
   ctx.provide('layout', layout)
   ctx.provide('sidebarRight', sidebarRight as never)
   ctx.provide('shortcuts', shortcuts as never)
@@ -104,6 +106,31 @@ describe('ui-titlebar apply', () => {
       order: 40,
     })
     redeclare()
+    await b.fiber.dispose()
+  })
+
+  it('blocks toggling an unmounted rightbar on the projects panel and allows closing an expanded preview', async () => {
+    const b = await bench()
+    let activePanelId: string | null = 'projects'
+    Object.assign(b.layout, { panelInfo: { getSnapshot: () => ({ activePanelId }) } })
+    const entry = b.slots.entries('shell.titlebar.trailing')[0]
+    const injected = (entry?.inject as unknown as () => PanelTogglesInjected)()
+    const surfacesShortcut = b.shortcuts.register.mock.calls
+      .map(call => call[0])
+      .find(cmd => cmd.id === 'surfaces.toggle')
+
+    b.sidebarRight.isExpanded.mockReturnValue(false)
+    injected.toggleSurfaces()
+    expect(b.sidebarRight.toggleExpanded).not.toHaveBeenCalled()
+    expect(surfacesShortcut?.resolve().status).toBe('blocked')
+
+    b.sidebarRight.isExpanded.mockReturnValue(true)
+    const openRes = surfacesShortcut?.resolve()
+    expect(openRes?.status).toBe('handled')
+    openRes?.run?.()
+    expect(b.sidebarRight.toggleExpanded).toHaveBeenCalledOnce()
+
+    activePanelId = null
     await b.fiber.dispose()
   })
 })

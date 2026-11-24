@@ -39,11 +39,11 @@ UI 改动先读本文。工程细则（CSS Modules、token 分层、动效 recip
 
 设置面板使用 `--dsw-alias-bg-layer-2`，随玻璃透明度设置调整填充，并复用 `--dsw-menu-backdrop-filter` 模糊底层内容。菜单与对话框同样响应玻璃透明度；透明主题仍遵循壁纸门控与滑块禁用契约。设置导航选中项采用 `--dsw-alias-interactive-bg-active` 的中性底色、主文字色和 500 字重，不叠加蓝色填充或阴影。浅色主题的共享滚动条使用主文字色 18% 的半透明滑块，悬停时提高到 30%，轨道保持透明，以适应玻璃背景。
 
-Project 以左侧边栏独立入口（`sidebar.panellist`，位于插件/定时任务/鲸鱼娘之后）打开主区全页三栏看板（`main` 槽位 `projects` 键，落在标题栏行之下的 `mainPanel` 内容行，不遮挡 48px 顶栏拖拽带与窗口按钮）。不再在普通侧栏会话行挂「Project」标签，不在新会话首屏提供 Project 按钮，也不在普通聊天内悬浮 312px 任务栏。
+Project 以左侧边栏独立入口（`sidebar.panellist`，位于插件/定时任务/鲸鱼娘之后）打开主区全高项目工作台（`main` 槽位 `projects` 键，挂在 `AppFrame` 跨标题栏行与内容行的 `.mainPanelFull` 轨道，自带单层 48px Row 1 顶栏并避让 `--dsh-frame-leading-clearance` 与窗口控制区，不叠加双层顶栏，同时在 `projects` 面板下隐藏无关的后台会话 Git/终端控件）。不再在普通侧栏会话行挂「Project」标签，不在新会话首屏提供 Project 按钮，也不在普通聊天内悬浮 312px 任务栏。
 
-三栏按容器实测宽度（`ResizeObserver`）自适应，栏间使用 5px 可拖拽分隔条：左栏为项目列表（默认 248px / 最小 188px，可折叠为 44px 图标轨，底部可展开已归档项目）；中栏为嵌入原生 DSH 协调者会话（最小 400px，完整复用 `conversation.content` 输入栏、模型/思考强度切换、附件与权限，顶栏仅保留项目名、工作区目录胶囊、手动审批/自动派发一键切换、暂停/恢复一键切换与齿轮设置入口）；右栏为执行者 Threads 面板（默认 380px / 最小 280px，可折叠为 44px 计数轨），按「执行中 / 待验收 / 等你处理 / 待开始 / 已解决（默认折叠）」5 组呈现，点击任务卡在右栏原位切换为任务详情（原生嵌入 Worker 对话 + Diff 变更与 Worktree 合并/清理审阅），支持快捷审批、单任务停止/重试、Resolve 验收与右键二段防误触删除。对话内 `projects_dispatch` 工具卡可直接定位打开对应任务详情；在项目页聊天中点击文件路径按需展开共享右栏预览（默认不强制占宽）。
+界面分「总览」与「单项目工作台（主区最多 2 栏）」：0 项目时总览呈现垂直居中单画布空态（单主按钮「新建项目」，无多余空栏与重复标题）；有项目返回总览时为 `max-width: 920px` 居中卡片网格。总览卡片、顶栏 `ProjectSwitcher` 与抽屉开关统一呈现事件驱动的三色状态微点（`waiting` 黄 > `running` 蓝呼吸 > `review` 绿 > `idle` 灰）。进入单项目后移除独立左项目栏，48px 顶栏左侧提供「全部项目」返回、`ProjectSwitcher`（复用 `Menu` 原语，支持项目/归档切换与新建）与工作区目录胶囊（窄窗自动收起防裁切），右侧提供派发模式（默认「自动并行」，可选「手动逐条审批」）、暂停/恢复、设置与带状态微点的「线程 · N」上下文抽屉开关。主区（最小 400px）自动挂载 `presentation` 隔离的原生嵌入协调者会话（不闪通用欢迎首屏、不自动发送首消息），点击任务卡、产物来源或 `projects_dispatch` 工具卡即在主区宽屏原位钻取任务详情（紧凑次级顶栏 + 「对话 / 改动」分段页签，改动页展示 `mergeability` 冲突预检徽标、Worktree 合并/清理审阅及单文件行尾「提修改」定向反馈闭环）。右侧项目上下文抽屉（默认 340px / 最小 280px，0px 占位绝对定位分隔条与 `0.5px solid var(--dsw-alias-border-l2)` 发丝线，不增第三栏）在 0 任务且 0 参考资料时默认自动收起释放全宽、有任务经 SSE 到达时自动展开，容器宽小于 680px 时切换为玻璃浮层抽屉；抽屉顶部以 `SegmentedTabs` 切换「线程 / 资料 / 记忆」3 分段：「线程」按行动优先级排列「等你处理（置顶、黄色强调）/ 执行中（蓝呼吸）/ 待验收（绿）/ 待开始 / 已解决（默认折叠）」5 组及卡片尾部独立快捷操作行，「资料」分「参考资料」与「任务产物」支持应用内共享右栏预览与来源任务直跳，「记忆」支持抽屉内原位编辑项目规则及共享记忆预算条、搜索、置顶与溯源跳转。主区与抽屉统一透明单层底色，在项目页点击文件路径按需展开共享右栏预览（展开后标题栏右栏收起钮与 `Ctrl+\` 自动恢复可达）。
 
-新建项目、项目设置（通用 / 共享记忆主题文件双栏）与危险操作确认全部使用应用内 `Modal`（零 `window.confirm`），遵循同一套 `--dsw-alias-*` / `--dsw-specific-*` token 与 `ui-primitives` 原语，弹窗与表单内容面采用 `--dsw-alias-bg-panel-solid` 或 `--dsw-alias-bg-layer-2` + `--dsw-menu-backdrop-filter`，在浅色、深色与透明/壁纸主题下层次清晰且不挤动布局。
+新建项目（默认选中「自动并行」）、项目设置（通用 / 执行线程 / 共享记忆主题文件双栏）与危险操作二段确认（删除任务、删除项目）全部使用应用内 `Modal`（零 `window.confirm`），遵循同一套 `--dsw-alias-*` / `--dsw-specific-*` token 与 `ui-primitives` 原语（含 `SegmentedControl`、`SegmentedTabs`、`SettingsSelect`、`Menu`），弹窗采用 `--dsw-alias-bg-layer-2` + `--dsw-menu-backdrop-filter` 玻璃质感并限定独立正文滚动区，字段校验走原位 `aria-invalid` 不增高表单，全部 Toast 统一 4500ms 自动淡出，在浅色、深色与透明/壁纸主题下层次清晰且不挤动布局。
 
 ## 适用范围
 
@@ -168,7 +168,7 @@ Browser 空白页、导航工具栏与尚未加载网页的 guest 占位区透�
 | 选中行 | `--dsw-specific-sidebar-nav-item-active`（强调用 `*-accent`）；设置侧栏导航沿用上游中性选中底色，浅色为 `#EBEEF2`，不使用强调色 |
 | 字体栈 | `--dsw-font-family`（系统 UI + 苹方 / 雅黑）；代码 `--ds-font-family-code` |
 
-Project 的新建、设置、共享记忆编辑器及二段确认弹窗沿用共享 `Modal`，内容面取 `--dsw-alias-bg-panel-solid` 或 `--dsw-alias-bg-layer-2` 并配对 `--dsw-menu-backdrop-filter`，标题与关闭钮固定在滚动内容上方；三栏看板画布与输入区沿用主题透明度。
+Project 的新建、设置、共享记忆编辑器及二段确认弹窗沿用共享 `Modal`，内容面统一取 `--dsw-alias-bg-layer-2` 并配对 `--dsw-menu-backdrop-filter` 玻璃质感，标题与底栏固定在独立滚动正文之外；总览、单项目最多两栏工作台（含右侧「线程 / 资料 / 记忆」3 分段抽屉及窄窗玻璃浮层）与嵌入式输入区沿用透明单层底色与主题透明度（壁纸、流光渐变、透明主题与亚克力下均无暗色座位底带）。
 
 设置侧栏导航禁止浏览器默认的黄色焦点轮廓。仅键盘焦点使用与设置入口一致的 `2px solid var(--dsw-alias-label-primary)` 内描边（`outline-offset: -2px`）；鼠标选中只显示中性选中底色，不额外画边框。
 

@@ -620,7 +620,8 @@
 
 /* An embedded occurrence has no grid parent; it fills its host's flex box. */
 .embeddedBody {
-  flex: 1;
+  flex: 1 1 0;
+  height: 100%;
   overflow: hidden;
   --dsh-chat-content-width: min(calc(100% - 32px), 920px);
   --dsh-composer-card-max-width: min(calc(100% - 16px), 952px);
@@ -726,7 +727,14 @@
 :global(html[data-dsh-wallpaper]:not([data-dsh-transparent])) .root[data-phase='active'] .composerSeat,
 :global(html[data-dsh-wallpaper]:not([data-dsh-transparent]) body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat,
 :global(html[data-dsh-gradient]) .root[data-phase='active'] .composerSeat,
-:global(html[data-dsh-gradient] body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat {
+:global(html[data-dsh-gradient] body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat,
+:global(html[data-dsh-wallpaper]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-wallpaper] body[data-ds-dark-theme]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-gradient]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-gradient] body[data-ds-dark-theme]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-transparent]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-transparent] body[data-ds-dark-theme]) .embeddedBody[data-content-phase='active'] .composerSeat,
+:global(html[data-dsh-window-material='acrylic']) .embeddedBody[data-content-phase='active'] .composerSeat {
   background: transparent;
 }
 
@@ -735,7 +743,8 @@
    seat above the back-to-bottom control (z-index 8, ui-chat ChatView) while
    the menu is open. The steady state stays 7 so the control keeps painting
    over the card. */
-.root[data-phase='active'] .composerSeat:has([data-trigger-menu]) {
+.root[data-phase='active'] .composerSeat:has([data-trigger-menu]),
+.embeddedBody[data-content-phase='active'] .composerSeat:has([data-trigger-menu]) {
   z-index: 9;
 }
 

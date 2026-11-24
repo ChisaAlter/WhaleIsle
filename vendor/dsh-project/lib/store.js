@@ -9,16 +9,17 @@
  * - Event bus notifies SSE subscribers on every project/task/memory mutation.
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { chmod, mkdir, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmod, lstat, mkdir, open, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createSerialQueue } from '../../dsh-shared/lib/managed-task-runtime.mjs';
-import { renameWithRetry } from './files.js';
+import { renameWithRetry, within } from './files.js';
 import {
   PROJECT_ID_RE,
   httpError,
   normalizeProject,
+  workerIsLive,
 } from './schema.js';
 
 export function resolveDshHome(overrideHome = '') {
@@ -91,34 +92,81 @@ export function createProjectStore({ home = '' } = {}) {
 
   /** @type {Map<string, ReturnType<typeof createSerialQueue>>} */
   const projectQueues = new Map();
-  /** @type {Map<string, { id: string, name: string, autonomy: string, paused: boolean, workspace: string }>} */
+  /** @type {Map<string, string>} coordinatorSessionId -> projectId */
   const coordinatorSessions = new Map();
+  /** @type {Map<string, { projectId: string, taskId: string }>} childSessionId -> task owner */
+  const workerSessions = new Map();
   /** @type {Map<string, any>} */
   const projectsCache = new Map();
   /** @type {Set<(event: any) => void>} */
   const listeners = new Set();
 
+  function clearProjectIndices(projectId) {
+    for (const [sessionId, ownerId] of coordinatorSessions) {
+      if (ownerId === projectId) coordinatorSessions.delete(sessionId);
+    }
+    for (const [sessionId, info] of workerSessions) {
+      if (info.projectId === projectId) workerSessions.delete(sessionId);
+    }
+  }
+
   function rememberProject(project) {
     const snapshot = structuredClone(project);
     projectsCache.set(project.id, snapshot);
-    for (const [sessionId, remembered] of coordinatorSessions) {
-      if (remembered.id === project.id) coordinatorSessions.delete(sessionId);
-    }
+    clearProjectIndices(project.id);
     const sessionId = typeof project.coordinatorSessionId === 'string'
       ? project.coordinatorSessionId.trim()
       : '';
-    if (!sessionId) return;
-    coordinatorSessions.set(sessionId, {
-      id: project.id,
-      name: project.name,
-      autonomy: project.autonomy,
-      paused: project.paused === true,
-      workspace: project.workspace || '',
-    });
+    if (sessionId) {
+      coordinatorSessions.set(sessionId, project.id);
+    }
+    for (const task of project.tasks || []) {
+      const childId = typeof task?.childSessionId === 'string' ? task.childSessionId.trim() : '';
+      if (childId) {
+        workerSessions.set(childId, { projectId: project.id, taskId: task.id });
+      }
+    }
+  }
+
+  function writeFileAtomicSync(file, contents) {
+    const temporary = `${file}.${randomBytes(4).toString('hex')}.tmp`;
+    try {
+      writeFileSync(temporary, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      renameSync(temporary, file);
+    } catch (error) {
+      try { unlinkSync(temporary); } catch { /* Best-effort temp cleanup. */ }
+      if (error?.code === 'EXDEV') {
+        writeFileSync(file, contents, { encoding: 'utf8', mode: 0o600 });
+        return;
+      }
+      throw error;
+    }
+  }
+
+  function recoverInterruptedTasks(project) {
+    const now = Date.now();
+    let changed = false;
+    for (const task of project.tasks || []) {
+      if (!task || task.finishedAt) continue;
+      if (task.status === 'running') {
+        task.status = 'blocked';
+        task.stopReason = 'interrupted_by_restart';
+        task.finishedAt = now;
+        task.updatedAt = now;
+        changed = true;
+      } else if (workerIsLive(task)) {
+        // E.g. resolved while running before a restart; settle finishedAt so it stops holding a slot.
+        task.finishedAt = task.updatedAt || now;
+        changed = true;
+      }
+    }
+    if (changed) project.updatedAt = now;
+    return changed;
   }
 
   function primeSync() {
     coordinatorSessions.clear();
+    workerSessions.clear();
     projectsCache.clear();
     let entries;
     try {
@@ -129,8 +177,16 @@ export function createProjectStore({ home = '' } = {}) {
     for (const entry of entries) {
       if (!entry.isDirectory() || !PROJECT_ID_RE.test(entry.name)) continue;
       try {
-        const raw = readFileSync(projectFile(entry.name), 'utf8');
+        const file = projectFile(entry.name);
+        const raw = readFileSync(file, 'utf8');
         const project = normalizeProject(JSON.parse(raw));
+        if (recoverInterruptedTasks(project)) {
+          try {
+            writeFileAtomicSync(file, `${JSON.stringify(project, null, 2)}\n`);
+          } catch {
+            // Keep recovered state in memory even if disk write fails on startup.
+          }
+        }
         rememberProject(project);
       } catch {
         // Ignore half-written or foreign directories.
@@ -138,8 +194,9 @@ export function createProjectStore({ home = '' } = {}) {
     }
   }
 
-  function emitChange({ type, projectId = '', taskId = '', ts = Date.now() }) {
+  function emitChange({ type, projectId = '', taskId = '', ts = Date.now(), ...extra }) {
     const event = {
+      ...extra,
       type: String(type || 'update'),
       ...(projectId ? { projectId: String(projectId) } : {}),
       ...(taskId ? { taskId: String(taskId) } : {}),
@@ -232,13 +289,46 @@ export function createProjectStore({ home = '' } = {}) {
     for (const cachedId of [...projectsCache.keys()]) {
       if (!seen.has(cachedId)) {
         projectsCache.delete(cachedId);
-        for (const [sid, info] of coordinatorSessions) {
-          if (info.id === cachedId) coordinatorSessions.delete(sid);
-        }
+        clearProjectIndices(cachedId);
       }
     }
     projects.sort((left, right) => right.updatedAt - left.updatedAt);
     return projects;
+  }
+
+  async function deleteProjectDir(id) {
+    const key = String(id || '');
+    if (!PROJECT_ID_RE.test(key)) throw httpError(404, 'project_not_found');
+    const root = resolve(rootDir());
+    const target = resolve(projectDir(key));
+    if (!within(root, target) || target === root) {
+      throw httpError(400, 'invalid_project_path');
+    }
+    let info;
+    try {
+      info = await lstat(target);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        projectsCache.delete(key);
+        clearProjectIndices(key);
+        projectQueues.delete(key);
+        return false;
+      }
+      throw error;
+    }
+    if (info.isSymbolicLink()) {
+      throw httpError(400, 'project_dir_symlink');
+    }
+    const realRoot = await realpath(root);
+    const realTarget = await realpath(target);
+    if (!within(realRoot, realTarget) || realTarget === realRoot) {
+      throw httpError(400, 'invalid_project_path');
+    }
+    await rm(realTarget, { recursive: true, force: true });
+    projectsCache.delete(key);
+    clearProjectIndices(key);
+    projectQueues.delete(key);
+    return true;
   }
 
   function getCachedProjects() {
@@ -254,7 +344,19 @@ export function createProjectStore({ home = '' } = {}) {
 
   function getCoordinatorInfo(sessionId) {
     if (typeof sessionId !== 'string' || !sessionId) return null;
-    return coordinatorSessions.get(sessionId) || null;
+    const projectId = coordinatorSessions.get(sessionId);
+    if (!projectId) return null;
+    return getCachedProject(projectId);
+  }
+
+  function getWorkerInfo(sessionId) {
+    if (typeof sessionId !== 'string' || !sessionId) return null;
+    const ref = workerSessions.get(sessionId);
+    if (!ref) return null;
+    const project = getCachedProject(ref.projectId);
+    if (!project) return null;
+    const task = (project.tasks || []).find((candidate) => candidate.id === ref.taskId) || null;
+    return { projectId: ref.projectId, taskId: ref.taskId, project, task };
   }
 
   return {
@@ -269,9 +371,11 @@ export function createProjectStore({ home = '' } = {}) {
     withProjectLock,
     readProject,
     writeProject,
+    deleteProjectDir,
     listProjects,
     getCachedProjects,
     getCachedProject,
     getCoordinatorInfo,
+    getWorkerInfo,
   };
 }

@@ -377,6 +377,16 @@ describe('AppFrame', () => {
     expect(getByTestId('main-content').closest('[data-main-panel]')).toBeNull()
   })
 
+  it('seats the projects workspace in the full-height center column across Row 1 and Row 2', () => {
+    const { instance, getByTestId } = mountFrame()
+    act(() => { instance.actions.selectPanel('projects' as MainPanelId) })
+    expect(getByTestId('main-content').closest('[data-main-panel]')).toBeNull()
+    expect(getByTestId('main-content').closest('[data-main-panel-full]')?.getAttribute('data-main-panel-full')).toBe('projects')
+    act(() => { instance.actions.selectPanel('plugins' as MainPanelId) })
+    expect(getByTestId('main-content').closest('[data-main-panel-full]')).toBeNull()
+    expect(getByTestId('main-content').closest('[data-main-panel]')).not.toBeNull()
+  })
+
   it('closes the overlay drawer when the current Session changes', () => {
     frameWidth = 390
     const { frame, instance, rerenderFrame } = mountFrame()

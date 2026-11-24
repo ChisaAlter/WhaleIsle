@@ -40,6 +40,10 @@ export function ConversationContent(props: ConversationContentProps) {
   const presentationOwned = useSessions(s =>
     sessionId !== undefined && s.byId[sessionId]?.presentation !== undefined,
   )
+  // An embedded plugin-owned session (e.g. a blank Project coordinator) never
+  // shows the generic welcome hero or workspace gate.
+  const effectiveHero = props.variant === 'embedded' && presentationOwned ? false : hero
+  const effectivePhase = props.variant === 'embedded' && presentationOwned && phase === 'hero' ? 'active' : phase
   const Views = useFactorySlot('views', ConversationSessionView)
   const WidthControls = useFactorySlot('widthControls', NoConversationWidthControls)
   const [body, setBody] = useState<HTMLDivElement | null>(null)
@@ -178,7 +182,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const previousComposer = useRef<{ sessionId: typeof sessionId; hero: boolean; top: number } | null>(null)
   useLayoutEffect(() => {
     const previous = previousComposer.current
-    if (!hero && (previous?.hero !== true || previous.sessionId !== sessionId || !session?.promptAttempted)) {
+    if (!effectiveHero && (previous?.hero !== true || previous.sessionId !== sessionId || !session?.promptAttempted)) {
       previousComposer.current = null
       return
     }
@@ -186,7 +190,7 @@ export function ConversationContent(props: ConversationContentProps) {
     const card = stack?.querySelector<HTMLElement>('[data-composer-card]')
     if (stack === null || card === undefined || card === null) return
     const top = card.getBoundingClientRect().top
-    if (!hero && previous !== null && !document.documentElement.hasAttribute('data-dsh-minimal')) {
+    if (!effectiveHero && previous !== null && !document.documentElement.hasAttribute('data-dsh-minimal')) {
       // The first-send commit mounts the transcript, running chrome and dock
       // projections, and the main thread can stay busy with that work for
       // several frames. The glide therefore starts in this same commit, before
@@ -196,7 +200,7 @@ export function ConversationContent(props: ConversationContentProps) {
       stack.style.setProperty('--dsh-composer-enter-offset', `${previous.top - top}px`)
       stack.dataset.composerEntering = ''
     }
-    previousComposer.current = { sessionId, hero, top }
+    previousComposer.current = { sessionId, hero: effectiveHero, top }
   })
   useLayoutEffect(() => {
     const stack = stackRef.current
@@ -211,9 +215,9 @@ export function ConversationContent(props: ConversationContentProps) {
     stack.addEventListener('animationend', onEnd)
     stack.addEventListener('animationcancel', onEnd)
     // Keep the starting rectangle current through window and draft resizing.
-    const observer = hero ? new ResizeObserver(() => {
+    const observer = effectiveHero ? new ResizeObserver(() => {
       const card = stack.querySelector<HTMLElement>('[data-composer-card]')
-      if (card !== null) previousComposer.current = { sessionId, hero, top: card.getBoundingClientRect().top }
+      if (card !== null) previousComposer.current = { sessionId, hero: effectiveHero, top: card.getBoundingClientRect().top }
     }) : null
     if (observer !== null) {
       observer.observe(stack)
@@ -226,7 +230,7 @@ export function ConversationContent(props: ConversationContentProps) {
       stack.removeEventListener('animationcancel', onEnd)
       finish()
     }
-  }, [hero, sessionId])
+  }, [effectiveHero, sessionId])
 
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
@@ -258,7 +262,7 @@ export function ConversationContent(props: ConversationContentProps) {
 
   // Building the row eagerly would still fire the workspace-picker slot for a
   // presentation-owned session, so the JSX only exists while the hero shows.
-  const heroWorkspaceRow = !hero ? null : (
+  const heroWorkspaceRow = !effectiveHero ? null : (
     <div className={css.heroWorkspaceRow} data-composer-flow="">
       <WorkspaceChip
         buttonRef={pickerAnchor}
@@ -298,13 +302,13 @@ export function ConversationContent(props: ConversationContentProps) {
   // blank session whose workspace vanished (deleted from the sidebar). The
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  const inert = sessionId === undefined || (effectiveHero && chipTitle === undefined)
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
-    variant: hero ? 'hero' : 'composer',
+    variant: effectiveHero ? 'hero' : 'composer',
     occurrence: props.variant,
     ...(inert
       ? {
@@ -318,12 +322,12 @@ export function ConversationContent(props: ConversationContentProps) {
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
-        : hero ? { placeholder: t('placeholder.hero') } : {}),
+        : effectiveHero ? { placeholder: t('placeholder.hero') } : {}),
   })
 
   const composerBar = (
-    <div ref={stackRef} className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
+    <div ref={stackRef} className={clsx(css.composerStack, effectiveHero && css.composerHero)}>
+      {effectiveHero && <HeroShell t={t} renderSlot={renderSlot} />}
       {heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
@@ -351,10 +355,10 @@ export function ConversationContent(props: ConversationContentProps) {
       data-conversation-content=""
       data-conversation-session={sessionId}
       data-conversation-region="chat"
-      data-content-phase={phase}
+      data-content-phase={effectivePhase}
     >
       {/* The frame wraps the scroll body in every phase, so leaving the home keeps the composer mounted. */}
-      {renderSlot('conversation.hero.frame', { hero: hero && props.variant !== 'embedded' }, {
+      {renderSlot('conversation.hero.frame', { hero: effectiveHero && props.variant !== 'embedded' }, {
         children: (
           <div className={css.scrollBody} data-conversation-scroll="">
         {presentationOwned && shellPhase === 'blank' && (
@@ -365,7 +369,7 @@ export function ConversationContent(props: ConversationContentProps) {
           </div>
         ),
       })}
-      <WidthControls container={body} phase={phase} />
+      <WidthControls container={body} phase={effectivePhase} />
     </div>
   )
 }

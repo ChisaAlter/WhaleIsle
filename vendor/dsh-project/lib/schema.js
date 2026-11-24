@@ -8,6 +8,7 @@ export const STATUSES = Object.freeze(['queued', 'running', 'review', 'failed', 
 export const HUMAN_TASK_FIELDS = Object.freeze(['status']);
 export const HUMAN_STATUSES = Object.freeze(['resolved', 'review']);
 export const AUTONOMY = Object.freeze(['manual', 'auto']);
+export const SCOPE_CEILINGS = Object.freeze(['readonly', 'research', 'docs', 'development']);
 
 export const MAX_GOAL = 16_000;
 export const MAX_BRIEF = 8_000;
@@ -56,6 +57,17 @@ export function httpError(status, message, extra = undefined) {
 
 export function text(value, max) {
   return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
+const CJK_CHAR_RE = /[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/g;
+
+/** Lightweight local token estimate (CJK ~0.7 tok/char, ASCII/Latin ~0.28 tok/char). */
+export function estimateTokens(value) {
+  const raw = typeof value === 'string' ? value : '';
+  if (!raw) return 0;
+  const cjk = (raw.match(CJK_CHAR_RE) || []).length;
+  const other = raw.length - cjk;
+  return Math.max(1, Math.ceil(cjk * 0.7 + other * 0.28));
 }
 
 export function intIn(value, min, max, fallback) {
@@ -148,6 +160,19 @@ function attachWorktreeFields(task, raw) {
   if (Number(raw.finishedAt)) task.finishedAt = Number(raw.finishedAt);
 }
 
+function attachScopeFields(task, raw) {
+  if (typeof raw.scopeCeiling === 'string' && SCOPE_CEILINGS.includes(raw.scopeCeiling.trim())) {
+    task.scopeCeiling = raw.scopeCeiling.trim();
+  }
+  if (Array.isArray(raw.writePaths)) {
+    const paths = raw.writePaths
+      .filter((entry) => typeof entry === 'string' && entry.trim())
+      .slice(0, 32)
+      .map((entry) => text(entry.trim(), 500));
+    if (paths.length > 0) task.writePaths = paths;
+  }
+}
+
 export function normalizeTask(raw = {}) {
   const accepted = raw.status === 'done' || raw.resolved === true;
   const task = {
@@ -166,6 +191,7 @@ export function normalizeTask(raw = {}) {
   };
   attachSessionFields(task, raw);
   attachWorktreeFields(task, raw);
+  attachScopeFields(task, raw);
   return task;
 }
 
@@ -181,7 +207,7 @@ export function normalizeProject(raw = {}) {
     name: text(raw.name, 120).trim() || 'Untitled project',
     goal: text(raw.goal, MAX_GOAL),
     workspace: text(raw.workspace, 1024).trim(),
-    autonomy: AUTONOMY.includes(raw.autonomy) ? raw.autonomy : 'manual',
+    autonomy: AUTONOMY.includes(raw.autonomy) ? raw.autonomy : 'auto',
     concurrency: intIn(raw.concurrency, 1, MAX_CONCURRENCY, DEFAULT_CONCURRENCY),
     paused: raw.paused === true,
     archived: raw.archived === true,
@@ -266,10 +292,18 @@ export function taskRoute(task) {
   };
 }
 
-export function routeChanged(task) {
+export function effectiveTaskRoute(project, task) {
+  return {
+    model: modelValue(task?.model || project?.model),
+    agentPreset: presetValue(task?.agentPreset || project?.agentPreset),
+    effort: effortValue(task?.reasoningEffort || project?.reasoningEffort),
+  };
+}
+
+export function routeChanged(task, project = null) {
   const recorded = task?.childRoute;
   if (!recorded) return false;
-  const wanted = taskRoute(task);
+  const wanted = project ? effectiveTaskRoute(project, task) : taskRoute(task);
   return recorded.model !== wanted.model
     || recorded.agentPreset !== wanted.agentPreset
     || recorded.effort !== wanted.effort;

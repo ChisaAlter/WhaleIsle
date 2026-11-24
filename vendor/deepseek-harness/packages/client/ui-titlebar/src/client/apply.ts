@@ -34,7 +34,15 @@ export const inject = ['slots', 'layout', 'locale', 'connection', 'remote', 'con
 
 /** Toggle the single right panel shared by guide and content. */
 function toggleSurfaces(ctx: Context): void {
-  ctx.get('sidebarRight')?.toggleExpanded()
+  const sidebarRight = ctx.get('sidebarRight')
+  if (sidebarRight === undefined) return
+  const activePanelId = ctx.layout.panelInfo?.getSnapshot().activePanelId
+  if (activePanelId === 'projects' && !sidebarRight.isExpanded()) return
+  try {
+    sidebarRight.toggleExpanded()
+  } catch {
+    // Non-conversation panels without an active preview mount no sidebarRight surface.
+  }
 }
 
 /**
@@ -58,7 +66,13 @@ export function apply(ctx: Context): void {
       'desktop:macos': panels, 'desktop:windows': panels, 'desktop:linux': panels,
     },
     regions: ['page'], modals: [],
-    resolve: () => ({ status: 'handled', run: () => { toggleSurfaces(ctx) } }),
+    resolve: () => {
+      const activePanelId = ctx.layout.panelInfo?.getSnapshot().activePanelId
+      if (activePanelId === 'projects' && ctx.get('sidebarRight')?.isExpanded() !== true) {
+        return { status: 'blocked', reason: t('surfaces.toggle') }
+      }
+      return { status: 'handled', run: () => { toggleSurfaces(ctx) } }
+    },
   }), 'ui-titlebar: surfaces.toggle')
   ctx.effect(() => ctx.shortcuts.register({
     id: 'terminal.drawer.toggle' as ShortcutCommandId, label: () => t('terminal.toggle'),

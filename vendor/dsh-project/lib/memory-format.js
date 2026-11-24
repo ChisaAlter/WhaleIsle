@@ -11,6 +11,7 @@ import {
   MEMORY_SEARCH_LIMIT,
   MEMORY_STALE_MARKERS,
   MEMORY_TYPE_MAX,
+  estimateTokens,
   httpError,
   text,
 } from './schema.js';
@@ -147,8 +148,11 @@ export function parseMemoryFile(raw, fallback = {}) {
     description: '',
     type: 'reference',
     modified: '',
+    pinned: false,
+    sourceTaskId: '',
     body,
     chars: body.length,
+    estimatedTokens: estimateTokens(body),
     path: String(fallback.path ?? ''),
   };
   const frontmatter = readMemoryFrontmatter(source);
@@ -160,8 +164,14 @@ export function parseMemoryFile(raw, fallback = {}) {
     if (fields.modified && !Number.isNaN(Date.parse(fields.modified))) {
       file.modified = new Date(fields.modified).toISOString();
     }
+    if (fields.pinned === 'true' || fields.pinned === '1') {
+      file.pinned = true;
+    }
+    const sourceTask = fields.source_task_id || fields.sourcetaskid || '';
+    if (sourceTask) file.sourceTaskId = text(sourceTask, 64).trim();
     file.body = frontmatter.body;
     file.chars = file.body.length;
+    file.estimatedTokens = estimateTokens(file.body);
   }
   if (!file.description) file.description = memoryDescription(file.body) || file.name;
   file.stale = isStaleMemoryFile(file);
@@ -170,13 +180,20 @@ export function parseMemoryFile(raw, fallback = {}) {
 
 export function serializeMemoryFile(file) {
   const body = String(file.body ?? '').replace(/\n+$/, '');
-  return [
+  const header = [
     '---',
     `name: ${file.name}`,
     `description: ${file.description}`,
     `type: ${file.type || 'reference'}`,
     `modified: ${file.modified}`,
+    ...(file.pinned === true ? ['pinned: true'] : []),
+    ...(typeof file.sourceTaskId === 'string' && file.sourceTaskId.trim()
+      ? [`source_task_id: ${text(file.sourceTaskId.trim(), 64)}`]
+      : []),
     '---',
+  ];
+  return [
+    ...header,
     '',
     body,
     '',
@@ -209,12 +226,13 @@ export function memoryTotal(files) {
 }
 
 function memoryIndexEntry(file, mode) {
-  if (mode === 'titles') return `· ${file.name}`;
+  const pin = file.pinned ? '[pinned] ' : '';
+  if (mode === 'titles') return `· ${pin}${file.name}`;
   const size = `${file.chars} chars`;
   const date = memoryDateOf(file.modified);
   const suffix = date ? `, ${date}` : '';
-  if (mode === 'no-description' || !file.description) return `· ${file.name} (${size}${suffix})`;
-  return `· ${file.name} — ${file.description} (${size}${suffix})`;
+  if (mode === 'no-description' || !file.description) return `· ${pin}${file.name} (${size}${suffix})`;
+  return `· ${pin}${file.name} — ${file.description} (${size}${suffix})`;
 }
 
 function staleMemoryLine(stale) {
@@ -227,7 +245,9 @@ function staleMemoryLine(stale) {
 export function memoryIndex(files, limit = MEMORY_INDEX_LIMIT, { listStale = false } = {}) {
   const all = Array.isArray(files) ? files : [];
   if (all.length === 0) return '(empty)';
-  const live = all.filter((file) => !file.stale);
+  const live = all
+    .filter((file) => !file.stale)
+    .sort((left, right) => (right.pinned ? 1 : 0) - (left.pinned ? 1 : 0));
   const stale = all.filter((file) => file.stale);
   const header =
     `${live.length} file(s), ${memoryTotal(all)} characters. `
@@ -266,35 +286,100 @@ export function memoryIndex(files, limit = MEMORY_INDEX_LIMIT, { listStale = fal
   return lines.join('\n');
 }
 
+const LATIN_TOKEN_RE = /[a-z0-9_]+/g;
+const CJK_RUN_RE = /[\u3400-\u9fff\uf900-\ufaff]+/g;
+
+function tokenizeSearchTerms(input) {
+  const lower = String(input ?? '').toLowerCase();
+  const terms = new Set();
+  for (const match of lower.matchAll(LATIN_TOKEN_RE)) {
+    if (match[0].length >= 2 || /^\d+$/.test(match[0])) terms.add(match[0]);
+  }
+  for (const match of lower.matchAll(CJK_RUN_RE)) {
+    const run = match[0];
+    if (run.length === 1) {
+      terms.add(run);
+    } else {
+      for (let i = 0; i < run.length - 1; i += 1) {
+        terms.add(run.slice(i, i + 2));
+      }
+    }
+  }
+  return [...terms];
+}
+
+function scoreField(haystack, needle, terms, weight) {
+  if (!haystack) return 0;
+  let score = 0;
+  if (haystack.includes(needle)) score += 6 * weight;
+  if (terms.length > 0) {
+    let hits = 0;
+    for (const term of terms) {
+      if (haystack.includes(term)) hits += 1;
+    }
+    if (hits > 0) {
+      const coverage = hits / terms.length;
+      score += (hits + coverage * 2) * weight;
+    }
+  }
+  return score;
+}
+
+export function searchMemoryRanked(files, query, limit = MEMORY_SEARCH_LIMIT) {
+  const needle = String(query ?? '').trim();
+  if (!needle) throw httpError(400, 'query is required for action "search"');
+  const all = Array.isArray(files) ? files : [];
+  const live = all.filter((file) => !file.stale);
+  const wanted = needle.toLowerCase();
+  const terms = tokenizeSearchTerms(wanted);
+  const ranked = [];
+
+  for (const file of live) {
+    const nameText = String(file.name ?? '').toLowerCase();
+    const descText = String(file.description ?? '').toLowerCase();
+    const bodyText = String(file.body ?? '').toLowerCase();
+    const score =
+      scoreField(nameText, wanted, terms, 4)
+      + scoreField(descText, wanted, terms, 2.5)
+      + scoreField(bodyText, wanted, terms, 1);
+    if (score <= 0) continue;
+    ranked.push({
+      file,
+      score: Number((score + (file.pinned ? 0.25 : 0)).toFixed(3)),
+    });
+  }
+
+  ranked.sort((left, right) => right.score - left.score || compareMemoryFiles(right.file, left.file));
+  return {
+    needle,
+    totalMatches: ranked.length,
+    liveCount: live.length,
+    staleCount: all.length - live.length,
+    matches: ranked.slice(0, limit),
+  };
+}
+
 export function searchMemory(files, query, limit = MEMORY_SEARCH_LIMIT) {
   const needle = String(query ?? '').trim();
   if (!needle) throw httpError(400, 'query is required for action "search"');
   const all = Array.isArray(files) ? files : [];
   if (all.length === 0) return `No memory file matches "${needle}". The shared memory is empty.`;
-  const live = all.filter((file) => !file.stale);
-  const wanted = needle.toLowerCase();
-  const matches = live.filter(
-    (file) =>
-      file.name.toLowerCase().includes(wanted)
-      || file.description.toLowerCase().includes(wanted)
-      || file.body.toLowerCase().includes(wanted),
-  );
-  if (matches.length === 0) {
-    const stale = all.length - live.length;
+  const ranked = searchMemoryRanked(all, needle, limit);
+  if (ranked.totalMatches === 0) {
     return (
-      `No memory file matches "${needle}". ${live.length} live file(s) in memory`
-      + `${stale ? `, ${stale} stale file(s) excluded` : ''} — `
+      `No memory file matches "${needle}". ${ranked.liveCount} live file(s) in memory`
+      + `${ranked.staleCount ? `, ${ranked.staleCount} stale file(s) excluded` : ''} — `
       + 'use projects_memory {action:"index"} to see them all.'
     );
   }
-  const shown = matches.slice(0, limit);
+  const shown = ranked.matches.map((entry) => entry.file);
   const header =
-    `${matches.length} file(s) match "${needle}"`
-    + (shown.length < matches.length ? `, showing the first ${shown.length}` : '')
+    `${ranked.totalMatches} file(s) match "${needle}"`
+    + (shown.length < ranked.totalMatches ? `, showing the first ${shown.length}` : '')
     + '. Read one with projects_memory {action:"read", name:"<name>"}.';
   const lines = [header, ...shown.map((file) => memoryIndexEntry(file, 'full'))];
-  if (shown.length < matches.length) {
-    lines.push(`- …and ${matches.length - shown.length} more file(s) match; narrow the query or use action:"index".`);
+  if (shown.length < ranked.totalMatches) {
+    lines.push(`- …and ${ranked.totalMatches - shown.length} more file(s) match; narrow the query or use action:"index".`);
   }
   return lines.join('\n');
 }
@@ -340,17 +425,21 @@ export function splitLegacyMemory(raw) {
 
 export function planFileArchive(files, target) {
   if (!files || files.length <= 1) return null;
-  const kept = [];
-  let used = 0;
-  for (let index = files.length - 1; index >= 0; index -= 1) {
-    const file = files[index];
-    if (kept.length > 0 && used + file.chars > target) break;
-    kept.unshift(file);
+  const pinned = files.filter((file) => file.pinned === true);
+  const unpinned = files.filter((file) => file.pinned !== true);
+  if (unpinned.length === 0) return null;
+  const kept = [...pinned];
+  let used = pinned.reduce((sum, file) => sum + (Number(file.chars) || 0), 0);
+  const keptUnpinned = [];
+  for (let index = unpinned.length - 1; index >= 0; index -= 1) {
+    const file = unpinned[index];
+    if ((kept.length > 0 || keptUnpinned.length > 0) && used + file.chars > target) break;
+    keptUnpinned.unshift(file);
     used += file.chars;
   }
-  const moved = files.slice(0, files.length - kept.length);
+  const moved = unpinned.slice(0, unpinned.length - keptUnpinned.length);
   if (moved.length === 0) return null;
-  return { kept, moved };
+  return { kept: [...kept, ...keptUnpinned], moved };
 }
 
 export function archiveSummary(files, limit = 2_000) {

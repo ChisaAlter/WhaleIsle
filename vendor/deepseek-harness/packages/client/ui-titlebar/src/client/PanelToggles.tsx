@@ -35,6 +35,7 @@ export type PanelTogglesProps =
 export function PanelToggles({
   rightbarShown,
   terminalDrawer,
+  usePanelInfo,
   useWorkspaces,
   useTerminalToggle,
   useSurfacesToggle,
@@ -42,11 +43,17 @@ export function PanelToggles({
   toggleTerminalDrawer,
   t,
 }: PanelTogglesProps): ReactNode {
+  const activePanelId = usePanelInfo(info => info.activePanelId)
+  const isProjectsPanel = activePanelId === 'projects'
   const terminalAvailable = useWorkspaces(s => s.items.length > 0)
   const terminalOpen = terminalDrawer > 0
   const surfacesOpen = rightbarShown
-  const showTerminal = useTerminalToggle(value => value)
-  const showSurfaces = useSurfacesToggle(value => value)
+  // On Projects, hide session-bound titlebar toggles unless that pane is already
+  // open (e.g. an on-demand file preview in the shared rightbar) so the user can
+  // still close it without duplicating the Projects task toggle or hitting an
+  // unmounted sidebarRight surface.
+  const showTerminal = useTerminalToggle(value => value) && (!isProjectsPanel || terminalOpen)
+  const showSurfaces = useSurfacesToggle(value => value) && (!isProjectsPanel || surfacesOpen)
 
   useEffect(() => {
     // Desktop runtime owns both chords through the shortcut registry
@@ -56,6 +63,7 @@ export function PanelToggles({
     const onKey = (event: KeyboardEvent) => {
       if (isSurfacesShortcut(event)) {
         if (isEditableKeyboardTarget(event.target)) return
+        if (isProjectsPanel && !surfacesOpen) return
         event.preventDefault()
         toggleSurfaces()
         return
@@ -71,7 +79,7 @@ export function PanelToggles({
     }
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
-  }, [terminalAvailable, toggleSurfaces, toggleTerminalDrawer])
+  }, [isProjectsPanel, surfacesOpen, terminalAvailable, toggleSurfaces, toggleTerminalDrawer])
 
   if (!showTerminal && !showSurfaces) return <></>
 
