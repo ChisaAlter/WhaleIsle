@@ -8,7 +8,7 @@ import type {
   TeamMemberProjection, TeamProjection, TeamTaskId, TeamTaskView as TeamTask,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type { SessionListState, SessionSnapshot, SessionSummary, UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session-status/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -216,7 +216,7 @@ describe('TeamAction', () => {
   })
 
   it('overlays live Session status and the durable model selection on roster rows', () => {
-    const statuses: SessionStatusSnapshot = new Map([[WORKER, { running: true, pendingInteraction: undefined, completionUnread: false }]])
+    const statuses: SessionStatusSnapshot = new Map([[WORKER, { running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false }]])
     const b = bench({
       statuses,
       running: { [SESSION]: true },
@@ -237,7 +237,7 @@ describe('TeamAction', () => {
     const row = screen.getByRole('button', { name: new RegExp(`worker.*${zh['memberStatus.running']}.*worker-model`, 'u') })
     expect(row.querySelector('[data-state="ongoing"]')).not.toBeNull()
 
-    act(() => { b.statuses.set(new Map([[WORKER, { running: false, pendingInteraction: undefined, completionUnread: false }]])) })
+    act(() => { b.statuses.set(new Map([[WORKER, { running: false, pendingInteraction: undefined, completionUnread: false, completionFailed: false }]])) })
     expect(screen.getByRole('button', { name: /^worker.*未运行/u })).toBeTruthy()
 
     act(() => {
@@ -311,7 +311,7 @@ describe('TeamAction', () => {
           ['unrelated' as SessionId]: { state: 'ready', error: null, values: { projectTeam: { members: [], tasks: [] } } },
         },
       })
-      b.statuses.set(new Map([['unrelated' as SessionId, { running: true, pendingInteraction: undefined, completionUnread: false }]]))
+      b.statuses.set(new Map([['unrelated' as SessionId, { running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false }]]))
     })
     expect(onRender).not.toHaveBeenCalled()
 
@@ -679,12 +679,12 @@ describe('Project Team entry', () => {
     act(() => { activity.set({ [SESSION]: { state: 'ready', runningJobSessionIds: [] } }) })
     expect(screen.getByRole('button', { name: '智能体团队，1 名成员运行中' })).toBeTruthy()
     act(() => { b.statuses.set(new Map([
-      [WORKER, { running: true, pendingInteraction: undefined, completionUnread: false }],
-      [failed.id, { running: true, pendingInteraction: undefined, completionUnread: false }],
+      [WORKER, { running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false }],
+      [failed.id, { running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false }],
     ])) })
     expect(screen.getByRole('button', { name: '智能体团队，2 名成员运行中' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /failed-job失败.*回合运行中.*Turn failed/u })).toBeTruthy()
-    act(() => { b.statuses.set(new Map([[WORKER, { running: false, pendingInteraction: undefined, completionUnread: false }]])) })
+    act(() => { b.statuses.set(new Map([[WORKER, { running: false, pendingInteraction: undefined, completionUnread: false, completionFailed: false }]])) })
     expect(screen.getByRole('button', { name: '智能体团队，0 名成员运行中' })).toBeTruthy()
     fireEvent.click(screen.getByRole('tab', { name: zh['project.history'] }))
     expect(screen.getByRole('button', { name: /^worker空闲/u })).toBeTruthy()

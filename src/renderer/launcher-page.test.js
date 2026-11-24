@@ -321,3 +321,123 @@ test('summarizeImport and importProgressText keep their user-facing shapes', () 
   assert.equal(context.importProgressText({ phase: 'sessions', done: 2, total: 5, rel: 'a/b' }), '正在导入会话 2/5：a/b');
   assert.equal(context.importProgressText({ phase: 'done' }), '导入完成。');
 });
+
+test('component manage dropdown toggles cleanly, closes on outside/Esc, enforces sibling exclusivity, and binds once', async () => {
+  const components = [
+    {
+      id: 'magpie', name: 'Magpie', version: '1.0.2', installedVersion: '1.0.2',
+      previousVersion: '1.0.1', state: 'running', kind: 'service', source: 'official',
+      capabilities: { canStop: true, canOpen: true, canRollback: true, canUninstall: true },
+    },
+    {
+      id: 'helper', name: 'Helper', version: '2.0.0', installedVersion: '2.0.0',
+      state: 'stopped', kind: 'tool',
+      capabilities: { canStart: true, canUninstall: true },
+    },
+  ];
+  const api = apiWith({
+    componentsList: async () => ({ components }),
+  });
+  const { document: doc, window: win, fireDOMContentLoaded } = kit.loadLauncherPage({ api });
+  fireDOMContentLoaded();
+  await flush();
+
+  doc.querySelector('[data-tab="components"]').click();
+  await flush();
+
+  const tabEl = doc.getElementById('tab-components');
+  assert.equal(tabEl.hidden, false);
+
+  const getMenus = () => tabEl.querySelectorAll('details.comp-manage');
+  assert.equal(getMenus().length, 2, 'two component rows render manage menus');
+  const [menuA, menuB] = getMenus();
+  const summaryA = menuA.querySelector('summary');
+  const summaryB = menuB.querySelector('summary');
+  const svgA = summaryA.querySelector('svg');
+
+  // Replicate real browser summary activation: pointerdown bubbles first,
+  // then click toggles <details>.open natively and fires non-bubbling toggle.
+  const activateSummary = (summary, clickTarget = summary) => {
+    clickTarget.dispatchEvent({ type: 'pointerdown', button: 0 });
+    const clickEvent = { type: 'click', button: 0 };
+    clickTarget.dispatchEvent(clickEvent);
+    if (!clickEvent.defaultPrevented) {
+      const details = summary.closest('details.comp-manage');
+      details.open = !details.open;
+      details.dispatchEvent({ type: 'toggle' });
+    }
+  };
+
+  // 1. Click summary to open; pointerdown on same summary must not pre-close it
+  //    before click toggles it shut (no close-then-reopen race).
+  activateSummary(summaryA);
+  assert.equal(menuA.open, true);
+  assert.equal(menuB.open, false);
+
+  svgA.dispatchEvent({ type: 'pointerdown', button: 0 });
+  assert.equal(menuA.open, true, 'pointerdown on the open summary (or child svg) does not pre-close it');
+  const secondClick = { type: 'click', button: 0 };
+  svgA.dispatchEvent(secondClick);
+  menuA.open = !menuA.open;
+  menuA.dispatchEvent({ type: 'toggle' });
+  assert.equal(menuA.open, false, 'clicking the same summary again closes the menu');
+
+  // 2. Opening sibling B closes A (both via pointer interaction and keyboard/programmatic toggle).
+  activateSummary(summaryA);
+  assert.equal(menuA.open, true);
+  activateSummary(summaryB);
+  assert.equal(menuA.open, false, 'opening another component manage menu closes the previous one');
+  assert.equal(menuB.open, true);
+
+  menuA.open = true;
+  menuA.dispatchEvent({ type: 'toggle' });
+  assert.equal(menuA.open, true);
+  assert.equal(menuB.open, false, 'toggle event also enforces sibling exclusivity');
+
+  // 3. Clicking inside the open menu panel keeps it open so menu buttons stay clickable.
+  const menuMeta = menuA.querySelector('.comp-manage-menu .row-meta');
+  menuMeta.dispatchEvent({ type: 'pointerdown', button: 0 });
+  menuMeta.dispatchEvent({ type: 'click', button: 0 });
+  assert.equal(menuA.open, true, 'clicking inside the manage menu keeps it open');
+
+  // 4. Clicking outside (pointerdown or click, including controls that stop click propagation) closes it.
+  doc.getElementById('rail-route-btn').dispatchEvent({ type: 'pointerdown', button: 0 });
+  assert.equal(menuA.open, false, 'outside pointerdown closes the manage menu');
+
+  activateSummary(summaryA);
+  assert.equal(menuA.open, true);
+  tabEl.querySelector('[data-comp-refresh]').dispatchEvent({ type: 'click', button: 0 });
+  assert.equal(menuA.open, false, 'outside click closes the manage menu');
+
+  // 5. Pressing Escape closes the open menu and restores focus to its summary.
+  activateSummary(summaryA);
+  const uninstallBtn = menuA.querySelector('[data-comp-action="uninstall"]');
+  uninstallBtn.focus();
+  assert.equal(doc.activeElement, uninstallBtn);
+  const escEvent = { type: 'keydown', key: 'Escape' };
+  doc.dispatchEvent(escEvent);
+  assert.equal(menuA.open, false, 'Escape closes the manage menu');
+  assert.equal(escEvent.defaultPrevented, true);
+  assert.equal(doc.activeElement, summaryA, 'Escape restores focus to the menu summary');
+
+  // 6. When app-confirm modal is visible, Escape is left to the modal instead of stealing focus.
+  activateSummary(summaryA);
+  const confirmEl = doc.getElementById('app-confirm');
+  confirmEl.hidden = false;
+  const modalEsc = { type: 'keydown', key: 'Escape' };
+  doc.dispatchEvent(modalEsc);
+  assert.equal(menuA.open, true, 'active confirm modal keeps Escape handling');
+  confirmEl.hidden = true;
+  doc.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.equal(menuA.open, false);
+
+  // 7. Re-mounting and refreshing do not leak document-level listeners.
+  const listenerCountBefore = doc._listeners.length;
+  win.__launcherComponents.mount(tabEl, api);
+  await win.__launcherComponents.refresh();
+  const otherHost = doc.createElement('section');
+  doc.body.appendChild(otherHost);
+  win.__launcherComponents.mount(otherHost, api);
+  await flush();
+  assert.equal(doc._listeners.length, listenerCountBefore, 'repeated mounts/refreshes do not duplicate document listeners');
+});

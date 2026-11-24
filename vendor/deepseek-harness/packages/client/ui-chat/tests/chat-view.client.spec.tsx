@@ -4,7 +4,8 @@ import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { ChatViewport } from '../src/client/chat/use-chat-viewport.ts'
 import type { ProcessGroupData } from '../src/client/contract/process-groups.ts'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-import { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { MessageId } from '@deepseek-ai/dsh-llm/types'
 import type { GlobalStandardProps, PropsRenderFactories, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -28,7 +29,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session-status/client'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -59,7 +60,7 @@ import { en, zh, pt } from '../src/client/locale.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
-  CompactionNodeView, ContextMessageNodeView, RetryNodeView, SteeringMessageNodeView,
+  CompactionNodeView, ContextMessageNodeView, InheritedHistoryNodeView, RetryNodeView, SteeringMessageNodeView,
   TurnErrorNodeView, TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
@@ -240,9 +241,7 @@ const command = (over: Partial<CommandNode> = {}): CommandNode => ({
   ...over,
 })
 const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummaryNode => ({
-  kind: 'compaction', seq: 8, time: 8_000,
-  summary: '## 压缩摘要\n\n保留的事实。',
-  summaryEventSeq: 7,
+  kind: 'compaction', seq: 8, summaryEventSeq: 7, time: 8_000,
   shadowedItemCount: 16,
   shadowedTokenCount: 11_309,
   ...over,
@@ -328,13 +327,14 @@ function HarnessUserOrigin({ useRenderer, owner, options }: {
 }
 
 function HarnessChatNode({
-  standard, owner, hookContext, usePerformanceUsage, useOpenUiTheme, toolOwners, fallback, renderAssistantSlot, renderUserChain,
+  standard, owner, hookContext, compaction, usePerformanceUsage, useOpenUiTheme, toolOwners, fallback, renderAssistantSlot, renderUserChain,
 }: {
   readonly standard: HarnessStandardProps
   readonly owner: RoutedChatNodeOwner
   readonly hookContext: ChatNodeHookContext
   readonly usePerformanceUsage: React.ComponentProps<typeof TurnTailNodeView>['usePerformanceUsage']
   readonly useOpenUiTheme: React.ComponentProps<typeof AssistantNodeView>['useOpenUiTheme']
+  readonly compaction: Pick<React.ComponentProps<typeof CompactionNodeView>, 'openCompaction' | 'useCompactionPreview'>
   readonly toolOwners: ToolOwner[]
   readonly fallback: React.ReactNode
   readonly renderAssistantSlot: React.ComponentProps<typeof AssistantNodeView>['renderSlot']
@@ -364,15 +364,17 @@ function HarnessChatNode({
     case 'command':
       return <CommandNodeView {...nodeProps} node={owner.node} renderSlot={renderCommandSlot} />
     case 'manual-compaction':
-      return <ManualCompactionNodeView {...nodeProps} node={owner.node} />
+      return <ManualCompactionNodeView {...nodeProps} {...compaction} node={owner.node} />
     case 'compaction':
-      return <CompactionNodeView {...nodeProps} node={owner.node} />
+      return <CompactionNodeView {...nodeProps} {...compaction} node={owner.node} />
     case 'model-retry':
       return <RetryNodeView {...nodeProps} node={owner.node} />
     case 'turn-error':
       return <TurnErrorNodeView {...nodeProps} node={owner.node} />
     case 'turn-max-tokens':
       return <TurnMaxTokensNodeView {...nodeProps} node={owner.node} />
+    case 'inherited-history':
+      return <InheritedHistoryNodeView {...nodeProps} node={owner.node} />
     case 'turn-process':
       return <TurnProcessNodeView {...nodeProps} node={owner.node} />
     case 'system-prompt':
@@ -470,6 +472,9 @@ function makeHarness(
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const openCompaction = vi.fn<(seq: number, signal: AbortSignal) => Promise<string | null>>(async () => null)
+  const compactionPreview = createSnapshotStore(true)
+  const compaction = { openCompaction, useCompactionPreview: bindSnapshotSelector(compactionPreview) }
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
@@ -495,7 +500,7 @@ function makeHarness(
     name === 'conversation.chat.message.images' ? renderImages(name, owner, options) : renderReasoningSlot(name, owner, options)
   const renderNodeSlot: NodeRenderer = (key, owner, opts) => {
     if (nodeSlotOverride !== undefined) return nodeSlotOverride(key, owner, opts)
-    return <HarnessChatNode standard={props} owner={owner}
+    return <HarnessChatNode compaction={compaction} standard={props} owner={owner}
       hookContext={opts.hookContext} usePerformanceUsage={usePerformanceUsage} useOpenUiTheme={useOpenUiTheme}
       toolOwners={toolOwners} fallback={opts.fallback} renderAssistantSlot={renderAssistantSlot}
       renderUserChain={renderUserChain} />
@@ -518,12 +523,17 @@ function makeHarness(
     return renderUserContent(owner as UserContentInput, renderImages, props.t)
   }
   const fenceCalls: { owner: MarkdownDelegateFenceInfo; entryKey: string | undefined }[] = []
+  const asideRenders = { count: 0 }
   const renderSlot = (
     key: string,
     owner: ChatFlowOwnerProps | MarkdownDelegateFenceInfo,
     opts: Parameters<FlowRenderer>[2] & { entryKey?: string; children?: React.ReactNode },
   ) => {
     if (key === 'conversation.chat.text-interaction') return null
+    if (key === 'conversation.chat.aside') {
+      asideRenders.count += 1
+      return <span data-chat-aside-probe="" />
+    }
     if (key === 'conversation.chat.markdown.fence' && 'lang' in owner) {
       fenceCalls.push({ owner, entryKey: opts.entryKey })
       return opts.children ?? null
@@ -626,7 +636,8 @@ function makeHarness(
     setConnection: (state: ConnectionState) => { connection.set(state) },
     openFile, openUserFile, loadOlder, consumeOlder, prepareOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
-    chatScroll, forkAt, toolOwners, fenceCalls,
+    chatScroll, forkAt, openCompaction, toolOwners, fenceCalls, asideRenders,
+    setCompactionPreview: (available: boolean) => { compactionPreview.set(available) },
     setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
     setGrouped: (value: ConversationGroupedView<ProcessGroupData> | undefined) => {
       grouped = value
@@ -791,7 +802,7 @@ describe('Chat node rendering', () => {
       const { getTriggerProps } = useMarkdownDelegate()
       return <>{targets.map((target, index) => <button key={index} {...getTriggerProps!(target)}>{index}</button>)}</>
     }
-    const view = render(<ChatView {...h.props} renderSlot={() => <References />} />)
+    const view = render(<ChatView {...h.props} renderSlot={(key: string) => key === 'conversation.chat.aside' ? null : <References />} />)
     directory = '/workspace/moved'
     for (const [index, target] of targets.entries()) {
       const button = view.getByRole('button', { name: String(index) })
@@ -891,6 +902,26 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('renders the aside once in a layer at the top of the Chat frame, which observes no sizes', () => {
+    const observed: Element[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      observe(target: Element): void { observed.push(target) }
+      unobserve(): void {}
+      disconnect(): void {}
+    })
+    const h = makeHarness({}, {}, chatSnapshotFixture({ nodes: [user(1, 'hello')] }))
+    const view = render(<h.ChatView {...h.props} />)
+    const frame = view.container.firstElementChild as HTMLElement
+    const layer = frame.querySelector('[data-chat-aside]') as HTMLElement
+    expect(layer.parentElement).toBe(frame)
+    expect(layer.querySelector('[data-chat-aside-probe]')).not.toBeNull()
+    // The layer's stylesheet publishes the gutter; the layer itself measures nothing.
+    expect(observed).not.toContain(layer)
+    // Transcript updates do not re-render the aside.
+    act(() => { h.setSession({ running: true }) })
+    expect(h.asideRenders.count).toBe(1)
+  })
+
   it('renders only referenced Nodes without deleting unreferenced Node data', () => {
     const snapshot = chatSnapshotFixture({ nodes: [user(1, 'included'), user(2, 'omitted')] })
     const h = makeHarness({}, {}, snapshot)
@@ -2150,7 +2181,7 @@ describe('ChatView', () => {
 
   it('keeps pending file mentions non-interactive until admission enables the reference injector', () => {
     const pending: InboxState['next-step'][number] = {
-      id: MessageId('pending-file-mention'), role: 'user', source: { kind: 'user' },
+      id: brandString<MessageId>('pending-file-mention'), role: 'user', source: { kind: 'user' },
       content: [{ type: 'text', text: 'Read @src/review.ts' }],
     }
     const h = makeHarness({}, { testInbox: { 'next-turn': [], 'next-step': [pending] }, running: true })
@@ -3883,6 +3914,23 @@ describe('ChatView', () => {
     expect(h.forkAt).toHaveBeenCalledWith(3)
   })
 
+  it('separates inherited history from the forked Session\'s own messages', () => {
+    const base = chatSnapshotFixture({ nodes: [user(1, 'inherited question'), user(3, 'own question')] })
+    const divider: ChatNode<'inherited-history'> = {
+      key: 'fixture:inherited-history', id: 'inherited-history', target: 'chat', kind: 'inherited-history',
+      anchorSeq: 2, visibility: 'visible', location: { kind: 'session' }, data: {},
+    }
+    const chat = new ChatSnapshotBuilder().replace({ nodes: [...base.nodes.values(), divider], timeline: base.timeline })
+    const h = makeHarness({}, {}, chat)
+    const view = render(<h.ChatView {...h.props} />)
+    const separator = view.getByRole('separator', { name: '以上为继承的历史消息' })
+    const inherited = view.getByText('inherited question')
+    const own = view.getByText('own question')
+    expect(inherited.compareDocumentPosition(separator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(separator.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(separator.querySelector('[data-icon="dsw-icon-branch-outline-regular"]')).not.toBeNull()
+  })
+
   it('disables fork when the indexed Turn has a later steering Node', async () => {
     const base = chatSnapshotFixture({
       nodes: [user(1, 'question'), assistant(2, 'answer')],
@@ -5144,7 +5192,7 @@ describe('ChatView', () => {
     expect(ov.getByText('已完成')).toBeTruthy()
   })
 
-  it('renders /compact as one stateful disclosure from running through completion', () => {
+  it('renders /compact as one row from running through a completed checkpoint that opens in the Sidebar', () => {
     const running = command({
       commandId: 'cmd-compact' as CommandNode['commandId'],
       name: 'compact',
@@ -5171,15 +5219,29 @@ describe('ChatView', () => {
     expect(view.queryByText('正在压缩…')).toBeNull()
     expect(view.queryByText('上下文已压缩')).toBeNull()
     expect(view.getByText('已压缩 16 条历史记录（约 11309 tokens）')).toBeTruthy()
-    const row = view.getByRole('button', { name: /compact/ })
-    expect(row.getAttribute('aria-expanded')).toBe('false')
+    const row = view.getByRole('button', { name: /compact.*在侧栏查看压缩摘要/ })
+    expect(row.getAttribute('aria-expanded')).toBeNull()
+    expect(row.getAttribute('data-compaction-seq')).toBe('8')
     expect(row.querySelector('[data-compaction-icon="context"]')).not.toBeNull()
-    expect(row.querySelector('[data-compaction-disclosure="collapsed"]')).not.toBeNull()
-    expect(view.queryByText('保留的事实。')).toBeNull()
+    expect(row.querySelector('[data-compaction-icon="open"]')).not.toBeNull()
     fireEvent.click(row)
-    expect(row.getAttribute('aria-expanded')).toBe('true')
-    expect(row.querySelector('[data-compaction-disclosure="expanded"]')).not.toBeNull()
-    expect(view.getByRole('heading', { name: '压缩摘要' })).toBeTruthy()
+    expect(h.openCompaction).toHaveBeenCalledExactlyOnceWith(7, expect.any(AbortSignal))
+    expect(view.container.querySelector('[class*="compactionBody"]')).toBeNull()
+  })
+
+  it('disables compaction rows while no Sidebar tab type opens checkpoints and enables them live', () => {
+    const h = makeHarness({ nodes: [compaction({ seq: 12, summaryEventSeq: 11 })] })
+    h.setCompactionPreview(false)
+    const view = render(<h.ChatView {...h.props} />)
+    const row = view.getByRole('button', { name: /上下文已压缩/ })
+    expect(row).toHaveProperty('disabled', true)
+    expect(row.textContent).not.toContain('在侧栏查看压缩摘要')
+    fireEvent.click(row)
+    expect(h.openCompaction).not.toHaveBeenCalled()
+    act(() => { h.setCompactionPreview(true) })
+    expect(row).toHaveProperty('disabled', false)
+    fireEvent.click(row)
+    expect(h.openCompaction).toHaveBeenCalledExactlyOnceWith(11, expect.any(AbortSignal))
   })
 
   it('keeps /compact no-history and error settlements on the generic command row', () => {
@@ -5261,7 +5323,7 @@ it('formats Portuguese elapsed minutes with numeric units', () => {
 it('does not infer menu targets from links or data attributes inside a plugin flow slot', () => {
   const h = makeHarness()
   const custom = vi.fn()
-  const view = render(<ChatView {...h.props} renderSlot={() => <>
+  const view = render(<ChatView {...h.props} renderSlot={(key: string) => key === 'conversation.chat.aside' ? null : <>
     <a href="https://example.com/plugin">Plugin link</a>
     <button data-file-path="/plugin/private.txt">Undeclared file</button>
     <button onContextMenu={(event) => {

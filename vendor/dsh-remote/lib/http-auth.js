@@ -17,27 +17,31 @@ function mediaTypeOf(req) {
   return String(value ?? '').split(';', 1)[0].trim().toLowerCase()
 }
 
-function connectionRejection(req, connection) {
-  if (!connection) return 401
-  if (typeof connection.admit === 'function') {
-    const admission = connection.admit(req)
-    if (admission && typeof admission === 'object' && 'rejection' in admission) {
-      return admission.rejection
+function connectionRejection(req, connection, peer) {
+  let admittedPeer = peer
+  if (admittedPeer === undefined) {
+    if (!connection) return 401
+    if (typeof connection.admit === 'function') {
+      const admission = connection.admit(req)
+      if (admission && typeof admission === 'object' && 'rejection' in admission) {
+        return admission.rejection
+      }
+      admittedPeer = admission?.peer
+    } else if (typeof connection.requestRejection === 'function') {
+      return connection.requestRejection(req)
+    } else {
+      return 401
     }
-    if (!admission || !admission.peer) return 401
-    if (admission.peer.principal?.kind && admission.peer.principal.kind !== 'owner') {
-      return 403
-    }
-    return undefined
   }
-  if (typeof connection.requestRejection === 'function') {
-    return connection.requestRejection(req)
+  if (!admittedPeer) return 401
+  if (admittedPeer.principal?.kind && admittedPeer.principal.kind !== 'owner') {
+    return 403
   }
-  return 401
+  return undefined
 }
 
-export function authorizeWebRequest(req, res, connection) {
-  const rejection = connectionRejection(req, connection)
+export function authorizeWebRequest(req, res, connection, peer) {
+  const rejection = connectionRejection(req, connection, peer)
   if (rejection !== undefined) {
     sendAuthError(res, rejection, rejection === 401 ? 'unauthorized' : 'forbidden')
     return false
@@ -53,10 +57,10 @@ export function authorizeWebRequest(req, res, connection) {
 export function protectWebRoute(route, getConnection) {
   return {
     ...route,
-    handler: async (req, res) => {
+    handler: async (req, res, peer) => {
       const connection = typeof getConnection === 'function' ? getConnection() : getConnection
-      if (!authorizeWebRequest(req, res, connection)) return
-      return route.handler(req, res)
+      if (!authorizeWebRequest(req, res, connection, peer)) return
+      return route.handler(req, res, peer)
     },
   }
 }

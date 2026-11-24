@@ -1,6 +1,6 @@
 /**
  * Browser half of the browse directory-picker backend: fills ui-workspace's
- * two directory-flow holes with the in-app Select Workspace Directory dialog
+ * three directory-flow holes with the in-app Select Workspace Directory dialog
  * (figma `Harness` 813-23126 family), driving the node half's
  * `directoryPicker/list`/`directoryPicker/createDirectory` primitives.
  * Each flow entry also declares a `.remote` child hole so a remote-workspace
@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from './contract/slots.ts'
 import type { BrowseFlowInjected } from './flow.ts'
-import { BrowseDirectoryFlowHero, BrowseDirectoryFlowSidebar } from './flow.ts'
+import { BrowseDirectoryFlowHero, BrowseDirectoryFlowPicker, BrowseDirectoryFlowSidebar } from './flow.ts'
 import type { RemoteFlowSlotName } from './contract/slots.ts'
 import { createPickerPreferenceStore } from './store.ts'
 export type { RemoteFlowOwnerProps, RemoteFlowSlotName } from './contract/slots.ts'
@@ -32,8 +32,8 @@ export const inject = ['slots', 'uiWorkspace', 'locale']
 
 /**
  * Client plugin body: register the dialog's dictionaries and the browse flow
- * into both directory-flow holes through `slots.inject()` because the
- * ui-workspace entries may activate later or replace their declarations.
+ * into all three directory-flow holes through `slots.inject()` because the
+ * ui-workspace declarations may activate later or be replaced.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -220,26 +220,35 @@ export function apply(ctx: ClientContext): void {
     hooks: { remoteFlow: remoteFlowSource(remoteHole) },
     t: ctx.locale.bind(LOCALE_NS),
   })
-  // All declaration lifetimes must be live before the pair installs; the
-  // generator makes the two registrations one transactional effect. The
-  // outer/inner nesting order is arbitrary; neither hole has precedence.
+  // Every declaration lifetime must be live before the set installs; the
+  // generator makes the three registrations one transactional effect. The
+  // nesting order is arbitrary; no hole has precedence.
   ctx.slots.inject('conversation.hero.workspace.directoryFlow', () =>
-    ctx.slots.inject('sidebar.workspaces.directoryFlow', function* () {
-      yield ctx.slots.register({
-        name: 'conversation.hero.workspace.directoryFlow',
-        children: {
-          'conversation.hero.workspace.directoryFlow.remote': { kind: 'single', scope: 'root' },
-        },
-        store: preferences,
-        inject: injected('conversation.hero.workspace.directoryFlow.remote'),
-      }, BrowseDirectoryFlowHero)
-      yield ctx.slots.register({
-        name: 'sidebar.workspaces.directoryFlow',
-        children: {
-          'sidebar.workspaces.directoryFlow.remote': { kind: 'single', scope: 'root' },
-        },
-        store: preferences,
-        inject: injected('sidebar.workspaces.directoryFlow.remote'),
-      }, BrowseDirectoryFlowSidebar)
-    }))
+    ctx.slots.inject('sidebar.workspaces.directoryFlow', () =>
+      ctx.slots.inject('workspace.picker.directoryFlow', function* () {
+        yield ctx.slots.register({
+          name: 'conversation.hero.workspace.directoryFlow',
+          children: {
+            'conversation.hero.workspace.directoryFlow.remote': { kind: 'single', scope: 'root' },
+          },
+          store: preferences,
+          inject: injected('conversation.hero.workspace.directoryFlow.remote'),
+        }, BrowseDirectoryFlowHero)
+        yield ctx.slots.register({
+          name: 'sidebar.workspaces.directoryFlow',
+          children: {
+            'sidebar.workspaces.directoryFlow.remote': { kind: 'single', scope: 'root' },
+          },
+          store: preferences,
+          inject: injected('sidebar.workspaces.directoryFlow.remote'),
+        }, BrowseDirectoryFlowSidebar)
+        yield ctx.slots.register({
+          name: 'workspace.picker.directoryFlow',
+          children: {
+            'workspace.picker.directoryFlow.remote': { kind: 'single', scope: 'root' },
+          },
+          store: preferences,
+          inject: injected('workspace.picker.directoryFlow.remote'),
+        }, BrowseDirectoryFlowPicker)
+      })))
 }

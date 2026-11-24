@@ -30,7 +30,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const {
     sessionId, phase, hero, useSession, useSessions, useConversation, useSessionStatus,
     useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-    selectWorkspace, selectNoDirectory, openWithDraft, t, useFactorySlot,
+    moveDraft, selectNoDirectory, openWithDraft, t, useFactorySlot,
   } = props
   const session = useSession(snapshot => snapshot)
   const conversation = useConversation(snapshot => snapshot)
@@ -59,10 +59,12 @@ export function ConversationContent(props: ConversationContentProps) {
 
   // Publishes the live measurements the scroll body and floating View chrome
   // read: the seat's height as --dsh-composer-reserve keeps footer space
-  // outside the transcript. The phone layout also reads the inherited
-  // --dsh-composer-height and --dsh-conversation-viewport-height (the
-  // remaining scrollport); on desktop their only consumers (the turn rail and
-  // the trajectory ledger) measure themselves, because one write of an
+  // outside the transcript, and the scrollport's width goes on the body as
+  // --dsh-conversation-viewport-width so the end reserve's lengths derive
+  // from it for the scrollport and width handles alike. The phone layout also
+  // reads the inherited --dsh-composer-height and --dsh-conversation-viewport-height
+  // (the remaining scrollport); on desktop their only consumers (the turn rail
+  // and the trajectory ledger) measure themselves, because one write of an
   // inherited property restyles every element of a long transcript (about
   // 15 ms per 1000 elements) each time the footer changes size. Callback ref,
   // not an effect; stable identity prevents observer churn while the first
@@ -73,6 +75,8 @@ export function ConversationContent(props: ConversationContentProps) {
     seatCleanup.current = null
     const scroller = seat?.parentElement ?? null
     if (seat === null || scroller === null) return
+    const content = scroller.closest<HTMLElement>('[data-conversation-content]')
+    let width: number | undefined
     // The reserve is registered and non-inherited, so writing it every frame
     // while a dock animates restyles only the scroll body. Each inherited write
     // restyles the whole transcript, so those wait until the size settles.
@@ -81,6 +85,13 @@ export function ConversationContent(props: ConversationContentProps) {
     // loop error) and lands a frame late anyway.
     const publishReserve = () => {
       scroller.style.setProperty('--dsh-composer-reserve', `${seat.offsetHeight}px`)
+    }
+    // The body is an ancestor of the whole transcript: write its non-inherited
+    // viewport width only when the width changes, not on every height report.
+    const publishViewportWidth = () => {
+      if (content === null || scroller.clientWidth === width) return
+      width = scroller.clientWidth
+      content.style.setProperty('--dsh-conversation-viewport-width', `${width}px`)
     }
     const publishSettled = () => {
       if (scroller.closest('[data-phone]') === null) return
@@ -95,6 +106,7 @@ export function ConversationContent(props: ConversationContentProps) {
     let settleSince = 0
     const observer = new ResizeObserver(() => {
       if (frame === 0) frame = requestAnimationFrame(() => { frame = 0; publishReserve() })
+      publishViewportWidth()
       if (scroller.closest('[data-phone]') === null) return
       const now = performance.now()
       if (settle === undefined) settleSince = now
@@ -105,8 +117,10 @@ export function ConversationContent(props: ConversationContentProps) {
       }, now - settleSince >= SIZE_SETTLE_MAX_MS ? 0 : SIZE_SETTLE_MS)
     })
     observer.observe(seat)
-    observer.observe(scroller)
+    // The scrollport's border box: its end inset changes only the content box, and no published length depends on that.
+    observer.observe(scroller, { box: 'border-box' })
     publishReserve()
+    publishViewportWidth()
     publishSettled()
 
     // A viewport-positioned child does not participate in its DOM parent's
@@ -276,7 +290,7 @@ export function ConversationContent(props: ConversationContentProps) {
           setPickerOpen(false)
           setPendingNoDirectory(false)
           setPendingWorkspaceId(workspaceId)
-          void selectWorkspace(workspaceId).catch(() => {
+          void props.onWorkspaceSelected(workspaceId, moveDraft).catch(() => {
             setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
           })
         },
@@ -323,7 +337,7 @@ export function ConversationContent(props: ConversationContentProps) {
 
   const composerBar = (
     <div ref={stackRef} className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
+      {hero && <HeroShell t={t} renderSlot={renderSlot} headline={props.headline} />}
       {heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}

@@ -77,7 +77,7 @@ export function resolveToolDiscoveryStrategy(
   threshold: number = DEFAULT_INLINE_TOOL_THRESHOLD,
 ): 'eager' | 'deferred' {
   if (!Number.isInteger(threshold) || threshold < 0) {
-    throw new McpLocalError(`mcp-client: inlineToolThreshold must be a non-negative integer (received ${String(threshold)})`)
+    throw new McpLocalError(`mcp-client: inlineToolThreshold must be a non-negative integer (received ${String(threshold)})`, 'MCP_TOOL_REGISTRATION_FAILED')
   }
   if (mode === 'eager') return 'eager'
   if (mode === 'deferred') return 'deferred'

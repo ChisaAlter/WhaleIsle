@@ -57,7 +57,7 @@ test('enabled whale host registers its RPC route on its own fiber', async (t) =>
     on: () => () => {},
     settings: { describe: () => [] },
     systemPrompt: { section() {} },
-    connection: { requestRejection: () => 401 },
+    connection: {},
     webServer: { register: (route) => { routes.push(route); return () => {}; } },
     agentPresets: { register: async (definition) => { presets.push(definition); return async () => {}; } },
     sessionController: {},
@@ -74,12 +74,73 @@ test('enabled whale host registers its RPC route on its own fiber', async (t) =>
   const route = routes.find((entry) => entry.kind === 'prefix' && entry.path === '/dsh-whale');
   assert.ok(route, 'assistant/ensure must not fall through to the static 405 handler');
 
-  const response = {
+  const makeRes = () => ({
     status: 0,
     body: '',
     writeHead(status) { this.status = status; },
     end(body) { this.body = body; },
+  });
+  const unauthRes = makeRes();
+  await route.handler({ method: 'POST', url: '/dsh-whale/assistant/ensure' }, unauthRes);
+  assert.equal(unauthRes.status, 401, 'missing peer must be rejected with 401');
+
+  const viewerRes = makeRes();
+  await route.handler(
+    { method: 'POST', url: '/dsh-whale/assistant/ensure' },
+    viewerRes,
+    { principal: { kind: 'viewer' } },
+  );
+  assert.equal(viewerRes.status, 403, 'non-owner peer must be rejected with 403');
+});
+
+test('dsh-bots route declares synchronous auth selector and enforces owner peer on RPC', async (t) => {
+  const { mountBotsIntoHost } = await import(
+    pathToFileURL(path.join(__dirname, '..', '..', 'vendor', 'dsh-whale', 'lib', 'bots', 'runtime.js')).href
+  );
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-bots-route-'));
+  const routes = [];
+  const disposers = [];
+  t.after(() => {
+    for (const dispose of disposers.reverse()) dispose();
+    assert.ok(path.resolve(home).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const ctx = {
+    on: () => () => {},
+    systemPrompt: { section() {} },
+    connection: {},
+    webServer: { register: (route) => { routes.push(route); return () => {}; } },
+    inject() {},
+    effect: (start) => {
+      const dispose = start();
+      if (typeof dispose === 'function') disposers.push(dispose);
+      return () => {};
+    },
   };
-  await route.handler({ method: 'POST', url: '/dsh-whale/assistant/ensure' }, response);
-  assert.equal(response.status, 401, 'the named route handles the request before authentication');
+  mountBotsIntoHost(ctx, { home, allowLegacyMigration: false });
+  const botsRoute = routes.find((entry) => entry.kind === 'prefix' && entry.path === '/dsh-bots');
+  assert.ok(botsRoute, 'mountBotsIntoHost must register /dsh-bots prefix route');
+  assert.equal(typeof botsRoute.auth, 'function', '/dsh-bots must supply a synchronous auth selector');
+  assert.equal(botsRoute.auth({ url: new URL('http://127.0.0.1/dsh-bots/webhooks/hook-1') }), 'anonymous');
+  assert.equal(botsRoute.auth({ url: new URL('http://127.0.0.1/dsh-bots/assets/mascots/A1.svg') }), 'anonymous');
+  assert.equal(botsRoute.auth({ url: new URL('http://127.0.0.1/dsh-bots/rpc') }), 'required');
+  assert.equal(botsRoute.auth({ url: new URL('http://127.0.0.1/dsh-bots/events') }), 'required');
+
+  const makeRes = () => ({
+    status: 0,
+    body: '',
+    writeHead(status) { this.status = status; },
+    end(body) { this.body = body; },
+  });
+  const unauthRes = makeRes();
+  await botsRoute.handler({ method: 'POST', url: '/dsh-bots/rpc', headers: { 'content-type': 'application/json' } }, unauthRes);
+  assert.equal(unauthRes.status, 401, '/dsh-bots/rpc without peer must fail closed with 401');
+
+  const guestRes = makeRes();
+  await botsRoute.handler(
+    { method: 'POST', url: '/dsh-bots/rpc', headers: { 'content-type': 'application/json' } },
+    guestRes,
+    { principal: { kind: 'guest' } },
+  );
+  assert.equal(guestRes.status, 403, '/dsh-bots/rpc with non-owner peer must return 403');
 });

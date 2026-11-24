@@ -27,6 +27,8 @@ export interface ControlledSwitchProps {
   // `| undefined` so a caller can forward an optional class straight through
   // under exactOptionalPropertyTypes (a CSS-module lookup is string|undefined).
   className?: string | undefined
+  autoFocus?: boolean
+  describedBy?: string | undefined
 }
 
 /** Native-checkbox form: any native input attribute, `type`/`role` fixed by the primitive. */
@@ -54,22 +56,26 @@ function isControlled(props: SwitchProps): props is ControlledSwitchProps {
  * @param props.disabled - whether the control refuses input.
  * @param props.title - localized hover text, typically why the toggle is locked.
  * @param props.className - extra class for layout placement.
+ * @param props.autoFocus - whether the control takes focus when it mounts enabled.
+ * @param props.describedBy - id of the element that describes the control.
  * @returns the switch element.
  */
 export function Switch(props: ControlledSwitchProps): ReactElement
 export function Switch(props: NativeSwitchProps): ReactElement
 export function Switch(props: SwitchProps): ReactElement {
   if (isControlled(props)) {
-    const { checked, onChange, label, disabled = false, loading = false, title, className } = props
+    const { checked, onChange, label, disabled = false, loading = false, title, className, autoFocus, describedBy } = props
     return (
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         aria-label={label}
+        aria-describedby={describedBy}
         title={title}
         disabled={disabled || loading}
         aria-busy={loading || undefined}
+        autoFocus={autoFocus}
         className={clsx(css.switch, className)}
         onClick={() => { onChange(!checked) }}
       >

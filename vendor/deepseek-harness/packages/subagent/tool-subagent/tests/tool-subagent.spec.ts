@@ -1,6 +1,7 @@
 import { ToolExecutionPipeline } from '@deepseek-ai/dsh-tools/pipeline'
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
+import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -9,7 +10,8 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { ToolCallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { ToolCallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm/types'
 import { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -24,7 +26,7 @@ import { loadStoredSession } from '../../subagent/tests/persistence-helpers.ts'
 import * as mock from './scripted-provider.ts'
 import type { Config as toolConfig } from '../src/index.ts'
 import * as tool from '../src/index.ts'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import {
   callSubagent,
   disposeSetupProvider,
@@ -105,7 +107,7 @@ describe('dsh-tool-subagent', () => {
     expect(text(result)).toMatch(/^started subagent /)
   })
 
-  it('resolves an explicit child directory without changing the parent directory', async () => {
+  it('starts the child in the parent directory without changing it', async () => {
     let childCwd: string | undefined
     const ctx = await setup({ provider: 'mock' }, {
       onStart: (request) => { childCwd = request.cwd },
@@ -116,10 +118,9 @@ describe('dsh-tool-subagent', () => {
       const result = await callSubagent(ctx, {
         description: 'inspect packages',
         prompt: 'list the packages',
-        cwd: 'packages',
       }, { agent: parent })
       expect(result.isError).toBe(false)
-      expect(childCwd).toBe(path.resolve(parentCwd, 'packages'))
+      expect(childCwd).toBe(parentCwd)
       expect(ctx.workingDirectory.get(parent.session)).toBe(parentCwd)
     } finally {
       await ctx.fiber.dispose()
@@ -131,7 +132,6 @@ describe('dsh-tool-subagent', () => {
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props).sort()).toEqual([
-      'cwd',
       'description',
       'name',
       'prompt',
@@ -143,13 +143,13 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock' })
     expect(new ToolExecutionPipeline(ctx).executionMode({
       signal: testToolSignal,
-      callId: ToolCallId('subagent-first'),
+      callId: brandString<ToolCallId>('subagent-first'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK' },
     })).toEqual({ kind: 'parallel' })
     expect(new ToolExecutionPipeline(ctx).executionMode({
       signal: testToolSignal,
-      callId: ToolCallId('subagent-second'),
+      callId: brandString<ToolCallId>('subagent-second'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK' },
     })).toEqual({ kind: 'parallel' })
@@ -192,9 +192,9 @@ describe('dsh-tool-subagent', () => {
     const names = ctx.tools.schemas().map(s => s.name).filter(n => n.startsWith('subagent')).sort()
     expect(names).toEqual(['subagent', 'subagent_acp'])
 
-    const parent = (await ctx.agents.create({ sessionId: SessionId('multi-provider-parent') })).agent
-    const viaSpawn = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: parent })
-    const viaAcp = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: parent })
+    const parent = (await ctx.agents.create({ sessionId: brandString<SessionId>('multi-provider-parent') })).agent
+    const viaSpawn = await executeToolFixture(ctx, { signal: testToolSignal, callId: brandString<ToolCallId>('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: parent })
+    const viaAcp = await executeToolFixture(ctx, { signal: testToolSignal, callId: brandString<ToolCallId>('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: parent })
     expect(text(viaSpawn)).toMatch(/^started subagent /)
     expect(text(viaAcp)).toMatch(/^started subagent /)
   })
@@ -269,6 +269,7 @@ describe('dsh-tool-subagent', () => {
     const result = await pending
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('changed while resolving the child LLM route')
+    expect(result.error?.info).toEqual({ name: 'SubagentError', code: 'PROVIDER_CHANGED' })
     expect(oldStart).not.toHaveBeenCalled()
     expect(replacementStart).not.toHaveBeenCalled()
   })
@@ -278,14 +279,14 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({
       provider: 'mock',
       withModelSelection: true,
-      agentOptions: { reasoningEffort: ReasoningEffortId('high'), maxTokens: 321 },
+      agentOptions: { reasoningEffort: brandString<ReasoningEffortId>('high'), maxTokens: 321 },
       maxDepth: 'provider-managed',
     }, {
       agentRouteDefaults: { provider: 'alpha', model: 'child-model' },
       onStart: (request) => { seen = request },
     })
     ctx.llm.registerAdapter(['alpha'], new MockAdapter([], {
-      efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
+      efforts: [{ id: brandString<ReasoningEffortId>('high'), name: 'High' }],
     }))
 
     await callSubagent(ctx, {
@@ -294,8 +295,9 @@ describe('dsh-tool-subagent', () => {
       provider: 'alpha',
       model: 'child-model',
     })
-    expect(ctx.tools.schemas(modelSelectionSetupAgent(ctx)).find(schema => schema.name === 'subagent')?.description)
-      .toContain('this backend\'s route defaults')
+    const schema = ctx.tools.schemas(modelSelectionSetupAgent(ctx)).find(entry => entry.name === 'subagent')!
+    expect((schema.parameters as { properties: Record<string, { description: string }> }).properties['provider']!.description)
+      .toContain('to run the subagent on the default model configured for this tool.')
     expect(seen?.agentOptions).toEqual({
       provider: 'alpha',
       model: 'child-model',
@@ -311,7 +313,7 @@ describe('dsh-tool-subagent', () => {
       parentAgentOptions: {
         provider: 'alpha',
         model: 'child-model',
-        reasoningEffort: ReasoningEffortId('high'),
+        reasoningEffort: brandString<ReasoningEffortId>('high'),
       },
       maxDepth: 'provider-managed',
     }, {
@@ -349,14 +351,14 @@ describe('dsh-tool-subagent', () => {
       start: async (request) => {
         seen = request
         return {
-          id: SessionId('bare-child'),
+          id: brandString<SessionId>('bare-child'),
           result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
           dispose: async () => {},
         }
       },
     })
     // Direct apply with only `provider` — no toolName, no agentOptions.
-    await tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'bare' })
+    tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'bare' })
     await new Promise(r => setTimeout(r, 10))
 
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(true)
@@ -369,6 +371,7 @@ describe('dsh-tool-subagent', () => {
     const result = await callSubagent(ctx, { description: 'd', prompt: 'p' }, { agent: undefined })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('requires a calling agent')
+    expect(result.error?.info).toEqual({ name: 'ToolContextUnavailableError', code: 'TOOL_CONTEXT_UNAVAILABLE' })
   })
 
   it('registers when the provider appears LATER — no load-order requirement (Loader starts siblings concurrently)', async () => {
@@ -378,7 +381,7 @@ describe('dsh-tool-subagent', () => {
     // Tool first: no provider yet — the tool must be absent, not broken.
     // Direct apply (schema bypass): also covers the waiting-note's default
     // toolName fallback, which validated config pre-fills.
-    await tool.apply(ctx, { provider: 'mock' })
+    tool.apply(ctx, { provider: 'mock' })
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(false)
     // Backend arrives (as a delayed sibling fiber would): the tool appears.
     await mock.mountScriptedProvider(ctx, { name: 'mock', reply: 'late but fine' })
@@ -391,7 +394,7 @@ describe('dsh-tool-subagent', () => {
     const ctx = await projectedContext()
     await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
-    await tool.apply(ctx, {
+    tool.apply(ctx, {
       provider: 'later-continuable',
       maxDepth: 'provider-managed',
     })
@@ -411,49 +414,67 @@ describe('dsh-tool-subagent', () => {
 
     const forkProvider = await mock.mountScriptedProvider(ctx, { name: 'fork', inheritsParentContext: true })
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
     await mock.mountScriptedProvider(ctx, { name: 'spawn' })
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
 
     await forkProvider.dispose()
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
     await mock.mountScriptedProvider(ctx, { name: 'fork', inheritsParentContext: true })
     await spawnTool.dispose()
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
     await forkTool.dispose()
     expect(await delegationGuidance(ctx)).toEqual([])
+  })
+
+  it('reports the configured concurrency limit and follows live edits', async () => {
+    const ctx = await projectedContext()
+    await mountWorkingDirectoryFixture(ctx)
+    const config = await liveConfig(ctx, SubagentRuntime, { maxActiveSubagents: 3 })
+    await mock.mountScriptedProvider(ctx, { name: 'mock' })
+    await ctx.plugin(tool, { provider: 'mock' })
+    expect((await delegationGuidance(ctx)).join('\n')).toContain('The concurrency limit of all the subagents is 3.')
+    await config.update({ maxActiveSubagents: 5 })
+    const guidance = (await delegationGuidance(ctx)).join('\n')
+    expect(guidance).toContain('The concurrency limit of all the subagents is 5.')
+    expect(guidance).not.toContain('The concurrency limit of all the subagents is 3.')
   })
 
   it('shares guidance only among the viewing agent\'s visible delegation definitions', async () => {
     const ctx = await setup({ provider: 'mock' })
     await ctx.plugin(tool, { provider: 'mock', toolName: 'subagent_fork' })
     const unrelated = await setup({ provider: 'mock', toolName: 'other_delegate' })
-    const parent = (await ctx.agents.create({ sessionId: SessionId('guidance-parent') })).agent
-    const peer = (await ctx.agents.create({ sessionId: SessionId('guidance-peer') })).agent
+    const parent = (await ctx.agents.create({ sessionId: brandString<SessionId>('guidance-parent') })).agent
+    const peer = (await ctx.agents.create({ sessionId: brandString<SessionId>('guidance-peer') })).agent
     const showSpawn = parent.ctx.tools.restrict({ deny: ['subagent'] })
     expect(await delegationGuidance(ctx, parent)).toEqual([
-      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
     expect(await delegationGuidance(ctx, peer)).toEqual([
-      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
     expect(await delegationGuidance(unrelated)).toEqual([
-      'Start independent delegations with `other_delegate` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `other_delegate` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
     showSpawn()
 
-    const scoped = await parent.ctx.plugin(tool, { provider: 'mock', toolName: 'subagent' })
+    const restoreDefinition = parent.ctx.tools.register({
+      ...ctx.tools.get('subagent')!, description: 'Scoped tool without delegation guidance.',
+    })
     expect(await delegationGuidance(ctx, parent)).toEqual([
-      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
     ])
-    await scoped.dispose()
+    restoreDefinition()
+    expect(await delegationGuidance(ctx, parent)).toEqual([
+      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.',
+    ])
     parent.ctx.tools.restrict({ deny: ['subagent', 'subagent_fork'] })
     expect(await delegationGuidance(ctx, parent)).toEqual([])
   })
@@ -495,9 +516,19 @@ describe('dsh-tool-subagent', () => {
       maxDepth: 'provider-managed',
     })
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(true)
-    expect((await ctx.systemPrompt.assemble()).sections.some(s => s.name === 'tool:subagent')).toBe(true)
+    const session = Session.create(brandString<SessionId>('tool-subagent-disposal'))
+    const initial = await ctx.systemPrompt.assemble({ session })
+    expect(initial.sections.some(s => s.name === 'tool:subagent')).toBe(true)
+    for (const message of admittedMessages(initial)) {
+      session.append('system/message', { turn: 1, step: 1, message }, { surfaceOp: 'append' })
+    }
     await mounted.dispose()
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(false)
+    const retirement = await ctx.systemPrompt.assemble({ session })
+    expect(admittedMessages(retirement).flatMap(message => message.source.sections ?? []))
+      .toContainEqual(expect.objectContaining({ name: 'tool:subagent', state: 'retired' }))
+    expect(admittedMessages(retirement).flatMap(message => message.content))
+      .toContainEqual({ type: 'text', text: 'The subagent tool is no longer available. Its instructions no longer apply.' })
     expect((await ctx.systemPrompt.assemble()).sections.some(s => s.name === 'tool:subagent')).toBe(false)
     expect(ctx.subagents.getProvider('continuable')).toBeDefined()
 
@@ -596,13 +627,13 @@ describe('dsh-tool-subagent', () => {
     // load with "cannot get property … without inject". Guard the shape directly.
     expect('default' in tool).toBe(false)
     expect(tool.name).toBe('tool-subagent')
-    expect(tool.inject).toEqual(['tools', 'subagents', 'systemPrompt', 'sessionProjections'])
+    expect(tool.inject).toEqual(['tools', 'subagents', 'systemPrompt'])
 
     const loader = Object.create(Loader.prototype) as Loader
     const unwrapped = loader.unwrapExports(tool) as Record<string, unknown>
     expect(unwrapped).toBe(tool)
     expect(unwrapped.name).toBe('tool-subagent')
-    expect(unwrapped.inject).toEqual(['tools', 'subagents', 'systemPrompt', 'sessionProjections'])
+    expect(unwrapped.inject).toEqual(['tools', 'subagents', 'systemPrompt'])
     expect(typeof unwrapped.apply).toBe('function')
     expect(unwrapped.Config).toBeDefined()
   })
@@ -619,7 +650,7 @@ describe('dsh-tool-subagent', () => {
       start: async (request) => {
         seen = request
         return {
-          id: SessionId('capture2-child'),
+          id: brandString<SessionId>('capture2-child'),
           result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
           dispose: async () => {},
         }
@@ -650,10 +681,12 @@ describe('dsh-tool-subagent', () => {
 
   it('validates maxDepth during initialization without Schemastery', async () => {
     const ctx = await projectedContext()
-    await expect(tool.apply(ctx, {
-      provider: 'unused',
-      maxDepth: Number.NaN,
-    })).rejects.toThrow('subagent maxDepth must be a non-negative safe integer')
+    expect(() => {
+      tool.apply(ctx, {
+        provider: 'unused',
+        maxDepth: Number.NaN,
+      })
+    }).toThrow('subagent maxDepth must be a non-negative safe integer')
   })
 
   it.each([
@@ -681,7 +714,7 @@ describe('dsh-tool-subagent', () => {
       start: async (request) => {
         seen = request
         return {
-          id: SessionId('capture4-child'),
+          id: brandString<SessionId>('capture4-child'),
           result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
           dispose: async () => {},
         }
@@ -720,18 +753,18 @@ describe('dsh-tool-subagent local activation', () => {
       textResponse('continuable answer'),
     ], modelSelection ? {
       efforts: [
-        { id: ReasoningEffortId('low'), name: 'Low' },
-        { id: ReasoningEffortId('high'), name: 'High' },
+        { id: brandString<ReasoningEffortId>('low'), name: 'Low' },
+        { id: brandString<ReasoningEffortId>('high'), name: 'High' },
       ],
-      defaultEffort: ReasoningEffortId('low'),
+      defaultEffort: brandString<ReasoningEffortId>('low'),
     } : undefined))
-    const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+    const parent = await ctx.agentLoop.create(brandString<SessionId>('parent'), { provider: 'mock', model: 'mock' })
     return { ctx, parent }
   }
 
   it.each([undefined, 'high'] as const)('starts the explicitly selected parent model with effort %s', async (effort) => {
     const { ctx, parent } = await continuableSetup(true)
-    parent.options.reasoningEffort = ReasoningEffortId('high')
+    parent.options.reasoningEffort = brandString<ReasoningEffortId>('high')
     let child: Agent | undefined
     ctx.on('subagent/start', (info) => { child = ctx.agents.get(info.id) })
     const result = await callSubagent(ctx, {
@@ -749,7 +782,7 @@ describe('dsh-tool-subagent local activation', () => {
     const { ctx } = await continuableSetup()
     expect(new ToolExecutionPipeline(ctx).executionMode({
       signal: testToolSignal,
-      callId: ToolCallId('subagent-continuable'),
+      callId: brandString<ToolCallId>('subagent-continuable'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK' },
     })).toEqual({ kind: 'parallel' })
@@ -772,7 +805,7 @@ describe('dsh-tool-subagent local activation', () => {
     expect(properties.run_in_background).toBeUndefined()
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
-    expect(guidance?.text).toBe('Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.')
+    expect(guidance?.text).toBe('Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. The concurrency limit of all the subagents is 8. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.')
 
     const started = await callSubagent(
       ctx,
@@ -787,10 +820,10 @@ describe('dsh-tool-subagent local activation', () => {
     // No Task was created for the continuable child.
 
     await vi.waitFor(() => {
-      expect(ctx.agents.get(SessionId(childId!))).toBeUndefined()
+      expect(ctx.agents.get(brandString<SessionId>(childId!))).toBeUndefined()
     }, { timeout: 5_000 })
     // The child id names a durable session carrying its continuation descriptor.
-    const loaded = await loadStoredSession(ctx.sessionPersistence, SessionId(childId!))
+    const loaded = await loadStoredSession(ctx.sessionPersistence, brandString<SessionId>(childId!))
     expect(loaded.events.some(event => event.type === 'subagent/descriptor')).toBe(true)
     expect(loaded.events.some(event => event.type === 'assistant/message')).toBe(true)
   })
@@ -808,7 +841,7 @@ describe('dsh-tool-subagent local activation', () => {
     expect(duplicate.isError).toBe(true)
     expect(text(duplicate)).toContain('agent name "reviewer" is already used by another subagent you created')
     await vi.waitFor(() => {
-      expect(ctx.agents.get(SessionId(childId!))).toBeUndefined()
+      expect(ctx.agents.get(brandString<SessionId>(childId!))).toBeUndefined()
     }, { timeout: 5_000 })
   })
 
@@ -827,8 +860,8 @@ describe('dsh-tool-subagent local activation', () => {
     const releasePreparations = Promise.withResolvers<undefined>()
     const cancelled = new AbortController()
     let preparationCount = 0
-    let cancelledChildId: ReturnType<typeof SessionId> | undefined
-    let survivingChildId: ReturnType<typeof SessionId> | undefined
+    let cancelledChildId: SessionId | undefined
+    let survivingChildId: SessionId | undefined
     ctx.subagents.registerProvider({
       name: 'gated',
       capabilities: { agentOptions: false, agentPreset: false, outputSchema: true, depthLimit: true },
@@ -843,7 +876,7 @@ describe('dsh-tool-subagent local activation', () => {
         return {}
       },
     })
-    await tool.apply(ctx, {
+    tool.apply(ctx, {
       provider: 'gated',
       toolName: 'subagent_gated',
       maxDepth: 3,
@@ -851,7 +884,7 @@ describe('dsh-tool-subagent local activation', () => {
 
     const execute = (callId: string, description: string, signal: AbortSignal) => executeToolFixture(ctx, {
       signal,
-      callId: ToolCallId(callId),
+      callId: brandString<ToolCallId>(callId),
       name: 'subagent_gated',
       arguments: { description, prompt: 'work' },
       agent: parent,
@@ -899,7 +932,7 @@ describe('depth budget configuration', () => {
       start: async (request) => {
         requests.push(request)
         return {
-          id: SessionId(`capture-child-${requests.length}`),
+          id: brandString<SessionId>(`capture-child-${requests.length}`),
           result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
           dispose: async () => {},
         }
@@ -942,7 +975,7 @@ describe('depth budget configuration', () => {
       start: async (request) => {
         requests.push(request)
         return {
-          id: SessionId('external-child'),
+          id: brandString<SessionId>('external-child'),
           result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
           dispose: async () => {},
         }
@@ -1028,7 +1061,7 @@ describe('worktree isolation', () => {
   }
 
   async function createParentInDir(ctx: Context, id: string, dir: string): Promise<Agent> {
-    const parent = await ctx.agentLoop.create(SessionId(id), {
+    const parent = await ctx.agentLoop.create(brandString<SessionId>(id), {
       provider: 'mock',
       model: 'mock',
     })
@@ -1044,7 +1077,7 @@ describe('worktree isolation', () => {
 
     const mockCtx = await setup({ provider: 'mock' })
     const mockProps = (mockCtx.tools.schemas().find(s => s.name === 'subagent')!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(mockProps)).toEqual(['cwd', 'description', 'name', 'prompt'])
+    expect(Object.keys(mockProps)).toEqual(['description', 'name', 'prompt'])
   })
 
   it('fails loudly without silent downgrade when isolation is "worktree" outside a Git repository', { timeout: 20_000 }, async () => {
@@ -1246,3 +1279,7 @@ describe('worktree isolation', () => {
     expect(branches).toBe('')
   })
 })
+
+function admittedMessages(assembly: import('@deepseek-ai/dsh-system-prompt').PromptAssembly) {
+  return assembly.systemUpdates(false).map(update => update.message)
+}

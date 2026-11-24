@@ -399,6 +399,7 @@ export function apply(ctx) {
         },
       },
       render: (_args, value) => [{ type: 'text', text: value.detail }],
+      presentationMeta: (_args, value) => ({ ok: value.ok, detail: value.detail }),
     },
     presentCall: (args) => ({
       card: 'generic',
@@ -406,15 +407,27 @@ export function apply(ctx) {
       kind: 'other',
       content: [{ type: 'text', text: String(args.text ?? '') }],
     }),
-    presentResult: (_args, result) => (result.ok !== true ? undefined : {
-      card: 'generic',
-      title: 'Delivered',
-      content: [{ type: 'text', text: String(result.value?.detail ?? '') }],
-    }),
+    presentResult: (_args, result) => {
+      if (!result || result.isError) return undefined;
+      const meta = result.meta && typeof result.meta === 'object' && !Array.isArray(result.meta)
+        ? /** @type {Record<string, any>} */ (result.meta)
+        : null;
+      if (meta && meta.ok !== true) return undefined;
+      const fallbackText = Array.isArray(result.content)
+        ? result.content.map((b) => (b && b.type === 'text' ? String(b.text ?? '') : '')).filter(Boolean).join('\n')
+        : '';
+      return {
+        card: 'generic',
+        title: 'Delivered',
+        content: [{ type: 'text', text: String(meta?.detail ?? fallbackText) }],
+      };
+    },
     async execute(args, exec) {
       const parsed = validateRelayArgs(args, exec, getSelfId);
-      if (parsed.error) return { ok: false, messageId: '', detail: parsed.error };
-      const { sessionId, text, mode } = parsed;
+      if ('error' in parsed && parsed.error) return { ok: false, messageId: '', detail: parsed.error };
+      const sessionId = parsed.sessionId ?? '';
+      const text = parsed.text ?? '';
+      const mode = parsed.mode ?? 'queue';
       const preBlocked = await precheckRelayTarget(ctx, sessionId, exec?.signal);
       if (preBlocked) return { ok: false, messageId: '', detail: preBlocked };
       const confirmation = await confirmModelAction({

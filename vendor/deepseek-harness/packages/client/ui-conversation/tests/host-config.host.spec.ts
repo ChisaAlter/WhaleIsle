@@ -6,7 +6,8 @@ import { ConversationSettingsFields } from '../src/submission-settings.ts'
 describe('conversation Host configuration', () => {
   it('accepts live writes for every preference exposed by the browser form', () => {
     const fields = Object.keys(ConversationSettingsFields)
-    expect(Object.keys(Config.dict ?? {})).toEqual(fields)
-    for (const field of fields) expect(isVolatilePath(Config, [field])).toBe(true)
+    const allFields = [...fields, 'maxConcurrentFileUploads']
+    expect(Object.keys(Config.dict ?? {})).toEqual(allFields)
+    for (const field of allFields) expect(isVolatilePath(Config, [field])).toBe(true)
   })
 })

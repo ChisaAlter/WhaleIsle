@@ -1,6 +1,6 @@
 /** The changed-files card, shown only while the Host serves the turn's summary, and explicitly declared files for a closing turn. */
+import { selectSessionDirectory } from '@deepseek-ai/dsh-api-session-controller/client/directories'
 import { useEffect, useState } from 'react'
-import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconWarningOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
@@ -75,7 +75,7 @@ export function Deliverables({
   const { getTriggerProps } = useContextMenu()
   const [expanded, setExpanded] = useState(false)
   const showCodeDiff = useShowCodeDiff(value => value)
-  const cwd = useSessions(state => sessionWorkingDirectory(state.byId[sessionId]))
+  const cwd = useSessions(state => selectSessionDirectory(state, sessionId))
   const states = usePresentedOpen(value => value)
   const host = usePresentedHost(value => value)
   const [dismissedHostNotice, setDismissedHostNotice] = useState<typeof host | undefined>()
@@ -98,7 +98,7 @@ export function Deliverables({
     if (host === null) void reloadPresentedHost()
   }, [host, reloadPresentedHost])
   return <>
-    {changes !== null && <ChangedFiles changes={changes} cwd={cwd} t={t}
+    {changes !== null && <ChangedFiles changes={changes} t={t}
       sessionId={sessionId} useChangesDiff={useChangesDiff} loadChangesDiff={loadChangesDiff}
       usePresentedOpen={usePresentedOpen} usePresentedHost={usePresentedHost} openChanged={openChanged} renderSlot={renderSlot}
       openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }} />}

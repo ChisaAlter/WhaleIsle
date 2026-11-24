@@ -274,6 +274,10 @@
   gap: 8px;
 }
 
+.addBlock > .editorActions {
+  margin-top: 12px;
+}
+
 .addBlock,
 .addPanel {
   display: flex;
@@ -369,6 +373,7 @@
 
 .modelCatalog {
   position: relative;
+  padding-top: 16px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
@@ -400,9 +405,11 @@
 }
 
 .modelList {
+  --model-row-gap: 12px;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--model-row-gap);
   min-width: 0;
 }
 
@@ -415,6 +422,9 @@
 
 .modelEntry {
   container: model-row / inline-size;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.4fr) minmax(0, 1fr) 28px 28px;
+  column-gap: 6px;
   position: relative;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md);
@@ -424,7 +434,8 @@
 
 .modelRow {
   display: grid;
-  grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   gap: 8px;
 }
@@ -475,7 +486,7 @@
   background: var(--dsw-alias-bg-module-platform);
 }
 
-/* Each row owns half of the 8px gap so native drops reach the insertion line. */
+/* Cover half the row gap plus the border's inward, pixel-rounded positioning edge. */
 .modelEntry::before,
 .modelEntry::after {
   content: '';
@@ -483,15 +494,15 @@
   z-index: 1;
   left: 0;
   right: 0;
-  height: 4px;
+  height: calc(var(--model-row-gap) / 2 + 1px);
 }
 
 .modelEntry::before {
-  top: -4px;
+  top: calc(-1 * (var(--model-row-gap) / 2 + 1px));
 }
 
 .modelEntry::after {
-  bottom: -4px;
+  bottom: calc(-1 * (var(--model-row-gap) / 2 + 1px));
 }
 
 .modelEntry[data-drop-target='before']::before,
@@ -516,11 +527,11 @@
 }
 
 .modelEntry[data-drop-target='before']::before {
-  top: -10px;
+  top: calc(-1 * (var(--model-row-gap) / 2 + 6px));
 }
 
 .modelEntry[data-drop-target='after']::after {
-  bottom: -10px;
+  bottom: calc(-1 * (var(--model-row-gap) / 2 + 6px));
 }
 
 .modelAdvanced {
@@ -571,7 +582,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 4px;
+  gap: 6px;
 }
 
 .modelInputTypes {
@@ -584,7 +595,7 @@
 
 .modelInputTypes legend {
   padding: 0;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .modelInputChoices {
@@ -844,5 +855,17 @@
 @container (max-width: 480px) {
   .compatGrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media (pointer: coarse) {
+  .input {
+    font-size: 16px;
   }
 }

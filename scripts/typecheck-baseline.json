@@ -9734,25 +9734,17 @@
       }
     },
     "vendor/dsh-deepseek-tools/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 2,
-        "Parameter 'args' implicitly has an 'any' type.": 3,
         "Parameter 'body' implicitly has an 'any' type.": 1,
         "Parameter 'config' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'details' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
         "Parameter 'key' implicitly has an 'any' type.": 1,
         "Parameter 'operation' implicitly has an 'any' type.": 1,
         "Parameter 'page' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 1,
         "Parameter 'summary' implicitly has an 'any' type.": 1,
-        "Parameter 'tool' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 2
+        "Parameter 'tool' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-deepseek-tools/tests/ui-qa.mjs": {
@@ -9781,11 +9773,6 @@
       },
       "TS7034": {
         "Variable 'errors' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
-      }
-    },
-    "vendor/dsh-platform-session/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-project/client/client.js": {
@@ -10035,9 +10022,6 @@
       }
     },
     "vendor/dsh-project/lib/bridge.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'code' does not exist on type 'Error'.": 1,
         "Property 'cwd' does not exist on type '{}'.": 2,
@@ -10123,7 +10107,7 @@
         "Parameter 'action' implicitly has an 'any' type.": 1,
         "Parameter 'chunk' implicitly has an 'any' type.": 1,
         "Parameter 'code' implicitly has an 'any' type.": 1,
-        "Parameter 'ctx' implicitly has an 'any' type.": 3,
+        "Parameter 'ctx' implicitly has an 'any' type.": 2,
         "Parameter 'error' implicitly has an 'any' type.": 1,
         "Parameter 'event' implicitly has an 'any' type.": 1,
         "Parameter 'host' implicitly has an 'any' type.": 1,
@@ -10133,9 +10117,8 @@
         "Parameter 'path' implicitly has an 'any' type.": 1,
         "Parameter 'payload' implicitly has an 'any' type.": 1,
         "Parameter 'projectId' implicitly has an 'any' type.": 4,
-        "Parameter 'req' implicitly has an 'any' type.": 10,
-        "Parameter 'requireConnection' implicitly has an 'any' type.": 1,
-        "Parameter 'res' implicitly has an 'any' type.": 10,
+        "Parameter 'req' implicitly has an 'any' type.": 8,
+        "Parameter 'res' implicitly has an 'any' type.": 8,
         "Parameter 'searchParams' implicitly has an 'any' type.": 4,
         "Parameter 'service' implicitly has an 'any' type.": 8,
         "Parameter 'status' implicitly has an 'any' type.": 1,
@@ -10147,9 +10130,6 @@
       }
     },
     "vendor/dsh-project/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'status' does not exist on type 'Error'.": 2
       },
@@ -10517,30 +10497,9 @@
         "Parameter 'value' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-task-control/lib/http.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 1
-      }
-    },
-    "vendor/dsh-task-control/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 1
-      }
-    },
-    "vendor/dsh-task-control/lib/inspection.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/cordis' or its corresponding type declarations.": 2
-      }
-    },
     "vendor/dsh-whale/lib/bots/bot-tools-items.js": {
       "TS7006": {
         "Parameter 'caller' implicitly has an 'any' type.": 1
-      }
-    },
-    "vendor/dsh-whale/lib/bots/bot-tools-plugin.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
       }
     },
     "vendor/dsh-whale/lib/bots/db.js": {
@@ -10704,9 +10663,7 @@
         "Parameter 'bot' implicitly has an 'any' type.": 1,
         "Parameter 'botId' implicitly has an 'any' type.": 1,
         "Parameter 'hint' implicitly has an 'any' type.": 1,
-        "Parameter 'host' implicitly has an 'any' type.": 1,
-        "Parameter 'req' implicitly has an 'any' type.": 1,
-        "Parameter 'res' implicitly has an 'any' type.": 1
+        "Parameter 'host' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'instance' implicitly has type 'any' in some locations where its type cannot be determined.": 1
@@ -10792,9 +10749,6 @@
       }
     },
     "vendor/dsh-whale/lib/bots/tidy-up-service.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS7006": {
         "Parameter 'botId' implicitly has an 'any' type.": 4,
         "Parameter 'next' implicitly has an 'any' type.": 1
@@ -10833,55 +10787,31 @@
         "Binding element 'reason' implicitly has an 'any' type.": 1
       }
     },
-    "vendor/dsh-whale/lib/bots/worker-tools-plugin.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      }
-    },
     "vendor/dsh-whale/lib/desktop-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 8,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
-        "Parameter 'p' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'p' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/discovery-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 4,
-        "Parameter 'args' implicitly has an 'any' type.": 3,
+        "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'card' implicitly has an 'any' type.": 1,
         "Parameter 'catalog' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 4,
         "Parameter 'e' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 4,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
+        "Parameter 'exec' implicitly has an 'any' type.": 1,
         "Parameter 'getSelfId' implicitly has an 'any' type.": 1,
         "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'm' implicitly has an 'any' type.": 1,
-        "Parameter 'p' implicitly has an 'any' type.": 1,
         "Parameter 'provider' implicitly has an 'any' type.": 1,
-        "Parameter 'sessionId' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 3,
-        "Parameter 'w' implicitly has an 'any' type.": 1
+        "Parameter 'sessionId' implicitly has an 'any' type.": 2
       }
     },
     "vendor/dsh-whale/lib/host-hooks.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'message' does not exist on type '{}'.": 1
       },
@@ -10925,10 +10855,6 @@
       }
     },
     "vendor/dsh-whale/lib/index.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'composer' does not exist on type '{ owner: string; title: string; }'.": 1,
         "Property 'getRuntimeIfReady' does not exist on type 'never'.": 2,
@@ -10945,7 +10871,6 @@
       },
       "TS7006": {
         "Parameter 'assembleCtx' implicitly has an 'any' type.": 3,
-        "Parameter 'block' implicitly has an 'any' type.": 2,
         "Parameter 'c' implicitly has an 'any' type.": 1,
         "Parameter 'catalog' implicitly has an 'any' type.": 1,
         "Parameter 'controller' implicitly has an 'any' type.": 5,
@@ -10970,8 +10895,7 @@
         "Parameter 'payload' implicitly has an 'any' type.": 1,
         "Parameter 'records' implicitly has an 'any' type.": 1,
         "Parameter 'reply' implicitly has an 'any' type.": 1,
-        "Parameter 'req' implicitly has an 'any' type.": 2,
-        "Parameter 'res' implicitly has an 'any' type.": 1,
+        "Parameter 'req' implicitly has an 'any' type.": 1,
         "Parameter 'route' implicitly has an 'any' type.": 2,
         "Parameter 'row' implicitly has an 'any' type.": 1,
         "Parameter 'rpcId' implicitly has an 'any' type.": 1,
@@ -11001,9 +10925,6 @@
       }
     },
     "vendor/dsh-whale/lib/memory-store.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'compactionThreshold' does not exist on type '{}'.": 1,
         "Property 'reservedCompletionTokens' does not exist on type '{}'.": 1,
@@ -11034,16 +10955,8 @@
       }
     },
     "vendor/dsh-whale/lib/memory-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 8,
-        "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 4,
-        "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'ctx' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/observe.js": {
@@ -11128,40 +11041,28 @@
       }
     },
     "vendor/dsh-whale/lib/profile-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter 'args' implicitly has an 'any' type.": 2,
-        "Parameter 'ctx' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 1
+        "Parameter 'ctx' implicitly has an 'any' type.": 1
       }
     },
     "vendor/dsh-whale/lib/project-bridge-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'scopeCeiling' does not exist on type '{ writePaths: string[]; error?: undefined; } | { projectId: string; cwd: string; goal: string; title: string; scopeCeiling: string; writePaths: string[]; constraints: string[]; conditions: string[]; sourceSummary: string; }'.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 5,
-        "Parameter 'args' implicitly has an 'any' type.": 5,
+        "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 3,
         "Parameter 'detail' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 6,
+        "Parameter 'exec' implicitly has an 'any' type.": 3,
         "Parameter 'getSelfId' implicitly has an 'any' type.": 3,
-        "Parameter 'p' implicitly has an 'any' type.": 1,
         "Parameter 'parsed' implicitly has an 'any' type.": 3,
         "Parameter 'part' implicitly has an 'any' type.": 1,
         "Parameter 'projects' implicitly has an 'any' type.": 1,
         "Parameter 'raw' implicitly has an 'any' type.": 1,
         "Parameter 'rawWritePaths' implicitly has an 'any' type.": 1,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 'scopeCeiling' implicitly has an 'any' type.": 1,
-        "Parameter 'target' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 3
+        "Parameter 'target' implicitly has an 'any' type.": 2
       }
     },
     "vendor/dsh-whale/lib/schedule-migration.js": {
@@ -11216,30 +11117,19 @@
       "TS18048": {
         "'s' is possibly 'undefined'.": 3
       },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS2339": {
         "Property 'atSeq' does not exist on type '{ sessionId: string; }'.": 1,
         "Property 'beforeSeq' does not exist on type '{ sessionId: string; }'.": 1,
         "Property 'message' does not exist on type '{}'.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 5,
-        "Parameter 'args' implicitly has an 'any' type.": 22,
         "Parameter 'controller' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'detail' implicitly has an 'any' type.": 1,
-        "Parameter 'e' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 12,
-        "Parameter 'i' implicitly has an 'any' type.": 2,
         "Parameter 'item' implicitly has an 'any' type.": 1,
-        "Parameter 'j' implicitly has an 'any' type.": 1,
         "Parameter 'ms' implicitly has an 'any' type.": 1,
-        "Parameter 'q' implicitly has an 'any' type.": 1,
         "Parameter 's' implicitly has an 'any' type.": 1,
         "Parameter 'signal' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 5,
         "Parameter 'w' implicitly has an 'any' type.": 1
       },
       "TS7031": {
@@ -11262,9 +11152,6 @@
       }
     },
     "vendor/dsh-whale/lib/side-qa.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
-      },
       "TS7006": {
         "Parameter 'assembler' implicitly has an 'any' type.": 1,
         "Parameter 'block' implicitly has an 'any' type.": 2,
@@ -11328,24 +11215,17 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 1
       },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7005": {
         "Variable 'recent' implicitly has an 'any[]' type.": 2
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 2,
         "Parameter 'absPath' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 2,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'entry' implicitly has an 'any' type.": 1,
         "Parameter 'homeDir' implicitly has an 'any' type.": 2,
         "Parameter 'query' implicitly has an 'any' type.": 2,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 't' implicitly has an 'any' type.": 1,
-        "Parameter 'tag' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'tag' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'recent' implicitly has type 'any[]' in some locations where its type cannot be determined.": 1
@@ -11388,9 +11268,6 @@
       },
       "TS18047": {
         "'natural' is possibly 'null'.": 2
-      },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
       },
       "TS2322": {
         "Type 'Promise<void>' is not assignable to type 'null'.": 1
@@ -11467,8 +11344,7 @@
     },
     "vendor/dsh-whale/lib/task-session-runner.js": {
       "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-agent' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1
+        "Cannot find module '@deepseek-ai/dsh-agent' or its corresponding type declarations.": 1
       },
       "TS2345": {
         "Argument of type 'any' is not assignable to parameter of type 'never'.": 3
@@ -11525,11 +11401,8 @@
       }
     },
     "vendor/dsh-whale/lib/task-tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 2,
+        "Parameter '_args' implicitly has an 'any' type.": 1,
         "Parameter 'args' implicitly has an 'any' type.": 10,
         "Parameter 'card' implicitly has an 'any' type.": 2,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
@@ -11537,8 +11410,7 @@
         "Parameter 'exec' implicitly has an 'any' type.": 11,
         "Parameter 'execute' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 1,
-        "Parameter 'parameters' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 1
+        "Parameter 'parameters' implicitly has an 'any' type.": 1
       },
       "TS7053": {
         "Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{}'.": 1
@@ -11548,24 +11420,19 @@
       "TS18046": {
         "'error' is of type 'unknown'.": 1
       },
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1
-      },
       "TS7005": {
         "Variable 'handle' implicitly has an 'any' type.": 1
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 1,
         "Parameter '_input' implicitly has an 'any' type.": 2,
         "Parameter 'agent' implicitly has an 'any' type.": 1,
         "Parameter 'agentCtx' implicitly has an 'any' type.": 1,
-        "Parameter 'args' implicitly has an 'any' type.": 4,
+        "Parameter 'args' implicitly has an 'any' type.": 3,
         "Parameter 'control' implicitly has an 'any' type.": 1,
         "Parameter 'ctx' implicitly has an 'any' type.": 1,
         "Parameter 'description' implicitly has an 'any' type.": 1,
         "Parameter 'event' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 3,
+        "Parameter 'exec' implicitly has an 'any' type.": 2,
         "Parameter 'execute' implicitly has an 'any' type.": 1,
         "Parameter 'i' implicitly has an 'any' type.": 1,
         "Parameter 'name' implicitly has an 'any' type.": 2,
@@ -11573,7 +11440,7 @@
         "Parameter 'parameters' implicitly has an 'any' type.": 1,
         "Parameter 'task' implicitly has an 'any' type.": 1,
         "Parameter 'tool' implicitly has an 'any' type.": 1,
-        "Parameter 'value' implicitly has an 'any' type.": 2
+        "Parameter 'value' implicitly has an 'any' type.": 1
       },
       "TS7034": {
         "Variable 'handle' implicitly has type 'any' in some locations where its type cannot be determined.": 1
@@ -11662,17 +11529,6 @@
       }
     },
     "vendor/dsh-whale/lib/tools.js": {
-      "TS2307": {
-        "Cannot find module '@deepseek-ai/dsh-llm' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/dsh-tools' or its corresponding type declarations.": 1,
-        "Cannot find module '@deepseek-ai/schemastery' or its corresponding type declarations.": 1
-      },
-      "TS2322": {
-        "Type 'string | undefined' is not assignable to type 'string'.": 3
-      },
-      "TS2345": {
-        "Argument of type 'string | undefined' is not assignable to parameter of type 'string'.": 1
-      },
       "TS2550": {
         "Property 'findLast' does not exist on type 'any[]'. Do you need to change your target library? Try changing the 'lib' compiler option to 'es2023' or later.": 1
       },
@@ -11680,20 +11536,17 @@
         "Type '() => string' is not assignable to type '() => string'. Two different types with this name exist, but they are unrelated.": 3
       },
       "TS7006": {
-        "Parameter '_args' implicitly has an 'any' type.": 5,
-        "Parameter 'args' implicitly has an 'any' type.": 10,
+        "Parameter 'args' implicitly has an 'any' type.": 1,
         "Parameter 'controller' implicitly has an 'any' type.": 2,
         "Parameter 'ctx' implicitly has an 'any' type.": 4,
         "Parameter 'events' implicitly has an 'any' type.": 1,
-        "Parameter 'exec' implicitly has an 'any' type.": 6,
+        "Parameter 'exec' implicitly has an 'any' type.": 1,
         "Parameter 'getSelfId' implicitly has an 'any' type.": 1,
         "Parameter 'owner' implicitly has an 'any' type.": 2,
         "Parameter 'querySvc' implicitly has an 'any' type.": 1,
-        "Parameter 'result' implicitly has an 'any' type.": 1,
         "Parameter 'row' implicitly has an 'any' type.": 1,
         "Parameter 'sessionId' implicitly has an 'any' type.": 3,
-        "Parameter 'signal' implicitly has an 'any' type.": 2,
-        "Parameter 'value' implicitly has an 'any' type.": 4
+        "Parameter 'signal' implicitly has an 'any' type.": 2
       }
     },
     "vendor/dsh-whale/src/shared/bot-avatar-color.js": {

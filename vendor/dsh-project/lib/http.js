@@ -236,18 +236,35 @@ async function routeProjectEndpoint(service, method, parts, req, res, searchPara
   throw httpError(404, 'not_found');
 }
 
-function checkConnection(ctx, req, res, requireConnection) {
-  const connection = ctx?.get?.('connection') ?? ctx?.connection;
-  if (connection && typeof connection.admit === 'function') {
-    const admission = connection.admit(req);
-    if (admission && 'rejection' in admission) {
-      sendJson(res, admission.rejection, { error: 'Project connection is not authorized.' });
-      return false;
+/**
+ * @param {any} ctx
+ * @param {any} req
+ * @param {any} res
+ * @param {any} peer
+ * @param {boolean} requireConnection
+ */
+function checkConnection(ctx, req, res, peer, requireConnection) {
+  let admittedPeer = peer;
+  if (admittedPeer === undefined) {
+    const connection = ctx?.get?.('connection') ?? ctx?.connection;
+    if (connection && typeof connection.admit === 'function') {
+      const admission = connection.admit(req);
+      if (admission && typeof admission === 'object' && 'rejection' in admission) {
+        sendJson(res, admission.rejection, { error: 'Project connection is not authorized.' });
+        return false;
+      }
+      admittedPeer = admission?.peer;
+    } else if (!requireConnection) {
+      return true;
     }
-    return true;
   }
-  if (requireConnection) {
-    sendJson(res, 401, { error: 'Project connection admission service is unavailable.' });
+  if (!admittedPeer) {
+    if (!requireConnection) return true;
+    sendJson(res, 401, { error: 'Project connection is not authorized.' });
+    return false;
+  }
+  if (admittedPeer.principal?.kind !== 'owner') {
+    sendJson(res, 403, { error: 'Project connection requires owner principal.' });
     return false;
   }
   return true;
@@ -323,8 +340,9 @@ export function createProjectsHttpHandler(ctx, service, { requireConnection = tr
     return routeProjectEndpoint(service, method, parts, req, res, searchParams);
   }
 
-  const handler = async (req, res) => {
-    if (!checkConnection(ctx, req, res, requireConnection)) return;
+  /** @param {any} req @param {any} res @param {any} [peer] */
+  const handler = async (req, res, peer) => {
+    if (!checkConnection(ctx, req, res, peer, requireConnection)) return;
 
     let url;
     try {

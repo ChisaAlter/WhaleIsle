@@ -33,6 +33,11 @@ export function ApprovalWarning({ warning }: {
     cancelClose()
     setOpen(true)
   }
+  const toggle = () => {
+    if (isBehindModal(anchor.current)) return
+    cancelClose()
+    setOpen(current => !current)
+  }
   const enter = (event: PointerEvent<HTMLElement>) => {
     if (event.pointerType === 'touch' || !window.matchMedia('(any-hover: hover)').matches) return
     show()
@@ -78,7 +83,7 @@ export function ApprovalWarning({ warning }: {
   }, [open, cancelClose])
   return <>
     <Button ref={anchor} size="sm" className={css.warningTrigger} style={{ anchorName }} aria-haspopup="dialog"
-      aria-expanded={open} aria-controls={open ? id : undefined} onClick={show}
+      aria-expanded={open} aria-controls={open ? id : undefined} onClick={toggle}
       onPointerEnter={enter} onPointerLeave={leave}
       onFocus={(event) => { if (event.currentTarget.matches(':focus-visible')) show() }} onBlur={blur}>
       <Tag tone="warning" className={css.warningTag}>

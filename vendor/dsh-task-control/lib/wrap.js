@@ -108,11 +108,11 @@ export function markAdmitted(req) {
  * @param {ReturnType<import('./state.js').createControlState>} state
  * @param {{ active: boolean, restores: Array<() => void> }} guard
  * @param {string} path
- * @param {(req: any, res: any) => any} handler
+ * @param {(req: any, res: any, peer?: any) => any} handler
  */
 function gateHttpHandler(state, guard, path, handler) {
-  return async function gatedRoute(/** @type {import('node:http').IncomingMessage} */ req, /** @type {any} */ res) {
-    if (!guard.active || admittedBefore(req)) return handler(req, res);
+  return async function gatedRoute(/** @type {import('node:http').IncomingMessage} */ req, /** @type {any} */ res, /** @type {any} */ peer) {
+    if (!guard.active || admittedBefore(req)) return handler(req, res, peer);
     const admission = admit(state, `http ${req.method} ${req.url}`);
     if (!admission.accepted) {
       if (!res.headersSent) {
@@ -124,7 +124,7 @@ function gateHttpHandler(state, guard, path, handler) {
     markAdmitted(req);
     if (undrained(req)) {
       admission.done();
-      return handler(req, res);
+      return handler(req, res, peer);
     }
     let finished = false;
     const done = () => {
@@ -136,7 +136,7 @@ function gateHttpHandler(state, guard, path, handler) {
     try {
       res.once('close', done);
       listening = true;
-      return await handler(req, res);
+      return await handler(req, res, peer);
     } finally {
       done();
       if (listening) res.off('close', done);
@@ -148,11 +148,11 @@ function gateHttpHandler(state, guard, path, handler) {
  * @param {ReturnType<import('./state.js').createControlState>} state
  * @param {{ active: boolean, restores: Array<() => void> }} guard
  * @param {string} path
- * @param {(req: any, socket: any, head: any) => any} handler
+ * @param {(req: any, socket: any, head: any, peer?: any) => any} handler
  */
 function gateUpgradeHandler(state, guard, path, handler) {
-  return function gatedUpgrade(/** @type {import('node:http').IncomingMessage} */ req, /** @type {import('node:stream').Duplex} */ socket, /** @type {any} */ head) {
-    if (!guard.active) return handler(req, socket, head);
+  return function gatedUpgrade(/** @type {import('node:http').IncomingMessage} */ req, /** @type {import('node:stream').Duplex} */ socket, /** @type {any} */ head, /** @type {any} */ peer) {
+    if (!guard.active) return handler(req, socket, head, peer);
     const admission = admit(state, `upgrade ${req.url}`);
     if (!admission.accepted) {
       try {
@@ -168,7 +168,7 @@ function gateUpgradeHandler(state, guard, path, handler) {
     // Connect-time admission still 503s new upgrades while locked; work the
     // socket delivers is gated at the service chokepoints instead.
     admission.done();
-    return handler(req, socket, head);
+    return handler(req, socket, head, peer);
   };
 }
 
@@ -239,9 +239,12 @@ export function wrapWebServer(state, webServer) {
     function registerFallbackGuarded(handler) {
       const gated = guard.active ? gateFallback(state, guard, handler) : handler;
       const dispose = originalRegisterFallback.call(this, gated);
-      if (guard.active) {
+      if (guard.active && typeof handler === 'function') {
         guard.restores.push(() => {
           if (webServer.fallback === gated) webServer.fallback = handler;
+          else if (webServer.fallback && typeof webServer.fallback === 'object' && webServer.fallback.handler === gated) {
+            webServer.fallback.handler = handler;
+          }
         });
       }
       return dispose;
@@ -252,6 +255,16 @@ export function wrapWebServer(state, webServer) {
   // Routes registered before this plugin loaded (e.g. the connection `/api`
   // prefix and the gateway upgrade row) escape the wrapped register calls;
   // rewrite their handler slots in place.
+  wrapExistingRoutes(state, guard, webServer);
+  return true;
+}
+
+/**
+ * @param {ReturnType<import('./state.js').createControlState>} state
+ * @param {{ active: boolean, restores: Array<() => void> }} guard
+ * @param {any} webServer
+ */
+function wrapExistingRoutes(state, guard, webServer) {
   if (webServer.prefixes instanceof Map) {
     for (const route of webServer.prefixes.values()) wrapRouteEntry(state, guard, route);
   }
@@ -261,10 +274,12 @@ export function wrapWebServer(state, webServer) {
   if (webServer.upgrades instanceof Map) {
     for (const route of webServer.upgrades.values()) wrapRouteEntry(state, guard, route, true);
   }
-  if (typeof webServer.fallback === 'function' && !webServer.fallback[WRAPPED]) {
-    replaceOwnedProperty(guard, webServer, 'fallback', gateFallback(state, guard, webServer.fallback));
+  const existingFallback = webServer.fallback;
+  if (typeof existingFallback === 'function' && !existingFallback[WRAPPED]) {
+    replaceOwnedProperty(guard, webServer, 'fallback', gateFallback(state, guard, existingFallback));
+  } else if (existingFallback && typeof existingFallback === 'object' && !existingFallback[WRAPPED]) {
+    gateFallback(state, guard, existingFallback);
   }
-  return true;
 }
 
 /**
@@ -276,13 +291,20 @@ function gateFallback(state, guard, handler) {
   // The fallback seat also takes a `{ resource }` responder (frontend-static
   // serves the SPA that way). A resource only ever answers GET and HEAD, the
   // read path this gate leaves open, so there is no handler to wrap.
+  if (handler && typeof handler === 'object' && !('resource' in handler) && typeof handler.handler === 'function') {
+    if (!handler[WRAPPED]) {
+      replaceOwnedProperty(guard, handler, 'handler', gateFallback(state, guard, handler.handler));
+      replaceOwnedProperty(guard, handler, WRAPPED, guard);
+    }
+    return handler;
+  }
   if (typeof handler !== 'function') return handler;
-  const gated = async function gatedFallback(/** @type {any} */ req, /** @type {any} */ res) {
-    if (!guard.active) return handler(req, res);
+  const gated = async function gatedFallback(/** @type {any} */ req, /** @type {any} */ res, /** @type {any} */ peer) {
+    if (!guard.active) return handler(req, res, peer);
     // The fallback serves SPA assets; locking it would white-out a visible
     // window during the confirmation wait. Mutating methods on unmatched
     // paths are still gated — they are not reads.
-    if (isReadMethod(req) || admittedBefore(req)) return handler(req, res);
+    if (isReadMethod(req) || admittedBefore(req)) return handler(req, res, peer);
     const admission = admit(state, `fallback ${req.method} ${req.url}`);
     if (!admission.accepted) {
       res.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
@@ -290,7 +312,7 @@ function gateFallback(state, guard, handler) {
       return undefined;
     }
     markAdmitted(req);
-    return Promise.resolve(handler(req, res)).finally(() => admission.done());
+    return Promise.resolve(handler(req, res, peer)).finally(() => admission.done());
   };
   replaceOwnedProperty(guard, gated, WRAPPED, guard);
   return gated;

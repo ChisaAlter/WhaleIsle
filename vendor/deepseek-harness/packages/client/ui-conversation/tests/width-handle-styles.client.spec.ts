@@ -16,13 +16,9 @@ function rule(css: string, selector: string): string {
 
 describe('conversation width handle styles', () => {
   it('keeps the gutter hit target narrow', () => {
-    const handle = rule(conversationCss, '.widthHandle')
-    const width = /width:\s*([^;]+);/s.exec(handle)?.[1]?.replace(/\s+/g, '')
-    // Never wider than 10px; collapse to zero when the content column leaves
-    // no room for the 24px inner inset and 24px outer safe zone.
-    expect(width).toBe(
-      'max(0px,min(10px,calc((100%-var(--dsh-chat-content-width))/2-24px-24px)))',
-    )
+    for (const side of ['left', 'right']) {
+      expect(conversationCss).toMatch(new RegExp(`\\.widthHandle\\[data-side='${side}'\\]\\s*\\{[^}]*width:\\s*min\\(\\s*10px`, 's'))
+    }
   })
 
   it('keeps the hover indicator compact', () => {

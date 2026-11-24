@@ -615,14 +615,23 @@ export function mountBotsIntoHost(ctx, { home, allowLegacyMigration = true }) {
   ctx.effect?.(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/dsh-bots',
-    async handler(req, res) {
+    /** @param {any} request */
+    auth: (request) => {
+      const pathname = request?.url?.pathname ?? '';
+      if (pathname.startsWith('/dsh-bots/webhooks/') || pathname.startsWith('/dsh-bots/assets/mascots/')) {
+        return 'anonymous';
+      }
+      return 'required';
+    },
+    /** @param {any} req @param {any} res @param {any} [peer] */
+    async handler(req, res, peer) {
       const rt = ensureRuntime();
       if (!rt) {
         res.writeHead(503);
         res.end('bots runtime unavailable');
         return;
       }
-      await rt.http.handler(req, res);
+      await rt.http.handler(req, res, peer);
     },
   }), 'dsh-bots:http');
 

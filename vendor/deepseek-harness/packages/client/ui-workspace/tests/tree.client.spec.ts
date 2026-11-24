@@ -3,22 +3,32 @@ import type {
   SessionListState, SessionProjectionMap, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type {
-  SessionPendingInteraction, SessionStatus, SessionStatusSnapshot,
-} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatus, SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session-status/client'
+import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   type ArchivedFilter,
   currentGroupKey, deriveFlat, deriveGroups, derivePinned, deriveSearchResults, isNoDirectorySession,
-  orderByRecency, owningGroupKey, owningParentFolder,
+  orderByRecency, owningGroupKey, owningParentFolder, sessionSearchIndex,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, visibleSessionIds, workspaceLabel, UNGROUPED_KEY,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 
 /** Host scratch cwd from the Workspace baseline; sessions here are no-directory tasks. */
 const SCRATCH = '/dsh-home/no-workspace'
+
+type SearchArgs = Parameters<typeof deriveSearchResults>
+/** Sidebar search as the component runs it: build the list's index, then search it. */
+function searchResults(
+  sessions: SearchArgs[0], workspaces: SearchArgs[1], query: string, archivedIds: SearchArgs[3],
+  archivedFilter: SearchArgs[4], statuses: SearchArgs[5], content: SearchArgs[6], limit: number,
+  scratchCwd: string | undefined = SCRATCH,
+): ReturnType<typeof deriveSearchResults> {
+  const index = sessionSearchIndex(sessions, workspaces, archivedIds, archivedFilter, scratchCwd)
+  return deriveSearchResults(sessions, workspaces, query, archivedIds, archivedFilter, statuses, content, limit, scratchCwd, index)
+}
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 // Unowned fixture sessions default to the scratch cwd so they stay listable;
@@ -92,7 +102,7 @@ const noAttention: SessionStatusSnapshot = new Map()
 const status = (
   pendingInteraction: SessionPendingInteraction | undefined,
   overrides: Partial<SessionStatus> = {},
-): SessionStatus => ({ running: undefined, pendingInteraction, completionUnread: false, ...overrides })
+): SessionStatus => ({ running: undefined, pendingInteraction, completionUnread: false, completionFailed: false, ...overrides })
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
 const rowState = (options: {
   pinned?: readonly string[]
@@ -419,6 +429,20 @@ describe('deriveGroups', () => {
     expect(strayGroups.map(group => group.key)).toEqual(['first'])
   })
 
+  it('matches titles fuzzily and orders local results by match, then recency', () => {
+    const newer = { ...summary('newer', 3), title: 'Weekly sync notes' }
+    const older = { ...summary('older', 2), title: 'Sync dashboard' }
+    const other = { ...summary('other', 4), title: 'Unrelated' }
+    const sessions = list(newer, older, other)
+    const search = (query: string) => searchResults(
+      sessions, [workspace('first', ['newer', 'older', 'other'])], query, noArchive, 'default',
+      noAttention, { items: [], hasMore: false }, 10,
+    ).items.map(item => item.id)
+    expect(search('sync')).toEqual([older.id, newer.id])
+    expect(search('wksn')).toEqual([newer.id])
+    expect(search('zzz')).toEqual([])
+  })
+
   it('projects the completion reminder into session and search rows (absent = false)', () => {
     const done = summary('done', 3)
     const plain = summary('plain', 2)
@@ -434,11 +458,23 @@ describe('deriveGroups', () => {
     expect(plainNode.completed).toBe(false)
     expect(deriveFlat(sessions, visibleSessionIds(sessions, workspaces, noArchive, 'default', SCRATCH), noRows, statuses)
       .find(node => node.id === done.id)!.completed).toBe(true)
-    const search = deriveSearchResults(
+    const search = searchResults(
       sessions, workspaces, 'done', noArchive, 'default',
       statuses, { items: [], hasMore: false }, 10, SCRATCH,
     )
     expect(search.items[0]?.completed).toBe(true)
+  })
+
+  it.each([true, false])('shows failed completion only while unread=%s in session and search rows', (unread) => {
+    const failed = summary('failed', 3)
+    const sessions = list(failed)
+    const statuses: SessionStatusSnapshot = new Map([[failed.id, status(undefined, {
+      completionUnread: unread, completionFailed: unread,
+    })]])
+    const rows = deriveFlat(sessions, visibleSessionIds(sessions, [], noArchive, 'default', SCRATCH), noRows, statuses)
+    expect(rows[0]).toMatchObject({ completed: unread, failed: unread })
+    const search = searchResults(sessions, [], 'failed', noArchive, 'default', statuses, { items: [], hasMore: false }, 10, SCRATCH)
+    expect(search.items[0]).toMatchObject({ completed: unread, failed: unread })
   })
 
   it('hides subagent-origin sessions and reads direct running counts from catalogs', () => {
@@ -480,7 +516,7 @@ describe('deriveGroups', () => {
       .map(node => [node.id, node.runningSubagentCount])).toEqual([
       [parent.id, 1], [fork.id, 1],
     ])
-    expect(deriveSearchResults(
+    expect(searchResults(
       sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive, 'default',
       noAttention, { items: [], hasMore: false }, 10, SCRATCH,
     ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 1 })
@@ -505,7 +541,7 @@ describe('deriveGroups', () => {
     const counts = (snapshot: SessionStatusSnapshot) => [
       deriveGroups(sessions, [workspace('first', ['parent'])], noRows, snapshot, view(['first']), SCRATCH)[0]!.sessions[0]!.runningSubagentCount,
       deriveFlat(sessions, [parent.id], noRows, snapshot)[0]!.runningSubagentCount,
-      deriveSearchResults(sessions, [], 'parent', noArchive, 'default', snapshot, { items: [], hasMore: false }, 10, SCRATCH).items[0]!.runningSubagentCount,
+      searchResults(sessions, [], 'parent', noArchive, 'default', snapshot, { items: [], hasMore: false }, 10, SCRATCH).items[0]!.runningSubagentCount,
     ]
     expect(counts(statuses)).toEqual([1, 1, 1])
     statuses.set(child.id, status(undefined, { running: false }))
@@ -537,7 +573,7 @@ describe('deriveGroups', () => {
     expect(visibleSessionIds(
       sessions, workspaces, archived('owned', 'owned-descendant'), 'only', SCRATCH,
     )).toEqual([])
-    expect(deriveSearchResults(
+    expect(searchResults(
       sessions,
       workspaces,
       'owned',
@@ -792,7 +828,7 @@ describe('deriveSearchResults archive filtering', () => {
     hit.title = hit.displayTitle = 'Needle row'
     const gone = summary('gone', 1)
     gone.title = gone.displayTitle = 'Needle archived'
-    const result = deriveSearchResults(
+    const result = searchResults(
       list(hit, gone),
       [],
       'needle',
@@ -809,7 +845,7 @@ describe('deriveSearchResults archive filtering', () => {
   it('matches archived sessions and flags them while the view shows them', () => {
     const gone = summary('gone', 1)
     gone.title = gone.displayTitle = 'Needle archived'
-    const result = deriveSearchResults(
+    const result = searchResults(
       list(gone), [], 'needle', archived('gone'), 'show', noAttention, { items: [], hasMore: false }, 10, SCRATCH,
     )
     expect(result.items.map(item => [item.id, item.archived])).toEqual([[gone.id, true]])
@@ -820,7 +856,7 @@ describe('deriveSearchResults archive filtering', () => {
     hit.title = hit.displayTitle = 'Needle row'
     const gone = summary('gone', 1)
     gone.title = gone.displayTitle = 'Needle archived'
-    const result = deriveSearchResults(
+    const result = searchResults(
       list(hit, gone), [], 'needle', archived('gone'), 'only', noAttention, { items: [], hasMore: false }, 10, SCRATCH,
     )
     expect(result.items.map(item => [item.id, item.archived])).toEqual([[gone.id, true]])
@@ -833,7 +869,7 @@ describe('deriveSearchResults branch marks', () => {
     source.title = source.displayTitle = 'Needle source'
     const branch = summary('my-branch', 2)
     branch.title = branch.displayTitle = 'Needle branch'
-    const result = deriveSearchResults(
+    const result = searchResults(
       branchedList([source, branch], branch.id, { sourceSessionId: source.id }),
       [workspace('first', ['shared', 'my-branch'])],
       'needle',
@@ -849,6 +885,22 @@ describe('deriveSearchResults branch marks', () => {
 })
 
 describe('deriveSearchResults', () => {
+  it('updates the previous index to the same results as a fresh one', () => {
+    const first = { ...summary('first', 1), title: 'Weekly sync notes' }
+    const second = { ...summary('second', 2), title: 'Sync dashboard' }
+    const before = list(first, second)
+    const previous = sessionSearchIndex(before, [], noArchive, 'default', SCRATCH)
+    previous.search('sync')
+    // A republish rebuilds every summary object; one title changes and one Session is new.
+    const after = list({ ...first, title: 'Weekly planning' }, { ...second }, { ...summary('third', 3), title: 'Sync retro' })
+    const updated = sessionSearchIndex(after, [], noArchive, 'default', SCRATCH, previous)
+    const fresh = sessionSearchIndex(after, [], noArchive, 'default', SCRATCH)
+    for (const query of ['sync', 'wkpl', 'retro']) {
+      expect(updated.search(query).map(row => row.id)).toEqual(fresh.search(query).map(row => row.id))
+    }
+    expect(updated.search('sync').map(row => row.id)).toEqual([sid('third'), sid('second')])
+  })
+
   it('merges local title/Workspace matches before ranked content hits and enriches duplicates', () => {
     const titleHit = summary('title-hit', 30, '/projects/a')
     titleHit.title = titleHit.displayTitle = 'Needle title'
@@ -856,7 +908,7 @@ describe('deriveSearchResults', () => {
     workspaceHit.title = workspaceHit.displayTitle = 'Ordinary title'
     const contentHit = summary('content-hit', 10, SCRATCH)
     const sessions = list(titleHit, workspaceHit, contentHit)
-    const result = deriveSearchResults(
+    const result = searchResults(
       sessions,
       [
         workspace('a', ['title-hit'], 'Alpha'),
@@ -891,7 +943,7 @@ describe('deriveSearchResults', () => {
           running: false,
           runningSubagentCount: 0,
           pendingInteraction: 'plan-review',
-          completed: false,
+          completed: false, failed: false,
           archived: false,
           snippet: 'title session body excerpt',
         },
@@ -901,7 +953,7 @@ describe('deriveSearchResults', () => {
           workspace: 'Needle Workspace',
           running: false,
           runningSubagentCount: 0,
-          completed: false,
+          completed: false, failed: false,
           archived: false,
         },
         {
@@ -912,7 +964,7 @@ describe('deriveSearchResults', () => {
           workspace: '',
           running: false,
           runningSubagentCount: 0,
-          completed: false,
+          completed: false, failed: false,
           archived: false,
           snippet: 'body needle excerpt',
         },
@@ -926,7 +978,7 @@ describe('deriveSearchResults', () => {
     idHit.title = idHit.displayTitle = 'Ordinary title'
     const other = summary('b7e0d4aa-session', 1)
     other.title = other.displayTitle = 'Another title'
-    const result = deriveSearchResults(
+    const result = searchResults(
       list(idHit, other), [], '9A2C71', noArchive, 'default', noAttention, { items: [], hasMore: false }, 10, SCRATCH,
     )
     expect(result.items.map(item => [item.id, item.title])).toEqual([[idHit.id, 'Ordinary title']])
@@ -938,7 +990,7 @@ describe('deriveSearchResults', () => {
     const sessions = list(currentBlank, staleBlank)
     // Blank placeholders never match — not their localized-display title, not
     // their id, and not even a backend content hit naming them.
-    const result = deriveSearchResults(
+    const result = searchResults(
       sessions,
       [workspace('first', ['opaque-current', 'new session stale'])],
       'new session',
@@ -964,7 +1016,7 @@ describe('deriveSearchResults', () => {
       item.title = item.displayTitle = `Needle ${String(index)}`
       return item
     })
-    const overflow = deriveSearchResults(
+    const overflow = searchResults(
       list(...rows),
       [],
       'needle',
@@ -978,7 +1030,7 @@ describe('deriveSearchResults', () => {
     expect(overflow.items).toHaveLength(3)
     expect(overflow.hasMore).toBe(true)
 
-    const backendMore = deriveSearchResults(
+    const backendMore = searchResults(
       list(summary('body', 1)),
       [],
       'needle',
@@ -991,7 +1043,7 @@ describe('deriveSearchResults', () => {
     )
     expect(backendMore.items).toHaveLength(1)
     expect(backendMore.hasMore).toBe(true)
-    expect(deriveSearchResults(list(), [], '  ', noArchive, 'default', noAttention, { items: [], hasMore: true }, 3, SCRATCH))
+    expect(searchResults(list(), [], '  ', noArchive, 'default', noAttention, { items: [], hasMore: true }, 3, SCRATCH))
       .toEqual({ items: [], hasMore: false })
   })
 })

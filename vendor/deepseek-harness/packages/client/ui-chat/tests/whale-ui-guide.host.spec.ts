@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
@@ -22,6 +23,7 @@ async function executeGuideTool(args: Record<string, unknown>) {
   vi.stubEnv('DSHD_WHALE_UI_HOST', HOST)
   const ctx = new Context()
   contexts.push(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(NativeToolExecutor)
@@ -97,7 +99,8 @@ describe('Whale UI compact prompt and on-demand guide tool', () => {
     vi.stubEnv('DSHD_WHALE_UI_HOST', HOST)
     const ctx = new Context()
     contexts.push(ctx)
-    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(NativeToolExecutor)
     await ctx.plugin(Chat)

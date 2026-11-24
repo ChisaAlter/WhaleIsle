@@ -27,7 +27,7 @@ export class AppWebEntry {
   private readonly page: BootPage
   private ctx: Context | undefined
   private stopDragRecall: (() => void) | undefined
-  private modules!: ClientModuleSystem
+  private modules: ClientModuleSystem | undefined
   private manifest!: BootManifest
 
   /**
@@ -79,25 +79,26 @@ export class AppWebEntry {
       const transport = (globalThis as {
         __DSH_TRANSPORT__?: Pick<ClientModuleCreateOptions, 'loadBundle' | 'resolveAsset'>
       }).__DSH_TRANSPORT__
-      this.modules = moduleLoader.create({
+      const modules = moduleLoader.create({
         boot: win.__DSH_BOOT__,
         staticModules: getStaticModules(),
         ...transport?.loadBundle === undefined ? {} : { loadBundle: transport.loadBundle },
         ...transport?.resolveAsset === undefined ? {} : { resolveAsset: transport.resolveAsset },
         ...this.seams,
       })
+      this.modules = modules
       // Desktop shell probe handle (see DshWindow.__DSH_MODULES__).
-      ;(globalThis as DshWindow).__DSH_MODULES__ = this.modules
-      this.manifest = this.modules.manifest
+      ;(globalThis as DshWindow).__DSH_MODULES__ = modules
+      this.manifest = modules.manifest
 
-      const prefetching = this.prefetchImmediateTier()
+      const prefetching = this.prefetchImmediateTier(modules)
       const ctx = new Context()
       this.ctx = ctx
       this.page.setTotal(this.manifest.plugins.length)
       await prefetching
       await bootClient({
         ctx,
-        modules: this.modules,
+        modules,
         manifest: this.manifest,
         // A failed entry may be optional; only the audit decides whether the boot page reports a failure.
         onEntryState: (name, state) => {
@@ -125,15 +126,22 @@ export class AppWebEntry {
     this.stopDragRecall = undefined
     const ctx = this.ctx
     this.ctx = undefined
-    if (ctx !== undefined) await ctx.fiber.dispose()
-    this.page.dispose()
+    try {
+      if (ctx !== undefined) await ctx.fiber.dispose()
+    } finally {
+      try {
+        await this.modules?.dispose()
+      } finally {
+        this.page.dispose()
+      }
+    }
   }
 
   /** Prefetch stage-one bundles and their dynamic requests before concurrent plugin imports. */
-  private async prefetchImmediateTier(): Promise<void> {
+  private async prefetchImmediateTier(modules: ClientModuleSystem): Promise<void> {
     await Promise.all(this.manifest.plugins
       .filter(row => row.immediately)
-      .map(row => this.modules.prefetch(row.id).catch((_prefetchError: unknown) => {
+      .map(row => modules.prefetch(row.id).catch((_prefetchError: unknown) => {
         // Prefetch only starts transport early; the Loader import retries and reports this bundle failure.
       })))
   }

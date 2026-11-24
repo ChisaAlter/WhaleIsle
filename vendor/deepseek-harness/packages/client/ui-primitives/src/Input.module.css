@@ -51,5 +51,11 @@
 }
 
 .input::placeholder {
-  color: var(--dsw-alias-label-placeholder);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+@media (pointer: coarse) {
+  .input {
+    font-size: 16px;
+  }
 }

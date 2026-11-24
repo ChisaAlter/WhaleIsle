@@ -44,7 +44,7 @@ const OFFICE_OVERLAY_FILENAME = 'desktop-office.patch.yml';
 const PRIMARY_RUNTIME_DIRNAME = 'dsh-primary-runtime';
 const OFFICE_SKILLS_DIRNAME = 'office-skills';
 const OFFICE_SKILL_FOLDERS = [
-  'office', 'office-docx', 'office-pptx', 'office-xlsx',
+  'office',
 ];
 const KIT_PACKAGE = '@deepseek-ai/libreoffice-kit';
 const KIT_CLI_ENTRY = path.join('lib', 'cli.js');

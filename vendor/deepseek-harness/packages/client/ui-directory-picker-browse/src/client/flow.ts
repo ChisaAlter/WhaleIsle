@@ -35,6 +35,7 @@ export type BrowseFlowHooks = PropsHooks<BrowseFlowInjected['hooks']>
 
 type HeroRemoteSlot = 'conversation.hero.workspace.directoryFlow.remote'
 type SidebarRemoteSlot = 'sidebar.workspaces.directoryFlow.remote'
+type PickerRemoteSlot = 'workspace.picker.directoryFlow.remote'
 
 type HeroFlowProps =
   PropsRuntime<'conversation.hero.workspace.directoryFlow'>
@@ -50,6 +51,13 @@ type SidebarFlowProps =
   & PropsStore<ReturnType<typeof createPickerPreferenceStore>>
   & PropsRenderSlots<SidebarRemoteSlot>
 
+type PickerFlowProps =
+  PropsRuntime<'workspace.picker.directoryFlow'>
+  & Omit<BrowseFlowInjected, 'hooks'>
+  & BrowseFlowHooks
+  & PropsStore<ReturnType<typeof createPickerPreferenceStore>>
+  & PropsRenderSlots<PickerRemoteSlot>
+
 /**
  * Shared flow body: the browse dialog plus the remote-workspace pane its
  * remote child hole produces. The occupant's pane stays mounted once first
@@ -59,7 +67,7 @@ type SidebarFlowProps =
  *   remote render point.
  * @returns the dialog element (renders nothing while closed).
  */
-function TabbedDirectoryFlow(props: (HeroFlowProps | SidebarFlowProps) & {
+function TabbedDirectoryFlow(props: (HeroFlowProps | SidebarFlowProps | PickerFlowProps) & {
   /** Render the remote-workspace pane for one owner share. */
   renderRemote: (owner: RemoteFlowOwnerProps) => ReactNode
 }): ReactElement {
@@ -121,5 +129,19 @@ export function BrowseDirectoryFlowSidebar(props: SidebarFlowProps): ReactElemen
     ...props,
     renderRemote: (owner: RemoteFlowOwnerProps) =>
       props.renderSlot('sidebar.workspaces.directoryFlow.remote', owner),
+  })
+}
+
+/**
+ * Shared workspace-picker hole occupant: declares the picker remote-workspace
+ * child and renders it through the dialog's tab strip.
+ * @param props - owner conversation plus the injected browse face.
+ * @returns the dialog element (renders nothing while closed).
+ */
+export function BrowseDirectoryFlowPicker(props: PickerFlowProps): ReactElement {
+  return createElement(TabbedDirectoryFlow, {
+    ...props,
+    renderRemote: (owner: RemoteFlowOwnerProps) =>
+      props.renderSlot('workspace.picker.directoryFlow.remote', owner),
   })
 }

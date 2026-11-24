@@ -1,7 +1,7 @@
 /** Session export command and Host-owned ZIP download and Markdown copy routes. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
+import type { CommandDefinitionId } from '@deepseek-ai/dsh-commands/types'
 import Schema from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { DEFAULT_TITLEBAR_ACTION } from './export-settings.ts'

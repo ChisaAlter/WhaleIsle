@@ -11,6 +11,7 @@ import { createPlatformPages, type PlatformPages } from '../src/client/platform-
 import { AccountPlatformHost } from '../src/client/AccountPlatformHost.tsx'
 import { AccountSection, type AccountSectionInjected, type AccountSnapshot } from '../src/client/AccountSection.tsx'
 import type { AccountMenuProps } from '../src/client/AccountMenu.tsx'
+import type { AccountNoticesProps } from '../src/client/AccountNotices.tsx'
 import type { AccountNotificationsOwnerProps } from '../src/client/account-ui.ts'
 import type {} from '../src/client/index.ts'
 import { en, zh, type AccountKey } from '../src/client/locales.ts'
@@ -195,7 +196,8 @@ it.each([en, zh])('updates the Settings menu keycaps and accessible combination 
   const operations = mount({ status: 'signed-out', attempt: null }, copy)
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
-  const props: AccountMenuProps = { renderSlot: () => null,
+  const props: AccountMenuProps = {
+    renderSlot: () => null,
     ...({} as GlobalStandardProps), ...operations, wide: true, settingsOpen: false,
     useAccount: selector => selector(operations.hooks.account.getSnapshot()),
     useTheme: selector => selector(operations.hooks.theme.getSnapshot()),
@@ -244,7 +246,8 @@ it.each([en, zh])('offers settings, contact and sign-in from the signed-out acco
 it.each([true, false])('keeps the account inset local through sign-in changes with wide=%s', async (wide) => {
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   let operations = operationsOf({ status: 'signed-out', attempt: null })
-  const props: AccountMenuProps = { renderSlot: () => null,
+  const props: AccountMenuProps = {
+    renderSlot: () => null,
     ...({} as GlobalStandardProps), ...operations, wide, settingsOpen: false,
     useAccount: selector => selector(operations.hooks.account.getSnapshot()),
     useTheme: selector => selector(operations.hooks.theme.getSnapshot()),
@@ -287,7 +290,9 @@ it('reports a failed start once while keeping the login dialog available', async
   expect(start).toHaveBeenCalledOnce()
   const dialog = screen.getByRole('dialog', { name: en.failureTitle })
   expect(within(dialog).getByText(en.failed)).toBeTruthy()
-  view.rerender(<AccountMenu renderSlot={() => null} {...({} as GlobalStandardProps)} {...operations} settingsOpen={false} start={start}
+  expect(screen.queryByRole('alert')).toBeNull()
+  view.rerender(<AccountMenu renderSlot={() => null} {...({} as GlobalStandardProps)} {...operations} settingsOpen={false}
+    start={start}
     useAccount={selector => selector(snapshot)} useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openOnboarding={() => {}} openSettings={() => {}}
     t={key => key in en ? en[key as AccountKey] : key} />)
@@ -360,6 +365,7 @@ it('opens usage inside Desktop and returns to the same Account settings', async 
   expect(platform.open).toHaveBeenCalledWith('usage', { x: 0, y: 0, width: 0, height: 0 })
   const back = screen.getByRole('button', { name: en.backToHarness })
   await expect(`${back.parentElement!.parentElement!.textContent}\n`).toMatchFileSnapshot('./expected/platform-header-en.txt')
+  expect(screen.getByRole('dialog', { name: en.backToHarness }).dataset.shortcutModal).toBe('platform')
   await act(async () => { fireEvent.click(back) })
   expect(platform.close).toHaveBeenCalledOnce()
   expect(screen.queryByRole('button', { name: en.backToHarness })).toBeNull()
@@ -662,7 +668,7 @@ it('dismisses a collapsed menu and hands its login dialog to the API-key onboard
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   const openOnboarding = vi.fn()
   let snapshot = operations.hooks.account.getSnapshot()
-  const props = { ...({} as GlobalStandardProps), ...operations, renderSlot: () => null, wide: false, settingsOpen: false,
+  const props = { renderSlot: () => null, ...({} as GlobalStandardProps), ...operations, wide: false, settingsOpen: false,
     openSettings: vi.fn(), openOnboarding,
     useAccount: <T,>(select: (value: AccountSnapshot) => T) => select(snapshot),
     useTheme: <T,>(select: (value: ThemeSnapshot) => T) => select(operations.hooks.theme.getSnapshot()),
@@ -773,12 +779,13 @@ it.each([en, zh])('shows live model sign-in guidance without replaying it after 
 })
 
 it.each(['desktopOnboardingVisible', 'onboarding'] as const)('hides the notification slot until %s ends', async (field) => {
+  const { AccountNotices } = await import('../src/client/AccountNotices.tsx')
   const operations = operationsOf({ status: 'credential-stored', attempt: null })
   let snapshot: AccountSnapshot = { ...operations.hooks.account.getSnapshot(), [field]: true }
   let active: boolean | undefined
   let openAccount: (() => void) | undefined
   const openSettings = vi.fn()
-  const renderSlot: AccountMenuProps['renderSlot'] = (name, owner) => {
+  const renderSlot: AccountNoticesProps['renderSlot'] = (name, owner) => {
     expect(name).toBe('settings.launcher.notifications')
     const value: object = owner
     const props = value as AccountNotificationsOwnerProps
@@ -786,25 +793,29 @@ it.each(['desktopOnboardingVisible', 'onboarding'] as const)('hides the notifica
     openAccount = props.openAccount
     return null
   }
-  const view = render(await accountMenu(operations, () => snapshot, false, renderSlot, openSettings))
+  const notices = () => <AccountNotices renderSlot={renderSlot} {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(snapshot)}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} openSettings={openSettings} />
+  const view = render(notices())
   expect(active).toBe(false)
   snapshot = { ...snapshot, [field]: false }
-  view.rerender(await accountMenu(operations, () => snapshot, false, renderSlot, openSettings))
+  view.rerender(notices())
   expect(active).toBe(true)
   openAccount?.()
   expect(openSettings).toHaveBeenCalledExactlyOnceWith('account')
 })
 
-it('keeps notification DOM inside the launcher while the collapsed rail hides it', async () => {
-  const operations = operationsOf({ status: 'credential-stored', attempt: null })
-  const snapshot = () => operations.hooks.account.getSnapshot()
-  const renderSlot: AccountMenuProps['renderSlot'] = () => <div role="status">Notification</div>
-  const view = render(await accountMenu(operations, snapshot, false, renderSlot))
-  const notice = screen.getByRole('status')
-  expect(view.container.contains(notice)).toBe(true)
-  view.rerender(await accountMenu(operations, snapshot, false, renderSlot, undefined, false))
-  expect(screen.queryByRole('status')).toBeNull()
-  expect(notice.isConnected).toBe(true)
-  view.rerender(await accountMenu(operations, snapshot, false, renderSlot))
-  expect(screen.getByRole('status')).toBe(notice)
+it('keeps the notification slot inactive while signed out', async () => {
+  const { AccountNotices } = await import('../src/client/AccountNotices.tsx')
+  const operations = operationsOf({ status: 'signed-out', attempt: null })
+  const owners: AccountNotificationsOwnerProps[] = []
+  const renderSlot: AccountNoticesProps['renderSlot'] = (_name, owner) => {
+    const value: object = owner
+    owners.push(value as AccountNotificationsOwnerProps)
+    return null
+  }
+  render(<AccountNotices renderSlot={renderSlot} {...({} as GlobalStandardProps)} {...operations}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())} openSettings={() => {}} />)
+  expect(owners.at(-1)?.active).toBe(false)
 })

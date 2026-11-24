@@ -16,15 +16,15 @@ import { createSidebarNavStore } from './stores.ts'
 import { createPanelPins } from './panel-pins.ts'
 import { HeaderLeadingControls } from './HeaderLeadingControls.tsx'
 import { SidebarRoot } from './SidebarRoot.tsx'
-import { PanelIcon } from './PanelIcon.tsx'
+import { PanelIcon, PanelTrailing } from './PanelIcon.tsx'
 import { en, ja, es, fr, de, ru, pt, zh, type SidebarKey } from './locales.ts'
 
 export type {
   SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
   SidebarNavTabOwnerProps, SidebarPageOwnerProps,
   SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata,
-  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
-  SectionScroller, SidebarSectionHookContext, SidebarSectionInjected, UseSectionScroller,
+  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSessionActionOwnerProps,
+  SidebarSettingsOwnerProps, SectionScroller, SidebarSectionHookContext, SidebarSectionInjected, UseSectionScroller,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
 export type { SidebarNavTabRow } from './stores.ts'
@@ -148,6 +148,10 @@ export function apply(ctx: ClientContext): void {
       name: 'sidebar.panel.icon', scope: 'root',
       children: { 'sidebar.panellist': { kind: 'list', scope: 'root' } },
     }, PanelIcon)
+    yield ctx.slots.registerFactory({
+      name: 'sidebar.panel.trailing', scope: 'root',
+      children: { 'sidebar.panellist.trailing': { kind: 'list', scope: 'root', inline: true } },
+    }, PanelTrailing)
     yield ctx.slots.register({
       name: 'sidebar',
       locale: NS,
@@ -164,6 +168,7 @@ export function apply(ctx: ClientContext): void {
         'sidebar.sections.after': { kind: 'list', scope: 'root' },
         'sidebar.settings': { kind: 'single', scope: 'root' },
         'sidebar.footer.action': { kind: 'list', scope: 'root' },
+        'sidebar.session.action': { kind: 'hoc', scope: 'root' },
       },
       inject: injectProps,
     }, SidebarRoot)

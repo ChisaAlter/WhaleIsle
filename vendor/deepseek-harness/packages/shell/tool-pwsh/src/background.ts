@@ -64,7 +64,7 @@ export function processOutcome(proc: ShellProcess, escalationModes: readonly San
   // wrapper exit; real nonzero command exits must remain `completed`.
   const base: JobOutcome = proc.status === 'killed'
     ? { status: 'killed', detail: proc.signal !== null ? `signal: ${proc.signal}` : 'killed before exit' }
-    : { status: 'completed', detail: `exit code: ${proc.exitCode ?? 0}` }
+    : { status: 'completed', detail: `exit code: ${proc.exitCode ?? 0}`, exitCode: proc.exitCode ?? 0 }
   const notes = sandboxNotes(proc.sandbox, escalationModes)
   if (proc.exitCode === STATUS_DLL_INIT_FAILED_U32 || proc.exitCode === STATUS_DLL_INIT_FAILED_I32) {
     const modeLabel = proc.sandbox?.mode ?? 'workspace-write'

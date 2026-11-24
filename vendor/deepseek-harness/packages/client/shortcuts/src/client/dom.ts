@@ -51,7 +51,7 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
   }
   const changedModals = (records: MutationRecord[]): void => {
     if (records.some(record => record.type === 'attributes'
-      ? record.oldValue === 'dialog' || record.oldValue === 'true' || containsModal(record.target)
+      ? record.attributeName === 'data-menu-popup' || record.oldValue === 'dialog' || record.oldValue === 'true' || containsModal(record.target)
       : [...record.addedNodes, ...record.removedNodes].some(containsModal))) reset()
   }
   const changedForeground = (records: MutationRecord[]): void => {
@@ -59,7 +59,7 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
   }
   const observer = fixed === undefined ? undefined : new MutationObserver(changedModals)
   observer?.observe(document.documentElement, { childList: true, subtree: true,
-    attributes: true, attributeFilter: ['role', 'aria-modal'], attributeOldValue: true })
+    attributes: true, attributeFilter: ['role', 'aria-modal', 'data-menu-popup'], attributeOldValue: true })
   const foregroundObserver = fixed === undefined ? undefined : new MutationObserver(changedForeground)
   // Attributes only: node insertion/removal is already covered by the
   // role/aria-modal observer above, and observing childList here would reset a

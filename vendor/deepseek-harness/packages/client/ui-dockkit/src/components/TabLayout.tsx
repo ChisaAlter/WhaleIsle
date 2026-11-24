@@ -300,7 +300,8 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
             : <TabStrip state={state} pane={pane} callbacks={callbacks} offsets={offsets} />)}
         </div>
         <div ref={body} className={clsx(css.tabHostBody, floating ? css.floatBody : css.paneBody)}
-          hidden={minimized} aria-hidden={minimized || undefined}>
+          hidden={minimized} aria-hidden={minimized || undefined}
+          data-dockkit-pane-body={floating ? undefined : ''}>
           {visited && (retained || (active && selected)) ? <TabBody tab={tab} renderTab={callbacks.renderTab} /> : null}
           {!floating && <PaneDropHints pane={pane} callbacks={callbacks} />}
         </div>

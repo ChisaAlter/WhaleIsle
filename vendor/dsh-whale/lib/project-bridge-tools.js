@@ -24,19 +24,21 @@ const VALID_SCOPE_CEILINGS = new Set(['readonly', 'research', 'docs', 'developme
 const DOC_EXT_RE = /\.(md|mdx|txt|rst|adoc)$/i;
 
 const listOutput = {
-  schema: { type: 'object', additionalProperties: true },
+  schema: /** @type {const} */ ({ type: 'object', additionalProperties: true }),
+  /** @param {any} _args @param {any} value */
   render: (_args, value) => [{
-    type: 'text',
+    type: /** @type {const} */ ('text'),
     text: Array.isArray(value?.projects) && value.projects.length
-      ? value.projects.map((p) => `- ${p.title} [${p.projectId}] (${p.canonicalWorkingDirectory}) status=${p.activity?.state ?? p.lifecycle}`).join('\n')
+      ? value.projects.map((/** @type {any} */ p) => `- ${p.title} [${p.projectId}] (${p.canonicalWorkingDirectory}) status=${p.activity?.state ?? p.lifecycle}`).join('\n')
       : String(value?.detail ?? ''),
   }],
 };
 
 const inspectOutput = {
-  schema: { type: 'object', additionalProperties: true },
+  schema: /** @type {const} */ ({ type: 'object', additionalProperties: true }),
+  /** @param {any} _args @param {any} value */
   render: (_args, value) => [{
-    type: 'text',
+    type: /** @type {const} */ ('text'),
     text: value?.project
       ? `${value.project.title} [${value.project.projectId}] (${value.project.canonicalWorkingDirectory}) status=${value.project.activity?.state ?? value.project.lifecycle}`
       : String(value?.detail ?? ''),
@@ -44,7 +46,7 @@ const inspectOutput = {
 };
 
 const handoffOutput = {
-  schema: {
+  schema: /** @type {const} */ ({
     type: 'object',
     additionalProperties: false,
     properties: {
@@ -57,8 +59,9 @@ const handoffOutput = {
       messageId: { type: 'string', required: true },
       detail: { type: 'string', required: true },
     },
-  },
-  render: (_args, value) => [{ type: 'text', text: String(value?.detail ?? '') }],
+  }),
+  /** @param {any} _args @param {any} value */
+  render: (_args, value) => [{ type: /** @type {const} */ ('text'), text: String(value?.detail ?? '') }],
   /** @param {any} _args @param {any} value */
   presentationMeta: (_args, value) => ({ ok: Boolean(value?.ok), detail: String(value?.detail ?? '') }),
 };

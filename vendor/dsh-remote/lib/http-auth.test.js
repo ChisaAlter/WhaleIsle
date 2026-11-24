@@ -113,6 +113,13 @@ test('authorizeWebRequest fails closed without connection and honors admit/reque
 
   const r5 = makeRes()
   assert.equal(authorizeWebRequest({ method: 'GET', headers: {} }, r5, { requestRejection: () => undefined }), true)
+
+  const r6 = makeRes()
+  assert.equal(authorizeWebRequest({ method: 'GET', headers: {} }, r6, null, { principal: { kind: 'owner' } }), true)
+
+  const r7 = makeRes()
+  assert.equal(authorizeWebRequest({ method: 'GET', headers: {} }, r7, null, { principal: { kind: 'viewer' } }), false)
+  assert.equal(r7.status, 403)
 })
 
 test('authorizeWebRequest enforces application/json on write methods and allows charset parameter', () => {

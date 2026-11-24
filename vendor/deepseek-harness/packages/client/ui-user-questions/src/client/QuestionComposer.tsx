@@ -515,7 +515,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
               disabled={busy !== null}
               onClick={() => { setMinimized(current => !current) }}
             >
-              {minimized ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
+              {minimized ? <IconChevronUpOutlineRegular size={18} /> : <IconChevronDownOutlineRegular size={18} />}
             </button>
             <Button
               type="button" className={css.iconButton}
@@ -524,7 +524,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
               title={t(pending.dismissal === 'hide' ? 'nav.close' : 'nav.cancel')}
               disabled={busy !== null} onClick={dismissFlow}
             >
-              <IconCloseOutlineRegular />
+              <IconCloseOutlineRegular size={15} />
             </Button>
           </div>
         </header>

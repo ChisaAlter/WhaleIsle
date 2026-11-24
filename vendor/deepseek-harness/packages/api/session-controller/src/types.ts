@@ -6,7 +6,7 @@ import type {
   AttachmentIdType, FileAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/types'
 import type { LlmModelBadge, TextBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeq, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap, SessionProjectionSummaryExcluded, SessionProjectionSummaryValues } from '@deepseek-ai/dsh-session-projection/types'
@@ -14,12 +14,13 @@ import type { Principal } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
+import type { SessionListMetadata, SessionPresentation } from '@deepseek-ai/dsh-session-query/types'
+export type { SessionListMetadata, SessionPresentation }
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Eligible latest failed turn/end for an empty prompt, or null. */
     conversationContinuation: SessionSeq | null
-    /** Persisted facts used to summarize a Session without activating it. */
-    sessionListMetadata: SessionListMetadata
     /**
      * Image-intake limits enforced by the Session prompt endpoint. Boot
      * constant, excluded from Session summary payloads: every Session shares
@@ -27,33 +28,6 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      */
     imageLimits: SessionProjectionSummaryExcluded<ImageAttachmentLimits>
   }
-}
-
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    /** Log-only navigation metadata; never enters model history or changes permissions. */
-    'session/presentation': SessionPresentation | null
-  }
-}
-
-/** Persisted hints used to summarize a cold Session. */
-export interface SessionListMetadata {
-  /** Whether the folded prefix contains no turn. */
-  readonly blank: boolean
-  /** Latest human-authored prompt time in the folded prefix. */
-  readonly lastPromptAt: number | null
-  /** Persistent plugin navigation owner, absent for ordinary conversations. */
-  readonly presentation?: SessionPresentation | undefined
-}
-
-/** Plugin-owned conversation presentation, not an execution authority. */
-export interface SessionPresentation {
-  readonly owner: string
-  readonly title: string
-  /** User-facing file navigation root; does not change the Agent cwd or grant filesystem access. */
-  readonly workingDirectory?: string | undefined
-  /** Selects the shared composer with plugin-owned trailing controls. */
-  readonly composer?: 'managed' | undefined
 }
 
 /** User file navigation preserves the separate execution cwd and grants no path authority. */
@@ -72,7 +46,6 @@ export interface SessionPresentationValue {
   readonly presentation: SessionPresentation | null
   readonly seq: number
 }
-
 /**
  * Summary wire values a Session-list row carries. A `sequenced` block carries
  * every summary key computed at its `asOfSeq`; a `cached` block carries the

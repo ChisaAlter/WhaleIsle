@@ -64,7 +64,7 @@ async function createDesktopClientBench(t, { locale = 'zh', initialProjects = []
 
   const openedPaths = [];
   const hostCtx = {
-    connection: { admit: () => ({ ok: true }) },
+    connection: { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
     agents: new Map(),
     get: () => undefined,
   };

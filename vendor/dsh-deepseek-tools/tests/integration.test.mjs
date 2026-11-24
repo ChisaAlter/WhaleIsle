@@ -233,7 +233,10 @@ test('real web profile: persistent settings, native tools, file permissions, str
   if (process.env.DSH_DEEPSEEK_UI_QA === '1') {
     const env = { ...process.env };
     const outcome = await new Promise((done, reject) => {
-      const uiUrl = ctx.connection.authenticatedUrl(ctx.webApp.getAdvertisedUrl());
+      const advertisedUrl = ctx.webApp.getAdvertisedUrl();
+      const entryUrls = [];
+      ctx.emit(ctx.webServer, 'webserver/entry-url', advertisedUrl, entryUrls);
+      const uiUrl = entryUrls.find((entry) => entry?.open)?.url ?? entryUrls[0]?.url ?? advertisedUrl;
       const child = spawn(process.execPath, [join(root, 'vendor/dsh-deepseek-tools/tests/ui-qa.mjs'), uiUrl, join(scratch, 'browser'), process.env.DSH_DEEPSEEK_QA_EVIDENCE || ''], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
       child.on('error', reject); child.on('exit', code => done({ code, output }));

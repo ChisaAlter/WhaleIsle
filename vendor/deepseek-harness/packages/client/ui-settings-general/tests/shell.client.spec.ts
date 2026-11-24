@@ -25,9 +25,10 @@ function injectedOf(c: TestClient): SettingsRootInjected {
   return (entry.inject as () => SettingsRootInjected)()
 }
 
-/** The shell's child declarations (chrome, actions, sections, and onboarding overlays). */
+/** The slots this package declares, through the shell or the `settings.section.view` Factory. */
 const CHILD_SPECS = {
   'settings.launcher': { kind: 'single', scope: 'root' },
+  'settings.notice': { kind: 'single', scope: 'root' },
   'settings.trigger': { kind: 'single', scope: 'root' },
   'settings.header': { kind: 'single', scope: 'root' },
   'settings.action': { kind: 'list', scope: 'root' },

@@ -16,8 +16,8 @@
 
 ## Invariants
 
-- 单一事实源：`--dsh-composer-resized-width` 由座位（`[data-composer-seat]`）发布，拖动结束（及恢复已存宽度）时再写到会话根和列宿主（`[data-conversation-scroll]`），供之后挂载的聊天列读取；各消费方只读变量，**不得**另存宽度或自行计算。
-- 拖动性能：继承型自定义属性写在 transcript 祖先上会让全部消息重算样式（20 轮会话每次移动约 60ms）。拖动帧因此只写座位（小子树）与不继承的 `--dsh-composer-flow-width`（`@property … inherits: false`，写在 `[data-chat-flow]` 聊天列和 `[data-composer-flow]` Hero 行本身）；聊天列与 Hero 行先读 flow 宽度，再回退到继承值。`composer-resize-publish.client.spec.tsx` 钉住拖动中不写列宿主。
+- 单一事实源：0.2.3-alpha.2 起，存在 `[data-conversation-content]` 宿主时，`ComposerResizeHandles` 水平拖动直接写入上游 `#8858` 统一非继承宽度轴 `--dsh-chat-user-width`（`contentWidth = width - 32`，并标记 `data-composer-user-width`），使聊天列、输入卡、Dock 卡、Hero 行、宽度手柄与 `ui-session-panel` 右侧留白全部从同一轴派生（废弃分叉的 `--dsh-composer-flow-width`）；脱离对话宿主的独立输入栏回退写入座位上的 `--dsh-composer-resized-width`。各消费方只读 CSS 变量，**不得**另存宽度或自行计算。
+- 拖动性能：上游 `#8858` 在 `[data-conversation-content]` 上通过 `@property`（`inherits: false`）驱动 `--dsh-chat-user-width` 与 `--dsh-chat-content-width-resolved`，避免拖动帧触发整页 transcript 样式重算；`composer-resize-publish.client.spec.tsx` 钉住拖动桥接 `--dsh-chat-user-width` 且不写独立列宿主。
 - 审批接管：审批卡宽高取被隐藏输入卡的实测尺寸，上下内边距取输入卡在输入区内的实测偏移，覆盖输入卡原位置；`approval-resize-geometry.e2e.ts` 在拉宽拉高后比较两张卡的位置与尺寸（误差 ≤1px）。
 - 静止回退：`var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))`，变量缺失时 = 旧值。
 - 关系钉死：统计 dock = 卡宽 − 2×side-clearance；聊天流转列 = 卡宽 − 2×side-clearance；QueueDock = 卡宽 − 2×dock-inset；TodoPanel / GoalBar = 卡宽 − 4×dock-inset。TodoPanel 使用共享 `ui-primitives/TaskDock`，宽度约定位于 `TaskDock.module.css` 的 `.root`。0.2.1-alpha.1 起 ActivityPill 与 UsagePill 各自占一个 dock 条目，宽度约定位于 `InputBar.module.css` 的 `.dock`；`PeakValleyRow` 在该容器中独占下一行。

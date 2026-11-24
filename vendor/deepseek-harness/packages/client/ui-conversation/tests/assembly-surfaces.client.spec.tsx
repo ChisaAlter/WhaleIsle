@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { syncedConfig } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyMenus, inject as injectMenus } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 /** Conversation assembly acceptance independent of Tool presentation. */
 import './control-row-dom.ts'
@@ -58,7 +59,7 @@ const LAYOUT_CHILDREN = {
 function provideWorkspaceNavigation(runtime: SlotTestRuntime): (id: SessionId) => void {
   let mainReference: ReturnType<typeof runtime.sessions.retain> | undefined
   const openSession = (id: SessionId): void => {
-    const next = runtime.sessions.retain(id, { source: 'mainView' })
+    const next = runtime.sessions.retain(id, { source: 'mainView', facets: { conversation: true } })
     mainReference?.release()
     mainReference = next
   }
@@ -90,7 +91,7 @@ async function bench(opts?: { blank?: boolean }) {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) })
-  await runtime.mount({ inject: [...injectMenus], apply: applyMenus })
+  await runtime.mount({ inject: [...injectMenus], apply: applyMenus }, syncedConfig({ resolutionTimeoutMs: 1000 }))
   await runtime.sessions.add({
     id: SID,
     summary: { title: 'S', displayTitle: 'S', cwd: '/proj' },
@@ -102,7 +103,7 @@ async function bench(opts?: { blank?: boolean }) {
   })
   openSession(SID)
   await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-  await runtime.mount({ inject: [...inject], apply })
+  await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
   return runtime
 }
 
@@ -116,9 +117,9 @@ describe('resident composer', () => {
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) })
-    await runtime.mount({ inject: [...injectMenus], apply: applyMenus })
+    await runtime.mount({ inject: [...injectMenus], apply: applyMenus }, syncedConfig({ resolutionTimeoutMs: 1000 }))
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-    await runtime.mount({ inject: [...inject], apply })
+    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
     runtime.slots.register({ name: 'conversation.hero.workspace' }, WorkspaceProbe)
     const view = runtime.renderRoot()
     const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')
@@ -146,12 +147,12 @@ describe('resident composer', () => {
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) })
-    await runtime.mount({ inject: [...injectMenus], apply: applyMenus })
+    await runtime.mount({ inject: [...injectMenus], apply: applyMenus }, syncedConfig({ resolutionTimeoutMs: 1000 }))
     await runtime.workspaces.update((draft) => {
       draft.items = [{ workspaceId: 'w1', title: 'Proj', path: '/proj', sessionIds: [SID] }] as never
     })
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-    await runtime.mount({ inject: [...inject], apply })
+    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
     runtime.slots.register({ name: 'conversation.hero.workspace' }, WorkspaceProbe)
     const view = runtime.renderRoot()
 
@@ -216,7 +217,7 @@ describe('prompt rejection through the assembled composer', () => {
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) })
-    await runtime.mount({ inject: [...injectMenus], apply: applyMenus })
+    await runtime.mount({ inject: [...injectMenus], apply: applyMenus }, syncedConfig({ resolutionTimeoutMs: 1000 }))
     const prompt = vi.fn<ISession['prompt']>(async () => ({
       ok: false,
       error: new RemoteError('session/agent-busy', 'prompt rejected before acceptance', { reason: 'busy' }),
@@ -228,7 +229,7 @@ describe('prompt rejection through the assembled composer', () => {
     })
     openSession(SID)
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
-    await runtime.mount({ inject: [...inject], apply })
+    await runtime.mount({ inject: [...inject], apply }, syncedConfig({ busyEnter: 'queue', maxConcurrentFileUploads: 2 }))
     const view = runtime.renderRoot()
 
     const composer = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!

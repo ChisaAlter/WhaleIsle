@@ -84,8 +84,8 @@
           "src/renderer/assets/welcome-brand.svg",
           "src/renderer/assets/window-material.css"
         ],
-        "sourceHash": "4b23854014e9d9064f204ee446a652a52f27cefa2b642287956686c0218fe1a8",
-        "artifactHash": "aeab15c8154e0198f62718c864dbfd09893291c50d88d4316671a6dd7afee469"
+        "sourceHash": "e152de6bef97e7159f3f67f83a06d183be9c36dd379c68dfab07685f24a716f7",
+        "artifactHash": "5ed4bd2e29873034fc5a0623f498a170d8b3020350d2142ad96cd70bb6cd6cb1"
       }
     },
     "dsh-acp/lib/vendor": {

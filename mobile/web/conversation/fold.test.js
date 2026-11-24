@@ -79,6 +79,39 @@ test('foldEvents keeps image blocks on user bubbles', () => {
   assert.deepEqual(rows[0].images, [{ mediaType: 'image/png', data: 'aGk=' }]);
 });
 
+test('foldEvents displays agent-message user rows while filtering internal notices', () => {
+  const rows = foldEvents([
+    {
+      event: {
+        type: 'user/message',
+        seq: 1,
+        time: 1,
+        data: {
+          id: 'm-subagent-1',
+          source: { kind: 'agent-message', from: 'coordinator' },
+          content: [{ type: 'text', text: '请审查子代理协议改动' }],
+        },
+      },
+    },
+    {
+      event: {
+        type: 'user/message',
+        seq: 2,
+        time: 2,
+        data: {
+          id: 'm-notice-1',
+          source: { kind: 'plan-mode', form: 'notice', summary: 'plan' },
+          content: [{ type: 'text', text: 'The user switched this session to plan mode.' }],
+        },
+      },
+    },
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].role, 'user');
+  assert.equal(rows[0].id, 'm-subagent-1');
+  assert.equal(rows[0].text, '请审查子代理协议改动');
+});
+
 test('foldEvents renders ChisaCode projected timeline entries', () => {
   const rows = foldEvents([
     { seqStart: 1, item: { type: 'user_message', messageId: 'u1', text: '检查远程' } },

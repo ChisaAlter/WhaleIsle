@@ -24,8 +24,8 @@ import {
   IconAgentPresetOutline16, IconArchiveOutline20, IconBrowseOutline16, IconChartOutline16,
   IconCloseOutline16, IconDataOutline16, IconDeviceOutline16, IconSearchOutline16,
   IconInfoOutline16, IconLightOutline16, IconPanelLeftOutline16,
-  IconPersonalizationOutline16, IconServerOutline16, IconSettingsOutline16,
-  IconSkillOutline16,
+  IconPersonalizationOutline16, IconRemoteConnectionOutlineMedium, IconServerOutline16, IconSettingsOutline16,
+  IconSkillOutline16, IconUserOutlineMedium,
   usePresence,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConnectionIndicatorState, PresenceState } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -64,6 +64,8 @@ const HIT_HIGHLIGHT_MS = 1_600
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
+  if (id === 'account') return <IconUserOutlineMedium size={16} />
+  if (id === 'remote-connection') return <IconRemoteConnectionOutlineMedium size={16} />
   const Icon = NAV_ICONS[id] ?? IconSettingsOutline16
   return <Icon size={16} />
 }
@@ -71,6 +73,7 @@ function navIcon(id: string) {
 type PanelProps = {
   rows: readonly SettingsSectionRow[]
   renderSlot: SettingsRootComponentProps['renderSlot']
+  renderFactorySlot: SettingsRootComponentProps['renderFactorySlot']
   activeId: string | undefined
   motionState: PresenceState
   open: boolean
@@ -84,7 +87,7 @@ type PanelProps = {
  * header button, a mask click, and document-level Escape (mounted only while
  * open, so the listener lifetime is the panel's).
  */
-function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect, onClose, t }: PanelProps) {
+function SettingsPanel({ rows, renderSlot, renderFactorySlot, activeId, motionState, open, onSelect, onClose, t }: PanelProps) {
   // Entries can unmount underneath the requested id, so the render-time
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
@@ -226,7 +229,7 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
           <div ref={options} className={css.options} hidden={searching}>
             {active !== undefined && (
               <div key={active} data-dsh-motion="swap">
-                {renderSlot('settings.section', { close: onClose }, { only: active })}
+                {renderFactorySlot('settings.section.view', { id: active, close: onClose })}
               </div>
             )}
           </div>
@@ -256,7 +259,7 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
             <div ref={indexRoot} className={css.index} hidden aria-hidden="true" {...{ inert: '' }}>
               {rows.map(row => (
                 <div key={row.id} data-settings-index={row.id}>
-                  {renderSlot('settings.section', { close: onClose, indexOnly: true }, { only: row.id })}
+                  {renderFactorySlot('settings.section.view', { id: row.id, close: onClose, indexOnly: true })}
                 </div>
               ))}
             </div>
@@ -275,7 +278,7 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
     wide, reconnect, openSettings, closeSettings, useConnectionState, useNavigation,
-    useSections, useOnboardingSteps, useSessions, renderSlot, t,
+    useSections, useOnboardingSteps, useSessions, renderSlot, renderFactorySlot, t,
     useDesktopUpdate, openDesktopUpdate, useShortcuts,
   } = props
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'settings.open'))
@@ -290,14 +293,14 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const { open, sectionId: activeId } = navigation
   const wasOpen = useRef(open)
   const { mounted, state } = usePresence(open)
+  const close = useCallback(() => { closeSettings() }, [closeSettings])
   const launcher = renderSlot('settings.launcher', {
     wide,
     settingsOpen: open,
     openSettings: (sectionId?: string) => { openSettings(sectionId) },
     ...(shortcut?.keys.length ? { settingsShortcut: { keys: shortcut.keys, aria: shortcut.aria } } : {}),
-    openOnboarding: (id: string) => { setExplicitOnboarding(id) },
+    openOnboarding: (id: string) => { close(); setExplicitOnboarding(id) },
   })
-  const close = useCallback(() => { closeSettings() }, [closeSettings])
   // The wide layout opens from the account launcher row, which is not the
   // trigger button useModalLayer captured, so that case needs the shell's own
   // return target. Without a launcher the hook's generic restore is already
@@ -421,6 +424,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     <div className={clsx(css.root, !wide && css.railRoot)}>
       {launcher != null && <button type="button" hidden data-dsh-settings-trigger
         aria-expanded={open} onClick={() => { openSettings() }} />}
+      <div className={css.noticeRow} hidden={!wide}><div className={css.notice}>{renderSlot('settings.notice', { openSettings })}</div></div>
       <div className={clsx(css.triggerRow, !wide && css.railRow)}>
         {launcher != null && <div ref={launcherRow} className={css.launcherRow}>{launcher}</div>}
         {launcher == null && <Tooltip disabled={open} label={t('trigger')} shortcutKeys={shortcut?.keys}>
@@ -457,6 +461,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
         <SettingsPanel
           rows={rows}
           renderSlot={renderSlot}
+          renderFactorySlot={renderFactorySlot}
           activeId={activeId}
           motionState={state}
           open={open}

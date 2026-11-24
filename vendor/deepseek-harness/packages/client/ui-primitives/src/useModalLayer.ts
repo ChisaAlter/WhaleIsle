@@ -4,8 +4,11 @@ import type { RefObject } from 'react'
 import { observeComposition } from './keyboard-composition.ts'
 import { focusWithoutRing } from './focus.ts'
 
+/** Active menu popups, including search controls outside the menu's ARIA row group. */
+export const menuPopupSelector = '[data-menu-popup], [role="menu"]'
+
 /** Dialog and menu elements whose document order determines foreground shortcut ownership. */
-export const modalSelector = '[role="dialog"][aria-modal="true"], [role="menu"]'
+export const modalSelector = `[role="dialog"][aria-modal="true"], ${menuPopupSelector}`
 
 /**
  * Markers that mean "this surface is no longer logically open" even though the
@@ -342,7 +345,7 @@ export function useModalLayer(dialog: RefObject<HTMLElement | null>, open: boole
       // menu retained for its exit recipe must not suppress this dialog's
       // traversal: an owner can close a focused menu without the menu's own
       // Escape handoff, leaving focus inside the retiring subtree.
-      const focusedMenu = document.activeElement?.closest<HTMLElement>('[role="menu"]')
+      const focusedMenu = document.activeElement?.closest<HTMLElement>(menuPopupSelector)
       if (focusedMenu != null && focusedMenu.closest(inactiveSelector) === null) return
       const items = tabStops(element)
       for (const toast of toastStacks.get(document)?.items ?? []) {

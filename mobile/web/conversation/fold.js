@@ -422,6 +422,35 @@ function toolResultOf(data) {
   return result;
 }
 
+/** @param {any} source */
+function isVisibleUserMessageSource(source) {
+  const kind = source?.kind;
+  return kind === 'user' || kind === 'agent-message';
+}
+
+/**
+ * @param {any[]} rows
+ * @param {any} data
+ * @param {any} eventSeq
+ * @param {number | null} turn
+ */
+function appendTurnEndRows(rows, data, eventSeq, turn) {
+  const reason = data.reason && typeof data.reason === 'object' ? data.reason : null;
+  if (reason?.kind === 'error' || reason?.kind === 'aborted') {
+    const failure = reason.error && typeof reason.error === 'object' ? reason.error : {};
+    rows.push({
+      id: `turn-error-${eventSeq}`,
+      role: 'error',
+      text: String(failure.message || reason.message || '运行失败'),
+      code: typeof failure.code === 'string' ? failure.code : '',
+      title: reason.kind === 'aborted' ? '本轮已中止' : '本轮运行失败',
+      turn,
+    });
+  } else if (reason?.kind === 'max-tokens') {
+    rows.push({ id: `turn-max-${eventSeq}`, role: 'meta', text: '输出达到长度上限', turn });
+  }
+}
+
 /**
  * Fold the raw dsh event log (plus ChisaCode projected `item` entries) into
  * flat timeline rows. Row roles: `user`, `assistant`, `reasoning`, `tool`,
@@ -505,20 +534,7 @@ function foldEvents(entries) {
       }
       // A turn that closed in failure paints the desktop's 「本轮运行失败」
       // row; without it the phone shows a bare user bubble and nothing else.
-      const reason = data.reason && typeof data.reason === 'object' ? data.reason : null;
-      if (reason?.kind === 'error' || reason?.kind === 'aborted') {
-        const failure = reason.error && typeof reason.error === 'object' ? reason.error : {};
-        rows.push({
-          id: `turn-error-${event.seq}`,
-          role: 'error',
-          text: String(failure.message || reason.message || '运行失败'),
-          code: typeof failure.code === 'string' ? failure.code : '',
-          title: reason.kind === 'aborted' ? '本轮已中止' : '本轮运行失败',
-          turn,
-        });
-      } else if (reason?.kind === 'max-tokens') {
-        rows.push({ id: `turn-max-${event.seq}`, role: 'meta', text: '输出达到长度上限', turn });
-      }
+      appendTurnEndRows(rows, data, event.seq, turn);
       continue;
     }
     if (event.type === 'turn/interrupt') {
@@ -531,7 +547,7 @@ function foldEvents(entries) {
       continue;
     }
     if (event.type === 'user/message') {
-      if (data?.source?.kind !== 'user') continue;
+      if (!isVisibleUserMessageSource(data?.source)) continue;
       flushPartial();
       rows.push({
         id: String(data.id || event.seq),

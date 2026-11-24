@@ -15,7 +15,7 @@ import type {
 import type { FileUploadReceiptId, StagedAttachment } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
-  ReasoningEffortId, createUserMessage, freezeMessage,
+  type ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageId, MessageSourceMap } from '@deepseek-ai/dsh-llm'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
@@ -224,7 +224,7 @@ export class SessionCommandController {
           model: request.model,
           ...(request.reasoningEffort === undefined
             ? {}
-            : { reasoningEffort: ReasoningEffortId(request.reasoningEffort) }),
+            : { reasoningEffort: brandString<ReasoningEffortId>(request.reasoningEffort) }),
         }
         await this.ctx.llm.resolveCallConfig(selected)
         agent.model.select(selected)
@@ -322,6 +322,7 @@ export class SessionCommandController {
     }
     let seed: ReturnType<typeof buildForkSeed>
     let inheritedEventCount: SessionLogOffset
+    let endSeq: SessionLogOffset
     if (beforeSeq !== undefined) {
       const previous = source.events.findLast(event => event.type === 'turn/end' && event.seq < beforeSeq)
       let cut = SessionLogOffset(previous === undefined ? 0 : Number(previous.seq) + 1)
@@ -332,6 +333,7 @@ export class SessionCommandController {
       }
       seed = source.events.slice(0, cut)
       inheritedEventCount = cut
+      endSeq = SessionLogOffset(Math.min(Number(cut), source.persistedEventCount ?? Number(cut)))
     } else {
       const boundary = atSeq ?? latestCompletedPrefixBoundary(source.events)
       if (boundary === undefined || source.events[boundary]?.seq !== boundary) {
@@ -345,6 +347,7 @@ export class SessionCommandController {
       }
       seed = buildForkSeed(source.events, boundary)
       inheritedEventCount = SessionLogOffset(boundary + 1)
+      endSeq = SessionLogOffset(Math.min(boundary + 1, source.persistedEventCount ?? boundary + 1))
     }
     let workspace: Workspace | undefined
     try {
@@ -363,6 +366,7 @@ export class SessionCommandController {
       const forked = await this.ctx.agents.create({
         sessionId: childId,
         seed,
+        parentSource: { sessionId: request.sessionId, endSeq },
         inheritedEventCount,
         meta: {
           ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),

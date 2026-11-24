@@ -45,7 +45,7 @@ test('HTTP routes, connection admission, CSRF write fence, task controls, sessio
     get(key) {
       if (key === 'connection') {
         return {
-          admit: () => (admitRequests ? { ok: true } : { rejection: 403 }),
+          admit: () => (admitRequests ? { peer: { principal: { kind: 'owner' } } } : { rejection: 403 }),
         };
       }
       if (key === 'workspaceRegistry') {
@@ -399,4 +399,30 @@ test('dsh-whale bridge contract: listBridgeSummaries, inspectBridgeProject, and 
   assert.equal(dup.accepted, true);
   assert.equal(dup.deduplicated, true);
   assert.equal(leadEvents.length, 1);
+});
+
+test('HTTP handler enforces owner principal from WebServer peer parameter (401/403/200)', async (t) => {
+  const home = makeTempDir(t, 'dsh-proj-peer-home-');
+  const service = new ProjectService({ get: () => undefined }, { home });
+  t.after(() => service.dispose());
+  const handler = createProjectsHttpHandler({ get: () => undefined }, service, { requireConnection: true });
+
+  const callWithPeer = async (peer) => {
+    const req = { method: 'GET', url: '/projects-api/projects', headers: {} };
+    const headers = {};
+    let body = '';
+    const res = {
+      statusCode: 0,
+      setHeader(k, v) { headers[k.toLowerCase()] = v; },
+      end(chunk) { body = String(chunk ?? ''); },
+    };
+    await handler(req, res, peer);
+    return { status: res.statusCode, body: JSON.parse(body || '{}') };
+  };
+
+  assert.equal((await callWithPeer(undefined)).status, 401);
+  assert.equal((await callWithPeer({ principal: { kind: 'viewer' } })).status, 403);
+  const ok = await callWithPeer({ principal: { kind: 'owner' } });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body, { projects: [] });
 });

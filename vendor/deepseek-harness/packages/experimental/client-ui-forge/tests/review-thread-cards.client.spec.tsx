@@ -6,11 +6,14 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ForgeReviewThread, ForgeThreadId } from '@deepseek-ai/dsh-experimental-forge/types'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { en } from '../src/client/locales.ts'
+import { hostCopy } from './client-fixtures.client.ts'
 import { Avatar, OutdatedThreads, ThreadCard, type ThreadActions, type ThreadWrites } from '../src/client/ReviewThreads.tsx'
 import { ThreadList, type ThreadListProps } from '../src/client/ThreadList.tsx'
 import { diffFile, reviewComment, reviewThread } from './thread-fixtures.client.ts'
 
-const t = makeTranslate(en)
+const english = makeTranslate(en)
+/** Copy of a view of a GitHub pull request, which names the code host and the noun. */
+const t = (key: string, params?: Record<string, unknown>): string => english(key, { forge: 'GitHub', noun: 'PR', ...params })
 const OLD = 'b'.repeat(40)
 const scrolled = vi.fn()
 
@@ -129,7 +132,7 @@ describe('ThreadCard writes', () => {
     expect(open.getByRole('button', { name: 'Resolve thread' })).toHaveProperty('disabled', true)
     expect(await open.findByRole('alert')).toHaveProperty('textContent', 'Refused')
     fireEvent.click(open.getByRole('button', { name: 'Resolve thread' }))
-    await vi.waitFor(() => { expect(open.getByRole('alert').textContent).toBe(en['thread.writeUnknown']) })
+    await vi.waitFor(() => { expect(open.getByRole('alert').textContent).toBe(hostCopy('thread.writeUnknown')) })
     open.unmount()
     const settled = render(<ThreadCard thread={reviewThread({ id: 't2' as ForgeThreadId, resolved: true, viewerCanResolve: true })} place={LINE}
       actions={actions({ writes: writes({ write }), focused: { id: 't2' as ForgeThreadId, revision: 1 } })} t={t} />)
@@ -267,15 +270,28 @@ describe('ThreadCard', () => {
     fireEvent.click(view.getByRole('button', { name: en['review.addToInput'] }))
     expect(shared.addToInput).toHaveBeenCalledWith(thread, 'R3')
     expect(shared.inputFailed).toHaveBeenCalledOnce()
-    fireEvent.click(view.getByRole('button', { name: en['thread.openOnHost'] }))
+    fireEvent.click(view.getByRole('button', { name: hostCopy('thread.openOnHost') }))
     expect(shared.openLink).toHaveBeenCalledWith(thread.comments[0]?.url)
+  })
+
+  it('names the destination of the quote and reports a refusal once the quote settles', async () => {
+    const shared = actions({
+      addToInput: vi.fn(async () => await Promise.reject(new Error('closed'))),
+      quoteCopy: { add: 'reviewPage.addToChat', added: 'reviewPage.addedToChat', failed: 'reviewPage.addToChatFailed' },
+    })
+    const view = render(<ThreadCard thread={reviewThread()} place={LINE} actions={shared} t={t} />)
+    expect(view.queryByRole('button', { name: en['review.addToInput'] })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Add to chat' }))
+    expect(shared.inputFailed).not.toHaveBeenCalled()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(shared.inputFailed).toHaveBeenCalledOnce()
   })
 
   it('names a file thread and offers no page without one', () => {
     const view = render(<ThreadCard thread={reviewThread({ subject: 'file', current: null, original: null, comments: [reviewComment({ url: null })] })}
       place={{ kind: 'file' }} actions={actions()} t={t} />)
     expect(view.getByRole('region', { name: en['thread.fileLevel'] }).textContent).toContain(en['thread.fileLevel'])
-    expect(view.queryByRole('button', { name: en['thread.openOnHost'] })).toBeNull()
+    expect(view.queryByRole('button', { name: hostCopy('thread.openOnHost') })).toBeNull()
   })
 
   it('folds a resolved thread into one row until unfolded or jumped to, and folds it again after a jump', () => {
@@ -362,7 +378,7 @@ describe('ThreadList', () => {
     cleanup()
     const { view } = list({ entries: [{ thread: reviewThread(), place: { kind: 'line', side: 'R', startLine: 3, endLine: 3 } }], filter: 'resolved' })
     expect(view.getByText(en['thread.none'])).toBeDefined()
-    expect(view.getByRole('button', { name: en['thread.openAll'] }).parentElement?.textContent).toBe(en['thread.openAll'])
+    expect(view.getByRole('button', { name: hostCopy('thread.openAll') }).parentElement?.textContent).toBe(hostCopy('thread.openAll'))
   })
 
   it('orders each file\'s threads from file threads to lines to outdated ones and describes each', () => {

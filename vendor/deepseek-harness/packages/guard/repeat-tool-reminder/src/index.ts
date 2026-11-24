@@ -1,5 +1,5 @@
 /**
- * Advisory per-agent repeat-call detector. It enriches post-execute decisions
+ * Advisory per-agent detector for model-direct repeat calls. It enriches post-execute decisions
  * with logged model context without vetoing or rewriting calls. Configuration
  * and chain semantics live in the package README; rationale lives in the
  * repeat-tool-reminder Agent Note.
@@ -272,13 +272,14 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   /**
-   * Advance the calling agent's chain for one attempt and determine whether it
-   * emits a reminder or trips the hard stop.
+   * Advance the calling agent's chain for one model-direct attempt and determine
+   * whether it emits a reminder or trips the hard stop. Nested executions neither
+   * count nor reset.
    */
   function observe(exec: ToolExecution): Observation {
     // A direct `ctx.tools.execute()` caller has no model to remind and no id
-    // to key on; only agent-loop calls participate.
-    if (!exec.agent) return { kind: 'none' }
+    // to key on; only model-direct agent-loop calls participate.
+    if (!exec.agent || exec.parent !== undefined) return { kind: 'none' }
     if (!tracked(exec.name)) return { kind: 'none' }
     const canonical = canonicalize(exec.arguments)
     const key = JSON.stringify([exec.name, canonical])

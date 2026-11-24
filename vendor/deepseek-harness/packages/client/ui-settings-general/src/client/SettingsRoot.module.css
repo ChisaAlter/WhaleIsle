@@ -43,6 +43,20 @@
   padding-right: 52px;
 }
 
+/* The notice row takes no height: its content floats above the sidebar list at
+   the row's full width, so status indicators in the trigger row do not narrow it. */
+.noticeRow {
+  position: relative;
+  height: 0;
+}
+
+.notice {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
 .triggerRow.railRow {
   width: 36px;
   height: 80px;
@@ -146,7 +160,7 @@
   backdrop-filter: var(--dsw-mask-blur);
 }
 
-/* Settings uses a shared 800×800 panel; longer sections scroll
+/* Settings uses a shared 824×800 panel; longer sections scroll
    inside the options column; the navigation scrolls independently. One height for
    every section, taken from the viewport rather than the content, because a
    content-sized panel would resize under the pointer on every nav click.

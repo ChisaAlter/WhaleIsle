@@ -937,3 +937,166 @@ test('Audit regression [P1 #31]: drainTimeoutMs=0 waits indefinitely and concurr
   assert.equal(secondRes.ok, true);
   assert.equal(releaseLock(state, { lockId: secondRes.lockId, owner: 'desktop-update' }).released, true);
 });
+
+test('wrapWebServer forwards 0.2.3 PeerScope through HTTP, upgrade, and fallback wrappers', async () => {
+  const { createControlState, acquireLock, releaseLock } = await load('state.js');
+  const { wrapWebServer, disposeGuards, markAdmitted } = await load('wrap.js');
+  const state = createControlState();
+  const seen = { http: [], upgrade: [], fallbackFn: [], fallbackObj: [] };
+
+  const httpRoute = {
+    kind: 'prefix',
+    path: '/open-in-app',
+    handler(req, res, peer) {
+      seen.http.push({ method: req.method, url: req.url, peer });
+      res.statusCode = 200;
+      res.end('ok');
+    },
+  };
+  const upgradeRoute = {
+    path: '/api/remote.mux',
+    handler(req, socket, head, peer) {
+      seen.upgrade.push({ url: req.url, head, peer });
+      return peer;
+    },
+  };
+  const webServer = {
+    prefixes: new Map([[httpRoute.path, httpRoute]]),
+    exact: new Map(),
+    upgrades: new Map([[upgradeRoute.path, upgradeRoute]]),
+    fallback: undefined,
+    register(route) {
+      const table = route.kind === 'exact' ? this.exact : this.prefixes;
+      table.set(route.path, route);
+      return () => { table.delete(route.path); };
+    },
+    registerUpgrade(route) {
+      this.upgrades.set(route.path, route);
+      return () => { this.upgrades.delete(route.path); };
+    },
+    registerFallback(fallback) {
+      this.fallback = fallback;
+      return () => { this.fallback = undefined; };
+    },
+  };
+
+  assert.equal(wrapWebServer(state, webServer), true);
+
+  const ownerPeer = { id: 'peer-owner', principal: { kind: 'owner' } };
+  const makeRes = () => ({
+    headersSent: false,
+    statusCode: 0,
+    status: 0,
+    body: '',
+    once() {},
+    off() {},
+    writeHead(status) { this.status = status; },
+    end(body) { this.body = body; },
+  });
+
+  // 1. HTTP route: undrained GET, drained POST, and already-admitted request all receive peer.
+  await httpRoute.handler({ method: 'GET', url: '/open-in-app/apps' }, makeRes(), ownerPeer);
+  await httpRoute.handler({ method: 'POST', url: '/open-in-app/open' }, makeRes(), ownerPeer);
+  const preAdmittedReq = { method: 'POST', url: '/open-in-app/again' };
+  markAdmitted(preAdmittedReq);
+  await httpRoute.handler(preAdmittedReq, makeRes(), ownerPeer);
+  assert.deepEqual(seen.http.map((x) => x.peer), [ownerPeer, ownerPeer, ownerPeer]);
+
+  // 2. Upgrade route: receives 4th arg peer.
+  const head = Buffer.from('mux-head');
+  const upgradedPeer = upgradeRoute.handler({ url: '/api/remote.mux' }, { write() {}, destroy() {} }, head, ownerPeer);
+  assert.equal(upgradedPeer, ownerPeer);
+  assert.equal(seen.upgrade.length, 1);
+  assert.equal(seen.upgrade[0].peer, ownerPeer);
+
+  // 3. Function fallback: GET read and POST mutating both forward peer.
+  const rawFnFallback = (req, res, peer) => {
+    seen.fallbackFn.push({ method: req.method, peer });
+    res.end('fn');
+  };
+  const disposeFnFallback = webServer.registerFallback(rawFnFallback);
+  await webServer.fallback({ method: 'GET', url: '/index.html' }, makeRes(), ownerPeer);
+  await webServer.fallback({ method: 'POST', url: '/submit' }, makeRes(), ownerPeer);
+  assert.deepEqual(seen.fallbackFn, [
+    { method: 'GET', peer: ownerPeer },
+    { method: 'POST', peer: ownerPeer },
+  ]);
+  disposeFnFallback();
+
+  // 4. 0.2.3 WebFallback object `{ handler, auth }`: preserves auth, forwards peer, gates POST while locked.
+  const objFallback = {
+    auth: 'required',
+    handler(req, res, peer) {
+      seen.fallbackObj.push({ method: req.method, peer });
+      res.end('obj');
+    },
+  };
+  const originalObjHandler = objFallback.handler;
+  webServer.registerFallback(objFallback);
+  assert.equal(webServer.fallback, objFallback);
+  assert.equal(objFallback.auth, 'required');
+  await objFallback.handler({ method: 'GET', url: '/app' }, makeRes(), ownerPeer);
+  await objFallback.handler({ method: 'POST', url: '/mutate' }, makeRes(), ownerPeer);
+  assert.deepEqual(seen.fallbackObj, [
+    { method: 'GET', peer: ownerPeer },
+    { method: 'POST', peer: ownerPeer },
+  ]);
+
+  const locked = await acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 50 });
+  assert.equal(locked.ok, true);
+  const blockedRes = makeRes();
+  await objFallback.handler({ method: 'POST', url: '/mutate' }, blockedRes, ownerPeer);
+  assert.equal(blockedRes.status, 503);
+  assert.equal(JSON.parse(blockedRes.body).error.code, 'dshd/admission-locked');
+  releaseLock(state, { lockId: locked.lockId, owner: 'desktop-update' });
+
+  // 5. Disposing guards restores handlers and retained wrappers keep forwarding peer transparently.
+  const retainedHttp = httpRoute.handler;
+  const retainedUpgrade = upgradeRoute.handler;
+  const retainedObjFallback = objFallback.handler;
+  disposeGuards(state);
+  assert.equal(objFallback.handler, originalObjHandler);
+  await retainedHttp({ method: 'GET', url: '/open-in-app/post-dispose' }, makeRes(), ownerPeer);
+  retainedUpgrade({ url: '/api/remote.mux' }, { write() {}, destroy() {} }, head, ownerPeer);
+  await retainedObjFallback({ method: 'POST', url: '/post-dispose' }, makeRes(), ownerPeer);
+  assert.equal(seen.http.at(-1).peer, ownerPeer);
+  assert.equal(seen.upgrade.at(-1).peer, ownerPeer);
+  assert.equal(seen.fallbackObj.at(-1).peer, ownerPeer);
+});
+
+test('dsh-task-control registers /dshd-task-control with auth: anonymous for 0.2.3 WebServer Bearer-only control requests', async () => {
+  const { apply } = await load('index.js');
+  const { CONTROL_PREFIX } = await load('http.js');
+
+  const prefixes = new Map();
+  const webServer = {
+    prefixes,
+    exact: new Map(),
+    upgrades: new Map(),
+    register(route) {
+      prefixes.set(route.path, route);
+      return () => { prefixes.delete(route.path); };
+    },
+  };
+  const cleanups = [];
+  const ctx = {
+    provide() {},
+    effect(fn) {
+      const cleanup = fn();
+      if (typeof cleanup === 'function') cleanups.push(cleanup);
+    },
+    on() { return () => {}; },
+    get(name) { return name === 'webServer' ? webServer : undefined; },
+    logger: { warn() {} },
+  };
+
+  apply(ctx);
+  try {
+    const controlRoute = prefixes.get(CONTROL_PREFIX);
+    assert.ok(controlRoute, '/dshd-task-control route should be registered');
+    assert.equal(controlRoute.kind, 'prefix');
+    assert.equal(controlRoute.auth, 'anonymous');
+  } finally {
+    for (const fn of cleanups.reverse()) fn();
+  }
+});

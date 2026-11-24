@@ -7,6 +7,7 @@
   },
   "files": [
     "src/submission-settings.ts",
+    "src/types.ts",
     "src/next-prompt-contract.ts",
     "src/next-prompt.ts",
     "src/index.ts"

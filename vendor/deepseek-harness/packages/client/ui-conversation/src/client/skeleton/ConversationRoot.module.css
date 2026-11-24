@@ -11,34 +11,8 @@
   min-width: 0;
   min-height: 0;
   /* AppFrame already paints `--dsw-alias-bg-base`. A second fill stacks with
-     that mix and hides a wallpaper. */
-
-  /* Shared width axis for the whole column: one content width W
-     (--dsh-chat-content-width) for the transcript, the dock cards
-     (todo/goal/queue: card minus four insets, 4 x 8 = 32), and business-owned
-     takeover cards; the input card alone is W + 32px.
-     The relation also holds when a narrow viewport shrinks everything: the
-     chat scroller and the takeover frames pad clearance + 16px per side while
-     the input card clears the bare clearance, so the input card stays exactly
-     content + 32px at every width. Declared on the root because the
-     transcript and the composer seat are sibling subtrees.
-
-     W adapts to the column, not the viewport (a collapsed sidebar widens the
-     column without resizing the window): the component publishes the column's
-     live width as --dsh-conversation-column-width (px, via ResizeObserver —
-     container-type would re-anchor the subtree's portal-free position:fixed
-     descendants) and the clamp keeps a 680px floor (a step under the figma
-     748px — the full-width reading felt wide on every screen), takes 64% of
-     wider columns, and caps at 920px for line-length
-     readability. A dragged user preference (--dsh-chat-user-width, published
-     by the width handles) replaces the adaptive term wholesale. */
-  --dsh-chat-content-width: var(
-    --dsh-chat-user-width,
-    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) * 0.64), 920px)
-  );
-  --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
-  --dsh-composer-side-clearance: 16px;
-  --dsh-composer-dock-inset: 8px;
+     that mix and hides a wallpaper. The shared width axis lives on `.body`
+     (`@property` non-inherited inputs + resolved content/card widths). */
 }
 
 /* Session identity and tools share the first row; view tabs sit below it. */
@@ -438,20 +412,21 @@
   /* Concrete overflow content establishes z-index 1, while the viewport
      composer remains above both layers. */
   z-index: 0;
-  width: max(
-    0px,
-    min(10px, calc((100% - var(--dsh-chat-content-width)) / 2 - 24px - 24px))
-  );
-  overflow: hidden;
   cursor: col-resize;
 }
 
+/* The strips follow the column when the end reserve moves it off the body's
+   center by half the end inset. Each strip takes its width from the gutter
+   on its own side: the start gutter loses that half and the end gutter
+   gains it. */
 .widthHandle[data-side='left'] {
-  right: min(100%, calc(50% + var(--dsh-chat-content-width) / 2 + 24px));
+  right: calc(50% + var(--dsh-chat-end-inset) / 2 + var(--dsh-chat-content-width) / 2 + 24px);
+  width: min(10px, calc((100% - var(--dsh-chat-end-inset) - var(--dsh-chat-content-width)) / 2 - 24px - 24px));
 }
 
 .widthHandle[data-side='right'] {
-  left: min(100%, calc(50% + var(--dsh-chat-content-width) / 2 + 24px));
+  left: calc(50% - var(--dsh-chat-end-inset) / 2 + var(--dsh-chat-content-width) / 2 + 24px);
+  width: min(10px, calc((100% + var(--dsh-chat-end-inset) - var(--dsh-chat-content-width)) / 2 - 24px - 24px));
 }
 
 /* The glow: a short 2px bar following the captured pointer's Y, centered in the strip
@@ -595,6 +570,49 @@
   flex: none;
 }
 
+/* The width axis's inputs and its continuously varying derived lengths are
+   registered without inheritance, so they exist only on the body: a resize
+   that changes them every frame does not restyle the transcript below it.
+   The resolved lengths compute to absolute values here, and the public
+   aliases the body declares from them inherit text that changes only when a
+   resolved width changes. */
+@property --dsh-conversation-column-width {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dsh-conversation-viewport-width {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* Without an initial value an unset preference stays invalid, so the body
+   falls back to the adaptive width. */
+@property --dsh-chat-user-width {
+  syntax: '*';
+  inherits: false;
+}
+
+@property --dsh-chat-content-width-resolved {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dsh-chat-end-reserve-max {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --dsh-chat-end-inset-resolved {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 /* Band below the header: the scrollport plus the width handles. Anchoring the
    handles here keeps their full-height strips and glow under the header's
    bottom edge at every header height. */
@@ -609,23 +627,57 @@
   /* Shared width axis for the transcript, dock cards, composer, and takeover
      cards. Main width controls publish the live body width and optional user
      preference; embedded occurrences override this adaptive axis below. */
-  --dsh-chat-content-width: var(
+  --dsh-chat-content-width-resolved: var(
     --dsh-chat-user-width,
-    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) * 0.64), 920px)
+    clamp(680px, calc(var(--dsh-conversation-column-width) * 0.64), 880px)
   );
+  --dsh-chat-content-width: var(--dsh-chat-content-width-resolved);
   --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
   --dsh-composer-side-clearance: 16px;
   --dsh-composer-dock-inset: 8px;
+
+  /* End reserve: room the body keeps free at its inline end for a surface
+     that stays beside the transcript. A stylesheet asks for it by setting
+     --dsh-chat-end-reserve on this element. The scrollport then pads its end
+     by --dsh-chat-end-inset, twice the missing gutter, which moves the
+     centered transcript column and the composer toward the start edge at
+     their own widths until the space after the column equals the reserve.
+     --dsh-chat-end-reserve-max is the largest reserve the start gutter can
+     give while the column keeps its width and its side inset; a larger one
+     gets no inset at all, so the surface reads the maximum before it relies
+     on the room. The maximum varies with every resize and is not inherited:
+     a stylesheet derives what it needs on this element, as a registered
+     length that changes only when its own value does. Every length derives from the scrollport's measured width,
+     so the same values hold where a percentage would resolve against
+     another box. The inset applies at once unless the stylesheet also sets
+     --dsh-chat-end-reserve-transition, a duration and an easing, for as long
+     as it wants a change of the inset animated. */
+  --dsh-chat-end-reserve-max: calc(
+    var(--dsh-conversation-viewport-width) - var(--dsh-chat-content-width-resolved) - var(--dsh-composer-side-clearance) - 16px
+  );
+  /* The first term is 0 for a reserve above the maximum and at least 1000px, above any inset, otherwise: a
+     step at the maximum, within a ten-thousandth of a pixel. */
+  --dsh-chat-end-inset-resolved: min(
+    max(0px, calc((var(--dsh-chat-end-reserve-max) - var(--dsh-chat-end-reserve, 0px)) * 10000000 + 1000px)),
+    calc(2 * max(
+      0px,
+      var(--dsh-chat-end-reserve, 0px) - (var(--dsh-conversation-viewport-width) - var(--dsh-chat-content-width-resolved)) / 2
+    ))
+  );
+  --dsh-chat-end-inset: var(--dsh-chat-end-inset-resolved);
 }
 
-/* An embedded occurrence has no grid parent; it fills its host's flex box. */
+/* An embedded occurrence has no grid parent (fills its host's flex box) and
+   makes no end room: its column already follows its frame's width. */
 .embeddedBody {
   flex: 1;
   overflow: hidden;
-  --dsh-chat-content-width: min(calc(100% - 32px), 920px);
-  --dsh-composer-card-max-width: min(calc(100% - 16px), 952px);
+  --dsh-chat-content-width: min(calc(100% - 32px), 880px);
+  --dsh-composer-card-max-width: min(calc(100% - 16px), 912px);
   --dsh-composer-side-clearance: 8px;
   --dsh-composer-dock-inset: 8px;
+  --dsh-chat-end-reserve-max: 0px;
+  --dsh-chat-end-inset: 0px;
 }
 
 .scrollBody {
@@ -638,6 +690,9 @@
      `.list`, ui-sidebar-files FilesBody `.body`): the bar sits 2px clear of
      the column's edge instead of flush against it. */
   margin-right: 2px;
+  /* The end reserve: 0 unless a surface beside the transcript asks for room. */
+  padding-inline-end: var(--dsh-chat-end-inset);
+  transition: padding-inline-end var(--dsh-chat-end-reserve-transition, 0s);
   overflow-y: auto;
   /* Reserved unconditionally: the composer seat matches this box's content box in
      Chat; the viewport seat compensates for that same width, so an `auto`
@@ -693,10 +748,15 @@
 
 .root[data-phase='active'] .composerSeat,
 .embeddedBody[data-content-phase='active'] .composerSeat {
+  box-sizing: border-box;
   position: absolute;
   right: calc(2px + var(--dsh-scrollbar-width));
   bottom: 0;
   left: 0;
+  /* Follow the scrollport's end reserve so the absolute composer seat stays
+     aligned with the transcript column when a docked aside requests room. */
+  padding-inline-end: var(--dsh-chat-end-inset);
+  transition: padding-inline-end var(--dsh-chat-end-reserve-transition, 0s);
   /* Above markdown CodeBlock sticky banners (z-index 6) so the footer never
      paints under a sticking code header while scrolling. The pinned compaction
      header (MessageItem.module.css, ui-chat) and the turn-navigation rail slot
@@ -791,7 +851,7 @@
   align-self: center;
   gap: 2px;
   width: 100%;
-  max-width: var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)));
+  max-width: var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width));
   min-width: 0;
   margin-top: 4px;
   /* Figma drew px 8; nudged +12 so the folder glyph aligns with the card's

@@ -8,13 +8,14 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createSettingsShellStore } from '../src/client/shell-store.ts'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
-import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import type { SettingsNavigation, SettingsNavigationSnapshot } from '../src/client/settings-navigation.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { DesktopUpdateView } from '../src/types.ts'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -66,6 +67,7 @@ function createNavigation(initial: SettingsNavigationSnapshot = { open: false, s
 /** Slot-content stand-ins: the shell renders whatever the seats contribute. */
 const SEAT_CONTENT: Record<string, string> = {
   'settings.trigger': 'Settings',
+  'settings.notice': 'Account notice',
   'settings.header': 'Settings Title',
   'settings.action': 'Open configuration file',
   'settings.close': 'Close',
@@ -118,12 +120,15 @@ function mount({
   const openDesktopUpdate = vi.fn()
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string; fallback?: import('react').ReactNode }) => {
-      if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
       if (key === 'settings.launcher' && launcher) return <button type="button">Account</button>
       return SEAT_CONTENT[key] ?? opts?.fallback
     }) as SettingsRootComponentProps['renderSlot'],
   )
-  const activeId = SessionId('active-session')
+  const renderFactorySlot = vi.fn(
+    ((name: string, factoryProps: { id: string }) =>
+      name === 'settings.section.view' ? <div data-testid={`section-${factoryProps.id}`} /> : null) as SettingsRootComponentProps['renderFactorySlot'],
+  )
+  const activeId = brandString<SessionId>('active-session')
   const sessions: SessionListState = {
     ids: [activeId],
     byId: {
@@ -184,6 +189,7 @@ function mount({
       return select(current)
     },
     renderSlot,
+    renderFactorySlot,
   }
   const view = render(<SettingsRoot {...props} />)
   const bump = (next: Row[]) => {
@@ -202,6 +208,7 @@ function mount({
     desktopUpdate = next
     view.rerender(<SettingsRoot {...props} />)
   }
+  const setWide = (next: boolean) => { view.rerender(<SettingsRoot {...props} wide={next} />) }
   const setShortcuts = (next: readonly ShortcutCatalogEntry[]) => {
     shortcuts = next
     view.rerender(<SettingsRoot {...props} />)
@@ -213,7 +220,10 @@ function mount({
     act(() => { sessions.byId[activeId] = { ...session, blank: next } })
     view.rerender(<SettingsRoot {...props} />)
   }
-  return { view, renderSlot, bump, listeners, reconnect, openDesktopUpdate, setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive, navigation }
+  return {
+    view, renderSlot, renderFactorySlot, bump, listeners, reconnect, openDesktopUpdate,
+    setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive, setWide, navigation,
+  }
 }
 
 function openPanel() {
@@ -409,12 +419,12 @@ describe('SettingsRoot trigger', () => {
 
 describe('SettingsPanel chrome seats', () => {
   it('marks hidden search renders so sections can leave data loading to their visible page', () => {
-    const { renderSlot } = mount()
+    const { renderFactorySlot } = mount()
     openPanel()
-    expect(renderSlot).toHaveBeenCalledWith('settings.section', { close: expect.any(Function) }, { only: 'general' })
-    renderSlot.mockClear()
+    expect(renderFactorySlot).toHaveBeenCalledWith('settings.section.view', { id: 'general', close: expect.any(Function) })
+    renderFactorySlot.mockClear()
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'model' } })
-    expect(renderSlot).toHaveBeenCalledWith('settings.section', { close: expect.any(Function), indexOnly: true }, { only: 'models' })
+    expect(renderFactorySlot).toHaveBeenCalledWith('settings.section.view', { id: 'models', close: expect.any(Function), indexOnly: true })
   })
 
   it('names the dialog via aria-labelledby pointing at the header seat node', () => {
@@ -542,19 +552,21 @@ describe('SettingsPanel navigation', () => {
         { id: 'agent-presets', order: 20, label: 'Agent presets' },
         { id: 'plugins', order: 30, label: 'Plugins' },
         { id: 'archived-sessions', order: 40, label: 'Archived sessions' },
-        { id: 'contributed', order: 50, label: 'Contributed' },
+        { id: 'remote-connection', order: 50, label: 'Remote connection' },
+        { id: 'contributed', order: 60, label: 'Contributed' },
       ],
     })
     openPanel()
     // Each product glyph names its sprite symbol id in data-icon.
-    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Archived sessions', 'Contributed']
+    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Archived sessions', 'Remote connection', 'Contributed']
       .map(name => screen.getByRole('button', { name }).querySelector('svg')?.getAttribute('data-icon'))
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
-    // The four ids the shell names get their own glyph; every other section —
+    // The five ids the shell names get their own glyph; every other section —
     // including one this package never heard of — shares the gear.
-    expect(new Set(glyphs.slice(0, 5)).size).toBe(5)
-    expect(glyphs[5]).toBe(glyphs[0])
+    expect(new Set(glyphs.slice(0, 6)).size).toBe(6)
+    expect(glyphs[5]).toBe('dsw-icon-remote-connection-outline-medium')
+    expect(glyphs[6]).toBe(glyphs[0])
   })
 
   it('switches the rendered section on nav click', () => {
@@ -638,12 +650,11 @@ describe('SettingsPanel navigation', () => {
   })
 
   it('renders an empty content column and focuses the title when the ledger is empty', () => {
-    const { renderSlot } = mount({ rows: [] })
+    const { renderFactorySlot } = mount({ rows: [] })
     openPanel()
     expect(document.activeElement).toBe(screen.getByText('Settings Title'))
     expect(screen.getByRole('dialog')).toBeTruthy()
-    const sectionCalls = renderSlot.mock.calls.filter(c => c[0] === 'settings.section')
-    expect(sectionCalls).toHaveLength(0)
+    expect(renderFactorySlot).not.toHaveBeenCalled()
   })
 
   it('drops the ledger subscription on unmount', () => {
@@ -711,4 +722,25 @@ it('passes current Settings key labels to the launcher and removes them when unb
 
   setShortcuts([{ ...row, keys: [], aria: undefined, binding: null, modified: true }])
   expect(launcher()).not.toHaveProperty('settingsShortcut')
+})
+
+it('renders the notice row before the launcher row and opens the requested section', () => {
+  const { renderSlot } = mount({ rows: [{ id: 'general', order: 0, label: 'General' }, { id: 'account', order: 1, label: 'Account' }] })
+  const notice = screen.getByText('Account notice').parentElement!
+  expect(notice.nextElementSibling?.contains(screen.getByRole('button', { name: 'Settings' }))).toBe(true)
+  const owner = renderSlot.mock.calls.find(call => call[0] === 'settings.notice')!
+  act(() => { (owner[1] as { openSettings: (sectionId?: string) => void }).openSettings('account') })
+  expect(screen.getByTestId('section-account')).toBeTruthy()
+})
+
+it('hides the notice row in the collapsed rail and keeps the same node', () => {
+  const { setWide } = mount()
+  const notice = screen.getByText('Account notice').parentElement!
+  expect(notice.hidden).toBe(false)
+  setWide(false)
+  expect(screen.getByText('Account notice').parentElement).toBe(notice)
+  expect(notice.hidden).toBe(true)
+  setWide(true)
+  expect(screen.getByText('Account notice').parentElement).toBe(notice)
+  expect(notice.hidden).toBe(false)
 })

@@ -1,4 +1,8 @@
 /** Copy for the retained-reminder task manager's `schedule.manager` namespace. */
+import {
+  recommendationDe, recommendationEn, recommendationEs, recommendationFr, recommendationJa, recommendationPt, recommendationRu,
+  recommendationZh,
+} from './recommendation-locales.ts'
 import { frequencyEn, frequencyJa, frequencyEs, frequencyFr, frequencyDe, frequencyRu, frequencyPt, frequencyZh } from './frequency-locales.ts'
 
 /** English task-manager dictionary and key domain. */
@@ -105,6 +109,7 @@ export const en = {
   'frequency.once': 'Once',
   'frequency.every': 'Every {value} {unit}',
   ...frequencyEn,
+  ...recommendationEn,
   'timing.date': 'Date',
   'timing.time': 'Time',
   'timing.hour': 'Hour',
@@ -274,6 +279,7 @@ export const zh: Record<TaskManagerKey, string> = {
   'frequency.once': '仅一次',
   'frequency.every': '每 {value} {unit}',
   ...frequencyZh,
+  ...recommendationZh,
   'timing.date': '日期',
   'timing.time': '时间',
   'timing.hour': '时',
@@ -338,6 +344,7 @@ export const zh: Record<TaskManagerKey, string> = {
 export const ja = {
   ...en,
   ...frequencyJa,
+  ...recommendationJa,
   'host.create': '作成',
   'host.createMethod': '作成方法を選択',
   'host.chatCreate': '会話で作成',
@@ -552,6 +559,7 @@ export const es = {
   'frequency.once': 'una vez',
   'frequency.every': 'Cada {value} {unit}',
   ...frequencyEs,
+  ...recommendationEs,
   'timing.date': 'Fecha',
   'timing.time': 'tiempo',
   'timing.hour': 'Hora',
@@ -714,6 +722,7 @@ export const fr = {
   'frequency.once': 'Une fois',
   'frequency.every': 'Chaque {value} {unit}',
   ...frequencyFr,
+  ...recommendationFr,
   'timing.date': 'Date',
   'timing.time': 'Temps',
   'timing.hour': 'Heure',
@@ -876,6 +885,7 @@ export const de = {
   'frequency.once': 'Einmal',
   'frequency.every': 'Jeder {value} {unit}',
   ...frequencyDe,
+  ...recommendationDe,
   'timing.date': 'Datum',
   'timing.time': 'Zeit',
   'timing.hour': 'Stunde',
@@ -1038,6 +1048,7 @@ export const ru = {
   'frequency.once': 'Однажды',
   'frequency.every': 'Каждый {value} {unit}',
   ...frequencyRu,
+  ...recommendationRu,
   'timing.date': 'Дата',
   'timing.time': 'Время',
   'timing.hour': 'Час',
@@ -1200,6 +1211,7 @@ export const pt = {
   'frequency.once': 'Uma vez',
   'frequency.every': 'A cada {value} {unit}',
   ...frequencyPt,
+  ...recommendationPt,
   'timing.date': 'Data',
   'timing.time': 'Hora',
   'timing.hour': 'Hora',

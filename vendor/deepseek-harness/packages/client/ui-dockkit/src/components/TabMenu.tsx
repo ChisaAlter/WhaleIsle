@@ -81,9 +81,13 @@ export function TabMenu({ labels, anchor, onClose, onDismiss, extras }: TabMenuP
     }
     document.addEventListener('keydown', onKeyDown, true)
     // A press anywhere but inside the menu dismisses it; one with no element
-    // target (dispatched to the window itself) counts as outside.
+    // target (dispatched to the window itself) counts as outside. A secondary
+    // press on the opening tab itself is left to the chip's contextmenu handler
+    // so a second right-click toggles the menu closed instead of dismissing and
+    // reopening it.
     const onPointerDown = (event: PointerEvent): void => {
       if (event.target instanceof Node && menu.contains(event.target)) return
+      if (event.button === 2 && event.target instanceof Node && anchor.contains(event.target)) return
       onDismiss()
     }
     // Capture phase: a press on a tab chip starts a drag on its own handler,

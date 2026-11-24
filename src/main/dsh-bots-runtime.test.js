@@ -562,7 +562,7 @@ test('Phase 3 fixes: legacy model selectModel contract, kickoff state progressio
     let registeredBotsRoute = null;
     lazyMock.ctx.effect = (fn) => fn();
     lazyMock.ctx.webServer = { register: (r) => { registeredBotsRoute = r; return () => {}; } };
-    lazyMock.ctx.connection = { requestRejection: () => undefined };
+    lazyMock.ctx.connection = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) };
     const handle = mountBotsIntoHost(lazyMock.ctx, { home: lazyHome });
     assert.equal(handle.instance, null);
     assert.equal(fs.existsSync(botsDbPath(lazyHome)), false);

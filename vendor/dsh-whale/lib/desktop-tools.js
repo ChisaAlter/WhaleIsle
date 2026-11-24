@@ -88,7 +88,7 @@ async function desktopCall(control, pathname, { method = 'GET', body, timeoutMs 
 }
 
 const pluginListOutput = {
-  schema: {
+  schema: /** @type {const} */ ({
     type: 'object',
     additionalProperties: false,
     properties: {
@@ -96,9 +96,10 @@ const pluginListOutput = {
       plugins: { type: 'array', required: true, items: { type: 'string' } },
       detail: { type: 'string', required: true },
     },
-  },
+  }),
+  /** @param {any} _args @param {any} value */
   render: (_args, value) => [{
-    type: 'text',
+    type: /** @type {const} */ ('text'),
     text: value.plugins.join('\n') || value.detail,
   }],
 };

@@ -37,6 +37,7 @@ import {
   installWhaleMemoryLifecycle,
   isInvalidRpcEndpoint,
   isValidClientRequestBody,
+  resolveOwnerPeerRejection,
 } from './host-hooks.js';
 import {
   SYSTEM_REMINDER_RE,
@@ -789,8 +790,9 @@ function registerRpc(ctx, scope, sseHub, botsRuntime = null) {
   ctx.effect(() => ctx.webServer.register({
       kind: 'prefix',
       path: '/dsh-whale',
-      async handler(req, res) {
-        const rejection = ctx.connection.requestRejection(req);
+      /** @param {any} req @param {any} res @param {any} [peer] */
+      async handler(req, res, peer) {
+        const rejection = resolveOwnerPeerRejection(ctx, req, peer);
         if (rejection !== undefined) {
           res.writeHead(rejection);
           res.end(rejection === 401 ? 'unauthorized' : 'forbidden');

@@ -234,8 +234,33 @@ function remapDshDefaultModel(dshHome, fromProvider, toProvider) {
 }
 
 /**
- * Ensure `refs.MAGPIE_GATEWAY_KEY: magpie` is recorded in `<dshHome>/.credentials.yaml`
- * without clobbering any non-Magpie value already set by the user.
+ * Migrate an unversioned `.credentials.yaml` to the `version: 1` layout
+ * required by `@deepseek-ai/dsh-credentials-local` >= 0.2.3 without losing any
+ * existing entries, comments, or values.
+ * @param {string} raw
+ * @returns {{ text: string, migrated: boolean }}
+ */
+function ensureVersionedCredentialsLayout(raw) {
+  if (/^[ \t]*version\s*:/m.test(raw)) {
+    return { text: raw, migrated: false };
+  }
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  if (/^(?:refs|records)\s*:/m.test(raw)) {
+    return { text: `version: 1${eol}${raw}`, migrated: true };
+  }
+  if (!/^\s*[^#\s]/m.test(raw)) {
+    const suffix = raw.endsWith('\n') || raw === '' ? '' : eol;
+    return { text: `${raw}${suffix}version: 1${eol}refs:${eol}`, migrated: true };
+  }
+  const trimmed = raw.replace(/\r?\n$/, '');
+  const indented = trimmed.split(/\r?\n/).map((line) => (line.length === 0 ? line : `  ${line}`)).join(eol);
+  return { text: `version: 1${eol}refs:${eol}${indented}${eol}`, migrated: true };
+}
+
+/**
+ * Ensure `version: 1` and `refs.MAGPIE_GATEWAY_KEY: magpie` are recorded in
+ * `<dshHome>/.credentials.yaml` without clobbering any non-Magpie value already
+ * set by the user.
  * @param {string} dshHome
  */
 function ensureMagpieCredentialRef(dshHome) {
@@ -243,15 +268,19 @@ function ensureMagpieCredentialRef(dshHome) {
   const raw = readText(file);
   if (!raw.trim()) {
     fs.mkdirSync(dshHome, { recursive: true });
-    atomicWriteFileSync(file, `refs:\n  ${MAGPIE_REF}: magpie\n`, { mode: 0o600 });
+    atomicWriteFileSync(file, `version: 1\nrefs:\n  ${MAGPIE_REF}: magpie\n`, { mode: 0o600 });
     return true;
   }
-  const existing = new RegExp(`^[ \\t]*${MAGPIE_REF}\\s*:\\s*(.+)$`, 'm').exec(raw);
+  const { text: base, migrated } = ensureVersionedCredentialsLayout(raw);
+  const existing = new RegExp(`^[ \\t]*${MAGPIE_REF}\\s*:\\s*(.+)$`, 'm').exec(base);
   if (existing) {
+    if (migrated) {
+      atomicWriteFileSync(file, base.replace(/\r?\n?$/, '\n'), { mode: 0o600 });
+    }
     return existing[1].trim().replace(/^["']|["']$/g, '') === 'magpie';
   }
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
-  const lines = raw.split(/\r?\n/);
+  const eol = base.includes('\r\n') ? '\r\n' : '\n';
+  const lines = base.split(/\r?\n/);
   const refsIdx = lines.findIndex((line) => /^[ \t]*refs\s*:\s*(?:\{\})?\s*$/.test(line));
   if (refsIdx !== -1) {
     lines[refsIdx] = 'refs:';
@@ -260,7 +289,7 @@ function ensureMagpieCredentialRef(dshHome) {
     if (lines.length && lines.at(-1) !== '') lines.push('');
     lines.push('refs:', `  ${MAGPIE_REF}: magpie`);
   }
-  atomicWriteFileSync(file, lines.join(eol).replace(/\n?$/, '\n'), { mode: 0o600 });
+  atomicWriteFileSync(file, lines.join(eol).replace(/\r?\n?$/, '\n'), { mode: 0o600 });
   return true;
 }
 
@@ -403,6 +432,7 @@ module.exports = {
   detachWhaleBridgeDshChannel,
   detachMagpieDshChannels,
   ensureDshWebProfileExists,
+  ensureMagpieCredentialRef,
   readDshDefaultModel,
   remapDshDefaultModel,
   syncDshToMagpieGateway,

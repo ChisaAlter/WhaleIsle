@@ -1,8 +1,11 @@
-/** Stateless text-area presentation over the InputBar's borrowed editor. */
+/** Text-area presentation over the InputBar's borrowed editor. */
+import { useId } from 'react'
 import type { CSSProperties, KeyboardEventHandler, ReactNode, RefObject } from 'react'
 import type { LexicalEditor } from 'lexical'
 import clsx from 'clsx'
 import { HoverCardGroup } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputState } from '../../contract/input.ts'
 import { ComposerContentEditable } from './ComposerContentEditable.tsx'
 import { DecoratorPortals } from './DecoratorPortals.tsx'
@@ -16,6 +19,9 @@ export interface DraftEditorProps {
   readonly editorDisabled: boolean
   readonly phase: InputState['phase'] | 'inert'
   readonly placeholderText: string
+  /** Session eligible for plugin guidance while the empty editor accepts input. */
+  readonly placeholderSessionId: SessionId | undefined
+  readonly renderSlotChain: PropsRenderSlots<'conversation.input.placeholder'>['renderSlotChain']
   readonly ariaLabel: string
   readonly workspaceTrigger: boolean
   readonly workspacePickerOpen: boolean
@@ -32,14 +38,15 @@ export interface DraftEditorProps {
 
 /**
  * Render the existing scrollport, editable surface, placeholder, and chip portals.
- * @param props - borrowed editor and presentation values; this component owns no Hooks.
+ * @param props - borrowed editor, presentation values and placeholder slot renderer.
  * @returns the existing text-area DOM without an additional wrapper.
  */
 export function DraftEditor({
   classNames: css, editor, scrollRef, editable, editorDisabled, phase, placeholderText, ariaLabel,
-  workspaceTrigger, workspacePickerOpen, onWorkspaceKeyDown, hint, showPlaceholder,
+  workspaceTrigger, workspacePickerOpen, onWorkspaceKeyDown, hint, showPlaceholder, placeholderSessionId, renderSlotChain,
   inputStyle, typingFxCaret, layers,
 }: DraftEditorProps): ReactNode {
+  const placeholderId = useId()
   const style = hint === null && inputStyle === undefined
     ? undefined
     : {
@@ -56,9 +63,8 @@ export function DraftEditor({
           data-phase={phase}
           aria-disabled={editorDisabled || undefined}
           data-placeholder={placeholderText}
-          // The placeholder was the textarea's accessible name; a div's
-          // data attribute is not, so the label restores it.
           aria-label={ariaLabel}
+          aria-labelledby={showPlaceholder && placeholderSessionId !== undefined ? placeholderId : undefined}
           aria-haspopup={workspaceTrigger ? 'menu' : undefined}
           aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
           tabIndex={workspaceTrigger ? 0 : undefined}
@@ -69,8 +75,10 @@ export function DraftEditor({
           style={style}
         />
         {showPlaceholder && (
-          <div aria-hidden className={css.placeholder} data-composer-placeholder>
-            {placeholderText}
+          <div id={placeholderId} aria-hidden className={css.placeholder} data-composer-placeholder>
+            {placeholderSessionId === undefined
+              ? placeholderText
+              : renderSlotChain('conversation.input.placeholder', { sessionId: placeholderSessionId }, { fallback: placeholderText })}
           </div>
         )}
         <DecoratorPortals editor={workspaceTrigger ? null : editor} />

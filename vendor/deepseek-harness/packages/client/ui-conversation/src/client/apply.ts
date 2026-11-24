@@ -2,9 +2,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
 /** Registers the target-neutral Conversation assembly, shell, input, and docks. */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
+import type { SyncedConfig } from '@deepseek-ai/dsh-client-config/types'
+import type { ConversationConfig } from '../types.ts'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import { IconPaperclipOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -13,6 +13,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session-status/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -21,15 +22,16 @@ import { UserText, PlainUserText, SessionReference } from './user-text/UserText.
 import { sessionReferenceRule } from './user-text/session-reference-rule.ts'
 import { collapseWhitespaceRule, trimWhitespaceRule } from './user-text/whitespace-rules.ts'
 import type { ViewTab } from './contract/views.ts'
+import { inputBarChildren } from './contract/slots.ts'
 import type {
-  ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
+  ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected, ConversationShellInjected,
   ConversationSessionInjected, DraftFileUploads, UserTextInjected,
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
 import type { ReferenceInsert } from './contract/draft-editor.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
-import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
@@ -83,21 +85,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Services required by the Conversation plugin. */
+/**
+ * Services required by the Conversation plugin. `uiSession.sessionStatus` provides the `useSessionStatus` hook the
+ * Conversation shell renders with, so the plugin unloads and reloads with it.
+ */
 export const inject = [
-  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'configForms', 'connection',
+  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiSession.sessionStatus', 'uiWorkspace', 'locale', 'configForms', 'connection',
 ]
 
-/** Conversation runtime configuration. */
-export interface Config {
-  /** Maximum generic-file uploads allowed to run concurrently in browser Workers. */
-  maxConcurrentFileUploads?: number
-}
-
-/** Validated Conversation runtime configuration. */
-export const Config: z<Config> = z.object({
-  maxConcurrentFileUploads: z.natural().min(1).default(2),
-})
 
 // Stable no-session sources keep the renderer's observable-hook cache and
 // hook order unchanged across current-Session transitions.
@@ -128,6 +123,10 @@ const ABSENT_FILE_UPLOADS = {
   getSnapshot: () => EMPTY_FILE_UPLOADS,
   subscribe: () => () => {},
 }
+const ABSENT_FILE_UPLOAD_LIMIT = {
+  getSnapshot: (): number | undefined => undefined,
+  subscribe: () => () => {},
+}
 
 /**
  * Browser-shell bridge reporting the harness-host path of a picked file. The
@@ -147,7 +146,7 @@ function hostPathBridge(): HostPathBridge | undefined {
 interface WorkspaceNavigation {
   openSession(sessionId: SessionId, beforeOpen?: (sessionId: SessionId) => void): void
   openWorkspace(
-    workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
+    workspaceId: Parameters<ConversationShellInjected['openWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
   openNoDirectory(beforeOpen: (sessionId: SessionId) => void): Promise<void>
@@ -185,12 +184,12 @@ function concreteConversation(ctx: Context): ConversationController {
 /**
  * Mount the Conversation core and target-neutral presentation.
  * @param ctx - Client root context.
+ * @param config - Host-synced live configuration.
  */
-export function apply(ctx: Context, config: Config = Config({})): void {
+export function apply(ctx: Context, config?: SyncedConfig<ConversationConfig>): void {
   const sessions = ctx.sessions
   const slots = ctx.slots
-  // Schemastery's field default is materialized before Cordis calls apply.
-  const maxConcurrentFileUploads = config.maxConcurrentFileUploads as number
+  const fileUploadLimit = config?.maxConcurrentFileUploads ?? ABSENT_FILE_UPLOAD_LIMIT
   const workspaceNavigation = ctx.get('uiWorkspace') as WorkspaceNavigation
   const uiConversation = new UiConversation(ctx, sessions)
   uiConversation.userText.register(sessionReferenceRule)
@@ -496,6 +495,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
   })
 
+  const shellInjected: ConversationShellInjected = {
+    openWorkspace: (workspaceId, adopt) => workspaceNavigation.openWorkspace(workspaceId, adopt),
+  }
+
   const registerConversationRoot = () => slots.register({
     name: 'main.conversation',
     children: {
@@ -525,7 +528,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     inject: (sessionId: SessionId | undefined): ConversationInjected => {
       // Picking a target from the hero carries the typed draft (and staged
       // images) into the Session that pick lands in, then opens it.
-      const openCarryingDraft = (nextId: SessionId): void => {
+      const moveDraft = (nextId: SessionId): void => {
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           // A draft with a submission in flight stays with the Session that is admitting it.
@@ -555,12 +558,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         hooks: {
           composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
         },
-        selectWorkspace: workspaceId => workspaceNavigation.openWorkspace(
-          workspaceId,
-          (nextId) => { openCarryingDraft(nextId) },
-        ),
-        selectNoDirectory: () => workspaceNavigation.openNoDirectory(openCarryingDraft),
-        openWithDraft: (nextId) => { workspaceNavigation.openSession(nextId, openCarryingDraft) },
+        moveDraft,
+        selectNoDirectory: () => workspaceNavigation.openNoDirectory(moveDraft),
+        openWithDraft: (nextId) => { workspaceNavigation.openSession(nextId, moveDraft) },
       }
     },
   }, ConversationContent)
@@ -645,15 +645,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     name: 'conversation.composer.bar',
     locale: NS,
     children: {
-      'conversation.input.attachments': { kind: 'single', scope: 'session-maybe' },
-      'conversation.input.overlay': { kind: 'list', scope: 'session' },
-      'conversation.input.permission': { kind: 'single', scope: 'session' },
-      'conversation.input.left': { kind: 'list', scope: 'session' },
-      'conversation.input.plan': { kind: 'single', scope: 'session' },
-      'conversation.input.right': { kind: 'list', scope: 'session' },
-      'conversation.input.model': { kind: 'single', scope: 'session' },
-      'conversation.input.managed': { kind: 'single', scope: 'session' },
-      'conversation.input.activity': { kind: 'single', scope: 'session' },
+      ...inputBarChildren,
       'conversation.composer.dock': {
         kind: 'list', scope: 'session',
         inject: { hooks: { statsLine: submissionPolicy.statsLine } },
@@ -712,7 +704,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           }
           const uploads: File[] = []
           const references: ReferenceInsert[] = []
-          const cwd = sessionWorkingDirectory(sessions.list.getSnapshot().byId[sessionId])
           for (const file of files) {
             const directory = directories.has(file)
             if (bridge === undefined && directory) return t('attachment.directoryDesktopOnly')
@@ -722,9 +713,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               uploads.push(file)
               continue
             }
-            const relative = relativizeToCwd(path, cwd)
+            // The dropped path stays absolute, so the sent text names the same file after the Session's directory moves.
             // A completed directory chip needs closed quotes; the directory grammar keeps them open for drill.
-            const mention = formatFileMention({ path: directory ? `${relative}/` : relative, kind: 'file' }, false)
+            const mention = formatFileMention({ path: directory ? `${path}/` : path, kind: 'file' }, false)
             if (mention === undefined) return t('attachment.pathUnsupported')
             const label = workspaceTitleOf(path) || file.name
             references.push({
@@ -793,7 +784,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield slots.register({
       name: 'main',
       key: 'conversation',
-      children: { 'main.conversation': { kind: 'single', scope: 'session-maybe' } },
+      children: { 'main.conversation': { kind: 'single', scope: 'session-maybe', inject: shellInjected } },
     }, ConversationPanel)
     yield registerConversationRoot()
     yield registerConversationContent()
@@ -825,7 +816,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     blocks: composerBlocks,
     modelFacts: composerModelFacts,
     modelCatalog: composerModelCatalog,
-    maxConcurrentFileUploads,
+    maxConcurrentFileUploads: fileUploadLimit,
   })
   ctx.plugin(todoDockEntry)
   ctx.plugin(queueDockEntry)
